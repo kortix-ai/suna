@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { flattenModels } from './model-flatten';
+import { flattenModels, isOfferedModel, type FlatModel } from './model-flatten';
 import type { ProviderListResponse } from './use-opencode-sessions';
 
 // Regression coverage for the "every provider shows as Kortix" picker bug:
@@ -109,5 +109,39 @@ describe('flattenModels — gateway `provider` + `reasoning_options` pass-throug
       }),
     );
     expect(flat?.reasoningOptions).toEqual([{ type: 'budget_tokens', min: 1024 }]);
+  });
+});
+
+// `enabled` is the server's per-project enablement answer (`/model-picker`).
+// Every consumer that asks "may this key be offered/resolved?" must go through
+// isOfferedModel — a second, client-local visibility heuristic is exactly what
+// made the picker and "Manage models" disagree (#5932 half-revert).
+describe('isOfferedModel', () => {
+  const models = [
+    { providerID: 'kortix', modelID: 'anthropic/claude-fable-5', enabled: true },
+    { providerID: 'kortix', modelID: 'anthropic/claude-opus-4-1', enabled: false },
+    { providerID: 'kortix', modelID: 'glm-5.2' },
+  ] as FlatModel[];
+
+  test('offers a model the server enabled', () => {
+    expect(isOfferedModel(models, { providerID: 'kortix', modelID: 'anthropic/claude-fable-5' })).toBe(
+      true,
+    );
+  });
+
+  test('refuses a model the server disabled', () => {
+    expect(
+      isOfferedModel(models, { providerID: 'kortix', modelID: 'anthropic/claude-opus-4-1' }),
+    ).toBe(false);
+  });
+
+  test('offers a model from a catalog that carries no enablement at all', () => {
+    // Native/legacy catalogs never stamp `enabled`; absence means "not
+    // applicable", never "hidden".
+    expect(isOfferedModel(models, { providerID: 'kortix', modelID: 'glm-5.2' })).toBe(true);
+  });
+
+  test('refuses a key that is not in the catalog', () => {
+    expect(isOfferedModel(models, { providerID: 'kortix', modelID: 'gone/model' })).toBe(false);
   });
 });

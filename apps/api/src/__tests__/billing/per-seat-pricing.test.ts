@@ -154,7 +154,6 @@ describe('Compute cost calculation', () => {
     const daytona = calculateComputeCost(spec, 3600, 'daytona');
     expect(calculateComputeCost(spec, 3600, 'platinum')).toBeCloseTo(daytona, 8);
     expect(calculateComputeCost(spec, 3600, 'e2b')).toBeCloseTo(daytona, 8);
-    expect(calculateComputeCost(spec, 3600, 'local-docker')).toBe(0);
   });
 
   test('cost scales linearly with both spec and time', () => {

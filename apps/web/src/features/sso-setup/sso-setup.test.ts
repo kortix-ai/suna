@@ -202,11 +202,12 @@ describe('auto-provision groups default', () => {
     expect(wizardSource).toContain('setAutoProvision] = useState(true)');
   });
 
-  test('the SSO card dialog defaults ON for new providers, stored value for existing', () => {
-    // Whitespace-tolerant: the formatter may wrap the useState initializer.
-    expect(cardSource.replace(/\s+/g, ' ')).toContain(
-      'useState( existing ? existing.auto_provision_groups : true',
-    );
+  test('the SSO card dialog is edit-only and seeds from the stored provider value', () => {
+    // The card dialog no longer has a create branch (new providers register
+    // through this wizard), so it seeds from the existing provider only.
+    const flat = cardSource.replace(/\s+/g, ' ');
+    expect(flat).toContain('useState(existing.auto_provision_groups)');
+    expect(flat).not.toContain('importSsoProviderFromMetadata');
   });
 });
 
@@ -365,9 +366,15 @@ describe('identity page progressive disclosure', () => {
     expect(scimCardSource).toContain("freshness === 'never'");
     // Setup values auto-open while a minted token awaits its first IdP call —
     // that is exactly when the admin is pasting them — and tuck away after.
-    expect(scimCardSource.replace(/\s+/g, ' ')).toContain(
-      "open={tokens.length > 0 && freshness === 'never'}",
-    );
+    //
+    // `defaultOpen`, deliberately not `open`: a controlled `open` with no
+    // `onOpenChange` fights the admin's own clicks (it was one of the call sites
+    // behind the flaky-disclosure report). The `key` re-seeds that starting
+    // value when the condition flips, so the auto-open behaviour above survives
+    // while a manual collapse in between now sticks. See disclosure.tsx.
+    const flat = scimCardSource.replace(/\s+/g, ' ');
+    expect(flat).toContain("defaultOpen={tokens.length > 0 && freshness === 'never'}");
+    expect(flat).toContain("key={tokens.length > 0 && freshness === 'never'");
   });
 });
 
@@ -472,8 +479,7 @@ describe('novice-walkthrough fixes stay fixed', () => {
     const google = getProviderGuide('google')!;
     const basic = google.steps.find((s) => s.id === 'basic-saml')!;
     const sp = (basic.content ?? []).find((b) => b.kind === 'sp-values') as
-      | { acsLabel?: string; acsFirst?: boolean }
-      | undefined;
+      { acsLabel?: string; acsFirst?: boolean } | undefined;
     expect(sp?.acsLabel).toBe('ACS URL');
     expect(sp?.acsFirst).toBe(true);
   });

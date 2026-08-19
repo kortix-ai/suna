@@ -164,8 +164,38 @@ suite('credit_accounts lifetime_* rollup (throwaway Postgres)', () => {
     psql('select kortix.recompute_credit_account_lifetime(null)');
     expect(lifetime(account)).toMatchObject({ granted: 0, purchased: 0, used: 0 });
   });
+
+  test('the rollup functions carry explicit EXECUTE grants for service_role', () => {
+    const acl = psql(
+      `select proname || ':' || (aclexplode(proacl)).grantee::regrole::text
+       from pg_proc
+       where pronamespace = 'kortix'::regnamespace
+         and proname in ('credit_ledger_lifetime_deltas', 'apply_credit_ledger_lifetime_rollup', 'recompute_credit_account_lifetime')`,
+    );
+    expect(acl).toContain('credit_ledger_lifetime_deltas:service_role');
+    expect(acl).toContain('apply_credit_ledger_lifetime_rollup:service_role');
+    expect(acl).toContain('recompute_credit_account_lifetime:service_role');
+  });
+
+  test('a service_role ledger insert fires the trigger without PUBLIC function EXECUTE (Supabase parity)', () => {
+    // Supabase revokes the default PUBLIC EXECUTE on functions; plain Postgres
+    // does not, which is how the missing grants shipped. Recreate that
+    // environment, then write the ledger as service_role through the trigger.
+    const account = newAccount();
+    psql(
+      'revoke execute on function kortix.credit_ledger_lifetime_deltas(numeric, text) from public',
+    );
+    psql('revoke execute on function kortix.apply_credit_ledger_lifetime_rollup() from public');
+    psql(
+      `set role service_role;
+       insert into kortix.credit_ledger (account_id, amount_precise, type) values ('${account}', 25, 'tier_grant');
+       reset role`,
+    );
+    expect(lifetime(account)).toMatchObject({ granted: 25, purchased: 0, used: 0 });
+  });
 });
 
 if (!dockerOk) {
+  // biome-ignore lint/suspicious/noSkippedTests: This integration suite requires a running Docker daemon.
   test.skip('credit lifetime rollup (docker unavailable — skipped)', () => {});
 }

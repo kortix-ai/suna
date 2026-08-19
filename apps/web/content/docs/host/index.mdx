@@ -8,7 +8,7 @@ import { Callout } from 'fumadocs-ui/components/callout';
 
 Kortix runs as one Docker Compose stack: the frontend, the API, the LLM gateway, and the Supabase distribution. This page shows the three ways to install it, how updates work, and how to back up your data.
 
-Agent sessions run on a separate sandbox provider, not on this stack. The default is [Daytona](https://www.daytona.io/); Platinum and E2B are also supported. `local-docker` runs sandboxes on the same box through Docker. It is **experimental** and not for production.
+Agent sessions run on a separate sandbox provider, not on this stack. The default is [Daytona](https://www.daytona.io/); Platinum and E2B are also supported.
 
 ## One-shot bootstrap
 
@@ -85,6 +85,16 @@ Any signed-in user can still join by invite or SSO. Opt out with
 `kortix self-host init --no-restrict-account-creation`, or re-enable the
 admin-only default with `--restrict-account-creation`.
 </Callout>
+
+Each API container has a 640 MiB memory limit by default.
+Keep this default on an 8 GiB host.
+Use a 1 GiB limit on a 16 GiB host when API traffic reaches the default limit:
+
+```sh
+kortix self-host env set KORTIX_API_MEMORY_LIMIT=1024m
+```
+
+Confirm the applied limit with `docker stats --no-stream`.
 
 ## Updates
 

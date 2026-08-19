@@ -4,8 +4,12 @@ import { readFileSync } from 'node:fs'
 import type { Config } from '../config'
 import { readRepoInfo } from '../git'
 import type { Opencode } from '../opencode'
-import type { AcpHarnessId } from '../acp/harness-registry'
-import type { AcpRuntime } from '../acp/runtime'
+import {
+  type OpencodeDeliveryObservation,
+  inspectOpencodeRoot,
+  observeOpencodeDelivery,
+  readPinnedSessionId,
+} from '../opencode-turn-state'
 
 /**
  * The branch this VM's session is supposed to be on, read from the host-
@@ -53,11 +57,48 @@ export type SandboxBootState = {
   initialOpenCodeSessionId?: string | null
   /** Boot-time OpenCode session creation failure. */
   initialOpenCodeSessionError?: string | null
-  /** Immutable selected ACP process binding for a multi-harness session. */
-  acpHarness?: AcpHarnessId | null
-  acpServerId?: string | null
-  acpRuntimeReady?: boolean
-  acpRuntimeError?: string | null
+  /** Fatal local persistence failure in the OpenCode audit relay. */
+  auditRelayError?: string | null
+}
+
+/**
+ * Answer `?turn=1` for the identity the caller asked about.
+ *
+ * Only the message-scoped read can attribute an ending to ONE turn. The
+ * root-scoped fallback (older daemons' callers, command turns with no message
+ * id) answers about the whole root, so it names no reason rather than lend one
+ * turn's outcome to another.
+ */
+export async function observeRequestedTurn(
+  opencodeUrl: string,
+  workspace: string,
+  identity: { sessionId: string | null; messageId: string | null },
+): Promise<OpencodeDeliveryObservation> {
+  if (identity.sessionId && identity.messageId) {
+    return observeOpencodeDelivery(opencodeUrl, workspace, identity.sessionId, identity.messageId)
+  }
+  const inspection = await inspectOpencodeRoot(opencodeUrl, workspace, identity.sessionId ?? '')
+  if (!inspection.known) return { inFlight: null, end: null }
+  return {
+    inFlight: inspection.turnInFlight,
+    // The ONE ending a root-scoped read can prove without lending another
+    // turn's outcome to this one: the root's last message is a prompt nothing
+    // answered. `abandoned` is already in the control plane's
+    // DAEMON_REPORTABLE_END_REASONS, and it is what triggers redelivery.
+    end: inspection.orphanedPrompt ? 'abandoned' : null,
+    orphanedPrompt: inspection.orphanedPrompt,
+  }
+}
+
+export function resolveTurnObservationIdentity(
+  requestedSession: string | undefined,
+  requestedMessage: string | undefined,
+  pinnedSession: string | null,
+): { sessionId: string | null; messageId: string | null } {
+  return {
+    sessionId: requestedSession || pinnedSession,
+    messageId: requestedMessage || null,
+  }
 }
 
 /**
@@ -74,7 +115,8 @@ export type SandboxBootState = {
  *     static_web_port: number | null,  // bound static-web port, null if down
  *     repo: string | null,    // remote URL of the materialized repo, if any
  *     branch: string | null,
- *     commit_sha: string | null
+ *     commit_sha: string | null,
+ *     agent_config_etag: string | null
  *   }
  *
  * Always returns 200 even when opencode is down — this is the daemon's own
@@ -86,7 +128,6 @@ export function createHealthRouter(
   bootTime: number,
   bootState: SandboxBootState,
   staticWebPort: number | null = null,
-  acpRuntime?: AcpRuntime,
 ): Hono {
   const router = new Hono()
 
@@ -107,52 +148,55 @@ export function createHealthRouter(
     const initialSessionReady =
       !bootState.initialOpenCodeSessionRequired || !!bootState.initialOpenCodeSessionId
     const initialSessionError = bootState.initialOpenCodeSessionError ?? null
-    const managedAcp =
-      !!bootState.acpHarness &&
-      !!bootState.acpServerId
-    const acpProcess = managedAcp
-      ? acpRuntime?.get(bootState.acpServerId as string) ?? null
-      : null
-    const acpRuntimeError =
-      bootState.acpRuntimeError ??
-      (bootState.acpRuntimeReady && !acpProcess
-        ? 'ACP harness process is not currently running'
-        : null)
-    const runtimeReady = managedAcp
-      ? repoReady &&
-        !bootState.repoMaterializationError &&
-        !acpRuntimeError &&
-        !!bootState.acpRuntimeReady &&
-        !!acpProcess
-      : repoReady &&
-        !bootState.repoMaterializationError &&
-        !initialSessionError &&
-        opencodeState === 'ok' &&
-        initialSessionReady
+    const auditRelayError = bootState.auditRelayError ?? null
+    const runtimeReady =
+      repoReady &&
+      !bootState.repoMaterializationError &&
+      !initialSessionError &&
+      !auditRelayError &&
+      opencodeState === 'ok' &&
+      initialSessionReady
     const status = runtimeReady
       ? 'ok'
-      : bootState.repoMaterializationError || initialSessionError || acpRuntimeError
+      : bootState.repoMaterializationError || initialSessionError || auditRelayError
         ? 'error'
-        : managedAcp
-          ? 'starting'
-          : opencodeState
+        : opencodeState
+
+    const requestedTurnSession = c.req.query('turn_session_id')?.trim()
+    const requestedTurnMessage = c.req.query('turn_message_id')?.trim()
+    const observedTurn = resolveTurnObservationIdentity(
+      requestedTurnSession,
+      requestedTurnMessage,
+      readPinnedSessionId(),
+    )
+    const turn =
+      c.req.query('turn') === '1'
+        ? await observeRequestedTurn(
+            opencode.getInternalUrl(),
+            process.env.KORTIX_WORKSPACE || '/workspace',
+            observedTurn,
+          )
+        : undefined
 
     return c.json({
       daemon: 'ok',
       status,
       runtimeReady,
-      runtime: managedAcp ? 'acp' : 'opencode-rest',
-      runtime_harness: bootState.acpHarness ?? 'opencode',
-      acp_harness: bootState.acpHarness ?? null,
-      acp_server_id: bootState.acpServerId ?? null,
-      acp_ready: managedAcp ? runtimeReady : false,
-      acp_busy: acpProcess?.busy ?? false,
-      runtime_pid: acpProcess?.pid ?? null,
-      // Managed ACP sessions do not start the legacy OpenCode supervisor.
-      // Its unstarted internal state is "starting", which is misleading here.
-      opencode: managedAcp ? 'down' : opencodeState,
+      // Which boot path this daemon took. An agent binary that predates
+      // monitor mode omits the field entirely, which is exactly what the
+      // monitor-box reconciler uses to detect a stale-agent box and recreate
+      // it (a box whose env says KORTIX_WORKLOAD=monitor but whose daemon
+      // booted the session path can never run monitors).
+      workload: process.env.KORTIX_WORKLOAD === 'monitor' ? 'monitor' : 'session',
+      opencode: opencodeState,
       uptime_s: Math.floor((Date.now() - bootTime) / 1000),
       opencode_pid: opencode.getPid(),
+      // The port opencode is listening on right now. It ALTERNATES: a verified
+      // reload boots the replacement on the idle half of the port pair and
+      // promotes it. The API's PTY proxy has to reach opencode directly (the
+      // daemon cannot carry a WebSocket) and previously hardcoded 4096, which
+      // becomes the dead half after one reload.
+      opencode_port: opencode.getActivePort(),
       // Static web server (preview/static files). The bound port when up, else
       // null — surfaces "preview won't load because static-web never bound".
       static_web_port: staticWebPort,
@@ -161,10 +205,32 @@ export function createHealthRouter(
       repo: repoInfo?.remoteUrl ?? null,
       branch: repoInfo?.branch ?? null,
       commit_sha: repoInfo?.commit ?? null,
-      boot_error:
-        bootState.repoMaterializationError ??
-        initialSessionError ??
-        acpRuntimeError,
+      // The content hash of the compiled agent config THIS opencode spawned
+      // with. Not derivable from commit_sha: a warm-workspace refresh advances
+      // the commit while deliberately skipping the restart, so a box can report
+      // the newest commit and still be running config compiled days ago. Read
+      // from the live process env, so it tracks a hot push as well as a boot.
+      agent_config_etag: process.env.KORTIX_COMPILED_AGENT_CONFIG_ETAG || null,
+      // Opt-in (`?turn=1`) because it costs a call into opencode, and health is
+      // polled as a liveness check every few seconds on every idle box. Two
+      // callers ask: the reload gate, which must not restart the runtime out
+      // from under a running turn, and the control plane's reaper, which
+      // repairs turn authority a lost relay left behind.
+      ...(turn
+        ? {
+            turn_in_flight: turn.inFlight,
+            // WHY it is not in flight, when the message list proves it:
+            // 'completed' | 'failed' | 'abandoned', else null. The control
+            // plane writes this straight into session_turns.end_reason — it
+            // cannot derive it, because only this process holds the messages.
+            turn_end: turn.end,
+            // "A prompt is on record with nothing answering it." Reported
+            // separately from `turn_end` because it is evidence about the
+            // PROMPT, not about the turn: the control plane redelivers on it.
+            turn_orphaned_prompt: turn.orphanedPrompt ?? false,
+          }
+        : {}),
+      boot_error: bootState.repoMaterializationError ?? initialSessionError ?? auditRelayError,
       opencode_session_id: bootState.initialOpenCodeSessionId ?? null,
       opencode_session_required: !!bootState.initialOpenCodeSessionRequired,
       // In-container boot timeline (ms since process start) so the dashboard can

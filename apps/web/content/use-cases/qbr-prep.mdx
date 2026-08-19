@@ -97,7 +97,7 @@ Postgres and HubSpot are **read-only** — the agent cannot change a usage
 record, a health score, a note, or a deal, even though it reads deeply from
 all of them. Its only writes are the new deck and the new doc it creates.
 Credentials are encrypted in the Secrets Manager and injected at runtime,
-never shown to the model or written to logs.
+scoped to the agents you grant them to.
 
 </Step>
 <Step title="Land the draft, stop there">
@@ -122,12 +122,9 @@ and is the one who opens the meeting and presents it.
 The agent reads deeply across account data, so its access is scoped and its
 output is bounded:
 
-- **Isolation.** Every run happens in its own microVM sandbox. The session can
-  reach only the systems it's scoped to, and only the new deck and doc leave
-  the sandbox.
+- **Isolation.** Every run happens in its own isolated sandbox. The session is granted access only to the systems it's scoped to, and only the new deck and doc are written back out.
 - **Scoped secrets.** The Postgres and HubSpot credentials are encrypted in the
-  Secrets Manager and injected into the sandbox at runtime, never exposed to
-  the model or the logs.
+  Secrets Manager and injected into the sandbox at runtime, scoped to the agents you grant them to.
 - **Read-only across the source systems.** Postgres and HubSpot are read-only
   connectors. The agent cannot change a usage record, a health score, a CSM
   note, or a deal — it can only draw from them.

@@ -13,7 +13,7 @@ import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import { parseTodos, TodoStatusIcon } from '@/features/session/tool/shared/todo-helpers';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { cn } from '@/lib/utils';
-import { ListTodo } from 'lucide-react';
+import { ListChecksIcon as ListTodo } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useMemo } from 'react';
 
@@ -32,9 +32,23 @@ export function TodoWriteTool({ part, defaultOpen, forceOpen, locked }: ToolProp
   }, [input.todos, metadata.todos, streamingInput.todos]);
 
   const total = todos.length;
-  const done = todos.filter((t) => t.status === 'completed').length;
-  const active = todos.find((t) => t.status === 'in_progress');
+  // Two more passes over the list per render — one of them allocating a throwaway
+  // array — on the one tool row that is on screen for the whole of a long turn.
+  // `todos` is a stable identity now, so keying on it is enough.
+  const done = useMemo(() => todos.filter((t) => t.status === 'completed').length, [todos]);
+  const active = useMemo(() => todos.find((t) => t.status === 'in_progress'), [todos]);
   const pct = total ? Math.round((done / total) * 100) : 0;
+
+  // Todos carry no id — key on content, disambiguating a repeated line with an
+  // occurrence counter so React state follows the row, not its position.
+  const keyedTodos = useMemo(() => {
+    const seen = new Map<string, number>();
+    return todos.map((todo) => {
+      const n = seen.get(todo.content) ?? 0;
+      seen.set(todo.content, n + 1);
+      return { todo, key: n === 0 ? todo.content : `${todo.content}#${n}` };
+    });
+  }, [todos]);
 
   const subtitle = active ? active.content : total ? `${done} of ${total} done` : undefined;
 
@@ -61,8 +75,8 @@ export function TodoWriteTool({ part, defaultOpen, forceOpen, locked }: ToolProp
             indicatorClassName="bg-kortix-green"
           />
           <Stepper orientation="vertical" count={total} className="flex w-full flex-col">
-            {todos.map((todo, i) => (
-              <div key={i} className="flex gap-2.5">
+            {keyedTodos.map(({ todo, key }, i) => (
+              <div key={key} className="flex gap-2.5">
                 <StepperItem
                   step={i + 1}
                   completed={todo.status === 'completed'}

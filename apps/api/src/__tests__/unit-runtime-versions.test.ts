@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
   AGENT_BROWSER_VERSION,
+  ANYDOC_VERSION,
   BUN_SHA256_AMD64,
   BUN_SHA256_ARM64,
   BUN_VERSION,
@@ -44,13 +45,10 @@ describe('runtime version drift guards', () => {
     const dockerfile = readRepoFile('apps/sandbox/Dockerfile');
     expect(dockerfile).toContain('COPY packages/shared/src/runtime-versions.json');
     expect(dockerfile).toContain("require('/tmp/kortix-runtime-versions.json').opencode");
-    expect(dockerfile).toContain("require('/tmp/kortix-runtime-versions.json').claudeAgentAcp");
-    expect(dockerfile).toContain("require('/tmp/kortix-runtime-versions.json').codexAcp");
-    expect(dockerfile).toContain("require('/tmp/kortix-runtime-versions.json').piAcp");
-    expect(dockerfile).toContain("require('/tmp/kortix-runtime-versions.json').piCodingAgent");
     expect(dockerfile).toContain("require('/tmp/kortix-runtime-versions.json').agentBrowser");
     expect(dockerfile).toContain("require('/tmp/kortix-runtime-versions.json').playwright");
     expect(dockerfile).toContain("require('/tmp/kortix-runtime-versions.json').bun");
+    expect(dockerfile).toContain("require('/tmp/kortix-runtime-versions.json').anydoc");
     expect(dockerfile).toContain('pnpmSha256Amd64');
     expect(dockerfile).toContain('pnpmSha256Arm64');
     expect(dockerfile).toContain('uvSha256Amd64');
@@ -81,11 +79,11 @@ describe('runtime version drift guards', () => {
       entrypointScriptPath: 'kortix-entrypoint',
       machineDocPath: 'MACHINE.md',
       slackCliPath: 'kortix-slack-cli',
-      executorSdkPath: 'kortix-executor-sdk',
     });
 
     expect(merged).toContain(`opencode-ai@${OPENCODE_VERSION}`);
     expect(merged).toContain(`agent-browser@${AGENT_BROWSER_VERSION}`);
+    expect(merged).toContain(`@firecrawl/anydoc@${ANYDOC_VERSION}`);
     expect(merged).toContain(`playwright@${PLAYWRIGHT_VERSION} install --with-deps chromium`);
     expect(merged).toContain(BUN_VERSION);
     for (const digest of [

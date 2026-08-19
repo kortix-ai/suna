@@ -1,13 +1,32 @@
-import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
+import * as realComputeMetering from '../../../billing/services/compute-metering';
+import * as realProviders from '../../../platform/providers';
+import * as realSandboxProxyBackend from '../../../sandbox-proxy/backend';
 
 let sandboxRow: Record<string, unknown> | null = null;
 let stopCalls: string[] = [];
 let stopError: Error | null = null;
 let pausedCompute: string[] = [];
 let cacheInvalidations: string[] = [];
-let updateCalls: Array<{ table: unknown; updates: Record<string, unknown>; inTransaction: boolean }> = [];
+let updateCalls: Array<{
+  table: unknown;
+  updates: Record<string, unknown>;
+  inTransaction: boolean;
+}> = [];
+let executedStatements: Array<{ sql: unknown; inTransaction: boolean }> = [];
 let inTransaction = false;
+
+// ── Pre-stop abort call (T11): the daemon fetch is the only real
+// I/O `abortLiveTurnBeforeStop` still performs once resolveServiceKey /
+// resolveSandboxIngress are stubbed below, so intercepting `fetch` is enough
+// to observe and control it without a real network call.
+let callOrder: string[] = [];
+let abortServiceKey: string | null = 'daemon-service-key';
+let abortFetchCalls: Array<{ url: string; init: Record<string, unknown> }> = [];
+let abortFetchImpl: (url: string, init: Record<string, unknown>) => Promise<Response> = async () =>
+  new Response(JSON.stringify({ ok: true }), { status: 200 });
+const originalFetch = globalThis.fetch;
 
 /** Flatten a drizzle SQL expression (including its bound params) to text, so a
  *  test can assert what the write actually asks Postgres to do. */
@@ -35,17 +54,33 @@ const updater = (table: unknown) => ({
   }),
 });
 
+// applyStoppedState settles this sandbox's still-open session_turns rows in the
+// same transaction that erases its turn authority, so the stubbed tx has to be
+// able to run a raw statement.
+const executor = async (statement: unknown) => {
+  executedStatements.push({ sql: statement, inTransaction });
+};
+
+// A nested drizzle transaction is a SAVEPOINT, which is what keeps a failed
+// ledger settle from aborting the stop it rides in.
+const transactionScope: Record<string, unknown> = {
+  update: updater,
+  execute: executor,
+  transaction: async <T>(fn: (tx: unknown) => Promise<T>): Promise<T> => fn(transactionScope),
+};
+
 mock.module('../../../shared/db', () => ({
   hasDatabase: () => true,
   db: {
     transaction: async <T>(fn: (tx: unknown) => Promise<T>): Promise<T> => {
       inTransaction = true;
       try {
-        return await fn({ update: updater });
+        return await fn(transactionScope);
       } finally {
         inTransaction = false;
       }
     },
+    execute: executor,
     select: () => ({
       from: (table: unknown) => ({
         where: () => ({
@@ -57,16 +92,41 @@ mock.module('../../../shared/db', () => ({
   },
 }));
 
+// Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
+// lists exports by hand deletes every export it omits — the failure surfaces in
+// whatever unrelated file imports the missing name next, attributed to no test.
 mock.module('../../../platform/providers', () => ({
+  ...realProviders,
   getProvider: (_name: string) => ({
     stop: async (externalId: string) => {
+      callOrder.push('provider.stop');
       stopCalls.push(externalId);
       if (stopError) throw stopError;
     },
   }),
 }));
 
+// Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
+// lists exports by hand deletes every export it omits — the failure surfaces in
+// whatever unrelated file imports the missing name next, attributed to no test.
+// Only `resolveServiceKey` / `resolveSandboxIngress` are overridden — those are
+// the two calls `abortLiveTurnBeforeStop` makes before its own `fetch`.
+mock.module('../../../sandbox-proxy/backend', () => ({
+  ...realSandboxProxyBackend,
+  resolveServiceKey: async (_externalId: string) => abortServiceKey,
+  resolveSandboxIngress: async (_ref: string, _req: unknown) => ({
+    url: 'https://daemon.example.test',
+    headers: {},
+    effectivePort: 8000,
+    websocket: false,
+  }),
+}));
+
+// Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
+// lists exports by hand deletes every export it omits — the failure surfaces in
+// whatever unrelated file imports the missing name next, attributed to no test.
 mock.module('../../../billing/services/compute-metering', () => ({
+  ...realComputeMetering,
   reopenComputeForSandbox: async () => undefined,
   pauseComputeSession: async (sandboxId: string) => {
     pausedCompute.push(sandboxId);
@@ -96,7 +156,23 @@ beforeEach(() => {
   pausedCompute = [];
   cacheInvalidations = [];
   updateCalls = [];
+  executedStatements = [];
   inTransaction = false;
+
+  callOrder = [];
+  abortServiceKey = 'daemon-service-key';
+  abortFetchCalls = [];
+  abortFetchImpl = async () => new Response(JSON.stringify({ ok: true }), { status: 200 });
+  globalThis.fetch = (async (url: unknown, init: unknown) => {
+    callOrder.push('abort');
+    const record = { url: String(url), init: (init ?? {}) as Record<string, unknown> };
+    abortFetchCalls.push(record);
+    return abortFetchImpl(record.url, record.init);
+  }) as typeof fetch;
+});
+
+afterAll(() => {
+  globalThis.fetch = originalFetch;
 });
 
 describe('stopSession', () => {
@@ -107,21 +183,68 @@ describe('stopSession', () => {
   });
 
   test('409s when the sandbox is not currently active', async () => {
-    sandboxRow = { sandboxId: 'sess-1', externalId: 'ext-1', provider: 'daytona', status: 'stopped', metadata: {} };
+    sandboxRow = {
+      sandboxId: 'sess-1',
+      externalId: 'ext-1',
+      provider: 'daytona',
+      status: 'stopped',
+      metadata: {},
+    };
     const result = await stopSession(baseInput);
     expect(result.status).toBe(409);
     expect(stopCalls).toEqual([]);
   });
 
+  test('cancels an in-progress stopped-row wake and guards against a late provider start', async () => {
+    sandboxRow = {
+      sandboxId: 'sess-1',
+      externalId: 'ext-1',
+      provider: 'platinum',
+      status: 'stopped',
+      metadata: {
+        runtimeWakeId: 'wake-1',
+        runtimeWakeStartedAt: new Date().toISOString(),
+        runtimeWakeLeaseExpiresAt: new Date(Date.now() + 120_000).toISOString(),
+      },
+    };
+
+    const result = await stopSession(baseInput);
+
+    expect(result.status).toBe(200);
+    expect(stopCalls).toEqual(['ext-1']);
+    expect(pausedCompute).toEqual(['sess-1']);
+    // Already-stopped row (a wake was mid-flight, not a live turn) — no live
+    // opencode process to abort, so no pre-stop call is attempted.
+    expect(abortFetchCalls).toEqual([]);
+    const metadata = updateCalls.find((c) => c.table === sessionSandboxes)?.updates.metadata;
+    const rendered = describeSql(metadata);
+    expect(rendered).toContain('runtimeWakeId');
+    expect(rendered).toContain('runtimeWakeLeaseExpiresAt');
+    expect(rendered).toContain('runtimeWakeCleanupUntilAt');
+    expect(rendered).toContain('manual');
+  });
+
   test('400s for an unsupported/unallowed provider', async () => {
-    sandboxRow = { sandboxId: 'sess-1', externalId: 'ext-1', provider: 'justavps', status: 'active', metadata: {} };
+    sandboxRow = {
+      sandboxId: 'sess-1',
+      externalId: 'ext-1',
+      provider: 'justavps',
+      status: 'active',
+      metadata: {},
+    };
     const result = await stopSession(baseInput);
     expect(result.status).toBe(400);
     expect(stopCalls).toEqual([]);
   });
 
   test('stops the provider sandbox, closes billing, and marks both rows stopped', async () => {
-    sandboxRow = { sandboxId: 'sess-1', externalId: 'ext-1', provider: 'daytona', status: 'active', metadata: { foo: 'bar' } };
+    sandboxRow = {
+      sandboxId: 'sess-1',
+      externalId: 'ext-1',
+      provider: 'daytona',
+      status: 'active',
+      metadata: { foo: 'bar' },
+    };
     const result = await stopSession(baseInput);
 
     expect(result.status).toBe(200);
@@ -143,6 +266,13 @@ describe('stopSession', () => {
     // still claims to be running.
     expect(sandboxUpdate?.inTransaction).toBe(true);
     expect(sessionUpdate?.inTransaction).toBe(true);
+    // A user stop mid-turn is the most likely way a runtime disappears under an
+    // open turn, and the statement above just erased the authority every
+    // token-scoped ledger settle CASes against.
+    expect(executedStatements).toHaveLength(1);
+    expect(executedStatements[0]?.inTransaction).toBe(true);
+    expect(describeSql(executedStatements[0]?.sql)).toContain('UPDATE kortix.session_turns');
+    expect(describeSql(executedStatements[0]?.sql)).toContain('runtime_gone');
   });
 
   // The lost update. This path used to write
@@ -172,23 +302,56 @@ describe('stopSession', () => {
     expect(rendered).toContain('coalesce');
     expect(rendered).toContain("'{}'::jsonb");
     expect(rendered).toContain('stopReason');
-    // The keys it read are left for the DB to keep — never re-sent, so a
-    // concurrent write to either of them survives this stop.
-    expect(rendered).not.toContain('runtimeWakeId');
+    // The wake fence is deleted in SQL so a late provider start cannot revive
+    // the stopped session. Unrelated concurrent metadata remains untouched.
+    expect(rendered).toContain('runtimeWakeId');
     expect(rendered).not.toContain('lastTurnAt');
   });
 
   test('reconciles the row as stopped even if the provider says it is already gone', async () => {
-    sandboxRow = { sandboxId: 'sess-1', externalId: 'ext-1', provider: 'daytona', status: 'active', metadata: {} };
+    sandboxRow = {
+      sandboxId: 'sess-1',
+      externalId: 'ext-1',
+      provider: 'daytona',
+      status: 'active',
+      metadata: {},
+    };
     stopError = new Error('sandbox already stopped');
     const result = await stopSession(baseInput);
 
     expect(result.status).toBe(200);
-    expect(updateCalls.some((c) => c.table === sessionSandboxes && c.updates.status === 'stopped')).toBe(true);
+    expect(
+      updateCalls.some((c) => c.table === sessionSandboxes && c.updates.status === 'stopped'),
+    ).toBe(true);
+  });
+
+  test('commits the stop when provider start is still transitioning', async () => {
+    sandboxRow = {
+      sandboxId: 'sess-1',
+      externalId: 'ext-1',
+      provider: 'platinum',
+      status: 'active',
+      metadata: { runtimeWakeId: 'wake-1' },
+    };
+    stopError = new Error('sandbox state change in progress');
+
+    const result = await stopSession(baseInput);
+
+    expect(result.status).toBe(200);
+    expect(pausedCompute).toEqual(['sess-1']);
+    expect(
+      updateCalls.some((c) => c.table === sessionSandboxes && c.updates.status === 'stopped'),
+    ).toBe(true);
   });
 
   test('502s on a genuine provider failure and leaves the rows untouched', async () => {
-    sandboxRow = { sandboxId: 'sess-1', externalId: 'ext-1', provider: 'daytona', status: 'active', metadata: {} };
+    sandboxRow = {
+      sandboxId: 'sess-1',
+      externalId: 'ext-1',
+      provider: 'daytona',
+      status: 'active',
+      metadata: {},
+    };
     stopError = new Error('provider unreachable');
     stopError.message = 'internal provider error: connection refused';
     const result = await stopSession(baseInput);
@@ -196,5 +359,98 @@ describe('stopSession', () => {
     expect(result.status).toBe(502);
     expect(updateCalls).toEqual([]);
     expect(pausedCompute).toEqual([]);
+  });
+
+  // T11: close the turn before the box loses power.
+  describe('pre-stop abort', () => {
+    test('issues the daemon abort BEFORE provider.stop() on a running box', async () => {
+      sandboxRow = {
+        sandboxId: 'sess-1',
+        externalId: 'ext-1',
+        provider: 'daytona',
+        status: 'active',
+        metadata: {},
+      };
+
+      const result = await stopSession(baseInput);
+
+      expect(result.status).toBe(200);
+      expect(abortFetchCalls).toHaveLength(1);
+      expect(abortFetchCalls[0]?.url).toBe('https://daemon.example.test/kortix/abort');
+      expect(abortFetchCalls[0]?.init.method).toBe('POST');
+      // Ordering: the abort call happens strictly before provider.stop().
+      expect(callOrder).toEqual(['abort', 'provider.stop']);
+    });
+
+    test('a timed-out/failed abort still stops the box (best-effort, never a gate)', async () => {
+      sandboxRow = {
+        sandboxId: 'sess-1',
+        externalId: 'ext-1',
+        provider: 'daytona',
+        status: 'active',
+        metadata: {},
+      };
+      abortFetchImpl = async () => {
+        throw new DOMException('The operation timed out.', 'TimeoutError');
+      };
+
+      const result = await stopSession(baseInput);
+
+      expect(result.status).toBe(200);
+      expect(abortFetchCalls).toHaveLength(1);
+      expect(callOrder).toEqual(['abort', 'provider.stop']);
+      expect(stopCalls).toEqual(['ext-1']);
+      expect(
+        updateCalls.some((c) => c.table === sessionSandboxes && c.updates.status === 'stopped'),
+      ).toBe(true);
+    });
+
+    test('a non-2xx abort response still stops the box', async () => {
+      sandboxRow = {
+        sandboxId: 'sess-1',
+        externalId: 'ext-1',
+        provider: 'daytona',
+        status: 'active',
+        metadata: {},
+      };
+      abortFetchImpl = async () => new Response('{"ok":false}', { status: 502 });
+
+      const result = await stopSession(baseInput);
+
+      expect(result.status).toBe(200);
+      expect(callOrder).toEqual(['abort', 'provider.stop']);
+    });
+
+    test('an unreachable box (no service key on record) skips the fetch entirely and still stops', async () => {
+      sandboxRow = {
+        sandboxId: 'sess-1',
+        externalId: 'ext-1',
+        provider: 'daytona',
+        status: 'active',
+        metadata: {},
+      };
+      abortServiceKey = null;
+
+      const result = await stopSession(baseInput);
+
+      expect(result.status).toBe(200);
+      expect(abortFetchCalls).toEqual([]);
+      expect(stopCalls).toEqual(['ext-1']);
+    });
+
+    test('an already-stopped box (409 path) never attempts the abort', async () => {
+      sandboxRow = {
+        sandboxId: 'sess-1',
+        externalId: 'ext-1',
+        provider: 'daytona',
+        status: 'stopped',
+        metadata: {},
+      };
+
+      const result = await stopSession(baseInput);
+
+      expect(result.status).toBe(409);
+      expect(abortFetchCalls).toEqual([]);
+    });
   });
 });

@@ -1,16 +1,30 @@
 import { describe, expect, it, test } from 'bun:test';
+import { PREVIEW_PROBE_TIMEOUT_MS } from '@kortix/sdk';
 import type { OutputItem } from '../shared/derive-panels';
 import type { Step } from '../shared/group-steps';
 import {
+  PREVIEW_MAX_WAIT_MS,
+  PREVIEW_PROBE_INTERVAL_MS,
+  PREVIEW_UNREACHABLE_WINDOW_MS,
+  aspectChangedWidth,
   deriveIsRunning,
+  fitSplitPercent,
+  groupOutputsByKind,
   isWideDeliverable,
   neighborOutputs,
   outputKey,
   pathOutput,
+  previewErrorReason,
+  previewLoadSuccessState,
+  previewLoadVerdict,
   quickBrowserOutput,
+  resolveSideSize,
+  runtimeSandboxHealth,
   sandboxRecents,
+  shouldArmLoadTimeout,
   shouldAutoExpandOutputs,
   shouldAutoOpenPayoff,
+  shouldKeepProbingPort,
   focusIndexForCall,
   stepForCallId,
 } from './easy-panel-logic';
@@ -89,6 +103,453 @@ describe('isWideDeliverable (wide split for landscape-shaped details)', () => {
   });
 });
 
+describe('fitSplitPercent (aspect-ratio-fit split for the Easy panel)', () => {
+  const box = { layoutWidth: 1400, panelContentHeight: 800 };
+
+  // ─── the shape table — same box, varying aspect. Values are approximate:
+  // idealPx = aspect * panelContentHeight + gutter(48), percent = idealPx /
+  // layoutWidth * 100, clamped to [35, 70]. ──
+  test.each([
+    ['A4 portrait (595/842) fits narrower than default', 595 / 842, 44],
+    ['A4 landscape (842/595) clamps to the 70 ceiling', 842 / 595, 70],
+    ['a square document sits mid-range', 1, 61],
+    ['an extreme-wide document clamps to 70', 10, 70],
+    ['an extreme-tall document clamps to the 35 floor', 0.05, 35],
+  ])('%s', (_label, aspect, expected) => {
+    expect(fitSplitPercent({ aspect, ...box })).toBeCloseTo(expected, 0);
+  });
+
+  test.each([
+    ['NaN aspect', NaN],
+    ['zero aspect', 0],
+    ['negative aspect', -1],
+    ['infinite aspect', Infinity],
+  ])('returns null, never NaN, for %s', (_label, aspect) => {
+    expect(fitSplitPercent({ aspect, ...box })).toBeNull();
+  });
+
+  it('returns null for a zero layoutWidth', () => {
+    expect(fitSplitPercent({ aspect: 1, layoutWidth: 0, panelContentHeight: 800 })).toBeNull();
+  });
+
+  it('returns null for a zero panelContentHeight', () => {
+    expect(fitSplitPercent({ aspect: 1, layoutWidth: 1400, panelContentHeight: 0 })).toBeNull();
+  });
+});
+
+describe('resolveSideSize (the panel-width precedence rule)', () => {
+  // 848 = the 800px content height the fitSplitPercent table above uses, plus
+  // PREVIEW_TOOLBAR_PX (48), which resolveSideSize subtracts itself. So an A4
+  // portrait through this box must land on that table's ~44.
+  const panelBox = { width: 1400, height: 848 };
+  const base = { isExpanded: false, isEasy: true, panelAspect: null, panelSplit: null, panelBox };
+
+  it('gives fullscreen the whole layout, ignoring a measured document', () => {
+    expect(
+      resolveSideSize({ ...base, isExpanded: true, panelAspect: 595 / 842, panelSplit: 70 }),
+    ).toBe(100);
+  });
+
+  it('keeps Advanced mode at an even 50, ignoring a measured document', () => {
+    expect(
+      resolveSideSize({ ...base, isEasy: false, panelAspect: 595 / 842, panelSplit: 70 }),
+    ).toBe(50);
+  });
+
+  it('lets a measured document outrank the split its extension asked for', () => {
+    const fitted = resolveSideSize({ ...base, panelAspect: 595 / 842, panelSplit: 70 });
+    expect(fitted).toBeCloseTo(44, 0);
+  });
+
+  it('falls back to panelSplit when the measurement is unusable', () => {
+    // NaN is what fitSplitPercent refuses; the split must survive that refusal
+    // rather than the panel collapsing to the default.
+    expect(resolveSideSize({ ...base, panelAspect: NaN, panelSplit: 70 })).toBe(70);
+  });
+
+  it('falls back to panelSplit when the panel box has not been measured yet', () => {
+    expect(
+      resolveSideSize({ ...base, panelBox: null, panelAspect: 595 / 842, panelSplit: 70 }),
+    ).toBe(70);
+  });
+
+  it('falls back to panelSplit when the box is shorter than its own toolbar', () => {
+    // panelContentHeight goes <= 0, which fitSplitPercent nulls out — the
+    // Global Constraint 6 path, seen from the caller.
+    expect(
+      resolveSideSize({
+        ...base,
+        panelBox: { width: 1400, height: 20 },
+        panelAspect: 595 / 842,
+        panelSplit: 70,
+      }),
+    ).toBe(70);
+  });
+
+  it('falls back all the way to the 35 card column with neither a fit nor a split', () => {
+    expect(resolveSideSize(base)).toBe(35);
+    expect(resolveSideSize({ ...base, panelAspect: NaN })).toBe(35);
+  });
+
+  it('still honors a wide deliverable that reports no shape of its own', () => {
+    expect(resolveSideSize({ ...base, panelSplit: 70 })).toBe(70);
+  });
+
+  it('never returns a non-finite size, whatever it is handed', () => {
+    const sizes = [
+      resolveSideSize({ ...base, panelAspect: Infinity, panelSplit: null }),
+      resolveSideSize({ ...base, panelAspect: 0, panelSplit: null }),
+      resolveSideSize({ ...base, panelBox: { width: 0, height: 0 }, panelAspect: 1 }),
+      resolveSideSize({ ...base, panelAspect: 1 }),
+    ];
+    for (const size of sizes) expect(Number.isFinite(size)).toBe(true);
+  });
+});
+
+describe('aspectChangedWidth (does a measurement ask the panel to move?)', () => {
+  const held = { prevAspect: 0.707, nextAspect: 0.707, currentSize: 44, nextSize: 44 };
+
+  it('is false when the ratio did not change at all', () => {
+    expect(aspectChangedWidth({ ...held, currentSize: 60, nextSize: 35 })).toBe(false);
+  });
+
+  it('is false when a new ratio lands on the width the panel already has', () => {
+    // The no-op guard: a transition here moves nothing and still swings the
+    // panels' min/max/collapsible for 320ms.
+    expect(
+      aspectChangedWidth({ prevAspect: null, nextAspect: 0.4, currentSize: 35, nextSize: 35 }),
+    ).toBe(false);
+  });
+
+  // ─── the regression this function was extracted for. The user drags the
+  // divider to 60%, which `react-resizable-panels` records internally and
+  // never reports back, then opens a tall document whose fit clamps to the
+  // 35 floor. Comparing against the LAST COMMANDED width (also 35) says
+  // "nothing changed", no transition is attached, and the unconditional
+  // resize(35) that follows jump-cuts a hand-placed 60% panel. Comparing
+  // against the panel's real width is what keeps the glide. ──
+  it('is true when the panel was dragged away from the width we last commanded', () => {
+    expect(
+      aspectChangedWidth({ prevAspect: null, nextAspect: 0.4, currentSize: 60, nextSize: 35 }),
+    ).toBe(true);
+  });
+
+  it('is true for an ordinary fit that genuinely widens the panel', () => {
+    expect(
+      aspectChangedWidth({ prevAspect: null, nextAspect: 1.41, currentSize: 35, nextSize: 70 }),
+    ).toBe(true);
+  });
+
+  it('is true when a held ratio is finally cleared into a different width', () => {
+    expect(
+      aspectChangedWidth({ prevAspect: 0.707, nextAspect: null, currentSize: 44, nextSize: 35 }),
+    ).toBe(true);
+  });
+
+  it('ignores sub-pixel drift, which a hand-dragged divider produces constantly', () => {
+    expect(
+      aspectChangedWidth({ prevAspect: null, nextAspect: 0.4, currentSize: 35.4, nextSize: 35 }),
+    ).toBe(false);
+    expect(
+      aspectChangedWidth({ prevAspect: null, nextAspect: 0.4, currentSize: 35.6, nextSize: 35 }),
+    ).toBe(true);
+  });
+
+  it('honors a custom epsilon and falls back to the default for a junk one', () => {
+    const drift = { prevAspect: null, nextAspect: 0.4, currentSize: 38, nextSize: 35 };
+    expect(aspectChangedWidth({ ...drift, epsilon: 5 })).toBe(false);
+    expect(aspectChangedWidth({ ...drift, epsilon: NaN })).toBe(true);
+  });
+
+  it('treats an unreadable size as a real change rather than a silent jump', () => {
+    // `getSize()` should never return this, but a size we cannot compare must
+    // keep its transition instead of committing with none attached.
+    expect(
+      aspectChangedWidth({ prevAspect: null, nextAspect: 0.4, currentSize: NaN, nextSize: 35 }),
+    ).toBe(true);
+  });
+});
+
+describe("shouldArmLoadTimeout (AppPreview's port watch)", () => {
+  const base = { isLoading: true, noApp: false, hasPreview: true };
+
+  it('is not armed while previewUrl is null — the auth token fetch must not burn the budget', () => {
+    expect(shouldArmLoadTimeout({ ...base, hasPreview: false })).toBe(false);
+  });
+
+  it('arms once previewUrl goes non-null', () => {
+    expect(shouldArmLoadTimeout({ ...base, hasPreview: true })).toBe(true);
+  });
+
+  it('is not armed for the no-app landing, even with a stray previewUrl', () => {
+    expect(shouldArmLoadTimeout({ ...base, noApp: true })).toBe(false);
+  });
+
+  it('is not armed once loading has already finished', () => {
+    expect(shouldArmLoadTimeout({ ...base, isLoading: false })).toBe(false);
+  });
+});
+
+describe('previewLoadSuccessState (a late load clears the error overlay)', () => {
+  it('clears both isLoading and hasError, so a late success retracts a prior timeout verdict', () => {
+    expect(previewLoadSuccessState()).toEqual({ isLoading: false, hasError: false });
+  });
+});
+
+describe('runtimeSandboxHealth', () => {
+  const checked = { initialCheckDone: true };
+
+  // The single reason this is three-valued and not a boolean: the store's OWN
+  // starting state is `connecting`/`null`, so "not alive" is the state every
+  // session passes through on the way up. Reading that as "dead" would fail
+  // every preview at mount.
+  it('is unknown at rest, before any health check has resolved', () => {
+    expect(runtimeSandboxHealth({ status: 'connecting', healthy: null, ...checked })).toBe(
+      'unknown',
+    );
+  });
+
+  it('is unknown while the sandbox is up but the runtime has not reported health', () => {
+    expect(runtimeSandboxHealth({ status: 'connected', healthy: null, ...checked })).toBe(
+      'unknown',
+    );
+  });
+
+  it('is alive only once the runtime reports healthy', () => {
+    expect(runtimeSandboxHealth({ status: 'connected', healthy: true, ...checked })).toBe('alive');
+  });
+
+  // `connected` + `healthy: false` is OpenCode still booting behind a live
+  // sandbox — progress, not death.
+  it('is unknown while the runtime is booting behind a live sandbox', () => {
+    expect(runtimeSandboxHealth({ status: 'connected', healthy: false, ...checked })).toBe(
+      'unknown',
+    );
+  });
+
+  it('is dead only on the store\'s own threshold-filtered "unreachable"', () => {
+    expect(runtimeSandboxHealth({ status: 'unreachable', healthy: null, ...checked })).toBe('dead');
+    expect(runtimeSandboxHealth({ status: 'unreachable', healthy: true, ...checked })).toBe('dead');
+  });
+
+  // The store is a process-wide singleton with no per-session key, so a preview
+  // opened right after a dead session inherits that session's verdict until the
+  // poll's first check lands. Without this gate the error card flashes at mount
+  // on a healthy sandbox.
+  it('withholds the dead verdict until a check has actually run for this mount', () => {
+    expect(
+      runtimeSandboxHealth({ status: 'unreachable', healthy: null, initialCheckDone: false }),
+    ).toBe('unknown');
+  });
+
+  // `alive` needs no such gate — it is unreachable without a resolved check —
+  // and gating it would only delay the correct wording.
+  it('does not gate the alive verdict, which no unresolved check can produce', () => {
+    expect(
+      runtimeSandboxHealth({ status: 'connected', healthy: true, initialCheckDone: false }),
+    ).toBe('alive');
+  });
+});
+
+describe('previewLoadVerdict (AppPreview declares failure from evidence, not silence)', () => {
+  const waiting = {
+    sandbox: 'unknown' as const,
+    probe: 'unknown' as const,
+    unreachableForMs: 0,
+    waitedMs: 0,
+  };
+
+  // ─── THE REPORTED BUG. A cold Next.js route compiles for 30-60s (CLAUDE.md).
+  // The old code called that dead at 5s. Nothing here may reproduce that. ──
+
+  it('keeps waiting on a port that answers, however long the app takes to render', () => {
+    expect(previewLoadVerdict({ ...waiting, probe: 'reachable', waitedMs: 6_000 })).toBe('wait');
+    expect(previewLoadVerdict({ ...waiting, probe: 'reachable', waitedMs: 60_000 })).toBe('wait');
+  });
+
+  it('keeps waiting through a cold start we know nothing about', () => {
+    expect(previewLoadVerdict({ ...waiting, waitedMs: 5_000 })).toBe('wait');
+    expect(previewLoadVerdict({ ...waiting, waitedMs: 30_000 })).toBe('wait');
+  });
+
+  it('keeps waiting while the sandbox is healthy and the port answers', () => {
+    expect(
+      previewLoadVerdict({ ...waiting, sandbox: 'alive', probe: 'reachable', waitedMs: 45_000 }),
+    ).toBe('wait');
+  });
+
+  // ─── A genuinely dead port must still resolve to the error card. ──
+
+  it('fails once the port has been continuously unreachable for the whole window', () => {
+    expect(
+      previewLoadVerdict({
+        ...waiting,
+        probe: 'unreachable',
+        unreachableForMs: PREVIEW_UNREACHABLE_WINDOW_MS,
+        waitedMs: PREVIEW_UNREACHABLE_WINDOW_MS,
+      }),
+    ).toBe('failed');
+  });
+
+  // The port-bind race: the agent runs `npm run dev` and the preview opens
+  // before the server has bound. A miss, or a few, is a starting server.
+  it('does not fail on a port that has only just started missing', () => {
+    expect(previewLoadVerdict({ ...waiting, probe: 'unreachable', unreachableForMs: 0 })).toBe(
+      'wait',
+    );
+    expect(
+      previewLoadVerdict({
+        ...waiting,
+        probe: 'unreachable',
+        unreachableForMs: PREVIEW_UNREACHABLE_WINDOW_MS - 1,
+      }),
+    ).toBe('wait');
+  });
+
+  // A port that goes 502 → 200 → 502 is a server restarting, not a dead one.
+  // Continuity is what the caller resets, and this asserts the reset counts.
+  it('does not fail on an intermittent port once a probe has answered again', () => {
+    expect(previewLoadVerdict({ ...waiting, probe: 'reachable', unreachableForMs: 0 })).toBe(
+      'wait',
+    );
+  });
+
+  // ─── A stopped workspace is known evidence, not a guess. ──
+
+  it('fails immediately on a sandbox the runtime poll has declared unreachable', () => {
+    expect(previewLoadVerdict({ ...waiting, sandbox: 'dead' })).toBe('failed');
+  });
+
+  it('never fails on a sandbox whose health is merely not known yet', () => {
+    expect(previewLoadVerdict({ ...waiting, sandbox: 'unknown', waitedMs: 1 })).toBe('wait');
+  });
+
+  // ─── The bound: never an infinite spinner. ──
+
+  it('fails at the bound even when every probe was inconclusive', () => {
+    expect(previewLoadVerdict({ ...waiting, waitedMs: PREVIEW_MAX_WAIT_MS })).toBe('failed');
+  });
+
+  it('fails at the bound even when the port answered but the frame never loaded', () => {
+    expect(
+      previewLoadVerdict({ ...waiting, probe: 'reachable', waitedMs: PREVIEW_MAX_WAIT_MS }),
+    ).toBe('failed');
+  });
+});
+
+describe('previewErrorReason (the copy must not claim more than the verdict knows)', () => {
+  const STOPPED = 'This workspace has stopped, so the app isn’t reachable anymore.';
+
+  it('says the workspace stopped only on a settled dead verdict', () => {
+    expect(previewErrorReason({ sandbox: 'dead', port: 3000 })).toBe(STOPPED);
+    expect(previewErrorReason({ sandbox: 'dead', port: 0 })).toBe(STOPPED);
+  });
+
+  // THE DEFECT. Both non-`dead` failure paths — the continuously-unreachable
+  // streak and the PREVIEW_MAX_WAIT_MS ceiling — fire while health is
+  // `unknown` (store still `connecting`, or `connected` with `healthy: null`).
+  // Reading the three-state value through `health === 'alive'` told those
+  // users their workspace had stopped when nothing established that.
+  it('never says the workspace stopped when health is merely unknown', () => {
+    expect(previewErrorReason({ sandbox: 'unknown', port: 3000 })).not.toBe(STOPPED);
+    expect(previewErrorReason({ sandbox: 'unknown', port: 0 })).not.toBe(STOPPED);
+  });
+
+  it('names the port when there is one', () => {
+    expect(previewErrorReason({ sandbox: 'unknown', port: 3000 })).toBe(
+      'The app on port 3000 may not be running yet.',
+    );
+    expect(previewErrorReason({ sandbox: 'alive', port: 8080 })).toBe(
+      'The app on port 8080 may not be running yet.',
+    );
+  });
+
+  it('falls back to the port-free sentence when no port could be parsed', () => {
+    expect(previewErrorReason({ sandbox: 'unknown', port: 0 })).toBe(
+      'The app may not be running yet.',
+    );
+  });
+});
+
+describe('shouldKeepProbingPort (a probe is a real request against the user app)', () => {
+  const probing = { probe: 'unknown' as const, unreachableForMs: 0, watchedMs: 0 };
+
+  it('stops the moment the port answers — nothing more for a probe to settle', () => {
+    expect(shouldKeepProbingPort({ ...probing, probe: 'reachable' })).toBe(false);
+  });
+
+  it('keeps probing while the answer is still inconclusive inside the window', () => {
+    expect(shouldKeepProbingPort({ ...probing, watchedMs: PREVIEW_PROBE_INTERVAL_MS })).toBe(true);
+  });
+
+  // A cold Next.js dev server answers a request by compiling. Polling one for
+  // the whole 90s bound would queue compiles behind the very page being waited
+  // on, so the watch stops once it has had its chance to see a dead port.
+  it('stops probing a slow-but-silent app once the window has passed with no misses', () => {
+    expect(shouldKeepProbingPort({ ...probing, watchedMs: PREVIEW_UNREACHABLE_WINDOW_MS })).toBe(
+      false,
+    );
+  });
+
+  // A streak that started late (the first probes were inconclusive) still has
+  // to be probed to its conclusion, or a dead port found at second 9 would
+  // never accumulate the continuity a failure verdict needs.
+  it('always probes an in-progress miss streak to its conclusion, window or not', () => {
+    expect(
+      shouldKeepProbingPort({
+        probe: 'unreachable',
+        unreachableForMs: 4_000,
+        watchedMs: PREVIEW_UNREACHABLE_WINDOW_MS * 1.5,
+      }),
+    ).toBe(true);
+  });
+
+  // ─── The FIRST miss of a streak carries `unreachableForMs: 0` — the caller
+  // starts the streak and reads its elapsed time in the same tick. A rule that
+  // keyed on accumulated time therefore did not protect the one sample that
+  // BEGINS a streak, so a first miss landing at or after the window ended the
+  // loop after a single sample and the failure verdict was never reached. ──
+  it('probes on after the miss that STARTS a streak, which has zero elapsed time', () => {
+    expect(
+      shouldKeepProbingPort({
+        probe: 'unreachable',
+        unreachableForMs: 0,
+        watchedMs: PREVIEW_UNREACHABLE_WINDOW_MS,
+      }),
+    ).toBe(true);
+  });
+
+  // The concrete scenario: an app that accepts the connection and then hangs —
+  // the ordinary signature of a dev server compiling its first route. Probe 1
+  // stalls to its own ceiling and the loop must not end on that one sample.
+  it('leaves room for more than one sample when every probe stalls to its ceiling', () => {
+    expect(PREVIEW_PROBE_TIMEOUT_MS + PREVIEW_PROBE_INTERVAL_MS).toBeLessThan(
+      PREVIEW_UNREACHABLE_WINDOW_MS,
+    );
+    expect(shouldKeepProbingPort({ ...probing, watchedMs: PREVIEW_PROBE_TIMEOUT_MS })).toBe(true);
+  });
+
+  it('never runs unbounded: a broken streak past the window stops the loop', () => {
+    expect(
+      shouldKeepProbingPort({
+        probe: 'unknown',
+        unreachableForMs: 0,
+        watchedMs: PREVIEW_UNREACHABLE_WINDOW_MS * 2,
+      }),
+    ).toBe(false);
+  });
+});
+
+describe('preview timing constants', () => {
+  it('bound the wait past the documented 30-60s cold-compile worst case', () => {
+    expect(PREVIEW_MAX_WAIT_MS).toBeGreaterThan(60_000);
+    expect(PREVIEW_UNREACHABLE_WINDOW_MS).toBeLessThan(PREVIEW_MAX_WAIT_MS);
+    // The probe cadence has to fit the continuity window several times over, or
+    // "continuously unreachable" would rest on a single sample.
+    expect(PREVIEW_UNREACHABLE_WINDOW_MS / PREVIEW_PROBE_INTERVAL_MS).toBeGreaterThanOrEqual(5);
+  });
+});
+
 describe('shouldAutoExpandOutputs', () => {
   it('opens exactly on the running -> idle transition when there is content', () => {
     expect(shouldAutoExpandOutputs(true, false, 1)).toBe(true);
@@ -146,7 +607,6 @@ describe('shouldAutoOpenPayoff (W2)', () => {
     hasPrimary: true,
     detailOpen: false,
     interactedThisRun: false,
-    panelOpen: true,
   };
 
   test('fires exactly at the successful running→idle transition with a primary', () => {
@@ -166,11 +626,15 @@ describe('shouldAutoOpenPayoff (W2)', () => {
     expect(shouldAutoOpenPayoff({ ...base, interactedThisRun: true })).toBe(false);
   });
 
-  // ─── IMPORTANT 6 — desktop keeps EasyPanel mounted behind a closed panel.
-  // Without this refusal the payoff would silently open a detail the user
-  // can't see; the closed-panel case belongs to the ready chip (W1) instead. ──
-  test('never fires behind a closed panel, even when every other condition is met', () => {
-    expect(shouldAutoOpenPayoff({ ...base, panelOpen: false })).toBe(false);
+  // The detail panel is content-driven since the cards moved to the floating
+  // overlay, so the payoff opening it IS the presentation — the old
+  // `panelOpen` refusal (which deferred to the ready chip while the panel was
+  // closed) no longer has a closed panel to defer about. The edge is what
+  // keeps this one-shot: `wasRunning && !isRunning` can only be true on the
+  // single render where the run settles, so the payoff cannot replay while a
+  // finished run sits idle.
+  test('an idle finished run never re-fires — the edge, not a panel flag, is the guard', () => {
+    expect(shouldAutoOpenPayoff({ ...base, wasRunning: false, isRunning: false })).toBe(false);
   });
 });
 
@@ -283,5 +747,114 @@ describe('focusIndexForCall (which command inside a group to open)', () => {
     expect(focusIndexForCall(parts, null)).toBe(-1);
     expect(focusIndexForCall(parts, undefined)).toBe(-1);
     expect(focusIndexForCall([], 'c1')).toBe(-1);
+  });
+});
+
+describe('groupOutputsByKind (Task 9 — kind grouping for large mixed runs)', () => {
+  /** A minimal, valid `OutputItem` of the given kind — `app` needs a `url`,
+   *  everything else is fine with just a name. */
+  function item(kind: OutputItem['kind'], name: string, callID = name): OutputItem {
+    if (kind === 'app') return { callID, name, kind, url: 'http://localhost:3000' };
+    return { callID, name, kind } as OutputItem;
+  }
+
+  function files(n: number, prefix = 'f'): OutputItem[] {
+    return Array.from({ length: n }, (_, i) => item('file', `${prefix}${i}.md`, `${prefix}${i}`));
+  }
+
+  // ─── the threshold — exactly 10 stays flat, 11 does not. ──
+
+  it('does not group at exactly the threshold (10 mixed outputs)', () => {
+    const outputs = [...files(5), ...Array.from({ length: 5 }, (_, i) => item('image', `i${i}.png`))];
+    expect(outputs).toHaveLength(10);
+    expect(groupOutputsByKind(outputs)).toBeNull();
+  });
+
+  it('groups the moment the list crosses the threshold (11 mixed outputs)', () => {
+    const outputs = [...files(6), ...Array.from({ length: 5 }, (_, i) => item('image', `i${i}.png`))];
+    expect(outputs).toHaveLength(11);
+    const groups = groupOutputsByKind(outputs);
+    expect(groups?.map((g) => g.kind)).toEqual(['file', 'image']);
+  });
+
+  it('does not group a short list, however mixed', () => {
+    const outputs = [item('file', 'a.md'), item('image', 'b.png'), item('video', 'c.mp4')];
+    expect(groupOutputsByKind(outputs)).toBeNull();
+  });
+
+  // ─── single-kind runs never group, no matter how long. ──
+
+  it('never groups a single-kind run past the threshold', () => {
+    expect(groupOutputsByKind(files(20))).toBeNull();
+  });
+
+  // ─── label mapping — every kind gets its plain-language header. ──
+
+  it('maps every kind to its plain-language label', () => {
+    const outputs = [
+      item('app', 'App'),
+      item('presentation', 'Deck'),
+      item('image', 'Pic'),
+      item('video', 'Clip'),
+      ...files(7),
+    ];
+    const groups = groupOutputsByKind(outputs);
+    expect(groups?.find((g) => g.kind === 'app')?.label).toBe('Apps');
+    expect(groups?.find((g) => g.kind === 'presentation')?.label).toBe('Presentations');
+    expect(groups?.find((g) => g.kind === 'image')?.label).toBe('Images');
+    expect(groups?.find((g) => g.kind === 'video')?.label).toBe('Videos');
+    expect(groups?.find((g) => g.kind === 'file')?.label).toBe('Documents');
+  });
+
+  // ─── group order follows first appearance in the input, not a fixed table. ──
+
+  it('orders groups by first appearance in the input, not a fixed priority table', () => {
+    const outputs = [
+      item('video', 'v1'),
+      item('file', 'f1'),
+      item('file', 'f2'),
+      item('image', 'i1'),
+      item('file', 'f3'),
+      item('image', 'i2'),
+      item('video', 'v2'),
+      item('file', 'f4'),
+      item('file', 'f5'),
+      item('file', 'f6'),
+      item('file', 'f7'),
+    ];
+    const groups = groupOutputsByKind(outputs);
+    // video appears first (index 0), then file (index 1), then image (index 3)
+    // — the reverse of `outputRank`'s file-before-media priority, proving this
+    // reads appearance order and does not re-derive `sortOutputs`'s ranking.
+    expect(groups?.map((g) => g.kind)).toEqual(['video', 'file', 'image']);
+  });
+
+  // ─── item order within a group is untouched input order. ──
+
+  it('preserves input order within each group', () => {
+    const outputs = [
+      item('file', 'f1'),
+      item('image', 'i1'),
+      item('file', 'f2'),
+      item('file', 'f3'),
+      item('image', 'i2'),
+      ...files(6, 'g'),
+    ];
+    const groups = groupOutputsByKind(outputs);
+    expect(groups?.find((g) => g.kind === 'file')?.items.map((o) => o.name)).toEqual([
+      'f1',
+      'f2',
+      'f3',
+      'g0.md',
+      'g1.md',
+      'g2.md',
+      'g3.md',
+      'g4.md',
+      'g5.md',
+    ]);
+    expect(groups?.find((g) => g.kind === 'image')?.items.map((o) => o.name)).toEqual([
+      'i1',
+      'i2',
+    ]);
   });
 });

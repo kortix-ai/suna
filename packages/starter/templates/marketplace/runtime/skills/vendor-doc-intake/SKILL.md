@@ -124,8 +124,7 @@ it, is always a person's.
 - **Drafts, never sends.** Every outbound email to a vendor is created as a
   Gmail draft. A human reviews and sends it.
 - **Scoped, brokered credentials.** Gmail and Google Sheets access are
-  injected into the sandbox at runtime and never shown to the model or
-  written to logs.
+  injected into the sandbox at runtime, scoped to this agent's grant.
 - **Idempotent per run.** Match new requests against `{{vendor_register}}`'s
   Gmail thread IDs before processing so the same request is never recorded
   twice across runs.

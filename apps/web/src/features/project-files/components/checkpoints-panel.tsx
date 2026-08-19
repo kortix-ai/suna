@@ -5,11 +5,19 @@ import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import Loading from '@/components/ui/loading';
 import { Skeleton } from '@/components/ui/skeleton';
 import { UserAvatar } from '@/components/ui/user-avatar';
-import type { ProjectCommit } from '@kortix/sdk';
 import { cn } from '@/lib/utils';
-import { AlertCircle, ChevronDown, History, Layers, RefreshCw, X } from 'lucide-react';
+import type { ProjectCommit } from '@kortix/sdk';
+import {
+  WarningCircleIcon as AlertCircle,
+  CaretDownIcon as ChevronDown,
+  ClockCounterClockwiseIcon as History,
+  StackIcon as Layers,
+  ArrowClockwiseIcon as RefreshCw,
+  XIcon as X,
+} from '@phosphor-icons/react';
 import { useMemo, useState } from 'react';
 import { useProjectContext } from '../context';
 import { useCommits } from '../hooks/use-commits';
@@ -18,6 +26,18 @@ import { CheckpointDetailDialog } from './checkpoint-detail-dialog';
 // ---------------------------------------------------------------------------
 // helpers
 // ---------------------------------------------------------------------------
+
+// Hoisted so render does not rebuild an Intl formatter per row. Output is
+// byte-identical: `toLocaleDateString()` ≡ `Intl.DateTimeFormat(undefined)`
+// and `toLocaleString(undefined, opts)` ≡ `Intl.DateTimeFormat(undefined, opts)`.
+const oldDateFormat = new Intl.DateTimeFormat();
+const fullDateTimeFormat = new Intl.DateTimeFormat(undefined, {
+  year: 'numeric',
+  month: 'short',
+  day: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+});
 
 function formatRelative(timestamp: number): string {
   const diff = Date.now() - timestamp;
@@ -33,17 +53,11 @@ function formatRelative(timestamp: number): string {
   if (days < 7) return `${days}d ago`;
   if (weeks < 5) return `${weeks}w ago`;
   if (months < 12) return `${months}mo ago`;
-  return new Date(timestamp).toLocaleDateString();
+  return oldDateFormat.format(new Date(timestamp));
 }
 
 function formatFull(timestamp: number): string {
-  return new Date(timestamp).toLocaleString(undefined, {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  return fullDateTimeFormat.format(new Date(timestamp));
 }
 
 function tsFromCommit(c: ProjectCommit): number {
@@ -185,7 +199,11 @@ export function CheckpointsPanel({ open = false, onClose }: CheckpointsPanelProp
             onClick={() => refetch()}
             title="Refresh"
           >
-            <RefreshCw className={cn('h-3.5 w-3.5', isFetching && 'animate-spin')} />
+            {isFetching ? (
+              <Loading className="h-3.5 w-3.5" />
+            ) : (
+              <RefreshCw className="h-3.5 w-3.5" />
+            )}
           </Button>
           <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onClose} title="Close">
             <X className="h-3.5 w-3.5" />

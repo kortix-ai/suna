@@ -1,36 +1,32 @@
 'use client';
 import { Badge } from '@/components/ui/badge';
-import { STATUS_TEXT, } from '@/components/ui/status';
+import { STATUS_TEXT } from '@/components/ui/status';
+import Loading from '@/components/ui/loading';
 import { SubSessionModal } from '@/features/session/sub-session-modal';
-import { ToolRegistry } from '@/features/session/tool/shared/registry';
-import type { ToolProps } from '@/features/session/tool/shared/types';
 import {
   BasicTool,
   isErrorOutput,
-  ToolOutputFallback,
   partOutput,
   partStatus,
+  ToolOutputFallback,
 } from '@/features/session/tool/shared/infrastructure';
+import { ToolRegistry } from '@/features/session/tool/shared/registry';
+import type { ToolProps } from '@/features/session/tool/shared/types';
 import { cn } from '@/lib/utils';
 import {
-  Check,
-  ChevronRight,
-  Circle,
-  Clock,
-  Layers,
-  Loader2,
-  X,
-} from 'lucide-react';
-import {
-  useMemo,
-  useState,
-} from 'react';
+  CheckIcon as Check,
+  CaretRightIcon as ChevronRight,
+  CircleIcon as Circle,
+  ClockIcon as Clock,
+  StackIcon as Layers,
+  XIcon as X,
+} from '@phosphor-icons/react';
+import { useMemo, useState } from 'react';
 
-
-import { OutputBlock } from '@/features/session/tool/shared/output-block';
 import { cleanWorkerOutput, parseTaskRows } from '@/features/session/tool/shared/agent-helpers';
+import { OutputBlock } from '@/features/session/tool/shared/output-block';
 
-export function AgentStatusTool({ part, forceOpen }: ToolProps) {
+export function AgentStatusTool({ part, defaultOpen, forceOpen }: ToolProps) {
   const status = partStatus(part);
   const output = partOutput(part);
   const isRunning = status === 'running' || status === 'pending';
@@ -39,11 +35,14 @@ export function AgentStatusTool({ part, forceOpen }: ToolProps) {
 
   const taskRows = useMemo(() => parseTaskRows(output), [output]);
   const cleanedOutput = useMemo(() => cleanWorkerOutput(output), [output]);
+  // `isErrorOutput` trims a copy of the whole output and runs `JSON.parse` over
+  // it, and the two branches below asked it twice per render.
+  const isError = useMemo(() => isErrorOutput(output), [output]);
 
   return (
     <>
       <BasicTool
-        icon={<Layers className="size-3.5 flex-shrink-0" />}
+        icon={<Layers className="size-3.5 shrink-0" />}
         trigger={{ title: 'Agent status' }}
         badge={
           !isRunning && taskRows.length > 0 ? (
@@ -52,6 +51,7 @@ export function AgentStatusTool({ part, forceOpen }: ToolProps) {
             </Badge>
           ) : undefined
         }
+        defaultOpen={defaultOpen}
         forceOpen={forceOpen}
       >
         {!isRunning && taskRows.length > 0 && (
@@ -83,25 +83,25 @@ export function AgentStatusTool({ part, forceOpen }: ToolProps) {
                   )}
                 >
                   {isActive ? (
-                    <Loader2 className="text-muted-foreground size-3 flex-shrink-0 animate-spin" />
+                    <Loading className="text-muted-foreground size-3 shrink-0" />
                   ) : row.status === 'completed' ? (
-                    <Check className={cn('size-3 flex-shrink-0', STATUS_TEXT.success)} />
+                    <Check className={cn('size-3 shrink-0', STATUS_TEXT.success)} />
                   ) : row.status === 'input_needed' ? (
-                    <Clock className={cn('size-3 flex-shrink-0', STATUS_TEXT.warning)} />
+                    <Clock className={cn('size-3 shrink-0', STATUS_TEXT.warning)} />
                   ) : row.status === 'cancelled' ? (
-                    <X className="text-muted-foreground/40 size-3 flex-shrink-0" />
+                    <X className="text-muted-foreground/40 size-3 shrink-0" />
                   ) : (
-                    <Circle className="text-muted-foreground/40 size-3 flex-shrink-0" />
+                    <Circle className="text-muted-foreground/40 size-3 shrink-0" />
                   )}
 
                   <span className="text-foreground/80 flex-1 truncate text-xs">{row.title}</span>
 
-                  <span className="text-muted-foreground/50 flex-shrink-0 font-mono text-xs">
+                  <span className="text-muted-foreground/50 shrink-0 font-mono text-xs">
                     {row.id.slice(-8)}
                   </span>
 
                   {hasSession && (
-                    <ChevronRight className="text-muted-foreground/20 size-3 flex-shrink-0" />
+                    <ChevronRight className="text-muted-foreground/20 size-3 shrink-0" />
                   )}
                 </div>
               );
@@ -109,11 +109,9 @@ export function AgentStatusTool({ part, forceOpen }: ToolProps) {
           </div>
         )}
 
-        {!isRunning && isErrorOutput(output) && (
-          <ToolOutputFallback output={output} toolName="agent_status" />
-        )}
+        {!isRunning && isError && <ToolOutputFallback output={output} toolName="agent_status" />}
 
-        {!isRunning && !isErrorOutput(output) && taskRows.length === 0 && cleanedOutput && (
+        {!isRunning && !isError && taskRows.length === 0 && cleanedOutput && (
           <OutputBlock text={cleanedOutput} />
         )}
       </BasicTool>
@@ -135,4 +133,3 @@ ToolRegistry.register('agent_status', AgentStatusTool);
 ToolRegistry.register('agent-status', AgentStatusTool);
 ToolRegistry.register('agent_task_list', AgentStatusTool);
 ToolRegistry.register('agent-task-list', AgentStatusTool);
-

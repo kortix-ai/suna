@@ -535,11 +535,11 @@ describe('in-call turn relay lands in the transcript', () => {
 /**
  * `db-deps.ts` pulls in most of the API to import, so its voice wiring is
  * asserted by reading the source — the same approach
- * unit-executor-router-deps.test.ts uses, and for the same reason: these are
+ * unit-connector-router-deps.test.ts uses, and for the same reason: these are
  * one-line wirings whose absence is invisible until production.
  */
 const DB_DEPS_SOURCE = await Bun.file(
-  new URL('../executor/db-deps.ts', import.meta.url).pathname,
+  new URL('../connectors/db-deps.ts', import.meta.url).pathname,
 ).text();
 
 describe('kortix_voice connector wiring', () => {

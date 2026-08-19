@@ -23,19 +23,18 @@
 
 import {
   AGENT_BROWSER_VERSION as DEFAULT_AGENT_BROWSER_VERSION,
+  ANYDOC_VERSION,
   BUN_SHA256_AMD64,
   BUN_SHA256_ARM64,
   BUN_VERSION,
-  CLAUDE_AGENT_ACP_VERSION,
-  CODEX_ACP_VERSION,
   NODE_VERSION,
   NPM_VERSION,
-  PI_ACP_VERSION,
-  PI_CODING_AGENT_VERSION,
   PLAYWRIGHT_VERSION,
   PNPM_SHA256_AMD64,
   PNPM_SHA256_ARM64,
   PNPM_VERSION,
+  PYTHON_PACKAGE_FLOOR,
+  PYTHON_PACKAGE_FLOOR_IMPORTS,
   PYTHON_VERSION,
   UV_SHA256_AMD64,
   UV_SHA256_ARM64,
@@ -200,7 +199,7 @@ export interface WarmRepoConfig {
 /**
  * Inputs for the artifact half of the layer — the contiguous tail that COPYs
  * Kortix's own staged build artifacts (agent + CLI binaries, entrypoint,
- * slack-cli, executor-sdk, scaffold.git) and wires the container's entrypoint.
+ * slack-cli, scaffold.git) and wires the container's entrypoint.
  *
  * Every artifact path is REQUIRED, deliberately: an agent-less image would
  * still build, still hash to a fresh snapshot identity, and only fail once a
@@ -229,16 +228,10 @@ export interface KortixArtifactLayerOpts {
    * /opt/kortix/apps/sandbox/slack-cli
    * and runs install-shims.sh to wire each *.ts (excluding lib/) as a
    * /usr/local/bin/<name> shim — that's how `slack` lands on PATH for the
-   * agent to invoke from inside the sandbox. (The Executor moved into the
-   * `kortix` CLI as `kortix executor` / `kortix executor mcp`.)
+   * agent to invoke from inside the sandbox. (The Connector moved into the
+   * `kortix` CLI as `kortix connectors` / `kortix connectors mcp`.)
    */
   slackCliPath: string;
-  /**
-   * Path the snapshot builder will reference for packages/executor-sdk.
-   * The agent CLI imports it via the same repo-relative path in dev and in
-   * real snapshots.
-   */
-  executorSdkPath: string;
   /**
    * Path (in the build context) to the baked full gateway model catalog JSON.
    * COPY'd into the image so the no-restart warm seed — which has no sandbox
@@ -360,6 +353,9 @@ function buildOpencodeInstanceWarmupLines(opts: {
     // breaks every session's first prompt, not just startup latency, so
     // it must fail the build — the warm-up readiness probe below stays
     // best-effort as before.
+    // E2B's Dockerfile parser does not preserve COPY --chown. Correct the
+    // ownership explicitly before the standard kortix user changes this tree.
+    'RUN sudo chown -R kortix:kortix /opt/kortix/warm-config',
     'RUN cd /opt/kortix/warm-config/.kortix/opencode \\',
     '    && rm -rf node_modules \\',
     '    && ln -s /opt/kortix/opencode-config-deps/node_modules node_modules \\',
@@ -439,7 +435,9 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     '    && rm -rf /var/lib/apt/lists/*',
     '',
     'RUN useradd --create-home --shell /bin/bash --user-group kortix \\',
-    "    && printf 'kortix ALL=(ALL) NOPASSWD:ALL\\n' > /etc/sudoers.d/kortix \\",
+    // E2B's Dockerfile parser removes the backslash from a quoted `\\n`.
+    // Use echo so every provider writes the same valid sudoers line.
+    "    && echo 'kortix ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/kortix \\",
     '    && chmod 0440 /etc/sudoers.d/kortix \\',
     '    && mkdir -p /workspace /opt/kortix /opt/pw-browsers /ephemeral/kortix-master/opencode \\',
     '        /home/kortix/.local/bin /home/kortix/.local/share/pnpm/bin /home/kortix/.bun/bin \\',
@@ -464,6 +462,36 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     `    && UV_PYTHON_DOWNLOADS=automatic uv python install --default ${PYTHON_VERSION} \\`,
     `    && python -c 'import sys; assert sys.version_info[:3] == (${PYTHON_VERSION.replaceAll('.', ', ')}); print("managed python:", sys.version)' \\`,
     `    && python3 -c 'import sys; assert sys.version_info[:3] == (${PYTHON_VERSION.replaceAll('.', ', ')})'`,
+    '',
+    // The Python package floor: everything the starter skills import, baked
+    // into the managed interpreter so bare `python3` works with zero runtime
+    // resolution. `uv run --with` re-downloads wheels from PyPI on first use in
+    // EVERY fresh sandbox — on the session hot path, network-dependent — so the
+    // floor exists precisely to keep skill scripts off that path; `uv run
+    // --with` remains the documented escape hatch for packages OUTSIDE the
+    // floor only. `--break-system-packages` overrides uv's externally-managed
+    // marker on the interpreter it just installed — this is OUR frozen
+    // build-time interpreter, not a distro Python; nothing upgrades it after
+    // this layer. python-playwright is pinned to the SAME version as the Node
+    // playwright that bakes Chromium below, so both resolve the identical
+    // browser revision under PLAYWRIGHT_BROWSERS_PATH.
+    // The install targets the managed interpreter by EXPLICIT PATH, never by
+    // discovery: `--system` skips uv-managed interpreters by design, and the
+    // apt floor above drags in Ubuntu's distro python3 via LibreOffice — so
+    // `--system` resolved /usr/bin/python3, where `kortix` cannot write, and
+    // the v39 bake failed on every provider (dev, 2026-08-03). The local-repro
+    // gap: a test container without the apt floor has no distro python, so
+    // `--system` happens to fall back to the managed shim and "passes".
+    // The import check is a single-line `python3 -c` on purpose: E2B's
+    // Dockerfile parser reads a heredoc body's first line as an instruction
+    // and aborts the build.
+    'RUN uv pip install --python /home/kortix/.local/bin/python3 --break-system-packages \\',
+    ...Object.entries(PYTHON_PACKAGE_FLOOR).map(
+      ([pkg, version]) => `        "${pkg}==${version}" \\`,
+    ),
+    `    && python3 -c 'import importlib; [importlib.import_module(m) for m in ${JSON.stringify(
+      Object.values(PYTHON_PACKAGE_FLOOR_IMPORTS).sort(),
+    )}]; print("python package floor OK")'`,
     '',
     // Install pnpm's versioned standalone release artifact after verifying the
     // repository-controlled checksum. pnpm then owns the JavaScript runtime
@@ -569,21 +597,6 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     '    && command -v opencode \\',
     '    && opencode --version',
     '',
-    // Install every ACP adapter during image construction. Runtime requests
-    // only start these pinned executables. They never download an npm package.
-    // pnpm 11 gives each global root package an isolated dependency graph.
-    // npm deduplicates Pi's exact internal versions into one compatible graph.
-    `RUN pnpm add -g "@agentclientprotocol/claude-agent-acp@${CLAUDE_AGENT_ACP_VERSION}" "@agentclientprotocol/codex-acp@${CODEX_ACP_VERSION}" "pi-acp@${PI_ACP_VERSION}" \\`,
-    `    && npm install -g --prefix /home/kortix/.local "@earendil-works/pi-coding-agent@${PI_CODING_AGENT_VERSION}" "@earendil-works/pi-ai@${PI_CODING_AGENT_VERSION}" "@earendil-works/pi-tui@${PI_CODING_AGENT_VERSION}" "@earendil-works/pi-agent-core@${PI_CODING_AGENT_VERSION}" \\`,
-    '    && command -v claude-agent-acp \\',
-    '    && command -v codex-acp \\',
-    '    && command -v pi-acp \\',
-    '    && command -v pi \\',
-    '    && claude-agent-acp --version \\',
-    '    && codex-acp --version \\',
-    '    && pi-acp --help >/dev/null \\',
-    '    && pi --version',
-    '',
     // Bake OpenCode's "one time database migration" at BUILD time. The first time
     // opencode serves, it migrates its sqlite schema — logged as "Performing one
     // time database migration (may take a few minutes)" — before it answers any
@@ -603,7 +616,7 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
       'RUN bash /tmp/kortix-opencode-warmup migration; rm -f /tmp/kortix-opencode-warmup',
     ] : []),
     '',
-    // Bun runtime for the agent CLIs (slack, …) + `kortix executor mcp`.
+    // Bun runtime for the agent CLIs (slack, …) + `kortix connectors mcp`.
     // Download one versioned release artifact and verify its checksum before
     // extracting it. The public installer script is not part of the trust path.
     'RUN case "$(uname -m)" in \\',
@@ -619,6 +632,18 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     '    && ln -sf bun /home/kortix/.bun/bin/bunx \\',
     '    && rm -rf /tmp/bun /tmp/bun.zip \\',
     `    && test "$(bun --version)" = "${BUN_VERSION}"`,
+    '',
+    // anydoc (Firecrawl) — the document→Markdown converter the
+    // convert-documents-to-markdown skill drives (Word/PowerPoint/Excel/ODF/
+    // RTF/EPUB/CSV/PDF → GFM). Baked so it works with zero runtime download —
+    // the upstream skill's `npx -y` would fetch from npm on the session hot
+    // path. Pure napi prebuilt binaries via platform optionalDependencies; no
+    // build scripts, so no --allow-build. Sits BELOW Chromium/opencode so a
+    // version bump re-uses their cached layers, and ABOVE the config-deps
+    // install (first non-deterministic layer downstream).
+    `RUN pnpm add -g "@firecrawl/anydoc@${ANYDOC_VERSION}" \\`,
+    '    && command -v anydoc \\',
+    `    && test "$(anydoc --version)" = "${ANYDOC_VERSION}"`,
     '',
     // Pre-install the OpenCode tool/plugin dependencies once, at image-build time,
     // into a stable baked location. The cloned config dir's plugin + tools import
@@ -685,8 +710,8 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
 
 /**
  * The staged-artifact half of the Kortix runtime layer: the COPYs of Kortix's
- * own build outputs (agent + CLI binaries, entrypoint, slack-cli,
- * executor-sdk, the optional LLM catalog, scaffold.git), the unpack/shim RUN
+ * own build outputs (agent + CLI binaries, entrypoint, slack-cli, the optional
+ * LLM catalog, scaffold.git), the unpack/shim RUN
  * that puts them on PATH, and the container's ENV/WORKDIR/EXPOSE/ENTRYPOINT.
  *
  * Every path here must exist in the build context — see
@@ -699,7 +724,6 @@ export function kortixArtifactLayer(opts: KortixArtifactLayerOpts): string {
     entrypointScriptPath,
     machineDocPath,
     slackCliPath,
-    executorSdkPath,
     catalogPath,
   } = opts;
 
@@ -709,9 +733,8 @@ export function kortixArtifactLayer(opts: KortixArtifactLayerOpts): string {
     `COPY ${cliBinaryPath} /tmp/kortix.gz`,
     `COPY ${entrypointScriptPath} /usr/local/bin/kortix-entrypoint`,
     `COPY ${machineDocPath} /MACHINE.md`,
-    // Keep the repo-relative layout so CLIs can import shared packages.
+    // The channel shims delegate Connector calls to the compiled `kortix` CLI.
     `COPY ${slackCliPath}/ /opt/kortix/apps/sandbox/slack-cli/`,
-    `COPY ${executorSdkPath}/ /opt/kortix/packages/executor-sdk/`,
     // Full gateway model catalog, baked at build so the token-less no-restart
     // warm seed serves the full picker (daemon reads KORTIX_LLM_CATALOG_FILE).
     ...(catalogPath ? [`COPY ${catalogPath} /opt/kortix/llm-catalog.json`] : []),

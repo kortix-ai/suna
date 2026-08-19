@@ -1,9 +1,10 @@
 import {
-  isSessionVisibleTo,
+  isProjectSessionVisibleTo,
   type SecretGrant,
   type ShareSubject,
-} from '../../executor/share';
+} from '../../connectors/share';
 import type { projectSessions, sessionSandboxes } from '@kortix/db';
+import { isWarmProjectSession } from './warm-sessions';
 
 type ProjectSessionRow = typeof projectSessions.$inferSelect;
 type RuntimeStatus = typeof sessionSandboxes.$inferSelect.status;
@@ -80,21 +81,6 @@ export function selectSessionRowsForViewer(input: {
    *  token). Stops a sandbox listing SIBLING backend sessions, which all share
    *  one `created_by`. */
   callerSessionId: string | null;
-  /**
-   * True when the caller narrowed the list to ONE end-user (`?end_user_ref=`).
-   *
-   * Required, not optional: defaulting it would silently pick the permissive
-   * branch at any call site that forgot it.
-   *
-   * `scope=project` normally returns rows the caller cannot open, with the
-   * end-user label redacted by the serializer. Combined with this filter that
-   * becomes a guess-and-check oracle — send a handle, count the rows, learn
-   * whether that end-user exists here even though its label is redacted. So when
-   * the caller asks an end-user-scoped question, they only get the sessions they
-   * could have opened anyway. The full inventory is still one unfiltered request
-   * away, which is the manager's real use case.
-   */
-  endUserRefFiltered: boolean;
   grantsBySession: Map<string, SecretGrant[]>;
   runtimeStatusBySession: Map<string, RuntimeStatus>;
 }): { authorized: boolean; items: SessionInventoryItem[] } {
@@ -110,7 +96,7 @@ export function selectSessionRowsForViewer(input: {
       typeof metadata.deletedBy === 'string' ? metadata.deletedBy : null;
     const runtimeStatus =
       input.runtimeStatusBySession.get(row.sessionId) ?? null;
-    const canAccess = isSessionVisibleTo(
+    const canAccess = isProjectSessionVisibleTo(
       row.visibility as 'private' | 'project' | 'restricted',
       row.createdBy,
       input.grantsBySession.get(row.sessionId) ?? [],
@@ -120,17 +106,16 @@ export function selectSessionRowsForViewer(input: {
         sessionId: row.sessionId,
         callerSessionId: input.callerSessionId,
       },
+      { metadata: row.metadata, canManageProject: input.canManageProject },
     );
     return { row, canAccess, runtimeStatus, deletedAt, deletedBy };
   });
 
   if (input.scope === 'project') {
-    return {
-      authorized: true,
-      items: input.endUserRefFiltered
-        ? items.filter((item) => item.canAccess)
-        : items,
-    };
+    // A list row is a disclosure. Keep manager-only lifecycle coverage for
+    // sessions the manager can open, including warm and soft-deleted rows, but
+    // never return an inaccessible session as a redacted breadcrumb.
+    return { authorized: true, items: items.filter((item) => item.canAccess) };
   }
 
   return {
@@ -138,6 +123,14 @@ export function selectSessionRowsForViewer(input: {
     items: items.filter((item) => {
       if (item.deletedAt) return false;
       if (!item.canAccess) return false;
+      // A warm session the user never prompted holds no work of theirs, so
+      // listing it is noise: they would see a session in the sidebar they never
+      // started. The marker is dropped by the first prompt, and from that moment
+      // the row lists like any other session. See lib/warm-sessions.ts.
+      //
+      // `visible` scope only. The `project` scope keeps accessible warm rows for
+      // lifecycle inspection, but it also applies the access filter above.
+      if (isWarmProjectSession(item.row.metadata)) return false;
       return item.row.status !== 'stopped' || item.runtimeStatus === 'stopped';
     }),
   };

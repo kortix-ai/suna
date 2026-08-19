@@ -21,6 +21,8 @@ beforeEach(() => {
   // Derived from CANONICAL_SKILL, never spelled out — the fixture must follow
   // the constant wherever it points.
   mkdirSync(join(dir, CANONICAL_SKILL, '..'), { recursive: true });
+  mkdirSync(join(dir, '.kortix', 'opencode', 'agents'), { recursive: true });
+  mkdirSync(join(dir, '.kortix', 'opencode', 'commands'), { recursive: true });
   writeFileSync(join(dir, CANONICAL_SKILL), 'canonical skill', 'utf8');
 });
 
@@ -29,7 +31,12 @@ afterEach(() => {
 });
 
 describe('wireCodingAgents', () => {
-  test('all agents → native skill links for opencode/claude/codex/pi + one AGENTS.md', () => {
+  test('all agents → native discovery links for opencode/claude/codex/pi + one AGENTS.md', () => {
+    mkdirSync(join(dir, '.claude'), { recursive: true });
+    mkdirSync(join(dir, '.pi'), { recursive: true });
+    writeFileSync(join(dir, '.claude', 'CLAUDE.md'), 'claude runtime', 'utf8');
+    writeFileSync(join(dir, '.pi', 'README.md'), 'pi runtime', 'utf8');
+
     const result = wireCodingAgents({
       repoRoot: dir,
       agents: ['opencode', 'claude', 'codex', 'pi', 'cursor'],
@@ -40,22 +47,36 @@ describe('wireCodingAgents', () => {
     expect(result.written.sort()).toEqual(
       [
         '.agents → .kortix/opencode',
-        '.claude → .kortix/opencode',
+        '.claude/agents → ../.kortix/opencode/agents',
+        '.claude/commands → ../.kortix/opencode/commands',
+        '.claude/skills → ../.kortix/opencode/skills',
         '.opencode → .kortix/opencode',
-        '.pi → .kortix/opencode',
+        '.pi/skills → ../.kortix/opencode/skills',
         'AGENTS.md',
       ].sort(),
     );
 
-    // Each link is a real symlink pointing straight at the OpenCode config dir.
-    // codex wires `.agents` (its documented, cross-tool skills dir), not `.codex`.
-    for (const link of ['.opencode', '.claude', '.agents', '.pi']) {
+    // OpenCode and Codex can consume the complete canonical directory.
+    for (const link of ['.opencode', '.agents']) {
       expect(lstatSync(join(dir, link)).isSymbolicLink()).toBe(true);
       expect(readlinkSync(join(dir, link))).toBe('.kortix/opencode');
-      // …and it resolves all the way to the canonical skill.
       const skill = join(dir, link, CANONICAL_SKILL.replace('.kortix/opencode/', ''));
       expect(readFileSync(skill, 'utf8')).toBe('canonical skill');
     }
+
+    // Claude Code and Pi keep their runtime files and receive native links.
+    expect(readFileSync(join(dir, '.claude', 'CLAUDE.md'), 'utf8')).toBe('claude runtime');
+    expect(readFileSync(join(dir, '.pi', 'README.md'), 'utf8')).toBe('pi runtime');
+    expect(readlinkSync(join(dir, '.claude', 'skills'))).toBe('../.kortix/opencode/skills');
+    expect(readlinkSync(join(dir, '.claude', 'agents'))).toBe('../.kortix/opencode/agents');
+    expect(readlinkSync(join(dir, '.claude', 'commands'))).toBe('../.kortix/opencode/commands');
+    expect(readlinkSync(join(dir, '.pi', 'skills'))).toBe('../.kortix/opencode/skills');
+    expect(readFileSync(join(dir, '.claude', 'skills', 'kortix-cli', 'SKILL.md'), 'utf8')).toBe(
+      'canonical skill',
+    );
+    expect(readFileSync(join(dir, '.pi', 'skills', 'kortix-cli', 'SKILL.md'), 'utf8')).toBe(
+      'canonical skill',
+    );
 
     // AGENTS.md is a real file pointing at the canonical skill, written once.
     expect(lstatSync(join(dir, 'AGENTS.md')).isSymbolicLink()).toBe(false);
@@ -68,7 +89,14 @@ describe('wireCodingAgents', () => {
   test('only wires the agents that were selected', () => {
     const result = wireCodingAgents({ repoRoot: dir, agents: ['opencode', 'claude'], overwrite: false });
 
-    expect(result.written.sort()).toEqual(['.claude → .kortix/opencode', '.opencode → .kortix/opencode'].sort());
+    expect(result.written.sort()).toEqual(
+      [
+        '.claude/agents → ../.kortix/opencode/agents',
+        '.claude/commands → ../.kortix/opencode/commands',
+        '.claude/skills → ../.kortix/opencode/skills',
+        '.opencode → .kortix/opencode',
+      ].sort(),
+    );
     // No codex/cursor selected → no .agents link, no AGENTS.md.
     expect(existsSync(join(dir, '.agents'))).toBe(false);
     expect(existsSync(join(dir, 'AGENTS.md'))).toBe(false);

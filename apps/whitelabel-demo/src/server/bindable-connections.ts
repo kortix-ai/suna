@@ -1,10 +1,10 @@
-import type { ConnectionProfile } from '@kortix/sdk';
+import type { Connection } from '@kortix/sdk';
 
 /**
  * Which connections a WRAPPER may bind to a session it starts.
  *
  * A wrapper acts under one credential for many end-users, so it has no personal
- * identity upstream. It can therefore bind only TEAM (`project`-owned)
+ * identity upstream. It can therefore bind only project-owned
  * connections — never a member's private one, and never another wrapper's
  * `external` one. `require_connectors`, which resolves the *acting user's own*
  * connection, is refused outright for the same reason
@@ -15,7 +15,7 @@ import type { ConnectionProfile } from '@kortix/sdk';
  * an error message.
  */
 export interface BindableConnection {
-  profileId: string;
+  connectionId: string;
   connectorAlias: string;
   label: string;
   isDefault: boolean;
@@ -28,7 +28,8 @@ export interface BindableConnection {
  * credential cannot connect on an end-user's behalf, and `require_connectors`
  * — the interactive flow that would — is refused for it outright.
  */
-export type ConnectorBindingUnavailable = 'private_only' | 'team_connection_inactive';
+export type ConnectorBindingUnavailable =
+  'private_only' | 'project_connection_inactive';
 
 export interface ConnectorBindingChoice {
   alias: string;
@@ -38,24 +39,24 @@ export interface ConnectorBindingChoice {
 }
 
 export function selectBindableConnections(
-  profiles: ConnectionProfile[] | undefined,
+  connections: Connection[] | undefined,
   connectorAlias: string,
 ): BindableConnection[] {
-  return (profiles ?? [])
+  return (connections ?? [])
     .filter(
-      (profile) =>
-        profile.connector_alias === connectorAlias &&
-        // Team-shared only — see above.
-        profile.owner_type === 'project' &&
+      (connection) =>
+        connection.connector_alias === connectorAlias &&
+        // Project-owned only — see above.
+        connection.owner_type === 'project' &&
         // A revoked or errored connection binds "successfully" and then fails at
         // the first tool call, which is a worse experience than not offering it.
-        profile.status === 'active',
+        connection.status === 'active',
     )
-    .map((profile) => ({
-      profileId: profile.profile_id,
-      connectorAlias: profile.connector_alias,
-      label: profile.label,
-      isDefault: profile.is_default,
+    .map((connection) => ({
+      connectionId: connection.connection_id,
+      connectorAlias: connection.connector_alias,
+      label: connection.label,
+      isDefault: connection.is_default,
     }))
     .sort((a, b) => {
       // Default first — it is what an unbound alias resolves to anyway, so it is
@@ -74,36 +75,41 @@ export function selectBindableConnections(
  * PRIVATE ones looks connected from the inside (a teammate connected it, in
  * their own account) and is unbindable from here, which is the single most
  * confusing thing about connectors in wrapper mode. Grouping is done over ALL
- * profiles, not just the bindable ones, precisely so that case can be named
+ * connections, not just the bindable ones, precisely so that case can be named
  * rather than silently disappearing from the picker.
  */
 export function selectConnectorBindingChoices(
-  profiles: ConnectionProfile[] | undefined,
+  connections: Connection[] | undefined,
 ): ConnectorBindingChoice[] {
-  const aliases = [...new Set((profiles ?? []).map((profile) => profile.connector_alias))].sort(
-    (a, b) => a.localeCompare(b),
-  );
+  const aliases = [
+    ...new Set((connections ?? []).map((connection) => connection.connector_alias)),
+  ].sort((a, b) => a.localeCompare(b));
 
   return aliases.map((alias) => {
-    const connections = selectBindableConnections(profiles, alias);
-    if (connections.length > 0) return { alias, connections, unavailable: null };
-    // A revoked/errored TEAM connection is a different ask than a private one:
-    // the team connection exists and needs reconnecting, rather than never
+    const bindableConnections = selectBindableConnections(connections, alias);
+    if (bindableConnections.length > 0)
+      return { alias, connections: bindableConnections, unavailable: null };
+    // A revoked or errored project connection is a different ask than a private one:
+    // the project connection exists and needs reconnecting, rather than never
     // having been shared. Same actor either way — a teammate.
     // `member` is the only owner type a wrapper genuinely cannot reach — it is
     // one person's private connection. Everything else (`project`, `agent`,
-    // `subject`, `external`) is a shared/system profile that the platform WILL
-    // bind for a caller who may manage system profiles, so calling those
+    // `subject`, `external`) is a shared/system connection that the platform WILL
+    // bind for a caller who may manage system connections, so calling those
     // "only connected to people's own accounts" tells the user something false
     // AND names an action — "ask a teammate to share it" — that resolves
-    // nothing. Channel/inbox installs mint `external` profiles, so this is a
+    // nothing. Channel/inbox installs mint `external` connections, so this is a
     // shape that really occurs, not a hypothetical.
-    const forAlias = (profiles ?? []).filter((p) => p.connector_alias === alias);
-    const hasNonMemberProfile = forAlias.some((p) => p.owner_type !== 'member');
+    const forAlias = (connections ?? []).filter(
+      (p) => p.connector_alias === alias,
+    );
+    const hasNonMemberConnection = forAlias.some((p) => p.owner_type !== 'member');
     return {
       alias,
-      connections,
-      unavailable: hasNonMemberProfile ? 'team_connection_inactive' : 'private_only',
+      connections: bindableConnections,
+      unavailable: hasNonMemberConnection
+        ? 'project_connection_inactive'
+        : 'private_only',
     };
   });
 }

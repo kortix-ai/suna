@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
   AGENT_BROWSER_VERSION,
+  ANYDOC_VERSION,
   BUN_SHA256_AMD64,
   BUN_VERSION,
   NODE_VERSION,
@@ -11,6 +12,7 @@ import {
   PLAYWRIGHT_VERSION,
   PNPM_SHA256_AMD64,
   PNPM_VERSION,
+  PYTHON_PACKAGE_FLOOR,
   UV_SHA256_AMD64,
   UV_VERSION,
 } from '@kortix/shared';
@@ -32,7 +34,6 @@ const COMMON = {
   entrypointScriptPath: 'kortix-entrypoint',
   machineDocPath: 'MACHINE.md',
   slackCliPath: 'kortix-slack-cli',
-  executorSdkPath: 'kortix-executor-sdk',
   opencodeWarmupScriptPath: 'kortix-opencode-warmup',
 };
 
@@ -72,7 +73,10 @@ describe('buildLayeredDockerfile', () => {
     expect(merged).toContain(
       `pnpm add -g --allow-build=agent-browser "agent-browser@${AGENT_BROWSER_VERSION}"`,
     );
-    expect(merged).not.toContain('npm install -g');
+    expect(merged).toContain(`pnpm add -g "@firecrawl/anydoc@${ANYDOC_VERSION}"`);
+    expect(merged).toContain(`test "$(anydoc --version)" = "${ANYDOC_VERSION}"`);
+    expect(merged).not.toContain('npm install -g opencode-ai');
+    expect(merged).not.toContain('npm install -g agent-browser');
     expect(merged).not.toContain('npx -y');
   });
 
@@ -89,7 +93,8 @@ describe('buildLayeredDockerfile', () => {
   test('runs build-time and runtime tools as the standard kortix user', () => {
     const merged = buildLayeredDockerfile({ userDockerfile: 'FROM ubuntu:24.04', ...COMMON });
     expect(merged).toContain('useradd --create-home --shell /bin/bash --user-group kortix');
-    expect(merged).toContain("printf 'kortix ALL=(ALL) NOPASSWD:ALL\\n' > /etc/sudoers.d/kortix");
+    expect(merged).toContain("echo 'kortix ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/kortix");
+    expect(merged).not.toContain("NOPASSWD:ALL\\n");
     expect(merged).toContain(
       'chown -R kortix:kortix /workspace /opt/kortix /opt/pw-browsers /ephemeral',
     );
@@ -110,7 +115,11 @@ describe('buildLayeredDockerfile', () => {
     expect(merged).toContain(`agent-browser@${AGENT_BROWSER_VERSION}`);
     expect(merged).toContain('uv python install --default 3.12.13');
     expect(merged).not.toContain('uv venv');
-    expect(merged).not.toContain('uv pip install');
+    expect(merged).toContain(
+      'uv pip install --python /home/kortix/.local/bin/python3 --break-system-packages',
+    );
+    expect(merged).toContain(`"pillow==${PYTHON_PACKAGE_FLOOR.pillow}"`);
+    expect(merged).toContain('python package floor OK');
     expect(merged).toContain('COPY kortix-agent.gz /tmp/kortix-agent.gz');
     expect(merged).toContain('gunzip -c /tmp/kortix-agent.gz > /usr/local/bin/kortix-agent');
     // The admin CLI is baked alongside the daemon and verified at build time.
@@ -119,7 +128,7 @@ describe('buildLayeredDockerfile', () => {
     expect(merged).toContain('gunzip -c /tmp/kortix.gz > /usr/local/bin/kortix');
     expect(merged).toContain('kortix --version');
     expect(merged).toContain('COPY kortix-slack-cli/ /opt/kortix/apps/sandbox/slack-cli/');
-    expect(merged).toContain('COPY kortix-executor-sdk/ /opt/kortix/packages/executor-sdk/');
+    expect(merged).not.toContain('/opt/kortix/packages/');
     expect(merged).toContain('ENTRYPOINT ["/usr/local/bin/kortix-entrypoint"]');
   });
 
@@ -227,6 +236,11 @@ describe('buildLayeredDockerfile', () => {
     });
     const verifyIdx = withConfig.indexOf('bun build tools/*.ts');
     expect(verifyIdx).toBeGreaterThanOrEqual(0);
+    const ownershipIdx = withConfig.indexOf(
+      'RUN sudo chown -R kortix:kortix /opt/kortix/warm-config',
+    );
+    expect(ownershipIdx).toBeGreaterThanOrEqual(0);
+    expect(ownershipIdx).toBeLessThan(verifyIdx);
     const precedingRun = withConfig.lastIndexOf('RUN', verifyIdx);
     const stepText = withConfig.slice(precedingRun, verifyIdx);
     expect(stepText).not.toContain('set +e');

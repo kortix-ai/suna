@@ -5,7 +5,7 @@
  * ONE source of truth for the rules, dependency-free (same reason as
  * `constants.ts`: the imperative validator `./index.ts`, the JSON Schema
  * generator `./json-schema.ts`, apps/api's manifest parser
- * (`projects/connectors.ts`) and the executor (`executor/execute.ts`) all need
+ * (`projects/connectors.ts`) and the connector (`connector/execute.ts`) all need
  * the exact same answer to "is this header legal?", and none of them may
  * import each other.
  *
@@ -16,7 +16,7 @@
  *      an embedded `\r\n` would let an author append arbitrary extra headers —
  *      or a whole second request — to the outbound message
  *      (header-injection / request-splitting).
- * The credential is NEVER expressible here: the executor drops any static
+ * The credential is NEVER expressible here: the connector drops any static
  * header that collides with the connector's auth header, so a static header
  * can neither spoof nor clobber the credential (see execute.ts
  * `applyConnectorHeaders`).
@@ -150,7 +150,7 @@ export function parseConnectorHeaders(raw: unknown): ConnectorHeadersParse {
 
 /**
  * Drop anything that fails validation, keeping the rest. The parser/CRUD layer
- * is where a bad header gets a loud error; this is the executor's fail-SAFE
+ * is where a bad header gets a loud error; this is the connector's fail-SAFE
  * backstop for a row that predates (or somehow bypassed) that validation — an
  * illegal header is never sent, but one bad row doesn't break every call.
  */

@@ -11,7 +11,19 @@ type ProjectEnvSnapshot = {
 type ProjectEnvUpdate = {
   changed: boolean
   revision: string
+  /** The FULL current name set, not a delta. */
   names: string[]
+  /**
+   * Names whose VALUE actually moved — added, removed, or rewritten.
+   *
+   * `names` is the whole allowlist, so it cannot answer "did THIS secret just
+   * change". The caller needs that: a few values are consumed by `spawnChild`
+   * outside the opencode config file (they are materialized into auth.json), so
+   * a change to one of those demands a full respawn rather than the ~51ms
+   * dispose. Keying that decision off `names` would respawn on every push for
+   * any project that merely HAS such a secret.
+   */
+  changedNames: string[]
 }
 
 export type ProjectEnvStore = {
@@ -87,6 +99,13 @@ export function createProjectEnvStore(initialEnv: NodeJS.ProcessEnv = process.en
       for (const name of nextNames) knownNames.add(name)
       for (const name of Object.keys(nextEnv)) knownNames.add(name)
 
+      // Computed against the PREVIOUS env, so it must run before the assignment.
+      const changedNames = [
+        ...new Set([...Object.keys(env), ...Object.keys(nextEnv)]),
+      ]
+        .filter((name) => env[name] !== nextEnv[name])
+        .sort()
+
       if (changed) {
         revision = nextRevision
         env = nextEnv
@@ -97,14 +116,17 @@ export function createProjectEnvStore(initialEnv: NodeJS.ProcessEnv = process.en
         changed,
         revision: nextRevision,
         names: [...nextNames],
+        changedNames,
       }
     },
   }
 }
 
-export function mergeProjectEnv(baseEnv: NodeJS.ProcessEnv, store: ProjectEnvStore): NodeJS.ProcessEnv {
+export function reconcileProjectEnv(
+  targetEnv: NodeJS.ProcessEnv,
+  store: ProjectEnvStore,
+): NodeJS.ProcessEnv {
   const snapshot = store.snapshot()
-  const merged: NodeJS.ProcessEnv = { ...baseEnv }
   // Clear every name this store has EVER managed, not just the ones still
   // granted. The server pushes only currently-granted names, so a revoked
   // secret never appears in `names` — deleting only those would leave its value
@@ -113,10 +135,14 @@ export function mergeProjectEnv(baseEnv: NodeJS.ProcessEnv, store: ProjectEnvSto
   // MCP servers and direct child spawns never pass through BASH_ENV, so the
   // `unset` written to agent-env.sh does not cover them.
   for (const name of snapshot.knownNames) {
-    delete merged[name]
+    delete targetEnv[name]
   }
   for (const [name, value] of Object.entries(snapshot.env)) {
-    merged[name] = value
+    targetEnv[name] = value
   }
-  return merged
+  return targetEnv
+}
+
+export function mergeProjectEnv(baseEnv: NodeJS.ProcessEnv, store: ProjectEnvStore): NodeJS.ProcessEnv {
+  return reconcileProjectEnv({ ...baseEnv }, store)
 }

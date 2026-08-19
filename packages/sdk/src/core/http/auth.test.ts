@@ -81,13 +81,6 @@ test('does NOT impose a default timeout on the SSE event stream endpoint (/globa
 	expect(signal).toBeUndefined();
 });
 
-test('does NOT impose a default timeout on an ACP session stream', () => {
-	const url = 'http://sbx.test/kortix/acp/ses_1';
-	expect(isStreamingRequest(url)).toBe(true);
-	expect(withDefaultTimeout(url, undefined)).toBeUndefined();
-	expect(isStreamingRequest('http://sbx.test/kortix/acpish/ses_1')).toBe(false);
-});
-
 test('composes a caller-supplied signal with the default timeout on a non-streaming request', () => {
 	const controller = new AbortController();
 	controller.abort();
@@ -129,6 +122,26 @@ test('buildAuthHeaders injects the Bearer token without clobbering an existing A
 		'tok',
 	);
 	expect(preset.get('Authorization')).toBe('Bearer mine');
+});
+
+test('buildAuthHeaders identifies the configured client surface', () => {
+	const headers = buildAuthHeaders('http://x.test/', undefined, 'tok', 'cli');
+	expect(headers.get('x-kortix-client')).toBe('cli');
+});
+
+test('buildAuthHeaders preserves an explicit client surface header', () => {
+	const headers = buildAuthHeaders(
+		'http://x.test/',
+		{ headers: { 'X-Kortix-Client': 'mobile' } },
+		'tok',
+		'cli',
+	);
+	expect(headers.get('x-kortix-client')).toBe('mobile');
+});
+
+test('buildAuthHeaders omits an unknown configured client surface', () => {
+	const headers = buildAuthHeaders('http://x.test/', undefined, 'tok', 'forged-source');
+	expect(headers.has('x-kortix-client')).toBe(false);
 });
 
 test('the synthetic 401 is a JSON fetch-semantics Response (no network call implied)', async () => {

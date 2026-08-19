@@ -1,14 +1,23 @@
 'use client';
 
-import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card';
+import { CubeIcon } from '@phosphor-icons/react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+
 import { cn } from '@/lib/utils';
 import { useIsSidePanelOpen } from '@/stores/kortix-computer-store';
 import type { Turn } from '@/ui';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+
+import { MENU_PANEL } from '@/components/ui/menu-recipe';
 import {
+  DASH_ROW_HEIGHT,
+  DASH_THICKNESS,
+  RAIL_WIDTH,
+  dashCenterY,
+  dashOpacity,
+  dashWidth,
   downsampleDashes,
-  extractUserText,
-  nearestDashIndex,
+  extractMinimapItem,
+  nearestDashRow,
   type MinimapItem,
 } from './chat-minimap-items';
 
@@ -18,36 +27,75 @@ interface ChatMinimapProps {
   contentRef: React.RefObject<HTMLDivElement>;
 }
 
+function MinimapCard({ item }: { item: MinimapItem }) {
+  const hasBody = item.segments.length > 0;
+
+  return (
+    <div className={cn(MENU_PANEL, 'w-64 rounded-md border px-3 py-2.5')}>
+      {hasBody && (
+        <p className="text-muted-foreground line-clamp-3 text-xs leading-5">
+          {item.segments.map((segment, i) =>
+            segment.mention ? (
+              <span key={i} className="text-foreground font-medium">
+                {segment.mention === 'agent' ? (
+                  <CubeIcon className="mr-1 inline size-3 align-[-0.15em]" />
+                ) : null}
+                {segment.text}
+              </span>
+            ) : (
+              <span key={i}>{segment.text}</span>
+            ),
+          )}
+        </p>
+      )}
+    </div>
+  );
+}
+
 export function ChatMinimap({ turns, scrollRef, contentRef }: ChatMinimapProps) {
-  // With the side panel open the panel body already pads the chat's right
-  // edge, so the rail sits flush (right-0); full-width chat keeps its own
-  // right-2 breathing room. Same store signal `session-layout` renders from.
-  const isSidePanelOpen = useIsSidePanelOpen();
   const [activeId, setActiveId] = useState<string | null>(null);
-  // Mirrors the hover card's open state so the active row can be scrolled
-  // into view when the list mounts.
-  const [open, setOpen] = useState(false);
 
-  const activeRowRef = useRef<HTMLButtonElement | null>(null);
-  // A user message's text never changes after it's sent — extract once per
-  // message id instead of re-stripping every turn on every streaming update.
-  const textCacheRef = useRef(new Map<string, string>());
+  // The rail lives in the chat's left gutter, and that gutter only exists
+  // while the chat owns the whole column. The moment a detail opens on the
+  // right — terminal, browser, a file, a deck, a PDF — the reading column is
+  // squeezed and the rail is competing for width with the thing the reader
+  // just asked to look at. It also stops being useful: attention is on the
+  // detail, not on jumping around the transcript.
+  //
+  // `isSidePanelOpen` is the flag for exactly that panel (it is deliberately
+  // separate from `isActionPanelOpen`, which is the floating card overlay in
+  // the chat's TOP-RIGHT — that one leaves the left gutter alone, so it must
+  // not hide the rail).
+  const sidePanelOpen = useIsSidePanelOpen();
 
-  // One entry per user turn that actually has text.
+  // Which row the pointer (or keyboard focus) is on, and which row the card is
+  // showing. They differ only while the card fades out — the card keeps its
+  // last message so it dissolves in place instead of blanking first.
+  const [hoverRow, setHoverRow] = useState<number | null>(null);
+  const [shownRow, setShownRow] = useState(0);
+
+  const focusRow = useCallback((row: number | null) => {
+    setHoverRow(row);
+    if (row !== null) setShownRow(row);
+  }, []);
+
+  // One entry per user turn that has something to preview. A message's content
+  // never changes after it is sent, so extract once per message id rather than
+  // re-parsing every turn on every streaming update.
+  const [itemCache] = useState(() => new Map<string, MinimapItem | null>());
   const items = useMemo<MinimapItem[]>(() => {
-    const cache = textCacheRef.current;
     const result: MinimapItem[] = [];
     for (const turn of turns) {
       const id = turn.userMessage.info.id;
-      let text = cache.get(id);
-      if (text === undefined) {
-        text = extractUserText(turn);
-        cache.set(id, text);
+      let item = itemCache.get(id);
+      if (item === undefined) {
+        item = extractMinimapItem(turn);
+        itemCache.set(id, item);
       }
-      if (text.length > 0) result.push({ id, text });
+      if (item) result.push(item);
     }
     return result;
-  }, [turns]);
+  }, [turns, itemCache]);
 
   const dashes = useMemo(() => downsampleDashes(items), [items]);
 
@@ -55,10 +103,10 @@ export function ChatMinimap({ turns, scrollRef, contentRef }: ChatMinimapProps) 
     () => items.findIndex((item) => item.id === activeId),
     [items, activeId],
   );
-  const activeDashIndex = useMemo(
-    () => nearestDashIndex(dashes, activeIndex),
-    [dashes, activeIndex],
-  );
+  const activeRow = useMemo(() => nearestDashRow(dashes, activeIndex), [dashes, activeIndex]);
+
+  // Idle, the rail reports scroll position. On hover it follows the pointer.
+  const focusedRow = hoverRow ?? activeRow;
 
   // The observer only cares about which turns exist, not about streaming
   // updates inside them — key it on the id list, not the array identity.
@@ -100,12 +148,6 @@ export function ChatMinimap({ turns, scrollRef, contentRef }: ChatMinimapProps) 
     return () => observer.disconnect();
   }, [scrollRef, contentRef, idsKey]);
 
-  // Keep the active row visible in the expanded jump list.
-  useEffect(() => {
-    if (!open) return;
-    activeRowRef.current?.scrollIntoView({ block: 'nearest' });
-  }, [open, activeId]);
-
   const handleJump = useCallback(
     (id: string) => {
       const contentEl = contentRef.current;
@@ -124,78 +166,91 @@ export function ChatMinimap({ turns, scrollRef, contentRef }: ChatMinimapProps) 
     [contentRef, scrollRef],
   );
 
-  if (items.length < 3) return null;
+  if (items.length < 3 || sidePanelOpen) return null;
+
+  const shown = dashes[shownRow]?.item ?? dashes[0].item;
+  const open = hoverRow !== null;
 
   return (
     <nav
       aria-label="Jump to message"
-      className={cn(
-        'pointer-events-none absolute top-1/2 z-10 -translate-y-1/2',
-        isSidePanelOpen ? '-right-1' : 'right-2',
-      )}
+      // Desktop only. On phone and tablet the rail is a 3px pointer target
+      // sitting on top of the chat — there is no hover, and the gutter it needs
+      // does not exist.
+      className="pointer-events-none absolute top-1/2 left-2 z-10 hidden -translate-y-1/2 lg:block"
     >
-      <HoverCard openDelay={50} closeDelay={150} onOpenChange={setOpen}>
-        {/* Collapsed rail — a quiet position indicator, like a scrollbar.
-            Fades out while the jump list is open so the card reads as the
-            rail's expanded form. */}
-        <HoverCardTrigger asChild>
-          <button
-            type="button"
-            aria-label="Jump to message"
-            className={cn(
-              'hit-area-x-3 hit-area-y-5 pointer-events-auto flex cursor-default flex-col items-end gap-2 rounded-sm px-1.5 py-2',
-              'transition-opacity duration-150 ease-out data-[state=open]:opacity-0',
-              'focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none',
-            )}
-          >
-            {dashes.map(({ item, index }) => (
+      {/* Preview opens toward the chat (right of the rail). */}
+      <div
+        aria-hidden
+        className={cn(
+          'absolute top-0 left-full pl-1.5',
+          'transition-transform duration-200 ease-out motion-reduce:transition-none',
+        )}
+        style={{ transform: `translateY(calc(${dashCenterY(shownRow)}px - 50%))` }}
+      >
+        <div
+          className={cn(
+            'origin-left transition-[opacity,transform,filter] duration-150 ease-out',
+            'motion-reduce:transition-[opacity]',
+            open
+              ? 'scale-100 opacity-100 blur-none'
+              : 'pointer-events-none scale-[0.97] opacity-0 blur-[2px]',
+          )}
+        >
+          <MinimapCard item={shown} />
+        </div>
+      </div>
+
+      {/* Rows TILE — no gap between them — so every pixel of the rail belongs
+          to a message and the pointer never falls into a dead band. The gap
+          you see is the row's padding around a 3px dash. */}
+      <div
+        className="pointer-events-auto flex flex-col items-stretch"
+        style={{ width: RAIL_WIDTH }}
+        onPointerLeave={() => focusRow(null)}
+      >
+        {dashes.map(({ item }, row) => {
+          const distance = focusedRow < 0 ? Infinity : Math.abs(row - focusedRow);
+          const isFocused = distance === 0;
+          return (
+            <button
+              key={item.id}
+              type="button"
+              aria-label={`Jump to message: ${item.text}`}
+              aria-current={dashes[row].index === activeIndex || undefined}
+              style={{ height: DASH_ROW_HEIGHT }}
+              // No `title`: a native tooltip would pop up on top of the card
+              // that already says the same thing, only better.
+              // Focus opens the card and magnifies the dash, but a keyboard
+              // user still needs a ring they can locate — it goes on the ROW,
+              // because a ring around a 3px dash is unreadable.
+              className={cn(
+                'hit-area-x-5 last:hit-area-b-3 first:hit-area-t-3 flex cursor-pointer items-center justify-start rounded-sm px-0.5',
+                'focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none',
+              )}
+              onPointerEnter={() => focusRow(row)}
+              onFocus={() => focusRow(row)}
+              onBlur={() => focusRow(null)}
+              onClick={() => handleJump(item.id)}
+            >
               <span
-                key={item.id}
                 aria-hidden
+                style={{
+                  width: dashWidth(distance),
+                  height: DASH_THICKNESS,
+                  opacity: dashOpacity(distance),
+                }}
                 className={cn(
-                  'h-[3px] w-4 origin-right rounded-full',
-                  'transition-[background-color,transform] duration-150 ease-out',
-                  'motion-reduce:transition-[background-color]',
-                  index === activeDashIndex
-                    ? 'bg-foreground/60 scale-x-125'
-                    : 'bg-muted-foreground/25',
+                  'rounded-full',
+                  'transition-[width,opacity,background-color] duration-200 ease-out',
+                  'motion-reduce:transition-[opacity,background-color]',
+                  isFocused ? 'bg-foreground' : 'bg-muted-foreground',
                 )}
               />
-            ))}
-          </button>
-        </HoverCardTrigger>
-
-        {/* Expanded jump list — every message, on hover */}
-        <HoverCardContent
-          side="left"
-          align="center"
-          sideOffset={-10}
-          collisionPadding={16}
-          className="scrollbar-hide flex max-h-[60vh] w-64 flex-col gap-0.5 overflow-y-auto overscroll-contain rounded-lg p-1"
-        >
-          {items.map((item) => {
-            const isActive = item.id === activeId;
-            return (
-              <button
-                key={item.id}
-                type="button"
-                ref={isActive ? activeRowRef : undefined}
-                aria-current={isActive || undefined}
-                onClick={() => handleJump(item.id)}
-                className={cn(
-                  'cursor-pointer rounded-sm px-2 py-1.5 text-left text-xs leading-snug',
-                  'transition-colors duration-100 ease-out',
-                  isActive
-                    ? 'bg-primary/[0.06] text-foreground font-medium'
-                    : 'text-muted-foreground hover:bg-primary/[0.05] hover:text-foreground',
-                )}
-              >
-                <span className="block truncate">{item.text}</span>
-              </button>
-            );
-          })}
-        </HoverCardContent>
-      </HoverCard>
+            </button>
+          );
+        })}
+      </div>
     </nav>
   );
 }

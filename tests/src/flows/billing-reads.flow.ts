@@ -149,7 +149,7 @@ flow(
   },
 );
 
-// BILL-15 — /deduct and /deduct-usage (credits.ts). These are NOT internal-
+// BILL-7 — /deduct and /deduct-usage (credits.ts). These are NOT internal-
 // cron-only: they sit behind the SAME plain supabaseAuth gate as every other
 // billing route here (billingApp's wildcard auth middleware only special-cases
 // /webhook and /cron/ paths) and resolve accountId directly from the caller's
@@ -161,7 +161,7 @@ flow(
 // and real response shape without touching the account's actual credit
 // balance.
 flow(
-  "BILL-15",
+  "BILL-7",
   {
     domain: "billing",
     routes: ["POST /v1/billing/deduct", "POST /v1/billing/deduct-usage"],
@@ -173,7 +173,7 @@ flow(
         .post("/v1/billing/deduct", {
           prompt_tokens: 0,
           completion_tokens: 0,
-          model: "claude-sonnet-4.6",
+          model: "glm-5.2",
         });
       r.status(401);
     });
@@ -183,7 +183,7 @@ flow(
         .post("/v1/billing/deduct", {
           prompt_tokens: 0,
           completion_tokens: 0,
-          model: "claude-sonnet-4.6",
+          model: "glm-5.2",
         });
       r.status([200, 404]);
       if (r.statusCode === 200) {

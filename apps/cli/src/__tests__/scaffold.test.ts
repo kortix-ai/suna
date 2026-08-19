@@ -28,6 +28,8 @@ const GKW_SKILL_PATHS = [
   '.kortix/opencode/skills/website-building/SKILL.md',
 ];
 
+const NATIVE_HARNESS_CONFIG_PATHS = ['.claude/CLAUDE.md', '.codex/AGENTS.md', '.pi/README.md'];
+
 function baseStarterPaths(): string[] {
   const probe = mkdtempSync(join(tmpdir(), 'kortix-scaffold-base-'));
   try {

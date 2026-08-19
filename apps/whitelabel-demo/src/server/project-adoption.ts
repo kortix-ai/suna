@@ -12,7 +12,7 @@
  * connectors, secrets and history: those were created in the Kortix dashboard, so
  * the demo has no record of them and shows an empty list.
  *
- * So: a DEPLOYMENT-level switch, default off, exactly like the usage breakdown.
+ * The deployment-level switch defaults to off.
  * Not a per-user permission — this app's login accepts any email with any
  * password, so an allowlist of addresses would name a user without
  * authenticating one. The honest statement is about the DEPLOYMENT ("this
@@ -54,7 +54,8 @@ export function selectImportableProjects(
   const owned = new Set(ownedProjectIds);
   return (accountProjects ?? [])
     .map((project) => ({
-      project_id: typeof project.project_id === 'string' ? project.project_id : '',
+      project_id:
+        typeof project.project_id === 'string' ? project.project_id : '',
       name: typeof project.name === 'string' ? project.name : '',
       imported: false,
     }))

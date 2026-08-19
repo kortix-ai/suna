@@ -25,8 +25,9 @@ import type {
  * longer need to tear anything down. Appended at the END so existing prefix
  * matches (e.g. invalidate `['opencode','sessions']`) still hit.
  *
- * `session(id)` / `messages(id)` stay global: opencode session ids are unique
- * per sandbox, so they never collide across sandboxes.
+ * Session and message keys also include this scope. Warm snapshots can contain
+ * a baked OpenCode id before each fork rotates to its final root. Cache safety
+ * must not depend on that rotation completing before a client reads data.
  */
 export function activeServerKey(): string {
   try {
@@ -40,7 +41,11 @@ export function activeServerKey(): string {
 // Helper: unwrap SDK response (data / error)
 // ============================================================================
 
-export function unwrap<T>(result: { data?: T; error?: unknown; response?: Response }): T {
+export function unwrap<T>(result: {
+  data?: T;
+  error?: unknown;
+  response?: Response;
+}): T {
   if (result.error) {
     const err = result.error;
     const status = (result.response as Response | undefined)?.status;
@@ -50,7 +55,9 @@ export function unwrap<T>(result: { data?: T; error?: unknown; response?: Respon
     // duck-types defensively instead of assuming a shape.
     const errRec = err && typeof err === 'object' ? (err as Record<string, unknown>) : undefined;
     const dataRec =
-      errRec?.data && typeof errRec.data === 'object' ? (errRec.data as Record<string, unknown>) : undefined;
+      errRec?.data && typeof errRec.data === 'object'
+        ? (errRec.data as Record<string, unknown>)
+        : undefined;
     const msg =
       dataRec?.message ||
       errRec?.message ||

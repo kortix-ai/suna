@@ -1,23 +1,30 @@
 'use client';
 
-import { useInfiniteQuery, useMutation, useQuery } from '@tanstack/react-query';
 import {
-  type ConnectorDraftInput,
-  type DiscoverIntegration,
-  type DiscoverIntegrationVariant,
-  type PipedreamApp,
   createConnector,
   getConnectStatus,
-  getDiscoverIntegration,
-  listDiscoverIntegrations,
+  getDiscoverConnector,
+  listDiscoverConnectors,
   listPipedreamApps,
+  type ConnectorDraftInput,
+  type DiscoverConnector,
+  type DiscoverConnectorVariant,
+  type PipedreamApp,
 } from '@kortix/sdk';
-import { Boxes, ChevronRight, ExternalLink, Globe, Plus, Search, Zap } from 'lucide-react';
+import {
+  CubeIcon as Boxes,
+  CaretRightIcon as ChevronRight,
+  ArrowSquareOutIcon as ExternalLink,
+  GlobeIcon as Globe,
+  PlusIcon as Plus,
+  MagnifyingGlassIcon as Search,
+  LightningIcon as Zap,
+} from '@phosphor-icons/react';
+import { useInfiniteQuery, useMutation, useQuery } from '@tanstack/react-query';
 import Image from 'next/image';
 import { useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
-import { useDebounce } from '@/hooks/use-debounce';
 import { Button } from '@/components/ui/button';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { InfoBanner } from '@/components/ui/info-banner';
@@ -32,35 +39,54 @@ import {
   ModalTitle,
 } from '@/components/ui/modal';
 import { Skeleton } from '@/components/ui/skeleton';
-import { errorToast, successToast } from '@/components/ui/toast';
+import { errorToast, successToast, warningToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
+import { useDebounce } from '@/hooks/use-debounce';
 import { isConnectorsEnabled } from '@/lib/config';
+
+import {
+  connectorAuthorizationStrategyIsEditable,
+  connectorSyncErrorForSlug,
+  createOnlyConnectorDraft,
+  proposeConnectorConnectionSlug,
+  type EasyConnectConnectionInput,
+} from './connector-connection-form';
+import { ConnectorConnectionModal } from './connector-connection-modal';
 
 const BUILT_IN_CHANNEL_APP_SLUGS = new Set(['slack', 'slack_v2']);
 
 type DiscoverCard =
-  | { source: 'integration'; item: DiscoverIntegration }
+  { source: 'connector'; item: DiscoverConnector } | { source: 'pipedream'; app: PipedreamApp };
+
+type DiscoverConnectorTarget =
+  | { source: 'connector'; item: DiscoverConnector; variant: DiscoverConnectorVariant }
   | { source: 'pipedream'; app: PipedreamApp };
 
-function connectorSlug(item: DiscoverIntegration, variant: DiscoverIntegrationVariant): string {
-  return `${item.slug}-${variant.kind}`
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '')
-    .slice(0, 48);
-}
-
+/**
+ * The Add-connector modal's Discover tab: a flat, searchable grid of the
+ * public catalogue plus Pipedream's OAuth apps.
+ *
+ * ── Known duplication, read before changing this file ──────────────────────
+ * `features/workspace/capabilities/connectors/discover-add-flow.tsx` runs the
+ * same add journey (surface picker -> `ConnectorConnectionModal` ->
+ * `createConnector`) for the Connectors page's Browse scope. The two are
+ * separate implementations of one journey and must stay behaviourally
+ * consistent; a fix here very likely belongs there too. That file's header
+ * records why they were not unified.
+ */
 export function DiscoverCatalogue({
   projectId,
+  existingSlugs,
   onAdded,
 }: {
   projectId: string;
+  existingSlugs: readonly string[];
   onAdded: (slug?: string) => void;
 }) {
   const [q, setQ] = useState('');
   const { debouncedValue: deferredQuery } = useDebounce(q.trim(), 300);
-  const [selectedIntegration, setSelectedIntegration] = useState<DiscoverIntegration | null>(null);
+  const [selectedConnector, setSelectedConnector] = useState<DiscoverConnector | null>(null);
+  const [connectorTarget, setConnectorTarget] = useState<DiscoverConnectorTarget | null>(null);
   const connectorsEnabled = isConnectorsEnabled();
   const connectStatus = useQuery({
     queryKey: ['connect-status'],
@@ -70,10 +96,10 @@ export function DiscoverCatalogue({
   });
   const pipedreamEnabled = connectorsEnabled && connectStatus.data?.configured === true;
 
-  const integrationsQuery = useInfiniteQuery({
-    queryKey: ['discover-integrations', projectId, deferredQuery],
+  const connectorsQuery = useInfiniteQuery({
+    queryKey: ['discover-connectors', projectId, deferredQuery],
     queryFn: ({ pageParam }) =>
-      listDiscoverIntegrations(
+      listDiscoverConnectors(
         projectId,
         deferredQuery || undefined,
         pageParam as string | undefined,
@@ -92,77 +118,103 @@ export function DiscoverCatalogue({
     enabled: pipedreamEnabled,
   });
   const detailQuery = useQuery({
-    queryKey: ['discover-integration-detail', projectId, selectedIntegration?.id],
+    queryKey: ['discover-connector-detail', projectId, selectedConnector?.id],
     queryFn: () =>
-      selectedIntegration
-        ? getDiscoverIntegration(projectId, selectedIntegration.id)
-        : Promise.reject(new Error('No integration selected')),
-    enabled: Boolean(selectedIntegration),
+      selectedConnector
+        ? getDiscoverConnector(projectId, selectedConnector.id)
+        : Promise.reject(new Error('No connector selected')),
+    enabled: Boolean(selectedConnector),
     staleTime: 15 * 60_000,
   });
 
-  const integrationCards: DiscoverCard[] = (integrationsQuery.data?.pages ?? [])
-    .flatMap((page) => page.items)
-    .map((item) => ({ source: 'integration' as const, item }));
-  const pipedreamOAuthCards: DiscoverCard[] = (pipedreamQuery.data?.pages ?? [])
-    .flatMap((page) => page.apps)
-    .filter((app) => app.authType === 'oauth' && !BUILT_IN_CHANNEL_APP_SLUGS.has(app.slug))
-    .map((app) => ({ source: 'pipedream' as const, app }));
-  const discoverCards = [...integrationCards, ...pipedreamOAuthCards];
+  const connectorCards: DiscoverCard[] = [];
+  for (const page of connectorsQuery.data?.pages ?? []) {
+    for (const item of page.items) {
+      connectorCards.push({ source: 'connector' as const, item });
+    }
+  }
+  const pipedreamOAuthCards: DiscoverCard[] = [];
+  for (const page of pipedreamQuery.data?.pages ?? []) {
+    for (const app of page.apps) {
+      if (app.authType === 'oauth' && !BUILT_IN_CHANNEL_APP_SLUGS.has(app.slug)) {
+        pipedreamOAuthCards.push({ source: 'pipedream' as const, app });
+      }
+    }
+  }
+  const discoverCards = [...connectorCards, ...pipedreamOAuthCards];
 
-  const addPipedream = useMutation({
-    mutationFn: (app: { slug: string; name: string }) =>
-      createConnector(projectId, {
-        slug: app.slug,
-        provider: 'pipedream',
-        app: app.slug,
-        account: 'default',
-      }).then(() => app),
-    onSuccess: (app) => {
-      successToast(`Added ${app.name} — click Connect to authorize`);
-      onAdded(app.slug);
-    },
-    onError: (error: Error) => errorToast(error.message || 'Failed to add'),
-  });
-
-  const addVariant = useMutation({
+  const addConnector = useMutation({
     mutationFn: async ({
-      item,
-      variant,
-    }: { item: DiscoverIntegration; variant: DiscoverIntegrationVariant }) => {
-      if (!variant.connector) throw new Error('This surface needs manual configuration');
-      const template = variant.connector;
-      const slug = connectorSlug(item, variant);
-      const auth = template.auth
-        ? {
-            type: template.auth.type,
-            in: template.auth.in,
-            ...(template.auth.name ? { name: template.auth.name } : {}),
-            ...(template.auth.prefix ? { prefix: template.auth.prefix } : {}),
-          }
-        : undefined;
-      const draft: ConnectorDraftInput = {
-        slug,
-        name: variant.name,
-        provider: template.provider,
-        ...(template.spec ? { spec: template.spec } : {}),
-        ...(template.url ? { url: template.url } : {}),
-        ...(template.transport ? { transport: template.transport } : {}),
-        ...(template.endpoint ? { endpoint: template.endpoint } : {}),
-        ...(auth ? { auth } : {}),
+      target,
+      connection,
+    }: {
+      target: DiscoverConnectorTarget;
+      connection: EasyConnectConnectionInput;
+    }) => {
+      let draft: ConnectorDraftInput;
+      if (target.source === 'pipedream') {
+        draft = {
+          slug: connection.slug,
+          name: connection.name.trim(),
+          provider: 'pipedream',
+          app: target.app.slug,
+          account: 'default',
+          authorization_strategy: connection.authorizationStrategy,
+        };
+      } else {
+        if (!target.variant.connector) {
+          throw new Error('This surface needs manual configuration');
+        }
+        const template = target.variant.connector;
+        const auth = template.auth
+          ? {
+              type: template.auth.type,
+              in: template.auth.in,
+              ...(template.auth.name ? { name: template.auth.name } : {}),
+              ...(template.auth.prefix ? { prefix: template.auth.prefix } : {}),
+            }
+          : undefined;
+        draft = {
+          slug: connection.slug,
+          name: connection.name.trim(),
+          provider: template.provider,
+          authorization_strategy: connection.authorizationStrategy,
+          ...(template.spec ? { spec: template.spec } : {}),
+          ...(template.url ? { url: template.url } : {}),
+          ...(template.transport ? { transport: template.transport } : {}),
+          ...(template.endpoint ? { endpoint: template.endpoint } : {}),
+          ...(auth ? { auth } : {}),
+        };
+      }
+      const createDraft = createOnlyConnectorDraft(draft);
+      const result = await createConnector(projectId, createDraft);
+      return {
+        slug: createDraft.slug,
+        name: createDraft.name ?? createDraft.slug,
+        pipedream: target.source === 'pipedream',
+        syncError: connectorSyncErrorForSlug(result, createDraft.slug),
       };
-      await createConnector(projectId, draft);
-      return { slug, name: variant.name };
     },
-    onSuccess: ({ slug, name }) => {
-      successToast(`Added ${name}`);
-      setSelectedIntegration(null);
+    onSuccess: ({ slug, name, pipedream, syncError }) => {
+      setConnectorTarget(null);
+      if (syncError) {
+        warningToast(
+          `Added ${name} to the manifest, but synchronization failed: ${syncError}. Use Sync to retry.`,
+        );
+        onAdded();
+        return;
+      }
+      successToast(pipedream ? `Added ${name} — click Connect to authorize` : `Added ${name}`);
       onAdded(slug);
     },
     onError: (error: Error) => errorToast(error.message || 'Failed to add'),
   });
 
-  const loading = integrationsQuery.isLoading || (pipedreamEnabled && pipedreamQuery.isLoading);
+  const loading = connectorsQuery.isLoading || (pipedreamEnabled && pipedreamQuery.isLoading);
+  const connectionDisplayName =
+    connectorTarget?.source === 'pipedream'
+      ? connectorTarget.app.name
+      : (connectorTarget?.variant.name ?? '');
 
   return (
     <div className="space-y-4">
@@ -177,17 +229,17 @@ export function DiscoverCatalogue({
         />
       </div>
 
-      {integrationsQuery.isError ? (
+      {connectorsQuery.isError ? (
         <InfoBanner
           tone="destructive"
           title="Could not load Discover"
           action={
-            <Button variant="outline" size="sm" onClick={() => integrationsQuery.refetch()}>
+            <Button variant="outline" size="sm" onClick={() => connectorsQuery.refetch()}>
               Retry
             </Button>
           }
         >
-          {(integrationsQuery.error as Error)?.message ?? 'The public catalogue is unavailable.'}
+          {(connectorsQuery.error as Error)?.message ?? 'The public catalogue is unavailable.'}
         </InfoBanner>
       ) : loading ? (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
@@ -198,7 +250,7 @@ export function DiscoverCatalogue({
       ) : discoverCards.length === 0 ? (
         <EmptyState
           icon={Search}
-          title="No integrations found"
+          title="No connectors found"
           description={q ? `Nothing matches "${q}".` : 'Try another search.'}
         />
       ) : (
@@ -217,13 +269,13 @@ export function DiscoverCatalogue({
                 <button
                   key={key}
                   type="button"
-                  disabled={addPipedream.isPending || addVariant.isPending}
+                  disabled={addConnector.isPending}
                   onClick={() =>
                     isOAuth
-                      ? addPipedream.mutate({ slug: card.app.slug, name: card.app.name })
-                      : setSelectedIntegration(card.item)
+                      ? setConnectorTarget({ source: 'pipedream', app: card.app })
+                      : setSelectedConnector(card.item)
                   }
-                  className="group bg-popover hover:bg-muted/80 focus-visible:ring-primary/50 active:scale-[0.96] flex min-h-28 flex-col rounded-md border p-3.5 text-left transition-[background-color,transform] focus-visible:ring-2 focus-visible:outline-none disabled:opacity-60"
+                  className="group bg-popover hover:bg-muted/80 focus-visible:ring-primary/50 flex min-h-28 flex-col rounded-md border p-3.5 text-left transition-[background-color,transform] focus-visible:ring-2 focus-visible:outline-none active:scale-[0.96] disabled:opacity-60"
                 >
                   <div className="flex items-center gap-3">
                     {icon ? (
@@ -259,19 +311,19 @@ export function DiscoverCatalogue({
               );
             })}
           </div>
-          {(integrationsQuery.hasNextPage || pipedreamQuery.hasNextPage) && (
+          {(connectorsQuery.hasNextPage || pipedreamQuery.hasNextPage) && (
             <div className="flex flex-wrap justify-center gap-2 pt-1">
-              {integrationsQuery.hasNextPage && (
+              {connectorsQuery.hasNextPage && (
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => integrationsQuery.fetchNextPage()}
-                  disabled={integrationsQuery.isFetchingNextPage}
+                  onClick={() => connectorsQuery.fetchNextPage()}
+                  disabled={connectorsQuery.isFetchingNextPage}
                 >
-                  {integrationsQuery.isFetchingNextPage ? (
+                  {connectorsQuery.isFetchingNextPage ? (
                     <Loading className="size-4 shrink-0" />
                   ) : null}
-                  Load more integrations
+                  Load more connectors
                 </Button>
               )}
               {pipedreamQuery.hasNextPage && (
@@ -293,14 +345,14 @@ export function DiscoverCatalogue({
       )}
 
       <Modal
-        open={Boolean(selectedIntegration)}
-        onOpenChange={(open) => !open && setSelectedIntegration(null)}
+        open={Boolean(selectedConnector)}
+        onOpenChange={(open) => !open && setSelectedConnector(null)}
       >
         <ModalContent className="lg:max-w-2xl">
           <ModalHeader>
-            <ModalTitle>{selectedIntegration?.name ?? 'Integration'}</ModalTitle>
+            <ModalTitle>{selectedConnector?.name ?? 'Connector'}</ModalTitle>
             <ModalDescription>
-              Choose a direct surface from {selectedIntegration?.domain}. Pipedream is not involved.
+              Choose a direct surface from {selectedConnector?.domain}. Pipedream is not involved.
             </ModalDescription>
           </ModalHeader>
           <ModalBody className="max-h-[60vh] overflow-y-auto">
@@ -313,7 +365,7 @@ export function DiscoverCatalogue({
             ) : detailQuery.isError ? (
               <InfoBanner
                 tone="destructive"
-                title="Could not load integration surfaces"
+                title="Could not load connector surfaces"
                 action={
                   <Button variant="outline" size="sm" onClick={() => detailQuery.refetch()}>
                     Retry
@@ -357,12 +409,16 @@ export function DiscoverCatalogue({
                         <Button
                           size="sm"
                           className="shrink-0"
-                          disabled={addVariant.isPending}
-                          onClick={() =>
-                            addVariant.mutate({ item: detailQuery.data.item, variant })
-                          }
+                          disabled={addConnector.isPending}
+                          onClick={() => {
+                            setSelectedConnector(null);
+                            setConnectorTarget({
+                              source: 'connector',
+                              item: detailQuery.data.item,
+                              variant,
+                            });
+                          }}
                         >
-                          {addVariant.isPending ? <Loading className="size-4 shrink-0" /> : null}
                           Add direct
                         </Button>
                       ) : href ? (
@@ -392,6 +448,30 @@ export function DiscoverCatalogue({
           </ModalBody>
         </ModalContent>
       </Modal>
+      <ConnectorConnectionModal
+        open={connectorTarget !== null}
+        idPrefix="discover-connector"
+        title={`Add ${connectionDisplayName || 'connector'}`}
+        description="Create a connector. The display name and slug identify it in project configuration."
+        initialName={connectionDisplayName}
+        initialSlug={
+          connectorTarget
+            ? proposeConnectorConnectionSlug(connectionDisplayName, existingSlugs)
+            : ''
+        }
+        existingSlugs={existingSlugs}
+        pending={addConnector.isPending}
+        authorizationStrategyDisabled={
+          connectorTarget?.source === 'connector' && connectorTarget.variant.connector
+            ? !connectorAuthorizationStrategyIsEditable(connectorTarget.variant.connector.provider)
+            : false
+        }
+        onOpenChange={(open) => !open && setConnectorTarget(null)}
+        onSubmit={(connection) => {
+          if (!connectorTarget) return;
+          addConnector.mutate({ target: connectorTarget, connection });
+        }}
+      />
     </div>
   );
 }

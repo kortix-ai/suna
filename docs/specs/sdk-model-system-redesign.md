@@ -1,8 +1,7 @@
 # SDK model system redesign — defaults (project / agent / trigger) + free-tier as a pure gateway concern
 
-> **Runtime update on 2026-07-28.** OpenCode provider injection below describes
-> the v2 compatibility path. Version 3 also routes Claude Code, Codex, and Pi.
-> Model support must be verified through the selected harness and exact model.
+> **Runtime scope.** OpenCode provider injection below describes the current
+> `kortix_version: 2` runtime.
 
 Status: **draft / for review** · Owner: SDK refactor (branch `whitelabel-demo`)
 
@@ -25,7 +24,7 @@ Three layers, mapped:
 1. **Gateway (already correct).** Entitlement is enforced *entirely server-side*.
    The gateway authenticates the token → resolves the account tier → (a) filters
    the `/llm-catalog` per tier and (b) rejects an unavailable managed model at
-   request time (402/400). `executor-sdk` has **zero** tier logic. Kortix is
+   request time (402/400). The SDK Connector client has **zero** tier logic. Kortix is
    injected into OpenCode as an OpenAI-compatible provider (`kortix`) via
    `KORTIX_LLM_API_KEY` + `KORTIX_LLM_BASE_URL`. **This is exactly the architecture
    you want — it already exists.**

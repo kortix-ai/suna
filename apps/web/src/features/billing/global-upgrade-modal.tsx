@@ -36,10 +36,13 @@ import { cn } from '@/lib/utils';
 import { BillingAccountProvider } from '@/stores/billing-account-context';
 import { useBillingReturnUrl } from '@/features/billing/billing-return';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
+import {
+  ArrowRightIcon as ArrowRight,
+  CreditCardIcon as CreditCardPlusSolid,
+  UserPlusIcon as UserPlus,
+} from '@phosphor-icons/react';
 import { formatCredits } from '@kortix/shared';
-import { CreditCardPlusSolid } from '@mynaui/icons-react';
 import { useQueryClient } from '@tanstack/react-query';
-import { ArrowRight, UserPlus } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useEffect } from 'react';
 
@@ -118,6 +121,9 @@ export function UpgradePlansModal({
     });
   };
 
+  // Keyed by MARKETING plan id (display-only — see pricing-plans.ts). The
+  // account's real plan is `isPerSeat` / `resolvedPlan(accountState)`, never
+  // one of these ids.
   const planActions: Record<UpgradeModalPlanId, React.ReactNode> = {
     free: (
       <Button
@@ -129,7 +135,7 @@ export function UpgradePlansModal({
         Continue on Free
       </Button>
     ),
-    team: canManageBilling ? (
+    team_seat: canManageBilling ? (
       <div className="space-y-2">
         {hasSeatMath && (
           <p className="text-muted-foreground text-center text-xs tabular-nums">
@@ -177,7 +183,7 @@ export function UpgradePlansModal({
   // core bug here). The top-up view already handles per-seat/subscribed
   // accounts, so this plans view is only reached for free/no-plan accounts.
   const planBadges: Partial<Record<UpgradeModalPlanId, string>> = isPerSeat
-    ? { team: 'Current plan' }
+    ? { team_seat: 'Current plan' }
     : { free: 'Current plan' };
 
   return (
@@ -204,7 +210,7 @@ export function UpgradePlansModal({
                 compact
                 action={planActions[plan.id]}
                 badgeOverride={planBadges[plan.id]}
-                priceOverride={plan.id === 'team' ? `$${pricePerSeat}` : undefined}
+                priceOverride={plan.id === 'team_seat' ? `$${pricePerSeat}` : undefined}
               />
             ))}
           </div>
@@ -319,10 +325,10 @@ function CreditTopUpModal({
           </div>
         </ModalHeader>
 
-        <ModalBody className="space-y-6 pt-4">
-          {/* Wallet balance — the concrete "why" behind the block. */}
+        <ModalBody className="space-y-4 pt-4">
+          {/* Available balance — the concrete "why" behind the block. */}
           <div className="bg-popover flex items-center justify-between gap-3 rounded-md border px-4 py-3">
-            <span className="text-muted-foreground text-sm">Wallet balance</span>
+            <span className="text-muted-foreground text-sm">Available balance</span>
             {showBalanceSkeleton ? (
               <Skeleton className="h-6 w-24 rounded-md" />
             ) : (
@@ -344,18 +350,19 @@ function CreditTopUpModal({
             )}
           </div>
 
-          <section className="space-y-3">
-            <Label>Buy credits</Label>
-            <CreditTopupSection />
-          </section>
-
-          {/* Auto top-up underneath — configure it here so it never happens again. */}
-          <section className="space-y-3">
-            <Label>Auto top-up</Label>
-            <div className="bg-popover rounded-md border px-4 py-4">
+          {/* One card, two seams — the same shape the Billing tab uses, so the
+              modal and the pane are not two dialects of one control. Both
+              components render their own heading and no chrome, so the card
+              supplies the border and the hairline and nothing repeats. */}
+          <div className="bg-popover rounded-md border">
+            <section className="space-y-3 px-4 py-4">
+              <h3 className="text-foreground text-sm font-medium">Add credits</h3>
+              <CreditTopupSection />
+            </section>
+            <div className="border-t px-4 py-4">
               <AutoTopupCard fetchSettings showSaveButton />
             </div>
-          </section>
+          </div>
         </ModalBody>
 
         <ModalFooter className="pt-4 pb-5 sm:justify-start">

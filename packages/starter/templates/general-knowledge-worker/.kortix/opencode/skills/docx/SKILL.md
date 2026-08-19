@@ -17,13 +17,13 @@ Under the hood, .docx is a ZIP container holding XML parts. Creation, reading, a
 |-----------|-----------|-----------|
 | Create a document from scratch | `docx` npm module (JavaScript) | See CREATION.md |
 | Edit an existing file | Unpack to XML, modify, repack | See EDITING.md |
-| Pull out text | `pandoc document.docx -o output.md` | Append `--track-changes=all` for redline content |
+| Pull out text | `anydoc document.docx -o output.md` | For redline content use `pandoc document.docx -o output.md --track-changes=all` |
 | Handle legacy .doc format | `soffice --headless --convert-to docx file.doc` | Convert before any XML work |
 | Rebuild from a PDF | Run `pdf2docx`, then patch issues | See below |
 | Export pages as images | `soffice` to PDF, then `pdftoppm` | See below |
-| Flatten tracked changes | `uv run skills/docx/scripts/accept_changes.py in.docx out.docx` | Requires LibreOffice |
+| Flatten tracked changes | `python3 skills/docx/scripts/accept_changes.py in.docx out.docx` | Requires LibreOffice |
 
-System tools such as `pandoc`, `soffice`, and `pdftoppm` are installed in the sandbox. Use `uv run --with <package>` for Python packages.
+System tools such as `anydoc`, `pandoc`, `soffice`, and `pdftoppm` are installed in the sandbox. Python packages such as `lxml`, `python-docx`, and `pdf2docx` are pre-installed — run scripts with `python3`. Use `uv run --with <package>` only for a package that is not pre-installed.
 
 ## Editing professional documents
 
@@ -41,7 +41,7 @@ Finance, legal, and other corporate documents carry conventions that are easy to
 ## PDF to Word
 
 Start by running `pdf2docx` to get a baseline .docx, then correct any artifacts. Never skip the automated conversion and attempt to rebuild manually.
-Run the conversion code with `uv run --with pdf2docx`.
+`pdf2docx` is pre-installed — run the conversion code with `python3`.
 
 ```python
 from pdf2docx import Converter

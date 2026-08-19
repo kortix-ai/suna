@@ -7,8 +7,8 @@
  * maintenance.ts, the provider webhook ingress, account deletion, the e2e
  * suites — keep the import path they already had.
  *
- *   ./reaping/policy               pure TTLs, activity clocks, kill decision
- *   ./reaping/box-reaper           the running-box sweep
+ *   ./reaping/policy               the reconcile decision + error classifiers
+ *   ./reaping/box-reaper           the running-box sweep (deadline_at <= now)
  *   ./reaping/box-queries          the sweep's DB reads/writes
  *   ./reaping/orphan-boxes         provider boxes with no DB row
  *   ./reaping/stuck-sessions       sessions stuck ACTIVE with no live box
@@ -25,26 +25,15 @@
 export { REAP_BATCH_SIZE, reapBatchSize } from './reaper-constants';
 
 export {
-  type IdleConfirmAction,
   type ReconcileAction,
-  autoStopTtlMs,
-  buildIdleStopMetadata,
-  decideHardStop,
-  decideIdleConfirm,
   decideReconcile,
-  hardStopCeilingMs,
-  hardStopEnabled,
-  idleObservedAtOf,
   isAlreadyNotRunning,
-  isTriggerSession,
-  lastMeaningfulAt,
-  provenActivityAt,
-  triggerAutoStopTtlMs,
 } from './reaping/policy';
 
 export {
   type ReapResult,
   EMPTY_REAP_RESULT,
+  observeSandboxTurn,
   reapAndReconcileSandboxes,
 } from './reaping/box-reaper';
 

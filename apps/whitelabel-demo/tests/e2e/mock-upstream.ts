@@ -1,7 +1,7 @@
 /**
  * Mock Kortix upstream — a tiny `Bun.serve` HTTP server implementing exactly
  * the endpoints `src/app/api/kortix/[...path]/route.ts`,
- * `src/app/api/preview-url/route.ts`, and `src/app/api/usage/route.ts` call
+ * `src/app/api/preview-url/route.ts`, and `src/app/api/session-costs/route.ts` call
  * out to. Everything is namespaced under `/v1` (matching `KORTIX_UPSTREAM`
  * including its `/v1` suffix, the same shape as `NEXT_PUBLIC_KORTIX_API_URL`).
  *
@@ -11,7 +11,7 @@
  *     is ALWAYS `Bearer <the wrapper key>`, never an end-user session token,
  *     and that the wrapper's own `lumen_session` cookie never leaks upstream.
  *  2. Behave like a real (if minimal) Kortix API: a projects store, secrets,
- *     gateway cost rows, cli-token minting, and the `/p/...` sandbox-runtime
+ *     session cost rows, cli-token minting, and the `/p/...` sandbox-runtime
  *     proxy surface (generic passthrough + one SSE stream + one echoing
  *     "message" endpoint) — enough surface for every flow the whitelabel app
  *     exercises through the BFF proxy.
@@ -42,16 +42,16 @@ export interface MockProject {
   [key: string]: unknown;
 }
 
-export interface GatewaySessionRow {
+export interface MockSessionCostRow {
   session_id: string;
   total_cost: number;
   [key: string]: unknown;
 }
 
-/** One `/connector-profiles` row — the shape `selectConnectorBindingChoices`
+/** One `/connections` row — the shape `selectConnectorBindingChoices`
  *  filters. Deliberately the raw upstream shape, not the app's view of it. */
-export interface MockConnectionProfile {
-  profile_id: string;
+export interface MockConnection {
+  connection_id: string;
   connector_alias: string;
   owner_type: 'project' | 'agent' | 'member' | 'subject' | 'external';
   owner_id: string | null;
@@ -74,11 +74,14 @@ export interface MockUpstream {
    *  used to simulate a project that exists upstream but this wrapper user
    *  never provisioned, to prove per-user filtering actually filters. */
   seedProject(overrides?: Partial<MockProject>): MockProject;
-  seedGatewaySessions(projectId: string, rows: GatewaySessionRow[]): void;
-  /** Seed the connection profiles `/connector-profiles` returns for a project. */
-  seedConnectionProfiles(projectId: string, profiles: MockConnectionProfile[]): void;
-  /** Make GET /v1/projects/:id/gateway/sessions fail (500) for this project id. */
-  failGatewayFor(projectId: string): void;
+  seedSessionCosts(projectId: string, rows: MockSessionCostRow[]): void;
+  /** Seed the connections `/connections` returns for a project. */
+  seedConnections(
+    projectId: string,
+    connections: MockConnection[],
+  ): void;
+  /** Make GET /v1/usage/session-costs fail for this project id. */
+  failSessionCostsFor(projectId: string): void;
   /** Make POST /v1/projects/:id/cli-token return HTTP 200 with a body MISSING
    *  `secret_key` — a malformed success the wrapper must surface as an error,
    *  never as a 200 carrying an undefined token. */
@@ -92,9 +95,9 @@ let tokenCounter = 0;
 export function createMockUpstream(expectedAuthToken: string): MockUpstream {
   const projects = new Map<string, MockProject>();
   const secrets = new Map<string, Array<{ name: string; value?: string }>>();
-  const gatewaySessions = new Map<string, GatewaySessionRow[]>();
-  const connectionProfiles = new Map<string, MockConnectionProfile[]>();
-  const failingGatewayProjects = new Set<string>();
+  const sessionCosts = new Map<string, MockSessionCostRow[]>();
+  const connections = new Map<string, MockConnection[]>();
+  const failingSessionCostProjects = new Set<string>();
   const malformedCliTokenProjects = new Set<string>();
   const activeIntervals = new Set<ReturnType<typeof setInterval>>();
 
@@ -108,7 +111,8 @@ export function createMockUpstream(expectedAuthToken: string): MockUpstream {
     // isValidProjectId before recording ownership or building upstream URLs,
     // so a non-UUID mock id would be (correctly) rejected.
     const id =
-      overrides.project_id ?? `00000000-0000-4000-8000-${String(projectCounter).padStart(12, '0')}`;
+      overrides.project_id ??
+      `00000000-0000-4000-8000-${String(projectCounter).padStart(12, '0')}`;
     const now = new Date().toISOString();
     return {
       project_id: id,
@@ -160,10 +164,37 @@ export function createMockUpstream(expectedAuthToken: string): MockUpstream {
         body,
       };
       requests.push(entry);
-      if (authorization !== `Bearer ${expectedAuthToken}`) authViolations.push(entry);
+      if (authorization !== `Bearer ${expectedAuthToken}`)
+        authViolations.push(entry);
       if (cookie) cookieViolations.push(entry);
 
       const p = url.pathname.replace(/^\/v1\//, '');
+
+      if (p === 'usage/session-costs' && method === 'GET') {
+        const projectId = url.searchParams.get('project_id') ?? '';
+        if (failingSessionCostProjects.has(projectId)) {
+          return Response.json(
+            { error: 'session costs unavailable' },
+            { status: 500 },
+          );
+        }
+        const rows = sessionCosts.get(projectId) ?? [];
+        return Response.json({
+          sessions: rows,
+          total: rows.length,
+          limit: Number(url.searchParams.get('limit') ?? 100),
+          offset: Number(url.searchParams.get('offset') ?? 0),
+          next_offset: null,
+          reconciliation: {
+            llm_cost: 0,
+            compute_cost: 0,
+            total_cost: 0,
+            request_count: 0,
+            compute_window_count: 0,
+            compute_seconds: 0,
+          },
+        });
+      }
 
       // ── projects: bare collection ──────────────────────────────────────
       if (p === 'projects' && method === 'GET') {
@@ -183,26 +214,19 @@ export function createMockUpstream(expectedAuthToken: string): MockUpstream {
         if (method === 'GET') return Response.json(secrets.get(id) ?? []);
         if (method === 'POST' || method === 'PUT') {
           const list = secrets.get(id) ?? [];
-          const entryBody = body as { name?: string; value?: string } | undefined;
-          if (entryBody?.name) list.push({ name: entryBody.name, value: entryBody.value });
+          const entryBody = body as
+            { name?: string; value?: string } | undefined;
+          if (entryBody?.name)
+            list.push({ name: entryBody.name, value: entryBody.value });
           secrets.set(id, list);
           return Response.json({ ok: true });
         }
       }
 
-      const profilesMatch = p.match(/^projects\/([^/]+)\/connector-profiles$/);
-      if (profilesMatch && method === 'GET') {
-        const [, id] = profilesMatch;
-        return Response.json({ profiles: connectionProfiles.get(id) ?? [] });
-      }
-
-      const gatewayMatch = p.match(/^projects\/([^/]+)\/gateway\/sessions$/);
-      if (gatewayMatch && method === 'GET') {
-        const [, id] = gatewayMatch;
-        if (failingGatewayProjects.has(id)) {
-          return Response.json({ error: 'gateway unavailable' }, { status: 500 });
-        }
-        return Response.json({ sessions: gatewaySessions.get(id) ?? [] });
+      const connectionsMatch = p.match(/^projects\/([^/]+)\/connections$/);
+      if (connectionsMatch && method === 'GET') {
+        const [, id] = connectionsMatch;
+        return Response.json({ connections: connections.get(id) ?? [] });
       }
 
       const cliTokenMatch = p.match(/^projects\/([^/]+)\/cli-token$/);
@@ -220,7 +244,9 @@ export function createMockUpstream(expectedAuthToken: string): MockUpstream {
         });
       }
 
-      const sessionStartMatch = p.match(/^projects\/([^/]+)\/sessions\/([^/]+)\/start$/);
+      const sessionStartMatch = p.match(
+        /^projects\/([^/]+)\/sessions\/([^/]+)\/start$/,
+      );
       if (sessionStartMatch && method === 'POST') {
         const [, projectId, sessionId] = sessionStartMatch;
         const now = new Date().toISOString();
@@ -255,7 +281,8 @@ export function createMockUpstream(expectedAuthToken: string): MockUpstream {
         const [, id] = projectDetailMatch;
         const project = projects.get(id);
         if (method === 'GET') {
-          if (!project) return Response.json({ error: 'Not found' }, { status: 404 });
+          if (!project)
+            return Response.json({ error: 'Not found' }, { status: 404 });
           // Deliberately set an upstream cookie here so tests can assert the
           // proxy strips it before it reaches the browser.
           return Response.json(project, {
@@ -264,14 +291,19 @@ export function createMockUpstream(expectedAuthToken: string): MockUpstream {
         }
       }
 
+      const sessionsMatch = p.match(/^projects\/([^/]+)\/sessions$/);
+      if (sessionsMatch && method === 'GET') {
+        return Response.json([]);
+      }
+
       // Any other `projects/:id/...` sub-path (sessions, files, connectors, …) —
       // generic forwarded-OK, recorded for assertion.
       if (/^projects\/[^/]+(\/.*)?$/.test(p)) {
         return Response.json({ ok: true, path: p, method });
       }
 
-      // ── executor/projects/:id/... ─────────────────────────────────────
-      if (/^executor\/projects\/[^/]+(\/.*)?$/.test(p)) {
+      // ── connectors/projects/:id/... ────────────────────────────────────
+      if (/^connectors\/projects\/[^/]+(\/.*)?$/.test(p)) {
         return Response.json({ ok: true, path: p, method });
       }
 
@@ -285,7 +317,8 @@ export function createMockUpstream(expectedAuthToken: string): MockUpstream {
         if (acceptEncoding !== 'identity') {
           return Response.json(
             {
-              error: 'wrapper forwarded unsupported response encoding negotiation',
+              error:
+                'wrapper forwarded unsupported response encoding negotiation',
             },
             { status: 502 },
           );
@@ -301,7 +334,9 @@ export function createMockUpstream(expectedAuthToken: string): MockUpstream {
             const enc = new TextEncoder();
             let n = 0;
             const push = (data: unknown) => {
-              controller.enqueue(enc.encode(`event: message\ndata: ${JSON.stringify(data)}\n\n`));
+              controller.enqueue(
+                enc.encode(`event: message\ndata: ${JSON.stringify(data)}\n\n`),
+              );
             };
             // First two "real" events land immediately-ish, then heartbeats —
             // enough to prove the stream is unbuffered end-to-end.
@@ -341,7 +376,10 @@ export function createMockUpstream(expectedAuthToken: string): MockUpstream {
         return Response.json({ ok: true, path: p, method });
       }
 
-      return Response.json({ error: 'mock-upstream: no route', path: p, method }, { status: 404 });
+      return Response.json(
+        { error: 'mock-upstream: no route', path: p, method },
+        { status: 404 },
+      );
     },
   });
 
@@ -366,14 +404,14 @@ export function createMockUpstream(expectedAuthToken: string): MockUpstream {
       projects.set(project.project_id, project);
       return project;
     },
-    seedGatewaySessions(projectId, rows) {
-      gatewaySessions.set(projectId, rows);
+    seedSessionCosts(projectId, rows) {
+      sessionCosts.set(projectId, rows);
     },
-    seedConnectionProfiles(projectId, profiles) {
-      connectionProfiles.set(projectId, profiles);
+    seedConnections(projectId, connectionRows) {
+      connections.set(projectId, connectionRows);
     },
-    failGatewayFor(projectId) {
-      failingGatewayProjects.add(projectId);
+    failSessionCostsFor(projectId) {
+      failingSessionCostProjects.add(projectId);
     },
     malformCliTokenFor(projectId) {
       malformedCliTokenProjects.add(projectId);

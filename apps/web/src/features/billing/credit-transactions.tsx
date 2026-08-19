@@ -2,7 +2,6 @@
 
 import { useTranslations } from 'next-intl';
 
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { InfoBanner } from '@/components/ui/info-banner';
 import {
@@ -13,19 +12,10 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
+import { CreditTransactionsTable } from '@/features/billing/transactions-table';
 import { useTransactions } from '@/hooks/billing/use-transactions';
 import { isBillingEnabled } from '@/lib/config';
-import { cn } from '@/lib/utils';
-import { formatCredits, formatCreditsWithSign } from '@kortix/shared';
-import { Coins, RefreshCw } from 'lucide-react';
+import { CoinsIcon as Coins, ArrowClockwiseIcon as RefreshCw } from '@phosphor-icons/react';
 import { useState } from 'react';
 
 interface Props {
@@ -56,45 +46,6 @@ export default function CreditTransactions({ accountId }: Props) {
       </div>
     );
   }
-
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  };
-
-  const getTransactionBadge = (type: string) => {
-    const badges: Record<string, { label: string; variant: any }> = {
-      tier_grant: { label: 'Tier Grant', variant: 'default' },
-      free_tier_grant: { label: 'Tier Grant', variant: 'secondary' },
-      purchase: { label: 'Purchase', variant: 'default' },
-      auto_topup: { label: 'Auto Top-up', variant: 'default' },
-      machine_bonus: { label: 'Machine Bonus', variant: 'secondary' },
-      admin_grant: { label: 'Admin Grant', variant: 'secondary' },
-      promotional: { label: 'Promotional', variant: 'secondary' },
-      daily_refresh: { label: 'Daily Refresh', variant: 'secondary' },
-      usage: { label: 'Usage', variant: 'outline' },
-      llm_debit: { label: 'LLM', variant: 'outline' },
-      token_deduction: { label: 'LLM', variant: 'outline' },
-      token_overage: { label: 'LLM Overage', variant: 'outline' },
-      compute_debit: { label: 'Sandbox', variant: 'outline' },
-      compute_refund: { label: 'Sandbox Refund', variant: 'secondary' },
-      refund: { label: 'Refund', variant: 'secondary' },
-      adjustment: { label: 'Adjustment', variant: 'outline' },
-      expired: { label: 'Expired', variant: 'destructive' },
-    };
-
-    const badge = badges[type] || { label: type, variant: 'outline' };
-    return (
-      <Badge variant={badge.variant as any} size="sm">
-        {badge.label}
-      </Badge>
-    );
-  };
 
   const handlePrevPage = () => {
     setOffset(Math.max(0, offset - limit));
@@ -182,53 +133,17 @@ export default function CreditTransactions({ accountId }: Props) {
         </p>
       ) : (
         <>
-          <div className="bg-popover overflow-hidden rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-[180px]">Date</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Description</TableHead>
-                  <TableHead className="text-center">
-                    {tHardcodedUi.raw('componentsBillingCreditTransactions.line198JsxTextCreditType')}
-                  </TableHead>
-                  <TableHead className="text-right">Credits</TableHead>
-                  <TableHead className="text-right">
-                    {tHardcodedUi.raw(
-                      'componentsBillingCreditTransactions.line200JsxTextCreditsAfter',
-                    )}
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {transactions.map((tx) => (
-                  <TableRow key={tx.id}>
-                    <TableCell className="font-mono text-xs">{formatDate(tx.created_at)}</TableCell>
-                    <TableCell>{getTransactionBadge(tx.type)}</TableCell>
-                    <TableCell className="text-sm">{tx.description || 'No description'}</TableCell>
-                    <TableCell className="text-center">
-                      {tx.is_expiring !== undefined && (
-                        <span className="text-muted-foreground text-xs">
-                          {tx.is_expiring ? 'Expiring' : 'Permanent'}
-                        </span>
-                      )}
-                    </TableCell>
-                    <TableCell
-                      className={cn(
-                        'text-right font-mono font-medium tabular-nums',
-                        tx.amount >= 0 ? 'text-kortix-green' : 'text-kortix-red',
-                      )}
-                    >
-                      {formatCreditsWithSign(tx.amount, { showDecimals: true })}
-                    </TableCell>
-                    <TableCell className="text-right font-mono tabular-nums">
-                      {formatCredits(tx.balance_after, { showDecimals: true })}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+          <CreditTransactionsTable
+            rows={transactions.map((tx) => ({
+              id: tx.id,
+              createdAt: tx.created_at,
+              type: tx.type,
+              description: tx.description ?? null,
+              isExpiring: tx.is_expiring,
+              amount: tx.amount,
+              balanceAfter: tx.balance_after,
+            }))}
+          />
           {data?.pagination && (
             <div className="flex items-center justify-between">
               <p className="text-muted-foreground text-xs tabular-nums">
@@ -236,7 +151,12 @@ export default function CreditTransactions({ accountId }: Props) {
                 {data.pagination.total} transactions
               </p>
               <div className="flex items-center gap-2">
-                <Button variant="outline" size="sm" onClick={handlePrevPage} disabled={offset === 0}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handlePrevPage}
+                  disabled={offset === 0}
+                >
                   Previous
                 </Button>
                 <Button

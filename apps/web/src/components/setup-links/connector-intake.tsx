@@ -1,26 +1,37 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
+import Loading from '@/components/ui/loading';
 import { cn } from '@/lib/utils';
-import { Check, ExternalLink, Loader2, Plug } from 'lucide-react';
+import {
+  CheckIcon as Check,
+  ArrowSquareOutIcon as ExternalLink,
+  PlugIcon as Plug,
+} from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useEffect, useState } from 'react';
+import { nextConnectorPollDelay } from './connector-poll';
 import { setupLinkApiBase } from './util';
 import {
+  finalizeConnectorSetupLink,
   getConnectorSetupLink,
   startConnectorSetupLink,
   type ConnectorSetupLinkInfo,
 } from '@kortix/sdk';
 
-type Phase = 'loading' | 'error' | 'ready' | 'starting' | 'opened';
+type Phase = 'loading' | 'error' | 'ready' | 'starting' | 'opened' | 'connected';
 
 /**
  * Renders a 1-click Pipedream Quick Connect for an agent-minted connect link.
  * On connect we POST /start to mint a FRESH Pipedream connect URL (the durable
- * link never hands out a stale Pipedream token) and open it in a popup. The
- * Pipedream connect webhook persists the credential server-side, so there's no
- * explicit finalize step here. Shared by the public /connect/[token] page and
- * the in-chat modal.
+ * link never hands out a stale Pipedream token) and open it in a popup.
+ *
+ * The popup is on Pipedream's origin and cannot call back into us, so once it
+ * is open we poll POST /finalize — the one call that persists the credential
+ * and notifies the session that asked for the connector. The Pipedream connect
+ * webhook does the same thing server-side, but only as redundancy; this poll is
+ * what tells THIS window it worked. Shared by the public /connect/[token] page
+ * and the in-chat modal.
  */
 export function ConnectorIntake({
   token,
@@ -36,6 +47,9 @@ export function ConnectorIntake({
   const [phase, setPhase] = useState<Phase>('loading');
   const [info, setInfo] = useState<ConnectorSetupLinkInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Bumped every time the popup is opened, so reopening restarts the poll
+  // window instead of inheriting an already-expired one.
+  const [openedAt, setOpenedAt] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -61,6 +75,46 @@ export function ConnectorIntake({
     };
   }, [base, token]);
 
+  // Ask the API whether the connection landed, until it says yes or the poll
+  // window closes. One request is in flight at a time by construction: the next
+  // timer is only armed after the current one settles. A failed poll is not
+  // fatal — the popup may still be open — so it just schedules the next one.
+  useEffect(() => {
+    if (phase !== 'opened') return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const startedAt = Date.now();
+    let attempt = 0;
+
+    const schedule = () => {
+      const delay = nextConnectorPollDelay(attempt, Date.now() - startedAt);
+      if (delay === null) return;
+      attempt += 1;
+      timer = setTimeout(poll, delay);
+    };
+
+    const poll = async () => {
+      try {
+        const body = await finalizeConnectorSetupLink(token, { backendUrl: base });
+        if (cancelled) return;
+        if (body.connected) {
+          setPhase('connected');
+          return;
+        }
+      } catch {
+        // Transient (offline, rate limit, a 502 from Pipedream) — keep asking.
+      }
+      if (cancelled) return;
+      schedule();
+    };
+
+    schedule();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [phase, openedAt, token, base]);
+
   async function connect() {
     setPhase('starting');
     setError(null);
@@ -72,6 +126,7 @@ export function ConnectorIntake({
         return;
       }
       window.open(body.connect_url, '_blank', 'noopener,noreferrer,width=520,height=720');
+      setOpenedAt(Date.now());
       setPhase('opened');
       onOpened?.();
     } catch (cause) {
@@ -85,7 +140,7 @@ export function ConnectorIntake({
   if (phase === 'loading') {
     return (
       <div className="text-muted-foreground flex items-center justify-center gap-2 py-8 text-sm">
-        <Loader2 className="h-4 w-4 animate-spin" />{' '}
+        <Loading className="h-4 w-4" />{' '}
         {tI18nHardcoded.raw('autoComponentsSetupLinksConnectorIntakeJsxTextLoading4e5fd209')}
       </div>
     );
@@ -99,12 +154,27 @@ export function ConnectorIntake({
     );
   }
 
+  if (phase === 'connected') {
+    return (
+      <div className="flex flex-col items-center gap-2 py-8 text-center">
+        <span className="bg-kortix-green/15 flex size-9 items-center justify-center rounded-sm">
+          <Check weight="fill" className="text-kortix-green size-5" />
+        </span>
+        <p className="text-foreground text-sm font-medium">Connected</p>
+        <p className="text-muted-foreground max-w-xs text-xs">
+          {appLabel} is connected to this project. You can close this window and return to your
+          session — the agent has been notified.
+        </p>
+      </div>
+    );
+  }
+
   if (phase === 'opened') {
     return (
       <div className="flex flex-col items-center gap-2 py-8 text-center">
-        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-500">
-          <Check className="h-5 w-5" />
-        </div>
+        <span className="bg-muted flex size-9 items-center justify-center rounded-sm">
+          <Loading className="size-4" />
+        </span>
         <p className="text-foreground text-sm font-medium">
           {tI18nHardcoded.raw('autoComponentsSetupLinksConnectorIntakeJsxTextFinishInThe0a10e77c')}
         </p>
@@ -135,7 +205,7 @@ export function ConnectorIntake({
       {error ? <p className="text-destructive text-xs">{error}</p> : null}
       <Button className="w-full" onClick={connect} disabled={starting}>
         {starting ? (
-          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          <Loading className="mr-2 h-4 w-4" />
         ) : (
           <Plug className="mr-2 h-4 w-4" />
         )}

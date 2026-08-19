@@ -75,25 +75,24 @@ export function useSubmitReviewItem() {
 }
 
 /**
- * Resolve an executor approval (`exec:` adapted review item) directly from the
+ * Resolve a connector approval (`call:` adapted review item) directly from the
  * inbox — the SAME call + payload the in-session approval prompt uses
  * (`resolveApproval`, via `SessionApprovalPrompt` → `useResolveApproval` in
- * session-audit-shared.tsx). Scope is always `'once'` here: the inbox acts on
- * one specific pending call, not "for the rest of this session" — that
- * broader scope stays a session-view-only affordance since it needs the
- * session's other pending rows in view to make sense.
+ * session-audit-shared.tsx). A decision always applies to the one call that
+ * asked for it — the "for the rest of this session" scopes were removed
+ * because they pre-authorised later calls with different arguments.
  */
 export function useResolveReviewApproval() {
   const ctx = useProjectContext();
   const projectId = ctx?.projectId ?? '';
   const invalidate = useInvalidate(projectId);
   return useMutation<
-    { ok: boolean; scope?: 'once' | 'session' | 'session_all' },
+    { ok: boolean },
     Error,
     { executionId: string; decision: 'approve' | 'deny' }
   >({
     mutationFn: ({ executionId, decision }) =>
-      resolveApproval(projectId, executionId, decision, 'once'),
+      resolveApproval(projectId, executionId, decision),
     onSuccess: invalidate,
     // Every call site (review-center-connected.tsx) passes its own call-time
     // `onError` to `resolve.mutate(vars, { onError })` and shows a specific

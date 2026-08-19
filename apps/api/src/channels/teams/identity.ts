@@ -205,7 +205,7 @@ export async function createTeamsAccessRequest(input: {
     projectId: input.projectId,
     requesterUserId: identity.userId,
     requesterEmail: email || identity.userId,
-    message: 'Requested from Microsoft Teams. Approve as Editor so they can run Kortix from Teams.',
+    message: 'Requested from Microsoft Teams. Approve so they can run Kortix from Teams.',
   });
   return { status: 'created', ...base };
 }

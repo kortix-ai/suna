@@ -23,12 +23,6 @@ const PROVIDER_COMPUTE_RATE_CARDS: Record<ProviderName, ProviderComputeRateCard>
     memoryPerGbSecond: 0.0000054,
     diskPerGbSecond: 0.000000036,
   },
-  // local-docker uses operator hardware. Meter usage without debiting credits.
-  'local-docker': {
-    cpuPerCoreSecond: 0,
-    memoryPerGbSecond: 0,
-    diskPerGbSecond: 0,
-  },
 };
 
 export function getProviderComputeRateCard(name: ProviderName): ProviderComputeRateCard {

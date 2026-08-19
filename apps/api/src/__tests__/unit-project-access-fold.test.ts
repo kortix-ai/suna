@@ -13,16 +13,13 @@ import { foldEffectiveProjectAccess } from '../projects/access';
 import { maxProjectRole } from '../iam/role-perms';
 
 describe('maxProjectRole', () => {
-  test('manager beats editor', () => {
-    expect(maxProjectRole('manager', 'editor')).toBe('manager');
-    expect(maxProjectRole('editor', 'manager')).toBe('manager');
-  });
-  test('editor beats member', () => {
-    expect(maxProjectRole('editor', 'member')).toBe('editor');
-    expect(maxProjectRole('member', 'editor')).toBe('editor');
+  test('manager beats member', () => {
+    expect(maxProjectRole('manager', 'member')).toBe('manager');
+    expect(maxProjectRole('member', 'manager')).toBe('manager');
   });
   test('equal roles return that role', () => {
     expect(maxProjectRole('member', 'member')).toBe('member');
+    expect(maxProjectRole('manager', 'manager')).toBe('manager');
   });
 });
 
@@ -75,13 +72,13 @@ describe('foldEffectiveProjectAccess', () => {
   });
 
   describe('direct access (plain member with project_members row)', () => {
-    test('member with Editor direct grant → Editor via direct', () => {
+    test('member with Manager direct grant → Manager via direct', () => {
       const r = foldEffectiveProjectAccess({
         accountRole: 'member',
-        directRole: 'editor',
+        directRole: 'manager',
         groupSources: [],
       });
-      expect(r.effective_project_role).toBe('editor');
+      expect(r.effective_project_role).toBe('manager');
       expect(r.effective_source).toBe('direct');
     });
 
@@ -116,10 +113,10 @@ describe('foldEffectiveProjectAccess', () => {
         directRole: null,
         groupSources: [
           { group_id: 'g1', group_name: 'Members', role: 'member' },
-          { group_id: 'g2', group_name: 'Engineering', role: 'editor' },
+          { group_id: 'g2', group_name: 'Engineering', role: 'manager' },
         ],
       });
-      expect(r.effective_project_role).toBe('editor');
+      expect(r.effective_project_role).toBe('manager');
       expect(r.effective_source).toBe('group');
     });
 
@@ -132,13 +129,13 @@ describe('foldEffectiveProjectAccess', () => {
         groupSources: [
           { group_id: 'g1', group_name: 'Members', role: 'member' },
           { group_id: 'g2', group_name: 'Managers', role: 'manager' },
-          { group_id: 'g3', group_name: 'Editors', role: 'editor' },
+          { group_id: 'g3', group_name: 'Readers', role: 'member' },
         ],
       });
       expect(r.group_sources.map((g) => g.group_name)).toEqual([
         'Managers',
-        'Editors',
         'Members',
+        'Readers',
       ]);
     });
 
@@ -158,14 +155,14 @@ describe('foldEffectiveProjectAccess', () => {
   });
 
   describe('mixed sources (precedence + tie-break)', () => {
-    test('Editor direct + Member group → Editor via direct', () => {
+    test('Manager direct + Member group → Manager via direct', () => {
       // Direct beats group when both are non-implicit; max role wins.
       const r = foldEffectiveProjectAccess({
         accountRole: 'member',
-        directRole: 'editor',
+        directRole: 'manager',
         groupSources: [{ group_id: 'g', group_name: 'Members', role: 'member' }],
       });
-      expect(r.effective_project_role).toBe('editor');
+      expect(r.effective_project_role).toBe('manager');
       expect(r.effective_source).toBe('direct');
     });
 
@@ -182,17 +179,17 @@ describe('foldEffectiveProjectAccess', () => {
       expect(r.effective_source).toBe('group');
     });
 
-    test('Editor direct + Editor group → Editor via direct (direct ties)', () => {
+    test('Manager direct + Manager group → Manager via direct (direct ties)', () => {
       // Same role from both: direct keeps the label because the fold
       // visits direct before groups. Stable for UI display.
       const r = foldEffectiveProjectAccess({
         accountRole: 'member',
-        directRole: 'editor',
+        directRole: 'manager',
         groupSources: [
-          { group_id: 'g', group_name: 'Engineering', role: 'editor' },
+          { group_id: 'g', group_name: 'Engineering', role: 'manager' },
         ],
       });
-      expect(r.effective_project_role).toBe('editor');
+      expect(r.effective_project_role).toBe('manager');
       expect(r.effective_source).toBe('direct');
     });
   });

@@ -1,29 +1,31 @@
 'use client';
-import { ToolRegistry } from '@/features/session/tool/shared/registry';
-import type { ToolProps } from '@/features/session/tool/shared/types';
 import {
   BasicTool,
   isErrorOutput,
-  ToolOutputFallback,
   partOutput,
   partStatus,
+  ToolOutputFallback,
 } from '@/features/session/tool/shared/infrastructure';
-import {
-  Trash2,
-} from 'lucide-react';
+import { ToolRegistry } from '@/features/session/tool/shared/registry';
+import type { ToolProps } from '@/features/session/tool/shared/types';
+import { TrashIcon as Trash2 } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
+import { useMemo } from 'react';
 
-
-export function TaskDeleteTool({ part, forceOpen }: ToolProps) {
+export function TaskDeleteTool({ part, defaultOpen, forceOpen }: ToolProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const output = partOutput(part);
   const status = partStatus(part);
-  const isError = status === 'completed' && isErrorOutput(output);
+  // `isErrorOutput` trims a copy of the whole output and runs `JSON.parse` over
+  // it; this sits in the body, so it ran on every render of the row.
+  const outputIsError = useMemo(() => isErrorOutput(output), [output]);
+  const isError = status === 'completed' && outputIsError;
 
   return (
     <BasicTool
-      icon={<Trash2 className="size-3.5 flex-shrink-0" />}
+      icon={<Trash2 className="size-3.5 shrink-0" />}
       trigger={{ title: 'Delete task', subtitle: isError ? 'failed' : undefined }}
+      defaultOpen={defaultOpen}
       forceOpen={forceOpen}
     >
       {isError ? (
@@ -55,4 +57,3 @@ function extractSkillFiles(output: string): string[] {
   }
   return files;
 }
-

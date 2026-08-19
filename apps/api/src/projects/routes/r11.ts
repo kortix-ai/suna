@@ -1,19 +1,22 @@
 // ─── Review Center ──────────────────────────────────────────────────────────
 // Per-project human-in-the-loop inbox. Agents submit outputs / decisions /
 // batches for review; humans approve, reject, request changes, or answer. Native
-// items only this pass — change requests and executor/tunnel approvals are folded
+// items only this pass — change requests and connector/tunnel approvals are folded
 // in by adapters later. See docs/REVIEW_CENTER_DESIGN.md.
 
 import { createRoute, z } from '@hono/zod-openapi';
-import { projectSessions } from '@kortix/db';
-import { and, eq } from 'drizzle-orm';
+import { connectorCalls, projectSessions } from '@kortix/db';
+import { and, eq, inArray } from 'drizzle-orm';
 import { relayReviewCard } from '../../channels/turn-relay';
+import { requireFeatureFlag } from '../../feature-flags/gate';
 import { PROJECT_ACTIONS } from '../../iam';
 import { assertAgentScope } from '../../iam/agent-scope';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
+import { mayResolveApproval } from '../lib/approval-authority';
+import { callerKortixSessionId } from '../lib/caller-session';
 import { normalizeString, readBody } from '../lib/serializers';
 import { isAdaptedId } from '../review-adapters';
 import {
@@ -46,14 +49,22 @@ projectsApp.openapi(
     },
     responses: {
       200: json(z.object({ review_items: z.array(AnyObject) }), 'Review items'),
-      ...errors(400, 404),
+      ...errors(400, 403, 404),
     },
   }),
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_REVIEW_READ);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_REVIEW_READ,
+    );
+    const gate = requireFeatureFlag(c, loaded.row.metadata, 'review_center');
+    if (gate) return gate;
 
     const segment = normalizeString(c.req.query('segment'))?.toLowerCase();
     if (segment && !SEGMENTS.includes(segment as (typeof SEGMENTS)[number])) {
@@ -64,9 +75,83 @@ projectsApp.openapi(
       return c.json({ error: 'Invalid kind' }, 400);
     }
 
+    // `args_preview` can contain email bodies, recipients, URLs, and other
+    // sensitive values. The broad `project.review.read` leaf may list the row,
+    // but only the same human authority that can resolve the exact approval may
+    // receive its parameters. New rows that race this query fail closed because
+    // their execution id will not be present in this set.
+    let isManager = false;
+    try {
+      await assertProjectCapability(
+        c,
+        loaded.userId,
+        loaded.row.accountId,
+        projectId,
+        PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE,
+      );
+      isManager = true;
+    } catch {
+      isManager = false;
+    }
+    const pendingExecutions = await db
+      .select({
+        executionId: connectorCalls.executionId,
+        sessionId: connectorCalls.sessionId,
+        actingUserId: connectorCalls.actingUserId,
+      })
+      .from(connectorCalls)
+      .where(
+        and(
+          eq(connectorCalls.projectId, projectId),
+          eq(connectorCalls.status, 'pending_approval'),
+        ),
+      );
+    const sessionIds = [
+      ...new Set(
+        pendingExecutions
+          .map((execution) => execution.sessionId)
+          .filter((sessionId): sessionId is string => Boolean(sessionId)),
+      ),
+    ];
+    const sessions = sessionIds.length
+      ? await db
+          .select({
+            sessionId: projectSessions.sessionId,
+            createdBy: projectSessions.createdBy,
+            origin: projectSessions.origin,
+          })
+          .from(projectSessions)
+          .where(
+            and(
+              eq(projectSessions.projectId, projectId),
+              inArray(projectSessions.sessionId, sessionIds),
+            ),
+          )
+      : [];
+    const sessionById = new Map(sessions.map((session) => [session.sessionId, session]));
+    const previewExecutionIds = new Set(
+      pendingExecutions
+        .filter((execution) => {
+          const session = execution.sessionId
+            ? sessionById.get(String(execution.sessionId))
+            : undefined;
+          return mayResolveApproval({
+            isManager,
+            targetSessionOrigin: session?.origin ?? (execution.sessionId ? null : 'user'),
+            targetSessionCreatedBy:
+              session?.createdBy ?? (execution.sessionId ? null : execution.actingUserId),
+            callerUserId: loaded.userId,
+            callerAuthType: (c.get('authType') as string | undefined) ?? null,
+            callerSessionId: callerKortixSessionId(c),
+          }).allowed;
+        })
+        .map((execution) => execution.executionId),
+    );
+
     const items = await listInboxItems(projectId, {
       segment: segment as ReviewSegment | undefined,
       kind: kind as (typeof KINDS)[number] | undefined,
+      canExposeConnectorCallPreview: (execution) => previewExecutionIds.has(execution.executionId),
     });
     return c.json({ review_items: items });
   },
@@ -85,14 +170,22 @@ projectsApp.openapi(
     },
     responses: {
       200: json(z.object({ review_item: AnyObject }), 'Review item'),
-      ...errors(400, 404),
+      ...errors(400, 403, 404),
     },
   }),
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_REVIEW_READ);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_REVIEW_READ,
+    );
+    const gate = requireFeatureFlag(c, loaded.row.metadata, 'review_center');
+    if (gate) return gate;
 
     const item = await getReviewItemById(c.req.param('reviewItemId'), projectId);
     if (!item) return c.json({ error: 'Review item not found' }, 404);
@@ -114,7 +207,7 @@ projectsApp.openapi(
     },
     responses: {
       201: json(AnyObject, 'The created review item'),
-      ...errors(400, 404),
+      ...errors(400, 403, 404),
     },
   }),
   async (c: any) => {
@@ -124,9 +217,17 @@ projectsApp.openapi(
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     // Human gate: submitting a reviewable needs project.review.submit. Every
     // built-in role holds it; a custom role that unchecks it is denied here.
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_REVIEW_SUBMIT);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_REVIEW_SUBMIT,
+    );
     // Agent-side gate: submitting a reviewable is the agent's intended path.
     assertAgentScope(c, 'project.review.submit');
+    const gate = requireFeatureFlag(c, loaded.row.metadata, 'review_center');
+    if (gate) return gate;
 
     const kind = normalizeString(body.kind);
     if (!isSubmittableKind(kind)) {
@@ -202,7 +303,7 @@ projectsApp.openapi(
     },
     responses: {
       200: json(AnyObject, 'The updated review item'),
-      ...errors(400, 404, 409),
+      ...errors(400, 403, 404, 409),
     },
   }),
   async (c: any) => {
@@ -218,6 +319,8 @@ projectsApp.openapi(
       projectId,
       PROJECT_ACTIONS.PROJECT_REVIEW_ACT,
     );
+    const gate = requireFeatureFlag(c, loaded.row.metadata, 'review_center');
+    if (gate) return gate;
 
     const verdict = normalizeString(body.verdict);
     if (!isReviewVerdict(verdict)) {
@@ -226,7 +329,7 @@ projectsApp.openapi(
         400,
       );
     }
-    // Adapted items (change requests, executor approvals) act through their own
+    // Adapted items (change requests, connector approvals) act through their own
     // source flow, not the review act endpoint.
     if (isAdaptedId(reviewItemId)) {
       return c.json({ error: 'Act on this item from its source view' }, 409);
@@ -258,7 +361,7 @@ projectsApp.openapi(
     },
     responses: {
       200: json(z.object({ updated: z.number(), review_items: z.array(AnyObject) }), 'Bulk result'),
-      ...errors(400, 404),
+      ...errors(400, 403, 404),
     },
   }),
   async (c: any) => {
@@ -273,6 +376,8 @@ projectsApp.openapi(
       projectId,
       PROJECT_ACTIONS.PROJECT_REVIEW_ACT,
     );
+    const gate = requireFeatureFlag(c, loaded.row.metadata, 'review_center');
+    if (gate) return gate;
 
     const verdict = normalizeString(body.verdict);
     if (!isReviewVerdict(verdict)) {

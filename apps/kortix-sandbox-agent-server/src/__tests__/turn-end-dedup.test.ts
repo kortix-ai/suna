@@ -17,6 +17,7 @@ const WORKSPACE = '/workspace'
 // completed timestamp we control). apps/api: POST .../turn-stream counts calls.
 function startMocks(getCompletedAt: () => number, turnStreamOk: () => boolean = () => true) {
   let turnStreamCalls = 0
+  const turnStreamBodies: Array<Record<string, unknown>> = []
   const server = Bun.serve({
     port: 0,
     async fetch(req) {
@@ -24,6 +25,7 @@ function startMocks(getCompletedAt: () => number, turnStreamOk: () => boolean = 
       // apps/api turn-stream relay target.
       if (url.pathname.endsWith('/turn-stream')) {
         turnStreamCalls++
+        turnStreamBodies.push((await req.json()) as Record<string, unknown>)
         // A non-ok response simulates a transient apps/api outage: the daemon
         // retries, then gives up WITHOUT recording the dedup signature.
         if (!turnStreamOk()) return new Response('boom', { status: 503 })
@@ -32,8 +34,14 @@ function startMocks(getCompletedAt: () => number, turnStreamOk: () => boolean = 
       // opencode: message list for the root turn — one completed assistant reply.
       if (url.pathname === `/session/${ROOT}/message`) {
         return Response.json([
-          { info: { role: 'user' } },
-          { info: { role: 'assistant', time: { completed: getCompletedAt() } } },
+          { info: { id: 'msg_turn_1', role: 'user' } },
+          {
+            info: {
+              role: 'assistant',
+              parentID: 'msg_turn_1',
+              time: { completed: getCompletedAt() },
+            },
+          },
         ])
       }
       // opencode: session lookup — root has no parentID.
@@ -46,6 +54,7 @@ function startMocks(getCompletedAt: () => number, turnStreamOk: () => boolean = 
   return {
     baseUrl: `http://127.0.0.1:${server.port}`,
     calls: () => turnStreamCalls,
+    bodies: () => turnStreamBodies,
     stop: () => server.stop(true),
   }
 }
@@ -55,6 +64,7 @@ beforeEach(() => {
   __resetRelayedTurnSignatures()
   saved = {
     SLACK_CHANNEL_ID: process.env.SLACK_CHANNEL_ID,
+    SLACK_THREAD_TS: process.env.SLACK_THREAD_TS,
     KORTIX_PROJECT_ID: process.env.KORTIX_PROJECT_ID,
     KORTIX_SESSION_ID: process.env.KORTIX_SESSION_ID,
     KORTIX_SANDBOX_TOKEN: process.env.KORTIX_SANDBOX_TOKEN,
@@ -68,8 +78,7 @@ afterEach(() => {
   }
 })
 
-function slackEnv(apiUrl: string) {
-  process.env.SLACK_CHANNEL_ID = 'C123'
+function sessionEnv(apiUrl: string) {
   process.env.KORTIX_PROJECT_ID = 'proj_1'
   process.env.KORTIX_SESSION_ID = 'sess_1'
   process.env.KORTIX_SANDBOX_TOKEN = 'tok'
@@ -78,9 +87,9 @@ function slackEnv(apiUrl: string) {
 
 describe('relayTurnEndToApi — exactly-once per completed turn', () => {
   test('two idle relays for the SAME completed turn finalize once', async () => {
-    let completedAt = 1000
+    const completedAt = 1000
     const m = startMocks(() => completedAt)
-    slackEnv(m.baseUrl)
+    sessionEnv(m.baseUrl)
     const opencode = { getInternalUrl: () => m.baseUrl }
     const cfg = { workspace: WORKSPACE } as unknown as Config
     try {
@@ -93,10 +102,42 @@ describe('relayTurnEndToApi — exactly-once per completed turn', () => {
     }
   })
 
+  test('relays the client message ID so apps/api can reject a stale terminal event', async () => {
+    const m = startMocks(() => 1000)
+    sessionEnv(m.baseUrl)
+    const opencode = { getInternalUrl: () => m.baseUrl }
+    const cfg = { workspace: WORKSPACE } as unknown as Config
+    try {
+      await relayTurnEndToApi(ROOT, 'idle', opencode, cfg)
+      expect(m.bodies()[0]?.turn_message_id).toBe('msg_turn_1')
+    } finally {
+      m.stop()
+    }
+  })
+
+  test('relays WITHOUT Slack context — turn end drives the idle auto-stop for every session', async () => {
+    const completedAt = 1000
+    const m = startMocks(() => completedAt)
+    delete process.env.SLACK_CHANNEL_ID
+    delete process.env.SLACK_THREAD_TS
+    process.env.KORTIX_PROJECT_ID = 'proj_1'
+    process.env.KORTIX_SESSION_ID = 'sess_1'
+    process.env.KORTIX_SANDBOX_TOKEN = 'tok'
+    process.env.KORTIX_API_URL = m.baseUrl
+    const opencode = { getInternalUrl: () => m.baseUrl }
+    const cfg = { workspace: WORKSPACE } as unknown as Config
+    try {
+      await relayTurnEndToApi(ROOT, 'idle', opencode, cfg)
+      expect(m.calls()).toBe(1)
+    } finally {
+      m.stop()
+    }
+  })
+
   test('a NEW turn (new completed timestamp) relays again', async () => {
     let completedAt = 1000
     const m = startMocks(() => completedAt)
-    slackEnv(m.baseUrl)
+    sessionEnv(m.baseUrl)
     const opencode = { getInternalUrl: () => m.baseUrl }
     const cfg = { workspace: WORKSPACE } as unknown as Config
     try {
@@ -109,9 +150,21 @@ describe('relayTurnEndToApi — exactly-once per completed turn', () => {
     }
   })
 
-  test('no-op outside Slack (no relay context)', async () => {
+  test('relays a web session without Slack metadata', async () => {
     const m = startMocks(() => 1000)
-    // deliberately NOT calling slackEnv → no SLACK_* env
+    sessionEnv(m.baseUrl)
+    const opencode = { getInternalUrl: () => m.baseUrl }
+    const cfg = { workspace: WORKSPACE } as unknown as Config
+    try {
+      await relayTurnEndToApi(ROOT, 'idle', opencode, cfg)
+      expect(m.calls()).toBe(1)
+    } finally {
+      m.stop()
+    }
+  })
+
+  test('does not relay without sandbox callback identity', async () => {
+    const m = startMocks(() => 1000)
     const opencode = { getInternalUrl: () => m.baseUrl }
     const cfg = { workspace: WORKSPACE } as unknown as Config
     try {
@@ -127,8 +180,9 @@ describe('relayTurnEndToApi — exactly-once per completed turn', () => {
   // reconcile-on-subscribe backstop) can still finalize it. Records only on res.ok.
   test('a failed relay does not suppress a later successful relay of the same turn', async () => {
     let ok = false // first relay attempt(s) hit a 503 outage
-    const m = startMocks(() => 1000, () => ok)
-    slackEnv(m.baseUrl)
+    const m = startMocks(() => 1000, () => ok,
+    )
+    sessionEnv(m.baseUrl)
     const opencode = { getInternalUrl: () => m.baseUrl }
     const cfg = { workspace: WORKSPACE } as unknown as Config
     try {

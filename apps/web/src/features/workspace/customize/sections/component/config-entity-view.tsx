@@ -27,10 +27,20 @@ import {
 } from '@/features/workspace/customize/use-configure-thread';
 import { cn } from '@/lib/utils';
 import { type ProjectConfigSummary, getProjectDetail, readProjectFile } from '@kortix/sdk';
-import { DangerTriangleSolid, Pencil, Search } from '@mynaui/icons-react';
+import { contract, qk } from '@kortix/sdk/react';
+import {
+  CaretRightIcon as ChevronRight,
+  CopyIcon as Copy,
+  WarningIcon as DangerTriangleSolid,
+  type Icon as LucideIcon,
+  PencilSimpleIcon,
+  PlusIcon as Plus,
+  MagnifyingGlassIcon as Search,
+} from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
-import { ChevronRight, Copy, type LucideIcon, Plus } from 'lucide-react';
 import { type ReactNode, useMemo, useState } from 'react';
+
+import { configEntitySourcePath } from './config-entity-source-path';
 
 export type ConfigEntity = { name: string; path: string; description: string | null };
 
@@ -154,9 +164,9 @@ export function ConfigEntityView<T extends ConfigEntity>(props: ConfigEntityView
   } = props;
 
   const detailQuery = useQuery({
-    queryKey: ['project-detail', projectId],
+    queryKey: qk.project.detail(projectId),
     queryFn: () => getProjectDetail(projectId),
-    staleTime: 10_000,
+    ...contract('config'),
   });
 
   const config = detailQuery.data?.config ?? null;
@@ -284,7 +294,7 @@ export function ConfigEntityView<T extends ConfigEntity>(props: ConfigEntityView
       ))}
     </div>
   ) : isForbidden ? (
-    <InfoBanner tone="warning" icon={DangerTriangleSolid} title="Access required">
+    <InfoBanner tone="warning" icon={<DangerTriangleSolid weight="fill" />} title="Access required">
       You don&apos;t have permission to read this repository.
     </InfoBanner>
   ) : detailQuery.isError ? (
@@ -527,7 +537,7 @@ export function ConfigEntityView<T extends ConfigEntity>(props: ConfigEntityView
           <Button
             variant="ghost"
             size="sm"
-            className="text-muted-foreground -ml-2 mb-6 gap-1.5"
+            className="text-muted-foreground mb-6 -ml-2 gap-1.5"
             onClick={() => setSelectedPath(null)}
           >
             <ChevronRight className="size-3.5 rotate-180" />
@@ -729,10 +739,15 @@ function EntityDetail<T extends ConfigEntity>({
   split,
 }: EntityDetailProps<T>) {
   const configure = useConfigureThread(projectId);
+  // A platform-managed entity (e.g. the meta coordinator) declares an
+  // absolute sandbox path — its source lives in the sandbox image, not the
+  // project repo, so there is nothing to fetch.
+  const platformSource = entity.path.startsWith('/');
   const fileQuery = useQuery({
-    queryKey: ['project-file-source', projectId, entity.path],
-    queryFn: () => readProjectFile(projectId, entity.path),
-    staleTime: 30_000,
+    queryKey: qk.project.fileSource(projectId, entity.path),
+    queryFn: () => readProjectFile(projectId, configEntitySourcePath(entity.path)),
+    ...contract('config'),
+    enabled: !platformSource,
   });
 
   const onCopy = async () => {
@@ -755,7 +770,11 @@ function EntityDetail<T extends ConfigEntity>({
   // ConfigEntityView), so the detail here is just the header + source.
   const extra = split ? null : renderDetailExtra?.(entity, config);
 
-  const source = fileQuery.isLoading ? (
+  const source = platformSource ? (
+    <p className="text-muted-foreground/60 text-sm italic">
+      Managed by the platform — the source ships inside the session sandbox ({entity.path}).
+    </p>
+  ) : fileQuery.isLoading ? (
     <div className="space-y-2.5">
       <Skeleton className="h-4 w-full" />
       <Skeleton className="h-4 w-11/12" />
@@ -841,19 +860,19 @@ function DetailToolbarActions({
   return (
     <ButtonGroup className="shrink-0">
       {canWrite ? (
-        <Hint label="Edit">
+        <Hint label="Edit" side="bottom">
           <Button variant="outline" size="sm" onClick={onEdit} disabled={editing}>
             {editing ? (
               <Loading className="size-3.5 shrink-0" />
             ) : (
-              <Pencil className="size-3.5 shrink-0" />
+              <PencilSimpleIcon className="size-3.5 shrink-0" />
             )}
             Edit
           </Button>
         </Hint>
       ) : null}
       <Hint label="Copy source">
-        <Button variant="outline" size="icon" onClick={onCopy} disabled={copyDisabled}>
+        <Button variant="outline" size="icon" className='size-8' onClick={onCopy} disabled={copyDisabled}>
           <Copy className="size-3.5 shrink-0" />
         </Button>
       </Hint>

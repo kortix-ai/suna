@@ -38,7 +38,7 @@ describe("init in an existing cloned project", () => {
       { cwd: repo },
     );
 
-    const result = spawnSync("bun", [cli, "init", "--force"], {
+    const result = spawnSync(process.execPath, [cli, "init", "--force"], {
       cwd: repo,
       encoding: "utf8",
     });
@@ -49,7 +49,10 @@ describe("init in an existing cloned project", () => {
     );
     expect(lstatSync(resolve(repo, ".agents")).isSymbolicLink()).toBe(true);
     expect(lstatSync(resolve(repo, ".opencode")).isSymbolicLink()).toBe(true);
-    expect(lstatSync(resolve(repo, ".claude")).isSymbolicLink()).toBe(true);
+    expect(lstatSync(resolve(repo, ".claude")).isDirectory()).toBe(true);
+    expect(
+      lstatSync(resolve(repo, ".claude", "skills")).isSymbolicLink(),
+    ).toBe(true);
     expect(readFileSync(resolve(repo, "AGENTS.md"), "utf8")).toContain(
       "This repository is a",
     );

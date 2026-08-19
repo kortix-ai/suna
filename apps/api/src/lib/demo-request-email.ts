@@ -1,13 +1,12 @@
 // Internal notification for public "book a demo" / demo-request submissions.
 // Fires on the first-step form details, before (and regardless of) whether the
-// lead goes on to book a Cal slot. Self-contained Mailtrap transport reading
-// from `config` (fed by AWS Secrets Manager in prod) — mirrors the account
-// invite transport in ../accounts/email.ts. If MAILTRAP_API_TOKEN is not set the
-// send is skipped gracefully so lead capture never fails on account of email.
+// lead goes on to book a Cal slot. Delivery goes through the shared
+// provider-chain transport (./email/transport.ts); with no provider configured
+// the send is skipped gracefully so lead capture never fails on account of
+// email.
 import { emailDomain, isWorkEmail } from '../accounts/personal-email';
 import { config } from '../config';
-
-const MAILTRAP_SEND_URL = 'https://send.api.mailtrap.io/api/send';
+import { isEmailConfigured, sendEmail } from './email/transport';
 
 export interface DemoRequestLead {
   name?: string;
@@ -22,7 +21,7 @@ export interface DemoRequestLead {
 
 export type DemoRequestNotifyResult =
   | { ok: true; status: number }
-  | { ok: false; skipped: true; reason: 'missing_mailtrap_token' }
+  | { ok: false; skipped: true; reason: 'email_not_configured' }
   | { ok: false; skipped?: false; status?: number; error: string };
 
 function escapeHtml(str: string): string {
@@ -95,8 +94,8 @@ function renderHtml(lead: DemoRequestLead): string {
 export async function sendDemoRequestNotification(
   lead: DemoRequestLead,
 ): Promise<DemoRequestNotifyResult> {
-  if (!config.MAILTRAP_API_TOKEN) {
-    return { ok: false, skipped: true, reason: 'missing_mailtrap_token' };
+  if (!isEmailConfigured()) {
+    return { ok: false, skipped: true, reason: 'email_not_configured' };
   }
 
   const recipients = (config.DEMO_LEAD_NOTIFY_EMAIL || 'marko@kortix.ai,hey@kortix.ai')
@@ -105,34 +104,23 @@ export async function sendDemoRequestNotification(
     .filter(Boolean);
   const who = lead.company_name?.trim() || lead.name?.trim() || lead.email;
 
-  try {
-    const res = await fetch(MAILTRAP_SEND_URL, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${config.MAILTRAP_API_TOKEN}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        from: {
-          email: config.DEMO_LEAD_FROM_EMAIL || config.MAILTRAP_FROM_EMAIL,
-          name: config.MAILTRAP_FROM_NAME,
-        },
-        to: recipients.map((address) => ({ email: address })),
-        subject: `New demo request — ${who}`,
-        html: renderHtml(lead),
-        category: 'demo-request',
-      }),
-      signal: AbortSignal.timeout(10_000),
-    });
-    if (!res.ok) {
-      const body = await res.text().catch(() => '');
-      console.warn(`[demo-request-email] Mailtrap ${res.status}: ${body}`);
-      return { ok: false, status: res.status, error: body || res.statusText || 'send failed' };
-    }
-    return { ok: true, status: res.status };
-  } catch (err) {
-    const message = (err as Error).message;
-    console.warn('[demo-request-email] send failed:', message);
-    return { ok: false, error: message };
+  const result = await sendEmail({
+    to: recipients,
+    subject: `New demo request — ${who}`,
+    html: renderHtml(lead),
+    category: 'demo-request',
+    from: {
+      email: config.DEMO_LEAD_FROM_EMAIL || config.MAILTRAP_FROM_EMAIL,
+      name: config.MAILTRAP_FROM_NAME,
+    },
+  });
+  if (result.ok) return { ok: true, status: result.status };
+  if ('skipped' in result && result.skipped) {
+    return { ok: false, skipped: true, reason: 'email_not_configured' };
   }
+  return {
+    ok: false,
+    status: 'status' in result ? result.status : undefined,
+    error: 'error' in result ? result.error : 'send failed',
+  };
 }

@@ -25,7 +25,7 @@ RUN apt-get update \\
     && rm -rf /var/lib/apt/lists/*
 
 RUN useradd --create-home --shell /bin/bash --user-group kortix \\
-    && printf 'kortix ALL=(ALL) NOPASSWD:ALL\\n' > /etc/sudoers.d/kortix \\
+    && echo 'kortix ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/kortix \\
     && chmod 0440 /etc/sudoers.d/kortix \\
     && mkdir -p /workspace /opt/kortix /opt/pw-browsers /ephemeral/kortix-master/opencode \\
         /home/kortix/.local/bin /home/kortix/.local/share/pnpm/bin /home/kortix/.bun/bin \\
@@ -48,6 +48,25 @@ RUN case "$(uname -m)" in \\
     && UV_PYTHON_DOWNLOADS=automatic uv python install --default 3.12.13 \\
     && python -c 'import sys; assert sys.version_info[:3] == (3, 12, 13); print("managed python:", sys.version)' \\
     && python3 -c 'import sys; assert sys.version_info[:3] == (3, 12, 13)'
+
+RUN uv pip install --python /home/kortix/.local/bin/python3 --break-system-packages \\
+        "lxml==6.1.1" \\
+        "markitdown[pptx]==0.1.7" \\
+        "openpyxl==3.1.5" \\
+        "pandas==3.0.5" \\
+        "pdf2docx==0.5.13" \\
+        "pdf2image==1.17.0" \\
+        "pdfplumber==0.11.10" \\
+        "pillow==12.3.0" \\
+        "playwright==1.60.0" \\
+        "pymupdf==1.28.0" \\
+        "pypdf==6.14.2" \\
+        "pypdfium2==5.12.1" \\
+        "pytesseract==0.3.13" \\
+        "python-docx==1.2.0" \\
+        "python-pptx==1.0.2" \\
+        "reportlab==5.0.0" \\
+    && python3 -c 'import importlib; [importlib.import_module(m) for m in ["PIL","docx","fitz","lxml","markitdown","openpyxl","pandas","pdf2docx","pdf2image","pdfplumber","playwright","pptx","pypdf","pypdfium2","pytesseract","reportlab"]]; print("python package floor OK")'
 
 ENV SHELL=/bin/bash
 RUN case "$(uname -m)" in \\
@@ -90,17 +109,6 @@ RUN pnpm add -g --allow-build=opencode-ai "opencode-ai@1.17.11" \\
     && command -v opencode \\
     && opencode --version
 
-RUN pnpm add -g "@agentclientprotocol/claude-agent-acp@0.58.1" "@agentclientprotocol/codex-acp@1.1.2" "pi-acp@0.0.31" \\
-    && npm install -g --prefix /home/kortix/.local "@earendil-works/pi-coding-agent@0.80.6" "@earendil-works/pi-ai@0.80.6" "@earendil-works/pi-tui@0.80.6" "@earendil-works/pi-agent-core@0.80.6" \\
-    && command -v claude-agent-acp \\
-    && command -v codex-acp \\
-    && command -v pi-acp \\
-    && command -v pi \\
-    && claude-agent-acp --version \\
-    && codex-acp --version \\
-    && pi-acp --help >/dev/null \\
-    && pi --version
-
 COPY --chown=kortix:kortix kortix-opencode-warmup /tmp/kortix-opencode-warmup
 RUN bash /tmp/kortix-opencode-warmup migration; rm -f /tmp/kortix-opencode-warmup
 
@@ -118,6 +126,10 @@ RUN case "$(uname -m)" in \\
     && rm -rf /tmp/bun /tmp/bun.zip \\
     && test "$(bun --version)" = "1.3.14"
 
+RUN pnpm add -g "@firecrawl/anydoc@0.1.6" \\
+    && command -v anydoc \\
+    && test "$(anydoc --version)" = "0.1.6"
+
 RUN mkdir -p /opt/kortix/opencode-config-deps \\
     && cd /opt/kortix/opencode-config-deps \\
     && printf '{"name":"kortix-opencode-config","private":true,"dependencies":{"@mendable/firecrawl-js":"^4.25.1","@opencode-ai/plugin":"1.17.11","@tavily/core":"^0.7.3","replicate":"^1.4.0"},"overrides":{"axios":"1.16.0","form-data":"4.0.6"}}' > package.json \\
@@ -129,6 +141,7 @@ RUN cd /opt/kortix/opencode-config-deps \\
     && echo "opencode-config-deps: baked tree bundles cleanly"
 
 COPY --chown=kortix:kortix kortix-opencode-config/ /opt/kortix/warm-config/.kortix/opencode/
+RUN sudo chown -R kortix:kortix /opt/kortix/warm-config
 RUN cd /opt/kortix/warm-config/.kortix/opencode \\
     && rm -rf node_modules \\
     && ln -s /opt/kortix/opencode-config-deps/node_modules node_modules \\
@@ -145,7 +158,6 @@ COPY kortix.gz /tmp/kortix.gz
 COPY kortix-entrypoint /usr/local/bin/kortix-entrypoint
 COPY MACHINE.md /MACHINE.md
 COPY kortix-slack-cli/ /opt/kortix/apps/sandbox/slack-cli/
-COPY kortix-executor-sdk/ /opt/kortix/packages/executor-sdk/
 COPY kortix-llm-catalog.json /opt/kortix/llm-catalog.json
 COPY scaffold.git /opt/kortix/scaffold.git
 RUN gunzip -c /tmp/kortix-agent.gz > /usr/local/bin/kortix-agent \\
@@ -190,7 +202,7 @@ RUN apt-get update \\
     && rm -rf /var/lib/apt/lists/*
 
 RUN useradd --create-home --shell /bin/bash --user-group kortix \\
-    && printf 'kortix ALL=(ALL) NOPASSWD:ALL\\n' > /etc/sudoers.d/kortix \\
+    && echo 'kortix ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/kortix \\
     && chmod 0440 /etc/sudoers.d/kortix \\
     && mkdir -p /workspace /opt/kortix /opt/pw-browsers /ephemeral/kortix-master/opencode \\
         /home/kortix/.local/bin /home/kortix/.local/share/pnpm/bin /home/kortix/.bun/bin \\
@@ -213,6 +225,25 @@ RUN case "$(uname -m)" in \\
     && UV_PYTHON_DOWNLOADS=automatic uv python install --default 3.12.13 \\
     && python -c 'import sys; assert sys.version_info[:3] == (3, 12, 13); print("managed python:", sys.version)' \\
     && python3 -c 'import sys; assert sys.version_info[:3] == (3, 12, 13)'
+
+RUN uv pip install --python /home/kortix/.local/bin/python3 --break-system-packages \\
+        "lxml==6.1.1" \\
+        "markitdown[pptx]==0.1.7" \\
+        "openpyxl==3.1.5" \\
+        "pandas==3.0.5" \\
+        "pdf2docx==0.5.13" \\
+        "pdf2image==1.17.0" \\
+        "pdfplumber==0.11.10" \\
+        "pillow==12.3.0" \\
+        "playwright==1.60.0" \\
+        "pymupdf==1.28.0" \\
+        "pypdf==6.14.2" \\
+        "pypdfium2==5.12.1" \\
+        "pytesseract==0.3.13" \\
+        "python-docx==1.2.0" \\
+        "python-pptx==1.0.2" \\
+        "reportlab==5.0.0" \\
+    && python3 -c 'import importlib; [importlib.import_module(m) for m in ["PIL","docx","fitz","lxml","markitdown","openpyxl","pandas","pdf2docx","pdf2image","pdfplumber","playwright","pptx","pypdf","pypdfium2","pytesseract","reportlab"]]; print("python package floor OK")'
 
 ENV SHELL=/bin/bash
 RUN case "$(uname -m)" in \\
@@ -255,17 +286,6 @@ RUN pnpm add -g --allow-build=opencode-ai "opencode-ai@1.17.11" \\
     && command -v opencode \\
     && opencode --version
 
-RUN pnpm add -g "@agentclientprotocol/claude-agent-acp@0.58.1" "@agentclientprotocol/codex-acp@1.1.2" "pi-acp@0.0.31" \\
-    && npm install -g --prefix /home/kortix/.local "@earendil-works/pi-coding-agent@0.80.6" "@earendil-works/pi-ai@0.80.6" "@earendil-works/pi-tui@0.80.6" "@earendil-works/pi-agent-core@0.80.6" \\
-    && command -v claude-agent-acp \\
-    && command -v codex-acp \\
-    && command -v pi-acp \\
-    && command -v pi \\
-    && claude-agent-acp --version \\
-    && codex-acp --version \\
-    && pi-acp --help >/dev/null \\
-    && pi --version
-
 COPY --chown=kortix:kortix kortix-opencode-warmup /tmp/kortix-opencode-warmup
 RUN bash /tmp/kortix-opencode-warmup migration; rm -f /tmp/kortix-opencode-warmup
 
@@ -283,6 +303,10 @@ RUN case "$(uname -m)" in \\
     && rm -rf /tmp/bun /tmp/bun.zip \\
     && test "$(bun --version)" = "1.3.14"
 
+RUN pnpm add -g "@firecrawl/anydoc@0.1.6" \\
+    && command -v anydoc \\
+    && test "$(anydoc --version)" = "0.1.6"
+
 RUN mkdir -p /opt/kortix/opencode-config-deps \\
     && cd /opt/kortix/opencode-config-deps \\
     && printf '{"name":"kortix-opencode-config","private":true,"dependencies":{"@mendable/firecrawl-js":"^4.25.1","@opencode-ai/plugin":"1.17.11","@tavily/core":"^0.7.3","replicate":"^1.4.0"},"overrides":{"axios":"1.16.0","form-data":"4.0.6"}}' > package.json \\
@@ -294,6 +318,7 @@ RUN cd /opt/kortix/opencode-config-deps \\
     && echo "opencode-config-deps: baked tree bundles cleanly"
 
 COPY --chown=kortix:kortix kortix-opencode-config/ /opt/kortix/warm-config/.kortix/opencode/
+RUN sudo chown -R kortix:kortix /opt/kortix/warm-config
 RUN cd /opt/kortix/warm-config/.kortix/opencode \\
     && rm -rf node_modules \\
     && ln -s /opt/kortix/opencode-config-deps/node_modules node_modules \\
@@ -310,7 +335,6 @@ COPY kortix.gz /tmp/kortix.gz
 COPY kortix-entrypoint /usr/local/bin/kortix-entrypoint
 COPY MACHINE.md /MACHINE.md
 COPY kortix-slack-cli/ /opt/kortix/apps/sandbox/slack-cli/
-COPY kortix-executor-sdk/ /opt/kortix/packages/executor-sdk/
 COPY kortix-llm-catalog.json /opt/kortix/llm-catalog.json
 COPY scaffold.git /opt/kortix/scaffold.git
 RUN gunzip -c /tmp/kortix-agent.gz > /usr/local/bin/kortix-agent \\
@@ -356,7 +380,7 @@ RUN apt-get update \\
     && rm -rf /var/lib/apt/lists/*
 
 RUN useradd --create-home --shell /bin/bash --user-group kortix \\
-    && printf 'kortix ALL=(ALL) NOPASSWD:ALL\\n' > /etc/sudoers.d/kortix \\
+    && echo 'kortix ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/kortix \\
     && chmod 0440 /etc/sudoers.d/kortix \\
     && mkdir -p /workspace /opt/kortix /opt/pw-browsers /ephemeral/kortix-master/opencode \\
         /home/kortix/.local/bin /home/kortix/.local/share/pnpm/bin /home/kortix/.bun/bin \\
@@ -379,6 +403,25 @@ RUN case "$(uname -m)" in \\
     && UV_PYTHON_DOWNLOADS=automatic uv python install --default 3.12.13 \\
     && python -c 'import sys; assert sys.version_info[:3] == (3, 12, 13); print("managed python:", sys.version)' \\
     && python3 -c 'import sys; assert sys.version_info[:3] == (3, 12, 13)'
+
+RUN uv pip install --python /home/kortix/.local/bin/python3 --break-system-packages \\
+        "lxml==6.1.1" \\
+        "markitdown[pptx]==0.1.7" \\
+        "openpyxl==3.1.5" \\
+        "pandas==3.0.5" \\
+        "pdf2docx==0.5.13" \\
+        "pdf2image==1.17.0" \\
+        "pdfplumber==0.11.10" \\
+        "pillow==12.3.0" \\
+        "playwright==1.60.0" \\
+        "pymupdf==1.28.0" \\
+        "pypdf==6.14.2" \\
+        "pypdfium2==5.12.1" \\
+        "pytesseract==0.3.13" \\
+        "python-docx==1.2.0" \\
+        "python-pptx==1.0.2" \\
+        "reportlab==5.0.0" \\
+    && python3 -c 'import importlib; [importlib.import_module(m) for m in ["PIL","docx","fitz","lxml","markitdown","openpyxl","pandas","pdf2docx","pdf2image","pdfplumber","playwright","pptx","pypdf","pypdfium2","pytesseract","reportlab"]]; print("python package floor OK")'
 
 ENV SHELL=/bin/bash
 RUN case "$(uname -m)" in \\
@@ -421,17 +464,6 @@ RUN pnpm add -g --allow-build=opencode-ai "opencode-ai@1.17.11" \\
     && command -v opencode \\
     && opencode --version
 
-RUN pnpm add -g "@agentclientprotocol/claude-agent-acp@0.58.1" "@agentclientprotocol/codex-acp@1.1.2" "pi-acp@0.0.31" \\
-    && npm install -g --prefix /home/kortix/.local "@earendil-works/pi-coding-agent@0.80.6" "@earendil-works/pi-ai@0.80.6" "@earendil-works/pi-tui@0.80.6" "@earendil-works/pi-agent-core@0.80.6" \\
-    && command -v claude-agent-acp \\
-    && command -v codex-acp \\
-    && command -v pi-acp \\
-    && command -v pi \\
-    && claude-agent-acp --version \\
-    && codex-acp --version \\
-    && pi-acp --help >/dev/null \\
-    && pi --version
-
 COPY --chown=kortix:kortix kortix-opencode-warmup /tmp/kortix-opencode-warmup
 RUN bash /tmp/kortix-opencode-warmup migration; rm -f /tmp/kortix-opencode-warmup
 
@@ -448,6 +480,10 @@ RUN case "$(uname -m)" in \\
     && ln -sf bun /home/kortix/.bun/bin/bunx \\
     && rm -rf /tmp/bun /tmp/bun.zip \\
     && test "$(bun --version)" = "1.3.14"
+
+RUN pnpm add -g "@firecrawl/anydoc@0.1.6" \\
+    && command -v anydoc \\
+    && test "$(anydoc --version)" = "0.1.6"
 
 RUN mkdir -p /opt/kortix/opencode-config-deps \\
     && cd /opt/kortix/opencode-config-deps \\
@@ -473,6 +509,7 @@ RUN rm -rf /workspace/.git && mkdir -p /workspace/.git && tar -xf /tmp/kortix-wa
 RUN git -C /workspace rev-parse HEAD >/dev/null 2>&1 && printf 'warm-repo: baked %s on %s\\n' "$(git -C /workspace rev-parse HEAD)" 'main'
 
 COPY --chown=kortix:kortix kortix-opencode-config/ /opt/kortix/warm-config/.kortix/opencode/
+RUN sudo chown -R kortix:kortix /opt/kortix/warm-config
 RUN cd /opt/kortix/warm-config/.kortix/opencode \\
     && rm -rf node_modules \\
     && ln -s /opt/kortix/opencode-config-deps/node_modules node_modules \\
@@ -489,7 +526,6 @@ COPY kortix.gz /tmp/kortix.gz
 COPY kortix-entrypoint /usr/local/bin/kortix-entrypoint
 COPY MACHINE.md /MACHINE.md
 COPY kortix-slack-cli/ /opt/kortix/apps/sandbox/slack-cli/
-COPY kortix-executor-sdk/ /opt/kortix/packages/executor-sdk/
 COPY kortix-llm-catalog.json /opt/kortix/llm-catalog.json
 COPY scaffold.git /opt/kortix/scaffold.git
 RUN gunzip -c /tmp/kortix-agent.gz > /usr/local/bin/kortix-agent \\
@@ -536,6 +572,7 @@ RUN rm -rf /workspace/.git && mkdir -p /workspace/.git && tar -xf /tmp/kortix-wa
 RUN git -C /workspace rev-parse HEAD >/dev/null 2>&1 && printf 'warm-repo: baked %s on %s\\n' "$(git -C /workspace rev-parse HEAD)" 'main'
 
 COPY --chown=kortix:kortix kortix-opencode-config/ /opt/kortix/warm-config/.kortix/opencode/
+RUN sudo chown -R kortix:kortix /opt/kortix/warm-config
 RUN cd /opt/kortix/warm-config/.kortix/opencode \\
     && rm -rf node_modules \\
     && ln -s /opt/kortix/opencode-config-deps/node_modules node_modules \\

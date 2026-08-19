@@ -4,8 +4,9 @@
  * ke2e review flow).
  */
 import { describe, expect, test } from 'bun:test';
-import type { reviewItems } from '@kortix/db';
+import type { connectorCalls, reviewItems } from '@kortix/db';
 import {
+  collectInboxItems,
   isReviewVerdict,
   isSubmittableKind,
   serializeReviewItem,
@@ -13,6 +14,7 @@ import {
 } from '../projects/review-items';
 
 type ReviewItemRow = typeof reviewItems.$inferSelect;
+type ConnectorCallRow = typeof connectorCalls.$inferSelect;
 
 describe('statusesForSegment', () => {
   test('needs_you / waiting are single-status; done is every terminal status', () => {
@@ -104,5 +106,53 @@ describe('serializeReviewItem', () => {
     const out = serializeReviewItem({ ...base, detail: null as never, metadata: null });
     expect(out.detail).toEqual({});
     expect(out.metadata).toEqual({});
+  });
+});
+
+describe('collectInboxItems connector-call preview authorization', () => {
+  const execution: ConnectorCallRow = {
+    executionId: 'exec-sensitive',
+    accountId: 'acc-1',
+    projectId: 'proj-1',
+    connectorId: null,
+    connectionId: null,
+    actionPath: 'gmail.send_email',
+    actingUserId: 'user-1',
+    sessionId: null,
+    status: 'pending_approval',
+    risk: 'write',
+    requestDigest: 'digest',
+    resultSummary: {
+      args_preview: { to: ['private@example.com'], body: 'sensitive body' },
+      args_preview_complete: true,
+    },
+    approvedBy: null,
+    createdAt: new Date('2026-06-30T10:00:00.000Z'),
+    resolvedAt: null,
+  };
+  const sources = {
+    native: async () => [],
+    changeRequests: async () => [],
+    connectorApprovals: async () => [execution],
+  };
+
+  test('fails closed when no preview-authority callback is provided', async () => {
+    const [item] = await collectInboxItems(sources);
+    expect(item.detail).not.toHaveProperty('args_preview');
+    expect(item.detail).toMatchObject({
+      args_preview_authorized: false,
+      args_preview_complete: false,
+    });
+  });
+
+  test('includes the full redacted preview only for an authorized execution', async () => {
+    const [item] = await collectInboxItems(sources, {
+      canExposeConnectorCallPreview: (row) => row.executionId === execution.executionId,
+    });
+    expect(item.detail).toMatchObject({
+      args_preview: { to: ['private@example.com'], body: 'sensitive body' },
+      args_preview_authorized: true,
+      args_preview_complete: true,
+    });
   });
 });

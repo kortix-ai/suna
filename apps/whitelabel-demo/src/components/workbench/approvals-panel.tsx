@@ -10,10 +10,13 @@
  * it was curl. So the pending set is polled per session and each row carries
  * the two decisions plus the standing one.
  *
- * Three buttons, because the platform takes three scopes and they are genuinely
- * different promises: `once` decides this call, `session` stops asking for THIS
- * connector+action for the rest of the session, `session_all` stops asking for
- * anything. Only `once` is offered as the primary action.
+ * Two buttons — Approve and Deny — and they decide exactly the call that asked.
+ *
+ * There used to be a third, "Always this session". The platform's `session` and
+ * `session_all` scopes were REMOVED: a grant keyed on (session, connector,
+ * action) ignores the ARGUMENTS, so approving a send to one recipient silently
+ * pre-authorised a send to any other. A tool that should run unattended belongs
+ * in an `always_run` policy rule, authored deliberately.
  */
 
 import Loading from '@/components/ui/loading';
@@ -64,11 +67,8 @@ export function SessionApprovals({
   });
 
   const resolve = useMutation({
-    mutationFn: (input: {
-      executionId: string;
-      decision: 'approve' | 'deny';
-      scope: 'once' | 'session' | 'session_all';
-    }) => kortix.project(projectId).approvals.resolve(input.executionId, input.decision, input.scope),
+    mutationFn: (input: { executionId: string; decision: 'approve' | 'deny' }) =>
+      kortix.project(projectId).approvals.resolve(input.executionId, input.decision),
     onMutate: (input) => {
       setFailure(null);
       setDeciding(input.executionId);
@@ -152,11 +152,7 @@ export function SessionApprovals({
                 size="xs"
                 disabled={busy}
                 onClick={() =>
-                  resolve.mutate({
-                    executionId: row.executionId,
-                    decision: 'approve',
-                    scope: 'once',
-                  })
+                  resolve.mutate({ executionId: row.executionId, decision: 'approve' })
                 }
               >
                 {busy ? <Loading className="size-3" /> : <Check className="size-3" />}
@@ -164,27 +160,10 @@ export function SessionApprovals({
               </Button>
               <Button
                 size="xs"
-                variant="secondary"
-                disabled={busy}
-                // `session` is scoped to this connector+action, not a blanket
-                // pass — say which, or people read it as "allow everything".
-                title="Stop asking for this action for the rest of the session"
-                onClick={() =>
-                  resolve.mutate({
-                    executionId: row.executionId,
-                    decision: 'approve',
-                    scope: 'session',
-                  })
-                }
-              >
-                Always this session
-              </Button>
-              <Button
-                size="xs"
                 variant="outline"
                 disabled={busy}
                 onClick={() =>
-                  resolve.mutate({ executionId: row.executionId, decision: 'deny', scope: 'once' })
+                  resolve.mutate({ executionId: row.executionId, decision: 'deny' })
                 }
               >
                 <X className="size-3" />
@@ -194,8 +173,8 @@ export function SessionApprovals({
           );
         })}
 
-        {/* The decision these three buttons send, on the execution id that is
-            actually waiting — the scope is the part people get wrong. */}
+        {/* The decision these buttons send, on the execution id that is
+            actually waiting. */}
         <CallSnippet
           id="approval.resolve"
           context={{ projectId, executionId: view.pending[0]?.executionId }}

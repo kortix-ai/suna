@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
+  applyEnablementToProviderList,
   LLM_PROVIDER_CREDENTIALS,
   type ProviderListResponse,
   connectedGatewayProviderIdsFromSecretNames,
@@ -108,5 +109,43 @@ describe('mergeProviderLists', () => {
     expect(merged.connected).toEqual(['kortix', 'anthropic']);
     expect(merged.all?.map((provider) => provider.id)).toEqual(['kortix', 'anthropic']);
     expect(merged.default).toEqual({ kortix: 'managed', anthropic: 'claude' });
+  });
+});
+
+// The session picker renders from the cached gateway ProviderListResponse
+// (query ['project-providers', :id, 'gateway'], staleTime Infinity) — NOT from
+// the `qk.project.modelPicker(id)` query the Manage-models tab writes through. A
+// toggle must be able to restamp `enabled` on that cached shape optimistically,
+// or the open picker keeps showing the pre-toggle list until a hard refresh.
+describe('applyEnablementToProviderList', () => {
+  const providers = {
+    default: { kortix: 'glm-5.2' },
+    connected: ['kortix'],
+    all: [
+      {
+        id: 'kortix',
+        name: 'Kortix',
+        source: 'gateway',
+        models: {
+          'glm-5.2': { name: 'GLM 5.2', enabled: true },
+          'anthropic/claude-sonnet-5': { name: 'Claude Sonnet 5', enabled: true },
+        },
+      },
+    ],
+  } as unknown as ProviderListResponse;
+
+  test('restamps enabled only for models named in the overrides', () => {
+    const next = applyEnablementToProviderList(providers, {
+      'anthropic/claude-sonnet-5': false,
+    });
+    const models = (next.all?.[0] as { models: Record<string, { enabled?: boolean }> }).models;
+    expect(models['anthropic/claude-sonnet-5'].enabled).toBe(false);
+    expect(models['glm-5.2'].enabled).toBe(true);
+  });
+
+  test('does not mutate the input list', () => {
+    applyEnablementToProviderList(providers, { 'glm-5.2': false });
+    const models = (providers.all?.[0] as { models: Record<string, { enabled?: boolean }> }).models;
+    expect(models['glm-5.2'].enabled).toBe(true);
   });
 });

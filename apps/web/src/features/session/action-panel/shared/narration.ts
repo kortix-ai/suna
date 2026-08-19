@@ -96,8 +96,10 @@ assign('sessions', [
 assign('memory', ['memory', 'memory_search', 'mem_search', 'ltm_search', 'get_mem']);
 assign('apps', [
   'connector_get', 'connector_list', 'connector_setup',
-  'kortix_executor_call', 'kortix_executor_connectors',
-  'kortix_executor_describe', 'kortix_executor_discover',
+  'kortix_connector_call', 'kortix_connectors',
+  'kortix_connectors_connectors', 'kortix_connectors_discover',
+  'kortix_connectors_describe', 'kortix_connectors_call',
+  'kortix_connector_describe', 'kortix_connector_discover',
 ]);
 assign('automations', [
   'triggers', 'trigger_create', 'trigger_delete', 'trigger_get', 'trigger_list',
@@ -138,6 +140,34 @@ export function humanizeToolName(toolName: string): string {
     .replace(/_/g, ' ')
     .trim()
     .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+/**
+ * The label a Context row wears for a tool, in plain language.
+ *
+ * Keyed on FAMILY, never on the tool name. A second per-tool table would be
+ * exactly the duplication `FAMILY_BY_TOOL` exists to prevent, and it would
+ * drift the moment another spelling of an existing tool lands. Two families
+ * earn an override; every other one keeps `humanizeToolName`, where the tool's
+ * own name is still the most truthful thing to call it.
+ *
+ * - `run` — `bash` humanizes to "Bash", the name of a shell. A reader who has
+ *   never opened one still knows what a terminal is.
+ * - `memory` — `memory`, `memory_search`, `mem_search`, `ltm_search` and
+ *   `get_mem` are five spellings of ONE thing. Humanized per tool they split
+ *   into "Memory", "Memory Search", "Get Mem", … as separate rows sitting
+ *   beside each other; `deriveContext` folds by label, so one label is what
+ *   makes them one row.
+ */
+const CONTEXT_LABEL_BY_FAMILY: Partial<Record<StepFamily, string>> = {
+  run: 'Terminal',
+  memory: 'Memory',
+};
+
+export function contextLabelForTool(toolName: string): string {
+  const family = familyForTool(toolName);
+  const label = family === 'hidden' ? undefined : CONTEXT_LABEL_BY_FAMILY[family];
+  return label ?? humanizeToolName(toolName);
 }
 
 function plural(n: number, one: string, many: string): string {
@@ -282,10 +312,10 @@ const APP_ACTION: Record<string, AppAction> = {
   connector_setup: 'connect',
   connector_get: 'read',
   connector_list: 'read',
-  kortix_executor_discover: 'read',
-  kortix_executor_describe: 'read',
-  kortix_executor_connectors: 'read',
-  kortix_executor_call: 'call',
+  kortix_connector_discover: 'read',
+  kortix_connector_describe: 'read',
+  kortix_connectors: 'read',
+  kortix_connector_call: 'call',
 };
 
 function appAction(part: ToolPart): AppAction {
@@ -746,7 +776,7 @@ export function narrateStep(family: StepFamily, parts: ToolPart[]): string {
     case 'ask':
       return 'Asked you a question';
     case 'retired':
-      return 'Used an integration that has since been removed';
+      return 'Used a connector that has since been removed';
     case 'other': {
       if (n === 1) return `Used ${humanizeToolName(parts[0].tool)}`;
       // Never inspect only parts[0] — a mixed group of unrecognized/MCP tools
@@ -802,7 +832,7 @@ export function narrateFailedStep(family: StepFamily, parts: ToolPart[]): string
     case 'ask':
       return "Couldn't ask you a question";
     case 'retired':
-      return 'Used an integration that has since been removed';
+      return 'Used a connector that has since been removed';
     case 'other': {
       // 'other' is the catch-all family, so a grouped step can hold several
       // distinct tools of which only one errored — naming parts[0] would blame

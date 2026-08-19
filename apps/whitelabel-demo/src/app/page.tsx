@@ -78,7 +78,10 @@ function Dashboard({
   wrapperMode: boolean;
   onDisconnect: () => void;
 }) {
-  const projects = useQuery({ queryKey: qk.projects, queryFn: () => kortix.projects.list() });
+  const projects = useQuery({
+    queryKey: qk.projects,
+    queryFn: () => kortix.projects.list(),
+  });
   const items = projects.data ?? [];
 
   return (
@@ -87,16 +90,16 @@ function Dashboard({
         <div className="mx-auto flex max-w-4xl items-center justify-between px-5 py-3">
           <div className="flex items-center gap-2">
             <BrandMark />
-            {/* The two integration shapes behave differently and the difference
+            {/* The two connector access modes behave differently and the difference
                 is otherwise invisible — which makes every other observation on
                 this page ambiguous. */}
             <ModeBadge wrapperMode={wrapperMode} />
           </div>
           <div className="flex items-center gap-1">
             {wrapperMode ? (
-              <Link href="/usage">
+              <Link href="/session-costs">
                 <Button variant="ghost" size="sm">
-                  <Receipt className="size-4" /> Usage
+                  <Receipt className="size-4" /> Session costs
                 </Button>
               </Link>
             ) : (
@@ -161,7 +164,9 @@ function Dashboard({
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-sm font-medium">{p.name}</div>
                   <div className="truncate text-xs text-muted-foreground">
-                    {p.updated_at ? `Updated ${relativeTime(p.updated_at)}` : p.project_id}
+                    {p.updated_at
+                      ? `Updated ${relativeTime(p.updated_at)}`
+                      : p.project_id}
                   </div>
                 </div>
               </Card>
@@ -180,7 +185,8 @@ function CreateProjectDialog() {
   const router = useRouter();
 
   const create = useMutation({
-    mutationFn: () => kortix.projects.provision({ name: name.trim(), seed_starter: true }),
+    mutationFn: () =>
+      kortix.projects.provision({ name: name.trim(), seed_starter: true }),
     onSuccess: (project) => {
       qc.invalidateQueries({ queryKey: qk.projects });
       setOpen(false);
@@ -202,8 +208,8 @@ function CreateProjectDialog() {
         <DialogHeader>
           <DialogTitle>New project</DialogTitle>
           <DialogDescription>
-            We&apos;ll provision a managed git repo seeded with a starter so the agent can boot
-            immediately.
+            We&apos;ll provision a managed git repo seeded with a starter so the
+            agent can boot immediately.
           </DialogDescription>
         </DialogHeader>
         <form
@@ -225,7 +231,10 @@ function CreateProjectDialog() {
           {/* The first call a wrapper ever makes, and the only project-create
               path it may use — so it belongs on the button that makes it. */}
           <div className="mt-3">
-            <CallSnippet id="project.provision" context={{ projectName: name }} />
+            <CallSnippet
+              id="project.provision"
+              context={{ projectName: name }}
+            />
           </div>
           <DialogFooter className="mt-4">
             <Button type="submit" disabled={!name.trim() || create.isPending}>

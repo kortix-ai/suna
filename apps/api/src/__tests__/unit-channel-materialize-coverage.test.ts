@@ -10,7 +10,7 @@ import { CHANNEL_PLATFORMS } from '@kortix/manifest-schema';
  * Assert from source so this needs no database.
  */
 const SOURCE = await Bun.file(
-  new URL('../executor/channel-materialize.ts', import.meta.url).pathname,
+  new URL('../connectors/channel-materialize.ts', import.meta.url).pathname,
 ).text();
 
 describe('synthesizeChannelConnectors covers every channel platform', () => {

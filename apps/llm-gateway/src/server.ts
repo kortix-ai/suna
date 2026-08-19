@@ -61,9 +61,9 @@ export function buildServer(): GatewayServer {
       retry: config.retry,
       breaker: config.breaker,
       captureBodies: config.captureBodies,
-      maxCapturedBodyBytes: config.maxCapturedBodyBytes,
-      maxRequestBytes: config.maxRequestBytes || undefined,
-      streamProbeTimeoutMs: config.streamProbeTimeoutMs,
+      maxRequestBytes: config.maxRequestBytes > 0 ? config.maxRequestBytes : undefined,
+      streamProbeTimeoutMs:
+        config.streamProbeTimeoutMs > 0 ? config.streamProbeTimeoutMs : undefined,
     },
     { logger },
   );
@@ -196,6 +196,10 @@ export function buildServer(): GatewayServer {
     }
   };
 
+  // The API reverse proxy exposes `/v1/llm-gateway` as the OpenAI base URL.
+  // It strips that prefix before forwarding the request, so OpenAI-compatible
+  // clients reach this service at `/chat/completions`.
+  app.post('/chat/completions', chatCompletions);
   app.post('/v1/chat/completions', chatCompletions);
   app.post('/v1/llm/chat/completions', chatCompletions);
   app.post('/v1/openai/chat/completions', chatCompletions);
@@ -231,6 +235,7 @@ export function buildServer(): GatewayServer {
     }
   };
 
+  app.post('/messages', messages);
   app.post('/v1/messages', messages);
   app.post('/v1/llm/messages', messages);
   app.post('/v1/openai/messages', messages);
@@ -238,6 +243,7 @@ export function buildServer(): GatewayServer {
   const models = (c: { req: { header: (k: string) => string | undefined } }) =>
     gateway.listModels(c.req.header('authorization'));
 
+  app.get('/models', models);
   app.get('/v1/models', models);
   app.get('/v1/llm/models', models);
   app.get('/v1/openai/models', models);

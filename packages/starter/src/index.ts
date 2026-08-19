@@ -33,25 +33,30 @@ export interface StarterFile {
   content: string;
 }
 
-// There is one USER-FACING starter kit: `general-knowledge-worker` (base
-// plumbing + the full consolidated Kortix skill kit). Every new project is
-// scaffolded with it — project creation no longer offers a choice.
+// There is one USER-FACING starter kit:
+// - `general-knowledge-worker`: the full skill kit on the OpenCode REST runtime.
 //
 // `minimal` (base only, no domain skills) is kept purely as an INTERNAL
 // building block: the project-clone seed path (`buildProjectSeedFilesFromItem`)
-// uses it to lay down the v2 compatibility floor and canonical skill source
+// uses it to lay down the OpenCode runtime floor and canonical skill source
 // before a `registry:project`'s own skills/agents are layered on top, so a
 // specialized project template isn't
 // polluted with every general-knowledge skill. It is not surfaced in the
 // create-project UI, mobile, or the `kortix init` prompt.
-export const STARTER_TEMPLATE_IDS = ['minimal', 'general-knowledge-worker'] as const;
+//
+export const STARTER_TEMPLATE_IDS = [
+  'minimal',
+  'general-knowledge-worker',
+] as const;
 export type StarterTemplateId = (typeof STARTER_TEMPLATE_IDS)[number];
 export const DEFAULT_STARTER_TEMPLATE_ID: StarterTemplateId = 'general-knowledge-worker';
 
 export const KORTIX_MANAGED_SKILL_NAMES = [
   'kortix-cli',
+  'kortix-apps',
   'kortix-computer',
-  'kortix-executor',
+  'kortix-connectors',
+  'kortix-harness-refinement',
   'kortix-marketplace',
   'kortix-voice',
   'kortix-memory',
@@ -73,8 +78,8 @@ export interface StarterVars {
   projectName: string;
   /** "owner/repo" GitHub identifier. Optional — defaults to "your-org/your-repo". */
   repoFullName?: string;
-  /** Starter kit. Defaults to the one user-facing kit
-   *  (`general-knowledge-worker`). `minimal` is an internal base-only build. */
+  /** Starter kit. Defaults to `general-knowledge-worker`.
+   *  `minimal` is an internal base-only build. */
   template?: StarterTemplateId;
 }
 
@@ -158,8 +163,10 @@ export function getStarterFiles(vars: StarterVars): StarterFile[] {
     template: normalizeStarterTemplateId(vars.template),
   };
 
+  // Later roots win (`byPath.set`), so the general-knowledge-worker layer may
+  // override a base file of the same path.
   const roots: { name: string; dir: string }[] = [{ name: 'base', dir: BASE_TEMPLATE_DIR }];
-  if (resolvedVars.template === 'general-knowledge-worker') {
+  if (resolvedVars.template !== 'minimal') {
     roots.push({
       name: 'general-knowledge-worker',
       dir: GENERAL_KNOWLEDGE_WORKER_TEMPLATE_DIR,

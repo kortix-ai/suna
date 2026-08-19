@@ -8,12 +8,14 @@ import {
   projectSessionRuntimeContexts,
   projectSessions,
   projects,
+  sessionLifecycleCommands,
   sessionSandboxes,
 } from '@kortix/db';
 import type { SQL } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
+import type { SandboxRuntimeHealth } from '../projects/runtime-inspection';
 import { mockIamEngineAllowAll, mockIamMembershipSyncNoop } from './helpers/iam-mocks';
 
 const USER_ID = '00000000-0000-4000-a000-000000000001';
@@ -22,26 +24,34 @@ const PROJECT_ID = '00000000-0000-4000-a000-000000000201';
 const SESSION_ID = '00000000-0000-4000-a000-000000000301';
 const TEST_GITHUB_OWNER = 'kortix-org';
 const PROJECT_RUNTIME_PAT = 'kortix_pat_project_runtime';
+const SESSION_AGENT_PAT = 'kortix_pat_session_agent';
 const PROJECT_SANDBOX_TOKEN = 'kortix_sb_project_runtime';
 const PROJECT_SA_TOKEN = 'kortix_sa_backend_wrapper';
-const PROJECT_AGENT_PAT = 'kortix_pat_agent_session';
-const PROJECT_EXECUTOR_PAT = 'kortix_pat_executor_sandbox';
+const SESSION_BOUND_PAT = 'kortix_pat_session_connector';
 const ORIGINAL_KORTIX_GITHUB_OWNER = process.env.KORTIX_GITHUB_OWNER;
 const ORIGINAL_API_KEY_SECRET = process.env.API_KEY_SECRET;
 const ORIGINAL_KORTIX_URL = process.env.KORTIX_URL;
+const ORIGINAL_ALLOWED_SANDBOX_PROVIDERS = process.env.ALLOWED_SANDBOX_PROVIDERS;
 
 process.env.KORTIX_GITHUB_OWNER = TEST_GITHUB_OWNER;
 process.env.API_KEY_SECRET = 'test-project-secret-key-material-32-bytes';
 process.env.KORTIX_URL = 'https://api.test.kortix.local';
+process.env.ALLOWED_SANDBOX_PROVIDERS = 'daytona,platinum,e2b';
+
+const { config } = await import('../config');
 
 let branchCreateCalls = 0;
 let sandboxProvisionCalls = 0;
 let providerStartCalls = 0;
+let providerStopCalls = 0;
 let providerStatus = 'stopped';
+let providerStatusSequence: string[] = [];
 let providerStatusAfterStart: string | null = null;
+let providerStatusSessionMetadataUpdate: Record<string, unknown> | null = null;
 let providerStartError: Error | null = null;
 let providerStartGate: Promise<void> | null = null;
 let releaseProviderStart: (() => void) | null = null;
+let runtimeInspectionHealth: SandboxRuntimeHealth | null = null;
 let providerRecoveryCalls = 0;
 let providerRecoveryEnabled = false;
 let providerRecoveryStatus: 'running' | 'recovering' | 'unavailable' = 'unavailable';
@@ -51,8 +61,16 @@ let computeReopenCalls = 0;
 let opencodeEnsureReason: 'unchanged' | 'healed' | 'not_ready' | 'unreachable' = 'unchanged';
 let activeSessionCount = 0;
 let sessionRow: typeof projectSessions.$inferSelect | null;
+let lastSessionInsertValues: Record<string, unknown> | null = null;
+const lifecycleCommandInserts: Array<Record<string, unknown>> = [];
 let lastSessionListWhere: unknown = null;
-let sessionSandboxRows: Array<typeof sessionSandboxes.$inferSelect>;
+// `active_since` / `deadline_at` are assigned by a DB trigger, never by
+// application code, so these HTTP-contract fixtures deliberately omit them —
+// none of the routes under test reads either column (only the reaper does, and
+// it has its own suite).
+type SandboxRowFixture = Omit<typeof sessionSandboxes.$inferSelect, 'activeSince' | 'deadlineAt'> &
+  Partial<Pick<typeof sessionSandboxes.$inferSelect, 'activeSince' | 'deadlineAt'>>;
+let sessionSandboxRows: Array<SandboxRowFixture>;
 let secretRows: Array<typeof projectSecrets.$inferSelect>;
 let runtimeContextRows: Array<typeof projectSessionRuntimeContexts.$inferSelect>;
 let secretValues: Map<string, string>;
@@ -79,6 +97,7 @@ const projectRow: typeof projects.$inferSelect = {
   repoUrl: `https://github.com/${TEST_GITHUB_OWNER}/contract-project.git`,
   defaultBranch: 'main',
   manifestPath: 'kortix.yaml',
+  idempotencyKey: null,
   status: 'active',
   metadata: {
     github: {
@@ -95,11 +114,15 @@ function resetState() {
   branchCreateCalls = 0;
   sandboxProvisionCalls = 0;
   providerStartCalls = 0;
+  providerStopCalls = 0;
   providerStatus = 'stopped';
+  providerStatusSequence = [];
   providerStatusAfterStart = null;
+  providerStatusSessionMetadataUpdate = null;
   providerStartError = null;
   providerStartGate = null;
   releaseProviderStart = null;
+  runtimeInspectionHealth = null;
   providerRecoveryCalls = 0;
   providerRecoveryEnabled = false;
   providerRecoveryStatus = 'unavailable';
@@ -108,6 +131,8 @@ function resetState() {
   computeReopenCalls = 0;
   opencodeEnsureReason = 'unchanged';
   activeSessionCount = 0;
+  lastSessionInsertValues = null;
+  lifecycleCommandInserts.length = 0;
   lastProvisionInput = null;
   projectRow.repoUrl = `https://github.com/${TEST_GITHUB_OWNER}/contract-project.git`;
   projectRow.defaultBranch = 'main';
@@ -135,7 +160,9 @@ function resetState() {
     origin: 'user',
     originRef: null,
     secretsAllowlist: null,
+    requiredConnectors: null,
     connectorBindingsInheritUnbound: false,
+    connectorBindingsConfigured: false,
     metadata: { existing: true },
     createdAt: new Date('2026-01-01T00:00:00Z'),
     updatedAt: new Date('2026-01-01T00:00:00Z'),
@@ -174,6 +201,34 @@ mock.module('../middleware/auth', () => ({
       await next();
       return;
     }
+    if (c.req.header('Authorization') === `Bearer ${SESSION_AGENT_PAT}`) {
+      c.set('userId', USER_ID);
+      c.set('userEmail', '');
+      c.set('authType', 'pat');
+      c.set('accountId', ACCOUNT_ID);
+      c.set('tokenProjectId', PROJECT_ID);
+      c.set('sessionId', SESSION_ID);
+      c.set('iamTokenId', '00000000-0000-4000-a000-000000000903');
+      c.set('agentGrant', {
+        agent: 'contract-agent',
+        connectors: 'all',
+        kortixCli: 'all',
+        env: 'all',
+      });
+      await next();
+      return;
+    }
+    if (c.req.header('Authorization') === `Bearer ${SESSION_BOUND_PAT}`) {
+      c.set('userId', USER_ID);
+      c.set('userEmail', '');
+      c.set('authType', 'pat');
+      c.set('accountId', ACCOUNT_ID);
+      c.set('tokenProjectId', PROJECT_ID);
+      c.set('sessionId', SESSION_ID);
+      c.set('iamTokenId', '00000000-0000-4000-a000-000000000903');
+      await next();
+      return;
+    }
     if (c.req.header('Authorization') === `Bearer ${PROJECT_SA_TOKEN}`) {
       c.set('userId', USER_ID);
       c.set('userEmail', '');
@@ -184,45 +239,25 @@ mock.module('../middleware/auth', () => ({
       await next();
       return;
     }
-    if (c.req.header('Authorization') === `Bearer ${PROJECT_AGENT_PAT}`) {
-      // An agent-session PAT: same principal as the runtime PAT but carrying a
-      // resolved agent grant — i.e. a token acting AS an agent inside a session.
-      c.set('userId', USER_ID);
-      c.set('userEmail', '');
-      c.set('authType', 'pat');
-      c.set('accountId', ACCOUNT_ID);
-      c.set('tokenProjectId', PROJECT_ID);
-      c.set('iamTokenId', '00000000-0000-4000-a000-000000000903');
-      c.set('agentGrant', { agent: 'default', kortixCli: 'all', connectors: 'all' });
-      await next();
-      return;
-    }
-    if (c.req.header('Authorization') === `Bearer ${PROJECT_EXECUTOR_PAT}`) {
-      // The REAL executor PAT injected into every sandbox (KORTIX_CLI_TOKEN):
-      // session-bound (sessionId set) but with a NULL agent grant — the common
-      // v1/default-agent case. It must still be excluded from 'backend'; keying
-      // the exclusion on the agent grant alone would fail open here.
-      c.set('userId', USER_ID);
-      c.set('userEmail', '');
-      c.set('authType', 'pat');
-      c.set('accountId', ACCOUNT_ID);
-      c.set('tokenProjectId', PROJECT_ID);
-      c.set('sessionId', SESSION_ID);
-      c.set('iamTokenId', '00000000-0000-4000-a000-000000000904');
-      await next();
-      return;
-    }
     c.set('userId', USER_ID);
     c.set('userEmail', 'contract@example.test');
     c.set('authType', 'supabase');
+    // The real middleware sets `sessionId` to the SUPABASE AUTH session for
+    // browser JWTs (IAM idle/lifetime gate) — it is NOT a project session.
+    // Mirrored here so a caller-session consumer that forgets to filter by
+    // authType (callerKortixSessionId) fails a test instead of stamping
+    // login-session ids into project data.
+    c.set('sessionId', '00000000-0000-4000-a000-00000000auth');
     await next();
   },
 }));
 
 mock.module('../projects/git', () => ({
+  MergeConflictError: class MergeConflictError extends Error {},
   createRemoteSessionBranch: async () => {
     branchCreateCalls += 1;
   },
+  remoteBranchExists: async () => true,
   archiveRepoSubtree: async () => undefined,
   deleteRemoteSessionBranch: async () => undefined,
   listRepoFiles: async () => [],
@@ -230,7 +265,7 @@ mock.module('../projects/git', () => ({
   grepRepoFiles: async () => [],
   loadProjectConfig: async () => ({}),
   readRepoFile: async () => '',
-  // executor/sync.ts imports these from the same barrel; a wholesale module mock
+  // connector/sync.ts imports these from the same barrel; a wholesale module mock
   // that omits them makes the whole file fail to LOAD with a SyntaxError, which
   // reads as "the suite is broken" rather than "the mock is short two names".
   RepoFileNotFoundError: class RepoFileNotFoundError extends Error {},
@@ -264,6 +299,13 @@ mock.module('../snapshots/builder', () => ({
     contentHash: 'a'.repeat(64),
     built: false,
     isDefault: true,
+  }),
+  ensureMetaSandboxImage: async () => ({
+    snapshotName: 'kortix-meta-test',
+    slug: 'meta',
+    contentHash: 'b'.repeat(64),
+    built: false,
+    isDefault: false,
   }),
   deleteSandboxImage: async () => ({
     deleted: false,
@@ -338,7 +380,10 @@ mock.module('../projects/github', () => ({
     default_branch: 'main',
     description: null,
   }),
-  getRepositoryBranch: async ({ branch }: { branch: string }) => ({ name: branch, protected: false }),
+  getRepositoryBranch: async ({ branch }: { branch: string }) => ({
+    name: branch,
+    protected: false,
+  }),
   listInstallationRepositories: async () => [],
   listOwnerRepositories: async () => [],
   listRepositoryBranches: async () => [],
@@ -358,7 +403,14 @@ mock.module('../platform/services/session-sandbox', () => ({
   },
 }));
 
+// Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
+// lists exports by hand deletes every export it omits — the failure surfaces in
+// whatever unrelated file imports the missing name next, attributed to no test.
+// `await import`, not a top-level `import`: the latter hoists above the
+// process.env writes here, and the barrel pulls in config, which reads them once.
+const realProviders = await import('../platform/providers');
 mock.module('../platform/providers', () => ({
+  ...realProviders,
   WarmRuntimeUnavailableError: class WarmRuntimeUnavailableError extends Error {
     constructor(message: string) {
       super(message);
@@ -366,14 +418,27 @@ mock.module('../platform/providers', () => ({
     }
   },
   getProvider: () => ({
-    getStatus: async () => providerStatus,
+    getStatus: async () => {
+      if (providerStatusSessionMetadataUpdate && sessionRow) {
+        sessionRow = {
+          ...sessionRow,
+          metadata: {
+            ...(sessionRow.metadata ?? {}),
+            ...providerStatusSessionMetadataUpdate,
+          },
+        };
+      }
+      return providerStatusSequence.shift() ?? providerStatus;
+    },
     start: async () => {
       providerStartCalls += 1;
       if (providerStartError) throw providerStartError;
       if (providerStatusAfterStart) providerStatus = providerStatusAfterStart;
       if (providerStartGate) await providerStartGate;
     },
-    stop: async () => undefined,
+    stop: async () => {
+      providerStopCalls += 1;
+    },
     remove: async () => undefined,
     ...(providerRecoveryEnabled
       ? {
@@ -385,6 +450,12 @@ mock.module('../platform/providers', () => ({
         }
       : {}),
   }),
+}));
+
+const realRuntimeInspection = await import('../projects/runtime-inspection');
+mock.module('../projects/runtime-inspection', () => ({
+  ...realRuntimeInspection,
+  inspectSandboxRuntime: async () => runtimeInspectionHealth,
 }));
 
 mock.module('../projects/opencode-mapping', () => ({
@@ -403,7 +474,12 @@ mock.module('../projects/opencode-mapping', () => ({
   }),
 }));
 
+// Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
+// lists exports by hand deletes every export it omits — the failure surfaces in
+// whatever unrelated file imports the missing name next, attributed to no test.
+const realComputeMetering = await import('../billing/services/compute-metering');
 mock.module('../billing/services/compute-metering', () => ({
+  ...realComputeMetering,
   reopenComputeForSandbox: async () => {
     computeReopenCalls += 1;
   },
@@ -473,6 +549,12 @@ mock.module('../shared/account-limits', () => ({
   clearAccountLimitCache: () => undefined,
 }));
 
+const realDefaultModelResolution = await import('../llm-gateway/resolution/default-model');
+mock.module('../llm-gateway/resolution/default-model', () => ({
+  ...realDefaultModelResolution,
+  isModelServableForAccount: async () => true,
+}));
+
 mock.module('../shared/supabase', () => ({
   getSupabase: () => ({
     auth: {
@@ -484,6 +566,33 @@ mock.module('../shared/supabase', () => ({
     },
   }),
 }));
+
+function applySandboxUpdates(
+  row: SandboxRowFixture,
+  updates: Partial<typeof sessionSandboxes.$inferSelect>,
+): SandboxRowFixture {
+  let metadata = updates.metadata;
+  if (metadata && typeof metadata === 'object' && 'queryChunks' in metadata) {
+    const query = new PgDialect().sqlToQuery(metadata as unknown as SQL);
+    const merged = { ...((row.metadata ?? {}) as Record<string, unknown>) };
+    for (const key of query.sql.matchAll(/- '([^']+)'/g)) delete merged[key[1]!];
+    for (const param of query.params) {
+      if (typeof param !== 'string' || !param.startsWith('{')) continue;
+      try {
+        Object.assign(merged, JSON.parse(param) as Record<string, unknown>);
+      } catch {
+        // Non-JSON SQL parameters are unrelated to metadata merges.
+      }
+    }
+    metadata = merged;
+  }
+  return {
+    ...row,
+    ...updates,
+    metadata: metadata === undefined ? row.metadata : metadata,
+    updatedAt: updates.updatedAt ?? new Date('2026-01-02T00:00:00Z'),
+  };
+}
 
 mock.module('../shared/db', () => ({
   hasDatabase: () => true,
@@ -523,6 +632,9 @@ mock.module('../shared/db', () => ({
             if (table === projects) return [projectRow];
             if (table === accountMembers) return [{ accountId: ACCOUNT_ID, accountRole: 'owner' }];
             if (table === projectMembers) return [];
+            if (table === projectSessions && fields?.sessionMetadata) {
+              return sessionRow ? [{ sessionMetadata: sessionRow.metadata }] : [];
+            }
             if (table === projectSessions) return sessionRow ? [sessionRow] : [];
             return [];
           },
@@ -607,7 +719,19 @@ mock.module('../shared/db', () => ({
             runtimeContextRows = [row];
             return [row];
           }
+          if (table === sessionLifecycleCommands) {
+            lifecycleCommandInserts.push(values);
+            return [
+              {
+                ...values,
+                commandId: `cmd-${lifecycleCommandInserts.length}`,
+                attempts: 0,
+                createdAt: new Date('2026-01-02T00:00:00Z'),
+              },
+            ];
+          }
           if (table !== projectSessions) return [];
+          lastSessionInsertValues = values;
           sessionRow = {
             sessionId: values.sessionId,
             accountId: values.accountId,
@@ -626,7 +750,9 @@ mock.module('../shared/db', () => ({
             origin: values.origin ?? 'user',
             originRef: values.originRef ?? null,
             secretsAllowlist: values.secretsAllowlist ?? null,
+            requiredConnectors: null,
             connectorBindingsInheritUnbound: values.connectorBindingsInheritUnbound ?? false,
+            connectorBindingsConfigured: values.connectorBindingsConfigured ?? false,
             metadata: values.metadata ?? {},
             createdAt: new Date('2026-01-02T00:00:00Z'),
             updatedAt: values.updatedAt ?? new Date('2026-01-02T00:00:00Z'),
@@ -641,96 +767,97 @@ mock.module('../shared/db', () => ({
         }) => {
           const conflictResult = {
             returning: async () => {
-            if (table === projectGitConnections) {
-              const existingIndex = gitConnectionRows.findIndex(
-                (row) => row.projectId === values.projectId,
-              );
-              const now = new Date('2026-01-02T00:00:00Z');
-              const row = {
-                connectionId:
-                  existingIndex >= 0
-                    ? gitConnectionRows[existingIndex]!.connectionId
-                    : '00000000-0000-4000-a000-000000000501',
-                accountId: values.accountId,
-                projectId: values.projectId,
-                provider: values.provider,
-                repoUrl: values.repoUrl,
-                repoOwner: values.repoOwner ?? null,
-                repoName: values.repoName ?? null,
-                externalRepoId: values.externalRepoId ?? null,
-                defaultBranch: values.defaultBranch,
-                authMethod: values.authMethod,
-                installationId: values.installationId ?? null,
-                credentialRef: values.credentialRef ?? null,
-                permissions: values.permissions ?? {},
-                visibility: values.visibility ?? null,
-                webhookId: values.webhookId ?? null,
-                status: values.status ?? 'connected',
-                lastValidatedAt: values.lastValidatedAt ?? now,
-                lastErrorCode: values.lastErrorCode ?? null,
-                lastErrorMessage: values.lastErrorMessage ?? null,
-                metadata: values.metadata ?? {},
+              if (table === projectGitConnections) {
+                const existingIndex = gitConnectionRows.findIndex(
+                  (row) => row.projectId === values.projectId,
+                );
+                const now = new Date('2026-01-02T00:00:00Z');
+                const row = {
+                  connectionId:
+                    existingIndex >= 0
+                      ? gitConnectionRows[existingIndex]!.connectionId
+                      : '00000000-0000-4000-a000-000000000501',
+                  accountId: values.accountId,
+                  projectId: values.projectId,
+                  provider: values.provider,
+                  repoUrl: values.repoUrl,
+                  repoOwner: values.repoOwner ?? null,
+                  repoName: values.repoName ?? null,
+                  externalRepoId: values.externalRepoId ?? null,
+                  defaultBranch: values.defaultBranch,
+                  authMethod: values.authMethod,
+                  installationId: values.installationId ?? null,
+                  credentialRef: values.credentialRef ?? null,
+                  permissions: values.permissions ?? {},
+                  visibility: values.visibility ?? null,
+                  webhookId: values.webhookId ?? null,
+                  status: values.status ?? 'connected',
+                  lastValidatedAt: values.lastValidatedAt ?? now,
+                  lastErrorCode: values.lastErrorCode ?? null,
+                  lastErrorMessage: values.lastErrorMessage ?? null,
+                  metadata: values.metadata ?? {},
                   createdAt: existingIndex >= 0 ? gitConnectionRows[existingIndex]!.createdAt : now,
-                updatedAt: values.updatedAt ?? now,
-              } as typeof projectGitConnections.$inferSelect;
-              if (existingIndex >= 0) gitConnectionRows[existingIndex] = row;
-              else gitConnectionRows.push(row);
-              return [row];
-            }
-            if (table === projectGitCredentials) {
-              const existingIndex = gitCredentialRows.findIndex(
+                  updatedAt: values.updatedAt ?? now,
+                } as typeof projectGitConnections.$inferSelect;
+                if (existingIndex >= 0) gitConnectionRows[existingIndex] = row;
+                else gitConnectionRows.push(row);
+                return [row];
+              }
+              if (table === projectGitCredentials) {
+                const existingIndex = gitCredentialRows.findIndex(
                   (row) => row.projectId === values.projectId && row.provider === values.provider,
+                );
+                const now = new Date('2026-01-02T00:00:00Z');
+                const row = {
+                  credentialId:
+                    existingIndex >= 0
+                      ? gitCredentialRows[existingIndex]!.credentialId
+                      : '00000000-0000-4000-a000-000000000601',
+                  accountId: values.accountId,
+                  projectId: values.projectId,
+                  provider: values.provider,
+                  authMethod: values.authMethod ?? 'token',
+                  valueEnc: values.valueEnc,
+                  createdBy: values.createdBy ?? null,
+                  createdAt: existingIndex >= 0 ? gitCredentialRows[existingIndex]!.createdAt : now,
+                  updatedAt: values.updatedAt ?? now,
+                } as typeof projectGitCredentials.$inferSelect;
+                if (existingIndex >= 0) gitCredentialRows[existingIndex] = row;
+                else gitCredentialRows.push(row);
+                return [row];
+              }
+              if (table !== projectSecrets) return [];
+              const existingIndex = secretRows.findIndex(
+                (row) => row.projectId === values.projectId && row.name === values.name,
               );
               const now = new Date('2026-01-02T00:00:00Z');
-              const row = {
-                credentialId:
+              const row: typeof projectSecrets.$inferSelect = {
+                secretId:
                   existingIndex >= 0
-                    ? gitCredentialRows[existingIndex]!.credentialId
-                    : '00000000-0000-4000-a000-000000000601',
-                accountId: values.accountId,
-                projectId: values.projectId,
-                provider: values.provider,
-                authMethod: values.authMethod ?? 'token',
-                valueEnc: values.valueEnc,
+                    ? secretRows[existingIndex]!.secretId
+                    : '00000000-0000-4000-a000-000000000401',
+                projectId: values.projectId!,
+                identifier: values.identifier ?? values.name!,
+                name: values.name!,
+                valueEnc: (set.valueEnc ?? values.valueEnc)!,
+                scope: values.scope ?? 'runtime',
+                ownerUserId: values.ownerUserId ?? null,
+                active: values.active ?? true,
                 createdBy: values.createdBy ?? null,
-                  createdAt: existingIndex >= 0 ? gitCredentialRows[existingIndex]!.createdAt : now,
-                updatedAt: values.updatedAt ?? now,
-              } as typeof projectGitCredentials.$inferSelect;
-              if (existingIndex >= 0) gitCredentialRows[existingIndex] = row;
-              else gitCredentialRows.push(row);
+                description: values.description ?? null,
+                strategy: values.strategy ?? 'runtime',
+                consumer: values.consumer ?? 'sandbox',
+                egressPolicy: values.egressPolicy ?? null,
+                handlePrefix: values.handlePrefix ?? null,
+                rotatedAt: values.rotatedAt ?? null,
+                strategyLocked: values.strategyLocked ?? false,
+                createdAt: existingIndex >= 0 ? secretRows[existingIndex]!.createdAt : now,
+                updatedAt: (set.updatedAt ?? values.updatedAt ?? now) as Date,
+              };
+              if (existingIndex >= 0) secretRows[existingIndex] = row;
+              else secretRows.push(row);
               return [row];
-            }
-            if (table !== projectSecrets) return [];
-            const existingIndex = secretRows.findIndex(
-                (row) => row.projectId === values.projectId && row.name === values.name,
-            );
-            const now = new Date('2026-01-02T00:00:00Z');
-            const row: typeof projectSecrets.$inferSelect = {
-              secretId:
-                existingIndex >= 0
-                  ? secretRows[existingIndex]!.secretId
-                  : '00000000-0000-4000-a000-000000000401',
-              projectId: values.projectId!,
-              identifier: values.identifier ?? values.name!,
-              name: values.name!,
-              valueEnc: (set.valueEnc ?? values.valueEnc)!,
-              scope: values.scope ?? 'runtime',
-              ownerUserId: values.ownerUserId ?? null,
-              active: values.active ?? true,
-              createdBy: values.createdBy ?? null,
-              description: values.description ?? null,
-              strategy: values.strategy ?? 'runtime',
-              egressPolicy: values.egressPolicy ?? null,
-              handlePrefix: values.handlePrefix ?? null,
-              rotatedAt: values.rotatedAt ?? null,
-              strategyLocked: values.strategyLocked ?? false,
-              createdAt: existingIndex >= 0 ? secretRows[existingIndex]!.createdAt : now,
-              updatedAt: (set.updatedAt ?? values.updatedAt ?? now) as Date,
-            };
-            if (existingIndex >= 0) secretRows[existingIndex] = row;
-            else secretRows.push(row);
-            return [row];
-          },
+            },
             then: (
               resolve: (value: unknown[]) => unknown,
               reject?: (reason: unknown) => unknown,
@@ -761,7 +888,7 @@ mock.module('../shared/db', () => ({
         updates: Partial<typeof projectSessions.$inferSelect> &
           Partial<typeof sessionSandboxes.$inferSelect>,
       ) => ({
-        where: () => ({
+        where: (predicate?: unknown) => ({
           returning: async () => {
             if (table === projectSessions) {
               if (!sessionRow) return [];
@@ -781,11 +908,22 @@ mock.module('../shared/db', () => ({
             if (table === sessionSandboxes) {
               const row = sessionSandboxRows[0];
               if (!row) return [];
-              sessionSandboxRows[0] = {
-                ...row,
-                ...updates,
-                updatedAt: updates.updatedAt ?? new Date('2026-01-02T00:00:00Z'),
-              };
+              if (predicate) {
+                const query = new PgDialect().sqlToQuery(predicate as SQL);
+                const metadata = (row.metadata ?? {}) as Record<string, unknown>;
+                if (
+                  query.sql.includes('runtimeWakeRetryAfterAt') &&
+                  typeof metadata.runtimeWakeId === 'string' &&
+                  Date.parse(String(metadata.runtimeWakeLeaseExpiresAt)) > Date.now()
+                ) {
+                  return [];
+                }
+                if (query.sql.includes("->>'runtimeWakeId' =")) {
+                  const wakeId = (row.metadata as Record<string, unknown> | null)?.runtimeWakeId;
+                  if (typeof wakeId !== 'string' || !query.params.includes(wakeId)) return [];
+                }
+              }
+              sessionSandboxRows[0] = applySandboxUpdates(row, updates);
               return [sessionSandboxRows[0]];
             }
             return [];
@@ -808,11 +946,7 @@ mock.module('../shared/db', () => ({
                 if (table === sessionSandboxes) {
                   const row = sessionSandboxRows[0];
                   if (!row) return [];
-                  sessionSandboxRows[0] = {
-                    ...row,
-                    ...updates,
-                    updatedAt: updates.updatedAt ?? new Date('2026-01-02T00:00:00Z'),
-                  };
+                  sessionSandboxRows[0] = applySandboxUpdates(row, updates);
                   return [sessionSandboxRows[0]];
                 }
                 return [];
@@ -836,11 +970,7 @@ mock.module('../shared/db', () => ({
               if (table === sessionSandboxes) {
                 const row = sessionSandboxRows[0];
                 if (!row) return [];
-                sessionSandboxRows[0] = {
-                  ...row,
-                  ...updates,
-                  updatedAt: updates.updatedAt ?? new Date('2026-01-02T00:00:00Z'),
-                };
+                sessionSandboxRows[0] = applySandboxUpdates(row, updates);
                 return [sessionSandboxRows[0]];
               }
               return [];
@@ -857,6 +987,9 @@ mock.module('../shared/db', () => ({
 const { projectsApp } = await import('../projects/index');
 const { encryptProjectSecret } = await import('../projects/secrets');
 const { resumeStoppedSandbox } = await import('../projects/routes/shared');
+const { applyStoppedState, reconcileSandboxStoppedByExternalId } = await import(
+  '../projects/reaping/sandbox-state-sync'
+);
 
 function createApp() {
   const app = new Hono();
@@ -897,68 +1030,158 @@ describe('project session API contract', () => {
     } else {
       process.env.KORTIX_URL = ORIGINAL_KORTIX_URL;
     }
+    if (ORIGINAL_ALLOWED_SANDBOX_PROVIDERS === undefined) {
+      delete process.env.ALLOWED_SANDBOX_PROVIDERS;
+    } else {
+      process.env.ALLOWED_SANDBOX_PROVIDERS = ORIGINAL_ALLOWED_SANDBOX_PROVIDERS;
+    }
   });
 
   beforeEach(() => resetState());
 
-  test('sandbox token acquires, renews, and releases the execution lease route', async () => {
-    sessionSandboxRows = [
-      {
-        sandboxId: SESSION_ID,
-        sessionId: SESSION_ID,
-        accountId: ACCOUNT_ID,
-        projectId: PROJECT_ID,
-        provider: 'daytona',
-        externalId: null,
-        baseUrl: null,
-        status: 'active',
-        config: {},
-        metadata: {},
-        lastUsedAt: null,
-        createdAt: new Date('2026-01-01T00:00:00Z'),
-        updatedAt: new Date('2026-01-01T00:00:00Z'),
-      },
-    ];
+  // The platform coordinator is a per-project experimental opt-in. Every other
+  // test in this file runs with the flag OFF and asserts the pre-meta default
+  // behavior byte-for-byte.
+  function enableMetaAgent() {
+    projectRow.metadata = {
+      ...(projectRow.metadata as Record<string, unknown>),
+      experimental: { meta_agent: true },
+    };
+  }
+
+  test('creates an omitted-agent session with the meta REST runtime', async () => {
+    enableMetaAgent();
     const app = createApp();
-    const request = (action: 'acquire' | 'renew' | 'release', token: string) =>
-      app.request(`/v1/projects/${PROJECT_ID}/execution-lease`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          action,
-          session_id: SESSION_ID,
-          lease_ttl_seconds: 180,
-        }),
-      });
-
-    const acquire = await request('acquire', PROJECT_SANDBOX_TOKEN);
-    expect(acquire.status).toBe(200);
-    expect(await acquire.json()).toMatchObject({
-      ok: true,
-      provider_url: null,
-      provider_headers: null,
+    const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider: 'daytona', base_ref: 'main' }),
     });
 
-    const renew = await request('renew', PROJECT_SANDBOX_TOKEN);
-    expect(renew.status).toBe(200);
-    expect(await renew.json()).toMatchObject({
-      ok: true,
-      provider_url: null,
-      provider_headers: null,
+    expect(response.status).toBe(201);
+    const createdMeta = await response.json();
+    expect(createdMeta).toMatchObject({
+      agent_name: 'meta',
+      metadata: {
+        sandbox_slug: 'meta',
+      },
+    });
+    // A browser (supabase) create is not an in-session spawn — its Supabase
+    // AUTH session id must never be stamped as a coordinator link.
+    expect(createdMeta.metadata?.spawned_by_session).toBeUndefined();
+    await flushUntil(() => sandboxProvisionCalls === 1);
+    expect(lastProvisionInput).toMatchObject({
+      agentName: 'meta',
+      sandboxSlug: 'meta',
+      extraEnvVars: {
+        KORTIX_AGENT_NAME: 'meta',
+        KORTIX_META_AGENT: '1',
+        KORTIX_PROJECT_AUTO_CLONE: '0',
+      },
+    });
+  });
+  test('a meta session with an omitted agent spawns the project default, not another meta', async () => {
+    enableMetaAgent();
+    sessionRow = { ...sessionRow!, agentName: 'meta' };
+    const app = createApp();
+    const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${SESSION_BOUND_PAT}`,
+      },
+      body: JSON.stringify({ provider: 'daytona', base_ref: 'main' }),
     });
 
-    const release = await request('release', PROJECT_SANDBOX_TOKEN);
-    expect(release.status).toBe(200);
-    expect(await release.json()).toEqual({ ok: true });
+    expect(response.status).toBe(201);
+    const created = await response.json();
+    // The fixture project declares `default_agent: 'kortix'` — a meta-session
+    // spawn resolves to it, never to another platform meta coordinator.
+    expect(created.agent_name).toBe('kortix');
+    expect(created.metadata?.sandbox_slug).not.toBe('meta');
+    expect(created.metadata?.spawned_by_session).toBe(SESSION_ID);
+  });
 
-    const forbidden = await request('renew', PROJECT_RUNTIME_PAT);
-    expect(forbidden.status).toBe(403);
-    expect(await forbidden.json()).toMatchObject({
-      error: 'execution lease requires a sandbox token',
+  test('a meta session cannot spawn another meta coordinator', async () => {
+    enableMetaAgent();
+    sessionRow = { ...sessionRow!, agentName: 'meta' };
+    const app = createApp();
+    const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${SESSION_BOUND_PAT}`,
+      },
+      body: JSON.stringify({
+        provider: 'daytona',
+        base_ref: 'main',
+        agent_name: 'meta',
+      }),
     });
+
+    expect(response.status).toBe(400);
+    expect((await response.json()).code).toBe('META_AGENT_RECURSION');
+  });
+
+  test('a non-meta session-bound caller may still spawn the meta coordinator', async () => {
+    enableMetaAgent();
+    const app = createApp();
+    const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${SESSION_BOUND_PAT}`,
+      },
+      body: JSON.stringify({
+        provider: 'daytona',
+        base_ref: 'main',
+        agent_name: 'meta',
+      }),
+    });
+
+    expect(response.status).toBe(201);
+    expect((await response.json()).agent_name).toBe('meta');
+  });
+
+  test('a session-bound spawn inherits the SPAWNING session sharing, not the private default', async () => {
+    // The caller's own session (sessionRow / SESSION_ID) is shared project-wide.
+    // A worker it spawns must be reachable by the same grantees, not fall back
+    // to the private default — otherwise sharing the coordinator would not
+    // actually share anything it spawns. See resolveInheritedSessionSharing.
+    sessionRow = { ...sessionRow!, visibility: 'project' };
+    const app = createApp();
+    const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${SESSION_BOUND_PAT}`,
+      },
+      body: JSON.stringify({ provider: 'daytona', base_ref: 'main' }),
+    });
+
+    expect(response.status).toBe(201);
+    const created = await response.json();
+    expect(created.metadata?.spawned_by_session).toBe(SESSION_ID);
+    expect(created.visibility).toBe('project');
+  });
+
+  test('a plain browser create is NOT session-bound, so it keeps the private default', async () => {
+    // Same shared-project-wide parent state as above, but with the Supabase
+    // browser auth path (no Authorization header) instead of a session-bound
+    // PAT — proves inheritance is gated on an actual spawning session, not
+    // just on the existence of an unrelated session row in the fixture.
+    sessionRow = { ...sessionRow!, visibility: 'project' };
+    const app = createApp();
+    const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider: 'daytona', base_ref: 'main' }),
+    });
+
+    expect(response.status).toBe(201);
+    const created = await response.json();
+    expect(created.metadata?.spawned_by_session).toBeUndefined();
+    expect(created.visibility).toBe('private');
   });
 
   test('GET project session inventory rejects callers without project.session.read', async () => {
@@ -971,7 +1194,7 @@ describe('project session API contract', () => {
     expect(assertedIamActions).toContain('project.session.read');
   });
 
-  test('in-place resume clears stale readiness timers and the prior terminal session error', async () => {
+  test('in-place resume keeps stopped state and billing closed until the provider proves running', async () => {
     const staleReadyWaitStartedAt = new Date(Date.now() - 10 * 60 * 1000).toISOString();
     sessionRow = {
       ...sessionRow!,
@@ -1017,9 +1240,9 @@ describe('project session API contract', () => {
     });
 
     expect(won).toBe(true);
-    expect(sessionRow).toMatchObject({ status: 'running', error: null });
+    expect(sessionRow).toMatchObject({ status: 'stopped' });
     expect(sessionSandboxRows[0]).toMatchObject({
-      status: 'active',
+      status: 'stopped',
       externalId: 'original-provider-identity',
       metadata: {
         initStatus: 'ready',
@@ -1033,8 +1256,232 @@ describe('project session API contract', () => {
     expect(resumedMetadata.runtimeUnavailableReason).toBeUndefined();
     expect(resumedMetadata.runtimeWakeStartedAt).toEqual(expect.any(String));
     expect(resumedMetadata.runtimeWakeId).toEqual(expect.any(String));
+    expect(computeReopenCalls).toBe(0);
 
+    providerStatus = 'running';
     releaseProviderStart?.();
+    await flushUntil(() => sessionSandboxRows[0]?.status === 'active');
+    expect(sessionRow).toMatchObject({ status: 'running', error: null });
+    expect(sessionSandboxRows[0]?.status).toBe('active');
+    expect(computeReopenCalls).toBe(1);
+  });
+
+  test('provider reconciliation observes a stopped row while an in-place resume is starting', async () => {
+    sessionRow = {
+      ...sessionRow!,
+      status: 'stopped',
+      error: null,
+    };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'platinum',
+        externalId: 'platinum-resume-race',
+        baseUrl: null,
+        status: 'stopped',
+        config: {},
+        metadata: { initStatus: 'ready' },
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-01T00:00:00Z'),
+        updatedAt: new Date('2026-01-01T00:00:00Z'),
+      },
+    ];
+    providerStartGate = new Promise<void>((resolve) => {
+      releaseProviderStart = resolve;
+    });
+
+    const won = await resumeStoppedSandbox({
+      sandboxId: SESSION_ID,
+      sessionId: SESSION_ID,
+      accountId: ACCOUNT_ID,
+      provider: 'platinum',
+      externalId: 'platinum-resume-race',
+      metadata: sessionSandboxRows[0]!.metadata as Record<string, unknown>,
+    });
+    const reconciled = await reconcileSandboxStoppedByExternalId(
+      'platinum-resume-race',
+      new Date(),
+    );
+    expect(won).toBe(true);
+    expect(reconciled).toBe(false);
+    expect(sessionSandboxRows[0]?.status).toBe('stopped');
+    expect(sessionRow?.status).toBe('stopped');
+    expect(computeReopenCalls).toBe(0);
+
+    providerStatus = 'running';
+    releaseProviderStart?.();
+    await flushUntil(() => sessionSandboxRows[0]?.status === 'active');
+    expect(computeReopenCalls).toBe(1);
+  });
+
+  test('provider start rejection keeps both rows stopped and opens no compute meter', async () => {
+    sessionRow = { ...sessionRow!, status: 'stopped', error: null };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'platinum',
+        externalId: 'platinum-rejected-wake',
+        baseUrl: null,
+        status: 'stopped',
+        config: {},
+        metadata: { initStatus: 'ready' },
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-01T00:00:00Z'),
+        updatedAt: new Date('2026-01-01T00:00:00Z'),
+      },
+    ];
+    providerStartError = new Error('provider rejected start');
+
+    expect(
+      await resumeStoppedSandbox({
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        provider: 'platinum',
+        externalId: 'platinum-rejected-wake',
+        metadata: sessionSandboxRows[0]!.metadata as Record<string, unknown>,
+      }),
+    ).toBe(true);
+    await flushUntil(
+      () =>
+        typeof (sessionSandboxRows[0]?.metadata as Record<string, unknown>)?.runtimeWakeFailedAt ===
+        'string',
+    );
+
+    expect(sessionSandboxRows[0]?.status).toBe('stopped');
+    expect(sessionRow?.status).toBe('stopped');
+    expect(computeReopenCalls).toBe(0);
+    const failureMetadata = sessionSandboxRows[0]?.metadata as Record<string, unknown>;
+    expect(failureMetadata.runtimeWakeError).toBe('start_failed');
+    expect(typeof failureMetadata.runtimeWakeFailedAt).toBe('string');
+    expect(typeof failureMetadata.runtimeWakeRetryAfterAt).toBe('string');
+    expect(failureMetadata.runtimeWakeId).toBeUndefined();
+    expect(Date.parse(String(failureMetadata.runtimeWakeRetryAfterAt))).toBeGreaterThan(Date.now());
+
+    const response = await createApp().request(
+      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`,
+      { method: 'POST' },
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      stage: 'stopped',
+      retriable: false,
+      reason: 'runtime_wake_cooldown',
+      sandbox: { status: 'stopped' },
+      failure: {
+        category: 'sandbox-provider',
+        retryable: true,
+      },
+    });
+    expect(providerStartCalls).toBe(1);
+  });
+
+  test('concurrent stopped-session resumes issue one provider start and open one meter', async () => {
+    sessionRow = { ...sessionRow!, status: 'stopped', error: null };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'platinum',
+        externalId: 'platinum-single-flight-wake',
+        baseUrl: null,
+        status: 'stopped',
+        config: {},
+        metadata: { initStatus: 'ready' },
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-01T00:00:00Z'),
+        updatedAt: new Date('2026-01-01T00:00:00Z'),
+      },
+    ];
+    providerStartGate = new Promise<void>((resolve) => {
+      releaseProviderStart = resolve;
+    });
+    const input = {
+      sandboxId: SESSION_ID,
+      sessionId: SESSION_ID,
+      accountId: ACCOUNT_ID,
+      provider: 'platinum',
+      externalId: 'platinum-single-flight-wake',
+      metadata: sessionSandboxRows[0]!.metadata as Record<string, unknown>,
+    };
+
+    const [first, second] = await Promise.all([
+      resumeStoppedSandbox(input),
+      resumeStoppedSandbox(input),
+    ]);
+    await flushUntil(() => providerStartCalls > 0);
+
+    expect([first, second].filter(Boolean)).toHaveLength(1);
+    expect(providerStartCalls).toBe(1);
+    expect(computeReopenCalls).toBe(0);
+
+    providerStatus = 'running';
+    releaseProviderStart?.();
+    await flushUntil(() => sessionSandboxRows[0]?.status === 'active');
+    expect(computeReopenCalls).toBe(1);
+  });
+
+  test('a manual stop wins when provider start resolves after the stop', async () => {
+    sessionRow = {
+      ...sessionRow!,
+      status: 'stopped',
+      error: null,
+    };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'platinum',
+        externalId: 'platinum-cancelled-wake',
+        baseUrl: null,
+        status: 'stopped',
+        config: {},
+        metadata: { initStatus: 'ready' },
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-01T00:00:00Z'),
+        updatedAt: new Date('2026-01-01T00:00:00Z'),
+      },
+    ];
+    providerStartGate = new Promise<void>((resolve) => {
+      releaseProviderStart = resolve;
+    });
+
+    expect(
+      await resumeStoppedSandbox({
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        provider: 'platinum',
+        externalId: 'platinum-cancelled-wake',
+        metadata: sessionSandboxRows[0]!.metadata as Record<string, unknown>,
+      }),
+    ).toBe(true);
+    await applyStoppedState({
+      sandboxId: SESSION_ID,
+      sessionId: SESSION_ID,
+      externalId: 'platinum-cancelled-wake',
+      // Top-level, not nested in `metadata`: the patch sets `stopReason` from
+      // the required field AFTER spreading `metadata`, so a nested one is
+      // overwritten and `JSON.stringify` drops the resulting undefined.
+      stopReason: 'manual',
+      metadata: { stoppedBy: USER_ID },
+    });
+    releaseProviderStart?.();
+    await flushUntil(() => providerStopCalls === 1);
+
+    expect(providerStopCalls).toBe(1);
+    expect(sessionSandboxRows[0]?.status).toBe('stopped');
+    expect(sessionRow?.status).toBe('stopped');
   });
 
   test('upserts and lists project secrets without exposing secret values', async () => {
@@ -1070,11 +1517,44 @@ describe('project session API contract', () => {
     expect(Array.isArray(listed.optional)).toBe(true);
 
     const deleteRes = await app.request(`/v1/projects/${PROJECT_ID}/secrets/openai_api_key`, {
-        method: 'DELETE',
+      method: 'DELETE',
     });
     expect(deleteRes.status).toBe(200);
     expect(await deleteRes.json()).toEqual({ ok: true });
     expect(secretRows).toHaveLength(0);
+  });
+
+  test('a session agent can verify writes when runtime delivery is narrowed to zero secrets', async () => {
+    sessionRow = { ...sessionRow!, secretsAllowlist: [] };
+    const app = createApp();
+    const headers = {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${SESSION_AGENT_PAT}`,
+    };
+
+    const writeRes = await app.request(`/v1/projects/${PROJECT_ID}/secrets`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ name: 'ANTHROPIC_API_KEY', value: 'test-secret' }),
+    });
+    expect(writeRes.status).toBe(200);
+    expect(await writeRes.json()).toMatchObject({
+      identifier: 'ANTHROPIC_API_KEY',
+      configured: true,
+    });
+
+    const listRes = await app.request(`/v1/projects/${PROJECT_ID}/secrets`, {
+      headers,
+    });
+    expect(listRes.status).toBe(200);
+    expect(await listRes.json()).toMatchObject({
+      items: [
+        expect.objectContaining({
+          identifier: 'ANTHROPIC_API_KEY',
+          configured: true,
+        }),
+      ],
+    });
   });
 
   test('stores provider-neutral git credentials outside runtime project secrets', async () => {
@@ -1092,9 +1572,9 @@ describe('project session API contract', () => {
     ).toBeUndefined();
 
     const writeRes = await app.request(`/v1/projects/${PROJECT_ID}/git-credential`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token: 'gitlab-project-token' }),
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: 'gitlab-project-token' }),
     });
     expect(writeRes.status).toBe(200);
     const written = await writeRes.json();
@@ -1156,7 +1636,7 @@ describe('project session API contract', () => {
     ];
 
     const cloneRes = await app.request(`/v1/projects/${PROJECT_ID}/git/clone-credential`, {
-        headers: { Authorization: `Bearer ${PROJECT_SANDBOX_TOKEN}` },
+      headers: { Authorization: `Bearer ${PROJECT_SANDBOX_TOKEN}` },
     });
     expect(cloneRes.status).toBe(200);
     expect(await cloneRes.json()).toMatchObject({
@@ -1170,34 +1650,8 @@ describe('project session API contract', () => {
     });
   });
 
-  test('derives session origin from the caller token; only a backend-origin caller may set origin_ref', async () => {
+  test('derives session origin from the caller token without session attribution fields', async () => {
     const app = createApp();
-    const forbidden = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ provider: 'daytona', base_ref: 'main', origin_ref: 'tenant-42' }),
-    });
-    expect(forbidden.status).toBe(403);
-    expect(await forbidden.json()).toMatchObject({ code: 'origin_override_forbidden' });
-
-    const whitespace = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ provider: 'daytona', base_ref: 'main', origin_ref: '   ' }),
-    });
-    expect(whitespace.status).toBe(400);
-
-    const bodySpoof = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        provider: 'daytona',
-        base_ref: 'main',
-        metadata: { source: 'system:forged' },
-      }),
-    });
-    expect(bodySpoof.status).toBe(201);
-    expect(((await bodySpoof.json()) as { origin: string }).origin).toBe('user');
 
     const userRes = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
       method: 'POST',
@@ -1205,9 +1659,11 @@ describe('project session API contract', () => {
       body: JSON.stringify({ provider: 'daytona', base_ref: 'main' }),
     });
     expect(userRes.status).toBe(201);
-    const userBody = (await userRes.json()) as { origin: string; origin_ref: string | null };
+    const userBody = (await userRes.json()) as Record<string, unknown>;
     expect(userBody.origin).toBe('user');
-    expect(userBody.origin_ref).toBeNull();
+    expect(userBody).not.toHaveProperty('end_user_ref');
+    expect(userBody).not.toHaveProperty('origin_ref');
+    expect(lastSessionInsertValues).not.toHaveProperty('originRef');
 
     const backendRes = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
       method: 'POST',
@@ -1215,12 +1671,14 @@ describe('project session API contract', () => {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${PROJECT_SA_TOKEN}`,
       },
-      body: JSON.stringify({ provider: 'daytona', base_ref: 'main', origin_ref: 'tenant-42' }),
+      body: JSON.stringify({ provider: 'daytona', base_ref: 'main' }),
     });
     expect(backendRes.status).toBe(201);
-    const backendBody = (await backendRes.json()) as { origin: string; origin_ref: string | null };
+    const backendBody = (await backendRes.json()) as Record<string, unknown>;
     expect(backendBody.origin).toBe('backend');
-    expect(backendBody.origin_ref).toBe('tenant-42');
+    expect(backendBody).not.toHaveProperty('end_user_ref');
+    expect(backendBody).not.toHaveProperty('origin_ref');
+    expect(lastSessionInsertValues).not.toHaveProperty('originRef');
 
     const patRes = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
       method: 'POST',
@@ -1228,45 +1686,117 @@ describe('project session API contract', () => {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${PROJECT_RUNTIME_PAT}`,
       },
-      body: JSON.stringify({ provider: 'daytona', base_ref: 'main', origin_ref: 'tenant-43' }),
+      body: JSON.stringify({ provider: 'daytona', base_ref: 'main' }),
     });
     expect(patRes.status).toBe(201);
-    const patBody = (await patRes.json()) as { origin: string; origin_ref: string | null };
+    const patBody = (await patRes.json()) as Record<string, unknown>;
     expect(patBody.origin).toBe('backend');
-    expect(patBody.origin_ref).toBe('tenant-43');
+    expect(patBody).not.toHaveProperty('end_user_ref');
+    expect(patBody).not.toHaveProperty('origin_ref');
+  });
 
-    const sandboxRes = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${PROJECT_SANDBOX_TOKEN}`,
-      },
-      body: JSON.stringify({ provider: 'daytona', base_ref: 'main', origin_ref: 'tenant-42' }),
-    });
-    expect(sandboxRes.status).toBe(403);
-    expect(await sandboxRes.json()).toMatchObject({ code: 'origin_override_forbidden' });
+  test('rejects client-supplied trigger authorization metadata at session create', async () => {
+    const app = createApp();
+    for (const [key, value] of [
+      ['source', 'trigger:scheduler'],
+      ['trigger_kind', 'git'],
+      ['trigger_slug', 'forged-trigger'],
+    ] as const) {
+      const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider: 'daytona',
+          base_ref: 'main',
+          metadata: { [key]: value },
+        }),
+      });
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({
+        error: `metadata key is server-managed: ${key}`,
+      });
+    }
+  });
 
-    const agentRes = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${PROJECT_AGENT_PAT}`,
+  test('runtime workspaces deny repository metadata and clone credentials to both session tokens', async () => {
+    sessionRow!.metadata = { workspace_mode: 'runtime' };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'daytona',
+        externalId: null,
+        baseUrl: null,
+        status: 'active',
+        config: {},
+        metadata: {},
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-02T00:00:00Z'),
+        updatedAt: new Date('2026-01-02T00:00:00Z'),
       },
-      body: JSON.stringify({ provider: 'daytona', base_ref: 'main', origin_ref: 'tenant-42' }),
-    });
-    expect(agentRes.status).toBe(403);
-    expect(await agentRes.json()).toMatchObject({ code: 'origin_override_forbidden' });
+    ];
+    const app = createApp();
 
-    const executorRes = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${PROJECT_EXECUTOR_PAT}`,
-      },
-      body: JSON.stringify({ provider: 'daytona', base_ref: 'main', origin_ref: 'tenant-42' }),
+    const projectRes = await app.request(`/v1/projects/${PROJECT_ID}`, {
+      headers: { Authorization: `Bearer ${SESSION_AGENT_PAT}` },
     });
-    expect(executorRes.status).toBe(403);
-    expect(await executorRes.json()).toMatchObject({ code: 'origin_override_forbidden' });
+    expect(projectRes.status).toBe(403);
+    expect(await projectRes.json()).toMatchObject({
+      message: 'session workspace does not allow repository access',
+    });
+
+    const patCloneRes = await app.request(`/v1/projects/${PROJECT_ID}/git/clone-credential`, {
+      headers: { Authorization: `Bearer ${SESSION_AGENT_PAT}` },
+    });
+    expect(patCloneRes.status).toBe(403);
+    expect(await patCloneRes.json()).toMatchObject({
+      message: 'session workspace does not allow repository access',
+    });
+
+    const sandboxCloneRes = await app.request(`/v1/projects/${PROJECT_ID}/git/clone-credential`, {
+      headers: { Authorization: `Bearer ${PROJECT_SANDBOX_TOKEN}` },
+    });
+    expect(sandboxCloneRes.status).toBe(403);
+    expect(await sandboxCloneRes.json()).toMatchObject({
+      error: 'sandbox workspace does not allow repository access',
+    });
+
+    for (const suffix of ['diff', 'merge-preview']) {
+      const crRes = await app.request(
+        `/v1/projects/${PROJECT_ID}/change-requests/00000000-0000-4000-a000-000000000801/${suffix}`,
+        { headers: { Authorization: `Bearer ${SESSION_AGENT_PAT}` } },
+      );
+      expect(crRes.status).toBe(403);
+      expect(await crRes.json()).toMatchObject({
+        message: 'session workspace does not allow repository access',
+      });
+    }
+  });
+
+  test('rejects removed session attribution fields', async () => {
+    const app = createApp();
+
+    for (const body of [
+      {
+        provider: 'daytona',
+        base_ref: 'main',
+        end_user_ref: 'legacy-reference',
+      },
+      { provider: 'daytona', base_ref: 'main', origin_ref: 'legacy-reference' },
+    ]) {
+      const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${PROJECT_RUNTIME_PAT}`,
+        },
+        body: JSON.stringify(body),
+      });
+
+      expect(response.status).toBe(400);
+    }
   });
 
   test('secrets allowlist is backend-only, existence-checked, and persisted', async () => {
@@ -1284,10 +1814,16 @@ describe('project session API contract', () => {
     const forbidden = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ provider: 'daytona', base_ref: 'main', secrets: ['GMAIL_TOKEN'] }),
+      body: JSON.stringify({
+        provider: 'daytona',
+        base_ref: 'main',
+        secrets: ['GMAIL_TOKEN'],
+      }),
     });
     expect(forbidden.status).toBe(403);
-    expect(await forbidden.json()).toMatchObject({ code: 'origin_override_forbidden' });
+    expect(await forbidden.json()).toMatchObject({
+      code: 'origin_override_forbidden',
+    });
 
     // A backend (PAT) caller naming an unknown identifier fails fast at create.
     const unknown = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
@@ -1296,10 +1832,16 @@ describe('project session API contract', () => {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${PROJECT_RUNTIME_PAT}`,
       },
-      body: JSON.stringify({ provider: 'daytona', base_ref: 'main', secrets: ['DOES_NOT_EXIST'] }),
+      body: JSON.stringify({
+        provider: 'daytona',
+        base_ref: 'main',
+        secrets: ['DOES_NOT_EXIST'],
+      }),
     });
     expect(unknown.status).toBe(404);
-    expect(await unknown.json()).toMatchObject({ code: 'SECRET_IDENTIFIER_NOT_FOUND' });
+    expect(await unknown.json()).toMatchObject({
+      code: 'SECRET_IDENTIFIER_NOT_FOUND',
+    });
 
     // A backend caller with a valid identifier → 201, allowlist persisted + echoed.
     const ok = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
@@ -1308,7 +1850,11 @@ describe('project session API contract', () => {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${PROJECT_RUNTIME_PAT}`,
       },
-      body: JSON.stringify({ provider: 'daytona', base_ref: 'main', secrets: ['GMAIL_TOKEN'] }),
+      body: JSON.stringify({
+        provider: 'daytona',
+        base_ref: 'main',
+        secrets: ['GMAIL_TOKEN'],
+      }),
     });
     expect(ok.status).toBe(201);
     expect((await ok.json()).secrets_allowlist).toEqual(['GMAIL_TOKEN']);
@@ -1320,7 +1866,11 @@ describe('project session API contract', () => {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${PROJECT_RUNTIME_PAT}`,
       },
-      body: JSON.stringify({ provider: 'daytona', base_ref: 'main', secrets: [] }),
+      body: JSON.stringify({
+        provider: 'daytona',
+        base_ref: 'main',
+        secrets: [],
+      }),
     });
     expect(zero.status).toBe(201);
     expect((await zero.json()).secrets_allowlist).toEqual([]);
@@ -1337,6 +1887,7 @@ describe('project session API contract', () => {
       ownerUserId: null,
       description: null,
       strategy: 'runtime' as const,
+      consumer: 'sandbox' as const,
       egressPolicy: null,
       handlePrefix: null,
       rotatedAt: null,
@@ -1362,16 +1913,14 @@ describe('project session API contract', () => {
       }),
     });
     expect(res.status).toBe(409);
-    expect(await res.json()).toMatchObject({ code: 'SECRET_IDENTIFIER_KEY_COLLISION' });
+    expect(await res.json()).toMatchObject({
+      code: 'SECRET_IDENTIFIER_KEY_COLLISION',
+    });
   });
 
-  test('KaaB: backend overrides (model, origin_ref, secrets, agent) each apply at boot', async () => {
-    // THE end-to-end proof: backend (PAT) creates carrying the Kortix-as-a-
-    // Backend overrides, asserting each is (a) reflected in the 201 and (b)
-    // actually applied in the env handed to the sandbox — not accepted-and-dropped.
+  test('backend overrides for model, secrets, and agent apply at boot', async () => {
     const app = createApp();
 
-    // Seed two runtime secrets; the allowlist will narrow the session to one.
     for (const [name, value] of [
       ['GMAIL_TOKEN', 'g-secret'],
       ['STRIPE_SECRET', 's-secret'],
@@ -1379,14 +1928,16 @@ describe('project session API contract', () => {
       const w = await app.request(`/v1/projects/${PROJECT_ID}/secrets`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, value }),
+        body: JSON.stringify({
+          name,
+          value,
+          strategy: 'runtime',
+          consumer: 'sandbox',
+        }),
       });
       expect(w.status).toBe(200);
     }
 
-    // (A) The default agent (unrestricted grant) + model + origin_ref + a secrets
-    // allowlist → each applied; the allowlist NARROWS from every secret to just
-    // the one named.
     const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
       method: 'POST',
       headers: {
@@ -1397,35 +1948,37 @@ describe('project session API contract', () => {
         provider: 'daytona',
         base_ref: 'main',
         opencode_model: 'anthropic/claude-opus-4-8',
-        origin_ref: 'tenant-42',
+        agent_name: 'default',
         secrets: ['GMAIL_TOKEN'],
       }),
     });
     expect(res.status).toBe(201);
     const body = (await res.json()) as {
       origin: string;
-      origin_ref: string | null;
       secrets_allowlist: string[] | null;
     };
     expect(body.origin).toBe('backend');
-    expect(body.origin_ref).toBe('tenant-42');
     expect(body.secrets_allowlist).toEqual(['GMAIL_TOKEN']);
 
     await flushUntil(() => sandboxProvisionCalls === 1);
     const env = lastProvisionInput!.extraEnvVars ?? {};
-    expect(env.KORTIX_ORIGIN_REF).toBe('tenant-42'); // origin_ref → attribution
-    expect(env.KORTIX_OPENCODE_MODEL).toBe('anthropic/claude-opus-4-8'); // model
-    expect(env.GMAIL_TOKEN).toBe('g-secret'); // allowlisted secret injected
-    expect(env.STRIPE_SECRET).toBeUndefined(); // non-allowlisted secret withheld
+    expect(env).not.toHaveProperty('KORTIX_END_USER_REF');
+    expect(env).not.toHaveProperty('KORTIX_ORIGIN_REF');
+    expect(env.KORTIX_OPENCODE_MODEL).toBe('anthropic/claude-opus-4-8');
+    expect(env.GMAIL_TOKEN).toBe('g-secret');
+    expect(env.STRIPE_SECRET).toBeUndefined();
 
-    // (B) The agent_name override reaches the sandbox as KORTIX_AGENT_NAME.
     const res2 = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${PROJECT_RUNTIME_PAT}`,
       },
-      body: JSON.stringify({ provider: 'daytona', base_ref: 'main', agent_name: 'reviewer' }),
+      body: JSON.stringify({
+        provider: 'daytona',
+        base_ref: 'main',
+        agent_name: 'reviewer',
+      }),
     });
     expect(res2.status).toBe(201);
     expect((await res2.json()).agent_name).toBe('reviewer');
@@ -1433,59 +1986,25 @@ describe('project session API contract', () => {
     expect(lastProvisionInput!.extraEnvVars?.KORTIX_AGENT_NAME).toBe('reviewer');
   });
 
-  test('KaaB: GET sessions filters by end_user_ref (and the deprecated origin_ref alias)', async () => {
-    // Without this filter a wrapper answering "show me THIS customer's sessions"
-    // has to pull every session in the project and filter client-side — which
-    // also means shipping other end-users' rows to a caller that asked about one.
-    //
-    // The DB here is a mock that returns rows regardless of the predicate, so
-    // asserting on the response body would pass even if the filter were dropped.
-    // We render the predicate the route actually built instead.
+  test('legacy attribution query parameters do not filter session inventory', async () => {
     const app = createApp();
     const renderWhere = () => new PgDialect().sqlToQuery(lastSessionListWhere as SQL);
 
-    // (A) modern spelling → an origin_ref term carrying the requested handle.
     lastSessionListWhere = null;
-    const modern = await app.request(
-      `/v1/projects/${PROJECT_ID}/sessions?end_user_ref=tenant-42`,
+    const first = await app.request(
+      `/v1/projects/${PROJECT_ID}/sessions?end_user_ref=legacy-reference`,
     );
-    expect(modern.status).toBe(200);
-    expect(renderWhere().sql).toContain('origin_ref');
-    expect(renderWhere().params).toContain('tenant-42');
-
-    // (B) the deprecated alias resolves to the same filter — it stays accepted
-    // forever, so a live wrapper written before the rename keeps working.
-    lastSessionListWhere = null;
-    const legacy = await app.request(`/v1/projects/${PROJECT_ID}/sessions?origin_ref=tenant-42`);
-    expect(legacy.status).toBe(200);
-    expect(renderWhere().params).toContain('tenant-42');
-
-    // (C) unfiltered lists must NOT gain a stray origin_ref term.
-    lastSessionListWhere = null;
-    const unfiltered = await app.request(`/v1/projects/${PROJECT_ID}/sessions`);
-    expect(unfiltered.status).toBe(200);
+    expect(first.status).toBe(200);
     expect(renderWhere().sql).not.toContain('origin_ref');
+    expect(renderWhere().params).not.toContain('legacy-reference');
 
-    // (D) both spellings, disagreeing → refused. Silently preferring one would
-    // hand the caller a different end-user's sessions than they asked for.
-    const conflict = await app.request(
-      `/v1/projects/${PROJECT_ID}/sessions?end_user_ref=tenant-42&origin_ref=tenant-7`,
-    );
-    expect(conflict.status).toBe(400);
-    expect((await conflict.json()).code).toBe('END_USER_REF_CONFLICT');
-
-    // ...but agreeing duplicates are fine (a client mid-migration sends both).
     lastSessionListWhere = null;
-    const agreeing = await app.request(
-      `/v1/projects/${PROJECT_ID}/sessions?end_user_ref=tenant-42&origin_ref=tenant-42`,
+    const second = await app.request(
+      `/v1/projects/${PROJECT_ID}/sessions?origin_ref=legacy-reference`,
     );
-    expect(agreeing.status).toBe(200);
-    expect(renderWhere().params).toContain('tenant-42');
-
-    // (E) a blank handle is a client bug, not "list everything" — refusing it
-    // keeps a wrapper from leaking the whole project on an empty variable.
-    const blank = await app.request(`/v1/projects/${PROJECT_ID}/sessions?end_user_ref=%20%20`);
-    expect(blank.status).toBe(400);
+    expect(second.status).toBe(200);
+    expect(renderWhere().sql).not.toContain('origin_ref');
+    expect(renderWhere().params).not.toContain('legacy-reference');
   });
 
   test('resolves legacy git auth secret server-side without injecting it into sandbox env', async () => {
@@ -1501,7 +2020,8 @@ describe('project session API contract', () => {
         scope: 'runtime',
         ownerUserId: null,
         description: null,
-        strategy: 'runtime' as const,
+        strategy: 'broker' as const,
+        consumer: 'git_proxy' as const,
         egressPolicy: null,
         handlePrefix: null,
         rotatedAt: null,
@@ -1544,7 +2064,7 @@ describe('project session API contract', () => {
     ];
 
     const cloneRes = await app.request(`/v1/projects/${PROJECT_ID}/git/clone-credential`, {
-        headers: { Authorization: `Bearer ${PROJECT_SANDBOX_TOKEN}` },
+      headers: { Authorization: `Bearer ${PROJECT_SANDBOX_TOKEN}` },
     });
     expect(cloneRes.status).toBe(200);
     expect(await cloneRes.json()).toMatchObject({
@@ -1604,6 +2124,29 @@ describe('project session API contract', () => {
         message: 'metadata key is server-managed: deletedBy',
       },
       {
+        // metadata.name is owned by the title generator; planting a non
+        // placeholder value pre-empts titling forever. Renaming is `name` →
+        // metadata.custom_name.
+        body: { metadata: { name: 'zzz' } },
+        message: 'metadata key is server-managed: name',
+      },
+      {
+        body: { metadata: { title_source: 'zzz' } },
+        message: 'metadata key is server-managed: title_source',
+      },
+      {
+        body: { metadata: { source: 'trigger:scheduler' } },
+        message: 'metadata key is server-managed: source',
+      },
+      {
+        body: { metadata: { trigger_kind: 'git' } },
+        message: 'metadata key is server-managed: trigger_kind',
+      },
+      {
+        body: { metadata: { trigger_slug: 'forged-trigger' } },
+        message: 'metadata key is server-managed: trigger_slug',
+      },
+      {
         body: { random: 'field' },
         message: 'field is not user-editable: random',
       },
@@ -1611,9 +2154,9 @@ describe('project session API contract', () => {
 
     for (const { body, message } of forbiddenBodies) {
       const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
       });
       expect(res.status).toBe(400);
       expect(await res.json()).toMatchObject({ error: message });
@@ -1635,9 +2178,7 @@ describe('project session API contract', () => {
       status: 'provisioning',
     });
 
-    const inventory = await app.request(
-      `/v1/projects/${PROJECT_ID}/sessions?scope=project`,
-    );
+    const inventory = await app.request(`/v1/projects/${PROJECT_ID}/sessions?scope=project`);
     expect(inventory.status).toBe(200);
     expect((await inventory.json())[0]).toMatchObject({
       session_id: SESSION_ID,
@@ -1739,6 +2280,166 @@ describe('project session API contract', () => {
     });
     expect(sandboxProvisionCalls).toBe(0);
     expect(sessionSandboxRows).toHaveLength(1);
+  });
+
+  test('dashboard start returns one typed terminal capacity failure without re-provisioning', async () => {
+    const app = createApp();
+    sessionRow = {
+      ...sessionRow!,
+      status: 'failed',
+      sandboxProvider: 'e2b',
+      error: 'The sandbox provider is at capacity right now. Stop another session and retry.',
+    };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'e2b',
+        externalId: null,
+        baseUrl: null,
+        status: 'error',
+        config: {},
+        metadata: {
+          initStatus: 'failed',
+          initAttempts: 1,
+          initMaxAttempts: 1,
+          failureCategory: 'provider-capacity',
+          errorMessage:
+            'The sandbox provider is at capacity right now. Stop another session and retry.',
+        },
+        lastUsedAt: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    ];
+
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const response = await app.request(
+        `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`,
+        { method: 'POST' },
+      );
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({
+        stage: 'failed',
+        retriable: false,
+        sandbox: {
+          status: 'error',
+          metadata: { initAttempts: 1, initMaxAttempts: 1 },
+        },
+        failure: {
+          category: 'provider-capacity',
+          message: 'The sandbox provider is at capacity right now. Stop another session and retry.',
+          retryable: true,
+        },
+      });
+    }
+    expect(sandboxProvisionCalls).toBe(0);
+  });
+
+  test('dashboard start upgrades a stored E2B placement failure to the capacity contract', async () => {
+    const app = createApp();
+    sessionRow = {
+      ...sessionRow!,
+      status: 'failed',
+      sandboxProvider: 'e2b',
+      error: 'The sandbox provider could not start this session. Try again.',
+    };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'e2b',
+        externalId: null,
+        baseUrl: null,
+        status: 'error',
+        config: {},
+        metadata: {
+          initStatus: 'failed',
+          initAttempts: 3,
+          initMaxAttempts: 3,
+          failureCategory: 'sandbox-provider',
+          errorMessage: 'The sandbox provider could not start this session. Try again.',
+          lastProvisioningError: '500: Failed to place sandbox',
+        },
+        lastUsedAt: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    ];
+
+    const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+      method: 'POST',
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      stage: 'failed',
+      retriable: false,
+      failure: {
+        category: 'provider-capacity',
+        message: 'The sandbox provider is at capacity right now. Try again in a minute.',
+        retryable: true,
+      },
+    });
+    expect(sandboxProvisionCalls).toBe(0);
+  });
+
+  test('dashboard start exposes an actionable non-retryable protected-delivery failure', async () => {
+    const app = createApp();
+    sessionRow = {
+      ...sessionRow!,
+      status: 'failed',
+      sandboxProvider: 'daytona',
+      error:
+        'This sandbox provider cannot enforce network-boundary secret delivery. Select Platinum or change the secret delivery policy.',
+    };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'daytona',
+        externalId: null,
+        baseUrl: null,
+        status: 'error',
+        config: {},
+        metadata: {
+          initStatus: 'failed',
+          initAttempts: 1,
+          initMaxAttempts: 1,
+          failureCategory: 'unsupported-secret-delivery',
+          errorMessage:
+            'This sandbox provider cannot enforce network-boundary secret delivery. Select Platinum or change the secret delivery policy.',
+          lastProvisioningError:
+            'Sandbox provider daytona does not support network-boundary secret delivery',
+        },
+        lastUsedAt: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    ];
+
+    const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+      method: 'POST',
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      stage: 'failed',
+      retriable: false,
+      failure: {
+        category: 'unsupported-secret-delivery',
+        message:
+          'This sandbox provider cannot enforce network-boundary secret delivery. Select Platinum or change the secret delivery policy.',
+        retryable: false,
+      },
+    });
+    expect(sandboxProvisionCalls).toBe(0);
   });
 
   test('dashboard start retires abandoned no-external-id provisioning rows and reallocates', async () => {
@@ -1920,7 +2621,195 @@ describe('project session API contract', () => {
     expect(sandboxProvisionCalls).toBe(0);
   });
 
-  test('dashboard start preserves a sandbox that stayed stopped after wake grace', async () => {
+  // ═══ THE MID-TURN PARK THIS CLOSES ═══
+  // Incident 2026-08-17T20:40:03Z (session 0fc6897a, Daytona f468056d): a box
+  // was durably stopped WHILE ITS TURN WAS RUNNING, `stopReason:
+  // provider_reconcile`, while Daytona's own autoStopInterval was 720 minutes.
+  // This endpoint is polled every second and Daytona folds `stopping` and
+  // `pending_stop` into `stopped` (platform/providers/daytona-state.ts), so ONE
+  // transitional read parked the row, settled the live turn's ledger
+  // `runtime_gone` and kicked the client into the wake flow with the turn's work
+  // lost. Unlike account deletion or the orphan sweep, this caller has NOT
+  // stopped the box itself — it is a pure observation, so it must confirm.
+  test('dashboard start does NOT park a box mid-turn on one stopped provider read', async () => {
+    const app = createApp();
+    sessionRow = {
+      ...sessionRow!,
+      sandboxProvider: 'daytona',
+      status: 'running',
+      opencodeSessionId: 'ses_root_existing',
+    };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'daytona',
+        externalId: 'box-mid-turn',
+        baseUrl: null,
+        status: 'active',
+        config: {},
+        metadata: {
+          activeTurns: {
+            'live-token': {
+              token: 'live-token',
+              state: 'active',
+              opencodeSessionId: 'ses_root_existing',
+              messageId: 'msg_live',
+              startedAtMs: Date.now() - 60_000,
+            },
+          },
+        },
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-02T00:00:00Z'),
+        updatedAt: new Date('2026-01-02T00:00:00Z'),
+      },
+    ];
+    providerStatus = 'stopped';
+
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+      method: 'POST',
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      stage: 'starting',
+      retriable: true,
+      reason: 'runtime_stop_unconfirmed',
+    });
+    // The row keeps its turn authority, the box is never stopped, and nothing
+    // is woken: the next poll either sees `running` again or earns the
+    // confirmation one window later.
+    expect(sessionSandboxRows[0]?.status).toBe('active');
+    expect(
+      (sessionSandboxRows[0]?.metadata as Record<string, unknown>).activeTurns,
+    ).toBeDefined();
+    expect(providerStartCalls).toBe(0);
+    expect(
+      (sessionSandboxRows[0]?.metadata as Record<string, unknown>).pendingStopObservedAtMs,
+    ).toEqual(expect.any(Number));
+  });
+
+  test('dashboard start parks a mid-turn box once a SECOND stopped read confirms it', async () => {
+    const app = createApp();
+    sessionRow = {
+      ...sessionRow!,
+      sandboxProvider: 'daytona',
+      status: 'running',
+      opencodeSessionId: 'ses_root_existing',
+    };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'daytona',
+        externalId: 'box-mid-turn-confirmed',
+        baseUrl: null,
+        status: 'active',
+        config: {},
+        metadata: {
+          activeTurns: {
+            'live-token': {
+              token: 'live-token',
+              state: 'active',
+              opencodeSessionId: 'ses_root_existing',
+              messageId: 'msg_live',
+              startedAtMs: Date.now() - 60_000,
+            },
+          },
+          // An earlier poll recorded the first observation, longer ago than
+          // MIDTURN_STOP_CONFIRMATION_MS.
+          pendingStopObservedAtMs: Date.now() - 20_000,
+        },
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-02T00:00:00Z'),
+        updatedAt: new Date('2026-01-02T00:00:00Z'),
+      },
+    ];
+    providerStatus = 'stopped';
+
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+      method: 'POST',
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      stage: 'starting',
+      retriable: true,
+      reason: 'runtime_waking',
+    });
+    expect(providerStartCalls).toBe(1);
+  });
+
+  // ═══ THE ARMED-AND-NEVER-DISARMED MARKER THIS CLOSES ═══
+  // This endpoint is polled about once a second, and it can ARM the mid-turn
+  // stop confirmation. If it never disarms it, two transient `pending_stop`
+  // misreads MINUTES apart — with hundreds of healthy `running` reads in
+  // between — read as one confirmed provider transition and park a live box.
+  // A confirmation is about ONE transition, so a `running` answer from any
+  // observer ends it.
+  test('dashboard start drops the pending-stop marker when the provider says running', async () => {
+    const app = createApp();
+    sessionRow = {
+      ...sessionRow!,
+      sandboxProvider: 'daytona',
+      status: 'running',
+      opencodeSessionId: 'ses_root_existing',
+    };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'daytona',
+        externalId: 'box-mid-turn-recovered',
+        baseUrl: null,
+        status: 'active',
+        config: {},
+        metadata: {
+          activeTurns: {
+            'live-token': {
+              token: 'live-token',
+              state: 'active',
+              opencodeSessionId: 'ses_root_existing',
+              messageId: 'msg_live',
+              startedAtMs: Date.now() - 60_000,
+            },
+          },
+          // Armed by an earlier poll that read the transitional `pending_stop`.
+          pendingStopObservedAtMs: Date.now() - 5_000,
+        },
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-02T00:00:00Z'),
+        updatedAt: new Date('2026-01-02T00:00:00Z'),
+      },
+    ];
+    providerStatus = 'running';
+
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+      method: 'POST',
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ stage: 'ready' });
+    expect(
+      (sessionSandboxRows[0]?.metadata as Record<string, unknown>).pendingStopObservedAtMs,
+    ).toBeUndefined();
+    // The turn authority is untouched — only the confirmation is.
+    expect(
+      (sessionSandboxRows[0]?.metadata as Record<string, unknown>).activeTurns,
+    ).toBeDefined();
+  });
+
+  // Incident 2026-08-14: a wake that ran out of time is NOT evidence the
+  // provider lost the box — the provider just answered `stopped`, which proves
+  // the box exists. The row parks retriable instead of being preserved as
+  // "computer was lost" (docs/incidents/2026-08-14-computer-lost-false-alarm-and-boot-failures.md).
+  test('dashboard start parks (not preserves) a sandbox that stayed stopped after wake grace', async () => {
     const app = createApp();
     sessionRow = {
       ...sessionRow!,
@@ -1956,8 +2845,8 @@ describe('project session API contract', () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({
       stage: 'failed',
-      retriable: false,
-      reason: 'runtime_identity_unavailable',
+      retriable: true,
+      reason: 'runtime_wake_timeout',
       sandbox: { external_id: 'box-stuck-stopped', status: 'stopped' },
     });
 
@@ -1965,9 +2854,14 @@ describe('project session API contract', () => {
     expect(sandboxProvisionCalls).toBe(0);
     expect(sessionSandboxRows).toHaveLength(1);
     expect(sessionSandboxRows[0]?.externalId).toBe('box-stuck-stopped');
+    // A park must never carry the loss flag the web renders as "computer was
+    // lost", and must record which failure parked it.
+    const parkedMetadata = sessionSandboxRows[0]?.metadata as Record<string, unknown>;
+    expect(parkedMetadata.runtimeIdentityState).toBeUndefined();
+    expect(parkedMetadata.stopReason).toBe('runtime_wake_failed');
   });
 
-  test('dashboard start preserves an old active row whose provider status stays unknown', async () => {
+  test('dashboard start trusts live runtime health when the provider status stays unknown', async () => {
     const app = createApp();
     sessionRow = {
       ...sessionRow!,
@@ -1996,16 +2890,20 @@ describe('project session API contract', () => {
       },
     ];
     providerStatus = 'unknown';
+    runtimeInspectionHealth = {
+      runtimeReady: true,
+      bootError: null,
+    };
 
     const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
       method: 'POST',
     });
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({
-      stage: 'failed',
+      stage: 'ready',
       retriable: false,
-      reason: 'runtime_identity_unavailable',
-      sandbox: { external_id: 'box-status-unknown', status: 'stopped' },
+      reason: 'unchanged',
+      sandbox: { external_id: 'box-status-unknown', status: 'active' },
     });
 
     expect(providerStartCalls).toBe(0);
@@ -2065,7 +2963,7 @@ describe('project session API contract', () => {
     ).toEqual(expect.any(String));
   });
 
-  test('concurrent archived resume + transient removed status keeps the original identity fenced', async () => {
+  test('a removed stopped runtime keeps the original identity fenced without optimistic activation', async () => {
     const app = createApp();
     sessionRow = {
       ...sessionRow!,
@@ -2105,13 +3003,13 @@ describe('project session API contract', () => {
     expect(await res.json()).toMatchObject({
       stage: 'starting',
       retriable: true,
-      reason: 'runtime_removed_checking',
+      reason: 'runtime_waking',
     });
-    expect(providerStartCalls).toBe(1);
+    expect(providerStartCalls).toBe(0);
     expect(sandboxProvisionCalls).toBe(0);
     expect(sessionSandboxRows).toHaveLength(1);
     expect(sessionSandboxRows[0]?.externalId).toBe('box-original-archived');
-    expect(sessionSandboxRows[0]?.status).toBe('active');
+    expect(sessionSandboxRows[0]?.status).toBe('stopped');
     expect(
       (sessionSandboxRows[0]?.metadata as Record<string, unknown>).runtimeWakeStartedAt,
     ).toEqual(expect.any(String));
@@ -2177,6 +3075,62 @@ describe('project session API contract', () => {
     });
     expect(sessionRow?.status).toBe('stopped');
     expect(sessionRow?.opencodeSessionId).toBe('ses_root_existing');
+  });
+
+  // The wake cooldown is a "the provider did not confirm this wake, retry
+  // shortly" payload, and it is evaluated BEFORE any provider truth. For a row
+  // already preserved as `runtimeIdentityState: 'unavailable'` that answer is
+  // false twice over: the identity is gone, so there is nothing to retry, and
+  // `failure.retryable: true` invites exactly the click that can only 409.
+  //
+  // This window used to be unreachable in practice (a preserve happened long
+  // after the cooldown lapsed). The maintenance pass now preserves the identity
+  // the moment the provider proves removal — which lands INSIDE the 2-minute
+  // cooldown of the wake that just failed — so the cooldown must yield to it.
+  test('a preserved-unavailable identity is not reported as a retryable wake cooldown', async () => {
+    const app = createApp();
+    sessionRow = { ...sessionRow!, status: 'stopped', opencodeSessionId: 'ses_root_existing' };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'platinum',
+        externalId: 'box-gone-in-cooldown',
+        baseUrl: null,
+        status: 'stopped',
+        config: {},
+        metadata: {
+          runtimeIdentityState: 'unavailable',
+          preservedExternalId: 'box-gone-in-cooldown',
+          runtimeUnavailableReason: 'runtime_removed',
+          // Cooldown still ticking from the wake that failed moments ago.
+          runtimeWakeRetryAfterAt: new Date(Date.now() + 90_000).toISOString(),
+        },
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-01T00:00:00Z'),
+        updatedAt: new Date('2026-01-01T00:00:00Z'),
+      },
+    ];
+    providerStatus = 'removed';
+    providerRecoveryEnabled = true;
+
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+      method: 'POST',
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body).toMatchObject({
+      stage: 'failed',
+      retriable: false,
+      reason: 'runtime_identity_unavailable',
+    });
+    // The specific lie: a retryable cooldown offered for an identity that is gone.
+    expect(body.reason).not.toBe('runtime_wake_cooldown');
+    expect((body.failure as { retryable?: boolean } | null)?.retryable).not.toBe(true);
+    // No wake is issued against a runtime the provider has already disowned.
+    expect(providerStartCalls).toBe(0);
   });
 
   test('dashboard start restores a provider-removed sandbox in place without provisioning', async () => {
@@ -2302,7 +3256,7 @@ describe('project session API contract', () => {
     sessionRow = {
       ...sessionRow!,
       status: 'running',
-        opencodeSessionId: 'ses_root_existing',
+      opencodeSessionId: 'ses_root_existing',
     };
     sessionSandboxRows = [
       {
@@ -2356,7 +3310,13 @@ describe('project session API contract', () => {
     expect(sandboxProvisionCalls).toBe(0);
   });
 
-  test('dashboard start preserves a running sandbox whose OpenCode runtime never becomes reachable', async () => {
+  // Incident 2026-08-14: this exact population — a RUNNING box whose runtime
+  // never became ready (a dead local tunnel blocked the guest's git clone) —
+  // was preserved as "computer was lost" while both provider control planes
+  // showed the box alive. A failed boot on a present box parks retriable and
+  // stops the provider box, so a DB-stopped row cannot keep burning unmetered
+  // compute.
+  test('dashboard start parks (not preserves) a running sandbox whose OpenCode runtime never becomes reachable', async () => {
     const app = createApp();
     sessionRow = {
       ...sessionRow!,
@@ -2395,8 +3355,8 @@ describe('project session API contract', () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({
       stage: 'failed',
-      retriable: false,
-      reason: 'runtime_identity_unavailable',
+      retriable: true,
+      reason: 'runtime_unreachable_timeout',
       sandbox: { external_id: 'box-opencode-dead', status: 'stopped' },
     });
 
@@ -2404,6 +3364,11 @@ describe('project session API contract', () => {
     expect(sandboxProvisionCalls).toBe(0);
     expect(sessionSandboxRows).toHaveLength(1);
     expect(sessionSandboxRows[0]?.externalId).toBe('box-opencode-dead');
+    // The box was RUNNING when the boot failed: the park must stop it.
+    expect(providerStopCalls).toBe(1);
+    const parkedMetadata = sessionSandboxRows[0]?.metadata as Record<string, unknown>;
+    expect(parkedMetadata.runtimeIdentityState).toBeUndefined();
+    expect(parkedMetadata.stopReason).toBe('runtime_boot_failed');
   });
 
   test('restart of a provider-removed sandbox refuses replacement and preserves identity', async () => {
@@ -2456,6 +3421,36 @@ describe('project session API contract', () => {
       metadata: {
         preservedExternalId: 'box-deleted',
         runtimeIdentityState: 'unavailable',
+      },
+    });
+  });
+
+  test('restart of a meta session keeps the meta runtime env', async () => {
+    const app = createApp();
+    sessionRow = {
+      ...sessionRow!,
+      status: 'stopped',
+      agentName: 'meta',
+      metadata: {
+        ...((sessionRow!.metadata as Record<string, unknown>) ?? {}),
+        sandbox_slug: 'meta',
+      },
+    };
+    sessionSandboxRows = [];
+
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/restart`, {
+      method: 'POST',
+    });
+
+    expect([200, 202]).toContain(res.status);
+    await flushUntil(() => sandboxProvisionCalls === 1);
+    // The rebuilt env must keep the meta runtime — losing it makes the daemon
+    // clone the project over the meta workspace and wipe /workspace/AGENTS.md.
+    expect(lastProvisionInput).toMatchObject({
+      agentName: 'meta',
+      extraEnvVars: {
+        KORTIX_META_AGENT: '1',
+        KORTIX_PROJECT_AUTO_CLONE: '0',
       },
     });
   });
@@ -2549,9 +3544,52 @@ describe('project session API contract', () => {
     expect(providerStartCalls).toBe(1);
     expect(sandboxProvisionCalls).toBe(0);
     expect(sessionSandboxRows[0]).toMatchObject({
-        externalId: 'box-missing-on-start',
+      externalId: 'box-missing-on-start',
       status: 'stopped',
       metadata: { preservedExternalId: 'box-missing-on-start' },
+    });
+  });
+
+  test('restart trusts live runtime health when the provider status stays unknown', async () => {
+    const app = createApp();
+    sessionRow = {
+      ...sessionRow!,
+      status: 'running',
+      opencodeSessionId: 'ses_root_existing',
+    };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'platinum',
+        externalId: 'box-restarted-status-unknown',
+        baseUrl: null,
+        status: 'active',
+        config: {},
+        metadata: {},
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-02T00:00:00Z'),
+        updatedAt: new Date('2026-01-02T00:00:00Z'),
+      },
+    ];
+    providerStatus = 'unknown';
+    runtimeInspectionHealth = {
+      runtimeReady: true,
+      bootError: null,
+    };
+
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/restart`, {
+      method: 'POST',
+    });
+    expect(res.status).toBe(202);
+    await flushUntil(() => sessionRow?.status === 'running');
+    expect(providerStartCalls).toBe(1);
+    expect(sessionRow?.status).toBe('running');
+    expect(sessionSandboxRows[0]).toMatchObject({
+      externalId: 'box-restarted-status-unknown',
+      status: 'active',
     });
   });
 
@@ -2590,7 +3628,7 @@ describe('project session API contract', () => {
     expect(providerStartCalls).toBe(1);
     expect(sandboxProvisionCalls).toBe(0);
     expect(sessionSandboxRows[0]).toMatchObject({
-        externalId: 'box-accepted-start-then-removed',
+      externalId: 'box-accepted-start-then-removed',
       status: 'stopped',
       metadata: { preservedExternalId: 'box-accepted-start-then-removed' },
     });
@@ -2630,15 +3668,114 @@ describe('project session API contract', () => {
     expect(env.KORTIX_OPENCODE_MODEL).toBe('anthropic/claude-sonnet-4-6');
   });
 
+  test('session create turns a pending prompt into a durable inbox row, not a client hand-off', async () => {
+    const app = createApp();
+    const pendingPrompt = {
+      text: 'Map this parcel.',
+      agent: 'default',
+      model: { providerID: 'kortix', modelID: 'claude-sonnet-4-5' },
+      variant: 'high',
+      attachment_names: ['parcel.geojson'],
+    };
+
+    const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        provider: 'daytona',
+        session_id: SESSION_ID,
+        pending_prompt: pendingPrompt,
+      }),
+    });
+
+    expect(response.status).toBe(201);
+    // The prompt is a durable row the moment the create returns — the
+    // wake-then-deliver machinery runs it even if the tab closes before the
+    // page ever mounts. The stored metadata keeps ONLY the picks: `text` is
+    // deliberately stripped, because a pre-deploy web bundle replays
+    // `pending_prompt.text` client-side and would double-send it.
+    const body = await response.json();
+    expect(body.metadata.pending_prompt).toEqual({
+      agent: 'default',
+      model: { providerID: 'kortix', modelID: 'claude-sonnet-4-5' },
+      variant: 'high',
+      attachment_names: ['parcel.geojson'],
+    });
+    expect(lifecycleCommandInserts.length).toBe(1);
+    const row = lifecycleCommandInserts[0] as any;
+    expect(row.commandType).toBe('continue_session');
+    expect(row.sessionId).toBe(SESSION_ID);
+    expect(row.idempotencyKey).toBe(`prompt:${SESSION_ID}:pending-first`);
+    expect(row.payload.text).toBe('Map this parcel.');
+    expect(row.payload.clientMessageId).toBe(`pending:${SESSION_ID}`);
+    // Minted with no transcript to place against, so the drain re-mints it
+    // against the live root before delivering.
+    expect(row.payload.wireMessageId).toMatch(/^msg_[0-9a-f]{12}[A-Za-z0-9]{14}$/);
+    expect(row.payload.remintOnDelivery).toBe(true);
+    expect(row.payload.parts).toEqual([{ type: 'text', text: 'Map this parcel.' }]);
+    expect(row.payload.overrides).toEqual({
+      agent: 'default',
+      model: { providerID: 'kortix', modelID: 'claude-sonnet-4-5' },
+      variant: 'high',
+      directory: null,
+    });
+    await flushUntil(() => sandboxProvisionCalls === 1);
+    expect(lastProvisionInput!.extraEnvVars?.KORTIX_INITIAL_PROMPT).toBeUndefined();
+  });
+
+  test('a pending prompt with data-URL file parts rides the row; an empty one makes no row', async () => {
+    const app = createApp();
+    const withParts = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        provider: 'daytona',
+        pending_prompt: {
+          text: 'Look at this screenshot.',
+          parts: [
+            { type: 'text', text: 'Look at this screenshot.' },
+            {
+              type: 'file',
+              mime: 'image/png',
+              url: 'data:image/png;base64,AAAA',
+              filename: 'shot.png',
+            },
+          ],
+        },
+      }),
+    });
+    expect(withParts.status).toBe(201);
+    expect(lifecycleCommandInserts.length).toBe(1);
+    expect((lifecycleCommandInserts[0] as any).payload.parts).toEqual([
+      { type: 'text', text: 'Look at this screenshot.' },
+      { type: 'file', mime: 'image/png', url: 'data:image/png;base64,AAAA', filename: 'shot.png' },
+    ]);
+
+    lifecycleCommandInserts.length = 0;
+    // Whitespace text with only attachment NAMES (no parts) is a hand-off with
+    // nothing deliverable in it: picks are stored, no row is made. (Bare
+    // whitespace text alone is already a 400 from the contract schema.)
+    const blank = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        provider: 'daytona',
+        pending_prompt: { text: '   ', attachment_names: ['late.png'] },
+      }),
+    });
+    expect(blank.status).toBe(201);
+    expect(lifecycleCommandInserts.length).toBe(0);
+  });
+
   test('allows only user-owned PATCH fields', async () => {
     const app = createApp();
     const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: 'Human name',
-          metadata: { custom: 'ok' },
-        }),
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: 'Human name',
+        metadata: { custom: 'ok' },
+      }),
     });
 
     expect(res.status).toBe(200);
@@ -2666,55 +3803,50 @@ describe('project session API contract', () => {
     expect(sandboxProvisionCalls).toBe(0);
   });
 
-  // ---------------------------------------------------------------------------
-  // End-to-end: stored project secrets must land in the sandbox env at session
-  // create. This is the contract the entire Secrets Manager UX relies on —
-  // anything stored via POST /secrets is expected to be a plain env var at
-  // sandbox boot, alongside the platform-managed KORTIX_* envelope.
-  // ---------------------------------------------------------------------------
-  test('e2e: stored project secrets are injected as plaintext env vars at session create', async () => {
+  test('e2e: only explicit sandbox secrets are injected as plaintext env vars', async () => {
     const app = createApp();
 
-    // 1. User stores two secrets via the Secrets Manager.
-    for (const [name, value] of [
-      ['OPENAI_API_KEY', 'sk-test-openai'],
-      ['STRIPE_SECRET', 'sk_test_stripe_live'],
+    for (const input of [
+      { name: 'OPENAI_API_KEY', value: 'sk-test-openai' },
+      {
+        name: 'LOCAL_BUILD_SECRET',
+        value: 'local-build-value',
+        strategy: 'runtime',
+        consumer: 'sandbox',
+      },
     ] as const) {
       const writeRes = await app.request(`/v1/projects/${PROJECT_ID}/secrets`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, value }),
+        body: JSON.stringify(input),
       });
       expect(writeRes.status).toBe(200);
     }
     expect(secretRows).toHaveLength(2);
-    // Stored values are encrypted at rest — plaintext never appears in valueEnc.
     for (const row of secretRows) {
       expect(row.valueEnc).not.toContain('sk-test-openai');
-      expect(row.valueEnc).not.toContain('sk_test_stripe_live');
+      expect(row.valueEnc).not.toContain('local-build-value');
     }
 
-    // 2. User creates a session — sandbox provisioning is fire-and-forget.
     const createRes = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ provider: 'daytona', base_ref: 'main' }),
+      body: JSON.stringify({
+        provider: 'daytona',
+        base_ref: 'main',
+        agent_name: 'default',
+      }),
     });
     expect(createRes.status).toBe(201);
 
-    // 3. Flush the fire-and-forget IIFE that calls provisionSessionSandbox.
     await flushUntil(() => sandboxProvisionCalls === 1);
     expect(sandboxProvisionCalls).toBe(1);
     expect(lastProvisionInput).not.toBeNull();
 
-    // 4. User secrets are present, decrypted, in extraEnvVars.
     const env = lastProvisionInput!.extraEnvVars ?? {};
-    expect(env.OPENAI_API_KEY).toBe('sk-test-openai');
-    expect(env.STRIPE_SECRET).toBe('sk_test_stripe_live');
+    expect(env.OPENAI_API_KEY).toBeUndefined();
+    expect(env.LOCAL_BUILD_SECRET).toBe('local-build-value');
 
-    // 5. Platform KORTIX_* envelope is still present alongside user secrets.
-    // Git provider credentials are deliberately absent; provisionSessionSandbox
-    // injects the single sandbox KORTIX_TOKEN at the provider boundary.
     expect(env.KORTIX_PROJECT_ID).toBe(PROJECT_ID);
     expect(env.KORTIX_SESSION_ID).toBeTruthy();
     const expectedRepoUrl =
@@ -2739,10 +3871,6 @@ describe('project session API contract', () => {
     expect(env.KORTIX_BOOTSTRAP_OPENCODE_SESSION).toBe('1');
     expect(env.KORTIX_INITIAL_PROMPT).toBeUndefined();
 
-    // 6. User can't shadow a platform var — POST /secrets rejects KORTIX_*.
-    // This protects the env-var precedence: user secrets are merged before
-    // KORTIX_* in the helper, so an accepted KORTIX_TOKEN would silently
-    // poison the sandbox auth.
     const shadowRes = await app.request(`/v1/projects/${PROJECT_ID}/secrets`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -2775,9 +3903,12 @@ describe('project session API contract', () => {
     expect(body.sandbox_provider).toBe('daytona');
     expect(body.base_ref).toBe('dev');
     expect(body.status).toBe('provisioning');
+    expect(body.opencode_session_id).toBeNull();
     expect(body.name).toBe('Contract session');
+    await flushUntil(() => branchCreateCalls === 1);
     expect(branchCreateCalls).toBe(1);
     expect(sessionRow?.baseRef).toBe('dev');
+    expect(sessionRow?.opencodeSessionId).toBeNull();
 
     await flushUntil(() => sandboxProvisionCalls === 1);
     expect(sandboxProvisionCalls).toBe(1);
@@ -2829,6 +3960,8 @@ describe('project session API contract', () => {
         body: JSON.stringify({ runtime_context: runtimeContext }),
       });
       expect(res.status).toBe(400);
+      const body = (await res.json()) as { code?: string };
+      expect(body.code).toBe('INVALID_SESSION_RUNTIME_CONTEXT');
       expect(sessionRow).toBeNull();
       expect(runtimeContextRows).toHaveLength(0);
       expect(sandboxProvisionCalls).toBe(0);
@@ -2856,11 +3989,11 @@ describe('project session API contract', () => {
     const context = { workspace_id: 'veyris_org_cold', locale: 'fr' };
     runtimeContextRows = [
       {
-      sessionId: SESSION_ID,
-      context,
-      byteSize: new TextEncoder().encode(JSON.stringify(context)).byteLength,
-      createdAt: new Date('2026-01-02T00:00:00Z'),
-      updatedAt: new Date('2026-01-02T00:00:00Z'),
+        sessionId: SESSION_ID,
+        context,
+        byteSize: new TextEncoder().encode(JSON.stringify(context)).byteLength,
+        createdAt: new Date('2026-01-02T00:00:00Z'),
+        updatedAt: new Date('2026-01-02T00:00:00Z'),
       },
     ];
     sessionRow = {
@@ -2883,11 +4016,11 @@ describe('project session API contract', () => {
     const context = { workspace_id: 'veyris_org_restart', locale: 'en' };
     runtimeContextRows = [
       {
-      sessionId: SESSION_ID,
-      context,
-      byteSize: new TextEncoder().encode(JSON.stringify(context)).byteLength,
-      createdAt: new Date('2026-01-02T00:00:00Z'),
-      updatedAt: new Date('2026-01-02T00:00:00Z'),
+        sessionId: SESSION_ID,
+        context,
+        byteSize: new TextEncoder().encode(JSON.stringify(context)).byteLength,
+        createdAt: new Date('2026-01-02T00:00:00Z'),
+        updatedAt: new Date('2026-01-02T00:00:00Z'),
       },
     ];
     sessionRow = {
@@ -2903,6 +4036,60 @@ describe('project session API contract', () => {
     expect(res.status).toBe(202);
     await flushUntil(() => sandboxProvisionCalls === 1);
     expect(JSON.parse(lastProvisionInput!.extraEnvVars!.KORTIX_SESSION_CONTEXT!)).toEqual(context);
+  });
+
+  test('explicit restart replaces an unmaterialized capacity failure without auto-sending its prompt', async () => {
+    const app = createApp();
+    const pendingPrompt = {
+      text: 'Map this parcel safely.',
+      agent: 'default',
+      model: null,
+      variant: null,
+      attachment_names: ['parcel.geojson'],
+    };
+    sessionRow = {
+      ...sessionRow!,
+      sandboxProvider: 'daytona',
+      status: 'failed',
+      error: 'The sandbox provider is at capacity right now. Try again in a minute.',
+      metadata: { pending_prompt: pendingPrompt },
+    };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'daytona',
+        externalId: null,
+        baseUrl: null,
+        status: 'error',
+        config: {},
+        metadata: {
+          initStatus: 'failed',
+          initAttempts: 1,
+          initMaxAttempts: 1,
+          failureCategory: 'provider-capacity',
+        },
+        lastUsedAt: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    ];
+
+    const response = await app.request(
+      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/restart`,
+      { method: 'POST' },
+    );
+
+    expect(response.status).toBe(202);
+    expect(await response.json()).toMatchObject({
+      ok: true,
+      session_id: SESSION_ID,
+      status: 'provisioning',
+    });
+    await flushUntil(() => sandboxProvisionCalls === 1);
+    expect(lastProvisionInput!.extraEnvVars?.KORTIX_INITIAL_PROMPT).toBeUndefined();
   });
 
   test('accepts a client-created session branch without recreating it server-side', async () => {
@@ -2931,7 +4118,7 @@ describe('project session API contract', () => {
   test('stops a session without deleting its preserved branch row', async () => {
     const app = createApp();
     const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`, {
-        method: 'DELETE',
+      method: 'DELETE',
     });
 
     expect(res.status).toBe(200);
@@ -2941,7 +4128,7 @@ describe('project session API contract', () => {
 
     sessionRow = null;
     const missing = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`, {
-        method: 'DELETE',
+      method: 'DELETE',
     });
     expect(missing.status).toBe(404);
     expect(await missing.json()).toMatchObject({ error: 'Not found' });

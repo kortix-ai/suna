@@ -4,10 +4,11 @@ import * as SheetPrimitive from '@radix-ui/react-dialog';
 import { cva, type VariantProps } from 'class-variance-authority';
 import * as React from 'react';
 
-import { Icon } from '@/features/icon/icon';
+import { Close } from '@/features/icon/icons/close';
 import { cn } from '@/lib/utils';
 import { DialogDepthProvider, dialogContentZ, dialogOverlayZ, useDialogDepth } from '@/lib/z-stack';
 import { buttonVariants } from './button';
+import { triggerVariants, type TriggerVariantProps } from './trigger-variants';
 
 const Sheet = ({ ...props }: React.ComponentProps<typeof SheetPrimitive.Root>) => {
   const parentDepth = useDialogDepth();
@@ -20,7 +21,20 @@ const Sheet = ({ ...props }: React.ComponentProps<typeof SheetPrimitive.Root>) =
   );
 };
 
-const SheetTrigger = SheetPrimitive.Trigger;
+const SheetTrigger = ({
+  className,
+  variant,
+  size,
+  asChild,
+  ...props
+}: Omit<React.ComponentProps<typeof SheetPrimitive.Trigger>, 'size'> & TriggerVariantProps) => (
+  <SheetPrimitive.Trigger
+    asChild={asChild}
+    // With `asChild` the child owns its styling — merging ours would double it.
+    className={asChild ? className : cn(triggerVariants({ variant, size }), className)}
+    {...props}
+  />
+);
 
 const SheetClose = SheetPrimitive.Close;
 
@@ -108,7 +122,7 @@ const SheetContent = React.forwardRef<
                 buttonVariants({ variant: 'ghost', size: 'icon' }),
               )}
             >
-              <Icon.Close className="size-[1.15rem] stroke-0" />
+              <Close className="size-[1.15rem] stroke-0" />
               <span className="sr-only">Close</span>
             </SheetPrimitive.Close>
           )}

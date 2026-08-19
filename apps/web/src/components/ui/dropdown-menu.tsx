@@ -2,18 +2,45 @@
 
 import { cn } from '@/lib/utils';
 import { floatingZ, useDialogDepth } from '@/lib/z-stack';
-// import { ChevronRight, Circle } from "@mynaui/icons-react";
+import { CheckIcon as Check, CaretRightIcon as ChevronRight } from '@phosphor-icons/react';
 import * as DropdownMenuPrimitive from '@radix-ui/react-dropdown-menu';
-import { Check, ChevronRight, Circle } from 'lucide-react';
 import * as React from 'react';
+import {
+  MENU_LABEL,
+  MENU_PANEL,
+  MENU_SEPARATOR,
+  MENU_SHORTCUT,
+  menuRow,
+  type MenuRowSize,
+} from './menu-recipe';
+import { triggerVariants, type TriggerVariantProps } from './trigger-variants';
+
+/**
+ * The row recipe, the panel and the label/separator/shortcut classes live in
+ * `./menu-recipe`, shared with `context-menu.tsx` — see that file for why the
+ * four row components here (Item, SubTrigger, CheckboxItem, RadioItem) are no
+ * longer allowed to style themselves.
+ *
+ * A dropdown is anchored to a trigger, so its panel is at least as wide as a
+ * typical trigger. A right-click menu has no trigger width to match and floors
+ * itself lower.
+ */
+const DROPDOWN_PANEL = cn(MENU_PANEL, 'min-w-[14rem] overflow-hidden');
 
 const DropdownMenu = DropdownMenuPrimitive.Root;
 
 const DropdownMenuTrigger = React.forwardRef<
   React.ElementRef<typeof DropdownMenuPrimitive.Trigger>,
-  React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Trigger>
->(({ className, ...props }, ref) => (
-  <DropdownMenuPrimitive.Trigger ref={ref} className={className} {...props} />
+  Omit<React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Trigger>, 'size'> &
+    TriggerVariantProps
+>(({ className, variant, size, asChild, ...props }, ref) => (
+  <DropdownMenuPrimitive.Trigger
+    ref={ref}
+    asChild={asChild}
+    // With `asChild` the child owns its styling — merging ours would double it.
+    className={asChild ? className : cn(triggerVariants({ variant, size }), className)}
+    {...props}
+  />
 ));
 DropdownMenuTrigger.displayName = DropdownMenuPrimitive.Trigger.displayName;
 
@@ -31,25 +58,28 @@ const DropdownMenuSub = DropdownMenuPrimitive.Sub;
 
 const DropdownMenuRadioGroup = DropdownMenuPrimitive.RadioGroup;
 
+/**
+ * Takes the same `size` and `inset` props as `DropdownMenuItem`, because a
+ * submenu trigger is a row like any other and has to line up with its siblings.
+ *
+ * The caret is `size-3.5` against the leading icon's `size-4`: it is an
+ * affordance, not content, and matching the icon's weight makes it compete with
+ * the label. `text-muted-foreground` for the same reason.
+ */
 const DropdownMenuSubTrigger = React.forwardRef<
   React.ElementRef<typeof DropdownMenuPrimitive.SubTrigger>,
   React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.SubTrigger> & {
     inset?: boolean;
+    size?: MenuRowSize;
   }
->(({ className, inset, children, ...props }, ref) => (
+>(({ className, inset, size = 'sm', children, ...props }, ref) => (
   <DropdownMenuPrimitive.SubTrigger
     ref={ref}
-    className={cn(
-      'group focus:bg-accent data-[state=open]:bg-accent flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none select-none [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0',
-      inset && 'pl-8',
-      className,
-    )}
+    className={cn('group', menuRow(size, 'default'), inset && 'pl-8', className)}
     {...props}
   >
     {children}
-    <span className="ml-auto flex items-center">
-      <ChevronRight className="block group-data-[state=open]:block" />
-    </span>
+    <ChevronRight className="text-muted-foreground ml-auto size-3.5" />
   </DropdownMenuPrimitive.SubTrigger>
 ));
 DropdownMenuSubTrigger.displayName = DropdownMenuPrimitive.SubTrigger.displayName;
@@ -60,14 +90,15 @@ const DropdownMenuSubContent = React.forwardRef<
     side?: 'top' | 'bottom' | 'left' | 'right';
     align?: 'start' | 'center' | 'end';
   }
->(({ className, side, align, style, ...props }, ref) => {
+>(({ className, side, align, sideOffset = 5, style, ...props }, ref) => {
   const depth = useDialogDepth();
 
   return (
     <DropdownMenuPrimitive.SubContent
       ref={ref}
+      sideOffset={sideOffset}
       className={cn(
-        'bg-sidebar text-sidebar-foreground data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 mb-10 min-w-[8rem] overflow-hidden rounded-md border p-1 shadow-lg',
+        DROPDOWN_PANEL,
         className,
         side === 'top' && 'data-[side=top]:slide-in-from-bottom-2',
         side === 'bottom' && 'data-[side=bottom]:slide-in-from-top-2',
@@ -95,10 +126,7 @@ const DropdownMenuContent = React.forwardRef<
       <DropdownMenuPrimitive.Content
         ref={ref}
         sideOffset={sideOffset}
-        className={cn(
-          'bg-sidebar text-sidebar-foreground hover:text-foreground data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 border-border min-w-[14rem] overflow-hidden rounded-md border p-1 shadow-xs ease-out',
-          className,
-        )}
+        className={cn(DROPDOWN_PANEL, className)}
         style={{ zIndex: floatingZ(depth), ...style }}
         {...props}
       />
@@ -112,19 +140,12 @@ const DropdownMenuItem = React.forwardRef<
   React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Item> & {
     inset?: boolean;
     variant?: 'default' | 'destructive';
+    size?: 'sm' | 'md' | 'lg';
   }
->(({ className, inset, variant = 'default', ...props }, ref) => (
+>(({ className, inset, variant = 'default', size = 'sm', ...props }, ref) => (
   <DropdownMenuPrimitive.Item
     ref={ref}
-    className={cn(
-      'focus:bg-foreground/10 focus:text-foreground relative flex cursor-default items-center gap-2 rounded-sm px-2 py-1 text-sm transition-colors ease-out outline-none select-none data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0',
-      variant === 'default' &&
-        'text-foreground/80 hover:bg-primary/10 hover:text-foreground w-full items-center justify-start gap-2 text-sm font-normal transition-all duration-500',
-      variant === 'destructive' &&
-        'text-destructive hover:bg-destructive/10 hover:text-destructive data-highlighted:bg-destructive/10 data-highlighted:text-destructive focus:text-destructive',
-      inset && 'pl-8',
-      className,
-    )}
+    className={cn(menuRow(size, variant), inset && 'pl-8', className)}
     {...props}
   />
 ));
@@ -134,22 +155,22 @@ const DropdownMenuCheckboxItem = React.forwardRef<
   React.ElementRef<typeof DropdownMenuPrimitive.CheckboxItem>,
   React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.CheckboxItem> & {
     reverse?: boolean;
+    size?: MenuRowSize;
   }
->(({ className, children, checked, reverse, ...props }, ref) => (
+>(({ className, children, checked, reverse, size = 'sm', ...props }, ref) => (
   <DropdownMenuPrimitive.CheckboxItem
     ref={ref}
-    className={cn(
-      'focus:bg-accent focus:text-foreground relative flex cursor-default items-center rounded-sm py-1.5 text-sm transition-colors outline-none select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
-      className,
-      reverse ? 'pr-8 pl-2' : 'pr-2 pl-8',
-    )}
+    // The check sits in the row's own padding rather than pushing the label
+    // across, so a checkbox row's text starts on the same line as a plain
+    // item's — `pl-8` on top of `px-2.5` would indent it past every neighbour.
+    className={cn(menuRow(size, 'default'), reverse ? 'pr-7' : 'pl-7', 'relative', className)}
     checked={checked}
     {...props}
   >
     <span
       className={cn(
-        'absolute flex h-3.5 w-3.5 items-center justify-center',
-        reverse ? 'right-2' : 'left-2',
+        'absolute flex size-3.5 items-center justify-center',
+        reverse ? 'right-2.5' : 'left-2.5',
       )}
     >
       <DropdownMenuPrimitive.ItemIndicator>
@@ -163,15 +184,28 @@ DropdownMenuCheckboxItem.displayName = DropdownMenuPrimitive.CheckboxItem.displa
 
 const DropdownMenuRadioItem = React.forwardRef<
   React.ElementRef<typeof DropdownMenuPrimitive.RadioItem>,
+  // `size` used to be 'default' | 'sm' | 'lg' here while every sibling row used
+  // 'sm' | 'md' | 'lg' — the same prop name meaning two different scales, where
+  // RadioItem's "sm" meant denser-than-normal and Item's "sm" meant normal. No
+  // consumer passed it, so it is now the one shared scale.
   React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.RadioItem> & {
-    size?: 'default' | 'sm' | 'lg';
+    size?: MenuRowSize;
     side?: 'left' | 'right';
   }
->(({ className, children, size = 'default', side = 'right', ...props }, ref) => {
+>(({ className, children, size = 'sm', side = 'right', ...props }, ref) => {
+  /**
+   * A check, not a dot, and the same check `DropdownMenuCheckboxItem` uses.
+   *
+   * This was `<Circle className="h-2 w-2 fill-current" />`, which could not
+   * work: Phosphor's CircleIcon is a stroked outline, so `fill-current` painted
+   * nothing, and `MENU_ROW_BASE`'s `[&_svg]:size-4` — a descendant selector —
+   * outranked the `h-2 w-2` sitting on the icon itself. The mark rendered as a
+   * hollow ring. No consumer had ever rendered a RadioItem, so nobody saw it.
+   */
   const indicator = (
     <span className="flex size-3.5 shrink-0 items-center justify-center">
       <DropdownMenuPrimitive.ItemIndicator>
-        <Circle className="h-2 w-2 fill-current" />
+        <Check className="text-muted-foreground size-3.5" />
       </DropdownMenuPrimitive.ItemIndicator>
     </span>
   );
@@ -179,16 +213,7 @@ const DropdownMenuRadioItem = React.forwardRef<
   return (
     <DropdownMenuPrimitive.RadioItem
       ref={ref}
-      className={cn(
-        'focus:bg-accent focus:text-foreground flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm transition-colors outline-none select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
-        size === 'sm' && 'gap-1.5 py-1',
-        size === 'sm' && side === 'left' && 'pl-1.5',
-        size === 'sm' && side === 'right' && 'pr-1.5',
-        size === 'lg' && 'py-2 text-base',
-        size === 'lg' && side === 'left' && 'pl-2.5',
-        size === 'lg' && side === 'right' && 'pr-2.5',
-        className,
-      )}
+      className={cn(menuRow(size, 'default'), className)}
       {...props}
     >
       {side === 'left' ? (
@@ -215,11 +240,7 @@ const DropdownMenuLabel = React.forwardRef<
 >(({ className, inset, ...props }, ref) => (
   <DropdownMenuPrimitive.Label
     ref={ref}
-    className={cn(
-      'text-muted-foreground px-2.5 py-0.5 text-[13px] font-medium tracking-normal',
-      inset && 'pl-8',
-      className,
-    )}
+    className={cn(MENU_LABEL, inset && 'pl-8', className)}
     {...props}
   />
 ));
@@ -229,18 +250,12 @@ const DropdownMenuSeparator = React.forwardRef<
   React.ElementRef<typeof DropdownMenuPrimitive.Separator>,
   React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Separator>
 >(({ className, ...props }, ref) => (
-  <DropdownMenuPrimitive.Separator
-    ref={ref}
-    className={cn('bg-foreground/10 -mx-1 my-1 h-px', className)}
-    {...props}
-  />
+  <DropdownMenuPrimitive.Separator ref={ref} className={cn(MENU_SEPARATOR, className)} {...props} />
 ));
 DropdownMenuSeparator.displayName = DropdownMenuPrimitive.Separator.displayName;
 
 const DropdownMenuShortcut = ({ className, ...props }: React.HTMLAttributes<HTMLSpanElement>) => {
-  return (
-    <span className={cn('ml-auto text-xs tracking-widest opacity-60', className)} {...props} />
-  );
+  return <span className={cn(MENU_SHORTCUT, className)} {...props} />;
 };
 DropdownMenuShortcut.displayName = 'DropdownMenuShortcut';
 

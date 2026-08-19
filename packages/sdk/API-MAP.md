@@ -7,7 +7,7 @@ Two layers, one client:
 | Layer | Reached via | Owns |
 |---|---|---|
 | **Kortix REST API** (`apps/api`, `/v1/*`) | `backendApi` (Supabase bearer) | control plane — projects, session lifecycle, sandbox provisioning, git/versions, secrets, billing |
-| **Session runtime** (in-sandbox daemon) | OpenCode REST compatibility through `/v1/p/{sandboxId}/8000/...`, or ACP through `/kortix/acp/{acp_server_id}` | agent runtime — messages, events, files, pty, permissions |
+| **Session runtime** (in-sandbox daemon) | OpenCode REST through `/v1/p/{sandboxId}/8000/...` | agent runtime — messages, events, files, pty, permissions |
 
 Legend: **✅ in SDK** · **🟡 partial** (client fn in SDK, hook not) · **❌ gap** (web-local / not wrapped)
 
@@ -72,6 +72,7 @@ try/catching every call.
 | restart | `POST .../sessions/:sid/restart` |
 | commit + push | `POST .../sessions/:sid/commit-push` |
 | sharing (project) | `GET/PUT .../sessions/:sid/sharing` |
+| finalized LLM + compute cost | `GET /v1/usage/session-costs/:sid?project_id=:id` → `projects-client/session-costs.ts`, facade `session(pid,sid).cost()` ✅ |
 | transcript | `GET .../sessions/:sid/transcript` → `projects-client/sessions.ts`'s `getSessionTranscript` ✅, facade `session(pid,sid).transcript()` ✅ (previously listed ✅ here with no client fn behind it — that was false; now genuinely wired) |
 | preview candidates (live ports) | `GET .../sessions/:sid/previews` |
 | public shares | `GET/POST/DELETE .../sessions/:sid/public-shares[/:id]` |
@@ -82,16 +83,10 @@ try/catching every call.
 | list / create / revoke (account-scoped) | `GET/POST /v1/accounts/tokens`, `DELETE /v1/accounts/tokens/:tokenId` | `projects-client/tokens.ts` ✅, facade `kortix.accounts.tokens.{list,create,revoke}` ✅ |
 | list / create / revoke (project-scoped, `KORTIX_TOKEN`) | `GET/POST /v1/projects/:id/cli-token`, `DELETE .../cli-token/:tokenId` | ✅, facade `project(id).tokens.{list,create,revoke}` ✅ |
 
-### 6. Session runtime — ACP plus OpenCode REST compatibility  ✅
+### 6. Session runtime — OpenCode REST  ✅
 
-`useSession(projectId, sessionId)` selects the transport returned by
-`POST /start`. ACP supports OpenCode, Claude Code, Codex, and Pi. The selected
-runtime profile, harness, native agent, `acp_server_id`, and `acp_session_id`
-are immutable for one session.
-
-The table below is the exact OpenCode REST compatibility surface. Its names
-remain public for backward compatibility. ACP uses `core/acp/*` and projects
-harness events into the existing message and part model.
+`useSession(projectId, sessionId)` opens the OpenCode REST runtime returned by
+`POST /start`. The table below is the exact runtime surface.
 | op | v2 client / daemon |
 |---|---|
 | create / list / get / delete / update | `client.session.{create,list,get,delete,update}` |
@@ -140,6 +135,22 @@ Daemon-direct (bypasses v2 client), full 12-op client now in the SDK (`@kortix/s
 | find files | `GET /find/file?query=&type=` (also `client.find.files`) | ✅ `files.findFiles` |
 | ripgrep text | `GET /find?pattern=` | ✅ `files.findText` |
 | upload / create / copy / delete / mkdir / rename | `POST /file/upload`, `POST /file/mkdir`, `POST /file/rename`, `DELETE /file` | ✅ `files.{uploadFile,createFile,copyFile,deleteFile,mkdir,renameFile}` |
+| **overwrite in place** | `POST /file/upload` (temp name) → `POST /file/rename` (over target) | ✅ `files.writeFile` |
+
+`writeFile` is the only op that overwrites. The daemon's upload writes with
+`flag: 'wx'` and, on `EEXIST`, lands the bytes under a suffixed name
+(`notes-mdx8k2-3f9a1c04.md`) — so `uploadFile` over an existing path writes a
+DIFFERENT file and reports where it went. `writeFile` uploads to a temp name and
+renames over the target (`fs.rename` overwrites atomically), backing the
+original up and restoring it if the swap fails. Use it for every "save this
+edited file" flow; `uploadFile` is for new files only.
+
+`files.createFile` is built on `writeFile` for the same reason it is
+version-safe: the daemon is baked into the sandbox image and `/v1/runtime-assets`
+does **not** ship it, so an old daemon (which drops the filename of a 0-byte
+multipart part) lands an empty create as `undefined`. Renaming the
+daemon-REPORTED path onto the requested path makes both fleets correct. Do not
+turn it back into a direct upload.
 React hooks are still web-local (`features/files/`, + duplicated in `features/project-files/` — collapsing that twin remains open). **`useWorkspaceSearch` is alive and consumed (`features/workspace/command-palette.tsx`) — not dead.** `useLssSearch` / `useTextSearch` are already gone.
 
 ### 11. Git / versions / change-requests  🟡
@@ -154,9 +165,11 @@ Client fns in SDK (`git-history.ts`, `change-requests.ts`), **hooks partial** (`
 | **request-changes** (Review Center feedback) | `POST .../change-requests/:cr/request-changes` → client fn already existed (`requestChangesOnChangeRequest`), now also on the facade: `project(id).changeRequests.requestChanges(crId, feedback)` ✅ |
 | project files (git-backed) | `GET /v1/projects/:id/files`, `POST /files/{content,search}`, `GET /files/archive` |
 
-### 12. Connectors / integrations  ✅ (project) · 🟡 (executor)
-- project connectors + sharing/policies → `projects-client/{connectors,policies}.ts` ✅
-- executor runtime (`/v1/executor/projects/:id/connectors/*`, Slack/Pipedream/CUA) → 🟡 web-local (`lib/*`)
+### 12. Connectors and connections  ✅ (project) · 🟡 (connector)
+- project Connector configuration, Connections, sharing, and policies →
+  `projects-client/{connectors,policies}.ts` ✅
+- Connector data plane → `project(id).connectors.{catalog,tools,search,describe,call,uploadAttachment}` ✅
+- agent-token fallback → `kortix.connectors.{catalog,tools,search,describe,call,uploadAttachment}` ✅
 
 ### 13. Triggers / scheduled tasks  🟡
 `projects-client/triggers.ts` ✅ (client) ; `useProjectTriggers` now in `@kortix/sdk/react` ✅ (list + create/update/remove/fire, invalidation-wired); the web app's own `hooks/scheduled-tasks` hook hasn't migrated onto it yet.
@@ -213,16 +226,23 @@ Two small project-scoped mutations, added to `projects-client/projects.ts`:
 - sandbox proxy `ALL /v1/p/:sandboxId/:port/*` + preview auth/share → used by opencode-client baseURL ✅
 
 ### 15. Billing  ✅ (read + a curated mutation surface)
-Read surface (unchanged) — `kortix.billing.{accountState, accountStateMinimal,
-transactions, transactionsSummary, creditBreakdown, usageHistory,
-tierConfigurations}` ✅. Hooks still web-local (`hooks/billing`) 🟡.
+Read surface — `kortix.billing.{accountState, accountStateMinimal,
+transactions, transactionsSummary, creditBreakdown, usageHistory, usageRollup,
+sessionCosts, tierConfigurations}` ✅. Hooks still web-local
+(`hooks/billing`) 🟡.
 | op | REST |
 |---|---|
 | account state (full / minimal) | `GET /v1/billing/account-state[/minimal]` |
 | transactions (paginated) / summary | `GET /v1/billing/transactions`, `/transactions/summary` |
 | credit breakdown | `GET /v1/billing/credit-breakdown` |
 | usage history | `GET /v1/billing/usage-history` |
+| unified session cost list / detail | `GET /v1/usage/session-costs`, `/v1/usage/session-costs/:sid` |
 | tier configurations (public pricing) | `GET /v1/billing/tier-configurations` |
+
+The unified session-cost client lives in `projects-client/session-costs.ts`.
+Use `kortix.billing.sessionCosts.list(options)` for account or project
+pagination. Use `kortix.billing.sessionCosts.get(sessionId, options)` for model
+usage and mixed LLM/compute ledger entries.
 
 Mutations — a deliberately curated subset of `apps/api/src/billing/routes`
 (Stripe-webhook-only routes and legacy/per-seat-claim internals stay
@@ -287,13 +307,14 @@ Map exists, but these belong to the platform app, not the agent SDK:
 | Marketplace/registry install (project-scoped) | ✅ complete — `projects-client/marketplace.ts`, facade `project(id).marketplace.*` / `.registry.*` |
 | Public marketplace catalog browse + sources | ✅ complete — `projects-client/marketplace-catalog.ts`, facade `kortix.marketplace.*` |
 | Billing mutations (checkout/subscription/credits) | ✅ complete — `projects-client/billing.ts`, facade `kortix.billing.{checkout, subscription, credits}` |
+| Unified session costs | ✅ complete — `projects-client/session-costs.ts`, facade `kortix.billing.sessionCosts.{list,get}` / `session(pid,sid).cost()` |
 | Setup links, manifest validate, git token | ✅ complete — facade `project(id).{setupLinks, validateManifest, gitToken}` |
 | Account audit (Enterprise) | ✅ client + facade (`kortix.accounts.audit.*`); 🟡 no hooks yet |
 | Skills create/update/delete | ❌ web-local (daemon file I/O) |
 | Git / versions / change-requests, gateway observability, sandbox-admin, billing/account-state, transcription | 🟡 client fns ✅ in SDK, hooks still web-local |
 | Channels (Slack/email/Meet installs) | 🟡 client fns ✅ in SDK, hooks still web-local — now also includes the Slack file get/upload proxy and Meet `speak` (client + facade wired; see §17) |
 | Triggers, project secrets, change-requests | 🟡→partial ✅ — `useProjectTriggers`/`useProjectSecrets`/`useChangeRequests` now in `@kortix/sdk/react`; the pre-existing web hooks for these haven't migrated onto them yet |
-| Executor connectors runtime | 🟡 web-local |
+| Connector runtime | 🟡 web-local |
 | kortix-master daemon family (tasks/tickets/projects/milestones/credentials/services) | ✅ client in SDK (`opencode/kortix-master.ts`, re-exported via `@kortix/sdk/opencode-client`) + hooks in `@kortix/sdk/react` (`use-kortix-master.ts`); web's `hooks/kortix/*` files are now thin re-export wrappers over them. Not on the ROOT barrel (deliberate — it's an opencode-runtime surface, reached via the opencode-client subpath) |
 
 ### To make the SDK the whole data layer

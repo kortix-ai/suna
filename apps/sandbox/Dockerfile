@@ -47,9 +47,8 @@ RUN case "${TARGETARCH:-}" in \
 
 # ─── Stage 2: build the kortix CLI binary ───────────────────────────────
 #
-# The CLI lives in apps/cli and imports four workspace packages
-# (@kortix/executor-sdk, @kortix/manifest-schema, @kortix/registry,
-# @kortix/starter) plus one npm dep (smol-toml).
+# The CLI lives in apps/cli and imports the unified @kortix/sdk plus its other
+# workspace packages and npm dependencies.
 # `bun build --compile` inlines all of them, so the runtime image carries a
 # single self-contained binary and never needs node_modules on PATH — the
 # same shape as kortix-agent. We assemble a throwaway workspace root so bun
@@ -61,10 +60,10 @@ ARG TARGETARCH
 
 WORKDIR /cli
 COPY apps/cli ./apps/cli
-COPY packages/executor-sdk ./packages/executor-sdk
 COPY packages/llm-catalog ./packages/llm-catalog
 COPY packages/manifest-schema ./packages/manifest-schema
 COPY packages/registry ./packages/registry
+COPY packages/sdk ./packages/sdk
 COPY packages/shared ./packages/shared
 COPY packages/starter ./packages/starter
 RUN printf '{"name":"kortix-cli-build","private":true,"workspaces":["apps/cli","packages/*"]}\n' > package.json \
@@ -93,7 +92,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 RUN useradd --create-home --shell /bin/bash --user-group kortix \
-    && printf 'kortix ALL=(ALL) NOPASSWD:ALL\n' > /etc/sudoers.d/kortix \
+    && echo 'kortix ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/kortix \
     && chmod 0440 /etc/sudoers.d/kortix \
     && mkdir -p /workspace /opt/kortix /opt/pw-browsers /ephemeral/kortix-master/opencode \
         /home/kortix/.local/bin /home/kortix/.local/share/pnpm/bin /home/kortix/.bun/bin \
@@ -124,6 +123,20 @@ RUN UV_VERSION="$(sed -n 's/.*"uv": "\([^"]*\)".*/\1/p' /tmp/kortix-runtime-vers
     && UV_PYTHON_DOWNLOADS=automatic uv python install --default "$PYTHON_VERSION" \
     && python -c "import sys; assert '.'.join(map(str, sys.version_info[:3])) == '${PYTHON_VERSION}'; print('managed python:', sys.version)" \
     && python3 -c "import sys; assert '.'.join(map(str, sys.version_info[:3])) == '${PYTHON_VERSION}'"
+
+# Python package floor — everything the starter skills import, baked into the
+# managed interpreter so bare `python3` needs no per-script resolution or
+# runtime downloads. Pins live in runtime-versions.json (`pythonPackages`);
+# `uv run --with` stays the escape hatch for packages outside the floor.
+# `--break-system-packages` overrides uv's externally-managed marker on the
+# interpreter installed above — our frozen build-time interpreter, not a
+# distro Python. The interpreter is named by EXPLICIT PATH: `--system` skips
+# uv-managed interpreters and would resolve the distro python3 that
+# LibreOffice's apt deps drag in. Unquoted $(...) expansion is safe here: pins
+# contain no whitespace, and the `markitdown[pptx]` glob matches no file here.
+RUN uv pip install --python /home/kortix/.local/bin/python3 --break-system-packages \
+        $(python3 -c "import json; print(' '.join(f'{k}=={v}' for k, v in sorted(json.load(open('/tmp/kortix-runtime-versions.json'))['pythonPackages'].items())))") \
+    && python3 -c "import importlib; [importlib.import_module(m) for m in ['PIL', 'docx', 'fitz', 'lxml', 'markitdown', 'openpyxl', 'pandas', 'pdf2docx', 'pdf2image', 'pdfplumber', 'playwright', 'pptx', 'pypdf', 'pypdfium2', 'pytesseract', 'reportlab']]; print('python package floor OK')"
 
 ENV SHELL=/bin/bash
 RUN PNPM_VERSION="$(python -c "import json; print(json.load(open('/tmp/kortix-runtime-versions.json'))['pnpm'])")" \
@@ -174,20 +187,6 @@ RUN OPENCODE_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versio
     && command -v opencode \
     && opencode --version
 
-RUN CLAUDE_AGENT_ACP_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').claudeAgentAcp)")" \
-    && CODEX_ACP_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').codexAcp)")" \
-    && PI_ACP_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').piAcp)")" \
-    && PI_CODING_AGENT_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').piCodingAgent)")" \
-    && pnpm add -g "@agentclientprotocol/claude-agent-acp@${CLAUDE_AGENT_ACP_VERSION}" "@agentclientprotocol/codex-acp@${CODEX_ACP_VERSION}" "pi-acp@${PI_ACP_VERSION}" "@earendil-works/pi-coding-agent@${PI_CODING_AGENT_VERSION}" \
-    && command -v claude-agent-acp \
-    && command -v codex-acp \
-    && command -v pi-acp \
-    && command -v pi \
-    && claude-agent-acp --version \
-    && codex-acp --version \
-    && pi-acp --help >/dev/null \
-    && pi --version
-
 RUN BUN_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').bun)")" \
     && BUN_SHA256_AMD64="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').bunSha256Amd64)")" \
     && BUN_SHA256_ARM64="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').bunSha256Arm64)")" \
@@ -204,6 +203,13 @@ RUN BUN_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versions.js
     && ln -sf bun /home/kortix/.bun/bin/bunx \
     && rm -rf /tmp/bun /tmp/bun.zip \
     && test "$(bun --version)" = "$BUN_VERSION"
+
+# anydoc (Firecrawl) — document→Markdown converter for the
+# convert-documents-to-markdown skill. Prebuilt napi binaries; no build scripts.
+RUN ANYDOC_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').anydoc)")" \
+    && pnpm add -g "@firecrawl/anydoc@${ANYDOC_VERSION}" \
+    && command -v anydoc \
+    && test "$(anydoc --version)" = "$ANYDOC_VERSION"
 
 RUN mkdir -p /opt/kortix/opencode-config-deps \
     && cd /opt/kortix/opencode-config-deps \
@@ -225,10 +231,8 @@ COPY --from=cli-builder /cli/kortix /usr/local/bin/kortix
 COPY --from=cli-builder /cli/managed-skills /opt/kortix/managed-skills
 COPY apps/sandbox/entrypoint.sh /usr/local/bin/kortix-entrypoint
 COPY apps/sandbox/MACHINE.md /MACHINE.md
-# Keep the repo-relative layout under /opt/kortix so agent CLIs can import
-# shared workspace packages the same way they do in local tests.
+# Channel shims delegate Connector calls to the compiled `kortix` CLI.
 COPY apps/sandbox/slack-cli/ /opt/kortix/apps/sandbox/slack-cli/
-COPY packages/executor-sdk/ /opt/kortix/packages/executor-sdk/
 RUN chmod +x /usr/local/bin/kortix-agent /usr/local/bin/kortix /usr/local/bin/kortix-entrypoint /opt/kortix/apps/sandbox/slack-cli/install-shims.sh \
     && bash /opt/kortix/apps/sandbox/slack-cli/install-shims.sh /opt/kortix/apps/sandbox/slack-cli \
     && kortix --version \

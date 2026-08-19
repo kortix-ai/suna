@@ -1,5 +1,11 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
+import type {
+  AccountState,
+  AccountStateAppAccessView,
+  UsageBreakdownItem,
+  UsageQueryOptions,
+} from './billing';
 import {
   cancelScheduledChange,
   cancelSubscription,
@@ -17,6 +23,7 @@ import {
   getProrationPreview,
   purchaseCredits,
   reactivateSubscription,
+  resolvedPlan,
   scheduleDowngrade,
   syncSubscription,
   getUsageRollup,
@@ -44,6 +51,12 @@ beforeEach(() => {
 
 configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
 const last = () => calls[calls.length - 1];
+
+type IsNever<T> = [T] extends [never] ? true : false;
+type UsageAttributionKey<T> = Extract<
+  keyof T,
+  `${'end_user' | 'origin'}_${'ref'}` | `${'endUser' | 'origin'}Ref`
+>;
 
 test('getAccountState hits /billing/account-state and returns the parsed body', async () => {
   const state = { ...getDefaultAccountState(), subscription: { ...getDefaultAccountState().subscription, tier_key: 'pro' } };
@@ -207,33 +220,138 @@ test('getUsageRollup GETs /usage with no query when unfiltered', async () => {
   expect(last().method).toBe('GET');
 });
 
-test('getUsageRollup groups by end_user_ref so spend is attributable per end-user', async () => {
-  nextResponse = {
-    status: 200,
-    body: {
-      data: { total_cost: 3, count: 2 },
-      breakdown: [
-        { end_user_ref: 'user-a', cost: 2, count: 1 },
-        { end_user_ref: 'user-b', cost: 1, count: 1 },
-      ],
+test('usage contracts omit usage attribution keys and grouping dimensions', () => {
+  type GroupBy = NonNullable<UsageQueryOptions['groupBy']>;
+  const breakdown: IsNever<UsageAttributionKey<UsageBreakdownItem>> = true;
+  const options: IsNever<UsageAttributionKey<UsageQueryOptions>> = true;
+  const groups: IsNever<Extract<GroupBy, `${'end_user' | 'origin'}_${'ref'}`>> = true;
+
+  expect([breakdown, options, groups]).toEqual([true, true, true]);
+});
+
+test('getUsageRollup serializes only supported grouping dimensions', async () => {
+  nextResponse = { status: 200, body: { data: { total_cost: 0, count: 0 } } };
+  await getUsageRollup({ groupBy: 'customer' } as unknown as UsageQueryOptions);
+  expect(last().url).toBe('http://test.local/usage');
+});
+
+// ── resolvedPlan ────────────────────────────────────────────────────────────
+// The API's `plan` block is the one place that knows what an account BEHAVES
+// as (trial overlay + per-seat self-heal + grandfathered naming). These pin
+// that the selector reads it, and that it still answers on a response from an
+// API old enough not to send the block at all.
+
+test('resolvedPlan reads the API plan block verbatim', () => {
+  const state: AccountState = {
+    ...getDefaultAccountState(),
+    plan: {
+      key: 'per_seat',
+      family: 'team',
+      label: 'Team',
+      sublabel: '$40/seat/mo · grandfathered',
+      status: 'grandfathered',
+      shape: 'seat',
+      rank: 4,
+      is_grandfathered: true,
     },
   };
-  const result = await getUsageRollup({ groupBy: 'end_user_ref', start: '2026-07-01' });
-  expect(last().url).toContain('group_by=end_user_ref');
-  expect(last().url).toContain('start=2026-07-01');
-  expect(result.breakdown?.map((b) => b.end_user_ref)).toEqual(['user-a', 'user-b']);
+
+  expect(resolvedPlan(state)).toEqual({
+    family: 'team',
+    label: 'Team',
+    sublabel: '$40/seat/mo · grandfathered',
+    isGrandfathered: true,
+  });
 });
 
-test('getUsageRollup narrows to one end-user via endUserRef', async () => {
-  nextResponse = { status: 200, body: { data: { total_cost: 2, count: 1 } } };
-  await getUsageRollup({ endUserRef: 'user-a' });
-  expect(last().url).toContain('end_user_ref=user-a');
-  expect(last().url).not.toContain('group_by');
+test('resolvedPlan reports the TRIAL plan, not the stored subscription tier', () => {
+  // An admin trial never writes credit_accounts.tier, so `tier_key` stays
+  // 'free' while every gate treats the account as Team. Reading `tier_key`
+  // here is exactly the skew the plan block exists to end.
+  const state: AccountState = {
+    ...getDefaultAccountState(),
+    subscription: { ...getDefaultAccountState().subscription, tier_key: 'free' },
+    plan: {
+      key: 'team',
+      family: 'team',
+      label: 'Team',
+      sublabel: null,
+      status: 'retired',
+      shape: 'flat',
+      rank: 8,
+      is_grandfathered: false,
+    },
+  };
+
+  expect(resolvedPlan(state).family).toBe('team');
+  expect(resolvedPlan(state).label).toBe('Team');
 });
 
-test('the deprecated originRef option still works, mapped to the new param', async () => {
-  // Live callers pinned to the old option must keep functioning after the rename.
-  nextResponse = { status: 200, body: { data: { total_cost: 2, count: 1 } } };
-  await getUsageRollup({ originRef: 'legacy-user' });
-  expect(last().url).toContain('end_user_ref=legacy-user');
+test('resolvedPlan falls back to the tier fields when the API sends no plan block', () => {
+  const base = getDefaultAccountState();
+  const state: AccountState = {
+    ...base,
+    subscription: { ...base.subscription, tier_key: 'tier_25_200' },
+    tier: { ...base.tier, name: 'tier_25_200', display_name: 'Ultra (Legacy)' },
+  };
+
+  expect(state.plan).toBeUndefined();
+  expect(resolvedPlan(state)).toEqual({
+    family: 'team',
+    label: 'Ultra (Legacy)',
+    sublabel: null,
+    isGrandfathered: false,
+  });
+});
+
+test('the fallback maps every tier key onto one of the three families', () => {
+  const base = getDefaultAccountState();
+  const familyOf = (tierKey: string) =>
+    resolvedPlan({
+      ...base,
+      subscription: { ...base.subscription, tier_key: tierKey },
+      tier: { ...base.tier, name: tierKey, display_name: '' },
+    }).family;
+
+  expect(familyOf('free')).toBe('free');
+  expect(familyOf('none')).toBe('free');
+  expect(familyOf('enterprise')).toBe('enterprise');
+  expect(familyOf('per_seat')).toBe('team');
+  expect(familyOf('tier_150_1200')).toBe('team');
+});
+
+test('the fallback label degrades to the raw tier key, never to an empty string', () => {
+  const base = getDefaultAccountState();
+  const state: AccountState = {
+    ...base,
+    subscription: { ...base.subscription, tier_key: 'tier_6_50' },
+    tier: { ...base.tier, name: 'tier_6_50', display_name: '' },
+  };
+
+  expect(resolvedPlan(state).label).toBe('tier_6_50');
+});
+
+test('resolvedPlan answers for a missing account state instead of throwing', () => {
+  expect(resolvedPlan(undefined)).toEqual({
+    family: 'free',
+    label: 'No Plan',
+    sublabel: null,
+    isGrandfathered: false,
+  });
+});
+
+test('the app-access projection carries the resolved plan key', () => {
+  // `fetchAccountStateWithToken` returns the raw account-state body, so the
+  // login gate can read the plan an account BEHAVES as. Typing the projection
+  // without it made the gate branch on the STORED tier, which is `free` for an
+  // account on an admin trial.
+  const trialing: AccountStateAppAccessView = {
+    subscription: { tier_key: 'free' },
+    plan: { key: 'team' },
+    credits: { can_run: false },
+  };
+  const olderApi: AccountStateAppAccessView = { subscription: { tier_key: 'free' } };
+
+  expect(trialing.plan?.key).toBe('team');
+  expect(olderApi.plan).toBeUndefined();
 });

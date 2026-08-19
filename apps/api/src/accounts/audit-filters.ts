@@ -8,7 +8,7 @@
 // and idx_audit_events_resource (resource_type).
 
 import { auditEvents } from '@kortix/db';
-import { type SQL, eq, gte, ilike, like, lte, or } from 'drizzle-orm';
+import { type SQL, eq, gte, ilike, like, lte, or, sql } from 'drizzle-orm';
 
 export interface AuditFilterInput {
   /** actor user_id, or null for "everyone". */
@@ -23,6 +23,14 @@ export interface AuditFilterInput {
   untilRaw: string | null;
   /** Case-insensitive substring over action + resource_type + resource_id. */
   q: string | null;
+  projectId?: string | null;
+  sessionId?: string | null;
+  actorType?: string | null;
+  source?: string | null;
+  phase?: string | null;
+  outcome?: string | null;
+  requestId?: string | null;
+  correlationId?: string | null;
 }
 
 export function buildFilters(accountId: string, input: AuditFilterInput): SQL[] {
@@ -36,16 +44,42 @@ export function buildFilters(accountId: string, input: AuditFilterInput): SQL[] 
   if (input.actor) {
     push(eq(auditEvents.actorUserId, input.actor));
   }
+  if (input.projectId) push(eq(auditEvents.projectId, input.projectId));
+  if (input.sessionId) push(eq(auditEvents.sessionId, input.sessionId));
+  if (input.actorType) push(eq(auditEvents.actorType, input.actorType));
+  if (input.source) {
+    // `source` is the trusted server-derived execution source. CLI/mobile/web
+    // are client-reported surfaces and never overwrite it. One ergonomic
+    // filter matches either field so `source=cli` remains useful without
+    // trusting the client as provenance.
+    push(
+      or(
+        eq(auditEvents.authoritativeSource, input.source),
+        eq(auditEvents.clientReportedSource, input.source),
+      ),
+    );
+  }
+  if (input.phase) push(eq(auditEvents.phase, input.phase));
+  if (input.outcome) push(eq(auditEvents.outcome, input.outcome));
+  if (input.requestId) push(eq(auditEvents.requestId, input.requestId));
+  if (input.correlationId) push(eq(auditEvents.correlationId, input.correlationId));
 
   if (input.actionPrefix) {
-    push(
-      input.actionPrefix.includes('.') && !input.actionPrefix.endsWith('.')
-        ? or(
-            eq(auditEvents.action, input.actionPrefix),
-            like(auditEvents.action, `${input.actionPrefix}.%`),
-          )
-        : like(auditEvents.action, `${input.actionPrefix}%`),
-    );
+    // `computer.*` was the pre-profile audit namespace. Computer operations are
+    // connector activity now. Keep historical rows inside the Connectors filter
+    // while every new writer emits `connector.computer.*`.
+    if (input.actionPrefix === 'connector.') {
+      push(or(like(auditEvents.action, 'connector.%'), like(auditEvents.action, 'computer.%')));
+    } else {
+      push(
+        input.actionPrefix.includes('.') && !input.actionPrefix.endsWith('.')
+          ? or(
+              eq(auditEvents.action, input.actionPrefix),
+              like(auditEvents.action, `${input.actionPrefix}.%`),
+            )
+          : like(auditEvents.action, `${input.actionPrefix}%`),
+      );
+    }
   }
 
   if (input.resourceType) {
@@ -74,6 +108,11 @@ export function buildFilters(accountId: string, input: AuditFilterInput): SQL[] 
         ilike(auditEvents.action, term),
         ilike(auditEvents.resourceType, term),
         ilike(auditEvents.resourceId, term),
+        ilike(auditEvents.sessionId, term),
+        ilike(auditEvents.requestId, term),
+        ilike(auditEvents.traceId, term),
+        ilike(auditEvents.correlationId, term),
+        sql`${auditEvents.projectId}::text ilike ${term}`,
       ),
     );
   }

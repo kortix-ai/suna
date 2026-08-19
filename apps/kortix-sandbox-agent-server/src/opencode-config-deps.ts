@@ -1,5 +1,16 @@
 import { execFile } from 'node:child_process'
-import { access, constants, copyFile, symlink } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
+import {
+  constants,
+  access,
+  copyFile,
+  lstat,
+  mkdir,
+  readFile,
+  rename,
+  rm,
+  symlink,
+} from 'node:fs/promises'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { logger } from './logger'
@@ -24,6 +35,53 @@ async function pathExists(p: string): Promise<boolean> {
   }
 }
 
+async function pathEntryExists(p: string): Promise<boolean> {
+  try {
+    await lstat(p)
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function filesMatch(left: string, right: string): Promise<boolean> {
+  try {
+    const [leftBytes, rightBytes] = await Promise.all([readFile(left), readFile(right)])
+    return leftBytes.equals(rightBytes)
+  } catch {
+    return false
+  }
+}
+
+async function replaceNodeModules(configDir: string, replacement: string): Promise<void> {
+  const target = join(configDir, 'node_modules')
+  const backup = join(configDir, `.node_modules-backup-${randomUUID()}`)
+  const hadTarget = await pathEntryExists(target)
+
+  try {
+    if (hadTarget) await rename(target, backup)
+    await rename(replacement, target)
+  } catch (err) {
+    if (hadTarget && (await pathEntryExists(backup))) {
+      await rename(backup, target).catch(() => undefined)
+    }
+    throw err
+  } finally {
+    // A failed rename can leave the staged link/tree at its temporary path.
+    await rm(replacement, { recursive: true, force: true }).catch(() => undefined)
+  }
+  if (hadTarget) await rm(backup, { recursive: true, force: true }).catch(() => undefined)
+}
+
+type InstallDeps = (stagingDir: string) => Promise<void>
+
+async function offlineInstall(stagingDir: string): Promise<void> {
+  await execFileAsync('bun', ['install', '--offline'], {
+    cwd: stagingDir,
+    env: { ...process.env, HOME: OPENCODE_HOME, BUN_INSTALL_CACHE_DIR: BUN_CACHE_DIR },
+  })
+}
+
 /**
  * Make OpenCode's boot-time dependency install free.
  *
@@ -36,46 +94,70 @@ async function pathExists(p: string): Promise<boolean> {
  * normally, and minutes when the registry is contended; it sits squarely on the
  * session boot hot path (it gates `runtimeReady`).
  *
- * Pre-satisfy it deterministically and offline *before* OpenCode starts:
- *   1. fastest — symlink the image-baked, pre-installed node_modules in (+ copy
- *      the matching bun.lock so OpenCode's own install verifies as a no-op);
- *   2. fallback — `bun install --offline` from the pre-warmed Bun cache;
- *   3. last resort — do nothing; OpenCode's own (online) install still works.
+ * Pre-satisfy it deterministically and offline before OpenCode starts:
+ *   1. link image-baked modules only when both lock files match;
+ *   2. otherwise install in a staging directory from the warm Bun cache;
+ *   3. atomically replace node_modules only after installation completes;
+ *   4. remove stale modules after installation failure so OpenCode performs a
+ *      clean online install.
  *
  * Any path turns the network-bound resolve into <0.5s. Never throws: a failure
  * here just means OpenCode falls back to its slower self-install.
  */
 export async function ensureOpencodeConfigDeps(
   configDir: string,
-  opts: { bakedDir?: string } = {},
+  opts: { bakedDir?: string; install?: InstallDeps } = {},
 ): Promise<void> {
   const bakedDir = opts.bakedDir ?? BAKED_DEPS_DIR
+  const install = opts.install ?? offlineInstall
+  const targetModules = join(configDir, 'node_modules')
+  let stagingDir: string | null = null
   try {
     if (!(await pathExists(join(configDir, 'package.json')))) return // no deps declared
-    if (await pathExists(join(configDir, 'node_modules'))) return // already satisfied
 
-    // 1. Restore the image-baked tree (instant, offline, deterministic).
     const bakedModules = join(bakedDir, 'node_modules')
-    if (await pathExists(bakedModules)) {
-      await symlink(bakedModules, join(configDir, 'node_modules'))
-      const bakedLock = join(bakedDir, 'bun.lock')
-      if ((await pathExists(bakedLock)) && !(await pathExists(join(configDir, 'bun.lock')))) {
-        await copyFile(bakedLock, join(configDir, 'bun.lock'))
-      }
+    const bakedLock = join(bakedDir, 'bun.lock')
+    const configLock = join(configDir, 'bun.lock')
+
+    // A matching lock proves that the baked tree satisfies this project. Do
+    // not retain an unverified real tree because OpenCode can update it in
+    // place and leave partially-written package files after interruption.
+    if ((await pathExists(bakedModules)) && (await filesMatch(configLock, bakedLock))) {
+      const stagedLink = join(configDir, `.node_modules-link-${randomUUID()}`)
+      await symlink(bakedModules, stagedLink)
+      await replaceNodeModules(configDir, stagedLink)
       logger.info('[boot] linked baked opencode config deps', { configDir, from: bakedModules })
       return
     }
 
-    // 2. No baked tree (pre-bake image) → offline install from the warm cache.
-    await execFileAsync('bun', ['install', '--offline'], {
-      cwd: configDir,
-      env: { ...process.env, HOME: OPENCODE_HOME, BUN_INSTALL_CACHE_DIR: BUN_CACHE_DIR },
-    })
-    logger.info('[boot] offline-installed opencode config deps', { configDir })
+    // A project-specific lock needs a project-specific tree. Install away
+    // from the live config so OpenCode never observes partial package writes.
+    stagingDir = join(configDir, `.deps-stage-${randomUUID()}`)
+    await mkdir(stagingDir, { recursive: true })
+    await copyFile(join(configDir, 'package.json'), join(stagingDir, 'package.json'))
+    if (await pathExists(configLock)) {
+      await copyFile(configLock, join(stagingDir, 'bun.lock'))
+    }
+    await install(stagingDir)
+    const stagedModules = join(stagingDir, 'node_modules')
+    if (!(await pathEntryExists(stagedModules))) {
+      throw new Error('dependency installation completed without node_modules')
+    }
+    await replaceNodeModules(configDir, stagedModules)
+    const stagedLock = join(stagingDir, 'bun.lock')
+    if (await pathExists(stagedLock)) await copyFile(stagedLock, configLock)
+    logger.info('[boot] staged opencode config deps installed', { configDir })
   } catch (err) {
+    // A stale tree is unsafe after a failed replacement. Remove it so
+    // OpenCode starts from an empty path and performs its own clean install.
+    await rm(targetModules, { recursive: true, force: true }).catch(() => undefined)
     logger.warn('[boot] ensureOpencodeConfigDeps failed; opencode will self-install', {
       configDir,
       err: err instanceof Error ? err.message : String(err),
     })
+  } finally {
+    if (stagingDir) {
+      await rm(stagingDir, { recursive: true, force: true }).catch(() => undefined)
+    }
   }
 }

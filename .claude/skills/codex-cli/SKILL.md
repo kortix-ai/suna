@@ -9,7 +9,7 @@ description: Drive OpenAI's Codex CLI (`codex exec`) as a non-interactive coding
 Codex CLI is OpenAI's terminal coding agent (Rust). Its **non-interactive** mode,
 `codex exec`, makes it a perfect disposable sub-agent: you write the metaprompt,
 Codex explores/edits/runs commands on its own, and returns a final message you
-capture and verify. You stay the long-context planner; Codex is the executor.
+capture and verify. You stay the long-context planner; Codex is the implementer.
 
 The golden rule: **Codex's self-report is a claim, not the truth.** Always
 capture its output, then independently verify the artifacts yourself (read the
@@ -119,7 +119,7 @@ when done.
 
 <repo-specifics>
 In this repo, respect the existing skills: prefer the `worktree` skill
-(`pnpm worktree`) for isolated parallel Codex runs, and the `ke2e-tests` /
+(`pnpm worktree`) for isolated parallel Codex runs, and the `testing` and
 `migration` skills' rules still apply to anything Codex produces — verify against
 them. A Codex run is not a license to bypass repo conventions; you own the result.
 </repo-specifics>

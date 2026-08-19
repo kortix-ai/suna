@@ -27,7 +27,9 @@ mock.module('../../slack-api', () => ({
     return true;
   },
 }));
+const realInstallStore = await import('../../install-store');
 mock.module('../../install-store', () => ({
+  ...realInstallStore,
   loadSlackTokenForProject: async () => 'xoxb-test',
 }));
 mock.module('../../../iam', () => ({

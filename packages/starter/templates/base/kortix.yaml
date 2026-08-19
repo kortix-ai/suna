@@ -1,23 +1,8 @@
 # yaml-language-server: $schema=https://kortix.com/schema/kortix.v2.schema.json
 #
 # Kortix project manifest. Source of truth for project-wide config that
-# lives in git alongside the code. `kortix_version` pins the schema.
-#
-# This starter uses version 2 because the ACP & Multi-Harness project
-# experiment defaults to disabled. Version 2 runs OpenCode through the
-# compatibility transport. To use OpenCode ACP, Claude Code, Codex, or Pi:
-#
-# 1. Enable the project experiment named "ACP & Multi-Harness"
-#    (`acp_runtime`).
-# 2. Change the schema URL and `kortix_version` to 3.
-# 3. Replace `opencode:` with `runtimes:`.
-# 4. Add `runtime` to every logical-agent block.
-#
-# Run `kortix system-skills get kortix-system --full` for the current
-# platform instructions. Run `kortix schema --version 3` for the exact
-# v3 schema.
-#
-# v2 manifests are YAML-only, with one
+# lives in git alongside the code. `kortix_version` pins the schema so
+# the platform can evolve safely. v2 manifests are YAML-only, with one
 # `agents:` map per project — GOVERNANCE ONLY (connectors/secrets/
 # kortix_cli/skills/workspace/enabled). OpenCode BEHAVIOR (description,
 # model, mode, temperature, permission, the prompt itself, …) lives
@@ -37,8 +22,8 @@ project:
   name: "{{projectName}}"
   description: A Kortix project.
 
-# Env vars the runtime needs. `required` is advisory. The dashboard displays
-# missing values, but session bootstrap does not block on them.
+# Env vars the runtime needs. Required values must be set in the Kortix
+# Secrets Manager before a session can start.
 env:
   required: []
   optional: [STRIPE_API_KEY]
@@ -88,46 +73,6 @@ env:
 opencode:
   config_dir: .kortix/opencode
 
-# ─── Version 3 runtime profiles ─────────────────────────────────────────
-# Version 3 replaces the `opencode:` block above with `runtimes:`. The
-# selected runtime profile becomes immutable when a session starts. An
-# in-place restart keeps the same harness. Start a new session to change it.
-#
-# runtimes:
-#   opencode:
-#     harness: opencode
-#     config_dir: .kortix/opencode
-#   claude:
-#     harness: claude
-#     config_dir: .claude
-#   codex:
-#     harness: codex
-#     config_dir: .codex
-#   pi:
-#     harness: pi
-#     config_dir: .pi
-#
-# Each v3 logical agent must reference one profile:
-#
-# agents:
-#   reviewer:
-#     runtime: codex
-#     connectors: all
-#     secrets: all
-#     skills: all
-#     kortix_cli: all
-#
-# Direct credentials differ by harness:
-# - Claude Code: ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN, or
-#   CLAUDE_CODE_OAUTH_TOKEN.
-# - Codex: CODEX_API_KEY or OPENAI_API_KEY.
-# - Pi: OPENAI_API_KEY or CODEX_API_KEY.
-# Managed Kortix model access needs no project key when the platform gateway
-# supports the selected harness and model.
-#
-# Do not use a generic provider verification result as proof. Send a real
-# prompt through the selected harness and model.
-
 # ─── Agents ──────────────────────────────────────────────────────────────
 # One map per project, GOVERNANCE ONLY — connectors/secrets/kortix_cli/
 # skills grants the runtime itself can't express, plus workspace (the git
@@ -147,10 +92,19 @@ agents:
     skills: all
     # sandbox: python # Must name an available project template, or "default".
 
-  memory-reflector:
-    # Scoped specialist: only what its job needs (open — never merge — a
-    # memory CR). No connectors, no project secrets.
-    kortix_cli: [project.cr.open]
+  harness-reflector:
+    # Continual-harness reflector: refines the shared harness (prompts,
+    # sub-agents, skills/tools, memory — memory curation is its fourth
+    # pass) from session evidence. Fans out session-reviewer sub-agents,
+    # one per recent session, then opens — never merges — a harness CR.
+    # No connectors, no project secrets.
+    kortix_cli: [project.cr.open, project.session.read]
+
+  session-reviewer:
+    # Read-only sub-agent of the harness-reflector: deep-reviews ONE
+    # session's full history and reports failure-signature findings.
+    # Never edits, never opens CRs.
+    kortix_cli: [project.session.read]
 
 # ─── Triggers ────────────────────────────────────────────────────────────
 # Each entry spawns a fresh session that runs `prompt` as its initial
@@ -159,28 +113,31 @@ agents:
 # agent above (or be omitted to fall back to `default_agent`).
 
 triggers:
-  # Memory reflector — surveys recent project activity and curates
-  # `.kortix/memory/` (the project brain). Reads its rubric from the
-  # `kortix-memory` skill. Opens a `memory: …` change request at the end
-  # of each run; exits silently when nothing is worth changing.
-  #
-  # Disabled by default. Flip `enabled: true` once your project has
-  # enough activity for reflection to find signal — usually after the
-  # first week or two.
-  - slug: memory-reflector
-    name: Memory reflector
+  # Harness reflector — the continual-harness loop across sessions.
+  # Surveys what every recent session actually did, finds failure
+  # signatures (repeated tool failures, rediscovery loops, stalled
+  # objectives), and refines the shared harness — agent prompts,
+  # sub-agents, skills/tools, memory — via the four-pass protocol in
+  # the `kortix-harness-refinement` skill. Opens a `harness: …` change
+  # request; exits silently when nothing is worth changing — a quiet
+  # project costs one short no-op session per day. Flip `enabled: false`
+  # to opt out.
+  - slug: harness-reflector
+    name: Harness reflector
     type: cron
-    agent: memory-reflector
-    enabled: false
+    agent: harness-reflector
+    enabled: true
     cron: "0 0 3 * * *" # 03:00 daily
     timezone: UTC
     prompt: |
-      Load the `kortix-memory` skill, then reflect on the last 24h of
-      project activity: git log, merged CRs, and every session that ran
-      in the window (`kortix sessions digest --since 24h` — analyze what
-      each session actually did). Update `.kortix/memory/` per the rubric
-      and open a single CR titled `memory: …`. Exit silently if nothing is
-      worth changing.
+      Load the `kortix-cli` skill, then read the refinement protocol
+      with `kortix skills get kortix-harness-refinement` (served live by
+      the CLI; `kortix skills get kortix-memory` for the memory pass).
+      Run the four-pass refinement protocol over the last 24h of project
+      activity: `kortix sessions digest --since 24h`, git log, and
+      merged CRs. Identify failure signatures, refine only the
+      components with observed failures, and open a single CR titled
+      `harness: …`. Exit silently if nothing is worth changing.
 
   # Cron trigger — fires on a 6-field croner expression
   # (second minute hour day month weekday).
@@ -215,6 +172,6 @@ triggers:
 # ─── Channels ────────────────────────────────────────────────────────────
 # v2 removes `channels` from the manifest — channel↔agent routing (Slack
 # today; Teams/Discord/etc. later) is managed live in the dashboard
-# (Customize → Channels), not committed to git. The channel integration
+# (Customize → Channels), not committed to git. The channel connection
 # itself still shows up here as a `connectors` entry with
 # `provider: channel` once you connect one — that part is unchanged.

@@ -85,3 +85,44 @@ describe('proxyAttemptTimeoutMs', () => {
     ).toBeLessThan(PROXY_ATTEMPT_TIMEOUT_MS);
   });
 });
+
+// ── Regression: `/command` is a blocking turn too ──────────────────────────
+//
+// A `/` slash-command goes to `POST /session/:id/command`, NOT
+// `/session/:id/message`. OpenCode holds that response open for the whole turn
+// exactly like `/message` does, but the matcher only listed `/message` — so a
+// command got the generic 15s connect cap, the abort looked like a stalled
+// connection, and the retry loop re-POSTed the SAME non-idempotent command up
+// to 4 times. Observed 2026-08-11 in session 9f6b0d87: one `/webapp` submit
+// produced 4 identical user messages, 11.0s / 11.8s / 13.7s apart.
+describe('isLongTurnCompletionRequest — slash commands', () => {
+  test('POST /session/:id/command matches (it blocks for the whole turn)', () => {
+    expect(isLongTurnCompletionRequest({ method: 'POST', path: '/session/abc123/command' })).toBe(
+      true,
+    );
+    expect(isLongTurnCompletionRequest({ method: 'post', path: '/session/abc-123/command' })).toBe(
+      true,
+    );
+    expect(
+      isLongTurnCompletionRequest({ method: 'POST', path: '/session/abc123/command?x=1' }),
+    ).toBe(true);
+  });
+
+  test('GET does not match, and neither does a lookalike path', () => {
+    expect(isLongTurnCompletionRequest({ method: 'GET', path: '/session/abc123/command' })).toBe(
+      false,
+    );
+    expect(isLongTurnCompletionRequest({ method: 'POST', path: '/session/abc123/commands' })).toBe(
+      false,
+    );
+    expect(
+      isLongTurnCompletionRequest({ method: 'POST', path: '/not-session/abc123/command' }),
+    ).toBe(false);
+  });
+
+  test('a command POST gets ~the whole remaining budget, not the 15s cap', () => {
+    expect(proxyAttemptTimeoutMs(40_000, { method: 'POST', path: '/session/abc123/command' })).toBe(
+      39_500,
+    );
+  });
+});

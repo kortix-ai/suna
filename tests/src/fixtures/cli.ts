@@ -46,6 +46,13 @@ export interface CliResult {
   stderr: string;
   /** Convenience: stdout + stderr joined (some CLI output goes to stderr). */
   all: string;
+  /** Browser-login callback delivery evidence. Present only for browserLogin(). */
+  callback?: {
+    status: number | null;
+    body: string;
+    attempts: number;
+    error: string | null;
+  };
 }
 
 export interface CliRunOptions {
@@ -181,8 +188,17 @@ export class CliSandbox {
    * Mint `pat` as OWNER via `ctx.fixtures.pat()` (POST /v1/accounts/tokens) and
    * pass the returned `kortix_pat_…` secret here.
    */
-  async login(pat: string, opts: { noProject?: boolean } = {}): Promise<CliResult> {
-    return this.run(['login', '--token', pat, ...(opts.noProject ? ['--no-project'] : [])]);
+  async login(
+    pat: string,
+    opts: { noProject?: boolean; account?: string } = {},
+  ): Promise<CliResult> {
+    return this.run([
+      'login',
+      '--token',
+      pat,
+      ...(opts.noProject ? ['--no-project'] : []),
+      ...(opts.account ? ['--account', opts.account] : []),
+    ]);
   }
 
   /** Tear down the temp dirs. Best-effort; safe to call twice. */
@@ -212,11 +228,11 @@ export async function runCliOnce(args: string[], opts?: CliRunOptions): Promise<
  *
  * `kortix login` (no --token) stands up a one-shot loopback callback server and
  * prints its URL — `…/cli/authorize?callback=http://127.0.0.1:<port>/callback&state=<hex>`
- * — to stdout, then tries to open a browser (harmless here). The dashboard's
- * only job is to POST `{state, token}` to that callback; we simulate the
- * dashboard by parsing the URL, then POSTing the (already-minted) PAT. The CLI
- * then verifies it via GET /accounts/me and saves the host. Returns the login
- * result once the process exits.
+ * — to stdout. The fixture's `CI=1` environment suppresses the browser process.
+ * The dashboard's only job is to POST `{state, token}` to that callback; we
+ * simulate the dashboard by parsing the URL, then POSTing the (already-minted)
+ * PAT. The CLI then verifies it via GET /accounts/me and saves the host. Returns
+ * the login result once the process exits.
  */
 export async function browserLogin(
   sb: CliSandbox,
@@ -236,6 +252,10 @@ export async function browserLogin(
   let callbackUrl: string | null = null;
   let state: string | null = null;
   let port: string | null = null;
+  let callbackStatus: number | null = null;
+  let callbackBody = '';
+  let callbackAttempts = 0;
+  let callbackError: string | null = null;
 
   // Read stdout incrementally until we see the authorize URL (or the stream ends).
   const reader = proc.stdout.getReader();
@@ -256,17 +276,39 @@ export async function browserLogin(
 
   if (callbackUrl && port && state) {
     // Simulate the dashboard POSTing the minted token to the loopback callback.
+    // Retry connection failures only. The CLI starts listening before it prints
+    // the URL, but a short bounded retry removes scheduler-dependent flakes on
+    // constrained CI workers. HTTP responses are product results, not retries.
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      callbackAttempts = attempt;
+      try {
+        const response = await fetch(`http://127.0.0.1:${port}/callback`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            state: opts.badState ? `${state}-wrong` : state,
+            token: pat,
+          }),
+        });
+        callbackStatus = response.status;
+        callbackBody = await response.text();
+        callbackError = null;
+        break;
+      } catch (error) {
+        callbackError = error instanceof Error ? error.message : String(error);
+        if (attempt < 3) await Bun.sleep(25 * attempt);
+      }
+    }
+  }
+
+  // A rejected state leaves the real CLI waiting for another callback. The
+  // 403 already proves rejection, so stop the process instead of spending 15s
+  // on a timeout that adds no contract coverage.
+  if (opts.badState && callbackStatus === 403) {
     try {
-      await fetch(`http://127.0.0.1:${port}/callback`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          state: opts.badState ? `${state}-wrong` : state,
-          token: pat,
-        }),
-      });
+      proc.kill();
     } catch {
-      /* the CLI will time out → non-zero exit, asserted by caller */
+      /* already gone */
     }
   }
 
@@ -295,5 +337,16 @@ export async function browserLogin(
   clearTimeout(killer);
 
   const stdout = stdoutBuf + restStdout;
-  return { exitCode, stdout, stderr, all: `${stdout}\n${stderr}` };
+  return {
+    exitCode,
+    stdout,
+    stderr,
+    all: `${stdout}\n${stderr}`,
+    callback: {
+      status: callbackStatus,
+      body: callbackBody,
+      attempts: callbackAttempts,
+      error: callbackError,
+    },
+  };
 }

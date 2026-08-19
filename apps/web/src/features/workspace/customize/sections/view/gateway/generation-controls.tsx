@@ -3,8 +3,9 @@
 /**
  * Per-model generation-parameter controls (reasoning effort, temperature,
  * top_p, max output tokens) — capability-gated off the live catalog, never
- * hardcoded per model. Shared by the routing section's project-default
- * config and the Playground's per-model tuning.
+ * hardcoded per model. Mounted by the routing section's project-default
+ * config. (It was shared with the Playground's per-model tuning until that
+ * tab was deleted; this file is unaffected.)
  *
  * *** CAPABILITY DATA SOURCE ***
  * `catalogModelForGateway` mirrors apps/api's `catalogModelForWireModel`
@@ -17,7 +18,7 @@
  * `LlmProviderModel` in that module for exactly this purpose.
  */
 
-import { AlertTriangle } from 'lucide-react';
+import { WarningIcon as AlertTriangle } from '@phosphor-icons/react';
 import { useMemo } from 'react';
 
 import { Input } from '@/components/ui/input';
@@ -179,6 +180,8 @@ export function GenerationControlsPanel({
             max={2}
             step={0.05}
             disabled={disabled}
+            thumbLabel="Temperature"
+            formatValue={(next) => next.toFixed(2)}
             onValueChange={([next]) => set('temperature', next)}
           />
         </div>
@@ -212,6 +215,8 @@ export function GenerationControlsPanel({
             max={1}
             step={0.01}
             disabled={disabled}
+            thumbLabel="Top-p"
+            formatValue={(next) => next.toFixed(2)}
             onValueChange={([next]) => set('topP', next)}
           />
         </div>

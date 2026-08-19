@@ -142,4 +142,4 @@ Animate with purpose — fade, slide, or product-reveal only.
 - Banned: "unlock productivity", "AI transformation", "seamless", "revolutionary", and other generic SaaS claims with no mechanism
 - One audience per sentence; lead with real product proof, not abstract AI art
 
-> For positioning, terminology, audience pitches, and the full don't-say / prefer wording list, use [`../internal-comms/SKILL.md`](../internal-comms/SKILL.md) — the verbal source of truth that complements these visual guidelines.
+> For positioning, terminology, audience pitches, and the full don't-say / prefer wording list, use [`../comms/SKILL.md`](../comms/SKILL.md) — the verbal source of truth that complements these visual guidelines.

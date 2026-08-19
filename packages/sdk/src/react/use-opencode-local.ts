@@ -11,20 +11,14 @@
  * - Variant persistence via useModelStore
  */
 
-import type { Config, ProviderListResponse } from '@opencode-ai/sdk/v2/client';
-import { useQuery } from '@tanstack/react-query';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { flattenModels, isOfferedModel, type FlatModel } from './model-flatten';
 import { featureFlags } from '../core/http/feature-flags';
-import { listProjectSecrets } from '../core/rest/projects-client';
+import type { Agent, Config, ProviderListResponse } from '@opencode-ai/sdk/v2/client';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createAgentSelectionScope } from './agent-selection-scope';
-import { type FlatModel, flattenModels } from './model-flatten';
-import {
-  connectedGatewayProviderIdsFromSecretNames,
-  normalizeProviderList,
-} from './provider-selection';
 import { useKortixRouteProjectId } from './route-project';
-import { type ModelKey, useModelStore } from './use-model-store';
-import type { RuntimeAgent } from './use-opencode-sessions/agents';
+import { normalizeProviderList } from './provider-selection';
+import { useModelStore, type ModelKey } from './use-model-store';
 
 export type { ModelKey };
 
@@ -33,7 +27,7 @@ export type { ModelKey };
 // ============================================================================
 
 export interface UseOpenCodeLocalOptions {
-  agents?: RuntimeAgent[];
+  agents?: Agent[];
   providers?: ProviderListResponse;
   config?: Config;
   /** Session ID — used to persist agent selection per-session in localStorage */
@@ -50,9 +44,10 @@ export interface UseOpenCodeLocalOptions {
    */
   defaultAgentName?: string | null;
   /**
-   * Free-tier gate for model visibility, threaded straight into `useModelStore`.
-   * A host that doesn't have a billing/account concept can omit it (default
-   * `false` — nothing is gated).
+   * @deprecated Inert. Entitlement is resolved server-side into each model's
+   * `enabled` flag by `/model-picker` (`freeManagedOnly` drops managed models
+   * for free-tier accounts before the catalog is even served), so there is
+   * nothing left to gate client-side.
    */
   freeTier?: boolean;
   /**
@@ -67,9 +62,9 @@ export interface UseOpenCodeLocalOptions {
 
 export interface OpenCodeLocalAgent {
   /** Currently selected agent (or first available) */
-  current: RuntimeAgent | undefined;
+  current: Agent | undefined;
   /** List of visible (non-hidden) agents, including subagents */
-  list: RuntimeAgent[];
+  list: Agent[];
   /** Set agent by name */
   set: (name: string | undefined) => void;
   /** Cycle to next/previous agent */
@@ -213,6 +208,29 @@ export function scopedModelSelectionKey(
 }
 
 /**
+ * The `modelStore.selectedModel` slot that holds "the model this composer is
+ * pointed at", scoped by provider mode and by agent.
+ *
+ * `agentName === undefined` is a REAL, reachable state, not an error: a project
+ * `member` is deny-by-default on agents (`resource-grants.ts`), so the composer
+ * roster is empty until an explicit grant names them. It gets its own stable
+ * agent-less slot instead of no slot at all.
+ *
+ * Returning `undefined` here (the shape `scopedModelSelectionKey` uses) is what
+ * broke the picker for exactly that member: `setModel` skipped the only durable
+ * write it had — the project-home composer carries no `sessionId`, so the
+ * per-session slot is absent too — and every click in a fully populated model
+ * list silently resolved back to the server default. Read and write must use
+ * THIS one function so they can never disagree about where the pick lives.
+ */
+export function agentScopedModelSelectionKey(
+  mode: ModelProviderMode,
+  agentName: string | undefined,
+): string {
+  return `${mode}:${agentName ?? ''}`;
+}
+
+/**
  * Resolve the current agent name with a priority chain:
  *   1. Per-session slot (`sessionAgentName`) — sticky for THIS session once the
  *      user (or a replayed stash) has picked one.
@@ -255,7 +273,6 @@ export function useOpenCodeLocal({
   sessionId,
   boundAgentName,
   defaultAgentName,
-  freeTier,
   resolveServerDefault,
 }: UseOpenCodeLocalOptions): OpenCodeLocal {
   // ---- Flatten models from providers (shared with the chat input, so the
@@ -263,35 +280,19 @@ export function useOpenCodeLocal({
   const flatModels = useMemo<FlatModel[]>(() => flattenModels(providers), [providers]);
   const projectId = useKortixRouteProjectId();
   const providerMode = useMemo(() => modelProviderMode(providers), [providers]);
-  const secretsQuery = useQuery({
-    queryKey: ['project-secrets', projectId],
-    queryFn: () => listProjectSecrets(projectId as string),
-    enabled: !!projectId && providerMode === 'gateway',
-    staleTime: 10_000,
-  });
-  const connectedProviderIds = useMemo(() => {
-    if (providerMode !== 'gateway') return undefined;
-    const data = secretsQuery.data;
-    const items = Array.isArray(data) ? data : (data?.items ?? []);
-    return connectedGatewayProviderIdsFromSecretNames(
-      new Set(items.map((secret: { name: string }) => secret.name)),
-    );
-  }, [providerMode, secretsQuery.data]);
 
-  // ---- Model store (persisted: visibility, recent, variant) ----
-  const modelStore = useModelStore(flatModels, {
-    connectedProviderIds,
-    freeTier: providerMode === 'gateway' && !!freeTier,
-  });
+  // ---- Model store (persisted: recent, variant, per-agent/session selection) ----
+  const modelStore = useModelStore(flatModels);
 
-  // ---- Model validation: a model is valid only if it's in the flattened list,
-  // which is already filtered to connected + gateway-only providers. This keeps
-  // default/recent resolution from ever selecting a native (bypass) model. ----
+  // ---- Model validation: a model is valid only if it's in the flattened list
+  // (already filtered to connected + gateway-only providers, so default/recent
+  // resolution can never select a native bypass model) AND the server hasn't
+  // turned it off for this project (`enabled`, stamped by `/model-picker`).
+  // The SAME predicate the session picker renders with — a second, client-only
+  // visibility rule here is what let a hidden model stay resolvable. ----
   const isModelValid = useCallback(
-    (model: ModelKey): boolean =>
-      flatModels.some((m) => m.providerID === model.providerID && m.modelID === model.modelID) &&
-      modelStore.isVisible(model),
-    [flatModels, modelStore],
+    (model: ModelKey): boolean => isOfferedModel(flatModels, model),
+    [flatModels],
   );
 
   // ---- First valid model from a list of fallback sources ----
@@ -314,16 +315,11 @@ export function useOpenCodeLocal({
     [flatModels],
   );
 
-  const isModelDefaultVisible = useCallback(
-    (model: ModelKey): boolean => modelStore.isVisible(model),
-    [modelStore],
-  );
-
   // ---- Agent state — persisted per-session in localStorage so switching tabs preserves selection ----
   // Project-only agents (orchestrator/project-maintainer/worker) are hidden
   // when the project paradigm is off; their bodies reference project
   // tools that aren't registered in default mode.
-  const visibleAgents = useMemo<RuntimeAgent[]>(() => {
+  const visibleAgents = useMemo<Agent[]>(() => {
     // Keep in sync with use-visible-agents.ts:PROJECT_ONLY_AGENTS.
     const projectOnlyAgents = new Set(['project-manager']);
     return (Array.isArray(rawAgents) ? rawAgents : []).filter(
@@ -348,7 +344,9 @@ export function useOpenCodeLocal({
     name: string | undefined;
   }>({ scope: '', name: undefined });
   const explicitAgentName =
-    explicitAgentSelection.scope === agentSelectionScope ? explicitAgentSelection.name : undefined;
+    explicitAgentSelection.scope === agentSelectionScope
+      ? explicitAgentSelection.name
+      : undefined;
   const currentAgentName = resolveCurrentAgentName({
     sessionId,
     sessionAgentName,
@@ -381,11 +379,16 @@ export function useOpenCodeLocal({
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [sessionId, agentSelectionScope, modelStore.setSessionAgentName, modelStore.setLastAgentName],
+    [
+      sessionId,
+      agentSelectionScope,
+      modelStore.setSessionAgentName,
+      modelStore.setLastAgentName,
+    ],
   );
 
   // Resolve current agent (matching SolidJS: find by name or fall back to first)
-  const currentAgent = useMemo<RuntimeAgent | undefined>(() => {
+  const currentAgent = useMemo<Agent | undefined>(() => {
     if (visibleAgents.length === 0) return undefined;
     if (currentAgentName) {
       const found = visibleAgents.find((a) => a.name === currentAgentName);
@@ -393,6 +396,14 @@ export function useOpenCodeLocal({
     }
     return visibleAgents[0];
   }, [visibleAgents, currentAgentName]);
+
+  // Where THIS composer's model pick is persisted. One key for the read below
+  // and the write in `setModel`, defined once so an agent-less composer (a
+  // member with no agent grant) still has somewhere to put the pick.
+  const agentModelSlotKey = useMemo(
+    () => agentScopedModelSelectionKey(providerMode, currentAgent?.name),
+    [providerMode, currentAgent?.name],
+  );
 
   // ---- Per-agent model overrides (persisted to localStorage so selection survives refresh/new tabs) ----
 
@@ -427,17 +438,17 @@ export function useOpenCodeLocal({
         const configured = defaults[p.id];
         if (configured) {
           const key = { providerID: p.id, modelID: configured };
-          if (isModelValid(key) && isModelDefaultVisible(key)) return key;
+          if (isModelValid(key)) return key;
         }
         for (const modelID of Object.keys(p.models)) {
           const key = { providerID: p.id, modelID };
-          if (isModelValid(key) && isModelDefaultVisible(key)) return key;
+          if (isModelValid(key)) return key;
         }
       }
     }
 
     return undefined;
-  }, [config?.model, modelStore.recent, providers, isModelValid, isModelDefaultVisible]);
+  }, [config?.model, modelStore.recent, providers, isModelValid]);
 
   // ---- Explicit per-conversation/per-agent picks (highest priority, localStorage) ----
   const explicitModelKey = useMemo<ModelKey | undefined>(
@@ -448,14 +459,19 @@ export function useOpenCodeLocal({
           scopedSessionModelKey ? modelStore.getSessionModel(scopedSessionModelKey) : undefined,
         // Back-compat: the old unscoped slot, only if valid in the current mode.
         () => (sessionId ? modelStore.getSessionModel(sessionId) : undefined),
-        // Per-agent model (persisted across sessions for this agent)
-        () =>
-          currentAgent
-            ? modelStore.getSelectedModel(`${providerMode}:${currentAgent.name}`)
-            : undefined,
+        // Per-agent model (persisted across sessions for this agent, or in the
+        // agent-less slot when the caller has access to no agent at all).
+        () => modelStore.getSelectedModel(agentModelSlotKey),
         () => (currentAgent ? modelStore.getSelectedModel(currentAgent.name) : undefined),
       ),
-    [currentAgent, sessionId, scopedSessionModelKey, providerMode, modelStore, getFirstValidModel],
+    [
+      currentAgent,
+      agentModelSlotKey,
+      sessionId,
+      scopedSessionModelKey,
+      modelStore,
+      getFirstValidModel,
+    ],
   );
 
   // The gateway-configured default for the current agent (agent -> project ->
@@ -479,7 +495,7 @@ export function useOpenCodeLocal({
       getFirstValidModel(
         () => serverDefaultKey,
         () => modelStore.globalDefault,
-        () => currentAgent?.model as ModelKey | undefined,
+        () => (currentAgent?.model as ModelKey | undefined),
         () => fallbackModel,
       );
     return resolved;
@@ -522,15 +538,17 @@ export function useOpenCodeLocal({
       }
 
       const next = model ?? fallbackModel;
-      if (currentAgent && next) {
-        modelStore.setSelectedModel(`${providerMode}:${currentAgent.name}`, next);
+      // Persist unconditionally into the composer's slot. This was gated on
+      // `currentAgent`, which made the whole picker inert for a project member
+      // holding no agent grant: no agent AND no sessionId (project-home
+      // composer) meant NEITHER write ran, so the pick vanished on the next
+      // render and the trigger snapped back to the server default.
+      if (next) {
+        modelStore.setSelectedModel(agentModelSlotKey, next);
       }
       // Also persist per-session so the selection survives page reload
       if (scopedSessionModelKey && next) {
         modelStore.setSessionModel(scopedSessionModelKey, next);
-      }
-      if (model) {
-        modelStore.setVisibility(model, true);
       }
       if (options?.recent && model) {
         modelStore.pushRecent(model);
@@ -540,7 +558,7 @@ export function useOpenCodeLocal({
         // for NEW sessions even when they change model in an existing session.
       }
     },
-    [currentAgent, scopedSessionModelKey, providerMode, fallbackModel, modelStore, isModelValid],
+    [agentModelSlotKey, scopedSessionModelKey, fallbackModel, modelStore, isModelValid],
   );
 
   // ---- Agent set (matching SolidJS local.tsx:52-63) ----
@@ -696,7 +714,10 @@ export function useOpenCodeLocal({
       recent: recentModels,
       list: flatModels,
       set: setModel,
-      visible: modelStore.isVisible,
+      // The server's enablement answer, not the localStorage heuristic — the
+      // one predicate every surface (picker list, stash replay, default
+      // resolution) agrees on.
+      visible: isModelValid,
       setVisibility: modelStore.setVisibility,
       cycle: cycleModel,
       hasSessionModel,

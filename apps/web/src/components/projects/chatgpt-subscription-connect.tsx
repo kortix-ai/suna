@@ -1,7 +1,10 @@
 'use client';
 
+import {
+  CheckCircleIcon as CheckCircle2,
+  WarningIcon as TriangleAlert,
+} from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle2, TriangleAlert } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
@@ -25,13 +28,14 @@ import {
 } from '@/features/workspace/shared/sharing-picker';
 import { accountStateSelectors, useAccountState } from '@/hooks/billing';
 import { isBillingEnabled } from '@/lib/config';
+import { cn } from '@/lib/utils';
 import { useBillingAccountId } from '@/stores/billing-account-context';
 import {
   listProjectSecrets,
   pollProjectProviderOAuth,
   startProjectProviderOAuth,
 } from '@kortix/sdk';
-import { refreshProjectProviderState } from '@kortix/sdk/react';
+import { contract, qk, refreshProjectProviderState } from '@kortix/sdk/react';
 
 export const CODEX_AUTH_JSON_SECRET_NAME = 'CODEX_AUTH_JSON';
 export const LEGACY_RUNTIME_AUTH_JSON_SECRET_NAME = 'OPENCODE_AUTH_JSON';
@@ -52,9 +56,9 @@ export function isChatGptSubscriptionConnected(secretNames: Set<string>): boolea
 
 export function useChatGptSubscriptionConnected(projectId: string, enabled = true) {
   const secretsQuery = useQuery({
-    queryKey: ['project-secrets', projectId],
+    queryKey: qk.project.secrets(projectId),
     queryFn: () => listProjectSecrets(projectId),
-    staleTime: 10_000,
+    ...contract('config'),
     enabled: enabled && !!projectId,
   });
 
@@ -94,20 +98,52 @@ export function useShowChatGptConnectPrompt(projectId: string) {
   return { show, connected, isLoading: accountLoading || secretsLoading };
 }
 
-export function ChatGptSubscriptionConnect({
+/**
+ * The whole ChatGPT device-OAuth flow, with no UI attached.
+ *
+ * **Why this is split out.** `ChatGptSubscriptionConnect` below is one fixed
+ * card: its own border, its own logo, its own title and description, its own
+ * button, its own footer note. That is fine as a standalone block and wrong
+ * everywhere else — dropping it inside a settings row that already says
+ * "ChatGPT" produces the same words twice inside a nested box.
+ *
+ * The flow is the part worth sharing; the card is just one arrangement of it.
+ * Take this hook and render whichever pieces you need:
+ *
+ * ```tsx
+ * const flow = useChatGptConnectFlow({ projectId });
+ *
+ * <SettingsRow label="ChatGPT" description="…">
+ *   {flow.isWaiting ? <ChatGptCancelButton flow={flow} /> : <ChatGptConnectButton flow={flow} />}
+ * </SettingsRow>
+ * <ChatGptAuthChallenge flow={flow} />
+ * ```
+ *
+ * Nothing here renders, so a host owns its own chrome completely.
+ */
+export interface ChatGptConnectFlow {
+  phase: ChatGptPhase;
+  error: string | null;
+  challenge: ChatGptChallenge | null;
+  /** Authorization is in flight — show the challenge and a Cancel, not Connect. */
+  isWaiting: boolean;
+  isDone: boolean;
+  connect: () => void;
+  /** Abandons an in-flight authorization and returns to idle. */
+  cancel: () => void;
+}
+
+export function useChatGptConnectFlow({
   projectId,
   sharing = DEFAULT_PROJECT_SHARING,
-  showSharingPicker = false,
-  autoStartOnOpen = false,
+  autoStart = false,
   onConnected,
 }: {
   projectId: string;
   sharing?: SharingSelection;
-  showSharingPicker?: boolean;
-  autoStartOnOpen?: boolean;
+  autoStart?: boolean;
   onConnected?: () => void;
-}) {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
+}): ChatGptConnectFlow {
   const queryClient = useQueryClient();
   const [phase, setPhase] = useState<ChatGptPhase>('idle');
   const [error, setError] = useState<string | null>(null);
@@ -160,7 +196,7 @@ export function ChatGptSubscriptionConnect({
         if (res.status === 'success') {
           setPhase('done');
           successToast('ChatGPT subscription connected to this project');
-          queryClient.invalidateQueries({ queryKey: ['project-secrets', projectId] });
+          queryClient.invalidateQueries({ queryKey: qk.project.secrets(projectId) });
           refreshProjectProviderState(queryClient, projectId, { expectProviderId: 'codex' });
           onConnected?.();
           return;
@@ -192,12 +228,147 @@ export function ChatGptSubscriptionConnect({
   }, [projectId, sharing, queryClient, onConnected]);
 
   useEffect(() => {
-    if (!autoStartOnOpen || autoStartedRef.current || phase !== 'idle') return;
+    if (!autoStart || autoStartedRef.current || phase !== 'idle') return;
     autoStartedRef.current = true;
     void handleConnect();
-  }, [autoStartOnOpen, handleConnect, phase]);
+  }, [autoStart, handleConnect, phase]);
 
-  const waiting = phase === 'waiting';
+  return {
+    phase,
+    error,
+    challenge,
+    isWaiting: phase === 'waiting',
+    isDone: phase === 'done',
+    connect: handleConnect,
+    cancel: reset,
+  };
+}
+
+/**
+ * Start / retry authorization. Label changes to "Reconnect" once a previous
+ * attempt errored or succeeded, matching what the card has always shown.
+ * Renders nothing while an authorization is in flight — pair it with
+ * `ChatGptCancelButton`, which is the control that belongs there instead.
+ */
+export function ChatGptConnectButton({
+  flow,
+  size = 'sm',
+  variant = 'outline',
+  className,
+  label,
+}: {
+  flow: ChatGptConnectFlow;
+  size?: 'sm' | 'default';
+  variant?: 'outline' | 'secondary' | 'default';
+  className?: string;
+  /** Overrides the default label; useful where the surrounding row already says "ChatGPT". */
+  label?: string;
+}) {
+  if (flow.isWaiting) return null;
+  const fallback = flow.error || flow.isDone ? 'Reconnect ChatGPT' : 'Connect ChatGPT';
+  return (
+    <Button
+      type="button"
+      size={size}
+      variant={variant}
+      className={className}
+      onClick={flow.connect}
+    >
+      {label ?? fallback}
+    </Button>
+  );
+}
+
+/** Abandons an in-flight authorization. Renders nothing when nothing is in flight. */
+export function ChatGptCancelButton({
+  flow,
+  size = 'sm',
+  variant = 'outline',
+  className,
+}: {
+  flow: ChatGptConnectFlow;
+  size?: 'sm' | 'default';
+  variant?: 'outline' | 'secondary' | 'default';
+  className?: string;
+}) {
+  if (!flow.isWaiting) return null;
+  return (
+    <Button type="button" size={size} variant={variant} className={className} onClick={flow.cancel}>
+      Cancel
+    </Button>
+  );
+}
+
+/**
+ * The device-code step: the code to copy and the link that opens OpenAI's auth
+ * page, plus the waiting indicator. Renders nothing unless an authorization is
+ * actually in flight, so a host can mount it unconditionally.
+ *
+ * `bare` drops the boxed chrome for hosts that already sit inside a bordered
+ * group — the settings panel's rows, for instance — so the code does not end up
+ * in a border inside a border.
+ */
+export function ChatGptAuthChallenge({
+  flow,
+  bare = false,
+  className,
+}: {
+  flow: ChatGptConnectFlow;
+  bare?: boolean;
+  className?: string;
+}) {
+  if (!flow.isWaiting) return null;
+  return (
+    <div
+      className={cn(
+        bare ? 'space-y-3' : 'border-border bg-muted/30 space-y-3 rounded-md border p-3',
+        className,
+      )}
+    >
+      {flow.challenge ? (
+        <ChatGptDeviceChallenge url={flow.challenge.url} code={flow.challenge.code} />
+      ) : (
+        <div className="text-foreground text-xs font-medium">Starting authorization…</div>
+      )}
+      <div className="text-muted-foreground flex items-center gap-2 text-xs">
+        <Loading className="size-3.5 shrink-0" />
+        {flow.challenge ? 'Waiting for you to finish in the browser…' : 'Connecting to OpenAI…'}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The standalone card — logo, title, description, the flow's controls, and a
+ * footer note. Unchanged in behaviour and API; it is now assembled from the
+ * parts above rather than owning the flow itself, so this file has one
+ * implementation of the OAuth loop instead of one per layout.
+ *
+ * Do NOT reach for this inside a surface that already labels ChatGPT. Use
+ * `useChatGptConnectFlow` with the individual parts instead.
+ */
+export function ChatGptSubscriptionConnect({
+  projectId,
+  sharing = DEFAULT_PROJECT_SHARING,
+  showSharingPicker = false,
+  autoStartOnOpen = false,
+  onConnected,
+}: {
+  projectId: string;
+  sharing?: SharingSelection;
+  showSharingPicker?: boolean;
+  autoStartOnOpen?: boolean;
+  onConnected?: () => void;
+}) {
+  const tI18nHardcoded = useTranslations('hardcodedUi');
+  const flow = useChatGptConnectFlow({
+    projectId,
+    sharing,
+    autoStart: autoStartOnOpen,
+    onConnected,
+  });
+  const { phase, error, challenge } = flow;
+  const waiting = flow.isWaiting;
 
   return (
     <div className="bg-popover rounded-md border p-4">
@@ -217,32 +388,7 @@ export function ChatGptSubscriptionConnect({
         </div>
       </div>
 
-      {waiting && (
-        <div className="border-border bg-muted/30 mt-3 rounded-md border p-3">
-          {challenge ? (
-            <>
-              <div className="text-foreground text-xs font-medium">
-                {tI18nHardcoded.raw(
-                  'autoComponentsProjectsProjectProviderModalJsxTextAuthorizeInThed882ae47',
-                )}
-              </div>
-              <div className="mt-3">
-                <ChatGptDeviceChallenge url={challenge.url} code={challenge.code} />
-              </div>
-            </>
-          ) : (
-            <div className="text-foreground text-xs font-medium">
-              {tI18nHardcoded.raw(
-                'autoComponentsProjectsProjectProviderModalJsxTextStartingAuthorization35b1fe13',
-              )}
-            </div>
-          )}
-          <div className="text-muted-foreground mt-3 flex items-center gap-2 text-xs">
-            <Loading className="size-3.5 shrink-0" />
-            {challenge ? 'Waiting for you to finish in the browser…' : 'Connecting to OpenAI…'}
-          </div>
-        </div>
-      )}
+      <ChatGptAuthChallenge flow={flow} className="mt-3" />
 
       {phase === 'done' && (
         <InfoBanner tone="success" icon={CheckCircle2} className="mt-3 text-xs">
@@ -258,33 +404,13 @@ export function ChatGptSubscriptionConnect({
         </InfoBanner>
       )}
 
-      {!autoStartOnOpen && (
-        <div className="mt-3 flex flex-wrap gap-2">
-          {waiting ? (
-            <Button type="button" size="sm" variant="outline" className="px-4" onClick={reset}>
-              Cancel
-            </Button>
-          ) : (
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className="px-4"
-              onClick={handleConnect}
-            >
-              {error || phase === 'done' ? 'Reconnect ChatGPT' : 'Connect ChatGPT'}
-            </Button>
-          )}
-        </div>
-      )}
-
-      {autoStartOnOpen && waiting && (
-        <div className="mt-3">
-          <Button type="button" size="sm" variant="outline" className="px-4" onClick={reset}>
-            Cancel
-          </Button>
-        </div>
-      )}
+      {/* Both branches are now the shared parts. `autoStartOnOpen` only ever
+          suppressed Connect — the flow starts itself — so Cancel is the one
+          control it keeps. */}
+      <div className="mt-3 flex flex-wrap gap-2 empty:mt-0">
+        {autoStartOnOpen ? null : <ChatGptConnectButton flow={flow} className="px-4" />}
+        <ChatGptCancelButton flow={flow} className="px-4" />
+      </div>
 
       {showSharingPicker ? null : (
         <p className="text-muted-foreground mt-3 text-xs">

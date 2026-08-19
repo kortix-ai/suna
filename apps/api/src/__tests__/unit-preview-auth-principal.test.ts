@@ -10,13 +10,16 @@
  */
 
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import * as realPreviewOwnership from '../shared/preview-ownership';
 
 const SANDBOX_ID = 'sandbox-xyz';
 let allowedAccounts = new Set<string>(['acct-owner']);
 let allowedUsers = new Set<string>(['user-owner', 'sa-owner', 'pat-user-owner', 'user-fallback-owner']);
 let mockSupabaseUser: { id: string } | null = null;
 
+const actualCrypto = await import('../shared/crypto');
 mock.module('../shared/crypto', () => ({
+  ...actualCrypto,
   isAccountToken: (t: string) => t.startsWith('kortix_pat_'),
   isServiceAccountToken: (t: string) => t.startsWith('kortix_sa_'),
   isKortixToken: (t: string) => t.startsWith('kortix_'),
@@ -91,7 +94,11 @@ mock.module('../shared/supabase', () => ({
   }),
 }));
 
+// Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
+// lists exports by hand deletes every export it omits — the failure surfaces in
+// whatever unrelated file imports the missing name next, attributed to no test.
 mock.module('../shared/preview-ownership', () => ({
+  ...realPreviewOwnership,
   canAccessPreviewSandbox: async ({ userId, accountId }: { userId?: string; accountId?: string }) => {
     if (accountId && allowedAccounts.has(accountId)) return true;
     if (userId && allowedUsers.has(userId)) return true;

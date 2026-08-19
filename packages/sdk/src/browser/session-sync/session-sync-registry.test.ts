@@ -1,21 +1,24 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import type { Message } from '@opencode-ai/sdk/v2/client';
 import { useSyncStore } from '../stores/sync-store';
+import { setCurrentRuntime } from '../../core/session/current-runtime';
 import {
+  loadSessionRuntimeStatus,
   ACTIVE_SESSION_PREFETCH_SOURCE,
-  beginSessionPromptObservation,
   clearActiveSessionPrefetches,
   getSessionSyncController,
   noteSessionSyncEvent,
   prefetchSessionSyncOnce,
   readSessionMessagePage,
   resetSessionSyncControllers,
+  resetSessionSyncControllersForSession,
   retainSessionSyncController,
 } from './session-sync-registry';
 
 beforeEach(() => {
   resetSessionSyncControllers();
   useSyncStore.getState().reset();
+  setCurrentRuntime(null);
 });
 
 describe('readSessionMessagePage', () => {
@@ -62,6 +65,27 @@ describe('readSessionMessagePage', () => {
 });
 
 describe('prefetchSessionSyncOnce', () => {
+  test('keeps controllers distinct when two sandboxes contain the same OpenCode id', () => {
+    const sharedId = 'session-from-snapshot';
+    const runtimeA = getSessionSyncController(sharedId, undefined, 'runtime-a');
+    const runtimeB = getSessionSyncController(sharedId, undefined, 'runtime-b');
+
+    expect(runtimeA).not.toBe(runtimeB);
+    expect(getSessionSyncController(sharedId, undefined, 'runtime-a')).toBe(runtimeA);
+    expect(getSessionSyncController(sharedId, undefined, 'runtime-b')).toBe(runtimeB);
+  });
+
+  test('retires old-sandbox controllers without deleting the current sandbox controller', () => {
+    const sharedId = 'session-from-snapshot';
+    const runtimeA = getSessionSyncController(sharedId, undefined, 'runtime-a');
+    const runtimeB = getSessionSyncController(sharedId, undefined, 'runtime-b');
+
+    resetSessionSyncControllersForSession(sharedId, 'runtime-b');
+
+    expect(getSessionSyncController(sharedId, undefined, 'runtime-a')).not.toBe(runtimeA);
+    expect(getSessionSyncController(sharedId, undefined, 'runtime-b')).toBe(runtimeB);
+  });
+
   test('deduplicates one runtime source and revalidates after the runtime changes', async () => {
     const requests: string[] = [];
     const client = (runtime: string) => ({
@@ -134,28 +158,113 @@ describe('session sync controller eviction', () => {
   });
 });
 
-describe('REST prompt observation events', () => {
-  test('ignores premature idle and ends observation on a terminal runtime error', () => {
+/**
+ * What is left of the event hook: a frame is proof this session's transcript
+ * moved. It used to also drive a prompt-observation phase machine that decided
+ * "working" from WHICH frame arrived when — an inference that latched, and is
+ * now the server's answer via `projectWorking`.
+ */
+describe('session sync events', () => {
+  test('renews the sole scoped controller while the current runtime is temporarily unbound', () => {
     const sessionId = 'session-rest-prompt';
-    const controller = getSessionSyncController(sessionId);
-
-    beginSessionPromptObservation(sessionId);
-    noteSessionSyncEvent({
-      type: 'session.idle',
-      properties: { sessionID: sessionId },
-    });
-    expect(controller.getSnapshot().isPromptObservedBusy).toBe(true);
+    const controller = getSessionSyncController(sessionId, undefined, 'runtime-a');
+    expect(controller.getSnapshot().freshness).toBe('idle');
 
     noteSessionSyncEvent({
       type: 'message.updated',
-      properties: {
-        info: { id: 'assistant-1', sessionID: sessionId, role: 'assistant' },
-      },
+      properties: { info: { id: 'assistant-1', sessionID: sessionId, role: 'assistant' } },
     });
+
+    expect(controller.getSnapshot().freshness).toBe('fresh');
+  });
+
+  test('a frame for another session never touches this one', () => {
+    const controller = getSessionSyncController('session-a', undefined, 'runtime-a');
+
     noteSessionSyncEvent({
-      type: 'session.error',
-      properties: { sessionID: sessionId, error: { name: 'RuntimeError' } },
+      type: 'session.idle',
+      properties: { sessionID: 'session-b' },
     });
-    expect(controller.getSnapshot().isPromptObservedBusy).toBe(false);
+
+    expect(controller.getSnapshot().freshness).toBe('idle');
+  });
+
+  test('ignores global events that do not contain session properties', () => {
+    expect(() =>
+      noteSessionSyncEvent({
+        type: 'server.connected',
+        properties: undefined,
+      }),
+    ).not.toThrow();
+  });
+
+  test('ignores an event with no properties instead of throwing', () => {
+    expect(() =>
+      noteSessionSyncEvent({ type: 'sync' } as unknown as { type?: string; properties: unknown }),
+    ).not.toThrow();
+  });
+});
+
+describe('loadSessionRuntimeStatus', () => {
+  test('returns the authoritative runtime status for one session', async () => {
+    const client = {
+      session: {
+        messages: async () => ({ data: [] }),
+        status: async () => ({ data: { 'ses-1': { type: 'busy' } } }),
+      },
+    } as never;
+    expect(await loadSessionRuntimeStatus('ses-1', client)).toEqual({ type: 'busy' });
+  });
+
+  test('a session absent from the snapshot is authoritatively idle', async () => {
+    const client = {
+      session: {
+        messages: async () => ({ data: [] }),
+        status: async () => ({ data: {} }),
+      },
+    } as never;
+    expect(await loadSessionRuntimeStatus('ses-1', client)).toEqual({ type: 'idle' });
+  });
+
+  test('a runtime without a status endpoint returns null (caller decides)', async () => {
+    const client = { session: { messages: async () => ({ data: [] }) } } as never;
+    expect(await loadSessionRuntimeStatus('ses-1', client)).toBeNull();
+  });
+});
+
+describe('loadSessionRuntimeStatus binds the client method', () => {
+  test('a client whose status() reads `this` (like the real SDK) works', async () => {
+    // The real @opencode-ai/sdk SessionClient.status() dereferences
+    // `this.client`. Detaching the method (`const f = s.status; await f()`)
+    // makes `this` undefined and throws before any request goes out — which
+    // silently disabled every status reconciliation against a real client
+    // while all the plain-object test fakes kept passing.
+    class RealisticSession {
+      private answer = { data: { 'ses-1': { type: 'busy' } } };
+      async messages() {
+        return { data: [] };
+      }
+      async status() {
+        // Throws exactly like the SDK if called detached.
+        return (this as RealisticSession).answer;
+      }
+    }
+    const client = { session: new RealisticSession() } as never;
+    expect(await loadSessionRuntimeStatus('ses-1', client)).toEqual({ type: 'busy' });
+  });
+});
+
+describe('loadSessionRuntimeStatus refuses to launder failures into idle', () => {
+  test('an SDK-style resolved error response throws instead of reporting idle', async () => {
+    // The generated client RESOLVES with { error } on HTTP failure. Mapping
+    // that to "idle" told every caller a failing runtime was authoritatively
+    // done — which defeats retry budgets built on thrown errors.
+    const client = {
+      session: {
+        messages: async () => ({ data: [] }),
+        status: async () => ({ error: { message: 'ECONNREFUSED' } }),
+      },
+    } as never;
+    await expect(loadSessionRuntimeStatus('ses-1', client)).rejects.toThrow();
   });
 });

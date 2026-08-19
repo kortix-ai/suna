@@ -1,8 +1,7 @@
 # Website Studio — an email-first, self-running web agency (spec)
 
 > **Runtime scope.** The shipped marketplace template uses
-> `kortix_version: 2` and an OpenCode-native `studio` agent. A project can
-> migrate this logical agent to a version 3 runtime profile.
+> `kortix_version: 2` and an OpenCode-native `studio` agent.
 
 **Status:** draft · **Date:** 2026-07-12 · **Owner:** Marko
 
@@ -115,6 +114,6 @@ initiates — is fully autonomous.
 - Email wiring: ship with a concrete inbound provider recipe (channel vs. raw
   webhook + signature) rather than leaving it to the operator.
 - A tiny `payments` reference skill (Stripe payment-link + subscription recipes)
-  would sharpen step 2; today it's the Stripe connector via `kortix-executor`.
+  would sharpen step 2; today it's the Stripe connector via `kortix-connectors`.
 - Deploy provider is assumed Vercel; document the connector contract.
 - Domain purchase flow via a registrar connector (propose → buy within budget).

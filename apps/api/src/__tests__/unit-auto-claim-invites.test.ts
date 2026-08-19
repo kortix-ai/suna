@@ -55,7 +55,9 @@ const fakeDb = {
   }),
 };
 
+const actualDrizzle = await import('drizzle-orm');
 mock.module('drizzle-orm', () => ({
+  ...actualDrizzle,
   and: (...parts: unknown[]) => ({ op: 'and', parts }),
   eq: (column: unknown, value: unknown) => ({ op: 'eq', column, value }),
   gt: (column: unknown, value: unknown) => ({ op: 'gt', column, value }),
@@ -114,7 +116,7 @@ describe('autoClaimPendingInvites', () => {
   });
 
   test('does NOT claim a project invite (carries bootstrap grants): stays pending', async () => {
-    state.pending = [makeInvite({ bootstrapGrants: [{ project_id: 'p1', role: 'editor' }] })];
+    state.pending = [makeInvite({ bootstrapGrants: [{ project_id: 'p1', role: 'manager' }] })];
 
     await autoClaimPendingInvites('user-1', 'invitee@example.com');
 

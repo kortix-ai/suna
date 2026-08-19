@@ -7,7 +7,6 @@ description: >-
   {{updates_folder}} for a founder to finalize. Never writes to Postgres or
   Stripe, and never sends anything.
 mode: primary
-model: kortix/codex/gpt-5.5
 permission: allow
 ---
 

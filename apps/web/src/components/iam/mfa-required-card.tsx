@@ -9,10 +9,22 @@
 // Safety: enable path always fetches the preview so the admin sees who
 // would be locked out, and the backend refuses flips that would orphan
 // the account.
+//
+// **Renders a bare `SettingsRow` — mount it inside a `SettingsRowGroup`.**
+// It used to draw its own `bg-popover rounded-md border` box, which is why
+// the organization pane read as four unrelated cards instead of one settings
+// form. It is a ROW now, in the Linear shape every other pane on this branch
+// uses (`components/ui/settings-row.tsx`); the group that hosts it owns the
+// border and the hairlines. `key-rules-card.tsx` made the same move first.
+//
+// The control is a `Switch`, not the old Require/Disable button pair. Both
+// confirmation surfaces are unchanged and still gate every flip — the switch
+// only opens them, and does not move until the mutation actually lands, so
+// what it shows is always the server's answer.
 
 import { errorToast, successToast } from '@/components/ui/toast';
+import { WarningIcon as AlertTriangle } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
@@ -29,7 +41,9 @@ import {
   ModalHeader,
   ModalTitle,
 } from '@/components/ui/modal';
+import { SettingsRow } from '@/components/ui/settings-row';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Switch } from '@/components/ui/switch';
 import { getMfaRequired, previewMfaRequired, setMfaRequired } from '@/lib/iam-client';
 import { listAccountMembers } from '@kortix/sdk';
 
@@ -76,7 +90,9 @@ export function MfaRequiredCard({ accountId, canManage }: MfaRequiredCardProps) 
     mutationFn: (enabled: boolean) => setMfaRequired(accountId, enabled),
     onSuccess: (res) => {
       successToast(
-        res.enabled ? 'MFA is now required for this account' : 'MFA requirement disabled',
+        res.enabled
+          ? 'Two-factor authentication is now required'
+          : 'Two-factor authentication is no longer required',
       );
       queryClient.invalidateQueries({ queryKey: ['iam-mfa-required', accountId] });
       // Permission probes cache verdicts and the MFA gate flips them
@@ -104,37 +120,31 @@ export function MfaRequiredCard({ accountId, canManage }: MfaRequiredCardProps) 
   }, [previewQuery.data]);
 
   return (
-    <div className="bg-popover rounded-md border px-4 py-3">
-      <div className="flex items-center justify-between gap-4">
-        <div className="min-w-0">
-          <p className="text-foreground flex items-center gap-2 text-sm font-medium">
-            Require MFA for all members
-            {!statusQuery.isLoading && enabled && (
-              <Badge variant="success" size="sm">
-                Required
-              </Badge>
-            )}
-          </p>
-          <p className="text-muted-foreground mt-0.5 text-xs">
-            When enabled, members must complete a second-factor challenge before any IAM-gated
-            action. Super-admins and Personal Access Tokens are exempt. Members enroll an authenticator under Settings → Security.
-          </p>
-        </div>
+    <>
+      <SettingsRow
+        label="Require two-factor authentication"
+        // One line, and only the part an admin decides on. Where a member
+        // enrols is the member's problem, and it is answered on the Profile
+        // pane where they do it — it does not belong in this row.
+        description="Members confirm a second factor before any protected action. Super-admins and API keys are exempt."
+      >
         {statusQuery.isLoading ? (
-          <Skeleton className="h-8 w-24 shrink-0 rounded-md" />
+          <Skeleton className="h-5 w-9 shrink-0 rounded-full" />
         ) : (
-          <Button
-            variant={enabled ? 'destructive' : 'secondary'}
-            size="sm"
-            disabled={!canManage || flipMutation.isPending}
-            onClick={() => setConfirmOpen(true)}
-            className="shrink-0 gap-1.5"
-          >
-            {flipMutation.isPending && <Loading className="size-3.5 shrink-0" />}
-            {enabled ? 'Disable' : 'Require MFA'}
-          </Button>
+          <>
+            {flipMutation.isPending ? <Loading className="size-3.5 shrink-0" /> : null}
+            <Switch
+              checked={enabled}
+              // Never flips optimistically: the confirmation below decides,
+              // and the query invalidation after it lands is what moves this.
+              onCheckedChange={() => setConfirmOpen(true)}
+              disabled={!canManage || flipMutation.isPending}
+              aria-label="Require two-factor authentication"
+              className="shrink-0"
+            />
+          </>
         )}
-      </div>
+      </SettingsRow>
 
       {/* Enable path */}
       <Modal
@@ -145,10 +155,14 @@ export function MfaRequiredCard({ accountId, canManage }: MfaRequiredCardProps) 
       >
         <ModalContent className="lg:max-w-lg">
           <ModalHeader>
-            <ModalTitle>Require MFA for this account?</ModalTitle>
+            <ModalTitle>Require two-factor authentication?</ModalTitle>
+            {/* Same words as the row that opens this — "protected action" and
+                "API keys", not "IAM-gated action" and "PATs". A confirmation
+                that renames what you just read is a confirmation you have to
+                re-read. */}
             <ModalDescription>
-              Members without a verified second factor will be blocked from every IAM-gated
-              action until they enrol. CLI tokens (PATs) are unaffected.
+              Members without a verified second factor are blocked from every protected action until
+              they enrol. API keys are unaffected.
             </ModalDescription>
           </ModalHeader>
 
@@ -162,8 +176,8 @@ export function MfaRequiredCard({ accountId, canManage }: MfaRequiredCardProps) 
 
             {previewQuery.data && previewQuery.data.will_lock_out_account && (
               <InfoBanner tone="destructive" icon={AlertTriangle}>
-                Nobody would retain access. Promote a super-admin or have at least one member
-                enrol MFA before enabling.
+                Nobody would retain access. Promote a super-admin or have at least one member enrol
+                MFA before enabling.
               </InfoBanner>
             )}
 
@@ -237,13 +251,11 @@ export function MfaRequiredCard({ accountId, canManage }: MfaRequiredCardProps) 
             <Button
               size="sm"
               onClick={() => flipMutation.mutate(true)}
-              disabled={
-                flipMutation.isPending || previewQuery.data?.will_lock_out_account === true
-              }
+              disabled={flipMutation.isPending || previewQuery.data?.will_lock_out_account === true}
               className="gap-1.5"
             >
               {flipMutation.isPending && <Loading className="size-3.5 shrink-0" />}
-              Require MFA
+              Require it
             </Button>
           </ModalFooter>
         </ModalContent>
@@ -255,13 +267,13 @@ export function MfaRequiredCard({ accountId, canManage }: MfaRequiredCardProps) 
         onOpenChange={(v) => {
           if (!flipMutation.isPending) setConfirmOpen(v);
         }}
-        title="Disable MFA requirement?"
-        description="Members will be able to sign in with a password alone. Per-policy MFA conditions you may have set on individual policies still apply — only the account-wide gate is removed."
-        confirmLabel="Disable MFA requirement"
+        title="Stop requiring two-factor authentication?"
+        description="Members will be able to sign in with a password alone. Any policy you set a second-factor condition on individually still enforces it — only the account-wide rule is removed."
+        confirmLabel="Stop requiring it"
         confirmVariant="destructive"
         isPending={flipMutation.isPending}
         onConfirm={() => flipMutation.mutate(false)}
       />
-    </div>
+    </>
   );
 }

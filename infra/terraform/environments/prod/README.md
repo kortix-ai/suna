@@ -17,34 +17,45 @@ autoscaling expected for SOC 2.
 
 ## Apply
 
+CI applies this root. `deploy-prod.yml` -> `terraform-prod-api` runs
+`terraform-apply.yml` on every production release, before the released image
+rolls onto ECS. There is no `terraform.tfvars`: every input is a committed
+default in `variables.tf`, except `api_image`, which the release supplies.
+
+To plan it by hand:
+
 ```bash
 cd infra/terraform/environments/prod
 
 export AWS_PROFILE=...                    # prod account creds
 export TF_VAR_cloudflare_api_token=...
-export TF_VAR_cloudflare_zone_id=...
 
-cp terraform.tfvars.example terraform.tfvars   # PIN api_image to a release; secret ARNs
 terraform init
 terraform plan
-terraform apply
 ```
 
 ## Notes
 
-- Pin `api_image` to an immutable release tag/sha — never `:latest` in prod.
-- Store prod secrets in Secrets Manager (separate from dev); reference ARNs in
-  `api_secrets`. The execution role reads only those ARNs.
+- `api_image` is supplied by the pipeline as `kortix/kortix-api:<version>` — the
+  exact release being shipped, always immutable. The committed default is the
+  moving `:latest` prod channel tag (retagged on every release) so a bare `plan`
+  resolves to a real published image; do not replace it with a hard-coded
+  version, which freezes at the release it was written on.
+- Prod secrets live in the `kortix-prod-env` Secrets Manager blob, which
+  `main.tf` passes as `secrets_blob_arn`. ECS injects the whole document as
+  `KORTIX_ENV_JSON` and the execution role reads only that ARN.
 - **`api_secrets` MUST include `MANAGED_GIT_GITHUB_TOKEN`** — the managed-git org
   PAT used by `POST /v1/projects/provision` to create repos under `managed-kortix`.
   Without it the code falls back to the GitHub App installation, which lacks
   Administration:write → `403 Resource not accessible by integration` → 502 on
-  EVERY "Create project". (EKS loads the whole bundle via `envFrom` so it tolerates
-  a missing key; ECS enumerates each `secrets` entry, so a dropped ref hard-fails.)
-  A `terraform apply` that omits it will silently re-break project creation.
+  EVERY "Create project". `api_secrets` is inert while `secrets_blob_arn` is set
+  (`modules/ecs-api/main.tf:459` enumerates the blob instead of each key), but the
+  map is committed in full so dropping the blob cannot silently drop that key.
 - Consider locking `alb_ingress_cidrs` (in the `ecs-api` module call) to
   Cloudflare's published IP ranges so the ALB only accepts proxied traffic.
 - Use a separate remote state backend / AWS account from dev. `.tfvars` and
-  state are gitignored.
+  state are gitignored; this root has neither a tfvars file nor an example.
 - Deploys = push a new image tag + `aws ecs update-service --force-new-deployment`
-  (rolling, min-healthy 100% / max 200%), or bump `api_image` and `apply`.
+  (rolling, min-healthy 100% / max 200%). `infra/scripts/ecs-deploy.sh` owns every
+  task-definition revision after the first; the service ignores `task_definition`
+  changes, so an apply never fights a deploy.

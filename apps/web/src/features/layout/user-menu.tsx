@@ -1,18 +1,7 @@
 'use client';
 
-import { ThemeToggle } from '@/components/home/theme-toggle';
 import { ReferralModal } from '@/components/referrals/referral-modal';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import { Button, buttonVariants } from '@/components/ui/button';
+import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -27,29 +16,37 @@ import {
   SidebarMenuItem,
 } from '@/components/ui/sidebar';
 import { UserAvatar } from '@/components/ui/user-avatar';
-import { SidePanelUserSettings } from '@/features/accounts/settings/side-panel-user-settings';
-import { DownloadAppsModal } from '@/features/layout/download-apps-modal';
-import { SupportModal } from '@/features/layout/support-modal';
+import {
+  HelpSubmenu,
+  THEME_OPTIONS,
+  ThemeSubmenu,
+  useLogoutFlow,
+} from '@/features/layout/user-menu-shared';
+import { type SettingsTab } from '@/features/workspace/settings/settings-tabs';
 import { isBillingEnabled } from '@/lib/config';
-import { openExternalRoute } from '@/lib/desktop';
-import { type SettingsTabId } from '@/lib/menu-registry';
-import { listAccounts } from '@kortix/sdk';
-import { createClient } from '@/lib/supabase/client';
 import { usePermission } from '@/lib/use-permission';
 import { cn } from '@/lib/utils';
-import { resetClientState } from '@/lib/utils/reset-client-state';
-import { useAccountSettingsModalStore } from '@/stores/account-settings-modal-store';
+import { useEnsureSelectedAccount } from '@/hooks/account/use-ensure-selected-account';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { useReferralDialog } from '@/stores/referral-dialog';
-import { BookOpen, CogOne, CreditCard, HomeSolid } from '@mynaui/icons-react';
+import { listAccounts } from '@kortix/sdk';
+import {
+  GearSixIcon as CogOne,
+  CreditCardIcon as CreditCard,
+  DownloadSimple,
+  SignOutIcon as LogOut,
+} from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
-import { Download, LifeBuoy, LogOut, Store } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import * as React from 'react';
 import { useEffect, useState } from 'react';
 
 export type UserMenuVariant = 'header' | 'sidebar';
+
+// Re-exported: `THEME_OPTIONS` moved to `user-menu-shared.tsx` when the sidebar
+// grew its own menu, and this stayed its public entry point.
+export { THEME_OPTIONS };
 
 export interface UserMenuUser {
   name: string;
@@ -69,28 +66,22 @@ export function UserMenu({
   const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
   const sidebar = React.useContext(SidebarContext);
-  const { selectedAccountId, setSelectedAccountId } = useCurrentAccountStore();
+  const { selectedAccountId } = useCurrentAccountStore();
   const { isOpen: referralOpen, closeDialog: closeReferral } = useReferralDialog();
 
   const [menuOpen, setMenuOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settingsTab, setSettingsTab] = useState<SettingsTabId>('general');
-  const [supportOpen, setSupportOpen] = useState(false);
-  const [downloadOpen, setDownloadOpen] = useState(false);
-  const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
 
   const accountsQuery = useQuery({
     queryKey: ['accounts'],
     queryFn: listAccounts,
     staleTime: 60_000,
   });
-  useEffect(() => {
-    const accounts = accountsQuery.data;
-    if (!accounts?.length) return;
-    if (!selectedAccountId || !accounts.find((a) => a.account_id === selectedAccountId)) {
-      setSelectedAccountId(accounts[0].account_id);
-    }
-  }, [accountsQuery.data, selectedAccountId, setSelectedAccountId]);
+  // Extracted verbatim to `hooks/account/use-ensure-selected-account.ts` so the
+  // standalone `/settings` route — which mounts `SettingsPanel` with no sidebar
+  // and therefore no `UserMenu` — can run the same seeding instead of copying
+  // it. Same `['accounts']` key and `staleTime` as the query above, so the two
+  // callers share one fetch.
+  useEnsureSelectedAccount();
 
   // In the collapsed sidebar's hover flyout, the menu content portals outside
   // the panel — hovering it fires the panel's pointer-leave and would collapse
@@ -111,21 +102,51 @@ export function UserMenu({
     requestAnimationFrame(() => fn());
   };
 
-  const openUserSettings = (tab: SettingsTabId) =>
-    deferAfterClose(() => {
-      setSettingsTab(tab);
-      setSettingsOpen(true);
-    });
+  /**
+   * NAVIGATE, do not poke the store.
+   *
+   * `useSettingsPanelStore.openSettings(tab)` only opens something when a
+   * `SettingsPanel` is mounted to observe it. There are exactly two such mounts
+   * — `project-layout/project-shell.tsx:195` and
+   * `workspace/settings/standalone-settings-route.tsx:113` — and `UserMenu` is
+   * inside NEITHER. Its only mount is the app header
+   * (`features/layout/app-header.tsx:108`, `variant="header"`), and the only
+   * layout rendering that header is `app/(app)/accounts/layout.tsx:26`. So a
+   * store write here set `open: true` with no subscriber and the rows did
+   * nothing at all — the click was silently swallowed.
+   *
+   * `/settings/<tab>` is the account-scoped door into the same overlay
+   * (`app/(app)/settings/[tab]/page.tsx` -> `StandaloneSettingsRoute`, which
+   * mounts the panel itself and validates the segment through
+   * `parseSettingsTab`). `SettingsTab` is the segment vocabulary, so the
+   * template needs no mapping table.
+   *
+   * `deferAfterClose` stays: the dropdown closes on the current frame and the
+   * navigation runs on the next, so the menu is not left mounted over a
+   * route transition.
+   */
+  const openUserSettings = (tab: SettingsTab) =>
+    deferAfterClose(() => router.push(`/settings/${tab}`));
 
-  const openLogoutConfirm = () => deferAfterClose(() => setLogoutConfirmOpen(true));
+  const { openConfirm: openLogoutConfirm, dialog: logoutDialog } = useLogoutFlow(deferAfterClose);
 
-  const performLogout = async () => {
-    const supabase = createClient();
-    await supabase.auth.signOut();
-    await resetClientState();
-    router.push('/auth');
-  };
-
+  /**
+   * One Help row.
+   *
+   * External rows render a real `<a target="_blank">` rather than calling
+   * `window.open` from a handler. Three reasons: the browser opens the tab
+   * inside the click's own user-gesture window, so no popup blocker can eat it
+   * — `deferAfterClose` defers a frame, which is exactly the kind of gap that
+   * trips one; cmd-click and middle-click keep working; and it is a link, so it
+   * reads as one to a screen reader.
+   *
+   * In the desktop shell `openExternalRoute` fires first and returns true — it
+   * hands the URL to the system browser — so the anchor's own navigation is
+   * cancelled to avoid opening the page twice.
+   *
+   * This is a plain function, not a component, so the rows are not remounted on
+   * every render of the menu.
+   */
   const trigger =
     variant === 'header' ? (
       <Button
@@ -143,11 +164,11 @@ export function UserMenu({
       </Button>
     ) : (
       <SidebarMenuButton
-        size="lg"
+        size="sm"
         className={cn(
-          'group/user relative gap-2 px-2.5 py-1',
+          'group/user relative gap-2 p-1',
           // 'hover:bg-sidebar-accent/60 data-[state=open]:bg-sidebar-accent',
-          'relative flex cursor-pointer items-center gap-2 rounded-md px-2 transition-colors duration-150',
+          'relative flex cursor-pointer items-center gap-2 rounded-md transition-colors duration-150',
           'group-data-[collapsible=icon]:!justify-center group-data-[collapsible=icon]:!gap-0 group-data-[collapsible=icon]:!px-0',
         )}
       >
@@ -155,14 +176,13 @@ export function UserMenu({
           email={user.email}
           name={user.name}
           avatarUrl={user.avatar}
-          size="md"
+          size="sm"
           className="border-border border"
         />
         <div className="flex min-w-0 flex-1 flex-col items-start justify-start space-y-0 text-left leading-tight group-data-[collapsible=icon]:hidden">
           <span className="text-foreground truncate text-sm font-medium tracking-tight">
             {user.name}
           </span>
-          <span className="text-muted-foreground/80 truncate text-xs">{user.email}</span>
         </div>
       </SidebarMenuButton>
     );
@@ -172,7 +192,10 @@ export function UserMenu({
       <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
       <DropdownMenuContent
         align={variant === 'sidebar' ? 'start' : 'end'}
-        side={variant === 'sidebar' ? (sidebar?.isMobile ? 'bottom' : 'top') : 'bottom'}
+        // `bottom` for both variants now. The sidebar copy opened upward while
+        // it lived in the FOOTER; it is the control at the TOP of the sidebar
+        // since the merge, where `top` would fly the menu off the viewport.
+        side="bottom"
         sideOffset={variant === 'sidebar' ? 6 : 8}
         className="w-[256px] space-y-0.5 overflow-hidden"
       >
@@ -182,18 +205,14 @@ export function UserMenu({
               onClick={() =>
                 deferAfterClose(() => router.push(`/accounts/${currentAccount.account_id}`))
               }
+              size="sm"
             >
-              <UserAvatar
-                email={user.email}
-                name={user.name}
-                avatarUrl={user.avatar}
-                size="lg"
-                className="border-border border"
-              />
+              {/* No avatar: the trigger right below already shows it, and
+                  repeating it inside the menu it opened is decoration. The
+                  email is the identifier that actually disambiguates which
+                  account you are about to open. */}
               <div className="min-w-0 flex-1 leading-tight">
-                <div className="text-foreground truncate text-sm font-medium">
-                  {currentAccount.name}
-                </div>
+                <div className="text-foreground truncate text-sm font-medium">{user.email}</div>
                 <div className="text-muted-foreground/70 mt-0.5 truncate text-xs">
                   {tI18nHardcoded.raw('autoFeaturesLayoutUserMenuJsxTextAccountSettings007162f5')}
                 </div>
@@ -204,68 +223,63 @@ export function UserMenu({
           </>
         )}
 
-        <DropdownMenuItem onClick={() => deferAfterClose(() => router.push('/projects'))}>
-          <HomeSolid />
-          Home
-        </DropdownMenuItem>
-
-        <DropdownMenuItem onClick={() => deferAfterClose(() => router.push('/marketplace'))}>
-          <Store />
-          Marketplace
-        </DropdownMenuItem>
-
-        <DropdownMenuItem
-          onClick={() =>
-            deferAfterClose(() => {
-              if (!openExternalRoute('/docs')) router.push('/docs');
-            })
-          }
-        >
-          <BookOpen />
-          Docs
-        </DropdownMenuItem>
-
-        <DropdownMenuItem onClick={() => deferAfterClose(() => setDownloadOpen(true))}>
-          <Download />
-          {tI18nHardcoded.raw('autoFeaturesLayoutUserMenuJsxTextDownloadApps2765d8e7')}
-        </DropdownMenuItem>
-
-        <DropdownMenuItem onClick={() => deferAfterClose(() => setSupportOpen(true))}>
-          <LifeBuoy />
-          Support
-        </DropdownMenuItem>
-
-        <DropdownMenuItem onClick={() => openUserSettings('general')}>
+        {/* Personal settings sits high: it is the item people come here for. The
+            account row above goes to the account page — a different
+            destination, which is why this one is not also called "settings". */}
+        {/* `profile`, NOT `general`. In the merged settings vocabulary
+            (`settings-tabs.ts`) `general` is Workspace → General, a
+            PROJECT-scoped tab; the user's own name/email/avatar/delete-account
+            surface — what the pre-merge `SidePanelUserSettings` called
+            `general` — is the `profile` tab. `general` is also absent from
+            `ACCOUNT_SCOPED_SETTINGS_TABS`, so with no project open the rail
+            filters it out and the panel falls back anyway. Same tab
+            `/settings` opens on (`STANDALONE_DEFAULT_SETTINGS_TAB`). */}
+        <DropdownMenuItem onClick={() => openUserSettings('profile')} size="sm">
           <CogOne />
-
           {tHardcodedUi.raw('componentsLayoutUserMenu.line209JsxAttrLabelUserSettings')}
         </DropdownMenuItem>
 
-        {isBillingEnabled() && canManageBilling && (
+        <DropdownMenuItem onClick={() => deferAfterClose(() => router.push('/download'))} size="sm">
+          <DownloadSimple />
+          {tI18nHardcoded.raw('autoFeaturesLayoutUserMenuJsxTextDownloadApps2765d8e7')}
+        </DropdownMenuItem>
+
+        {/* `/accounts/<id>?tab=billing`, NOT `/settings/billing`. Billing is
+            an ACCOUNT setting and it left the settings overlay for the account
+            page; `parseSettingsTab('billing')` returns `null` now, so the old
+            href would have landed on the overlay's default tab. Gated on
+            `currentAccount` for the same reason — without an account id there
+            is no page to open. The `isBillingEnabled() && canManageBilling`
+            gate is unchanged: the page renders the Billing section for anyone
+            who reaches it, so the row staying hidden is what keeps a member
+            without `billing.write` from being handed the link. */}
+        {currentAccount && isBillingEnabled() && canManageBilling && (
           <DropdownMenuItem
             onClick={() =>
               deferAfterClose(() =>
-                useAccountSettingsModalStore.getState().openAccountSettings({ tab: 'billing' }),
+                router.push(`/accounts/${currentAccount.account_id}?tab=billing`),
               )
             }
+            size="sm"
           >
             <CreditCard />
             Billing
           </DropdownMenuItem>
         )}
 
-        <DropdownMenuItem variant="destructive" onClick={openLogoutConfirm}>
-          <LogOut />
+        <ThemeSubmenu />
 
-          {tHardcodedUi.raw('componentsLayoutUserMenu.line248JsxAttrLabelLogOut')}
-        </DropdownMenuItem>
+        <HelpSubmenu deferAfterClose={deferAfterClose} onClose={() => setMenuOpen(false)} />
 
+        {/* Log out is the only row that ends something, so it gets its own
+            group. Nothing sits below it — the last item in a menu is the one a
+            slipped pointer lands on. */}
         <DropdownMenuSeparator />
 
-        <div className="focus:bg-foreground/10 focus:text-foreground relative flex cursor-default items-center justify-between gap-2 rounded-sm px-2 py-[0.3rem] text-sm transition-colors outline-none select-none data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0">
-          Theme
-          <ThemeToggle variant="compact" />
-        </div>
+        <DropdownMenuItem onClick={openLogoutConfirm} size="sm">
+          <LogOut />
+          {tHardcodedUi.raw('componentsLayoutUserMenu.line248JsxAttrLabelLogOut')}
+        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -282,35 +296,8 @@ export function UserMenu({
         dropdown
       )}
 
-      <SidePanelUserSettings
-        open={settingsOpen}
-        onOpenChange={setSettingsOpen}
-        defaultTab={settingsTab}
-      />
-      <SupportModal open={supportOpen} onOpenChange={setSupportOpen} />
-      <DownloadAppsModal open={downloadOpen} onOpenChange={setDownloadOpen} />
       <ReferralModal open={referralOpen} onOpenChange={closeReferral} />
-      <AlertDialog open={logoutConfirmOpen} onOpenChange={setLogoutConfirmOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {tI18nHardcoded.raw('autoFeaturesLayoutUserMenuJsxTextLogOutOfYour4770ea0c')}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {tI18nHardcoded.raw('autoFeaturesLayoutUserMenuJsxTextYouLlNeedToee9fad67')}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              className={buttonVariants({ variant: 'destructive' })}
-              onClick={performLogout}
-            >
-              {tHardcodedUi.raw('componentsLayoutUserMenu.line248JsxAttrLabelLogOut')}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {logoutDialog}
     </>
   );
 }

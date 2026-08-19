@@ -3,12 +3,8 @@
  *
  * The scope controls belong next to the input, not in a dialog someone saw once
  * before the session existed — "which secrets can this thing read?" is asked
- * mid-conversation. But two of the four answers are written exactly once, at
- * create (`mid-session-change.ts`), so the bar has to be able to tell an
- * editable control from a decorative one BEFORE it renders either. A control
- * that appears to re-scope a running session — and silently doesn't — is worse
- * than no bar at all, so that judgement lives here, in a pure module, where it
- * can be asserted.
+ * mid-conversation. The bar reads authoritative scope before it offers
+ * replacement controls.
  *
  * Everything else here is presentation the copy depends on being right about:
  * which secrets are in and which are out, which identifiers the allowlist names
@@ -16,8 +12,14 @@
  * bind.
  */
 
-import { type ConnectorBindingNotice, connectorBindingNotice } from '@/lib/connector-binding';
-import { collidingIdentifiers, normalizeSecretKey } from '@/lib/secret-collisions';
+import {
+  type ConnectorBindingNotice,
+  connectorBindingNotice,
+} from '@/lib/connector-binding';
+import {
+  collidingIdentifiers,
+  normalizeSecretKey,
+} from '@/lib/secret-collisions';
 import { isAllowlistable } from '@/lib/secret-scope';
 import { type ScopeRowKey, isFixedAtStart } from '@/lib/session-scope';
 import type {
@@ -47,7 +49,7 @@ const COPY: Record<ScopeControlKey, { badge: string; note: string }> = {
   },
   agent: {
     badge: 'Per message',
-    note: 'Each message names the agent that runs it, and the composer above picks it. An agent whose SECRET access differs from the one this session booted with is refused — only a new session can run it.',
+    note: 'Each message names the agent that runs it, and the composer above picks it. A switch re-scopes future secret delivery, connector access, and Kortix CLI access to the selected agent.',
   },
   secrets: {
     badge: 'Changeable',
@@ -63,12 +65,7 @@ export function scopeControl(key: ScopeControlKey): ScopeControl {
   return { key, live: !isFixedAtStart(key), ...COPY[key] };
 }
 
-/**
- * The only honest action a create-only row can offer.
- *
- * Not "apply", not "save": nothing on a running session accepts either, so the
- * button has to name what actually happens.
- */
+/** Optional fallback when a user wants a separate session. */
 export const START_NEW_SESSION_ACTION = 'Start a new session with this scope';
 
 // ── Secrets ─────────────────────────────────────────────────────────────────
@@ -96,7 +93,7 @@ export interface ScopeBarSecretRow {
 }
 
 export interface ScopeBarSecrets {
-  /** Did this session start with an allowlist at all? */
+  /** Whether the authoritative scope has an allowlist. */
   narrowed: boolean;
   rows: ScopeBarSecretRow[];
   /** Allowlisted identifiers with no project secret behind them. */
@@ -139,9 +136,13 @@ export function scopeBarSecrets(input: {
   // disappearance `missing` exists to prevent. It cannot be in a live allowlist
   // legitimately anyway: create would have refused it.
   const known = new Set(
-    (input.secrets ?? []).filter(isAllowlistable).map((secret) => secret.identifier),
+    (input.secrets ?? [])
+      .filter(isAllowlistable)
+      .map((secret) => secret.identifier),
   );
-  const missing = (allowlist ?? []).filter((identifier) => !known.has(identifier));
+  const missing = (allowlist ?? []).filter(
+    (identifier) => !known.has(identifier),
+  );
 
   if (!narrowed) {
     return {
@@ -150,7 +151,7 @@ export function scopeBarSecrets(input: {
       missing,
       summary: 'Agent grant',
       detail:
-        'This session started without an allowlist, so it reads whatever its agent is granted — which can be fewer of these than the list suggests.',
+        'The current scope has no allowlist, so the session reads whatever its agent is granted — which can be fewer of these than the list suggests.',
     };
   }
   if (allowed.size === 0) {
@@ -160,7 +161,7 @@ export function scopeBarSecrets(input: {
       missing,
       summary: 'None',
       detail:
-        'This session started with an empty allowlist, which is a real choice and not an empty state: it receives no project secrets at all.',
+        'The current scope has an empty allowlist. This is a real choice: the session receives no project secrets.',
     };
   }
   return {
@@ -187,16 +188,14 @@ export interface ScopeDraftIssue {
 }
 
 export const NEW_IDENTIFIER_HINT =
-  'You can name an identifier that does not exist yet, but a session cannot create one: add it in Settings → Secrets first, then start a session that allows it. A start that names a missing identifier is refused.';
+  'A session cannot create a secret. Add the identifier in Settings → Secrets before you apply this scope. A replacement that names a missing identifier is refused.';
 
 /**
  * Both ways a drafted allowlist gets refused, checked here rather than
  * discovered at the create.
  *
  * `not_created` is 404 SECRET_IDENTIFIER_NOT_FOUND and `key_collision` is 409
- * SECRET_IDENTIFIER_KEY_COLLISION — and neither is fixable afterwards, because
- * an allowlist cannot be edited once written. So the bar refuses to start
- * rather than starting something that cannot boot.
+ * SECRET_IDENTIFIER_KEY_COLLISION.
  */
 export function scopeDraftIssues(
   draft: string[],
@@ -219,7 +218,7 @@ export function scopeDraftIssues(
         identifier,
         kind: 'not_created',
         conflicts: [],
-        message: `${identifier} is not a project secret yet. Create it in Settings → Secrets, then start a session that allows it.`,
+        message: `${identifier} is not a project secret yet. Create it in Settings → Secrets before you apply this scope.`,
       });
       continue;
     }
@@ -251,22 +250,26 @@ export function classifyTypedIdentifier(
 ): TypedIdentifier {
   const identifier = text.trim();
   if (identifier.length === 0) return { kind: 'empty' };
-  if (input.draft.includes(identifier)) return { kind: 'already_listed', identifier };
+  if (input.draft.includes(identifier))
+    return { kind: 'already_listed', identifier };
   // Same filter as scopeDraftIssues: "exists" here must mean "can be allowed",
   // otherwise the field tells the user an identifier is fine and create 404s.
   const exists = (input.secrets ?? [])
     .filter(isAllowlistable)
     .some((secret) => secret.identifier === identifier);
-  return exists ? { kind: 'existing', identifier } : { kind: 'unknown', identifier };
+  return exists
+    ? { kind: 'existing', identifier }
+    : { kind: 'unknown', identifier };
 }
 
 // ── Connections ─────────────────────────────────────────────────────────────
 
 export interface ScopeBarConnector {
   alias: string;
-  /** What THIS session is bound to — the label recorded at create. null = the project default. */
+  /** What THIS session is bound to. null = the project default. */
   bound: string | null;
-  /** What a NEW session could bind for this alias. */
+  boundConnectionId: string | null;
+  /** Connections available for a replacement binding. */
   choices: BindableConnection[];
   unavailable: ConnectorBindingUnavailable | null;
   /** The remedy when nothing is bindable. Always a teammate — never "connect it yourself". */
@@ -288,54 +291,64 @@ export interface ScopeBarConnectors {
  */
 export function scopeBarConnectors(input: {
   choices: ConnectorBindingChoice[] | undefined;
-  /** Alias -> label, as this wrapper recorded it at create. */
+  /** Alias -> connection identifier from GET session scope. */
   boundConnections: Record<string, string>;
 }): ScopeBarConnectors {
   const choices = input.choices ?? [];
   const aliases = [
-    ...new Set([...choices.map((choice) => choice.alias), ...Object.keys(input.boundConnections)]),
+    ...new Set([
+      ...choices.map((choice) => choice.alias),
+      ...Object.keys(input.boundConnections),
+    ]),
   ].sort((a, b) => a.localeCompare(b));
 
   const rows: ScopeBarConnector[] = aliases.map((alias) => {
-    const choice = choices.find((candidate) => candidate.alias === alias) ?? null;
+    const choice =
+      choices.find((candidate) => candidate.alias === alias) ?? null;
+    const connectionId = input.boundConnections[alias] ?? null;
+    const connection = choice?.connections.find(
+      (candidate) => candidate.connectionId === connectionId,
+    );
     return {
       alias,
-      bound: input.boundConnections[alias] ?? null,
+      bound: connectionId ? (connection?.label ?? connectionId) : null,
+      boundConnectionId: connectionId,
       choices: choice?.connections ?? [],
       unavailable: choice?.unavailable ?? null,
       // Only ask for a notice when the server actually reported a reason.
       // A synthesized row (bound, but no longer in the choices) has no reason,
       // and `connectorBindingNotice` would fall through to "private only" —
       // naming a cause nobody established.
-      notice: choice && choice.unavailable !== null ? connectorBindingNotice(choice) : null,
+      notice:
+        choice && choice.unavailable !== null
+          ? connectorBindingNotice(choice)
+          : null,
     };
   });
 
   const bound = rows.filter((row) => row.bound !== null).length;
   const summary =
-    rows.length === 0 ? 'None' : bound === 0 ? 'Project defaults' : `${bound} bound`;
+    rows.length === 0
+      ? 'None'
+      : bound === 0
+        ? 'Project defaults'
+        : `${bound} bound`;
   return { rows, summary };
 }
 
 /**
- * The bindings to pre-fill the next session with, recovered from the labels
- * this session recorded.
+ * Has the user actually drafted a change worth applying?
  *
- * The platform never serializes a session's `connector_bindings` back, so the
- * label in metadata is all there is. An alias whose label no longer resolves to
- * a bindable connection is simply left out — which lands it on the project
- * default, exactly where an unbindable alias would end up anyway.
+ * The draft states are three-valued and easy to get wrong:
+ *   `undefined` — untouched, so there is nothing to apply
+ *   `null`      — deliberately "stop narrowing" (a real, applicable change)
+ *   `string[]`  — an explicit list, including `[]` for "no project secrets"
+ *
+ * The first version tested `draft !== null`, which is TRUE for the untouched
+ * `undefined` — so the Apply button rendered from first paint, above a list the
+ * user had not edited. Every one of `null`, `[]` and a populated list is a real
+ * change; only `undefined` is not.
  */
-export function seedBindingsFromLabels(rows: ScopeBarConnector[]): Record<string, string> {
-  const bindings: Record<string, string> = {};
-  for (const row of rows) {
-    if (row.bound === null) continue;
-    const match = row.choices.find(
-      // `buildSessionCreateInput` records the profile id when no label was
-      // known, so accept either form.
-      (connection) => connection.label === row.bound || connection.profileId === row.bound,
-    );
-    if (match) bindings[row.alias] = match.profileId;
-  }
-  return bindings;
+export function hasScopeDraft<T>(draft: T | undefined): draft is T {
+  return draft !== undefined;
 }

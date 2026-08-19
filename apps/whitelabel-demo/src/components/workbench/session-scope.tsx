@@ -12,13 +12,21 @@
  */
 
 import { CallSnippet } from '@/components/dev/call-snippet';
+import { useConnectorBindingChoices } from '@/components/connector-bindings';
+import { scopeBarConnectors } from '@/components/chat/scope-bar-model';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ModelSwitcher } from '@/components/workbench/model-switcher';
 import type { CallSnippetId } from '@/lib/call-snippets';
 import { kortix } from '@/lib/kortix';
 import { qk } from '@/lib/query-keys';
-import { isFixedAtStart, readBoundConnections, sessionScopeIsReadable, sessionScopeRows, type ScopeRowKey } from '@/lib/session-scope';
+import {
+  isFixedAtStart,
+  readScopeBindingIds,
+  sessionScopeIsReadable,
+  sessionScopeRows,
+  type ScopeRowKey,
+} from '@/lib/session-scope';
 import { useQuery } from '@tanstack/react-query';
 import { Lock, Plug, RefreshCw, Repeat } from 'lucide-react';
 
@@ -30,23 +38,34 @@ const ICONS: Record<ScopeRowKey, typeof Lock> = {
 };
 
 /**
- * The call that MOVES a row — only the two rows that can still move have one.
- * The frozen rows share the create call below, because the honest answer to
- * "how do I change this?" is "you don't, you start a session".
+ * The call that moves each row with a dedicated inline control.
  */
 const ROW_CALL: Partial<Record<ScopeRowKey, CallSnippetId>> = {
   model: 'session.model',
   agent: 'session.prompt',
 };
 
-export function SessionScope({ projectId, sessionId }: { projectId: string; sessionId: string }) {
+export function SessionScope({
+  projectId,
+  sessionId,
+}: {
+  projectId: string;
+  sessionId: string;
+}) {
   const session = useQuery({
     queryKey: qk.session(projectId, sessionId),
-    queryFn: () => kortix.session(projectId, sessionId).get({ showErrors: false }),
+    queryFn: () =>
+      kortix.session(projectId, sessionId).get({ showErrors: false }),
     retry: false,
   });
+  const scope = useQuery({
+    queryKey: qk.sessionScope(projectId, sessionId),
+    queryFn: () => kortix.session(projectId, sessionId).scope(),
+    retry: false,
+  });
+  const connectors = useConnectorBindingChoices(projectId);
 
-  if (session.isLoading) {
+  if (session.isLoading || scope.isLoading) {
     return (
       <div className="space-y-2">
         {Array.from({ length: 4 }).map((_, i) => (
@@ -67,10 +86,11 @@ export function SessionScope({ projectId, sessionId }: { projectId: string; sess
   // NOT open would render as LESS restricted than one they may. `can_access` is
   // on the payload for exactly this; not reading it turns a redaction into a
   // false reassurance.
-  if (!sessionScopeIsReadable(session.data)) {
+  if (!sessionScopeIsReadable(session.data) || !scope.data) {
     return (
       <p className="rounded-md border border-border bg-card px-3 py-2.5 text-xs text-muted-foreground">
-        This session&apos;s scope could not be read just now. Reopen the session to try again.
+        This session&apos;s scope could not be read just now. Reopen the session
+        to try again.
       </p>
     );
   }
@@ -78,11 +98,18 @@ export function SessionScope({ projectId, sessionId }: { projectId: string; sess
   // Read once, out here: the readability check above narrows `session.data`,
   // and that narrowing does not survive into the row callbacks below.
   const agentName = session.data.agent_name ?? null;
+  const connectionRows = scopeBarConnectors({
+    choices: connectors.data?.connectors,
+    boundConnections: readScopeBindingIds(scope.data.connector_bindings),
+  }).rows;
   const rows = sessionScopeRows({
     agentName: session.data.agent_name,
-    // null = never narrowed, which is the opposite of an empty allowlist.
-    secretsAllowlist: session.data.secrets_allowlist ?? null,
-    boundConnections: readBoundConnections(session.data.metadata),
+    secretsAllowlist: scope.data.secrets_allowlist,
+    boundConnections: Object.fromEntries(
+      connectionRows.flatMap((row) =>
+        row.bound ? [[row.alias, row.bound]] : [],
+      ),
+    ),
   });
 
   return (
@@ -101,7 +128,10 @@ export function SessionScope({ projectId, sessionId }: { projectId: string; sess
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
                 <span className="text-sm font-medium">{row.label}</span>
-                <Badge variant={fixed ? 'secondary' : 'outline'} className="text-xs">
+                <Badge
+                  variant={fixed ? 'secondary' : 'outline'}
+                  className="text-xs"
+                >
                   {row.badge}
                 </Badge>
               </div>
@@ -111,9 +141,13 @@ export function SessionScope({ projectId, sessionId }: { projectId: string; sess
                 </div>
               )}
               {row.value !== null && (
-                <div className="mt-0.5 break-words font-mono text-xs">{row.value}</div>
+                <div className="mt-0.5 break-words font-mono text-xs">
+                  {row.value}
+                </div>
               )}
-              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{row.detail}</p>
+              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                {row.detail}
+              </p>
               {ROW_CALL[row.key] && (
                 <div className="-ml-2 mt-1">
                   <CallSnippet
@@ -127,27 +161,16 @@ export function SessionScope({ projectId, sessionId }: { projectId: string; sess
         );
       })}
 
-      {/* Everything frozen above was decided in ONE request. Showing it here is
-          the difference between "you can't change this" and "here is where it
-          was chosen" — filled in from what this session actually reports, so it
-          is this session's call rather than an example of one. */}
       <div className="rounded-md border border-dashed border-border px-3 py-2.5">
         <p className="text-xs leading-relaxed text-muted-foreground">
-          The frozen rows were fixed by the call that opened this session. The agent and the
-          allowlist below are read back from the session; connector bindings are not — the platform
-          accepts them at create and never serializes them, which is why Lumen keeps its own record.
+          The secret allowlist and connections above come from the
+          session scope endpoint. Saving a change sends one complete
+          replacement.
         </p>
         <div className="-ml-2 mt-1">
           <CallSnippet
-            id="session.create"
-            context={{
-              projectId,
-              sessionId,
-              overrides: {
-                agent: agentName,
-                secrets: session.data.secrets_allowlist ?? null,
-                bindings: {}, runtimeContext: null },
-            }}
+            id="session.rescope"
+            context={{ projectId, sessionId }}
           />
         </div>
       </div>

@@ -15,6 +15,26 @@ export const PROJECT_LANDING_PATH = '/projects/start';
 /** Non-httpOnly so middleware can read it and the project page can set it. */
 export const LAST_PROJECT_COOKIE = 'kortix_last_project';
 
+/**
+ * Set at the moment authentication completes — by the `/auth/callback` route
+ * on its redirect response, and by the `/auth` page before its client-side
+ * redirect. It marks the navigation that follows as "the user just signed
+ * in", which is the strongest possible proof of intent the landing door can
+ * ask for before provisioning a first project.
+ *
+ * This exists because `document.referrer` cannot carry that proof: a magic
+ * link opened from Gmail arrives with a `https://mail.google.com/` referrer,
+ * an OAuth signup arrives from the IdP, and a client-side redirect keeps
+ * whatever referrer `/auth` itself was loaded with (often a search engine).
+ * All of those are cross-origin, so a referrer-only CSRF gate demoted exactly
+ * the users it must never demote — brand-new signups — to the projects list.
+ * A cross-site attacker can strip a referrer, but cannot set this cookie.
+ */
+export const POST_AUTH_INTENT_COOKIE = 'kortix_post_auth';
+
+/** Short-lived on purpose: it only has to outlive the post-auth redirect. */
+export const POST_AUTH_INTENT_MAX_AGE = 60 * 5;
+
 /** One year. The value is a project id, not a credential. */
 export const LAST_PROJECT_COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
 

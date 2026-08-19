@@ -35,7 +35,7 @@ const KNOWN_STATES: readonly BillingState[] = [
 ];
 
 const DEAD_SUBSCRIPTION_STATUSES = new Set(['canceled', 'unpaid', 'incomplete_expired']);
-const FAILING_STATUSES = new Set(['past_due', 'unpaid', 'incomplete']);
+const FAILING_STATUSES = new Set(['past_due', 'unpaid', 'incomplete', 'incomplete_expired']);
 
 export type AccountStateLike = Pick<
   AccountState,
@@ -70,9 +70,16 @@ export function resolveBillingState(
   if (isBillingState(state.billing_state)) return state.billing_state;
 
   // Fallback derivation for an API that predates `billing_state`.
+  //
+  // The failing-payment check comes BEFORE the per-seat bypass, mirroring
+  // apps/api/src/billing/services/billing-state.ts: only a subscription Stripe
+  // is actually collecting on skips the wallet floor. With the checks the other
+  // way round, a `past_due` per-seat account rendered as fully `active` here
+  // while the server had already blocked it — the two copies of this decision
+  // disagreeing is the exact defect class this module exists to prevent.
   if (state.credits?.can_run === true) return 'active';
-  if (accountHasLiveSubscription(state) && state.billing_model === 'per_seat') return 'active';
   if (FAILING_STATUSES.has(state.subscription?.status ?? '')) return 'payment_failed';
+  if (accountHasLiveSubscription(state) && state.billing_model === 'per_seat') return 'active';
   if (state.subscription?.subscription_id || state.tier?.can_purchase_credits) {
     return 'out_of_credits';
   }

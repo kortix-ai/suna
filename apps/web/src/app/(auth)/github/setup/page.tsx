@@ -16,7 +16,7 @@ import {
   saveGitHubInstallation,
   type LinkableGitHubInstallation,
 } from '@kortix/sdk';
-import { Github } from 'lucide-react';
+import { GithubLogoIcon as Github } from '@phosphor-icons/react';
 import { useAppHome } from '@/lib/onboarding/use-app-home';
 
 type SetupState = 'verify' | 'loading' | 'select' | 'empty' | 'saving' | 'done' | 'error';
@@ -179,7 +179,7 @@ function GitHubSetup() {
         : 'GitHub connected. Redirecting you back now.',
     );
     redirectTimer.current = window.setTimeout(
-      () => router.replace(consumeGitHubSetupReturn() ?? '/projects?new=1'),
+      () => router.replace(consumeGitHubSetupReturn() ?? '/new'),
       900,
     );
   }

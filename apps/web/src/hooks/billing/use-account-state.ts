@@ -13,7 +13,8 @@
  */
 
 import { errorToast, infoToast, successToast } from '@/components/ui/toast';
-import { useBillingAccountId } from '@/stores/billing-account-context';
+import { shouldQueryAccountState } from '@/hooks/billing/account-state-gating';
+import { useBillingAccountId, useBillingAccountResolved } from '@/stores/billing-account-context';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import {
@@ -32,6 +33,7 @@ import {
   type AccountState,
 } from '@kortix/sdk';
 import { dollarsToCredits } from '@kortix/shared';
+import { SEAT_GRANT_USD } from '@/features/billing/compute-pricing';
 
 export type { AccountState };
 
@@ -184,12 +186,20 @@ interface UseAccountStateOptions {
  * - Agent run completes (credits deducted)
  */
 export function useAccountState(options?: UseAccountStateOptions) {
-  const enabled = options?.enabled ?? true;
   // Explicit option wins; fall back to the nearest BillingAccountProvider so
   // any consumer inside /accounts/[id] is automatically scoped without
   // every call site having to pass the id by hand.
   const contextAccountId = useBillingAccountId();
+  const contextResolved = useBillingAccountResolved();
   const accountId = options?.accountId ?? contextAccountId;
+  // Hold the query until the surface knows whose account it is; fetching the
+  // primary account as a stand-in only to swap cache slots is what made every
+  // presence-driven billing UI paint, unpaint, and paint again on cold load.
+  const enabled = shouldQueryAccountState({
+    enabled: options?.enabled ?? true,
+    hasExplicitAccountId: options?.accountId !== undefined,
+    contextResolved,
+  });
 
   return useQuery<AccountState>({
     queryKey: accountStateKeys.state(accountId),
@@ -227,9 +237,16 @@ export function useAccountStateWithStreaming(isStreaming: boolean = false) {
   // Inherit the BillingAccountProvider if one is wrapping us — keeps the
   // streaming variant aligned with the static one on /accounts/[id].
   const accountId = useBillingAccountId();
+  const contextResolved = useBillingAccountResolved();
   return useQuery<AccountState>({
     queryKey: accountStateKeys.state(accountId),
     queryFn: () => getAccountState({ accountId }),
+    // Same wait as useAccountState — never fetch under a provisional account.
+    enabled: shouldQueryAccountState({
+      enabled: true,
+      hasExplicitAccountId: false,
+      contextResolved,
+    }),
     staleTime: 1000 * 60 * 5, // 5 minutes during streaming
     gcTime: 1000 * 60 * 15,
     refetchOnWindowFocus: false,
@@ -298,7 +315,7 @@ export function useCreatePerSeatCheckout() {
         useUpgradeDialogStore.getState().closeUpgradeDialog();
         await invalidateAccountState(queryClient, true, true, accountId);
         successToast('Subscription activated', {
-          description: `${data.seat_count} seat${data.seat_count === 1 ? '' : 's'} active · $${20 * data.seat_count} of usage credit deposited.`,
+          description: `${data.seat_count} seat${data.seat_count === 1 ? '' : 's'} active · $${SEAT_GRANT_USD * data.seat_count} of usage credit deposited.`,
         });
         return;
       }
@@ -550,15 +567,11 @@ export const accountStateSelectors = {
   tierDisplayName: (state: AccountState | undefined) =>
     state?.subscription?.tier_display_name ?? 'No Plan',
 
-  /** Get plan name for TierBadge (e.g., 'Plus', 'Pro', 'Ultra', 'Basic') */
-  planName: (state: AccountState | undefined) => {
-    if (!state?.subscription) return 'Basic';
-    const tierKey = state.subscription.tier_key || state.tier?.name;
-    if (!tierKey || tierKey === 'none' || tierKey === 'free') return 'Basic';
-
-    if (tierKey === 'pro') return 'Pro';
-    return 'Basic';
-  },
+  // REMOVED: `planName`. It was a third frontend tier catalog — a hand-written
+  // tier_key -> display-name map that only knew 'pro' and called every other
+  // paid plan 'Basic', so a per-seat Team account read as Basic. It had no
+  // callers. Use `resolvedPlan(state).label` (@kortix/sdk), which reads the
+  // server's plan block.
 
   /** Check if subscription is cancelled */
   isCancelled: (state: AccountState | undefined) => state?.subscription?.is_cancelled ?? false,

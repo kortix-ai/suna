@@ -1,12 +1,9 @@
 'use client';
 
-import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
-import { ChevronRight, FileIcon, FileText, Folder } from 'lucide-react';
-import { type ReactNode, useState } from 'react';
-import { useOcFileOpen } from '@/features/session/use-oc-file-open';
-import { useToolNavigation } from '@/features/session/tool/shared/infrastructure';
 import { getDirectory, getFilename } from '@/ui';
+import { CaretRightIcon as ChevronRight, FileTextIcon as FileText } from '@phosphor-icons/react';
+import { type ReactNode, useState } from 'react';
 
 export function parseFilePaths(output: string): string[] | null {
   if (!output) return null;
@@ -32,7 +29,9 @@ export interface GrepFileGroup {
   matches: GrepMatch[];
 }
 
-export function parseGrepOutput(output: string): { matchCount: number; groups: GrepFileGroup[] } | null {
+export function parseGrepOutput(
+  output: string,
+): { matchCount: number; groups: GrepFileGroup[] } | null {
   if (!output) return null;
   const text = String(output).trim();
   const headerMatch = text.match(/^Found\s+(\d+)\s+match/i);
@@ -95,11 +94,15 @@ export function ToolListRow({
   return (
     <div
       className={cn(
-        'group flex items-center gap-1.5 px-3 py-1 transition-colors',
+        // Same row grammar as WebSourceRow: leading glyph, the name taking the
+        // free space, and the secondary detail parked on the right. A file list
+        // and a source list are the same shape of thing — a set of results the
+        // tool found — so they should not read as two different components.
+        'group flex items-center gap-2.5 rounded-sm px-2 py-2 transition-colors duration-150',
         disabled
           ? 'cursor-default opacity-70'
           : onClick
-            ? 'hover:bg-muted/50 cursor-pointer'
+            ? 'hover:bg-muted cursor-pointer'
             : undefined,
       )}
       onClick={onClick && !disabled ? onClick : undefined}
@@ -108,35 +111,37 @@ export function ToolListRow({
       {chevron && (
         <ChevronRight
           className={cn(
-            'text-muted-foreground size-3 flex-shrink-0 transition-transform',
+            'text-muted-foreground/60 size-3.5 shrink-0 transition-transform',
             chevron === 'expanded' && 'rotate-90',
           )}
         />
       )}
-      <span className="text-muted-foreground/50 group-hover:text-foreground/60 flex-shrink-0 transition-colors [&>svg]:size-3">
+      <span className="text-muted-foreground/60 group-hover:text-foreground/70 shrink-0 transition-colors [&>svg]:size-4">
         {icon}
       </span>
-      <span className="flex min-w-0 flex-1 items-baseline gap-1.5 overflow-hidden text-xs">
-        <span
-          className={cn(
-            'text-foreground flex-shrink-0 font-mono font-medium whitespace-nowrap',
-            onNameClick && !disabled && 'hover:text-primary cursor-pointer transition-colors',
-          )}
-          onClick={
-            onNameClick && !disabled
-              ? (e) => {
-                  e.stopPropagation();
-                  onNameClick();
-                }
-              : undefined
-          }
-        >
-          {name}
-        </span>
-        {dir && <span className="text-muted-foreground/40 truncate text-xs">{dir}</span>}
+      <span
+        className={cn(
+          'text-foreground min-w-0 flex-1 truncate font-mono text-sm',
+          onNameClick && !disabled && 'hover:text-primary cursor-pointer transition-colors',
+        )}
+        onClick={
+          onNameClick && !disabled
+            ? (e) => {
+                e.stopPropagation();
+                onNameClick();
+              }
+            : undefined
+        }
+      >
+        {name}
       </span>
+      {dir && (
+        <span className="text-muted-foreground max-w-[40%] shrink-0 truncate font-mono text-sm">
+          {dir}
+        </span>
+      )}
       {trailing !== undefined && trailing !== null && (
-        <span className="text-muted-foreground/50 flex-shrink-0 text-xs">{trailing}</span>
+        <span className="text-muted-foreground shrink-0 text-sm tabular-nums">{trailing}</span>
       )}
     </div>
   );
@@ -154,12 +159,12 @@ export function InlineFileList({
   disabled?: boolean;
 }) {
   return (
-    <div className="py-0.5">
-      {paths.map((fp, i) => {
+    <div>
+      {paths.map((fp) => {
         const dp = toDisplayPath(fp);
         return (
           <ToolListRow
-            key={i}
+            key={fp}
             icon={<FileText />}
             name={getFilename(dp) ?? dp}
             dir={getDirectory(dp)}
@@ -187,13 +192,13 @@ export function InlineGrepResults({
   const [expandedIndex, setExpandedIndex] = useState<number | null>(groups.length === 1 ? 0 : null);
 
   return (
-    <div className="py-0.5">
+    <div>
       {groups.map((group, i) => {
         const dp = toDisplayPath(group.filePath);
         const isExpanded = expandedIndex === i;
 
         return (
-          <div key={i}>
+          <div key={group.filePath}>
             <ToolListRow
               icon={<FileText />}
               name={getFilename(dp) ?? dp}
@@ -212,7 +217,7 @@ export function InlineGrepResults({
                     key={j}
                     className="border-border/10 flex items-start gap-0 border-b last:border-b-0"
                   >
-                    <span className="text-muted-foreground/50 w-10 flex-shrink-0 py-1 pr-2 text-right font-mono text-xs select-none">
+                    <span className="text-muted-foreground/50 w-10 shrink-0 py-1 pr-2 text-right font-mono text-xs select-none">
                       {match.line}
                     </span>
                     <span className="text-foreground/70 py-1 pr-2 font-mono text-xs leading-relaxed break-all">
@@ -228,4 +233,3 @@ export function InlineGrepResults({
     </div>
   );
 }
-

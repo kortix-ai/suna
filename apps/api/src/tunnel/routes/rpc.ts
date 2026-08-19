@@ -47,7 +47,7 @@ export function createRpcRouter() {
 
       // Ownership / existence: scoped to the caller's account (personal or team).
       // The shared core then handles rate-limit / capability / permission /
-      // relay / audit — the same path the Executor's `computer` connector uses.
+      // relay / audit — the same path the Connector's `computer` connector uses.
       const [tunnel] = await db
         .select()
         .from(tunnelConnections)
@@ -57,7 +57,14 @@ export function createRpcRouter() {
         return c.json({ error: 'Tunnel connection not found' }, 404);
       }
 
-      const outcome = await executeTunnelRpc({ tunnelId, accountId, method, params });
+      const outcome = await executeTunnelRpc({
+        tunnelId,
+        tunnelOwnerAccountId: tunnel.accountId,
+        accountId,
+        actorUserId: c.get('userId') as string | undefined,
+        method,
+        params,
+      });
 
       if (outcome.ok) {
         return c.json({ result: outcome.result });
@@ -75,7 +82,11 @@ export function createRpcRouter() {
           );
         case 'rate_limited':
           return c.json(
-            { error: outcome.message, code: TunnelErrorCode.RATE_LIMITED, retryAfterMs: outcome.retryAfterMs },
+            {
+              error: outcome.message,
+              code: TunnelErrorCode.RATE_LIMITED,
+              retryAfterMs: outcome.retryAfterMs,
+            },
             429,
           );
         case 'bad_request':

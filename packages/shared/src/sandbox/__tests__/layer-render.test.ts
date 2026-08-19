@@ -23,13 +23,12 @@ import {
   AGENT_BROWSER_VERSION,
   BUN_SHA256_AMD64,
   BUN_SHA256_ARM64,
-  CLAUDE_AGENT_ACP_VERSION,
-  CODEX_ACP_VERSION,
   OPENCODE_VERSION,
-  PI_ACP_VERSION,
-  PI_CODING_AGENT_VERSION,
+  PLAYWRIGHT_VERSION,
   PNPM_SHA256_AMD64,
   PNPM_SHA256_ARM64,
+  PYTHON_PACKAGE_FLOOR,
+  PYTHON_PACKAGE_FLOOR_IMPORTS,
   UV_SHA256_AMD64,
   UV_SHA256_ARM64,
 } from '../../runtime-versions';
@@ -50,7 +49,6 @@ const COMMON = {
   entrypointScriptPath: 'kortix-entrypoint',
   machineDocPath: 'MACHINE.md',
   slackCliPath: 'kortix-slack-cli',
-  executorSdkPath: 'kortix-executor-sdk',
   opencodeConfigPath: 'kortix-opencode-config',
   opencodeWarmupScriptPath: 'kortix-opencode-warmup',
   catalogPath: 'kortix-llm-catalog.json',
@@ -126,34 +124,6 @@ describe('runtime artifact integrity', () => {
     expect(rendered).not.toMatch(/curl[^|\n]*\|\s*(?:sh|bash)/);
   });
 
-  test('installs and probes each ACP adapter at an exact version', () => {
-    expect(rendered).toContain(
-      `"@agentclientprotocol/claude-agent-acp@${CLAUDE_AGENT_ACP_VERSION}"`,
-    );
-    expect(rendered).toContain(
-      `"@agentclientprotocol/codex-acp@${CODEX_ACP_VERSION}"`,
-    );
-    expect(rendered).toContain(`"pi-acp@${PI_ACP_VERSION}"`);
-    expect(rendered).toContain(
-      `"@earendil-works/pi-coding-agent@${PI_CODING_AGENT_VERSION}"`,
-    );
-    expect(rendered).toContain(
-      `"@earendil-works/pi-ai@${PI_CODING_AGENT_VERSION}"`,
-    );
-    expect(rendered).toContain(
-      `"@earendil-works/pi-tui@${PI_CODING_AGENT_VERSION}"`,
-    );
-    expect(rendered).toContain(
-      `"@earendil-works/pi-agent-core@${PI_CODING_AGENT_VERSION}"`,
-    );
-    expect(rendered).toContain(
-      'npm install -g --prefix /home/kortix/.local',
-    );
-    expect(rendered).toContain('command -v claude-agent-acp');
-    expect(rendered).toContain('command -v codex-acp');
-    expect(rendered).toContain('command -v pi-acp');
-    expect(rendered).toContain('command -v pi');
-  });
 });
 
 describe('the Python runtime is managed by uv', () => {
@@ -161,8 +131,35 @@ describe('the Python runtime is managed by uv', () => {
 
   test('does not install or mutate the distro Python', () => {
     expect(toolchain).not.toContain('python3 python3-dev python3-pip python3-venv');
-    expect(toolchain).not.toContain('--break-system-packages');
-    expect(toolchain).not.toContain('uv pip install');
+    expect(toolchain.match(/uv pip install/g)).toHaveLength(1);
+    expect(toolchain).toContain(
+      'uv pip install --python /home/kortix/.local/bin/python3 --break-system-packages',
+    );
+    expect(toolchain).not.toContain('uv pip install --system');
+  });
+
+  test('bakes every floor package exactly-pinned into the managed Python', () => {
+    for (const [pkg, version] of Object.entries(PYTHON_PACKAGE_FLOOR)) {
+      expect(toolchain).toContain(`"${pkg}==${version}"`);
+    }
+  });
+
+  test('proves every floor import at build time in a single-line check', () => {
+    for (const importName of Object.values(PYTHON_PACKAGE_FLOOR_IMPORTS)) {
+      expect(toolchain).toContain(`"${importName}"`);
+    }
+    expect(toolchain).toContain('python package floor OK');
+    expect(toolchain).not.toContain('<<');
+  });
+
+  test('every floor package has an import mapping and vice versa', () => {
+    expect(Object.keys(PYTHON_PACKAGE_FLOOR_IMPORTS).sort()).toEqual(
+      Object.keys(PYTHON_PACKAGE_FLOOR).sort(),
+    );
+  });
+
+  test('python-playwright matches the Node playwright that bakes Chromium', () => {
+    expect(PYTHON_PACKAGE_FLOOR.playwright).toBe(PLAYWRIGHT_VERSION);
   });
 
   test('installs an exact managed Python as python and python3', () => {
@@ -334,7 +331,12 @@ describe('the entrypoint survives providers that discard image USER/ENV', () => 
     expect(entrypoint).toContain(`KORTIX_PATH="${KORTIX_USER_PATH_DIRS}"`);
     expect(entrypoint).toContain('export HOME=/home/kortix USER=kortix LOGNAME=kortix');
     expect(entrypoint).toContain('setpriv --reuid kortix --regid kortix --init-groups');
-    expect(entrypoint).toContain('sudo -u kortix --');
+    // -E, because sudo's default env_reset drops every KORTIX_* var and the
+    // daemon would come up with no session identity while still passing its
+    // health check. Verified against this image's own sudoers line
+    // ('kortix ALL=(ALL) NOPASSWD:ALL'): as root, -E is accepted without a
+    // SETENV tag, and without it the token arrives empty.
+    expect(entrypoint).toContain('sudo -E -u kortix --');
   });
 
   test('entrypoint PATH dirs cannot drift from the toolchain ENV PATH', () => {

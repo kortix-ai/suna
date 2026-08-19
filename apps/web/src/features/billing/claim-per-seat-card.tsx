@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
 import { useClaimPerSeat } from '@/hooks/billing/use-account-state';
 import type { AccountState } from '@kortix/sdk';
-import { ArrowRight } from 'lucide-react';
+import { ArrowRightIcon as ArrowRight } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 
 export function ClaimPerSeatCard({ accountState }: { accountState?: AccountState }) {
@@ -52,7 +52,7 @@ export function ClaimPerSeatCard({ accountState }: { accountState?: AccountState
         </Button>
       </div>
       {claim.isError && (
-        <p className="text-destructive mt-2 text-xs break-words">
+        <p className="text-destructive mt-2 text-xs wrap-break-word">
           {(claim.error as Error)?.message ?? 'Could not switch. Try again or contact support.'}
         </p>
       )}

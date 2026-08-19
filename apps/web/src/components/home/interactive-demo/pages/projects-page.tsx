@@ -3,9 +3,14 @@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { InlineMeta } from '@/components/ui/inline-meta';
+import Loading from '@/components/ui/loading';
 import { cn } from '@/lib/utils';
-import { FolderGit2, GitBranch, Loader2, Plus } from 'lucide-react';
-import { AnimatePresence, motion } from 'motion/react';
+import {
+  GitBranchIcon as FolderGit2,
+  GitBranchIcon as GitBranch,
+  PlusIcon as Plus,
+} from '@phosphor-icons/react';
+import { AnimatePresence, m } from 'motion/react';
 import { useTranslations } from 'next-intl';
 import { PageHead } from '../primitives';
 import type { ProjectCard } from '../types';
@@ -25,7 +30,7 @@ function ProjectStatusBadge({ status }: { status: ProjectCard['status'] }) {
   if (status === 'shipping') {
     return (
       <Badge size="sm" variant="outline" className="gap-1 text-amber-600 dark:text-amber-500">
-        <Loader2 className="size-3 animate-spin" /> shipping
+        <Loading className="size-3" /> shipping
       </Badge>
     );
   }
@@ -40,7 +45,7 @@ function ProjectRow({ project }: { project: ProjectCard }) {
   const { name, status, files, branch, repo, url } = project;
   const live = status === 'live';
   return (
-    <motion.div
+    <m.div
       layout
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
@@ -75,7 +80,7 @@ function ProjectRow({ project }: { project: ProjectCard }) {
           {live && url && <span className="text-cyan-600 dark:text-cyan-400">{url}</span>}
         </InlineMeta>
       </div>
-    </motion.div>
+    </m.div>
   );
 }
 

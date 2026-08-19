@@ -5,24 +5,78 @@
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { mapLimit } from '@kortix/registry';
-import { createBranchRef, getBranchCommitSha, parseGitHubRepoUrl } from '../github';
 import { validateRef } from '../git-ref';
+import { createBranchRef, getBranchCommitSha, parseGitHubRepoUrl } from '../github';
+import { isMissingRemoteBranchError } from '../managed-repo-seed';
+import { FIELD_SEP } from './commits';
 import {
+  existingProjectMirrorPath,
   hostFromRepoUrl,
   invalidateProjectMirror,
+  isGitOperationError,
   makeSessionBranchRepo,
   normalizeTreePath,
   refreshMirror,
   runGit,
   runGitCapture,
 } from './mirror';
-import { FIELD_SEP } from './commits';
 import type { GitBackedProject, GitBranchInfo } from './types';
 
 // Bounded concurrency for blob hashing below — enough to cut many-file
 // install wall-clock time without spawning an unbounded pile of `git
 // hash-object` subprocesses per commit.
 const HASH_CONCURRENCY = 8;
+const BRANCH_COMPARE_CONCURRENCY = 8;
+const BRANCH_COMPARE_LIMIT = 100;
+const BRANCH_LIST_TIMEOUT_MS = 15_000;
+
+export interface ExpectedFileRevision {
+  path: string;
+  sha: string | null;
+  /** Logical file candidates in winner-priority order. */
+  candidatePaths?: readonly string[];
+}
+
+export class GitFileRevisionConflictError extends Error {
+  constructor(readonly path: string) {
+    super(`File "${path}" changed since it was read`);
+    this.name = 'GitFileRevisionConflictError';
+  }
+}
+
+export function isExpectedFileRevisionRace(error: unknown): boolean {
+  if (!isGitOperationError(error)) return false;
+  const details = `${error.message}\n${error.stderr}`;
+  if (error.gitArgs[0] === 'update-ref') {
+    return details.includes(' but expected ') || details.includes('reference already exists');
+  }
+  return (
+    details.includes('[rejected]') ||
+    details.includes('non-fast-forward') ||
+    details.includes('fetch first') ||
+    details.includes('stale info') ||
+    (error.gitArgs[0] === 'push' && details.includes('failed to update ref'))
+  );
+}
+
+async function readRemoteBranchTip(
+  project: GitBackedProject,
+  repoPath: string,
+  branch: string,
+  authHost: string,
+): Promise<string | null | undefined> {
+  const remote = await runGitCapture(
+    ['ls-remote', '--heads', 'origin', `refs/heads/${branch}`],
+    repoPath,
+    project.gitAuthToken,
+    undefined,
+    authHost,
+    project.gitAuthHeaders,
+  );
+  if (remote.exitCode !== 0) return undefined;
+  const sha = remote.stdout.trim().split(/\s+/, 1)[0] ?? '';
+  return /^[0-9a-f]{40}$/.test(sha) ? sha : null;
+}
 
 /**
  * Hash every file's content into a git blob object (`git hash-object -w`),
@@ -50,8 +104,40 @@ export async function hashBlobs(
   );
 }
 
-export async function listBranches(project: GitBackedProject): Promise<GitBranchInfo[]> {
-  const repoPath = await refreshMirror(project);
+function branchFromRemoteRef(name: string, tip: string, defaultBranch: string): GitBranchInfo {
+  const isDefault = name === defaultBranch;
+  return {
+    name,
+    is_default: isDefault,
+    tip,
+    tip_short: tip.slice(0, 7),
+    subject: '',
+    committer_name: '',
+    committer_email: '',
+    committed_at: '',
+    ahead: isDefault ? 0 : null,
+    behind: isDefault ? 0 : null,
+  };
+}
+
+export function parseRemoteBranches(stdout: string, defaultBranch: string): GitBranchInfo[] {
+  const branches = stdout
+    .split('\n')
+    .map((line) => line.trim().match(/^([0-9a-f]{40})\s+refs\/heads\/(.+)$/))
+    .filter((match): match is RegExpMatchArray => match !== null)
+    .map((match) => branchFromRemoteRef(match[2] ?? '', match[1] ?? '', defaultBranch));
+
+  branches.sort((a, b) => {
+    if (a.is_default !== b.is_default) return a.is_default ? -1 : 1;
+    return a.name.localeCompare(b.name);
+  });
+  return branches;
+}
+
+async function readCachedBranchMetadata(
+  repoPath: string,
+  baseRef: string,
+): Promise<Map<string, GitBranchInfo>> {
   const format = [
     '%(refname:short)',
     '%(objectname)',
@@ -67,7 +153,6 @@ export async function listBranches(project: GitBackedProject): Promise<GitBranch
     false,
   );
   const lines = result.stdout.split('\n').filter(Boolean);
-  const baseRef = project.defaultBranch;
 
   const branches = lines
     .map<GitBranchInfo | null>((line) => {
@@ -81,9 +166,7 @@ export async function listBranches(project: GitBackedProject): Promise<GitBranch
         tip_short: tipShort,
         subject,
         committer_name: committerName,
-        committer_email: committerEmail
-          .replace(/^</, '')
-          .replace(/>$/, ''),
+        committer_email: committerEmail.replace(/^</, '').replace(/>$/, ''),
         committed_at: committedAt,
         ahead: null,
         behind: null,
@@ -91,32 +174,104 @@ export async function listBranches(project: GitBackedProject): Promise<GitBranch
     })
     .filter((b): b is GitBranchInfo => b !== null);
 
-  // Compute ahead/behind vs default in parallel (skip the default itself).
-  await Promise.all(
-    branches.map(async (b) => {
-      if (b.is_default) {
-        b.ahead = 0;
-        b.behind = 0;
-        return;
+  // Exact ahead/behind requires one revision walk per branch on the Git
+  // versions available in our runtime. Bound both process concurrency and the
+  // total comparison count. A repository with thousands of session branches
+  // must never spawn thousands of child processes from one HTTP request.
+  const comparable =
+    branches.length <= BRANCH_COMPARE_LIMIT
+      ? branches
+      : branches.filter((branch) => branch.is_default);
+  await mapLimit(comparable, BRANCH_COMPARE_CONCURRENCY, async (b) => {
+    if (b.is_default) {
+      b.ahead = 0;
+      b.behind = 0;
+      return;
+    }
+    try {
+      const rl = await runGit(
+        ['rev-list', '--left-right', '--count', `${baseRef}...${b.name}`],
+        repoPath,
+        false,
+      );
+      const match = rl.stdout.trim().match(/^(\d+)\s+(\d+)/);
+      if (match) {
+        b.behind = Number(match[1]);
+        b.ahead = Number(match[2]);
       }
-      try {
-        const rl = await runGit(
-          ['rev-list', '--left-right', '--count', `${baseRef}...${b.name}`],
-          repoPath,
-          false,
-        );
-        const match = rl.stdout.trim().match(/^(\d+)\s+(\d+)/);
-        if (match) {
-          b.behind = Number(match[1]);
-          b.ahead = Number(match[2]);
-        }
-      } catch {
-        // Default branch missing or unreachable — leave ahead/behind null.
-      }
-    }),
-  );
+    } catch {
+      // Default branch missing or unreachable — leave ahead/behind null.
+    }
+  });
 
-  return branches;
+  return new Map(branches.map((branch) => [branch.name, branch]));
+}
+
+/**
+ * List the remote branch refs without cloning repository history.
+ *
+ * The old path called `refreshMirror()` first. A cold request cloned the full
+ * repository and then started one `git rev-list` process per branch. That
+ * cannot fit inside the API or SDK deadline for repositories with thousands
+ * of branches. One `git ls-remote --heads` call returns the authoritative refs
+ * without transferring commit history. A valid warm mirror may enrich the
+ * response with commit metadata, but this read never creates or refreshes it.
+ */
+export async function listBranches(project: GitBackedProject): Promise<GitBranchInfo[]> {
+  const result = await runGit(
+    ['ls-remote', '--heads', project.repoUrl],
+    undefined,
+    true,
+    project.gitAuthToken,
+    undefined,
+    hostFromRepoUrl(project.repoUrl),
+    BRANCH_LIST_TIMEOUT_MS,
+    project.gitAuthHeaders,
+  );
+  const branches = parseRemoteBranches(result.stdout, project.defaultBranch);
+  const repoPath = existingProjectMirrorPath(project);
+  if (!repoPath || branches.length === 0) return branches;
+
+  const cached = await readCachedBranchMetadata(repoPath, project.defaultBranch).catch(() => null);
+  if (!cached) return branches;
+
+  return branches.map((branch) => {
+    const metadata = cached.get(branch.name);
+    // Only reuse metadata for the same remote tip. A stale mirror must not
+    // attach the previous commit's subject, date, or comparison counts.
+    return metadata?.tip === branch.tip ? metadata : branch;
+  });
+}
+
+/**
+ * Does `refs/heads/<branch>` exist on the REMOTE right now?
+ *
+ * One `git ls-remote` round trip against the upstream — no clone, no shared
+ * mirror, no cache. That matters for both callers: provisioning must PROVE a
+ * scaffold seed produced the default branch before it reports the project
+ * active, and session start must decide whether the repo needs a repair seed.
+ * `listBranches` cannot answer either question — it reads the cached bare
+ * mirror, which happily returns an empty list for a repo with no refs.
+ *
+ * The ref is validated before it reaches argv, so a branch name can never be
+ * smuggled in as a `git ls-remote` option (`--upload-pack=…`).
+ */
+export async function remoteBranchExists(
+  project: GitBackedProject,
+  branch: string,
+): Promise<boolean> {
+  const ref = validateRef(branch);
+  const result = await runGit(
+    ['ls-remote', '--heads', project.repoUrl, `refs/heads/${ref}`],
+    undefined,
+    true,
+    project.gitAuthToken,
+    undefined,
+    hostFromRepoUrl(project.repoUrl),
+    undefined,
+    project.gitAuthHeaders,
+  );
+  return result.stdout.trim().length > 0;
 }
 
 export async function createRemoteSessionBranch(
@@ -155,16 +310,32 @@ export async function createRemoteSessionBranch(
     // block on cloning every branch and all history from large repos.
     await runGit(['init', '--bare', repoPath], undefined, false);
     await runGit(['remote', 'add', 'origin', project.repoUrl], repoPath, false);
-    await runGit(
-      ['fetch', '--no-tags', '--depth=1', 'origin', `+refs/heads/${base}:refs/heads/${base}`],
-      repoPath,
-      true,
-      project.gitAuthToken,
-      undefined,
-      authHost,
-      undefined,
-      project.gitAuthHeaders,
-    );
+    const fetchBase = () =>
+      runGit(
+        ['fetch', '--no-tags', '--depth=1', 'origin', `+refs/heads/${base}:refs/heads/${base}`],
+        repoPath,
+        true,
+        project.gitAuthToken,
+        undefined,
+        authHost,
+        undefined,
+        project.gitAuthHeaders,
+      );
+    try {
+      await fetchBase();
+    } catch (error) {
+      // `couldn't find remote ref refs/heads/<base>` on a MANAGED repo means the
+      // scaffold seed never landed — the repo is structurally empty and every
+      // surface built on it (files, agents, skills, manifest version, session
+      // start) is dead. Seed it on demand, then retry once. Reactive by design:
+      // the happy path pays nothing, and a repair only runs for the exact
+      // failure it can fix (see isMissingRemoteBranchError).
+      if (!isMissingRemoteBranchError(error)) throw error;
+      const { ensureManagedRepoSeeded } = await import('../managed-repo-seed');
+      const outcome = await ensureManagedRepoSeeded(project.projectId, 'session-branch');
+      if (!outcome.repaired) throw error;
+      await fetchBase();
+    }
     await runGit(
       ['push', 'origin', `refs/heads/${base}:refs/heads/${branch}`],
       repoPath,
@@ -191,13 +362,31 @@ export async function deleteRemoteSessionBranch(
 
   const authHost = hostFromRepoUrl(project.repoUrl);
   const repoPath = await refreshMirror(project, true);
-  const remote = await runGit(['ls-remote', '--heads', 'origin', branchName], repoPath, true, project.gitAuthToken, undefined, authHost, undefined, project.gitAuthHeaders)
-    .catch(() => ({ stdout: '', stderr: '' }));
+  const remote = await runGit(
+    ['ls-remote', '--heads', 'origin', branchName],
+    repoPath,
+    true,
+    project.gitAuthToken,
+    undefined,
+    authHost,
+    undefined,
+    project.gitAuthHeaders,
+  ).catch(() => ({ stdout: '', stderr: '' }));
   if (!remote.stdout.trim()) return false;
 
-  await runGit(['push', 'origin', `:${branchName}`], repoPath, true, project.gitAuthToken, undefined, authHost, undefined, project.gitAuthHeaders);
-  await runGit(['update-ref', '-d', `refs/heads/${branchName}`], repoPath, false)
-    .catch(() => undefined);
+  await runGit(
+    ['push', 'origin', `:${branchName}`],
+    repoPath,
+    true,
+    project.gitAuthToken,
+    undefined,
+    authHost,
+    undefined,
+    project.gitAuthHeaders,
+  );
+  await runGit(['update-ref', '-d', `refs/heads/${branchName}`], repoPath, false).catch(
+    () => undefined,
+  );
   return true;
 }
 
@@ -214,6 +403,7 @@ export async function commitFileToBranch(
     branch?: string;
     authorName?: string;
     authorEmail?: string;
+    expectedFileRevision?: ExpectedFileRevision;
   },
 ): Promise<{ commitSha: string }> {
   if (!normalizeTreePath(opts.path)) throw new Error('File path is required');
@@ -223,6 +413,7 @@ export async function commitFileToBranch(
     branch: opts.branch,
     authorName: opts.authorName,
     authorEmail: opts.authorEmail,
+    expectedFileRevision: opts.expectedFileRevision,
   });
   return { commitSha };
 }
@@ -246,12 +437,15 @@ export async function commitMultipleFilesToBranch(
     branch?: string;
     authorName?: string;
     authorEmail?: string;
+    expectedFileRevision?: ExpectedFileRevision;
   },
 ): Promise<{ commitSha: string; branch: string; fileCount: number }> {
   const files = (opts.files ?? [])
     .map((f) => ({ path: normalizeTreePath(f.path), content: f.content }))
     .filter((f): f is { path: string; content: string } => Boolean(f.path));
-  const deletes = (opts.deletes ?? []).map((p) => normalizeTreePath(p)).filter((p): p is string => Boolean(p));
+  const deletes = (opts.deletes ?? [])
+    .map((p) => normalizeTreePath(p))
+    .filter((p): p is string => Boolean(p));
   if (files.length === 0 && deletes.length === 0) throw new Error('Nothing to commit');
   const branch = validateRef(opts.branch || project.defaultBranch);
   const authHost = hostFromRepoUrl(project.repoUrl);
@@ -259,6 +453,52 @@ export async function commitMultipleFilesToBranch(
 
   const tip = await runGitCapture(['rev-parse', '--verify', `refs/heads/${branch}`], repoPath);
   const parentSha = tip.exitCode === 0 ? tip.stdout.trim() : null;
+  const expectedPath = opts.expectedFileRevision
+    ? normalizeTreePath(opts.expectedFileRevision.path)
+    : undefined;
+  if (opts.expectedFileRevision && !expectedPath) {
+    throw new Error('Expected file revision path is required');
+  }
+  const expectedFileRevision =
+    opts.expectedFileRevision && expectedPath
+      ? {
+          path: expectedPath,
+          sha: opts.expectedFileRevision.sha,
+          candidatePaths: Array.from(
+            new Set(
+              (opts.expectedFileRevision.candidatePaths ?? [expectedPath])
+                .map((path) => normalizeTreePath(path))
+                .filter((path): path is string => Boolean(path)),
+            ),
+          ),
+        }
+      : undefined;
+  if (expectedFileRevision) {
+    if (!expectedFileRevision.candidatePaths.includes(expectedFileRevision.path)) {
+      expectedFileRevision.candidatePaths.push(expectedFileRevision.path);
+    }
+    const current = parentSha
+      ? await runGitCapture(
+          ['ls-tree', parentSha, '--', ...expectedFileRevision.candidatePaths],
+          repoPath,
+        )
+      : { stdout: '', stderr: '', exitCode: 0 };
+    if (current.exitCode !== 0) {
+      throw new Error(`Failed to read current revision for "${expectedFileRevision.path}"`);
+    }
+    const revisions = new Map<string, string>();
+    for (const line of current.stdout.split('\n')) {
+      const match = line.match(/^\d+\s+blob\s+([0-9a-f]{40})\t(.+)$/);
+      if (match?.[1] && match[2]) revisions.set(match[2], match[1]);
+    }
+    const currentWinner =
+      expectedFileRevision.candidatePaths.find((path) => revisions.has(path)) ?? null;
+    const expectedWinner = expectedFileRevision.sha === null ? null : expectedFileRevision.path;
+    const currentSha = revisions.get(expectedFileRevision.path) ?? null;
+    if (currentWinner !== expectedWinner || currentSha !== expectedFileRevision.sha) {
+      throw new GitFileRevisionConflictError(expectedFileRevision.path);
+    }
+  }
 
   const author = opts.authorName || 'Kortix';
   const email = opts.authorEmail || 'noreply@kortix.ai';
@@ -300,26 +540,48 @@ export async function commitMultipleFilesToBranch(
       await runGit(['update-index', '--force-remove', path], repoPath, false, null, deleteEnv);
     }
     const treeSha = (await runGit(['write-tree'], repoPath, false, null, indexEnv)).stdout.trim();
-    if (!/^[0-9a-f]{40}$/.test(treeSha)) throw new Error('git write-tree did not return a tree SHA');
+    if (!/^[0-9a-f]{40}$/.test(treeSha))
+      throw new Error('git write-tree did not return a tree SHA');
 
     const commitArgs = ['commit-tree', treeSha];
     if (parentSha) commitArgs.push('-p', parentSha);
     commitArgs.push('-m', opts.message);
     const commitSha = (await runGit(commitArgs, repoPath, false, null, identEnv)).stdout.trim();
-    if (!/^[0-9a-f]{40}$/.test(commitSha)) throw new Error('git commit-tree did not return a commit SHA');
+    if (!/^[0-9a-f]{40}$/.test(commitSha))
+      throw new Error('git commit-tree did not return a commit SHA');
 
-    if (parentSha) await runGit(['update-ref', `refs/heads/${branch}`, commitSha, parentSha], repoPath, false);
-    else await runGit(['update-ref', `refs/heads/${branch}`, commitSha], repoPath, false);
-    await runGit(
-      ['push', 'origin', `${commitSha}:refs/heads/${branch}`],
-      repoPath,
-      true,
-      project.gitAuthToken,
-      undefined,
-      authHost,
-      undefined,
-      project.gitAuthHeaders,
-    );
+    try {
+      const pushArgs = ['push'];
+      if (expectedFileRevision) {
+        pushArgs.push(`--force-with-lease=refs/heads/${branch}:${parentSha ?? ''}`);
+      }
+      pushArgs.push('origin', `${commitSha}:refs/heads/${branch}`);
+      await runGit(
+        pushArgs,
+        repoPath,
+        true,
+        project.gitAuthToken,
+        undefined,
+        authHost,
+        undefined,
+        project.gitAuthHeaders,
+      );
+    } catch (error) {
+      invalidateProjectMirror(project.projectId);
+      if (expectedFileRevision) {
+        const remoteTip = await readRemoteBranchTip(project, repoPath, branch, authHost);
+        if (remoteTip === commitSha) {
+          return { commitSha, branch, fileCount: files.length };
+        }
+        if (remoteTip !== undefined && remoteTip !== parentSha) {
+          throw new GitFileRevisionConflictError(expectedFileRevision.path);
+        }
+        if (isExpectedFileRevisionRace(error)) {
+          throw new GitFileRevisionConflictError(expectedFileRevision.path);
+        }
+      }
+      throw error;
+    }
 
     invalidateProjectMirror(project.projectId);
     return { commitSha, branch, fileCount: files.length };

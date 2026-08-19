@@ -5,8 +5,8 @@
  * (the HKDF input) is present.
  */
 import { describe, expect, test } from 'bun:test';
-import { mintSetupLink, resolveSetupLink } from '../setup-links/token';
 import { encryptProjectSecret } from '../projects/secrets';
+import { mintSetupLink, resolveSetupLink } from '../setup-links/token';
 
 const PROJECT_A = '11111111-1111-4111-8111-111111111111';
 const PROJECT_B = '22222222-2222-4222-8222-222222222222';
@@ -55,6 +55,26 @@ describe('setup-link token codec', () => {
     expect(r.payload.app).toBe('smartlead');
   });
 
+  test('connector link carries the requesting session id (sid) for the finalize callback', () => {
+    const { token } = mintSetupLink(PROJECT_A, {
+      kind: 'connector',
+      slug: 'smartlead',
+      app: 'smartlead',
+      uid: 'user-1',
+      sid: 'ses_abc123',
+    });
+    const r = resolveSetupLink(token);
+    if (!r.ok || r.payload.kind !== 'connector') throw new Error('expected connector');
+    expect(r.payload.sid).toBe('ses_abc123');
+  });
+
+  test('connector link sid defaults to null when not provided', () => {
+    const { token } = mintSetupLink(PROJECT_A, { kind: 'connector', slug: 'smartlead' });
+    const r = resolveSetupLink(token);
+    if (!r.ok || r.payload.kind !== 'connector') throw new Error('expected connector');
+    expect(r.payload.sid).toBeNull();
+  });
+
   test('scope defaults to runtime when omitted', () => {
     const { token } = mintSetupLink(PROJECT_A, { kind: 'secret', fields: [{ name: 'FOO_KEY' }] });
     const r = resolveSetupLink(token);
@@ -64,17 +84,19 @@ describe('setup-link token codec', () => {
 
   test('expired token resolves to 410', () => {
     // Build a token by hand with an exp in the past (mint clamps TTL ≥ 1 min).
+    // Must be more than 60s in the past to exceed the clock-skew buffer.
     const payload = {
       kind: 'secret',
       fields: [{ name: 'FOO_KEY' }],
       scope: 'runtime',
+      sid: null,
       uid: null,
-      exp: Date.now() - 1000,
+      exp: Date.now() - 120_000,
       nonce: 'x',
       pid: PROJECT_A,
     };
     const envelope = encryptProjectSecret(PROJECT_A, JSON.stringify(payload));
-    const token = 'ksl_' + Buffer.from(`${PROJECT_A}.${envelope}`, 'utf8').toString('base64url');
+    const token = `ksl_${Buffer.from(`${PROJECT_A}.${envelope}`, 'utf8').toString('base64url')}`;
     const r = resolveSetupLink(token);
     expect(r.ok).toBe(false);
     if (r.ok) return;
@@ -96,7 +118,7 @@ describe('setup-link token codec', () => {
     const { token } = mintSetupLink(PROJECT_A, { kind: 'secret', fields: [{ name: 'FOO_KEY' }] });
     const decoded = Buffer.from(token.slice('ksl_'.length), 'base64url').toString('utf8');
     const envelope = decoded.slice(decoded.indexOf('.') + 1);
-    const reWrapped = 'ksl_' + Buffer.from(`${PROJECT_B}.${envelope}`, 'utf8').toString('base64url');
+    const reWrapped = `ksl_${Buffer.from(`${PROJECT_B}.${envelope}`, 'utf8').toString('base64url')}`;
     const r = resolveSetupLink(reWrapped);
     expect(r.ok).toBe(false);
   });
@@ -108,5 +130,41 @@ describe('setup-link token codec', () => {
       if (r.ok) continue;
       expect(r.status).toBe(404);
     }
+  });
+
+  test('secret link carries session id (sid) for callback', () => {
+    const { token } = mintSetupLink(PROJECT_A, {
+      kind: 'secret',
+      fields: [{ name: 'AGENT_KORTIX_GITHUB_TOKEN' }],
+      scope: 'runtime',
+      uid: 'user-1',
+      sid: 'ses_abc123',
+    });
+    const r = resolveSetupLink(token);
+    expect(r.ok).toBe(true);
+    if (!r.ok || r.payload.kind !== 'secret') throw new Error('expected secret');
+    expect(r.payload.sid).toBe('ses_abc123');
+  });
+
+  test('secret link sid defaults to null when not provided', () => {
+    const { token } = mintSetupLink(PROJECT_A, {
+      kind: 'secret',
+      fields: [{ name: 'FOO_KEY' }],
+    });
+    const r = resolveSetupLink(token);
+    expect(r.ok).toBe(true);
+    if (!r.ok || r.payload.kind !== 'secret') throw new Error('expected secret');
+    expect(r.payload.sid).toBeNull();
+  });
+
+  test('default secret-link TTL is 7 days', () => {
+    const before = Date.now();
+    const { expiresAt } = mintSetupLink(PROJECT_A, {
+      kind: 'secret',
+      fields: [{ name: 'FOO_KEY' }],
+    });
+    const ttlMs = expiresAt - before;
+    expect(ttlMs).toBeGreaterThan(7 * 24 * 60 * 60 * 1000 - 5000);
+    expect(ttlMs).toBeLessThan(7 * 24 * 60 * 60 * 1000 + 5000);
   });
 });

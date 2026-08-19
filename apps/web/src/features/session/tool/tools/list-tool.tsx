@@ -1,32 +1,25 @@
 'use client';
-import { ToolRegistry } from '@/features/session/tool/shared/registry';
-import type { ToolProps } from '@/features/session/tool/shared/types';
+import { InlineFileList, parseFilePaths } from '@/features/session/tool/shared/file-list';
 import {
   BasicTool,
   ToolEmptyState,
-  isErrorOutput,
   ToolOutputFallback,
+  isErrorOutput,
   partInput,
   partOutput,
   partStatus,
   useToolNavigation,
 } from '@/features/session/tool/shared/infrastructure';
-import {
-  InlineFileList,
-  parseFilePaths,
-} from '@/features/session/tool/shared/file-list';
+import { ToolRegistry } from '@/features/session/tool/shared/registry';
+import { ToolResultCard } from '@/features/session/tool/shared/result-card';
+import type { ToolProps } from '@/features/session/tool/shared/types';
 import { useOcFileOpen } from '@/features/session/use-oc-file-open';
-import {
-  ListTree,
-} from 'lucide-react';
+import { getDirectory } from '@/ui';
+import { TreeStructureIcon as ListTree } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
-import {
-  useMemo,
-} from 'react';
-import {
-  getDirectory,
-} from '@/ui';
+import { useCallback, useMemo } from 'react';
 
+const NO_PATHS: string[] = [];
 
 export function ListTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -39,12 +32,19 @@ export function ListTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
 
   const filePaths = useMemo(() => parseFilePaths(output), [output]);
   const hasResults = filePaths && filePaths.length > 0;
-  const isNoResults =
-    !hasResults && status === 'completed' && !!output && !isErrorOutput(output);
+  // `isErrorOutput` trims the whole output and runs `JSON.parse` over it. It sat
+  // in the body, so every re-render re-parsed a listing that had not changed.
+  const errored = useMemo(() => isErrorOutput(output), [output]);
+  const isNoResults = !hasResults && status === 'completed' && !!output && !errored;
+
+  const handleFileClick = useCallback(
+    (fp: string) => openFileWithList(fp, filePaths ?? NO_PATHS),
+    [openFileWithList, filePaths],
+  );
 
   return (
     <BasicTool
-      icon={<ListTree className="size-3.5 flex-shrink-0" />}
+      icon={<ListTree className="size-3.5 shrink-0" />}
       trigger={{
         title: 'List',
         subtitle: directory,
@@ -59,20 +59,22 @@ export function ListTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
       locked={locked}
     >
       {hasResults ? (
-        <div data-scrollable className="max-h-72 overflow-auto">
+        <ToolResultCard>
           <InlineFileList
             paths={filePaths}
-            onFileClick={(fp) => openFileWithList(fp, filePaths)}
+            onFileClick={handleFileClick}
             toDisplayPath={toDisplayPath}
             disabled={!navigationEnabled}
           />
-        </div>
+        </ToolResultCard>
       ) : isNoResults ? (
-        <ToolEmptyState
-          message={tHardcodedUi.raw(
-            'componentsSessionToolRenderers.line3534JsxAttrMessageDirectoryIsEmpty',
-          )}
-        />
+        <ToolResultCard>
+          <ToolEmptyState
+            message={tHardcodedUi.raw(
+              'componentsSessionToolRenderers.line3534JsxAttrMessageDirectoryIsEmpty',
+            )}
+          />
+        </ToolResultCard>
       ) : output ? (
         <ToolOutputFallback output={output} toolName="list" />
       ) : null}
@@ -87,4 +89,3 @@ function looksLikeHtml(s: string): boolean {
   if (head.includes('<!doctype html') || head.includes('<html')) return true;
   return /<\/(body|head|div|p|span|table)>/i.test(s.slice(0, 3000));
 }
-

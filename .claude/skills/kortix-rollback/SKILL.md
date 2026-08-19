@@ -1,6 +1,6 @@
 ---
 name: kortix-rollback
-description: "How to roll Kortix PRODUCTION back to an older already-released version — the inverse of a release. Covers the one-dispatch rollback-prod.yml engine, the per-surface mechanics (API + gateway = Argo image-tag swap; frontend = Vercel promote), the all-important Vercel frontend behavior (why a backend-only push can 'clobber' a FE rollback, and the 'don't rebuild the FE for backend-only pushes' skip that fixes it), the DB/migration-drift safety check that is the real blocker, and how a later promote returns prod to latest. Load WHENEVER the user wants to roll back / revert / downgrade / 'go back a version' on prod, asks how the rollback or the frontend clobber/skip behavior works, or needs to run rollback-prod.yml. Pairs with kortix-release (the forward direction)."
+description: "How to roll Kortix PRODUCTION back to an older already-released version — the inverse of a release. Covers the one-dispatch rollback-prod.yml engine, the per-surface mechanics (API + gateway = ECS Fargate image-tag swap; frontend = Vercel promote), the all-important Vercel frontend behavior (why a backend-only push can 'clobber' a FE rollback, and the 'don't rebuild the FE for backend-only pushes' skip that fixes it), the DB/migration-drift safety check that is the real blocker, and how a later promote returns prod to latest. Load WHENEVER the user wants to roll back / revert / downgrade / 'go back a version' on prod, asks how the rollback or the frontend clobber/skip behavior works, or needs to run rollback-prod.yml. Pairs with kortix-release (the forward direction)."
 ---
 
 # Kortix Rollback
@@ -25,20 +25,15 @@ gh workflow run rollback-prod.yml --repo kortix-ai/suna --ref main \
 
 It rolls **frontend AND backend** and handles each surface independently:
 - **Frontend** → promoted back to vX.Y.Z immediately (Vercel API, no rebuild).
-- **Backend** (api, gateway) → opens a **review-gated PR into `prod`** that pins
-  `image.tag`. Merge it → Argo CD rolls those Deployments to the `:vX.Y.Z` images.
+- **Backend** (api, gateway) → re-tags the old `:vX.Y.Z` images as `:latest` and
+  triggers an ECS Fargate rolling deploy via `ecs-deploy.sh`.
 
-So a rollback is **2 actions**: dispatch, then merge the backend PR. The backend PR
-is the one gated step (prod is review-protected — `enforce_admins:true`,
-`required_reviews:1`, `allow_force:false`; there is no force-push path).
+## 2. Per-surface mechanics
 
-## 2. Why the two halves work completely differently
-
-This is the thing to internalize.
-
-**Backend (API + gateway) runs a Docker image.** Rollback = point Argo CD's GitOps
-source (`infra/k8s/envs/prod/values.yaml` + `gateway-values.yaml` `image.tag`) at
-the old, immutable, prebuilt `:vX.Y.Z` image. Argo (auto-sync + selfHeal) pulls it.
+**Backend (API + gateway) runs Docker images on ECS Fargate.** Rollback = re-tag
+the old, immutable, prebuilt `:vX.Y.Z` image as `:latest` and trigger an ECS
+rolling update. The ECS deploy script (`infra/scripts/ecs-deploy.sh`) registers a
+new task-def revision pointing at the old image and waits for `services-stable`.
 Clean and exact — the image is frozen.
 
 **Frontend is built by Vercel from the `prod` branch SOURCE.** Vercel is
@@ -105,64 +100,27 @@ version, webhook shapes).
 
 ## 5. Per-surface availability (the engine handles this)
 
-You can't roll a surface BELOW where it existed. The gateway only entered prod EKS
-at ~v0.9.72 (image exists from 0.9.69), so there is no `kortix-gateway:0.9.68`. The
-workflow checks each image (Docker Hub tags API) and **skips any surface with no
-`:vX.Y.Z` image** rather than wedging Argo on `ImagePullBackOff`. It also leaves
-the root `VERSION` at the current prod number so deploy-prod's retag can never
-overwrite the `:vX.Y.Z` rollback image.
+You can't roll a surface BELOW where it existed. The gateway only entered prod
+at ~v0.9.72 (image exists from 0.9.69), so there is no `kortix-gateway:0.9.68`.
+The workflow checks each image (Docker Hub tags API) and **skips any surface with
+no `:vX.Y.Z` image** rather than wedging ECS on `ImagePullBackOff`.
 
 ## 6. Resuming — a later promote returns prod to LATEST automatically
 
 You do NOT manually undo a rollback. To resume, get the fix onto `staging`, wait
 for staging deploy + QA, then **Promote to Production** (see kortix-release).
 The release PR carries the staging candidate into prod, Vercel builds the latest
-FE, and Argo rolls the latest API/gateway images. The rollback evaporates. No
+FE, and ECS rolls the latest API/gateway images. The rollback evaporates. No
 manual Vercel step to resume.
-
-## 6b. NEVER repoint Argo `targetRevision` at a rollback branch
-
-There's a tempting break-glass shortcut: instead of merging the image-tag PR into
-`prod`, hand-patch the live Argo app's `spec.sources[].targetRevision` (API,
-`kortix-prod`) / `spec.source.targetRevision` (gateway, `kortix-gateway-prod`) to
-a one-off `rollback/<...>` branch so Argo deploys it **without** the prod merge
-gate. **Don't.** A forward release advances the `prod` branch, but Argo is now
-tracking the rollback branch, so it never sees the new version — **every future
-release silently stalls**: `deploy-prod`'s "Wait for Deployment rolled out" loops
-~28min on the OLD image while pods are perfectly Healthy, then fails. (Happened
-2026-06-28: a 0.9.84 rollback branch stranded prod; the 0.9.86 release hung.)
-
-If it ever happens, recover by pointing Argo back at `prod`:
-
-```bash
-CTX=arn:aws:eks:eu-west-2:935064898258:cluster/kortix-prod-eks
-# kortix-prod is MULTI-source (chart + $values) — patch every source:
-kubectl --context "$CTX" -n argocd patch application kortix-prod --type json \
-  -p '[{"op":"replace","path":"/spec/sources/0/targetRevision","value":"prod"},
-       {"op":"replace","path":"/spec/sources/1/targetRevision","value":"prod"}]'
-# kortix-gateway-prod is single-source:
-kubectl --context "$CTX" -n argocd patch application kortix-gateway-prod --type merge \
-  -p '{"spec":{"source":{"targetRevision":"prod"}}}'
-kubectl --context "$CTX" -n argocd annotate application kortix-prod kortix-gateway-prod \
-  argocd.argoproj.io/refresh=hard --overwrite
-```
-
-`deploy-prod` now **self-heals** this: an "Ensure Argo app tracks 'prod'" step
-asserts + repoints before the rollout wait, so a forward release reclaims a
-stranded app automatically. The git-based rollback (image-tag PR into `prod`,
-§1–2) keeps Argo on `prod` and is the only supported method — use it.
 
 ## 7. Gotchas
 
 - **The deploy-prod run on the backend merge goes partly red** (its version-watch
   waits for the current `VERSION` while pods report the rolled version; release-
-  create re-hits the existing release). Cosmetic — Argo does the real roll
-  independently. Judge success by Argo health + `api.kortix.com/v1/health`.
+  create re-hits the existing release). Cosmetic — ECS does the real roll
+  independently. Judge success by `api.kortix.com/v1/health`.
 - **Pushing `vercel.json` itself to prod rebuilds the FE** (it's under `apps/web`,
   so the skip says "build") — which clobbers a FE rollback. Let it ride to prod on
   a normal promote instead of a standalone push.
-- **Backend merge needs a human** (review or, in a true break-glass, briefly
-  relaxing `enforce_admins` then restoring it). There is intentionally no
-  force-push-to-prod path.
-- **Verify after:** `api.kortix.com/v1/health` (version), Argo app health, and the
-  live Vercel production deployment (`/v9/projects/{id}` → `targets.production`).
+- **Verify after:** `api.kortix.com/v1/health` (version), ECS service health, and
+  the live Vercel production deployment (`/v9/projects/{id}` → `targets.production`).

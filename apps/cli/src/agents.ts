@@ -1,5 +1,5 @@
-import { existsSync, lstatSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { existsSync, lstatSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 
 export type CodingAgent = 'opencode' | 'claude' | 'codex' | 'pi' | 'cursor';
 
@@ -28,18 +28,20 @@ export const CANONICAL_SKILL = '.kortix/opencode/skills/kortix-cli/SKILL.md';
 const OPENCODE_DIR = '.kortix/opencode';
 
 /**
- * Native discovery directory each agent reads. We symlink it straight at the
- * OpenCode config dir so the agent picks up its shared skills + agents:
+ * Native discovery paths each agent reads:
  *
  *   .opencode → .kortix/opencode   (OpenCode native; recursive skill discovery)
- *   .claude   → .kortix/opencode   (Claude Code: .claude/skills, .claude/agents — flat, depth-1)
+ *   .claude/skills → ../.kortix/opencode/skills
+ *   .claude/agents → ../.kortix/opencode/agents
+ *   .claude/commands → ../.kortix/opencode/commands
  *   .agents   → .kortix/opencode   (Codex + the cross-tool AGENTS standard: .agents/skills, recursive)
- *   .pi       → .kortix/opencode   (Pi: .pi/skills)
+ *   .pi/skills → ../.kortix/opencode/skills
  *
  * Codex's documented project skills dir is `.agents/skills` (not `.codex/`), and
  * `.agents/skills` is what OpenCode + other agent tools read too — so the codex
- * choice wires `.agents`. Each link targets `.kortix/opencode` directly (not via
- * `.opencode`) so any agent can be wired independently. Pi also reads a root
+ * choice wires `.agents`. Claude Code and Pi keep their local configuration
+ * in real `.claude` and `.pi` directories. The CLI links only the native
+ * discovery subdirectories into those directories. Pi also reads a root
  * `AGENTS.md`. Cursor has no directory of its own and reads `AGENTS.md`.
  *
  * Note: Claude Code scans `.claude/skills` only one level deep, so skills nested
@@ -47,11 +49,20 @@ const OPENCODE_DIR = '.kortix/opencode';
  * NOT discovered locally by Claude. They still load in the OpenCode sandbox and
  * for Codex, both of which discover skills recursively.
  */
-const AGENT_LINK: Partial<Record<CodingAgent, string>> = {
-  opencode: '.opencode',
-  claude: '.claude',
-  codex: '.agents',
-  pi: '.pi',
+interface AgentLink {
+  path: string;
+  target: string;
+}
+
+const AGENT_LINKS: Partial<Record<CodingAgent, readonly AgentLink[]>> = {
+  opencode: [{ path: '.opencode', target: OPENCODE_DIR }],
+  claude: [
+    { path: '.claude/skills', target: '../.kortix/opencode/skills' },
+    { path: '.claude/agents', target: '../.kortix/opencode/agents' },
+    { path: '.claude/commands', target: '../.kortix/opencode/commands' },
+  ],
+  codex: [{ path: '.agents', target: OPENCODE_DIR }],
+  pi: [{ path: '.pi/skills', target: '../.kortix/opencode/skills' }],
 };
 
 export interface WireAgentsInput {
@@ -67,7 +78,7 @@ export interface WireAgentsResult {
 
 /**
  * Wire each selected local coding tool to the starter's canonical skill source.
- * OpenCode, Claude Code, Codex, and Pi get a native discovery-directory link.
+ * OpenCode, Claude Code, Codex, and Pi get native discovery links.
  * Codex, Pi, and Cursor also get a root `AGENTS.md` pointer.
  */
 export function wireCodingAgents(input: WireAgentsInput): WireAgentsResult {
@@ -76,19 +87,24 @@ export function wireCodingAgents(input: WireAgentsInput): WireAgentsResult {
   let wantAgentsMd = false;
 
   for (const agent of input.agents) {
-    const link = AGENT_LINK[agent];
-    if (link) {
-      const abs = resolve(input.repoRoot, link);
+    for (const link of AGENT_LINKS[agent] ?? []) {
+      const abs = resolve(input.repoRoot, link.path);
+      try {
+        mkdirSync(dirname(abs), { recursive: true });
+      } catch (err) {
+        skipped.push(`${link.path} (parent unavailable: ${(err as Error).message})`);
+        continue;
+      }
       if (!handleExisting(abs, input.overwrite)) {
-        skipped.push(link);
+        skipped.push(link.path);
       } else {
         try {
-          symlinkSync(OPENCODE_DIR, abs);
-          written.push(`${link} → ${OPENCODE_DIR}`);
+          symlinkSync(link.target, abs);
+          written.push(`${link.path} → ${link.target}`);
         } catch (err) {
           // Symlinks need elevated privileges on some platforms (e.g. Windows
           // without Developer Mode). Never fail init over it — just note it.
-          skipped.push(`${link} (symlink unsupported: ${(err as Error).message})`);
+          skipped.push(`${link.path} (symlink unsupported: ${(err as Error).message})`);
         }
       }
     }
@@ -118,9 +134,9 @@ function handleExisting(abs: string, overwrite: boolean): boolean {
     st = undefined;
   }
   if (!st && !existsSync(abs)) return true;
+  if (st?.isDirectory()) return false;
   if (overwrite) {
-    // force + non-recursive: removes a stale symlink or file without ever
-    // recursively wiping a real directory the user may have created.
+    // Remove a stale symlink or file. Preserve real directories.
     rmSync(abs, { force: true, recursive: false });
     return true;
   }
@@ -136,7 +152,7 @@ canonical system skills are available through each wired tool's native discovery
 location.
 
 Whenever the user asks about Kortix — \`kortix.yaml\`, triggers, secrets, the
-sandbox image, sessions, connectors, ACP, runtime profiles, or OpenCode,
+sandbox image, sessions, connectors, or OpenCode,
 Claude Code, Codex, and Pi configuration — read \`${CANONICAL_SKILL}\` first.
 It is the canonical reference.
 

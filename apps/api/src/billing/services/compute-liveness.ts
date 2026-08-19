@@ -25,12 +25,22 @@
  *
  * The grace is not a guess
  * ------------------------
- * Every box is created with the provider's own idle auto-stop set to
- * `providerAutoStopBackstopMinutes()` (60 min in prod — Daytona
- * `autoStopInterval`, Platinum `auto_stop_minutes`). A sandbox therefore
- * physically cannot outlive its last observed activity by more than that: the
- * provider destroys it. Billing past `lastAliveAt + grace` is not a late reap,
- * it is charging for a box that provably no longer exists.
+ * It is sized by how often the control plane can be expected to LOOK, because
+ * that is what the clamp trades against: too small and a single missed
+ * maintenance pass zeroes a healthy box's revenue, too large and a dead box
+ * keeps billing. 60 minutes is >= 12 maintenance passes (5 min each) of slack
+ * for a live box, and the entire ceiling for a dead one.
+ *
+ * It is deliberately NOT the provider's idle auto-stop any more. Those were one
+ * number until 2026-07-30 and the coupling was load-bearing in the wrong
+ * direction: raising the provider's timer so it stops killing boxes mid
+ * long-tool-run also raised — silently — how long a provably-dead box may bill.
+ * See `providerAutoStopBackstopMinutes()` in platform/providers/index.ts. The
+ * provider timer remains the *physical* ceiling on a box's existence, and the
+ * ordering `billing grace <= provider backstop` is asserted in
+ * platform/providers/autostop-backstop.test.ts so an edit that inverts them
+ * fails CI —
+ * but this number is now free to stay tight while that one is free to grow.
  *
  * What counts as evidence
  * -----------------------
@@ -43,15 +53,40 @@
  * around the clock. A signal the box authors may never extend its own bill.
  */
 
-import { providerAutoStopBackstopMinutes } from '../../platform/providers';
+import { config } from '../../config';
 
 /**
- * How long a window may keep billing after the last control-plane observation
- * that the box was alive. Pinned to the provider's own idle auto-stop, because
- * that is the hard physical bound on how long the box can still exist.
+ * Hard floor on the billing grace, and its value in every environment that has
+ * not raised the idle window: 60 minutes.
+ *
+ * A floor rather than a plain constant because the grace can never be shorter
+ * than the idle window a box is allowed to sit in — a box the reaper is still
+ * legitimately waiting on must not fall out of billing while it waits.
  */
+export const BILLING_LIVENESS_GRACE_FLOOR_MINUTES = 60;
+
+/**
+ * THE BILLING GRACE. How long a window may keep billing after the last
+ * control-plane observation that the box was alive.
+ *
+ * This is the money guarantee merged in a0cfc7cdb and it must only ever get
+ * TIGHTER. Its arithmetic is unchanged from when it was
+ * `providerAutoStopBackstopMinutes()`: same floor, same doubling of the idle
+ * window, so the clamp's behaviour is byte-identical at every value of
+ * KORTIX_SANDBOX_AUTOSTOP_MINUTES. Only the coupling is gone — this reads the
+ * idle window directly instead of borrowing a provider-safety number that now
+ * needs to be twelve times larger.
+ *
+ * Doubling the idle window: the reaper may legitimately leave a box running for
+ * one idle window; the grace has to cover that plus the pass that ends it.
+ */
+export function billingLivenessGraceMinutes(): number {
+  const idleWindow = Math.max(1, config.KORTIX_SANDBOX_AUTOSTOP_MINUTES || 15);
+  return Math.max(BILLING_LIVENESS_GRACE_FLOOR_MINUTES, idleWindow * 2);
+}
+
 export function computeLivenessGraceMs(): number {
-  return providerAutoStopBackstopMinutes() * 60_000;
+  return billingLivenessGraceMinutes() * 60_000;
 }
 
 export function parseTimestamp(value: unknown): Date | null {

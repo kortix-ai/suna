@@ -5,7 +5,7 @@
  * has connections for, not one hardcoded alias.
  *
  * Two states, and the difference between them is the thing people get wrong:
- *  - team connections exist → pick one (or leave it on the project default)
+ *  - project connections exist → pick one (or leave it on the project default)
  *  - none do → say so, and say that a TEAMMATE is the one who can change it.
  *    There is deliberately no "connect it yourself" button; a wrapper has no
  *    personal upstream identity, and the interactive flow that would connect
@@ -33,9 +33,12 @@ export function useConnectorBindingChoices(projectId: string, enabled = true) {
     queryKey: ['connector-binding-choices', projectId],
     queryFn: async () => {
       const token = getSessionToken();
-      const res = await fetch(`/api/connections?projectId=${encodeURIComponent(projectId)}`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-      });
+      const res = await fetch(
+        `/api/connections?projectId=${encodeURIComponent(projectId)}`,
+        {
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        },
+      );
       if (!res.ok) return { connectors: [] as ConnectorBindingChoice[] };
       return (await res.json()) as { connectors: ConnectorBindingChoice[] };
     },
@@ -51,17 +54,17 @@ export function ConnectorBindingFields({
   onChange,
 }: {
   choices: ConnectorBindingChoice[];
-  /** Alias -> profile id. An alias absent from this map stays on the default. */
+  /** Alias -> connection id. An alias absent from this map stays on the default. */
   value: Record<string, string>;
   onChange: (next: Record<string, string>) => void;
 }) {
   if (choices.length === 0) return null;
 
-  const set = (alias: string, profileId: string | null) => {
+  const set = (alias: string, connectionId: string | null) => {
     const next = { ...value };
     // Unbinding REMOVES the alias rather than storing an empty string: the
     // create body must omit it entirely so the server resolves its own default.
-    if (profileId) next[alias] = profileId;
+    if (connectionId) next[alias] = connectionId;
     else delete next[alias];
     onChange(next);
   };
@@ -88,11 +91,18 @@ export function ConnectorBindingFields({
         }
 
         return (
-          <div key={choice.alias} className="flex items-center justify-between gap-3">
-            <span className="truncate font-mono text-xs text-muted-foreground">{choice.alias}</span>
+          <div
+            key={choice.alias}
+            className="flex items-center justify-between gap-3"
+          >
+            <span className="truncate font-mono text-xs text-muted-foreground">
+              {choice.alias}
+            </span>
             <Select
               value={value[choice.alias] ?? DEFAULT_VALUE}
-              onValueChange={(v) => set(choice.alias, v === DEFAULT_VALUE ? null : v)}
+              onValueChange={(v) =>
+                set(choice.alias, v === DEFAULT_VALUE ? null : v)
+              }
             >
               <SelectTrigger
                 className="h-8 w-56 text-xs"
@@ -103,7 +113,10 @@ export function ConnectorBindingFields({
               <SelectContent>
                 <SelectItem value={DEFAULT_VALUE}>Project default</SelectItem>
                 {choice.connections.map((connection) => (
-                  <SelectItem key={connection.profileId} value={connection.profileId}>
+                  <SelectItem
+                    key={connection.connectionId}
+                    value={connection.connectionId}
+                  >
                     {connection.label}
                     {connection.isDefault ? ' (default)' : ''}
                   </SelectItem>
@@ -115,20 +128,4 @@ export function ConnectorBindingFields({
       })}
     </div>
   );
-}
-
-/** Labels for the chosen connections, keyed by alias — recorded in session
- *  metadata so the workbench can name what a running session is bound to. */
-export function bindingLabels(
-  choices: ConnectorBindingChoice[],
-  bindings: Record<string, string>,
-): Record<string, string> {
-  const labels: Record<string, string> = {};
-  for (const [alias, profileId] of Object.entries(bindings)) {
-    const match = choices
-      .find((choice) => choice.alias === alias)
-      ?.connections.find((connection) => connection.profileId === profileId);
-    if (match) labels[alias] = match.label;
-  }
-  return labels;
 }

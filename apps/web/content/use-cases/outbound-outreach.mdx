@@ -91,7 +91,7 @@ Every batch stops at a **human approval gate**, and a **daily cap** limits how m
 messages can go out even once approved. A wrong segment can't turn into thousands
 of unreviewed emails, because the send is gated and capped regardless of how big
 the list is. Credentials are encrypted in the Secrets Manager and injected at
-runtime, never shown to the model or written to logs.
+runtime, scoped to the agents you grant them to.
 
 </Step>
 <Step title="Run personalized outbound at a safe rate">
@@ -116,14 +116,13 @@ and nothing leaves without a person clearing it.
 
 The agent can draft and send email, so the send is the tightly controlled step:
 
-- **Isolation.** Each sweep runs in its own fresh microVM sandbox, torn down when
+- **Isolation.** Each sweep runs in its own fresh isolated sandbox, torn down when
   it finishes. The session reaches only enrichment, the CRM, and email, and only
   drafted messages leave it; nothing sends from inside the sandbox. A failure on
   one contact is logged and skipped — it never blocks or corrupts the rest of the
   batch.
 - **Scoped secrets.** The enrichment, CRM, and email credentials are encrypted in
-  the Secrets Manager and injected into the sandbox at runtime, never exposed to
-  the model or the logs.
+  the Secrets Manager and injected into the sandbox at runtime, scoped to the agents you grant them to.
 - **Human approval gate.** Nothing sends without a person approving it. Every batch
   is reviewed before send, and a **daily cap** limits volume even after approval,
   so a wrong list can never mass-send unreviewed.

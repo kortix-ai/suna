@@ -22,6 +22,7 @@ import { selectFromList } from '../tui-select.ts';
 import { emitJson, locateProjectAnywhere, takeFlagBool, takeFlagValue } from '../command-helpers.ts';
 import { C, help, pad, status } from '../style.ts';
 import { projectWebUrl } from '../web-url.ts';
+import { openInBrowser } from '../browser.ts';
 import { appendGitExcludeEntries } from '../git-exclude.ts';
 import { configureProjectGitAuth, resolveProjectGitTarget } from '../project-git.ts';
 import type { Auth } from '../api/auth.ts';
@@ -528,7 +529,7 @@ async function projectsUse(arg?: string): Promise<number> {
     process.stdout.write(`  ${C.dim}account → ${C.reset}${accountLabel} ${C.dim}(now active)${C.reset}\n`);
   }
   process.stdout.write(
-    `  ${C.dim}Used by connectors/executor/sessions when a directory isn't linked.${C.reset}\n`,
+    `  ${C.dim}Used by connectors/connections/sessions when a directory isn't linked.${C.reset}\n`,
   );
   return 0;
 }
@@ -747,20 +748,4 @@ function formatRelative(iso: string): string {
   const d = Math.floor(h / 24);
   if (d < 30) return `${d}d ago`;
   return new Date(iso).toLocaleDateString();
-}
-
-
-function openInBrowser(url: string): void {
-  // Only hand a real web URL to the OS opener — a value starting with '-' would
-  // be read as a flag by open/xdg-open, and Windows `start` parses its argument,
-  // so an unvalidated URL is a command-injection vector.
-  if (!/^https?:\/\//i.test(url)) return;
-  const cmd =
-    process.platform === 'darwin'
-      ? 'open'
-      : process.platform === 'win32'
-        ? 'cmd'
-        : 'xdg-open';
-  const args = process.platform === 'win32' ? ['/c', 'start', '', url] : [url];
-  spawnSync(cmd, args, { stdio: 'ignore' });
 }

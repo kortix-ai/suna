@@ -10,7 +10,7 @@ metadata:
 Claude Code is Anthropic's terminal coding agent. Its **headless** mode,
 `claude -p` (a.k.a. `--print`), makes it a disposable sub-agent: you write the
 metaprompt, Claude explores/edits/runs commands on its own, and returns a final
-message you capture and verify. You stay the planner; Claude is the executor —
+message you capture and verify. You stay the planner; Claude is the implementer —
 it's a strong long-context planner, so this is useful for reviews, big-picture
 design, and cross-cutting refactors.
 

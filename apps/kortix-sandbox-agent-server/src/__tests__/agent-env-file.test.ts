@@ -100,6 +100,33 @@ describe('writeAgentEnvFile', () => {
     expect(body).toContain('unset OLD')
   })
 
+  test('revokes a hot-added secret that was absent from the boot name list', () => {
+    const store = createProjectEnvStore({
+      KORTIX_PROJECT_SECRET_NAMES: 'BOOT_SECRET',
+      BOOT_SECRET: 'boot',
+    } as NodeJS.ProcessEnv)
+    const sh = shPath()
+
+    store.apply({
+      revision: 'r-hot-add',
+      env: { BOOT_SECRET: 'boot', HOT_SECRET: 'hot' },
+      names: ['BOOT_SECRET', 'HOT_SECRET'],
+    })
+    store.apply({
+      revision: 'r-hot-revoke',
+      env: { BOOT_SECRET: 'boot' },
+      names: ['BOOT_SECRET'],
+    })
+    writeAgentEnvFile(store, {
+      sh,
+      bootEnv: { KORTIX_PROJECT_SECRET_NAMES: 'BOOT_SECRET' } as NodeJS.ProcessEnv,
+    })
+
+    const body = readFileSync(sh, 'utf8')
+    expect(body).toContain("export BOOT_SECRET='boot'")
+    expect(body).toContain('unset HOT_SECRET')
+  })
+
   test('emits the per-session cred allowlist (no-restart hot-swap fix) but NOT daemon-internal KORTIX_*', () => {
     // The no-restart hot-swap reuses the seed opencode, so its env never gets the
     // per-session creds; this file (BASH_ENV) must carry them to the agent's shells.

@@ -1,9 +1,6 @@
 # Session boot — 1-second threshold gap analysis + attack sequence
 
-> **Historical runtime scope.** This analysis measures the v2 OpenCode
-> compatibility boot path. A v3 session also starts an immutable OpenCode,
-> Claude Code, Codex, or Pi ACP harness. Use harness-specific readiness marks
-> and `tests/e2e/scripts/acp-multi-harness-smoke.ts` for current acceptance.
+> This analysis measures the v2 OpenCode REST boot path.
 
 > Goal §1: *Performance: Kortix minimal harness + session boot optimization —
 > **1-second threshold**.* This doc is the grounded scoping step before any
@@ -26,16 +23,16 @@ The stages, in order:
 | 3 | `repo-materialized` | Project repo cloned/seeded into the sandbox | Cold: full clone; warm: snapshot restore |
 | 4 | `config-deps` | OpenCode config deps installed (`/opt/kortix/opencode-config-deps`) | Cold: install; warm: pre-installed |
 | 5 | `opencode-spawned` | OpenCode process spawned | Always (spawn cost) |
-| 6 | `proxy-up` | Kortix proxy server (LLM + executor) up | Always |
+| 6 | `proxy-up` | Kortix proxy server (LLM + connector) up | Always |
 | 7 | `opencode-ready` | OpenCode reports ready (config loaded, providers initialized) | Always (OpenCode's own boot) |
 | 8 | `opencode-session-created` | First OpenCode conversation created (UI-usable) | If `initialOpenCodeSessionRequired` |
 
 In **warm-seed mode** (the fast path), stages run in parallel branches:
 `seed-project-materialized` / `seed-scaffold-materialized` → `seed-llm-proxy-started`
-→ `seed-executor-proxy-started` → `seed-opencode-spawned` → `seed-proxy-ready`
+→ `seed-connector-proxy-started` → `seed-opencode-spawned` → `seed-proxy-ready`
 → `seed-opencode-ready` → `seed-opencode-session`, then adoption:
 `adopt-repo-materialized` → `adopt-gateway-catalog-refreshed` →
-`adopt-opencode-hotswapped` → `adopt-executor-proxy-ready` →
+`adopt-opencode-hotswapped` → `adopt-connector-proxy-ready` →
 `adopt-opencode-restarted`.
 
 ## Existing boot-acceleration infrastructure (already built)
@@ -84,9 +81,9 @@ that can plausibly hit 1s.
    the **dominant cost** in the warm path (hundreds of ms to seconds).
    **Unknown: actual OpenCode boot time on a warm snapshot.** Second thing to
    measure.
-3. **Proxy up** (stage 6) — Kortix's own LLM + executor proxy. Should be fast
+3. **Proxy up** (stage 6) — Kortix's own LLM + connector proxy. Should be fast
    (in-process Hono server) but has startup work (gateway catalog refresh,
-   executor proxy bind). **Likely <100ms** but unmeasured.
+   connector proxy bind). **Likely <100ms** but unmeasured.
 4. **Repo materialization** (stage 3) — in warm mode this is a snapshot
    restore (fast); in cold mode it's a full `git clone` (slow, seconds). The
    warm path sidesteps this.

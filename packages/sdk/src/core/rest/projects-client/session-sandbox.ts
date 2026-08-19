@@ -6,8 +6,6 @@ import { setSessionRuntime } from "../../session/session-runtime-registry";
 import { getSandboxUrlForExternalId } from "../../session/server-store/url-helpers";
 import type { ProjectSession } from "./sessions";
 
-type SessionRuntimeHarness = 'claude' | 'codex' | 'opencode' | 'pi';
-
 // ---------------------------------------------------------------------------
 // Session sandbox — runtime row in `kortix.session_sandboxes`. Separate from
 // the legacy /instances sandbox table (`kortix.sandboxes`); no billing or
@@ -36,6 +34,13 @@ export interface ProjectSessionSandbox {
 export type SessionStartStage =
   "provisioning" | "starting" | "ready" | "stopped" | "failed";
 
+export interface SessionStartFailure {
+  category: "provider-capacity" | "git-auth" | "sandbox-provider";
+  message: string;
+  /** A user action can retry. Automatic polling must still stop. */
+  retryable: boolean;
+}
+
 export interface SessionStartResult {
   /** Coarse lifecycle stage to render + poll on. */
   stage: SessionStartStage;
@@ -45,12 +50,8 @@ export interface SessionStartResult {
   retriable: boolean;
   sandbox: ProjectSessionSandbox | null;
   opencode_session_id: string | null;
-  /** Server-selected session client transport. Missing means legacy REST. */
-  runtime_transport?: 'acp' | 'rest';
-  runtime_harness?: SessionRuntimeHarness;
-  native_agent?: string | null;
-  acp_server_id?: string | null;
-  acp_session_id?: string | null;
+  /** Stable terminal failure. Provider-specific diagnostics stay internal. */
+  failure?: SessionStartFailure | null;
   /**
    * Relative proxy path for this session's OpenCode runtime (port 8000), composed
    * against the configured backendUrl. The server owns the proxy scheme; the SDK
@@ -72,25 +73,15 @@ export function projectSessionStartSeed(
 ): SessionStartResult | null {
   if (
     session.status !== "running" ||
+    !session.sandbox_id ||
     !session.sandbox_provider ||
     !session.sandbox_url ||
-    (session.runtime_transport === "acp"
-      ? !session.acp_server_id
-      : !session.opencode_session_id)
+    !session.opencode_session_id
   ) {
     return null;
   }
   const externalId = session.sandbox_url.match(/\/p\/([^/]+)\//)?.[1];
   if (!externalId) return null;
-  // The `project_sessions.sandbox_id` column is nullable (a legacy Suna-migration
-  // session is minted with it null and provisioning only writes `sandbox_url`,
-  // never back-filling `sandbox_id`). Without this guard the seeded
-  // `ProjectSessionSandbox` carries a `null` `sandbox_id`, which the session
-  // page then derefs as `sandbox.sandbox_id.slice(0, 8)` and crashes the render
-  // (Better Stack pattern e6d0e044). Drop the seed entirely when the id is
-  // missing — `useSession`'s `/start` poll then resolves readiness from server
-  // truth (which always carries the non-null `session_sandboxes.sandbox_id`).
-  if (!session.sandbox_id) return null;
   return {
     stage: "ready",
     agent_name: session.agent_name ?? "default",
@@ -111,11 +102,6 @@ export function projectSessionStartSeed(
       updated_at: session.updated_at,
     },
     opencode_session_id: session.opencode_session_id,
-    runtime_transport: session.runtime_transport,
-    runtime_harness: session.runtime_harness,
-    native_agent: session.native_agent,
-    acp_server_id: session.acp_server_id,
-    acp_session_id: session.acp_session_id,
     runtime_url: session.sandbox_url,
   };
 }

@@ -7,8 +7,10 @@ import {
 } from '../command-helpers.ts';
 import { C, help, pad, status } from '../style.ts';
 
-type ProjectRole = 'manager' | 'editor' | 'member';
-const ROLES: readonly ProjectRole[] = ['manager', 'editor', 'member'];
+// Two project roles. `editor` was removed on 2026-08-18 — the API answers
+// 400 for it, so the CLI never offers it.
+type ProjectRole = 'manager' | 'member';
+const ROLES: readonly ProjectRole[] = ['manager', 'member'];
 
 interface AccessMember {
   user_id: string;
@@ -109,12 +111,44 @@ export async function runAccess(argv: string[]): Promise<number> {
         const email = positional[0];
         if (!email) return missing('an email');
         if (!checkRole()) return 2;
-        const resp = await ctx.client.post<{ status?: string }>(`${base}/access/invite`, {
+        const resp = await ctx.client.post<{
+          status?: string;
+          /** False when no email left the building — every deployment without
+           *  MAILTRAP_API_TOKEN, which is every self-hosted one. */
+          email_sent?: boolean;
+          email_skip_reason?: string | null;
+          /** The only remaining delivery channel when the email was skipped. */
+          invite_url?: string;
+          message?: string;
+        }>(`${base}/access/invite`, {
           email,
           role,
           ...(f.expires ? { expires_at: f.expires } : {}),
         });
-        process.stdout.write(`${status.ok(`Invited ${C.bold}${email}${C.reset} as ${role}${resp.status === 'invited' ? ' (pending signup)' : ''}`)}\n`);
+        if (json) {
+          emitJson(resp);
+          return 0;
+        }
+        const pending = resp.status === 'invited' ? ' (pending signup)' : '';
+        // The server tells us whether an email actually went out, and hands back
+        // an invite_url precisely so this case is recoverable. Printing a green
+        // tick regardless left the inviter waiting for a delivery that never
+        // happened — and threw away the only link that would have worked. The
+        // web dashboard already warns and offers the link for this same payload,
+        // so a CLI user and a web user were told opposite things.
+        //
+        // `email_sent === undefined` is an older API that predates the field;
+        // keep the previous wording rather than inventing a warning.
+        if (resp.email_sent === false) {
+          process.stdout.write(
+            `${status.warn(`Invited ${C.bold}${email}${C.reset} as ${role}${pending} — but NO email was sent${resp.email_skip_reason ? ` (${resp.email_skip_reason})` : ''}.`)}\n`,
+          );
+          if (resp.invite_url) {
+            process.stdout.write(`  Share this link with them:\n  ${C.bold}${resp.invite_url}${C.reset}\n`);
+          }
+          return 0;
+        }
+        process.stdout.write(`${status.ok(`Invited ${C.bold}${email}${C.reset} as ${role}${pending}`)}\n`);
         return 0;
       }
       case 'grant':

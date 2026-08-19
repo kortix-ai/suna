@@ -1,41 +1,60 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
 import {
-  activateConnectionProfile,
+  activateConnection,
   createConnector,
-  discoverConnectorAuth,
-  discoverConnectionProfileOAuth2,
   deleteConnector,
+  discoverConnectionOAuth2,
+  discoverConnectorAuth,
+  ensureProjectConnectorConnection,
   getConnectStatus,
-  getDiscoverIntegration,
+  getConnectionPolicies,
+  getConnectionOAuth2Application,
+  getConnectionOAuth2Status,
   getConnectorConfig,
   getConnectorPolicies,
-  getConnectionProfileOAuth2Application,
-  getConnectionProfileOAuth2Status,
-  ensureProjectConnectorProfile,
-  listConnectionProfiles,
+  getDiscoverConnector,
+  listAllConnections,
+  listConnections,
   listConnectors,
-  listDiscoverIntegrations,
+  listDiscoverConnectors,
   listPipedreamApps,
+  listPipedreamSections,
   pipedreamConnect,
-  pipedreamConnectConnectionProfile,
+  pipedreamConnectConnection,
   pipedreamFinalize,
-  pipedreamFinalizeConnectionProfile,
-  pollConnectionProfileOAuth2DeviceAuthorization,
-  putConnectionProfileOAuth2Application,
-  reconcileConnectionProfile,
-  reconcileMemberConnectionProfile,
-  revokeConnectionProfile,
+  pipedreamFinalizeConnection,
+  pollConnectionOAuth2DeviceAuthorization,
+  putConnectionOAuth2Application,
+  reconcileConnection,
+  reconcileMemberConnection,
+  revokeConnection,
+  setConnectionPolicies,
+  setConnectorAuthorizationStrategy,
   setConnectorCredential,
   setConnectorCredentialMode,
+  setConnectorSecretBinding,
   setConnectorName,
   setConnectorPolicies,
   setConnectorSensitive,
+  setDefaultConnection,
+  startConnectionOAuth2Authorization,
+  startConnectionOAuth2DeviceAuthorization,
   syncConnectors,
-  startConnectionProfileOAuth2Authorization,
-  startConnectionProfileOAuth2DeviceAuthorization,
-  updateConnectionProfileCredential,
+  updateConnectionCredential,
 } from './connectors';
+
+const canonicalConnectionType: import('./connectors').Connection = {
+  connection_id: 'connection-new',
+  connector_alias: 'gmail',
+  owner_type: 'project',
+  owner_id: null,
+  label: 'New Gmail',
+  status: 'active',
+  is_default: true,
+  metadata: {},
+};
+void canonicalConnectionType;
 
 let calls: { url: string; method: string; body: unknown }[] = [];
 let nextResponse: { status: number; body: unknown } = { status: 200, body: {} };
@@ -62,11 +81,35 @@ configureKortix({
 });
 const last = () => calls[calls.length - 1];
 
-test('native OAuth2 lifecycle methods use profile-scoped generic routes', async () => {
-  nextResponse = { status: 200, body: { profile_id: 'profile-1' } };
-  await ensureProjectConnectorProfile('P1', 'generic-api');
+test('connection APIs expose only connection identifiers', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      connections: [
+        {
+          connection_id: 'connection-1',
+          connector_alias: 'gmail',
+          owner_type: 'project',
+          owner_id: null,
+          label: 'Gmail',
+          status: 'active',
+          is_default: true,
+          metadata: {},
+        },
+      ],
+    },
+  };
+  expect((await listConnections('P1')).connections[0]?.connection_id).toBe('connection-1');
+  expect(listAllConnections).toBeDefined();
+  expect(reconcileConnection).toBeDefined();
+  expect(reconcileMemberConnection).toBeDefined();
+});
+
+test('native OAuth2 lifecycle methods use connection-scoped generic routes', async () => {
+  nextResponse = { status: 200, body: { connection_id: 'connection-1' } };
+  await ensureProjectConnectorConnection('P1', 'generic-api');
   expect(last()).toMatchObject({ method: 'POST' });
-  expect(last().url).toContain('/projects/P1/connectors/generic-api/oauth2/profile');
+  expect(last().url).toContain('/projects/P1/connectors/generic-api/oauth2/connection');
 
   nextResponse = { status: 200, body: { ok: true } };
   const application = {
@@ -76,22 +119,22 @@ test('native OAuth2 lifecycle methods use profile-scoped generic routes', async 
     token_endpoint_auth_method: 'none' as const,
     scopes: ['read'],
   };
-  await putConnectionProfileOAuth2Application('P1', 'profile-1', application);
+  await putConnectionOAuth2Application('P1', 'connection-1', application);
   expect(last()).toMatchObject({ method: 'PUT', body: application });
-  expect(last().url).toContain('/projects/P1/connector-profiles/profile-1/oauth2/application');
+  expect(last().url).toContain('/projects/P1/connections/connection-1/oauth2/application');
 
   nextResponse = {
     status: 200,
     body: { application: { ...application, has_client_secret: false } },
   };
-  await getConnectionProfileOAuth2Application('P1', 'profile-1');
+  await getConnectionOAuth2Application('P1', 'connection-1');
   expect(last().method).toBe('GET');
 
   nextResponse = {
     status: 200,
     body: { metadata: { token_url: application.token_url } },
   };
-  await discoverConnectionProfileOAuth2('P1', 'profile-1', {
+  await discoverConnectionOAuth2('P1', 'connection-1', {
     discovery_url: 'https://identity.example.com/.well-known/oauth-authorization-server',
   });
   expect(last().method).toBe('POST');
@@ -100,7 +143,7 @@ test('native OAuth2 lifecycle methods use profile-scoped generic routes', async 
     status: 200,
     body: { authorization_url: application.authorization_url },
   };
-  await startConnectionProfileOAuth2Authorization('P1', 'profile-1', {
+  await startConnectionOAuth2Authorization('P1', 'connection-1', {
     success_redirect_uri: 'https://dev.kortix.com/projects/P1',
   });
   expect(last().url).toContain('/oauth2/authorize');
@@ -115,36 +158,136 @@ test('native OAuth2 lifecycle methods use profile-scoped generic routes', async 
       interval_seconds: 5,
     },
   };
-  await startConnectionProfileOAuth2DeviceAuthorization('P1', 'profile-1', {});
+  await startConnectionOAuth2DeviceAuthorization('P1', 'connection-1', {});
   expect(last().url).toContain('/oauth2/device');
 
   nextResponse = { status: 200, body: { status: 'pending' } };
-  await pollConnectionProfileOAuth2DeviceAuthorization('P1', 'profile-1', 'session-1');
+  await pollConnectionOAuth2DeviceAuthorization('P1', 'connection-1', 'session-1');
   expect(last().url).toContain('/oauth2/device/session-1');
 
   nextResponse = { status: 200, body: { status: 'active', scopes: ['read'] } };
-  await getConnectionProfileOAuth2Status('P1', 'profile-1');
+  await getConnectionOAuth2Status('P1', 'connection-1');
   expect(last().url).toContain('/oauth2/status');
+});
+
+test('connection methods use the canonical connection route contract', async () => {
+  nextResponse = { status: 200, body: { connections: [] } };
+  await listConnections('P1');
+  expect(last().url).toContain('/projects/P1/connections');
+
+  nextResponse = {
+    status: 200,
+    body: {
+      connection_id: 'connection-1',
+      connector_alias: 'gmail',
+      owner_type: 'project',
+      owner_id: null,
+      label: 'Project Gmail',
+      status: 'active',
+      is_default: true,
+      metadata: {},
+    },
+  };
+  await reconcileConnection('P1', {
+    connector_alias: 'gmail',
+    owner_type: 'project',
+    label: 'Project Gmail',
+  });
+  expect(last()).toMatchObject({ method: 'POST' });
+
+  nextResponse = { status: 200, body: { ok: true } };
+  await updateConnectionCredential('P1', 'connection-1', {
+    value: 'secret-value',
+  });
+  expect(last().url).toContain('/connections/connection-1/credential');
+  await revokeConnection('P1', 'connection-1');
+  expect(last().url).toContain('/connections/connection-1/revoke');
+  await activateConnection('P1', 'connection-1');
+  expect(last().url).toContain('/connections/connection-1/activate');
+  await setDefaultConnection('P1', 'connection-1');
+  expect(last().url).toContain('/connections/connection-1/default');
+
+  nextResponse = { status: 200, body: { connection_id: 'connection-1' } };
+  await ensureProjectConnectorConnection('P1', 'gmail');
+  expect(last().url).toContain('/connectors/gmail/oauth2/connection');
+
+  nextResponse = { status: 200, body: { token: 'connect-token' } };
+  await pipedreamConnectConnection('P1', 'connection-1');
+  expect(last().url).toContain('/connections/connection-1/connect');
+
+  nextResponse = { status: 200, body: { connected: true } };
+  await pipedreamFinalizeConnection('P1', 'connection-1');
+  expect(last().url).toContain('/connections/connection-1/connect/finalize');
+});
+
+test('deprecated authorization policy methods fail before widening policy scope', async () => {
+  await expect(getConnectionPolicies('P1', 'authorization-1')).rejects.toThrow(
+    'Use getConnectorPolicies(projectId, slug)',
+  );
+  await expect(
+    setConnectionPolicies('P1', 'authorization-1', [{ match: 'send_email', action: 'block' }]),
+  ).rejects.toThrow('Use setConnectorPolicies(projectId, slug, policies)');
+  expect(calls).toHaveLength(0);
 });
 
 const postmanDraftTypecheck: import('./connectors').ConnectorDraftInput = {
   slug: 'hubspot',
   provider: 'postman',
   spec: 'https://github.com/HubSpot/HubSpot-public-api-spec-collection',
+  authorization_strategy: 'user',
 };
 void postmanDraftTypecheck;
 
 test('listConnectors GETs the project connectors list', async () => {
-  nextResponse = { status: 200, body: { connectors: [] } };
+  nextResponse = {
+    status: 200,
+    body: {
+      connectors: [
+        {
+          slug: 'signed-api',
+          name: 'Signed API',
+          provider: 'http',
+          status: 'active',
+          credentialMode: 'shared',
+          authorizationStrategy: 'user',
+          requestAuthType: 'hmac',
+          sensitive: false,
+          actions: [],
+          authSecret: 'credential',
+          secretSet: false,
+        },
+      ],
+    },
+  };
   const result = await listConnectors('P1');
-  expect(last().url).toContain('/executor/projects/P1/connectors');
+  expect(last().url).toContain('/connectors/projects/P1/connectors');
   expect(last().method).toBe('GET');
-  expect(result).toEqual({ connectors: [] });
+  expect(result.connectors[0]?.requestAuthType).toBe('hmac');
 });
 
 test('listConnectors throws on a failed response', async () => {
   nextResponse = { status: 500, body: { message: 'boom' } };
   await expect(listConnectors('P1')).rejects.toBeTruthy();
+});
+
+test('setConnectorSecretBinding sends one explicit project secret identifier', async () => {
+  nextResponse = { status: 200, body: { ok: true } };
+
+  await setConnectorSecretBinding('P1', 'signed-api', 'SIGNING_KEY');
+
+  expect(last()).toEqual({
+    url: 'http://test.local/connectors/projects/P1/connectors/signed-api/secret-binding',
+    method: 'PUT',
+    body: { secret_identifier: 'SIGNING_KEY' },
+  });
+});
+
+test('setConnectorSecretBinding clears a binding with null', async () => {
+  nextResponse = { status: 200, body: { ok: true } };
+
+  await setConnectorSecretBinding('P1', 'signed-api', null);
+
+  expect(last()?.body).toEqual({ secret_identifier: null });
 });
 
 test('listConnectors is a silent background read — a 403 never hits the global error sink', async () => {
@@ -171,7 +314,7 @@ test('listConnectors is a silent background read — a 403 never hits the global
 test('syncConnectors POSTs an empty body to the sync endpoint', async () => {
   nextResponse = { status: 200, body: { synced: 2, errors: [] } };
   const result = await syncConnectors('P1');
-  expect(last().url).toContain('/executor/projects/P1/connectors/sync');
+  expect(last().url).toContain('/connectors/projects/P1/connectors/sync');
   expect(last().method).toBe('POST');
   expect(last().body).toEqual({});
   expect(result).toEqual({ synced: 2, errors: [] });
@@ -180,15 +323,25 @@ test('syncConnectors POSTs an empty body to the sync endpoint', async () => {
 test('setConnectorCredentialMode PUTs { mode }', async () => {
   nextResponse = { status: 200, body: { ok: true } };
   await setConnectorCredentialMode('P1', 'slack', 'shared');
-  expect(last().url).toContain('/executor/projects/P1/connectors/slack/credential-mode');
+  expect(last().url).toContain('/connectors/projects/P1/connectors/slack/credential-mode');
   expect(last().method).toBe('PUT');
   expect(last().body).toEqual({ mode: 'shared' });
+});
+
+test('setConnectorAuthorizationStrategy PUTs one exclusive strategy', async () => {
+  nextResponse = { status: 200, body: { ok: true } };
+  await setConnectorAuthorizationStrategy('P1', 'gmail-read', 'user');
+  expect(last().url).toContain(
+    '/connectors/projects/P1/connectors/gmail-read/authorization-strategy',
+  );
+  expect(last().method).toBe('PUT');
+  expect(last().body).toEqual({ authorization_strategy: 'user' });
 });
 
 test('setConnectorSensitive PUTs { sensitive }', async () => {
   nextResponse = { status: 200, body: { ok: true } };
   await setConnectorSensitive('P1', 'slack', true);
-  expect(last().url).toContain('/executor/projects/P1/connectors/slack/sensitive');
+  expect(last().url).toContain('/connectors/projects/P1/connectors/slack/sensitive');
   expect(last().method).toBe('PUT');
   expect(last().body).toEqual({ sensitive: true });
 });
@@ -199,14 +352,14 @@ test('getConnectorPolicies GETs the policies list', async () => {
     body: { policies: [{ match: '*', action: 'require_approval' }] },
   };
   const result = await getConnectorPolicies('P1', 'slack');
-  expect(last().url).toContain('/executor/projects/P1/connectors/slack/policies');
+  expect(last().url).toContain('/connectors/projects/P1/connectors/slack/policies');
   expect(last().method).toBe('GET');
   expect(result.policies).toHaveLength(1);
 });
 
 test('getConnectorPolicies surfaces the effective scope that decided each tool', async () => {
   // Project rules are evaluated before connector rules and CANNOT be overridden
-  // (see the executor's resolveEffectiveAction). Without `effective`, an editor
+  // (see the connector's resolveEffectiveAction). Without `effective`, an editor
   // renders a connector rule the runtime is actually ignoring.
   nextResponse = {
     status: 200,
@@ -239,7 +392,7 @@ test('setConnectorPolicies PUTs { policies }', async () => {
   nextResponse = { status: 200, body: { ok: true } };
   const policies = [{ match: 'send_message', action: 'block' as const }];
   await setConnectorPolicies('P1', 'slack', policies);
-  expect(last().url).toContain('/executor/projects/P1/connectors/slack/policies');
+  expect(last().url).toContain('/connectors/projects/P1/connectors/slack/policies');
   expect(last().method).toBe('PUT');
   expect(last().body).toEqual({ policies });
 });
@@ -264,17 +417,47 @@ test('getConnectorConfig GETs the config, url-encoding a slug with special chara
   };
   const result = await getConnectorConfig('P1', 'my app/v1');
   expect(last().url).toContain(
-    `/executor/projects/P1/connectors/${encodeURIComponent('my app/v1')}/config`,
+    `/connectors/projects/P1/connectors/${encodeURIComponent('my app/v1')}/config`,
   );
   expect(last().url).not.toContain('my app/v1');
   expect(last().method).toBe('GET');
   expect(result.slug).toBe('my app/v1');
 });
 
+test('computer connector config exposes its assigned machine ids', async () => {
+  const tunnelIds = [
+    '11111111-1111-4111-8111-111111111111',
+    '22222222-2222-4222-8222-222222222222',
+  ];
+  nextResponse = {
+    status: 200,
+    body: {
+      slug: 'studio-computers',
+      name: 'Studio computers',
+      provider: 'computer',
+      platform: null,
+      credentialMode: 'shared',
+      authorizationStrategy: 'project',
+      app: null,
+      account: null,
+      url: null,
+      transport: null,
+      endpoint: null,
+      baseUrl: null,
+      spec: null,
+      tunnelIds,
+      auth: { type: 'none', in: 'header', name: null, prefix: null },
+      headers: {},
+    },
+  };
+  const result = await getConnectorConfig('P1', 'studio-computers');
+  expect(result.tunnelIds).toEqual(tunnelIds);
+});
+
 test('setConnectorName PUTs { name }', async () => {
   nextResponse = { status: 200, body: { ok: true } };
   await setConnectorName('P1', 'slack', 'Team Slack');
-  expect(last().url).toContain('/executor/projects/P1/connectors/slack/name');
+  expect(last().url).toContain('/connectors/projects/P1/connectors/slack/name');
   expect(last().method).toBe('PUT');
   expect(last().body).toEqual({ name: 'Team Slack' });
 });
@@ -285,7 +468,7 @@ test('pipedreamConnect POSTs an empty body to the connect endpoint', async () =>
     body: { connectUrl: 'https://pipedream.com/connect/x' },
   };
   const result = await pipedreamConnect('P1', 'github');
-  expect(last().url).toContain('/executor/projects/P1/connectors/github/connect');
+  expect(last().url).toContain('/connectors/projects/P1/connectors/github/connect');
   expect(last().method).toBe('POST');
   expect(last().body).toEqual({});
   expect(result.connectUrl).toContain('pipedream.com');
@@ -293,14 +476,29 @@ test('pipedreamConnect POSTs an empty body to the connect endpoint', async () =>
 
 test('createConnector POSTs the draft as the raw body', async () => {
   nextResponse = { status: 200, body: { ok: true } };
-  const draft = {
+  const draft: import('./connectors').ConnectorDraftInput = {
     slug: 'my-http',
     provider: 'http' as const,
     url: 'https://example.com',
+    create_only: true,
   };
   await createConnector('P1', draft);
-  expect(last().url).toContain('/executor/projects/P1/connectors');
-  expect(last().url).not.toContain('/connectors/');
+  expect(last().url).toContain('/connectors/projects/P1/connectors');
+  expect(last().url).not.toContain('/executor/');
+  expect(last().method).toBe('POST');
+  expect(last().body).toEqual(draft);
+});
+
+test('createConnector sends a Computers profile machine allowlist', async () => {
+  nextResponse = { status: 200, body: { ok: true } };
+  const draft: import('./connectors').ConnectorDraftInput = {
+    slug: 'studio-computers',
+    name: 'Studio computers',
+    provider: 'computer',
+    tunnel_ids: ['11111111-1111-4111-8111-111111111111', '22222222-2222-4222-8222-222222222222'],
+    create_only: true,
+  };
+  await createConnector('P1', draft);
   expect(last().method).toBe('POST');
   expect(last().body).toEqual(draft);
 });
@@ -326,7 +524,7 @@ test('discoverConnectorAuth POSTs a draft to the auth-discovery endpoint', async
     spec: 'https://github.com/HubSpot/HubSpot-public-api-spec-collection',
   };
   expect(await discoverConnectorAuth('P1', draft)).toEqual(discovery);
-  expect(last().url).toContain('/executor/projects/P1/connectors/auth-discovery');
+  expect(last().url).toContain('/connectors/projects/P1/connectors/auth-discovery');
   expect(last().method).toBe('POST');
   expect(last().body).toEqual(draft);
 });
@@ -334,14 +532,14 @@ test('discoverConnectorAuth POSTs a draft to the auth-discovery endpoint', async
 test('deleteConnector DELETEs the connector by slug', async () => {
   nextResponse = { status: 200, body: { ok: true } };
   await deleteConnector('P1', 'slack');
-  expect(last().url).toContain('/executor/projects/P1/connectors/slack');
+  expect(last().url).toContain('/connectors/projects/P1/connectors/slack');
   expect(last().method).toBe('DELETE');
 });
 
 test('listPipedreamApps GETs with no query string when no optional params are given', async () => {
   nextResponse = { status: 200, body: { apps: [], hasMore: false } };
   await listPipedreamApps('P1');
-  expect(last().url).toContain('/executor/projects/P1/pipedream/apps');
+  expect(last().url).toContain('/connectors/projects/P1/pipedream/apps');
   expect(last().url).not.toContain('?');
   expect(last().method).toBe('GET');
 });
@@ -352,28 +550,111 @@ test('listPipedreamApps GETs with q + cursor as query params when given', async 
     body: { apps: [], nextCursor: 'c2', hasMore: true },
   };
   const result = await listPipedreamApps('P1', 'slack', 'c1');
-  expect(last().url).toContain('/executor/projects/P1/pipedream/apps?');
+  expect(last().url).toContain('/connectors/projects/P1/pipedream/apps?');
   expect(last().url).toContain('q=slack');
   expect(last().url).toContain('cursor=c1');
   expect(result.nextCursor).toBe('c2');
 });
 
-test('listDiscoverIntegrations GETs a searchable cursor page', async () => {
+test('listPipedreamApps surfaces the catalogue total the API reports', async () => {
+  // The browse UI states "Showing 192 of 2,713" against this number. Without
+  // it a paged surface can only ever quote what it has already fetched, which
+  // reads as a catalogue of 192.
+  nextResponse = {
+    status: 200,
+    body: { apps: [], total: 2713, nextCursor: 'c2', hasMore: true },
+  };
+  const result = await listPipedreamApps('P1');
+  expect(result.total).toBe(2713);
+});
+
+test('listPipedreamApps tolerates an API build that reports no total', async () => {
+  // The field is additive, so an older deployment omits it. Callers fall back
+  // to the loaded count; what must not happen is a throw or a `NaN`.
+  nextResponse = { status: 200, body: { apps: [], hasMore: false } };
+  const result = await listPipedreamApps('P1');
+  expect(result.total).toBeUndefined();
+});
+
+test('listPipedreamApps accepts an options object with a category', async () => {
+  // Category filtering is served from the API's snapshot of the whole
+  // catalogue. Pipedream's own /apps endpoint accepts a category parameter and
+  // ignores it, so this parameter is meaningful only to the Kortix API.
+  nextResponse = { status: 200, body: { apps: [], categories: [], total: 0, hasMore: false, indexReady: true } };
+  await listPipedreamApps('P1', { q: 'sap', category: 'Business Management', cursor: '48', limit: 24 });
+  expect(last().url).toContain('q=sap');
+  expect(last().url).toContain('category=Business+Management');
+  expect(last().url).toContain('cursor=48');
+  expect(last().url).toContain('limit=24');
+});
+
+test('listPipedreamApps keeps the positional (q, cursor) signature working', async () => {
+  // Published API. The options object is additive; the old call shape must not
+  // change behaviour for any consumer pinned to the current major.
+  nextResponse = { status: 200, body: { apps: [], categories: [], total: 0, hasMore: false, indexReady: true } };
+  await listPipedreamApps('P1', 'slack', 'c1');
+  expect(last().url).toContain('q=slack');
+  expect(last().url).toContain('cursor=c1');
+  expect(last().url).not.toContain('category=');
+});
+
+test('listPipedreamApps surfaces the category facet and index readiness', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      apps: [],
+      categories: [{ key: 'Marketing', label: 'Marketing', count: 207 }],
+      total: 207,
+      hasMore: false,
+      indexReady: true,
+    },
+  };
+  const result = await listPipedreamApps('P1');
+  expect(result.categories).toEqual([{ key: 'Marketing', label: 'Marketing', count: 207 }]);
+  expect(result.indexReady).toBe(true);
+});
+
+test('listPipedreamSections GETs the browse page in one request', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      sections: [{ key: 'Marketing', label: 'Marketing', total: 207, apps: [] }],
+      categories: [],
+      indexReady: true,
+    },
+  };
+  const result = await listPipedreamSections('P1', { perCategory: 6, maxCategories: 12 });
+  expect(last().url).toContain('/connectors/projects/P1/pipedream/sections?');
+  expect(last().url).toContain('perCategory=6');
+  expect(last().url).toContain('maxCategories=12');
+  // The section states its category's TRUE size, not the length of `apps` —
+  // that is what lets a heading say "Marketing · 207" over six cards.
+  expect(result.sections[0]?.total).toBe(207);
+});
+
+test('listPipedreamSections GETs without a query string when unparameterised', async () => {
+  nextResponse = { status: 200, body: { sections: [], categories: [], indexReady: false } };
+  await listPipedreamSections('P1');
+  expect(last().url).not.toContain('?');
+  expect(last().method).toBe('GET');
+});
+
+test('listDiscoverConnectors GETs a searchable cursor page', async () => {
   nextResponse = { status: 200, body: { items: [], total: 0, hasMore: false } };
-  await listDiscoverIntegrations('P1', 'notion admin', '48');
-  expect(last().url).toContain('/executor/projects/P1/discover/integrations?');
+  await listDiscoverConnectors('P1', 'notion admin', '48');
+  expect(last().url).toContain('/connectors/projects/P1/discover/connectors?');
   expect(last().url).toContain('q=notion+admin');
   expect(last().url).toContain('cursor=48');
   expect(last().method).toBe('GET');
 });
 
-test('getDiscoverIntegration GETs detail by encoded catalogue id', async () => {
+test('getDiscoverConnector GETs detail by encoded catalogue id', async () => {
   nextResponse = {
     status: 200,
     body: { item: { id: 'openapi/1forge-com' }, variants: [] },
   };
-  const result = await getDiscoverIntegration('P1', 'openapi/1forge-com');
-  expect(last().url).toContain('/executor/projects/P1/discover/integrations/detail?');
+  const result = await getDiscoverConnector('P1', 'openapi/1forge-com');
+  expect(last().url).toContain('/connectors/projects/P1/discover/connectors/detail?');
   expect(last().url).toContain('id=openapi%2F1forge-com');
   expect(last().method).toBe('GET');
   expect(result.item.id).toBe('openapi/1forge-com');
@@ -385,7 +666,7 @@ test('getConnectStatus GETs the deployment-wide connect-status endpoint', async 
     body: { configured: true, provider: 'pipedream' },
   };
   const result = await getConnectStatus();
-  expect(last().url).toContain('/executor/connect-status');
+  expect(last().url).toContain('/connectors/connect-status');
   expect(last().method).toBe('GET');
   expect(result).toEqual({ configured: true, provider: 'pipedream' });
 });
@@ -393,23 +674,25 @@ test('getConnectStatus GETs the deployment-wide connect-status endpoint', async 
 test('setConnectorCredential PUTs { value }', async () => {
   nextResponse = { status: 200, body: { ok: true } };
   await setConnectorCredential('P1', 'slack', 'sekret');
-  expect(last().url).toContain('/executor/projects/P1/connectors/slack/credential');
+  expect(last().url).toContain('/connectors/projects/P1/connectors/slack/credential');
   expect(last().method).toBe('PUT');
   expect(last().body).toEqual({ value: 'sekret' });
 });
 
 test('setConnectorCredential PUTs a native OAuth2 client-credentials configuration', async () => {
   nextResponse = { status: 200, body: { ok: true } };
-  const oauth2 = {
+  const oauth2: import('./connectors').OAuth2ClientCredentials = {
     type: 'oauth2_client_credentials' as const,
     token_url: 'https://login.microsoftonline.com/tenant/oauth2/v2.0/token',
     client_id: 'client-id',
     token_endpoint_auth_method: 'client_secret_post' as const,
     client_secret: 'client-secret',
     scopes: ['https://graph.microsoft.com/.default'],
+    resource: 'https://resource.example.com',
+    token_params: { tenant_hint: 'tenant-123' },
   };
   await setConnectorCredential('P1', 'sharepoint', { oauth2 });
-  expect(last().url).toContain('/executor/projects/P1/connectors/sharepoint/credential');
+  expect(last().url).toContain('/connectors/projects/P1/connectors/sharepoint/credential');
   expect(last().method).toBe('PUT');
   expect(last().body).toEqual({ oauth2 });
 });
@@ -417,22 +700,22 @@ test('setConnectorCredential PUTs a native OAuth2 client-credentials configurati
 test('pipedreamFinalize POSTs an empty body to the connect/finalize endpoint', async () => {
   nextResponse = { status: 200, body: { connected: true, accountId: 'acc_1' } };
   const result = await pipedreamFinalize('P1', 'github');
-  expect(last().url).toContain('/executor/projects/P1/connectors/github/connect/finalize');
+  expect(last().url).toContain('/connectors/projects/P1/connectors/github/connect/finalize');
   expect(last().method).toBe('POST');
   expect(last().body).toEqual({});
   expect(result).toEqual({ connected: true, accountId: 'acc_1' });
 });
 
-test('connection profile lifecycle uses the typed project profile routes', async () => {
-  nextResponse = { status: 200, body: { profiles: [] } };
-  await listConnectionProfiles('P1');
-  expect(last().url).toContain('/projects/P1/connector-profiles');
+test('connection lifecycle uses the typed project connection routes', async () => {
+  nextResponse = { status: 200, body: { connections: [] } };
+  await listConnections('P1');
+  expect(last().url).toContain('/projects/P1/connections');
   expect(last().method).toBe('GET');
 
   nextResponse = {
     status: 201,
     body: {
-      profile_id: 'profile-1',
+      connection_id: 'connection-1',
       connector_alias: 'veyris',
       owner_type: 'external',
       owner_id: 'thread-1',
@@ -442,7 +725,7 @@ test('connection profile lifecycle uses the typed project profile routes', async
       metadata: {},
     },
   };
-  await reconcileConnectionProfile('P1', {
+  await reconcileConnection('P1', {
     connector_alias: 'veyris',
     owner_type: 'external',
     owner_id: 'thread-1',
@@ -452,12 +735,12 @@ test('connection profile lifecycle uses the typed project profile routes', async
   expect(last().body).not.toHaveProperty('credential');
 
   nextResponse = { status: 200, body: { ok: true } };
-  await updateConnectionProfileCredential('P1', 'profile-1', {
+  await updateConnectionCredential('P1', 'connection-1', {
     value: 'capability',
   });
-  expect(last().url).toContain('/connector-profiles/profile-1/credential');
+  expect(last().url).toContain('/connections/connection-1/credential');
   expect(last().body).toEqual({ value: 'capability' });
-  await updateConnectionProfileCredential('P1', 'profile-1', {
+  await updateConnectionCredential('P1', 'connection-1', {
     oauth2: {
       type: 'oauth2_client_credentials',
       token_url: 'https://login.microsoftonline.com/tenant/oauth2/v2.0/token',
@@ -468,17 +751,17 @@ test('connection profile lifecycle uses the typed project profile routes', async
     },
   });
   expect(last().body).toHaveProperty('oauth2.type', 'oauth2_client_credentials');
-  await revokeConnectionProfile('P1', 'profile-1');
-  expect(last().url).toContain('/connector-profiles/profile-1/revoke');
-  await activateConnectionProfile('P1', 'profile-1');
-  expect(last().url).toContain('/connector-profiles/profile-1/activate');
+  await revokeConnection('P1', 'connection-1');
+  expect(last().url).toContain('/connections/connection-1/revoke');
+  await activateConnection('P1', 'connection-1');
+  expect(last().url).toContain('/connections/connection-1/activate');
 });
 
-test('member profile creation is owner-scoped by the API and never accepts an owner id', async () => {
+test('member connection creation is owner-scoped by the API and never accepts an owner id', async () => {
   nextResponse = {
     status: 201,
     body: {
-      profile_id: 'profile-member',
+      connection_id: 'connection-member',
       connector_alias: 'gmail',
       owner_type: 'member',
       owner_id: 'user-from-token',
@@ -488,24 +771,24 @@ test('member profile creation is owner-scoped by the API and never accepts an ow
       metadata: {},
     },
   };
-  await reconcileMemberConnectionProfile('P1', {
+  await reconcileMemberConnection('P1', {
     connector_alias: 'gmail',
     label: 'My Gmail',
   });
-  expect(last().url).toContain('/projects/P1/connector-profiles/me');
+  expect(last().url).toContain('/projects/P1/connections/me');
   expect(last().method).toBe('POST');
   expect(last().body).toEqual({ connector_alias: 'gmail', label: 'My Gmail' });
 });
 
-test('profile-specific Pipedream connect and finalize bind the OAuth identity to the profile', async () => {
+test('connection-specific Pipedream connect and finalize bind the OAuth identity to the connection', async () => {
   nextResponse = {
     status: 200,
     body: { connectUrl: 'https://pipedream.test/connect' },
   };
-  await pipedreamConnectConnectionProfile('P1', 'profile-member', {
+  await pipedreamConnectConnection('P1', 'connection-member', {
     success_redirect_uri: 'kortix://connected',
   });
-  expect(last().url).toContain('/projects/P1/connector-profiles/profile-member/connect');
+  expect(last().url).toContain('/projects/P1/connections/connection-member/connect');
   expect(last().method).toBe('POST');
   expect(last().body).toEqual({ success_redirect_uri: 'kortix://connected' });
 
@@ -513,8 +796,8 @@ test('profile-specific Pipedream connect and finalize bind the OAuth identity to
     status: 200,
     body: { connected: true, accountId: 'acc-member' },
   };
-  await pipedreamFinalizeConnectionProfile('P1', 'profile-member');
-  expect(last().url).toContain('/projects/P1/connector-profiles/profile-member/connect/finalize');
+  await pipedreamFinalizeConnection('P1', 'connection-member');
+  expect(last().url).toContain('/projects/P1/connections/connection-member/connect/finalize');
   expect(last().method).toBe('POST');
   expect(last().body).toEqual({});
 });

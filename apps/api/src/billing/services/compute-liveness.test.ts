@@ -1,35 +1,78 @@
-import { describe, expect, mock, test } from 'bun:test';
+import { afterEach, describe, expect, mock, test } from 'bun:test';
 
-// Only `computeLivenessGraceMs` reaches for the provider module (and through it
-// the real config, which process.exits on an incomplete local env). The rules
-// under test are pure and take their grace as an argument.
-mock.module('../../platform/providers', () => ({
-  providerAutoStopBackstopMinutes: () => 60,
-}));
+// Only the grace constant reaches for config (the real one process.exits on an
+// incomplete local env). Everything else here is pure and takes its grace as an
+// argument. Mutable so a test can sweep the idle window.
+const cfg: {
+  KORTIX_SANDBOX_AUTOSTOP_MINUTES?: number;
+  KORTIX_SANDBOX_PROVIDER_AUTOSTOP_MINUTES?: number;
+} = { KORTIX_SANDBOX_AUTOSTOP_MINUTES: 15 };
+mock.module('../../config', () => ({ config: cfg }));
 
-const { billableWindowEnd, computeLivenessGraceMs, isBeyondLivenessCeiling, lastAliveAtOf, parseTimestamp } =
-  await import('./compute-liveness');
+const {
+  BILLING_LIVENESS_GRACE_FLOOR_MINUTES,
+  billableWindowEnd,
+  billingLivenessGraceMinutes,
+  computeLivenessGraceMs,
+  isBeyondLivenessCeiling,
+  lastAliveAtOf,
+  parseTimestamp,
+} = await import('./compute-liveness');
 
 const HOUR = 3_600_000;
-const GRACE = HOUR; // providerAutoStopBackstopMinutes() is 60 in prod
+const GRACE = HOUR; // billingLivenessGraceMinutes() is 60 in prod
 const NOW = new Date('2026-07-29T12:00:00Z');
 
-describe('computeLivenessGraceMs', () => {
-  // Pinned to the provider's own idle auto-stop, because that is the hard
-  // physical bound on how long the box can still exist.
-  test('is the provider auto-stop backstop, in ms', () => {
+/** kortix-prod-env, confirmed 2026-07-29. */
+const PROD_IDLE_WINDOW_MINUTES = 15;
+
+afterEach(() => {
+  cfg.KORTIX_SANDBOX_AUTOSTOP_MINUTES = PROD_IDLE_WINDOW_MINUTES;
+  cfg.KORTIX_SANDBOX_PROVIDER_AUTOSTOP_MINUTES = undefined;
+});
+
+describe('billingLivenessGraceMinutes — the money knob, and only the money knob', () => {
+  test('is 60 minutes on the prod idle window', () => {
+    expect(billingLivenessGraceMinutes()).toBe(60);
     expect(computeLivenessGraceMs()).toBe(GRACE);
   });
 
-  // The grace has to sit inside a window nothing else enforced before:
-  //  - at LEAST two maintenance cycles, or a single missed pass silently zeroes
-  //    a healthy box's revenue;
-  //  - at MOST the provider auto-stop, or we bill past the point the box can
-  //    physically exist, which is the bug this whole change exists to kill.
-  test('sits between two reaper passes and the provider auto-stop', () => {
+  // BYTE-IDENTICAL. This is verbatim the arithmetic
+  // providerAutoStopBackstopMinutes() performed while the two were one number.
+  // The clamp is a pure function of graceMs, so proving graceMs is unchanged at
+  // every input proves the merged money guarantee is unchanged too.
+  test('REGRESSION: identical to the pre-split derivation at every idle window', () => {
+    const preSplit = (idle: number) => Math.max(60, Math.max(1, idle || 15) * 2);
+    for (const idle of [0, 1, 5, 15, 29, 30, 31, 45, 120, 720]) {
+      cfg.KORTIX_SANDBOX_AUTOSTOP_MINUTES = idle;
+      expect(billingLivenessGraceMinutes()).toBe(preSplit(idle));
+      expect(computeLivenessGraceMs()).toBe(preSplit(idle) * 60_000);
+    }
+  });
+
+  test('never dips below its floor', () => {
+    for (const idle of [undefined, 0, -5, 1, 29] as (number | undefined)[]) {
+      cfg.KORTIX_SANDBOX_AUTOSTOP_MINUTES = idle;
+      expect(billingLivenessGraceMinutes()).toBe(BILLING_LIVENESS_GRACE_FLOOR_MINUTES);
+    }
+  });
+
+  // At LEAST two maintenance cycles, or a single missed pass silently zeroes a
+  // healthy box's revenue.
+  test('covers at least two maintenance passes', () => {
     const maintenanceIntervalMs = 5 * 60_000;
     expect(computeLivenessGraceMs()).toBeGreaterThanOrEqual(2 * maintenanceIntervalMs);
-    expect(computeLivenessGraceMs()).toBeLessThanOrEqual(60 * 60_000);
+  });
+
+  // THE DECOUPLING, direction 2. The provider's idle timer is 12x this number
+  // and must be free to grow further; before the split it WAS this number, so
+  // raising it raised the bill ceiling with it. The ordering relation between
+  // the two lives in platform/providers/autostop-backstop.test.ts.
+  test('REGRESSION: does not move when the provider backstop moves', () => {
+    for (const backstop of [60, 720, 1440, 100_000]) {
+      cfg.KORTIX_SANDBOX_PROVIDER_AUTOSTOP_MINUTES = backstop;
+      expect(billingLivenessGraceMinutes()).toBe(60);
+    }
   });
 });
 
@@ -81,16 +124,16 @@ describe('lastAliveAtOf', () => {
 describe('billableWindowEnd — the clamp that caps the whole defect class', () => {
   test('a freshly observed box bills right up to now', () => {
     const lastAliveAt = new Date(NOW.getTime() - 60_000);
-    expect(
-      billableWindowEnd({ requestedEnd: NOW, lastAliveAt, graceMs: GRACE }).getTime(),
-    ).toBe(NOW.getTime());
+    expect(billableWindowEnd({ requestedEnd: NOW, lastAliveAt, graceMs: GRACE }).getTime()).toBe(
+      NOW.getTime(),
+    );
   });
 
   test('bills exactly to the ceiling at the boundary', () => {
     const lastAliveAt = new Date(NOW.getTime() - GRACE);
-    expect(
-      billableWindowEnd({ requestedEnd: NOW, lastAliveAt, graceMs: GRACE }).getTime(),
-    ).toBe(NOW.getTime());
+    expect(billableWindowEnd({ requestedEnd: NOW, lastAliveAt, graceMs: GRACE }).getTime()).toBe(
+      NOW.getTime(),
+    );
   });
 
   // THE 829-hour row: dead since 2026-06-24, still billing on 2026-07-29.
@@ -114,9 +157,9 @@ describe('billableWindowEnd — the clamp that caps the whole defect class', () 
 
   test('never extends a window that ends before the ceiling', () => {
     const requestedEnd = new Date(NOW.getTime() - 5 * HOUR);
-    expect(
-      billableWindowEnd({ requestedEnd, lastAliveAt: NOW, graceMs: GRACE }).getTime(),
-    ).toBe(requestedEnd.getTime());
+    expect(billableWindowEnd({ requestedEnd, lastAliveAt: NOW, graceMs: GRACE }).getTime()).toBe(
+      requestedEnd.getTime(),
+    );
   });
 });
 

@@ -5,8 +5,7 @@ import { useParams } from 'next/navigation';
 import { useCallback, useMemo, useState } from 'react';
 
 import { ProjectProviderModal } from '@/features/workspace/customize/sections/llm-provider/llm-provider-modal';
-import { useLlmProviderCatalogRevision } from '@/features/workspace/customize/sections/llm-provider/use-live-catalog';
-import { accountStateSelectors, useAccountState } from '@/hooks/billing';
+import { useAccountState } from '@/hooks/billing';
 import { isBillingEnabled } from '@/lib/config';
 import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
@@ -15,15 +14,44 @@ import type { ProviderModalTab } from '@/stores/provider-modal-store';
 import { useProviderModalStore } from '@/stores/provider-modal-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import { getProjectDetail, listProjectSecrets } from '@kortix/sdk';
-import {
-  connectedGatewayProviderIdsFromSecretNames,
-  hasUsableModel,
-  type ModelKey,
-} from '@kortix/sdk/react';
+import { contract, type ModelKey, qk } from '@kortix/sdk/react';
 import type { FlatModel } from './session-chat-input';
 
-export function projectProviderModalTab(tab: ProviderModalTab): 'connected' | 'catalog' | 'models' {
-  return tab === 'providers' ? 'catalog' : tab;
+/**
+ * `ProviderModalTab` is the caller-facing vocabulary ('providers' | 'connected'
+ * | 'models'). JAY-510 merged the modal's 'catalog' and 'connected' tabs into
+ * one `providers` surface, so both of those now resolve to it; only 'models'
+ * still names a distinct tab.
+ */
+export function projectProviderModalTab(tab: ProviderModalTab): 'providers' | 'models' {
+  return tab === 'models' ? 'models' : 'providers';
+}
+
+/**
+ * Which project this gate acts on. An explicitly passed id wins; the `[id]`
+ * route segment is the fallback.
+ *
+ * The fallback is what every original caller relies on — they all render under
+ * `/projects/[id]`. The explicit id exists because the onboarding wizard's plan
+ * step now also runs on `/new` (`app/(app)/new`), which has NO `[id]` segment:
+ * there the route yields `null`, `modal` is therefore `null`, and
+ * `openConnectProvider` renders nothing while the step's only control never
+ * advances the wizard.
+ *
+ * `!== undefined`, never `??`: a caller that deliberately passes `null` means
+ * "act on no project", and must not silently inherit whatever route it happens
+ * to be rendered under.
+ *
+ * Exported so this rule is provable — the hook itself cannot be rendered in
+ * `apps/web`'s test harness (no jsdom, and `mock.module` is process-wide across
+ * a non---isolate `bun test` run).
+ */
+export function resolveGateProjectId(
+  explicitId: string | null | undefined,
+  routeId: unknown,
+): string | null {
+  if (explicitId !== undefined) return explicitId;
+  return typeof routeId === 'string' ? routeId : null;
 }
 
 /**
@@ -34,27 +62,28 @@ export function projectProviderModalTab(tab: ProviderModalTab): 'connected' | 'c
  *
  * Also computes `hasSelectableModels` — pass the caller's flattened model list
  * (default `[]` for callers that only need the routing actions). This is
- * deliberately NOT `models.length > 0` or a raw provider-connected check: the
- * gateway bakes its whole catalog into every project regardless of plan or
- * connected keys, so the raw list is basically never empty. See
- * `hasUsableModel` for the actual entitlement check.
+ * deliberately NOT `models.length > 0`: the raw provider catalog can carry
+ * models the project does not offer. See `isModelOffered` for the check.
+ *
+ * `options.projectId` names the project explicitly, for callers that render
+ * outside `/projects/[id]`. Omitting it keeps the original route-inferred
+ * behaviour verbatim — see `resolveGateProjectId`.
  */
-export function useModelConnectionGate(models: FlatModel[] = []) {
-  // See use-connected-providers.ts: re-renders when LlmCatalogBootstrap's
-  // live-catalog fetch lands, since connectedProviderIds below reads the
-  // module-level LLM_PROVIDERS binding.
-  const catalogRevision = useLlmProviderCatalogRevision();
+export function useModelConnectionGate(
+  models: FlatModel[] = [],
+  options?: { projectId?: string | null },
+) {
   const openProviderModal = useProviderModalStore((s) => s.openProviderModal);
   const openUpgradeDialog = useUpgradeDialogStore((s) => s.openUpgradeDialog);
 
   const params = useParams<{ id?: string }>();
-  const projectId = typeof params?.id === 'string' ? params.id : null;
+  const projectId = resolveGateProjectId(options?.projectId, params?.id);
 
   const projectDetailQuery = useQuery({
-    queryKey: ['project-detail', projectId],
+    queryKey: qk.project.detail(projectId ?? ''),
     queryFn: () => getProjectDetail(projectId as string),
     enabled: !!projectId,
-    staleTime: 30_000,
+    ...contract('config'),
   });
   const llmGatewayEnabled = isLlmGatewayEnabled(projectDetailQuery.data?.project);
   const canWriteProviders =
@@ -63,41 +92,51 @@ export function useModelConnectionGate(models: FlatModel[] = []) {
     }).allowed === true;
 
   const [projectModalOpen, setProjectModalOpen] = useState(false);
-  const [projectModalTab, setProjectModalTab] = useState<'connected' | 'catalog' | 'models'>(
-    'catalog',
-  );
+  const [projectModalTab, setProjectModalTab] = useState<'providers' | 'models'>('providers');
 
-  // Same entitlement inputs ModelSelector uses: which BYOK providers are
-  // connected (from project secrets), and whether the account is on free
-  // tier (hides Kortix-managed models — they paywall server-side otherwise).
   const baseModels = useMemo(
     () => (llmGatewayEnabled ? models : models.filter((m) => m.providerID !== 'kortix')),
     [models, llmGatewayEnabled],
   );
+  // `project.secret.read` is manager-tier, so for a project `member` this query
+  // was a guaranteed 403 on every project-home render — a permission check
+  // performed by asking the server to refuse. Gate it on the leaf instead.
+  // `allowed === true` also holds the query while the probe is still loading,
+  // so it fires once, when the answer is known, or not at all.
+  const canReadSecrets =
+    useProjectCan(projectId ?? undefined, PROJECT_ACTIONS.PROJECT_SECRET_READ, {
+      accountId: projectDetailQuery.data?.project.account_id,
+    }).allowed === true;
   const secretsQuery = useQuery({
-    queryKey: ['project-secrets', projectId],
+    queryKey: qk.project.secrets(projectId ?? ''),
     queryFn: () => listProjectSecrets(projectId as string),
-    enabled: !!projectId && llmGatewayEnabled,
-    staleTime: 10_000,
+    enabled: !!projectId && llmGatewayEnabled && canReadSecrets,
+    ...contract('config'),
   });
-  const connectedProviderIds = useMemo(() => {
-    if (!llmGatewayEnabled) return new Set<string>();
-    const data = secretsQuery.data;
-    const items = Array.isArray(data) ? data : (data?.items ?? []);
-    const secretNames = new Set(items.map((secret: { name: string }) => secret.name));
-    return connectedGatewayProviderIdsFromSecretNames(secretNames);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- catalogRevision drives a re-read of the module-level LLM_PROVIDERS binding, not a value used directly here
-  }, [llmGatewayEnabled, secretsQuery.data, catalogRevision]);
-  const { data: accountState, isPending: accountStatePending } = useAccountState();
-  const freeTier = useMemo(() => {
-    const tierKey = accountStateSelectors.tierKey(accountState).toLowerCase();
-    const hasActiveSubscription = !!accountState?.subscription?.subscription_id;
-    return (tierKey === 'free' || tierKey === 'none') && !hasActiveSubscription;
-  }, [accountState]);
+  const { isPending: accountStatePending } = useAccountState();
+  // Availability is SERVER-resolved, never re-derived here. `/model-picker`
+  // already applies plan entitlement (`freeManagedOnly`) and connected-BYOK
+  // filtering, then stamps `enabled` on every model it serves. This gate must
+  // read that flag.
+  //
+  // *** BUG THIS FIXES (clicking a model in the picker did nothing) ***
+  // This hook used to recompute entitlement with `hasUsableModel(models, {
+  // connectedProviderIds, freeTier })`, where `freeTier` came from the BILLING
+  // account state (`tier_key` free/none and no `subscription_id`). The server
+  // computes it as `KORTIX_BILLING_INTERNAL_ENABLED ? accountIsFreeTier(...) :
+  // false`, so with billing off the two disagree: `/model-defaults` answers
+  // `freeTier: false` and `/model-picker` serves `enabled: true`, while this
+  // gate answered "free tier" and reported EVERY managed model unselectable.
+  // `resolveAvailableSelectedModel` then nulled the pick, so the trigger stayed
+  // on `unsetLabel`, no check mark rendered, and each click looked like a no-op
+  // even though `onSelect` fired and the model store was written.
+  //
+  // Native (non-gateway) catalogs carry no `enabled` — opencode only lists
+  // models of CONNECTED providers, so presence there already means usable.
+  const isModelOffered = useCallback((model: FlatModel) => model.enabled !== false, []);
   const hasSelectableModels = useMemo(
-    () =>
-      hasUsableModel(baseModels, { connectedProviderIds, freeTier: llmGatewayEnabled && freeTier }),
-    [baseModels, connectedProviderIds, llmGatewayEnabled, freeTier],
+    () => baseModels.some(isModelOffered),
+    [baseModels, isModelOffered],
   );
   const modelsByKey = useMemo(
     () =>
@@ -110,19 +149,15 @@ export function useModelConnectionGate(models: FlatModel[] = []) {
     (selectedModel: ModelKey) => {
       const model = modelsByKey.get(`${selectedModel.providerID}:${selectedModel.modelID}`);
       if (!model) return false;
-      return hasUsableModel([model], {
-        connectedProviderIds,
-        freeTier: llmGatewayEnabled && freeTier,
-      });
+      return isModelOffered(model);
     },
-    [modelsByKey, connectedProviderIds, llmGatewayEnabled, freeTier],
+    [modelsByKey, isModelOffered],
   );
-  // `hasSelectableModels` is only trustworthy once every entitlement input has
-  // loaded — before that, a subscribed account with zero BYOK keys computes as
-  // "nothing usable" (accountState undefined → freeTier, secrets undefined →
-  // no connected providers) and any gate keyed on it flashes, then vanishes.
-  // Disabled queries stay `isPending` forever, so each is guarded by its
-  // `enabled` condition.
+  // `hasSelectableModels` is only trustworthy once every input the served
+  // catalog depends on has loaded — a secret write invalidates `/model-picker`,
+  // so a gate keyed on a half-loaded answer flashes, then vanishes. Disabled
+  // queries stay `isPending` forever, so each is guarded by its `enabled`
+  // condition.
   const entitlementsPending =
     (!!projectId && projectDetailQuery.isPending) ||
     (!!projectId && llmGatewayEnabled && secretsQuery.isPending) ||
@@ -158,10 +193,15 @@ export function useModelConnectionGate(models: FlatModel[] = []) {
   ) : null;
 
   // Billing off (self-host default): there's no Kortix plan to upgrade to and
-  // no <GlobalUpgradeModal/> mounted anywhere to respond to openUpgrade() (see
-  // app-providers.tsx's `isBillingEnabled() && <GlobalUpgradeModal />`) — an
-  // "Upgrade" button would be a dead click. Callers should hide it and only
-  // offer "bring your own key" when this is false.
+  // no <GlobalUpgradeModal/> mounted anywhere to respond to openUpgrade()
+  // (every host mounts it behind the same flag — `app-providers.tsx`'s
+  // `isBillingEnabled() && <GlobalUpgradeModal />`, and the same line on
+  // `/new`) — an "Upgrade" button would be a dead click. Callers should hide it
+  // and only offer "bring your own key" when this is false.
+  //
+  // This flag answers "is billing ON", NOT "is a host MOUNTED". A route that
+  // enables billing without mounting one still yields a dead click — which is
+  // exactly why `/new` had to mount its own.
   const showUpgradeOption = isBillingEnabled();
 
   return {

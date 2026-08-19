@@ -247,8 +247,10 @@ describe('S1 kill switch', () => {
 
     const create = createCalls()[0];
     expect(create.body?.name).toBeUndefined();
-    expect(create.body?.metadata).toBeUndefined();
     expect(create.headers['Idempotency-Key']).toBeUndefined();
+    // The ownership markers the orphan-box reaper filters on are NOT part of
+    // S1 and must survive the kill-switch; only `kortix.sandbox_id` is S1's.
+    expect((create.body?.metadata as Record<string, unknown>)['kortix.managed']).toBe('true');
   });
 
   test('omitting sandboxId also falls back to the legacy body (no crash, no dedup)', async () => {

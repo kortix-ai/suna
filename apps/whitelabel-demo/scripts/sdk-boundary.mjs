@@ -21,7 +21,7 @@ const ALLOWED_CLIENT_BFF_ROUTES = [
   // Provider-neutral session model control: the upstream field is named after
   // the runtime, so the translation stays server-side and the client says `model`.
   '/api/session-model',
-  '/api/usage',
+  '/api/session-costs',
   // Lists the ACCOUNT's projects so an operator can adopt one into this demo
   // user. Gated on LUMEN_ALLOW_PROJECT_IMPORT and off by default — it is the one
   // place the wrapper's per-end-user project filter is deliberately bypassed, so
@@ -40,7 +40,7 @@ const RULES = [
     scope: 'all',
     rule: 'direct-runtime-import',
     pattern:
-      /['"]@kortix\/sdk\/(?:acp|event-stream|idb-sync-cache|opencode(?:-[^'"]*)?|sandbox(?:-[^'"]*)?|server-store|session|sync-store)['"]/gi,
+      /['"]@kortix\/sdk\/(?:event-stream|idb-sync-cache|opencode(?:-[^'"]*)?|sandbox(?:-[^'"]*)?|server-store|session|sync-store)['"]/gi,
     message: 'Client code must use @kortix/sdk and @kortix/sdk/react only.',
   },
   {
@@ -117,7 +117,9 @@ function rawFetchViolations(source, client) {
   const violations = [];
   const fetchPattern = /\bfetch\s*\(/g;
   for (const match of source.matchAll(fetchPattern)) {
-    const expression = source.slice((match.index ?? 0) + match[0].length).trimStart();
+    const expression = source
+      .slice((match.index ?? 0) + match[0].length)
+      .trimStart();
     const quote = expression[0];
     let target = null;
     if (quote === "'" || quote === '"') {
@@ -140,7 +142,9 @@ function rawFetchViolations(source, client) {
       target !== null &&
       ALLOWED_CLIENT_BFF_ROUTES.some(
         (route) =>
-          target === route || target.startsWith(`${route}/`) || target.startsWith(`${route}?`),
+          target === route ||
+          target.startsWith(`${route}/`) ||
+          target.startsWith(`${route}?`),
       );
     if (!isAllowed) {
       violations.push({
@@ -177,11 +181,13 @@ export function scanSource(source, options = { client: true }) {
 export function scanWhiteLabelBoundary() {
   return sourceFiles(CLIENT_ROOT).flatMap((path) => {
     const source = readFileSync(path, 'utf8');
-    return scanSource(source, { client: isFeatureClient(path) }).map((violation) => ({
-      ...violation,
-      file: relative(APP_ROOT, path),
-      line: lineNumber(source, violation.index),
-    }));
+    return scanSource(source, { client: isFeatureClient(path) }).map(
+      (violation) => ({
+        ...violation,
+        file: relative(APP_ROOT, path),
+        line: lineNumber(source, violation.index),
+      }),
+    );
   });
 }
 
@@ -211,15 +217,14 @@ export function scanTestSource(source) {
 }
 
 export function scanWhiteLabelTestBoundary() {
-  return listWhiteLabelTestFiles()
-    .flatMap((path) => {
-      const source = readFileSync(path, 'utf8');
-      return scanTestSource(source).map((violation) => ({
-        ...violation,
-        file: relative(REPO_ROOT, path),
-        line: lineNumber(source, violation.index),
-      }));
-    });
+  return listWhiteLabelTestFiles().flatMap((path) => {
+    const source = readFileSync(path, 'utf8');
+    return scanTestSource(source).map((violation) => ({
+      ...violation,
+      file: relative(REPO_ROOT, path),
+      line: lineNumber(source, violation.index),
+    }));
+  });
 }
 
 export function listWhiteLabelTestFiles() {
@@ -229,7 +234,7 @@ export function listWhiteLabelTestFiles() {
       !path.endsWith(join('e2e', 'sdk-boundary.test.ts')),
   );
   const repositoryTests = sourceFiles(REPOSITORY_TEST_ROOT).filter(
-    (path) => /whitelabel.*\.spec\.[cm]?[jt]sx?$/.test(path),
+    (path) => /(?:whitelabel|sdk-only-session).*\.spec\.[cm]?[jt]sx?$/.test(path),
   );
   return [...localTests, ...repositoryTests];
 }
@@ -245,7 +250,9 @@ function run() {
   }
 
   for (const violation of violations) {
-    console.error(`${violation.file}:${violation.line} [${violation.rule}] ${violation.message}`);
+    console.error(
+      `${violation.file}:${violation.line} [${violation.rule}] ${violation.message}`,
+    );
   }
   console.error(`White-label SDK boundary: ${violations.length} violation(s).`);
   process.exitCode = 1;

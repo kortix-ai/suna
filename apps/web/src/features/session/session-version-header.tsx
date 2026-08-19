@@ -13,7 +13,11 @@ import { useTranslations } from 'next-intl';
  * style): **All files** (default) and **Changes** (the real diff viewer).
  */
 
-import { FileDiff, Info, Layers } from 'lucide-react';
+import {
+  GitDiffIcon as FileDiff,
+  InfoIcon as Info,
+  StackIcon as Layers,
+} from '@phosphor-icons/react';
 import { useParams } from 'next/navigation';
 
 import Loading from '@/components/ui/loading';
@@ -94,7 +98,7 @@ export function SessionVersionHeader({
   const hasChanges = changedCount > 0;
 
   return (
-    <div className="border-border/60 flex-shrink-0 border-b">
+    <div className="border-border/60 shrink-0 border-b">
       {/* Compact header row — tabs (left) + version chip & CTA (right). */}
       <div className="flex items-center gap-3 px-4">
         {/* Tabs — All files (default) · Changes (secondary). */}

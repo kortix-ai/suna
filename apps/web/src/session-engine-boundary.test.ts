@@ -25,4 +25,12 @@ describe('project session engine boundary', () => {
     expect(chatSource).not.toContain('@/stores/opencode-compaction-store');
     expect(chatSource).toContain('sessionState?.isCompacting ?? false');
   });
+
+  test('SessionChat preserves hydrated content after a runtime lookup miss', () => {
+    expect(chatSource).toContain('resolveSessionContentState({');
+    expect(chatSource).toContain('hasMessages,');
+    expect(chatSource).not.toContain(
+      'const isNotFound = !session && sessionResolved && !optimisticPrompt',
+    );
+  });
 });

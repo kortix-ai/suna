@@ -31,13 +31,13 @@ describe('buildInstallSuccessSummary', () => {
 });
 
 describe('projectMarketplaceHref', () => {
-  test('builds the customize marketplace deep link for a project', () => {
-    expect(projectMarketplaceHref('proj_123')).toBe('/projects/proj_123/customize/marketplace');
+  test('builds the settings marketplace deep link for a project', () => {
+    expect(projectMarketplaceHref('proj_123')).toBe('/projects/proj_123/settings/marketplace');
   });
 
   test('URL-encodes project ids with special characters', () => {
     expect(projectMarketplaceHref('proj/weird id')).toBe(
-      '/projects/proj%2Fweird%20id/customize/marketplace',
+      '/projects/proj%2Fweird%20id/settings/marketplace',
     );
   });
 });

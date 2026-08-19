@@ -1,4 +1,3 @@
-import { spawn } from 'node:child_process';
 import { hostname } from 'node:os';
 
 import {
@@ -21,6 +20,7 @@ import { ensureDefaultProjectBinding } from '../project-bind.ts';
 import { C, help, status } from '../style.ts';
 import { selectFromList } from '../tui-select.ts';
 import { webDashboardUrl } from '../web-url.ts';
+import { openInBrowser } from '../browser.ts';
 
 const HELP = help`Usage: kortix login [options]
 
@@ -208,8 +208,12 @@ export async function performLogin(opts: PerformLoginOptions): Promise<number> {
     /* makeActive */ true,
   );
 
+  const loginIdentity = me.token_context?.agent
+    ? `agent ${C.bold}${me.token_context.agent}${C.reset} ` +
+      `(initiator: ${C.bold}${me.email || me.user_id}${C.reset})`
+    : C.bold + (me.email || me.user_id) + C.reset;
   process.stdout.write(
-    `\n${status.ok(`Logged in to host ${C.bold}${hostName}${C.reset} as ${C.bold}${me.email || me.user_id}${C.reset}`)}\n`,
+    `\n${status.ok(`Logged in to host ${C.bold}${hostName}${C.reset} as ${loginIdentity}`)}\n`,
   );
 
   // The account step of the funnel: exactly one → auto-select; several →
@@ -337,30 +341,4 @@ async function browserLogin(apiBase: string, dashboardUrl?: string): Promise<str
 function safeHostname(): string {
   const raw = hostname() || 'CLI';
   return raw.length > 60 ? `${raw.slice(0, 60)}…` : raw;
-}
-
-function openInBrowser(url: string): void {
-  // Only hand a real web URL to the OS opener — a value starting with '-' would
-  // be read as a flag by open/xdg-open, and Windows `start` parses its argument,
-  // so an unvalidated URL is a command-injection vector.
-  if (!/^https?:\/\//i.test(url)) return;
-  const platform = process.platform;
-  let cmd: string;
-  let args: string[];
-  if (platform === 'darwin') {
-    cmd = 'open';
-    args = [url];
-  } else if (platform === 'win32') {
-    cmd = 'cmd';
-    args = ['/c', 'start', '', url];
-  } else {
-    cmd = 'xdg-open';
-    args = [url];
-  }
-  try {
-    const child = spawn(cmd, args, { stdio: 'ignore', detached: true });
-    child.unref();
-  } catch {
-    /* user can copy-paste the URL from stdout */
-  }
 }

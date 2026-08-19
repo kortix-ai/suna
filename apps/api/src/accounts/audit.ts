@@ -12,40 +12,35 @@
 //   - DELETE /:accountId/audit/webhooks/:id
 
 import { createRoute, z } from '@hono/zod-openapi';
-import { auditEvents, auditWebhooks } from '@kortix/db';
-import { and, asc, desc, eq, lt, or } from 'drizzle-orm';
+import { auditEvents, auditWebhookDeliveries, auditWebhooks } from '@kortix/db';
+import { and, asc, desc, eq } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../iam';
 import { assertAllowedSourceAddress } from '../marketplace/catalog';
 import { ErrorSchema, auth, errors, json, makeOpenApiApp } from '../openapi';
 import { recordAuditEvent } from '../shared/audit';
-import { deliverTestEvent, generateWebhookSecret } from '../shared/audit-webhooks';
+import {
+  deliverTestEvent,
+  generateWebhookSecret,
+  replayAuditWebhookDelivery,
+} from '../shared/audit-webhooks';
 import { db } from '../shared/db';
+import {
+  buildAuditCursorCondition,
+  parseAuditCursor,
+  parseAuditInstant,
+  parseAuditLimit,
+  serializeAuditEvent,
+} from '../shared/audit-query';
+import { AuditListSchema } from '../shared/audit-schema';
+import { reconcileAuditEvents } from '../shared/audit-reconciliation';
 import type { AppEnv } from '../types';
 import { type AuditFilterInput, buildFilters } from './audit-filters';
 import { requireEntitlement } from './iam/helpers';
 
 export const auditRouter = makeOpenApiApp<AppEnv>();
 
-const AccountIdParam = z.object({ accountId: z.string() });
-const AuditEventSchema = z
-  .object({
-    event_id: z.string(),
-    occurred_at: z.string(),
-    actor_user_id: z.string().nullable(),
-    action: z.string(),
-    resource_type: z.string().nullable(),
-    resource_id: z.string().nullable(),
-    before: z.any().nullable(),
-    after: z.any().nullable(),
-    ip: z.string().nullable(),
-    user_agent: z.string().nullable(),
-    metadata: z.any().nullable(),
-  })
-  .openapi('AuditEvent');
-const AuditListSchema = z
-  .object({ events: z.array(AuditEventSchema), next_cursor: z.string().nullable() })
-  .openapi('AuditEventList');
+const AccountIdParam = z.object({ accountId: z.string().uuid() });
 const AuditWebhookSchema = z
   .object({
     webhook_id: z.string(),
@@ -94,14 +89,22 @@ const DEFAULT_LIMIT = 50;
 export { buildFilters, type AuditFilterInput } from './audit-filters';
 
 // GET /v1/accounts/:accountId/audit
-//   ?action=iam.       — prefix match on action (e.g. "iam.policy.")
-//   ?actor=<uuid>      — only events performed by this user
-//   ?resource_type=X   — prefix match on resource_type (e.g. "project_session")
-//   ?since=ISO         — only events at or after this timestamp
-//   ?until=ISO         — only events at or before this timestamp
-//   ?q=text           — case-insensitive substring on action/resource_type/resource_id
-//   ?cursor=ISO|uuid   — keyset pagination cursor (occurredAt|eventId)
-//   ?limit=N           — default 50, max 200
+//   ?action=connector.       — prefix match on action
+//   ?actor=<uuid>           — only events performed by this user
+//   ?actor_type=agent       — human, agent, service_account, or system
+//   ?project_id=<uuid>      — one project
+//   ?session_id=<id>        — one session
+//   ?source=cli             — one client or execution source
+//   ?outcome=failure        — success, failure, denied, or pending
+//   ?request_id=<id>        — one API request
+//   ?correlation_id=<id>    — one cross-system operation
+//   ?resource_type=X        — prefix match on resource_type
+//   ?since=ISO              — only events at or after this timestamp
+//   ?until=ISO              — only events at or before this timestamp
+//   ?q=text                 — search action, resource, project, session, request,
+//                             trace, and correlation identifiers
+//   ?cursor=ISO|uuid        — keyset pagination cursor (occurredAt|eventId)
+//   ?limit=N                — default 50, max 200
 auditRouter.openapi(
   createRoute({
     method: 'get',
@@ -113,7 +116,15 @@ auditRouter.openapi(
       params: AccountIdParam,
       query: z.object({
         action: z.string().optional(),
-        actor: z.string().optional(),
+        actor: z.string().uuid().optional(),
+        actor_type: z.enum(['human', 'agent', 'service_account', 'system']).optional(),
+        project_id: z.string().uuid().optional(),
+        session_id: z.string().optional(),
+        source: z.string().optional(),
+        phase: z.string().optional(),
+        outcome: z.enum(['success', 'failure', 'denied', 'pending']).optional(),
+        request_id: z.string().optional(),
+        correlation_id: z.string().optional(),
         resource_type: z.string().optional(),
         since: z.string().optional(),
         until: z.string().optional(),
@@ -124,7 +135,7 @@ auditRouter.openapi(
     },
     responses: {
       200: json(AuditListSchema, 'Audit events page'),
-      ...errors(401, 403),
+      ...errors(400, 401, 403),
     },
   }),
   async (c: any) => {
@@ -136,18 +147,39 @@ auditRouter.openapi(
 
     const actionPrefix = c.req.query('action')?.trim() || null;
     const actor = c.req.query('actor')?.trim() || null;
+    const actorType = c.req.query('actor_type')?.trim() || null;
+    const projectId = c.req.query('project_id')?.trim() || null;
+    const sessionId = c.req.query('session_id')?.trim() || null;
+    const source = c.req.query('source')?.trim() || null;
+    const phase = c.req.query('phase')?.trim() || null;
+    const outcome = c.req.query('outcome')?.trim() || null;
+    const requestId = c.req.query('request_id')?.trim() || null;
+    const correlationId = c.req.query('correlation_id')?.trim() || null;
     const resourceType = c.req.query('resource_type')?.trim() || null;
     const sinceRaw = c.req.query('since')?.trim() || null;
     const untilRaw = c.req.query('until')?.trim() || null;
     const q = c.req.query('q')?.trim() || null;
-    const cursor = c.req.query('cursor')?.trim() || null;
-    const limitRaw = Number.parseInt(c.req.query('limit') ?? '', 10);
-    const limit = Number.isFinite(limitRaw)
-      ? Math.min(Math.max(limitRaw, 1), MAX_LIMIT)
-      : DEFAULT_LIMIT;
+    let parsedCursor: ReturnType<typeof parseAuditCursor>;
+    let limit: number;
+    try {
+      parseAuditInstant(sinceRaw, 'since');
+      parseAuditInstant(untilRaw, 'until');
+      parsedCursor = parseAuditCursor(c.req.query('cursor')?.trim() || null);
+      limit = parseAuditLimit(c.req.query('limit')?.trim() || null, DEFAULT_LIMIT, MAX_LIMIT);
+    } catch (error) {
+      return c.json({ error: (error as Error).message }, 400);
+    }
 
     const conditions = buildFilters(accountId, {
       actor,
+      actorType,
+      projectId,
+      sessionId,
+      source,
+      phase,
+      outcome,
+      requestId,
+      correlationId,
       actionPrefix,
       resourceType,
       sinceRaw,
@@ -157,17 +189,8 @@ auditRouter.openapi(
 
     // Keyset cursor encoded as "<isoTimestamp>|<eventId>" so equal timestamps
     // tie-break by event id (stable order). Cheaper than OFFSET on long lists.
-    if (cursor) {
-      const [tsStr, lastId] = cursor.split('|');
-      const ts = new Date(tsStr);
-      if (!Number.isNaN(ts.getTime()) && lastId) {
-        conditions.push(
-          or(
-            lt(auditEvents.occurredAt, ts),
-            and(eq(auditEvents.occurredAt, ts), lt(auditEvents.eventId, lastId)),
-          )!,
-        );
-      }
+    if (parsedCursor) {
+      conditions.push(buildAuditCursorCondition(parsedCursor, accountId, 'descending'));
     }
 
     const rows = await db
@@ -183,19 +206,7 @@ auditRouter.openapi(
     const nextCursor = hasMore && last ? `${last.occurredAt.toISOString()}|${last.eventId}` : null;
 
     return c.json({
-      events: page.map((r) => ({
-        event_id: r.eventId,
-        occurred_at: r.occurredAt.toISOString(),
-        actor_user_id: r.actorUserId,
-        action: r.action,
-        resource_type: r.resourceType,
-        resource_id: r.resourceId,
-        before: r.before,
-        after: r.after,
-        ip: r.ip,
-        user_agent: r.userAgent,
-        metadata: r.metadata,
-      })),
+      events: page.map(serializeAuditEvent),
       next_cursor: nextCursor,
     });
   },
@@ -203,8 +214,8 @@ auditRouter.openapi(
 
 // ─── Export ───────────────────────────────────────────────────────────────
 // Streams an audit slice as CSV or JSONL. Same filter shape as the list
-// endpoint. Hard-capped at EXPORT_MAX rows per request — for larger pulls
-// callers should page via repeated `since=` calls.
+// endpoint. Each page is capped at EXPORT_MAX rows. Continue with the cursor
+// in X-Audit-Next-Cursor until X-Audit-Complete is true.
 
 const EXPORT_MAX = 10_000;
 
@@ -222,10 +233,48 @@ function csvEscape(value: unknown): string {
 const CSV_HEADERS = [
   'event_id',
   'occurred_at',
-  'action',
+  'account_id',
+  'project_id',
+  'session_id',
+  'opencode_session_id',
+  'turn_id',
+  'message_id',
+  'tool_call_id',
+  'execution_id',
+  'session_sequence',
   'actor_user_id',
+  'actor_type',
+  'agent_id',
+  'agent_name',
+  'initiator_actor_type',
+  'initiator_actor_id',
+  'parent_event_id',
+  'delegation_depth',
+  'source',
+  'authoritative_source',
+  'client_reported_source',
+  'outcome',
+  'action',
+  'phase',
   'resource_type',
   'resource_id',
+  'http_status',
+  'duration_ms',
+  'request_id',
+  'trace_id',
+  'correlation_id',
+  'causation_id',
+  'source_ledger',
+  'source_record_id',
+  'source_revision',
+  'input_summary',
+  'output_summary',
+  'input_sha256',
+  'output_sha256',
+  'error_code',
+  'error_message',
+  'integrity_previous_hash',
+  'integrity_hash',
   'ip',
   'user_agent',
   'before',
@@ -245,11 +294,21 @@ auditRouter.openapi(
       query: z.object({
         format: z.enum(['csv', 'jsonl']).optional(),
         action: z.string().optional(),
-        actor: z.string().optional(),
+        actor: z.string().uuid().optional(),
+        actor_type: z.enum(['human', 'agent', 'service_account', 'system']).optional(),
+        project_id: z.string().uuid().optional(),
+        session_id: z.string().optional(),
+        source: z.string().optional(),
+        phase: z.string().optional(),
+        outcome: z.enum(['success', 'failure', 'denied', 'pending']).optional(),
+        request_id: z.string().optional(),
+        correlation_id: z.string().optional(),
         resource_type: z.string().optional(),
         since: z.string().optional(),
         until: z.string().optional(),
         q: z.string().optional(),
+        cursor: z.string().optional(),
+        limit: z.string().optional(),
       }),
     },
     responses: {
@@ -277,13 +336,39 @@ auditRouter.openapi(
 
     const actionPrefix = c.req.query('action')?.trim() || null;
     const actor = c.req.query('actor')?.trim() || null;
+    const actorType = c.req.query('actor_type')?.trim() || null;
+    const projectId = c.req.query('project_id')?.trim() || null;
+    const sessionId = c.req.query('session_id')?.trim() || null;
+    const source = c.req.query('source')?.trim() || null;
+    const phase = c.req.query('phase')?.trim() || null;
+    const outcome = c.req.query('outcome')?.trim() || null;
+    const requestId = c.req.query('request_id')?.trim() || null;
+    const correlationId = c.req.query('correlation_id')?.trim() || null;
     const resourceType = c.req.query('resource_type')?.trim() || null;
     const sinceRaw = c.req.query('since')?.trim() || null;
     const untilRaw = c.req.query('until')?.trim() || null;
     const q = c.req.query('q')?.trim() || null;
+    let parsedCursor: ReturnType<typeof parseAuditCursor>;
+    let exportLimit: number;
+    try {
+      parseAuditInstant(sinceRaw, 'since');
+      parseAuditInstant(untilRaw, 'until');
+      parsedCursor = parseAuditCursor(c.req.query('cursor')?.trim() || null);
+      exportLimit = parseAuditLimit(c.req.query('limit')?.trim() || null, EXPORT_MAX, EXPORT_MAX);
+    } catch (error) {
+      return c.json({ error: (error as Error).message }, 400);
+    }
 
     const conditions = buildFilters(accountId, {
       actor,
+      actorType,
+      projectId,
+      sessionId,
+      source,
+      phase,
+      outcome,
+      requestId,
+      correlationId,
       actionPrefix,
       resourceType,
       sinceRaw,
@@ -291,43 +376,37 @@ auditRouter.openapi(
       q,
     });
 
-    const rows = await db
+    if (parsedCursor) {
+      conditions.push(buildAuditCursorCondition(parsedCursor, accountId, 'ascending'));
+    }
+
+    const fetched = await db
       .select()
       .from(auditEvents)
       .where(and(...conditions))
       // Export is chronological (oldest → newest) — that's the order humans
       // expect when grepping through a CSV; pagination uses reverse order.
       .orderBy(asc(auditEvents.occurredAt), asc(auditEvents.eventId))
-      .limit(EXPORT_MAX);
+      .limit(exportLimit + 1);
+    const hasMore = fetched.length > exportLimit;
+    const rows = hasMore ? fetched.slice(0, exportLimit) : fetched;
+    const last = rows.at(-1);
+    const nextCursor = hasMore && last ? `${last.occurredAt.toISOString()}|${last.eventId}` : null;
 
     const filenameDate = new Date().toISOString().slice(0, 10);
     const filename = `audit-${filenameDate}.${format}`;
 
     if (format === 'jsonl') {
-      const body = rows
-        .map((r) =>
-          JSON.stringify({
-            event_id: r.eventId,
-            occurred_at: r.occurredAt.toISOString(),
-            action: r.action,
-            actor_user_id: r.actorUserId,
-            resource_type: r.resourceType,
-            resource_id: r.resourceId,
-            ip: r.ip,
-            user_agent: r.userAgent,
-            before: r.before,
-            after: r.after,
-            metadata: r.metadata,
-          }),
-        )
-        .join('\n');
+      const body = rows.map((r) => JSON.stringify(serializeAuditEvent(r))).join('\n');
       return new Response(body, {
         status: 200,
         headers: {
           'Content-Type': 'application/x-ndjson; charset=utf-8',
           'Content-Disposition': `attachment; filename="${filename}"`,
           'X-Audit-Row-Count': String(rows.length),
-          'X-Audit-Capped': rows.length >= EXPORT_MAX ? 'true' : 'false',
+          'X-Audit-Capped': hasMore ? 'true' : 'false',
+          'X-Audit-Complete': hasMore ? 'false' : 'true',
+          'X-Audit-Next-Cursor': nextCursor ?? '',
         },
       });
     }
@@ -335,20 +414,9 @@ auditRouter.openapi(
     // CSV
     const lines: string[] = [CSV_HEADERS.join(',')];
     for (const r of rows) {
+      const event = serializeAuditEvent(r);
       lines.push(
-        [
-          csvEscape(r.eventId),
-          csvEscape(r.occurredAt.toISOString()),
-          csvEscape(r.action),
-          csvEscape(r.actorUserId),
-          csvEscape(r.resourceType),
-          csvEscape(r.resourceId),
-          csvEscape(r.ip),
-          csvEscape(r.userAgent),
-          csvEscape(r.before),
-          csvEscape(r.after),
-          csvEscape(r.metadata),
-        ].join(','),
+        CSV_HEADERS.map((header) => csvEscape(event[header as keyof typeof event])).join(','),
       );
     }
     return new Response(lines.join('\n'), {
@@ -357,9 +425,49 @@ auditRouter.openapi(
         'Content-Type': 'text/csv; charset=utf-8',
         'Content-Disposition': `attachment; filename="${filename}"`,
         'X-Audit-Row-Count': String(rows.length),
-        'X-Audit-Capped': rows.length >= EXPORT_MAX ? 'true' : 'false',
+        'X-Audit-Capped': hasMore ? 'true' : 'false',
+        'X-Audit-Complete': hasMore ? 'false' : 'true',
+        'X-Audit-Next-Cursor': nextCursor ?? '',
       },
     });
+  },
+);
+
+auditRouter.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{accountId}/audit/reconcile',
+    tags: ['accounts'],
+    summary: 'Reconcile durable source ledgers into the canonical audit log',
+    ...auth,
+    request: {
+      params: AccountIdParam,
+      query: z.object({ limit: z.string().optional() }),
+    },
+    responses: { 200: json(z.any(), 'Reconciliation page'), ...errors(400, 401, 403) },
+  }),
+  async (c: any) => {
+    const userId = c.get('userId') as string;
+    const accountId = c.req.param('accountId');
+    await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+    const denied = await requireEntitlement(c, accountId, 'auditAccess');
+    if (denied) return denied;
+    let limit: number;
+    try {
+      limit = parseAuditLimit(c.req.query('limit')?.trim() || null, 1_000, 5_000);
+    } catch (error) {
+      return c.json({ error: (error as Error).message }, 400);
+    }
+    const result = await reconcileAuditEvents(accountId, limit);
+    await recordAuditEvent({
+      accountId,
+      actorUserId: userId,
+      authoritativeSource: 'human',
+      action: 'iam.audit.reconcile',
+      resourceType: 'audit_ledger',
+      outputSummary: { ...result },
+    });
+    return c.json(result);
   },
 );
 
@@ -594,6 +702,115 @@ auditRouter.openapi(
     });
 
     return c.json(serializeWebhook(updated));
+  },
+);
+
+auditRouter.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{accountId}/audit/webhooks/{webhookId}/deliveries',
+    tags: ['accounts'],
+    summary: 'List durable audit webhook deliveries',
+    ...auth,
+    request: {
+      params: z.object({ accountId: z.string().uuid(), webhookId: z.string().uuid() }),
+      query: z.object({ status: z.string().optional(), limit: z.string().optional() }),
+    },
+    responses: {
+      200: json(z.object({ deliveries: z.array(z.any()) }), 'Webhook deliveries'),
+      ...errors(400, 401, 403, 404),
+    },
+  }),
+  async (c: any) => {
+    const userId = c.get('userId') as string;
+    const accountId = c.req.param('accountId');
+    const webhookId = c.req.param('webhookId');
+    await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+    let limit: number;
+    try {
+      limit = parseAuditLimit(c.req.query('limit')?.trim() || null, 100, 500);
+    } catch (error) {
+      return c.json({ error: (error as Error).message }, 400);
+    }
+    const [hook] = await db
+      .select({ webhookId: auditWebhooks.webhookId })
+      .from(auditWebhooks)
+      .where(and(eq(auditWebhooks.accountId, accountId), eq(auditWebhooks.webhookId, webhookId)))
+      .limit(1);
+    if (!hook) return c.json({ error: 'webhook not found' }, 404);
+    const status = c.req.query('status')?.trim() || null;
+    const rows = await db
+      .select()
+      .from(auditWebhookDeliveries)
+      .where(
+        and(
+          eq(auditWebhookDeliveries.webhookId, webhookId),
+          ...(status ? [eq(auditWebhookDeliveries.status, status)] : []),
+        ),
+      )
+      .orderBy(desc(auditWebhookDeliveries.createdAt))
+      .limit(limit);
+    return c.json({
+      deliveries: rows.map((row) => ({
+        delivery_id: row.deliveryId,
+        webhook_id: row.webhookId,
+        event_id: row.eventId,
+        status: row.status,
+        attempts: row.attempts,
+        next_attempt_at: row.nextAttemptAt.toISOString(),
+        last_status: row.lastStatus,
+        last_error: row.lastError,
+        delivered_at: row.deliveredAt?.toISOString() ?? null,
+        created_at: row.createdAt.toISOString(),
+        updated_at: row.updatedAt.toISOString(),
+      })),
+    });
+  },
+);
+
+auditRouter.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{accountId}/audit/webhooks/{webhookId}/deliveries/{deliveryId}/replay',
+    tags: ['accounts'],
+    summary: 'Replay a durable audit webhook delivery',
+    ...auth,
+    request: {
+      params: z.object({
+        accountId: z.string().uuid(),
+        webhookId: z.string().uuid(),
+        deliveryId: z.string().uuid(),
+      }),
+    },
+    responses: {
+      200: json(z.object({ replayed: z.boolean() }), 'Delivery queued'),
+      ...errors(401, 403, 404),
+    },
+  }),
+  async (c: any) => {
+    const userId = c.get('userId') as string;
+    const accountId = c.req.param('accountId');
+    const webhookId = c.req.param('webhookId');
+    const deliveryId = c.req.param('deliveryId');
+    await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+    const [hook] = await db
+      .select({ webhookId: auditWebhooks.webhookId })
+      .from(auditWebhooks)
+      .where(and(eq(auditWebhooks.accountId, accountId), eq(auditWebhooks.webhookId, webhookId)))
+      .limit(1);
+    if (!hook) return c.json({ error: 'webhook not found' }, 404);
+    const replayed = await replayAuditWebhookDelivery(deliveryId, webhookId);
+    if (!replayed) return c.json({ error: 'delivery not found' }, 404);
+    await recordAuditEvent({
+      accountId,
+      actorUserId: userId,
+      authoritativeSource: 'human',
+      action: 'iam.audit.webhook.delivery.replay',
+      resourceType: 'audit_webhook_delivery',
+      resourceId: deliveryId,
+      metadata: { webhook_id: webhookId },
+    });
+    return c.json({ replayed: true });
   },
 );
 

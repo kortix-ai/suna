@@ -7,16 +7,15 @@
 # Two stages run in order:
 #   1. FE-relevance — if a push changed NOTHING that feeds the apps/web build
 #      (only sibling apps / infra / tests / docs), skip it on every branch.
-#   2. Deploy-target — the permanent environments (main/staging/prod) always
-#      deploy real FE changes; per-PR previews are OPT-IN to save build spend.
+#   2. Deploy-target — staging auto-builds. Production deploys through the
+#      gated workflow. Dev uses ECS. PR previews use Platinum or Daytona.
 #
-# For the permanent environments, default to BUILD on ANY uncertainty — never
-# silently skip a real FE deploy. Per-PR previews invert that: default SKIP,
-# build only when explicitly opted in (a "preview" label or a preview/* branch).
+# Staging defaults to BUILD on uncertainty. Dev and PR previews default to SKIP.
+# Production auto-builds always skip because deploy-prod.yml owns that release.
 #
 # WHY THIS EXISTS
 # A backend/infra-only push to `prod` (e.g. a rollback that only flips
-# infra/k8s image tags) must NOT rebuild + redeploy the frontend. Vercel
+# backend-only deployment metadata must NOT rebuild + redeploy the frontend. Vercel
 # auto-deploys the prod branch on every push, so without this an infra-only
 # push would re-deploy the current FE and CLOBBER a Vercel "instant rollback"
 # of the frontend. A real promote changes FE source (apps/web, packages,
@@ -53,40 +52,25 @@ if ! printf '%s\n' "$changed" | grep -qvE "$SAFE"; then
 fi
 
 # ── Stage 2: deploy-target gate ──────────────────────────────────────────────
-# FE-relevant changes are present. The permanent environments always deploy;
-# per-PR previews are OPT-IN (previews on every PR were the bulk of build spend).
+# FE-relevant changes are present. Staging always deploys; per-PR previews are
+# OPT-IN (previews on every PR were the bulk of build spend).
+#
+# `prod` is NOT here: a push to prod must never auto-deploy the frontend.
+# The 2026-08-10 v0.12.7 outage shipped the new frontend to kortix.com while
+# the API was still on the old version (its prerequisite migration failed), so
+# every access check called a route that did not exist yet. The prod frontend
+# deploys ONLY from deploy-prod.yml's `deploy-web-vercel` job, which runs after
+# `verify-live-version` proves the API serves the release. Belt-and-braces with
+# `git.deploymentEnabled.prod: false` in vercel.json.
 REF="${VERCEL_GIT_COMMIT_REF:-}"
 case "${VERCEL_ENV:-}:$REF" in
-  production:*|*:main|*:staging|*:prod)
+  *:prod)
+    echo "vercel-ignore: prod deploys only via deploy-prod.yml after the API is live — skipping auto build."
+    exit 0 ;;
+  production:*|*:staging)
     echo "vercel-ignore: environment branch (${REF:-$VERCEL_ENV}) — building frontend."
     exit 1 ;;
 esac
 
-# A per-PR / feature-branch preview. Build only when explicitly opted in:
-#   • branch named preview/*                       (no secret required), OR
-#   • the PR carries a "preview" label             (needs GITHUB_TOKEN, PR-read).
-case "$REF" in
-  preview/*)
-    echo "vercel-ignore: preview/* branch — building opt-in preview."
-    exit 1 ;;
-esac
-
-PR="${VERCEL_GIT_PULL_REQUEST_ID:-}"
-OWNER="${VERCEL_GIT_REPO_OWNER:-kortix-ai}"
-SLUG="${VERCEL_GIT_REPO_SLUG:-suna}"
-if [ -n "$PR" ] && [ -n "${GITHUB_TOKEN:-}" ]; then
-  labels="$(curl -fsSL \
-    -H "Authorization: Bearer $GITHUB_TOKEN" \
-    -H "Accept: application/vnd.github+json" \
-    "https://api.github.com/repos/$OWNER/$SLUG/issues/$PR/labels" 2>/dev/null)" || labels=""
-  if printf '%s' "$labels" | grep -qE '"name"[[:space:]]*:[[:space:]]*"preview"'; then
-    echo "vercel-ignore: PR #$PR carries the 'preview' label — building opt-in preview."
-    exit 1
-  fi
-  echo "vercel-ignore: PR #$PR has no 'preview' label — skipping preview (add the label + redeploy to build one)."
-  exit 0
-fi
-
-# No way to confirm an opt-in (no PR context or no GITHUB_TOKEN) → skip.
-echo "vercel-ignore: preview not opted-in (no preview/* branch, no 'preview' label check available) — skipping. ref=$REF pr=${PR:-none}"
+echo "vercel-ignore: dev deploys on ECS; PR previews deploy in sandboxes — skipping Vercel. ref=$REF"
 exit 0

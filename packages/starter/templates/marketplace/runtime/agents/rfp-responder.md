@@ -7,7 +7,6 @@ description: >-
   {{drafts_folder}}, and flags anything it can't answer confidently — holding
   the completed draft for a human to review and submit.
 mode: primary
-model: kortix/anthropic/claude-sonnet-5
 permission: allow
 ---
 

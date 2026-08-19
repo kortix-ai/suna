@@ -1,58 +1,119 @@
 import { spawn } from 'child_process';
-import { existsSync } from 'fs';
+import { existsSync, realpathSync, statSync } from 'fs';
 import { homedir, platform } from 'os';
 import { join } from 'path';
-
-const INSTALL_SCRIPT_URL = 'https://raw.githubusercontent.com/trycua/cua/main/libs/cua-driver/scripts/install.sh';
-const INSTALL_PS_URL = 'https://raw.githubusercontent.com/trycua/cua/main/libs/cua-driver/scripts/install.ps1';
 
 interface ExecResult {
   stdout: string;
   stderr: string;
 }
 
+const MAX_DRIVER_OUTPUT_BYTES = 5 * 1024 * 1024;
+const DRIVER_ENV_KEYS = [
+  'PATH',
+  'HOME',
+  'USER',
+  'LANG',
+  'LC_ALL',
+  'LC_CTYPE',
+  'TMPDIR',
+  'DISPLAY',
+  'WAYLAND_DISPLAY',
+  'XDG_RUNTIME_DIR',
+  'XAUTHORITY',
+  'DBUS_SESSION_BUS_ADDRESS',
+] as const;
+
 export interface CuaToolCall {
   tool: string;
   args?: Record<string, unknown>;
 }
 
-function envOff(value: string | undefined): boolean {
-  return !!value && ['0', 'false', 'no', 'off'].includes(value.toLowerCase());
-}
-
 function candidateBins(): string[] {
   const candidates = [
     process.env.CUA_DRIVER_BIN,
-    join(homedir(), '.local', 'bin', process.platform === 'win32' ? 'cua-driver.exe' : 'cua-driver'),
+    join(
+      homedir(),
+      '.local',
+      'bin',
+      process.platform === 'win32' ? 'cua-driver.exe' : 'cua-driver',
+    ),
     '/usr/local/bin/cua-driver',
     '/opt/homebrew/bin/cua-driver',
   ];
   return candidates.filter((p): p is string => !!p);
 }
 
-function findBinary(): string | null {
+export function findCuaDriverBinary(): string | null {
   for (const candidate of candidateBins()) {
-    if (existsSync(candidate)) return candidate;
+    if (!existsSync(candidate)) continue;
+    const resolved = realpathSync(candidate);
+    const stats = statSync(resolved);
+    if (!stats.isFile()) throw new Error(`cua-driver is not a regular file: ${candidate}`);
+    if (process.platform !== 'win32') {
+      const currentUid = typeof process.getuid === 'function' ? process.getuid() : undefined;
+      if (currentUid !== undefined && stats.uid !== currentUid && stats.uid !== 0) {
+        throw new Error(`cua-driver is not owned by the current user or root: ${resolved}`);
+      }
+      if ((stats.mode & 0o022) !== 0) {
+        throw new Error(`cua-driver must not be writable by group or other users: ${resolved}`);
+      }
+      if ((stats.mode & 0o111) === 0) {
+        throw new Error(`cua-driver is not executable: ${resolved}`);
+      }
+    }
+    return resolved;
   }
   return null;
 }
 
+function driverEnvironment(): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {};
+  for (const key of DRIVER_ENV_KEYS) {
+    if (process.env[key] !== undefined) env[key] = process.env[key];
+  }
+  return env;
+}
+
 function execFile(cmd: string, args: string[], timeoutMs = 30_000): Promise<ExecResult> {
   return new Promise((resolve, reject) => {
-    const proc = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    const proc = spawn(cmd, args, {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: driverEnvironment(),
+    });
     let stdout = '';
     let stderr = '';
+    let outputBytes = 0;
     let settled = false;
 
-    const timer = setTimeout(() => {
+    const rejectAndKill = (error: Error) => {
       if (settled) return;
       settled = true;
+      clearTimeout(timer);
       proc.kill('SIGKILL');
-      reject(new Error(`${cmd} timed out after ${timeoutMs}ms`));
+      reject(error);
+    };
+
+    const timer = setTimeout(() => {
+      rejectAndKill(new Error(`${cmd} timed out after ${timeoutMs}ms`));
     }, timeoutMs);
 
-    proc.stdout.on('data', (d: Buffer) => { stdout += d.toString(); });
-    proc.stderr.on('data', (d: Buffer) => { stderr += d.toString(); });
+    proc.stdout.on('data', (data: Buffer) => {
+      outputBytes += data.byteLength;
+      if (outputBytes > MAX_DRIVER_OUTPUT_BYTES) {
+        rejectAndKill(new Error('cua-driver output exceeds the 5 MiB limit'));
+        return;
+      }
+      stdout += data.toString();
+    });
+    proc.stderr.on('data', (data: Buffer) => {
+      outputBytes += data.byteLength;
+      if (outputBytes > MAX_DRIVER_OUTPUT_BYTES) {
+        rejectAndKill(new Error('cua-driver output exceeds the 5 MiB limit'));
+        return;
+      }
+      stderr += data.toString();
+    });
     proc.on('close', (code) => {
       if (settled) return;
       settled = true;
@@ -65,39 +126,9 @@ function execFile(cmd: string, args: string[], timeoutMs = 30_000): Promise<Exec
       }
     });
     proc.on('error', (err) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      reject(err);
+      rejectAndKill(err);
     });
   });
-}
-
-async function installDriver(): Promise<string> {
-  if (envOff(process.env.TUNNEL_CUA_AUTO_INSTALL)) {
-    throw new Error('cua-driver is not installed and TUNNEL_CUA_AUTO_INSTALL is disabled');
-  }
-
-  if (platform() === 'win32') {
-    await execFile('powershell.exe', [
-      '-NoProfile',
-      '-ExecutionPolicy',
-      'Bypass',
-      '-Command',
-      `irm ${INSTALL_PS_URL} | iex`,
-    ], 180_000);
-  } else {
-    await execFile('/bin/bash', [
-      '-lc',
-      `/bin/bash -c "$(curl -fsSL ${INSTALL_SCRIPT_URL})" -- --no-modify-path`,
-    ], 180_000);
-  }
-
-  const installed = findBinary();
-  if (!installed) {
-    throw new Error('cua-driver install completed, but no cua-driver binary was found');
-  }
-  return installed;
 }
 
 function parseJsonOutput(stdout: string): unknown {
@@ -121,7 +152,15 @@ async function sleep(ms: number): Promise<void> {
 function sanitizeArgs(args: Record<string, unknown>): Record<string, unknown> {
   const sanitized: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(args)) {
-    if (key === 'permissionId' || key === 'permission_id' || key === 'tunnelId' || key === 'tunnel_id') {
+    if (
+      key === '__permission' ||
+      key === '_sig' ||
+      key === '_nonce' ||
+      key === 'permissionId' ||
+      key === 'permission_id' ||
+      key === 'tunnelId' ||
+      key === 'tunnel_id'
+    ) {
       continue;
     }
     sanitized[key] = value;
@@ -131,20 +170,20 @@ function sanitizeArgs(args: Record<string, unknown>): Record<string, unknown> {
 
 export class CuaDriver {
   private binary: string | null = null;
-  private installPromise: Promise<string> | null = null;
+  private daemonReady = false;
 
   async ensureInstalled(): Promise<string> {
     if (this.binary && existsSync(this.binary)) return this.binary;
 
-    const found = findBinary();
+    const found = findCuaDriverBinary();
     if (found) {
       this.binary = found;
       return found;
     }
 
-    this.installPromise ??= installDriver();
-    this.binary = await this.installPromise;
-    return this.binary;
+    throw new Error(
+      'cua-driver is not installed. Install it locally before enabling Computer Use. Agent Tunnel never downloads or executes remote installers.',
+    );
   }
 
   async version(): Promise<string> {
@@ -173,6 +212,7 @@ export class CuaDriver {
 
   async call(tool: string, args: Record<string, unknown> = {}): Promise<unknown> {
     if (!tool || typeof tool !== 'string') throw new Error('CUA tool name is required');
+    await this.ensureDaemonReady();
     const bin = await this.ensureInstalled();
     const payload = JSON.stringify(sanitizeArgs(args));
     let lastError: unknown;
@@ -206,22 +246,39 @@ export class CuaDriver {
       const child = spawn('open', ['-n', '-g', '-a', 'CuaDriver', '--args', 'serve'], {
         detached: true,
         stdio: 'ignore',
+        env: driverEnvironment(),
       });
       child.unref();
     } else {
       const child = spawn(bin, ['serve'], {
         detached: true,
         stdio: 'ignore',
-        env: { ...process.env, CUA_DRIVER_RS_PERMISSIONS_GATE: process.env.CUA_DRIVER_RS_PERMISSIONS_GATE ?? '0' },
+        env: driverEnvironment(),
       });
       child.unref();
     }
 
     await new Promise((resolve) => setTimeout(resolve, 750));
     try {
-      return { ok: true, status: await this.status() };
+      const status = await this.status();
+      this.daemonReady = true;
+      return { ok: true, status };
     } catch {
       return { ok: true };
+    }
+  }
+
+  private async ensureDaemonReady(): Promise<void> {
+    if (this.daemonReady) return;
+    try {
+      const status = await this.status();
+      if (/not\s+running|stopped|unavailable/i.test(status)) {
+        throw new Error(status);
+      }
+      this.daemonReady = true;
+    } catch {
+      await this.startDaemon();
+      this.daemonReady = true;
     }
   }
 }

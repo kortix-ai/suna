@@ -1,8 +1,7 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
-import { useEffect, useMemo, useRef, useState } from 'react';
-
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import {
   CommandGroup,
   CommandInput,
@@ -14,56 +13,61 @@ import {
 } from '@/components/ui/command';
 import Hint from '@/components/ui/hint';
 import { cn } from '@/lib/utils';
-import type { RuntimeAgent } from '@kortix/sdk/react';
-import { Check, ChevronDown } from 'lucide-react';
-import { AgentHarnessIcon } from './agent-harness-icon';
+import type { Agent } from '@kortix/sdk/react';
+import { capitalizeWords, isMetaAgentName } from '@kortix/shared';
+import { CaretDownIcon, CheckIcon, FolderSimpleIcon as MetaFolder } from '@phosphor-icons/react';
+import { useTranslations } from 'next-intl';
+import { useEffect, useMemo, useState } from 'react';
+import { composerSelectableAgents } from './composer-agent-access';
 
-// ============================================================================
-// Agent Selector
-// ============================================================================
+/**
+ * Agents on screen before the popover grows a search field.
+ *
+ * The list caps at 320px and a row is two lines (~48px), so roughly six fit
+ * without scrolling. Up to that point the whole set is readable in one glance
+ * and a search field is pure chrome — it costs a row of height and a focus
+ * stop to filter something the eye has already finished reading. Past it,
+ * scanning becomes scrolling and search starts paying for itself.
+ */
+const SEARCH_MIN_AGENTS = 7;
 
 export function AgentSelector({
   agents,
   selectedAgent,
   onSelect,
   disabled = false,
+  triggerLabelClassName,
+  unavailableHint,
 }: {
-  agents: RuntimeAgent[];
+  agents: Agent[];
   selectedAgent: string | null;
   onSelect: (agentName: string | null) => void;
   disabled?: boolean;
+  triggerLabelClassName?: string;
+  /**
+   * Why there is nothing to pick — shown as the tooltip on the inert trigger.
+   *
+   * Set only for a roster that loaded EMPTY because this user holds no agent
+   * grant. An empty list with no hint is the ordinary not-loaded-yet state and
+   * says nothing, because there is nothing true to say yet.
+   */
+  unavailableHint?: string | null;
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
-  const [flash, setFlash] = useState(false);
-  const prevAgentRef = useRef(selectedAgent);
 
-  const primaryAgents = useMemo(
-    () => agents.filter((a) => !a.hidden && a.mode !== 'subagent'),
-    [agents],
-  );
+  const primaryAgents = useMemo(() => composerSelectableAgents(agents), [agents]);
 
-  // Flash highlight when agent changes (e.g. via Tab cycling)
-  useEffect(() => {
-    if (prevAgentRef.current !== selectedAgent && prevAgentRef.current !== null) {
-      setFlash(true);
-      const timer = setTimeout(() => setFlash(false), 400);
-      return () => clearTimeout(timer);
-    }
-    prevAgentRef.current = selectedAgent;
-  }, [selectedAgent]);
+  // A `flash` state, a `prevAgentRef` feeding it, two effects and a 400ms
+  // timer used to live here. Nothing ever READ `flash` — it was written on
+  // every agent change and rendered nowhere, so the whole apparatus bought a
+  // re-render and a timer per selection and showed the user nothing.
 
-  useEffect(() => {
-    prevAgentRef.current = selectedAgent;
-  }, [selectedAgent]);
-
-  // Reset search when closing
   useEffect(() => {
     if (!open) setSearch('');
   }, [open]);
 
-  // Fuzzy filter
   const filteredPrimary = useMemo(() => {
     const q = search.toLowerCase().trim();
     if (!q) return primaryAgents;
@@ -72,110 +76,177 @@ export function AgentSelector({
     );
   }, [primaryAgents, search]);
 
+  const filteredMeta = useMemo(
+    () => filteredPrimary.filter((a) => isMetaAgentName(a.name)),
+    [filteredPrimary],
+  );
+  const filteredProject = useMemo(
+    () => filteredPrimary.filter((a) => !isMetaAgentName(a.name)),
+    [filteredPrimary],
+  );
+
+  // Keyed off the FULL list, never the filtered one: deriving it from
+  // `filteredPrimary` would make the field that is doing the filtering vanish
+  // the moment a query narrowed the list past the threshold, taking the
+  // user's own query with it.
+  const showSearch = primaryAgents.length >= SEARCH_MIN_AGENTS;
+
   const currentAgent = primaryAgents.find((a) => a.name === selectedAgent) || primaryAgents[0];
-  const displayName = currentAgent?.name || 'Agent';
+  const displayName = currentAgent?.name ? capitalizeWords(currentAgent.name) : 'Agent';
+  const metaSelected = isMetaAgentName(currentAgent?.name);
+
+  /**
+   * One agent: name, its type, its description, and a check when it is the
+   * one in use.
+   *
+   * The type is a `Badge` on the row rather than a `CommandGroup` heading.
+   * Headings only earn their place when there is more than one section to
+   * tell apart, and there usually is not — most projects have no meta agents
+   * at all, so the list rendered a lone "Agents" label over a single group,
+   * captioning something that needed no caption. A badge says the same thing
+   * where it is actually useful (on the row that differs) and disappears
+   * entirely when every agent is the same kind.
+   *
+   * Selection is shown ONCE, by the check plus the tinted row. It used to be
+   * said three times — check, tinted row, AND a heavier font weight on the
+   * name — which made the selected row's title render at a different weight
+   * from every other title for no added information.
+   */
+  const renderAgentItem = (agent: Agent, meta: boolean) => {
+    const isSelected =
+      selectedAgent === agent.name || (!selectedAgent && agent === primaryAgents[0]);
+    return (
+      <CommandItem
+        key={agent.name}
+        value={`agent-${agent.name}`}
+        // `items-start` is what pins the check to the top right: the row is
+        // two lines and a vertically-centred check floats between them,
+        // pointing at neither.
+        className={cn('items-start gap-2 py-2', isSelected && 'bg-primary/[0.06]')}
+        onSelect={() => {
+          if (disabled) return;
+          onSelect(agent.name);
+          setOpen(false);
+        }}
+      >
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 items-center gap-1.5">
+            <span className="text-foreground truncate text-sm font-medium">
+              {capitalizeWords(agent.name)}
+            </span>
+            {meta && (
+              <Badge variant="outline" size="xs" className="shrink-0 font-normal">
+                Platform
+              </Badge>
+            )}
+          </div>
+          {agent.description && (
+            <p className="text-muted-foreground mt-0.5 truncate text-xs">{agent.description}</p>
+          )}
+        </div>
+        {isSelected && (
+          // `mt-0.5` optically centres the 16px check against the first line
+          // rather than the top edge of the text box.
+          <CheckIcon className="text-foreground mt-0.5 size-4 shrink-0" />
+        )}
+      </CommandItem>
+    );
+  };
+
+  /**
+   * Nothing to pick from.
+   *
+   * The SAME trigger as the loaded state and as the model picker beside it —
+   * same variant, size, radius, label slot and caret — just inert and muted.
+   * It is deliberately not a wide pill, a banner, or an icon of its own: an
+   * empty picker is still a picker, and the composer's bottom rail is a row of
+   * sibling controls, not a place to put a notice. The reason lives in the
+   * tooltip, and on the send button's tooltip, which is where a user who wants
+   * it goes.
+   *
+   * The tooltip hangs off a `<span>` rather than the button: a disabled button
+   * takes no pointer events, so a `Hint` wrapped straight around it would never
+   * open — in exactly the state where its words matter.
+   */
+  if (primaryAgents.length === 0) {
+    const trigger = (
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        disabled
+        aria-label={unavailableHint ?? undefined}
+        className="text-muted-foreground rounded-lg"
+      >
+        <span className={cn('max-w-[100px] truncate', triggerLabelClassName)}>{displayName}</span>
+        <CaretDownIcon className="size-3" />
+      </Button>
+    );
+    if (!unavailableHint) return trigger;
+    return (
+      <Hint side="top" label={unavailableHint}>
+        <span className="inline-flex">{trigger}</span>
+      </Hint>
+    );
+  }
 
   return (
-    // When locked we keep the trigger hoverable (no native `disabled`, which
-    // would suppress hover) but gate the popover shut, so the tooltip can still
-    // explain WHY the agent can't be switched mid-session.
     <CommandPopover open={open} onOpenChange={(next) => setOpen(disabled ? false : next)}>
-      <Hint
-        side="top"
-        className="max-w-[240px]"
-        label={
-          disabled ? (
-            <p>
-              {
-                "This agent is set when the session starts and can't be changed here. Start a new session to use a different agent."
-              }
-            </p>
-          ) : (
-            <p>
-              {tHardcodedUi.raw('componentsSessionSessionChatInput.line224JsxTextSwitchAgent')}
-              <kbd className="bg-foreground/10 ml-1 rounded px-1.5 py-0.5 font-mono text-xs">
-                Tab
-              </kbd>
-            </p>
-          )
-        }
-      >
-        <CommandPopoverTrigger>
-          <button
-            type="button"
-            aria-disabled={disabled || undefined}
-            aria-label={tHardcodedUi.raw(
-              'componentsSessionSessionChatInput.line211JsxAttrAriaLabelAgentPicker',
-            )}
-            className={cn(
-              'text-muted-foreground hover:text-foreground hover:bg-muted inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-xs font-medium capitalize transition-[color,background-color,transform] duration-200 active:scale-[0.96]',
-              flash && 'bg-primary/10 text-foreground',
-              open && 'bg-muted text-foreground',
-              disabled &&
-                'hover:text-muted-foreground cursor-not-allowed opacity-70 hover:bg-transparent',
-            )}
-          >
-            <span className="max-w-[100px] truncate">{displayName}</span>
-            <ChevronDown
-              className={cn(
-                'size-3 opacity-50 transition-transform duration-200',
-                open && 'rotate-180',
-              )}
-            />
-          </button>
-        </CommandPopoverTrigger>
-      </Hint>
+      <CommandPopoverTrigger>
+        <Button type="button" variant="ghost" size="sm" className="text-foreground/70 rounded-lg">
+          {metaSelected && <MetaFolder className="size-3.5 shrink-0" weight="fill" />}
+          <span className={cn('max-w-[100px] truncate', triggerLabelClassName)}>{displayName}</span>
+          <CaretDownIcon className={cn('size-3', open && 'rotate-180')} />
+        </Button>
+      </CommandPopoverTrigger>
 
       <CommandPopoverContent side="top" align="start" sideOffset={8} className="w-[300px]">
-        <CommandInput
-          compact
-          placeholder={tHardcodedUi.raw(
-            'componentsSessionSessionChatInput.line231JsxAttrPlaceholderSearchAgents',
-          )}
-          value={search}
-          onValueChange={setSearch}
-        />
+        {/*
+          A search field over four agents is a control that costs a row of
+          chrome to save nobody any time — the whole list is already on screen
+          and readable in one glance. It only earns its place once the list
+          outgrows the popover and scanning turns into scrolling.
+
+          It stays MOUNTED either way, just visually hidden, and that is
+          deliberate: cmdk drives arrow-key navigation from a keydown handler
+          on its own root, and the input is the only focusable descendant
+          inside it. Unmounting it would leave focus on the Radix content
+          wrapper — the parent — where keydown never reaches cmdk at all, so
+          the arrow keys would silently stop working on exactly the short
+          lists this is meant to simplify.
+        */}
+        <div className={showSearch ? undefined : 'sr-only'}>
+          <CommandInput
+            compact
+            placeholder={tHardcodedUi.raw(
+              'componentsSessionSessionChatInput.line231JsxAttrPlaceholderSearchAgents',
+            )}
+            value={search}
+            onValueChange={setSearch}
+          />
+        </div>
 
         <CommandList className="max-h-[320px]">
-          {/* Primary agents */}
+          {/*
+            ONE group, no heading — and the group is not optional dressing.
+            `CommandPopoverContent` forces `[data-slot=command-list]:py-0` and
+            gives `[data-slot=command-group]` its `py-1`, so the GROUP is what
+            carries this popover's vertical inset. Dropping it (and padding the
+            list instead) loses that fight on specificity — a descendant
+            selector beats a plain class — and the rows end up flush against
+            the popover's top and bottom edges.
+
+            The heading is what goes, not the group. The row's own badge
+            carries the type, so a heading would repeat it — and with no meta
+            agents (the common case) it captioned a single group with a lone
+            "Agents" label that told the reader nothing they could not see.
+            Meta agents are ordered first, so the grouping still reads without
+            being announced.
+          */}
           {filteredPrimary.length > 0 && (
-            <CommandGroup heading="Agents" forceMount>
-              {filteredPrimary.map((agent) => {
-                const isSelected =
-                  selectedAgent === agent.name || (!selectedAgent && agent === primaryAgents[0]);
-                return (
-                  <CommandItem
-                    key={agent.name}
-                    value={`agent-${agent.name}`}
-                    className={isSelected ? 'bg-foreground/[0.06]' : undefined}
-                    onSelect={() => {
-                      if (disabled) return;
-                      onSelect(agent.name);
-                      setOpen(false);
-                    }}
-                  >
-                    <AgentHarnessIcon harness={agent.harness} />
-                    <div className="min-w-0 flex-1 py-0.5">
-                      <div
-                        className={cn(
-                          'truncate text-sm leading-tight capitalize',
-                          isSelected
-                            ? 'text-foreground font-semibold'
-                            : 'text-foreground/90 font-medium',
-                        )}
-                      >
-                        {agent.name}
-                      </div>
-                      {agent.description && (
-                        <p className="text-muted-foreground/55 mt-1 truncate text-xs leading-snug">
-                          {agent.description}
-                        </p>
-                      )}
-                    </div>
-                    {isSelected && <Check className="text-foreground shrink-0" />}
-                  </CommandItem>
-                );
-              })}
+            <CommandGroup forceMount>
+              {filteredMeta.map((agent) => renderAgentItem(agent, true))}
+              {filteredProject.map((agent) => renderAgentItem(agent, false))}
             </CommandGroup>
           )}
 

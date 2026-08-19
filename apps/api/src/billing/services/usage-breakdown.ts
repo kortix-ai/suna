@@ -19,12 +19,29 @@
 // and no metadata still classifies.
 
 import { creditLedger } from '@kortix/db';
-import { and, eq, gte, inArray, sql } from 'drizzle-orm';
+import { and, eq, gte, inArray, lt, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
 
 const COMPUTE_DEBIT_KINDS = ['compute_debit'] as const;
 const LLM_DEBIT_KINDS = ['llm_debit', 'token_deduction', 'token_overage'] as const;
-const DEBIT_KINDS: string[] = [...COMPUTE_DEBIT_KINDS, ...LLM_DEBIT_KINDS];
+/**
+ * Debits that are neither compute nor LLM.
+ *
+ * `usage` is what the router writes for a Kortix tool call — deliberately not
+ * `llm_debit` (router/services/billing.ts:68). It was in neither list, and the
+ * query filters on `inArray(LEDGER_KIND, DEBIT_KINDS)`, so this money was not
+ * merely uncategorised: it was excluded from the result set entirely and
+ * vanished from the total. On the production Kortix account that is 10,859 rows.
+ *
+ * `admin_debit` is a manual adjustment. It is real money leaving the wallet, so
+ * it belongs in the total; calling it compute or LLM would be a lie.
+ */
+const OTHER_DEBIT_KINDS = ['usage', 'admin_debit'] as const;
+const DEBIT_KINDS: string[] = [
+  ...COMPUTE_DEBIT_KINDS,
+  ...LLM_DEBIT_KINDS,
+  ...OTHER_DEBIT_KINDS,
+];
 
 // metadata->>'ledger_type' first, credit_ledger.type second. NULLIF guards the
 // rows whose metadata is present but carries an empty ledger_type.
@@ -33,16 +50,65 @@ const LEDGER_KIND = sql<string>`COALESCE(NULLIF(${creditLedger.metadata} ->> 'le
 export interface UsageBreakdown {
   compute_usd: number;
   llm_usd: number;
+  /** Debits that are neither compute nor LLM — tool calls, manual adjustments. */
+  other_usd: number;
   total_usd: number;
   period_start: string | null;
   period_end: string | null;
 }
 
-export function classifyLedgerKind(kind: string | null): 'compute' | 'llm' | null {
+export function classifyLedgerKind(kind: string | null): 'compute' | 'llm' | 'other' | null {
   if (!kind) return null;
   if ((COMPUTE_DEBIT_KINDS as readonly string[]).includes(kind)) return 'compute';
   if ((LLM_DEBIT_KINDS as readonly string[]).includes(kind)) return 'llm';
+  if ((OTHER_DEBIT_KINDS as readonly string[]).includes(kind)) return 'other';
   return null;
+}
+
+/**
+ * The start of the CURRENT billing period, from a fixed monthly anchor.
+ *
+ * `credit_accounts.billing_cycle_anchor` is Stripe's anchor: the instant the
+ * subscription started, and it never moves. Passing it straight through as
+ * "period start" meant the window never reset — "Spend this period" quietly
+ * accumulated LIFETIME spend under a this-period label. On the production
+ * Kortix account the anchor is 2026-06-07, two months stale.
+ *
+ * Roll it forward by whole months to the most recent occurrence at or before
+ * `now`. Day-of-month is clamped, so a 31st anchor lands on the 28th/30th in
+ * shorter months and returns to the 31st afterwards — same rule Stripe uses.
+ */
+export function currentPeriodStart(anchorIso: string | null, now: Date = new Date()): string | null {
+  if (!anchorIso) return null;
+  const anchor = new Date(anchorIso);
+  if (Number.isNaN(anchor.getTime())) return null;
+  if (anchor >= now) return anchor.toISOString();
+
+  const months =
+    (now.getUTCFullYear() - anchor.getUTCFullYear()) * 12 +
+    (now.getUTCMonth() - anchor.getUTCMonth());
+
+  const at = (monthOffset: number): Date => {
+    const y = anchor.getUTCFullYear();
+    const m = anchor.getUTCMonth() + monthOffset;
+    // Day 0 of the following month = last day of the target month.
+    const daysInTarget = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+    return new Date(
+      Date.UTC(
+        y,
+        m,
+        Math.min(anchor.getUTCDate(), daysInTarget),
+        anchor.getUTCHours(),
+        anchor.getUTCMinutes(),
+        anchor.getUTCSeconds(),
+        anchor.getUTCMilliseconds(),
+      ),
+    );
+  };
+
+  // `months` can overshoot by one when the day-of-month has not arrived yet.
+  const candidate = at(months);
+  return (candidate <= now ? candidate : at(months - 1)).toISOString();
 }
 
 /**
@@ -74,12 +140,18 @@ export async function getUsageBreakdownThisPeriod(
         gte(creditLedger.createdAt, sinceIso),
         // Only debit-shaped kinds (positive grants and refunds are excluded).
         inArray(LEDGER_KIND, DEBIT_KINDS),
+        // And only actual debits. The comment below always claimed "negative
+        // amounts" but nothing enforced it — harmless while every listed kind
+        // was strictly negative, unsafe now that `admin_debit` is counted, since
+        // a positive manual adjustment would otherwise inflate reported spend.
+        lt(creditLedger.amount, '0'),
       ),
     )
     .groupBy(LEDGER_KIND);
 
   let compute = 0;
   let llm = 0;
+  let other = 0;
   for (const row of rows) {
     const amt = Number(row.total) || 0;
     const category = classifyLedgerKind(row.kind);
@@ -87,13 +159,16 @@ export async function getUsageBreakdownThisPeriod(
       compute += amt;
     } else if (category === 'llm') {
       llm += amt;
+    } else if (category === 'other') {
+      other += amt;
     }
   }
 
   return {
     compute_usd: compute,
     llm_usd: llm,
-    total_usd: compute + llm,
+    other_usd: other,
+    total_usd: compute + llm + other,
     period_start: sinceIso,
     period_end: null, // open period — current billing cycle hasn't closed yet
   };

@@ -1,6 +1,12 @@
 'use client';
 
-import { Check, Copy, KeyRound, MoreHorizontal, Trash2 } from 'lucide-react';
+import {
+  CheckIcon as Check,
+  CopyIcon as Copy,
+  KeyIcon as KeyRound,
+  DotsThreeIcon as MoreHorizontal,
+  TrashIcon as Trash2,
+} from '@phosphor-icons/react';
 import { useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
@@ -38,15 +44,31 @@ import {
 } from '@/hooks/projects/use-project-gateway';
 import type { CreatedGatewayKey } from '@/lib/projects-gateway-client';
 
+// Hoisted so render does not rebuild the formatter per call — same default
+// locale and options as the previous inline `toLocaleDateString` call.
+const KEY_DATE_FORMAT = new Intl.DateTimeFormat(undefined, {
+  month: 'short',
+  day: 'numeric',
+  year: 'numeric',
+});
+
 function fmtDate(s: string | null): string {
   if (!s) return 'never';
-  return new Date(s).toLocaleDateString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  });
+  return KEY_DATE_FORMAT.format(new Date(s));
 }
 
+/**
+ * Gateway keys — `kortix_gw_…` credentials for calling THIS project's gateway
+ * from outside Kortix.
+ *
+ * A SECTION, not a tab. It used to be its own tab labelled "API keys",
+ * sitting four tabs away from another tab also labelled "API keys" (the
+ * provider BYOK list) and one tab away from "API" (the reference for calling
+ * the gateway with one of these). Three tabs, one job. All three are now
+ * sections of `llm-api-keys-tab.tsx`, which owns the scroll container, the
+ * padding and the section headings — this renders bare so it can sit inside
+ * one.
+ */
 export function GatewayKeys({
   projectId,
   canWrite = false,
@@ -54,7 +76,7 @@ export function GatewayKeys({
 }: {
   projectId: string;
   canWrite?: boolean;
-  /** Jump to the Providers/Models tab from the reveal dialog's reference panel. */
+  /** Jump to the Models tab from the reveal dialog's reference panel. */
   onViewModels?: () => void;
 }) {
   const { data, isError } = useGatewayKeys(projectId);
@@ -69,11 +91,9 @@ export function GatewayKeys({
 
   if (isError) {
     return (
-      <div className="flex min-h-0 flex-1 items-center justify-center p-5">
-        <p className="text-muted-foreground text-sm">
-          You need the manage-keys permission to view gateway keys.
-        </p>
-      </div>
+      <p className="text-muted-foreground py-6 text-center text-sm">
+        You need the manage-keys permission to view gateway keys.
+      </p>
     );
   }
 
@@ -91,105 +111,98 @@ export function GatewayKeys({
   };
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-      <div className="w-full space-y-4 p-5">
-        <section className="space-y-3">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <Label>
-                API keys
-                <span className="text-muted-foreground font-normal"> ({keys.length})</span>
-              </Label>
-              <p className="text-muted-foreground mt-0.5 text-pretty text-xs">
-                Project-scoped keys for calling the gateway from external apps — every request is
-                logged and billed here.
-              </p>
-            </div>
-            {canWrite && (
-              <Button size="sm" className="shrink-0" onClick={() => setCreating(true)}>
+    <div className="space-y-3">
+      {/* The count line and the header button only exist once there is a list
+          to describe. With no keys the empty state already says what a key is
+          for AND carries the one Create button — printing "0 keys" above a
+          second Create button is the same offer made twice. */}
+      {keys.length > 0 && (
+        <div className="flex items-start justify-between gap-3">
+          <p className="text-muted-foreground text-xs text-pretty">
+            {keys.length === 1 ? '1 key' : `${keys.length} keys`}. Every request made with one is
+            logged and billed to this project.
+          </p>
+          {canWrite && (
+            <Button size="sm" className="shrink-0" onClick={() => setCreating(true)}>
+              Create key
+            </Button>
+          )}
+        </div>
+      )}
+
+      {keys.length === 0 ? (
+        <EmptyState
+          icon={KeyRound}
+          size="sm"
+          title="No keys yet"
+          description="Create a project-scoped key to call the gateway from outside a Kortix session."
+          action={
+            canWrite ? (
+              <Button variant="outline" size="sm" onClick={() => setCreating(true)}>
                 Create key
               </Button>
-            )}
-          </div>
-
-          {keys.length === 0 ? (
-            <EmptyState
-              icon={KeyRound}
-              size="sm"
-              title="No keys yet"
-              description="Create a project-scoped key to call the gateway from outside a Kortix session."
-              action={
-                canWrite ? (
-                  <Button variant="outline" size="sm" onClick={() => setCreating(true)}>
-                    Create key
-                  </Button>
-                ) : undefined
-              }
-            />
-          ) : (
-            <ul className="space-y-2">
-              {keys.map((k) => {
-                const active = k.status === 'active';
-                const revoking = revokeKey.isPending && revokeKey.variables === k.key_id;
-                return (
-                  <li
-                    key={k.key_id}
-                    className="bg-popover group flex items-center gap-3 rounded-md border px-4 py-2.5 transition-colors"
-                  >
-                    <EntityAvatar icon={KeyRound} size="sm" />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-foreground truncate text-sm font-medium">
-                          {k.name}
-                        </span>
-                        <Badge
-                          size="sm"
-                          variant={active ? 'success' : 'secondary'}
-                          className="capitalize"
-                        >
-                          {k.status}
-                        </Badge>
-                      </div>
-                      <InlineMeta className="mt-0.5">
-                        <code className="font-mono">{k.key_prefix}…</code>
-                        <span>last used {fmtDate(k.last_used_at)}</span>
-                      </InlineMeta>
-                    </div>
-                    {active && canWrite && (
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button
-                            size="icon-sm"
-                            variant="ghost"
-                            className="shrink-0"
-                            aria-label="Key actions"
-                            disabled={revoking}
-                          >
-                            {revoking ? (
-                              <Loading className="size-3.5 shrink-0" />
-                            ) : (
-                              <MoreHorizontal className="size-3.5 shrink-0" />
-                            )}
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-44">
-                          <DropdownMenuItem
-                            variant="destructive"
-                            onClick={() => setRevokeTarget({ key_id: k.key_id, name: k.name })}
-                          >
-                            <Trash2 className="size-3.5 shrink-0" />
-                            Revoke key
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </section>
-      </div>
+            ) : undefined
+          }
+        />
+      ) : (
+        <ul className="space-y-2">
+          {keys.map((k) => {
+            const active = k.status === 'active';
+            const revoking = revokeKey.isPending && revokeKey.variables === k.key_id;
+            return (
+              <li
+                key={k.key_id}
+                className="bg-popover group flex items-center gap-3 rounded-md border px-4 py-2.5 transition-colors"
+              >
+                <EntityAvatar icon={KeyRound} size="sm" />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-foreground truncate text-sm font-medium">{k.name}</span>
+                    <Badge
+                      size="sm"
+                      variant={active ? 'success' : 'secondary'}
+                      className="capitalize"
+                    >
+                      {k.status}
+                    </Badge>
+                  </div>
+                  <InlineMeta className="mt-0.5">
+                    <code className="font-mono">{k.key_prefix}…</code>
+                    <span>last used {fmtDate(k.last_used_at)}</span>
+                  </InlineMeta>
+                </div>
+                {active && canWrite && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        size="icon-sm"
+                        variant="ghost"
+                        className="shrink-0"
+                        aria-label="Key actions"
+                        disabled={revoking}
+                      >
+                        {revoking ? (
+                          <Loading className="size-3.5 shrink-0" />
+                        ) : (
+                          <MoreHorizontal className="size-3.5 shrink-0" />
+                        )}
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-44">
+                      <DropdownMenuItem
+                        onClick={() => setRevokeTarget({ key_id: k.key_id, name: k.name })}
+                      >
+                        <Trash2 className="size-3.5 shrink-0" />
+                        Revoke key
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
 
       <Modal open={creating} onOpenChange={(n) => (n ? undefined : setCreating(false))}>
         <ModalContent className="sm:max-w-md">

@@ -1,6 +1,6 @@
 'use client';
 
-import { MessageSquare } from 'lucide-react';
+import { ChatIcon as MessageSquare } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { AssistantTurn, UserBubble } from '../chat/chat-turn';
 import { Composer, HOME_PROMPT_MESSAGES } from '../chat/composer';
@@ -15,7 +15,7 @@ export function ChatPage({
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const sessionName = convo.scenario?.sessionName ?? 'new-session';
-  const busy = convo.phase === 'thinking' || convo.phase === 'streaming';
+  const busy =  convo.phase === 'streaming';
   const others = HOME_PROMPT_MESSAGES.filter((p) => p !== convo.userText).slice(0, 3);
 
   return (

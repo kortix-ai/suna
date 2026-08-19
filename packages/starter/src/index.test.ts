@@ -18,8 +18,11 @@ function byPath(files: StarterFile[]): Map<string, string> {
 }
 
 describe('STARTER_TEMPLATE_IDS', () => {
-  test('contains the two known templates', () => {
-    expect([...STARTER_TEMPLATE_IDS]).toEqual(['minimal', 'general-knowledge-worker']);
+  test('contains the two OpenCode templates', () => {
+    expect([...STARTER_TEMPLATE_IDS]).toEqual([
+      'minimal',
+      'general-knowledge-worker',
+    ]);
   });
 
   test('default template is the general knowledge worker (base + all domain skills)', () => {
@@ -222,6 +225,7 @@ describe('getStarterFiles', () => {
       // Design quality for every artifact below (CSS, PPT, matplotlib, PDF).
       'design-foundations',
       // Documents & decks.
+      'convert-documents-to-markdown',
       'docx',
       'pdf',
       'presentations',
@@ -278,8 +282,10 @@ describe('KORTIX_MANAGED_SKILL_NAMES', () => {
   test('tracks only the first-party kortix-* skill directories', () => {
     expect([...KORTIX_MANAGED_SKILL_NAMES]).toEqual([
       'kortix-cli',
+      'kortix-apps',
       'kortix-computer',
-      'kortix-executor',
+      'kortix-connectors',
+      'kortix-harness-refinement',
       'kortix-marketplace',
       'kortix-voice',
       'kortix-memory',
@@ -292,7 +298,7 @@ describe('KORTIX_MANAGED_SKILL_NAMES', () => {
     expect(isKortixManagedSkillName('kortix-system')).toBe(true);
     expect(isKortixManagedSkillName('agent-browser')).toBe(false);
     expect(isKortixManagedSkillName('kortix')).toBe(false);
-    expect(isKortixManagedSkillName('memory-reflector')).toBe(false);
+    expect(isKortixManagedSkillName('harness-reflector')).toBe(false);
     expect(isKortixManagedSkillName('web_search')).toBe(false);
   });
 

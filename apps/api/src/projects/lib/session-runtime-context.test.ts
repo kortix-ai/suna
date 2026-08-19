@@ -41,19 +41,16 @@ describe('session runtime context boundaries', () => {
     ).toEqual({ OTHER: 'base' });
   });
 
-  test('trusted internal extras cannot shadow or invent KORTIX_ORIGIN_REF', () => {
-    // origin_ref is the end-user a backend session acts for. It is derived
-    // server-side from an origin-gated request field, so a later extraEnvVars
-    // merge must not be able to re-point it at a DIFFERENT end-user...
+  test('trusted internal extras cannot shadow or invent the secret capability catalog', () => {
+    const catalog = '{"version":1,"capabilities":[]}';
     expect(
       mergeSessionSandboxEnv(
-        { KORTIX_ORIGIN_REF: 'alice', OTHER: 'base' },
-        { KORTIX_ORIGIN_REF: 'bob', OTHER: 'extra' },
+        { KORTIX_SECRET_CAPABILITIES: catalog },
+        { KORTIX_SECRET_CAPABILITIES: '{"forged":true}' },
       ),
-    ).toEqual({ KORTIX_ORIGIN_REF: 'alice', OTHER: 'extra' });
-    // ...nor fabricate one on a session the server gave no origin_ref at all.
-    expect(mergeSessionSandboxEnv({ OTHER: 'base' }, { KORTIX_ORIGIN_REF: 'invented' })).toEqual({
-      OTHER: 'base',
-    });
+    ).toEqual({ KORTIX_SECRET_CAPABILITIES: catalog });
+    expect(
+      mergeSessionSandboxEnv({}, { KORTIX_SECRET_CAPABILITIES: '{"forged":true}' }),
+    ).toEqual({});
   });
 });

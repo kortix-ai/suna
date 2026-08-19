@@ -1,10 +1,8 @@
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, or, sql } from 'drizzle-orm';
 import { createRoute, z } from '@hono/zod-openapi';
 import {
   gatewayBudgets,
   gatewayRequestLogs,
-  sandboxComputeSessions,
-  sessionSandboxes,
 } from '@kortix/db';
 import {
   calculateCost,
@@ -15,6 +13,7 @@ import {
 import { type GenerationConfig, clampGenerationConfig } from '@kortix/llm-catalog';
 import { resolveCandidates } from '../../llm-gateway/resolution/resolve-candidates';
 import { catalogModelForWireModel } from '../../llm-gateway/models/catalog-models';
+import { platformDefaultModelId } from '../../llm-gateway/models/served-managed-models';
 import { db } from '../../shared/db';
 import { auth, errors, json } from '../../openapi';
 import { authorize } from '../../iam';
@@ -36,8 +35,7 @@ import {
 import { publicGatewayBaseUrl } from '../../llm-gateway/public-url';
 import { verifyProviderConnection } from '../../llm-gateway/provider-verify';
 import { config } from '../../config';
-import { getCachedAccountTier } from '../../billing/services/entitlements';
-import { accountIsFreeTierForModels } from '../../billing/services/tiers';
+import { accountMayUseManagedModels } from '../../billing/services/entitlements';
 import { getAccountModelDefaults } from '../../repositories/model-preferences';
 import {
   getProjectRoutingPolicy,
@@ -47,6 +45,14 @@ import {
 import { invalidateAccountModelDefaults } from '../../llm-gateway/resolution/default-model';
 import { parseProjectRoutingPolicyInput } from '../../llm-gateway/routing/project-policy';
 import { resolveGatewayRoute } from '../../llm-gateway/routing';
+import { listProjectGatewaySessionSpend } from '../../shared/session-costs';
+import {
+  kortixBilledSpendSql,
+  providerBilledSpendSql,
+  splitLlmSpend,
+  totalSpendSql,
+} from '../../shared/llm-spend';
+import { classifyGatewayLogReference } from './gateway-log-reference';
 
 async function canDo(
   c: any,
@@ -99,6 +105,13 @@ const LIST_COLUMNS = {
 };
 
 function serializeLogRow(r: Record<string, any>) {
+  // See shared/llm-spend.ts. `final_cost` alone answers "what did Kortix bill
+  // you", which is 0 on every BYOK request — it is not what the call cost you.
+  const spend = splitLlmSpend({
+    billingMode: r.billingMode,
+    upstreamCost: r.upstreamCost,
+    finalCost: r.finalCost,
+  });
   return {
     log_id: r.logId,
     request_id: r.requestId,
@@ -116,8 +129,18 @@ function serializeLogRow(r: Record<string, any>) {
     output_tokens: r.outputTokens,
     cached_tokens: r.cachedTokens,
     cache_write_tokens: r.cacheWriteTokens,
-    upstream_cost: Number(r.upstreamCost ?? 0),
-    final_cost: Number(r.finalCost ?? 0),
+    // What you paid your own provider, and what Kortix debited from your
+    // wallet. On a Kortix-managed (`credits`) row `provider_cost` is 0 on
+    // purpose: the upstream price there is Kortix's wholesale cost, not
+    // yours, and shipping it would publish the Kortix margin on every
+    // managed request.
+    kortix_cost: spend.kortix_cost,
+    provider_cost: spend.provider_cost,
+    total_cost: spend.total_cost,
+    /** @deprecated Same value as `provider_cost`. */
+    upstream_cost: spend.provider_cost,
+    /** @deprecated Same value as `kortix_cost`. */
+    final_cost: spend.kortix_cost,
     streaming: r.streaming,
     billing_mode: r.billingMode,
     actor_user_id: r.actorUserId,
@@ -194,8 +217,11 @@ projectsApp.openapi(
   }),
   async (c: any) => {
     const projectId = c.req.param('projectId');
-    const logId = c.req.param('logId');
-    if (!UUID_V4_REGEX.test(logId)) return c.json({ error: 'Invalid log id' }, 400);
+    const logReference = c.req.param('logId');
+    const referenceKind = classifyGatewayLogReference(logReference);
+    if (referenceKind === 'invalid') {
+      return c.json({ error: 'Invalid log id or request id' }, 400);
+    }
 
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -210,7 +236,17 @@ projectsApp.openapi(
     const [row] = await db
       .select()
       .from(gatewayRequestLogs)
-      .where(and(eq(gatewayRequestLogs.logId, logId), eq(gatewayRequestLogs.projectId, projectId)))
+      .where(
+        and(
+          referenceKind === 'both'
+            ? or(
+                eq(gatewayRequestLogs.logId, logReference),
+                eq(gatewayRequestLogs.requestId, logReference),
+              )
+            : eq(gatewayRequestLogs.requestId, logReference),
+          eq(gatewayRequestLogs.projectId, projectId),
+        ),
+      )
       .limit(1);
     if (!row) return c.json({ error: 'Not found' }, 404);
 
@@ -254,7 +290,9 @@ projectsApp.openapi(
       .select({
         requests: sql<number>`count(*)::int`,
         errors: sql<number>`count(*) filter (where not ok)::int`,
-        totalCost: sql<number>`coalesce(sum(final_cost), 0)::float8`,
+        totalCost: totalSpendSql,
+        kortixCost: kortixBilledSpendSql,
+        providerCost: providerBilledSpendSql,
         inputTokens: sql<string>`coalesce(sum(input_tokens), 0)`,
         outputTokens: sql<string>`coalesce(sum(output_tokens), 0)`,
       })
@@ -271,6 +309,8 @@ projectsApp.openapi(
       requests: agg?.requests ?? 0,
       errors: agg?.errors ?? 0,
       total_cost: agg?.totalCost ?? 0,
+      kortix_cost: agg?.kortixCost ?? 0,
+      provider_cost: agg?.providerCost ?? 0,
       input_tokens: Number(agg?.inputTokens ?? 0),
       output_tokens: Number(agg?.outputTokens ?? 0),
     });
@@ -308,7 +348,9 @@ projectsApp.openapi(
         day: sql<string>`to_char(date_trunc('day', ${gatewayRequestLogs.createdAt}), 'YYYY-MM-DD')`,
         requests: sql<number>`count(*)::int`,
         errors: sql<number>`count(*) filter (where not ${gatewayRequestLogs.ok})::int`,
-        cost: sql<number>`coalesce(sum(${gatewayRequestLogs.finalCost}), 0)::float8`,
+        cost: totalSpendSql,
+        kortixCost: kortixBilledSpendSql,
+        providerCost: providerBilledSpendSql,
         inputTokens: sql<string>`coalesce(sum(${gatewayRequestLogs.inputTokens}), 0)`,
         outputTokens: sql<string>`coalesce(sum(${gatewayRequestLogs.outputTokens}), 0)`,
         p50: sql<number>`coalesce(percentile_cont(0.5) within group (order by ${gatewayRequestLogs.latencyMs}), 0)::int`,
@@ -331,6 +373,8 @@ projectsApp.openapi(
       requests: number;
       errors: number;
       cost: number;
+      kortix_cost: number;
+      provider_cost: number;
       input_tokens: number;
       output_tokens: number;
       p50: number;
@@ -346,6 +390,8 @@ projectsApp.openapi(
         requests: r?.requests ?? 0,
         errors: r?.errors ?? 0,
         cost: r?.cost ?? 0,
+        kortix_cost: r?.kortixCost ?? 0,
+        provider_cost: r?.providerCost ?? 0,
         input_tokens: Number(r?.inputTokens ?? 0),
         output_tokens: Number(r?.outputTokens ?? 0),
         p50: r?.p50 ?? 0,
@@ -383,100 +429,13 @@ projectsApp.openapi(
     );
 
     const days = Math.min(Math.max(Number(c.req.query('days')) || 30, 1), 365);
-
-    const [llmRows, computeRows] = await Promise.all([
-      db
-        .select({
-          sessionId: gatewayRequestLogs.sessionId,
-          requests: sql<number>`count(*)::int`,
-          errors: sql<number>`count(*) filter (where not ${gatewayRequestLogs.ok})::int`,
-          cost: sql<number>`coalesce(sum(${gatewayRequestLogs.finalCost}), 0)::float8`,
-          tokens: sql<string>`coalesce(sum(${gatewayRequestLogs.inputTokens} + ${gatewayRequestLogs.outputTokens}), 0)`,
-          models: sql<number>`count(distinct ${gatewayRequestLogs.requestedModel})::int`,
-          lastAt: sql<string>`max(${gatewayRequestLogs.createdAt})`,
-        })
-        .from(gatewayRequestLogs)
-        .where(
-          and(
-            eq(gatewayRequestLogs.projectId, projectId),
-            sql`${gatewayRequestLogs.sessionId} is not null`,
-            sql`${gatewayRequestLogs.createdAt} >= now() - make_interval(days => ${days})`,
-          ),
-        )
-        .groupBy(gatewayRequestLogs.sessionId),
-      db
-        .select({
-          sessionId: sandboxComputeSessions.sessionId,
-          cost: sql<number>`coalesce(sum(${sandboxComputeSessions.costUsd}), 0)::float8`,
-          seconds: sql<string>`coalesce(sum(extract(epoch from coalesce(${sandboxComputeSessions.endedAt}, ${sandboxComputeSessions.lastBilledAt}, now()) - ${sandboxComputeSessions.startedAt})), 0)::bigint`,
-          lastAt: sql<string>`max(${sandboxComputeSessions.lastBilledAt})`,
-        })
-        .from(sandboxComputeSessions)
-        .innerJoin(
-          sessionSandboxes,
-          eq(sessionSandboxes.sessionId, sandboxComputeSessions.sessionId),
-        )
-        .where(
-          and(
-            eq(sessionSandboxes.projectId, projectId),
-            sql`${sandboxComputeSessions.sessionId} is not null`,
-            sql`${sandboxComputeSessions.startedAt} >= now() - make_interval(days => ${days})`,
-          ),
-        )
-        .groupBy(sandboxComputeSessions.sessionId),
-    ]);
-
-    type Row = {
-      session_id: string;
-      llm_cost: number;
-      compute_cost: number;
-      requests: number;
-      errors: number;
-      tokens: number;
-      models: number;
-      compute_seconds: number;
-      last_at: string | null;
-    };
-    const bySession = new Map<string, Row>();
-    for (const r of llmRows) {
-      if (!r.sessionId) continue;
-      bySession.set(r.sessionId, {
-        session_id: r.sessionId,
-        llm_cost: r.cost,
-        compute_cost: 0,
-        requests: r.requests,
-        errors: r.errors,
-        tokens: Number(r.tokens),
-        models: r.models,
-        compute_seconds: 0,
-        last_at: r.lastAt,
-      });
-    }
-    for (const r of computeRows) {
-      if (!r.sessionId) continue;
-      const e = bySession.get(r.sessionId) ?? {
-        session_id: r.sessionId,
-        llm_cost: 0,
-        compute_cost: 0,
-        requests: 0,
-        errors: 0,
-        tokens: 0,
-        models: 0,
-        compute_seconds: 0,
-        last_at: null,
-      };
-      e.compute_cost = r.cost;
-      e.compute_seconds = Number(r.seconds);
-      if (r.lastAt && (!e.last_at || r.lastAt > e.last_at)) e.last_at = r.lastAt;
-      bySession.set(r.sessionId, e);
-    }
-
-    const sessions = [...bySession.values()]
-      .map((e) => ({ ...e, total_cost: e.llm_cost + e.compute_cost }))
-      .sort((a, b) => b.total_cost - a.total_cost)
-      .slice(0, 50);
-
-    return c.json({ window_days: days, sessions });
+    return c.json(
+      await listProjectGatewaySessionSpend({
+        accountId: loaded.row.accountId,
+        projectId,
+        days,
+      }),
+    );
   },
 );
 
@@ -512,7 +471,9 @@ projectsApp.openapi(
         provider: gatewayRequestLogs.provider,
         requests: sql<number>`count(*)::int`,
         errors: sql<number>`count(*) filter (where not ${gatewayRequestLogs.ok})::int`,
-        cost: sql<number>`coalesce(sum(${gatewayRequestLogs.finalCost}), 0)::float8`,
+        cost: totalSpendSql,
+        kortixCost: kortixBilledSpendSql,
+        providerCost: providerBilledSpendSql,
         tokens: sql<string>`coalesce(sum(${gatewayRequestLogs.inputTokens} + ${gatewayRequestLogs.outputTokens}), 0)`,
       })
       .from(gatewayRequestLogs)
@@ -534,6 +495,8 @@ projectsApp.openapi(
         requests: r.requests,
         errors: r.errors,
         cost: r.cost,
+        kortix_cost: r.kortixCost,
+        provider_cost: r.providerCost,
         tokens: Number(r.tokens),
       })),
     });
@@ -571,7 +534,10 @@ projectsApp.openapi(
       .select({
         userId: gatewayRequestLogs.actorUserId,
         requests: sql<number>`count(*)::int`,
-        cost: sql<number>`coalesce(sum(${gatewayRequestLogs.finalCost}), 0)::float8`,
+        // Budgets cap what a project SPENDS, so per-member spend here is the
+        // same total-spend figure the budget gate enforces on — not the
+        // Kortix-billed slice, which is 0 on every BYOK request.
+        cost: totalSpendSql,
         tokens: sql<string>`coalesce(sum(${gatewayRequestLogs.inputTokens} + ${gatewayRequestLogs.outputTokens}), 0)`,
       })
       .from(gatewayRequestLogs)
@@ -583,12 +549,12 @@ projectsApp.openapi(
         ),
       )
       .groupBy(gatewayRequestLogs.actorUserId)
-      .orderBy(desc(sql`sum(${gatewayRequestLogs.finalCost})`));
+      .orderBy(desc(totalSpendSql));
 
     const [projectAgg] = await db
       .select({
         requests: sql<number>`count(*)::int`,
-        cost: sql<number>`coalesce(sum(${gatewayRequestLogs.finalCost}), 0)::float8`,
+        cost: totalSpendSql,
       })
       .from(gatewayRequestLogs)
       .where(
@@ -1130,7 +1096,7 @@ async function routingPolicyDocument(ctx: RoutingContext, canWrite: boolean) {
     getAccountModelDefaults(ctx.accountId, ctx.projectId),
   ]);
   const projectDefault = defaults.projects[ctx.projectId] ?? null;
-  const effectiveDefault = projectDefault ?? defaults.account ?? config.LLM_GATEWAY_DEFAULT_MODEL;
+  const effectiveDefault = projectDefault ?? defaults.account ?? platformDefaultModelId();
   const defaultModelSource = projectDefault
     ? ('project' as const)
     : defaults.account
@@ -1169,16 +1135,16 @@ async function routingPolicyDocument(ctx: RoutingContext, canWrite: boolean) {
     effective: {
       defaultModel: effectiveDefault,
       defaultModelSource,
-      visionModel: stored?.visionModel ?? config.LLM_GATEWAY_VISION_MODEL,
+      visionModel: stored?.visionModel ?? config.LLM_GATEWAY_VISION_MODEL ?? null,
       defaultFallback: {
         models: [...(route.fallbackModels ?? [])],
         fallbackOn: route.fallbackOn ?? 'transient',
       },
     },
     platform: {
-      defaultModel: config.LLM_GATEWAY_DEFAULT_MODEL,
-      visionModel: config.LLM_GATEWAY_VISION_MODEL,
-      defaultFallback: operatorFallbackFor(config.LLM_GATEWAY_DEFAULT_MODEL),
+      defaultModel: platformDefaultModelId(),
+      visionModel: config.LLM_GATEWAY_VISION_MODEL ?? null,
+      defaultFallback: operatorFallbackFor(platformDefaultModelId()),
     },
     capabilities: { write: canWrite },
   };
@@ -1260,7 +1226,7 @@ projectsApp.openapi(
     }
     const defaults = await getAccountModelDefaults(loaded.row.accountId, projectId);
     const effectivePrimary =
-      policy.defaultModel ?? defaults.account ?? config.LLM_GATEWAY_DEFAULT_MODEL;
+      policy.defaultModel ?? defaults.account ?? platformDefaultModelId();
     if (policy.defaultFallback?.models.includes(effectivePrimary)) {
       return c.json(
         {
@@ -1368,9 +1334,7 @@ projectsApp.openapi(
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     const body = await c.req.json();
     const defaults = await getAccountModelDefaults(loaded.row.accountId, projectId);
-    const freeModelsOnly = config.KORTIX_BILLING_INTERNAL_ENABLED
-      ? accountIsFreeTierForModels(await getCachedAccountTier(loaded.row.accountId))
-      : false;
+    const freeModelsOnly = !(await accountMayUseManagedModels(loaded.row.accountId));
     const principal: AuthedPrincipal = {
       userId: loaded.userId,
       accountId: loaded.row.accountId,

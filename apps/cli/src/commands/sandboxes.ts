@@ -217,15 +217,28 @@ export async function runSandboxes(argv: string[]): Promise<number> {
           ready: boolean;
           building: boolean;
           latest_failure: SnapshotBuild | null;
+          status?: {
+            state: 'ready' | 'building' | 'not_built' | 'degraded' | 'blocked' | 'unknown';
+            current_failure: SnapshotBuild | null;
+            stale_failure: SnapshotBuild | null;
+          } | null;
         }>(`${base}/sandbox-health`);
         if (json) {
           emitJson(h);
           return 0;
         }
-        const state = h.ready ? `${C.green}ready${C.reset}` : h.building ? `${C.yellow}building${C.reset}` : `${C.red}not ready${C.reset}`;
+        const currentState = h.status?.state ?? (h.ready ? 'ready' : h.building ? 'building' : 'unknown');
+        const stateColor =
+          currentState === 'ready'
+            ? C.green
+            : currentState === 'blocked' || currentState === 'degraded'
+              ? C.red
+              : C.yellow;
+        const state = `${stateColor}${currentState.replace('_', ' ')}${C.reset}`;
         process.stdout.write(`\n  primary ${C.bold}${h.primary_slug ?? '—'}${C.reset}  ${state}\n`);
-        if (h.latest_failure) {
-          process.stdout.write(`  ${C.red}last failure:${C.reset} ${trim(h.latest_failure.error?.split('\n')[0] ?? 'unknown', 80)}\n`);
+        const currentFailure = h.status ? h.status.current_failure : h.latest_failure;
+        if (currentFailure) {
+          process.stdout.write(`  ${C.red}current failure:${C.reset} ${trim(currentFailure.error?.split('\n')[0] ?? 'unknown', 80)}\n`);
           process.stdout.write(`  ${C.dim}Repair it with ${C.reset}${C.cyan}kortix sandboxes fix${C.reset}\n`);
         }
         process.stdout.write('\n');

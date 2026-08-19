@@ -178,6 +178,35 @@ export function connectedGatewayProviderIdsFromSecretNames(secretNames: Set<stri
   return ids;
 }
 
+/**
+ * Restamp `enabled` on a gateway ProviderListResponse from an overrides map
+ * (`wireModelId -> enabled`), touching only the models the map names. Pure —
+ * returns a new list. Used to optimistically update the cached
+ * `['project-providers', :id, 'gateway']` query when "Manage models" writes an
+ * override, so the session picker (which renders from THAT cache, staleTime
+ * Infinity) reflects the toggle without waiting for the refetch.
+ */
+export function applyEnablementToProviderList(
+  providers: ProviderListResponse,
+  overrides: Record<string, boolean>,
+): ProviderListResponse {
+  const all = Array.isArray(providers.all) ? providers.all : [];
+  return {
+    ...providers,
+    all: all.map((provider) => ({
+      ...provider,
+      models: Object.fromEntries(
+        Object.entries(provider.models ?? {}).map(([id, model]) => [
+          id,
+          overrides[id] === undefined
+            ? model
+            : { ...(model as Record<string, unknown>), enabled: overrides[id] },
+        ]),
+      ),
+    })),
+  } as unknown as ProviderListResponse;
+}
+
 export function projectLlmCatalogToProviderList(
   catalog: ProjectLlmCatalogResponse,
 ): ProviderListResponse {

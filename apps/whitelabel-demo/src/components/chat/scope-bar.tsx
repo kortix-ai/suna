@@ -8,12 +8,8 @@
  * agent read the Stripe key?" and "which mailbox is it sending as?" were
  * questions with no answer at the moment they get asked.
  *
- * The bar is deliberately asymmetric, because the platform is. The model and
- * the per-message agent can move now; the secrets allowlist and the connector
- * bindings are written once at create and never again. So the current-session
- * sections are TEXT — no switch, no select, nothing that could look like it
- * re-scopes a running session — and every change lands in a clearly separated
- * draft whose only button starts a new session with it.
+ * The scope endpoint is authoritative for secrets and connector bindings. Each
+ * save reads that scope and sends a complete replacement for both axes.
  */
 
 import { CallSnippet } from '@/components/dev/call-snippet';
@@ -21,12 +17,15 @@ import Loading from '@/components/ui/loading';
 
 import {
   ConnectorBindingFields,
-  bindingLabels,
   useConnectorBindingChoices,
 } from '@/components/connector-bindings';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -44,10 +43,22 @@ import { invalidateSessions, qk } from '@/lib/query-keys';
 import { getSessionToken } from '@/lib/session';
 import { sessionCreateFailure } from '@/lib/session-create-failure';
 import { buildSessionCreateInput } from '@/lib/session-overrides';
-import { readBoundConnections, sessionScopeIsReadable } from '@/lib/session-scope';
+import {
+  buildCompleteSessionScopeReplacement,
+  readScopeBindingIds,
+  sessionScopeIsReadable,
+} from '@/lib/session-scope';
 import { generateSessionId } from '@kortix/sdk';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, Bot, ChevronDown, Cpu, Lock, Plug, Plus } from 'lucide-react';
+import {
+  AlertTriangle,
+  Bot,
+  ChevronDown,
+  Cpu,
+  Lock,
+  Plug,
+  Plus,
+} from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { type ReactNode, useState } from 'react';
 import { toast } from 'sonner';
@@ -57,25 +68,37 @@ import {
   SECRET_MEMBERSHIP_LABEL,
   START_NEW_SESSION_ACTION,
   classifyTypedIdentifier,
+  hasScopeDraft,
   scopeBarConnectors,
   scopeBarSecrets,
   scopeControl,
   scopeDraftIssues,
-  seedBindingsFromLabels,
 } from './scope-bar-model';
 
-export function ScopeBar({ projectId, sessionId }: { projectId: string; sessionId: string }) {
+export function ScopeBar({
+  projectId,
+  sessionId,
+}: {
+  projectId: string;
+  sessionId: string;
+}) {
   const router = useRouter();
   const qc = useQueryClient();
 
   const session = useQuery({
     queryKey: qk.session(projectId, sessionId),
-    queryFn: () => kortix.session(projectId, sessionId).get({ showErrors: false }),
+    queryFn: () =>
+      kortix.session(projectId, sessionId).get({ showErrors: false }),
     retry: false,
   });
   const secrets = useQuery({
     queryKey: qk.secrets(projectId),
     queryFn: () => kortix.project(projectId).secrets.list(),
+    retry: false,
+  });
+  const scope = useQuery({
+    queryKey: qk.sessionScope(projectId, sessionId),
+    queryFn: () => kortix.session(projectId, sessionId).scope(),
     retry: false,
   });
   const connectors = useConnectorBindingChoices(projectId);
@@ -103,24 +126,38 @@ export function ScopeBar({ projectId, sessionId }: { projectId: string; sessionI
   // it as fact and a session the viewer may NOT open renders as the LEAST
   // restricted one on the screen.
   const data = sessionScopeIsReadable(session.data) ? session.data : null;
+  const authoritativeScope = scope.data;
 
   const items = secrets.data?.items ?? [];
   const choices = connectors.data?.connectors ?? [];
-  const live = scopeBarSecrets({ secrets: items, allowlist: data?.secrets_allowlist ?? null });
+  const live = scopeBarSecrets({
+    secrets: items,
+    allowlist: authoritativeScope?.secrets_allowlist,
+  });
+  const liveBindings = readScopeBindingIds(
+    authoritativeScope?.connector_bindings,
+  );
   const connections = scopeBarConnectors({
     choices: connectors.data?.connectors,
-    boundConnections: readBoundConnections(data?.metadata),
+    boundConnections: liveBindings,
   });
 
   // `undefined` = untouched, so the draft simply IS this session's scope until
   // someone changes something. Deriving it instead of copying it in an effect
   // keeps it correct while the session query is still resolving.
-  const [draftSecrets, setDraftSecrets] = useState<string[] | null | undefined>(undefined);
-  const [draftBindings, setDraftBindings] = useState<Record<string, string> | undefined>(undefined);
+  const [draftSecrets, setDraftSecrets] = useState<string[] | null | undefined>(
+    undefined,
+  );
+  const [draftBindings, setDraftBindings] = useState<
+    Record<string, string> | undefined
+  >(undefined);
   const [typed, setTyped] = useState('');
 
-  const nextSecrets = draftSecrets === undefined ? (data?.secrets_allowlist ?? null) : draftSecrets;
-  const nextBindings = draftBindings ?? seedBindingsFromLabels(connections.rows);
+  const nextSecrets =
+    draftSecrets === undefined
+      ? (authoritativeScope?.secrets_allowlist ?? null)
+      : draftSecrets;
+  const nextBindings = draftBindings ?? liveBindings;
   const issues = scopeDraftIssues(nextSecrets ?? [], items);
 
   const start = useMutation({
@@ -130,11 +167,13 @@ export function ScopeBar({ projectId, sessionId }: { projectId: string; sessionI
         buildSessionCreateInput(
           // The agent comes along too, or "with this scope" would quietly drop
           // the one part of the scope that is already right.
-          { agent: data?.agent_name ?? null, secrets: nextSecrets, bindings: nextBindings, runtimeContext: null },
           {
-            sessionId: nextId,
-            connectionLabels: bindingLabels(choices, nextBindings),
+            agent: data?.agent_name ?? null,
+            secrets: nextSecrets,
+            bindings: nextBindings,
+            runtimeContext: null,
           },
+          { sessionId: nextId },
         ),
       );
       return nextId;
@@ -149,25 +188,64 @@ export function ScopeBar({ projectId, sessionId }: { projectId: string; sessionI
     },
   });
 
+  // Apply the draft to THIS session. The bar said "Changeable" before this
+  // existed — a badge without the control, which is worse than saying frozen.
+  const applyScope = useMutation({
+    mutationFn: async (patch: {
+      secrets?: string[] | null;
+      bindings?: Record<string, string>;
+    }) => {
+      if (!authoritativeScope) {
+        throw new Error('The current session scope is not available');
+      }
+      return kortix
+        .session(projectId, sessionId)
+        .rescope(
+          buildCompleteSessionScopeReplacement(authoritativeScope, patch),
+        );
+    },
+    onSuccess: (body) => {
+      // Report what actually happened, not a flat "saved". A dropped secret stops
+      // being DELIVERED from the next prompt — the agent may still hold the value
+      // it already read, and saying "revoked" here would be false assurance.
+      // Only a dropped SECRET carries the "cannot un-read" caveat. A dropped
+      // BINDING is fully retroactive, so warning about it would teach a limit
+      // that does not exist there.
+      const dropped = body.dropped_secrets ?? [];
+      if (dropped.length > 0 && body.retroactive === false) {
+        toast.warning(body.detail ?? 'Applies from the next prompt.', {
+          duration: 8000,
+        });
+      } else {
+        toast.success(
+          body.detail ?? 'Scope updated — applies from the next prompt.',
+        );
+      }
+      qc.setQueryData(qk.sessionScope(projectId, sessionId), body);
+      setDraftSecrets(undefined);
+      setDraftBindings(undefined);
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
   // Every chip is a claim about what this session may reach, and a half-loaded
   // one reads as a narrower session than it is ("None" before the list arrives).
   // Hold the whole bar rather than animating through a wrong answer.
-  if (session.isLoading || secrets.isLoading || connectors.isLoading) {
+  if (
+    session.isLoading ||
+    scope.isLoading ||
+    secrets.isLoading ||
+    connectors.isLoading
+  ) {
     return <div className="mt-2 h-6" aria-hidden />;
   }
-  if (!data) {
+  if (!data || !authoritativeScope) {
     return (
       <p className="mt-2 text-center text-[11px] text-muted-foreground">
         This session&apos;s scope could not be read just now.
       </p>
     );
   }
-
-  // Read off the capability map rather than hardcoded: if either of these ever
-  // became changeable in place, the draft-and-restart affordance would be the
-  // wrong shape and should disappear rather than quietly misdescribe the rule.
-  const secretsFixed = !scopeControl('secrets').live;
-  const connectionsFixed = !scopeControl('connections').live;
 
   // Offering "start a new session with this scope" against a secret list that
   // failed to load would either send an allowlist nothing verified or refuse it
@@ -183,11 +261,16 @@ export function ScopeBar({ projectId, sessionId }: { projectId: string; sessionI
   const toggleSecret = (identifier: string, on: boolean) => {
     const base = nextSecrets ?? [];
     setDraftSecrets(
-      on ? [...new Set([...base, identifier])] : base.filter((id) => id !== identifier),
+      on
+        ? [...new Set([...base, identifier])]
+        : base.filter((id) => id !== identifier),
     );
   };
 
-  const typedState = classifyTypedIdentifier(typed, { secrets: items, draft: nextSecrets ?? [] });
+  const typedState = classifyTypedIdentifier(typed, {
+    secrets: items,
+    draft: nextSecrets ?? [],
+  });
 
   return (
     <div className="mt-2 flex flex-wrap items-center gap-1.5">
@@ -225,8 +308,12 @@ export function ScopeBar({ projectId, sessionId }: { projectId: string; sessionI
               would be a claim about secret access that nothing established. */}
           {secrets.isError && (
             <p className="text-xs text-muted-foreground">
-              This project&apos;s secrets could not be read just now, so only the allowlist itself
-              is shown: {live.narrowed ? (data.secrets_allowlist ?? []).join(', ') || 'nothing' : 'it was never narrowed'}.
+              This project&apos;s secrets could not be read just now, so only
+              the allowlist itself is shown:{' '}
+              {live.narrowed
+                ? authoritativeScope.secrets_allowlist?.join(', ') || 'nothing'
+                : 'it was never narrowed'}
+              .
             </p>
           )}
           {!secrets.isError && live.rows.length === 0 && (
@@ -235,9 +322,14 @@ export function ScopeBar({ projectId, sessionId }: { projectId: string; sessionI
             </p>
           )}
           {live.rows.map((row) => (
-            <div key={row.identifier} className="flex items-start justify-between gap-2">
+            <div
+              key={row.identifier}
+              className="flex items-start justify-between gap-2"
+            >
               <div className="min-w-0">
-                <div className="truncate font-mono text-xs">{row.identifier}</div>
+                <div className="truncate font-mono text-xs">
+                  {row.identifier}
+                </div>
                 {/* The KEY is shown next to every identifier, always: the
                     allowlist addresses the identifier, the sandbox sees the
                     KEY, and they are routinely different names. */}
@@ -247,7 +339,11 @@ export function ScopeBar({ projectId, sessionId }: { projectId: string; sessionI
               </div>
               <Badge
                 variant={row.membership === 'allowed' ? 'outline' : 'ghost'}
-                className={row.membership === 'excluded' ? 'text-muted-foreground' : undefined}
+                className={
+                  row.membership === 'excluded'
+                    ? 'text-muted-foreground'
+                    : undefined
+                }
               >
                 {SECRET_MEMBERSHIP_LABEL[row.membership]}
               </Badge>
@@ -263,11 +359,15 @@ export function ScopeBar({ projectId, sessionId }: { projectId: string; sessionI
           )}
         </div>
 
-        <NextSession
-          label="Change what the next session may read"
-          // No draft editor without the list it edits: a start built on a list
+        <ScopeEditor
+          label="Change what this session may read"
+          // No draft editor without the list it edits: a change built on a list
           // that failed to load would name identifiers nobody verified.
-          show={secretsFixed && !secrets.isError}
+          //
+          // NOT gated on `secretsFixed` any more. It was, and when secrets became
+          // changeable that flag went false and took the ONLY editing controls
+          // with it — the popover said "Changeable" over a read-only list.
+          show={!secrets.isError}
         >
           <div className="flex items-center justify-between gap-3">
             <Label htmlFor="scope-bar-narrow" className="text-xs font-normal">
@@ -276,24 +376,32 @@ export function ScopeBar({ projectId, sessionId }: { projectId: string; sessionI
             <Switch
               id="scope-bar-narrow"
               checked={nextSecrets !== null}
-              onCheckedChange={(on) => setDraftSecrets(on ? (nextSecrets ?? []) : null)}
+              onCheckedChange={(on) =>
+                setDraftSecrets(on ? (nextSecrets ?? []) : null)
+              }
             />
           </div>
           {nextSecrets === null ? (
             <p className="text-[11px] leading-relaxed text-muted-foreground">
-              Off, the next session gets its agent&apos;s full secret grant — the same as this one.
+              Off, this session gets its agent&apos;s full secret grant — no
+              narrowing at all.
             </p>
           ) : (
             <div className="space-y-2">
               {live.rows.map((row) => (
-                <div key={row.identifier} className="flex items-center justify-between gap-3">
+                <div
+                  key={row.identifier}
+                  className="flex items-center justify-between gap-3"
+                >
                   <Label
                     htmlFor={`scope-bar-secret-${row.identifier}`}
                     className="min-w-0 font-mono text-xs font-normal"
                   >
                     <span className="truncate">{row.identifier}</span>
                     {row.name !== row.identifier && (
-                      <span className="truncate text-muted-foreground">→ {row.name}</span>
+                      <span className="truncate text-muted-foreground">
+                        → {row.name}
+                      </span>
                     )}
                   </Label>
                   <Switch
@@ -306,8 +414,13 @@ export function ScopeBar({ projectId, sessionId }: { projectId: string; sessionI
               {nextSecrets
                 .filter((id) => !live.rows.some((row) => row.identifier === id))
                 .map((id) => (
-                  <div key={id} className="flex items-center justify-between gap-3">
-                    <span className="min-w-0 truncate font-mono text-xs">{id}</span>
+                  <div
+                    key={id}
+                    className="flex items-center justify-between gap-3"
+                  >
+                    <span className="min-w-0 truncate font-mono text-xs">
+                      {id}
+                    </span>
                     <Button
                       variant="ghost"
                       size="sm"
@@ -320,7 +433,10 @@ export function ScopeBar({ projectId, sessionId }: { projectId: string; sessionI
                 ))}
 
               <div className="space-y-1.5 border-t border-border pt-2">
-                <Label htmlFor="scope-bar-new-identifier" className="text-xs font-normal">
+                <Label
+                  htmlFor="scope-bar-new-identifier"
+                  className="text-xs font-normal"
+                >
                   Allow another identifier
                 </Label>
                 <div className="flex items-center gap-1.5">
@@ -335,9 +451,15 @@ export function ScopeBar({ projectId, sessionId }: { projectId: string; sessionI
                     size="sm"
                     variant="secondary"
                     className="h-8"
-                    disabled={typedState.kind === 'empty' || typedState.kind === 'already_listed'}
+                    disabled={
+                      typedState.kind === 'empty' ||
+                      typedState.kind === 'already_listed'
+                    }
                     onClick={() => {
-                      if (typedState.kind === 'empty' || typedState.kind === 'already_listed') {
+                      if (
+                        typedState.kind === 'empty' ||
+                        typedState.kind === 'already_listed'
+                      ) {
                         return;
                       }
                       toggleSecret(typedState.identifier, true);
@@ -348,7 +470,9 @@ export function ScopeBar({ projectId, sessionId }: { projectId: string; sessionI
                   </Button>
                 </div>
                 {typedState.kind === 'already_listed' && (
-                  <p className="text-[11px] text-muted-foreground">Already on the list.</p>
+                  <p className="text-[11px] text-muted-foreground">
+                    Already on the list.
+                  </p>
                 )}
                 {/* Said where they type it, not after the create fails: this
                     app can list a project's secrets but cannot mint one, and
@@ -360,14 +484,31 @@ export function ScopeBar({ projectId, sessionId }: { projectId: string; sessionI
               </div>
             </div>
           )}
-        </NextSession>
+        </ScopeEditor>
+        {/* Apply to THIS session. Shown above "start a new session" because it is
+            now the ordinary path — starting fresh is the fallback for the one
+            thing a re-scope cannot do, not the default. */}
+        {hasScopeDraft(draftSecrets) && (
+          <div className="mt-2 space-y-1.5 border-t border-border pt-2">
+            <Button
+              size="sm"
+              className="w-full"
+              disabled={applyScope.isPending || issues.length > 0}
+              onClick={() => applyScope.mutate({ secrets: nextSecrets })}
+            >
+              {applyScope.isPending ? 'Applying…' : 'Apply to this session'}
+            </Button>
+            <p className="text-[11px] leading-relaxed text-muted-foreground">
+              Takes effect on the next prompt. Removing one stops it being
+              handed out — it cannot un-read a value the agent already has, so
+              rotate it if you need it truly revoked.
+            </p>
+          </div>
+        )}
         {startAction}
         {/* The call behind the control, next to the control — the demo's job is
             to teach what to send, and re-scoping is the least obvious of these. */}
-        <CallSnippet
-          id="session.rescope"
-          context={{ projectId, sessionId }}
-        />
+        <CallSnippet id="session.rescope" context={{ projectId, sessionId }} />
       </ScopeChip>
 
       <ScopeChip
@@ -387,8 +528,12 @@ export function ScopeBar({ projectId, sessionId }: { projectId: string; sessionI
           {connections.rows.map((row) => (
             <div key={row.alias} className="space-y-0.5">
               <div className="flex items-center justify-between gap-2">
-                <span className="truncate font-mono text-xs text-muted-foreground">{row.alias}</span>
-                <span className="truncate text-xs">{row.bound ?? 'Project default'}</span>
+                <span className="truncate font-mono text-xs text-muted-foreground">
+                  {row.alias}
+                </span>
+                <span className="truncate text-xs">
+                  {row.bound ?? 'Project default'}
+                </span>
               </div>
               {/* The remedy is always a teammate. A wrapper acts under one
                   credential for many end-users, so it has no upstream identity
@@ -409,9 +554,11 @@ export function ScopeBar({ projectId, sessionId }: { projectId: string; sessionI
           ))}
         </div>
 
-        <NextSession
-          label="Bind different accounts for the next session"
-          show={connectionsFixed && choices.some((choice) => choice.connections.length > 0)}
+        <ScopeEditor
+          label="Bind different accounts for this session"
+          // Same fix as secrets: gating on `connectionsFixed` hid the picker the
+          // moment bindings became changeable, so the popover offered nothing.
+          show={choices.some((choice) => choice.connections.length > 0)}
         >
           <ConnectorBindingFields
             // Only the aliases with something to bind — the unavailable ones
@@ -421,8 +568,29 @@ export function ScopeBar({ projectId, sessionId }: { projectId: string; sessionI
             value={nextBindings}
             onChange={setDraftBindings}
           />
-        </NextSession>
+        </ScopeEditor>
+        {/* Same control as secrets, different guarantee: a binding is resolved
+            server-side on every tool call, so this one IS fully effective — the
+            copy must not borrow the secrets caveat. */}
+        {hasScopeDraft(draftBindings) && (
+          <div className="mt-2 space-y-1.5 border-t border-border pt-2">
+            <Button
+              size="sm"
+              className="w-full"
+              disabled={applyScope.isPending}
+              onClick={() => applyScope.mutate({ bindings: nextBindings })}
+            >
+              {applyScope.isPending ? 'Applying…' : 'Apply to this session'}
+            </Button>
+            <p className="text-[11px] leading-relaxed text-muted-foreground">
+              Takes effect on the next tool call — connections resolve
+              server-side, so unlike secrets this change is complete. An alias
+              you unbind falls back to the project default.
+            </p>
+          </div>
+        )}
         {startAction}
+        <CallSnippet id="session.rescope" context={{ projectId, sessionId }} />
       </ScopeChip>
 
       <ScopeChip
@@ -473,7 +641,11 @@ function ScopeChip({
           <span className="max-w-40 truncate text-foreground">{value}</span>
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="start" side="top" className="w-80 max-h-[60dvh] overflow-y-auto scrollbar-thin">
+      <PopoverContent
+        align="start"
+        side="top"
+        className="w-80 max-h-[60dvh] overflow-y-auto scrollbar-thin"
+      >
         <PopoverHeader>
           <div className="flex items-center gap-2">
             <PopoverTitle>{title}</PopoverTitle>
@@ -481,7 +653,9 @@ function ScopeChip({
               {badge}
             </Badge>
           </div>
-          <PopoverDescription className="text-xs leading-relaxed">{note}</PopoverDescription>
+          <PopoverDescription className="text-xs leading-relaxed">
+            {note}
+          </PopoverDescription>
         </PopoverHeader>
         {children}
       </PopoverContent>
@@ -489,18 +663,15 @@ function ScopeChip({
   );
 }
 
-/**
- * The draft, behind a disclosure that names its consequence.
- *
- * A collapsed section labelled "the next session" is the difference between a
- * control someone reads as re-scoping the running session and one they read as
- * planning the next. The label is not decoration.
- */
-function NextSession({
+function ScopeEditor({
   label,
   show = true,
   children,
-}: { label: string; show?: boolean; children: ReactNode }) {
+}: {
+  label: string;
+  show?: boolean;
+  children: ReactNode;
+}) {
   if (!show) return null;
   return (
     <Collapsible className="mt-3 border-t border-border pt-3">
@@ -514,7 +685,9 @@ function NextSession({
           <ChevronDown className="size-3.5" />
         </Button>
       </CollapsibleTrigger>
-      <CollapsibleContent className="mt-2 space-y-2.5">{children}</CollapsibleContent>
+      <CollapsibleContent className="mt-2 space-y-2.5">
+        {children}
+      </CollapsibleContent>
     </Collapsible>
   );
 }
@@ -546,7 +719,11 @@ function StartWithScope({
         disabled={pending || issues.length > 0}
         onClick={onStart}
       >
-        {pending ? <Loading className="size-3.5" /> : <Plus className="size-3.5" />}
+        {pending ? (
+          <Loading className="size-3.5" />
+        ) : (
+          <Plus className="size-3.5" />
+        )}
         {START_NEW_SESSION_ACTION}
       </Button>
     </div>

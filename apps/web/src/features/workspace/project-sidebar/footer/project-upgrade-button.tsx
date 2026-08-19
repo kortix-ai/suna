@@ -2,11 +2,11 @@
 
 import Hint from '@/components/ui/hint';
 import { SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
-import { accountStateSelectors, useAccountState } from '@/hooks/billing';
+import { resolvedPlan, useAccountState } from '@/hooks/billing';
 import { isBillingEnabled } from '@/lib/config';
 import { cn } from '@/lib/utils';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
-import { ArrowUpRight } from 'lucide-react';
+import { ArrowUpRightIcon as ArrowUpRight } from '@phosphor-icons/react';
 import { useCallback } from 'react';
 
 interface SidebarUpgradeButtonProps {
@@ -34,13 +34,15 @@ function useSidebarUpgrade(accountId?: string) {
     return { show: false as const, handleClick };
   }
 
-  const tierKey = accountStateSelectors.tierKey(accountState).toLowerCase();
   const hasActiveSubscription = !!accountState.subscription?.subscription_id;
-  const isFreeOrNoPlan = tierKey === 'free' || tierKey === 'none';
-  // A per-seat (Team) account is never "on Free" even though its legacy tier_key
-  // can still read 'free' — it gets the balance/top-up warning instead of an
-  // "Upgrade Plan" pitch. Excluding it here is what keeps a paying Team account
-  // from being mislabeled as Free in the sidebar.
+  // The RESOLVED plan family (free = the keys `free` and `none`), so an admin
+  // trial and a self-healed per-seat team both read as Team here, exactly as
+  // the server's gates read them.
+  const isFreeOrNoPlan = resolvedPlan(accountState).family === 'free';
+  // Kept on top of that: a per-seat account with no live Stripe subscription
+  // does NOT self-heal, so the resolver still reports it free. It is never "on
+  // Free" from the customer's side — it gets the balance/top-up warning instead
+  // of an "Upgrade Plan" pitch.
   const isPerSeat = accountState.billing_model === 'per_seat';
   const show = isFreeOrNoPlan && !hasActiveSubscription && !isPerSeat;
 

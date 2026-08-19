@@ -24,9 +24,17 @@ import {
 } from '../api/change-requests';
 import { useProjectContext } from '../context';
 import { gitStatusKeys } from '@/features/files/hooks/use-git-status';
+import { branchKeys } from './use-branches';
+import { commitKeys } from './use-commits';
+import { qk } from '@kortix/sdk/react';
 
 export const changeRequestKeys = {
   all: ['project-files', 'change-requests'] as const,
+  /** Project-scoped, status-agnostic prefix — every CR list/detail/diff/preview
+   *  for one project, regardless of status. Used for "something about this
+   *  project's CRs changed" invalidation; `all` above is unscoped (every
+   *  project) and too broad for that. */
+  project: (projectId: string) => ['project-files', 'change-requests', projectId] as const,
   list: (projectId: string, status: ChangeRequestStatus | 'all') =>
     ['project-files', 'change-requests', projectId, 'list', status] as const,
   detail: (projectId: string, crId: string) =>
@@ -35,6 +43,17 @@ export const changeRequestKeys = {
     ['project-files', 'change-requests', projectId, crId, 'diff'] as const,
   preview: (projectId: string, crId: string) =>
     ['project-files', 'change-requests', projectId, crId, 'merge-preview'] as const,
+};
+
+/**
+ * `useVersionDiff`'s key family — kept local (not exported elsewhere) since
+ * this is its only reader/invalidator.
+ */
+const versionDiffKeys = {
+  project: (projectId: string) => ['project-files', 'version-diff', projectId] as const,
+  diff: (projectId: string, from: string, into: string) =>
+    ['project-files', 'version-diff', projectId, from, into] as const,
+  idle: ['project-files', 'version-diff', 'idle'] as const,
 };
 
 export function useChangeRequests(
@@ -93,8 +112,8 @@ export function useVersionDiff(
   const canRun = Boolean(projectId && input?.from && input?.into);
   return useQuery<VersionDiffPreview>({
     queryKey: canRun
-      ? ['project-files', 'version-diff', projectId, input!.from, input!.into]
-      : ['project-files', 'version-diff', 'idle'],
+      ? versionDiffKeys.diff(projectId, input!.from, input!.into)
+      : versionDiffKeys.idle,
     queryFn: () => fetchVersionDiff(projectId, input!),
     enabled: canRun && options?.enabled !== false,
     staleTime: 10_000,
@@ -123,18 +142,29 @@ function useInvalidateAll(projectIdArg?: string) {
   const ctx = useProjectContext();
   const projectId = projectIdArg ?? ctx?.projectId ?? '';
   return () => {
-    qc.invalidateQueries({ queryKey: ['project-files', 'change-requests', projectId] });
+    qc.invalidateQueries({ queryKey: changeRequestKeys.project(projectId) });
     // Branches list shows ahead/behind that may shift after a merge.
-    qc.invalidateQueries({ queryKey: ['project-files', 'branches', projectId] });
+    qc.invalidateQueries({ queryKey: branchKeys.list(projectId) });
     // The merge commit lands on the default branch — commit list goes stale.
-    qc.invalidateQueries({ queryKey: ['project-files', 'commits', projectId] });
+    qc.invalidateQueries({ queryKey: commitKeys.project(projectId) });
     // Whether this version still differs from its base changes the moment a CR
     // merges — refresh the "Alternate version of main · N changes" banner
     // (git-status, which is otherwise sticky and never re-fetches on its own),
     // the live version-diff preview, and the cached session row (base_ref etc.).
     qc.invalidateQueries({ queryKey: gitStatusKeys.all });
-    qc.invalidateQueries({ queryKey: ['project-files', 'version-diff', projectId] });
-    qc.invalidateQueries({ queryKey: ['project', 'session', projectId] });
+    qc.invalidateQueries({ queryKey: versionDiffKeys.project(projectId) });
+    // Every individual git-connected session under this project — a CR
+    // landing on the base ref can change what `getProjectSession` returns
+    // (base_ref etc.) for any of them. sessionsScope is the shared prefix
+    // that reaches the sessions list AND every qk.project.session(id, sid)
+    // entry in one call; there is no "every session, not the list" prefix to
+    // narrow to, so this deliberately also refreshes the sessions list.
+    qc.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId) });
+    // Landing a CR on the base ref is the one thing that happens INSIDE the app
+    // that can make an open session's compiled agent config stale. The
+    // freshness query is deliberately not polled — this is what tells it to
+    // look again, so the chip appears on merge rather than on next focus.
+    qc.invalidateQueries({ queryKey: ['session-config', projectId] });
   };
 }
 
@@ -156,7 +186,7 @@ export function useCommitSessionChanges(options?: { projectId?: string }) {
       // The working tree was just committed — the git-status banner and the
       // branch list (ahead/behind) are now stale.
       qc.invalidateQueries({ queryKey: gitStatusKeys.all, type: 'active' });
-      qc.invalidateQueries({ queryKey: ['project-files', 'branches', projectId] });
+      qc.invalidateQueries({ queryKey: branchKeys.list(projectId) });
     },
   });
 }

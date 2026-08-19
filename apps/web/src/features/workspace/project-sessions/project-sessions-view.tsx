@@ -1,109 +1,102 @@
 'use client';
 
-import { sessionSource, type SessionSourceKind } from '@/components/projects/session-label';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { InfoBanner } from '@/components/ui/info-banner';
-import {
-  InputGroupSearch,
-  InputGroupSearchClear,
-  InputGroupSearchIcon,
-  InputGroupSearchInput,
-} from '@/components/ui/input-group';
-import Loading from '@/components/ui/loading';
+import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
+import Hint from '@/components/ui/hint';
+import { useOptionalSidebar } from '@/components/ui/sidebar';
 import { Skeleton } from '@/components/ui/skeleton';
-import { FilterBar, FilterBarItem } from '@/components/ui/tabs';
-import { errorToast, successToast } from '@/components/ui/toast';
-import { Icon } from '@/features/icon/icon';
+import { errorToast, successToast, warningToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
-import CustomizeSectionWrapper from '@/features/workspace/customize/sections/component/section-wrapper';
+import { useReviewSessionSummary } from '@/features/review-center/hooks/use-review-session-summary';
+import {
+  sidebarOpenerLabel,
+  useShowPageSidebarOpener,
+} from '@/features/workspace/project-layout/sidebar-opener';
 import { RenameSessionModal } from '@/features/workspace/project-sidebar/modal/rename-session-modal';
 import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
+import { ShareSessionModal } from '@/features/workspace/project-sidebar/modal/share-session-modal';
 import {
-  sessionVisibilityMeta,
-  ShareSessionModal,
-} from '@/features/workspace/project-sidebar/modal/share-session-modal';
-import {
-  getSessionDisplayTitle,
+  projectSessionsRefetchInterval,
   sessionLastActivityAt,
-  shouldPollProjectSessions,
 } from '@/features/workspace/project-sidebar/project-session-list-helpers';
+import {
+  groupSessions,
+  type SessionSection,
+} from '@/features/workspace/project-sidebar/session-grouping';
+import { useIsCreatingProjectSession } from '@/hooks/projects/new-session-guard';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { cn } from '@/lib/utils';
 import {
+  selectCollapsedSections,
+  selectGroupMode,
+  selectHiddenSections,
+  selectOrderMode,
+  selectSourceFilters,
+  selectStatusFilters,
+  useSessionFilterStore,
+} from '@/stores/session-filter-store';
+import {
+  deleteProjectSession,
   listProjectSessions,
   restartProjectSession,
   stopProjectSession,
   type ProjectSession,
-  type ProjectSessionStatus,
 } from '@kortix/sdk';
-import { Pencil, Share, TrashSolid } from '@mynaui/icons-react';
+import { contract, qk, useFeatureFlag } from '@kortix/sdk/react';
+import {
+  CaretRightIcon,
+  ChatIcon,
+  MagnifyingGlassIcon,
+  SidebarSimpleIcon as PanelLeft,
+  PlusIcon,
+} from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { format, formatDistanceToNowStrict } from 'date-fns';
-import {
-  AlertTriangle,
-  CalendarClock,
-  ChevronDown,
-  ExternalLink,
-  GitBranch,
-  Mail,
-  MessageSquare,
-  MoreHorizontal,
-  Plus,
-  RotateCcw,
-  Search,
-  Square,
-  Webhook,
-  type LucideIcon,
-} from 'lucide-react';
-import Link from 'next/link';
-import { useMemo, useState } from 'react';
-import type { IconType } from 'react-icons/lib';
+import { useCallback, useDeferredValue, useEffect, useMemo, useState, type ReactNode } from 'react';
 
 import {
+  buildSessionSearchIndex,
   filterProjectSessions,
-  PROJECT_SESSIONS_FILTERS,
-  projectSessionsFilterCounts,
-  sessionAccessMeta,
-  sessionOwnerLabel,
-  type ProjectSessionsFilter,
+  mapWithConcurrency,
+  pruneSelection,
+  sessionIsDeletable,
+  summarizeBulkDelete,
+  toggleSelection,
 } from './project-sessions-helpers';
+import { SessionDetail } from './session-detail';
+import { SessionRow, type SessionRowActions } from './session-row';
+import { SessionsSelectionBar } from './sessions-selection-bar';
+import { SessionsToolbar } from './sessions-toolbar';
 
-const SOURCE_ICONS: Record<SessionSourceKind, LucideIcon | IconType> = {
-  chat: MessageSquare,
-  slack: Icon.Slack,
-  telegram: Icon.Telegram,
-  email: Mail,
-  schedule: CalendarClock,
-  webhook: Webhook,
-};
+/**
+ * This page's view state is its OWN — narrowing the manager inventory here must not
+ * narrow the sidebar you navigate with. It still OPENS matching the sidebar:
+ * a surface with no stored choice inherits the sidebar's, and only diverges once
+ * you change something here.
+ *
+ * One exception, deliberately: COLLAPSED SECTIONS are not inherited, so every
+ * section here starts expanded regardless of what is folded in the sidebar. You
+ * navigate to this page to see everything. See `selectCollapsedSections`.
+ */
+const SURFACE = 'page' as const;
 
-const STATUS_META: Record<
-  ProjectSessionStatus,
-  { label: string; variant: 'success' | 'warning' | 'muted' | 'destructive' | 'kortix' }
-> = {
-  queued: { label: 'Queued', variant: 'warning' },
-  branching: { label: 'Branching', variant: 'warning' },
-  provisioning: { label: 'Provisioning', variant: 'warning' },
-  running: { label: 'Running', variant: 'success' },
-  completed: { label: 'Completed', variant: 'kortix' },
-  stopped: { label: 'Stopped', variant: 'muted' },
-  failed: { label: 'Failed', variant: 'destructive' },
-};
+/** Concurrent DELETEs during a bulk removal. There is no bulk endpoint, so a
+ *  27-session batch would otherwise open 27 sockets at once. */
+const DELETE_CONCURRENCY = 4;
+
+/** Shared fallback so a row with no formatted stamp still gets a stable prop
+ *  identity — an inline `{ relative: '', exact: '' }` is a new object per
+ *  render and would defeat SessionRow's memo. */
+const NO_TIMESTAMP = { relative: '', exact: '' } as const;
 
 function formatTimestamp(value: string): { relative: string; exact: string } {
   try {
     const date = new Date(value);
     return {
-      relative: formatDistanceToNowStrict(date, { addSuffix: true }),
+      relative: formatDistanceToNowStrict(date, { addSuffix: false }),
       exact: format(date, 'MMM d, yyyy, h:mm a'),
     };
   } catch {
@@ -111,332 +104,287 @@ function formatTimestamp(value: string): { relative: string; exact: string } {
   }
 }
 
+// Staggered (unique) widths so the block reads as a list of rows rather than a
+// solid bar; each width doubles as a stable key, which an array index is not.
+// Same device as the sidebar's session skeleton.
+const SKELETON_ROW_WIDTHS = ['w-56', 'w-40', 'w-64', 'w-44', 'w-72', 'w-36', 'w-52', 'w-48'];
+
+/**
+ * Shape-matched to `SessionRow`: the same `bg-popover` bordered row at the same
+ * `px-3 py-2`, a `size-8 rounded-sm` status tile, the title, and the fixed `w-10`
+ * slot that holds relative time. Matching the real geometry is what stops the
+ * list jumping when data lands.
+ *
+ * `py-0` on every `Skeleton` is load-bearing: the primitive's base is
+ * `rounded-md py-4`, and with `box-sizing: border-box` that 32px of padding
+ * beats any smaller explicit height — so the previous `size-4` tile rendered as
+ * a 16×32 bar and each `h-3.5` line as a 32px slab, none of which matched a row.
+ */
 function SessionListSkeleton() {
   return (
-    <div className="space-y-2" aria-hidden>
-      {Array.from({ length: 6 }).map((_, index) => (
-        <div key={index} className="bg-popover flex items-center gap-3 rounded-md border px-4 py-3">
-          <Skeleton className="size-9 shrink-0 rounded-sm" />
-          <div className="min-w-0 flex-1 space-y-1.5">
-            <Skeleton className={cn('h-3.5 rounded-sm', index % 2 ? 'w-44' : 'w-64')} />
-            <Skeleton className="h-3 w-36 rounded-sm" />
-          </div>
-          <Skeleton className="h-5 w-16 rounded-full" />
+    <div className="space-y-2 pt-4" aria-hidden>
+      {SKELETON_ROW_WIDTHS.map((width) => (
+        <div key={width} className="bg-popover flex items-center gap-3 rounded-md border px-3 py-2">
+          <Skeleton className="size-8 shrink-0 rounded-sm py-0" />
+          <Skeleton className={cn('h-3.5 py-0', width)} />
+          <Skeleton className="ml-auto h-3 w-10 shrink-0 py-0" />
         </div>
       ))}
     </div>
   );
 }
 
-function DetailItem({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
-  return (
-    <div className="min-w-0 space-y-1">
-      <dt className="text-muted-foreground text-xs">{label}</dt>
-      <dd
-        className={cn(
-          'text-foreground text-sm break-words',
-          mono && 'font-mono text-xs tabular-nums',
-        )}
-      >
-        {value}
-      </dd>
-    </div>
-  );
-}
-
-function SessionRow({
-  projectId,
-  session,
-  onRename,
-  onShare,
-  onDelete,
-  onRestart,
-  onStop,
-  restarting,
-  stopping,
+/**
+ * One grouped section of the list — the page's counterpart to the sidebar's
+ * `SessionListSection`, and it follows the same two rules.
+ *
+ * `showHeaders` false (at most one section is populated, see `groupSessions`)
+ * renders the plain list: one header divides nothing. Otherwise the section is
+ * a `Disclosure` whose `open` mirrors the store's collapsed list — collapsed is
+ * NOT open — so the header toggle and the menu's `Collapse all` agree.
+ *
+ * No per-section `⋯` here, unlike the sidebar: the page's toolbar menu sits a
+ * few pixels away and is the same menu, so a copy on every section header would
+ * be pure duplication on a surface this wide.
+ */
+function SessionsSection({
+  section,
+  showHeader,
+  open,
+  onOpenChange,
+  children,
 }: {
-  projectId: string;
-  session: ProjectSession;
-  onRename: (sessionId: string, currentName: string) => void;
-  onShare: (session: ProjectSession) => void;
-  onDelete: (sessionId: string, label: string) => void;
-  onRestart: (sessionId: string, label: string) => void;
-  onStop: (sessionId: string, label: string) => void;
-  restarting: boolean;
-  stopping: boolean;
+  section: SessionSection;
+  showHeader: boolean;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  children: ReactNode;
 }) {
-  const [open, setOpen] = useState(false);
-  const title = getSessionDisplayTitle(session);
-  const source = sessionSource(session);
-  const SourceIcon = SOURCE_ICONS[source.kind];
-  const status = STATUS_META[session.status];
-  const visibility = sessionVisibilityMeta(session);
-  const ownerLabel = sessionOwnerLabel(session);
-  const access = sessionAccessMeta(session);
-  const isDeleted = Boolean(session.deleted_at);
-  const canManageSharing = session.can_manage_sharing !== false && !isDeleted;
-  const hasLifecycleActions = access.canOpen && !isDeleted;
-  const hasActions = canManageSharing || hasLifecycleActions;
-  const ownerTypeLabel =
-    session.owner_type === 'user'
-      ? 'Person'
-      : session.owner_type === 'service_account'
-        ? 'Agent / service account'
-        : session.owner_type === 'unknown'
-          ? 'Unknown principal'
-          : 'Unattributed';
-  const created = formatTimestamp(session.created_at);
-  const updated = formatTimestamp(sessionLastActivityAt(session));
-  const conversationCount = (session.opencode_sessions ?? []).length;
-  const archivedConversationCount = (session.opencode_sessions ?? []).filter(
-    (item) => item.archived_at,
-  ).length;
-  const href = `/projects/${projectId}/sessions/${session.session_id}`;
+  if (!showHeader) return <div className="space-y-2">{children}</div>;
 
   return (
     <Disclosure
       open={open}
-      onOpenChange={setOpen}
-      variant="outline"
-      className="group/session bg-popover overflow-hidden"
+      onOpenChange={onOpenChange}
+      className="group/section space-y-2"
+      transition={{ duration: 0.15, ease: 'easeOut' }}
     >
-      <DisclosureTrigger variant="outline">
-        <button
-          type="button"
-          className="hover:bg-muted/40 flex min-h-16 w-full cursor-pointer items-center gap-3 rounded-md px-4 py-3 text-left transition-colors duration-150"
-          aria-label={`${open ? 'Hide' : 'Show'} details for ${title}`}
-        >
-          <span className="bg-kortix-base/20 flex size-9 shrink-0 items-center justify-center rounded-sm">
-            <SourceIcon className="text-foreground size-5" />
+      <DisclosureTrigger>
+        <div className="group/section-header text-muted-foreground flex h-8 cursor-pointer items-center gap-1.5 px-1 text-sm font-medium">
+          <span className="truncate">{section.label}</span>
+          <span className="text-muted-foreground/60 text-xs tabular-nums">
+            {section.sessions.length}
           </span>
-
-          <span className="min-w-0 flex-1">
-            <span className="flex min-w-0 flex-wrap items-center gap-1.5">
-              <span className="text-foreground max-w-full truncate text-sm font-medium">
-                {title}
-              </span>
-              {isDeleted ? (
-                <Badge variant="destructive" size="xs">
-                  Deleted
-                </Badge>
-              ) : session.can_access === false ? (
-                <Badge variant="outline" size="xs">
-                  Metadata only
-                </Badge>
-              ) : session.is_owner === false ? (
-                <Badge variant="kortix" size="xs">
-                  Shared
-                </Badge>
-              ) : null}
-            </span>
-            <span className="text-muted-foreground mt-1 flex min-w-0 flex-wrap items-center gap-1.5 text-xs">
-              <span>
-                {source.triggerSlug ? `${source.label} · ${source.triggerSlug}` : source.label}
-              </span>
-              <span className="text-muted-foreground/40">&bull;</span>
-              <span className="truncate">{ownerLabel}</span>
-              <span className="text-muted-foreground/40">&bull;</span>
-              <span className="tabular-nums" title={updated.exact}>
-                {updated.relative}
-              </span>
-            </span>
-          </span>
-
-          <Badge variant={status.variant} size="sm" className="hidden sm:inline-flex">
-            {status.label}
-          </Badge>
-          <ChevronDown className="text-muted-foreground size-4 shrink-0 transition-transform duration-150 ease-out group-data-[state=open]/session:rotate-180" />
-        </button>
-      </DisclosureTrigger>
-
-      <DisclosureContent variant="outline" contentClassName="border-border border-t">
-        <div className="space-y-5 px-4 py-5">
-          <div className="flex flex-wrap items-center gap-2 sm:hidden">
-            <Badge variant={status.variant} size="sm">
-              {status.label}
-            </Badge>
-            <Badge variant="outline" size="sm">
-              {visibility.label}
-            </Badge>
-          </div>
-
-          <dl className="grid gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
-            <DetailItem label="Last activity" value={updated.exact} />
-            <DetailItem label="Status" value={status.label} />
-            <DetailItem
-              label="Source"
-              value={source.triggerSlug ? `${source.label} · ${source.triggerSlug}` : source.label}
-            />
-            <DetailItem label="Session / resource owner" value={ownerLabel} />
-            <DetailItem label="Owner identity" value={ownerTypeLabel} />
-            <DetailItem
-              label="Owner ID"
-              value={session.created_by || 'Unattributed'}
-              mono={Boolean(session.created_by)}
-            />
-            <DetailItem label="Your access" value={access.label} />
-            <DetailItem label="Visibility" value={visibility.label} />
-            <DetailItem label="Created" value={created.exact} />
-            <DetailItem label="Agent" value={session.agent_name || 'Project default'} />
-            <DetailItem label="Runtime" value={session.sandbox_provider || 'Not provisioned'} />
-            <DetailItem
-              label="Runtime resource state"
-              value={session.runtime_status || 'Missing'}
-            />
-            <DetailItem
-              label="Conversations"
-              value={`${conversationCount} OpenCode session${conversationCount === 1 ? '' : 's'}${
-                archivedConversationCount > 0 ? ` · ${archivedConversationCount} archived` : ''
-              }`}
-            />
-            <DetailItem label="Base ref" value={session.base_ref || 'Default branch'} mono />
-            <DetailItem label="Branch" value={session.branch_name || 'Not created'} mono />
-            <DetailItem label="Session ID" value={session.session_id} mono />
-            <DetailItem label="Sandbox ID" value={session.sandbox_id || 'Missing'} mono />
-            <DetailItem
-              label="Root conversation ID"
-              value={session.opencode_session_id || 'Not synced'}
-              mono
-            />
-          </dl>
-
-          {session.error ? (
-            <InfoBanner tone="destructive" icon={AlertTriangle} title="Session error">
-              <span className="break-words">{session.error}</span>
-            </InfoBanner>
-          ) : null}
-
-          {isDeleted ? (
-            <InfoBanner tone="neutral" title="Soft-deleted session">
-              <span>
-                Deleted{' '}
-                {session.deleted_at
-                  ? formatTimestamp(session.deleted_at).exact
-                  : 'at an unknown time'}
-                {session.deleted_by ? ` by ${session.deleted_by}` : ''}. The durable record remains
-                visible here for investigation.
-              </span>
-            </InfoBanner>
-          ) : session.can_access === false ? (
-            <InfoBanner tone="neutral" title="Metadata-only access">
-              You can inspect this inventory record, but the owner has not shared the session
-              content with you.
-            </InfoBanner>
-          ) : null}
-
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4">
-            <div className="text-muted-foreground flex min-w-0 items-center gap-1.5 text-xs">
-              <GitBranch className="size-3.5 shrink-0" />
-              <span className="truncate font-mono">
-                {session.branch_name || session.session_id}
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              {access.canOpen ? (
-                <Button variant="outline" size="sm" asChild>
-                  <Link href={href}>
-                    Open session
-                    <ExternalLink className="size-3.5 shrink-0" />
-                  </Link>
-                </Button>
-              ) : (
-                <Button variant="outline" size="sm" disabled>
-                  {access.label}
-                </Button>
-              )}
-              {hasActions ? (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button type="button" variant="secondary" size="sm">
-                      <MoreHorizontal className="size-3.5 shrink-0" />
-                      Actions
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-44">
-                    {hasLifecycleActions ? (
-                      <DropdownMenuItem onSelect={() => onRename(session.session_id, title)}>
-                        <Pencil />
-                        Rename
-                      </DropdownMenuItem>
-                    ) : null}
-                    {canManageSharing ? (
-                      <DropdownMenuItem onSelect={() => onShare(session)}>
-                        <Share />
-                        Share
-                      </DropdownMenuItem>
-                    ) : null}
-                    {hasLifecycleActions ? (
-                      <DropdownMenuItem
-                        disabled={restarting}
-                        onSelect={() => onRestart(session.session_id, title)}
-                      >
-                        {restarting ? <Loading className="size-4 shrink-0" /> : <RotateCcw />}
-                        Restart
-                      </DropdownMenuItem>
-                    ) : null}
-                    {session.status === 'running' && hasLifecycleActions ? (
-                      <DropdownMenuItem
-                        disabled={stopping}
-                        onSelect={() => onStop(session.session_id, title)}
-                      >
-                        {stopping ? <Loading className="size-4 shrink-0" /> : <Square />}
-                        Stop
-                      </DropdownMenuItem>
-                    ) : null}
-                    {hasLifecycleActions ? (
-                      <DropdownMenuItem
-                        variant="destructive"
-                        onSelect={() => onDelete(session.session_id, title)}
-                      >
-                        <TrashSolid />
-                        Delete
-                      </DropdownMenuItem>
-                    ) : null}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              ) : null}
-            </div>
-          </div>
+          <CaretRightIcon
+            aria-hidden
+            className="size-3 shrink-0 opacity-0 transition-[opacity,transform] duration-150 ease-out group-hover/section-header:opacity-100 group-data-[state=open]/section:rotate-90"
+          />
         </div>
-      </DisclosureContent>
+      </DisclosureTrigger>
+      <DisclosureContent contentClassName="space-y-2">{children}</DisclosureContent>
     </Disclosure>
+  );
+}
+
+/**
+ * Absolute top-left opener — same rules as project-home / session header.
+ * Inlined here (not via CustomizeSectionWrapper) so this page can own spacing
+ * and layout without the shared shell's constraints.
+ */
+function SessionsSidebarToggle() {
+  const sidebar = useOptionalSidebar();
+  // Shared gate — see sidebar-opener.ts. Must be called before the early
+  // return, and it already covers the `!sidebar` case.
+  const show = useShowPageSidebarOpener();
+  if (!sidebar || !show) return null;
+
+  const label = sidebarOpenerLabel(sidebar);
+
+  return (
+    <Hint label={label} side="bottom">
+      <Button
+        type="button"
+        aria-label={label}
+        variant="ghost"
+        size="icon"
+        onClick={sidebar.toggleSidebar}
+        onPointerEnter={sidebar.state === 'collapsed' ? sidebar.peekEnter : undefined}
+        onPointerLeave={sidebar.state === 'collapsed' ? sidebar.peekLeave : undefined}
+        className="hover:bg-sidebar-accent hover:text-sidebar-foreground absolute top-2 left-2 z-20 shrink-0 cursor-pointer items-center justify-center rounded-md transition-[color,background-color,transform] duration-150 ease-out active:scale-[0.96]"
+      >
+        <PanelLeft className="cn-rtl-flip size-4" />
+      </Button>
+    </Hint>
   );
 }
 
 export function ProjectSessionsView({ projectId }: { projectId: string }) {
   const queryClient = useQueryClient();
-  const [filter, setFilter] = useState<ProjectSessionsFilter>('all');
   const [search, setSearch] = useState('');
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(() => new Set());
+  const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
   const [sessionToRename, setSessionToRename] = useState<{ id: string; name: string } | null>(null);
   const [sessionToShare, setSessionToShare] = useState<ProjectSession | null>(null);
   const [sessionToDelete, setSessionToDelete] = useState<{ id: string; label: string } | null>(
     null,
   );
   const newSession = useNewProjectSession(projectId);
+  const creatingSession = useIsCreatingProjectSession(projectId);
 
   const sessionsQuery = useQuery({
-    queryKey: ['project-session-inventory', projectId],
+    // 'project' scope: the manager-only lifecycle inventory — a
+    // DIFFERENT server request than the default 'visible' scope every other
+    // reader uses. It includes accessible warm and soft-deleted rows, but never
+    // sessions the manager cannot open. It MUST carry its own scope segment in
+    // the key (see qk.project.sessions' doc comment). Sharing the default-scope key here
+    // is the exact bug this file existed to fix.
+    queryKey: qk.project.sessions(projectId, 'project'),
     queryFn: () => listProjectSessions(projectId, { scope: 'project' }),
-    staleTime: 10_000,
+    // The shared policy, not a local copy of the provisioning rule. This view
+    // stopped polling the moment every session settled, so a title written
+    // seconds later (server-side, with no event — see `sessionTitleHasLanded`)
+    // was invisible here until the window regained focus, while the sidebar
+    // and header had already moved on. Three surfaces, three policies, one
+    // name: that divergence IS the bug.
     refetchInterval: (query) =>
-      shouldPollProjectSessions(query.state.data as ProjectSession[] | undefined) ? 5_000 : false,
-    refetchOnWindowFocus: false,
+      projectSessionsRefetchInterval({
+        sessions: query.state.data as ProjectSession[] | undefined,
+        hasOpenSession: false,
+      }),
+    // The poll stops once every session settles, so without this a session
+    // deleted from another surface would linger here indefinitely.
+    refetchOnWindowFocus: true,
+    ...contract('inventory'),
   });
 
+  const invalidateSessions = useCallback(() => {
+    // The PREFIX, not the scoped read key: this view reads the 'project'
+    // scope, but every other surface (sidebar, header, palette, ...) reads
+    // the default 'visible' scope. A rename/share/delete here has to reach
+    // BOTH, or the other scope goes stale — see qk.project.sessionsScope.
+    queryClient.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId) });
+  }, [projectId, queryClient]);
+
   const sessions = useMemo(() => sessionsQuery.data ?? [], [sessionsQuery.data]);
-  const counts = useMemo(() => projectSessionsFilterCounts(sessions), [sessions]);
+
+  // Typing stays on the fast path: the input updates from `search` every
+  // keystroke, while the list below re-filters from the deferred copy. On a
+  // large inventory React can drop an intermediate filter pass entirely rather
+  // than run one per character.
+  const deferredSearch = useDeferredValue(search);
+
+  // Built once per session list, not once per keystroke — see
+  // `buildSessionSearchIndex`.
+  const searchIndex = useMemo(() => buildSessionSearchIndex(sessions), [sessions]);
+
+  // Grouping, ordering, the two multi-select facets, hidden and collapsed
+  // sections all come from the SAME per-project store the sidebar writes, via
+  // the SAME `SessionFilterMenu`. Choose "Group by status" in either surface and
+  // both show it.
+  const groupMode = useSessionFilterStore(selectGroupMode(projectId, SURFACE));
+  const orderMode = useSessionFilterStore(selectOrderMode(projectId, SURFACE));
+  const statusFilters = useSessionFilterStore(selectStatusFilters(projectId, SURFACE));
+  const sourceFilters = useSessionFilterStore(selectSourceFilters(projectId, SURFACE));
+  const hiddenSections = useSessionFilterStore(selectHiddenSections(projectId, SURFACE));
+  const collapsedSections = useSessionFilterStore(selectCollapsedSections(projectId, SURFACE));
+  const collapsedSectionSet = useMemo(() => new Set(collapsedSections), [collapsedSections]);
+  const toggleSectionCollapsed = useSessionFilterStore((s) => s.toggleSectionCollapsed);
+  const resetFilters = useSessionFilterStore((s) => s.resetFilters);
+
+  // Review Center feeds `status` grouping's `needs-you` section and the menu's
+  // Show list. Same flag gate as the sidebar: flag off, query never runs.
+  const reviewEnabled = useFeatureFlag(projectId, 'review_center').enabled;
+  const reviewSummary = useReviewSessionSummary(projectId, { enabled: reviewEnabled });
+
   const visibleSessions = useMemo(
-    () => filterProjectSessions(sessions, filter, search),
-    [sessions, filter, search],
+    () =>
+      filterProjectSessions(sessions, statusFilters, sourceFilters, deferredSearch, searchIndex),
+    [sessions, statusFilters, sourceFilters, deferredSearch, searchIndex],
   );
+
+  const grouped = useMemo(
+    () =>
+      groupSessions(visibleSessions, {
+        mode: groupMode,
+        order: orderMode,
+        reviewCountBySession: reviewSummary.needsYouBySession,
+        hiddenSections,
+      }),
+    [visibleSessions, groupMode, orderMode, reviewSummary.needsYouBySession, hiddenSections],
+  );
+
+  // Keyed on `sessions` alone, deliberately NOT on the search query: this is
+  // two `date-fns` calls per session, and re-deriving it per keystroke would
+  // also hand every surviving row a brand-new `time` object and re-render the
+  // whole list past the memo on SessionRow.
+  const timestamps = useMemo(() => {
+    const map = new Map<string, { relative: string; exact: string }>();
+    for (const session of sessions) {
+      map.set(session.session_id, formatTimestamp(sessionLastActivityAt(session)));
+    }
+    return map;
+  }, [sessions]);
+
+  const selectableSessions = useMemo(
+    () => visibleSessions.filter(sessionIsDeletable),
+    [visibleSessions],
+  );
+
+  // Selection must never outlive its own visibility: narrowing the filter after
+  // selecting would otherwise leave "N selected" counting off-screen rows, and
+  // "Delete N" would destroy sessions the user cannot see.
+  //
+  // DERIVED, not synced. This used to be a `useEffect` calling `setSelected`,
+  // which fires a second render pass every time `visibleSessions` changes —
+  // i.e. on every keystroke while a selection is live. `pruneSelection` returns
+  // the SAME Set when nothing was dropped, so this stays referentially stable
+  // and every read below sees a value that is already correct for this render.
+  const visibleSelection = useMemo(
+    () => (selected.size === 0 ? selected : pruneSelection(selected, visibleSessions)),
+    [selected, visibleSessions],
+  );
+
+  const exitSelectMode = useCallback(() => {
+    setSelectMode(false);
+    setSelected(new Set());
+  }, []);
+
+  useEffect(() => {
+    if (!selectMode) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') exitSelectMode();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [selectMode, exitSelectMode]);
+
+  // "/" focuses search, the way it does in the rest of the product.
+  useEffect(() => {
+    if (searchOpen || selectMode) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== '/' || event.metaKey || event.ctrlKey || event.altKey) return;
+      const target = event.target as HTMLElement | null;
+      if (
+        target?.isContentEditable ||
+        ['INPUT', 'TEXTAREA', 'SELECT'].includes(target?.tagName ?? '')
+      )
+        return;
+      event.preventDefault();
+      setSearchOpen(true);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [searchOpen, selectMode]);
 
   const restartMutation = useMutation({
     mutationFn: ({ sessionId }: { sessionId: string; label: string }) =>
       restartProjectSession(projectId, sessionId),
     onSuccess: (_data, { label }) => {
       successToast(`Restarting "${label}"…`);
-      queryClient.invalidateQueries({ queryKey: ['project-session-inventory', projectId] });
-      queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] });
+      invalidateSessions();
     },
     onError: (error) =>
       errorToast(error instanceof Error ? error.message : 'Failed to restart session'),
@@ -447,150 +395,275 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
       stopProjectSession(projectId, sessionId),
     onSuccess: (_data, { label }) => {
       successToast(`"${label}" stopped`);
-      queryClient.invalidateQueries({ queryKey: ['project-session-inventory', projectId] });
-      queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] });
+      invalidateSessions();
     },
     onError: (error) =>
       errorToast(error instanceof Error ? error.message : 'Failed to stop session'),
   });
 
-  const action = (
-    <Button
-      type="button"
-      size="sm"
-      variant="secondary"
-      className="gap-1.5"
-      onClick={() => newSession()}
-    >
-      <Plus className="size-4 shrink-0" />
-      New session
-    </Button>
+  const bulkDeleteMutation = useMutation({
+    mutationFn: async (sessionIds: string[]) => {
+      const results = await mapWithConcurrency(
+        sessionIds,
+        DELETE_CONCURRENCY,
+        async (sessionId) => {
+          try {
+            await deleteProjectSession(projectId, sessionId);
+            return { sessionId, ok: true };
+          } catch {
+            return { sessionId, ok: false };
+          }
+        },
+      );
+      return summarizeBulkDelete(results);
+    },
+    onSuccess: (summary) => {
+      // Partial failure is a real outcome, not an error. Reporting "Deleted 7"
+      // while two rows survive is worse than reporting nothing.
+      if (summary.failed.length === 0) successToast(summary.message);
+      else if (summary.succeeded.length === 0) errorToast(summary.message);
+      else warningToast(summary.message);
+
+      setBulkConfirmOpen(false);
+      exitSelectMode();
+      invalidateSessions();
+    },
+    onError: (error) => {
+      errorToast(error instanceof Error ? error.message : 'Failed to delete sessions');
+      setBulkConfirmOpen(false);
+    },
+  });
+
+  // Depends on the two `mutate` functions, not on the mutation objects.
+  // `useMutation` returns a NEW object every render (isPending, variables and
+  // friends all live on it), so the old deps rebuilt `rowActions` on every
+  // render and pushed a fresh `actions` prop into every row. `mutate` itself is
+  // referentially stable in react-query v5, which is what makes this hold.
+  const restart = restartMutation.mutate;
+  const stop = stopMutation.mutate;
+  const rowActions: SessionRowActions = useMemo(
+    () => ({
+      onRename: (id, name) => setSessionToRename({ id, name }),
+      onShare: setSessionToShare,
+      onDelete: (id, label) => setSessionToDelete({ id, label }),
+      onRestart: (sessionId, label) => restart({ sessionId, label }),
+      onStop: (sessionId, label) => stop({ sessionId, label }),
+    }),
+    [restart, stop],
+  );
+
+  // One callback shared by every row, rather than a closure per row per render.
+  const handleToggleOpen = useCallback((sessionId: string, open: boolean) => {
+    setExpanded(open ? sessionId : null);
+  }, []);
+  const handleToggleSelect = useCallback((sessionId: string) => {
+    setSelected((current) => toggleSelection(current, sessionId));
+  }, []);
+
+  const allSelected =
+    selectableSessions.length > 0 && visibleSelection.size === selectableSessions.length;
+
+  const header = selectMode ? (
+    <SessionsSelectionBar
+      selectedCount={visibleSelection.size}
+      selectableCount={selectableSessions.length}
+      allSelected={allSelected}
+      onSelectAll={() =>
+        setSelected(new Set(selectableSessions.map((session) => session.session_id)))
+      }
+      onClearSelection={() => setSelected(new Set())}
+      onExit={exitSelectMode}
+      onDelete={() => setBulkConfirmOpen(true)}
+      deleting={bulkDeleteMutation.isPending}
+    />
+  ) : (
+    <SessionsToolbar
+      projectId={projectId}
+      sessions={sessions}
+      reviewCountBySession={reviewSummary.needsYouBySession}
+      search={search}
+      onSearchChange={setSearch}
+      searchOpen={searchOpen}
+      onSearchOpenChange={setSearchOpen}
+      onEnterSelectMode={() => setSelectMode(true)}
+      onNewSession={() => newSession()}
+      creatingSession={creatingSession}
+      canSelect={sessions.length > 0}
+    />
   );
 
   return (
-    <CustomizeSectionWrapper
-      title="Sessions"
-      description="Manager inventory of every durable session and its owner, access, and runtime state."
-      action={action}
-      className="max-w-5xl"
-    >
-      <div className="space-y-4">
-        <InputGroupSearch>
-          <InputGroupSearchIcon>
-            <Search />
-          </InputGroupSearchIcon>
-          <InputGroupSearchInput
-            variant="popover"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search by title, owner, source, branch, agent, or ID"
-            aria-label="Search sessions"
-          />
-          {search ? <InputGroupSearchClear onClick={() => setSearch('')} /> : null}
-        </InputGroupSearch>
-
-        <div className="[scrollbar-width:none] overflow-x-auto pb-1 [&::-webkit-scrollbar]:hidden">
-          <FilterBar className="h-8 rounded-md">
-            {PROJECT_SESSIONS_FILTERS.map((option) => (
-              <FilterBarItem
-                key={option.value}
-                className="h-[calc(100%-4px)] rounded-[calc(var(--radius)-3px)] px-2.5 text-xs"
-                data-state={filter === option.value ? 'active' : 'inactive'}
-                aria-selected={filter === option.value}
-                onClick={() => setFilter(option.value)}
-              >
-                {option.label}
-                <span className="tabular-nums">{counts[option.value]}</span>
-              </FilterBarItem>
-            ))}
-          </FilterBar>
-        </div>
-
-        {sessionsQuery.isLoading ? (
-          <SessionListSkeleton />
-        ) : sessionsQuery.isError ? (
-          <ErrorState
-            size="sm"
-            title="Sessions could not be loaded"
-            description={
-              sessionsQuery.error instanceof Error ? sessionsQuery.error.message : undefined
-            }
-            action={
-              <Button variant="outline" size="sm" onClick={() => sessionsQuery.refetch()}>
-                Retry
-              </Button>
-            }
-          />
-        ) : sessions.length === 0 ? (
-          <EmptyState
-            size="sm"
-            icon={MessageSquare}
-            title="No sessions yet"
-            description="Start a session to give this project its first task."
-            action={
-              <Button variant="outline" size="sm" className="gap-1.5" onClick={() => newSession()}>
-                <Plus className="size-3.5 shrink-0" />
-                New session
-              </Button>
-            }
-          />
-        ) : visibleSessions.length === 0 ? (
-          <EmptyState
-            size="sm"
-            icon={Search}
-            title="No matching sessions"
-            description="Try another search or clear the current filter."
-            action={
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setFilter('all');
-                  setSearch('');
-                }}
-              >
-                Clear filters
-              </Button>
-            }
-          />
-        ) : (
-          <div className="space-y-2" aria-live="polite">
-            <p className="text-muted-foreground text-xs tabular-nums">
-              Showing {visibleSessions.length} of {sessions.length}{' '}
-              {sessions.length === 1 ? 'session' : 'sessions'}
-            </p>
-            {visibleSessions.map((session) => (
-              <SessionRow
-                key={session.session_id}
-                projectId={projectId}
-                session={session}
-                onRename={(id, name) => setSessionToRename({ id, name })}
-                onShare={setSessionToShare}
-                onDelete={(id, label) => setSessionToDelete({ id, label })}
-                onRestart={(sessionId, label) => restartMutation.mutate({ sessionId, label })}
-                onStop={(sessionId, label) => stopMutation.mutate({ sessionId, label })}
-                restarting={
-                  restartMutation.isPending &&
-                  restartMutation.variables?.sessionId === session.session_id
-                }
-                stopping={
-                  stopMutation.isPending && stopMutation.variables?.sessionId === session.session_id
-                }
-              />
-            ))}
+    <>
+      {/* Fixed shell: the header is a non-scrolling band and the list below it
+          owns the only scroll container on the page. `overflow-hidden` here
+          stops the app shell from scrolling when the list grows. */}
+      <div className="relative flex h-full min-h-0 flex-col overflow-hidden">
+        <SessionsSidebarToggle />
+        <header
+          className={cn(
+            'mx-auto w-full max-w-4xl shrink-0 px-4 pt-10 pb-5 lg:pt-20',
+            'flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between',
+          )}
+        >
+          <div className="space-y-1">
+            <h2 className="text-foreground text-xl font-medium">Sessions</h2>
           </div>
-        )}
+          <div className="mt-2 shrink-0 sm:mt-0">{header}</div>
+        </header>
+
+        <div className={cn('mx-auto flex min-h-0 w-full max-w-4xl flex-1 flex-col px-4 pb-4')}>
+          {sessionsQuery.isLoading ? (
+            <SessionListSkeleton />
+          ) : sessionsQuery.isError ? (
+            <ErrorState
+              size="sm"
+              title="Sessions could not be loaded"
+              description={
+                sessionsQuery.error instanceof Error ? sessionsQuery.error.message : undefined
+              }
+              action={
+                <Button variant="outline" size="sm" onClick={() => sessionsQuery.refetch()}>
+                  Retry
+                </Button>
+              }
+            />
+          ) : sessions.length === 0 ? (
+            <EmptyState
+              size="sm"
+              icon={ChatIcon}
+              title="No sessions yet"
+              description="Start a session to give this project its first task."
+              action={
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={() => newSession()}
+                  disabled={creatingSession}
+                  aria-busy={creatingSession}
+                >
+                  <PlusIcon className="size-3.5 shrink-0" />
+                  New session
+                </Button>
+              }
+            />
+          ) : grouped.sections.length === 0 ? (
+            // Covers BOTH "the filters/search match nothing" and "every section
+            // was hidden via the menu's Show list" — `visibleSessions.length`
+            // alone cannot see the second, and the list would otherwise render
+            // an empty scroll area with no explanation.
+            <EmptyState
+              size="sm"
+              icon={MagnifyingGlassIcon}
+              title="No matching sessions"
+              description={
+                visibleSessions.length > 0
+                  ? 'Every section is hidden. Re-enable one from Show in the view menu.'
+                  : 'Try another search or clear the current filter.'
+              }
+              action={
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    resetFilters(projectId, SURFACE);
+                    setSearch('');
+                  }}
+                >
+                  Clear filters
+                </Button>
+              }
+            />
+          ) : (
+            /* The list gets a containing block whose height cannot depend on
+                   its children. `FadedScrollArea` sizes its outer element with
+                   `h-full`, and `height: 100%` only resolves against a definite
+                   height — inside a flex chain still being measured from content it
+                   resolves to `auto`, so the component grows to fit every row and
+                   the whole app shell scrolls instead of the list. An
+                   `absolute inset-0` layer is out of flow, so this parent
+                   contributes no content height and takes only what flexbox gives
+                   it, which makes the percentage definite. */
+            <div className="relative min-h-0 flex-1">
+              <div className="absolute inset-0">
+                <FadedScrollArea fadeColor="from-background" className="pt-4">
+                  <div className="space-y-4 pb-6" aria-live="polite">
+                    {grouped.sections.map((section) => (
+                      <SessionsSection
+                        key={section.id}
+                        section={section}
+                        showHeader={grouped.showHeaders}
+                        open={!collapsedSectionSet.has(section.id)}
+                        onOpenChange={() => toggleSectionCollapsed(projectId, section.id, SURFACE)}
+                      >
+                        {section.sessions.map((session) => {
+                          const time = timestamps.get(session.session_id) ?? NO_TIMESTAMP;
+                          const isOpen = expanded === session.session_id;
+                          return (
+                            <SessionRow
+                              key={session.session_id}
+                              session={session}
+                              time={time}
+                              open={isOpen}
+                              onToggleOpen={handleToggleOpen}
+                              selectMode={selectMode}
+                              selected={visibleSelection.has(session.session_id)}
+                              onToggleSelect={handleToggleSelect}
+                              restarting={
+                                restartMutation.isPending &&
+                                restartMutation.variables?.sessionId === session.session_id
+                              }
+                              stopping={
+                                stopMutation.isPending &&
+                                stopMutation.variables?.sessionId === session.session_id
+                              }
+                              actions={rowActions}
+                            >
+                              {/* Mounted only while expanded — 27 collapsed detail grids
+                              would otherwise all format timestamps on every render. */}
+                              {isOpen ? (
+                                <SessionDetail
+                                  projectId={projectId}
+                                  session={session}
+                                  formatted={{
+                                    created: formatTimestamp(session.created_at).exact,
+                                    updated: time.exact,
+                                    deleted: session.deleted_at
+                                      ? formatTimestamp(session.deleted_at).exact
+                                      : null,
+                                  }}
+                                />
+                              ) : null}
+                            </SessionRow>
+                          );
+                        })}
+                      </SessionsSection>
+                    ))}
+                  </div>
+                </FadedScrollArea>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
+
+      <ConfirmDialog
+        open={bulkConfirmOpen}
+        onOpenChange={(open) => !bulkDeleteMutation.isPending && setBulkConfirmOpen(open)}
+        title={`Delete ${visibleSelection.size} ${visibleSelection.size === 1 ? 'session' : 'sessions'}?`}
+        description="This permanently destroys each session's branch and sandbox. It cannot be undone."
+        confirmLabel={`Delete ${visibleSelection.size}`}
+        confirmVariant="destructive"
+        isPending={bulkDeleteMutation.isPending}
+        onConfirm={() => bulkDeleteMutation.mutate([...visibleSelection])}
+      />
 
       <ShareSessionModal
         projectId={projectId}
         session={sessionToShare}
         open={!!sessionToShare}
         onOpenChange={(open) => !open && setSessionToShare(null)}
-        onSaved={() => {
-          queryClient.invalidateQueries({ queryKey: ['project-session-inventory', projectId] });
-          queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] });
-        }}
+        onSaved={invalidateSessions}
       />
       <RenameSessionModal
         projectId={projectId}
@@ -605,7 +678,12 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
         sessionLabel={sessionToDelete?.label}
         open={!!sessionToDelete}
         onOpenChange={(open) => !open && setSessionToDelete(null)}
+        // The modal's own onSuccess already invalidates qk.project.sessionsScope
+        // — the prefix that reaches the 'project'-scoped key this view reads
+        // — so this is a harmless duplicate, kept so the two do not silently
+        // diverge again if either is edited independently.
+        onDeleted={invalidateSessions}
       />
-    </CustomizeSectionWrapper>
+    </>
   );
 }

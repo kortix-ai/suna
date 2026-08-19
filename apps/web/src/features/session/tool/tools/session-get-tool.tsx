@@ -1,5 +1,6 @@
 'use client';
 
+import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import { STATUS_BG, STATUS_BORDER, STATUS_TEXT, StatusDot } from '@/components/ui/status';
 import {
   BasicTool,
@@ -14,17 +15,17 @@ import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { cn } from '@/lib/utils';
 import {
-  BookOpen,
-  Check,
-  ChevronDown,
-  ChevronRight,
-  Clock,
-  FileText,
-  ListTodo,
-  MessageCircle,
-  Minimize2,
-  RefreshCw,
-} from 'lucide-react';
+  BookOpenIcon as BookOpen,
+  CheckIcon as Check,
+  CaretDownIcon as ChevronDown,
+  CaretRightIcon as ChevronRight,
+  ClockIcon as Clock,
+  FileTextIcon as FileText,
+  ListChecksIcon as ListTodo,
+  ChatCircleIcon as MessageCircle,
+  ArrowsInSimpleIcon as Minimize2,
+  ArrowClockwiseIcon as RefreshCw,
+} from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import React, { useMemo } from 'react';
 
@@ -81,17 +82,24 @@ export function SessionGetTool({ part, defaultOpen, forceOpen, locked }: ToolPro
     };
   }, [output, sid]);
 
-  const headerArgs: string[] = [];
-  if (parsed?.hasConversation)
-    headerArgs.push(`${parsed.msgCount} msgs`, `${parsed.toolCount} tools`);
-  if (parsed?.compression) headerArgs.push('compressed');
+  const headerArgs = useMemo(() => {
+    const args: string[] = [];
+    if (parsed?.hasConversation) args.push(`${parsed.msgCount} msgs`, `${parsed.toolCount} tools`);
+    if (parsed?.compression) args.push('compressed');
+    return args;
+  }, [parsed]);
 
+  // Local state driving a CONTROLLED `Disclosure` — the same shape web-fetch's
+  // "View raw HTML" fold uses. Both of these were hand-rolled `<button>` +
+  // `{show && …}` pairs: no `aria-expanded`, no height animation, and two
+  // near-identical copies of the chevron ternary. The standard primitive owns
+  // the role, the keyboard handling and the reveal; the row keeps its chrome.
   const [showConv, setShowConv] = React.useState(false);
   const [showTodos, setShowTodos] = React.useState(true);
 
   return (
     <BasicTool
-      icon={<BookOpen className="size-3.5 flex-shrink-0" />}
+      icon={<BookOpen className="size-3.5 shrink-0" />}
       trigger={{
         title: parsed?.title ?? 'Session Get',
         subtitle: parsed?.id || sid,
@@ -133,32 +141,34 @@ export function SessionGetTool({ part, defaultOpen, forceOpen, locked }: ToolPro
           </div>
 
           {parsed.todos.length > 0 && (
-            <div>
-              <button
-                onClick={() => setShowTodos(!showTodos)}
-                className="hover:bg-muted/20 flex w-full items-center gap-2 px-3 py-1.5 text-left transition-colors"
-              >
-                {showTodos ? (
-                  <ChevronDown className="text-muted-foreground/40 size-2.5" />
-                ) : (
-                  <ChevronRight className="text-muted-foreground/40 size-2.5" />
-                )}
-                <ListTodo className="text-muted-foreground/60 size-3" />
-                <span className="text-xs font-medium">Todos</span>
-                <span className="text-muted-foreground/50 ml-auto text-xs">
-                  {parsed.todos.length}
-                </span>
-              </button>
-              {showTodos && (
+            <Disclosure open={showTodos} onOpenChange={setShowTodos}>
+              <DisclosureTrigger>
+                <button
+                  type="button"
+                  className="hover:bg-muted/20 flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left transition-colors"
+                >
+                  {showTodos ? (
+                    <ChevronDown className="text-muted-foreground/40 size-2.5" />
+                  ) : (
+                    <ChevronRight className="text-muted-foreground/40 size-2.5" />
+                  )}
+                  <ListTodo className="text-muted-foreground/60 size-3" />
+                  <span className="text-xs font-medium">Todos</span>
+                  <span className="text-muted-foreground/50 ml-auto text-xs">
+                    {parsed.todos.length}
+                  </span>
+                </button>
+              </DisclosureTrigger>
+              <DisclosureContent>
                 <div className="space-y-1 px-3 pb-2">
-                  {parsed.todos.map((todo, i) => {
+                  {parsed.todos.map((todo) => {
                     const isComplete = todo.status === 'completed';
                     const isProgress = todo.status === 'in_progress';
                     return (
-                      <div key={i} className="flex items-start gap-2 text-xs">
+                      <div key={todo.text} className="flex items-start gap-2 text-xs">
                         <div
                           className={cn(
-                            'mt-[2px] flex h-3 w-3 flex-shrink-0 items-center justify-center rounded border',
+                            'mt-[2px] flex h-3 w-3 shrink-0 items-center justify-center rounded border',
                             isComplete && cn(STATUS_BG.success, STATUS_BORDER.success),
                             isProgress && STATUS_BORDER.info,
                             !isComplete && !isProgress && 'border-border',
@@ -180,35 +190,41 @@ export function SessionGetTool({ part, defaultOpen, forceOpen, locked }: ToolPro
                     );
                   })}
                 </div>
-              )}
-            </div>
+              </DisclosureContent>
+            </Disclosure>
           )}
 
+          {/* Closed. A session's whole transcript is the heaviest thing this
+              view can render, and it is not what the reader came for — the
+              header line already says how many messages and tool calls there
+              were. */}
           {parsed.hasConversation && parsed.conversation && (
-            <div>
-              <button
-                onClick={() => setShowConv(!showConv)}
-                className="hover:bg-muted/20 flex w-full items-center gap-2 px-3 py-1.5 text-left transition-colors"
-              >
-                {showConv ? (
-                  <ChevronDown className="text-muted-foreground/40 size-2.5" />
-                ) : (
-                  <ChevronRight className="text-muted-foreground/40 size-2.5" />
-                )}
-                <MessageCircle className="text-muted-foreground/60 size-3" />
-                <span className="text-xs font-medium">Conversation</span>
-                <span className="text-muted-foreground/50 ml-auto text-xs">
-                  {parsed.msgCount}{' '}
-                  {tHardcodedUi.raw('componentsSessionToolRenderers.line5824JsxTextMsgs')}
-                  {parsed.toolCount} tools
-                </span>
-              </button>
-              {showConv && (
+            <Disclosure open={showConv} onOpenChange={setShowConv}>
+              <DisclosureTrigger>
+                <button
+                  type="button"
+                  className="hover:bg-muted/20 flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left transition-colors"
+                >
+                  {showConv ? (
+                    <ChevronDown className="text-muted-foreground/40 size-2.5" />
+                  ) : (
+                    <ChevronRight className="text-muted-foreground/40 size-2.5" />
+                  )}
+                  <MessageCircle className="text-muted-foreground/60 size-3" />
+                  <span className="text-xs font-medium">Conversation</span>
+                  <span className="text-muted-foreground/50 ml-auto text-xs">
+                    {parsed.msgCount}{' '}
+                    {tHardcodedUi.raw('componentsSessionToolRenderers.line5824JsxTextMsgs')}
+                    {parsed.toolCount} tools
+                  </span>
+                </button>
+              </DisclosureTrigger>
+              <DisclosureContent>
                 <div className="px-3 py-2">
                   <OutputBlock text={parsed.conversation} markdown />
                 </div>
-              )}
-            </div>
+              </DisclosureContent>
+            </Disclosure>
           )}
 
           {parsed.compression && (

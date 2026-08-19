@@ -145,7 +145,43 @@ export function isGithubAppConfigured() {
   return Boolean(githubAppId() && githubAppPrivateKey());
 }
 
-function githubAppStateSecret() {
+// The App's own OAuth client (every GitHub App gets one for "user access
+// token" / user-to-server flows) — used to prove a caller's GitHub identity
+// and org role for account-linking (see platform/routes/github-app.ts's
+// oauth/authorize + oauth/callback). Populated automatically by the manifest
+// flow (exchangeManifestCode stores client_id/client_secret alongside the App
+// creds); env fallback lets a self-host operator who pasted an existing App
+// (POST /app) or configured everything via `.env` set these two values
+// directly, mirroring every other githubApp* accessor's DB-first/env-fallback
+// shape.
+export function githubAppClientId() {
+  return (
+    managedGithubAppConfig().clientId?.trim() ||
+    process.env.KORTIX_GITHUB_APP_CLIENT_ID ||
+    process.env.GITHUB_APP_CLIENT_ID ||
+    null
+  );
+}
+
+export function githubAppClientSecret() {
+  return (
+    managedGithubAppConfig().clientSecret?.trim() ||
+    process.env.KORTIX_GITHUB_APP_CLIENT_SECRET ||
+    process.env.GITHUB_APP_CLIENT_SECRET ||
+    null
+  );
+}
+
+/** Whether the App's own OAuth identity-proof flow (oauth/authorize +
+ *  oauth/callback) can run. This is independent of `isGithubAppConfigured()`
+ *  (App ID + private key, needed for JWT/installation calls) — a deployment
+ *  can have one without the other, e.g. an App pasted via POST /app with no
+ *  client credentials supplied. */
+export function isGithubAppOAuthConfigured() {
+  return Boolean(githubAppClientId() && githubAppClientSecret());
+}
+
+export function githubAppStateSecret() {
   return (
     managedGithubAppConfig().stateSecret?.trim() ||
     process.env.KORTIX_GITHUB_APP_STATE_SECRET ||
@@ -171,7 +207,7 @@ export interface GitHubAppInstallState {
   issuedAt: number;
 }
 
-function normalizeGitHubFrontendOrigin(value: unknown): string | undefined {
+export function normalizeGitHubFrontendOrigin(value: unknown): string | undefined {
   if (typeof value !== 'string' || !value.trim()) return undefined;
   try {
     const url = new URL(value);
@@ -875,7 +911,8 @@ export async function getFileSha(opts: {
       opts.auth,
     );
     return res.sha ?? null;
-  } catch {
-    return null;
+  } catch (error) {
+    if (error instanceof GitHubApiError && error.status === 404) return null;
+    throw error;
   }
 }

@@ -1,8 +1,7 @@
 # Daytona linux-vm (microVM) ⇒ non-declarative build: implications
 
-> **Historical build-context scope.** The runtime layer now includes OpenCode,
-> Claude Code, Codex, and Pi harness paths. References below to the OpenCode
-> config identify the v2 compatibility floor and canonical starter skill source.
+> **Current build-context scope.** The runtime layer includes the OpenCode REST
+> process and its version 2 config directory.
 
 **Question:** to switch Daytona sandboxes from `container` to `linux-vm` (microVM,
 ~35% faster create + no 21s create-spikes), we'd have to stop using Daytona's
@@ -13,7 +12,7 @@ Daytona). What does going non-declarative actually cost us?
 
 **Today (declarative).** We never ship a finished image. At snapshot-build time we
 *assemble a build context at runtime* — gzip the freshly-built `kortix-agent` +
-`kortix` CLI, copy `slack-cli`, `executor-sdk`, the starter `.kortix/opencode`
+`kortix` CLI, copy `slack-cli`, the starter `.kortix/opencode`
 config, the generated `llm-catalog.json`, and a generated `scaffold.git` — compose
 the layered Dockerfile (`dockerfile-layer.ts`), and hand it to the provider via
 `Image.fromDockerfile(ctx.composedPath)`. Daytona builds + caches it, content-
@@ -55,7 +54,7 @@ linux-vm Dockerfile build is Daytona telling us a registry must be configured.
 - **~35% faster create + eliminates the 21s `create→running` spikes** (the "30s+ on
   2× retry" — Daytona's container create hanging to the 30s timeout then retrying).
   microVM `create→running` was median ~1.1s, max 1.4s over 20 runs vs container max
-  21.4s. (See `tests/performance/session-start/`.)
+  21.4s in the recorded provider benchmark.
 - **The image *build* moves entirely off the session hot path.** Pre-building means
   the 30–400s snapshot build (the rebuild landmine on any runtime change) happens in
   CI ahead of time, never at first-session. Non-declarative *fixes* that as a side

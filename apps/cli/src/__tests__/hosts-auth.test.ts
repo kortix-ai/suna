@@ -10,6 +10,8 @@ import { runWhoami } from '../commands/whoami.ts';
 import { getHost, loadConfig } from '../api/config.ts';
 import { stripAnsi } from '../style.ts';
 
+const JSON_HEADERS = { 'content-type': 'application/json' };
+
 // The host-centric auth surface: `kortix hosts login/logout/whoami` and the
 // thin top-level `login`/`logout`/`whoami` aliases must delegate to the SAME
 // shared helpers (performLogin/performLogout/performWhoami) and behave
@@ -22,7 +24,6 @@ const ORIGINAL_STDERR_WRITE = process.stderr.write;
 
 const ENV_KEYS = [
   'KORTIX_CLI_TOKEN',
-  'KORTIX_EXECUTOR_TOKEN',
   'KORTIX_TOKEN',
   'KORTIX_API_URL',
   'KORTIX_FRONTEND_URL',
@@ -81,17 +82,33 @@ function captureOutput() {
   };
 }
 
-function mockApi(accounts: typeof ACCOUNTS = ACCOUNTS) {
+function mockApi(
+  accounts: typeof ACCOUNTS = ACCOUNTS,
+  tokenContext?: {
+    auth_type: string | null;
+    project_id: string | null;
+    session_id: string | null;
+    agent: string | null;
+    connectors: string[] | 'all' | null;
+    kortix_cli: string[] | 'all' | null;
+    env: string[] | 'all' | null;
+  },
+) {
   globalThis.fetch = (async (input: RequestInfo | URL) => {
     const url = String(input);
     requests.push(url);
     if (url.endsWith('/v1/accounts/me')) {
       return new Response(
-        JSON.stringify({ user_id: 'user_1', email: 'user@example.test', accounts }),
-        { status: 200 },
+        JSON.stringify({
+          user_id: 'user_1',
+          email: 'user@example.test',
+          ...(tokenContext ? { token_context: tokenContext } : {}),
+          accounts,
+        }),
+        { status: 200, headers: JSON_HEADERS },
       );
     }
-    return new Response(JSON.stringify({ error: `unexpected ${url}` }), { status: 500 });
+    return new Response(JSON.stringify({ error: `unexpected ${url}` }), { status: 500, headers: JSON_HEADERS });
   }) as typeof fetch;
 }
 
@@ -176,6 +193,26 @@ describe('kortix hosts login', () => {
     const code = await runLogin(['--token', 'kortix_pat_alias', '--no-project']);
     expect(code).toBe(0);
     expect(getHost('test')?.token).toBe('kortix_pat_alias');
+  });
+
+  test('labels an agent session token and its initiating user', async () => {
+    writeConfig('');
+    mockApi(ACCOUNTS, {
+      auth_type: 'pat',
+      project_id: 'project_1',
+      session_id: 'session_1',
+      agent: 'veyris-internal',
+      connectors: 'all',
+      kortix_cli: 'all',
+      env: 'all',
+    });
+
+    const code = await runLogin(['--token', 'kortix_pat_agent', '--no-project']);
+
+    expect(code).toBe(0);
+    expect(stripAnsi(stdout)).toContain(
+      'Logged in to host test as agent veyris-internal (initiator: user@example.test)',
+    );
   });
 });
 

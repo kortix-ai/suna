@@ -18,11 +18,16 @@ const kortix = createKortix({
 `backendUrl` and `getToken` are required. The SDK caches nothing: it calls
 `getToken` on every request, so your app owns token storage and refresh.
 
+Set `clientSource` to `api`, `cli`, `mobile`, or `web` when your host needs a
+separate source in the centralized audit log. This value identifies the client
+surface. It does not change the authenticated actor or their permissions.
+
 ## Personal access tokens
 
 A personal access token (PAT) is the credential for the SDK, the CLI, and CI.
-Create one at **User settings → API keys**. The key starts with `kortix_pat_`
-and shows only once, at creation. Store it as a secret.
+Create one in your own settings, at **Settings → API keys**
+(`/settings/tokens`). The key starts with `kortix_pat_` and shows only once, at
+creation. Store it as a secret.
 
 A PAT acts as the user who created it. Its scope is fixed at creation:
 
@@ -38,7 +43,9 @@ type, not a separate token kind.
 ## Service accounts
 
 A service account is a separate credential family for non-human callers,
-prefixed `kortix_sa_`. Create one at **Account settings → Service accounts**.
+prefixed `kortix_sa_`. Create one at **Account → Tokens**
+(`/accounts/<account-id>?tab=tokens`), the account-level surface for
+credentials that are not a person's.
 
 <Callout type="warn">
   A new service account has no project access. If you point `getToken` at one

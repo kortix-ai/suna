@@ -1,15 +1,14 @@
 import { shredAgentEnvFile } from './agent-env-file'
+import { stopEgressShim } from './egress-shim'
 import { logger } from './logger'
 import type { Opencode } from './opencode'
 import type { ProxyServer } from './proxy'
 import type { StaticWebServer } from './static-web'
-import type { AcpRuntime } from './acp/runtime'
 
 export function installShutdownHandlers(
   opencode: Opencode,
   proxy: ProxyServer,
   staticWeb?: StaticWebServer,
-  acpRuntime?: AcpRuntime,
 ) {
   let shuttingDown = false
 
@@ -18,6 +17,10 @@ export function installShutdownHandlers(
     shuttingDown = true
     logger.info('[shutdown] signal received', { signal })
     shredAgentEnvFile()
+    // Stops the listener and drops the CA private key, which lives only in
+    // memory and is never written to disk. A hibernated or archived disk must
+    // not be able to yield a CA that can still impersonate a policy host.
+    stopEgressShim()
 
     void (async () => {
       try {
@@ -30,13 +33,6 @@ export function installShutdownHandlers(
           await staticWeb.stop()
         } catch (err) {
           logger.warn('[shutdown] static-web stop failed', err)
-        }
-      }
-      if (acpRuntime) {
-        try {
-          await acpRuntime.shutdown()
-        } catch (err) {
-          logger.warn('[shutdown] ACP runtime stop failed', err)
         }
       }
       try {

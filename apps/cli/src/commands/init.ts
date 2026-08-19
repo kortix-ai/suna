@@ -25,11 +25,11 @@ function agentSublabel(agent: CodingAgent): string {
     case 'opencode':
       return 'symlink .opencode → .kortix/opencode';
     case 'claude':
-      return 'symlink .claude → .kortix/opencode';
+      return 'link .claude skills, agents, and commands';
     case 'codex':
       return 'symlink .agents → .kortix/opencode + AGENTS.md';
     case 'pi':
-      return 'symlink .pi → .kortix/opencode + AGENTS.md';
+      return 'link .pi/skills + AGENTS.md';
     case 'cursor':
       return 'AGENTS.md (read natively — no rule file)';
     default:
@@ -52,20 +52,17 @@ Arguments:
                        in. Prompted if omitted.
 
 Pick the local coding tools to wire up. The starter's canonical skill source is
-linked into each native discovery location: .opencode, .claude, .agents, or .pi.
+linked into each native discovery location. Local tool files remain in
+.claude, .codex, and .pi.
 Codex, Pi, and Cursor also get a root AGENTS.md pointer.
 
-This local tool selection does not select the cloud session harness. Cloud
-sessions use kortix.yaml version 3 runtime profiles after the project enables
-the ACP & Multi-Harness experiment.
+This local tool selection does not change the cloud OpenCode REST runtime.
 
 Options:
   --name <project>     Alias for the positional project-name.
   --primary <agent>    Primary coding agent to wire up (${SUPPORTED_AGENTS.join('|')}).
   --agents <list>      Comma-separated extras to wire up alongside --primary.
                        Example: --agents claude,cursor
-  --template <name>    Starter template: general-knowledge-worker (default, full
-                       skill kit) or minimal (base plumbing only).
   --force              Configure the current cloned Kortix repository in place.
                        Requires kortix.yaml (or kortix.toml) and .kortix/opencode.
   --no-git             Don't run \`git init\` in the new project directory.
@@ -218,8 +215,7 @@ function printAgentPreamble(): void {
     `  Pick the local coding tools to wire into this Kortix project.`,
     '',
     `  ${dim}Each tool receives the starter's canonical Kortix system skills.${reset}`,
-    `  ${dim}Ask it to configure triggers, agents, or runtime profiles.${reset}`,
-    `  ${dim}Cloud harness selection lives in kortix.yaml version 3.${reset}`,
+    `  ${dim}Ask it to configure triggers, agents, or OpenCode settings.${reset}`,
     '',
     `  ${opts}`,
     '',
@@ -304,9 +300,8 @@ export async function runInit(argv: string[]): Promise<number> {
   }
 
   // ── Resolve starter template ────────────────────────────────────────
-  // There's one starter kit — every project scaffolds with the full Kortix
-  // skill kit. The `--template` flag stays as an advanced escape hatch (e.g.
-  // the internal base-only `minimal`), but we no longer prompt for a choice.
+  // One public starter exists. Keep parsing historical template values for
+  // scripts and API compatibility. Do not expose them as product choices.
   const template: StarterTemplateId = flags.template ?? DEFAULT_STARTER_TEMPLATE_ID;
 
   // ── Resolve coding agents (multi-select TUI) ─────────────────────────

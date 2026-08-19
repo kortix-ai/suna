@@ -16,6 +16,8 @@ import { join } from 'node:path';
 import { platinumJson, isPlatinumConfigured } from '../../shared/platinum';
 import {
   stageBuildContext,
+  stageAppBuildContext,
+  stageMetaBuildContext,
   stageAgentBinaryGz,
   DEFAULT_CPU,
   DEFAULT_MEMORY_GB,
@@ -23,6 +25,7 @@ import {
   KORTIX_ENTRYPOINT,
 } from '../build-context';
 import { SANDBOX_SPEC_LIMITS } from '../dockerfile-layer';
+import { tarBuildContext } from '../staging-tar';
 import { normalizeExistingProviderState } from './state';
 import type {
   BuildableTemplate,
@@ -573,11 +576,14 @@ class PlatinumAdapter implements SandboxProviderAdapter {
    *  staging and the S3 upload self-heals (mirrors the daytona adapter). */
   private async buildOnce(input: BuildableTemplate, userDockerfile: string, tap?: BuildLogTap): Promise<BuildSnapshotResult> {
     // Stage the SAME context Daytona builds (Dockerfile + agent/cli/entrypoint/…).
-    const ctx = await stageBuildContext(input.snapshotName, userDockerfile, input.warmRepo, input.isShared);
+    const ctx = input.runtimeProfile === 'app'
+      ? await stageAppBuildContext(input.snapshotName, userDockerfile, input.appContext!)
+      : input.runtimeProfile === 'meta'
+      ? await stageMetaBuildContext()
+      : await stageBuildContext(input.snapshotName, userDockerfile, input.warmRepo, input.isShared);
     const tarPath = join(ctx.contextDir, '..', `${input.snapshotName.replace(/[^a-zA-Z0-9_.-]/g, '_')}.tar.gz`);
     try {
-      const tar = Bun.spawn(['tar', '-czf', tarPath, '-C', ctx.contextDir, '.']);
-      if ((await tar.exited) !== 0) throw new Error('tar build context failed');
+      await tarBuildContext(ctx.contextDir, tarPath);
 
       // Contexts are 100s of MB (baked agent + CLI binaries) — too big for the
       // API gateway's body cap, so upload DIRECTLY to object storage via a

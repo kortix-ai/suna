@@ -1,13 +1,3 @@
-/**
- * The create-only overrides, end to end through the wrapper.
- *
- * This boots the real app against the MOCK upstream, so it proves what the
- * demo SENDS and how it handles what comes back — not that the platform
- * enforces any of it. The refusals these overrides can produce
- * (SECRET_IDENTIFIER_NOT_FOUND, CONNECTOR_PROFILE_INACTIVE, …) are the real
- * API's job and are tested there.
- */
-
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import {
   type AppInstance,
@@ -17,13 +7,22 @@ import {
   startApp,
   uniqueEmail,
 } from './harness';
-import { type MockConnectionProfile, type MockUpstream, createMockUpstream } from './mock-upstream';
+import {
+  type MockConnection,
+  type MockUpstream,
+  createMockUpstream,
+} from './mock-upstream';
 import { DEMO_PASSWORD, WRAPPER_KEY, wrapperEnv } from './env';
-import { NO_OVERRIDES, buildSessionCreateInput } from '../../src/lib/session-overrides';
+import {
+  NO_OVERRIDES,
+  buildSessionCreateInput,
+} from '../../src/lib/session-overrides';
 import type { ConnectorBindingChoice } from '../../src/server/bindable-connections';
 
-const profile = (over: Partial<MockConnectionProfile>): MockConnectionProfile => ({
-  profile_id: 'p1',
+const connection = (
+  over: Partial<MockConnection>,
+): MockConnection => ({
+  connection_id: 'p1',
   connector_alias: 'slack',
   owner_type: 'project',
   owner_id: null,
@@ -45,13 +44,19 @@ describe('starting a session with overrides', () => {
     mock = createMockUpstream(WRAPPER_KEY);
     app = await startApp(wrapperEnv({ KORTIX_UPSTREAM: `${mock.url}/v1` }));
     token = await loginUser(app, uniqueEmail('overrides'), DEMO_PASSWORD);
-    const project = await createTestKortix(app, token).projects.provision({ name: 'Overrides' });
+    const project = await createTestKortix(app, token).projects.provision({
+      name: 'Overrides',
+    });
     projectId = project.project_id;
-    mock.seedConnectionProfiles(projectId, [
-      profile({ profile_id: 'slack_team', connector_alias: 'slack', is_default: true }),
+    mock.seedConnections(projectId, [
+      connection({
+        connection_id: 'slack_team',
+        connector_alias: 'slack',
+        is_default: true,
+      }),
       // Connected, but to a person's own account — unbindable from a wrapper.
-      profile({
-        profile_id: 'gmail_mine',
+      connection({
+        connection_id: 'gmail_mine',
         connector_alias: 'gmail',
         owner_type: 'member',
         owner_id: 'u1',
@@ -72,12 +77,14 @@ describe('starting a session with overrides', () => {
       { headers: { Authorization: `Bearer ${token}` } },
     );
     expect(res.status).toBe(200);
-    return ((await res.json()) as { connectors: ConnectorBindingChoice[] }).connectors;
+    return ((await res.json()) as { connectors: ConnectorBindingChoice[] })
+      .connectors;
   }
 
   async function lastSessionCreate() {
     const create = mock.requests.filter(
-      (r) => r.method === 'POST' && r.path === `/v1/projects/${projectId}/sessions`,
+      (r) =>
+        r.method === 'POST' && r.path === `/v1/projects/${projectId}/sessions`,
     );
     expect(create.length).toBe(1);
     return create[0]!.body as Record<string, unknown>;
@@ -95,7 +102,9 @@ describe('starting a session with overrides', () => {
         ),
       );
 
-    expect(await lastSessionCreate()).toMatchObject({ secrets: ['STRIPE_KEY'] });
+    expect(await lastSessionCreate()).toMatchObject({
+      secrets: ['STRIPE_KEY'],
+    });
   });
 
   test('a binding reaches the API keyed by the alias that was chosen', async () => {
@@ -111,35 +120,42 @@ describe('starting a session with overrides', () => {
       );
 
     const body = await lastSessionCreate();
-    expect(body.connector_bindings).toEqual({ slack: { profile_id: 'slack_team' } });
+    expect(body.connector_bindings).toEqual({
+      slack: { connection_id: 'slack_team' },
+    });
     expect(body.inherit_unbound).toBe(true);
   });
 
   test('an untouched dialog adds nothing to the create the wrapper already sent', async () => {
     mock.reset();
     const kortix = createTestKortix(app, token);
-    await kortix
-      .project(projectId)
-      .sessions.create(
-        buildSessionCreateInput(NO_OVERRIDES, {
-          sessionId: '00000000-0000-4000-8000-00000000a003',
-        }),
-      );
+    await kortix.project(projectId).sessions.create(
+      buildSessionCreateInput(NO_OVERRIDES, {
+        sessionId: '00000000-0000-4000-8000-00000000a003',
+      }),
+    );
 
-    // `end_user_ref` is injected by the proxy from the signed-in user and is
-    // never accepted from the browser — so the ONLY thing the dialog itself
-    // contributed here is the session id.
     const body = await lastSessionCreate();
-    expect(Object.keys(body).sort()).toEqual(['end_user_ref', 'session_id']);
+    expect(Object.keys(body).sort()).toEqual(['session_id']);
     expect(body.session_id).toBe('00000000-0000-4000-8000-00000000a003');
   });
 
-  test('the picker offers the team connection and only the team connection', async () => {
-    const slack = (await connectorChoices()).find((c) => c.alias === 'slack')!;
-    expect(slack.connections.map((c) => c.profileId)).toEqual(['slack_team']);
+  test('the mock returns the session collection shape used by the project page', async () => {
+    const sessions = await createTestKortix(app, token)
+      .project(projectId)
+      .sessions.list();
+
+    expect(sessions).toEqual([]);
   });
 
-  test('an alias with no team connection is offered as "ask a teammate"', async () => {
+  test('the picker offers the project connection and only the project connection', async () => {
+    const slack = (await connectorChoices()).find((c) => c.alias === 'slack')!;
+    expect(slack.connections.map((c) => c.connectionId)).toEqual([
+      'slack_team',
+    ]);
+  });
+
+  test('an alias with no project connection is offered as "ask a teammate"', async () => {
     // The private connection exists upstream; it must never appear as an
     // option, and the alias must not silently vanish either.
     const gmail = (await connectorChoices()).find((c) => c.alias === 'gmail')!;

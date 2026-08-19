@@ -1,116 +1,203 @@
 'use client';
 
 /**
- * The full v2 "agent builder" — the complete editor for one `agents.<name>`
- * block in a kortix_version 2 manifest (agent-first spec §2.2). Exposes the
- * ENTIRE agent-config field space: identity, behavior/model, Kortix governance
- * (skills/connectors/secrets/kortix_cli), and the full OpenCode permission tree.
+ * The full agent editor — every field of one `agents.<name>` block in a
+ * kortix_version 2 manifest (agent-first spec §2.2).
  *
- * Mounted from agents-view.tsx's detail aside via <AgentConfigEditor/>:
- *   - v2 project (editable) → a compact summary card + "Edit configuration",
- *     which opens the full grouped editor in a Modal.
+ * Mounted from the /projects/[id]/agent detail modal
+ * (`capabilities/agents/agent-detail-aside.tsx` + `agents-page.tsx`):
+ *   - The aside's <AgentConfigEditor/> renders a compact summary card +
+ *     "Edit configuration".
+ *   - That click does NOT open a modal. The page swaps the detail modal's
+ *     source pane for <AgentEditorPanel/>, so the full editor lives in the
+ *     shell the user was already reading — one level deep, not two.
  *   - v1 project (not editable) → renders the caller's `fallback` (the legacy
  *     model + scope cards) plus an "upgrade to v2" hint. We degrade, never crash.
  *
  * Saves round-trip the whole block to kortix.yaml via the agent-config route,
  * validated server-side against the manifest-schema validator before commit.
  *
- * The field-space catalogs live in agent-editor-catalog.ts, small shared UI
- * primitives (Segmented/FieldRow/SectionHeader/LayerHeader) in
- * agent-editor-primitives.tsx, the all/pick/none governance control in
- * grant-mode-field.tsx, the permission-tree editor in permission-editor.tsx,
- * and the two layers' field blocks in kortix-layer-fields.tsx /
- * runtime-layer-fields.tsx. This file owns only the modal shell (state,
- * queries, save) and the public entry point.
+ * ── How this is organised, and why it changed ──────────────────────────────
+ * The editor used to open with two headings, "Kortix" and "OpenCode", each
+ * with an icon and a sentence naming the file it wrote to. That is a storage
+ * taxonomy: to find "model" you first had to know that models are an OpenCode
+ * concern. The sections are now the questions you actually ask about an agent
+ * — Basics, Model, Access, Workspace, Tools — and every field still writes to
+ * exactly the same place it always did. `set` writes the Kortix block, `setOc`
+ * writes the nested runtime block; that split is a fact about the code, not a
+ * heading in the UI.
+ *
+ * Field blocks live in agent-editor-basics-fields.tsx (Basics + Model),
+ * agent-editor-access-fields.tsx (Access + Workspace) and permission-editor.tsx
+ * (Tools). Layout primitives are in agent-editor-primitives.tsx, the
+ * all/pick/none grant control in grant-mode-field.tsx. This file owns the pane
+ * shell — state, queries, dirty tracking, save — and the summary card the aside
+ * renders.
  */
 
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { InfoBanner } from '@/components/ui/info-banner';
+import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
-import {
-  Modal,
-  ModalBody,
-  ModalContent,
-  ModalDescription,
-  ModalFooter,
-  ModalHeader,
-  ModalTitle,
-} from '@/components/ui/modal';
 import { Skeleton } from '@/components/ui/skeleton';
-import {
-  useAgentConfig,
-  useUpdateAgentConfig,
-} from '@/hooks/projects/use-agent-config';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { useAgentConfig, useUpdateAgentConfig } from '@/hooks/projects/use-agent-config';
+import { cn } from '@/lib/utils';
 import {
   type AgentConfigBlock,
   type AgentGrantSetV2,
   listConnectors,
-  listProjectSecrets,
   listProjectSandboxTemplates,
-  type RuntimeAgentConfig,
+  listProjectSecrets,
   type ProjectConfigSummary,
+  type RuntimeAgentConfig,
 } from '@kortix/sdk';
+import { contract, qk } from '@kortix/sdk/react';
+import { XIcon } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
-import { AnimatePresence, motion } from 'motion/react';
-import { Bot, Cpu, Layers } from 'lucide-react';
+import { AnimatePresence, m } from 'motion/react';
 import { useMemo, useState } from 'react';
-import { SectionHeader, LayerHeader } from './agent-editor-primitives';
-import { KortixLayerFields } from './kortix-layer-fields';
-import { RuntimeLayerFields } from './runtime-layer-fields';
+import { AccessSection, WorkspaceSection } from './agent-editor-access-fields';
+import { BasicsSection, ModelSection } from './agent-editor-basics-fields';
+import { ToolsSection } from './permission-editor';
 
 export {
   AGENT_MODE_HELP,
+  AGENT_MODE_LABEL,
   AGENT_MODES,
   KORTIX_CLI_CATALOG,
+  PERMISSION_ACTION_LABEL,
+  PERMISSION_ACTION_ONLY_GROUP_LABEL,
   PERMISSION_ACTION_ONLY_KEYS,
   PERMISSION_ACTIONS,
   PERMISSION_KEY_HELP,
+  PERMISSION_KEY_LABEL,
   PERMISSION_RULE_GROUPS,
   PERMISSION_RULE_KEYS,
+  THEME_COLOR_SWATCH,
   THEME_COLORS,
   WORKSPACE_MODE_HELP,
+  WORKSPACE_MODE_LABEL,
   WORKSPACE_MODES,
 } from './agent-editor-catalog';
-export { Segmented, FieldRow } from './agent-editor-primitives';
 
 type Agent = ProjectConfigSummary['agents'][number];
 
-function AgentEditorModal({
+/**
+ * The editor as a PANE, not a modal — it replaces the entity detail modal's
+ * source pane (see `paneOverride` in `shared/entity/entity-modal.tsx`), so
+ * configuring an agent never stacks a second dialog over the first.
+ *
+ * Owns its own read: the aside's summary card already ran the same
+ * `useAgentConfig`, so this renders from cache in the common case.
+ */
+export function AgentEditorPanel({
+  projectId,
+  agentName,
+  skillsOptions,
+  onClose,
+}: {
+  projectId: string;
+  agentName: string;
+  skillsOptions: { id: string; label: string }[];
+  onClose: () => void;
+}) {
+  const configQuery = useAgentConfig(projectId, agentName);
+
+  if (configQuery.isLoading) {
+    return (
+      <div className="space-y-3 p-5">
+        <Skeleton className="h-4 w-32" />
+        <Skeleton className="h-24 w-full rounded-md" />
+        <Skeleton className="h-24 w-full rounded-md" />
+      </div>
+    );
+  }
+
+  // Unreachable from the aside (it only offers the editor when `editable`),
+  // but a permission revoked mid-session can still land here.
+  const data = configQuery.data;
+  if (!data?.editable) {
+    return (
+      <div className="space-y-3 p-5">
+        <p className="text-muted-foreground text-sm text-pretty">
+          This agent's configuration can't be edited.
+        </p>
+        <Button variant="outline" size="sm" onClick={onClose}>
+          Back
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <AgentEditorForm
+      projectId={projectId}
+      agentName={agentName}
+      initial={data.block ?? {}}
+      skillsOptions={skillsOptions}
+      onClose={onClose}
+    />
+  );
+}
+
+/**
+ * Order-independent serialization, for the dirty check.
+ *
+ * `set`/`setOc` clear a field with `delete`, which drops the key and re-adds it
+ * at the END of the object when the field is set again. Plain
+ * `JSON.stringify(draft) !== JSON.stringify(baseline)` therefore reported
+ * "Unsaved changes" — and enabled Save — for a field the user had cleared and
+ * then typed back exactly as it was. Sorting keys at every level takes
+ * insertion order out of the comparison.
+ */
+export function stableStringify(value: unknown): string {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value) ?? 'null';
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;
+  const entries = Object.entries(value as Record<string, unknown>)
+    .filter(([, v]) => v !== undefined)
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([k, v]) => `${JSON.stringify(k)}:${stableStringify(v)}`);
+  return `{${entries.join(',')}}`;
+}
+
+function AgentEditorForm({
   projectId,
   agentName,
   initial,
   skillsOptions,
-  open,
-  onOpenChange,
+  onClose,
 }: {
   projectId: string;
   agentName: string;
   initial: AgentConfigBlock;
   skillsOptions: { id: string; label: string }[];
-  open: boolean;
-  onOpenChange: (v: boolean) => void;
+  onClose: () => void;
 }) {
   const [draft, setDraft] = useState<AgentConfigBlock>(initial);
   const [baseline] = useState<AgentConfigBlock>(initial);
-  const isDirty = useMemo(() => JSON.stringify(draft) !== JSON.stringify(baseline), [draft, baseline]);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const isDirty = useMemo(
+    () => stableStringify(draft) !== stableStringify(baseline),
+    [draft, baseline],
+  );
   const update = useUpdateAgentConfig(projectId, agentName);
 
   const secretsQuery = useQuery({
-    queryKey: ['project-secrets', projectId],
+    queryKey: qk.project.secrets(projectId),
     queryFn: () => listProjectSecrets(projectId),
-    staleTime: 30_000,
+    ...contract('config'),
   });
   const connectorsQuery = useQuery({
-    queryKey: ['project-connectors', projectId],
+    queryKey: qk.project.connectors(projectId),
     queryFn: () => listConnectors(projectId),
-    staleTime: 30_000,
+    ...contract('config'),
   });
   const sandboxesQuery = useQuery({
-    queryKey: ['project-sandbox-templates', projectId],
+    queryKey: qk.project.sandboxTemplates(projectId),
     queryFn: () => listProjectSandboxTemplates(projectId),
-    staleTime: 30_000,
+    ...contract('config'),
   });
   const secretOptions = useMemo(
     () =>
@@ -138,7 +225,7 @@ function AgentEditorModal({
   }, [initial.sandbox, sandboxesQuery.data]);
 
   // No governance field is a plain string anymore (that was `description`/
-  // `model`, both moved to the OpenCode layer) — clearing is undefined-only.
+  // `model`, both moved to the runtime block) — clearing is undefined-only.
   const set = <K extends keyof AgentConfigBlock>(key: K, value: AgentConfigBlock[K]) =>
     setDraft((d) => {
       const next = { ...d };
@@ -147,8 +234,8 @@ function AgentEditorModal({
       return next;
     });
 
-  // OpenCode-layer fields live nested under `draft.opencode` — same
-  // clear-on-empty semantics as `set`, folded into the sub-object.
+  // Runtime fields live nested under `draft.opencode` — same clear-on-empty
+  // semantics as `set`, folded into the sub-object.
   const setOc = <K extends keyof RuntimeAgentConfig>(key: K, value: RuntimeAgentConfig[K]) =>
     setDraft((d) => {
       const oc: RuntimeAgentConfig = { ...(d.opencode ?? {}) };
@@ -164,84 +251,95 @@ function AgentEditorModal({
     try {
       await update.mutateAsync(draft);
       successToast(`${agentName} configuration saved`);
-      onOpenChange(false);
+      onClose();
     } catch (e) {
       errorToast((e as Error)?.message ?? 'Failed to save configuration');
     }
   };
 
-  return (
-    <Modal open={open} onOpenChange={onOpenChange}>
-      <ModalContent className="lg:max-w-2xl">
-        <ModalHeader>
-          <ModalTitle>Configure {agentName}</ModalTitle>
-          <ModalDescription>
-            The full agent definition. Governance saves to{' '}
-            <span className="font-mono">kortix.yaml</span>; behavior saves to this agent's{' '}
-            <span className="font-mono">.kortix/opencode/agents/{agentName}.md</span>.
-          </ModalDescription>
-        </ModalHeader>
-        <ModalBody className="max-h-[70vh] space-y-8 overflow-y-auto">
-          {/* ─── KORTIX LAYER — identity + governance, runtime-agnostic ─── */}
-          <div className="space-y-6">
-            <LayerHeader
-              icon={Layers}
-              label="Kortix"
-              tone="kortix"
-              description="Identity, model, and platform-enforced governance. Works the same no matter what runtime executes this agent."
-            />
-            <KortixLayerFields
-              draft={draft}
-              set={set}
-              skillsOptions={skillsOptions}
-              connectorOptions={connectorOptions}
-              secretOptions={secretOptions}
-              sandboxOptions={sandboxOptions}
-            />
-          </div>
+  // Closing with edits in flight used to bin them silently. The guard is only
+  // armed when there is something to lose, so the common path is still one
+  // click.
+  const requestClose = () => (isDirty ? setConfirmDiscard(true) : onClose());
 
-          {/* ─── OPENCODE LAYER — nested, runtime-specific behavior ─── */}
-          <div className="space-y-6">
-            <LayerHeader
-              icon={Cpu}
-              label="OpenCode"
-              tone="outline"
-              description="Behavior this agent's runtime executes — mode, sampling, permission tree. Namespaced so a future runtime (Codex/Claude) gets its own block here."
-            />
-            <RuntimeLayerFields agentName={agentName} oc={draft.opencode ?? {}} setOc={setOc} />
-          </div>
-        </ModalBody>
-        <ModalFooter className="sm:justify-between">
-          <div className="flex items-center gap-2.5">
-            <Button type="button" variant="outline-ghost" onClick={() => onOpenChange(false)}>
-              Cancel
-            </Button>
-            <AnimatePresence initial={false}>
-              {isDirty ? (
-                <motion.span
-                  key="dirty"
-                  initial={{ opacity: 0, y: 4 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: 4 }}
-                  transition={{ type: 'spring', duration: 0.3, bounce: 0 }}
-                  className="text-muted-foreground/60 text-[11px]"
-                >
-                  Unsaved changes
-                </motion.span>
-              ) : null}
-            </AnimatePresence>
-          </div>
-          <Button type="button" onClick={onSave} disabled={update.isPending || !isDirty}>
-            {update.isPending ? <Loading className="size-4 shrink-0" /> : null}
-            Save configuration
+  const oc = draft.opencode ?? {};
+
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="border-border/60 flex shrink-0 items-start justify-between gap-3 border-b py-3 pr-2 pl-5">
+        <div className="min-w-0 space-y-0.5">
+          <p className="text-foreground text-sm font-medium">Configuration</p>
+          <p className="text-muted-foreground text-xs text-pretty">
+            Saving commits the change to your project repo.
+          </p>
+        </div>
+        <Button variant="ghost" size="icon-sm" aria-label="Close editor" onClick={requestClose}>
+          <XIcon className="size-4" />
+        </Button>
+      </div>
+
+      <div className="min-h-0 flex-1 space-y-8 overflow-y-auto px-5 py-5">
+        <BasicsSection draft={draft} set={set} oc={oc} setOc={setOc} />
+        <ModelSection oc={oc} setOc={setOc} />
+        <AccessSection
+          draft={draft}
+          set={set}
+          skillsOptions={skillsOptions}
+          connectorOptions={connectorOptions}
+          secretOptions={secretOptions}
+        />
+        <WorkspaceSection draft={draft} set={set} sandboxOptions={sandboxOptions} />
+        <ToolsSection permission={oc.permission} onChange={(next) => setOc('permission', next)} />
+      </div>
+
+      <div className="border-border/60 flex shrink-0 items-center justify-between gap-3 border-t px-5 py-3">
+        <div className="flex items-center gap-2.5">
+          <Button type="button" variant="outline-ghost" size="sm" onClick={requestClose}>
+            Cancel
           </Button>
-        </ModalFooter>
-      </ModalContent>
-    </Modal>
+          <AnimatePresence initial={false}>
+            {isDirty ? (
+              <m.span
+                key="dirty"
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 4 }}
+                transition={{ type: 'spring', duration: 0.3, bounce: 0 }}
+                className="text-muted-foreground text-xs"
+              >
+                Unsaved changes
+              </m.span>
+            ) : null}
+          </AnimatePresence>
+        </div>
+        <Button type="button" size="sm" onClick={onSave} disabled={update.isPending || !isDirty}>
+          {update.isPending ? <Loading className="size-3.5 shrink-0" /> : null}
+          Save
+        </Button>
+      </div>
+
+      {/* Nested inside the editor's own tree on purpose: rendered as a sibling
+          of the detail modal, Radix reads every click in the alert as an
+          outside-click and dismisses the modal underneath it. Same reason the
+          entity modal nests its "Edit source" confirm. */}
+      <ConfirmDialog
+        open={confirmDiscard}
+        onOpenChange={setConfirmDiscard}
+        title="Discard your changes?"
+        description={`${agentName} keeps its saved configuration. Anything you changed here is lost.`}
+        confirmLabel="Discard"
+        cancelLabel="Keep editing"
+        confirmVariant="destructive"
+        onConfirm={() => {
+          setConfirmDiscard(false);
+          onClose();
+        }}
+      />
+    </div>
   );
 }
 
-// ─── Public entry — mounted from agents-view's detail aside ────────────────
+// ─── Public entry — mounted from the agent detail modal's aside ────────────
 
 /** Summarize a grant set for the compact card. */
 export function grantSummary(v: AgentGrantSetV2 | undefined): {
@@ -259,6 +357,7 @@ export function AgentConfigEditor({
   agent,
   skillsOptions,
   fallback,
+  onEditConfig,
 }: {
   projectId: string;
   agent: Agent;
@@ -266,8 +365,11 @@ export function AgentConfigEditor({
   skillsOptions: { id: string; label: string }[];
   /** Rendered for a v1 project (the legacy model + scope cards) — we degrade. */
   fallback: React.ReactNode;
+  /** Opens the full editor. The caller swaps <AgentEditorPanel/> into the
+   *  detail modal's source pane — it is a pane, not a modal, so the user
+   *  stays one level deep. */
+  onEditConfig: () => void;
 }) {
-  const [open, setOpen] = useState(false);
   const configQuery = useAgentConfig(projectId, agent.name);
 
   if (configQuery.isLoading) {
@@ -291,96 +393,66 @@ export function AgentConfigEditor({
         {fallback}
         <InfoBanner tone="info" title="Upgrade for the full agent editor">
           This project uses a v1 manifest. Migrate to <span className="font-mono">kortix.yaml</span>{' '}
-          (kortix_version 2) to edit the agent's mode, model, temperature, permission tree, and
-          per-agent governance here.
+          (kortix_version 2) to edit this agent's availability, model, tool permissions and access
+          here.
         </InfoBanner>
       </div>
     );
   }
 
   const block = data.block ?? {};
-  const summaries: { key: string; label: string; grant: AgentGrantSetV2 | undefined }[] = [
-    { key: 'skills', label: 'Skills', grant: block.skills },
-    { key: 'connectors', label: 'Connectors', grant: block.connectors },
-    { key: 'secrets', label: 'Secrets', grant: block.secrets },
-    { key: 'kortix_cli', label: 'CLI', grant: block.kortix_cli },
+  const oc = block.opencode ?? {};
+
+  // One flat spec sheet, in the editor's own section order: what it is, how it
+  // thinks, what it may reach, where it runs. Rows for values that are not set
+  // are dropped rather than printed as "—" — an absent optional is not a fact
+  // worth a line.
+  //
+  // Every value is plain text. These were Badges, which put five identical
+  // "All" chips down the card: a chip says "this is a state worth noticing",
+  // and when every row has one, none of them do.
+  const rows: { key: string; label: string; value: string; mono?: boolean }[] = [
+    ...(oc.mode ? [{ key: 'mode', label: 'Availability', value: formatModeLabel(oc.mode) }] : []),
+    ...(oc.hidden ? [{ key: 'hidden', label: 'In pickers', value: 'Hidden' }] : []),
+    ...(oc.model ? [{ key: 'model', label: 'Model', value: oc.model, mono: true }] : []),
+    ...(oc.temperature !== undefined
+      ? [{ key: 'temperature', label: 'Temperature', value: String(oc.temperature) }]
+      : []),
+    { key: 'skills', label: 'Skills', value: grantSummary(block.skills).label },
+    { key: 'connectors', label: 'Connectors', value: grantSummary(block.connectors).label },
+    { key: 'secrets', label: 'Secrets', value: grantSummary(block.secrets).label },
+    { key: 'kortix_cli', label: 'Project actions', value: grantSummary(block.kortix_cli).label },
+    { key: 'sandbox', label: 'Environment', value: block.sandbox ?? 'Project default' },
   ];
 
   return (
-    <div className="border-border/60 bg-muted/20 space-y-3 rounded-lg border p-4">
-      <div className="flex items-center justify-between gap-2">
-        <SectionHeader icon={Bot} title="Configuration" />
-        <Badge variant="muted" size="xs" className="font-mono">
-          yaml + .md
-        </Badge>
-      </div>
+    <div className="bg-popover space-y-3 rounded-md border px-4 py-4">
+      <Label>Configuration</Label>
 
-      <div className="flex flex-wrap items-center gap-1.5">
-        {block.opencode?.mode ? (
-          <Badge variant="outline" size="xs" className="capitalize">
-            {block.opencode.mode}
-          </Badge>
-        ) : null}
-        {block.opencode?.model ? (
-          <Badge variant="outline" size="xs" className="font-mono">
-            {block.opencode.model}
-          </Badge>
-        ) : null}
-        {block.opencode?.temperature !== undefined ? (
-          <Badge variant="outline" size="xs">
-            temp {block.opencode.temperature}
-          </Badge>
-        ) : null}
-        {block.opencode?.hidden ? (
-          <Badge variant="muted" size="xs">
-            hidden
-          </Badge>
-        ) : null}
-        {block.enabled === false ? (
-          <Badge variant="muted" size="xs">
-            disabled
-          </Badge>
-        ) : null}
-      </div>
+      <dl className="space-y-2">
+        {rows.map((row) => (
+          <div key={row.key} className="flex items-baseline justify-between gap-3">
+            <dt className="text-muted-foreground shrink-0 text-xs">{row.label}</dt>
+            <dd
+              className={cn(
+                'text-foreground min-w-0 truncate text-xs font-medium',
+                row.mono && 'font-mono',
+              )}
+            >
+              {row.value}
+            </dd>
+          </div>
+        ))}
+      </dl>
 
-      <div className="space-y-1.5">
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-muted-foreground/70 text-[11px] font-medium tracking-wide uppercase">
-            Environment
-          </span>
-          <Badge variant="outline" size="xs" className="font-mono">
-            {block.sandbox ?? 'Project default'}
-          </Badge>
-        </div>
-        {summaries.map((s) => {
-          const sum = grantSummary(s.grant);
-          return (
-            <div key={s.key} className="flex items-center justify-between gap-2">
-              <span className="text-muted-foreground/70 text-[11px] font-medium tracking-wide uppercase">
-                {s.label}
-              </span>
-              <Badge variant={sum.tone} size="xs">
-                {sum.label}
-              </Badge>
-            </div>
-          );
-        })}
-      </div>
-
-      <Button size="sm" className="w-full" onClick={() => setOpen(true)}>
+      <Button size="sm" className="w-full" onClick={onEditConfig}>
         Edit configuration
       </Button>
-
-      {open ? (
-        <AgentEditorModal
-          projectId={projectId}
-          agentName={agent.name}
-          initial={block}
-          skillsOptions={skillsOptions}
-          open={open}
-          onOpenChange={setOpen}
-        />
-      ) : null}
     </div>
   );
+}
+
+/** `primary` -> `Primary`. Sentence case, not the raw manifest token. */
+function formatModeLabel(mode: string): string {
+  return mode.charAt(0).toUpperCase() + mode.slice(1);
 }

@@ -23,11 +23,14 @@ pnpm worktree create --name migration-fix --db --yes
 |---|---|
 | `pnpm worktree create --name <n> [--branch b] [--from main] [--db] [--no-start] [--yes]` | From a fresh clone: install missing deps, create the worktree, allocate a port block, `pnpm install`, build runtime artifacts, then boot the stack against the shared primary Supabase DB. Add `--db` to render/start/migrate a separate Supabase project. Idempotent — re-run to resume. |
 | `pnpm worktree new <n>` | Alias of `create` (positional name). |
-| `pnpm worktree start <n>` | Boot an existing worktree's app stack on its ports. Shared mode uses primary Supabase; isolated mode starts/migrates its own Supabase. Streams logs; `Ctrl+C` stops the dev servers. |
+| `pnpm worktree start <n> [--billing] [--stripe]` | Boot an existing worktree's app stack on its ports. Add `--billing` for local billing routes without webhooks. Add `--stripe` for live test-mode webhook forwarding. Shared mode uses primary Supabase; isolated mode starts/migrates its own Supabase. Streams logs; `Ctrl+C` stops the dev servers. |
 | `pnpm worktree stop <n>` | Stop the dev servers — the whole process tree, verified dead before the registry records it. Isolated mode also stops that worktree's Supabase containers. **Data is preserved.** |
 | `pnpm worktree stop --all` | Stop every worktree in one pass. The end-of-day sweep, and the way back from stacks orphaned by an OOM kill. |
 | `pnpm worktree nuke <n> [--force]` | Tear down the app worktree: stop, `git worktree remove`, delete the slot's store, free the port slot. Isolated mode also drops its Supabase containers **and volumes**. Shared mode leaves primary Supabase untouched. |
-| `pnpm worktree list` | All worktrees with their slot, branch, status, and ports. |
+| `pnpm worktree nuke --all [--older-than 2d] [--idle 12h] [--include-dirty] [--dry-run] [--yes]` | Bulk teardown. Always keeps running stacks; frees slots whose directory is gone; keeps dirty checkouts unless `--include-dirty`; time rules filter on `createdAt` / last activity. Prints keep/nuke reasons before acting. |
+| `pnpm worktree list` | Every worktree with its live status and web/api ports, running first then alphabetical. Status comes from a real listening-port scan, not the registry, so it cannot go stale. |
+| `pnpm worktree list <name>` | Filter by substring. A single match expands to full clickable URLs (web, api, studio) plus its path. |
+| `pnpm worktree list [name] --json` | The same data as JSON on stdout for scripting — effective ports, both the probed and recorded status, and URLs. |
 | `pnpm worktree status [n]` | Live health (🟢/⚪) of web/api/Supabase per worktree. |
 | `pnpm worktree doctor [--yes]` | Check (or `--yes` install) the toolchain + flag worktree/registry drift. |
 

@@ -7,6 +7,7 @@ import {
   updateCreditAccount,
 } from '../repositories/credit-accounts';
 import { insertLedgerEntry } from '../repositories/transactions';
+import { assertRpcDebitLedgerType } from '../ledger-type-honesty';
 import { MINIMUM_CREDIT_FOR_RUN, TOKEN_PRICE_MULTIPLIER } from './tiers';
 import { getManagedModel } from '@kortix/llm-catalog';
 import { calculateCost as calculateGatewayCost } from '@kortix/llm-gateway';
@@ -92,7 +93,22 @@ export async function deductCredits(
   amount: number,
   description: string,
   ledgerType: LedgerDebitType = 'usage',
+  /**
+   * Stable key identifying the thing being paid for.
+   *
+   * Without it, a debit whose RPC response is lost AFTER the function committed
+   * is invisible to us: the wallet moved, this code believes it did not, and the
+   * caller charges the same thing again. Commit-then-timeout is the ordinary
+   * failure of a pooled RPC under load. Pass a key derived from WHAT is being
+   * billed (not from the clock or a random id) so a retry produces the same one.
+   */
+  idempotencyKey?: string,
 ) {
+  // The RPC hardcodes `type = 'usage'` on the ledger row, so a non-usage kind
+  // here manufactures a row that contradicts itself. Reject before the money
+  // moves rather than after (2026-07-30 mislabelled-clawback incident).
+  assertRpcDebitLedgerType(ledgerType);
+
   const supabase = getSupabase();
 
   const { data, error } = await supabase.rpc('atomic_use_credits', {
@@ -100,6 +116,7 @@ export async function deductCredits(
     p_amount: amount,
     p_description: description,
     p_ledger_type: ledgerType,
+    ...(idempotencyKey ? { p_idempotency_key: idempotencyKey } : {}),
   });
 
   if (error) {
@@ -231,16 +248,27 @@ export async function grantCredits(
   description: string,
   isExpiring = true,
   stripeEventId?: string,
+  opts?: {
+    /** Ledger expiry stamp for expiring grants (e.g. a trial's end date). */
+    expiresAt?: string | null;
+    /**
+     * Explicit idempotency key. NOTE: the RPC only dedupes keys seen within
+     * the last hour — callers that need long-window idempotency (monthly
+     * re-grants) must check the ledger for the key themselves before calling.
+     */
+    idempotencyKey?: string | null;
+  },
 ) {
   const supabase = getSupabase();
-  const idempotencyKey = stripeEventId ? `grant:${accountId}:${stripeEventId}` : null;
+  const idempotencyKey =
+    opts?.idempotencyKey ?? (stripeEventId ? `grant:${accountId}:${stripeEventId}` : null);
 
   const { data, error } = await supabase.rpc('atomic_add_credits', {
     p_account_id: accountId,
     p_amount: amount,
     p_is_expiring: isExpiring,
     p_description: description,
-    p_expires_at: null,
+    p_expires_at: opts?.expiresAt ?? null,
     p_type: type,
     p_stripe_event_id: stripeEventId ?? null,
     p_idempotency_key: idempotencyKey,

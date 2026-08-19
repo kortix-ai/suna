@@ -16,7 +16,7 @@ const { buildServer } = await import('./server');
 // produces; `gateway.chatCompletions()` returns the OpenAI-compat envelope
 // instead. No real upstream call is made — a missing bearer token short-circuits
 // inside the shared pipeline before any network hop.
-describe('standalone gateway /v1/messages mounting', () => {
+describe('standalone gateway inference routes', () => {
   const { app } = buildServer();
 
   const post = (path: string) =>
@@ -30,7 +30,7 @@ describe('standalone gateway /v1/messages mounting', () => {
       }),
     });
 
-  for (const path of ['/v1/messages', '/v1/llm/messages', '/v1/openai/messages']) {
+  for (const path of ['/messages', '/v1/messages', '/v1/llm/messages', '/v1/openai/messages']) {
     test(`${path} is registered and speaks the Anthropic error envelope`, async () => {
       const res = await post(path);
       expect(res.status).toBe(401);
@@ -46,15 +46,28 @@ describe('standalone gateway /v1/messages mounting', () => {
     expect(res.status).toBe(404);
   });
 
-  test('/v1/chat/completions (unaffected sibling route) still speaks the OpenAI-compat error envelope, not the Anthropic one', async () => {
-    const res = await app.request('/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ model: 'x', messages: [{ role: 'user', content: 'hi' }] }),
+  for (const path of ['/chat/completions', '/v1/chat/completions']) {
+    test(`${path} speaks the OpenAI-compat error envelope`, async () => {
+      const res = await app.request(path, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ model: 'x', messages: [{ role: 'user', content: 'hi' }] }),
+      });
+      expect(res.status).toBe(401);
+      const body = (await res.json()) as Record<string, unknown>;
+      expect(body.type).toBeUndefined();
+      expect(body.code).toBe('missing_token');
     });
-    expect(res.status).toBe(401);
-    const body = (await res.json()) as Record<string, unknown>;
-    expect(body.type).toBeUndefined();
-    expect(body.code).toBe('missing_token');
-  });
+  }
+
+  for (const path of ['/models', '/v1/models']) {
+    test(`${path} is registered`, async () => {
+      const res = await app.request(path);
+      expect(res.status).toBe(401);
+      expect((await res.json()) as Record<string, unknown>).toHaveProperty(
+        'error.message',
+        'Missing bearer token',
+      );
+    });
+  }
 });

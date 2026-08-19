@@ -1,8 +1,7 @@
 # Agent-scoped secret injection
 
-> **Runtime update on 2026-07-28.** The immutable logical-agent secret grant
-> applies to OpenCode, Claude Code, Codex, and Pi. OpenCode process and subagent
-> details below remain specific to the v2 compatibility path.
+> **Current runtime scope.** The immutable logical-agent secret grant applies to
+> the version 2 OpenCode REST runtime and its subagents.
 
 **Date:** 2026-07-26
 **Status:** Implemented
@@ -40,8 +39,8 @@ secret, with no error anywhere.
 Nothing in the codebase ever updates that column (verified: the only `agentName`
 write is on `chat_channel_bindings`).
 
-Meanwhile in-session agent switching is permitted. `KORTIX_ENFORCE_SESSION_AGENT_LOCK`
-defaults off, and the proxy forwards a concrete `agent` field untouched
+Meanwhile in-session agent switching is unconditional. No configuration refuses
+it, and the proxy forwards a concrete `agent` field untouched
 (`preview.ts` — *"a prompt may freely run a different agent"*).
 
 So the hot push resolved the grant from a stale column on every turn:
@@ -117,42 +116,38 @@ so OpenCode resolves its own `default_agent`), so it maps to the session's agent
 rather than triggering a fresh sentinel lookup. Without that, every ordinary turn
 on a concretely-bound session would recompute its grant against `'default'`.
 
-### Refuse a grant-changing switch
+### Re-scope a grant-changing switch
 
 Re-scoping the env on a later turn **cannot undo the disclosure**. By the time a
 switch is observed, the previous agent's secrets are already in
 `/dev/shm/kortix/agent-env.sh`, exported into every shell it spawned, and in its
 own context. Narrowing the next push does not retract any of that.
 
-So a switch whose `secrets` grant differs from the session's is refused:
-`AgentSecretGrantMismatchError` → the existing
-`409 AGENT_SWITCH_REQUIRES_NEW_SESSION`.
+The product accepts the switch. Before forwarding the prompt, the proxy replaces
+OpenCode's environment with the running agent's grant and re-mints the session
+token's connector and Kortix CLI grant.
 
-This is deliberately **narrower than `KORTIX_ENFORCE_SESSION_AGENT_LOCK`**, which
-409s on any name change and is gated off precisely because it false-positived on
-ordinary flows. Switching between agents with the *same* grant stays free.
+No configuration refuses a switch. A switch always re-scopes.
+
+That residue is exactly why refusing the switch bought nothing. The secret is
+disclosed the moment the first agent reads it, so blocking the second agent
+protects nothing that is still protectable. Connector and Kortix CLI grants are
+different: they are checked against `account_tokens.agent_grant` at call time,
+and the re-mint rewrites that row, so narrowing them on a switch does take
+effect.
 
 ### User-visible consequence
 
-The web client's comments claim sessions are agent-immutable
-(`new-session-create.ts`, `use-new-project-session.ts`), but **that lock is not
-actually active**: `SESSION_AGENT_LOCK_ENABLED` is hardcoded `false`
-(`composer-chat-input.tsx:103`, `session-chat.tsx:3760`), so `lockedAgentName` is
-always null and `agentSelectorLocked` is always false. Users *can* switch agents
-inside an open session today.
+The web client lets a user switch agents inside an open session. The only
+remaining pin is the meta agent: `composer-chat-input.tsx` sets
+`lockedAgentName` from `isMetaAgentName(boundAgentName)`, so
+`agentSelectorLocked` is true for a meta-agent session and false everywhere
+else.
 
-So this does change behavior for one population: **projects that declare
-different `secrets` grants per agent**. A mid-session switch across that boundary
-now returns 409 where it previously succeeded. That is the boundary those
-projects declared, so enforcing it is the point — but the UI currently surfaces
-it as a generic error rather than a designed "start a new session" flow.
-
-Everyone else is unaffected: a project with no `agents:` map, or with uniform
-grants, never trips it (see the `undefined ≡ 'all'` note below).
-
-Making this a designed experience means flipping `SESSION_AGENT_LOCK_ENABLED` to
-true so the selector greys out inside a bound session. That is a product
-decision, not a security one, and is deliberately not bundled here.
+Projects can switch between agents with different grants. The switch changes
+future delivery only. It cannot erase a secret that an earlier agent already
+read or remove it from an existing shell process. Operators that require that
+stronger isolation must create a new session.
 
 ### `undefined` and `'all'` are one authority
 
@@ -163,17 +158,11 @@ declares `secrets: all` or omits the key. Downstream they are identical —
 `allowAll = grant === undefined || grant === 'all'` and both take the same branch.
 
 Comparing them as distinct authorities therefore protects nothing and produces
-false 409s on the most ordinary shape there is: a session bound to `default`
-prompting with a concrete agent that omits `secrets`. `grantEnvKey` collapses
-them. An explicit list stays distinct from both — that is a declared narrowing,
-and the project's secret set can change under it.
-
-### Kill switch
-
-`KORTIX_ENFORCE_AGENT_SECRET_GRANT_LOCK` (default **on**). Turning it off
-degrades to re-scoping onto the *running* agent's grant — it does **not** restore
-resolution from the stale create-time column. Enforcement off trades the hard
-refusal for a soft narrowing; the original widening is not reachable either way.
+spurious grant churn — a re-mint on every turn — on the most ordinary shape
+there is: a session bound to `default` prompting with a concrete agent that omits
+`secrets`. `grantEnvKey` collapses them, and `agentGrantDiffers` still needs that
+collapse. An explicit list stays distinct from both — that is a declared
+narrowing, and the project's secret set can change under it.
 
 ## Files
 
@@ -184,11 +173,10 @@ refusal for a soft narrowing; the original widening is not reachable either way.
 | `projects/lib/secret-grant.fail-closed.test.ts` | New — fail-closed through the real loader chain |
 | `projects/triggers.ts` | `readManifest` opt-in `rethrowReadErrors` |
 | `projects/agents.ts` | `loadProjectAgents` threads it through |
-| `sandbox-proxy/routes/preview.test.ts` | Covers the 409 / 503 mapping |
+| `sandbox-proxy/routes/preview.test.ts` | Covers the 503 mapping |
 | `projects/lib/sessions.ts` | Boot uses the shared resolver; no `.catch(() => null)` |
 | `projects/lib/sandbox-env-sync.ts` | Hot push resolves from the running agent |
-| `sandbox-proxy/routes/preview.ts` | Threads `requestedAgent`; maps errors to 409 / 503 |
-| `config.ts` | `KORTIX_ENFORCE_AGENT_SECRET_GRANT_LOCK` |
+| `sandbox-proxy/routes/preview.ts` | Threads `requestedAgent`; maps errors to 503 |
 
 ## Not in scope
 

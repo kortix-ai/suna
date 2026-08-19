@@ -1,17 +1,27 @@
 'use client';
 
 import { DiffView } from '@/components/diff/diff-view';
-import { HighlightedCode, UnifiedMarkdown } from '@/components/markdown/unified-markdown';
+import { CopyOverlay, HighlightedCode } from '@/components/markdown/code';
+import { CopyButton } from '@/components/markdown/copy-button';
+import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
 import { Button } from '@/components/ui/button';
-import { Collapsible, CollapsibleTrigger } from '@/components/ui/collapsible';
 import Hint from '@/components/ui/hint';
 import { DiffStat, STATUS_BG, STATUS_TEXT } from '@/components/ui/status';
 import { TextShimmer } from '@/components/ui/text-shimmer';
 import { openSessionQuickView } from '@/features/session/open-session-quick-view';
 import { prefersPreviewLink } from '@/features/session/preview-url-fallback';
+import { isEmptyShowPart } from '@/features/session/session-activity-groups';
+import { ToolResultCard } from '@/features/session/tool/shared/result-card';
+import {
+  ToolSurfaceContext,
+  useToolCardFrame,
+  useToolCardPad,
+  useToolIndent,
+} from '@/features/session/tool/shared/surface';
 import { formatRawOutput, looksLikeJsonPayload } from '@/features/session/tool/tool-output-format';
 import { useAuthenticatedPreviewUrl } from '@/hooks/use-authenticated-preview-url';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
+import { looksLikeMarkdown } from '@/lib/markdown-detect';
 import { openSafeExternalUrl, safeHttpUrl } from '@/lib/safe-url';
 import { INTERACTIVE_PREVIEW_IFRAME_SANDBOX } from '@/lib/security/iframe-sandbox';
 import { cn } from '@/lib/utils';
@@ -22,20 +32,20 @@ import { useFilePreviewStore } from '@/stores/file-preview-store';
 import { getActivePanelSessionId, sessionPreviewTabId } from '@/stores/session-browser-store';
 import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
 import {
-  AlertTriangle,
-  Check,
-  ChevronRight,
-  CircleAlert,
-  Globe,
-  Loader2,
-  PanelRight,
-  Search,
-} from 'lucide-react';
+  WarningIcon as AlertTriangle,
+  ArrowSquareOutIcon,
+  CaretRightIcon,
+  CheckIcon as Check,
+  WarningCircleIcon as CircleAlert,
+  GlobeIcon as Globe,
+  ArrowClockwiseIcon as GrRefresh,
+  SidebarSimpleIcon as PanelRight,
+  MagnifyingGlassIcon as Search,
+} from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { GrRefresh } from 'react-icons/gr';
-import { TbExternalLink } from 'react-icons/tb';
 
+import { Disclosure, DisclosureTrigger } from '@/components/ui/disclosure';
 import Loading from '@/components/ui/loading';
 import type { BasicToolProps, ParsedJsonFailure } from '@/features/session/tool/shared/types';
 import { ToolError } from '@/features/session/tool/tool-error';
@@ -230,7 +240,7 @@ export function ServicePreviewActions({ preview }: { preview: ServicePreviewStat
           onClick={openInBrowser}
           className={cn(navigationEnabled && previewUrl ? '' : 'cursor-not-allowed opacity-50')}
         >
-          <TbExternalLink className="size-4.5" />
+          <ArrowSquareOutIcon className="size-4.5" />
         </Button>
       </Hint>
       <Hint
@@ -240,7 +250,6 @@ export function ServicePreviewActions({ preview }: { preview: ServicePreviewStat
         <Button
           type="button"
           onClick={navigateToPreviewTab}
-          variant="secondary"
           size="xs"
           disabled={!navigationEnabled || !proxy}
         >
@@ -276,7 +285,7 @@ export function ServicePreviewUrlFallback({ preview }: { preview: ServicePreview
               navigationEnabled && previewUrl ? '' : 'cursor-not-allowed opacity-60',
             )}
           >
-            <TbExternalLink className="text-muted-foreground size-4 shrink-0" />
+            <ArrowSquareOutIcon className="text-muted-foreground size-4 shrink-0" />
             <span className="break-all">{label}</span>
           </Button>
         </Hint>
@@ -305,7 +314,10 @@ export function ServicePreviewViewport({ preview }: { preview: ServicePreviewSta
 
   return (
     <div
-      className={cn('relative w-full overflow-hidden bg-white', fill ? 'h-full' : 'aspect-video')}
+      className={cn(
+        'bg-secondary relative w-full overflow-hidden',
+        fill ? 'h-full' : 'aspect-video',
+      )}
     >
       {(isLoading || !previewUrl) && !linkOnlyPreview && (
         <div className="bg-background/60 absolute inset-0 z-10 flex items-center justify-center">
@@ -323,7 +335,7 @@ export function ServicePreviewViewport({ preview }: { preview: ServicePreviewSta
           key={refreshKey}
           src={previewUrl}
           title={displayLabel}
-          className="absolute inset-0 h-full w-full border-0 bg-white"
+          className="bg-secondary absolute inset-0 h-full w-full border-0"
           sandbox={INTERACTIVE_PREVIEW_IFRAME_SANDBOX}
           onLoad={onLoad}
           onError={onError}
@@ -410,15 +422,61 @@ export function parsePartialJSON(raw: string): Record<string, unknown> {
   return result;
 }
 
-export function partStreamingInput(part: ToolPart): Record<string, unknown> {
-  const input = part.state.input ?? {};
-  if (Object.keys(input).length > 0) return input;
+/**
+ * The one empty object every "no input / no metadata yet" answer shares.
+ *
+ * `?? {}` looks free and is not: it hands back a NEW object on every call, and
+ * these two helpers are the first thing almost every one of the ~58 tool
+ * renderers does. A fresh identity there invalidates every `useMemo([input])`
+ * and `useMemo([metadata])` downstream — so the memos those components were
+ * carefully given could never hold, for any tool, on any render.
+ *
+ * Frozen so that a caller mutating what it believes is its own object fails
+ * loudly instead of quietly poisoning every other tool on the screen.
+ */
+const EMPTY_RECORD: Record<string, unknown> = Object.freeze({});
 
-  if ((part.state.status === 'pending' || part.state.status === 'running') && 'raw' in part.state) {
-    const raw = (part.state as any).raw as string;
-    if (raw) return parsePartialJSON(raw);
+function isEmptyObject(value: Record<string, unknown>): boolean {
+  for (const key in value) {
+    if (Object.hasOwn(value, key)) return false;
   }
-  return input;
+  return true;
+}
+
+/**
+ * A call's arguments, including the half-arrived ones — memoised per part.
+ *
+ * While a call streams, its arguments live in `state.raw` as incomplete JSON,
+ * and `parsePartialJSON` builds a fresh object out of it on every render. That
+ * object is the dependency of the `useMemo`s inside the tool components, so
+ * during exactly the period when a tool is doing the most re-rendering, all of
+ * its memoisation was guaranteed to miss.
+ *
+ * The cache is keyed on the part and guarded on BOTH `state` and the raw text,
+ * because a streaming part keeps its object while its buffer grows.
+ */
+const STREAMING_INPUT_CACHE = new WeakMap<
+  ToolPart,
+  { state: ToolPart['state']; raw: string; input: Record<string, unknown> }
+>();
+
+export function partStreamingInput(part: ToolPart): Record<string, unknown> {
+  const input = part.state.input;
+  // A settled call's `input` is already one stable object owned by the part.
+  if (input && !isEmptyObject(input)) return input;
+
+  if (part.state.status === 'pending' || part.state.status === 'running') {
+    const raw = 'raw' in part.state ? ((part.state as { raw?: string }).raw ?? '') : '';
+    if (raw) {
+      const cached = STREAMING_INPUT_CACHE.get(part);
+      if (cached && cached.state === part.state && cached.raw === raw) return cached.input;
+
+      const parsed = parsePartialJSON(raw);
+      STREAMING_INPUT_CACHE.set(part, { state: part.state, raw, input: parsed });
+      return parsed;
+    }
+  }
+  return input ?? EMPTY_RECORD;
 }
 
 export function partInput(part: ToolPart): Record<string, unknown> {
@@ -431,21 +489,40 @@ export function partMetadata(part: ToolPart): Record<string, unknown> {
     part.state.status === 'running' ||
     part.state.status === 'error'
   ) {
-    return (part.state.metadata as Record<string, unknown>) ?? {};
+    return (part.state.metadata as Record<string, unknown>) ?? EMPTY_RECORD;
   }
-  return {};
+  return EMPTY_RECORD;
 }
 
-export function partOutput(part: ToolPart): string {
-  if (part.state.status === 'completed') {
-    const raw = part.state.output ?? '';
+/**
+ * A completed tool's output, stripped of transport noise — memoised per part.
+ *
+ * Nine call sites read this (`read`, `bash`, `edit`, `write`, `apply_patch`,
+ * `web_search`, `generic`, `getToolDiagnostics`, the file-chip row), most of
+ * them in the component BODY, so they run whether the row is open or closed.
+ * Uncached, each call was two global regex passes plus a `trim()` over the whole
+ * output — three full scans and two string copies of a payload that is routinely
+ * tens of kilobytes, per row, per frame.
+ *
+ * Keyed the same way as `partOutcome`: a part is replaced rather than mutated
+ * when it changes, so the object identity IS the version, and the guard on
+ * `state` keeps the entry sound if a part object is ever reused.
+ */
+const OUTPUT_CACHE = new WeakMap<ToolPart, { state: ToolPart['state']; output: string }>();
 
-    return raw
-      .replace(/<bash_metadata>[\s\S]*?<\/bash_metadata>/g, '')
-      .replace(/<\/?(?:system_info|exit_code|stderr_note)>[\s\S]*?(?:<\/\w+>)?$/g, '')
-      .trim();
-  }
-  return '';
+export function partOutput(part: ToolPart): string {
+  if (part.state.status !== 'completed') return '';
+
+  const cached = OUTPUT_CACHE.get(part);
+  if (cached && cached.state === part.state) return cached.output;
+
+  const output = (part.state.output ?? '')
+    .replace(/<bash_metadata>[\s\S]*?<\/bash_metadata>/g, '')
+    .replace(/<\/?(?:system_info|exit_code|stderr_note)>[\s\S]*?(?:<\/\w+>)?$/g, '')
+    .trim();
+
+  OUTPUT_CACHE.set(part, { state: part.state, output });
+  return output;
 }
 
 export function partStatus(part: ToolPart): string {
@@ -484,12 +561,12 @@ export function getAgentCardLabel(input: Record<string, unknown>): string {
 export function StatusIcon({ status }: { status: string }) {
   switch (status) {
     case 'completed':
-      return <Check className={cn('size-3 flex-shrink-0', STATUS_TEXT.success)} />;
+      return <Check className={cn('size-3 shrink-0', STATUS_TEXT.success)} />;
     case 'error':
-      return <CircleAlert className="text-muted-foreground size-3 flex-shrink-0" />;
+      return <CircleAlert className="text-muted-foreground size-3 shrink-0" />;
     case 'running':
     case 'pending':
-      return <Loader2 className="text-muted-foreground size-3 flex-shrink-0 animate-spin" />;
+      return <Loading className="text-muted-foreground size-3 shrink-0" />;
     default:
       return null;
   }
@@ -513,77 +590,32 @@ export function ToolEmptyState({ message }: { message: string }) {
   );
 }
 
-export function looksLikeError(text: string): boolean {
-  const t = text.trim();
-  if (t.length > 500) return false;
-  if (/^Error:\s/i.test(t)) return true;
-  if (/^([\w._-]+Error|[\w._-]+Exception):\s/i.test(t)) return true;
-  if (/Traceback \(most recent call last\)/i.test(t)) return true;
-  if (/^\s*\[\s*\{[\s\S]*"message"\s*:/.test(t)) return true;
-  return false;
-}
+// ── Tool-outcome + JSON-failure parsing ────────────────────────────────────
+// Pure helpers (no React) live in `./tool-outcome` so they're testable without
+// loading this 1500-line module. Re-exported here to keep every existing
+// `from '@/features/session/tool/shared/infrastructure'` import working —
+// `partOutcome`, `parseJsonFailure`, `isErrorOutput`, `looksLikeError`,
+// `cleanErrorMessage`, `formatJsonFailureOutput`, and the `ToolOutcome` type
+// are all defined there now. See that file for the null-object guard that
+// stops a tool whose output is the literal `null` from crashing turn render
+// (Better Stack patterns `487ae241…` / `ce68779d…`).
+export {
+  cleanErrorMessage,
+  formatJsonFailureOutput,
+  isErrorOutput,
+  looksLikeError,
+  parseJsonFailure,
+  partOutcome,
+  type ToolOutcome,
+} from './tool-outcome';
 
-/**
- * True when a completed tool's output is an error rather than a result —
- * either a plain error/traceback string or the `{success:false,error}` contract.
- * Tools whose own parser returns nothing should fall back to rendering the
- * error (via `ToolOutputFallback`) instead of a blank panel.
- */
-export function isErrorOutput(output: string): boolean {
-  return !!output && (looksLikeError(output) || parseJsonFailure(output) !== null);
-}
-
-export function parseJsonFailure(output: string): ParsedJsonFailure | null {
-  const trimmed = output.trim();
-  if (!trimmed) return null;
-
-  let parsed: Record<string, unknown>;
-  try {
-    parsed = JSON.parse(trimmed) as Record<string, unknown>;
-  } catch {
-    return null;
-  }
-
-  if (parsed.success !== false || typeof parsed.error !== 'string') return null;
-
-  const result: ParsedJsonFailure = {
-    errorSummary: parsed.error.trim(),
-    hint: typeof parsed.hint === 'string' ? parsed.hint.trim() : undefined,
-  };
-
-  const nestedMatch = result.errorSummary.match(/:\s*(\{[\s\S]*\})\s*$/);
-  if (!nestedMatch) return result;
-
-  try {
-    const nested = JSON.parse(nestedMatch[1]) as Record<string, unknown>;
-    if (typeof nested.message === 'string' && nested.message.trim()) {
-      result.nestedMessage = nested.message.trim();
-    }
-    if (typeof nested.status === 'number') {
-      result.status = nested.status;
-    }
-    if (typeof nested.error === 'boolean') {
-      result.nestedError = nested.error;
-    }
-  } catch {}
-
-  return result;
-}
-
-/**
- * Normalize a backend error string for display: strip the noisy, often
- * duplicated `Error:` prefixes (e.g. "Error: … Error: Error: …") and collapse
- * whitespace, so the panel shows one calm sentence instead of stack-y jargon.
- * Falls back to the trimmed original if cleaning would empty the string.
- */
-export function cleanErrorMessage(raw: string): string {
-  const cleaned = raw
-    .replace(/^(?:\s*Error:\s*)+/i, '')
-    .replace(/(?:\bError:\s*){2,}/gi, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-  return cleaned || raw.trim();
-}
+import {
+  cleanErrorMessage,
+  formatJsonFailureOutput,
+  looksLikeError,
+  parseJsonFailure,
+  type ToolOutcome,
+} from './tool-outcome';
 
 export function JsonFailureOutputCard({
   failure,
@@ -605,16 +637,16 @@ export function JsonFailureOutputCard({
         <CircleAlert className={cn('size-3.5', STATUS_TEXT.destructive)} />
       </span>
       <div className="min-w-0 flex-1 space-y-1">
-        <p className="text-foreground/90 text-xs leading-relaxed text-pretty break-words">
+        <p className="text-foreground/90 text-xs leading-relaxed text-pretty wrap-break-word">
           {summary}
         </p>
         {detail && detail !== summary && (
-          <p className="text-muted-foreground text-xs leading-relaxed text-pretty break-words">
+          <p className="text-muted-foreground text-xs leading-relaxed text-pretty wrap-break-word">
             {detail}
           </p>
         )}
         {failure.hint && (
-          <p className="text-muted-foreground/80 text-xs leading-relaxed text-pretty break-words">
+          <p className="text-muted-foreground/80 text-xs leading-relaxed text-pretty wrap-break-word">
             {failure.hint.trim()}
           </p>
         )}
@@ -626,44 +658,6 @@ export function JsonFailureOutputCard({
       )}
     </div>
   );
-}
-
-export function formatJsonFailureOutput(output: string): string | null {
-  const trimmed = output.trim();
-  if (!trimmed) return null;
-
-  let parsed: Record<string, unknown>;
-  try {
-    parsed = JSON.parse(trimmed) as Record<string, unknown>;
-  } catch {
-    return null;
-  }
-
-  const success = parsed.success;
-  const error = parsed.error;
-  const hint = parsed.hint;
-
-  if (success !== false || typeof error !== 'string') return null;
-
-  const lines: string[] = [];
-  lines.push(error.trim());
-
-  const nestedMatch = error.match(/:\s*(\{[\s\S]*\})\s*$/);
-  if (nestedMatch) {
-    try {
-      const nested = JSON.parse(nestedMatch[1]) as Record<string, unknown>;
-      const nestedMessage = nested.message;
-      if (typeof nestedMessage === 'string' && nestedMessage.trim()) {
-        lines.push(`Details: ${nestedMessage.trim()}`);
-      }
-    } catch {}
-  }
-
-  if (typeof hint === 'string' && hint.trim()) {
-    lines.push(`Hint: ${hint.trim()}`);
-  }
-
-  return lines.join('\n\n');
 }
 
 export function ToolOutputFallback({
@@ -678,68 +672,162 @@ export function ToolOutputFallback({
   const parsedJsonFailure = !isStreaming ? parseJsonFailure(output) : null;
   if (parsedJsonFailure) {
     return (
-      <div className="p-0">
+      <ToolResultCard>
         <JsonFailureOutputCard failure={parsedJsonFailure} toolName={toolName} />
-      </div>
+      </ToolResultCard>
     );
   }
 
   const jsonFailure = !isStreaming ? formatJsonFailureOutput(output) : null;
   if (jsonFailure) {
-    return (
-      <div className="p-0">
-        <ToolError error={jsonFailure} toolName={toolName} />
-      </div>
-    );
+    return <ToolError error={jsonFailure} toolName={toolName} />;
   }
 
   if (!isStreaming && looksLikeError(output)) {
-    return (
-      <div className="p-0">
-        <ToolError error={output} toolName={toolName} />
-      </div>
-    );
+    return <ToolError error={output} toolName={toolName} />;
   }
 
   if (looksLikeJsonPayload(output) || output.length > 4000) {
     return <RawOutputBlock output={output} />;
   }
 
+  // Short, non-JSON output — a fetched page, a summary, an agent's prose. This
+  // branch used to return a bare scroll div: no edge, no copy button, and no
+  // indent, so a fetched article sat flush against the chain rail as loose text
+  // while the very same content over 4000 characters got the full card. Same
+  // shell either way now; only the length differs.
   return (
-    <div data-scrollable className={cn('max-h-72 overflow-auto p-2', MD_FLUSH_CLASSES)}>
-      <UnifiedMarkdown content={output} isStreaming={isStreaming} />
+    <ToolOutputCard copyText={output}>
+      <div className={cn('text-sm', MD_FLUSH_CLASSES)}>
+        <UnifiedMarkdown content={output} isStreaming={isStreaming} />
+      </div>
+    </ToolOutputCard>
+  );
+}
+
+/**
+ * The shell every expanded tool output shares: hairlined card, copy button
+ * pinned top-right, scrollable body, aligned to the row's label.
+ *
+ * One shell rather than per-branch chrome, because the alternative is what this
+ * file already proved — the card gets added to whichever branch someone is
+ * looking at, and the other paths quietly keep rendering naked text.
+ */
+function ToolOutputCard({ copyText, children }: { copyText?: string; children: React.ReactNode }) {
+  const indent = useToolIndent();
+  const frame = useToolCardFrame();
+  const pad = useToolCardPad();
+
+  return (
+    <div
+      className={cn(
+        'relative',
+        // Frame and inset are the panel's business too: on the panel the row
+        // card is already the frame, so drawing a second one around the body
+        // is the triple-nesting the gate filed. See `useToolCardFrame`.
+        frame,
+        // The seam and the indent are ONE inline-surface concern, so they are
+        // gated together. Inline, the card hangs under a trigger row and needs
+        // both: 6px of air and the row's 22px text column (this card used to
+        // hardcode `ml-7`, 28px, against a `gap-3` the row class does not
+        // have). On the panel the card IS the disclosure body, which already
+        // supplies `px-3 py-3` — a top margin there is double-spacing, 18px
+        // over 12px at the bottom.
+        indent && 'mt-1.5',
+        indent,
+      )}
+    >
+      {/* Floated rather than in a header bar: a bar would cost a row of height
+		      on every output block, and the button reads clearly against the
+		      surface on its own. `pr-11` on the body keeps the first line from
+		      running under it — one reserve value for every floating copy in the
+		      tool views (`bash`'s command/output panes and `ToolCodeCard` use the
+		      same one). */}
+      {copyText && (
+        <CopyButton
+          code={copyText}
+          className="text-muted-foreground/60 hover:text-foreground absolute top-1 right-1 z-10"
+        />
+      )}
+      <div data-scrollable className={cn('max-h-96 overflow-auto', pad, 'pr-11')}>
+        {children}
+      </div>
     </div>
   );
 }
 
+/**
+ * Raw tool output as its own object: a muted, hairlined card with a copy
+ * button pinned top-right.
+ *
+ * Bare `<pre>` on the page had no edge, so a wall of output bled into the step
+ * around it and there was no way to get the text out except selecting it by
+ * hand. The card gives it a boundary; the copy button gives it an exit.
+ *
+ * Markdown renders as markdown. Agents routinely answer in markdown, and
+ * showing a reader `## Heading` and `**bold**` as literal punctuation is
+ * showing them the transport instead of the message. Detection is conservative
+ * (`looksLikeMarkdown`) — anything short of unambiguous syntax stays in the
+ * monospace block, which is the right home for logs, stack traces, and JSON.
+ *
+ * Copy always sends the FULL original output, never the truncated or
+ * pretty-printed `text` — the copy button is how you get at the part the cap
+ * hid, so handing back the visible slice would defeat it.
+ */
 export function RawOutputBlock({ output, maxChars = 2000 }: { output: string; maxChars?: number }) {
   const { text, truncatedChars } = useMemo(
     () => formatRawOutput(output, maxChars),
     [output, maxChars],
   );
+  const isMarkdown = useMemo(() => looksLikeMarkdown(text), [text]);
+
   return (
-    <div data-scrollable className="max-h-72 overflow-auto p-2">
-      <pre className="text-muted-foreground/80 font-mono text-xs leading-relaxed break-words whitespace-pre-wrap">
-        {text}
-      </pre>
+    <ToolOutputCard copyText={output}>
+      {isMarkdown ? (
+        <div className={cn('text-sm', MD_FLUSH_CLASSES)}>
+          <UnifiedMarkdown content={text} />
+        </div>
+      ) : (
+        <pre className="text-muted-foreground font-mono text-xs leading-relaxed wrap-break-word whitespace-pre-wrap">
+          {text}
+        </pre>
+      )}
       {truncatedChars > 0 && (
-        <div className="text-muted-foreground/40 mt-1.5 px-1 text-xs">
-          +{truncatedChars.toLocaleString()} more characters
+        <div className="text-muted-foreground/40 mt-2 text-xs">
+          +{truncatedChars.toLocaleString()} more characters — copy for the full output
         </div>
       )}
-    </div>
+    </ToolOutputCard>
   );
 }
 
 export const ToolRunningContext = createContext(false);
 
+/**
+ * This step's verdict, supplied once by `ToolPartRenderer` and read by
+ * {@link BasicTool} — the same ambient-per-part seam `ToolRunningContext` and
+ * `ToolDurationContext` already use.
+ *
+ * It is a context and not a prop because the icon has to change for EVERY
+ * registered renderer, and there are ~40 of them each passing their own
+ * `icon={…}`. Threading a prop through all of them guarantees the next tool
+ * added forgets it; reading it here means a failed call cannot draw a
+ * business-as-usual icon no matter which tool produced it.
+ */
+export const ToolOutcomeContext = createContext<ToolOutcome>('ok');
+
 export const StalePendingContext = createContext(false);
 
 export const ToolDurationContext = createContext<number | undefined>(undefined);
 
-export type ToolSurface = 'inline' | 'panel';
-
-export const ToolSurfaceContext = createContext<ToolSurface>('inline');
+export {
+  TOOL_INDENT,
+  ToolSurfaceContext,
+  useToolCardFrame,
+  useToolCardPad,
+  useToolIndent,
+  type ToolSurface,
+} from '@/features/session/tool/shared/surface';
 
 // Background memory plumbing (searches/gets and raw .kortix/memory reads) stays
 // out of the Actions panel. The memory editor tool itself ('memory'/'oc-memory')
@@ -761,7 +849,11 @@ const MEMORY_LOOKUP_TOOL_NAMES = new Set([
 
 export function shouldShowToolPartInActionsPanel(part: Pick<ToolPart, 'tool' | 'state'>): boolean {
   if (MEMORY_LOOKUP_TOOL_NAMES.has(part.tool)) return false;
-  // The skill tool opens its content in a side sheet, not the Actions panel.
+  // A `show` that handed nothing over renders an empty card, so its stepper row
+  // would open onto blank space. Same verdict the chat transcript reaches.
+  if (isEmptyShowPart(part)) return false;
+  // A skill row opens its SKILL.md in the detail panel, so it has no Actions
+  // row of its own. (It used to raise a side sheet; that sheet is gone.)
   if (part.tool === 'skill') return false;
   // File reads stay out of the Actions panel.
   if (part.tool === 'read') return false;
@@ -773,11 +865,52 @@ export const ToolActivateContext = createContext<((callID: string) => void) | nu
 export const BoundActivateContext = createContext<(() => void) | null>(null);
 
 // Shared class for the compact single-line "row" layout used by every inline mode.
+//
+// The colour rule skips `[data-tone]` icons. It is a descendant selector on the
+// ROW — `(0,2,2)` — so it outranks any `text-*` class the icon carries itself
+// `(0,1,0)`, and it silently repainted every toned leading icon. Excluding
+// toned icons by attribute keeps the verdict icon's OWN class authoritative
+// without an `!important` arms race inside a shared class.
 const TOOL_ROW_CLASS = cn(
   'flex items-center gap-1.5 py-0.5',
   'text-xs text-muted-foreground/70 transition-colors select-none max-w-full group',
-  '[&>span:first-child>svg]:size-3.5 [&>span:first-child>svg]:text-muted-foreground/50',
+  '[&>span:first-child>svg]:size-4 [&>span:first-child>svg:not([data-tone])]:text-muted-foreground',
 );
+
+/**
+ * The leading icon for a step that failed.
+ *
+ * It REPLACES the tool's own icon rather than sitting beside it. A globe next
+ * to a warning reads as "a web page, and separately, a problem"; the row has
+ * one 16px gutter, and the thing the reader needs from it is the verdict — the
+ * tool's identity is still spelled out in the title immediately to its right.
+ *
+ * One glyph, one muted tone: the triangle itself is the verdict, and it stays
+ * `neutral` so a failed step reads as information beside the row's title, not
+ * as an alarm. Which KIND of failure it was still travels on `data-tone` and
+ * the aria-label. Same triangle `ScrapeResultItem` already puts on a dead URL
+ * inside the card, so the summary row and the row it summarises say the same
+ * thing with the same mark.
+ */
+/**
+ * The verdict mark on a tool row.
+ *
+ * It carries an accessible name because for some rows it is the ONLY failure
+ * signal: a call that returned its error settles as `completed`, so the title
+ * still reads "Ran command" and the tint is all that says otherwise. Every other
+ * failure glyph in the turn is labelled (`activity-burst.tsx`,
+ * `activity-file-chips.tsx`); this one was the exception.
+ */
+function ToolOutcomeIcon({ outcome }: { outcome: Exclude<ToolOutcome, 'ok'> }) {
+  return (
+    <AlertTriangle
+      weight="fill"
+      data-tone={outcome}
+      aria-label={outcome === 'failed' ? 'This step failed' : 'This step partly failed'}
+      className={cn('size-4 shrink-0', STATUS_TEXT.neutral)}
+    />
+  );
+}
 
 // Title + subtitle + args, rendered for the compact inline row layout.
 function InlineTriggerTitle({
@@ -789,20 +922,20 @@ function InlineTriggerTitle({
   running: boolean;
   onSubtitleClick?: () => void;
 }) {
+  const args = trigger.args ?? [];
+
   return (
     <>
-      <span className="flex-shrink-0 text-xs whitespace-nowrap">{trigger.title}</span>
-      {(trigger.subtitle || (trigger.args && trigger.args.length > 0)) && (
+      <span className="text-foreground shrink-0 text-sm whitespace-nowrap">{trigger.title}</span>
+      {(trigger.subtitle || args.length > 0) && (
         <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
           {trigger.subtitle &&
             (running ? (
-              <TextShimmer duration={1} spread={2} className="min-w-0 truncate font-mono text-xs">
-                {trigger.subtitle}
-              </TextShimmer>
+              <TextShimmer className="min-w-0 truncate text-sm">{trigger.subtitle}</TextShimmer>
             ) : (
               <span
                 className={cn(
-                  'text-muted-foreground min-w-0 truncate font-mono text-xs',
+                  'text-muted-foreground min-w-0 truncate text-sm',
                   onSubtitleClick &&
                     'hover:text-foreground cursor-pointer underline-offset-2 hover:underline',
                 )}
@@ -819,55 +952,18 @@ function InlineTriggerTitle({
                 {trigger.subtitle}
               </span>
             ))}
-          {!running &&
-            trigger.args &&
-            trigger.args.length > 0 &&
-            trigger.args.map((arg, i) => (
+          {args.length > 0 && (
+            <>
+              {trigger.subtitle && <span className="text-muted-foreground/40 shrink-0">·</span>}
               <span
-                key={i}
-                title={arg}
-                className="text-muted-foreground/60 min-w-0 truncate font-mono text-xs"
+                className="text-muted-foreground/40 min-w-0 truncate text-sm"
+                title={args.join(' · ')}
               >
-                {arg}
+                {args.join(' · ')}
               </span>
-            ))}
+            </>
+          )}
         </div>
-      )}
-    </>
-  );
-}
-
-// Right-aligned metadata for the inline row: duration, badge, spinner, accessory.
-function ToolRightCluster({
-  running,
-  durationMs,
-  badge,
-  rightAccessory,
-}: {
-  running: boolean;
-  durationMs?: number;
-  badge?: React.ReactNode;
-  rightAccessory?: React.ReactNode;
-}) {
-  return (
-    <>
-      {!running && durationMs !== undefined && durationMs >= 1000 && (
-        <span className="text-muted-foreground/40 flex-shrink-0 font-mono text-xs tabular-nums">
-          {Math.round(durationMs / 1000)}s
-        </span>
-      )}
-      {badge && (
-        <span className="text-muted-foreground/60 flex-shrink-0 font-mono text-xs whitespace-nowrap">
-          {badge}
-        </span>
-      )}
-      {running && (
-        <Loader2 className="text-muted-foreground/40 size-3 flex-shrink-0 animate-spin" />
-      )}
-      {!running && rightAccessory && (
-        <span className="text-muted-foreground/30 group-hover:text-muted-foreground/60 flex-shrink-0 transition-colors [&>svg]:size-3">
-          {rightAccessory}
-        </span>
       )}
     </>
   );
@@ -879,23 +975,24 @@ function ToolHeaderRow({
   trigger,
   running,
   onSubtitleClick,
-  durationMs,
-  badge,
-  rightAccessory,
+  outcome = 'ok',
 }: {
   icon?: React.ReactNode;
   trigger: TriggerTitle | React.ReactNode;
   running: boolean;
   onSubtitleClick?: () => void;
-  durationMs?: number;
-  badge?: React.ReactNode;
-  rightAccessory?: React.ReactNode;
+  outcome?: ToolOutcome;
 }) {
   const triggerIsEmpty = isTriggerTitle(trigger) ? !trigger.title && !trigger.subtitle : false;
 
+  // A failed step leads with the verdict, not with the tool. Placed here rather
+  // than in each renderer because every one of them hardcodes its own icon and
+  // none of them look at the output.
+  const leading = outcome === 'ok' ? icon : <ToolOutcomeIcon outcome={outcome} />;
+
   return (
     <>
-      {icon && <span className="shrink-0">{icon}</span>}
+      {leading && <span className="text-muted-foreground size-4 shrink-0">{leading}</span>}
       <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
         {isTriggerTitle(trigger) ? (
           <InlineTriggerTitle
@@ -906,124 +1003,208 @@ function ToolHeaderRow({
         ) : (
           trigger
         )}
-        {running && triggerIsEmpty && (
-          <>
-            <span className="bg-muted-foreground/10 h-3 w-16 flex-shrink-0 animate-pulse rounded" />
-            <span className="bg-muted-foreground/10 h-3 w-28 min-w-0 animate-pulse rounded" />
-          </>
-        )}
       </div>
-      <ToolRightCluster
-        running={running}
-        durationMs={durationMs}
-        badge={badge}
-        rightAccessory={rightAccessory}
-      />
     </>
   );
 }
 
-// Title + subtitle/args for the large side-panel header layout.
-function PanelTriggerTitle({
+/**
+ * The row title's shrink priority: it yields LAST, and only to a cap.
+ *
+ * Title and subtitle are flex siblings, and both used to be plain `min-w-0
+ * truncate` — no shrink priority at all, so flexbox took the overflow out of
+ * both in proportion to their content. A long subtitle therefore ate the
+ * title: the `testing` skill's row rendered as `t…` beside 28 characters of
+ * description, and `mcp__linear__create_issue` rendered as `C..`. The name is
+ * the one thing a closed row exists to say, so it cannot be the part that
+ * loses.
+ *
+ * `shrink-0` alone would let a sentence-length title push the subtitle off the
+ * card entirely, which is the same failure mirrored. The `max-w-[60%]` cap is
+ * the second half: a short title always renders whole, a long one truncates at
+ * 60% of the trigger and leaves the rest to the subtitle.
+ */
+const PANEL_TITLE_CLASS = 'min-w-0 max-w-[60%] shrink-0 truncate';
+
+/**
+ * Title + subtitle + args on ONE line, for the panel's disclosure row.
+ *
+ * The panel used to stack these — an `h3` with a second mono line under it —
+ * which is a page header, and a page header only works when there is one call
+ * on the page. A detail routinely holds several, so the unit here is a row: one
+ * line, closed, that says which call this is and nothing more. Everything the
+ * old header showed still shows, it just reads left-to-right instead of
+ * top-to-bottom.
+ */
+function PanelRowTitle({
   trigger,
   running,
-  badge,
   onSubtitleClick,
 }: {
   trigger: TriggerTitle;
   running: boolean;
-  badge?: React.ReactNode;
   onSubtitleClick?: () => void;
 }) {
   const args = trigger.args ?? [];
-  const hasMeta = Boolean(trigger.subtitle || args.length > 0);
 
   return (
-    <div className="flex items-start justify-between gap-3">
-      <div className="min-w-0 flex-1">
-        {running ? (
-          <TextShimmer className="text-sm font-medium">{trigger.title || 'Working'}</TextShimmer>
-        ) : (
-          <h3 className="text-foreground truncate text-sm font-medium">{trigger.title}</h3>
-        )}
-        {hasMeta && (
-          <div className="text-muted-foreground mt-0.5 flex min-w-0 items-baseline gap-1.5 font-mono text-xs">
-            {trigger.subtitle && (
-              <span
-                className={cn(
-                  'truncate',
-                  onSubtitleClick &&
-                    'hover:text-foreground cursor-pointer underline-offset-2 hover:underline',
-                )}
-                title={trigger.subtitle}
-                onClick={onSubtitleClick}
-              >
-                {trigger.subtitle}
-              </span>
-            )}
-            {args.length > 0 && (
-              <>
-                {trigger.subtitle && <span className="text-muted-foreground/40 shrink-0">·</span>}
-                <span
-                  className="text-muted-foreground/60 min-w-0 truncate"
-                  title={args.join(' · ')}
-                >
-                  {args.join(' · ')}
-                </span>
-              </>
-            )}
-          </div>
-        )}
-      </div>
-      {badge && (
-        <span className="text-muted-foreground/60 shrink-0 pt-0.5 font-mono text-xs whitespace-nowrap tabular-nums">
-          {badge}
+    <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
+      {running ? (
+        <TextShimmer className={cn(PANEL_TITLE_CLASS, 'text-sm font-medium')}>
+          {trigger.title || 'Working'}
+        </TextShimmer>
+      ) : (
+        <span className={cn('text-foreground text-sm font-medium', PANEL_TITLE_CLASS)}>
+          {trigger.title}
+        </span>
+      )}
+      {trigger.subtitle && (
+        <span
+          className={cn(
+            'text-muted-foreground min-w-0 truncate font-mono text-xs',
+            onSubtitleClick &&
+              'hover:text-foreground cursor-pointer underline-offset-2 hover:underline',
+          )}
+          title={trigger.subtitle}
+          // `stopPropagation` is load-bearing now and was not before: the
+          // subtitle sits INSIDE the disclosure trigger, so without it every
+          // "open this file" click would also toggle the row it lives on.
+          onClick={
+            onSubtitleClick
+              ? (e) => {
+                  e.stopPropagation();
+                  onSubtitleClick();
+                }
+              : undefined
+          }
+        >
+          {trigger.subtitle}
+        </span>
+      )}
+      {args.length > 0 && (
+        <span
+          className="text-muted-foreground/60 min-w-0 truncate font-mono text-xs"
+          title={args.join(' · ')}
+        >
+          {args.join(' · ')}
         </span>
       )}
     </div>
   );
 }
 
-// Side-panel surface: large sticky header on top, padded body below.
-function PanelTool({
+/**
+ * Side-panel surface: one closed-by-default disclosure row per tool call.
+ *
+ * The panel is not a page for a single call. A Progress step or a Context group
+ * hands the detail N calls at once, and the old layout answered that with N
+ * sticky `px-4 pt-4 pb-3` headers and N padded bodies stacked down the pane —
+ * the same title treatment repeated, every payload open, nothing skimmable.
+ * A row inverts it: the detail opens as a list of one-line summaries, and the
+ * reader expands the one they came for.
+ *
+ * The row is the `bg-popover rounded-md border` surface the design system uses
+ * for every panel row, and its disclosure affordance is the same MARK the Easy
+ * cards use — a `CaretRightIcon` that points down once the thing is open. Only
+ * the mark is shared: `PanelCard` sits on `bg-pane` at a tighter radius and
+ * animates its chevron through `motion` with a press scale, while this row is a
+ * denser, plainer thing that rotates its chevron in CSS. Same vocabulary, not
+ * the same component. No rail, no connector, no per-row header: the gap between
+ * rows is the whole rhythm.
+ *
+ * Interaction is gated on having a body — a childless call has nothing to
+ * disclose, so it gets no chevron, no `role="button"`, and no cursor change
+ * rather than a control that does nothing. `locked` keeps the trigger (a locked
+ * row must still be openable) and only drops the pointer affordance; refusing
+ * the close is {@link BasicTool}'s `handleOpenChange`, shared with inline.
+ */
+function PanelToolRow({
+  icon,
   trigger,
   children,
   running,
   badge,
+  outcome,
   onSubtitleClick,
+  locked,
+  open,
+  onOpenChange,
   className,
 }: {
+  icon?: React.ReactNode;
   trigger: TriggerTitle | React.ReactNode;
   children?: React.ReactNode;
   running: boolean;
   badge?: React.ReactNode;
+  outcome: ToolOutcome;
   onSubtitleClick?: () => void;
+  locked?: boolean;
+  open: boolean;
+  onOpenChange: (value: boolean) => void;
   className?: string;
 }) {
-  return (
-    <div className="bg-background flex flex-col">
-      {trigger && (
-        <div className="bg-background sticky top-0 z-10 px-4 pt-4 pb-3">
-          {isTriggerTitle(trigger) ? (
-            <PanelTriggerTitle
-              trigger={trigger}
-              running={running}
-              badge={badge}
-              onSubtitleClick={onSubtitleClick}
-            />
-          ) : (
-            <div className="flex items-start justify-between gap-3">
-              <div className="[&>span:first-child>svg]:text-muted-foreground text-foreground min-w-0 flex-1 text-sm font-medium [&>span:first-child>svg]:size-4">
-                {trigger}
-              </div>
-            </div>
-          )}
+  const hasBody = Boolean(children);
+  // Same substitution the inline header makes, from the same context — a failed
+  // call leads with the verdict on both surfaces or the two disagree about what
+  // happened. See {@link ToolOutcomeIcon}.
+  const leading = outcome === 'ok' ? icon : <ToolOutcomeIcon outcome={outcome} />;
+
+  const row = (
+    <div
+      className={cn(
+        'flex min-h-11 w-full items-center gap-2.5 px-3 py-2.5 text-left',
+        hasBody && 'transition-colors',
+        hasBody && !locked && 'hover:bg-muted-foreground/[0.04] cursor-pointer',
+      )}
+    >
+      {leading && (
+        <span className="text-muted-foreground flex size-4 shrink-0 items-center justify-center [&>svg]:size-4">
+          {leading}
+        </span>
+      )}
+      {isTriggerTitle(trigger) ? (
+        <PanelRowTitle trigger={trigger} running={running} onSubtitleClick={onSubtitleClick} />
+      ) : (
+        // `truncate` here CLIPS rather than ellipsises — a node trigger's
+        // content is flex children (the DCP tools' label + chip rows), and
+        // `text-overflow` only applies to inline text. Clipping is the intent:
+        // the row is one line, and an over-long node has to stop at the badge
+        // rather than push the chevron off the card.
+        <div className="[&>span:first-child>svg]:text-muted-foreground text-foreground min-w-0 flex-1 truncate text-sm font-medium [&>span:first-child>svg]:size-4">
+          {trigger}
         </div>
       )}
-      {children && (
-        <div className={cn('h-full min-h-0 flex-1 p-4 pt-0 text-sm', className)}>{children}</div>
+      {badge && (
+        <span className="text-muted-foreground/60 shrink-0 font-mono text-xs whitespace-nowrap tabular-nums">
+          {badge}
+        </span>
+      )}
+      {hasBody && (
+        <CaretRightIcon
+          aria-hidden
+          // CSS, not `motion` — the rotation is a 150ms state change on one
+          // property, and every row on the pane would otherwise carry a
+          // motion component. `motion-reduce` snaps it instead.
+          className={cn(
+            'text-muted-foreground size-4 shrink-0 transition-transform motion-reduce:transition-none',
+            open && 'rotate-90',
+          )}
+        />
       )}
     </div>
+  );
+
+  return (
+    <Disclosure
+      open={open}
+      onOpenChange={onOpenChange}
+      className="bg-popover border-border overflow-hidden rounded-md border"
+    >
+      {hasBody ? <DisclosureTrigger>{row}</DisclosureTrigger> : row}
+      {hasBody && open && (
+        <div className={cn('border-border border-t px-3 py-3 text-sm', className)}>{children}</div>
+      )}
+    </Disclosure>
   );
 }
 
@@ -1082,7 +1263,10 @@ function ActivatableToolRow({
       className={cn(TOOL_ROW_CLASS, 'cursor-pointer')}
     >
       {header}
-      <PanelRight className="text-muted-foreground/30 size-3 flex-shrink-0 opacity-0 transition-opacity group-hover:opacity-80" />
+      <PanelRight
+        className="text-muted-foreground/30 size-3 shrink-0 opacity-0 transition-opacity group-hover:opacity-80"
+        mirrored
+      />
     </div>
   );
 }
@@ -1102,25 +1286,18 @@ function CollapsibleToolRow({
   onOpenChange: (value: boolean) => void;
 }) {
   return (
-    <Collapsible open={open} onOpenChange={onOpenChange}>
-      <CollapsibleTrigger asChild>
+    <Disclosure open={open} onOpenChange={onOpenChange}>
+      <DisclosureTrigger>
         <div
           data-component="tool-trigger"
           className={cn(TOOL_ROW_CLASS, children && !locked && 'cursor-pointer')}
         >
           {header}
-          <ChevronRight
-            className={cn(
-              'text-muted-foreground/30 size-3 flex-shrink-0 transition-all',
-              children && !locked ? 'opacity-40 group-hover:opacity-80' : 'opacity-0',
-              open && children && 'rotate-90 !opacity-100',
-            )}
-          />
         </div>
-      </CollapsibleTrigger>
+      </DisclosureTrigger>
 
       {children && open && <div className="mt-1 mb-1 overflow-hidden text-xs">{children}</div>}
-    </Collapsible>
+    </Disclosure>
   );
 }
 
@@ -1133,7 +1310,6 @@ export function BasicTool({
   locked,
   onSubtitleClick,
   badge,
-  rightAccessory,
   onClick,
   className,
   durationMs: durationMsProp,
@@ -1141,9 +1317,16 @@ export function BasicTool({
   const running = useContext(ToolRunningContext);
   const contextDuration = useContext(ToolDurationContext);
   const durationMs = durationMsProp ?? contextDuration;
+  const outcome = useContext(ToolOutcomeContext);
   const surface = useContext(ToolSurfaceContext);
   const activate = useContext(BoundActivateContext);
-  const [open, setOpen] = useState(defaultOpen);
+  // `forceOpen` seeds the state as well as latching it. The effect below alone
+  // could only open the row on the frame AFTER mount, so a call that arrives
+  // already waiting on a permission or a question rendered closed once and then
+  // snapped open — a flash of the wrong answer on the exact row whose prompt is
+  // the point. The effect stays for the case it is actually for: `forceOpen`
+  // flipping true on an already-mounted row.
+  const [open, setOpen] = useState(defaultOpen || !!forceOpen);
 
   useEffect(() => {
     if (forceOpen) setOpen(true);
@@ -1157,18 +1340,32 @@ export function BasicTool({
     [locked],
   );
 
-  // Side-panel surface has its own header/body layout and ignores the inline modes.
+  // Side-panel surface: a disclosure row, closed unless the caller seeded it
+  // open. It runs on the SAME state the inline branch does — `defaultOpen`
+  // seeds it, `forceOpen` latches it, `locked` refuses the close — because the
+  // panel is a second presentation of one behavior, not a second behavior. The
+  // branch used to ignore all three (plus `icon` and `outcome`) and render an
+  // always-expanded page header instead.
+  //
+  // `onClick` stays inline-only: a panel row's click is its disclosure, and the
+  // two tools that pass one (project-create / project-select) have no body, so
+  // they render as the plain, non-interactive rows they already were here.
   if (surface === 'panel') {
     return (
-      <PanelTool
+      <PanelToolRow
+        icon={icon}
         trigger={trigger}
         running={running}
         badge={badge}
+        outcome={outcome}
         onSubtitleClick={onSubtitleClick}
+        locked={locked}
+        open={open}
+        onOpenChange={handleOpenChange}
         className={className}
       >
         {children}
-      </PanelTool>
+      </PanelToolRow>
     );
   }
 
@@ -1178,9 +1375,7 @@ export function BasicTool({
       trigger={trigger}
       running={running}
       onSubtitleClick={onSubtitleClick}
-      durationMs={durationMs}
-      badge={badge}
-      rightAccessory={rightAccessory}
+      outcome={outcome}
     />
   );
 
@@ -1206,6 +1401,50 @@ export function BasicTool({
   );
 }
 
+/**
+ * A file's contents inside an expanded tool row, in the same card `bash` draws
+ * around a command — so read / write / edit / bash all present code the one way.
+ *
+ * The indent comes from {@link useToolIndent}, and the `mt-1.5` seam rides with
+ * it: both are the inline surface's business (see {@link ToolOutputCard}). On
+ * the panel this card IS the disclosure body and the body already brings
+ * `px-3 py-3`.
+ *
+ * `pr-11` is the shared reserve every floating copy button gets — `CopyOverlay`
+ * pins its button at `top-3 right-3`, and without the reserve the first line of
+ * a wrapped file ran underneath it.
+ */
+export function ToolCodeCard({
+  code,
+  language,
+  className,
+}: {
+  code: string;
+  language: string;
+  className?: string;
+}) {
+  const indent = useToolIndent();
+  const frame = useToolCardFrame();
+  const pad = useToolCardPad();
+  if (!code) return null;
+  return (
+    <div className={cn(indent && 'mt-1.5', indent, className)}>
+      {/* Frame and pad are gated on the surface for the same reason the indent
+          is: on the panel the row card is the frame and its body is the inset.
+          See `useToolCardFrame`. */}
+      <div className={cn('relative', frame)}>
+        {/* The scroller sits INSIDE the overlay so the copy button stays pinned
+            to the card while long content scrolls under it. */}
+        <CopyOverlay code={code}>
+          <div data-scrollable className={cn('max-h-96 overflow-auto', pad, 'pr-11')}>
+            <HighlightedCode code={code} language={language} />
+          </div>
+        </CopyOverlay>
+      </div>
+    </div>
+  );
+}
+
 export function InlineDiffView({
   oldValue,
   newValue,
@@ -1226,10 +1465,17 @@ export function InlineDiffView({
   );
 }
 
+/**
+ * A frameless code pane, for code that is already inside someone else's card.
+ *
+ * `p-3` is the same inset every other mono body in the tool views carries
+ * ({@link ToolCodeCard}, `bash`'s command and output panes); it used to be the
+ * only one at `px-3 py-2`, which is the row/list inset, not the code one.
+ */
 export function ToolCode({ code, language }: { code: string; language: string }) {
   return (
     <div data-scrollable className="max-h-96 overflow-auto">
-      <pre className="text-foreground/90 overflow-x-auto px-3 py-2 font-mono text-xs leading-[1.65] [&_code]:border-none [&_code]:bg-transparent [&_code]:p-0 [&_span]:border-none [&_span]:outline-none">
+      <pre className="text-foreground/90 overflow-x-auto p-3 font-mono text-xs leading-[1.65] [&_code]:border-none [&_code]:bg-transparent [&_code]:p-0 [&_span]:border-none [&_span]:outline-none">
         <HighlightedCode code={code} language={language}>
           {code}
         </HighlightedCode>
@@ -1300,13 +1546,13 @@ export function DiagnosticsDisplay({
 
   return (
     <div className="space-y-1 px-2 pb-2">
-      {diagnostics.map((d, i) => {
+      {diagnostics.map((d) => {
         const isError = d.severity === 1;
         const isWarning = d.severity === 2;
         return (
           <button
             type="button"
-            key={i}
+            key={`${d.range.start.line}:${d.range.start.character}:${d.severity ?? 0}:${d.message}`}
             disabled={!navigationEnabled || !filePath}
             className={cn(
               'group flex w-full items-start gap-1.5 text-left text-xs transition-colors',
@@ -1318,9 +1564,9 @@ export function DiagnosticsDisplay({
             onClick={() => handleClick(d)}
           >
             {isError ? (
-              <CircleAlert className="mt-0.5 size-3 flex-shrink-0" />
+              <CircleAlert className="mt-0.5 size-3 shrink-0" />
             ) : (
-              <AlertTriangle className="mt-0.5 size-3 flex-shrink-0" />
+              <AlertTriangle className="mt-0.5 size-3 shrink-0" />
             )}
             <span className="group-hover:underline">
               [{d.range.start.line + 1}:{d.range.start.character + 1}] {d.message}

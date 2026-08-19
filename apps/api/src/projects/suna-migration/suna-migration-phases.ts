@@ -176,7 +176,7 @@ export async function dbStep(ctx: SunaMigrationContext): Promise<void> {
     await tx.insert(projects).values({
       projectId, accountId: ctx.accountId, name: 'Legacy (Suna) projects',
       // pushBundleAsRepo (suna-push.ts) seeds the new repo with
-      // @kortix/starter, which ships kortix.yaml (kortix_version 2).
+      // @kortix/starter, which ships the current v2 kortix.yaml.
       repoUrl, defaultBranch, manifestPath: 'kortix.yaml', status: 'active',
       metadata: {
         git: { url: repoUrl, upstream_url: repoUrl, default_branch: defaultBranch, provider, managed: true,
@@ -206,8 +206,16 @@ export async function dbStep(ctx: SunaMigrationContext): Promise<void> {
         sessionId: crypto.randomUUID(), accountId: ctx.accountId, projectId,
         branchName: s.slug, baseRef: defaultBranch, sandboxProvider: 'daytona',
         sandboxId: null, sandboxUrl: null, opencodeSessionId: s.opencodeSessionId,
-        agentName: 'default', status: 'stopped', createdBy: ctx.accountId, visibility: 'project',
+        // 'completed', NOT 'stopped': the default session list
+        // (selectSessionRowsForViewer) hides stopped sessions that have no
+        // session_sandboxes row — which is every migrated session until its
+        // first open — so 'stopped' makes the whole migration invisible.
+        agentName: 'default', status: 'completed', createdBy: ctx.accountId, visibility: 'project',
         metadata: {
+          // Carry the legacy thread's own title over; nothing ever re-titles a
+          // migrated session (it serves no first prompt), so without this every
+          // migrated thread displays as untitled forever.
+          ...(s.title ? { name: s.title } : {}),
           legacy_migration: {
             run_id: ctx.runId,
             // Reuse the legacy on-open ship: archive is keyed by projectId.

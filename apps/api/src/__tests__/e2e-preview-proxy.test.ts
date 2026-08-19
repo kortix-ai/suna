@@ -17,6 +17,8 @@ import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { runWithContext } from '../lib/request-context';
 import { classifyPtyWebSocketPath } from '../platform/providers/pty-ingress';
+import * as realProviders from '../platform/providers';
+import * as realPreviewOwnership from '../shared/preview-ownership';
 
 // ─── Mock state ──────────────────────────────────────────────────────────────
 
@@ -120,7 +122,14 @@ mock.module('../shared/db', () => {
         // (a field the sandbox-row query shape shares), which would otherwise
         // misclassify it as a sandbox-table query and starve resolveOwnerRawEnv.
         const isProjectSessionQuery = fieldKeys.includes('createdBy');
+        // `wakeSandbox`'s deadline probe: a one-column projection of
+        // session_sandboxes. It must be classified BEFORE the loose sandbox
+        // check and served a LIVE deadline, otherwise every wake in this file is
+        // refused as expired and the auto-wake/retry assertions all fail. The
+        // refusal path itself is covered in sandbox-proxy/wake-deadline-guard.test.ts.
+        const isDeadlineProbe = fieldKeys.length === 1 && fieldKeys[0] === 'deadlineAt';
         const isSandboxQuery =
+          !isDeadlineProbe &&
           !isProjectSessionQuery &&
           fieldKeys.some((key) =>
             [
@@ -138,6 +147,11 @@ mock.module('../shared/db', () => {
 
         const rowsFor = (ordered = false): any[] => {
           if (isProjectSessionQuery) return [{ createdBy: TEST_USER_ID }];
+          if (isDeadlineProbe) {
+            return mockSandboxRows().length === 0
+              ? []
+              : [{ deadlineAt: new Date(Date.now() + 60 * 60_000) }];
+          }
           if (isSandboxQuery) {
             const rows = mockSandboxRows();
             return ordered ? sortPreferredSandboxRows(rows) : rows;
@@ -178,8 +192,32 @@ mock.module('../shared/db', () => {
   };
 });
 
+const realTurnLifecycle = await import('../projects/sandbox-turn-lifecycle');
+mock.module('../projects/sandbox-turn-lifecycle', () => ({
+  ...realTurnLifecycle,
+  beginSandboxTurn: async () => 'granted',
+  acceptSandboxTurn: async () => true,
+  abandonSandboxTurn: async () => true,
+}));
+
+// IAM — a prompt that switches to a CONCRETE agent is authorized for
+// `project.agent.read` on that agent before the re-mint (sandbox-proxy/routes/preview.ts).
+// The real engine issues an `innerJoin` this file's `db` stub does not build, so
+// leaving it unmocked makes `authorize` throw, the forward retry 4x, and every
+// agent-switch assertion answer 502 instead of the 204 it is about.
+//
+// This file's subject is proxy FORWARDING, so the gate is held open here and the
+// gate itself — 403-before-re-mint, the requested agent as the resource, the
+// non-binding 'default' sentinel, and the no-round-trip ordinary turn — is pinned
+// in sandbox-proxy/routes/preview-agent-authz.test.ts.
+mock.module('../iam', () => ({
+  PROJECT_ACTIONS: { PROJECT_AGENT_READ: 'project.agent.read' },
+  authorize: async () => ({ allowed: true, reason: 'project_role' }),
+}));
+
 mock.module('../shared/preview-ownership', () => ({
-  // Mirrors the REAL narrowing (executor/share.ts): a session-bound caller — a
+  ...realPreviewOwnership,
+  // Mirrors the REAL narrowing (connector/share.ts): a session-bound caller — a
   // sandbox token — may reach only its OWN session. Without this the mock
   // ignored callerSessionId entirely, so a test could pass one and prove
   // nothing; the WebSocket leg's isolation had no coverage at all.
@@ -231,7 +269,11 @@ mock.module('../shared/daytona', () => ({
   }),
 }));
 
+// Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
+// lists exports by hand deletes every export it omits — the failure surfaces in
+// whatever unrelated file imports the missing name next, attributed to no test.
 mock.module('../platform/providers', () => ({
+  ...realProviders,
   // Whole-module replacement: every export the graph touches must be present or
   // the file loads to 0 tests (see the secrets mock above).
   SandboxTemplateNotFoundError: class SandboxTemplateNotFoundError extends Error {},
@@ -329,16 +371,35 @@ mock.module('../projects/secrets', () => {
     listProjectSecrets: async (projectId: string) => snapshot(projectId).env,
     listProjectSecretsForUser: async (projectId: string) => snapshot(projectId).env,
     listProjectSecretsSnapshot: async (projectId: string) => snapshot(projectId),
+    listProjectSecretNamesForConsumer: async () => [],
     listProjectSecretsSnapshotForUser: async (projectId: string) => snapshot(projectId),
+    materializeSecretDelivery: async () => undefined,
+    projectSecretIsConfiguredForConsumer: async () => false,
     projectSecretsRevision: (env: Record<string, string>) =>
       `rev-${Object.keys(env).sort().join('-')}`,
     getProjectSecretValue: async () => null,
+    getProjectSecretValueForConsumer: async () => null,
+    resolveProjectSecretForConsumer: async () => null,
+    resolveProjectSecretsForConsumer: async () => ({}),
+    withholdUndeliverable: () => undefined,
   };
 });
 
 mock.module('../projects/opencode-session-snapshot', () => ({
   scheduleOpencodeSnapshotSync: (input: Record<string, unknown>) => {
     mockSnapshotSyncCalls.push(input);
+  },
+}));
+
+// The proxy owns two of the four title hooks. Keep the REAL prompt extraction
+// (that is the part the proxy actually decides) and capture only the generator
+// call, whose own idempotency/CAS is covered by unit + integration tests.
+let mockTitleCalls: Array<Record<string, unknown>> = [];
+const realTitleGenerate = await import('../projects/session-title-generate');
+mock.module('../projects/session-title-generate', () => ({
+  ...realTitleGenerate,
+  generateSessionTitleFromFirstPrompt: async (input: Record<string, unknown>) => {
+    mockTitleCalls.push(input);
   },
 }));
 
@@ -463,6 +524,7 @@ beforeEach(() => {
   mockDbUpdateCalls = [];
   mockResolvedPreviewPorts = [];
   mockSnapshotSyncCalls = [];
+  mockTitleCalls = [];
 
   // Install mock fetch
   globalThis.fetch = mockFetch as any;
@@ -680,11 +742,17 @@ describe('Preview proxy: ownership', () => {
         headers: { Authorization: 'Bearer test' },
       });
       expect(res.status).toBe(503);
+      // `hop: control_plane` — this answer came off our own row read, so a
+      // client must not count it as evidence that the box is unreachable.
+      expect(res.headers.get('X-Kortix-Proxy-Hop')).toBe('control_plane');
+      expect(res.headers.get('X-Kortix-Upstream-Status')).toBeNull();
       const body = await res.json();
       expect(body).toEqual({
         error: `sandbox not ready (status: ${status})`,
         port: TEST_PORT,
         status: 503,
+        hop: 'control_plane',
+        upstream_status: null,
       });
     },
   );
@@ -818,6 +886,7 @@ describe('Preview proxy: forwarding', () => {
       llmGatewayDenyEnv: '',
       llmGatewayEnabled: false,
       names: ['OPENROUTER_API_KEY', 'SENTRY_DSN'],
+      opencodeEnv: {},
       refreshModels: true,
       revision: 'rev-OPENROUTER_API_KEY-SENTRY_DSN',
     });
@@ -826,59 +895,48 @@ describe('Preview proxy: forwarding', () => {
     );
   });
 
-  test('schedules a deferred opencode_sessions snapshot sync after an accepted ACP session prompt', async () => {
-    mockFetchResponses = [{ status: 202, body: '' }];
+  test('titles from a REST prompt_async body, with the model the user picked for the turn', async () => {
+    mockFetchResponses = [
+      { status: 200, body: '{"ok":true,"changed":true,"revision":"rev"}' },
+      { status: 204, body: '' },
+    ];
     const app = createProxyTestApp();
-
-    const res = await app.request(`/v1/p/${TEST_SANDBOX_ID}/8000/kortix/acp/ses_123`, {
+    const res = await app.request(`/v1/p/${TEST_SANDBOX_ID}/8000/session/ses_123/prompt_async`, {
       method: 'POST',
-      headers: {
-        Authorization: 'Bearer test',
-        'Content-Type': 'application/json',
-      },
+      headers: { Authorization: 'Bearer test', 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        jsonrpc: '2.0',
-        id: 'prompt-1',
-        method: 'session/prompt',
-        params: { sessionId: 'ses_123', prompt: [{ type: 'text', text: 'Research Marko' }] },
+        parts: [{ type: 'text', text: 'set up the MS Graph connector' }],
+        model: { providerID: 'kortix', modelID: 'codex/gpt-5.6-sol' },
       }),
     });
 
-    expect(res.status).toBe(202);
-    expect(mockSnapshotSyncCalls).toEqual([
+    expect(res.status).toBe(204);
+    expect(mockTitleCalls).toEqual([
       {
         sessionId: mockDbSandbox.sessionId,
         projectId: TEST_PROJECT_ID,
-        externalId: TEST_SANDBOX_ID,
+        accountId: mockDbSandbox.accountId,
         userId: TEST_USER_ID,
+        firstPromptText: 'set up the MS Graph connector',
+        modelHint: 'codex/gpt-5.6-sol',
       },
     ]);
   });
 
-  test('does not retry an ACP session prompt after an ambiguous upstream 502', async () => {
+  test('does not title a prompt body that carries no text', async () => {
     mockFetchResponses = [
-      { status: 502, body: 'bad gateway' },
-      { status: 202, body: '' },
+      { status: 200, body: '{"ok":true,"changed":true,"revision":"rev"}' },
+      { status: 204, body: '' },
     ];
     const app = createProxyTestApp();
-
-    const res = await app.request(`/v1/p/${TEST_SANDBOX_ID}/8000/kortix/acp/ses_123`, {
+    const res = await app.request(`/v1/p/${TEST_SANDBOX_ID}/8000/session/ses_123/prompt_async`, {
       method: 'POST',
-      headers: {
-        Authorization: 'Bearer test',
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        jsonrpc: '2.0',
-        id: 'prompt-2',
-        method: 'session/prompt',
-        params: { sessionId: 'ses_123', prompt: [{ type: 'text', text: 'Research Marko' }] },
-      }),
+      headers: { Authorization: 'Bearer test', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ parts: [{ type: 'image', url: 'x' }] }),
     });
 
-    expect(res.status).toBe(502);
-    expect(mockFetchCalls).toHaveLength(1);
-    expect(mockSnapshotSyncCalls).toEqual([]);
+    expect(res.status).toBe(204);
+    expect(mockTitleCalls).toEqual([]);
   });
 
   test('allows prompt_async when requested agent matches the session-bound token agent', async () => {
@@ -926,10 +984,10 @@ describe('Preview proxy: forwarding', () => {
     });
   });
 
-  // Agent-lock enforcement is OFF by default (KORTIX_ENFORCE_SESSION_AGENT_LOCK
-  // unset) — in-session agent switching is allowed. A prompt may run a different
-  // concrete agent than the session booted with, and it's forwarded untouched.
-  test('allows in-session agent switching by default (no 409, concrete agent forwarded)', async () => {
+  // In-session agent switching is allowed, unconditionally — there is no flag and
+  // no refusal. A prompt may run a different concrete agent than the session
+  // booted with, and it is forwarded untouched.
+  test('allows in-session agent switching (no 409, concrete agent forwarded)', async () => {
     mockDbSandbox = { ...mockDbSandbox, agentName: 'reviewer' };
     mockFetchResponses = [
       { status: 200, body: '{"ok":true,"changed":true,"revision":"rev"}' },
@@ -1389,14 +1447,43 @@ describe('Preview proxy: retry exhaustion', () => {
     globalThis.fetch = savedFetch;
 
     expect(res.status).toBe(502);
+    // Every attempt resolved an ingress address and then had its connection
+    // refused, on an ordinary app port — so this is the user's own process, and
+    // a probe must not read it as "the runtime is gone".
+    expect(res.headers.get('X-Kortix-Proxy-Hop')).toBe('upstream_port');
     const body = await res.json();
     expect(body).toEqual({
       error: 'sandbox upstream unreachable',
       port: TEST_PORT,
       status: 502,
+      hop: 'upstream_port',
+      upstream_status: null,
     });
     // Should have made 4 attempts (0, 1, 2, 3)
     expect(callCount).toBe(4);
+  });
+
+  // Same failure, session-data port: now it IS the runtime, and the probe must
+  // count it. The two cases differ ONLY by the port, which is the whole point of
+  // the hop.
+  test('the same connection failure on the daemon port is attributed to the daemon', async () => {
+    const savedFetch = globalThis.fetch;
+    globalThis.fetch = (() => Promise.reject(new Error('Connection refused'))) as any;
+
+    const app = createProxyTestApp();
+    const origSetTimeout = globalThis.setTimeout;
+    globalThis.setTimeout = ((fn: any) => fn()) as any;
+
+    const res = await app.request('/v1/p/sandbox-retry-exhaust-daemon-001/8000/kortix/health', {
+      headers: { Authorization: 'Bearer test' },
+    });
+
+    globalThis.setTimeout = origSetTimeout;
+    globalThis.fetch = savedFetch;
+
+    expect(res.status).toBe(502);
+    expect(res.headers.get('X-Kortix-Proxy-Hop')).toBe('daemon');
+    expect(await res.json()).toMatchObject({ hop: 'daemon' });
   });
 
   test('returns last 400 when all retries get sandbox-down (HTTP 400 path)', async () => {

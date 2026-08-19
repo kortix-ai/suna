@@ -23,6 +23,7 @@ mock.module('../../config', () => ({
 mock.module('../../shared/db', () => ({ db: {} }));
 
 let getDaytonaSandbox: (_externalId: string) => Promise<unknown>;
+let activityRefreshes: string[];
 
 mock.module('../../shared/daytona', () => ({
   getDaytona: () => ({
@@ -53,7 +54,69 @@ beforeEach(() => {
   // Below the code's own 1000ms floor (Math.max(1000, …)) would just get
   // clamped up — use a value comfortably above it.
   process.env.KORTIX_DAYTONA_CALL_TIMEOUT_MS = '1200';
+  activityRefreshes = [];
   getDaytonaSandbox = () => new Promise<never>(() => {});
+});
+
+test('renewLifecycle refreshes provider activity for a running sandbox', async () => {
+  getDaytonaSandbox = async () => ({
+    id: 'sbx_active',
+    state: 'started',
+    refreshActivity: async () => {
+      activityRefreshes.push('sbx_active');
+    },
+  });
+  const { DaytonaProvider } = await import('./daytona');
+
+  await new DaytonaProvider().renewLifecycle('sbx_active');
+
+  expect(activityRefreshes).toEqual(['sbx_active']);
+});
+
+test('renewLifecycle never refreshes a stopped sandbox', async () => {
+  getDaytonaSandbox = async () => ({
+    id: 'sbx_stopped',
+    state: 'stopped',
+    refreshActivity: async () => {
+      activityRefreshes.push('sbx_stopped');
+    },
+  });
+  const { DaytonaProvider } = await import('./daytona');
+
+  await expect(new DaytonaProvider().renewLifecycle('sbx_stopped')).rejects.toThrow(
+    'non-running sandbox',
+  );
+  expect(activityRefreshes).toEqual([]);
+});
+
+test('renewLifecycle rejects a failed activity refresh instead of reporting renewal', async () => {
+  getDaytonaSandbox = async () => ({
+    id: 'sbx_failed',
+    state: 'started',
+    refreshActivity: async () => {
+      throw new Error('activity refresh unavailable');
+    },
+  });
+  const { DaytonaProvider } = await import('./daytona');
+
+  await expect(new DaytonaProvider().renewLifecycle('sbx_failed')).rejects.toThrow(
+    'activity refresh unavailable',
+  );
+});
+
+test('renewLifecycle bounds a hung activity refresh', async () => {
+  getDaytonaSandbox = async () => ({
+    id: 'sbx_hung',
+    state: 'started',
+    refreshActivity: () => new Promise<never>(() => {}),
+  });
+  const { DaytonaProvider } = await import('./daytona');
+
+  const startedAt = Date.now();
+  await expect(new DaytonaProvider().renewLifecycle('sbx_hung')).rejects.toThrow(
+    'Daytona lifecycle renewal(sbx_hung) timed out after 1200ms',
+  );
+  expect(Date.now() - startedAt).toBeLessThan(5_000);
 });
 
 test('getStatus() gives up on a hung Daytona call instead of hanging forever', async () => {
@@ -85,12 +148,16 @@ test('getStatus() reports missing Daytona sandboxes as removed', async () => {
   await expect(provider.getStatus('sbx_missing')).resolves.toBe('removed');
 });
 
-test('native auto-stop is a backstop clamped well above the reaper TTL', async () => {
+// 720 (12h), not the 60 this returned while it doubled as the billing grace —
+// see providerAutoStopBackstopMinutes() and ./autostop-backstop.test.ts. The
+// timer sees only inbound traffic, so a turn spent in local tools resets
+// nothing; 12h clears the 8.4h worst turn measured on 30 days of prod.
+test('native auto-stop is a backstop that clears the longest measured turn', async () => {
   const { daytonaLifecycle } = await import('./daytona');
   const { providerAutoStopBackstopMinutes } = await import('./index');
 
-  expect(providerAutoStopBackstopMinutes()).toBe(60);
-  expect(daytonaLifecycle().autoStopInterval).toBe(60);
+  expect(providerAutoStopBackstopMinutes()).toBe(720);
+  expect(daytonaLifecycle().autoStopInterval).toBe(720);
   expect(daytonaLifecycle(5).autoStopInterval).toBe(5);
   expect(daytonaLifecycle(0).autoStopInterval).toBe(1);
 });

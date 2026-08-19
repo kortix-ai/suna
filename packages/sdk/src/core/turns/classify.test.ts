@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
-import type { Message, Part } from '../runtime/client';
 import type { MessageWithParts } from '../../transcript';
+import type { Message, Part } from '../runtime/client';
 import {
   type ClassifiedPart,
   classifyPart,
@@ -542,6 +542,18 @@ describe('classifyTurn — error normalization + isEmpty', () => {
               provider: 'openai',
               request_id: 'req_xyz',
               suggestion: 'Add an openai API key in project settings, then retry.',
+              attempt_failures: [
+                {
+                  attempt: 1,
+                  provider: 'openai-codex',
+                  route_model: 'codex/gpt-5.6-sol',
+                  resolved_model: 'gpt-5.6-sol',
+                  stage: 'stream_error',
+                  status: 400,
+                  code: 'context_length_exceeded',
+                  message: 'Your input exceeds the context window of this model.',
+                },
+              ],
             }),
           },
         },
@@ -555,6 +567,13 @@ describe('classifyTurn — error normalization + isEmpty', () => {
     expect(result.error?.code).toBe('provider_not_connected');
     expect(result.error?.suggestion).toBe('Add an openai API key in project settings, then retry.');
     expect(result.error?.requestId).toBe('req_xyz');
+    expect(result.error?.attemptFailures).toEqual([
+      expect.objectContaining({
+        provider: 'openai-codex',
+        code: 'context_length_exceeded',
+        status: 400,
+      }),
+    ]);
   });
 
   test('a turn with only step markers and no error is empty', () => {

@@ -25,7 +25,7 @@ const tabsTriggerPaddingVariants = cva('', {
 const tabsTriggerHeightVariants = cva('', {
   variants: {
     size: {
-      default: 'h-9',
+      default: 'h-8',
       xs: 'h-7',
       sm: 'h-8',
       md: 'h-10',
@@ -37,6 +37,13 @@ const tabsTriggerHeightVariants = cva('', {
   },
 });
 
+/**
+ * Web sizing only. The desktop shell overrides all of it with a flat
+ * `html[data-desktop='true'] [role='tablist'] [role='tab'] { font-size }` rule
+ * in globals.css — a descendant selector on <html> beats these utility
+ * classes, so changing a size here has NO effect inside the desktop app.
+ * Change tab text there, not here.
+ */
 const tabsTriggerTextVariants = cva('font-medium', {
   variants: {
     size: {
@@ -54,6 +61,8 @@ const tabsTriggerTextVariants = cva('font-medium', {
 
 type TabsTriggerSize = 'xs' | 'sm' | 'default' | 'md';
 type TabsSize = TabsTriggerSize | 'lg';
+/** `default` is the filled pill; `outline` is a bordered active chip. */
+type TabsTriggerVariant = 'default' | 'outline';
 
 const tabsListHeightClasses: Record<TabsSize, string> = {
   default: 'h-9',
@@ -63,7 +72,22 @@ const tabsListHeightClasses: Record<TabsSize, string> = {
   lg: 'h-10',
 };
 
-type TabsListType = 'default' | 'underline' | 'secondary';
+/** Stroke thickness of the active underline rule (`type="underline"` only). */
+type TabsUnderlineSize = 'xs' | 'sm' | 'md' | 'lg';
+
+const tabsUnderlineBorderClasses: Record<TabsUnderlineSize, string> = {
+  xs: '**:data-[slot=tabs-trigger]:after:h-px',
+  sm: '**:data-[slot=tabs-trigger]:after:h-[1.5px]',
+  md: '**:data-[slot=tabs-trigger]:after:h-0.5',
+  lg: '**:data-[slot=tabs-trigger]:after:h-[3px]',
+};
+
+/** Shared underline-list chrome; indicator height comes from `underlineSize`. */
+const tabsListUnderlineBaseClasses =
+  "border-border **:data-[slot=tabs-trigger]:data-[state=inactive]:text-muted-foreground text-muted-foreground **:data-[slot=tabs-trigger]:data-[state=active]:text-foreground inline-flex w-fit items-center justify-center gap-0 rounded-none border-b **:data-[slot=tabs-trigger]:relative **:data-[slot=tabs-trigger]:h-full **:data-[slot=tabs-trigger]:rounded-none **:data-[slot=tabs-trigger]:border-0 **:data-[slot=tabs-trigger]:bg-transparent **:data-[slot=tabs-trigger]:shadow-none **:data-[slot=tabs-trigger]:after:pointer-events-none **:data-[slot=tabs-trigger]:after:absolute **:data-[slot=tabs-trigger]:after:inset-x-0 **:data-[slot=tabs-trigger]:after:bottom-0 **:data-[slot=tabs-trigger]:after:rounded-full **:data-[slot=tabs-trigger]:after:bg-transparent **:data-[slot=tabs-trigger]:after:content-[''] **:data-[slot=tabs-trigger]:data-[state=active]:bg-transparent **:data-[slot=tabs-trigger]:data-[state=active]:shadow-none **:data-[slot=tabs-trigger]:data-[state=active]:after:bg-foreground **:data-[slot=tabs-trigger]:data-[state=inactive]:bg-transparent";
+
+/** `default` is the secondary-coloured pill bar; `underline` is the flat rule. */
+type TabsListType = 'default' | 'underline';
 
 function resolveTabsTriggerSize(
   sizeProp: TabsTriggerSize | undefined,
@@ -79,6 +103,8 @@ const TabsActiveValueContext = React.createContext<string>('');
 const TabsListTypeContext = React.createContext<TabsListType>('default');
 const TabsAnimateContext = React.createContext<'fluid' | 'none'>('fluid');
 const TabsSizeContext = React.createContext<TabsSize>('default');
+/** Lets `TabsTrigger` adapt to a vertical `TabsList` without every caller re-passing orientation. */
+const TabsOrientationContext = React.createContext<'horizontal' | 'vertical'>('horizontal');
 
 function Tabs({
   className,
@@ -117,32 +143,44 @@ function Tabs({
 interface TabsListProps extends React.ComponentProps<typeof TabsPrimitive.List> {
   type?: TabsListType;
   size?: TabsSize;
+  /** Active underline stroke. Only applies when `type="underline"`. Default `sm`. */
+  underlineSize?: TabsUnderlineSize;
   animate?: 'fluid' | 'none';
+  /**
+   * `vertical` stacks triggers full-width in a column (e.g. a settings
+   * rail) instead of laying them out inline. This is a styling switch only —
+   * `aria-orientation` still comes from `orientation` on the `Tabs` root, per
+   * Radix. Default `horizontal`.
+   */
+  orientation?: 'horizontal' | 'vertical';
 }
 
 function TabsList({
   className,
   type = 'default',
   size = 'default',
+  underlineSize = 'sm',
   animate = 'fluid',
+  orientation = 'horizontal',
   children,
   ...props
 }: TabsListProps) {
   const activeValue = React.useContext(TabsActiveValueContext);
+  const isVertical = orientation === 'vertical';
   const useSlidingIndicator = type === 'default' && animate === 'fluid';
 
   const list = (
     <TabsPrimitive.List
       data-slot="tabs-list"
       className={cn(
-        type === 'default' &&
+        !isVertical &&
+          type === 'default' &&
           'relative z-10 inline-flex h-full w-fit items-center justify-center gap-1',
-        type === 'secondary' &&
-          'relative z-10 inline-flex h-full w-fit items-center justify-center gap-0.5 bg-transparent p-0.5',
-        type === 'underline' &&
-          'border-border **:data-[slot=tabs-trigger]:data-[state=active]:border-b-foreground **:data-[slot=tabs-trigger]:data-[state=inactive]:text-muted-foreground text-muted-foreground **:data-[slot=tabs-trigger]:data-[state=active]:text-foreground inline-flex w-fit items-center justify-center gap-0 rounded-none border-b **:data-[slot=tabs-trigger]:h-full **:data-[slot=tabs-trigger]:rounded-none **:data-[slot=tabs-trigger]:border-x-0 **:data-[slot=tabs-trigger]:border-t-0 **:data-[slot=tabs-trigger]:border-b-[1.5px] **:data-[slot=tabs-trigger]:border-b-transparent **:data-[slot=tabs-trigger]:bg-transparent **:data-[slot=tabs-trigger]:shadow-none **:data-[slot=tabs-trigger]:data-[state=active]:bg-transparent **:data-[slot=tabs-trigger]:data-[state=active]:shadow-none **:data-[slot=tabs-trigger]:data-[state=inactive]:bg-transparent',
-        type === 'underline' && tabsListHeightClasses[size],
-        type === 'underline' && className,
+        !isVertical && type === 'underline' && tabsListUnderlineBaseClasses,
+        !isVertical && type === 'underline' && tabsUnderlineBorderClasses[underlineSize],
+        !isVertical && type === 'underline' && tabsListHeightClasses[size],
+        isVertical &&
+          'flex h-auto w-full flex-col items-stretch gap-0.5 rounded-none bg-transparent p-0',
         className,
       )}
       {...props}
@@ -155,31 +193,38 @@ function TabsList({
     <TabsListTypeContext.Provider value={type}>
       <TabsAnimateContext.Provider value={animate}>
         <TabsSizeContext.Provider value={size}>
-          {useSlidingIndicator ? (
-            <SlidingTabIndicator
-              activeId={activeValue}
-              className={cn(
-                'text-muted-foreground inline-flex w-fit items-center justify-center',
-                tabsListHeightClasses[size],
-                className,
-              )}
-              indicatorClassName="bg-foreground rounded-[calc(var(--radius)-2.5px)]"
-            >
-              {list}
-            </SlidingTabIndicator>
-          ) : type === 'underline' ? (
-            list
-          ) : (
-            <div
-              className={cn(
-                'text-muted-foreground inline-flex w-fit items-center justify-center',
-                tabsListHeightClasses[size],
-                className,
-              )}
-            >
-              {list}
-            </div>
-          )}
+          <TabsOrientationContext.Provider value={orientation}>
+            {isVertical ? (
+              // The sliding pill indicator only measures the x-axis (see
+              // SlidingTabIndicator) — in a column it would collapse to a
+              // zero-width bar, so vertical lists render without it.
+              list
+            ) : useSlidingIndicator ? (
+              <SlidingTabIndicator
+                activeId={activeValue}
+                className={cn(
+                  'text-muted-foreground inline-flex w-fit items-center justify-center',
+                  tabsListHeightClasses[size],
+                  className,
+                )}
+                indicatorClassName="bg-input rounded-[calc(var(--radius)-2.5px)]"
+              >
+                {list}
+              </SlidingTabIndicator>
+            ) : type === 'underline' ? (
+              list
+            ) : (
+              <div
+                className={cn(
+                  'text-muted-foreground inline-flex w-fit items-center justify-center',
+                  tabsListHeightClasses[size],
+                  className,
+                )}
+              >
+                {list}
+              </div>
+            )}
+          </TabsOrientationContext.Provider>
         </TabsSizeContext.Provider>
       </TabsAnimateContext.Provider>
     </TabsListTypeContext.Provider>
@@ -188,77 +233,54 @@ function TabsList({
 
 function TabsTrigger({
   className,
-  variant = 'default',
   size: sizeProp,
+  variant = 'default',
   value,
   ...props
 }: React.ComponentProps<typeof TabsPrimitive.Trigger> & {
-  variant?: 'default' | 'large' | 'transparent' | 'underline' | 'secondary' | 'a_accent-i_outline' | 'a_accent-i_transparent';
   size?: TabsTriggerSize;
+  variant?: TabsTriggerVariant;
 }) {
   const listType = React.useContext(TabsListTypeContext);
   const animate = React.useContext(TabsAnimateContext);
   const listSize = React.useContext(TabsSizeContext);
+  const listOrientation = React.useContext(TabsOrientationContext);
   const size = resolveTabsTriggerSize(sizeProp, listSize);
-  const useSlidingIndicator =
-    listType === 'default' && variant === 'default' && animate === 'fluid';
-  const isUnderlineList = listType === 'underline' && variant === 'default';
-  const isSecondaryList = listType === 'secondary' && variant === 'default';
-  const isSecondaryVariant = variant === 'secondary';
+  const isUnderlineList = listType === 'underline';
+  const isOutline = !isUnderlineList && variant === 'outline';
+  // Outline paints its own border; the sliding pill fill would fight it.
+  const useSlidingIndicator = !isUnderlineList && !isOutline && animate === 'fluid';
+  const isVertical = listOrientation === 'vertical';
 
   return (
     <TabsPrimitive.Trigger
       data-slot="tabs-trigger"
       data-sliding-tab={useSlidingIndicator ? value : undefined}
+      data-variant={variant}
       value={value}
       className={cn(
-        "focus-visible:ring-kortix-blue duration-normal ease-default inline-flex flex-1 items-center justify-center rounded-[calc(var(--radius)-2.5px)] border border-transparent whitespace-nowrap transition-[color,background-color,border-color,box-shadow] focus-visible:ring-[0.6px] focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+        "focus-visible:ring-kortix-blue duration-normal ease-default inline-flex flex-1 cursor-pointer items-center justify-center rounded-[calc(var(--radius)-2.5px)] border border-transparent whitespace-nowrap transition-[color,background-color,border-color,box-shadow] focus-visible:ring-[0.6px] focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
         tabsTriggerTextVariants({ size }),
-        variant === 'default' &&
-          cn(
-            tabsTriggerPaddingVariants({ size }),
-            isUnderlineList
-              ? 'h-full'
-              : isSecondaryList
-                ? 'h-[calc(100%-4px)]'
-                : tabsTriggerHeightVariants({ size }),
-          ),
-        useSlidingIndicator &&
-          'data-[state=active]:text-background data-[state=inactive]:text-foreground/60 hover:data-[state=inactive]:text-foreground/80 relative z-10 data-[state=active]:bg-transparent data-[state=inactive]:bg-transparent',
+        tabsTriggerPaddingVariants({ size }),
+        isUnderlineList ? 'h-full' : tabsTriggerHeightVariants({ size }),
         isUnderlineList &&
           'data-[state=active]:text-foreground data-[state=inactive]:text-muted-foreground hover:data-[state=inactive]:text-foreground rounded-none bg-transparent shadow-none data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=inactive]:bg-transparent',
-        isSecondaryList &&
-          cn(
-            'border-transparent bg-transparent shadow-none transition-colors duration-150',
-            'data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:ring-foreground/6 data-[state=active]:shadow-sm data-[state=active]:ring-1',
-            'data-[state=inactive]:text-muted-foreground/60 hover:data-[state=inactive]:text-foreground/80 data-[state=inactive]:bg-transparent',
-          ),
-        variant === 'default' &&
-          !useSlidingIndicator &&
-          !isUnderlineList &&
-          !isSecondaryList &&
-          'data-[state=active]:bg-foreground data-[state=active]:text-background data-[state=inactive]:text-foreground/60 hover:data-[state=inactive]:text-foreground/80 data-[state=inactive]:bg-transparent',
-
+        // Default: a secondary-coloured pill. With animate="fluid" the sliding
+        // indicator paints the pill behind the trigger, so the trigger itself
+        // stays transparent; otherwise the trigger paints its own.
+        !isUnderlineList &&
+          !isOutline &&
+          'data-[state=active]:text-foreground data-[state=inactive]:text-muted-foreground hover:data-[state=inactive]:text-foreground relative z-10 data-[state=inactive]:bg-transparent',
+        !isUnderlineList &&
+          !isOutline &&
+          (useSlidingIndicator
+            ? 'data-[state=active]:bg-transparent'
+            : 'data-[state=active]:bg-input'),
+        // Outline: bordered active chip — matches Button `outline` (border + transparent fill).
+        isOutline &&
+          'data-[state=active]:text-foreground data-[state=inactive]:text-muted-foreground hover:data-[state=inactive]:bg-foreground/5 hover:data-[state=inactive]:text-foreground relative z-10 bg-transparent data-[state=active]:border-border data-[state=active]:bg-transparent data-[state=inactive]:bg-transparent',
+        isVertical && 'w-full justify-start text-left',
         className,
-        variant === 'large' &&
-          'border-border/80 h-10 border px-4 data-[state=inactive]:bg-transparent',
-        variant === 'transparent' &&
-          'text-primary data-[state=active]:text-primary data-[state=inactive]:text-primary bg-transparent data-[state=active]:border-transparent data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=inactive]:bg-transparent dark:data-[state=active]:border-none',
-        variant === 'underline' &&
-          'text-primary data-[state=active]:border-primary data-[state=active]:text-primary data-[state=inactive]:text-primary rounded-none border-b-2 border-transparent bg-transparent data-[state=active]:border-b-2 data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=inactive]:bg-transparent',
-        isSecondaryVariant &&
-          cn(
-            tabsTriggerPaddingVariants({ size }),
-            tabsTriggerHeightVariants({ size }),
-            'flex-none border-transparent bg-transparent shadow-none',
-            'data-[state=active]:bg-foreground data-[state=active]:text-background',
-            'data-[state=inactive]:text-muted-foreground hover:data-[state=inactive]:text-foreground data-[state=inactive]:bg-transparent',
-          ),
-        variant === 'a_accent-i_outline' &&
-          'data-[state=inactive]:border-border data-[state=active]:bg-foreground/5 data-[state=active]:text-accent-foreground data-[state=inactive]:text-foreground data-[state=active]:hover:bg-foreground/10 data-[state=inactive]:hover:bg-foreground/5 data-[state=inactive]:hover:text-foreground dark:data-[state=active]:bg-foreground/5 dark:data-[state=active]:text-accent-foreground dark:data-[state=inactive]:text-foreground px-2 data-[state=active]:border-transparent data-[state=active]:shadow-none data-[state=inactive]:bg-transparent dark:data-[state=active]:border-transparent',
-        variant === 'a_accent-i_transparent' &&
-          'data-[state=active]:border-border data-[state=active]:bg-transparent data-[state=active]:text-accent-foreground data-[state=inactive]:text-foreground data-[state=active]:hover:bg-foreground/10 data-[state=inactive]:hover:bg-foreground/5 data-[state=inactive]:hover:text-foreground dark:data-[state=active]:bg-secondary dark:data-[state=active]:text-accent-foreground dark:data-[state=inactive]:text-foreground px-2 data-[state=inactive]:border-transparent data-[state=active]:shadow-none data-[state=inactive]:bg-transparent dark:data-[state=active]:border-transparent',
-          className
       )}
       {...props}
     />
@@ -278,12 +300,15 @@ function TabsContent({ className, ...props }: React.ComponentProps<typeof TabsPr
 /** Compact Radix TabsList — use inside <Tabs> root for smaller contexts. */
 interface TabsListCompactProps extends React.ComponentProps<typeof TabsPrimitive.List> {
   type?: TabsListType;
+  /** Active underline stroke. Only applies when `type="underline"`. Default `sm`. */
+  underlineSize?: TabsUnderlineSize;
   animate?: 'fluid' | 'none';
 }
 
 function TabsListCompact({
   className,
   type = 'default',
+  underlineSize = 'sm',
   animate = 'fluid',
   children,
   ...props
@@ -297,10 +322,9 @@ function TabsListCompact({
       className={cn(
         type === 'default' &&
           'relative z-10 inline-flex h-full w-fit items-center justify-center gap-0.5',
-        type === 'secondary' &&
-          'bg-foreground/5 relative z-10 inline-flex h-full w-fit items-center justify-center gap-0.5 p-0.5',
-        type === 'underline' &&
-          'border-border **:data-[slot=tabs-trigger]:data-[state=active]:border-b-foreground **:data-[slot=tabs-trigger]:data-[state=inactive]:text-muted-foreground text-muted-foreground **:data-[slot=tabs-trigger]:data-[state=active]:text-foreground inline-flex h-7 w-fit items-center justify-center gap-0 rounded-none border-b **:data-[slot=tabs-trigger]:h-full **:data-[slot=tabs-trigger]:rounded-none **:data-[slot=tabs-trigger]:border-x-0 **:data-[slot=tabs-trigger]:border-t-0 **:data-[slot=tabs-trigger]:border-b-[1.5px] **:data-[slot=tabs-trigger]:border-b-transparent **:data-[slot=tabs-trigger]:bg-transparent **:data-[slot=tabs-trigger]:shadow-none **:data-[slot=tabs-trigger]:data-[state=active]:bg-transparent **:data-[slot=tabs-trigger]:data-[state=active]:shadow-none **:data-[slot=tabs-trigger]:data-[state=inactive]:bg-transparent',
+        type === 'underline' && tabsListUnderlineBaseClasses,
+        type === 'underline' && 'h-7',
+        type === 'underline' && tabsUnderlineBorderClasses[underlineSize],
         type === 'underline' && className,
       )}
       {...props}
@@ -320,7 +344,7 @@ function TabsListCompact({
                 'text-muted-foreground inline-flex h-7 w-fit items-center justify-center gap-0.5',
                 className,
               )}
-              indicatorClassName="bg-foreground rounded-[calc(var(--radius)-3px)]"
+              indicatorClassName="bg-input rounded-[calc(var(--radius)-3px)]"
             >
               {list}
             </SlidingTabIndicator>
@@ -345,38 +369,42 @@ function TabsListCompact({
 /** Compact Radix TabsTrigger — use inside <Tabs> root for smaller contexts. */
 function TabsTriggerCompact({
   className,
+  variant = 'default',
   value,
   ...props
-}: React.ComponentProps<typeof TabsPrimitive.Trigger>) {
+}: React.ComponentProps<typeof TabsPrimitive.Trigger> & {
+  variant?: TabsTriggerVariant;
+}) {
   const listType = React.useContext(TabsListTypeContext);
   const animate = React.useContext(TabsAnimateContext);
-  const useSlidingIndicator = listType === 'default' && animate === 'fluid';
   const isUnderlineList = listType === 'underline';
-  const isSecondaryList = listType === 'secondary';
+  const isOutline = !isUnderlineList && variant === 'outline';
+  const useSlidingIndicator = !isUnderlineList && !isOutline && animate === 'fluid';
 
   return (
     <TabsPrimitive.Trigger
       data-slot="tabs-trigger"
       data-sliding-tab={useSlidingIndicator ? value : undefined}
+      data-variant={variant}
       value={value}
       className={cn(
         'focus-visible:ring-kortix-blue relative z-10 inline-flex flex-1 cursor-pointer items-center justify-center border border-transparent text-xs font-medium whitespace-nowrap focus-visible:ring-[0.6px] focus-visible:outline-none',
         tabsTriggerPaddingVariants({ size: 'xs' }),
-        isUnderlineList
-          ? 'h-full rounded-none'
-          : isSecondaryList
-            ? 'h-[calc(100%-4px)]'
-            : tabsTriggerHeightVariants({ size: 'xs' }),
-        useSlidingIndicator &&
-          'data-[state=active]:text-background data-[state=inactive]:text-foreground/60 hover:data-[state=inactive]:text-foreground/80 rounded-[calc(var(--radius)-3px)] transition-colors duration-150 data-[state=active]:bg-transparent data-[state=inactive]:bg-transparent',
+        isUnderlineList ? 'h-full rounded-none' : tabsTriggerHeightVariants({ size: 'xs' }),
         isUnderlineList &&
           'duration-normal ease-default data-[state=active]:text-foreground data-[state=inactive]:text-muted-foreground hover:data-[state=inactive]:text-foreground rounded-none bg-transparent shadow-none transition-[color,background-color,border-color,box-shadow] data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=inactive]:bg-transparent motion-reduce:transition-none',
-        isSecondaryList &&
-          'data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:ring-foreground/6 data-[state=inactive]:text-muted-foreground/60 hover:data-[state=inactive]:text-foreground/80 border-transparent bg-transparent shadow-none transition-colors duration-150 data-[state=active]:shadow-sm data-[state=active]:ring-1 data-[state=inactive]:bg-transparent',
-        !useSlidingIndicator &&
-          !isUnderlineList &&
-          !isSecondaryList &&
-          'data-[state=active]:bg-foreground data-[state=active]:text-background data-[state=inactive]:text-foreground/60 hover:data-[state=inactive]:text-foreground/80 rounded-[calc(var(--radius)-3px)] data-[state=inactive]:bg-transparent',
+        // Default: a secondary-coloured pill — see TabsTrigger for why the
+        // active fill is conditional on the sliding indicator.
+        !isUnderlineList &&
+          !isOutline &&
+          'data-[state=active]:text-foreground data-[state=inactive]:text-muted-foreground hover:data-[state=inactive]:text-foreground rounded-[calc(var(--radius)-3px)] transition-colors duration-150 data-[state=inactive]:bg-transparent',
+        !isUnderlineList &&
+          !isOutline &&
+          (useSlidingIndicator
+            ? 'data-[state=active]:bg-transparent'
+            : 'data-[state=active]:bg-input'),
+        isOutline &&
+          'data-[state=active]:text-foreground data-[state=inactive]:text-muted-foreground hover:data-[state=inactive]:bg-foreground/5 hover:data-[state=inactive]:text-foreground rounded-[calc(var(--radius)-3px)] bg-transparent transition-[color,background-color,border-color] duration-150 data-[state=active]:border-border data-[state=active]:bg-transparent data-[state=inactive]:bg-transparent',
         'disabled:pointer-events-none disabled:opacity-50',
         "[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-3.5",
         className,
@@ -435,4 +463,10 @@ export {
   tabsTriggerTextVariants,
 };
 
-export type { TabsListType, TabsSize, TabsTriggerSize };
+export type {
+  TabsListType,
+  TabsSize,
+  TabsTriggerSize,
+  TabsTriggerVariant,
+  TabsUnderlineSize,
+};

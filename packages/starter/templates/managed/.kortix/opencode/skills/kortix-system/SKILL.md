@@ -1,31 +1,36 @@
 ---
 name: kortix-system
-description: "Canonical reference for Kortix projects, the CLI, sessions, sandboxes, change requests, triggers, connectors, secrets, system skills, and ACP multi-harness runtimes. Covers `kortix.yaml` versions 1, 2, and 3; the `acp_runtime` project experiment; OpenCode, Claude Code, Codex, and Pi; runtime profiles and immutable session identity; native config and credential boundaries; and the complete OpenCode-specific reference. Load when the user asks how Kortix works, what Kortix can do, how an agent discovers platform instructions, how to configure or test a harness, how to edit `kortix.yaml`, how to use the `kortix` CLI, how to land work through a change request, or how to schedule and automate work."
+description: "Canonical reference for Kortix projects, Apps, the CLI, sessions, sandboxes, change requests, triggers, connectors, secrets, system skills, and OpenCode REST. Covers `kortix.yaml` versions 1 and 2, serverless App deployments, OpenCode configuration, session identity, credential boundaries, and the complete OpenCode reference. Load when the user asks how Kortix works, what Kortix can do, how to deploy an App, how an agent discovers platform instructions, how to configure or test OpenCode, how to edit `kortix.yaml`, how to use the `kortix` CLI, how to land work through a change request, or how to schedule and automate work."
 ---
 
 <skill name="kortix-system">
 
 <live-skills>
 The `kortix` CLI is the live source of truth for how Kortix works. The Kortix
-**system skills** — `kortix-system`, `kortix-executor`, `kortix-memory`,
-`kortix-slack`, `kortix-computer`, `kortix-voice`, `kortix-marketplace` — are
+**system skills** — `kortix-system`, `kortix-apps`, `kortix-connectors`,
+`kortix-memory`, `kortix-harness-refinement`, `kortix-slack`,
+`kortix-computer`, `kortix-voice`, `kortix-marketplace` — are
 served fresh by the CLI,
 so their instructions always match the platform version you're running on (no
 re-install, no image re-bake):
 
-- `kortix skills` — list the Kortix system skills.
-- `kortix skills get <name>` — print one skill's current SKILL.md body.
-- `kortix skills get <name> --full` — also include its referenced files.
+- `kortix system-skills` — list the Kortix system skills.
+- `kortix system-skills get <name>` — print one skill's current SKILL.md body.
+- `kortix system-skills get <name> --full` — also include its referenced files.
 
-(On a newer CLI the same command is also spelled `kortix system-skills`; both
-work. Optional, non-system skills are marketplace items, not system skills —
-browse them with `kortix marketplace list --type skill`.)
+`kortix skills` is a permanent compatibility alias. Optional, non-system
+skills are marketplace items. Browse them with
+`kortix marketplace list --type skill`.
 
-Before answering anything about Kortix internals — the executor/connectors,
+Before answering anything about Kortix internals — Apps, connectors and connections,
 project memory, Slack/channels, reaching a connected computer, or sending a
-notetaker into a meeting — load the matching skill with `kortix skills get
-<name>` and follow it. Prefer this over any stale local copy; the CLI reflects
-the platform you're actually on.
+notetaker into a meeting — load the matching skill with
+`kortix system-skills get <name>` and follow it. Prefer this over any stale
+local copy. The CLI reflects the deployed platform.
+
+For App deployment or lifecycle work, load `kortix-apps`. It contains the
+source-type decision tree, fast paths, blocking behavior, and verification
+contract.
 </live-skills>
 
 <overview>
@@ -33,69 +38,16 @@ A **Kortix project** is one GitHub repo with a `kortix.yaml` at the root — a s
 
 The repo has two configuration layers with strict ownership:
 
-- **Kortix config** — `kortix.yaml` at the repo root, plus `.kortix/` for the sandbox Dockerfile, memory, and the canonical managed-skill source. The platform reads project config, runtime routing, triggers, and Kortix-side governance.
-- **Harness-native config** — the selected runtime profile's `config_dir`. OpenCode normally uses `.kortix/opencode`; Claude Code uses `.claude`; Codex uses `.codex`; Pi uses `.pi`. Each harness owns its prompt, tools, permissions, extensions, and provider-specific settings.
+- **Kortix config** — `kortix.yaml` at the repo root, plus `.kortix/` for the
+  sandbox Dockerfile, memory, and managed skills.
+- **OpenCode config** — `.kortix/opencode`, or the v2
+  `opencode.config_dir`. OpenCode owns prompts, tools, permissions, extensions,
+  and provider settings.
 
-Kortix-specific settings go in `kortix.yaml`. Harness-specific behavior stays in
-the selected native config directory. Do not copy harness-native behavior into
-the manifest.
-
-`kortix_version: 2` runs OpenCode. `kortix_version: 3` declares named
-`runtimes` and lets each logical agent select OpenCode, Claude Code, Codex, or
-Pi through `agents.<name>.runtime`. Version 3 requires the project experiment
-`acp_runtime`, shown as **ACP & Multi-Harness**. The experiment defaults to
-disabled. A disabled project uses the OpenCode REST compatibility transport.
-
-Legacy v1 projects and v2 projects keep OpenCode-native discovery. Their
-`.kortix/opencode/` directory can also drive a local `opencode` run.
+Kortix-specific settings go in `kortix.yaml`. OpenCode behavior stays in the
+OpenCode config directory. Legacy v1 and current v2 projects both use
+OpenCode REST.
 </overview>
-
-<runtime-harnesses>
-## ACP and multi-harness runtime
-
-The supported harness ids are `opencode`, `claude`, `codex`, and `pi`.
-
-Version 3 separates logical agents from runtime profiles:
-
-```yaml
-kortix_version: 3
-default_agent: reviewer
-
-runtimes:
-  codex:
-    harness: codex
-    config_dir: .codex
-
-agents:
-  reviewer:
-    runtime: codex
-    connectors: all
-    secrets: all
-    skills: all
-    kortix_cli: all
-```
-
-Kortix resolves the agent, runtime profile, harness, config directory, and
-native agent when a session starts. That identity is immutable for the
-session. A restart preserves it. Start a new session to change harness.
-
-Managed Kortix system skills are injected into each selected harness's native
-skill directory. The harness can also fetch the deployed source directly:
-
-```sh
-kortix system-skills get kortix-system --full
-```
-
-Credential names differ by harness. Generic provider-key verification is not
-reliable because access depends on the selected model, region, entitlement,
-and API dialect. Test credentials by sending a real prompt through the target
-harness and model.
-
-**Full reference:** `.kortix/opencode/skills/kortix-system/references/kortix/runtime-harnesses.md`
-— v3 manifest shape, native config and skill discovery, credentials, model
-behavior, immutable identity, and the four-harness live smoke command. Load it
-for any ACP, harness, v3 manifest, runtime selection, or harness-test question.
-</runtime-harnesses>
 
 <capabilities>
 ## What Kortix can do
@@ -111,8 +63,8 @@ multi-source investigation), **browser automation** (logins, forms, JS
 sites), **code & data** (full Linux sandbox, any language, Docker-in-Docker),
 **documents** (finished PDF/DOCX/PPTX/XLSX), **media** (image/video/TTS/
 transcription), **websites & apps** (build + deploy from the repo),
-**integrations** (3,000+ connectors + MCP/OpenAPI/GraphQL/HTTP, brokered
-server-side), **secrets** (encrypted, never shown to the model), **memory**
+**connectors** (3,000+ apps + MCP/OpenAPI/GraphQL/HTTP, brokered
+server-side), **secrets** (encrypted, scoped to this agent's grant), **memory**
 (a compounding file-based company brain), **scheduling** (cron/webhook
 triggers — see `<scheduling>` below), **channels** (Slack and chat
 surfaces), and **subagents** (parallel isolated sessions).
@@ -147,13 +99,11 @@ Load this skill when the user asks any of:
 - "How do I add a cron trigger / webhook?" / "Why isn't my webhook firing?"
 - "Where do secrets come from?" / "Why does my session fail to start?"
 - "What's the difference between `kortix.yaml` and `opencode.jsonc`?"
-- "How do I use or test OpenCode, Claude Code, Codex, or Pi?"
-- "What does `acp_runtime` / ACP & Multi-Harness do?"
-- "How do `runtimes` and `agents.<name>.runtime` work in version 3?"
-- "Can I change a running session from one harness to another?"
+- "How do I use or test OpenCode?"
 - "How does an agent retrieve the current Kortix system instructions?"
 - "How do I customize the sandbox image?"
-- "How do I create a harness-native agent or a reusable skill?"
+- "How do I deploy a website, Dockerfile, or OCI image?" / "How do Kortix Apps work?"
+- "How do I create an OpenCode agent or a reusable skill?"
 - "How do I register an MCP server?"
 - "How do I tighten permissions for the build agent?"
 - "What does `AGENTS.md` do in OpenCode?"
@@ -215,12 +165,23 @@ project-scoped — it cannot enumerate other projects or hit account-level
 routes. Trying `kortix projects ls` from inside the sandbox returns 403;
 that's intentional. Use `kortix projects info` to inspect **this** project.
 
+**Secret capability discovery.** `$KORTIX_SECRET_CAPABILITIES` contains a
+value-free JSON catalog for this session. Check it before asking for a
+credential. It lists only secrets allowed by both the agent grant and session
+scope. A `sandbox` entry names the environment variable that contains the
+value. An `https_broker` entry must use `kortix secrets call IDENTIFIER URL
+[options]`; Kortix adds the value server-side only after the request matches the
+stored host, method, and path policy. A `kortix_service` entry is available only
+through its named service, such as a connector or the LLM gateway. Never print
+or return a secret value or an opaque broker handle. Use `kortix secrets ls
+--json` when you need the complete delivery policy.
+
 **Getting a credential — never punt to the dashboard.** When you need an API key
 or an app connected, **mint a setup link and surface the URL in the same turn** —
 don't tell the human to "open Customize → Connectors", and don't ask them to
 paste a raw key into chat. Use the `request_secret` / `connect` tools on the
-`kortix-executor` MCP (or `kortix secrets request` / `kortix executor connect` /
-`kortix connectors link`). The human gets a fill-in
+`kortix-connectors` MCP (or `kortix secrets request` /
+`kortix connectors connect`). The human gets a fill-in
 modal (web) or a tappable link (Slack); you never touch the raw value. Do this
 automatically whenever you add or need a tool. Full playbook in the
 **credentials-and-setup-links** reference below.
@@ -235,6 +196,54 @@ you're done. No manifest, no bot token, no secret-intake link. Details in the
 — every command, every flag, every env var, common workflows. Load it
 when you need exact syntax.
 </cli>
+
+<apps>
+## Kortix Apps — deploy a website or container
+
+An **App** is a project-scoped, serverless deployment with one stable Kortix
+URL. A deployment is immutable. A failed deployment never replaces the active
+version. The control plane starts the App sandbox on the first public request,
+keeps it running while requests arrive, and stops it after the configured idle
+timeout. `stop` suspends compute immediately. The next public request resumes
+the App and returns the original request after readiness.
+
+Apps is experimental and off by default. Enable **Apps** for the selected
+project under Project Settings → Experimental before using the CLI or SDK. The
+CLI labels Apps as experimental. App operations remain gated by the selected
+project feature.
+
+New Apps are private. Use `kortix apps access <app>` to select creator-only,
+whole-project, restricted member/group, public, or password access. Never store
+an App password in `kortix.yaml`.
+
+Use the CLI from the source directory:
+
+```sh
+kortix apps deploy .                         # auto-detect static, bundle, or Dockerfile
+kortix apps deploy ./dist --type static
+kortix apps deploy . --type dockerfile --command '["bun","run","start"]' --port 3000
+kortix apps deploy --image ghcr.io/acme/api:1.4.2 --command '["/app/server"]' --port 8081
+kortix apps access storefront --mode restricted --members <member-id> --groups <group-id>
+kortix apps ls --json
+```
+
+For a repeatable deployment, declare an `apps:` map in a v2 `kortix.yaml`, then
+run `kortix apps deploy --manifest-app <name>`. A single declared App becomes
+the default for bare `kortix apps deploy`. The manifest stores non-secret
+environment values and maps runtime environment keys to **project secret
+identifiers**. It never stores secret values.
+
+The first release supports one public HTTP port, static sites, JavaScript
+bundles, Dockerfiles, and public OCI images. It supports HTTP streaming, SSE,
+and WebSockets. It does not support replicas, persistent volumes, UDP, private
+registries, or custom domains.
+
+**Full reference:**
+`.kortix/opencode/skills/kortix-system/references/kortix/apps.md` — workload
+selection, manifest fields, every lifecycle command, ignore rules, secrets,
+cold starts, rollback, limits, and failure handling. Load it before deploying
+or operating an App.
+</apps>
 
 <marketplace>
 The **Kortix Marketplace** is the project skill library and the normal way to
@@ -288,10 +297,8 @@ sessions after a change request merges (`<change-requests>` below) —
 writing it on a session branch makes it available to that session only.
 
 `.kortix/opencode/skills` is the canonical git source for Kortix-managed
-skills. At sandbox boot, Kortix projects the managed skills into the selected
-harness's native discovery path. OpenCode reads `<config_dir>/skills`, Claude
-Code reads `<config_dir>/skills`, Codex reads `.agents/skills`, and Pi reads
-`<config_dir>/skills`. See `<runtime-harnesses>`.
+skills, and OpenCode's own discovery path. At sandbox boot, Kortix force-writes
+the latest managed system skills into it, so a stale committed copy never wins.
 
 **Full reference:** `.kortix/opencode/skills/kortix-system/references/authoring-skills.md`
 — the complete spec (all frontmatter fields, naming regex, the
@@ -339,6 +346,34 @@ watching — usually via `slack send`, silent otherwise), and it must be
 - `.kortix/opencode/skills/kortix-system/references/kortix/kortix-cli.md`
   — the `kortix triggers ls/info/fire/enable/disable` command reference.
 </scheduling>
+
+<continual-harness>
+## Continual harness — the project refines its own scaffolding
+
+Everything that shapes agent behavior in this project — agent prompts,
+sub-agents, skills/tools, memory — is the **harness**, and it lives in git
+under `.kortix/`. Kortix treats the harness as continuously improvable
+from trajectory evidence, on two loops:
+
+1. **In-session refinement (self-invoked)** — every agent runs the
+   four-pass protocol from the `kortix-harness-refinement` skill over its
+   own recent turns the moment a failure signature costs it twice (and as
+   a checkpoint on long sessions). Edits apply in place — they take
+   effect next turn — committed `harness: …` to the session branch, with
+   one CR kept updated toward `main`.
+2. **Cross-session reflection** — the `harness-reflector` agent (daily
+   cron trigger, on by default) fans out read-only `session-reviewer`
+   sub-agents, one per recent session, to work through full session
+   histories; it aggregates their findings, refines the shared harness,
+   and opens a `harness: …` CR against `main`.
+
+Any agent may also invoke the protocol itself when a failure signature
+costs it twice — load `kortix-harness-refinement`
+(`kortix skills get kortix-harness-refinement` if it is not on disk)
+for the failure signatures, the four passes, and the guardrails (never
+edit managed `kortix-*` skills, never merge your own harness CR, no-op
+is valid).
+</continual-harness>
 
 <change-requests>
 **This is the single most important rule for any agent running in a
@@ -422,7 +457,7 @@ When you, as an agent, have changes you believe should persist:
 | Dashboard     | Renders the CR — title, description, diff, merge preview, conflict markers.               |
 | CLI           | `kortix cr ls / show / diff / open / merge / close / reopen` — full life-cycle locally.   |
 | `kortix.yaml` | Edits to triggers / env land via CR like any other file.                                  |
-| Skills        | New harness-native skill files reach future sessions **only** after a CR merges. Managed Kortix system skills also receive the deployed host overlay. |
+| Skills        | New OpenCode skill files reach future sessions **only** after a CR merges. Managed Kortix system skills also receive the deployed host overlay. |
 | Triggers      | Cron / webhook trigger edits reach the scheduler **only** after the CR merges to `main`.  |
 
 Full reference: `.kortix/opencode/skills/kortix-system/references/kortix/change-requests.md`.
@@ -433,41 +468,35 @@ The boundary between project config and runtime config:
 
 | Surface | Owner | File | Read by |
 | --- | --- | --- | --- |
-| Kortix config | Kortix | `kortix.yaml` + `.kortix/Dockerfile` | Kortix platform |
+| Kortix config | Kortix | `kortix.yaml` + optional custom sandbox files | Kortix platform |
 | OpenCode native config | OpenCode | `.kortix/opencode/` | OpenCode |
-| Claude Code native config | Claude Code | v3 runtime `config_dir`, normally `.claude` | Claude Code |
-| Codex native config | Codex | v3 runtime `config_dir`, normally `.codex`; repo skills in `.agents/skills` | Codex |
-| Pi native config | Pi | v3 runtime `config_dir`, normally `.pi` | Pi |
 
 Version 2 declares OpenCode's config directory through
-`opencode.config_dir`. Version 3 declares one or more native config
-directories through `runtimes.<name>.config_dir`.
+`opencode.config_dir`.
 
-Do not duplicate native harness config in `kortix.yaml`. The manifest owns
-runtime selection, launchability, grants, triggers, and project settings. Each
-harness owns its prompt, permissions, tools, extensions, and provider-specific
-settings. Dashboard edits to triggers and env round-trip through
-`kortix.yaml`.
+Do not duplicate OpenCode config in `kortix.yaml`. The manifest owns
+launchability, grants, triggers, and project settings. OpenCode owns its prompt,
+permissions, tools, extensions, and provider settings. Dashboard edits to
+triggers and env round-trip through `kortix.yaml`.
 </contract>
 
 <canonical-schema>
 ## The canonical manifest schema — one URL, always correct
 
-The starter project's `kortix.yaml` is `kortix_version: 2` — check its top
-`# yaml-language-server: $schema=...` line. That URL is the public, versioned
-JSON Schema, generated straight from `@kortix/manifest-schema` (the same
-package that backs `kortix validate` and the CR-merge gate — one source of
-truth, no separate spec to keep in sync by hand):
+The starter uses `kortix_version: 2`. Check the top
+`# yaml-language-server: $schema=...` line in `kortix.yaml`. That URL is the
+public, versioned JSON Schema, generated from `@kortix/manifest-schema` (the
+same package that backs `kortix validate` and the CR-merge gate — one source
+of truth, no separate spec to keep in sync by hand):
 
 | URL | Covers |
 | --- | --- |
-| `https://kortix.com/schema/kortix.v3.schema.json` | `kortix_version: 3` ACP runtime profiles and multiple harnesses |
 | `https://kortix.com/schema/kortix.v2.schema.json` | `kortix_version: 2` OpenCode governance map |
 | `https://kortix.com/schema/kortix.v1.schema.json` | `kortix_version: 1` only (legacy `[[agents]]` array + `[[channels]]`) |
 | `https://kortix.com/schema/kortix.schema.json` | All published versions; dispatches on `kortix_version` |
 
 `kortix schema` (from any session — the CLI is always pre-authenticated, see
-`<cli>` above) prints the same document locally: `kortix schema --version 3`,
+`<cli>` above) prints the same document locally: `kortix schema --version 2`,
 or `kortix schema --url` for just the URL. If you are AUTHORING or EDITING
 `kortix.yaml` and unsure whether a field/shape is legal, this schema — not
 this skill's prose, which can drift — is the authoritative structural spec;
@@ -483,7 +512,7 @@ and every block is **governance only** —
 renamed `secrets`. There is no `model`/`mode`/`description`/`permission`/
 `prompt` on the manifest side at all in v2 — every one of those is OpenCode
 behavior and lives in that agent's own `.kortix/opencode/agents/<name>.md`
-frontmatter, joined by name (this project's `kortix` and `memory-reflector`
+frontmatter, joined by name (this project's `kortix` and `harness-reflector`
 agents both work this way — open their `.md` files to see what they
 actually do). `default_agent` is required and must resolve to a declared,
 enabled agent. `[[channels]]` is removed outright (channel↔agent routing is
@@ -491,45 +520,21 @@ dashboard-managed, not git). v2 is YAML-only and deny-by-default on every
 grant set (an omitted `connectors`/`secrets`/`skills`/`kortix_cli` resolves
 to `none`, not `all`).
 
-**v3 in one paragraph:** `runtimes:` is a name-to-profile map. Each profile
-declares `harness: opencode|claude|codex|pi` and an optional native
-`config_dir`. `agents:` remains a governance map, but every logical-agent
-block must reference a declared profile through `runtime`. The optional
-`agent` field selects a harness-native agent identifier. Version 3 rejects
-the v2 top-level `opencode` and `runtime` fields. It requires the
-**ACP & Multi-Harness** project experiment before a session can start.
 </canonical-schema>
 
 <agent-authorization>
-## Per-agent governance — `agents:` (v2/v3) / `[[agents]]` (v1, legacy)
+## Per-agent governance — `agents:` (v2) / `[[agents]]` (v1, legacy)
 
-In v2, a logical agent maps by name to an OpenCode agent file. In v3, a logical
-agent selects a runtime profile and can optionally select a harness-native
-agent identifier. In both versions, the manifest owns **launchability and
-authority**. Harness-native behavior stays outside the manifest.
+In v2, a logical agent maps by name to an OpenCode agent file. The manifest
+owns **launchability and authority**. OpenCode behavior stays outside the
+manifest.
 
 ```yaml
 agents:
   release-bot:                          # = the agent's .md name (.kortix/opencode/agents/release-bot.md)
     sandbox: ml                         # default environment for this agent
-    connectors: [github]                # which connector profiles it may call   (default: none)
+    connectors: [github]                # which connectors it may call   (default: none)
     kortix_cli: [project.write, project.cr.open]    # what it may do via the Kortix CLI/API (default: none)
-```
-
-Version 3 adds `runtime` and optional `agent`:
-
-```yaml
-runtimes:
-  review-codex:
-    harness: codex
-    config_dir: .codex
-
-agents:
-  release-bot:
-    runtime: review-codex
-    agent: reviewer
-    connectors: [github]
-    kortix_cli: [project.write, project.cr.open]
 ```
 
 **Which file owns what — never duplicate across the boundary:**
@@ -537,26 +542,22 @@ agents:
 | Setting | Lives in |
 | --- | --- |
 | v2 system prompt, `model`, `mode`, tools, and `permission` | `.kortix/opencode/agents/<name>.md` and `opencode.jsonc` |
-| v3 prompt, tools, permissions, extensions, and provider settings | selected harness `config_dir` |
-| runtime profile and harness | v3 `runtimes:` plus `agents.<name>.runtime` |
 | connectors, secrets, skills, `kortix_cli`, workspace, enabled | manifest `agents:` map |
 
 **How the grant resolves at session start:**
 - v2 (`kortix.yaml`) is **deny-by-default**: an omitted `connectors`/`secrets`/`skills`/`kortix_cli` on a declared agent resolves to `none`, not `all`. `default_agent` is required and must resolve to a declared, enabled agent — give it `connectors: all`, `secrets: all`, `kortix_cli: all`, `skills: all` explicitly if it should keep full access.
-- v3 uses the same deny-by-default grants. It also requires every logical agent
-  to reference a declared runtime profile. The selected harness identity is
-  immutable after session start.
 - v1 (`kortix.toml`, legacy) is **backward-compatible** instead: manifest has **no `[[agents]]`** at all → no agent-grant restriction, agents discovered straight from OpenCode. Agent **is listed** → its `connectors`/`kortix_cli` (default each = none if omitted). Manifest **has `[[agents]]` but this agent isn't listed** → default-deny for Kortix grants. The v1 default agent keeps **full access** only while `[[agents]]` is unadopted — the moment you add `[[agents]]`, declare the default agent too or it falls under the unlisted-deny rule.
 - The effective grant is always **∩ the launching user's role** — an agent can never exceed the human who launched it. Editing the manifest only takes effect once the **CR is merged** (read from the default branch).
 - Session environment precedence is explicit `sandbox_slug`, agent `sandbox`, project `sandbox.default`, then platform `default`. Triggers, schedules, and channels use the target agent's environment.
 
 **Discovery contract:**
-- Declaring `agents:` (v2/v3) or `[[agents]]` (v1) opts into declarative,
-  server-side agent discovery. Native harness files can exist without becoming
+- Declaring `agents:` (v2) or `[[agents]]` (v1) opts into declarative,
+  server-side agent discovery. OpenCode agent files can exist without becoming
   launchable logical agents.
 - Once a project adopts declarative agents, Kortix chat inputs, trigger/channel pickers, and other product UI should fetch agents from the server-side Kortix registry, not directly from the sandbox OpenCode `/app/agents` result.
 - Model lists should follow the same direction: UI fetches the server/LLM-gateway model catalog, not a sandbox-local OpenCode provider list, so connected-provider policy and billing stay server-owned.
-- New projects default to `kortix.yaml` (v2) declarative discovery. Older `kortix.toml` (v1) projects stay in legacy mode until they migrate.
+- New projects use v2 declarative discovery. Older `kortix.toml` (v1)
+  projects stay in legacy mode until they migrate.
 
 **`kortix_cli` — the grantable enum** (project-scoped only; account-level admin actions
 like `member.*` / `billing.*` / `project.create` can NEVER be granted to an agent — nor can
@@ -578,7 +579,7 @@ project.file.read  project.file.write
 project.customize.read  project.customize.write
 project.gitops.read  project.gitops.push  project.gitops.merge
 project.secret.read  project.secret.write
-project.connector.read  project.connector.write  project.connector.profiles.manage   # channels (Slack/meet/email) send + connect are gated here
+project.connector.read  project.connector.write  project.connector.connections.manage   # channels (Slack/meet/email) send + connect are gated here
 project.review.read  project.review.submit  project.review.act
 ```
 
@@ -592,7 +593,7 @@ to see the full enum.
 <reference path=".kortix/opencode/skills/kortix-system/references/capabilities.md">
   The full capabilities reference behind the `<capabilities>` summary
   above: a worked-example paragraph per capability (research, browser,
-  code/data, documents, media, websites/apps, integrations, secrets,
+  code/data, documents, media, websites/apps, connectors, secrets,
   memory, scheduling, channels, subagents, models), "What Kortix is," and
   "What makes Kortix different" for comparison questions. Load whenever a
   capability question needs more than the one-liner in SKILL.md.
@@ -604,7 +605,7 @@ to see the full enum.
   punting the human to the dashboard or asking them to paste a raw key. Covers
   the two link kinds (secret intake / Pipedream Quick Connect), how to mint each
   (the `request_secret` + `connect` MCP tools, or the `kortix secrets request` /
-  `kortix executor connect` / `kortix connectors link` CLI), what the human sees
+  `kortix connectors connect` CLI), what the human sees
   (web modal vs Slack link), how to verify it
   landed, and the security model. Load this whenever you hit "I need an API key /
   I need this app connected" — it is the canonical, autonomous flow.
@@ -615,10 +616,18 @@ to see the full enum.
   projects, secrets, env, sessions, triggers, cr, init, update,
   uninstall), every flag, every env var the CLI reads. Includes the
   project-scoped token model and what the CLI can do **from inside a
-  session sandbox** (where `KORTIX_SANDBOX_TOKEN` + `KORTIX_API_URL` are
+  session sandbox** (where `KORTIX_CLI_TOKEN` + `KORTIX_API_URL` are
   pre-injected so `kortix sessions ls`, `kortix secrets set FOO=bar`,
   `kortix cr ls` all work out of the box). Load this when you want to
   drive the Kortix cloud from a terminal or agent.
+</reference>
+
+<reference path=".kortix/opencode/skills/kortix-system/references/kortix/apps.md">
+  Kortix Apps deployment and operations reference. Covers static, bundle,
+  Dockerfile, and OCI workloads; the v2 manifest `apps:` map; archive ignore
+  rules; environment and secret mappings; stable URLs; cold wake and idle
+  stop; lifecycle commands; rollback; resource and budget limits; and current
+  first-release boundaries. Load before deploying or operating an App.
 </reference>
 
 <reference path=".kortix/opencode/skills/kortix-system/references/kortix/marketplace.md">
@@ -641,23 +650,14 @@ to see the full enum.
 </reference>
 
 <reference path=".kortix/opencode/skills/kortix-system/references/kortix/kortix-yaml.md">
-  In-depth `kortix.yaml` reference. Covers versions 1, 2, and 3; runtime
-  profiles; logical agents; every shared top-level key (`project:`,
+  In-depth `kortix.yaml` reference. Covers versions 1 and 2; logical agents;
+  every shared top-level key (`project:`,
   `env:`, `sandbox:`); every `triggers:` field (cron +
   webhook, incl. `session_mode` and the project-wide `triggers_paused`
   kill-switch), the prompt template variables, the secrets contract, the
-  `apps:` deployment surface, schema versioning, common gotchas, and a
+  schema versioning, common gotchas, and a
   legacy note on the v1 `kortix.toml` TOML format. Load this when
   editing or debugging the manifest.
-</reference>
-
-<reference path=".kortix/opencode/skills/kortix-system/references/kortix/runtime-harnesses.md">
-  ACP and multi-harness reference. Covers the `acp_runtime` experiment,
-  `kortix_version: 3`, OpenCode/Claude Code/Codex/Pi runtime profiles,
-  native config and system-skill discovery, harness-specific credentials,
-  immutable session identity, model behavior, and the canonical
-  `acp-multi-harness-smoke.ts` command. Load for any runtime selection,
-  harness configuration, authentication, or live harness-test question.
 </reference>
 
 <reference path=".kortix/opencode/skills/kortix-system/references/scheduling.md">
@@ -780,18 +780,14 @@ Things that surprise people:
   Centralized in the manifest now, parsed as `triggers:`.
 - **Kortix-owned files live in `.kortix/` at the repo root.** The
   `Dockerfile` and `opencode/` config dir sit under there to keep the
-  root clean. Both paths are declared in `kortix.yaml`
-  (`sandbox: dockerfile`, `opencode: config_dir`) — relocate freely.
-- **Harness behavior remains runtime-native.** In v2, skills, commands, tools,
-  plugins, MCP, providers, and agent prompts remain OpenCode config. In v3,
-  place equivalent behavior in the selected harness's `config_dir`. Declaring
-  a logical agent in `agents:` remains a separate Kortix decision.
-- **A running session cannot switch harness.** Kortix freezes the selected
-  runtime profile at session start. Edit the manifest, merge the CR, and start
-  a new session to use a different harness.
+  root clean. Version 2 declares the OpenCode path through
+  `opencode.config_dir`.
+- **OpenCode behavior remains OpenCode-native.** Skills, commands, tools,
+  plugins, MCP, providers, and agent prompts remain OpenCode config. Declaring
+  a logical agent in `agents:` is a separate Kortix decision.
 - **Provider verification is a real prompt.** A generic key check cannot prove
   a model, region, entitlement, and API dialect together. Test the exact
-  harness and model through a session prompt.
+  model through a session prompt.
 - **Manifest schema is versioned.** `kortix_version` lets the platform
   evolve safely. A manifest declaring a higher version than the platform
   knows about is rejected outright — better than silent misread.

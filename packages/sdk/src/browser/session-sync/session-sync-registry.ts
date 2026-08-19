@@ -1,13 +1,14 @@
 import type { Message, Part, SessionStatus } from '@opencode-ai/sdk/v2/client';
-import { useSyncStore } from '../stores/sync-store';
 import { getClient } from '../../core/runtime/client';
 import {
   SessionSyncController,
-  loadCompleteSessionHistory,
   type SessionSyncPage,
   type SessionSyncReason,
   type SessionSyncTelemetryEvent,
+  loadCompleteSessionHistory,
 } from '../../core/session-sync/session-sync-controller';
+import { getCurrentRuntimeSandboxId } from '../../core/session/current-runtime';
+import { useSyncStore } from '../stores/sync-store';
 
 interface MessagesResponse {
   data?: Array<{ info: Message; parts: Part[] }>;
@@ -29,6 +30,8 @@ export const ACTIVE_SESSION_PREFETCH_SOURCE = Symbol('active-session-prefetch');
 type SessionPrefetchSource = string | typeof ACTIVE_SESSION_PREFETCH_SOURCE;
 
 interface RegistryEntry {
+  sessionId: string;
+  runtimeScope: string;
   controller: SessionSyncController;
   consumers: number;
   lastUsedAt: number;
@@ -38,6 +41,35 @@ interface RegistryEntry {
 
 const MAX_CONTROLLERS = 20;
 const controllers = new Map<string, RegistryEntry>();
+
+function runtimeScopeKey(runtimeScope?: string): string {
+  return runtimeScope ?? getCurrentRuntimeSandboxId() ?? 'none';
+}
+
+function controllerKey(sessionId: string, runtimeScope?: string): string {
+  return `${runtimeScopeKey(runtimeScope)}\n${sessionId}`;
+}
+
+function findExistingSessionEntry(
+  sessionId: string,
+  runtimeScope?: string,
+): RegistryEntry | undefined {
+  const exact = controllers.get(controllerKey(sessionId, runtimeScope));
+  if (exact) return exact;
+
+  // During a React runtime switch, the framework-free current-runtime store can
+  // be briefly unbound while the session's sandbox-scoped controller remains
+  // mounted. Reuse that controller only when the wire id has one unambiguous
+  // owner. Never route across multiple sandboxes that contain the same id.
+  if (runtimeScopeKey(runtimeScope) !== 'none') return undefined;
+  let match: RegistryEntry | undefined;
+  for (const entry of controllers.values()) {
+    if (entry.sessionId !== sessionId) continue;
+    if (match) return undefined;
+    match = entry;
+  }
+  return match;
+}
 
 export async function readSessionMessagePage(
   client: SessionMessageClient,
@@ -59,20 +91,20 @@ function reportTelemetry(sessionId: string, event: SessionSyncTelemetryEvent): v
   console.debug('[session-sync]', { sessionId, ...event });
 }
 
-function resolveClient(sessionId: string): SessionMessageClient {
-  return controllers.get(sessionId)?.client ?? getClient();
+function resolveClient(key: string): SessionMessageClient {
+  return controllers.get(key)?.client ?? getClient();
 }
 
-function createController(sessionId: string): SessionSyncController {
+function createController(sessionId: string, key: string): SessionSyncController {
   return new SessionSyncController({
     sessionId,
-    loadPage: (request) => readSessionMessagePage(resolveClient(sessionId), sessionId, request),
-    loadStatus: async () => {
-      const loadStatus = resolveClient(sessionId).session.status;
-      if (!loadStatus) return { type: 'idle' } as SessionStatus;
-      const result = await loadStatus();
-      return result.data?.[sessionId] ?? ({ type: 'idle' } as SessionStatus);
-    },
+    loadPage: (request) => readSessionMessagePage(resolveClient(key), sessionId, request),
+    // No `loadStatus` / `setStatus`. The liveness poll reconciles the
+    // transcript tail and claims nothing about whether the session is working:
+    // `GET .../turn` answers that, and `setBusy` is already driven from that
+    // projection (`livenessBusy`). `loadSessionRuntimeStatus` stays — it is a
+    // published export of `@kortix/sdk/react` — but this controller no longer
+    // calls it.
     hydrate: (messages) => {
       useSyncStore.getState().hydrate(sessionId, messages);
     },
@@ -80,22 +112,18 @@ function createController(sessionId: string): SessionSyncController {
       const state = useSyncStore.getState();
       if (!(sessionId in state.messages)) state.hydrate(sessionId, []);
     },
-    setStatus: (status) => {
-      controllers.get(sessionId)?.controller.observePromptStatus(status);
-      useSyncStore.getState().setStatus(sessionId, status);
-    },
     onTelemetry: (event) => reportTelemetry(sessionId, event),
   });
 }
 
-function evictInactiveControllers(protectedSessionId?: string): void {
+function evictInactiveControllers(protectedKey?: string): void {
   if (controllers.size <= MAX_CONTROLLERS) return;
   const inactive = [...controllers.entries()]
-    .filter(([sessionId, entry]) => entry.consumers === 0 && sessionId !== protectedSessionId)
+    .filter(([key, entry]) => entry.consumers === 0 && key !== protectedKey)
     .sort((a, b) => a[1].lastUsedAt - b[1].lastUsedAt);
-  for (const [sessionId, entry] of inactive) {
+  for (const [key, entry] of inactive) {
     entry.controller.destroy();
-    controllers.delete(sessionId);
+    controllers.delete(key);
     if (controllers.size <= MAX_CONTROLLERS) return;
   }
 }
@@ -104,29 +132,35 @@ function getOrCreateRegistryEntry(
   sessionId: string,
   client?: SessionMessageClient,
   initialConsumers = 0,
+  runtimeScope?: string,
 ): RegistryEntry {
-  const existing = controllers.get(sessionId);
+  const key = controllerKey(sessionId, runtimeScope);
+  const existing = controllers.get(key);
   if (existing) {
     existing.client = client;
     existing.lastUsedAt = Date.now();
     return existing;
   }
   const entry: RegistryEntry = {
-    controller: createController(sessionId),
+    sessionId,
+    runtimeScope: runtimeScopeKey(runtimeScope),
+    controller: createController(sessionId, key),
     client,
     consumers: initialConsumers,
     lastUsedAt: Date.now(),
   };
-  controllers.set(sessionId, entry);
+  controllers.set(key, entry);
   return entry;
 }
 
 export function getSessionSyncController(
   sessionId: string,
   client?: SessionMessageClient,
+  runtimeScope?: string,
 ): SessionSyncController {
-  const entry = getOrCreateRegistryEntry(sessionId, client);
-  evictInactiveControllers(sessionId);
+  const key = controllerKey(sessionId, runtimeScope);
+  const entry = getOrCreateRegistryEntry(sessionId, client, 0, runtimeScope);
+  evictInactiveControllers(key);
   return entry.controller;
 }
 
@@ -135,13 +169,20 @@ export async function prefetchSessionSyncOnce(
   source: SessionPrefetchSource,
   client?: SessionMessageClient,
 ): Promise<boolean> {
-  const existing = controllers.get(sessionId);
-  const entry = getOrCreateRegistryEntry(sessionId, existing?.consumers ? undefined : client);
-  evictInactiveControllers(sessionId);
+  const runtimeScope = source === ACTIVE_SESSION_PREFETCH_SOURCE ? runtimeScopeKey() : source;
+  const key = controllerKey(sessionId, runtimeScope);
+  const existing = controllers.get(key);
+  const entry = getOrCreateRegistryEntry(
+    sessionId,
+    existing?.consumers ? undefined : client,
+    0,
+    runtimeScope,
+  );
+  evictInactiveControllers(key);
   if (entry.prefetchedSource === source) return true;
   await entry.controller.reconcile('manual');
   const succeeded = entry.controller.getSnapshot().freshness === 'fresh';
-  const current = controllers.get(sessionId);
+  const current = controllers.get(key);
   if (succeeded && current === entry) current.prefetchedSource = source;
   return succeeded;
 }
@@ -154,19 +195,20 @@ export function clearActiveSessionPrefetches(): void {
   }
 }
 
-export function retainSessionSyncController(sessionId: string): () => void {
-  let entry = controllers.get(sessionId);
+export function retainSessionSyncController(sessionId: string, runtimeScope?: string): () => void {
+  const key = controllerKey(sessionId, runtimeScope);
+  let entry = controllers.get(key);
   if (entry) {
     entry.client = undefined;
     entry.consumers += 1;
     entry.lastUsedAt = Date.now();
   } else {
-    entry = getOrCreateRegistryEntry(sessionId, undefined, 1);
+    entry = getOrCreateRegistryEntry(sessionId, undefined, 1, runtimeScope);
   }
   evictInactiveControllers();
   const controller = entry.controller;
   return () => {
-    const current = controllers.get(sessionId);
+    const current = controllers.get(key);
     if (!current || current.controller !== controller) return;
     current.consumers = Math.max(0, current.consumers - 1);
     current.lastUsedAt = Date.now();
@@ -175,16 +217,41 @@ export function retainSessionSyncController(sessionId: string): () => void {
   };
 }
 
-export function reconcileSessionTail(sessionId: string, reason: SessionSyncReason): Promise<void> {
-  return getSessionSyncController(sessionId).reconcile(reason);
+export function reconcileSessionTail(
+  sessionId: string,
+  reason: SessionSyncReason,
+  runtimeScope?: string,
+): Promise<void> {
+  return getSessionSyncController(sessionId, undefined, runtimeScope).reconcile(reason);
 }
 
-export function beginSessionPromptObservation(sessionId: string): void {
-  getSessionSyncController(sessionId).beginPromptObservation();
-}
-
-export function endSessionPromptObservation(sessionId: string): void {
-  controllers.get(sessionId)?.controller.endPromptObservation();
+/**
+ * One authoritative read of a session's runtime status. `null` when the
+ * runtime exposes no status endpoint — the caller decides what silence means.
+ * A session absent from the snapshot is authoritatively idle: the runtime
+ * enumerates every session it is working on.
+ */
+export async function loadSessionRuntimeStatus(
+  sessionId: string,
+  client: SessionMessageClient = getClient(),
+): Promise<SessionStatus | null> {
+  // Invoke BOUND — `client.session.status()` — never detached into a local.
+  // The real SDK's SessionClient.status() dereferences `this.client`, so a
+  // detached call throws a TypeError before any request goes out. That exact
+  // detachment silently disabled status reconciliation against real clients
+  // while every plain-object test fake kept passing.
+  if (!client.session.status) return null;
+  const result = (await client.session.status()) as {
+    data?: Record<string, SessionStatus>;
+    error?: unknown;
+  };
+  // The generated client RESOLVES with { error } on HTTP failure. Mapping
+  // that to "idle" told callers a failing runtime was authoritatively done —
+  // and starved every retry budget built on thrown errors. Fail loudly.
+  if (result.error !== undefined || result.data === undefined) {
+    throw new Error(`session status read failed: ${JSON.stringify(result.error ?? 'no data')}`);
+  }
+  return result.data[sessionId] ?? ({ type: 'idle' } as SessionStatus);
 }
 
 export function loadSessionTranscriptMessages(
@@ -195,7 +262,11 @@ export function loadSessionTranscriptMessages(
   );
 }
 
-export function noteSessionSyncEvent(event: { type?: string; properties: unknown }): void {
+export function noteSessionSyncEvent(event: {
+  type?: string;
+  properties?: unknown;
+}): void {
+  if (!event.properties || typeof event.properties !== 'object') return;
   const properties = event.properties as Record<string, unknown>;
   const info = properties.info as { sessionID?: string; role?: string } | undefined;
   const part = properties.part as { sessionID?: string } | undefined;
@@ -204,29 +275,27 @@ export function noteSessionSyncEvent(event: { type?: string; properties: unknown
     info?.sessionID ||
     part?.sessionID;
   if (!sessionId) return;
-  const controller = controllers.get(sessionId)?.controller;
-  if (!controller) return;
-  controller.noteActivity();
-
-  if (event.type === 'session.status') {
-    const status = properties.status as SessionStatus | undefined;
-    if (status) controller.observePromptStatus(status);
-    return;
-  }
-  if (event.type === 'session.idle') {
-    controller.observePromptStatus({ type: 'idle' });
-    return;
-  }
-  if (event.type === 'session.error') {
-    controller.endPromptObservation();
-    return;
-  }
-  if (event.type === 'message.updated' && info?.role === 'assistant') {
-    controller.observePromptActivity();
-  }
+  // Every frame for this session is proof its transcript moved, and that is
+  // all this hook does now: it renews freshness. The frames themselves are
+  // applied by the event handler, and "is this session working?" is answered
+  // by `projectWorking` over the server's turn authority — not by inferring a
+  // phase from which frame arrived when.
+  findExistingSessionEntry(sessionId)?.controller.noteActivity();
 }
 
 export function resetSessionSyncControllers(): void {
   for (const entry of controllers.values()) entry.controller.destroy();
   controllers.clear();
+}
+
+/** Retire controllers for one wire id after a different sandbox claims it. */
+export function resetSessionSyncControllersForSession(
+  sessionId: string,
+  keepRuntimeScope?: string,
+): void {
+  for (const [key, entry] of controllers) {
+    if (entry.sessionId !== sessionId || entry.runtimeScope === keepRuntimeScope) continue;
+    entry.controller.destroy();
+    controllers.delete(key);
+  }
 }

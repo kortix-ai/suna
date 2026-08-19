@@ -34,27 +34,40 @@ import { focusWithoutScroll } from '@/lib/utils/focus-without-scroll';
 import { parseLocalhostUrl, toInternalUrl } from '@/lib/utils/sandbox-url';
 import { recentDisplayLabel, useBrowserRecentsStore } from '@/stores/browser-recents-store';
 import { useIsExpanded, useToggleExpanded } from '@/stores/kortix-computer-store';
-import type { CreateSessionPublicShareInput } from '@kortix/sdk';
+import { type CreateSessionPublicShareInput, probePreviewPort } from '@kortix/sdk';
 import { useRuntimeConnectionStore } from '@kortix/sdk/react';
 import {
-  AlertTriangle,
-  ArrowLeft,
-  ArrowRight,
-  Check,
-  Globe,
-  Link as LinkIcon,
-  Maximize2,
-  MessageSquarePlus,
-  Minimize2,
-  RefreshCw,
-} from 'lucide-react';
-import { AnimatePresence, motion } from 'motion/react';
+  WarningIcon as AlertTriangle,
+  ArrowLeftIcon as ArrowLeft,
+  ArrowRightIcon as ArrowRight,
+  ArrowSquareOutIcon,
+  CheckIcon as Check,
+  GlobeIcon as Globe,
+  ArrowClockwiseIcon as GrRefresh,
+  LinkSimpleIcon,
+  ArrowsOutSimpleIcon as Maximize2,
+  ChatIcon as MessageSquarePlus,
+  ArrowsInSimpleIcon as Minimize2,
+  SparkleIcon as SparklesSolid,
+  WarningIcon,
+} from '@phosphor-icons/react';
+import { AnimatePresence, m } from 'motion/react';
 import type React from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { GrRefresh } from 'react-icons/gr';
-import { TbExternalLink } from 'react-icons/tb';
 import { CloseButton, DetailSidebarToggle } from './detail-view';
-import { sandboxRecents } from './easy-panel-logic';
+import {
+  PREVIEW_MAX_WAIT_MS,
+  PREVIEW_PROBE_INTERVAL_MS,
+  type PreviewProbe,
+  type SandboxHealth,
+  previewErrorReason,
+  previewLoadSuccessState,
+  previewLoadVerdict,
+  runtimeSandboxHealth,
+  sandboxRecents,
+  shouldArmLoadTimeout,
+  shouldKeepProbingPort,
+} from './easy-panel-logic';
 import type { ShareContext } from './viewer-actions';
 
 // zustand v5's own hook feeds React's `useSyncExternalStore` a
@@ -65,9 +78,13 @@ import type { ShareContext } from './viewer-actions';
 // same process, as this component's render tests need to. Reading through
 // `getState()` for both snapshots sidesteps that — same live value, same
 // reactivity via `subscribe`, no behavior change in the browser or real SSR.
-const getSandboxAliveSnapshot = () => {
+const getSandboxHealthSnapshot = (): SandboxHealth => {
   const s = useRuntimeConnectionStore.getState();
-  return s.status === 'connected' && s.healthy === true;
+  return runtimeSandboxHealth({
+    status: s.status,
+    healthy: s.healthy,
+    initialCheckDone: s.initialCheckDone,
+  });
 };
 
 /** Split a URL so the hostname can be rendered brighter than the rest. */
@@ -88,6 +105,7 @@ export function AppPreview({
   shareContext,
   onClose,
   onAskForChanges,
+  onSendToAgent,
 }: {
   /** The internal sandbox URL the agent handed over, e.g. http://localhost:3000. */
   url: string;
@@ -101,6 +119,12 @@ export function AppPreview({
    *  detail (W12). Omitted entirely (not disabled) where there's no session
    *  composer to hand it to. */
   onAskForChanges?: () => void;
+  /** "Send to agent" — shown in the "Couldn't load" error state next to
+   *  Retry, in the merge-conflict "Solve with agent" style. Seeds the session
+   *  composer with a prompt asking the agent to bring the app back up. Omitted
+   *  entirely (not disabled) when there's no handler — the error screen then
+   *  shows only Retry, exactly as before. */
+  onSendToAgent?: () => void;
 }) {
   // The app runs on localhost *inside the sandbox*, which the browser cannot
   // reach. The proxy is what makes it openable at all.
@@ -123,11 +147,11 @@ export function AppPreview({
   const proxied = useMemo(() => proxyUrl(current) ?? current, [proxyUrl, current]);
   // Null while the auth token is still being fetched — the landing state holds.
   const previewUrl = useAuthenticatedPreviewUrl(proxied);
+  const hasPreview = !!previewUrl;
 
   const [refreshKey, setRefreshKey] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
-  const loadTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [addressValue, setAddressValue] = useState(current);
   const [isEditing, setIsEditing] = useState(false);
@@ -156,36 +180,99 @@ export function AppPreview({
   });
   const copied = shareLink.copied;
 
-  const sandboxAlive = useSyncExternalStore(
+  const sandboxHealth = useSyncExternalStore(
     useRuntimeConnectionStore.subscribe,
-    getSandboxAliveSnapshot,
-    getSandboxAliveSnapshot,
+    getSandboxHealthSnapshot,
+    getSandboxHealthSnapshot,
   );
 
   useEffect(() => {
     if (!isEditing) setAddressValue(current);
   }, [current, isEditing]);
 
-  const clearLoadTimeout = useCallback(() => {
-    if (loadTimeout.current) {
-      clearTimeout(loadTimeout.current);
-      loadTimeout.current = null;
-    }
-  }, []);
-
+  // ─── The port watch. ─────────────────────────────────────────────────────
   // Cross-origin iframes frequently never fire onLoad OR onError, so both the
-  // spinner and the error card would otherwise hang on a dead server. After 5s
-  // of silence, assume the worst and say so — a blank frame reads as "your app
-  // is broken" with no explanation, which is worse than an honest error (W8).
+  // spinner and the error card would otherwise hang forever. This used to be a
+  // flat 5s timer that declared "Couldn't load" on that silence — but silence
+  // is not evidence, and a first hit on a cold dev-server route takes 30-60s
+  // (CLAUDE.md), so healthy apps were being failed mid-compile.
+  //
+  // So ask the port instead of watching the clock. The preview proxy answers
+  // 502/503/504 ITSELF when it cannot open a connection, which makes a NEGATIVE
+  // verdict fast and independent of how slow the app is; a positive verdict is
+  // only ever as fast as the app, and the iframe's own onLoad is the better
+  // signal for that anyway. `previewLoadVerdict` owns every decision; this is
+  // the loop that feeds it (one probe in flight at a time, so a stalled port
+  // delays the next probe instead of stacking sockets).
+  //
+  // Armed only once the iframe actually has a `src` (`hasPreview`): the auth
+  // token fetch that produces `previewUrl` can itself take a few seconds, and
+  // arming at mount burned that wait against the app's budget.
   useEffect(() => {
-    if (!isLoading || noApp) return;
-    clearLoadTimeout();
-    loadTimeout.current = setTimeout(() => {
+    if (!shouldArmLoadTimeout({ isLoading, noApp, hasPreview }) || !previewUrl) return;
+
+    const startedAt = Date.now();
+    let unreachableSince = 0;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let alive = true;
+    const controller = new AbortController();
+
+    const fail = () => {
+      alive = false;
       setIsLoading(false);
       setHasError(true);
-    }, 5000);
-    return clearLoadTimeout;
-  }, [isLoading, refreshKey, clearLoadTimeout, noApp]);
+    };
+
+    // Sandbox health is read from the store at decision time, not closed over:
+    // it must reach the next tick WITHOUT restarting the watch, or every write
+    // by the runtime poll would reset the elapsed clock.
+    const decide = (probe: PreviewProbe, waitedMs: number) => {
+      const verdict = previewLoadVerdict({
+        sandbox: getSandboxHealthSnapshot(),
+        probe,
+        unreachableForMs: unreachableSince ? Date.now() - unreachableSince : 0,
+        waitedMs,
+      });
+      if (verdict === 'failed') fail();
+      return verdict;
+    };
+
+    const tick = async () => {
+      const probe = await probePreviewPort(previewUrl, { signal: controller.signal });
+      if (!alive) return;
+
+      // Continuity, not a count: any answer at all clears the streak, so a
+      // server that restarts mid-wait never accumulates its way to an error.
+      if (probe === 'unreachable') unreachableSince ||= Date.now();
+      else unreachableSince = 0;
+
+      const watchedMs = Date.now() - startedAt;
+      if (decide(probe, watchedMs) === 'failed') return;
+
+      const unreachableForMs = unreachableSince ? Date.now() - unreachableSince : 0;
+      if (shouldKeepProbingPort({ probe, unreachableForMs, watchedMs })) {
+        timer = setTimeout(tick, PREVIEW_PROBE_INTERVAL_MS);
+      }
+      // Otherwise the probe has said all it can. The iframe's own onLoad and
+      // the bound below carry the rest — no more requests at the user's app.
+    };
+
+    // The bound gets its own timer rather than riding the poll: a probe that
+    // stalls stretches the loop's cadence, and the ceiling must not stretch
+    // with it.
+    const deadline = setTimeout(() => {
+      if (alive) decide('unknown', PREVIEW_MAX_WAIT_MS);
+    }, PREVIEW_MAX_WAIT_MS);
+
+    void tick();
+
+    return () => {
+      alive = false;
+      controller.abort();
+      clearTimeout(deadline);
+      if (timer) clearTimeout(timer);
+    };
+  }, [isLoading, refreshKey, noApp, hasPreview, previewUrl]);
 
   // Nothing to load, so land the cursor on the address bar — the fastest way
   // in once you know the port. `focusWithoutScroll`: this fires while the
@@ -256,8 +343,6 @@ export function AppPreview({
     },
     [addressValue, navigateTo],
   );
-
-  const hasPreview = !!previewUrl;
 
   // At rest the bar shows the full URL; this overlay re-renders it with the
   // hostname highlighted, which an <input> can't do (it can't mix text colors).
@@ -373,7 +458,7 @@ export function AppPreview({
               window.open(previewUrl, '_blank', 'noopener,noreferrer');
             }}
           >
-            <TbExternalLink className="size-4" />
+            <ArrowSquareOutIcon className="size-4" />
           </Button>
         </Hint>
 
@@ -393,7 +478,7 @@ export function AppPreview({
                 → "Button icon-swap"). */}
             <span className="relative inline-flex size-4 items-center justify-center">
               <AnimatePresence initial={false} mode="popLayout">
-                <motion.span
+                <m.span
                   key={copied ? 'check' : 'link'}
                   initial={{ scale: 0.25, opacity: 0, filter: 'blur(4px)' }}
                   animate={{ scale: 1, opacity: 1, filter: 'blur(0px)' }}
@@ -404,9 +489,9 @@ export function AppPreview({
                   {copied ? (
                     <Check className="text-kortix-green size-4" />
                   ) : (
-                    <LinkIcon className="size-4" />
+                    <LinkSimpleIcon className="size-4" />
                   )}
-                </motion.span>
+                </m.span>
               </AnimatePresence>
             </span>
           </Button>
@@ -443,25 +528,30 @@ export function AppPreview({
         {hasError && !noApp && (
           <div className="bg-background absolute inset-0 z-10 flex items-center justify-center">
             <div className="flex max-w-sm flex-col items-center gap-4 px-4 text-center">
-              <span className="bg-kortix-orange/15 flex size-9 items-center justify-center rounded-sm">
-                <AlertTriangle className="text-kortix-orange size-5" />
+              <span className="bg-kortix-yellow/15 flex size-9 items-center justify-center rounded-md">
+                <WarningIcon className="text-kortix-yellow size-5" />
               </span>
               <div>
                 <p className="text-sm font-medium">Couldn&apos;t load {name}</p>
                 {/* The single most common cause, said plainly: the agent started
-                    the server a moment ago and it isn't listening yet. */}
+                    the server a moment ago and it isn't listening yet. Only a
+                    SETTLED `dead` verdict earns the stopped-workspace wording —
+                    see `previewErrorReason`. */}
                 <p className="text-muted-foreground mt-1 text-xs">
-                  {!sandboxAlive
-                    ? 'This workspace has stopped, so the app isn’t reachable anymore.'
-                    : port
-                      ? `The app on port ${port} may not be running yet.`
-                      : 'The app may not be running yet.'}
+                  {previewErrorReason({ sandbox: sandboxHealth, port })}
                 </p>
               </div>
-              <Button variant="outline" size="sm" className="gap-1.5" onClick={reload}>
-                <RefreshCw className="size-3.5 shrink-0" />
-                Retry
-              </Button>
+              <div className="flex items-center justify-center gap-2">
+                <Button variant="outline" size="sm" className="gap-1.5" onClick={reload}>
+                  Retry
+                </Button>
+                {onSendToAgent && (
+                  <Button size="sm" className="gap-1.5" onClick={onSendToAgent}>
+                    <SparklesSolid weight="fill" className="size-3.5 shrink-0" />
+                    Send to agent
+                  </Button>
+                )}
+              </div>
             </div>
           </div>
         )}
@@ -514,11 +604,18 @@ export function AppPreview({
             className="h-full w-full border-0"
             sandbox={INTERACTIVE_PREVIEW_IFRAME_SANDBOX}
             onLoad={() => {
-              clearLoadTimeout();
-              setIsLoading(false);
+              // A load is positive evidence the app is up, which overrides a
+              // `hasError` an earlier verdict set — otherwise the error card
+              // (absolute inset-0 z-10) keeps covering a working app until a
+              // manual Retry (see `previewLoadSuccessState`). Clearing
+              // `isLoading` also disarms the port watch: its effect is gated on
+              // `shouldArmLoadTimeout`, so the state change tears it down.
+              const next = previewLoadSuccessState();
+              setIsLoading(next.isLoading);
+              setHasError(next.hasError);
             }}
             onError={() => {
-              clearLoadTimeout();
+              // A real error event is its own evidence — no probe needed.
               setIsLoading(false);
               setHasError(true);
             }}

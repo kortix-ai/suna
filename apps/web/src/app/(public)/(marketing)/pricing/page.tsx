@@ -6,16 +6,18 @@ import KortixGrid from '@/components/ui/marketing/gridder';
 import { ComputeCreditCalculator } from '@/features/billing/compute-credit-calculator';
 import { PricingPlanCard } from '@/features/billing/pricing-plan-card';
 import { PRICING_PLANS } from '@/features/billing/pricing-plans';
-import { ArrowRight } from 'lucide-react';
+import { ArrowRightIcon as ArrowRight } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 
 const START_URL = '/auth';
 const DEMO_URL = '/enterprise';
 
+// Keyed by MARKETING plan id (display-only — see pricing-plans.ts). Never an
+// API tier key.
 const PLAN_CTAS: Record<(typeof PRICING_PLANS)[number]['id'], { cta: string; href: string }> = {
   free: { cta: 'Get started', href: START_URL },
-  team: { cta: 'Get started', href: START_URL },
+  team_seat: { cta: 'Get started', href: START_URL },
   enterprise: { cta: 'Request demo', href: DEMO_URL },
 };
 
@@ -162,7 +164,7 @@ export default function PricingPage() {
       </div>
 
       {/* ── CTA footer ─────────────────────────────────────────── */}
-      <section id="cta" className="relative mx-auto max-w-6xl px-6 py-16 sm:py-24 xl:px-0">
+      <section id="cta" className="relative mx-auto max-w-7xl px-6 py-16 sm:py-24 xl:px-0">
         <div className="border-border bg-card relative overflow-hidden rounded-sm border text-center">
           <div className="flex grid-cols-12 flex-col-reverse gap-2 md:grid">
             <div className="col-span-4 flex flex-col items-start justify-start p-6 *:text-left">

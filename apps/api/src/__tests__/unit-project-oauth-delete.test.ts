@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { projectSecrets } from '@kortix/db';
+import * as realAccess from '../projects/lib/access';
 
 const PROJECT_ID = '33333333-3333-4333-8333-333333333333';
 const ACCOUNT_ID = '44444444-4444-4444-8444-444444444444';
@@ -20,6 +21,7 @@ mock.module('../iam', () => ({ PROJECT_ACTIONS }));
 const deleteCalls: Array<{ table: unknown; where: unknown }> = [];
 const propagateCalls: Array<{ projectId: string; opts: unknown }> = [];
 const capabilityChecks: Array<{ userId: string; accountId: string; projectId: string; action: string }> = [];
+const auditEvents: Array<Record<string, unknown>> = [];
 
 mock.module('../shared/db', () => ({
   hasDatabase: true,
@@ -33,7 +35,11 @@ mock.module('../shared/db', () => ({
   },
 }));
 
+// Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
+// lists exports by hand deletes every export it omits — the failure surfaces in
+// whatever unrelated file imports the missing name next, attributed to no test.
 mock.module('../projects/lib/access', () => ({
+  ...realAccess,
   loadProjectForUser: async (c: any) => ({
     row: { accountId: ACCOUNT_ID, projectId: PROJECT_ID },
     userId: c.get('userId'),
@@ -53,6 +59,21 @@ mock.module('../projects/lib/access', () => ({
 mock.module('../projects/lib/sandbox-env-sync', () => ({
   propagateProjectSecretsToActiveSandboxes: async (projectId: string, opts: unknown) => {
     propagateCalls.push({ projectId, opts });
+  },
+}));
+
+mock.module('../shared/audit', () => ({
+  inferAuditSource: () => 'api',
+  recordAuditEvent: async (event: Record<string, unknown>) => {
+    auditEvents.push(event);
+  },
+  runAuditedTransaction: async <T>(
+    operation: (tx: typeof import('../shared/db').db) => Promise<T>,
+    event: (result: T) => Record<string, unknown>,
+  ) => {
+    const result = await operation((await import('../shared/db')).db);
+    auditEvents.push(event(result));
+    return result;
   },
 }));
 
@@ -78,6 +99,7 @@ describe('DELETE /v1/projects/:projectId/oauth/:provider', () => {
     deleteCalls.length = 0;
     propagateCalls.length = 0;
     capabilityChecks.length = 0;
+    auditEvents.length = 0;
   });
 
   test('authorized principal deletes the backing secret and propagates to sandboxes', async () => {
@@ -101,6 +123,15 @@ describe('DELETE /v1/projects/:projectId/oauth/:provider', () => {
 
     expect(propagateCalls).toHaveLength(1);
     expect(propagateCalls[0].projectId).toBe(PROJECT_ID);
+    expect(auditEvents).toHaveLength(1);
+    expect(auditEvents[0]).toMatchObject({
+      action: 'secret.oauth.disconnected',
+      projectId: PROJECT_ID,
+      metadata: {
+        identifier: 'CODEX_AUTH_JSON',
+        consumer: 'llm_gateway',
+      },
+    });
   });
 
   test('unauthorized principal is denied and no delete is issued', async () => {

@@ -66,7 +66,7 @@ describe('grant expiry (filtered at authorization time)', () => {
     const expired = uid();
     await db.insert(accountMembers).values({ userId: expired, accountId: ACCOUNT, accountRole: 'member' });
     await db.insert(projectMembers).values({
-      accountId: ACCOUNT, projectId: P1, userId: expired, projectRole: 'editor',
+      accountId: ACCOUNT, projectId: P1, userId: expired, projectRole: 'manager',
       expiresAt: new Date(Date.now() - 60_000), // one minute ago
     });
     expect((await authorizeV2(expired, ACCOUNT, PROJECT_ACTIONS.PROJECT_WRITE, proj(P1))).allowed).toBe(false);
@@ -74,7 +74,7 @@ describe('grant expiry (filtered at authorization time)', () => {
     const future = uid();
     await db.insert(accountMembers).values({ userId: future, accountId: ACCOUNT, accountRole: 'member' });
     await db.insert(projectMembers).values({
-      accountId: ACCOUNT, projectId: P1, userId: future, projectRole: 'editor',
+      accountId: ACCOUNT, projectId: P1, userId: future, projectRole: 'manager',
       expiresAt: new Date(Date.now() + 3_600_000), // one hour out
     });
     expect((await authorizeV2(future, ACCOUNT, PROJECT_ACTIONS.PROJECT_WRITE, proj(P1))).allowed).toBe(true);

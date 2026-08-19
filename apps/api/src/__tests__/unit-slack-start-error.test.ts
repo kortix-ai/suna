@@ -28,6 +28,16 @@ describe('startErrorMessage', () => {
     expect(m).toContain('/kortix login');
   });
 
+  test('WORKSPACE_MODE_UNAVAILABLE explains the configuration change instead of login', () => {
+    const m = startErrorMessage(409, {
+      code: 'WORKSPACE_MODE_UNAVAILABLE',
+      error: 'workspace mode "read" requires restricted workspace artifacts',
+    });
+    expect(m).toContain('`read`');
+    expect(m).toContain('`runtime` or `branch`');
+    expect(m).not.toContain('/kortix login');
+  });
+
   test('403 → permission, ask an admin', () => {
     const m = startErrorMessage(403, {});
     expect(m.toLowerCase()).toContain('permission');

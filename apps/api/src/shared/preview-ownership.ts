@@ -14,7 +14,13 @@
 import { db } from './db';
 import { isPlatformAdmin } from './platform-roles';
 import { resolveAccountId } from './resolve-account';
-import { isSessionVisibleTo, loadSessionGrants, resolveShareSubject } from '../executor/share';
+import {
+  isProjectSessionVisibleTo,
+  isTriggerCreatedSessionMetadata,
+  loadSessionGrants,
+  resolveShareSubject,
+} from '../connectors/share';
+import { authorize } from '../iam';
 import { accountMembers, projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, eq, or, sql } from 'drizzle-orm';
 import type { KortixUserContext } from './kortix-user-context';
@@ -65,6 +71,7 @@ export async function canAccessSandboxSession(input: {
       visibility: projectSessions.visibility,
       createdBy: projectSessions.createdBy,
       origin: projectSessions.origin,
+      metadata: projectSessions.metadata,
     })
     .from(projectSessions)
     .where(
@@ -78,9 +85,20 @@ export async function canAccessSandboxSession(input: {
 
   let allowed = true;
   if (row) {
-    const subject = await resolveShareSubject(input.userId);
-    const grants = (await loadSessionGrants([input.sessionId])).get(input.sessionId) ?? [];
-    allowed = isSessionVisibleTo(
+    const [subject, grantsBySession, managerVerdict] = await Promise.all([
+      resolveShareSubject(input.userId),
+      loadSessionGrants([input.sessionId]),
+      isTriggerCreatedSessionMetadata(row.metadata)
+        ? authorize(
+            input.userId,
+            input.accountId,
+            'project.members.manage',
+            { type: 'project', id: input.projectId },
+          )
+        : Promise.resolve({ allowed: false as const, reason: 'not_trigger_session' }),
+    ]);
+    const grants = grantsBySession.get(input.sessionId) ?? [];
+    allowed = isProjectSessionVisibleTo(
       row.visibility as 'private' | 'project' | 'restricted',
       row.createdBy,
       grants,
@@ -90,6 +108,7 @@ export async function canAccessSandboxSession(input: {
         sessionId: input.sessionId,
         callerSessionId: input.callerSessionId,
       },
+      { metadata: row.metadata, canManageProject: managerVerdict.allowed },
     );
   }
   sessionVisibilityCache.set(key, { allowed, expiresAt: Date.now() + SESSION_VISIBILITY_TTL_MS });

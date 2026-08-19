@@ -1,13 +1,13 @@
 import { defaultEnabledModelIds } from '@kortix/llm-catalog';
 
-import { config } from '../config';
-import { getProjectRoutingPolicy } from '../repositories/project-routing-policies';
 import { isKnownManagedModelId } from './models/managed-models';
 
 // Per-project model enablement. The newest model of each family is offered by
-// default; a project stores only the EXCEPTIONS it made to that. Anything not
-// effectively enabled is refused everywhere (chat, Slack, triggers, raw API)
-// and hidden from the session picker.
+// default; a project stores only the EXCEPTIONS it made to that. Enablement is
+// a DISPLAY contract: the picker hides a disabled model, but the gateway still
+// serves it if a caller names it outright. The gateway must never refuse a
+// request over enablement — that 400'd every turn on deployments whose in-use
+// model the default rule had turned off (the #5932 revert).
 //
 //     enabled(id) = overrides[id] ?? defaultEnabledModelIds(catalog).has(id)
 //
@@ -17,7 +17,7 @@ import { isKnownManagedModelId } from './models/managed-models';
 // anyone clicking anything.
 //
 // This module is the ONLY place that resolves overrides + default into an
-// answer, so the gateway and both UI surfaces can never disagree.
+// answer, so no two UI surfaces can disagree.
 //
 // NOTE: distinct from ./enablement.ts, which resolves the `llm_gateway`
 // experimental FEATURE flag — not model on/off.
@@ -39,11 +39,11 @@ export type ModelOverrides = Record<string, boolean>;
  *
  * Takes the catalog rather than fetching one so each caller defaults over
  * exactly the models it is answering about — the picker route narrows by
- * connected providers and plan, the gateway judges against everything routable.
+ * connected providers and plan.
  *
  * `alwaysOn` is the models this project is CONFIGURED to use (its effective
- * default, vision model, fallbacks, routing-rule targets). Pruning one of those
- * would refuse a request the project's own settings just produced.
+ * default, vision model, fallbacks, routing-rule targets). Hiding one of those
+ * would hide the model the project's own settings resolve to.
  */
 export function defaultEnabledFromCatalog(
   catalog: Record<string, ServedModel>,
@@ -62,7 +62,7 @@ export function defaultEnabledFromCatalog(
     // firehose the recency rule exists to tame — every one of them is in the
     // catalog precisely because we want it offered. Several (glm-5.2, the
     // PLATFORM DEFAULT) publish no release date or family at all, so the rule
-    // would prune them and the gateway would refuse every `auto` request.
+    // would prune them and `auto` would resolve to a hidden model.
     if (isKnownManagedModelId(id)) enabled.add(id);
   }
   for (const id of alwaysOn) {
@@ -80,37 +80,14 @@ export function resolveEnablement(
   overrides: ModelOverrides,
   alwaysOn: Iterable<string> = [],
 ): Map<string, boolean> {
-  // Feature off is a kill switch, not a mode: everything is offered, and the
-  // gateway's check below agrees. Both halves read the flag so the picker can
-  // never show a model the gateway would refuse, or vice versa.
-  if (!config.MODEL_ENABLEMENT_ENABLED) {
-    return new Map(Object.keys(catalog).map((id) => [id, true]));
-  }
   const byDefault = defaultEnabledFromCatalog(catalog, alwaysOn);
   return new Map(Object.keys(catalog).map((id) => [id, overrides[id] ?? byDefault.has(id)]));
 }
 
 /**
- * True when `projectId` offers `wireModel`. Always true when there's no project
- * to scope the overrides to — enablement simply doesn't apply, which must never
- * read as "refuse everything".
- */
-export async function isModelEnabledForProject(
-  projectId: string | null | undefined,
-  wireModel: string,
-  catalog: Record<string, ServedModel>,
-): Promise<boolean> {
-  if (!config.MODEL_ENABLEMENT_ENABLED || !projectId) return true;
-  const policy = await getProjectRoutingPolicy(projectId);
-  const override = policy?.modelOverrides?.[wireModel];
-  if (override !== undefined) return override;
-  return defaultEnabledFromCatalog(catalog, routingReferencedModels(policy)).has(wireModel);
-}
-
-/**
  * Models a routing policy points at, which the project is therefore configured
- * to route to. Refusing one of these would break a request the project's own
- * routing rules produced.
+ * to route to. Hiding one of these would hide a model the project's own
+ * routing rules produce.
  */
 export function routingReferencedModels(
   policy: {

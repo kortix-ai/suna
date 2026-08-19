@@ -23,11 +23,13 @@ import { KORTIX_USER_CONTEXT_HEADER } from '../kortix-user-context'
 import { buildGitAuthArgs, configureGlobalGitIdentity, materializeRepo, __clearCloneTokenCacheForTests, __clearRepoIdentityMemoForTests } from '../git'
 
 const TEST_TOKEN = 'test-kortix-token-32-chars-1234567890'
+const TEST_AGENT_ENV_FILE = join(tmpdir(), `kortix-proxy-agent-env-${process.pid}.sh`)
 
 function baseConfig(over: Partial<Config> = {}): Config {
   return {
     servicePort: 8000,
     opencodeInternalPort: 4096,
+    opencodeStandbyPort: 4097,
     staticPort: 3211,
     workspace: '/workspace',
     projectTarget: '/workspace',
@@ -47,6 +49,9 @@ function baseConfig(over: Partial<Config> = {}): Config {
     gitUserEmail: 'agent@kortix.ai',
     cloneFilter: '',
     cloneDepth: 1,
+    workload: '',
+    monitorsJson: '',
+    monitorBoxEpoch: '',
     ...over,
   }
 }
@@ -60,7 +65,24 @@ function fakeOpencode(
     getState: () => state,
     getPid: () => null,
     getInternalUrl: () => hooks.internalUrl ?? 'http://127.0.0.1:1', // unreachable by default
+    // Health reports this so the API's PTY proxy can follow opencode across a
+    // reload swap. Omitting it made every /kortix/health assertion 500.
+    getActivePort: () => 4096,
     restart: async () => hooks.restart?.(),
+    // The env route calls reloadConfig now, which applies config in place via
+    // dispose and falls back to restart. Both land here so a test counting
+    // "was the new config applied" keeps counting exactly that.
+    reloadConfig: async () => {
+      hooks.restart?.()
+      return 'restarted' as const
+    },
+    // The refresh route now performs a VERIFIED swap: boot the new opencode,
+    // prove it serves, then retire the old one. Lands on the same hook so a
+    // test counting "was opencode replaced" keeps counting exactly that.
+    reloadVerified: async () => {
+      hooks.restart?.()
+      return { outcome: 'swapped' as const, port: 4097, pid: null }
+    },
   } as unknown as Opencode
 }
 
@@ -115,6 +137,7 @@ describe('daemon proxy auth gate', () => {
     // own fetch call count + git-config side effects.
     __clearCloneTokenCacheForTests()
     __clearRepoIdentityMemoForTests()
+    rmSync(TEST_AGENT_ENV_FILE, { force: true })
   })
 
   it('uses KORTIX_SANDBOX_TOKEN as the canonical sandbox auth token', () => {
@@ -593,11 +616,14 @@ describe('daemon proxy auth gate', () => {
     expect(body.reason).toBe('malformed')
   })
 
-  it('lets the API service bearer reach /kortix/refresh', async () => {
+  // `base=1` needs the DIRECT-call header as well as the bearer. The bearer
+  // alone proves nothing about the hop: the preview proxy authenticates the
+  // user traffic it relays with this very token. See KORTIX_SERVICE_CALL_HEADER.
+  it('lets a direct API call reach /kortix/refresh?base=1', async () => {
     const app = buildOpencodeApp(baseConfig(), fakeOpencode('ok'), Date.now())
     const res = await app.request('/kortix/refresh?base=1&restart=0', {
       method: 'POST',
-      headers: { Authorization: `Bearer ${TEST_TOKEN}` },
+      headers: { Authorization: `Bearer ${TEST_TOKEN}`, 'X-Kortix-Service-Call': '1' },
     })
     expect(res.status).toBe(409)
     const body = (await res.json()) as { error: string; message: string }
@@ -609,7 +635,7 @@ describe('daemon proxy auth gate', () => {
     const app = buildOpencodeApp(baseConfig(), fakeOpencode('ok'), Date.now())
     const res = await app.request('/kortix/refresh?base=1&base_sha=main', {
       method: 'POST',
-      headers: { Authorization: `Bearer ${TEST_TOKEN}` },
+      headers: { Authorization: `Bearer ${TEST_TOKEN}`, 'X-Kortix-Service-Call': '1' },
     })
     expect(res.status).toBe(400)
     expect(await res.json()).toEqual({
@@ -729,7 +755,7 @@ describe('daemon proxy auth gate', () => {
         `/kortix/refresh?base=1&base_sha=${baseSha}&restart=0`,
         {
           method: 'POST',
-          headers: { Authorization: `Bearer ${TEST_TOKEN}` },
+          headers: { Authorization: `Bearer ${TEST_TOKEN}`, 'X-Kortix-Service-Call': '1' },
         },
       )
 
@@ -789,7 +815,7 @@ describe('daemon proxy auth gate', () => {
         `/kortix/refresh?base=1&base_sha=${baseSha}&restart=0`,
         {
           method: 'POST',
-          headers: { Authorization: `Bearer ${TEST_TOKEN}` },
+          headers: { Authorization: `Bearer ${TEST_TOKEN}`, 'X-Kortix-Service-Call': '1' },
         },
       )
 
@@ -815,6 +841,9 @@ describe('daemon proxy auth gate', () => {
       Date.now(),
       { repoMaterializationError: null, timeline: [] },
       store,
+      null,
+      undefined,
+      TEST_AGENT_ENV_FILE,
     )
 
     const res = await app.request('/kortix/env', {
@@ -836,6 +865,8 @@ describe('daemon proxy auth gate', () => {
       changed: true,
       revision: 'rev-1',
       names: ['NEW_SECRET', 'OLD_SECRET', 'REMOVED_SECRET'],
+      exported: 2,
+      agent_env_written: true,
     })
     expect(restartCalls).toBe(0)
     expect(mergeProjectEnv({
@@ -879,6 +910,9 @@ describe('daemon proxy auth gate', () => {
       Date.now(),
       { repoMaterializationError: null, timeline: [] },
       store,
+      null,
+      undefined,
+      TEST_AGENT_ENV_FILE,
     )
 
     try {
@@ -945,17 +979,74 @@ describe('daemon proxy auth gate', () => {
     }
   })
 
+  it('enables Connector MCP in a running session and restarts opencode once', async () => {
+    let restartCalls = 0
+    const previous = process.env.KORTIX_CONNECTORS_MCP_ENABLED
+    delete process.env.KORTIX_CONNECTORS_MCP_ENABLED
+    const store = createProjectEnvStore({} as NodeJS.ProcessEnv)
+    const app = buildOpencodeApp(
+      baseConfig(),
+      fakeOpencode('ok', { restart: () => { restartCalls += 1 } }),
+      Date.now(),
+      { repoMaterializationError: null, timeline: [] },
+      store,
+      null,
+      undefined,
+      TEST_AGENT_ENV_FILE,
+    )
+
+    const request = () =>
+      app.request('/kortix/env', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${TEST_TOKEN}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          revision: 'rev-email-mcp',
+          env: {},
+          names: [],
+          refreshModels: true,
+          opencodeEnv: { KORTIX_CONNECTORS_MCP_ENABLED: '1' },
+        }),
+      })
+
+    try {
+      const enabled = await request()
+      expect(enabled.status).toBe(200)
+      expect(await enabled.json()).toMatchObject({
+        ok: true,
+        opencode_env_changed: true,
+        opencode_env_names: ['KORTIX_CONNECTORS_MCP_ENABLED'],
+      })
+      expect(process.env.KORTIX_CONNECTORS_MCP_ENABLED as string | undefined).toBe('1')
+      expect(restartCalls).toBe(1)
+
+      const replay = await request()
+      expect(replay.status).toBe(200)
+      expect(await replay.json()).toMatchObject({
+        ok: true,
+        opencode_env_changed: false,
+        opencode_env_names: [],
+      })
+      expect(restartCalls).toBe(1)
+    } finally {
+      if (previous === undefined) delete process.env.KORTIX_CONNECTORS_MCP_ENABLED
+      else process.env.KORTIX_CONNECTORS_MCP_ENABLED = previous
+    }
+  })
+
   it('flips the provider-key deny-list with llm gateway mode (BYOK works when off)', async () => {
     const saved = {
       key: process.env.KORTIX_LLM_API_KEY,
       base: process.env.KORTIX_LLM_BASE_URL,
       deny: process.env.KORTIX_OPENCODE_DENY_ENV,
-      exec: process.env.KORTIX_EXECUTOR_TOKEN,
+      exec: process.env.KORTIX_CLI_TOKEN,
     }
     delete process.env.KORTIX_LLM_API_KEY
     delete process.env.KORTIX_LLM_BASE_URL
     delete process.env.KORTIX_OPENCODE_DENY_ENV
-    process.env.KORTIX_EXECUTOR_TOKEN = 'kortix_pat_exec'
+    process.env.KORTIX_CLI_TOKEN = 'kortix_pat_exec'
 
     const store = createProjectEnvStore({} as NodeJS.ProcessEnv)
     const app = buildOpencodeApp(
@@ -964,6 +1055,9 @@ describe('daemon proxy auth gate', () => {
       Date.now(),
       { repoMaterializationError: null, timeline: [] },
       store,
+      null,
+      undefined,
+      TEST_AGENT_ENV_FILE,
     )
 
     try {
@@ -1006,7 +1100,7 @@ describe('daemon proxy auth gate', () => {
         KORTIX_LLM_API_KEY: saved.key,
         KORTIX_LLM_BASE_URL: saved.base,
         KORTIX_OPENCODE_DENY_ENV: saved.deny,
-        KORTIX_EXECUTOR_TOKEN: saved.exec,
+        KORTIX_CLI_TOKEN: saved.exec,
       })) {
         if (v === undefined) delete process.env[k]
         else process.env[k] = v
@@ -1027,6 +1121,9 @@ describe('daemon proxy auth gate', () => {
       Date.now(),
       { repoMaterializationError: null, timeline: [] },
       store,
+      null,
+      undefined,
+      TEST_AGENT_ENV_FILE,
     )
 
     const res = await app.request('/kortix/env', {

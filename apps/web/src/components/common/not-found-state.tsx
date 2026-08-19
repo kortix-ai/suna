@@ -2,9 +2,9 @@
 
 import { useTranslations } from 'next-intl';
 
+import { ArrowLeftIcon as ArrowLeft, BookOpenIcon as BookOpen } from '@phosphor-icons/react';
+import { m } from 'motion/react';
 import Link from 'next/link';
-import { ArrowLeft, BookOpen } from 'lucide-react';
-import { motion } from 'motion/react';
 
 import { Button } from '@/components/ui/button';
 
@@ -48,29 +48,27 @@ export function NotFoundCard({
   ];
 
   return (
-    <motion.div
+    <m.div
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5, ease: [0.25, 0.46, 0.45, 0.94] }}
       className="relative z-10 flex w-full max-w-[460px] flex-col items-center gap-6 text-center"
     >
-      <motion.div
-        className="select-none font-mono text-7xl font-bold leading-none tracking-tighter text-foreground/[0.07] sm:text-8xl"
+      <m.div
+        className="text-foreground/[0.07] font-mono text-7xl leading-none font-bold tracking-tighter select-none sm:text-8xl"
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={{ delay: 0.1, duration: 0.5 }}
       >
         404
-      </motion.div>
+      </m.div>
 
-      <h1 className="text-3xl font-normal leading-tight tracking-tight text-foreground sm:text-5xl">
+      <h1 className="text-foreground text-3xl leading-tight font-normal tracking-tight sm:text-5xl">
         {title ?? tHardcodedUi.raw('appNotFound.line65JsxTextPageNotFound')}
       </h1>
-      <p className="px-2 text-sm leading-relaxed text-foreground/60 sm:text-base">
+      <p className="text-foreground/60 px-2 text-sm leading-relaxed sm:text-base">
         {description ??
-          tHardcodedUi.raw(
-            'appNotFound.line70JsxTextThePageYouAposReLookingForDoesn',
-          )}
+          tHardcodedUi.raw('appNotFound.line70JsxTextThePageYouAposReLookingForDoesn')}
       </p>
 
       <div className="mt-1 flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:justify-center">
@@ -89,7 +87,7 @@ export function NotFoundCard({
           </Button>
         ))}
       </div>
-    </motion.div>
+    </m.div>
   );
 }
 

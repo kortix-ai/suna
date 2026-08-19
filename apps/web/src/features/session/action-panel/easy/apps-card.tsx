@@ -20,9 +20,9 @@
  * unlike a live thumbnail it cannot half-load and libel a working app as broken.
  */
 
-import { useRuntimeConnectionStore } from '@kortix/sdk/react';
 import { cn } from '@/lib/utils';
 import { parseLocalhostUrl } from '@/lib/utils/sandbox-url';
+import { useRuntimeConnectionStore } from '@kortix/sdk/react';
 import { useSyncExternalStore } from 'react';
 import type { OutputItem } from '../shared/derive-panels';
 import { PanelCard } from './panel-card';
@@ -84,7 +84,11 @@ export function AppsCard({
                 onClick={() => onOpenApp(app)}
                 className={cn(
                   'hover:bg-accent -mx-0.5 flex w-full items-center gap-2.5 rounded-sm px-1 py-1.5 text-left',
-                  'transition-[background-color,transform] active:scale-[0.998]',
+                  // 0.98 is the row press value the Outputs and Context rows
+                  // use; 0.998 is the CARD HEADER's (`panel-card.tsx`), where a
+                  // full-width surface must barely move. A row that pressed at
+                  // the header's value read as not responding at all.
+                  'transition-[background-color,transform] active:scale-[0.98]',
                 )}
               >
                 <span className="flex size-7 shrink-0 items-center justify-center" aria-hidden>

@@ -1,32 +1,121 @@
+import { GRANTABLE_KORTIX_CLI_ACTIONS } from '@kortix/manifest-schema';
 import { describe, expect, test } from 'bun:test';
-import { renderToStaticMarkup } from 'react-dom/server';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { GRANTABLE_KORTIX_CLI_ACTIONS } from '@kortix/manifest-schema';
 
 import {
+  AGENT_MODE_LABEL,
+  AGENT_MODES,
+  grantSummary,
   KORTIX_CLI_CATALOG,
+  PERMISSION_ACTION_LABEL,
   PERMISSION_ACTION_ONLY_KEYS,
+  PERMISSION_ACTIONS,
   PERMISSION_KEY_HELP,
+  PERMISSION_KEY_LABEL,
   PERMISSION_RULE_GROUPS,
   PERMISSION_RULE_KEYS,
-  Segmented,
-  grantSummary,
+  stableStringify,
+  THEME_COLOR_SWATCH,
+  THEME_COLORS,
+  WORKSPACE_MODE_LABEL,
+  WORKSPACE_MODES,
 } from './agent-editor';
 
-const editorSource = readFileSync(fileURLToPath(new URL('./agent-editor.tsx', import.meta.url)), 'utf8');
-const kortixFieldsSource = readFileSync(
-  fileURLToPath(new URL('./kortix-layer-fields.tsx', import.meta.url)),
-  'utf8',
-);
+const read = (file: string) => readFileSync(fileURLToPath(new URL(file, import.meta.url)), 'utf8');
+const editorSource = read('./agent-editor.tsx');
+const accessFieldsSource = read('./agent-editor-access-fields.tsx');
+const basicsFieldsSource = read('./agent-editor-basics-fields.tsx');
+const primitivesSource = read('./agent-editor-primitives.tsx');
+const grantFieldSource = read('./grant-mode-field.tsx');
+const permissionEditorSource = read('./permission-editor.tsx');
+const sectionSources = [accessFieldsSource, basicsFieldsSource, permissionEditorSource];
+const allEditorSources = [...sectionSources, editorSource, primitivesSource, grantFieldSource];
 
 describe('agent environment editor', () => {
   test('loads sandbox templates and exposes the Environment field', () => {
     expect(editorSource).toContain('listProjectSandboxTemplates(projectId)');
     expect(editorSource).toContain('options.set(initial.sandbox, initial.sandbox)');
-    expect(kortixFieldsSource).toContain('label="Environment"');
-    expect(kortixFieldsSource).toContain("set('sandbox'");
-    expect(kortixFieldsSource).toContain('Project default');
+    expect(accessFieldsSource).toContain('label="Environment"');
+    expect(accessFieldsSource).toContain("set('sandbox'");
+    expect(accessFieldsSource).toContain('Project default');
+  });
+});
+
+// The editor is grouped by the QUESTION each field answers, not by the file the
+// value lands in. The two storage-named headings ("Kortix" / "OpenCode") and
+// the icons that decorated them are gone; these guards fail if either comes
+// back.
+describe('section structure — questions, not storage layers', () => {
+  test('every section the shell composes is rendered exactly once', () => {
+    for (const section of [
+      'BasicsSection',
+      'ModelSection',
+      'AccessSection',
+      'WorkspaceSection',
+      'ToolsSection',
+    ]) {
+      expect(editorSource).toContain(`<${section}`);
+    }
+  });
+
+  test('no layer heading, and no icon chrome, survives in the editor', () => {
+    for (const source of allEditorSources) {
+      expect(source).not.toContain('LayerHeader');
+      expect(source).not.toContain('tone="kortix"');
+      expect(source).not.toContain('label="OpenCode"');
+    }
+    // The primitives import no icon library at all — that is what stops an
+    // icon slot growing back onto the section header.
+    expect(primitivesSource).not.toContain('@phosphor-icons/react');
+  });
+
+  test('the primitives module exports the three layout shapes', () => {
+    for (const primitive of ['EditorSection', 'SettingRow', 'SettingBlock']) {
+      expect(primitivesSource).toContain(`export function ${primitive}`);
+    }
+  });
+});
+
+// Below `text-xs` the editor was unreadable — `text-[11px]` help lines,
+// `text-[10px]` group headings, a `text-[9px]` checkmark. `text-xs` is the
+// floor now and there is no arbitrary-value font size anywhere in the editor.
+describe('typography floor', () => {
+  test('no arbitrary pixel font size in any editor source', () => {
+    for (const source of allEditorSources) {
+      expect(source).not.toMatch(/text-\[\d+px\]/);
+    }
+  });
+});
+
+describe('stableStringify — the dirty check', () => {
+  test('key order does not change the result', () => {
+    expect(stableStringify({ a: 1, b: 2 })).toBe(stableStringify({ b: 2, a: 1 }));
+  });
+
+  // The bug this fixes: `set` deletes a key to clear it, so re-setting the same
+  // value re-adds it at the END of the object. Plain JSON.stringify then
+  // reported the draft as dirty against an identical baseline.
+  test('a cleared-then-restored field is not dirty', () => {
+    const baseline = { enabled: false, sandbox: 'gpu', skills: 'all' };
+    const cleared: Record<string, unknown> = { ...baseline };
+    delete cleared.sandbox;
+    const restored = { ...cleared, sandbox: 'gpu' };
+    expect(JSON.stringify(restored)).not.toBe(JSON.stringify(baseline)); // the old check
+    expect(stableStringify(restored)).toBe(stableStringify(baseline)); // the new one
+  });
+
+  test('nested objects and arrays are compared by content', () => {
+    expect(stableStringify({ opencode: { mode: 'all', color: 'info' } })).toBe(
+      stableStringify({ opencode: { color: 'info', mode: 'all' } }),
+    );
+    expect(stableStringify({ skills: ['a', 'b'] })).not.toBe(
+      stableStringify({ skills: ['b', 'a'] }),
+    );
+  });
+
+  test('an undefined value reads the same as an absent key', () => {
+    expect(stableStringify({ a: 1, b: undefined })).toBe(stableStringify({ a: 1 }));
   });
 });
 
@@ -48,38 +137,56 @@ describe('grantSummary — governance grant card labels', () => {
   });
 });
 
-describe('Segmented control', () => {
-  test('renders every option and marks the active one', () => {
-    const html = renderToStaticMarkup(
-      <Segmented
-        options={[
-          { value: 'primary', label: 'primary' },
-          { value: 'subagent', label: 'subagent' },
-          { value: 'all', label: 'all' },
-        ]}
-        value="subagent"
-        onChange={() => {}}
-      />,
-    );
-    expect(html).toContain('primary');
-    expect(html).toContain('subagent');
-    expect(html).toContain('all');
-    // The active option carries the selected styling token; the others don't.
-    expect(html).toContain('bg-secondary');
+// The local `Segmented` / `FieldRow` primitives are gone. Every mode picker is
+// now a real @/components/ui component: Tabs for the grant mode (a required
+// three-way choice), Select everywhere the choice includes an inherit state.
+// These guards fail if either primitive creeps back in.
+describe('mode pickers use the shared component library', () => {
+  test('the primitives module holds layout only — no Segmented, no FieldRow', () => {
+    expect(primitivesSource).not.toContain('Segmented');
+    expect(primitivesSource).not.toContain('FieldRow');
   });
 
-  test('an unset value renders with no active styling', () => {
-    const html = renderToStaticMarkup(
-      <Segmented
-        options={[
-          { value: 'allow', label: 'Allow' },
-          { value: 'deny', label: 'Deny' },
-        ]}
-        value={undefined}
-        onChange={() => {}}
-      />,
-    );
-    expect(html).not.toContain('bg-secondary');
+  test('the grant-mode field is built from Tabs', () => {
+    expect(grantFieldSource).toContain("from '@/components/ui/tabs'");
+    expect(grantFieldSource).toContain('TabsTriggerCompact');
+    for (const mode of ['all', 'pick', 'none']) {
+      expect(grantFieldSource).toContain(`value: '${mode}'`);
+    }
+  });
+
+  test('Tabs stay scoped to the grant-mode field — every section uses Select', () => {
+    for (const source of sectionSources) {
+      expect(source).not.toContain('@/components/ui/tabs');
+      expect(source).toContain("from '@/components/ui/select'");
+    }
+  });
+
+  // The control these replaced hid "unset" behind clicking the already-active
+  // segment. Every inherit-capable picker must now NAME that option.
+  test('every inherit-capable picker names its inherit option', () => {
+    expect(accessFieldsSource).toContain('Project default');
+    expect(basicsFieldsSource).toContain('Project default');
+    expect(permissionEditorSource).toContain('inheritLabel');
+    expect(permissionEditorSource).toContain('inheritLabel="Inherit"');
+  });
+});
+
+describe('display-name maps — Select renders the value verbatim', () => {
+  test('every mode and action has a non-empty capitalized label', () => {
+    const cases: [readonly string[], Record<string, string>][] = [
+      [AGENT_MODES, AGENT_MODE_LABEL],
+      [WORKSPACE_MODES, WORKSPACE_MODE_LABEL],
+      [PERMISSION_ACTIONS, PERMISSION_ACTION_LABEL],
+    ];
+    for (const [values, labels] of cases) {
+      for (const value of values) {
+        const label = labels[value];
+        expect(label).toBeString();
+        expect(label!.length).toBeGreaterThan(0);
+        expect(label![0]).toBe(value[0]!.toUpperCase());
+      }
+    }
   });
 });
 
@@ -142,6 +249,37 @@ describe('PERMISSION_KEY_HELP — inline help coverage', () => {
     for (const key of [...PERMISSION_RULE_KEYS, ...PERMISSION_ACTION_ONLY_KEYS]) {
       expect(typeof PERMISSION_KEY_HELP[key]).toBe('string');
       expect(PERMISSION_KEY_HELP[key]?.length).toBeGreaterThan(0);
+    }
+  });
+});
+
+// A row reading only `external_directory` or `lsp` told a reader nothing. Every
+// permission key now leads with a sentence and keeps the manifest token beside
+// it; a key added without a label would silently fall back to the raw token.
+describe('PERMISSION_KEY_LABEL — plain-word names', () => {
+  test('every key has a label that is not just the raw token', () => {
+    for (const key of [...PERMISSION_RULE_KEYS, ...PERMISSION_ACTION_ONLY_KEYS]) {
+      const label = PERMISSION_KEY_LABEL[key];
+      expect(typeof label).toBe('string');
+      expect(label?.length).toBeGreaterThan(0);
+      expect(label).not.toBe(key);
+      expect(label).not.toContain('_');
+    }
+  });
+
+  test('the editor renders the label, not only the key', () => {
+    expect(permissionEditorSource).toContain('PERMISSION_KEY_LABEL[permKey]');
+  });
+});
+
+describe('THEME_COLOR_SWATCH — the colour picker shows colour', () => {
+  test('every theme colour maps to a token class', () => {
+    for (const color of THEME_COLORS) {
+      const swatch = THEME_COLOR_SWATCH[color];
+      expect(swatch.startsWith('bg-')).toBe(true);
+      // Brand + semantic tokens only. A raw palette class here would be the
+      // one place in the editor that hardcodes a colour.
+      expect(swatch).toMatch(/^bg-(kortix-[a-z]+|foreground|muted-foreground)$/);
     }
   });
 });

@@ -85,7 +85,7 @@ describe('sendDemoRequestNotification', () => {
   test('skips gracefully when the Mailtrap token is not configured', async () => {
     mockConfig.MAILTRAP_API_TOKEN = '';
     const result = await sendDemoRequestNotification(LEAD);
-    expect(result).toEqual({ ok: false, skipped: true, reason: 'missing_mailtrap_token' });
+    expect(result).toEqual({ ok: false, skipped: true, reason: 'email_not_configured' });
     expect(calls).toHaveLength(0);
   });
 

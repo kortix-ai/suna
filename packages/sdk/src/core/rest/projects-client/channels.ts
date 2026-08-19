@@ -1,4 +1,4 @@
-// Project channels — Slack + email inbound/outbound integration installs.
+// Project channels — Slack + email inbound/outbound connection installs.
 
 import { backendApi } from '../../http/api-client';
 import { unwrap } from './shared';
@@ -150,13 +150,17 @@ export interface EmailSenderPolicy {
   mode: 'allow_all' | 'restricted';
   allowedEmails: string[];
   allowedDomains: string[];
+  /**
+   * Case-insensitive, unanchored RE2-compatible pattern (maximum 256
+   * characters). Backreferences and look-around are intentionally unsupported.
+   */
   allowedRegex: string | null;
 }
 
 export interface EmailInstallation {
-  /** Canonical Kortix connection profile to pass in connector_bindings.email. */
-  profileId: string | null;
-  profileSlug: string;
+  /** Kortix connection to pass in connector_bindings.email. */
+  connectionId: string | null;
+  connectorSlug: string;
   inboxId: string;
   email: string;
   displayName: string | null;
@@ -165,13 +169,33 @@ export interface EmailInstallation {
   installedAt: string;
 }
 
-type EmailInstallationWire = Omit<EmailInstallation, 'profileId'> & {
-  profile_id?: string | null;
-  profileId?: string | null;
+export type EmailConnectionInstallation = EmailInstallation;
+
+type EmailInstallationWire = Omit<
+  EmailInstallation,
+  'connectionId' | 'connectorSlug'
+> & {
+  connection_id?: string | null;
+  connectionId?: string | null;
+  connector_slug?: string | null;
+  connectorSlug?: string | null;
+  connection_slug?: string | null;
+  connectionSlug?: string | null;
 };
 
-function normalizeEmailInstallation(value: EmailInstallationWire): EmailInstallation {
-  return { ...value, profileId: value.profileId ?? value.profile_id ?? null };
+function normalizeEmailInstallation(value: EmailInstallationWire): EmailConnectionInstallation {
+  const connectionId = value.connectionId ?? value.connection_id ?? null;
+  const connectorSlug =
+    value.connectorSlug ??
+    value.connector_slug ??
+    value.connectionSlug ??
+    value.connection_slug ??
+    'kortix_email';
+  return {
+    ...value,
+    connectionId,
+    connectorSlug,
+  };
 }
 
 export interface EmailMode {
@@ -185,7 +209,7 @@ const DEFAULT_EMAIL_MODE: EmailMode = { provider: 'agentmail', managed_available
 export async function getEmailInstallation(
   projectId: string,
   connectorSlug?: string | null,
-): Promise<EmailInstallation | null> {
+): Promise<EmailConnectionInstallation | null> {
   const query = connectorSlug ? `?connector_slug=${encodeURIComponent(connectorSlug)}` : '';
   const res = await backendApi.get<EmailInstallationWire | null>(
     `/projects/${encodeURIComponent(projectId)}/channels/email/installation${query}`,
@@ -218,7 +242,7 @@ export interface ConnectEmailInput {
 export async function connectEmail(
   projectId: string,
   input: ConnectEmailInput,
-): Promise<EmailInstallation> {
+): Promise<EmailConnectionInstallation> {
   const installation = unwrap(
     await backendApi.post<EmailInstallationWire>(
       `/projects/${encodeURIComponent(projectId)}/channels/email/connect`,
@@ -246,7 +270,7 @@ export async function updateEmailPolicy(
   projectId: string,
   connectorSlug: string | null | undefined,
   senderPolicy: EmailSenderPolicy,
-): Promise<EmailInstallation> {
+): Promise<EmailConnectionInstallation> {
   const installation = unwrap(
     await backendApi.patch<EmailInstallationWire>(
       `/projects/${encodeURIComponent(projectId)}/channels/email/installation`,

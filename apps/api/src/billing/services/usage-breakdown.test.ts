@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 
+import { currentPeriodStart } from './usage-breakdown';
+
 type LedgerRow = { type: string; kind: string; total: string };
 
 let rows: LedgerRow[] = [];
@@ -52,8 +54,21 @@ describe('classifyLedgerKind', () => {
     expect(classifyLedgerKind('token_overage')).toBe('llm');
   });
 
-  test('refuses to classify the flat RPC type, a refund, or nothing', () => {
-    expect(classifyLedgerKind('usage')).toBeNull();
+  test('counts the flat RPC type as other rather than dropping it', () => {
+    // CHANGED DELIBERATELY. This used to assert null, on the reasoning that
+    // `usage` is the flat RPC type and therefore not a real category. True, but
+    // the query filters on these lists, so returning null did not leave the
+    // money uncategorised — it excluded the row from the result set entirely
+    // and the spend vanished from the total. 10,859 such rows, $107.67, on the
+    // production Kortix account. Money that left the wallet has to appear
+    // somewhere; "other" is honest, silence is not.
+    expect(classifyLedgerKind('usage')).toBe('other');
+    expect(classifyLedgerKind('admin_debit')).toBe('other');
+  });
+
+  test('still refuses a refund or nothing', () => {
+    // A refund is a CREDIT. Counting it as spend would overstate the bill, and
+    // the sign guard in the query is the second line of defence.
     expect(classifyLedgerKind('tool_reservation_refund')).toBeNull();
     expect(classifyLedgerKind(null)).toBeNull();
   });
@@ -133,5 +148,86 @@ describe('getUsageBreakdownThisPeriod', () => {
     const start = new Date(breakdown.period_start as string).getTime();
     expect(start).toBeGreaterThanOrEqual(before - 30 * 86400 * 1000);
     expect(start).toBeLessThanOrEqual(after - 30 * 86400 * 1000);
+  });
+});
+
+/**
+ * "Spend this period" was anchored on Stripe's FIXED subscription anchor, which
+ * never moves — so the window never reset and the figure quietly accumulated
+ * LIFETIME spend under a this-period label. Production Kortix account: anchor
+ * 2026-06-07, still being used two months later.
+ */
+describe('currentPeriodStart', () => {
+  const now = new Date('2026-08-05T12:00:00.000Z');
+
+  test('rolls a stale anchor forward to the current period', () => {
+    // The exact production case: anchor 2026-06-07, read on 2026-08-05. The
+    // period running on that date began 2026-07-07 — the 8th of August has not
+    // happened yet. Before this, the window start was reported as the June
+    // anchor, so "this period" covered two months and counting.
+    expect(currentPeriodStart('2026-06-07T03:20:08.000Z', now)).toBe('2026-07-07T03:20:08.000Z');
+  });
+
+  test('never returns a start in the future', () => {
+    const start = new Date(currentPeriodStart('2026-06-07T03:20:08.000Z', now)!);
+    expect(start.getTime()).toBeLessThanOrEqual(now.getTime());
+  });
+
+  test('the period is at most one month long', () => {
+    const start = new Date(currentPeriodStart('2026-06-07T03:20:08.000Z', now)!);
+    const days = (now.getTime() - start.getTime()) / 86_400_000;
+    expect(days).toBeLessThan(32);
+  });
+
+  test('mid-February, a 31st anchor is still in its January period', () => {
+    // The period beginning Jan 31 runs until the February occurrence, so on
+    // Feb 15 the answer is still January. My first version of this test
+    // asserted Feb 28 and was simply wrong — Feb 28 is in the future here.
+    expect(currentPeriodStart('2026-01-31T00:00:00.000Z', new Date('2026-02-15T00:00:00.000Z'))).toBe(
+      '2026-01-31T00:00:00.000Z',
+    );
+  });
+
+  test('clamps a 31st anchor to the last day of a shorter month', () => {
+    // Stripe's own rule, and the case that actually exercises the clamp:
+    // without it, Date rolls Feb 31 over into March 3.
+    expect(currentPeriodStart('2026-01-31T00:00:00.000Z', new Date('2026-03-01T00:00:00.000Z'))).toBe(
+      '2026-02-28T00:00:00.000Z',
+    );
+  });
+
+  test('an anchor in the future is left alone', () => {
+    expect(currentPeriodStart('2027-01-01T00:00:00.000Z', now)).toBe('2027-01-01T00:00:00.000Z');
+  });
+
+  test('a null or unparseable anchor yields null, never a wrong window', () => {
+    expect(currentPeriodStart(null, now)).toBeNull();
+    expect(currentPeriodStart('not-a-date', now)).toBeNull();
+  });
+});
+
+/**
+ * `usage` is what the router writes for a Kortix tool call. It was in neither
+ * kind list, and the query filters on those lists — so the money was not merely
+ * uncategorised, it was excluded from the result set and vanished from the
+ * total. 10,859 such rows on the production Kortix account.
+ */
+describe('classifyLedgerKind covers every kind that is actually written', () => {
+  test.each([
+    ['compute_debit', 'compute'],
+    ['llm_debit', 'llm'],
+    ['token_deduction', 'llm'],
+    ['token_overage', 'llm'],
+    ['usage', 'other'],
+    ['admin_debit', 'other'],
+  ])('%s -> %s', (kind, expected) => {
+    expect(classifyLedgerKind(kind)).toBe(expected as 'compute' | 'llm' | 'other');
+  });
+
+  test('no debit kind written anywhere in the API falls through to null', () => {
+    // Grepped from apps/api/src: these are every ledger kind a debit is written
+    // with. A kind missing here is money missing from the report.
+    const written = ['compute_debit', 'llm_debit', 'token_deduction', 'token_overage', 'usage', 'admin_debit'];
+    expect(written.filter((k) => classifyLedgerKind(k) === null)).toEqual([]);
   });
 });

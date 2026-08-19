@@ -1,7 +1,6 @@
 'use client';
 
 import { DiffView } from '@/components/diff/diff-view';
-import { BetterCodeBlock } from '@/components/ui/better-code-block';
 import { TextShimmer } from '@/components/ui/text-shimmer';
 import {
   BasicTool,
@@ -13,16 +12,19 @@ import {
   partOutput,
   partStatus,
   partStreamingInput,
+  ToolCodeCard,
   ToolOutputFallback,
   ToolRunningContext,
 } from '@/features/session/tool/shared/infrastructure';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
+import { ToolResultCard } from '@/features/session/tool/shared/result-card';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 
 import { useFilePreviewStore } from '@/stores/file-preview-store';
-import { getDirectory, getFilename } from '@/ui';
+import { getFilename } from '@/ui';
+import { PencilSimpleIcon } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
-import { useContext } from 'react';
+import { useCallback, useContext, useMemo } from 'react';
 
 export function WriteTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -32,26 +34,43 @@ export function WriteTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const status = partStatus(part);
   const running = useContext(ToolRunningContext);
   const filePath = (input.filePath as string) || (streamingInput.filePath as string) || undefined;
-  const filename = getFilename(filePath) || '';
-  const directory = filePath ? getDirectory(filePath) : undefined;
+  // Two `split()` calls — one on the path, one on the basename — allocating two
+  // throwaway arrays per render, for a value that only changes when the part does.
+  const filename = useMemo(() => getFilename(filePath) || '', [filePath]);
   const content = (input.content as string) || (streamingInput.content as string) || '';
-  const ext = filename.split('.').pop() || '';
+  const ext = useMemo(() => filename.split('.').pop() || '', [filename]);
   const output = partOutput(part);
-  const isError = status === 'completed' && isErrorOutput(output);
-  const diagnostics = getToolDiagnostics(part, filePath);
+  // `isErrorOutput` trims the whole output and attempts a `JSON.parse` over it.
+  // A written file's output is not small, and this ran on every render of the row.
+  const isError = useMemo(
+    () => status === 'completed' && isErrorOutput(output),
+    [status, output],
+  );
+  // Unmemoised this ran on every frame of a COLLAPSED row: `partOutput` plus two
+  // full-string `includes`, and — when the output carries `<file_diagnostics>` —
+  // a global regex, a full split and a per-line regex on top.
+  const diagnostics = useMemo(() => getToolDiagnostics(part, filePath), [part, filePath]);
 
   const isStalePending = !running && !filename && (status === 'pending' || status === 'running');
 
-  const { openPreview } = useFilePreviewStore();
+  // Field selector, not the whole store: destructuring the store subscribes this
+  // row to every field in it, so opening one file preview re-rendered every write
+  // row on screen.
+  const openPreview = useFilePreviewStore((s) => s.openPreview);
+  const handleSubtitleClick = useCallback(() => {
+    if (filePath) openPreview(filePath);
+  }, [filePath, openPreview]);
 
   return (
     <BasicTool
+      icon={<PencilSimpleIcon className="size-3.5 shrink-0" />}
       trigger={{
         title: 'Write',
-        subtitle: isStalePending ? undefined : filename || (isStalePending ? 'Working...' : undefined),
-        args: directory ? [directory] : undefined,
+        subtitle: isStalePending
+          ? undefined
+          : filename || (isStalePending ? 'Working...' : undefined),
       }}
-      onSubtitleClick={filePath ? () => openPreview(filePath) : undefined}
+      onSubtitleClick={filePath ? handleSubtitleClick : undefined}
       defaultOpen={defaultOpen}
       forceOpen={forceOpen}
       locked={locked}
@@ -60,23 +79,15 @@ export function WriteTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
       {isError ? (
         <ToolOutputFallback output={output} toolName="write" />
       ) : content ? (
-        <div className="bg-card">
-          <BetterCodeBlock
-            code={content}
-            language={ext}
-            showBackgroundColors={false}
-            border={false}
-            className="p-0"
-          />
-        </div>
+        <ToolCodeCard code={content} language={ext} />
       ) : isStalePending ? (
-        <div className='p-4 pt-0'>
+        <ToolResultCard bodyClassName="px-2 py-1.5">
           <TextShimmer>
             {tHardcodedUi.raw(
               'componentsSessionToolRenderers.line2853JsxTextWaitingForFileContent',
             )}
           </TextShimmer>
-        </div>
+        </ToolResultCard>
       ) : null}
       <DiagnosticsDisplay diagnostics={diagnostics} filePath={filePath} />
     </BasicTool>

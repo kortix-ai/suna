@@ -20,7 +20,7 @@ import { Button } from '@/components/ui/button';
 import { NativeSlider } from '@/components/ui/slider-native';
 import { cn } from '@/lib/utils';
 import type { ToolPart } from '@/ui';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { CaretLeftIcon as ChevronLeft, CaretRightIcon as ChevronRight } from '@phosphor-icons/react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   type FollowMode,

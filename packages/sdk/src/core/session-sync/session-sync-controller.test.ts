@@ -1,9 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 import type { Message, Part, SessionStatus } from '@opencode-ai/sdk/v2/client';
 import {
+  SESSION_SYNC_PAGE_SIZE,
   SessionSyncController,
   createHttpSessionSyncController,
   loadCompleteSessionHistory,
+  type SessionSyncControllerOptions,
   type SessionSyncPage,
   type SessionSyncScheduler,
 } from './session-sync-controller';
@@ -90,7 +92,7 @@ describe('SessionSyncController', () => {
     await controller.start();
     expect(requests).toEqual([
       {
-        url: 'https://runtime.example.test/session/session%2F1/message?limit=10',
+        url: `https://runtime.example.test/session/session%2F1/message?limit=${SESSION_SYNC_PAGE_SIZE}`,
         authorization: 'Bearer token-1',
       },
     ]);
@@ -110,9 +112,9 @@ describe('SessionSyncController', () => {
     });
 
     expect(requests).toEqual([
-      { limit: 10 },
-      { limit: 10, before: 'cursor-2' },
-      { limit: 10, before: 'cursor-1' },
+      { limit: SESSION_SYNC_PAGE_SIZE },
+      { limit: SESSION_SYNC_PAGE_SIZE, before: 'cursor-2' },
+      { limit: SESSION_SYNC_PAGE_SIZE, before: 'cursor-1' },
     ]);
     expect(messages.map((message) => message.info.id)).toEqual([
       'message-1',
@@ -121,7 +123,7 @@ describe('SessionSyncController', () => {
     ]);
   });
 
-  test('loads only the newest ten messages and exposes older pagination', async () => {
+  test('loads only the newest page and exposes older pagination', async () => {
     const requests: Array<{ limit: number; before?: string }> = [];
     const hydrated: MessageWithParts[][] = [];
     const controller = new SessionSyncController({
@@ -137,7 +139,7 @@ describe('SessionSyncController', () => {
     });
 
     await controller.start();
-    expect(requests).toEqual([{ limit: 10 }]);
+    expect(requests).toEqual([{ limit: SESSION_SYNC_PAGE_SIZE }]);
     expect(controller.getSnapshot()).toMatchObject({
       freshness: 'fresh',
       hasOlder: true,
@@ -145,7 +147,10 @@ describe('SessionSyncController', () => {
     });
 
     await controller.loadOlder();
-    expect(requests).toEqual([{ limit: 10 }, { limit: 10, before: 'cursor-older' }]);
+    expect(requests).toEqual([
+      { limit: SESSION_SYNC_PAGE_SIZE },
+      { limit: SESSION_SYNC_PAGE_SIZE, before: 'cursor-older' },
+    ]);
     expect(hydrated.flat().map((entry) => entry.info.id)).toEqual([
       'message-newest',
       'message-older',
@@ -209,9 +214,9 @@ describe('SessionSyncController', () => {
     await controller.start();
 
     expect(requests).toEqual([
-      { limit: 10 },
-      { limit: 10, before: 'cursor-1' },
-      { limit: 10, before: 'cursor-2' },
+      { limit: SESSION_SYNC_PAGE_SIZE },
+      { limit: SESSION_SYNC_PAGE_SIZE, before: 'cursor-1' },
+      { limit: SESSION_SYNC_PAGE_SIZE, before: 'cursor-2' },
     ]);
     expect(hydrated).toEqual([
       [
@@ -295,10 +300,10 @@ describe('SessionSyncController', () => {
     await controller.loadOlder();
 
     expect(requests).toEqual([
-      { limit: 10 },
-      { limit: 10, before: 'cursor-1' },
-      { limit: 10, before: 'cursor-2' },
-      { limit: 10, before: 'cursor-3' },
+      { limit: SESSION_SYNC_PAGE_SIZE },
+      { limit: SESSION_SYNC_PAGE_SIZE, before: 'cursor-1' },
+      { limit: SESSION_SYNC_PAGE_SIZE, before: 'cursor-2' },
+      { limit: SESSION_SYNC_PAGE_SIZE, before: 'cursor-3' },
     ]);
     expect(hydrated).toEqual([
       ['user-new', 'assistant-new'],
@@ -335,7 +340,10 @@ describe('SessionSyncController', () => {
     await expect(controller.loadOlder()).rejects.toThrow(
       'Session history cursor repeated: cursor-1',
     );
-    expect(requests).toEqual([{ limit: 10 }, { limit: 10, before: 'cursor-1' }]);
+    expect(requests).toEqual([
+      { limit: SESSION_SYNC_PAGE_SIZE },
+      { limit: SESSION_SYNC_PAGE_SIZE, before: 'cursor-1' },
+    ]);
     expect(controller.getSnapshot().isLoadingOlder).toBe(false);
   });
 
@@ -394,20 +402,27 @@ describe('SessionSyncController', () => {
     await controller.reconcile('manual');
     await controller.reconcile('manual');
 
-    expect(requests).toEqual([{ limit: 10 }, { limit: 10 }]);
+    expect(requests).toEqual([
+      { limit: SESSION_SYNC_PAGE_SIZE },
+      { limit: SESSION_SYNC_PAGE_SIZE },
+    ]);
   });
 
   test('uses event activity instead of part count for busy liveness', async () => {
     const clock = createScheduler();
     const requests: Array<{ limit: number; before?: string }> = [];
     const statuses: SessionStatus[] = [];
+    let statusReads = 0;
     const controller = new SessionSyncController({
       sessionId: 'session-1',
       loadPage: async (request) => {
         requests.push(request);
         return page([]);
       },
-      loadStatus: async () => ({ type: 'idle' }) as SessionStatus,
+      loadStatus: async () => {
+        statusReads += 1;
+        return { type: 'idle' } as SessionStatus;
+      },
       hydrate: () => {},
       markLoaded: () => {},
       setStatus: (status) => statuses.push(status),
@@ -424,69 +439,87 @@ describe('SessionSyncController', () => {
     expect(requests).toHaveLength(1);
 
     clock.advance(10_000);
-    await Promise.resolve();
-    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(requests).toHaveLength(2);
-    expect(statuses).toEqual([{ type: 'idle' }]);
+    // The poll reconciles the TAIL and nothing else. Its status half read the
+    // runtime over REST and wrote the answer into the slot SSE frames land in,
+    // which made a REST poll indistinguishable from the runtime's own voice —
+    // and re-stamped the stream observation on every tick, so the bound that
+    // stops a dead stream from deciding was never reached. `GET .../turn` is
+    // the status authority now, and the controller's own `setBusy` is already
+    // driven FROM that projection, so a fourth stamped input could only
+    // confirm or latch, never correct.
+    expect(statuses).toEqual([]);
+    expect(statusReads).toBe(0);
   });
 
-  test('keeps REST prompt completion busy until runtime idle is stable after real work starts', () => {
-    let now = 0;
-    let timeout:
-      | {
-          handler: () => void;
-          dueAt: number;
-        }
-      | undefined;
-    const scheduler = {
-      now: () => now,
-      setInterval: () => 1,
-      clearInterval: () => {},
-      setTimeout: (handler: () => void, delayMs: number) => {
-        timeout = { handler, dueAt: now + delayMs };
-        return 2;
+  test('the caller\'s working signal, and only it, starts transcript liveness reconciliation', async () => {
+    const clock = createScheduler();
+    const requests: Array<{ limit: number; before?: string }> = [];
+    const hydrated: string[][] = [];
+    const statuses: SessionStatus[] = [];
+    let statusReads = 0;
+    const controller = new SessionSyncController({
+      sessionId: 'session-1',
+      loadPage: async (request) => {
+        requests.push(request);
+        return messagePage([
+          { id: 'user-new', role: 'user' },
+          { id: 'assistant-new', role: 'assistant', parentID: 'user-new' },
+        ]);
       },
-      clearTimeout: () => {
-        timeout = undefined;
+      loadStatus: async () => {
+        statusReads += 1;
+        return { type: 'idle' } as SessionStatus;
       },
-    };
-    const advance = (ms: number) => {
-      now += ms;
-      if (timeout && timeout.dueAt <= now) {
-        const handler = timeout.handler;
-        timeout = undefined;
-        handler();
-      }
-    };
+      hydrate: (messages) => hydrated.push(messages.map((message) => message.info.id)),
+      markLoaded: () => {},
+      setStatus: (status) => statuses.push(status),
+      scheduler: clock.scheduler,
+      livenessIntervalMs: 10_000,
+    });
+
+    // Nothing polls until someone says the session is working. The controller
+    // does not decide that any more — `projectWorking` does, from the server's
+    // turn authority — so an unattended controller is silent.
+    clock.advance(10_001);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(requests).toHaveLength(0);
+
+    controller.setBusy(true);
+    clock.advance(10_001);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(requests).toHaveLength(1);
+    expect(hydrated).toEqual([['user-new', 'assistant-new']]);
+    // The tail is repaired; no status is claimed or even read. `loadStatus` /
+    // `setStatus` remain on the options type only because 0.12.8 published
+    // them — see their `@deprecated` banners.
+    expect(statuses).toEqual([]);
+    expect(statusReads).toBe(0);
+  });
+
+  test('the snapshot holds transcript state only — never a busy opinion', async () => {
     const controller = new SessionSyncController({
       sessionId: 'session-1',
       loadPage: async () => page([]),
+      loadStatus: async () => ({ type: 'busy' }) as SessionStatus,
       hydrate: () => {},
       markLoaded: () => {},
-      scheduler,
     });
 
-    controller.beginPromptObservation();
-    expect(controller.getSnapshot().isPromptObservedBusy).toBe(true);
+    await controller.start();
+    controller.noteActivity();
 
-    controller.observePromptStatus({ type: 'idle' });
-    advance(1_000);
-    expect(controller.getSnapshot().isPromptObservedBusy).toBe(true);
-
-    controller.observePromptStatus({ type: 'busy' });
-    controller.observePromptStatus({ type: 'idle' });
-    advance(400);
-    expect(controller.getSnapshot().isPromptObservedBusy).toBe(true);
-
-    controller.observePromptStatus({ type: 'busy' });
-    advance(1_000);
-    expect(controller.getSnapshot().isPromptObservedBusy).toBe(true);
-
-    controller.observePromptStatus({ type: 'idle' });
-    advance(499);
-    expect(controller.getSnapshot().isPromptObservedBusy).toBe(true);
-    advance(1);
-    expect(controller.getSnapshot().isPromptObservedBusy).toBe(false);
+    // The three transcript fields, and nothing else. `isPromptObservedBusy`
+    // lived here and latched: it was inferred from silence, and every signal
+    // that could have released it can be lost.
+    expect(Object.keys(controller.getSnapshot()).sort()).toEqual([
+      'freshness',
+      'hasOlder',
+      'isLoadingOlder',
+    ]);
+    expect('isPromptObservedBusy' in controller.getSnapshot()).toBe(false);
   });
 
   test('marks an empty or failed initial read as loaded', async () => {
@@ -535,7 +568,7 @@ describe('SessionSyncController', () => {
 
     await controller.loadOlder();
     expect(requests.at(-1)).toEqual({
-      limit: 10,
+      limit: SESSION_SYNC_PAGE_SIZE,
       before: 'cursor-older',
     });
   });
@@ -560,10 +593,10 @@ describe('SessionSyncController', () => {
     await controller.loadOlder();
 
     expect(requests).toEqual([
-      { limit: 10 },
-      { limit: 10, before: 'cursor-1' },
-      { limit: 10 },
-      { limit: 10, before: 'cursor-2' },
+      { limit: SESSION_SYNC_PAGE_SIZE },
+      { limit: SESSION_SYNC_PAGE_SIZE, before: 'cursor-1' },
+      { limit: SESSION_SYNC_PAGE_SIZE },
+      { limit: SESSION_SYNC_PAGE_SIZE, before: 'cursor-2' },
     ]);
   });
 

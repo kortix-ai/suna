@@ -6,8 +6,14 @@ import { Button } from '@/components/ui/button';
 import { ButtonGroup, ButtonGroupSeparator } from '@/components/ui/button-group';
 import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
+import { usePreviewFit } from '@/features/file-viewer/preview-fit';
 import { cn } from '@/lib/utils';
-import { ImageOff, Maximize2, Minimize2, RotateCw, ZoomIn, ZoomOut } from 'lucide-react';
+import {
+  ImageBrokenIcon as ImageOff,
+  ArrowClockwiseIcon as RotateCw,
+  MagnifyingGlassPlusIcon as ZoomIn,
+  MagnifyingGlassMinusIcon as ZoomOut,
+} from '@phosphor-icons/react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 /** What sits behind the artwork. Only meaningful for formats that can be
@@ -83,12 +89,16 @@ export function ImageRenderer({
   backdrop: showBackdrop = false,
 }: ImageRendererProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
+  // `null` outside a <PreviewFitProvider> (Advanced-mode viewer, /projects
+  // previews, the file-preview modal, share pages) — `report` below is then
+  // an inert no-op, which is how this stays byte-identical everywhere except
+  // the Easy panel.
+  const previewFit = usePreviewFit();
   const [zoom, setZoom] = useState(1);
   const [rotation, setRotation] = useState(0);
   const [isPanning, setIsPanning] = useState(false);
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [startPanPosition, setStartPanPosition] = useState({ x: 0, y: 0 });
-  const [isFitToScreen, setIsFitToScreen] = useState(true);
   const [backdrop, setBackdrop] = useState<ImageBackdrop>('transparent');
   const [imgLoaded, setImgLoaded] = useState(false);
   const [imgError, setImgError] = useState(false);
@@ -103,7 +113,6 @@ export function ImageRenderer({
   const [imgSrc, setImgSrc] = useState(url);
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const containerRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
 
   // Check if the url is an SVG. The file name is checked FIRST because a caller
@@ -146,12 +155,13 @@ export function ImageRenderer({
     };
   }, []);
 
-  // Reset position when zoom changes
+  // Once the image is back to 1x or smaller it fits its container again, so any
+  // pan offset is stale — drop it.
   useEffect(() => {
-    if (isFitToScreen) {
+    if (zoom <= 1) {
       setPosition({ x: 0, y: 0 });
     }
-  }, [zoom, isFitToScreen]);
+  }, [zoom]);
 
   // Handle image load success
   const handleImageLoad = useCallback(() => {
@@ -165,8 +175,22 @@ export function ImageRenderer({
         height: imageRef.current.naturalHeight,
         type: displayFileType,
       });
+      previewFit?.report({
+        width: imageRef.current.naturalWidth,
+        height: imageRef.current.naturalHeight,
+      });
     }
-  }, [displayFileType]);
+  }, [displayFileType, previewFit]);
+
+  // Retries exhausted: these bytes are never going to decode, so there will be
+  // no `report` for this image. Say "never" rather than staying silent — a
+  // consumer reads silence as "still loading" and keeps whatever width it last
+  // measured. Guarded on `previewFit`, so this is inert everywhere but the
+  // Easy panel, exactly like `report`.
+  useEffect(() => {
+    if (!previewFit || !imgError) return;
+    previewFit.reportUnmeasurable();
+  }, [previewFit, imgError]);
 
   // Force the browser to re-attempt by toggling the src. For blob: URLs a
   // cache-bust param doesn't help, so we briefly clear and re-set the src.
@@ -209,15 +233,12 @@ export function ImageRenderer({
 
   const handleZoomIn = () => {
     setZoom((prev) => Math.min(prev + getZoomStep(prev), MAX_ZOOM));
-    setIsFitToScreen(false);
   };
 
   const handleZoomOut = () => {
     setZoom((prev) => {
       const step = getZoomStep(prev - 0.01); // step based on where we're going
-      const newZoom = Math.max(prev - step, MIN_ZOOM);
-      if (newZoom <= 0.5) setIsFitToScreen(true);
-      return newZoom;
+      return Math.max(prev - step, MIN_ZOOM);
     });
   };
 
@@ -226,42 +247,26 @@ export function ImageRenderer({
     setZoom(1);
     setRotation(0);
     setPosition({ x: 0, y: 0 });
-    setIsFitToScreen(true);
   };
 
-  // Scroll wheel zoom
-  const handleWheel = (e: React.WheelEvent) => {
-    e.preventDefault();
-    const delta = e.deltaY > 0 ? -1 : 1;
-    setZoom((prev) => {
-      const step = getZoomStep(prev) * 0.5;
-      const next = Math.max(MIN_ZOOM, Math.min(prev + delta * step, MAX_ZOOM));
-      if (next <= 0.5) setIsFitToScreen(true);
-      else setIsFitToScreen(false);
-      return next;
-    });
-  };
+  // Deliberately no wheel/trackpad zoom. Zoom changes only from the shelf
+  // buttons (and the reset readout), so scrolling over an image scrolls the
+  // surrounding list instead of silently rescaling the artwork.
 
   // Function for rotation
   const handleRotate = () => {
     setRotation((prev) => (prev + 90) % 360);
   };
 
-  // Toggle fit to screen
-  const toggleFitToScreen = () => {
-    if (isFitToScreen) {
-      setZoom(1);
-      setIsFitToScreen(false);
-    } else {
-      setZoom(1);
-      setPosition({ x: 0, y: 0 });
-      setIsFitToScreen(true);
-    }
-  };
+  // Panning is only meaningful once the image is bigger than its container —
+  // that is exactly `zoom > 1`, since the img is `object-contain` and already
+  // fits at 1x. Derived from `zoom` rather than tracked as its own flag, so the
+  // two can never disagree.
+  const canPan = zoom > 1;
 
   // Pan handlers
   const handleMouseDown = (e: React.MouseEvent) => {
-    if (!isFitToScreen) {
+    if (canPan) {
       setIsPanning(true);
       setStartPanPosition({
         x: e.clientX - position.x,
@@ -271,7 +276,7 @@ export function ImageRenderer({
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
-    if (isPanning && !isFitToScreen) {
+    if (isPanning && canPan) {
       setPosition({
         x: e.clientX - startPanPosition.x,
         y: e.clientY - startPanPosition.y,
@@ -305,11 +310,10 @@ export function ImageRenderer({
   const infoLabel = tHardcodedUi.raw(
     'componentsFileRenderersImageRenderer.line287JsxAttrTitleImageInformation',
   );
-  const fitLabel = isFitToScreen ? 'Actual size' : 'Fit to screen';
   const alwaysOn = controls === 'always';
 
   return (
-    <div className={cn('group relative h-full w-full', className)}>
+    <div className={cn('group relative h-full w-full ', className)}>
       {/* Floating controls — reveal on hover or keyboard focus; pinned open
           while the info panel is. Opacity-only (no movement) so rapid
           hover-in/out retargets cleanly. `controls="always"` opts out of the
@@ -320,9 +324,9 @@ export function ImageRenderer({
           className={cn(
             'absolute left-1/2 z-10 -translate-x-1/2',
             alwaysOn
-              ? 'bottom-3'
+              ? 'bottom-1'
               : [
-                  'top-3 opacity-0 transition-opacity duration-200 ease-out',
+                  'top-1 opacity-0 transition-opacity duration-200 ease-out',
                   'group-hover:opacity-100 focus-within:opacity-100',
                   showInfo && 'opacity-100',
                 ],
@@ -375,21 +379,6 @@ export function ImageRenderer({
                 <RotateCw className="size-4" />
               </Button>
             </Hint>
-            <Hint label={fitLabel} side="bottom">
-              <Button
-                variant="accent"
-                size="icon"
-                className="text-foreground"
-                onClick={toggleFitToScreen}
-                aria-label={fitLabel}
-              >
-                {isFitToScreen ? (
-                  <Maximize2 className="size-4" />
-                ) : (
-                  <Minimize2 className="size-4" />
-                )}
-              </Button>
-            </Hint>
             {/* Backdrop swatches join the SAME group behind a separator rather
                 than floating as a second shelf — one row of chrome over the
                 canvas, not two competing ones. The glyph IS the colour: a
@@ -436,14 +425,13 @@ export function ImageRenderer({
 
       {/* Image container - Clean background */}
       <div
-        ref={containerRef}
         className={cn(
           'relative h-full w-full overflow-hidden select-none',
           // `bg-white`/`bg-black` are the one place raw colours are correct:
           // these are not UI chrome picking up the theme, they are the literal
           // white and black the user asked to see the artwork against.
           !showBackdrop || backdrop === 'transparent'
-            ? 'text-foreground bg-background'
+            ? 'text-foreground bg-secondary'
             : backdrop === 'white'
               ? 'bg-white'
               : 'bg-black',
@@ -452,10 +440,8 @@ export function ImageRenderer({
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseLeave}
-        onWheel={handleWheel}
-        onDoubleClick={imgError ? undefined : toggleFitToScreen}
         style={{
-          cursor: isPanning ? 'grabbing' : !isFitToScreen ? 'grab' : 'default',
+          cursor: isPanning ? 'grabbing' : canPan ? 'grab' : 'default',
           ...(showBackdrop && backdrop === 'transparent' ? CANVAS_CHECKER : null),
         }}
       >
@@ -491,7 +477,7 @@ export function ImageRenderer({
             <div
               className="absolute inset-0 flex items-center justify-center p-8"
               style={{
-                transform: isFitToScreen ? 'none' : translateTransform,
+                transform: canPan ? translateTransform : 'none',
                 transition: isPanning ? 'none' : 'transform 0.1s ease-out',
               }}
             >

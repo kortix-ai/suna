@@ -1,9 +1,7 @@
 # SDK Runtime Model — first-principles redesign (per-session, no "active server")
 
-> **Extended on 2026-07-28.** The session-scoped invariant remains current.
-> The OpenCode client and SSE details below describe the REST compatibility
-> path. The current SDK also projects ACP sessions for OpenCode, Claude Code,
-> Codex, and Pi through the same session-scoped public surface.
+> The session-scoped invariant remains current. The OpenCode client and SSE
+> details below describe the active REST path.
 
 > Status: **proposal** · 2026-06-27 · Follows `sdk-session-collapse.md` (which shipped
 > `useSession`). This redesigns the layer *underneath* it — the client/server/store model —

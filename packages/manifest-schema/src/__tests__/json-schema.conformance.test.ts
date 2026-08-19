@@ -383,6 +383,70 @@ channels:
       'kortix_version = 1\n[[triggers]]\nslug = "t"\ntype = "cron"\ncron = "0 9 * * *"\nprompt = "go"\nsession_mode = "sometimes"\n',
   },
 
+  // ─── shared sections: triggers type = "monitor" ───────────────────────
+  {
+    name: 'monitor: a stream monitor with run + mode is valid',
+    format: 'yaml',
+    valid: true,
+    input:
+      'kortix_version: 1\ntriggers:\n  - slug: t\n    type: monitor\n    run: ./monitors/t.ts\n    mode: stream\n    prompt: go\n',
+  },
+  {
+    name: 'monitor: a poll monitor with an interval is valid',
+    format: 'yaml',
+    valid: true,
+    input:
+      'kortix_version: 1\ntriggers:\n  - slug: t\n    type: monitor\n    run: ./monitors/t.ts\n    mode: poll\n    interval: 60s\n    expect_event_within: 24h\n    prompt: go\n',
+  },
+  {
+    name: 'monitor: missing run + mode is rejected',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    type: monitor\n    prompt: go\n',
+  },
+  {
+    name: 'monitor: mode = poll without an interval is rejected',
+    format: 'yaml',
+    valid: false,
+    input:
+      'kortix_version: 1\ntriggers:\n  - slug: t\n    type: monitor\n    run: ./m.ts\n    mode: poll\n    prompt: go\n',
+  },
+  {
+    name: 'monitor: an interval on a stream monitor is rejected',
+    format: 'yaml',
+    valid: false,
+    input:
+      'kortix_version: 1\ntriggers:\n  - slug: t\n    type: monitor\n    run: ./m.ts\n    mode: stream\n    interval: 60s\n    prompt: go\n',
+  },
+  {
+    name: 'monitor: an unknown mode is rejected',
+    format: 'yaml',
+    valid: false,
+    input:
+      'kortix_version: 1\ntriggers:\n  - slug: t\n    type: monitor\n    run: ./m.ts\n    mode: tail\n    prompt: go\n',
+  },
+  {
+    name: 'monitor: cron wiring on a monitor is rejected',
+    format: 'yaml',
+    valid: false,
+    input:
+      'kortix_version: 1\ntriggers:\n  - slug: t\n    type: monitor\n    run: ./m.ts\n    mode: stream\n    cron: "0 9 * * *"\n    prompt: go\n',
+  },
+  {
+    name: 'monitor: secret_env on a monitor is rejected',
+    format: 'yaml',
+    valid: false,
+    input:
+      'kortix_version: 1\ntriggers:\n  - slug: t\n    type: monitor\n    run: ./m.ts\n    mode: stream\n    secret_env: HOOK_SECRET\n    prompt: go\n',
+  },
+  {
+    name: 'monitor: a malformed duration is rejected by both validators',
+    format: 'yaml',
+    valid: false,
+    input:
+      'kortix_version: 1\ntriggers:\n  - slug: t\n    type: monitor\n    run: ./m.ts\n    mode: poll\n    interval: soon\n    prompt: go\n',
+  },
+
   // ─── shared sections: sandbox.default reserved sentinel ────────────────
   {
     name: 'sandbox.default = "default" (the reserved platform sentinel) is valid with no matching template',
@@ -480,6 +544,20 @@ connectors:
     input: 'kortix_version: 2\ndefault_agent: w\nagents:\n  w:\n    secrets: [STRIPE_KEY]\n',
   },
   {
+    name: 'v2: canonical required connector subset accepted',
+    format: 'yaml',
+    valid: true,
+    input:
+      'kortix_version: 2\ndefault_agent: w\nagents:\n  w:\n    connectors: [gmail]\n    connectors_required: [gmail]\n',
+  },
+  {
+    name: 'v2: deprecated required connector input alias accepted',
+    format: 'yaml',
+    valid: true,
+    input:
+      'kortix_version: 2\ndefault_agent: w\nagents:\n  w:\n    connectors: [gmail]\n    connectors_personal: [gmail]\n',
+  },
+  {
     name: 'v2: top-level [env] section unaffected',
     format: 'yaml',
     valid: true,
@@ -499,6 +577,34 @@ connectors:
     valid: true,
     input:
       'kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\nconnectors:\n  - slug: gmail\n    provider: pipedream\n    app: gmail\n    credential: shared\n',
+  },
+  {
+    name: 'v2: connector project authorization strategy accepted',
+    format: 'yaml',
+    valid: true,
+    input:
+      'kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\nconnectors:\n  - slug: gmail-shared\n    name: Shared Gmail\n    provider: pipedream\n    app: gmail\n    authorization_strategy: project\n',
+  },
+  {
+    name: 'v2: connector user authorization strategy accepted',
+    format: 'yaml',
+    valid: true,
+    input:
+      'kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\nconnectors:\n  - slug: gmail-personal\n    name: Personal Gmail\n    provider: pipedream\n    app: gmail\n    authorization_strategy: user\n',
+  },
+  {
+    name: 'v2: connector both authorization strategy rejected',
+    format: 'yaml',
+    valid: false,
+    input:
+      'kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\nconnectors:\n  - slug: gmail\n    provider: pipedream\n    app: gmail\n    authorization_strategy: both\n',
+  },
+  {
+    name: 'v2: connector blank name rejected',
+    format: 'yaml',
+    valid: false,
+    input:
+      'kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\nconnectors:\n  - slug: gmail\n    name: ""\n    provider: pipedream\n    app: gmail\n',
   },
   {
     name: 'v2: connector agent_scope rejected outright',
@@ -636,11 +742,11 @@ connectors:
       'kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\nconnectors:\n  - slug: wat\n    provider: made-up\n',
   },
   {
-    name: 'v2: retired apps section is rejected',
+    name: 'v2: Kortix Apps map is accepted',
     format: 'yaml',
-    valid: false,
+    valid: true,
     input:
-      'kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\napps:\n  - slug: site\n',
+      'kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\napps:\n  site:\n    path: .\n    type: static\n    readiness_path: /\n',
   },
 ];
 
@@ -681,6 +787,39 @@ describe('JSON Schema documents are themselves valid JSON Schema (ajv compiles t
       expect(doc.$schema).toBe('https://json-schema.org/draft/2020-12/schema');
     }
   });
+
+  test('connector fields are discoverable in the versioned schema', () => {
+    const connectorProperties = (
+      KORTIX_V2_JSON_SCHEMA as {
+        properties: {
+          connectors: { items: { properties: Record<string, unknown> } };
+        };
+      }
+    ).properties.connectors.items.properties;
+    expect(connectorProperties.name).toEqual({ type: 'string', minLength: 1 });
+    expect(connectorProperties.authorization_strategy).toEqual({
+      type: 'string',
+      enum: ['project', 'user'],
+      default: 'project',
+    });
+  });
+
+  test('required connector fields publish canonical and deprecated annotations', () => {
+    const agentProperties = (
+      KORTIX_V2_JSON_SCHEMA as {
+        properties: {
+          agents: {
+            additionalProperties: { properties: Record<string, Record<string, unknown>> };
+          };
+        };
+      }
+    ).properties.agents.additionalProperties.properties;
+    expect(agentProperties.connectors_required?.description).toContain('must resolve');
+    expect(agentProperties.connectors_personal).toMatchObject({
+      deprecated: true,
+      description: 'Deprecated input alias for connectors_required.',
+    });
+  });
 });
 
 // ─── Known, intentional divergences ────────────────────────────────────────
@@ -715,6 +854,23 @@ describe('Known divergence: cross-field rules only the imperative validator enfo
     const toml = 'kortix_version = 2\ndefault_agent = "w"\n[agents.w]\n';
     expect(validateManifest(toml, 'toml').valid).toBe(false);
     expect(validateCombined(parseToml(toml))).toBe(true);
+  });
+
+  // A monitor's duration FLOORS (interval ≥ 30s, expect_event_within ≥ 5m)
+  // are value ranges over a formatted string. JSON Schema can pin the shape
+  // (`DURATION_RE`) but not the magnitude, so the floors stay imperative-only.
+  test('monitor interval below the 30s floor: imperative rejects, schema accepts the shape', () => {
+    const yaml =
+      'kortix_version: 1\ntriggers:\n  - slug: t\n    type: monitor\n    run: ./m.ts\n    mode: poll\n    interval: 5s\n    prompt: go\n';
+    expect(validateManifest(yaml, 'yaml').valid).toBe(false);
+    expect(validateCombined(parseYaml(yaml))).toBe(true);
+  });
+
+  test('monitor expect_event_within below the 5m floor: imperative rejects, schema accepts the shape', () => {
+    const yaml =
+      'kortix_version: 1\ntriggers:\n  - slug: t\n    type: monitor\n    run: ./m.ts\n    mode: stream\n    expect_event_within: 60s\n    prompt: go\n';
+    expect(validateManifest(yaml, 'yaml').valid).toBe(false);
+    expect(validateCombined(parseYaml(yaml))).toBe(true);
   });
 
   test('auth.type oauth1 on a non-openapi/http connector: imperative rejects, schema accepts', () => {

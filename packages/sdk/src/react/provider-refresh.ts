@@ -6,6 +6,7 @@ import { listProjectSecrets } from '../core/rest/projects-client';
 import { connectedGatewayProviderIdsFromSecretNames } from './provider-selection';
 import { configKeys } from './use-opencode-config';
 import { clearProjectProviderCache, opencodeKeys } from './use-opencode-sessions';
+import { qk } from './query-keys';
 
 type RefreshProjectProviderStateOptions = {
   removeProjectScopedCache?: boolean;
@@ -47,8 +48,8 @@ function invalidateProviderQueries(queryClient: QueryClient, projectId: string):
   const projectProviderKey = ['project-providers', projectId];
   clearProjectProviderCache(projectId);
   void queryClient.invalidateQueries({ queryKey: projectProviderKey });
-  void queryClient.invalidateQueries({ queryKey: ['project-secrets', projectId] });
-  void queryClient.refetchQueries({ queryKey: ['project-secrets', projectId], type: 'all' });
+  void queryClient.invalidateQueries({ queryKey: qk.project.secrets(projectId) });
+  void queryClient.refetchQueries({ queryKey: qk.project.secrets(projectId), type: 'all' });
   void queryClient.refetchQueries({ queryKey: projectProviderKey, type: 'all' });
   void queryClient.invalidateQueries({ queryKey: opencodeKeys.providers() });
   void queryClient.invalidateQueries({ queryKey: configKeys.all });
@@ -87,8 +88,16 @@ export function refreshProjectProviderState(
   const poll = async (): Promise<void> => {
     let connected = false;
     try {
+      // Same key `useProjectSecrets`/the Customize secrets view read —
+      // pre-migration this was a standalone flat `project-secrets` array
+      // literal, so every poll's `fetchQuery` populated a cache entry no
+      // `useQuery` observer ever read: a real network request whose result
+      // no UI ever saw. Sharing `qk.project.secrets(id)` means the poll's
+      // fresh (`staleTime: 0`) fetch is the SAME entry the secrets UI
+      // renders from, so the picker/secrets list update from this poll
+      // too, not only from the `refetchQueries` burst below.
       const secrets = await queryClient.fetchQuery({
-        queryKey: ['project-secrets', projectId],
+        queryKey: qk.project.secrets(projectId),
         queryFn: () => listProjectSecrets(projectId),
         staleTime: 0,
       });

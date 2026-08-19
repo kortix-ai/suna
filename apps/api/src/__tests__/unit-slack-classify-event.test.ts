@@ -42,7 +42,9 @@ mock.module('../channels/slack/turn', () => ({
   relayTurnStep: async () => {},
   rowToHandle: () => ({ sessionId: '', channel: 'C1', token: 'xoxb', ts: '', steps: [] }),
 }));
+const realInstallStore = await import('../channels/install-store');
 mock.module('../channels/install-store', () => ({
+  ...realInstallStore,
   loadSlackBotUserIdForProject: async () => 'B1',
   loadSlackTokenForProject: async () => 'xoxb-test',
   loadSlackSigningSecretForProject: async () => null,
@@ -96,6 +98,66 @@ describe('classifyEvent — a message that @-mentions the bot is a mention', () 
 
   test('an edited/system message (has a subtype) is ignored even if it contains the mention', async () => {
     const cls = await classifyEvent('T1', ev({ subtype: 'message_changed', thread_ts: '90.0', text: '<@B1> edited' }), BOT);
+    expect(cls).toBe('ignore');
+  });
+
+  test('file_share with no files is ignored', async () => {
+    const cls = await classifyEvent('T1', ev({ subtype: 'file_share', channel_type: 'im', text: '' }), BOT);
+    expect(cls).toBe('ignore');
+  });
+
+  test('file_share with files in a DM passes through', async () => {
+    const cls = await classifyEvent('T1', ev({ subtype: 'file_share', channel_type: 'im', text: '', files: [{ id: 'F1', mimetype: 'audio/wav', name: 'voice-message.wav', size: 12345, url_private_download: 'https://...' }] }), BOT);
+    expect(cls).toBe('dm');
+  });
+
+  test('file_share with files in a channel passes through', async () => {
+    const cls = await classifyEvent('T1', ev({ subtype: 'file_share', channel_type: 'channel', text: 'listen to this', files: [{ id: 'F1', mimetype: 'audio/mp4', name: 'audio.m4a', size: 54321, url_private_download: 'https://...' }] }), BOT);
+    expect(cls).toBe('ignore');
+  });
+
+  test('file_share with files and a bot mention is a mention', async () => {
+    const cls = await classifyEvent('T1', ev({ subtype: 'file_share', channel_type: 'channel', text: '<@B1> transcribe this', files: [{ id: 'F1', mimetype: 'audio/wav', name: 'voice.wav', size: 9999, url_private_download: 'https://...' }] }), BOT);
+    expect(cls).toBe('mention');
+  });
+
+  test('me_message in a DM is a dm', async () => {
+    const cls = await classifyEvent('T1', ev({ subtype: 'me_message', channel_type: 'im', text: 'waves hello' }), BOT);
+    expect(cls).toBe('dm');
+  });
+
+  test('me_message with a bot mention is a mention', async () => {
+    const cls = await classifyEvent('T1', ev({ subtype: 'me_message', channel_type: 'channel', text: '<@B1> laughs at your joke' }), BOT);
+    expect(cls).toBe('mention');
+  });
+
+  test('me_message in a channel without mention is ignored (no pickup)', async () => {
+    const cls = await classifyEvent('T1', ev({ subtype: 'me_message', channel_type: 'channel', text: 'waves goodbye' }), BOT);
+    expect(cls).toBe('ignore');
+  });
+
+test('bot_message in a DM is a dm', async () => {
+    const cls = await classifyEvent('T1', ev({ subtype: 'bot_message', channel_type: 'im', text: 'hello from another bot', bot_id: 'B999' }), BOT);
+    expect(cls).toBe('dm');
+  });
+
+  test('bot_message with a bot mention is a mention', async () => {
+    const cls = await classifyEvent('T1', ev({ subtype: 'bot_message', channel_type: 'channel', text: '<@B1> analyze this report', bot_id: 'B999' }), BOT);
+    expect(cls).toBe('mention');
+  });
+
+  test('bot_message without mention in a channel is ignored (no pickup)', async () => {
+    const cls = await classifyEvent('T1', ev({ subtype: 'bot_message', channel_type: 'channel', text: 'other bot chatter', bot_id: 'B999' }), BOT);
+    expect(cls).toBe('ignore');
+  });
+
+  test('other subtypes like thread_broadcast are still ignored', async () => {
+    const cls = await classifyEvent('T1', ev({ subtype: 'thread_broadcast', channel_type: 'channel', text: 'broadcast' }), BOT);
+    expect(cls).toBe('ignore');
+  });
+
+  test('other subtypes like message_changed are still ignored', async () => {
+    const cls = await classifyEvent('T1', ev({ subtype: 'message_changed', channel_type: 'channel', text: 'edited' }), BOT);
     expect(cls).toBe('ignore');
   });
 });

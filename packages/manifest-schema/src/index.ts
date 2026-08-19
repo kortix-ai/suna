@@ -17,16 +17,23 @@
 
 import { Cron } from 'croner';
 import { TomlError } from 'smol-toml';
+import { type ManifestFormat, parseManifestText } from './format';
 import { parseConnectorHeaders } from './connector-headers';
 import {
   CHANNEL_PLATFORMS,
   CONNECTOR_AUTH_TYPES,
+  CONNECTOR_AUTHORIZATION_STRATEGIES,
   CONNECTOR_POLICY_ACTIONS,
   CONNECTOR_PROVIDERS,
   ENV_NAME_RE,
   GRANTABLE_KORTIX_CLI_ACTIONS,
   LEGACY_SANDBOX_KEYS,
   LEGACY_TOLERATED_KORTIX_CLI_ACTIONS,
+  reservedEnvNameReason,
+  MONITOR_MIN_EXPECT_EVENT_WITHIN_SECONDS,
+  MONITOR_MIN_INTERVAL_SECONDS,
+  MONITOR_MODES,
+  MONITOR_RUN_MAX_LENGTH,
   RESERVED_SANDBOX_SLUG,
   RESERVED_SLUG_PROVIDERS,
   SANDBOX_CPU_BOUNDS,
@@ -34,8 +41,8 @@ import {
   SANDBOX_MEMORY_BOUNDS,
   SLUG_RE,
   TRIGGER_TYPES,
+  parseDurationSeconds,
 } from './constants';
-import { type ManifestFormat, parseManifestText } from './format';
 // The 7 below (v2-only enums/regex) are no longer consumed directly in this
 // file — validateAgentMdFrontmatter and friends moved to ./index.v2.ts, which
 // imports them itself — but are kept in the re-export block just below for
@@ -47,7 +54,6 @@ import {
   validateRuntimeV2,
   validateTriggerAgentRefsV2,
 } from './index.v2';
-import { validateAgentsV3, validateManifestCrossRefsV3, validateRuntimesV3 } from './index.v3';
 
 export {
   type ManifestFormat,
@@ -65,7 +71,7 @@ export {
 // why: it broke an index.ts ⇄ json-schema.ts import cycle).
 // `[[connectors]].headers` — arbitrary static request headers. Its own
 // dependency-free module (same rationale as `constants.ts`) so the validator,
-// the JSON Schema, apps/api's parser and the executor share ONE ruleset.
+// the JSON Schema, apps/api's parser and the connector share ONE ruleset.
 export {
   type ConnectorHeadersParse,
   CONNECTOR_FORBIDDEN_HEADER_NAMES,
@@ -84,6 +90,7 @@ export {
   AGENT_THEME_COLORS_V2,
   CHANNEL_PLATFORMS,
   CONNECTOR_AUTH_TYPES,
+  CONNECTOR_AUTHORIZATION_STRATEGIES,
   CONNECTOR_POLICY_ACTIONS,
   CONNECTOR_PROVIDERS,
   ENV_NAME_RE,
@@ -91,17 +98,28 @@ export {
   HEX_COLOR_RE_V2,
   LEGACY_SANDBOX_KEYS,
   LEGACY_TOLERATED_KORTIX_CLI_ACTIONS,
+  isReservedEnvName,
+  NEVER_DELIVERED_ENV_NAMES,
   PERMISSION_ACTION_ONLY_KEYS_V2,
   PERMISSION_ACTIONS_V2,
+  RESERVED_ENV_NAME_PREFIXES,
+  RESERVED_ENV_NAMES,
+  reservedEnvNameReason,
   RESERVED_SANDBOX_SLUG,
   RESERVED_SLUG_PROVIDERS,
+  MONITOR_MIN_EXPECT_EVENT_WITHIN_SECONDS,
+  MONITOR_MIN_INTERVAL_SECONDS,
+  MONITOR_MODES,
+  MONITOR_RUN_MAX_LENGTH,
+  DURATION_RE,
+  formatDurationSeconds,
+  parseDurationSeconds,
   SANDBOX_CPU_BOUNDS,
   SANDBOX_DISK_BOUNDS,
   SANDBOX_MEMORY_BOUNDS,
   SLUG_RE,
   TRIGGER_TYPES,
   V2_RUNTIME_VALUES,
-  V3_HARNESS_VALUES,
   WORKSPACE_MODES_V2,
 } from './constants';
 
@@ -121,22 +139,13 @@ export {
   type PermissionConfigV2,
   type GrantSetV2,
   type AgentBlockV2,
+  type AppBlockV2,
+  type AppResourcesV2,
   type ManifestV2,
   resolveGrantSet,
   validatePermissionConfig,
   validateAgentMdFrontmatter,
 } from './index.v2';
-export {
-  type HarnessV3,
-  type RuntimeBlockV3,
-  type AgentBlockV3,
-  type ManifestV3,
-  type RuntimesV3Scan,
-  type AgentsV3Scan,
-  validateRuntimesV3,
-  validateAgentsV3,
-  validateManifestCrossRefsV3,
-} from './index.v3';
 
 /**
  * Maximum manifest schema version this validator understands.
@@ -150,7 +159,7 @@ export {
  * sets. See docs/specs/2026-07-05-agent-first-config-unification.md
  * §2.1/§2.2/§2.7 (decision 2026-07-05: "one home per concern").
  */
-const KNOWN_SCHEMA_VERSION = 3;
+const KNOWN_SCHEMA_VERSION = 2;
 
 /**
  * True when `v` is a value the runtime's `coerceBool` recognizes for an
@@ -232,9 +241,7 @@ export function validateManifest(
 
   const version = validateRoot(parsed, format, issues);
 
-  if (version === 3) {
-    validateManifestBodyV3(parsed, format, issues);
-  } else if (version === 2) {
+  if (version === 2) {
     validateManifestBodyV2(parsed, format, issues);
   } else {
     validateManifestBodyV1(parsed, format, issues);
@@ -245,39 +252,6 @@ export function validateManifest(
     parsed,
     issues,
   };
-}
-
-function validateManifestBodyV3(
-  parsed: Record<string, unknown>,
-  format: ManifestFormat,
-  issues: ManifestIssue[],
-): void {
-  validateProject(parsed.project, 'project', issues);
-  validateEnv(parsed.env, 'env', issues);
-  validateSandbox(parsed.sandbox, 'sandbox', issues, format);
-  rejectLegacySandboxes(parsed.sandboxes, 'sandboxes', issues);
-  validateTriggers(parsed.triggers, 'triggers', issues, format);
-  validateConnectors(parsed.connectors, 'connectors', issues, 2, format);
-  rejectRetiredApps(parsed.apps, 'apps', issues);
-  rejectChannelsV2(parsed.channels, 'channels', issues);
-  if (parsed.runtime !== undefined) {
-    issues.push({
-      path: 'runtime',
-      message: 'kortix_version 3 uses the `runtimes` map.',
-      severity: 'error',
-    });
-  }
-  if (parsed.opencode !== undefined) {
-    issues.push({
-      path: 'opencode',
-      message: 'kortix_version 3 configures OpenCode through a runtime profile.',
-      severity: 'error',
-    });
-  }
-  const runtimes = validateRuntimesV3(parsed.runtimes, 'runtimes', issues);
-  const agents = validateAgentsV3(parsed.agents, 'agents', issues);
-  validateManifestCrossRefsV3(parsed.default_agent, agents, runtimes, issues);
-  validateTriggerAgentRefsV2(parsed.triggers, 'triggers', agents.names, issues);
 }
 
 /**
@@ -321,7 +295,7 @@ function validateManifestBodyV2(
   rejectLegacySandboxes(parsed.sandboxes, 'sandboxes', issues);
   validateTriggers(parsed.triggers, 'triggers', issues, format);
   validateConnectors(parsed.connectors, 'connectors', issues, 2, format);
-  rejectRetiredApps(parsed.apps, 'apps', issues);
+  validateAppsV2(parsed.apps, 'apps', issues);
   rejectChannelsV2(parsed.channels, 'channels', issues);
   validateRuntimeV2(parsed.runtime, 'runtime', issues);
   const { names: agentNames, disabledNames } = validateAgentsV2(parsed.agents, 'agents', issues);
@@ -380,7 +354,7 @@ export function validateGrantList(
   label: string,
   issues: ManifestIssue[],
   checkAction: boolean,
-  version: 1 | 2 | 3 = 1,
+  version: 1 | 2 = 1,
 ): void {
   if (value === undefined || value === null) return;
   if (typeof value === 'string') {
@@ -418,10 +392,10 @@ export function validateGrantList(
         issues.push({
           path: `${where}[${k}]`,
           message:
-            version >= 2
-              ? `"${s}" is a deprecated, no-op kortix_cli action (removed from enforcement) and is not tolerated in kortix_version ${version} — remove it from the manifest.`
+            version === 2
+              ? `"${s}" is a deprecated, no-op kortix_cli action (removed from enforcement) and is not tolerated in kortix_version 2 — remove it from the manifest.`
               : `"${s}" is a deprecated, no-op kortix_cli action (removed from enforcement — granting or omitting it has no effect). Remove it from the manifest.`,
-          severity: version >= 2 ? 'error' : 'warning',
+          severity: version === 2 ? 'error' : 'warning',
         });
       } else {
         issues.push({
@@ -435,12 +409,7 @@ export function validateGrantList(
 }
 
 /** `[[agents]]` — the per-agent scoping overlay (name + connectors + kortix_cli). */
-function validateAgents(
-  node: unknown,
-  path: string,
-  issues: ManifestIssue[],
-  format: ManifestFormat = 'toml',
-): void {
+function validateAgents(node: unknown, path: string, issues: ManifestIssue[], format: ManifestFormat = 'toml'): void {
   if (node == null) return;
   if (!Array.isArray(node)) {
     issues.push({
@@ -526,10 +495,11 @@ function validateRoot(
   // v2's nested permission trees, per-value secret scoping, and approval lists
   // are genuinely awkward in TOML (spec §2.7) — TOML sunsets at v1. Point at
   // the migration path rather than silently misparsing.
-  if (version >= 2 && format === 'toml') {
+  if (version === 2 && format === 'toml') {
     issues.push({
       path: 'kortix_version',
-      message: `kortix_version ${version} manifests must be kortix.yaml (TOML only supports kortix_version 1). Rename the file to kortix.yaml.`,
+      message:
+        'kortix_version 2 manifests must be kortix.yaml (TOML only supports kortix_version 1). Rename the file to kortix.yaml or run `kortix migrate`.',
       severity: 'error',
     });
     return version;
@@ -607,12 +577,7 @@ function validateOpenCode(node: unknown, path: string, issues: ManifestIssue[]):
  * carries no direct image keys — those belonged to the removed singular
  * `[sandbox]` table, so any that linger are flagged as legacy.
  */
-function validateSandbox(
-  node: unknown,
-  path: string,
-  issues: ManifestIssue[],
-  format: ManifestFormat = 'toml',
-): void {
+function validateSandbox(node: unknown, path: string, issues: ManifestIssue[], format: ManifestFormat = 'toml'): void {
   if (node == null) return;
   if (!isTable(node)) {
     issues.push({
@@ -669,17 +634,13 @@ function validateSandbox(
   }
 }
 
-function validateSandboxTemplates(
-  node: unknown,
-  path: string,
-  issues: ManifestIssue[],
-  format: ManifestFormat = 'toml',
-): void {
+function validateSandboxTemplates(node: unknown, path: string, issues: ManifestIssue[], format: ManifestFormat = 'toml'): void {
   if (node == null) return;
   if (!Array.isArray(node)) {
     issues.push({
       path,
-      message: listSectionHint('sandbox.templates', format),
+      message:
+        listSectionHint('sandbox.templates', format),
       severity: 'error',
     });
     return;
@@ -794,12 +755,255 @@ function rejectRetiredApps(node: unknown, path: string, issues: ManifestIssue[])
   });
 }
 
-function validateTriggers(
+const APP_TYPES = new Set(['static', 'bundle', 'dockerfile', 'oci_image']);
+const APP_KEYS = new Set([
+  'path', 'type', 'image', 'dockerfile', 'command', 'port', 'root', 'output_dir',
+  'install_command', 'build_command', 'spa', 'readiness_path', 'idle_timeout_seconds',
+  'monthly_budget_usd', 'resources', 'env', 'secrets',
+]);
+
+function validateAppStringMap(
   node: unknown,
   path: string,
   issues: ManifestIssue[],
-  format: ManifestFormat = 'toml',
+  validateKey: boolean,
 ): void {
+  if (node === undefined) return;
+  if (!isTable(node)) {
+    issues.push({ path, message: 'must be a key-to-string map.', severity: 'error' });
+    return;
+  }
+  for (const [key, value] of Object.entries(node)) {
+    const where = `${path}.${key}`;
+    if (validateKey && !ENV_NAME_RE.test(key)) {
+      issues.push({ path: where, message: 'key must be an uppercase environment variable name.', severity: 'error' });
+    }
+    // The deploy path refuses these (`resolveAppRuntimeEnvironment` →
+    // `assertDestination`). Without the same check here, `validate` passes on a
+    // manifest that cannot deploy — which is the one job this command has.
+    if (validateKey) {
+      const reason = reservedEnvNameReason(key);
+      if (reason) {
+        issues.push({ path: where, message: `key "${key}" ${reason}`, severity: 'error' });
+      }
+    }
+    if (typeof value !== 'string' || value.trim() === '') {
+      issues.push({ path: where, message: 'must be a non-empty string.', severity: 'error' });
+    }
+  }
+}
+
+function validateAppsV2(node: unknown, path: string, issues: ManifestIssue[]): void {
+  if (node === undefined) return;
+  if (!isTable(node)) {
+    issues.push({ path, message: 'must be a map keyed by App slug.', severity: 'error' });
+    return;
+  }
+  for (const [slug, value] of Object.entries(node)) {
+    const where = `${path}.${slug}`;
+    if (!SLUG_RE.test(slug)) {
+      issues.push({ path: where, message: 'App key must be a lowercase slug.', severity: 'error' });
+    }
+    if (!isTable(value)) {
+      issues.push({ path: where, message: 'must be an App configuration object.', severity: 'error' });
+      continue;
+    }
+    for (const key of Object.keys(value)) {
+      if (!APP_KEYS.has(key)) {
+        issues.push({ path: `${where}.${key}`, message: 'is not a supported App field.', severity: 'error' });
+      }
+    }
+    const type = value.type;
+    if (type !== undefined && (typeof type !== 'string' || !APP_TYPES.has(type))) {
+      issues.push({ path: `${where}.type`, message: 'must be static, bundle, dockerfile, or oci_image.', severity: 'error' });
+    }
+    for (const key of ['path', 'dockerfile', 'root', 'output_dir'] as const) {
+      expectRelativePathOrAbsent(value[key], `${where}.${key}`, issues);
+    }
+    for (const key of ['image', 'install_command', 'build_command'] as const) {
+      expectStringOrAbsent(value[key], `${where}.${key}`, issues);
+    }
+    if (value.command !== undefined) {
+      if (!Array.isArray(value.command) || value.command.length === 0 ||
+          !value.command.every((item) => typeof item === 'string' && item.length > 0)) {
+        issues.push({ path: `${where}.command`, message: 'must be a non-empty string array.', severity: 'error' });
+      }
+    }
+    if (value.port !== undefined) {
+      const port = Number(value.port);
+      if (!Number.isInteger(port) || port < 1 || port > 65535 || port === 7331 || port === 8080) {
+        issues.push({ path: `${where}.port`, message: 'must be an integer from 1 to 65535, excluding 7331 and 8080.', severity: 'error' });
+      }
+    }
+    if ((type === 'dockerfile' || type === 'oci_image') &&
+        (!Array.isArray(value.command) || value.command.length === 0)) {
+      if (!issues.some((issue) => issue.path === `${where}.command`)) {
+        issues.push({ path: `${where}.command`, message: `is required for ${type} Apps.`, severity: 'error' });
+      }
+    }
+    if ((type === 'dockerfile' || type === 'oci_image') && value.port === undefined) {
+      issues.push({ path: `${where}.port`, message: `is required for ${type} Apps.`, severity: 'error' });
+    }
+    if (type === 'oci_image' && (typeof value.image !== 'string' || !value.image.trim())) {
+      issues.push({ path: `${where}.image`, message: 'is required for oci_image Apps.', severity: 'error' });
+    }
+    if (value.spa !== undefined && typeof value.spa !== 'boolean') {
+      issues.push({ path: `${where}.spa`, message: 'must be a boolean.', severity: 'error' });
+    }
+    if (value.readiness_path !== undefined &&
+        (typeof value.readiness_path !== 'string' || !value.readiness_path.startsWith('/'))) {
+      issues.push({ path: `${where}.readiness_path`, message: 'must be an absolute HTTP path.', severity: 'error' });
+    }
+    expectBoundedIntOrAbsent(value.idle_timeout_seconds, `${where}.idle_timeout_seconds`, { min: 120, max: 86400 }, issues);
+    if (value.monthly_budget_usd !== undefined &&
+        (typeof value.monthly_budget_usd !== 'number' || value.monthly_budget_usd < 0)) {
+      issues.push({ path: `${where}.monthly_budget_usd`, message: 'must be a non-negative number.', severity: 'error' });
+    }
+    if (value.resources !== undefined) {
+      if (!isTable(value.resources)) {
+        issues.push({ path: `${where}.resources`, message: 'must be an object.', severity: 'error' });
+      } else {
+        expectBoundedIntOrAbsent(value.resources.cpu, `${where}.resources.cpu`, { min: 1, max: 64 }, issues);
+        expectBoundedIntOrAbsent(value.resources.memory_gb, `${where}.resources.memory_gb`, { min: 1, max: 512 }, issues);
+        expectBoundedIntOrAbsent(value.resources.disk_gb, `${where}.resources.disk_gb`, { min: 1, max: 2048 }, issues);
+        for (const key of Object.keys(value.resources)) {
+          if (!['cpu', 'memory_gb', 'disk_gb'].includes(key)) {
+            issues.push({ path: `${where}.resources.${key}`, message: 'is not a supported resource field.', severity: 'error' });
+          }
+        }
+      }
+    }
+    validateAppStringMap(value.env, `${where}.env`, issues, true);
+    validateAppStringMap(value.secrets, `${where}.secrets`, issues, true);
+  }
+}
+
+/**
+ * A duration-literal field on a monitor (`interval`, `expect_event_within`).
+ * Returns the parsed seconds, or null when the value is absent/rejected.
+ */
+function validateMonitorDuration(
+  value: unknown,
+  where: string,
+  floorSeconds: number,
+  issues: ManifestIssue[],
+): number | null {
+  if (typeof value !== 'string' || !value.trim()) {
+    issues.push({
+      path: where,
+      message: 'must be a duration string like "30s", "5m", "24h", or "7d".',
+      severity: 'error',
+    });
+    return null;
+  }
+  const seconds = parseDurationSeconds(value);
+  if (seconds === null) {
+    issues.push({
+      path: where,
+      message: `"${value}" is not a duration — write a positive integer plus s/m/h/d (e.g. "30s", "5m", "24h").`,
+      severity: 'error',
+    });
+    return null;
+  }
+  if (seconds < floorSeconds) {
+    issues.push({
+      path: where,
+      message: `must be at least ${floorSeconds}s (got "${value}"); the platform enforces this floor.`,
+      severity: 'error',
+    });
+    return null;
+  }
+  return seconds;
+}
+
+/**
+ * `type: monitor` — the third trigger type (docs/specs/2026-08-12-monitors.md).
+ * A monitor names a repo command (`run`) that the platform supervises 24/7 in
+ * the project's monitor box; its stdout lines are the events. `cron`/`run_at`/
+ * `timezone`/`secret_env` are cron/webhook wiring and are hard-rejected here —
+ * silently ignoring them would let a manifest claim a schedule the monitor
+ * runner never reads.
+ *
+ * MUST stay in sync with the runtime parser (apps/api/.../triggers.ts
+ * `parseTriggerEntry`'s monitor branch) and with `triggerSchema` in
+ * ./json-schema.ts — the conformance suite fails CI if the two validators
+ * disagree on a fixture.
+ */
+function validateMonitorTrigger(
+  entry: Record<string, unknown>,
+  where: string,
+  issues: ManifestIssue[],
+): void {
+  const run = typeof entry.run === 'string' ? entry.run.trim() : '';
+  if (!run) {
+    issues.push({
+      path: `${where}.run`,
+      message: 'monitor triggers must declare a `run` command (repo-relative).',
+      severity: 'error',
+    });
+  } else if (run.length > MONITOR_RUN_MAX_LENGTH) {
+    issues.push({
+      path: `${where}.run`,
+      message: `must be at most ${MONITOR_RUN_MAX_LENGTH} characters.`,
+      severity: 'error',
+    });
+  } else if (/[\r\n]/.test(run)) {
+    issues.push({
+      path: `${where}.run`,
+      message: 'must be a single command line — no newlines.',
+      severity: 'error',
+    });
+  }
+
+  const mode = typeof entry.mode === 'string' ? entry.mode.trim() : '';
+  if (!(MONITOR_MODES as readonly string[]).includes(mode)) {
+    issues.push({
+      path: `${where}.mode`,
+      message: `mode must be one of: ${MONITOR_MODES.join(', ')} (got "${mode || 'unset'}").`,
+      severity: 'error',
+    });
+  }
+
+  // `interval` is the poll period, so it is required iff mode=poll and
+  // meaningless on a long-running stream.
+  if (mode === 'poll') {
+    validateMonitorDuration(
+      entry.interval,
+      `${where}.interval`,
+      MONITOR_MIN_INTERVAL_SECONDS,
+      issues,
+    );
+  } else if (entry.interval !== undefined) {
+    issues.push({
+      path: `${where}.interval`,
+      message: 'is only valid on a `mode: poll` monitor — a stream runs continuously.',
+      severity: 'error',
+    });
+  }
+
+  // Optional silence watchdog: no event within this window synthesizes a
+  // `silent` lifecycle event so a wedged monitor can never fail silently.
+  if (entry.expect_event_within !== undefined) {
+    validateMonitorDuration(
+      entry.expect_event_within,
+      `${where}.expect_event_within`,
+      MONITOR_MIN_EXPECT_EVENT_WITHIN_SECONDS,
+      issues,
+    );
+  }
+
+  for (const key of ['cron', 'schedule', 'run_at', 'runAt', 'timezone', 'secret_env', 'secretEnv']) {
+    if (entry[key] !== undefined) {
+      issues.push({
+        path: `${where}.${key}`,
+        message: 'is not valid on a monitor trigger — monitors are driven by their `run` process.',
+        severity: 'error',
+      });
+    }
+  }
+}
+
+function validateTriggers(node: unknown, path: string, issues: ManifestIssue[], format: ManifestFormat = 'toml'): void {
   if (node == null) return;
   if (!Array.isArray(node)) {
     issues.push({
@@ -945,6 +1149,8 @@ function validateTriggers(
           severity: 'error',
         });
       }
+    } else if (type === 'monitor') {
+      validateMonitorTrigger(entry, where, issues);
     }
     if (entry.enabled !== undefined && !isEnabledValue(entry.enabled)) {
       issues.push({
@@ -992,13 +1198,7 @@ function validateTriggers(
   });
 }
 
-function validateConnectors(
-  node: unknown,
-  path: string,
-  issues: ManifestIssue[],
-  version: 1 | 2 = 1,
-  format: ManifestFormat = 'toml',
-): void {
+function validateConnectors(node: unknown, path: string, issues: ManifestIssue[], version: 1 | 2 = 1, format: ManifestFormat = 'toml'): void {
   if (node == null) return;
   if (!Array.isArray(node)) {
     issues.push({
@@ -1032,6 +1232,16 @@ function validateConnectors(
       });
     } else {
       seenSlugs.add(slug);
+    }
+    if (
+      entry.name !== undefined &&
+      (typeof entry.name !== 'string' || entry.name.trim().length === 0)
+    ) {
+      issues.push({
+        path: `${where}.name`,
+        message: 'name must be a non-empty string when provided.',
+        severity: 'error',
+      });
     }
     // Runtime parser lowercases provider/auth.type/policy.action/platform before
     // matching — mirror that so a manifest using "MCP" or "Slack" isn't blocked.
@@ -1120,7 +1330,8 @@ function validateConnectors(
     if ((provider === 'openapi' || provider === 'postman') && typeof entry.spec !== 'string') {
       issues.push({
         path: `${where}.spec`,
-        message: `${provider} connectors need a \`spec\` (URL or repo path); without it the connector fails to materialize.`,
+        message:
+          `${provider} connectors need a \`spec\` (URL or repo path); without it the connector fails to materialize.`,
         severity: 'warning',
       });
     }
@@ -1156,6 +1367,19 @@ function validateConnectors(
           path: `${where}.credential`,
           message: `credential should be "shared" (got "${cm || 'unset'}"); the runtime rejects anything else.`,
           severity: version === 2 ? 'error' : 'warning',
+        });
+      }
+    }
+    if (entry.authorization_strategy !== undefined) {
+      const strategy =
+        typeof entry.authorization_strategy === 'string'
+          ? entry.authorization_strategy.trim().toLowerCase()
+          : '';
+      if (!(CONNECTOR_AUTHORIZATION_STRATEGIES as readonly string[]).includes(strategy)) {
+        issues.push({
+          path: `${where}.authorization_strategy`,
+          message: `authorization_strategy must be one of: ${CONNECTOR_AUTHORIZATION_STRATEGIES.join(', ')} (got "${strategy || 'unset'}").`,
+          severity: 'error',
         });
       }
     }
@@ -1209,12 +1433,7 @@ function validateConnectors(
             severity: 'error',
           });
         }
-        if (
-          t === 'oauth1' &&
-          provider !== 'openapi' &&
-          provider !== 'postman' &&
-          provider !== 'http'
-        ) {
+        if (t === 'oauth1' && provider !== 'openapi' && provider !== 'postman' && provider !== 'http') {
           issues.push({
             path: `${where}.auth.type`,
             message: 'auth.type "oauth1" is only supported for openapi/postman/http connectors.',
@@ -1238,15 +1457,12 @@ function validateConnectors(
     if (entry.headers !== undefined) {
       const parsedHeaders = parseConnectorHeaders(entry.headers);
       if (!parsedHeaders.ok) {
-        issues.push({
-          path: `${where}.headers`,
-          message: `${parsedHeaders.error}.`,
-          severity: 'error',
-        });
+        issues.push({ path: `${where}.headers`, message: `${parsedHeaders.error}.`, severity: 'error' });
       } else if (provider === 'pipedream' || provider === 'channel') {
         issues.push({
           path: `${where}.headers`,
-          message: `${provider} connectors are called through the platform, not as a raw HTTP request — \`headers\` is ignored at runtime.`,
+          message:
+            `${provider} connectors are called through the platform, not as a raw HTTP request — \`headers\` is ignored at runtime.`,
           severity: 'warning',
         });
       }
@@ -1288,12 +1504,7 @@ function validateConnectors(
   });
 }
 
-function validateChannels(
-  node: unknown,
-  path: string,
-  issues: ManifestIssue[],
-  format: ManifestFormat = 'toml',
-): void {
+function validateChannels(node: unknown, path: string, issues: ManifestIssue[], format: ManifestFormat = 'toml'): void {
   if (node == null) return;
   if (!Array.isArray(node)) {
     issues.push({

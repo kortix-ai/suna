@@ -1,6 +1,6 @@
-import { resolveExperimentalFeature } from '../experimental/features';
+import { resolveFeatureFlag } from '../feature-flags/registry';
 
 /** True only when the platform gateway is available and this project opted in. */
 export function projectLlmGatewayEnabled(metadata: unknown): boolean {
-  return resolveExperimentalFeature(metadata, 'llm_gateway');
+  return resolveFeatureFlag(metadata, 'llm_gateway');
 }

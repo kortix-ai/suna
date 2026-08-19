@@ -31,19 +31,19 @@ export const STATUS_TEXT: Record<StatusTone, string> = {
 
 /** Faint tinted background per tone (for chips / fills). */
 export const STATUS_BG: Record<StatusTone, string> = {
-  success: 'bg-emerald-500/10',
-  warning: 'bg-amber-500/10',
+  success: 'bg-kortix-green/10',
+  warning: 'bg-kortix-yellow/10',
   destructive: 'bg-destructive/10',
-  info: 'bg-blue-500/10',
+  info: 'bg-kortix-blue/10',
   neutral: 'bg-popover',
 };
 
 /** Hairline border per tone (matches InfoBanner edges). */
 export const STATUS_BORDER: Record<StatusTone, string> = {
-  success: 'border-emerald-500/25',
-  warning: 'border-amber-500/30',
+  success: 'border-kortix-green',
+  warning: 'border-kortix-yellow',
   destructive: 'border-destructive/30',
-  info: 'border-blue-500/25',
+  info: 'border-kortix-blue',
   neutral: 'border-border',
 };
 

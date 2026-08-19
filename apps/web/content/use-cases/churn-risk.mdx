@@ -89,7 +89,7 @@ model, the agent reads:
 The agent is **read-only** across every customer system. It has no write access to
 Postgres, Plain, or Stripe, so it cannot change an account, a ticket, or a
 subscription. Its only output is the Slack post. Credentials are encrypted in the
-Secrets Manager and injected at runtime, never shown to the model or written to
+Secrets Manager and injected at runtime, scoped to the agents you grant them to or written to
 logs.
 
 </Step>
@@ -114,12 +114,9 @@ team reads it and decides what to do. Nothing is written back automatically.
 The agent reads across every customer system, so its access is scoped and
 one-directional:
 
-- **Isolation.** Every run happens in its own microVM sandbox. The session can
-  reach only the systems it's scoped to, and only the Slack post leaves the
-  sandbox.
+- **Isolation.** Every run happens in its own isolated sandbox. The session is granted access only to the systems it's scoped to, and only the Slack post is written back out.
 - **Scoped secrets.** The Postgres, Plain, and Stripe credentials are encrypted in
-  the Secrets Manager and injected into the sandbox at runtime, never exposed to
-  the model or the logs.
+  the Secrets Manager and injected into the sandbox at runtime, scoped to the agents you grant them to.
 - **Read-only.** The connectors into customer data are read-only. The agent cannot
   change an account, a ticket, or a subscription; it can only report.
 - **Everything is code.** The agent's scoring rules, skills, and per-system

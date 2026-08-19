@@ -1,10 +1,12 @@
 import type {
-  ConnectionProfileCredentialInput,
+  ConnectionCredentialInput,
   ConnectorDraftInput,
   OAuth2ApplicationInput,
   OAuth2ClientCredentials,
   OAuth2TokenEndpointAuthMethod,
 } from '@kortix/sdk';
+
+import { connectorSyncErrorForSlug, createOnlyConnectorDraft } from './connector-connection-form';
 
 export interface OAuth2CredentialForm {
   tokenUrl: string;
@@ -39,7 +41,7 @@ export function oauth2CredentialFormValid(form: OAuth2CredentialForm): boolean {
 
 export function buildOAuth2CredentialInput(
   form: OAuth2CredentialForm,
-): ConnectionProfileCredentialInput {
+): ConnectionCredentialInput {
   const oauth2: OAuth2ClientCredentials = {
     type: 'oauth2_client_credentials',
     token_url: form.tokenUrl.trim(),
@@ -150,8 +152,7 @@ export function mergeOAuth2DiscoveryMetadata(
     ...form,
     authorizationUrl: form.authorizationUrl || metadata.authorization_url || '',
     tokenUrl: form.tokenUrl || metadata.token_url || '',
-    deviceAuthorizationUrl:
-      form.deviceAuthorizationUrl || metadata.device_authorization_url || '',
+    deviceAuthorizationUrl: form.deviceAuthorizationUrl || metadata.device_authorization_url || '',
     revocationUrl: form.revocationUrl || metadata.revocation_url || '',
     scopes: form.scopes || metadata.scopes?.join(' ') || '',
   };
@@ -162,17 +163,22 @@ export async function createConnectorWithOptionalOAuth2(
   draft: ConnectorDraftInput,
   oauth2: OAuth2CredentialForm | null,
   deps: {
-    createConnector: (projectId: string, draft: ConnectorDraftInput) => Promise<unknown>;
+    createConnector: (
+      projectId: string,
+      draft: ConnectorDraftInput,
+    ) => Promise<Awaited<ReturnType<typeof import('@kortix/sdk').createConnector>>>;
     deleteConnector: (projectId: string, slug: string) => Promise<unknown>;
     setConnectorCredential: (
       projectId: string,
       slug: string,
-      credential: ConnectionProfileCredentialInput,
+      credential: ConnectionCredentialInput,
     ) => Promise<unknown>;
   },
-): Promise<void> {
-  await deps.createConnector(projectId, draft);
-  if (!oauth2) return;
+): Promise<{ syncError: string | null; credentialStored: boolean }> {
+  const created = await deps.createConnector(projectId, createOnlyConnectorDraft(draft));
+  const syncError = connectorSyncErrorForSlug(created, draft.slug);
+  if (syncError) return { syncError, credentialStored: false };
+  if (!oauth2) return { syncError: null, credentialStored: false };
 
   try {
     await deps.setConnectorCredential(projectId, draft.slug, buildOAuth2CredentialInput(oauth2));
@@ -190,4 +196,5 @@ export async function createConnectorWithOptionalOAuth2(
     }
     throw credentialError;
   }
+  return { syncError: null, credentialStored: true };
 }

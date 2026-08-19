@@ -115,7 +115,7 @@ function printHelp() {
   --skip-provision          reuse an existing project/session instead of minting one
   --project <id>            project id (required with --skip-provision unless derivable from --call)
   --call <id>                session id == call id (required with --skip-provision)
-  --token <executorToken>   skip fetching KORTIX_EXECUTOR_TOKEN from the sandbox
+  --token <connectorToken>   skip fetching KORTIX_CLI_TOKEN from the sandbox
   --say "<text>"            phrase spoken in step 6 (default: a plain "can you hear me")
   --run-command-say "<text>" phrase spoken in step 8 to trigger run_command
   --api-log <path>          API access-log path checked in step 8 (default: ${DEFAULT_API_LOG})
@@ -427,24 +427,24 @@ async function main() {
     record('3-session', 'SKIP', `reusing session=${sessionId} (assumed ready)`);
   }
 
-  // ── prerequisite: the per-session executor token the sandbox's agent
-  // would carry (KORTIX_EXECUTOR_TOKEN), needed for every real MCP call
+  // ── prerequisite: the per-session connector token the sandbox's agent
+  // would carry (KORTIX_CLI_TOKEN), needed for every real MCP call
   // below. Fetched by executing `printenv` INSIDE the sandbox — the same
   // primitive the voice run_command tool itself uses — rather than minting
   // a new one, so this is the actual credential a live agent has, not a
   // stand-in. Not fatal: MCP-dependent steps just SKIP without it.
-  let executorToken = arg('token');
-  if (executorToken) {
+  let connectorToken = arg('token');
+  if (connectorToken) {
     record('token', 'SKIP', 'using --token override');
   } else {
     try {
-      const result = await runCommandInSandbox(sessionId!, 'printenv KORTIX_EXECUTOR_TOKEN');
+      const result = await runCommandInSandbox(sessionId!, 'printenv KORTIX_CLI_TOKEN');
       const tok = result.stdout.trim().split('\n').pop()?.trim();
       if (!tok || result.timedOut) {
         throw new Error(`printenv returned nothing (timedOut=${result.timedOut}, exit=${result.exitCode})`);
       }
-      executorToken = tok;
-      record('token', 'PASS', `fetched KORTIX_EXECUTOR_TOKEN (${tok.slice(0, 12)}…)`);
+      connectorToken = tok;
+      record('token', 'PASS', `fetched KORTIX_CLI_TOKEN (${tok.slice(0, 12)}…)`);
     } catch (err) {
       record('token', 'FAIL', err instanceof Error ? err.message : String(err));
     }
@@ -455,14 +455,14 @@ async function main() {
   let joinUrl: string | undefined;
   if (flag('skip-spawn')) {
     record('4-spawn', 'SKIP');
-  } else if (!executorToken) {
+  } else if (!connectorToken) {
     record('4-spawn', 'SKIP', 'no session token available');
   } else {
     try {
       const { status, body } = await mcpCall(
         projectId!,
         sessionId!,
-        executorToken,
+        connectorToken,
         'tools/call',
         { name: 'voice_spawn', arguments: {} },
         4,
@@ -484,11 +484,11 @@ async function main() {
   // ── step 5: tools/list — exact tool surface, no blocking tool ──────────
   if (flag('skip-mcp-list')) {
     record('5-mcp-tools-list', 'SKIP');
-  } else if (!executorToken) {
+  } else if (!connectorToken) {
     record('5-mcp-tools-list', 'SKIP', 'no session token available');
   } else {
     try {
-      const { status, body } = await mcpCall(projectId!, sessionId!, executorToken, 'tools/list', undefined, 5);
+      const { status, body } = await mcpCall(projectId!, sessionId!, connectorToken, 'tools/list', undefined, 5);
       if (status !== 200) {
         record('5-mcp-tools-list', 'FAIL', `HTTP ${status} ${JSON.stringify(body).slice(0, 200)}`);
       } else {
@@ -595,14 +595,14 @@ async function main() {
   // ── step 9: voice_read over MCP — turns + a monotonic cursor ───────────
   if (flag('skip-voice-read')) {
     record('9-voice-read', 'SKIP');
-  } else if (!executorToken) {
+  } else if (!connectorToken) {
     record('9-voice-read', 'SKIP', 'no session token available');
   } else {
     try {
       const { status, body } = await mcpCall(
         projectId!,
         sessionId!,
-        executorToken,
+        connectorToken,
         'tools/call',
         { name: 'voice_read', arguments: { call_id: sessionId, cursor: 0 } },
         9,
@@ -633,7 +633,7 @@ async function main() {
   // ── step 10: voice_end — assert the room actually closes ──────────────
   if (flag('skip-end')) {
     record('10-end', 'SKIP');
-  } else if (!executorToken) {
+  } else if (!connectorToken) {
     record('10-end', 'SKIP', 'no session token available');
   } else {
     try {
@@ -647,7 +647,7 @@ async function main() {
       const { status, body } = await mcpCall(
         projectId!,
         sessionId!,
-        executorToken,
+        connectorToken,
         'tools/call',
         { name: 'voice_end', arguments: { call_id: sessionId } },
         10,

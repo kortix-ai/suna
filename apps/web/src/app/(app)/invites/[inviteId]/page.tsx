@@ -2,15 +2,16 @@
 
 import { useLocale, useTranslations } from 'next-intl';
 
+import { ClockIcon as Clock } from '@phosphor-icons/react';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { Clock, Loader2 } from 'lucide-react';
-import { motion } from 'motion/react';
+import { m } from 'motion/react';
 import { useParams, useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { Button } from '@/components/ui/button';
 import { InfoBanner } from '@/components/ui/info-banner';
+import Loading from '@/components/ui/loading';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { WallpaperBackground } from '@/components/ui/wallpaper-background';
 import { useAuth } from '@/features/providers/auth-provider';
@@ -96,7 +97,7 @@ export default function InvitePage() {
     return (
       <BrandSurface>
         <div className="text-foreground/40 flex items-center gap-2.5 text-sm">
-          <Loader2 className="h-4 w-4 animate-spin" />
+          <Loading className="h-4 w-4" />
           {tHardcodedUi.raw('appInvitesInviteidPage.line88JsxTextLoadingInvite')}
         </div>
       </BrandSurface>
@@ -243,7 +244,7 @@ export default function InvitePage() {
             className="flex-1 text-sm"
           >
             {declinePending ? (
-              <Loader2 className="mx-auto h-4 w-4 animate-spin" />
+              <Loading className="mx-auto h-4 w-4" />
             ) : (
               tHardcodedUi.raw('appInvitesInviteidPage.decline')
             )}
@@ -256,7 +257,7 @@ export default function InvitePage() {
             className="flex-1 text-sm"
           >
             {acceptPending ? (
-              <Loader2 className="mx-auto h-4 w-4 animate-spin" />
+              <Loading className="mx-auto h-4 w-4" />
             ) : (
               tHardcodedUi.raw('appInvitesInviteidPage.accept')
             )}
@@ -281,7 +282,7 @@ function BrandSurface({ children }: { children: React.ReactNode }) {
 
 function InviteCard({ children, kicker }: { children: React.ReactNode; kicker: string }) {
   return (
-    <motion.div
+    <m.div
       initial={{ opacity: 0, y: 20, scale: 0.98 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
@@ -294,7 +295,7 @@ function InviteCard({ children, kicker }: { children: React.ReactNode; kicker: s
           {children}
         </div>
       </div>
-    </motion.div>
+    </m.div>
   );
 }
 
@@ -322,14 +323,25 @@ function GhostAction({ onClick, children }: { onClick: () => void; children: Rea
   );
 }
 
+const dateFormattersByLocale = new Map<string, Intl.DateTimeFormat>();
+
+function dateFormatterFor(locale: string): Intl.DateTimeFormat {
+  let formatter = dateFormattersByLocale.get(locale);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat(locale);
+    dateFormattersByLocale.set(locale, formatter);
+  }
+  return formatter;
+}
+
 function formatWhen(iso: string, locale: string): string {
   const d = new Date(iso);
   const now = new Date();
   const msPerDay = 24 * 60 * 60 * 1000;
   const diffDays = Math.round((d.getTime() - now.getTime()) / msPerDay);
-  if (diffDays < -1) return d.toLocaleDateString(locale);
+  if (diffDays < -1) return dateFormatterFor(locale).format(d);
   if (diffDays < 14) {
     return new Intl.RelativeTimeFormat(locale, { numeric: 'auto' }).format(diffDays, 'day');
   }
-  return d.toLocaleDateString(locale);
+  return dateFormatterFor(locale).format(d);
 }

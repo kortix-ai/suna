@@ -143121,6 +143121,67 @@
       "npm": "@openrouter/ai-sdk-provider",
       "models": [
         {
+          "id": "x-ai/grok-4.6",
+          "name": "Grok 4.6",
+          "description": "xAI's frontier model for long-running agents, coding, knowledge work, and visual projects",
+          "released": "2026-08-12",
+          "attachment": true,
+          "reasoning": true,
+          "reasoning_options": [
+            {
+              "type": "effort",
+              "values": [
+                "low",
+                "medium",
+                "high",
+                "xhigh"
+              ]
+            }
+          ],
+          "tool_call": true,
+          "structured_output": true,
+          "open_weights": false,
+          "temperature": true,
+          "knowledge": "2026-02-01",
+          "last_updated": "2026-08-12",
+          "family": "grok",
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "pdf"
+            ],
+            "output": [
+              "text"
+            ]
+          },
+          "limit": {
+            "context": 500000,
+            "output": 500000
+          },
+          "cost": {
+            "input": 2,
+            "output": 6,
+            "cache_read": 0.5,
+            "tiers": [
+              {
+                "input": 4,
+                "output": 12,
+                "cache_read": 1,
+                "tier": {
+                  "type": "context",
+                  "size": 200000
+                }
+              }
+            ],
+            "context_over_200k": {
+              "input": 4,
+              "output": 12,
+              "cache_read": 1
+            }
+          }
+        },
+        {
           "id": "moonshotai/kimi-k3",
           "name": "Kimi K3",
           "description": "Kimi multimodal agent model for visual understanding, coding, and planning",
@@ -145600,6 +145661,50 @@
           "temperature": true,
           "knowledge": "2025-05",
           "last_updated": "2026-04-24",
+          "family": "deepseek-thinking",
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          },
+          "limit": {
+            "context": 1048576,
+            "output": 384000
+          },
+          "cost": {
+            "input": 0.435,
+            "output": 0.87,
+            "cache_read": 0.003625
+          }
+        },
+        {
+          "id": "deepseek/deepseek-v4-pro-0813",
+          "name": "DeepSeek V4 Pro 0813",
+          "description": "DeepSeek V4 Pro snapshot with million-token context and support for thinking and non-thinking modes",
+          "released": "2026-08-12",
+          "attachment": false,
+          "reasoning": true,
+          "reasoning_options": [
+            {
+              "type": "toggle"
+            },
+            {
+              "type": "effort",
+              "values": [
+                "low",
+                "high",
+                "max"
+              ]
+            }
+          ],
+          "tool_call": true,
+          "structured_output": false,
+          "open_weights": false,
+          "temperature": true,
+          "last_updated": "2026-08-12",
           "family": "deepseek-thinking",
           "modalities": {
             "input": [

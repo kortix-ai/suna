@@ -19,10 +19,14 @@
  * side, so the actions never move.
  */
 
+import { HighlightedCode } from '@/components/markdown/code';
 import { CopyButton } from '@/components/markdown/copy-button';
 import { DocMarkdown } from '@/components/markdown/doc-markdown';
+import {
+  MarkdownFrontmatterCard,
+  parseFrontmatter,
+} from '@/components/markdown/markdown-frontmatter';
 import { Button } from '@/components/ui/button';
-import { CodeBlockCode } from '@/components/ui/code-block';
 import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -40,14 +44,14 @@ import { track } from '@/lib/track';
 import { cn } from '@/lib/utils';
 import { useIsExpanded, useToggleExpanded } from '@/stores/kortix-computer-store';
 import {
-  Code2,
-  Download,
-  ExternalLink,
-  Eye,
-  Maximize2,
-  MessageSquarePlus,
-  Minimize2,
-} from 'lucide-react';
+  CodeSimpleIcon as Code2,
+  DownloadIcon as Download,
+  ArrowSquareOutIcon as ExternalLink,
+  EyeIcon as Eye,
+  ArrowsOutSimpleIcon as Maximize2,
+  ChatIcon as MessageSquarePlus,
+  ArrowsInSimpleIcon as Minimize2,
+} from '@phosphor-icons/react';
 import { useEffect, useState } from 'react';
 import { CloseButton, DetailSidebarToggle } from './detail-view';
 import { type ShareContext, ShareFileButton } from './viewer-actions';
@@ -148,7 +152,7 @@ export function DownloadButton({ path, fileName }: { path: string; fileName: str
         className="size-7 active:scale-[0.96] disabled:opacity-100"
       >
         {downloading ? (
-          <Loading className="size-3.5 shrink-0" />
+          <Loading className="text-muted-foreground size-3.5 shrink-0 motion-reduce:animate-none" />
         ) : (
           <Download className="size-3.5" />
         )}
@@ -194,7 +198,7 @@ export function OpenInNewTabButton({ path }: { path: string }) {
         className="size-7 active:scale-[0.96] disabled:opacity-100"
       >
         {opening ? (
-          <Loading className="size-3.5 shrink-0" />
+          <Loading className="text-muted-foreground size-3.5 shrink-0 motion-reduce:animate-none" />
         ) : (
           <ExternalLink className="size-3.5" />
         )}
@@ -255,19 +259,12 @@ export function FileViewer({
                 <TabsTrigger
                   size="xs"
                   value="preview"
-                  variant="a_accent-i_transparent"
                   aria-label="Preview"
                   className="h-7 w-7 px-0"
                 >
                   <Eye className="size-3.5" />
                 </TabsTrigger>
-                <TabsTrigger
-                  size="xs"
-                  value="source"
-                  variant="a_accent-i_transparent"
-                  aria-label="Source"
-                  className="h-7 w-7 px-0"
-                >
+                <TabsTrigger size="xs" value="source" aria-label="Source" className="h-7 w-7 px-0">
                   <Code2 className="size-3.5" />
                 </TabsTrigger>
               </TabsList>
@@ -423,30 +420,43 @@ function FileBody({
   }
 
   if (markdown) {
+    // Frontmatter has to come off BEFORE the markdown parser sees it. Handed
+    // the raw file, markdown reads the block as prose: the opening `---` is a
+    // thematic break and the closing `---` is a setext underline, so an agent
+    // definition rendered as a stray horizontal rule followed by its entire
+    // metadata as one giant bold heading. Same split, same card as the chat's
+    // inline preview (`MarkdownWithFrontmatter`), so both panes agree on what
+    // an agent file looks like.
+    const { frontmatter, body } = parseFrontmatter(content);
     return (
-      <div className="p-10">
+      <div className="p-6">
+        {frontmatter && <MarkdownFrontmatterCard data={frontmatter} />}
         {/* `allowHtml={false}`: this is a file viewer — embedded markup shows as
             escaped text rather than becoming live DOM. */}
-        <DocMarkdown content={content} allowHtml={false} />
+        <DocMarkdown content={body} allowHtml={false} />
       </div>
     );
   }
 
-  // `CodeBlockCode`, not `CodeHighlight`: the latter wraps the code in a
-  // document-style block — a tinted card, a language chip, and its own copy
+  // `HighlightedCode`, not `CodeHighlight`: the latter wraps the code in a
+  // document-style card — a tinted surface, a language chip, and its own copy
   // button. That chrome is right for a snippet embedded IN prose. Here the code
   // IS the document, so the chrome just boxes the file inside a second box and
   // puts a second copy button next to the toolbar's. Plain highlighted text,
-  // filling the pane, is the whole job.
+  // filling the pane, is the whole job — which is exactly what HighlightedCode
+  // renders, so none of the old override classes are needed to strip it.
   //
-  // The padding goes on the <pre> itself, not a wrapper: the tinted background
-  // should run the full width of the pane, with the code inset inside it — a
-  // padded wrapper would inset the tint too and leave a white margin around it.
+  // No palette override: there is only one. This pane and the diff viewer beside
+  // it both render under min-dark / min-light (see @/lib/code-theme). The
+  // CodeMirror editor still carries its own Pierre-derived theme and does NOT
+  // match — a known, accepted gap, not an oversight.
+  //
+  // Only the horizontal padding is dropped, not the vertical: the pane's own
+  // background should run edge to edge, so the code is inset from the bottom
+  // but flush to the sides.
   return (
-    <CodeBlockCode
-      code={content}
-      language={languageFor(fileName)}
-      className="[&_pre]:rounded-none [&_pre]:!bg-transparent [&_pre]:!px-0 [&_pre]:!pb-4 [&_pre]:!text-[13px]"
-    />
+    <div className="pb-4 [&_code]:text-[13px]">
+      <HighlightedCode code={content} language={languageFor(fileName)} />
+    </div>
   );
 }

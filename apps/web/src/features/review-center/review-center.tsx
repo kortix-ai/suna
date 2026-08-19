@@ -38,14 +38,21 @@ import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { cn } from '@/lib/utils';
 import type { ReviewVerdict } from '@kortix/sdk';
-import { CheckCircleSolid, InboxSolid, ShieldCheckSolid, X } from '@mynaui/icons-react';
-import { ChevronDown, Layers, Search } from 'lucide-react';
-import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
+import {
+  CheckCircleIcon as CheckCircleSolid,
+  CaretDownIcon as ChevronDown,
+  TrayIcon as InboxSolid,
+  StackIcon as Layers,
+  MagnifyingGlassIcon as Search,
+  XIcon as X,
+} from '@phosphor-icons/react';
+import { AnimatePresence, m, useReducedMotion } from 'motion/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { statusToVerdict } from './map';
 import { MOCK_ITEMS } from './mock-data';
 import {
   bulkSkipMessage,
+  connectorCallId,
   formatItemAge,
   isQuickDecidableApproval,
   resolveBulkOutcome,
@@ -53,13 +60,11 @@ import {
 import { type ReviewActions, ReviewDetailModal } from './review-detail-modal';
 import { KIND_META, RISK_BAR, RISK_META, SOURCE_META, STATUS_META } from './review-meta';
 import {
-  approveAllSafe,
   bulkSetStatus,
   countsBySegment,
   decideApprovalAction,
   filterItems,
   groupBySession,
-  safePendingCount,
   sessionOptions,
   setStatus,
 } from './review-reducer';
@@ -86,7 +91,7 @@ function AnimatedCount({ value }: { value: number }) {
   return (
     <span className="relative inline-flex min-w-[1ch] justify-center overflow-hidden tabular-nums">
       <AnimatePresence mode="popLayout" initial={false}>
-        <motion.span
+        <m.span
           key={value}
           initial={{ y: -7, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
@@ -94,7 +99,7 @@ function AnimatedCount({ value }: { value: number }) {
           transition={{ duration: 0.16, ease: EASE }}
         >
           {value}
-        </motion.span>
+        </m.span>
       </AnimatePresence>
     </span>
   );
@@ -142,6 +147,7 @@ function ItemRow({
   onToggleSelect,
   onQuickApprove,
   onQuickDeny,
+  bulkSelectable = true,
 }: {
   item: ReviewItem;
   idx: number;
@@ -152,8 +158,7 @@ function ItemRow({
   fresh: boolean;
   /** prefers-reduced-motion: collapse enter/stagger to instant. */
   reduce: boolean;
-  /** A single-action approval with a real client-side resolve path (an
-   *  executor approval) — show Approve/Deny right on the row, no modal hop. */
+  /** Whether this row exposes inline decisions. Connector approvals are false. */
   quickDecidable: boolean;
   /** 'approve' | 'deny' while this row's own resolve mutation is in flight. */
   pendingDecision?: 'approve' | 'deny' | null;
@@ -165,6 +170,7 @@ function ItemRow({
   onToggleSelect: () => void;
   onQuickApprove?: () => void;
   onQuickDeny?: () => void;
+  bulkSelectable?: boolean;
 }) {
   const kind = KIND_META[item.kind];
   const Source = SOURCE_META[item.source];
@@ -179,7 +185,7 @@ function ItemRow({
       : kind.bar;
 
   return (
-    <motion.li
+    <m.li
       data-idx={idx}
       layout={!reduce}
       initial={reduce ? false : { opacity: 0, y: fresh ? -6 : 0 }}
@@ -198,7 +204,7 @@ function ItemRow({
         fresh && 'bg-kortix-blue/[0.05]',
       )}
     >
-      {segment === 'needs_you' && (
+      {segment === 'needs_you' && bulkSelectable && (
         <Checkbox
           checked={selected}
           onCheckedChange={onToggleSelect}
@@ -278,7 +284,7 @@ function ItemRow({
           </Badge>
         )}
       </div>
-    </motion.li>
+    </m.li>
   );
 }
 
@@ -313,6 +319,8 @@ export function ReviewCenter({
   onAct,
   onBulkAct,
   onOpenSession,
+  onRecoverChange,
+  recoveringCrId,
   onRefresh,
   isLoading,
   isFetching,
@@ -327,6 +335,9 @@ export function ReviewCenter({
   onBulkAct?: (ids: string[], verdict: ReviewVerdict) => void;
   /** Connected mode: open a session (e.g. to watch the agent revise a change). */
   onOpenSession?: (sessionId: string) => void;
+  /** Connected mode: start a recovery session for a conflicted change. */
+  onRecoverChange?: (item: Extract<ReviewItem, { kind: 'change' }>, conflicts: string[]) => void;
+  recoveringCrId?: string | null;
   /** Connected mode: force an immediate poll instead of waiting for the
    *  interval — the "Live" indicator doubles as this refresh affordance. */
   onRefresh?: () => void;
@@ -379,7 +390,6 @@ export function ReviewCenter({
     () => filterItems(items, segment, kindFilter, query, sessionFilter),
     [items, segment, kindFilter, query, sessionFilter],
   );
-  const visibleSafePending = useMemo(() => safePendingCount(visible), [visible]);
   const kindCounts = useMemo(() => {
     // Respect the active session filter so the kind-tab badges never contradict
     // the visible list when scoped to one session.
@@ -447,7 +457,10 @@ export function ReviewCenter({
       return;
     }
     const known = knownIdsRef.current;
-    const arrived = items.filter((i) => !known.has(i.id)).map((i) => i.id);
+    const arrived: string[] = [];
+    for (const item of items) {
+      if (!known.has(item.id)) arrived.push(item.id);
+    }
     if (arrived.length > 0) {
       setFreshIds((prev) => {
         const n = new Set(prev);
@@ -519,15 +532,16 @@ export function ReviewCenter({
     },
     decideAction: (itemId, actionId, decision) =>
       setItems(decideApprovalAction(items, itemId, actionId, decision)),
-    approveAllSafe: (itemId) => setItems(approveAllSafe(items, itemId)),
     openSession: onOpenSession,
+    recoverChange: onRecoverChange,
+    recoveringCrId,
     connected,
     pendingId,
     pendingDecision,
   };
 
-  /** Row-level Approve/Deny for a single-action executor approval — resolves
-   *  it directly via `actions.resolve`, no modal hop. */
+  /** Legacy quick-decision handler. The eligibility helper currently returns
+   *  false because Connector approvals require the parameter-review modal. */
   const quickDecide = (item: ReviewItem, decision: 'approve' | 'deny') => {
     actions.resolve(
       item.id,
@@ -575,8 +589,7 @@ export function ReviewCenter({
 
   /** Connected mode: decide up-front what the verdict will really act on so
    *  the optimistic removal + toast never claim more than the server was
-   *  asked (exec approvals are never denied by a dismiss; risky approvals
-   *  survive an approve sweep; CRs each need their own review). */
+   *  asked. Bulk verdicts skip connector approvals and Change Requests. */
   const connectedBulkOutcome = (ids: string[], verdict: 'approve' | 'dismiss') => {
     const riskById = new Map(items.map((i) => [i.id, i.risk]));
     return resolveBulkOutcome(ids, verdict, (id) => riskById.get(id));
@@ -625,11 +638,11 @@ export function ReviewCenter({
       setSelectedIds(new Set());
       return;
     }
+    const itemIds = new Set(items.map((x) => x.id));
     let next = items;
     for (const id of ids) {
-      const it = items.find((x) => x.id === id);
-      if (!it) continue;
-      next = it.kind === 'approval' ? approveAllSafe(next, id) : setStatus(next, id, 'approved');
+      if (!itemIds.has(id)) continue;
+      next = setStatus(next, id, 'approved');
     }
     apply(
       next,
@@ -640,22 +653,15 @@ export function ReviewCenter({
     setSelectedIds(new Set());
   };
 
-  const toggleSelect = (id: string) =>
+  const toggleSelect = (id: string) => {
+    const item = items.find((candidate) => candidate.id === id);
+    if (item?.kind === 'approval' || (connected && connectorCallId(id))) return;
     setSelectedIds((prev) => {
       const n = new Set(prev);
       if (n.has(id)) n.delete(id);
       else n.add(id);
       return n;
     });
-
-  const onApproveAllSafeGlobal = () => {
-    const ids = visible.filter((i) => i.kind === 'approval').map((i) => i.id);
-    let next = items;
-    for (const id of ids) next = approveAllSafe(next, id);
-    commit(
-      next,
-      `Approved ${visibleSafePending} safe ${visibleSafePending === 1 ? 'action' : 'actions'}`,
-    );
   };
 
   // ── Keyboard shortcuts ──────────────────────────────────────────────────
@@ -734,7 +740,7 @@ export function ReviewCenter({
               <div className="space-y-1">
                 <div className="flex items-center gap-2">
                   <span className="bg-kortix-base/15 flex size-7 items-center justify-center rounded-sm">
-                    <InboxSolid className="text-kortix-base size-4" />
+                    <InboxSolid weight="fill" className="text-kortix-base size-4" />
                   </span>
                   <h1 className="text-foreground text-xl font-medium tracking-tight text-balance">
                     Review Center
@@ -906,36 +912,6 @@ export function ReviewCenter({
               </div>
             )}
 
-            {/* Bulk bar (safe approvals across the current view). Prototype-only:
-                connected mode already surfaces "approve all safe" per-item via
-                each approval's own inline Approve/Deny + the floating
-                multi-select bar below, so this global banner would be a
-                second, redundant safe-approve entry point there. */}
-            <AnimatePresence initial={false}>
-              {!connected &&
-                segment === 'needs_you' &&
-                visibleSafePending > 0 &&
-                selectionCount === 0 && (
-                  <motion.div
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: 'auto' }}
-                    exit={{ opacity: 0, height: 0 }}
-                    transition={{ duration: 0.2, ease: EASE }}
-                    className="overflow-hidden"
-                  >
-                    <div className="bg-kortix-green/10 border-kortix-green/25 flex flex-wrap items-center gap-3 rounded-md border px-4 py-2.5">
-                      <ShieldCheckSolid className="text-kortix-green size-5 shrink-0" />
-                      <span className="text-foreground min-w-0 flex-1 text-sm text-pretty">
-                        {visibleSafePending} safe {visibleSafePending === 1 ? 'action' : 'actions'}{' '}
-                        can be approved together. Risky ones stay for you to decide.
-                      </span>
-                      <Button size="sm" onClick={onApproveAllSafeGlobal}>
-                        Approve all safe
-                      </Button>
-                    </div>
-                  </motion.div>
-                )}
-            </AnimatePresence>
           </div>
 
           {/* List */}
@@ -962,7 +938,7 @@ export function ReviewCenter({
               ))}
             </ul>
           ) : visible.length === 0 ? (
-            <motion.div
+            <m.div
               key={`empty-${segment}-${query ? 'q' : ''}`}
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
@@ -989,7 +965,7 @@ export function ReviewCenter({
                         : 'Approved, rejected and finished items land here.'
                 }
               />
-            </motion.div>
+            </m.div>
           ) : grouped ? (
             <div
               ref={(el) => {
@@ -1035,6 +1011,10 @@ export function ReviewCenter({
                           reduce={reduce}
                           quickDecidable={connected && isQuickDecidableApproval(item)}
                           pendingDecision={pendingId === item.id ? pendingDecision : null}
+                          bulkSelectable={
+                            item.kind !== 'approval' &&
+                            (!connected || connectorCallId(item.id) === null)
+                          }
                           onOpen={() => setSelectedId(item.id)}
                           onToggleSelect={() => toggleSelect(item.id)}
                           onQuickApprove={() => quickDecide(item, 'approve')}
@@ -1069,6 +1049,9 @@ export function ReviewCenter({
                   reduce={reduce}
                   quickDecidable={connected && isQuickDecidableApproval(item)}
                   pendingDecision={pendingId === item.id ? pendingDecision : null}
+                  bulkSelectable={
+                    item.kind !== 'approval' && (!connected || connectorCallId(item.id) === null)
+                  }
                   sessionLabel={item.sessionId ? labelFor(item.sessionId) : undefined}
                   onOpen={() => setSelectedId(item.id)}
                   onToggleSelect={() => toggleSelect(item.id)}
@@ -1084,7 +1067,7 @@ export function ReviewCenter({
       {/* Floating multi-select action bar */}
       <AnimatePresence>
         {selectionCount > 0 && (
-          <motion.div
+          <m.div
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 12 }}
@@ -1111,7 +1094,7 @@ export function ReviewCenter({
                 <X className="size-4" />
               </Button>
             </div>
-          </motion.div>
+          </m.div>
         )}
       </AnimatePresence>
 

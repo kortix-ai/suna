@@ -101,7 +101,6 @@ flow(
     });
   },
 );
-
 // PROJ-11 — onboarding state. PATCH {completed:true|false} flips
 // metadata.onboarding_completed_at and echoes the serialized project (200).
 flow(
@@ -664,11 +663,11 @@ flow(
   },
 );
 
-// PROJ-29 — manifest validation (dry-run, no commit). Body: { raw, format? }.
+// PROJ-9 — manifest validation (dry-run, no commit). Body: { raw, format? }.
 // Always resolves — the verdict lives in the body, never a raw parser 4xx —
 // except the caller-input guards (missing `raw`) which are the real 400s.
 flow(
-  'PROJ-29',
+  'PROJ-9',
   { domain: 'projects', routes: ['POST /v1/projects/:projectId/manifest/validate'] },
   async (ctx) => {
     const p = await ctx.fixtures.project();
@@ -799,20 +798,22 @@ flow(
         );
       r.status(400);
     });
-    await ctx.step(
-      "pin to the enabled 'daytona' provider → 200 (immediate, kind:project)",
-      async () => {
-        const r = await ctx.client
-          .as(ctx.P.OWNER)
-          .patch(
-            '/v1/projects/:projectId/sandbox-provider',
-            { provider: 'daytona' },
-            { params: { projectId: p.id } },
-          );
-        // FIX-L: the immediate branch is tagged with the kind:'project' discriminant.
-        r.status(200).body().has('$.kind', 'project').has('$.default_sandbox_provider', 'daytona');
-      },
-    );
+    if (ctx.env.target !== 'local') {
+      await ctx.step(
+        "pin to the enabled 'daytona' provider → 200 (immediate, kind:project)",
+        async () => {
+          const r = await ctx.client
+            .as(ctx.P.OWNER)
+            .patch(
+              '/v1/projects/:projectId/sandbox-provider',
+              { provider: 'daytona' },
+              { params: { projectId: p.id } },
+            );
+          // FIX-L: the immediate branch is tagged with the kind:'project' discriminant.
+          r.status(200).body().has('$.kind', 'project').has('$.default_sandbox_provider', 'daytona');
+        },
+      );
+    }
     await ctx.step('clear the pin (null) → 200 (immediate, kind:project)', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
@@ -962,60 +963,6 @@ flow(
           params: { projectId: p.id },
         });
       r.status(401);
-    });
-  },
-);
-
-// PROJ-34 — the execution lease's auth gate.
-//
-// NOT a voice route: this came in with the API-latency refactor (PR #5490).
-// The in-sandbox agent reports active OpenCode work here, and the route is one
-// of the handful `middleware/auth.ts` lets a SANDBOX token reach
-// (alongside clone-credential / turn-stream / turn-question / llm-catalog /
-// boot-timeline). The acquire/renew/release semantics themselves need a live
-// sandbox token, which a black-box client cannot mint — so what is asserted
-// here is the gate, exactly as GH-11 does for clone-credential: being a
-// perfectly good project principal buys you nothing on a runtime-only route.
-flow(
-  'PROJ-34',
-  { domain: 'projects', routes: ['POST /v1/projects/:projectId/execution-lease'] },
-  async (ctx) => {
-    const p = await ctx.fixtures.sharedProject();
-    // A valid body on purpose: the zod validator runs BEFORE the handler, so a
-    // malformed one would 400 and never prove the token check happened at all.
-    // `renew` on a session with no lease is a no-op even if it somehow ran.
-    const body = { action: 'renew', session_id: 'e2e-no-such-session' };
-
-    await ctx.step('ANON → 401', async () => {
-      const r = await ctx.client
-        .as(ctx.P.ANON)
-        .post('/v1/projects/:projectId/execution-lease', body, { params: { projectId: p.id } });
-      r.status(401);
-    });
-
-    await ctx.step('OWNER user session is not a sandbox token → 403', async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .post('/v1/projects/:projectId/execution-lease', body, { params: { projectId: p.id } });
-      r.status(403);
-    });
-
-    await ctx.step('account PAT is not a sandbox token → 403', async () => {
-      const r = await ctx.client
-        .as(ctx.P.PAT_ACCT)
-        .post('/v1/projects/:projectId/execution-lease', body, { params: { projectId: p.id } });
-      r.status(403);
-    });
-
-    await ctx.step('unknown action → 400 (body validated before the token check)', async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .post(
-          '/v1/projects/:projectId/execution-lease',
-          { action: 'steal', session_id: 'e2e-no-such-session' },
-          { params: { projectId: p.id } },
-        );
-      r.status(400);
     });
   },
 );

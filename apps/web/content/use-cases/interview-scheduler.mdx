@@ -94,7 +94,7 @@ model, the agent can:
 The agent's job stops at the draft. It never emails a candidate directly, never
 sends a calendar invite, and never makes or implies a hiring decision — no
 rejecting a candidate, no advancing a stage, no offer. Credentials are encrypted
-in the Secrets Manager and injected at runtime, never shown to the model or
+in the Secrets Manager and injected at runtime, scoped to the agents you grant them to or
 written to logs.
 
 </Step>
@@ -121,11 +121,10 @@ interviewer's calendar without them.
 The agent touches a candidate's next step in the hiring process, so the boundary
 between "proposed" and "confirmed" is the control that matters:
 
-- **Isolation.** Every run happens in its own microVM sandbox. Only the drafted
-  proposal and invites leave the sandbox.
+- **Isolation.** Every run happens in its own isolated sandbox. Only the drafted
+  proposal and invites are written back out.
 - **Scoped secrets.** The Greenhouse and Google Calendar credentials are encrypted
-  in the Secrets Manager and injected into the sandbox at runtime, never exposed to
-  the model or the logs.
+  in the Secrets Manager and injected into the sandbox at runtime, scoped to the agents you grant them to.
 - **Human approval gate.** The agent never sends the candidate proposal and never
   sends a calendar invite. Every draft is held for the coordinator to review,
   adjust, and send.

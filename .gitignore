@@ -153,3 +153,6 @@ botkube-communication.secret.yaml
 botkube-comm-real.yaml
 .env*
 .cutover-state/
+
+# Playwright MCP session artifacts (console logs, page snapshots)
+.playwright-mcp/

@@ -24,6 +24,16 @@ const BoolFlag = z.preprocess((v) => {
 const Schema = z.object({
   KORTIX_SERVICE_PORT: z.coerce.number().int().positive().default(8000),
   KORTIX_OPENCODE_INTERNAL_PORT: z.coerce.number().int().positive().default(4096),
+  // The other half of the opencode port PAIR. A verified reload boots the new
+  // opencode on whichever of the two is idle, proves it serves, and only then
+  // swaps to it and kills the old one — so a config that cannot boot never
+  // takes the session down with it.
+  //
+  // Fixed rather than picked at reload time on purpose: both ports must be in
+  // the web proxy's blocked-self-ports set, and that set is built once at
+  // startup. An ephemeral port would be unguarded the moment it went live,
+  // handing the sandbox an unproxied route to its own opencode.
+  KORTIX_OPENCODE_STANDBY_PORT: z.coerce.number().int().positive().default(4097),
   // Static web server port. Default 3211 is a hard contract: apps/web
   // (platform-client STATIC_FILE_SERVER, url.ts) and the starter `show` tool
   // build preview URLs against this exact port via /proxy/3211 and p3211-* .
@@ -76,11 +86,26 @@ const Schema = z.object({
   // slower than a full one and defers cost into unpredictable mid-session
   // stalls. Kept for remotes where shallow is unavailable.
   KORTIX_CLONE_FILTER: z.string().default(''),
+  // ── Monitor box (docs/specs/2026-08-12-monitors.md) ──────────────────────
+  // `monitor` selects the daemon's monitor mode: it clones the repo, skips
+  // opencode entirely, and supervises the project's monitor processes instead.
+  // Anything else (including unset) is the normal session daemon.
+  KORTIX_WORKLOAD: z.string().default(''),
+  // The enabled monitors, resolved from kortix.yaml BY apps/api and injected as
+  // JSON. The daemon deliberately does not parse the manifest: one parser means
+  // the box can never disagree with the platform about what a monitor is.
+  KORTIX_MONITORS: z.string().default(''),
+  // This boot's epoch, minted by the reconciler and stored on the box row. The
+  // ingest route rejects any batch stamped with another value, so events from a
+  // superseded boot can never fire.
+  KORTIX_MONITOR_BOX_EPOCH: z.string().default(''),
 })
 
 export type Config = {
   servicePort: number
   opencodeInternalPort: number
+  /** Idle half of the opencode port pair; see KORTIX_OPENCODE_STANDBY_PORT. */
+  opencodeStandbyPort: number
   staticPort: number
   workspace: string
   projectTarget: string
@@ -102,12 +127,19 @@ export type Config = {
   gitUserEmail: string
   cloneFilter: string
   cloneDepth: number
+  /** `'monitor'` selects monitor mode; '' (the default) is the session daemon. */
+  workload: string
+  /** Raw `KORTIX_MONITORS` JSON; parsed by monitor-runner.parseMonitorSpecs. */
+  monitorsJson: string
+  /** The box epoch this boot must stamp on every ingest batch. */
+  monitorBoxEpoch: string
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const parsed = Schema.parse({
     KORTIX_SERVICE_PORT: env.KORTIX_SERVICE_PORT,
     KORTIX_OPENCODE_INTERNAL_PORT: env.KORTIX_OPENCODE_INTERNAL_PORT,
+    KORTIX_OPENCODE_STANDBY_PORT: env.KORTIX_OPENCODE_STANDBY_PORT,
     KORTIX_STATIC_PORT: env.KORTIX_STATIC_PORT,
     KORTIX_WORKSPACE: env.KORTIX_WORKSPACE,
     KORTIX_PROJECT_TARGET: env.KORTIX_PROJECT_TARGET,
@@ -128,11 +160,15 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     KORTIX_GIT_USER_EMAIL: env.KORTIX_GIT_USER_EMAIL,
     KORTIX_CLONE_FILTER: env.KORTIX_CLONE_FILTER,
     KORTIX_CLONE_DEPTH: env.KORTIX_CLONE_DEPTH,
+    KORTIX_WORKLOAD: env.KORTIX_WORKLOAD,
+    KORTIX_MONITORS: env.KORTIX_MONITORS,
+    KORTIX_MONITOR_BOX_EPOCH: env.KORTIX_MONITOR_BOX_EPOCH,
   })
 
   return {
     servicePort: parsed.KORTIX_SERVICE_PORT,
     opencodeInternalPort: parsed.KORTIX_OPENCODE_INTERNAL_PORT,
+    opencodeStandbyPort: parsed.KORTIX_OPENCODE_STANDBY_PORT,
     staticPort: parsed.KORTIX_STATIC_PORT,
     workspace: parsed.KORTIX_WORKSPACE,
     projectTarget: parsed.KORTIX_PROJECT_TARGET,
@@ -154,6 +190,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     gitUserEmail: parsed.KORTIX_GIT_USER_EMAIL,
     cloneFilter: parsed.KORTIX_CLONE_FILTER,
     cloneDepth: parsed.KORTIX_CLONE_DEPTH,
+    workload: parsed.KORTIX_WORKLOAD.trim(),
+    monitorsJson: parsed.KORTIX_MONITORS,
+    monitorBoxEpoch: parsed.KORTIX_MONITOR_BOX_EPOCH.trim(),
   }
 }
 
@@ -242,6 +281,47 @@ export async function resolveSandboxOnBoot(cfg: Config): Promise<string | null> 
  * opencode.jsonc — that's what keeps a freshly provisioned sandbox bootable
  * before a project has been cloned.
  */
+/**
+ * The same directory, but REPO-RELATIVE — the form git pathspecs need.
+ *
+ * `resolveOpencodeConfigDir` answers "where does opencode read from" (absolute,
+ * with a fallback outside the repo when the project has no opencode.jsonc). A
+ * git operation needs the other half: the path inside the working tree, or
+ * nothing at all when the effective dir is the out-of-repo default and there is
+ * therefore nothing in git to sync.
+ */
+export async function resolveOpencodeConfigDirRelative(cfg: Config): Promise<string | null> {
+  const fs = await import('node:fs/promises')
+  const rel = await readOpencodeConfigDirFromManifest(fs, cfg.projectTarget)
+  if (!isPlainRelativePath(rel)) return null
+  const absolute = await resolveOpencodeConfigDir(cfg)
+  // Fell back to the out-of-repo default: the project ships no opencode config,
+  // so there is no tracked directory to update.
+  return absolute === `${cfg.projectTarget}/${rel}` ? rel : null
+}
+
+/**
+ * Is this a literal directory path, and nothing cleverer?
+ *
+ * `opencode.config_dir` comes from a repo-controlled manifest and this value
+ * becomes a git PATHSPEC. The manifest reader only rejects absolute paths and
+ * `..`, so `:(top)*` survives it — and git honours pathspec magic even after
+ * `--`, which would let a manifest turn a config-dir sync into a rewrite of the
+ * whole working tree. The git calls also run with `GIT_LITERAL_PATHSPECS=1`, so
+ * this is the second of two independent guards rather than the only one; it
+ * exists so a magic-looking value is SKIPPED loudly instead of silently
+ * resolving to some other directory.
+ *
+ * Deliberately narrow: only the boot path may keep interpreting whatever the
+ * manifest says. This governs the sync alone.
+ */
+function isPlainRelativePath(value: string): boolean {
+  if (!value || value.startsWith('/') || value.startsWith('-')) return false
+  return value
+    .split('/')
+    .every((segment) => segment.length > 0 && segment !== '.' && segment !== '..' && /^[\w .-]+$/.test(segment))
+}
+
 export async function resolveOpencodeConfigDir(cfg: Config): Promise<string> {
   const fs = await import('node:fs/promises')
   const relConfigDir = await readOpencodeConfigDirFromManifest(fs, cfg.projectTarget)

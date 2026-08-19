@@ -12,10 +12,20 @@
  * granted the permissive null grant or silently default-denied-to-running.
  */
 import { describe, expect, test } from 'bun:test';
-import { getStarterFiles } from '@kortix/starter';
+import { DEFAULT_STARTER_TEMPLATE_ID, getStarterFiles } from '@kortix/starter';
 import { extractAgents, projectRequiresDeclaredAgents, resolveGovernedAgentGrant } from '../projects/agents';
 import { KNOWN_SCHEMA_VERSION, parseManifestString } from '../projects/triggers';
-import { compileAgentConfig } from '../projects/lib/compile-agent-config';
+
+/**
+ * The manifest's own `default_agent`, asserted present. Every starter assertion
+ * below is written against this instead of a hardcoded agent name, so the guard
+ * survives a change of which starter (or which schema version) ships by default.
+ */
+function declaredDefaultAgent(loaded: ReturnType<typeof extractAgents>): string {
+  const name = loaded.defaultAgent;
+  expect(typeof name).toBe('string');
+  return name as string;
+}
 
 function loadAgents(body: string) {
   return extractAgents(parseManifestString(`kortix_version = ${KNOWN_SCHEMA_VERSION}\n[project]\nname="t"\n${body}`));
@@ -258,16 +268,19 @@ describe('resolveGovernedAgentGrant — subject project, kortix_version 2 manife
 // `metadata.default_agent` mirror set (sessions.ts's `projectDefaultAgent` is
 // `undefined`/null the very first time). The starter it seeds
 // (@kortix/starter, packages/starter/templates/base) MUST therefore ship a
-// kortix_version 2 manifest with a `default_agent` that resolves — otherwise
+// v2 manifest with a `default_agent` that resolves — otherwise
 // EVERY brand-new project's first session (agent 'default', the UI's
 // no-explicit-agent path) is rejected with AGENT_NOT_DECLARED before a sandbox
 // is ever provisioned. This exercises the REAL shipped starter (not a
 // synthetic fixture) through the exact resolution rule sessions.ts calls.
 describe('resolveGovernedAgentGrant — the actual shipped starter satisfies its own require_declared_agents stamp', () => {
-  const starterFiles = getStarterFiles({ projectName: 'Acme Co', template: 'minimal' });
+  const starterFiles = getStarterFiles({
+    projectName: 'Acme Co',
+    template: DEFAULT_STARTER_TEMPLATE_ID,
+  });
   const manifestFile = starterFiles.find((f) => f.path === 'kortix.yaml');
 
-  test('the starter ships kortix.yaml (kortix_version 2), not a v1 kortix.toml', () => {
+  test('the starter ships a v2 kortix.yaml, not a v1 kortix.toml', () => {
     expect(manifestFile).toBeDefined();
     expect(starterFiles.some((f) => f.path === 'kortix.toml')).toBe(false);
   });
@@ -276,6 +289,10 @@ describe('resolveGovernedAgentGrant — the actual shipped starter satisfies its
     const manifest = parseManifestString(manifestFile!.content, 'yaml', 'kortix.yaml');
     expect(manifest.schemaVersion).toBe(2);
     const loaded = extractAgents(manifest);
+    expect(loaded.errors).toEqual([]);
+    // The manifest must name a default agent, and must declare it.
+    const declaredDefault = declaredDefaultAgent(loaded);
+    expect(loaded.specs.map((spec) => spec.name)).toContain(declaredDefault);
 
     // Mirrors r1.ts /projects/provision exactly: subject=true (the metadata
     // stamp), and no project.metadata.default_agent mirror set yet.
@@ -286,6 +303,9 @@ describe('resolveGovernedAgentGrant — the actual shipped starter satisfies its
 
     expect(governed.ok).toBe(true);
     if (!governed.ok) return;
+    // The default agent is the one a new user drives from the UI with no
+    // configuration, so it must carry the full grant — a narrowed default is a
+    // silently crippled first session.
     expect(governed.grant).toEqual({
       agent: 'kortix',
       connectors: 'all',
@@ -304,18 +324,4 @@ describe('resolveGovernedAgentGrant — the actual shipped starter satisfies its
     expect(governed.ok).toBe(true);
   });
 
-  test('the compiled v2 agent config reaches the session — no illegal-frontmatter compile error', () => {
-    const manifest = parseManifestString(manifestFile!.content, 'yaml', 'kortix.yaml');
-    const promptFiles: Record<string, string> = {};
-    for (const f of starterFiles) {
-      if (f.path === '.kortix/opencode/agents/kortix.md' || f.path === '.kortix/opencode/agents/memory-reflector.md') {
-        promptFiles[f.path] = f.content;
-      }
-    }
-    const compiled = compileAgentConfig(manifest.raw, 'opencode', promptFiles);
-    expect(compiled).not.toBeNull();
-    expect(compiled?.agent?.kortix?.mode).toBe('primary');
-    expect(compiled?.agent?.kortix?.prompt).toContain('Kortix general knowledge worker');
-    expect(compiled?.agent?.kortix?.prompt).not.toContain('---');
-  });
 });

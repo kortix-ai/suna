@@ -1,9 +1,5 @@
 # IAM — agent-centric access & inheritance (plan)
 
-> **Runtime update on 2026-07-28.** The OpenCode-only status in this plan is
-> historical. Version 3 preserves the same agent grants while routing the
-> logical agent to OpenCode, Claude Code, Codex, or Pi.
-
 Turning the meeting notes into a grounded plan: what's real today, what the
 "pyramid" idea actually solves, whether it makes sense, and how to build it.
 
@@ -48,7 +44,7 @@ Turning the meeting notes into a grounded plan: what's real today, what the
 | Assign an **agent → member/department** (who may use it) | **Live** | `iam_resource_grants` type `agent`; Resource-access card |
 | Assign a **skill → member/department** | **Live** | `iam_resource_grants` type `skill` |
 | Secrets shared to members/departments (one source of truth) | **Live** | share model (`project_secret_grants` + `share_scope`) |
-| Connectors are **project-level** with share-scope + credential mode | **Live** | `executor_connectors.project_id` |
+| Connectors are **project-level** with share-scope + credential mode | **Live** | `connectors.project_id` |
 | Skills discovered from repo files (`.kortix/opencode/skills/*/SKILL.md`) | **Live** | `git/config.ts` |
 | **Human inherits an agent's resources** | **Not built** | — |
 | **Per-agent `skills` allowlist** (like `env`/`connectors`) | **Not built** | — |
@@ -146,10 +142,10 @@ Department ──assigned──▶ Agent ──declares──▶ Resources (env 
   `iam_resource_grants` type `skill`.
 - **Target:** make skills a first-class **per-agent declared capability**
   (`[[agents]] skills = [...]`), governed server-side through the opencode config
-  the same way connectors go through the Executor — so a skill can be enabled/
+  the same way connectors go through the Connector — so a skill can be enabled/
   audited centrally and **inherited** by humans assigned to the agent.
 - **Needs clarification:** "server-side" = run the skill's tools through the
-  Executor gateway (like connectors), or just *register/allowlist* them in
+  Connector gateway (like connectors), or just *register/allowlist* them in
   opencode config while they still execute in-sandbox? The former is a larger
   build; the latter is a natural extension of the env/connector allowlist.
 
@@ -198,7 +194,7 @@ Department ──assigned──▶ Agent ──declares──▶ Resources (env 
 
 1. **Global vs session-scoped inheritance** — default to session-scoped (safe) with
    an explicit standalone opt-in? (Strong recommendation: yes.)
-2. **"Skills server-side"** — execute via the Executor gateway, or just allowlist
+2. **"Skills server-side"** — execute via the Connector gateway, or just allowlist
    in opencode config with in-sandbox execution?
 3. **Is the pyramid the primary path or one of several?** Recommendation: primary
    for the common case, direct grants still available for exceptions.

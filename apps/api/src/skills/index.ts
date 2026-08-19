@@ -1,10 +1,9 @@
 /**
  * /v1/skills — the kortix-managed system skills, served over HTTP.
  *
- * The point: an agent in any supported harness (OpenCode, Claude Code, Codex,
- * or Pi) holding only
- * the `kortix` binary and a token can discover and read everything it needs to
- * drive Kortix. No repo checkout, no baked sandbox image. `kortix skills` /
+ * The point: an OpenCode agent holding only the `kortix` binary and a token can
+ * discover and read everything it needs to drive Kortix. No repo checkout, no
+ * baked sandbox image. `kortix skills` /
  * `kortix skills get <name>` are thin wrappers over these two routes.
  *
  * SHAPE — list + fetch, not one overloaded endpoint, because an agent pays tokens
@@ -27,8 +26,8 @@
  * they stay behind a token rather than becoming an anonymous crawl target. Using
  * combinedAuth (rather than supabaseAuth) is what makes the two callers that
  * matter work with no new auth scheme: the CLI holding a `kortix_pat_`, and an
- * in-sandbox agent holding the platform-injected `KORTIX_CLI_TOKEN` /
- * `KORTIX_EXECUTOR_TOKEN` session PAT. Content is identical for every caller —
+ * in-sandbox agent holding the platform-injected `KORTIX_CLI_TOKEN` session PAT.
+ * Content is identical for every caller —
  * this is authentication, not authorization; no account scoping applies.
  */
 

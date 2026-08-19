@@ -32,6 +32,7 @@ mock.module('../shared/db', () => ({
 mock.module('../projects/secrets', () => ({
   decryptProjectSecret: (_projectId: string, value: string) => value.replace(/^enc:/, ''),
   encryptProjectSecret: (_projectId: string, value: string) => `enc:${value}`,
+  getProjectSecretValueForConsumer: async () => null,
   listProjectSecrets: async () => ({}),
 }));
 
@@ -62,17 +63,29 @@ describe('saveSlackInstall', () => {
       workspaceId: 'T1',
       projectId: 'proj-1',
     });
-    expect(insertedValues).toContainEqual({
-      projectId: 'proj-1',
-      identifier: 'SLACK_BOT_TOKEN',
-      name: 'SLACK_BOT_TOKEN',
-      valueEnc: 'enc:xoxb-test',
-    });
-    expect(insertedValues).toContainEqual({
-      projectId: 'proj-1',
-      identifier: 'SLACK_SIGNING_SECRET',
-      name: 'SLACK_SIGNING_SECRET',
-      valueEnc: 'enc:signing-secret',
-    });
+    expect(insertedValues).toContainEqual(
+      expect.objectContaining({
+        projectId: 'proj-1',
+        identifier: 'SLACK_BOT_TOKEN',
+        name: 'SLACK_BOT_TOKEN',
+        valueEnc: 'enc:xoxb-test',
+        scope: 'connector',
+        strategy: 'broker',
+        consumer: 'connector',
+        rotatedAt: expect.any(Date),
+      }),
+    );
+    expect(insertedValues).toContainEqual(
+      expect.objectContaining({
+        projectId: 'proj-1',
+        identifier: 'SLACK_SIGNING_SECRET',
+        name: 'SLACK_SIGNING_SECRET',
+        valueEnc: 'enc:signing-secret',
+        scope: 'connector',
+        strategy: 'broker',
+        consumer: 'connector',
+        rotatedAt: expect.any(Date),
+      }),
+    );
   });
 });

@@ -1,15 +1,15 @@
+import type { Icon as IconType } from '@phosphor-icons/react';
 import {
-  Bot,
-  Brain,
-  Database,
-  FileText,
-  GitPullRequest,
-  MessageSquare,
-  Search,
-  type LucideIcon,
-} from 'lucide-react';
-import { FaUsers } from 'react-icons/fa';
-import type { IconType } from 'react-icons/lib';
+  RobotIcon as Bot,
+  BrainIcon as Brain,
+  DatabaseIcon as Database,
+  UsersIcon as FaUsers,
+  FileTextIcon as FileText,
+  GitPullRequestIcon as GitPullRequest,
+  ChatIcon as MessageSquare,
+  MagnifyingGlassIcon as Search,
+  type Icon as LucideIcon,
+} from '@phosphor-icons/react';
 
 export const favicon = (d: string) => `https://www.google.com/s2/favicons?domain=${d}&sz=128`;
 
@@ -118,7 +118,7 @@ export const AGENTS: AgentDef[] = [
 
 export const CORE_SKILLS: [string, string][] = [
   ['agent-browser', 'Browser automation CLI for AI agents'],
-  ['kortix-executor', 'One interface to every connected integration'],
+  ['kortix-connectors', 'One interface to every connected connector'],
   ['kortix-memory', 'Read, write, and curate the project brain'],
   ['kortix-slack', 'Answer in Slack as a teammate'],
   ['kortix-system', 'Canonical reference for a Kortix project'],
@@ -193,7 +193,7 @@ export const GKW_SKILLS: [string, string][] = [
   ['xlsx', 'Spreadsheets, financial models & polished workbooks'],
 ];
 
-export const INTEGRATIONS: [string, string, boolean][] = [
+export const CONNECTORS: [string, string, boolean][] = [
   ['github.com', 'GitHub', true],
   ['slack.com', 'Slack', true],
   ['gmail.com', 'Gmail', false],

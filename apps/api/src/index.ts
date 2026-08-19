@@ -1,4 +1,7 @@
-// ─── Observability (must be first — instruments before other imports) ────────
+// Expand the aggregate ECS secret before any module reads process.env.
+import './environment-secret';
+
+// ─── Observability (must follow environment hydration) ───────────────────────
 import './lib/sentry';
 import { captureException, flushSentry, addBreadcrumb, isSentryIgnoredError } from './lib/sentry';
 import { logger as appLogger, isLoggingTransportError } from './lib/logger';
@@ -11,7 +14,12 @@ import {
   renderMetrics,
   metricsEnabled,
 } from './lib/metrics';
-import { getDiagnosticFields, getRequestContext, runWithContext, setContextField } from './lib/request-context';
+import {
+  getDiagnosticFields,
+  getRequestContext,
+  runWithContext,
+  setContextField,
+} from './lib/request-context';
 import { getRequestUrl, ensureAbsoluteRequestUrl } from './lib/request-url';
 
 import { timingSafeEqual } from 'node:crypto';
@@ -37,7 +45,10 @@ import { createCorsMiddleware } from './middleware/cors';
 import { requestDeadline, isRequestDeadlineHTTPException } from './middleware/request-deadline';
 import { inspectDatabaseError } from './shared/database-errors';
 import { isPlatinumSandboxNotRunningError } from './shared/platinum';
-import { isDaytonaRateLimitError, primeDaytonaRateLimitClassifier } from './shared/daytona-rate-limit';
+import {
+  isDaytonaRateLimitError,
+  primeDaytonaRateLimitClassifier,
+} from './shared/daytona-rate-limit';
 import {
   isDaytonaTransientProviderError,
   primeDaytonaTransientClassifier,
@@ -74,8 +85,9 @@ import {
 } from './shared/leader-election';
 import { marketplaceApp } from './marketplace';
 import { skillsApp } from './skills';
+import { runtimeAssetsApp } from './runtime-assets';
 import { oauthApp } from './oauth';
-import { nativeOAuth2CallbackApp } from './executor/oauth2-callback';
+import { nativeOAuth2CallbackApp } from './connectors/oauth2-callback';
 import {
   projectWebhooksApp,
   projectsApp,
@@ -84,12 +96,17 @@ import {
   getTriggerSchedulerHealth,
 } from './projects';
 import { startProjectMaintenance, stopProjectMaintenance } from './projects/maintenance';
+import { startActiveTurnRenewal, stopActiveTurnRenewal } from './projects/active-turn-renewal';
 import { kickStartupPreBuild } from './snapshots/builder';
 import { registerSunaMigrationRoutes } from './projects/suna-migration/suna-migration-routes';
+import { handleAppPublicRequest, resolveAppRequest } from './apps/public-proxy';
+import { appWsHandlers, prepareAppWsUpgrade } from './apps/ws-proxy';
 import {
   startSunaMigrationWorker,
   stopSunaMigrationWorker,
 } from './projects/suna-migration/suna-migration-worker';
+import { startAppDeploymentWorker, stopAppDeploymentWorker } from './apps/deployment-worker';
+import { startAppIdleReaper, stopAppIdleReaper } from './apps/idle-reaper';
 import {
   startProviderTransitionWorker,
   stopProviderTransitionWorker,
@@ -98,7 +115,12 @@ import { accountsRouter } from './accounts';
 import { authRouter } from './auth';
 import { scimRouter } from './scim';
 import { accountInvitesRouter } from './accounts/invites';
-import { auditStateChangingRequest } from './shared/audit';
+import { auditApiRequest } from './shared/audit';
+import { startAuditWebhookWorker, stopAuditWebhookWorker } from './shared/audit-webhooks';
+import {
+  startAuditReconciliationWorker,
+  stopAuditReconciliationWorker,
+} from './shared/audit-reconciliation-worker';
 import { opsApp } from './ops';
 import { adminApp } from './admin';
 
@@ -119,10 +141,15 @@ process.on('unhandledRejection', (reason: unknown) => {
     // which is exactly what took prod down on 2026-06-18. Record it locally and
     // drop it. See logger.ts isLoggingTransportError.
     if (isLoggingTransportError(`${err.message}\n${err.stack ?? ''}`)) {
-      appLogger.localError('Dropped logging-transport rejection', { error: err.message });
+      appLogger.localError('Dropped logging-transport rejection', {
+        error: err.message,
+      });
       return;
     }
-    appLogger.error('Unhandled promise rejection', { error: err.message, stack: err.stack });
+    appLogger.error('Unhandled promise rejection', {
+      error: err.message,
+      stack: err.stack,
+    });
     captureException(err, { handler: 'unhandledRejection' });
   } catch {
     // never let the crash guard itself crash the process
@@ -150,6 +177,7 @@ process.on('uncaughtException', (err: Error) => {
 // ─── App Setup ──────────────────────────────────────────────────────────────
 
 const app = new OpenAPIHono();
+const UUID_PATH_SEGMENT_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // Exported so tooling/tests can introspect the route table (app.routes) without
 // booting the server. See the import.meta.main guard around startup below.
 export { app };
@@ -209,12 +237,14 @@ app.use('*', async (c, next) => {
       // Auto-extract common resource IDs from URL patterns for logs/traces.
       const path = c.req.path;
       const projectSessionMatch = path.match(/\/projects\/([^/]+)\/sessions\/([^/]+)/);
-      if (projectSessionMatch) {
+      if (projectSessionMatch && UUID_PATH_SEGMENT_RE.test(projectSessionMatch[1])) {
         setContextField('projectId', projectSessionMatch[1]);
         setContextField('sessionId', projectSessionMatch[2]);
       } else {
         const projectMatch = path.match(/\/projects\/([^/]+)/);
-        if (projectMatch) setContextField('projectId', projectMatch[1]);
+        if (projectMatch && UUID_PATH_SEGMENT_RE.test(projectMatch[1])) {
+          setContextField('projectId', projectMatch[1]);
+        }
       }
       const sbMatch = path.match(/\/sandbox(?:es)?\/([^/]+)/) || path.match(/\/p\/([^/]+)/);
       if (sbMatch) setContextField('sandboxId', sbMatch[1]);
@@ -289,7 +319,10 @@ app.use('*', async (c, next) => {
   // queue toward overflow. Suppress only SUCCESSFUL probes (a non-2xx still
   // logs, so a failing/degraded probe stays fully visible).
   const isHealthProbe =
-    path === '/health' || path === '/v1/health' || path.endsWith('/health/live');
+    path === '/health' ||
+    path === '/v1/health' ||
+    path.endsWith('/health/live') ||
+    path.endsWith('/health/ready');
   const suppressLog = isExpectedProxyNoise || (isHealthProbe && status < 400);
 
   if (!suppressLog) {
@@ -322,7 +355,7 @@ if (config.INTERNAL_KORTIX_ENV === 'dev') {
   app.use('*', prettyJSON());
 }
 
-app.use('/v1/*', auditStateChangingRequest);
+app.use('/v1/*', auditApiRequest);
 
 // Wall-clock deadline for non-streaming requests — returns 503 before the 30s
 // client abort instead of hanging. Streaming/proxy/WS surfaces are exempted
@@ -426,7 +459,11 @@ const livenessHandler = (c: any) => {
   if (eventLoopLagMs > MAX_EVENT_LOOP_LAG_MS) {
     // 503 → kubelet liveness fails → the pod is restarted (auto-recovery).
     return c.json(
-      { status: 'degraded', event_loop_lag_ms: lag, threshold_ms: MAX_EVENT_LOOP_LAG_MS },
+      {
+        status: 'degraded',
+        event_loop_lag_ms: lag,
+        threshold_ms: MAX_EVENT_LOOP_LAG_MS,
+      },
       503,
     );
   }
@@ -436,6 +473,32 @@ const livenessHandler = (c: any) => {
 // Unversioned + /v1 forms so either can be wired as the kubelet liveness probe.
 app.get('/health/live', livenessHandler);
 app.get('/v1/health/live', livenessHandler);
+
+// ─── Readiness gate — returns 503 until the app is fully initialized ──────────
+//
+// The ALB target group health check for ECS Fargate uses this endpoint to
+// decide whether a task is ready to receive traffic. During a rolling deploy:
+//   1. The new task starts, Bun.serve is up, but schema + services may not be
+//      ready yet → returns 503 (ALB keeps it out of the target group).
+//   2. Once bootServices() completes → returns 200 (ALB registers it, traffic
+//      flows to the new task before the old one is drained).
+//   3. On SIGTERM/SIGINT → draining flag is set → returns 503 (ALB deregisters
+//      the old task, giving in-flight requests time to complete within the
+//      deregistration_delay window).
+//
+// This eliminates the "brief 503 during deploy" window that caused the
+// maintenance mode trigger chain.
+const readinessHandler = (c: any) => {
+  if (draining) {
+    return c.json({ status: 'draining', reason: 'shutdown in progress' }, 503);
+  }
+  if (!schemaReady) {
+    return c.json({ status: 'starting', reason: 'schema not ready' }, 503);
+  }
+  return c.json({ status: 'ok' });
+};
+app.get('/health/ready', readinessHandler);
+app.get('/v1/health/ready', readinessHandler);
 
 function hasInternalObservabilityAuth(c: any): boolean {
   const authHeader = c.req.header('Authorization');
@@ -453,6 +516,9 @@ function hasInternalObservabilityAuth(c: any): boolean {
 app.get('/metrics', (c) => {
   if (!hasInternalObservabilityAuth(c)) {
     return c.text('unauthorized\n', 401);
+  }
+  if (process.env.KORTIX_LOCAL_TEST_PROFILE === '1') {
+    c.header('x-kortix-local-test-profile', '1');
   }
   if (!metricsEnabled()) return c.text('metrics disabled\n', 404);
   c.header('content-type', 'text/plain; version=0.0.4; charset=utf-8');
@@ -573,8 +639,13 @@ app.openapi(
     summary: 'Update the maintenance config (admin only)',
     ...auth,
     middleware: [supabaseAuth] as const,
-    request: { body: { content: { 'application/json': { schema: MaintenanceSchema } } } },
-    responses: { 200: json(MaintenanceSchema, 'Updated config'), ...errors(403, 503) },
+    request: {
+      body: { content: { 'application/json': { schema: MaintenanceSchema } } },
+    },
+    responses: {
+      200: json(MaintenanceSchema, 'Updated config'),
+      ...errors(403, 503),
+    },
   }),
   async (c: any) => {
     const userId = c.get('userId') as string;
@@ -591,7 +662,11 @@ app.openapi(
     };
     await db
       .insert(platformSettings)
-      .values({ key: MAINTENANCE_KEY, value: maintenanceConfig, updatedAt: new Date() })
+      .values({
+        key: MAINTENANCE_KEY,
+        value: maintenanceConfig,
+        updatedAt: new Date(),
+      })
       .onConflictDoUpdate({
         target: platformSettings.key,
         set: { value: maintenanceConfig, updatedAt: new Date() },
@@ -605,9 +680,9 @@ app.openapi(
 // "Book a demo" qualifier form POSTs the first-step details here (via the web
 // server); we email an internal notification to DEMO_LEAD_NOTIFY_EMAIL on every
 // submission, whether or not the lead goes on to book a Cal slot. The email uses
-// the API's Mailtrap credentials (AWS Secrets Manager), so the Vercel frontend
-// never needs the secret. IP rate-limited; a missing Mailtrap token is a
-// graceful skip, so lead capture never fails on account of email.
+// the API's email-provider credentials (AWS Secrets Manager), so the Vercel
+// frontend never needs the secret. IP rate-limited; no configured email
+// provider is a graceful skip, so lead capture never fails on account of email.
 const DemoRequestSchema = z
   .object({
     name: z.string().max(200).optional(),
@@ -627,7 +702,9 @@ app.openapi(
     tags: ['system'],
     summary: 'Submit a public demo request (emails an internal notification)',
     middleware: [createDemoRequestRateLimitMiddleware()] as const,
-    request: { body: { content: { 'application/json': { schema: DemoRequestSchema } } } },
+    request: {
+      body: { content: { 'application/json': { schema: DemoRequestSchema } } },
+    },
     responses: {
       200: json(
         z.object({ ok: z.boolean(), emailed: z.boolean() }).openapi('DemoRequestResult'),
@@ -670,7 +747,9 @@ app.openapi(
     path: '/v1/prewarm',
     tags: ['system'],
     summary: 'No-op pre-warm (frontend fires this on login)',
-    responses: { 200: json(z.object({ success: z.boolean() }).openapi('Prewarm'), 'ok') },
+    responses: {
+      200: json(z.object({ success: z.boolean() }).openapi('Prewarm'), 'ok'),
+    },
   }),
   (c: any) => c.json({ success: true }),
 );
@@ -735,6 +814,18 @@ app.route('/v1/usage', usageApp); // GET /v1/usage[?start&end&group_by] — acco
 
 app.route('/v1/billing', billingApp); // /v1/billing/account-state, /v1/billing/webhooks/*
 app.route('/v1/account', accountDeletionApp); // account deletion status/request/cancel/immediate
+// Auth for the ONE platform route that needs an identity. Scoped to this exact
+// path, not `/v1/platform/*`: the mount point, `/sandbox/version` and the
+// github-app setup callbacks are deliberately unauthenticated and would break.
+//
+// Without this the route was unreachable. `auth` from openapi/index.ts is
+// `{ security: [{ bearerAuth: [] }] }` — OpenAPI METADATA, not middleware — so
+// `authType` was never set and the handler's `authType !== 'apiKey'` guard
+// returned 403 for every relay. The daemon fire-and-forgets this call, so it
+// failed silently and no in-guest boot timeline was ever recorded.
+// supabaseAuth is the middleware carrying the sandbox-token path allowlist
+// (middleware/auth.ts), which already lists `/boot-timeline`.
+app.use('/v1/platform/boot-timeline', supabaseAuth);
 app.route('/v1/platform', platformApp); // /v1/platform, /v1/platform/sandbox/version
 registerSunaMigrationRoutes(projectsApp); // /v1/projects/suna-migration/* (OG Suna → opencode, user-triggered)
 // Voice routes are registered BEFORE projectsApp: Hono matches in registration
@@ -751,10 +842,19 @@ app.route('/v1/marketplace', marketplaceApp); // /v1/marketplace — browse the 
 // what lets an agent in ANY harness, holding only the `kortix` binary and a token,
 // read the platform's own instructions with no repo checkout and no sandbox.
 // combinedAuth (not supabaseAuth) so a CLI `kortix_pat_` and the in-sandbox
-// KORTIX_CLI_TOKEN both work; see ./skills/index.ts for the full auth rationale.
+// KORTIX_CLI_TOKEN works; see ./skills/index.ts for the full auth rationale.
 app.use('/v1/skills', combinedAuth);
 app.use('/v1/skills/*', combinedAuth);
 app.route('/v1/skills', skillsApp); // GET /v1/skills, /v1/skills/:name[?full=1], /v1/skills/:name/file?path=
+
+// /v1/runtime-assets — the sandbox runtime assets THIS deploy was built with:
+// the `kortix` CLI binary it bakes into snapshots and the managed-skill overlay.
+// A live sandbox reconciles against these on every session start/restart/resume,
+// which is what stops an old box from running a CLI that predates the routes it
+// calls. combinedAuth for the same reason as /v1/skills above: the callers are a
+// `kortix_pat_` CLI and the in-sandbox KORTIX_CLI_TOKEN.
+app.use('/v1/runtime-assets/*', combinedAuth);
+app.route('/v1/runtime-assets', runtimeAssetsApp); // GET /manifest, /cli, /managed-skills
 
 // Universal git smart-HTTP proxy — every git-backed project's client origin.
 // Auth is handled inside (git sends Basic/Bearer, not combinedAuth's Bearer),
@@ -764,14 +864,14 @@ app.route('/v1/skills', skillsApp); // GET /v1/skills, /v1/skills/:name[?full=1]
   app.route('/v1/git', gitProxyApp); // /v1/git/:projectId(.git)/{info/refs,git-upload-pack,git-receive-pack}
 }
 
-// Executor — unified connector layer. Gateway routes (/connectors, /call) use
-// KORTIX_EXECUTOR_TOKEN (validated inside the router); admin routes
+// Connector — unified connector layer. Gateway routes (/catalog, /call) use
+// KORTIX_CLI_TOKEN (validated inside the router); admin routes
 // (/projects/:id/connectors*) need user auth, so combinedAuth runs first.
 {
-  const { executorApp } = await import('./executor');
-  app.use('/v1/executor/projects/*', combinedAuth);
-  app.use('/v1/executor/connect-status', combinedAuth); // deployment capability flag (authed)
-  app.route('/v1/executor', executorApp); // /v1/executor/connectors, /call, /projects/:id/connectors[/sync|/:slug/sharing]
+  const { connectorApp } = await import('./connectors');
+  app.use('/v1/connectors/projects/*', combinedAuth);
+  app.use('/v1/connectors/connect-status', combinedAuth); // deployment capability flag (authed)
+  app.route('/v1/connectors', connectorApp);
 }
 
 app.route('/v1/webhooks', projectWebhooksApp); // /v1/webhooks/:triggerId — signed project trigger fires
@@ -808,6 +908,15 @@ app.route('/v1/access', accessControlApp); // /v1/access/signup-status, /v1/acce
 import { setupLinksPublicApp } from './setup-links/public-app';
 app.route('/v1/setup-links', setupLinksPublicApp); // /v1/setup-links/{secret,connector}/:token
 
+// Approval links — AUTHENTICATED, unlike the setup links above. The token names
+// which pending decision is being asked for; it never confers the right to make
+// it (see setup-links/approval-app.ts for why an approval must not be a bearer
+// capability). supabaseAuth 401s an anonymous hit so the page can bounce the
+// human through login and return them here.
+import { approvalLinksApp } from './setup-links/approval-app';
+app.use('/v1/approval-links/*', supabaseAuth);
+app.route('/v1/approval-links', approvalLinksApp); // GET /v1/approval-links/:token
+
 // Public session shares — PUBLIC, share-id-gated. Anonymous, read-only
 // session title + sanitized transcript for a valid session public-share
 // (any resource type SESS-13's CRUD creates); backs the logged-out
@@ -834,10 +943,11 @@ app.route('/v1/admin', adminApp);
 
 // OAuth2 provider — public token endpoint, auth on authorize/consent
 app.route('/v1/oauth', oauthApp);
-app.route('/v1/integrations/oauth2', nativeOAuth2CallbackApp);
+app.route('/v1/connectors/oauth2', nativeOAuth2CallbackApp);
 
 // Public device-auth endpoints (no auth — CLI uses these)
 import { createDeviceAuthPublicRouter } from './tunnel/routes/device-auth';
+import { warmPipedreamCatalog } from './connectors/pipedream';
 app.route('/v1/tunnel/device-auth', createDeviceAuthPublicRouter());
 
 app.use('/v1/tunnel/*', async (c, next) => {
@@ -916,7 +1026,11 @@ app.onError((err, c) => {
     });
     c.header('Retry-After', '10');
     return c.json(
-      { error: true, message: 'sandbox provider is temporarily rate-limited', status: 503 },
+      {
+        error: true,
+        message: 'sandbox provider is temporarily rate-limited',
+        status: 503,
+      },
       503,
     );
   }
@@ -944,7 +1058,11 @@ app.onError((err, c) => {
     });
     c.header('Retry-After', '10');
     return c.json(
-      { error: true, message: 'git mirror is temporarily unavailable', status: 503 },
+      {
+        error: true,
+        message: 'git mirror is temporarily unavailable',
+        status: 503,
+      },
       503,
     );
   }
@@ -972,16 +1090,23 @@ app.onError((err, c) => {
   // error and fall through to the generic capture below, so unexpected
   // failures stay loud. See shared/daytona-transient.ts.
   if (isDaytonaTransientProviderError(err)) {
-    appLogger.warn(`${method} ${path} -> 503 [DaytonaError:transient] ${err.message.slice(0, 200)}`, {
-      method,
-      path,
-      errorType: 'DaytonaError',
-      errorName: err.name,
-      statusCode: (err as { statusCode?: unknown }).statusCode ?? null,
-    });
+    appLogger.warn(
+      `${method} ${path} -> 503 [DaytonaError:transient] ${err.message.slice(0, 200)}`,
+      {
+        method,
+        path,
+        errorType: 'DaytonaError',
+        errorName: err.name,
+        statusCode: (err as { statusCode?: unknown }).statusCode ?? null,
+      },
+    );
     c.header('Retry-After', '10');
     return c.json(
-      { error: true, message: 'sandbox provider is temporarily unavailable', status: 503 },
+      {
+        error: true,
+        message: 'sandbox provider is temporarily unavailable',
+        status: 503,
+      },
       503,
     );
   }
@@ -1014,11 +1139,27 @@ app.onError((err, c) => {
       method,
     });
 
+    // An HTTPException built with an explicit `res` carries a machine-readable
+    // body its thrower needs the CLIENT to branch on — `code:'account_mfa_required'`
+    // (iam/dispatcher.ts's buildDenialError, which the web app's step-up dialog
+    // keys on) and `code:'impersonation_invalid'` (middleware/impersonation.ts).
+    // Rebuilding a generic `{error,message,status}` body here silently threw
+    // that field away, so every typed 4xx arrived at the client untyped. Honour
+    // the response the thrower constructed; everything else still gets the
+    // generic shape below.
+    if (err.res) {
+      return err.res;
+    }
+
     const response: Record<string, unknown> = {
       error: true,
       message: err.message,
       status: err.status,
     };
+
+    if (isRequestDeadlineHTTPException(err)) {
+      response.code = err.code;
+    }
 
     // Add Retry-After header for 503s (sandbox waking up)
     if (err.status === 503) {
@@ -1046,8 +1187,7 @@ app.onError((err, c) => {
     // follow-up (raise the shadow pooler's `pool_size` / move to transaction
     // mode) is a human-owned external action recorded in the sweep ledger.
     // Better Stack patterns 721b7efe… (API) + b38179c5… (frontend symptom).
-    const databaseMessage =
-      databaseError.causeMessage ?? databaseError.outerMessage;
+    const databaseMessage = databaseError.causeMessage ?? databaseError.outerMessage;
     const isPoolExhaustion = isSentryIgnoredError(
       databaseError.causeName ?? databaseError.outerName,
       databaseMessage,
@@ -1160,19 +1300,27 @@ console.log(`
 ╚═══════════════════════════════════════════════════════════╝
 `);
 
-// Load LLM pricing from models.dev (non-blocking if it fails).
-// Awaited so pricing is available before the first billing request.
-await initModelPricing().catch((err) =>
-  console.error('[startup] Model pricing init failed (will retry in 24h):', err),
-);
-runtimeModelCatalog
-  .start()
-  .catch((err) =>
-    console.error('[startup] Gateway model catalog init failed (keeping bundled snapshot):', err),
+// Local REST tests use the bundled model catalog and never contact models.dev.
+if (process.env.KORTIX_MODEL_PRICING_LIVE_ENABLED !== '0') {
+  await initModelPricing().catch((err) =>
+    console.error('[startup] Model pricing init failed (will retry in 24h):', err),
   );
+}
+if (process.env.KORTIX_MODEL_CATALOG_LIVE_ENABLED !== '0') {
+  runtimeModelCatalog
+    .start()
+    .catch((err) =>
+      console.error('[startup] Gateway model catalog init failed (keeping bundled snapshot):', err),
+    );
+}
 
 // Schema readiness gate — blocks DB-dependent requests until push completes.
 let schemaReady = false;
+// Drain flag — set on SIGTERM/SIGINT so the load balancer health check
+// stops routing traffic before the process exits. The ECS deregistration
+// delay (30s) gives the ALB time to notice the 503s and drain in-flight
+// requests.
+let draining = false;
 
 // Ensure DB schema exists before starting services that depend on it.
 // This is idempotent — safe to run on every startup.
@@ -1214,6 +1362,7 @@ let singletonWorkersRunning = false;
 async function startSingletonWorkers() {
   if (singletonWorkersRunning) return;
   singletonWorkersRunning = true;
+  startActiveTurnRenewal();
   startProjectMaintenance();
   startProjectTriggerScheduler();
   // Mint the global platform-default sandbox image once per leadership term so
@@ -1225,6 +1374,10 @@ async function startSingletonWorkers() {
   // were mid-flight when the API last stopped — a crash at building/ready/
   // activating converges instead of stranding. Safe across replicas (lease CAS).
   startProviderTransitionWorker();
+  startAppDeploymentWorker();
+  startAppIdleReaper();
+  startAuditWebhookWorker();
+  startAuditReconciliationWorker();
   // IAM V2 time-bounded grants: tick every 60s, emit one audit event per row
   // that just transitioned to expired. Engine already filters expired rows out
   // of authorize() so correctness doesn't depend on this — it's the audit trail.
@@ -1234,10 +1387,15 @@ async function startSingletonWorkers() {
 async function stopSingletonWorkers() {
   if (!singletonWorkersRunning) return;
   singletonWorkersRunning = false;
+  stopActiveTurnRenewal();
   stopProjectTriggerScheduler();
   stopProjectMaintenance();
   stopSunaMigrationWorker();
   stopProviderTransitionWorker();
+  stopAppDeploymentWorker();
+  stopAppIdleReaper();
+  await stopAuditWebhookWorker();
+  await stopAuditReconciliationWorker();
   const { stopGrantExpirySweeper } = await import('./iam/expiry-sweeper');
   stopGrantExpirySweeper();
 }
@@ -1264,10 +1422,20 @@ async function bootServices() {
     },
     { eligible },
   );
+  // Build the Pipedream catalogue index in the background. Deliberately NOT
+  // awaited: the crawl is ~33 requests / ~48s, and readiness must not wait on
+  // a third party. Until it lands, the catalogue routes answer from the live
+  // paged API (`indexReady: false`), so a cold pod serves correct results the
+  // whole time — just without category facets.
+  warmPipedreamCatalog();
 }
 
 // Graceful shutdown
 async function shutdown(signal: string) {
+  // Set draining flag FIRST so the ALB health check starts returning 503
+  // and the load balancer stops routing new requests to this instance.
+  // The deregistration_delay (30s) gives in-flight requests time to complete.
+  draining = true;
   appLogger.info(`Shutting down gracefully`, { signal });
   // Releases the lease (so a peer takes over immediately instead of waiting out
   // the TTL) and stops the singleton workers via onRelease — but only if this
@@ -1370,6 +1538,26 @@ export default {
     // Matches `p{port}-{sandboxId}.localhost:{apiPort}` regardless of path.
     // Same per-request long-poll/SSE timeout posture as /v1/p/.
     const host = req.headers.get('host') || '';
+    if (resolveAppRequest(req, url)) {
+      server.timeout(req, 0);
+      if (isWsUpgrade) {
+        const prepared = await prepareAppWsUpgrade(req, url);
+        if (!prepared.ok) {
+          return new Response(JSON.stringify({ error: prepared.message }), {
+            status: prepared.status,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        const upgraded = server.upgrade(req, { data: prepared.data });
+        if (upgraded) return undefined;
+        return new Response(JSON.stringify({ error: 'App WebSocket upgrade failed' }), {
+          status: 500,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      const appResponse = await handleAppPublicRequest(req);
+      if (appResponse) return appResponse;
+    }
     if (parsePreviewSubdomain(host)) {
       server.timeout(req, 0);
       // WS-on-subdomain isn't wired yet (agent server's port-proxy is
@@ -1377,7 +1565,9 @@ export default {
       // gracefully instead of timing out.
       if (isWsUpgrade) {
         return new Response(
-          JSON.stringify({ error: 'WebSocket upgrade on preview subdomain not implemented' }),
+          JSON.stringify({
+            error: 'WebSocket upgrade on preview subdomain not implemented',
+          }),
           { status: 501, headers: { 'Content-Type': 'application/json' } },
         );
       }
@@ -1398,16 +1588,50 @@ export default {
 
       const tunnelId = url.searchParams.get('tunnelId');
 
-      if (!tunnelId) {
-        return new Response(JSON.stringify({ error: 'Missing tunnelId' }), {
+      if (
+        !tunnelId ||
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(tunnelId)
+      ) {
+        return new Response(JSON.stringify({ error: 'A valid tunnelId is required' }), {
           status: 400,
           headers: { 'Content-Type': 'application/json' },
         });
       }
 
-      // Rate limit WS connections (keyed by tunnelId to prevent connection spam)
+      // Agent Tunnel is a native CLI protocol. Browsers always send Origin on
+      // WebSocket upgrades; rejecting it prevents cross-site WebSocket use if
+      // a machine bearer is ever exposed to browser-accessible state.
+      if (req.headers.has('origin')) {
+        return new Response(
+          JSON.stringify({
+            error: 'Browser tunnel WebSockets are not allowed',
+          }),
+          {
+            status: 403,
+            headers: { 'Content-Type': 'application/json' },
+          },
+        );
+      }
+
+      // Include the source address so an unauthenticated attacker who learns a
+      // tunnelId cannot consume the real machine's reconnect budget.
       const { tunnelRateLimiter } = await import('./tunnel/core/rate-limiter');
-      const wsRateCheck = tunnelRateLimiter.check('wsConnect', tunnelId);
+      const clientIp =
+        req.headers.get('cf-connecting-ip')?.trim() ||
+        req.headers.get('x-real-ip')?.trim() ||
+        req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
+        'unknown';
+      const wsIpRateCheck = tunnelRateLimiter.check('wsConnectIp', clientIp);
+      if (!wsIpRateCheck.allowed) {
+        return new Response(
+          JSON.stringify({
+            error: 'Too many connection attempts',
+            retryAfterMs: wsIpRateCheck.retryAfterMs,
+          }),
+          { status: 429, headers: { 'Content-Type': 'application/json' } },
+        );
+      }
+      const wsRateCheck = tunnelRateLimiter.check('wsConnect', `${clientIp}:${tunnelId}`);
       if (!wsRateCheck.allowed) {
         return new Response(
           JSON.stringify({
@@ -1478,6 +1702,10 @@ export default {
         previewWsHandlers.open(ws as any);
         return;
       }
+      if (ws.data?.type === 'app-ws') {
+        appWsHandlers.open(ws as any);
+        return;
+      }
       // No other WS upgrades are accepted.
       try {
         ws.close(1011, 'unsupported websocket upgrade');
@@ -1489,22 +1717,30 @@ export default {
       message: string | Buffer,
     ) {
       if (ws.data?.type === 'tunnel-agent') {
-        tunnelWsHandlers.onMessage(ws.data.tunnelId, message);
+        tunnelWsHandlers.onMessage(ws.data.tunnelId, ws as any, message);
         return;
       }
       if (ws.data?.type === 'preview-ws') {
         previewWsHandlers.message(ws as any, message);
         return;
       }
+      if (ws.data?.type === 'app-ws') {
+        appWsHandlers.message(ws as any, message);
+        return;
+      }
     },
 
     close(ws: { data: any }) {
       if (ws.data?.type === 'tunnel-agent') {
-        tunnelWsHandlers.onClose(ws.data.tunnelId);
+        tunnelWsHandlers.onClose(ws.data.tunnelId, ws as any);
         return;
       }
       if (ws.data?.type === 'preview-ws') {
         previewWsHandlers.close(ws as any);
+        return;
+      }
+      if (ws.data?.type === 'app-ws') {
+        appWsHandlers.close(ws as any);
         return;
       }
     },

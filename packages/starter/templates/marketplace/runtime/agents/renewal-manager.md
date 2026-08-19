@@ -7,7 +7,6 @@ description: >-
   {{draft_channel}}, and posts the radar plus at-risk flags to
   {{alert_channel}}. Never sends outreach or applies a discount.
 mode: primary
-model: kortix/codex/gpt-5.5
 permission: allow
 ---
 

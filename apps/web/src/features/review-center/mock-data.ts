@@ -1,6 +1,6 @@
 /**
  * Mock Review Center data — prototype only. Shapes mirror the real systems the
- * production read model would adapt from (change requests, executor approvals,
+ * production read model would adapt from (change requests, connector approvals,
  * agent-submitted outputs/decisions/batches). Timestamps are relative to load so
  * the inbox always reads fresh.
  */

@@ -30,10 +30,14 @@ resource "aws_iam_role" "ec2_cpu_reconciler" {
 }
 
 data "aws_iam_policy_document" "ec2_cpu_reconciler" {
-  # checkov:skip=CKV_AWS_356: DescribeInstances, DescribeAlarms, and X-Ray telemetry APIs do not support resource-level permissions; alarm writes remain ARN-scoped below.
+  # checkov:skip=CKV_AWS_356: DescribeInstances, DescribeLoadBalancers, DescribeAlarms, and X-Ray telemetry APIs do not support resource-level permissions; alarm writes remain ARN-scoped below.
   statement {
-    sid       = "DiscoverRunningInstancesAndAlarms"
-    actions   = ["ec2:DescribeInstances", "cloudwatch:DescribeAlarms"]
+    sid = "DiscoverInfrastructureAndAlarms"
+    actions = [
+      "ec2:DescribeInstances",
+      "elasticloadbalancing:DescribeLoadBalancers",
+      "cloudwatch:DescribeAlarms",
+    ]
     resources = ["*"]
   }
 
@@ -47,11 +51,24 @@ data "aws_iam_policy_document" "ec2_cpu_reconciler" {
   }
 
   statement {
+    sid     = "ReconcileDcf86AlbAlarms"
+    actions = ["cloudwatch:PutMetricAlarm", "cloudwatch:TagResource"]
+    resources = [
+      "arn:aws:cloudwatch:us-west-2:${local.account_id}:alarm:kortix-alb-*",
+      "arn:aws:cloudwatch:eu-west-2:${local.account_id}:alarm:kortix-alb-*",
+      "arn:aws:cloudwatch:us-east-2:${local.account_id}:alarm:kortix-alb-*",
+    ]
+  }
+
+  statement {
     sid     = "WriteFunctionLogs"
     actions = ["logs:CreateLogStream", "logs:PutLogEvents"]
     resources = [
       "${aws_cloudwatch_log_group.usw2_ec2_cpu_reconciler.arn}:*",
       "${aws_cloudwatch_log_group.euw2_ec2_cpu_reconciler.arn}:*",
+      "${aws_cloudwatch_log_group.usw2_alb_alarm_reconciler.arn}:*",
+      "${aws_cloudwatch_log_group.euw2_alb_alarm_reconciler.arn}:*",
+      "${aws_cloudwatch_log_group.use2_alb_alarm_reconciler.arn}:*",
     ]
   }
 

@@ -5,13 +5,14 @@ import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
 import { useClearFocusedToolCall, useFocusedToolCallId } from '@/stores/kortix-computer-store';
 import type { MessageWithParts } from '@/ui';
-import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { ActionNavigator } from '../shared/action-navigator';
-import { collectToolParts } from '../shared/collect-tool-parts';
 import {
-  ToolPartRenderer,
-  ToolSurfaceContext,
-} from '../../tool/tool-renderers';
+  CaretLeftIcon as ChevronLeft,
+  CaretRightIcon as ChevronRight,
+} from '@phosphor-icons/react';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import { ToolPartRenderer, ToolSurfaceContext } from '../../tool/tool-renderers';
+import { collectToolParts } from '../shared/collect-tool-parts';
 
 /**
  * Side-panel "Actions" view.
@@ -84,11 +85,21 @@ export const AdvancedPanel = memo(function AdvancedPanel({
         key={current?.id}
         className={cn(
           'min-h-0 flex-1 overflow-auto',
-          '[&_[data-scrollable]]:max-h-none [&_[data-scrollable]]:overflow-visible',
+          // Uncapped so the focused tool fills the panel instead of scrolling
+          // in its own inner box (see detail-view.tsx for the same un-cap).
+          // Height only, not overflow: overflow-visible kills the x-axis
+          // scrollbar ToolCodeCard needs for long mono lines, clipping
+          // memory/read/edit/write output at the card frame.
+          '[&_[data-scrollable]]:max-h-none',
         )}
       >
         {current && (
           <ToolSurfaceContext.Provider value="panel">
+            {/* `defaultOpen` is what keeps this view expanded now that the panel
+                surface is a disclosure row (it used to be inert here, because
+                the panel branch rendered its body unconditionally). This view
+                shows exactly one call at a time and the navigator below is how
+                you reach the others, so its row is always the open one. */}
             <ToolPartRenderer part={current} sessionId={sessionId} defaultOpen />
           </ToolSurfaceContext.Provider>
         )}

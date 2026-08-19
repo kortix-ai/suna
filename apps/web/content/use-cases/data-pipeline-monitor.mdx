@@ -112,7 +112,7 @@ The agent is **read-only** across the entire warehouse. It has no write access
 to any table, schema, or pipeline configuration — it can only observe and
 report. Its outputs are exactly two: the Slack alert and the drafted GitHub
 issue. Credentials are encrypted in the Secrets Manager and injected at
-runtime, never shown to the model or written to logs.
+runtime, scoped to the agents you grant them to.
 
 </Step>
 <Step title="Let the warehouse watch itself">
@@ -138,12 +138,11 @@ cause attached. The data team decides what to do; nothing changes on its own.
 The agent reads across the entire warehouse, so its access is scoped and
 strictly one-directional:
 
-- **Isolation.** Every run happens in its own microVM sandbox. The session can
-  reach only the warehouse it's scoped to, and only the Slack alert and the
-  drafted issue leave the sandbox.
+- **Isolation.** Every run happens in its own isolated sandbox. The session is granted access only to the warehouse it's scoped to, and only the Slack alert and the
+  drafted issue are written back out.
 - **Scoped secrets.** The warehouse credential and the GitHub token are
   encrypted in the Secrets Manager and injected into the sandbox at runtime,
-  never exposed to the model or the logs.
+  scoped to the agents you grant them to.
 - **Read-only, no exceptions.** The connector into the warehouse is read-only.
   The agent cannot modify a row, alter a schema, or touch a pipeline — it can
   only alert and draft.

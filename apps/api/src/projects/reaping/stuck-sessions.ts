@@ -35,14 +35,21 @@ import { chatTurnStreams, projectSessions, sessionSandboxes, usageEvents } from 
 import { db } from '../../shared/db';
 import { pauseComputeSession } from '../../billing/services/compute-metering';
 import { ACTIVE_SESSION_STATUSES } from '../lib/session-status';
-import { autoStopTtlMs } from './policy';
+import { config } from '../../config';
 
 const STUCK_SESSION_BATCH = 200;
+
+/** How long a session may claim to be running with no live box behind it.
+ *  Shares the idle-grace knob — the same question asked of a session rather
+ *  than of a box. */
+function stuckSessionCutoffMs(): number {
+  return Math.max(1, config.KORTIX_SANDBOX_AUTOSTOP_MINUTES || 15) * 60_000;
+}
 
 export async function reconcileStuckActiveSessions(
   now = new Date(),
 ): Promise<{ candidates: number; reconciled: number; billingClosed: number; errors: number }> {
-  const cutoff = new Date(now.getTime() - autoStopTtlMs());
+  const cutoff = new Date(now.getTime() - stuckSessionCutoffMs());
 
   const candidates = await db
     .select({ sessionId: projectSessions.sessionId })

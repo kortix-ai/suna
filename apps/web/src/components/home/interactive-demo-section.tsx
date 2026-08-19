@@ -5,36 +5,39 @@ import { Button } from '@/components/ui/button';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { InlineMeta } from '@/components/ui/inline-meta';
 import { UserAvatar } from '@/components/ui/user-avatar';
-import { Icon } from '@/features/icon/icon';
-import { safeScrollTo } from '@/lib/utils/safe-scroll-to';
+import { Slack } from '@/features/icon/icons/slack';
 import { cn } from '@/lib/utils';
+import { safeScrollTo } from '@/lib/utils/safe-scroll-to';
 import {
-  ArrowRight,
-  Blocks,
-  Bot,
-  Brain,
-  ChevronDown,
-  ChevronRight,
-  Clock,
-  Database,
-  FileText,
-  GitPullRequest,
-  KeyRound,
-  MessageSquare,
-  Plus,
-  Search,
-  type LucideIcon,
-} from 'lucide-react';
-import { AnimatePresence, motion } from 'motion/react';
+  ArrowRightIcon as ArrowRight,
+  SquaresFourIcon as Blocks,
+  RobotIcon as Bot,
+  BrainIcon as Brain,
+  CaretDownIcon as ChevronDown,
+  CaretRightIcon as ChevronRight,
+  ClockIcon as Clock,
+  DatabaseIcon as Database,
+  UsersIcon as FaUsers,
+  FileTextIcon as FileText,
+  GitPullRequestIcon as GitPullRequest,
+  HouseIcon as GoHomeFill,
+  SparkleIcon as HiMiniSparkles,
+  KeyIcon as KeyRound,
+  ShieldIcon as MdShield,
+  ChatIcon as MessageSquare,
+  ChatCircleDotsIcon as PiChatCircleDotsFill,
+  ClockCountdownIcon as PiClockCountdownFill,
+  PlusIcon as Plus,
+  CpuIcon as RiCpuLine,
+  FolderIcon as RiFolder3Fill,
+  RobotIcon as RiRobot3Fill,
+  MagnifyingGlassIcon as Search,
+  type Icon as IconType,
+  type Icon as LucideIcon,
+} from '@phosphor-icons/react';
+import { AnimatePresence, m } from 'motion/react';
 import { useTranslations } from 'next-intl';
 import { useEffect, useRef, useState } from 'react';
-import { FaUsers } from 'react-icons/fa';
-import { GoHomeFill } from 'react-icons/go';
-import { HiMiniSparkles } from 'react-icons/hi2';
-import { IconType } from 'react-icons/lib';
-import { MdShield } from 'react-icons/md';
-import { PiChatCircleDotsFill, PiClockCountdownFill } from 'react-icons/pi';
-import { RiCpuLine, RiFolder3Fill, RiRobot3Fill } from 'react-icons/ri';
 import { KortixLogo } from '../sidebar/kortix-logo';
 import { Composer } from './interactive-demo/chat/composer';
 import { type DemoConversation } from './interactive-demo/chat/use-demo-conversation';
@@ -90,7 +93,9 @@ function Panel({
         <div className="border-border flex items-center justify-between border-b px-4 py-2.5">
           <span className="text-foreground text-sm font-semibold">
             {title}
-            {count && <span className="text-muted-foreground ml-1.5 font-normal">{count}</span>}
+            {count ? (
+              <span className="text-muted-foreground ml-1.5 font-normal">{count}</span>
+            ) : null}
           </span>
           {action}
         </div>
@@ -136,7 +141,7 @@ function Row({
   );
 }
 
-/** Real brand logo (favicon) on a neutral tile — used for Integrations + Models. */
+/** Real brand logo (favicon) on a neutral tile — used for Connectors + Models. */
 function BrandLogo({ domain, alt, size = 20 }: { domain: string; alt: string; size?: number }) {
   return (
     <span
@@ -176,6 +181,8 @@ function StatusDot({ on, label }: { on: boolean; label?: [string, string] }) {
   );
 }
 
+const knob = <span className="size-4 rounded-full bg-white shadow" />;
+
 function Toggle({ on, onClick }: { on: boolean; onClick?: () => void }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const className = cn(
@@ -183,7 +190,6 @@ function Toggle({ on, onClick }: { on: boolean; onClick?: () => void }) {
     on ? 'bg-kortix-green justify-end' : 'bg-muted-foreground/20 justify-start',
     onClick && 'cursor-pointer',
   );
-  const knob = <span className="size-4 rounded-full bg-white shadow" />;
   if (!onClick) return <span className={className}>{knob}</span>;
   return (
     <button
@@ -218,7 +224,7 @@ function ConnectBadge({ connected }: { connected: boolean }) {
 function HomePage({ nav, convo }: { nav: Nav; convo: DemoConversation }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const cards: [string, string, LucideIcon | IconType, string | undefined, PageId][] = [
-    ['Integrations', 'Connect the tools your agents use', Blocks, '1', 'integrations'],
+    ['Connectors', 'Connect the tools your agents use', Blocks, '1', 'connectors'],
     ['Scheduled tasks', 'Run work on a schedule, 24/7', Clock, '2', 'scheduling'],
     ['Skills', 'Reusable workflows every agent shares', HiMiniSparkles, '71', 'skills'],
     ['Channels', 'Run this project from Slack', MessageSquare, undefined, 'channels'],
@@ -258,11 +264,11 @@ function HomePage({ nav, convo }: { nav: Nav; convo: DemoConversation }) {
                   <span className="min-w-0 flex-1">
                     <span className="text-foreground flex items-center gap-1.5 text-xs font-medium sm:text-sm">
                       {title}
-                      {count && (
+                      {count ? (
                         <Badge size="sm" variant="muted">
                           {count}
                         </Badge>
-                      )}
+                      ) : null}
                     </span>
                     <span className="text-muted-foreground mt-0.5 block truncate text-[11px] sm:text-xs">
                       {sub}
@@ -305,7 +311,7 @@ type AgentDef = {
 
 const AGENTS: AgentDef[] = [
   {
-    name: 'kortix',
+    name: 'Kortix',
     desc: 'General knowledge worker — full tool access; codes, researches, writes and runs ops end-to-end in an isolated sandbox.',
     icon: Bot,
     trigger: 'primary',
@@ -316,7 +322,7 @@ const AGENTS: AgentDef[] = [
     on: true,
   },
   {
-    name: 'pr-bot',
+    name: 'PR Bot',
     desc: 'Runs a thermo-nuclear review and stands up a one-click preview on every pull request to kortix-ai/kortix.',
     icon: GitPullRequest,
     trigger: 'webhook',
@@ -327,7 +333,7 @@ const AGENTS: AgentDef[] = [
     on: true,
   },
   {
-    name: 'memory-reflector',
+    name: 'Memory Reflector',
     desc: 'Reflects on recent activity and curates .kortix/memory, opening a memory CR each run.',
     icon: Brain,
     trigger: 'cron',
@@ -338,7 +344,7 @@ const AGENTS: AgentDef[] = [
     on: false,
   },
   {
-    name: 'researcher',
+    name: 'Researcher',
     desc: 'Deep multi-source research with structured synthesis, inline citations and charts.',
     icon: Search,
     trigger: 'manual',
@@ -349,7 +355,7 @@ const AGENTS: AgentDef[] = [
     on: true,
   },
   {
-    name: 'analyst',
+    name: 'Analyst',
     desc: 'Profiles the warehouse, writes performant SQL and ships a dashboard from a plain question.',
     icon: Database,
     trigger: 'manual',
@@ -360,7 +366,7 @@ const AGENTS: AgentDef[] = [
     on: true,
   },
   {
-    name: 'support-triage',
+    name: 'Support Triage',
     desc: 'Categorizes, prioritizes and routes inbound tickets, drafting an empathetic first reply.',
     icon: MessageSquare,
     trigger: 'webhook',
@@ -371,7 +377,7 @@ const AGENTS: AgentDef[] = [
     on: true,
   },
   {
-    name: 'deck-builder',
+    name: 'Deck Builder',
     desc: 'Turns a prompt and your latest data into board decks and polished presentations.',
     icon: FileText,
     trigger: 'manual',
@@ -382,7 +388,7 @@ const AGENTS: AgentDef[] = [
     on: false,
   },
   {
-    name: 'sdr',
+    name: 'SDR',
     desc: 'Enriches leads from the CRM, researches each account and drafts tailored outreach.',
     icon: FaUsers,
     trigger: 'manual',
@@ -479,9 +485,9 @@ function AgentsPage() {
   );
 }
 
-/* ─── Integrations (3,000+ via Pipedream) ───────────────────────────────── */
+/* ─── Connectors (3,000+ via Pipedream) ─────────────────────────────────── */
 
-const INTEGRATIONS: [string, string, boolean][] = [
+const CONNECTORS: [string, string, boolean][] = [
   ['github.com', 'GitHub', true],
   ['slack.com', 'Slack', true],
   ['gmail.com', 'Gmail', false],
@@ -510,19 +516,20 @@ const INTEGRATIONS: [string, string, boolean][] = [
 
 const CONNECTOR_TYPES = ['App', 'MCP', 'OpenAPI', 'GraphQL', 'HTTP'];
 
-function IntegrationsPage({ connectedExtra = [] }: { connectedExtra?: string[] }) {
+function ConnectorsPage({ connectedExtra = [] }: { connectedExtra?: string[] }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const [q, setQ] = useState('');
   const query = q.trim().toLowerCase();
-  const list = INTEGRATIONS.filter(
+  const list = CONNECTORS.filter(
     ([domain, name]) =>
       !query || name.toLowerCase().includes(query) || domain.toLowerCase().includes(query),
   );
+  const connectedExtraSet = new Set(connectedExtra);
   return (
     <div>
       <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
         <div className="min-w-0">
-          <h3 className="text-foreground text-lg font-semibold tracking-tight">Integrations</h3>
+          <h3 className="text-foreground text-lg font-semibold tracking-tight">Connectors</h3>
           <p className="text-muted-foreground mt-0.5 text-sm">
             {tI18nHardcoded.raw('autoComponentsHomeInteractiveDemoSectionJsxText3000Apps0dfb5b41')}
           </p>
@@ -592,7 +599,7 @@ function IntegrationsPage({ connectedExtra = [] }: { connectedExtra?: string[] }
       {list.length > 0 ? (
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
           {list.map(([domain, name, connected]) => {
-            const justConnected = !connected && connectedExtra.includes(name);
+            const justConnected = !connected && connectedExtraSet.has(name);
             return (
               <div
                 key={name}
@@ -603,7 +610,7 @@ function IntegrationsPage({ connectedExtra = [] }: { connectedExtra?: string[] }
               >
                 <BrandLogo domain={domain} alt={name} />
                 <span className="text-foreground truncate text-sm font-medium">{name}</span>
-                <ConnectBadge connected={connected || connectedExtra.includes(name)} />
+                <ConnectBadge connected={connected || connectedExtraSet.has(name)} />
               </div>
             );
           })}
@@ -738,11 +745,11 @@ function ModelsPage({
               </div>
               {isActive ? (
                 <Badge size="sm" variant="success" className="shrink-0 gap-1">
-                  <HiMiniSparkles className="size-3" /> Active
+                  <HiMiniSparkles weight="fill" className="size-3" /> Active
                 </Badge>
               ) : p.state === 'managed' ? (
                 <Badge size="sm" variant="highlight" className="shrink-0 gap-1">
-                  <HiMiniSparkles className="size-3" /> Managed
+                  <HiMiniSparkles weight="fill" className="size-3" /> Managed
                 </Badge>
               ) : connected ? (
                 <ConnectBadge connected />
@@ -771,7 +778,7 @@ function ModelsPage({
 type ScheduleJob = { name: string; cron: string; when: string; next: string; on: boolean };
 
 const INITIAL_JOBS: ScheduleJob[] = [
-  { name: 'memory-reflector', cron: '0 */6 * * *', when: 'every 6 hours', next: 'in 2h', on: true },
+  { name: 'Memory reflector', cron: '0 */6 * * *', when: 'every 6 hours', next: 'in 2h', on: true },
   { name: 'Daily briefing', cron: '0 8 * * *', when: 'every day · 08:00', next: 'in 6h', on: true },
   {
     name: 'Weekly PR digest',
@@ -885,7 +892,7 @@ function ChannelsPage({
                 connected ? 'border-kortix-green/30 bg-kortix-green/5' : 'border-border',
               )}
             >
-              <Icon.Slack className="size-7" />
+              <Slack className="size-7" />
             </span>
             <div className="min-w-0">
               <p className="text-foreground text-sm font-medium">
@@ -906,7 +913,7 @@ function ChannelsPage({
             </Badge>
           ) : (
             <Button size="sm" className="shrink-0">
-              <Icon.Slack className="size-3.5" />{' '}
+              <Slack className="size-3.5" />{' '}
               {tI18nHardcoded.raw(
                 'autoComponentsHomeInteractiveDemoSectionJsxTextAddToSlacka83dbb5b',
               )}
@@ -1148,7 +1155,7 @@ function SecurityPage({
                         'autoComponentsHomeInteractiveDemoSectionJsxAttrTitleTwoFactor677873ea',
                       )}
                     >
-                      <MdShield className="size-3.5" /> 2FA
+                      <MdShield weight="fill" className="size-3.5" /> 2FA
                     </span>
                     <Badge size="sm" variant={m.role === 'Owner' ? 'highlight' : 'outline'}>
                       {m.role}
@@ -1203,7 +1210,7 @@ function SecurityPage({
         </Panel>
 
         <div className="border-border/60 bg-muted/20 text-muted-foreground flex items-center gap-2.5 rounded-md border px-3 py-2.5 text-xs">
-          <MdShield className="size-4 shrink-0" />
+          <MdShield weight="fill" className="size-4 shrink-0" />
           <span>
             {tI18nHardcoded.raw(
               'autoComponentsHomeInteractiveDemoSectionJsxTextSSO2FAEnforced29070cf3',
@@ -1240,33 +1247,33 @@ const PAGES: Record<
 > = {
   home: {
     label: 'Home',
-    icon: <GoHomeFill className="size-4" />,
+    icon: <GoHomeFill weight="fill" className="size-4" />,
     render: (nav, convo) => <HomePage nav={nav} convo={convo} />,
   },
   projects: {
     label: 'Projects',
-    icon: <RiFolder3Fill className="size-4" />,
+    icon: <RiFolder3Fill weight="fill" className="size-4" />,
     render: (_nav, _convo, extras) => <ProjectsPage projects={extras.projects} />,
   },
   chat: {
     label: 'Chat',
-    icon: <PiChatCircleDotsFill className="size-4" />,
+    icon: <PiChatCircleDotsFill weight="fill" className="size-4" />,
     render: (_nav, convo, extras) => <ChatPage convo={convo} onSkillClick={extras.onSkillClick} />,
   },
   agents: {
     label: 'Agents',
-    icon: <RiRobot3Fill className="size-4" />,
+    icon: <RiRobot3Fill weight="fill" className="size-4" />,
     render: () => <AgentsPage />,
   },
   skills: {
     label: 'Skills',
-    icon: <HiMiniSparkles className="size-4" />,
+    icon: <HiMiniSparkles weight="fill" className="size-4" />,
     render: (_nav, _convo, extras) => <SkillsPage focusedSkill={extras.focusedSkill} />,
   },
-  integrations: {
-    label: 'Integrations',
+  connectors: {
+    label: 'Connectors',
     icon: <Blocks className="size-4" />,
-    render: (_nav, _convo, extras) => <IntegrationsPage connectedExtra={extras.connectors} />,
+    render: (_nav, _convo, extras) => <ConnectorsPage connectedExtra={extras.connectors} />,
   },
   models: {
     label: 'Models',
@@ -1277,7 +1284,7 @@ const PAGES: Record<
   },
   scheduling: {
     label: 'Scheduling',
-    icon: <PiClockCountdownFill className="size-4" />,
+    icon: <PiClockCountdownFill weight="fill" className="size-4" />,
     render: (_nav, _convo, extras) => <SchedulingPage added={extras.scheduleAdded} />,
   },
   channels: {
@@ -1289,7 +1296,7 @@ const PAGES: Record<
   },
   security: {
     label: 'Security',
-    icon: <MdShield className="size-4" />,
+    icon: <MdShield weight="fill" className="size-4" />,
     render: (_nav, _convo, extras) => (
       <SecurityPage memberAdded={extras.memberAdded} secretAdded={extras.secretAdded} />
     ),
@@ -1531,7 +1538,7 @@ export function InteractiveDemoSection({
                 )}
               >
                 <AnimatePresence mode="wait">
-                  <motion.div
+                  <m.div
                     key={active}
                     initial={{ opacity: 0, x: 10 }}
                     animate={{ opacity: 1, x: 0 }}
@@ -1551,7 +1558,7 @@ export function InteractiveDemoSection({
                       memberAdded: director.memberAdded,
                       slack: director.slack,
                     })}
-                  </motion.div>
+                  </m.div>
                 </AnimatePresence>
               </div>
             </div>

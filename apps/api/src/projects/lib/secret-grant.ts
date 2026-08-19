@@ -19,12 +19,17 @@
  *      (`preview.ts`: a prompt's `agent` field is forwarded untouched), so a
  *      session born under a broad agent could run a narrow one and still be
  *      handed the broad agent's full env. The grant is now resolved from the
- *      agent the prompt actually RUNS (`effectiveRunningAgent`), and a switch
- *      that would cross a secret boundary is refused outright
- *      (`AgentSecretGrantMismatchError` → 409) because narrowing the env on a
- *      later turn cannot un-read what the previous agent already read: the
- *      secrets are in the box's tmpfs env file, in every shell it spawned, and
- *      in its own context.
+ *      agent the prompt actually RUNS (`effectiveRunningAgent`), which replaces
+ *      future secret delivery with that agent's grant.
+ *
+ * A switch is never REFUSED. It used to be, behind an operator flag, on the
+ * argument that a later narrowing cannot un-read what the previous agent
+ * already consumed. That is true, and it is exactly why refusing bought
+ * nothing: the residue exists from the moment the first agent reads the value,
+ * so blocking the second agent protects nothing still protectable. What the
+ * refusal did instead was 409 ordinary switches — including through a call path
+ * that hit the lock's `?? true` default while the flag was off. Re-scoping is
+ * the whole mechanism now.
  *
  * The pure helpers below carry the policy; `resolveSessionSecretGrant` is the
  * single I/O entry point both call sites use.
@@ -55,20 +60,6 @@ export class SecretGrantResolutionError extends Error {
       }`,
     );
     this.name = 'SecretGrantResolutionError';
-  }
-}
-
-/** A prompt asked to run an agent whose secret grant differs from the one this
- *  session's sandbox was provisioned for. */
-export class AgentSecretGrantMismatchError extends Error {
-  constructor(
-    readonly sessionAgent: string,
-    readonly requestedAgent: string,
-  ) {
-    super(
-      `agent '${requestedAgent}' has a different secrets grant than this session's agent '${sessionAgent}'`,
-    );
-    this.name = 'AgentSecretGrantMismatchError';
   }
 }
 
@@ -177,29 +168,18 @@ export function agentGrantDiffers(
 }
 
 /**
- * Pure policy over an already-loaded manifest — exported for tests. Throws
- * `AgentSecretGrantMismatchError` when the switch crosses a secret boundary.
+ * Pure policy over an already-loaded manifest — exported for tests.
  *
- * `enforceGrantLock: false` is the operational kill switch. It degrades to
- * re-scoping the env onto the RUNNING agent's grant rather than reverting to
- * the old behavior of resolving from the session's stale create-time agent —
- * so turning enforcement off trades the hard refusal for a soft narrowing, it
- * never re-opens the original widening.
+ * The policy is now one rule: the env follows the agent that RUNS. The
+ * session's create-time agent does not enter into it, which is why this takes
+ * no `sessionAgent`. It cannot throw — a switch is always re-scoped, never
+ * refused.
  */
 export function secretGrantEnvForRunningAgent(
   loaded: LoadedAgents,
-  sessionAgent: string,
   runningAgent: string,
-  enforceGrantLock = true,
 ): string[] | 'all' | undefined {
-  const runningEnv = grantFromLoadedAgents(runningAgent, loaded)?.env;
-  if (runningAgent === sessionAgent) return runningEnv;
-
-  const sessionEnv = grantFromLoadedAgents(sessionAgent, loaded)?.env;
-  if (enforceGrantLock && secretGrantEnvDiffers(sessionEnv, runningEnv)) {
-    throw new AgentSecretGrantMismatchError(sessionAgent, runningAgent);
-  }
-  return runningEnv;
+  return grantFromLoadedAgents(runningAgent, loaded)?.env;
 }
 
 export interface SessionSecretGrantInput {
@@ -215,17 +195,18 @@ export interface SessionSecretGrantInput {
   /** The agent this prompt asked to run, when the caller is a prompt. Omit at
    *  boot — the session's own agent is the one that runs. */
   requestedAgent?: string | null;
-  /** Operational kill switch for the grant-change refusal — see
-   *  `secretGrantEnvForRunningAgent`. Defaults to enforced. */
-  enforceGrantLock?: boolean;
+  /** Bypass the process-local Git mirror TTL. Authorization paths set this so
+   *  a manifest commit handled by another API replica applies on the next
+   *  request, not up to 60 seconds later. */
+  forceRefresh?: boolean;
 }
 
 /**
  * Resolve the `env` grant for the agent that will actually run.
  *
  * Throws `SecretGrantResolutionError` if the manifest cannot be loaded (fail
- * closed) and `AgentSecretGrantMismatchError` if the prompt's agent has a
- * different grant than the session's (fail closed on privilege change).
+ * closed). A switch to an agent with a different grant is not an error — the
+ * env is re-scoped onto the running agent.
  */
 export async function resolveSessionSecretGrant(
   input: SessionSecretGrantInput,
@@ -237,12 +218,10 @@ export async function resolveSessionSecretGrant(
  * The FULL grant of the agent a prompt will actually run — secrets, connectors
  * and Kortix CLI actions.
  *
- * Same resolution, same failure modes, same refusal as
- * `resolveSessionSecretGrant` (which is this function's `env` leg): callers get
- * `SecretGrantResolutionError` on an unreadable manifest and
- * `AgentSecretGrantMismatchError` on a secret-boundary switch. The extra legs
- * exist for the token re-mint, which needs to know what the running agent may
- * reach, not just what it may read.
+ * Same resolution and same failure mode as `resolveSessionSecretGrant` (which
+ * is this function's `env` leg): callers get `SecretGrantResolutionError` on an
+ * unreadable manifest. The extra legs exist for the token re-mint, which needs
+ * to know what the running agent may reach, not just what it may read.
  */
 export async function resolveSessionAgentGrant(
   input: SessionSecretGrantInput,
@@ -273,19 +252,12 @@ async function loadGrantForRunningAgent(
         manifestPath: input.manifestPath ?? 'kortix.yaml',
         gitAuthToken: null,
       },
-      { rethrowReadErrors: true },
+      { rethrowReadErrors: true, forceRefresh: input.forceRefresh },
     );
   } catch (err) {
     throw new SecretGrantResolutionError(runningAgent, err);
   }
 
-  // Runs the secret-boundary refusal FIRST, so a switch that must be refused is
-  // never also re-minted — one switch cannot half-succeed.
-  const env = secretGrantEnvForRunningAgent(
-    loaded,
-    input.sessionAgent,
-    runningAgent,
-    input.enforceGrantLock ?? true,
-  );
+  const env = secretGrantEnvForRunningAgent(loaded, runningAgent);
   return { grant: grantFromLoadedAgents(runningAgent, loaded), env };
 }

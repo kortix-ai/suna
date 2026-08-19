@@ -73,6 +73,64 @@ export function modelChangeNeedsLivePush(input: {
   return input.status === 'running';
 }
 
+/** The 200 body of `PUT /projects/:p/sessions/:s/model`. */
+export interface ModelChangeResult {
+  opencode_model: string;
+  /** True only when a live sandbox took the new model NOW. */
+  applied_live: boolean;
+  /**
+   * Set (and only ever `true`) when a live push was REQUIRED and FAILED: the row
+   * is written but the running harness is still on the old model.
+   *
+   * `applied_live: false` alone cannot carry this. It is also the ordinary,
+   * benign answer for a cold session, where the row IS the whole mechanism and
+   * the next boot reads it. Collapsing the two is what let the reference app
+   * report `toast.success('… saved — applies when this session next starts')`
+   * after a `502 upstream-closed-before-headers` env sync — a running session
+   * that keeps answering from the OLD model, with the user told it changed.
+   *
+   * Kept as a 200 deliberately. The write DID happen and is durable; a non-2xx
+   * would say it did not, and every client would retry a store that already
+   * succeeded (or worse, treat the stored model as unset). The half-applied
+   * state is a partial success, so it is reported as one — and this flag is what
+   * makes it machine-checkable instead of a `detail` string clients must sniff.
+   */
+  push_failed?: true;
+  detail?: string;
+}
+
+/**
+ * Shape the response for a completed model write. Single source of truth for the
+ * applied / stored / half-applied distinction, so the route and every client
+ * agree on which of the three happened.
+ */
+export function modelChangeResult(input: {
+  model: string;
+  needsPush: boolean;
+  push?: { applied: boolean; reason?: string };
+  current?: string | null;
+}): ModelChangeResult {
+  if (!input.needsPush) {
+    return {
+      opencode_model: input.model,
+      applied_live: false,
+      detail:
+        input.current === input.model
+          ? 'already set to this model'
+          : 'stored — applies when the sandbox next starts',
+    };
+  }
+  if (input.push?.applied) {
+    return { opencode_model: input.model, applied_live: true };
+  }
+  return {
+    opencode_model: input.model,
+    applied_live: false,
+    push_failed: true,
+    detail: `stored, but not pushed: ${input.push?.reason ?? 'unknown'}`,
+  };
+}
+
 /**
  * May this caller CHANGE the session's model?
  *
@@ -80,7 +138,7 @@ export function modelChangeNeedsLivePush(input: {
  * `visibility: 'project'` session is readable by every project member, but
  * changing its model restarts opencode and destroys the owner's in-flight turn
  * — so this gates on the same owner-or-manager signal the sharing and stop
- * routes use (r7.ts:1508, :1689) rather than on visibility.
+ * routes use (routes/project-sessions.ts) rather than on visibility.
  */
 export function mayChangeSessionModel(visible: { canManageSharing: boolean }): boolean {
   return visible.canManageSharing;

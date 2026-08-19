@@ -86,4 +86,23 @@ describe('audit buildFilters', () => {
     });
     expect(conds).toHaveLength(2);
   });
+
+  test('reconstruction fields each add one exact condition', () => {
+    const conds = buildFilters(ACCOUNT, {
+      actor: null,
+      actionPrefix: null,
+      resourceType: null,
+      sinceRaw: null,
+      untilRaw: null,
+      q: null,
+      projectId: '00000000-0000-4000-a000-000000000201',
+      sessionId: 'session-1',
+      actorType: 'agent',
+      source: 'connector',
+      outcome: 'failure',
+      requestId: 'request-1',
+      correlationId: 'execution-1',
+    });
+    expect(conds).toHaveLength(8);
+  });
 });

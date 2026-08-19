@@ -122,7 +122,7 @@ vendor name match) for a human to confirm next run.
   reported with its evidence; the agent doesn't assume it's unauthorized or
   recommend blocking the card, only that a human confirm and register it.
 - **Secrets scoped.** The Plaid access token and Sheets credentials are
-  injected at runtime, never shown to the model or written to logs.
+  injected at runtime, scoped to this agent's grant.
 - **Audit rules are code.** Waste thresholds (e.g. the price-hike percentage)
   live in this skill and change through a reviewed change request, not an ad
   hoc instruction mid-run.

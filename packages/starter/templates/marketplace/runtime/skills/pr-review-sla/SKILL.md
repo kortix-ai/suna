@@ -112,8 +112,7 @@ list to diff against, so the whole sweep is recomputed and reposted every day.
   PR's state from GitHub rather than assuming anything from the prior day's
   nudges.
 - **Scoped secret.** `GH_TOKEN` is injected as an environment variable at
-  runtime, scoped to read access, and never shown to the model or written to
-  logs.
+  runtime, scoped to read access and to this agent's grant.
 - **People decide, not the agent.** The nudge flags what's blocking; a human
   reviews, pings, or closes the PR themselves.
 </guardrails>

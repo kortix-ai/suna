@@ -10,14 +10,14 @@
  * corpus through both `validateManifest` and this schema (via ajv) and
  * fails CI on any accept/reject disagreement.
  *
- * Four documents are published (see `apps/web/public/schema/` +
+ * Three documents are published (see `apps/web/public/schema/` +
  * `scripts/generate-schema.ts`):
  *
  *   - `kortix.v1.schema.json` — the `[[agents]]`-array / `[[channels]]` shape.
  *   - `kortix.v2.schema.json` — the `agents:`-map, governance-only shape.
- *   - `kortix.v3.schema.json` — ACP runtime profiles and logical agents.
- *   - `kortix.schema.json`    — all versions, dispatched by `if/then` on
- *     `kortix_version`, so ONE URL validates every published version.
+ *   - `kortix.schema.json`    — BOTH, dispatched by an `if/then` on
+ *     `kortix_version` (const 1 vs const 2), so ONE URL always validates
+ *     whichever version a manifest declares.
  *
  * Deliberate scope limits (documented, not bugs — see spec header of
  * `./index.ts` and the conformance test):
@@ -44,6 +44,7 @@ import {
   AGENT_THEME_COLORS_V2,
   CHANNEL_PLATFORMS,
   CONNECTOR_AUTH_TYPES,
+  CONNECTOR_AUTHORIZATION_STRATEGIES,
   CONNECTOR_POLICY_ACTIONS,
   CONNECTOR_PROVIDERS,
   ENV_NAME_RE,
@@ -53,6 +54,9 @@ import {
   LEGACY_TOLERATED_KORTIX_CLI_ACTIONS,
   PERMISSION_ACTION_ONLY_KEYS_V2,
   PERMISSION_ACTIONS_V2,
+  DURATION_RE,
+  MONITOR_MODES,
+  MONITOR_RUN_MAX_LENGTH,
   RESERVED_SANDBOX_SLUG,
   RESERVED_SLUG_PROVIDERS,
   SANDBOX_CPU_BOUNDS,
@@ -61,7 +65,6 @@ import {
   SLUG_RE,
   TRIGGER_TYPES,
   V2_RUNTIME_VALUES,
-  V3_HARNESS_VALUES,
   WORKSPACE_MODES_V2,
 } from './constants';
 import {
@@ -115,13 +118,13 @@ function grantSetSchema(itemSchema: JsonSchemaFragment = NON_EMPTY_STRING): Json
  * grantable catalog PLUS the legacy set. v2 hard-rejects them, so its enum
  * is the live grantable catalog ONLY. Both always accept the `"*"` wildcard.
  */
-function kortixCliEnum(version: 1 | 2 | 3): readonly string[] {
-  return version >= 2
+function kortixCliEnum(version: 1 | 2): readonly string[] {
+  return version === 2
     ? [...GRANTABLE_KORTIX_CLI_ACTIONS, '*']
     : [...GRANTABLE_KORTIX_CLI_ACTIONS, ...LEGACY_TOLERATED_KORTIX_CLI_ACTIONS, '*'];
 }
 
-function kortixCliGrantSetSchema(version: 1 | 2 | 3): JsonSchemaFragment {
+function kortixCliGrantSetSchema(version: 1 | 2): JsonSchemaFragment {
   return grantSetSchema({ type: 'string', enum: [...kortixCliEnum(version)] });
 }
 
@@ -143,10 +146,7 @@ function permissionRuleSchema(): JsonSchemaFragment {
  *  `validatePermissionConfig` in `./index.ts`). */
 function permissionConfigSchema(): JsonSchemaFragment {
   const actionOnlyProps = Object.fromEntries(
-    PERMISSION_ACTION_ONLY_KEYS_V2.map((key) => [
-      key,
-      { type: 'string', enum: [...PERMISSION_ACTIONS_V2] },
-    ]),
+    PERMISSION_ACTION_ONLY_KEYS_V2.map((key) => [key, { type: 'string', enum: [...PERMISSION_ACTIONS_V2] }]),
   );
   return {
     oneOf: [
@@ -171,7 +171,7 @@ function agentMdFrontmatterSchema(): JsonSchemaFragment {
   return {
     type: 'object',
     description:
-      'OpenCode behavior for one agent — lives in .kortix/opencode/agents/<name>.md frontmatter, never in the manifest. Provided here as an authoring aid; not itself part of kortix.yaml.',
+      "OpenCode behavior for one agent — lives in .kortix/opencode/agents/<name>.md frontmatter, never in the manifest. Provided here as an authoring aid; not itself part of kortix.yaml.",
     properties: {
       description: { type: 'string' },
       model: { type: 'string' },
@@ -259,10 +259,7 @@ function projectSchema(): JsonSchemaFragment {
 /** `[env]` — env-var name lists. Unknown keys are a WARNING only
  *  (`validateEnv`), so `additionalProperties: true` here to keep parity. */
 function envSchema(): JsonSchemaFragment {
-  const nameList = {
-    type: 'array',
-    items: { type: 'string', pattern: ENV_NAME_PATTERN_CASE_INSENSITIVE },
-  };
+  const nameList = { type: 'array', items: { type: 'string', pattern: ENV_NAME_PATTERN_CASE_INSENSITIVE } };
   return {
     type: 'object',
     properties: { required: nameList, optional: nameList },
@@ -323,8 +320,9 @@ function sandboxSchema(): JsonSchemaFragment {
   };
 }
 
-/** One `[[triggers]]` entry — cron or webhook (`validateTriggers`). */
+/** One `[[triggers]]` entry — cron, webhook, or monitor (`validateTriggers`). */
 function triggerSchema(): JsonSchemaFragment {
+  const durationSchema: JsonSchemaFragment = { type: 'string', pattern: DURATION_RE.source };
   return {
     type: 'object',
     required: ['slug', 'type'],
@@ -353,6 +351,15 @@ function triggerSchema(): JsonSchemaFragment {
       timezone: { type: 'string' },
       secret_env: { type: 'string', pattern: ENV_NAME_PATTERN },
       secretEnv: { type: 'string', pattern: ENV_NAME_PATTERN },
+      // `type: monitor` only — the repo command the platform supervises 24/7,
+      // its shape, and the two duration bounds. The FLOORS (interval ≥ 30s,
+      // expect_event_within ≥ 5m) are value ranges over a formatted string,
+      // which JSON Schema can't express — the imperative validator owns them
+      // (see json-schema.conformance.test.ts's documented-divergence block).
+      run: { type: 'string', minLength: 1, maxLength: MONITOR_RUN_MAX_LENGTH },
+      mode: { type: 'string', enum: [...MONITOR_MODES] },
+      interval: durationSchema,
+      expect_event_within: durationSchema,
     },
     additionalProperties: true,
     allOf: [
@@ -374,6 +381,38 @@ function triggerSchema(): JsonSchemaFragment {
         if: { properties: { type: { const: 'webhook' } } },
         then: { anyOf: [{ required: ['secret_env'] }, { required: ['secretEnv'] }] },
       },
+      {
+        // A monitor names its command and its shape, and carries none of the
+        // cron/webhook wiring (`false` = the key may not appear at all).
+        if: { properties: { type: { const: 'monitor' } } },
+        then: {
+          required: ['run', 'mode'],
+          properties: {
+            cron: false,
+            schedule: false,
+            run_at: false,
+            runAt: false,
+            timezone: false,
+            secret_env: false,
+            secretEnv: false,
+          },
+        },
+      },
+      {
+        // `interval` is the poll period: required on poll, forbidden on stream.
+        if: {
+          properties: { type: { const: 'monitor' }, mode: { const: 'poll' } },
+          required: ['mode'],
+        },
+        then: { required: ['interval'] },
+      },
+      {
+        if: {
+          properties: { type: { const: 'monitor' }, mode: { const: 'stream' } },
+          required: ['mode'],
+        },
+        then: { properties: { interval: false } },
+      },
     ],
   };
 }
@@ -385,12 +424,12 @@ function triggerSchema(): JsonSchemaFragment {
  *  hand-written 2-entry list once let a connector declare `slug = "computer"`
  *  with a non-`computer` provider and still validate structurally, since
  *  nothing in this array checked it (the "computer-slug accept bug"). */
-const RESERVED_SLUG_CONST_CHECKS: JsonSchemaFragment[] = Object.entries(
-  RESERVED_SLUG_PROVIDERS,
-).map(([slug, provider]) => ({
+const RESERVED_SLUG_CONST_CHECKS: JsonSchemaFragment[] = Object.entries(RESERVED_SLUG_PROVIDERS).map(
+  ([slug, provider]) => ({
     if: { properties: { slug: { const: slug } } },
     then: { properties: { provider: { const: provider } } },
-}));
+  }),
+);
 
 /** One `[[connectors]]` entry. `version` only changes two fields:
  *
@@ -413,6 +452,7 @@ function connectorSchema(version: 1 | 2): JsonSchemaFragment {
     required: ['slug', 'provider'],
     properties: {
       slug: SLUG_SCHEMA,
+      name: NON_EMPTY_STRING,
       // `computer` is deliberately excluded — synth-only, never hand-authored.
       provider: { type: 'string', enum: [...CONNECTOR_PROVIDERS] },
       app: { type: 'string' },
@@ -424,6 +464,11 @@ function connectorSchema(version: 1 | 2): JsonSchemaFragment {
       spec: { type: 'string' },
       platform: { type: 'string', enum: [...CHANNEL_PLATFORMS] },
       credential: credentialSchema,
+      authorization_strategy: {
+        type: 'string',
+        enum: [...CONNECTOR_AUTHORIZATION_STRATEGIES],
+        default: 'project',
+      },
       agent_scope: agentScopeSchema,
       auth: {
         type: 'object',
@@ -528,9 +573,17 @@ function agentBlockV2Schema(): JsonSchemaFragment {
       enabled: { type: 'boolean' },
       sandbox: SLUG_SCHEMA,
       connectors: grantSetSchema(),
-      // A concrete subset of `connectors` that must resolve to the launching
-      // user's OWN connection (a list of aliases — never 'all'/'none').
-      connectors_personal: { type: 'array', items: NON_EMPTY_STRING },
+      connectors_required: {
+        type: 'array',
+        items: NON_EMPTY_STRING,
+        description: 'Connector slugs that must resolve before the session starts.',
+      },
+      connectors_personal: {
+        type: 'array',
+        items: NON_EMPTY_STRING,
+        deprecated: true,
+        description: 'Deprecated input alias for connectors_required.',
+      },
       secrets: grantSetSchema(),
       skills: grantSetSchema(),
       kortix_cli: kortixCliGrantSetSchema(2),
@@ -540,52 +593,63 @@ function agentBlockV2Schema(): JsonSchemaFragment {
   };
 }
 
-function runtimeBlockV3Schema(): JsonSchemaFragment {
+function appStringMapSchema(): JsonSchemaFragment {
   return {
     type: 'object',
-    description:
-      'One ACP runtime profile. The selected harness and resolved profile are immutable when a session starts.',
-    required: ['harness'],
-    properties: {
-      harness: {
-        type: 'string',
-        enum: [...V3_HARNESS_VALUES],
-        description:
-          'Harness implementation for this runtime profile. Supported values select OpenCode, Claude Code, Codex, or Pi.',
-      },
-      config_dir: {
-        ...relativePathSchema(),
-        description:
-          'Optional repository-relative harness configuration directory. The runtime uses the harness-native default when this field is absent.',
-      },
-    },
-    additionalProperties: false,
+    propertyNames: { pattern: ENV_NAME_PATTERN },
+    additionalProperties: { type: 'string', minLength: 1 },
   };
 }
 
-function agentBlockV3Schema(): JsonSchemaFragment {
+function appBlockV2Schema(): JsonSchemaFragment {
   return {
     type: 'object',
-    required: ['runtime'],
     properties: {
-      runtime: {
-        ...NON_EMPTY_STRING,
-        description:
-          'The name of a declared runtime profile. This selection becomes immutable when a session starts.',
+      path: relativePathSchema(),
+      type: { type: 'string', enum: ['static', 'bundle', 'dockerfile', 'oci_image'] },
+      image: { type: 'string', minLength: 1 },
+      dockerfile: relativePathSchema(),
+      command: { type: 'array', minItems: 1, items: NON_EMPTY_STRING },
+      port: { type: 'integer', minimum: 1, maximum: 65535, not: { enum: [7331, 8080] } },
+      root: relativePathSchema(),
+      output_dir: relativePathSchema(),
+      install_command: NON_EMPTY_STRING,
+      build_command: NON_EMPTY_STRING,
+      spa: { type: 'boolean' },
+      readiness_path: { type: 'string', pattern: '^/' },
+      idle_timeout_seconds: { type: 'integer', minimum: 120, maximum: 86400 },
+      monthly_budget_usd: { type: 'number', minimum: 0 },
+      resources: {
+        type: 'object',
+        properties: {
+          cpu: { type: 'integer', minimum: 1, maximum: 64 },
+          memory_gb: { type: 'integer', minimum: 1, maximum: 512 },
+          disk_gb: { type: 'integer', minimum: 1, maximum: 2048 },
+        },
+        additionalProperties: false,
       },
-      agent: {
-        ...NON_EMPTY_STRING,
-        description:
-          'Optional harness-native agent identifier. Omit this field when the selected harness has no named-agent concept.',
-      },
-      enabled: { type: 'boolean' },
-      connectors: grantSetSchema(),
-      secrets: grantSetSchema(),
-      skills: grantSetSchema(),
-      kortix_cli: kortixCliGrantSetSchema(3),
-      workspace: { type: 'string', enum: [...WORKSPACE_MODES_V2] },
+      env: appStringMapSchema(),
+      secrets: appStringMapSchema(),
     },
     additionalProperties: false,
+    allOf: [
+      {
+        if: { properties: { type: { enum: ['dockerfile', 'oci_image'] } }, required: ['type'] },
+        then: { required: ['command', 'port'] },
+      },
+      {
+        if: { properties: { type: { const: 'oci_image' } }, required: ['type'] },
+        then: { required: ['image'] },
+      },
+    ],
+  };
+}
+
+function appsV2Schema(): JsonSchemaFragment {
+  return {
+    type: 'object',
+    propertyNames: { pattern: SLUG_RE.source },
+    additionalProperties: appBlockV2Schema(),
   };
 }
 
@@ -601,7 +665,7 @@ function sharedSectionProperties(connectorVersion: 1 | 2): JsonSchemaFragment {
     sandboxes: false,
     triggers: { type: 'array', items: triggerSchema() },
     connectors: { type: 'array', items: connectorSchema(connectorVersion) },
-    apps: false,
+    apps: connectorVersion === 2 ? appsV2Schema() : false,
   };
 }
 
@@ -667,52 +731,11 @@ export function buildManifestV2Schema(): JsonSchemaFragment {
   };
 }
 
-export function buildManifestV3Schema(): JsonSchemaFragment {
-  const shared = sharedSectionProperties(2);
-  const { opencode: _opencode, ...runtimeNeutralSections } = shared;
-  return {
-    $schema: DRAFT,
-    $id: `${KORTIX_SCHEMA_BASE_URL}/kortix.v3.schema.json`,
-    title: 'Kortix manifest (kortix_version 3)',
-    description:
-      'ACP & Multi-Harness manifest for OpenCode, Claude Code, Codex, and Pi. ' +
-      'The project must enable the `acp_runtime` experiment before it can start a version 3 session. ' +
-      'Each logical agent selects one declared runtime profile. The selected harness, runtime profile, ' +
-      'and harness-native agent identifier are immutable when a session starts. Native harness ' +
-      'configuration owns model, prompt, permission, and tool behavior.',
-    type: 'object',
-    required: ['kortix_version', 'default_agent', 'runtimes', 'agents'],
-    properties: {
-      kortix_version: { const: 3 },
-      default_agent: NON_EMPTY_STRING,
-      runtimes: {
-        type: 'object',
-        description:
-          'Named ACP runtime profiles. Each profile selects one supported harness and its native configuration directory.',
-        minProperties: 1,
-        propertyNames: { pattern: SLUG_RE.source },
-        additionalProperties: runtimeBlockV3Schema(),
-      },
-      agents: {
-        type: 'object',
-        minProperties: 1,
-        propertyNames: { pattern: SLUG_RE.source },
-        additionalProperties: agentBlockV3Schema(),
-      },
-      ...runtimeNeutralSections,
-      runtime: false,
-      opencode: false,
-      channels: false,
-    },
-    additionalProperties: true,
-  };
-}
-
 /**
  * The combined document: ONE stable URL that validates a manifest of
- * every known version, dispatched by an `if/then` on `kortix_version`
+ * EITHER known version, dispatched by an `if/then` on `kortix_version`
  * (spec ask: "one single validator reference"). Each branch inlines the
- * SAME body a standalone versioned document would use (the
+ * SAME body a standalone `kortix.v1`/`kortix.v2` document would use (the
  * builder functions above are the single source for both), so this document
  * is fully self-contained — no cross-document `$ref` resolution required to
  * validate with it.
@@ -720,26 +743,27 @@ export function buildManifestV3Schema(): JsonSchemaFragment {
 export function buildManifestSchema(): JsonSchemaFragment {
   const v1 = buildManifestV1Schema();
   const v2 = buildManifestV2Schema();
-  const v3 = buildManifestV3Schema();
   // Strip the per-document $id/$schema/title/description from the inlined
   // bodies — only the combined document's own carry those.
   const { $schema: _s1, $id: _i1, title: _t1, description: _d1, ...v1Body } = v1;
   const { $schema: _s2, $id: _i2, title: _t2, description: _d2, ...v2Body } = v2;
-  const { $schema: _s3, $id: _i3, title: _t3, description: _d3, ...v3Body } = v3;
   return {
     $schema: DRAFT,
     $id: `${KORTIX_SCHEMA_BASE_URL}/kortix.schema.json`,
     title: 'Kortix manifest',
-    description: `kortix.toml / kortix.yaml — combined schema covering every published \`kortix_version\`. Dispatches to the v1, v2, or v3 shape by \`kortix_version\`. Prefer this URL when the version is not known ahead of time; pin \`${KORTIX_SCHEMA_BASE_URL}/kortix.v3.schema.json\` when it is.`,
+    description:
+      'kortix.toml / kortix.yaml — combined schema covering every published `kortix_version`. ' +
+      'Dispatches to the v1 or v2 shape by `kortix_version`. Prefer this URL when the version is ' +
+      `not known ahead of time; pin \`${KORTIX_SCHEMA_BASE_URL}/kortix.v2.schema.json\` (or v1) ` +
+      'when it is.',
     type: 'object',
     required: ['kortix_version'],
     properties: {
-      kortix_version: { type: 'integer', enum: [1, 2, 3] },
+      kortix_version: { type: 'integer', enum: [1, 2] },
     },
     allOf: [
       { if: { properties: { kortix_version: { const: 1 } } }, then: v1Body },
       { if: { properties: { kortix_version: { const: 2 } } }, then: v2Body },
-      { if: { properties: { kortix_version: { const: 3 } } }, then: v3Body },
     ],
   };
 }
@@ -749,17 +773,13 @@ export function buildManifestSchema(): JsonSchemaFragment {
  *  static files, the kortix-system skill) reads from. */
 export const KORTIX_V1_JSON_SCHEMA: JsonSchemaFragment = buildManifestV1Schema();
 export const KORTIX_V2_JSON_SCHEMA: JsonSchemaFragment = buildManifestV2Schema();
-export const KORTIX_V3_JSON_SCHEMA: JsonSchemaFragment = buildManifestV3Schema();
 export const KORTIX_JSON_SCHEMA: JsonSchemaFragment = buildManifestSchema();
 
 /** The one accessor every caller should use — "always return the correct,
  *  fully-valid schema for a given kortix_version." Pass no argument (or
  *  `'combined'`) for the single URL that dispatches on `kortix_version`. */
-export function manifestJsonSchema(
-  version: 1 | 2 | 3 | 'combined' = 'combined',
-): JsonSchemaFragment {
+export function manifestJsonSchema(version: 1 | 2 | 'combined' = 'combined'): JsonSchemaFragment {
   if (version === 1) return KORTIX_V1_JSON_SCHEMA;
   if (version === 2) return KORTIX_V2_JSON_SCHEMA;
-  if (version === 3) return KORTIX_V3_JSON_SCHEMA;
   return KORTIX_JSON_SCHEMA;
 }

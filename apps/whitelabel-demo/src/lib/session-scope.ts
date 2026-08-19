@@ -1,5 +1,9 @@
 import { MID_SESSION_CAPABILITIES } from './mid-session-change';
-import { BOUND_CONNECTIONS_KEY } from './session-overrides';
+import type {
+  SessionConnectorBindings,
+  SessionScope,
+  SessionScopeInput as SessionScopeReplacement,
+} from '@kortix/sdk';
 
 /**
  * What THIS session is actually scoped to, and what can still move.
@@ -30,35 +34,52 @@ export interface SessionScopeRow {
   control: 'model' | null;
 }
 
-export interface SessionScopeInput {
+export interface SessionScopeRowsInput {
   /** `session.agent_name` — null when the project default agent runs. */
   agentName: string | null | undefined;
   /** `session.secrets_allowlist` — null/undefined = never narrowed. */
   secretsAllowlist: string[] | null | undefined;
-  /** Connections bound at create, alias -> label (see `BOUND_CONNECTIONS_KEY`). */
+  /** Active connector bindings, alias -> connection label or identifier. */
   boundConnections: Record<string, string>;
 }
 
 const ALL_SECRETS = 'Everything the agent is granted';
 
-/**
- * The connections this wrapper recorded when it created the session.
- *
- * The platform accepts `connector_bindings` at create and never serializes
- * them back onto the session, so metadata is the only place a running
- * session's bindings survive. Anything else in there is ignored — it is
- * free-form, and a session created before this existed simply has none.
- */
-export function readBoundConnections(
-  metadata: Record<string, unknown> | null | undefined,
+/** Extract the canonical connection identifiers from a scope response. */
+export function readScopeBindingIds(
+  bindings: SessionConnectorBindings | null | undefined,
 ): Record<string, string> {
-  const raw = metadata?.[BOUND_CONNECTIONS_KEY];
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
   return Object.fromEntries(
-    Object.entries(raw as Record<string, unknown>).filter(
-      (entry): entry is [string, string] => typeof entry[1] === 'string',
-    ),
+    Object.entries(bindings ?? {}).map(([alias, binding]) => [
+      alias,
+      binding.connection_id,
+    ]),
   );
+}
+
+export function buildCompleteSessionScopeReplacement(
+  current: SessionScope,
+  changes: {
+    secrets?: string[] | null;
+    bindings?: Record<string, string>;
+  },
+): SessionScopeReplacement {
+  const secrets = Object.hasOwn(changes, 'secrets')
+    ? changes.secrets
+    : current.secrets_allowlist;
+  const bindings = Object.hasOwn(changes, 'bindings')
+    ? (changes.bindings ?? {})
+    : readScopeBindingIds(current.connector_bindings);
+
+  return {
+    secrets: secrets === null ? null : [...(secrets ?? [])],
+    connector_bindings: Object.fromEntries(
+      Object.entries(bindings).map(([alias, connectionId]) => [
+        alias,
+        { connection_id: connectionId },
+      ]),
+    ),
+  };
 }
 
 export function describeSecretsAllowlist(
@@ -74,7 +95,9 @@ export function describeSecretsAllowlist(
   return allowlist.join(', ');
 }
 
-export function sessionScopeRows(input: SessionScopeInput): SessionScopeRow[] {
+export function sessionScopeRows(
+  input: SessionScopeRowsInput,
+): SessionScopeRow[] {
   const agent = input.agentName ?? null;
   const agentLabel = agent ?? 'The project default agent';
   const bound = Object.entries(input.boundConnections);
@@ -95,33 +118,33 @@ export function sessionScopeRows(input: SessionScopeInput): SessionScopeRow[] {
       badge: 'Per message',
       value: agentLabel,
       detail: agent
-        ? `Messages run as ${agent} unless another agent is picked in the composer. An agent whose SECRET access differs from ${agent}'s is refused — re-scoping now cannot un-read what ${agent} already loaded — and only a new session can run it.`
-        : "Messages run as the project's default agent unless another is picked in the composer. An agent with different SECRET access is refused and needs a new session; different connector or CLI access is fine.",
+        ? `Messages run as ${agent} unless another agent is picked in the composer. A switch re-scopes future secret delivery, connector access, and Kortix CLI access to the selected agent.`
+        : "Messages run as the project's default agent unless another is picked in the composer. A switch re-scopes future secret delivery, connector access, and Kortix CLI access to the selected agent.",
       control: null,
     },
     {
       key: 'secrets',
       label: 'Secrets',
-      badge: 'Fixed at start',
+      badge: 'Changeable now',
       value: describeSecretsAllowlist(input.secretsAllowlist, agent),
       detail:
         input.secretsAllowlist === null || input.secretsAllowlist === undefined
-          ? 'This session was started without a narrower allowlist, so it gets the agent’s full secret grant. An allowlist can only be set when a session starts — narrowing one mid-flight could leave the session unable to boot.'
-          : 'This allowlist was set when the session started and cannot be widened or narrowed now. Start a new session to change it.',
+          ? 'No narrower allowlist was set, so this session gets the agent’s full secret grant. Set one from the scope bar under the composer — what you send REPLACES the list, from the next prompt.'
+          : 'Change it from the scope bar under the composer. What you send REPLACES this list, from the next prompt. Removing one stops it being handed out, but cannot un-read a value the agent already has — rotate the secret if you need it truly revoked.',
       control: null,
     },
     {
       key: 'connections',
       label: 'Connections',
-      badge: 'Fixed at start',
+      badge: 'Changeable now',
       value:
         bound.length === 0
           ? 'The project default for every connector'
           : bound.map(([alias, label]) => `${alias}: ${label}`).join(', '),
       detail:
         bound.length === 0
-          ? 'Every connector this agent uses resolves to the project’s default connection. Bind a specific team connection when starting a session to run as that account instead.'
-          : 'Bound when the session started. Connectors not listed here still use the project default. Sessions started from here can only run as a TEAM connection — never a teammate’s private one.',
+          ? 'Every connector this agent uses resolves to the project’s default connection. Bind a specific project connection from the scope bar.'
+          : 'Change these from the scope bar under the composer. Unlike secrets a binding change is fully retroactive — connections resolve server-side on each tool call, so the next call already uses the new one. Only project connections can be bound, never a teammate’s private one.',
       control: null,
     },
   ];
@@ -129,7 +152,9 @@ export function sessionScopeRows(input: SessionScopeInput): SessionScopeRow[] {
 
 /** The scope rows the mid-session capability map says are frozen. Keeps the
  *  badges from drifting away from the contract they describe. */
-export function isFixedAtStart(key: keyof typeof MID_SESSION_CAPABILITIES): boolean {
+export function isFixedAtStart(
+  key: keyof typeof MID_SESSION_CAPABILITIES,
+): boolean {
   // Derived from the capability table, with no hardcoded exception. `connections`
   // used to be forced true here even though the table had no entry for it — so
   // the badge and the behaviour could disagree, and did the moment the /scope

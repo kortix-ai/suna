@@ -375,12 +375,12 @@ PODS:
     - React-featureflags
     - React-hermes
     - React-jsi
-    - React-jsiexecutor
+    - React-jsiconnector
     - React-jsinspector
     - React-jsinspectorcdp
     - React-jsitooling
     - React-perflogger
-    - React-runtimeexecutor
+    - React-runtimeconnector
     - React-runtimescheduler
     - React-utils
     - ReactNativeDependencies
@@ -396,12 +396,12 @@ PODS:
     - React-featureflags
     - React-hermes
     - React-jsi
-    - React-jsiexecutor
+    - React-jsiconnector
     - React-jsinspector
     - React-jsinspectorcdp
     - React-jsitooling
     - React-perflogger
-    - React-runtimeexecutor
+    - React-runtimeconnector
     - React-runtimescheduler
     - React-utils
     - ReactNativeDependencies
@@ -414,12 +414,12 @@ PODS:
     - React-featureflags
     - React-hermes
     - React-jsi
-    - React-jsiexecutor
+    - React-jsiconnector
     - React-jsinspector
     - React-jsinspectorcdp
     - React-jsitooling
     - React-perflogger
-    - React-runtimeexecutor
+    - React-runtimeconnector
     - React-runtimescheduler
     - React-utils
     - ReactNativeDependencies
@@ -434,12 +434,12 @@ PODS:
     - React-featureflags
     - React-hermes
     - React-jsi
-    - React-jsiexecutor
+    - React-jsiconnector
     - React-jsinspector
     - React-jsinspectorcdp
     - React-jsitooling
     - React-perflogger
-    - React-runtimeexecutor
+    - React-runtimeconnector
     - React-runtimescheduler
     - React-utils
     - ReactNativeDependencies
@@ -453,12 +453,12 @@ PODS:
     - React-featureflags
     - React-hermes
     - React-jsi
-    - React-jsiexecutor
+    - React-jsiconnector
     - React-jsinspector
     - React-jsinspectorcdp
     - React-jsitooling
     - React-perflogger
-    - React-runtimeexecutor
+    - React-runtimeconnector
     - React-runtimescheduler
     - React-utils
     - ReactNativeDependencies
@@ -472,12 +472,12 @@ PODS:
     - React-featureflags
     - React-hermes
     - React-jsi
-    - React-jsiexecutor
+    - React-jsiconnector
     - React-jsinspector
     - React-jsinspectorcdp
     - React-jsitooling
     - React-perflogger
-    - React-runtimeexecutor
+    - React-runtimeconnector
     - React-runtimescheduler
     - React-utils
     - ReactNativeDependencies
@@ -491,12 +491,12 @@ PODS:
     - React-featureflags
     - React-hermes
     - React-jsi
-    - React-jsiexecutor
+    - React-jsiconnector
     - React-jsinspector
     - React-jsinspectorcdp
     - React-jsitooling
     - React-perflogger
-    - React-runtimeexecutor
+    - React-runtimeconnector
     - React-runtimescheduler
     - React-utils
     - ReactNativeDependencies
@@ -510,12 +510,12 @@ PODS:
     - React-featureflags
     - React-hermes
     - React-jsi
-    - React-jsiexecutor
+    - React-jsiconnector
     - React-jsinspector
     - React-jsinspectorcdp
     - React-jsitooling
     - React-perflogger
-    - React-runtimeexecutor
+    - React-runtimeconnector
     - React-runtimescheduler
     - React-utils
     - ReactNativeDependencies
@@ -529,12 +529,12 @@ PODS:
     - React-featureflags
     - React-hermes
     - React-jsi
-    - React-jsiexecutor
+    - React-jsiconnector
     - React-jsinspector
     - React-jsinspectorcdp
     - React-jsitooling
     - React-perflogger
-    - React-runtimeexecutor
+    - React-runtimeconnector
     - React-runtimescheduler
     - React-utils
     - ReactNativeDependencies
@@ -548,12 +548,12 @@ PODS:
     - React-featureflags
     - React-hermes
     - React-jsi
-    - React-jsiexecutor
+    - React-jsiconnector
     - React-jsinspector
     - React-jsinspectorcdp
     - React-jsitooling
     - React-perflogger
-    - React-runtimeexecutor
+    - React-runtimeconnector
     - React-runtimescheduler
     - React-utils
     - ReactNativeDependencies
@@ -567,12 +567,12 @@ PODS:
     - React-featureflags
     - React-hermes
     - React-jsi
-    - React-jsiexecutor
+    - React-jsiconnector
     - React-jsinspector
     - React-jsinspectorcdp
     - React-jsitooling
     - React-perflogger
-    - React-runtimeexecutor
+    - React-runtimeconnector
     - React-runtimescheduler
     - React-utils
     - ReactNativeDependencies
@@ -586,12 +586,12 @@ PODS:
     - React-featureflags
     - React-hermes
     - React-jsi
-    - React-jsiexecutor
+    - React-jsiconnector
     - React-jsinspector
     - React-jsinspectorcdp
     - React-jsitooling
     - React-perflogger
-    - React-runtimeexecutor
+    - React-runtimeconnector
     - React-runtimescheduler
     - React-utils
     - ReactNativeDependencies
@@ -605,12 +605,12 @@ PODS:
     - React-featureflags
     - React-hermes
     - React-jsi
-    - React-jsiexecutor
+    - React-jsiconnector
     - React-jsinspector
     - React-jsinspectorcdp
     - React-jsitooling
     - React-perflogger
-    - React-runtimeexecutor
+    - React-runtimeconnector
     - React-runtimescheduler
     - React-utils
     - ReactNativeDependencies
@@ -624,12 +624,12 @@ PODS:
     - React-featureflags
     - React-hermes
     - React-jsi
-    - React-jsiexecutor
+    - React-jsiconnector
     - React-jsinspector
     - React-jsinspectorcdp
     - React-jsitooling
     - React-perflogger
-    - React-runtimeexecutor
+    - React-runtimeconnector
     - React-runtimescheduler
     - React-utils
     - ReactNativeDependencies
@@ -646,7 +646,7 @@ PODS:
     - React-RCTBlob
     - React-RCTFBReactNativeSpec
     - React-RCTImage (= 0.81.5)
-    - React-runtimeexecutor
+    - React-runtimeconnector
     - ReactCommon
     - ReactNativeDependencies
   - React-cxxreact (0.81.5):
@@ -660,7 +660,7 @@ PODS:
     - React-jsinspectortracing
     - React-logger (= 0.81.5)
     - React-perflogger (= 0.81.5)
-    - React-runtimeexecutor
+    - React-runtimeconnector
     - React-timing (= 0.81.5)
     - ReactNativeDependencies
   - React-debug (0.81.5)
@@ -671,7 +671,7 @@ PODS:
     - React-featureflagsnativemodule
     - React-idlecallbacksnativemodule
     - React-jsi
-    - React-jsiexecutor
+    - React-jsiconnector
     - React-microtasksnativemodule
     - React-RCTFBReactNativeSpec
     - ReactNativeDependencies
@@ -683,9 +683,9 @@ PODS:
     - React-FabricComponents
     - React-graphics
     - React-jsi
-    - React-jsiexecutor
+    - React-jsiconnector
     - React-RCTFBReactNativeSpec
-    - React-runtimeexecutor
+    - React-runtimeconnector
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
     - Yoga
@@ -717,10 +717,10 @@ PODS:
     - React-featureflags
     - React-graphics
     - React-jsi
-    - React-jsiexecutor
+    - React-jsiconnector
     - React-logger
     - React-rendererdebug
-    - React-runtimeexecutor
+    - React-runtimeconnector
     - React-runtimescheduler
     - React-utils
     - ReactCommon/turbomodule/core
@@ -736,10 +736,10 @@ PODS:
     - React-featureflags
     - React-graphics
     - React-jsi
-    - React-jsiexecutor
+    - React-jsiconnector
     - React-logger
     - React-rendererdebug
-    - React-runtimeexecutor
+    - React-runtimeconnector
     - React-runtimescheduler
     - React-utils
     - ReactCommon/turbomodule/core
@@ -755,10 +755,10 @@ PODS:
     - React-featureflags
     - React-graphics
     - React-jsi
-    - React-jsiexecutor
+    - React-jsiconnector
     - React-logger
     - React-rendererdebug
-    - React-runtimeexecutor
+    - React-runtimeconnector
     - React-runtimescheduler
     - React-utils
     - ReactCommon/turbomodule/core
@@ -774,10 +774,10 @@ PODS:
     - React-featureflags
     - React-graphics
     - React-jsi
-    - React-jsiexecutor
+    - React-jsiconnector
     - React-logger
     - React-rendererdebug
-    - React-runtimeexecutor
+    - React-runtimeconnector
     - React-runtimescheduler
     - React-utils
     - ReactCommon/turbomodule/core
@@ -793,10 +793,10 @@ PODS:
     - React-featureflags
     - React-graphics
     - React-jsi
-    - React-jsiexecutor
+    - React-jsiconnector
     - React-logger
     - React-rendererdebug
-    - React-runtimeexecutor
+    - React-runtimeconnector
     - React-runtimescheduler
     - React-utils
     - ReactCommon/turbomodule/core
@@ -812,10 +812,10 @@ PODS:
     - React-featureflags
     - React-graphics
     - React-jsi
-    - React-jsiexecutor
+    - React-jsiconnector
     - React-logger
     - React-rendererdebug
-    - React-runtimeexecutor
+    - React-runtimeconnector
     - React-runtimescheduler
     - React-utils
     - ReactCommon/turbomodule/core
@@ -835,10 +835,10 @@ PODS:
     - React-featureflags
     - React-graphics
     - React-jsi
-    - React-jsiexecutor
+    - React-jsiconnector
     - React-logger
     - React-rendererdebug
-    - React-runtimeexecutor
+    - React-runtimeconnector
     - React-runtimescheduler
     - React-utils
     - ReactCommon/turbomodule/core
@@ -854,10 +854,10 @@ PODS:
     - React-featureflags
     - React-graphics
     - React-jsi
-    - React-jsiexecutor
+    - React-jsiconnector
     - React-logger
     - React-rendererdebug
-    - React-runtimeexecutor
+    - React-runtimeconnector
     - React-runtimescheduler
     - React-utils
     - ReactCommon/turbomodule/core
@@ -873,10 +873,10 @@ PODS:
     - React-featureflags
     - React-graphics
     - React-jsi
-    - React-jsiexecutor
+    - React-jsiconnector
     - React-logger
     - React-rendererdebug
-    - React-runtimeexecutor
+    - React-runtimeconnector
     - React-runtimescheduler
     - React-utils
     - ReactCommon/turbomodule/core
@@ -892,10 +892,10 @@ PODS:
     - React-featureflags
     - React-graphics
     - React-jsi
-    - React-jsiexecutor
+    - React-jsiconnector
     - React-logger
     - React-rendererdebug
-    - React-runtimeexecutor
+    - React-runtimeconnector
     - React-runtimescheduler
     - React-utils
     - ReactCommon/turbomodule/core
@@ -911,11 +911,11 @@ PODS:
     - React-featureflags
     - React-graphics
     - React-jsi
-    - React-jsiexecutor
+    - React-jsiconnector
     - React-logger
     - React-renderercss
     - React-rendererdebug
-    - React-runtimeexecutor
+    - React-runtimeconnector
     - React-runtimescheduler
     - React-utils
     - ReactCommon/turbomodule/core
@@ -932,10 +932,10 @@ PODS:
     - React-featureflags
     - React-graphics
     - React-jsi
-    - React-jsiexecutor
+    - React-jsiconnector
     - React-logger
     - React-rendererdebug
-    - React-runtimeexecutor
+    - React-runtimeconnector
     - React-runtimescheduler
     - React-utils
     - ReactCommon/turbomodule/core
@@ -951,10 +951,10 @@ PODS:
     - React-featureflags
     - React-graphics
     - React-jsi
-    - React-jsiexecutor
+    - React-jsiconnector
     - React-logger
     - React-rendererdebug
-    - React-runtimeexecutor
+    - React-runtimeconnector
     - React-runtimescheduler
     - React-utils
     - ReactCommon/turbomodule/core
@@ -970,10 +970,10 @@ PODS:
     - React-featureflags
     - React-graphics
     - React-jsi
-    - React-jsiexecutor
+    - React-jsiconnector
     - React-logger
     - React-rendererdebug
-    - React-runtimeexecutor
+    - React-runtimeconnector
     - React-runtimescheduler
     - React-utils
     - ReactCommon/turbomodule/core
@@ -989,10 +989,10 @@ PODS:
     - React-featureflags
     - React-graphics
     - React-jsi
-    - React-jsiexecutor
+    - React-jsiconnector
     - React-logger
     - React-rendererdebug
-    - React-runtimeexecutor
+    - React-runtimeconnector
     - React-runtimescheduler
     - React-utils
     - ReactCommon/turbomodule/core
@@ -1008,10 +1008,10 @@ PODS:
     - React-featureflags
     - React-graphics
     - React-jsi
-    - React-jsiexecutor
+    - React-jsiconnector
     - React-logger
     - React-rendererdebug
-    - React-runtimeexecutor
+    - React-runtimeconnector
     - React-runtimescheduler
     - React-utils
     - ReactCommon/turbomodule/core
@@ -1027,10 +1027,10 @@ PODS:
     - React-featureflags
     - React-graphics
     - React-jsi
-    - React-jsiexecutor
+    - React-jsiconnector
     - React-logger
     - React-rendererdebug
-    - React-runtimeexecutor
+    - React-runtimeconnector
     - React-runtimescheduler
     - React-utils
     - ReactCommon/turbomodule/core
@@ -1047,10 +1047,10 @@ PODS:
     - React-featureflags
     - React-graphics
     - React-jsi
-    - React-jsiexecutor
+    - React-jsiconnector
     - React-logger
     - React-rendererdebug
-    - React-runtimeexecutor
+    - React-runtimeconnector
     - React-runtimescheduler
     - React-utils
     - ReactCommon/turbomodule/core
@@ -1066,10 +1066,10 @@ PODS:
     - React-featureflags
     - React-graphics
     - React-jsi
-    - React-jsiexecutor
+    - React-jsiconnector
     - React-logger
     - React-rendererdebug
-    - React-runtimeexecutor
+    - React-runtimeconnector
     - React-runtimescheduler
     - React-utils
     - ReactCommon/turbomodule/core
@@ -1086,11 +1086,11 @@ PODS:
     - React-featureflags
     - React-graphics
     - React-jsi
-    - React-jsiexecutor
+    - React-jsiconnector
     - React-logger
     - React-performancetimeline
     - React-rendererdebug
-    - React-runtimeexecutor
+    - React-runtimeconnector
     - React-runtimescheduler
     - React-utils
     - ReactCommon/turbomodule/core
@@ -1106,10 +1106,10 @@ PODS:
     - React-featureflags
     - React-graphics
     - React-jsi
-    - React-jsiexecutor
+    - React-jsiconnector
     - React-logger
     - React-rendererdebug
-    - React-runtimeexecutor
+    - React-runtimeconnector
     - React-runtimescheduler
     - React-utils
     - ReactCommon/turbomodule/core
@@ -1125,10 +1125,10 @@ PODS:
     - React-featureflags
     - React-graphics
     - React-jsi
-    - React-jsiexecutor
+    - React-jsiconnector
     - React-logger
     - React-rendererdebug
-    - React-runtimeexecutor
+    - React-runtimeconnector
     - React-runtimescheduler
     - React-utils
     - ReactCommon/turbomodule/core
@@ -1145,11 +1145,11 @@ PODS:
     - React-featureflags
     - React-graphics
     - React-jsi
-    - React-jsiexecutor
+    - React-jsiconnector
     - React-logger
     - React-rendererconsistency
     - React-rendererdebug
-    - React-runtimeexecutor
+    - React-runtimeconnector
     - React-runtimescheduler
     - React-utils
     - ReactCommon/turbomodule/core
@@ -1165,11 +1165,11 @@ PODS:
     - React-featureflags
     - React-graphics
     - React-jsi
-    - React-jsiexecutor
+    - React-jsiconnector
     - React-logger
     - React-rendererconsistency
     - React-rendererdebug
-    - React-runtimeexecutor
+    - React-runtimeconnector
     - React-runtimescheduler
     - React-utils
     - ReactCommon/turbomodule/core
@@ -1188,7 +1188,7 @@ PODS:
     - React-featureflags
     - React-graphics
     - React-jsi
-    - React-jsiexecutor
+    - React-jsiconnector
     - React-logger
     - React-RCTFBReactNativeSpec
     - React-rendererdebug
@@ -1220,7 +1220,7 @@ PODS:
     - React-featureflags
     - React-graphics
     - React-jsi
-    - React-jsiexecutor
+    - React-jsiconnector
     - React-logger
     - React-RCTFBReactNativeSpec
     - React-rendererdebug
@@ -1241,7 +1241,7 @@ PODS:
     - React-featureflags
     - React-graphics
     - React-jsi
-    - React-jsiexecutor
+    - React-jsiconnector
     - React-logger
     - React-RCTFBReactNativeSpec
     - React-rendererdebug
@@ -1262,7 +1262,7 @@ PODS:
     - React-featureflags
     - React-graphics
     - React-jsi
-    - React-jsiexecutor
+    - React-jsiconnector
     - React-logger
     - React-RCTFBReactNativeSpec
     - React-rendererdebug
@@ -1283,7 +1283,7 @@ PODS:
     - React-featureflags
     - React-graphics
     - React-jsi
-    - React-jsiexecutor
+    - React-jsiconnector
     - React-logger
     - React-RCTFBReactNativeSpec
     - React-rendererdebug
@@ -1304,7 +1304,7 @@ PODS:
     - React-featureflags
     - React-graphics
     - React-jsi
-    - React-jsiexecutor
+    - React-jsiconnector
     - React-logger
     - React-RCTFBReactNativeSpec
     - React-rendererdebug
@@ -1325,7 +1325,7 @@ PODS:
     - React-featureflags
     - React-graphics
     - React-jsi
-    - React-jsiexecutor
+    - React-jsiconnector
     - React-logger
     - React-RCTFBReactNativeSpec
     - React-rendererdebug
@@ -1346,7 +1346,7 @@ PODS:
     - React-featureflags
     - React-graphics
     - React-jsi
-    - React-jsiexecutor
+    - React-jsiconnector
     - React-logger
     - React-RCTFBReactNativeSpec
     - React-rendererdebug
@@ -1367,7 +1367,7 @@ PODS:
     - React-featureflags
     - React-graphics
     - React-jsi
-    - React-jsiexecutor
+    - React-jsiconnector
     - React-logger
     - React-RCTFBReactNativeSpec
     - React-rendererdebug
@@ -1388,7 +1388,7 @@ PODS:
     - React-featureflags
     - React-graphics
     - React-jsi
-    - React-jsiexecutor
+    - React-jsiconnector
     - React-logger
     - React-RCTFBReactNativeSpec
     - React-rendererdebug
@@ -1409,7 +1409,7 @@ PODS:
     - React-featureflags
     - React-graphics
     - React-jsi
-    - React-jsiexecutor
+    - React-jsiconnector
     - React-logger
     - React-RCTFBReactNativeSpec
     - React-rendererdebug
@@ -1430,7 +1430,7 @@ PODS:
     - React-featureflags
     - React-graphics
     - React-jsi
-    - React-jsiexecutor
+    - React-jsiconnector
     - React-logger
     - React-RCTFBReactNativeSpec
     - React-rendererdebug
@@ -1451,7 +1451,7 @@ PODS:
     - React-featureflags
     - React-graphics
     - React-jsi
-    - React-jsiexecutor
+    - React-jsiconnector
     - React-logger
     - React-RCTFBReactNativeSpec
     - React-rendererdebug
@@ -1472,7 +1472,7 @@ PODS:
     - React-featureflags
     - React-graphics
     - React-jsi
-    - React-jsiexecutor
+    - React-jsiconnector
     - React-logger
     - React-RCTFBReactNativeSpec
     - React-rendererdebug
@@ -1491,7 +1491,7 @@ PODS:
     - React-graphics
     - React-ImageManager
     - React-jsi
-    - React-jsiexecutor (= 0.81.5)
+    - React-jsiconnector (= 0.81.5)
     - React-logger
     - React-rendererdebug
     - React-utils
@@ -1506,7 +1506,7 @@ PODS:
     - React-Core-prebuilt
     - React-featureflags
     - React-jsi
-    - React-jsiexecutor
+    - React-jsiconnector
     - React-RCTFBReactNativeSpec
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
@@ -1514,7 +1514,7 @@ PODS:
     - hermes-engine
     - React-Core-prebuilt
     - React-jsi
-    - React-jsiexecutor
+    - React-jsiconnector
     - React-utils
     - ReactNativeDependencies
   - React-hermes (0.81.5):
@@ -1522,20 +1522,20 @@ PODS:
     - React-Core-prebuilt
     - React-cxxreact (= 0.81.5)
     - React-jsi
-    - React-jsiexecutor (= 0.81.5)
+    - React-jsiconnector (= 0.81.5)
     - React-jsinspector
     - React-jsinspectorcdp
     - React-jsinspectortracing
     - React-perflogger (= 0.81.5)
-    - React-runtimeexecutor
+    - React-runtimeconnector
     - ReactNativeDependencies
   - React-idlecallbacksnativemodule (0.81.5):
     - hermes-engine
     - React-Core-prebuilt
     - React-jsi
-    - React-jsiexecutor
+    - React-jsiconnector
     - React-RCTFBReactNativeSpec
-    - React-runtimeexecutor
+    - React-runtimeconnector
     - React-runtimescheduler
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
@@ -1561,7 +1561,7 @@ PODS:
     - hermes-engine
     - React-Core-prebuilt
     - ReactNativeDependencies
-  - React-jsiexecutor (0.81.5):
+  - React-jsiconnector (0.81.5):
     - hermes-engine
     - React-Core-prebuilt
     - React-cxxreact (= 0.81.5)
@@ -1570,7 +1570,7 @@ PODS:
     - React-jsinspectorcdp
     - React-jsinspectortracing
     - React-perflogger (= 0.81.5)
-    - React-runtimeexecutor
+    - React-runtimeconnector
     - ReactNativeDependencies
   - React-jsinspector (0.81.5):
     - hermes-engine
@@ -1582,7 +1582,7 @@ PODS:
     - React-jsinspectortracing
     - React-oscompat
     - React-perflogger (= 0.81.5)
-    - React-runtimeexecutor
+    - React-runtimeconnector
     - ReactNativeDependencies
   - React-jsinspectorcdp (0.81.5):
     - React-Core-prebuilt
@@ -1606,7 +1606,7 @@ PODS:
     - React-jsinspector
     - React-jsinspectorcdp
     - React-jsinspectortracing
-    - React-runtimeexecutor
+    - React-runtimeconnector
     - ReactNativeDependencies
   - React-jsitracing (0.81.5):
     - React-jsi
@@ -1621,7 +1621,7 @@ PODS:
     - hermes-engine
     - React-Core-prebuilt
     - React-jsi
-    - React-jsiexecutor
+    - React-jsiconnector
     - React-RCTFBReactNativeSpec
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
@@ -1840,7 +1840,7 @@ PODS:
     - React-jsi
     - React-jsinspector
     - React-jsinspectorcdp
-    - React-runtimeexecutor
+    - React-runtimeconnector
     - ReactCommon/turbomodule/bridging
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
@@ -1890,7 +1890,7 @@ PODS:
     - React-rendererdebug
     - React-RuntimeApple
     - React-RuntimeCore
-    - React-runtimeexecutor
+    - React-runtimeconnector
     - React-runtimescheduler
     - React-utils
     - ReactCommon
@@ -1932,7 +1932,7 @@ PODS:
     - React-rendererconsistency
     - React-renderercss
     - React-rendererdebug
-    - React-runtimeexecutor
+    - React-runtimeconnector
     - React-runtimescheduler
     - React-utils
     - ReactNativeDependencies
@@ -2005,7 +2005,7 @@ PODS:
     - React-jsitooling
     - React-RuntimeApple
     - React-RuntimeCore
-    - React-runtimeexecutor
+    - React-runtimeconnector
     - React-RuntimeHermes
     - ReactNativeDependencies
   - React-RCTSettings (0.81.5):
@@ -2046,7 +2046,7 @@ PODS:
     - React-featureflags
     - React-jserrorhandler
     - React-jsi
-    - React-jsiexecutor
+    - React-jsiconnector
     - React-jsinspector
     - React-jsitooling
     - React-Mapbuffer
@@ -2054,7 +2054,7 @@ PODS:
     - React-RCTFabric
     - React-RCTFBReactNativeSpec
     - React-RuntimeCore
-    - React-runtimeexecutor
+    - React-runtimeconnector
     - React-RuntimeHermes
     - React-runtimescheduler
     - React-utils
@@ -2067,15 +2067,15 @@ PODS:
     - React-featureflags
     - React-jserrorhandler
     - React-jsi
-    - React-jsiexecutor
+    - React-jsiconnector
     - React-jsinspector
     - React-jsitooling
     - React-performancetimeline
-    - React-runtimeexecutor
+    - React-runtimeconnector
     - React-runtimescheduler
     - React-utils
     - ReactNativeDependencies
-  - React-runtimeexecutor (0.81.5):
+  - React-runtimeconnector (0.81.5):
     - React-Core-prebuilt
     - React-debug
     - React-featureflags
@@ -2094,7 +2094,7 @@ PODS:
     - React-jsitooling
     - React-jsitracing
     - React-RuntimeCore
-    - React-runtimeexecutor
+    - React-runtimeconnector
     - React-utils
     - ReactNativeDependencies
   - React-runtimescheduler (0.81.5):
@@ -2109,7 +2109,7 @@ PODS:
     - React-performancetimeline
     - React-rendererconsistency
     - React-rendererdebug
-    - React-runtimeexecutor
+    - React-runtimeconnector
     - React-timing
     - React-utils
     - ReactNativeDependencies
@@ -2135,7 +2135,7 @@ PODS:
     - React-featureflags
     - React-graphics
     - React-jsi
-    - React-jsiexecutor
+    - React-jsiconnector
     - React-NativeModulesApple
     - React-RCTAppDelegate
     - React-rendererdebug
@@ -2633,13 +2633,13 @@ DEPENDENCIES:
   - "React-ImageManager (from `../../../node_modules/.pnpm/react-native@0.81.5_@babel+core@7.29.7_@types+react@19.1.17_react@19.1.0/node_modules/react-native/ReactCommon/react/renderer/imagemanager/platform/ios`)"
   - "React-jserrorhandler (from `../../../node_modules/.pnpm/react-native@0.81.5_@babel+core@7.29.7_@types+react@19.1.17_react@19.1.0/node_modules/react-native/ReactCommon/jserrorhandler`)"
   - "React-jsi (from `../../../node_modules/.pnpm/react-native@0.81.5_@babel+core@7.29.7_@types+react@19.1.17_react@19.1.0/node_modules/react-native/ReactCommon/jsi`)"
-  - "React-jsiexecutor (from `../../../node_modules/.pnpm/react-native@0.81.5_@babel+core@7.29.7_@types+react@19.1.17_react@19.1.0/node_modules/react-native/ReactCommon/jsiexecutor`)"
+  - "React-jsiconnector (from `../../../node_modules/.pnpm/react-native@0.81.5_@babel+core@7.29.7_@types+react@19.1.17_react@19.1.0/node_modules/react-native/ReactCommon/jsiconnector`)"
   - "React-jsinspector (from `../../../node_modules/.pnpm/react-native@0.81.5_@babel+core@7.29.7_@types+react@19.1.17_react@19.1.0/node_modules/react-native/ReactCommon/jsinspector-modern`)"
   - "React-jsinspectorcdp (from `../../../node_modules/.pnpm/react-native@0.81.5_@babel+core@7.29.7_@types+react@19.1.17_react@19.1.0/node_modules/react-native/ReactCommon/jsinspector-modern/cdp`)"
   - "React-jsinspectornetwork (from `../../../node_modules/.pnpm/react-native@0.81.5_@babel+core@7.29.7_@types+react@19.1.17_react@19.1.0/node_modules/react-native/ReactCommon/jsinspector-modern/network`)"
   - "React-jsinspectortracing (from `../../../node_modules/.pnpm/react-native@0.81.5_@babel+core@7.29.7_@types+react@19.1.17_react@19.1.0/node_modules/react-native/ReactCommon/jsinspector-modern/tracing`)"
   - "React-jsitooling (from `../../../node_modules/.pnpm/react-native@0.81.5_@babel+core@7.29.7_@types+react@19.1.17_react@19.1.0/node_modules/react-native/ReactCommon/jsitooling`)"
-  - "React-jsitracing (from `../../../node_modules/.pnpm/react-native@0.81.5_@babel+core@7.29.7_@types+react@19.1.17_react@19.1.0/node_modules/react-native/ReactCommon/hermes/executor/`)"
+  - "React-jsitracing (from `../../../node_modules/.pnpm/react-native@0.81.5_@babel+core@7.29.7_@types+react@19.1.17_react@19.1.0/node_modules/react-native/ReactCommon/hermes/connectors/`)"
   - "React-logger (from `../../../node_modules/.pnpm/react-native@0.81.5_@babel+core@7.29.7_@types+react@19.1.17_react@19.1.0/node_modules/react-native/ReactCommon/logger`)"
   - "React-Mapbuffer (from `../../../node_modules/.pnpm/react-native@0.81.5_@babel+core@7.29.7_@types+react@19.1.17_react@19.1.0/node_modules/react-native/ReactCommon`)"
   - "React-microtasksnativemodule (from `../../../node_modules/.pnpm/react-native@0.81.5_@babel+core@7.29.7_@types+react@19.1.17_react@19.1.0/node_modules/react-native/ReactCommon/react/nativemodule/microtasks`)"
@@ -2671,7 +2671,7 @@ DEPENDENCIES:
   - "React-rendererdebug (from `../../../node_modules/.pnpm/react-native@0.81.5_@babel+core@7.29.7_@types+react@19.1.17_react@19.1.0/node_modules/react-native/ReactCommon/react/renderer/debug`)"
   - "React-RuntimeApple (from `../../../node_modules/.pnpm/react-native@0.81.5_@babel+core@7.29.7_@types+react@19.1.17_react@19.1.0/node_modules/react-native/ReactCommon/react/runtime/platform/ios`)"
   - "React-RuntimeCore (from `../../../node_modules/.pnpm/react-native@0.81.5_@babel+core@7.29.7_@types+react@19.1.17_react@19.1.0/node_modules/react-native/ReactCommon/react/runtime`)"
-  - "React-runtimeexecutor (from `../../../node_modules/.pnpm/react-native@0.81.5_@babel+core@7.29.7_@types+react@19.1.17_react@19.1.0/node_modules/react-native/ReactCommon/runtimeexecutor`)"
+  - "React-runtimeconnector (from `../../../node_modules/.pnpm/react-native@0.81.5_@babel+core@7.29.7_@types+react@19.1.17_react@19.1.0/node_modules/react-native/ReactCommon/runtimeconnector`)"
   - "React-RuntimeHermes (from `../../../node_modules/.pnpm/react-native@0.81.5_@babel+core@7.29.7_@types+react@19.1.17_react@19.1.0/node_modules/react-native/ReactCommon/react/runtime`)"
   - "React-runtimescheduler (from `../../../node_modules/.pnpm/react-native@0.81.5_@babel+core@7.29.7_@types+react@19.1.17_react@19.1.0/node_modules/react-native/ReactCommon/react/renderer/runtimescheduler`)"
   - "React-timing (from `../../../node_modules/.pnpm/react-native@0.81.5_@babel+core@7.29.7_@types+react@19.1.17_react@19.1.0/node_modules/react-native/ReactCommon/react/timing`)"
@@ -2836,8 +2836,8 @@ EXTERNAL SOURCES:
     :path: "../../../node_modules/.pnpm/react-native@0.81.5_@babel+core@7.29.7_@types+react@19.1.17_react@19.1.0/node_modules/react-native/ReactCommon/jserrorhandler"
   React-jsi:
     :path: "../../../node_modules/.pnpm/react-native@0.81.5_@babel+core@7.29.7_@types+react@19.1.17_react@19.1.0/node_modules/react-native/ReactCommon/jsi"
-  React-jsiexecutor:
-    :path: "../../../node_modules/.pnpm/react-native@0.81.5_@babel+core@7.29.7_@types+react@19.1.17_react@19.1.0/node_modules/react-native/ReactCommon/jsiexecutor"
+  React-jsiconnector:
+    :path: "../../../node_modules/.pnpm/react-native@0.81.5_@babel+core@7.29.7_@types+react@19.1.17_react@19.1.0/node_modules/react-native/ReactCommon/jsiconnector"
   React-jsinspector:
     :path: "../../../node_modules/.pnpm/react-native@0.81.5_@babel+core@7.29.7_@types+react@19.1.17_react@19.1.0/node_modules/react-native/ReactCommon/jsinspector-modern"
   React-jsinspectorcdp:
@@ -2849,7 +2849,7 @@ EXTERNAL SOURCES:
   React-jsitooling:
     :path: "../../../node_modules/.pnpm/react-native@0.81.5_@babel+core@7.29.7_@types+react@19.1.17_react@19.1.0/node_modules/react-native/ReactCommon/jsitooling"
   React-jsitracing:
-    :path: "../../../node_modules/.pnpm/react-native@0.81.5_@babel+core@7.29.7_@types+react@19.1.17_react@19.1.0/node_modules/react-native/ReactCommon/hermes/executor/"
+    :path: "../../../node_modules/.pnpm/react-native@0.81.5_@babel+core@7.29.7_@types+react@19.1.17_react@19.1.0/node_modules/react-native/ReactCommon/hermes/connectors/"
   React-logger:
     :path: "../../../node_modules/.pnpm/react-native@0.81.5_@babel+core@7.29.7_@types+react@19.1.17_react@19.1.0/node_modules/react-native/ReactCommon/logger"
   React-Mapbuffer:
@@ -2912,8 +2912,8 @@ EXTERNAL SOURCES:
     :path: "../../../node_modules/.pnpm/react-native@0.81.5_@babel+core@7.29.7_@types+react@19.1.17_react@19.1.0/node_modules/react-native/ReactCommon/react/runtime/platform/ios"
   React-RuntimeCore:
     :path: "../../../node_modules/.pnpm/react-native@0.81.5_@babel+core@7.29.7_@types+react@19.1.17_react@19.1.0/node_modules/react-native/ReactCommon/react/runtime"
-  React-runtimeexecutor:
-    :path: "../../../node_modules/.pnpm/react-native@0.81.5_@babel+core@7.29.7_@types+react@19.1.17_react@19.1.0/node_modules/react-native/ReactCommon/runtimeexecutor"
+  React-runtimeconnector:
+    :path: "../../../node_modules/.pnpm/react-native@0.81.5_@babel+core@7.29.7_@types+react@19.1.17_react@19.1.0/node_modules/react-native/ReactCommon/runtimeconnector"
   React-RuntimeHermes:
     :path: "../../../node_modules/.pnpm/react-native@0.81.5_@babel+core@7.29.7_@types+react@19.1.17_react@19.1.0/node_modules/react-native/ReactCommon/react/runtime"
   React-runtimescheduler:
@@ -3029,7 +3029,7 @@ SPEC CHECKSUMS:
   React-ImageManager: c659ddac4e196a28cefd036f5881b2c355363882
   React-jserrorhandler: 23a4e4e66c95a68300a4d01f359f9b8a5500aaa3
   React-jsi: 89d43d1e7d4d0663f8ba67e0b39eb4e4672c27de
-  React-jsiexecutor: abe4874aaab90dfee5dec480680220b2f8af07e3
+  React-jsiconnector: abe4874aaab90dfee5dec480680220b2f8af07e3
   React-jsinspector: 91f19a57032075d0f820fdee080080a21c4afabe
   React-jsinspectorcdp: 20537446838cf73f826cb1f78ec1180c58da6eb5
   React-jsinspectornetwork: fc9a317f3a57c33da6252c9cc160d321b85a3a48
@@ -3067,7 +3067,7 @@ SPEC CHECKSUMS:
   React-rendererdebug: c1056f8c458501ef6022a076d47bcc9fd1a84b01
   React-RuntimeApple: 0766031d217ff53b8c5bb3a90a114c698890ccbb
   React-RuntimeCore: b3c96e5eaa457d8f5680e7986d8694a8329bcfea
-  React-runtimeexecutor: d1f52523b0b66051e22be1aabd8dd5de1dbf5eef
+  React-runtimeconnector: d1f52523b0b66051e22be1aabd8dd5de1dbf5eef
   React-RuntimeHermes: 2396631900bdb9fb05667de66345365d0d394e2b
   React-runtimescheduler: 2032e7fa094a7494809b478ef4434588b5ab992a
   React-timing: 32f695c27e3896d6f1bef77de042781b1bc999b3

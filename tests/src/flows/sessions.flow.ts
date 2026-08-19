@@ -410,7 +410,7 @@ flow(
     const team = await ctx.fixtures.team();
     const p = await team.project({ seed: true });
     const editor = await team.addMember('member');
-    await team.grantProjectRole(p.id, editor.userId!, 'editor');
+    await team.grantProjectRole(p.id, editor.userId!, 'manager');
     const manager = await team.addMember('member');
     await team.grantProjectRole(p.id, manager.userId!, 'manager');
 
@@ -505,7 +505,7 @@ flow(
 /**
  * SESS-15 — per-session agent action audit log. Same visibility gate as
  * session detail (project read + the session must be visible to the caller —
- * projects/routes/r7.ts). Non-Enterprise accounts degrade to pending-only
+ * projects/routes/project-audit.ts). Non-Enterprise accounts degrade to pending-only
  * (never a 402 here: this is the always-on approval control plane the
  * launcher polls from every open session).
  */
@@ -765,14 +765,17 @@ flow(
     routes: [
       'POST /v1/projects/:projectId/sessions/warm',
       'POST /v1/projects/:projectId/sessions/warm/claim',
+      'POST /v1/projects/:projectId/sessions/:sessionId/start',
+      'GET /v1/projects/:projectId/sessions',
     ],
   },
   async (ctx) => {
     const p = await ctx.fixtures.sharedSeededProject();
     const owner = ctx.client.as(ctx.P.OWNER);
     let warmSessionId = '';
+    let replacementId = '';
 
-    await ctx.step('first ensure creates one available warm session', async () => {
+    await ctx.step('warming creates an ordinary session marked unused', async () => {
       const r = await owner.post(
         '/v1/projects/:projectId/sessions/warm',
         {},
@@ -781,39 +784,70 @@ flow(
       r.status(200)
         .body()
         .has('$.reused', false)
-        .has('$.workspace_refresh.status', 'skipped')
-        .has('$.session.metadata.warm_session.state', 'available')
+        .has('$.session.metadata.warm', true)
         .exists('$.session.session_id');
       warmSessionId = r.json<any>().session.session_id;
       ctx.track('session', warmSessionId, { projectId: p.id });
     });
 
-    await ctx.step('second ensure reuses the same session', async () => {
+    await ctx.step('warming again returns the same unused session', async () => {
       const r = await owner.post(
         '/v1/projects/:projectId/sessions/warm',
         {},
         { params: { projectId: p.id } },
       );
-      r.status(200)
-        .body()
-        .has('$.reused', true)
-        .has('$.session.session_id', warmSessionId)
-        .exists('$.workspace_refresh.status');
+      r.status(200).body().has('$.reused', true).has('$.session.session_id', warmSessionId);
     });
 
-    await ctx.step('claim changes the warm state atomically', async () => {
+    await ctx.step('an unused warm session is hidden from the visible list', async () => {
+      const visible = await owner.get('/v1/projects/:projectId/sessions', {
+        params: { projectId: p.id },
+        query: { scope: 'visible' },
+      });
+      visible.status(200);
+      const visibleIds = visible.json<any>().sessions.map((s: any) => s.session_id);
+      if (visibleIds.includes(warmSessionId)) {
+        throw new Error('An unused warm session appeared in the visible session list');
+      }
+    });
+
+    await ctx.step('the same session IS in the project-wide inventory', async () => {
+      const all = await owner.get('/v1/projects/:projectId/sessions', {
+        params: { projectId: p.id },
+        query: { scope: 'project' },
+      });
+      all.status(200);
+      const ids = all.json<any>().sessions.map((s: any) => s.session_id);
+      if (!ids.includes(warmSessionId)) {
+        throw new Error('A warm session is missing from the manager inventory');
+      }
+    });
+
+    await ctx.step('using the session drops the marker', async () => {
       const r = await owner.post(
         '/v1/projects/:projectId/sessions/warm/claim',
         { session_id: warmSessionId },
         { params: { projectId: p.id } },
       );
-      r.status(200)
-        .body()
-        .has('$.session_id', warmSessionId)
-        .has('$.metadata.warm_session.state', 'claimed');
+      r.status(200).body().has('$.session_id', warmSessionId);
+      if ((r.json<any>().metadata ?? {}).warm !== undefined) {
+        throw new Error('The warm marker survived first use');
+      }
     });
 
-    await ctx.step('a second claim returns the stable conflict code', async () => {
+    await ctx.step('a used session appears in the visible list', async () => {
+      const visible = await owner.get('/v1/projects/:projectId/sessions', {
+        params: { projectId: p.id },
+        query: { scope: 'visible' },
+      });
+      visible.status(200);
+      const visibleIds = visible.json<any>().sessions.map((s: any) => s.session_id);
+      if (!visibleIds.includes(warmSessionId)) {
+        throw new Error('A used session is still hidden from the visible session list');
+      }
+    });
+
+    await ctx.step('a second use returns the stable conflict code', async () => {
       const r = await owner.post(
         '/v1/projects/:projectId/sessions/warm/claim',
         { session_id: warmSessionId },
@@ -822,18 +856,94 @@ flow(
       r.status(409).body().has('$.code', 'WARM_SESSION_ALREADY_CLAIMED');
     });
 
-    await ctx.step('the next ensure creates the replacement', async () => {
+    await ctx.step('the next warm creates a replacement', async () => {
       const r = await owner.post(
         '/v1/projects/:projectId/sessions/warm',
         {},
         { params: { projectId: p.id } },
       );
       r.status(200).body().has('$.reused', false);
-      const replacementId = r.json<any>().session.session_id;
+      replacementId = r.json<any>().session.session_id;
       if (replacementId === warmSessionId) {
-        throw new Error('The replacement reused the claimed session id');
+        throw new Error('The replacement reused the used session id');
       }
       ctx.track('session', replacementId, { projectId: p.id });
+    });
+
+    // The REAL adoption path. The browser never calls /warm/claim (deprecated):
+    // a home send navigates to the warm session and fires POST /start, which
+    // must drop the marker (listing the row) and stamp last_activity_at (so
+    // the just-started session sorts as the newest, not at its create time).
+    await ctx.step('adopting via POST /start drops the marker and stamps activity', async () => {
+      const start = await owner.post(
+        '/v1/projects/:projectId/sessions/:sessionId/start',
+        {},
+        { params: { projectId: p.id, sessionId: replacementId } },
+      );
+      start.status(200);
+
+      const visible = await owner.get('/v1/projects/:projectId/sessions', {
+        params: { projectId: p.id },
+        query: { scope: 'visible' },
+      });
+      visible.status(200);
+      const row = visible
+        .json<any>()
+        .sessions.find((s: any) => s.session_id === replacementId);
+      if (!row) {
+        throw new Error('An adopted warm session is still hidden from the visible session list');
+      }
+      if ((row.metadata ?? {}).warm !== undefined) {
+        throw new Error('The warm marker survived adoption via POST /start');
+      }
+      if (typeof (row.metadata ?? {}).last_activity_at !== 'string') {
+        throw new Error('Adoption did not stamp last_activity_at — the session sorts at create time');
+      }
+      // Adoption also bumps updated_at (the API list's ORDER BY), so
+      // API-order consumers — CLI `sessions list`, mobile, external SDK —
+      // see the adopted session as newest. Deterministic even in the shared
+      // project: both rows belong to THIS flow, and the /claim of the first
+      // session happened strictly before this adoption.
+      const ids = visible.json<any>().sessions.map((s: any) => s.session_id);
+      if (ids.indexOf(replacementId) > ids.indexOf(warmSessionId)) {
+        throw new Error(
+          'The adopted session sorts below a session used earlier — adoption did not bump updated_at',
+        );
+      }
+    });
+
+    // The regression that shipped: after adoption, a later warm ensure handed
+    // the SAME (now used) session back, so the next project-home send landed
+    // its prompt inside an existing conversation.
+    await ctx.step('a later warm ensure never returns the adopted session', async () => {
+      const r = await owner.post(
+        '/v1/projects/:projectId/sessions/warm',
+        {},
+        { params: { projectId: p.id } },
+      );
+      r.status(200).body().has('$.reused', false);
+      const nextId = r.json<any>().session.session_id;
+      if (nextId === replacementId) {
+        throw new Error('The warm ensure handed back a session that was already adopted');
+      }
+      ctx.track('session', nextId, { projectId: p.id });
+
+      // JAY-596, pinned BEHAVIORALLY: a replenish carries the id it just
+      // took as exclude_session_id, and the server must create a fresh
+      // session instead of echoing the excluded one back — even though its
+      // warm marker is still set at that moment. `nextId` is exactly such a
+      // still-markered, would-be-reused candidate.
+      const excluded = await owner.post(
+        '/v1/projects/:projectId/sessions/warm',
+        { exclude_session_id: nextId },
+        { params: { projectId: p.id } },
+      );
+      excluded.status(200).body().has('$.reused', false);
+      const freshId = excluded.json<any>().session.session_id;
+      if (freshId === nextId) {
+        throw new Error('exclude_session_id was ignored — the excluded warm session came back');
+      }
+      ctx.track('session', freshId, { projectId: p.id });
     });
   },
 );

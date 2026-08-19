@@ -13,6 +13,7 @@ import {
 } from '@kortix/sdk';
 import { getActiveStaticFilePreviewUrl } from '@kortix/sdk/react';
 import JSZip from 'jszip';
+import { readRuntimeFileWithRetry } from './runtime-file-read';
 
 // Data operations — single source of truth in the SDK. Aliased to the names the
 // file panel components already import.
@@ -111,7 +112,7 @@ export async function openFileInNewTab(filePath: string): Promise<void> {
 
 /** Download a single file to the user's machine. */
 export async function downloadFile(filePath: string, fileName?: string): Promise<void> {
-  const blob = await readBlob(filePath);
+  const blob = await readRuntimeFileWithRetry(filePath, () => readBlob(filePath));
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -125,12 +126,14 @@ export async function downloadFile(filePath: string, fileName?: string): Promise
 /** Recursively collect absolute file paths under a directory. */
 async function listAllFilesRecursive(dirPath: string): Promise<string[]> {
   const entries = await listFiles(dirPath);
-  const results: string[] = [];
-  for (const entry of entries) {
-    if (entry.type === 'file') results.push(entry.path);
-    else if (entry.type === 'directory') results.push(...(await listAllFilesRecursive(entry.path)));
-  }
-  return results;
+  const results = await Promise.all(
+    entries.map(async (entry) => {
+      if (entry.type === 'file') return [entry.path];
+      if (entry.type === 'directory') return listAllFilesRecursive(entry.path);
+      return [];
+    }),
+  );
+  return results.flat();
 }
 
 /** Characters Windows Explorer's extractor (and NTFS itself) refuses in a
@@ -164,7 +167,11 @@ export async function downloadFilesAsZip(
 ): Promise<void> {
   const zip = new JSZip();
   const names = uniqueZipNames(files.map((f) => f.name));
-  await Promise.all(files.map(async (f, i) => zip.file(names[i], await readBlob(f.path))));
+  await Promise.all(
+    files.map(async (f, i) =>
+      zip.file(names[i], await readRuntimeFileWithRetry(f.path, () => readBlob(f.path))),
+    ),
+  );
   const blob = await zip.generateAsync({ type: 'blob' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -190,14 +197,16 @@ export async function downloadDirectory(
     zip.file('.gitkeep', '');
   } else {
     let done = 0;
-    for (const filePath of allFiles) {
-      const relativePath = filePath.startsWith(dirPath + '/')
-        ? filePath.slice(dirPath.length + 1)
-        : filePath.split('/').pop() || filePath;
-      zip.file(relativePath, await readBlob(filePath));
-      done++;
-      onProgress?.(done / allFiles.length);
-    }
+    await Promise.all(
+      allFiles.map(async (filePath) => {
+        const relativePath = filePath.startsWith(dirPath + '/')
+          ? filePath.slice(dirPath.length + 1)
+          : filePath.split('/').pop() || filePath;
+        zip.file(relativePath, await readRuntimeFileWithRetry(filePath, () => readBlob(filePath)));
+        done++;
+        onProgress?.(done / allFiles.length);
+      }),
+    );
   }
 
   const zipBlob = await zip.generateAsync({ type: 'blob' });

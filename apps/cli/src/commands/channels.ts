@@ -71,7 +71,10 @@ interface TeamsInstallation {
 }
 
 interface TeamsMode {
-  oauth_available: boolean;
+  /** The project's `teams` experimental feature. Off ⇒ the channel is dark. */
+  enabled: boolean;
+  /** Server (or bring-your-own) bot credentials resolve ⇒ an install can run. */
+  available: boolean;
   orgConsentUrl: string | null;
   orgInstalled: boolean;
   deepLinkUrl: string | null;
@@ -333,9 +336,13 @@ async function connectManual(ctx: ProjectCtx, opts: ConnectOpts): Promise<number
   return 0;
 }
 
+function apiV1Base(url: string): string {
+  return `${url.trim().replace(/\/+$/, '').replace(/\/v1$/, '')}/v1`;
+}
+
 function printInstall(ctx: ProjectCtx, install: SlackInstallation, headline: string): void {
   const name = install.workspaceName ?? install.workspaceId;
-  const webhookUrl = `${ctx.client.apiBase.replace(/\/$/, '')}/v1/webhooks/slack/${ctx.projectId}`;
+  const webhookUrl = `${apiV1Base(ctx.client.apiBase)}/webhooks/slack/${ctx.projectId}`;
   process.stdout.write(
     `${headline}  ${C.bold}${name}${C.reset}\n` +
       `         team       ${C.dim}${install.workspaceId}${C.reset}\n` +
@@ -364,8 +371,7 @@ async function channelsManifest(
   const ctx = await resolveProjectContext(ctxOpts);
   if (!ctx) return 1;
 
-  const baseUrl = ctx.client.apiBase.replace(/\/$/, '');
-  const requestUrl = `${baseUrl}/v1/webhooks/slack/${ctx.projectId}`;
+  const requestUrl = `${apiV1Base(ctx.client.apiBase)}/webhooks/slack/${ctx.projectId}`;
 
   const manifest = {
     display_information: {
@@ -487,9 +493,18 @@ async function teamsConnect(
     const mode = await ctx.client.get<TeamsMode>(
       `/projects/${ctx.projectId}/channels/teams/mode`,
     );
-    if (!mode.oauth_available || !mode.orgConsentUrl) {
+    // Client-side pre-check, worded exactly like the server's feature-flag gate
+    // (feature-flags/gate.ts). It is a failure, so it goes to stderr like every
+    // other CLI error — stdout stays reserved for the command's own output.
+    if (!mode.enabled) {
+      process.stderr.write(
+        `${status.err('Microsoft Teams is not enabled for this project. Enable it in Settings → Feature flags.')}\n`,
+      );
+      return 1;
+    }
+    if (!mode.orgConsentUrl) {
       process.stdout.write(
-        `${C.dim}Teams one-click install isn't configured on this host. Set the Teams app credentials (TEAMS_CLIENT_ID / TEAMS_CLIENT_SECRET / TEAMS_TENANT_ID) on the server, then retry.${C.reset}\n`,
+        `${C.dim}Teams one-click install isn't configured on this host. Set MICROSOFT_APP_ID / MICROSOFT_APP_PASSWORD on the server, or bring your own bot from the dashboard.${C.reset}\n`,
       );
       return 1;
     }

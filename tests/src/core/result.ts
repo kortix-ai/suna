@@ -66,6 +66,11 @@ export interface RunSummary {
   durationMs: number;
 }
 
+export interface FixtureStats {
+  databaseProjectCount: number;
+  managedProjectCount: number;
+}
+
 export interface RunResult {
   runId: string;
   startedAt: string;
@@ -74,6 +79,10 @@ export interface RunResult {
   target: string;
   gitSha: string | null;
   capabilities: Record<string, boolean>;
+  profile?: "all" | "local";
+  excludedFlows?: Array<{ id: string; reason: string }>;
+  /** Run-scoped project fixtures created before teardown starts. */
+  fixtureStats: FixtureStats;
   /** Every route template touched across the run (for coverage). */
   routesHit: string[];
   flows: FlowResult[];
@@ -89,4 +98,13 @@ export function summarize(flows: FlowResult[], durationMs: number): RunSummary {
     todo: flows.filter((f) => f.status === "todo").length,
     durationMs,
   };
+}
+
+export function runExitCode(
+  summary: Pick<RunSummary, "failed" | "skipped" | "todo">,
+  requireAll = false,
+): 0 | 1 {
+  if (summary.failed > 0) return 1;
+  if (requireAll && (summary.skipped > 0 || summary.todo > 0)) return 1;
+  return 0;
 }

@@ -1,8 +1,8 @@
+import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, test } from 'bun:test';
 
-import { seedDraft } from './policies-panel';
+import { seedDraft, toPayloadRule } from './policies-panel';
 
 // Regression test for the Better Stack error pattern `236e88fb…` —
 //   `TypeError: Cannot read properties of undefined (reading 'map')`
@@ -76,5 +76,138 @@ describe('PoliciesPanel source guard — no unguarded query.data.policies.map', 
   test('the seeding useEffect + revert handler route through seedDraft, not raw .policies.map', () => {
     expect(panelSource).not.toContain('query.data.policies.map(');
     expect(panelSource).toContain('seedDraft(query.data)');
+  });
+});
+
+// The panel is rendered inside the Global rules sheet and the customize
+// Connectors section, so it has to speak the design-system dialect: hand-composed
+// `bg-popover rounded-md border` panels, `kortix-*` accents, named toast helpers.
+// Each assertion below pins a primitive that the panel was previously built from
+// and that a copy-paste from an older screen would quietly reintroduce.
+describe('PoliciesPanel source guard — design-system primitives', () => {
+  const imports = panelSource
+    .split('\n')
+    .filter((line) => line.startsWith('import ') || line.startsWith('  '))
+    .join('\n');
+
+  test('no banned wrappers: SectionCard, List/ListRow, Dialog', () => {
+    expect(imports).not.toContain("from '@/components/ui/section-card'");
+    expect(imports).not.toContain("from '@/components/ui/list'");
+    expect(imports).not.toContain("from '@/components/ui/dialog'");
+  });
+
+  test('toasts come from the named helpers, not @/lib/toast', () => {
+    expect(imports).not.toContain("from '@/lib/toast'");
+    expect(panelSource).toContain("from '@/components/ui/toast'");
+    expect(panelSource).toContain('successToast(');
+    expect(panelSource).toContain('errorToast(');
+  });
+
+  test('semantic colour is kortix-*, never a raw Tailwind palette or a dark: hack', () => {
+    expect(panelSource).toContain('text-kortix-orange');
+    expect(panelSource).toContain('text-kortix-red');
+    expect(panelSource).not.toContain('amber-');
+    expect(panelSource).not.toContain('dark:text-');
+  });
+
+  test('panels are rounded-md — never the rounded-2xl the old cards used', () => {
+    expect(panelSource).not.toContain('rounded-2xl');
+    expect(panelSource).not.toContain('rounded-xl');
+  });
+
+  // The trigger used to render label + description ("Ask first · Pause for human
+  // approval"), which forced `min-w-[16rem] shrink-0` and squeezed the tool
+  // pattern input beside it. `SelectItem description` renders in the menu only.
+  test('the action select keeps its descriptions out of the closed trigger', () => {
+    // Comments are stripped first — the prose above ACTION_META names the old
+    // `min-w-[16rem]` on purpose, and must not satisfy the guard.
+    const code = panelSource.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+    expect(code).toContain('description={ACTION_META[a].description}');
+    expect(code).not.toContain('min-w-[16rem]');
+  });
+});
+
+/**
+ * Argument conditions must survive a panel round-trip.
+ *
+ * This panel replaces the WHOLE policy list on save, so any field the draft
+ * fails to carry is a field the save silently DELETES. Before conditions were
+ * threaded through `seedDraft` + `toPayloadRule`, merely opening the panel and
+ * saving an unrelated edit would strip a recipient allow-list off a rule —
+ * turning "only these addresses" into "any address" with no warning.
+ */
+describe('argument conditions survive the draft round-trip', () => {
+  const RULE = {
+    match: 'gmail.send_email',
+    action: 'require_approval' as const,
+    conditions: [{ arg: 'to', match: '/^owner@example\\.com$/' }],
+  };
+
+  test('seedDraft carries conditions onto the draft, with a stable row id', () => {
+    const { draft } = seedDraft({ policies: [RULE], defaultMode: 'risk' });
+
+    expect(draft[0]?.conditions).toMatchObject([{ arg: 'to', match: '/^owner@example\\.com$/' }]);
+    // Keyed by a stable id, not the array index: deleting a middle condition
+    // must not make React re-use the removed row's DOM node.
+    expect(draft[0]?.conditions[0]?.id).toBeString();
+  });
+
+  test('seedDraft defaults a rule without conditions to an empty list, not undefined', () => {
+    const { draft } = seedDraft({
+      policies: [{ match: '*', action: 'block' }],
+      defaultMode: 'risk',
+    });
+
+    expect(draft[0]?.conditions).toEqual([]);
+  });
+
+  test('a save re-emits the conditions it was seeded with', () => {
+    const { draft } = seedDraft({ policies: [RULE], defaultMode: 'risk' });
+
+    expect(toPayloadRule(draft[0]!)).toEqual(RULE);
+  });
+
+  test('an unconditional rule omits the key entirely rather than sending []', () => {
+    const { draft } = seedDraft({
+      policies: [{ match: '*', action: 'block' }],
+      defaultMode: 'risk',
+    });
+
+    const payload = toPayloadRule(draft[0]!);
+    expect(payload).toEqual({ match: '*', action: 'block' });
+    expect('conditions' in payload).toBe(false);
+  });
+
+  test('half-typed condition rows are dropped so they cannot fail the whole save', () => {
+    const payload = toPayloadRule({
+      id: 'r1',
+      match: 'gmail.send_email',
+      action: 'block',
+      conditions: [
+        { id: 'c1', arg: 'to', match: '' },
+        { id: 'c2', arg: '', match: 'x' },
+        { id: 'c3', arg: '  bcc  ', match: '  *@example.com  ' },
+      ],
+    });
+
+    expect(payload.conditions).toEqual([{ arg: 'bcc', match: '*@example.com' }]);
+  });
+
+  test('negate is preserved when set and omitted when not', () => {
+    const withNegate = toPayloadRule({
+      id: 'r1',
+      match: 'gmail.send_email',
+      action: 'block',
+      conditions: [{ id: 'c1', arg: 'to', match: '*', negate: true }],
+    });
+    const withoutNegate = toPayloadRule({
+      id: 'r2',
+      match: 'gmail.send_email',
+      action: 'block',
+      conditions: [{ id: 'c1', arg: 'to', match: '*', negate: false }],
+    });
+
+    expect(withNegate.conditions).toEqual([{ arg: 'to', match: '*', negate: true }]);
+    expect(withoutNegate.conditions).toEqual([{ arg: 'to', match: '*' }]);
   });
 });

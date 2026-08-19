@@ -38,8 +38,11 @@ mock.module('../repositories/credit-accounts', () => ({
 // The admission hold is a real row-locked DB write in production; here it is
 // emulated against the fixture balance — it succeeds when the wallet can cover
 // the floor and throws when it cannot, exactly like `atomic_use_credits`.
+const holdCalls: number[] = [];
+
 mock.module('./credits', () => ({
   deductCredits: async (_accountId: string, amount: number) => {
+    holdCalls.push(amount);
     if (Number(account?.balance ?? 0) < amount) throw new Error('insufficient credits');
   },
 }));
@@ -295,6 +298,113 @@ describe('assertBillingActive / BillingGateError — the reason survives the thr
       const body = await gateError.res!.clone().json();
       expect(body.billing_state).toBe('out_of_credits');
       expect(body.billing_state).not.toBe('no_subscription');
+    }
+  });
+});
+
+describe('the wallet floor applies to every subscription that is not paying', () => {
+  test('an ACTIVE per-seat subscription takes NO admission hold — it is not wallet-gated', async () => {
+    billingEnabled = true;
+    holdCalls.length = 0;
+    account = creditAccount({
+      billingModel: 'per_seat',
+      tier: 'per_seat',
+      balance: '0',
+      stripeSubscriptionId: 'sub_live',
+      stripeSubscriptionStatus: 'active',
+    });
+    const result = await checkBillingActive('acct-1');
+    expect(result.ok).toBe(true);
+    expect(holdCalls).toEqual([]);
+  });
+
+  test('a PAST_DUE per-seat account with credit is admitted but METERED — the hold is taken', async () => {
+    billingEnabled = true;
+    holdCalls.length = 0;
+    account = creditAccount({
+      billingModel: 'per_seat',
+      tier: 'per_seat',
+      balance: '25.00',
+      stripeSubscriptionId: 'sub_dunning',
+      stripeSubscriptionStatus: 'past_due',
+      paymentStatus: 'past_due',
+    });
+    const result = await checkBillingActive('acct-1');
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.holdUsd).toBe(0.01);
+    expect(holdCalls).toEqual([0.01]);
+  });
+
+  test('a PAST_DUE per-seat account with an empty wallet is blocked as payment_failed, not "subscribe"', async () => {
+    billingEnabled = true;
+    holdCalls.length = 0;
+    account = creditAccount({
+      billingModel: 'per_seat',
+      tier: 'per_seat',
+      balance: '0',
+      stripeSubscriptionId: 'sub_dunning',
+      stripeSubscriptionStatus: 'past_due',
+      paymentStatus: 'past_due',
+    });
+    const result = await checkBillingActive('acct-1');
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.billingState).toBe('payment_failed');
+      expect(result.reason).toBe('insufficient_credits');
+      expect(result.reason).not.toBe('subscription_required');
+      expect(result.message).toContain('payment');
+    }
+  });
+
+  test('an INCOMPLETE_EXPIRED per-seat account cannot spend past the floor', async () => {
+    billingEnabled = true;
+    account = creditAccount({
+      billingModel: 'per_seat',
+      tier: 'per_seat',
+      balance: '0',
+      stripeSubscriptionId: 'sub_never_paid',
+      stripeSubscriptionStatus: 'incomplete_expired',
+    });
+    const result = await checkBillingActive('acct-1');
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.billingState).toBe('payment_failed');
+  });
+
+  test('a TRIALING per-seat account still bypasses the floor', async () => {
+    billingEnabled = true;
+    holdCalls.length = 0;
+    account = creditAccount({
+      billingModel: 'per_seat',
+      tier: 'per_seat',
+      balance: '0',
+      stripeSubscriptionId: 'sub_trial',
+      stripeSubscriptionStatus: 'trialing',
+    });
+    const result = await checkBillingActive('acct-1');
+    expect(result.ok).toBe(true);
+    expect(holdCalls).toEqual([]);
+  });
+
+  test('the 402 for a past_due account tells the client to fix payment, not to subscribe', async () => {
+    billingEnabled = true;
+    account = creditAccount({
+      billingModel: 'per_seat',
+      tier: 'per_seat',
+      balance: '0',
+      stripeSubscriptionId: 'sub_dunning',
+      stripeSubscriptionStatus: 'past_due',
+      paymentStatus: 'past_due',
+    });
+    try {
+      await assertBillingActive('acct-1');
+      throw new Error('expected assertBillingActive to throw');
+    } catch (err) {
+      const gateError = err as InstanceType<typeof BillingGateError>;
+      const res = gateError.res as Response;
+      const body = await res.clone().json();
+      expect(body.billing_state).toBe('payment_failed');
+      expect(body.code).not.toBe('subscription_required');
+      expect(body.has_subscription).toBe(true);
     }
   });
 });

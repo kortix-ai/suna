@@ -10,12 +10,18 @@ import {
 } from './index';
 
 describe('managed catalog', () => {
+  // 2026-08-10: claude-opus-4.8 / claude-sonnet-4.6 / kimi-k3 deactivated
+  // (commented out in MANAGED_MODELS, reactivatable by diff); muse-spark-1.2,
+  // minimax-m3, and gpt-5.6-luna added the same day.
   test('exposes the managed lineup', () => {
     expect(DEFAULT_MANAGED_MODEL_IDS).toEqual([
-      'claude-opus-4.8',
-      'claude-sonnet-4.6',
+      'grok-4.6',
       'glm-5.2',
       'deepseek-v4-flash',
+      'deepseek-v4-pro-0813',
+      'muse-spark-1.2',
+      'minimax-m3',
+      'gpt-5.6-luna',
     ]);
   });
 
@@ -24,8 +30,8 @@ describe('managed catalog', () => {
     expect(DEFAULT_MANAGED_MODEL_IDS).not.toContain('kortix-basic');
   });
 
-  test('Opus is the single flagship', () => {
-    expect(MANAGED_FLAGSHIP_MODEL_ID).toBe('claude-opus-4.8');
+  test('Grok 4.6 is the single flagship', () => {
+    expect(MANAGED_FLAGSHIP_MODEL_ID).toBe('grok-4.6');
     expect(MANAGED_MODELS.filter((m) => m.tier === 'flagship')).toHaveLength(1);
   });
 
@@ -59,6 +65,40 @@ describe('managed catalog', () => {
     }
   });
 
+  // Measured 2026-07-30 on live session fcfd1f38-5e64-4a65-9db1-78cb5a6a4690:
+  // `deepseek/deepseek-v4-flash` is served by 21 OpenRouter endpoints. With NO
+  // `provider` routing preference on the request, OpenRouter load-balances
+  // across all of them, and they are not interchangeable:
+  //   - exactly ONE (`deepseek`, the first-party endpoint) reports
+  //     supports_implicit_caching:true, so the prompt cache is a ~1-in-21
+  //     lottery — replaying a BYTE-IDENTICAL body twice measured 0% then 99%
+  //     cached, which is what made `cachedReadTokens` look like it collapsed
+  //     after turn 1 when the prefix had never changed at all;
+  //   - `io-net/fp8` caps context at 32_768 and `akashml/fp8` at 131_072
+  //     against a model advertised at 1_048_576, so a long session can be
+  //     routed onto an endpoint that cannot hold it;
+  //   - `coreweave/fp8` publishes a p99 latency of 107_688ms;
+  //   - identical input tokenizes differently per endpoint (7041 / 7066 /
+  //     7081 / 7361 prompt_tokens for the same body).
+  // `openrouterProvider` exists for exactly this and was set on ZERO models.
+  test('every openrouter-transport managed model pins its provider routing', () => {
+    const openRouterModels = MANAGED_MODELS.filter((m) => m.transport === 'openrouter');
+    expect(openRouterModels.length).toBeGreaterThan(0);
+    for (const m of openRouterModels) {
+      const pref = m.openrouterProvider;
+      expect(pref, `${m.id} must pin OpenRouter provider routing`).toBeDefined();
+      const order = (pref as { order?: unknown }).order;
+      expect(Array.isArray(order), `${m.id} needs a provider order`).toBe(true);
+      expect((order as string[]).length, `${m.id} needs a provider order`).toBeGreaterThan(0);
+      // Fallbacks stay ON: pinning must improve cache locality without turning
+      // a single endpoint's outage into a hard failure for the whole platform.
+      expect(
+        (pref as { allow_fallbacks?: unknown }).allow_fallbacks,
+        `${m.id} must keep OpenRouter fallbacks enabled`,
+      ).toBe(true);
+    }
+  });
+
   test('transport matches the upstream id shape', () => {
     for (const m of MANAGED_MODELS) {
       if (m.transport === 'bedrock') {
@@ -68,8 +108,10 @@ describe('managed catalog', () => {
         // OpenRouter slugs are provider/model.
         expect(m.upstreamModelId, `${m.id} OpenRouter slug`).toContain('/');
       } else {
+        // AsterLab accepts a bare, slash-free upstream model id on its
+        // OpenAI-compatible endpoint (e.g. `glm-5.2`, `kimi-k3`).
         expect(m.transport, `${m.id} transport`).toBe('aster');
-        expect(m.upstreamModelId, `${m.id} AsterLab model`).toBe('glm-5.2');
+        expect(m.upstreamModelId, `${m.id} AsterLab slug`).toMatch(/^[^/]+$/);
       }
     }
   });
@@ -84,8 +126,6 @@ describe('managed catalog', () => {
 
 describe('managed resolution + back-compat aliases', () => {
   test('resolves current ids', () => {
-    expect(getManagedModel('claude-opus-4.8')?.name).toBe('Claude Opus 4.8');
-    expect(getManagedModel('claude-opus-4.8')?.transport).toBe('bedrock');
     expect(getManagedModel('glm-5.2')?.name).toBe('GLM 5.2');
     expect(getManagedModel('glm-5.2')?.transport).toBe('aster');
     expect(getManagedModel('glm-5.2')?.upstreamModelId).toBe('glm-5.2');
@@ -95,12 +135,51 @@ describe('managed resolution + back-compat aliases', () => {
       cacheWritePerMillion: 1,
       outputPerMillion: 4,
     });
-    expect(getManagedModel('deepseek-v4-flash')?.providerBrand).toBe('deepseek');
+    expect(getManagedModel('deepseek-v4-flash')?.providerBrand).toBeUndefined();
     expect(getManagedModel('deepseek-v4-flash')?.pricing).toEqual({
       inputPerMillion: 0.0938,
       cachedInputPerMillion: 0.01876,
       cacheWritePerMillion: 0.0938,
       outputPerMillion: 0.1876,
+    });
+    expect(getManagedModel('grok-4.6')).toMatchObject({
+      name: 'Grok 4.6',
+      upstreamModelId: 'x-ai/grok-4.6',
+      transport: 'openrouter',
+      pricingRef: 'openrouter/x-ai/grok-4.6',
+      tier: 'flagship',
+      vision: true,
+      limit: { context: 500_000, output: 500_000 },
+      openrouterProvider: { order: ['xai'], allow_fallbacks: true },
+    });
+    expect(getManagedModel('grok-4.6')?.pricing).toEqual({
+      inputPerMillion: 2,
+      cachedInputPerMillion: 0.5,
+      outputPerMillion: 6,
+      contextOver200k: {
+        inputPerMillion: 4,
+        cachedInputPerMillion: 1,
+        outputPerMillion: 12,
+        contextThreshold: 200_000,
+      },
+    });
+    expect(getManagedModel('deepseek-v4-pro-0813')).toMatchObject({
+      name: 'DeepSeek V4 Pro 0813',
+      upstreamModelId: 'deepseek/deepseek-v4-pro-0813',
+      transport: 'openrouter',
+      pricingRef: 'openrouter/deepseek/deepseek-v4-pro-0813',
+      pricing: {
+        inputPerMillion: 1.74,
+        cachedInputPerMillion: 0.145,
+        outputPerMillion: 3.48,
+      },
+      tier: 'balanced',
+      vision: false,
+      limit: { context: 1_048_575, output: 384_000 },
+      openrouterProvider: {
+        order: ['gmicloud'],
+        allow_fallbacks: true,
+      },
     });
   });
 
@@ -114,6 +193,10 @@ describe('managed resolution + back-compat aliases', () => {
       'qwen3-max',
       'minimax-m2.5',
       'kimi-k2',
+      // 2026-08-10 slim-down (commented out, not aliased):
+      'claude-opus-4.8',
+      'claude-sonnet-4.6',
+      'kimi-k3',
     ]) {
       expect(getManagedModel(old), `${old} should be gone`).toBeUndefined();
       expect(isManagedModelId(old), `${old} should be gone`).toBe(false);

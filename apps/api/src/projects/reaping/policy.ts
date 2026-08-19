@@ -1,114 +1,37 @@
 /**
- * The reaper's PURE decisions — TTL knobs, activity clocks, error classifiers,
- * and the kill decision itself.
+ * The reaper's PURE decisions — the reconcile action and the error classifiers.
  *
  * Deliberately free of `db`, provider adapters, and every other side effect, so
  * the money semantics can be exhaustively unit-tested without booting the
  * platform layer, and so a stop path (session-lifecycle/stop.ts) can reuse the
  * error classifiers without importing the sweep engine — which is what used to
  * make this an import cycle.
+ *
+ * WHAT USED TO BE HERE, AND WHY IT IS GONE
+ * ----------------------------------------
+ * Until 2026-07-29 this file also held the TTL knobs, two activity clocks, an
+ * arm/disarm idle state machine, and an "absolute ceiling" computed from
+ * usage_events. Every one of them was a heuristic reconstructing a fact the
+ * control plane could simply have recorded: WHEN THIS BOX SHOULD DIE. Two of
+ * them (`lastMeaningfulAt`, and the busy probe they fed) read timestamps the
+ * SANDBOX ITSELF wrote, so a wedged box forged the evidence used to judge it and
+ * lived forever — 187 genuinely running prod boxes, 156 of which had never
+ * emitted a single LLM usage_event, the oldest 264 hours old.
+ *
+ * The replacement is `session_sandboxes.deadline_at` plus exact active-turn
+ * authority. Only fresh control-plane observation renews an active turn. The
+ * decision for every other running box is `deadline_at <= now()`.
  */
 
-import { config } from '../../config';
 import type { SandboxStatus } from '../../platform/providers/status';
-import { positiveEnvInt } from '../reaper-constants';
-
-const DEFAULT_AUTOSTOP_MINUTES = 15;
-const DEFAULT_TRIGGER_AUTOSTOP_MINUTES = 5;
-/** Absolute ceiling: no box survives this long without PROVEN activity. */
-const DEFAULT_HARD_STOP_MINUTES = 240;
-
-/** The single knob for "how long with no real turn before we stop a box". */
-export function autoStopTtlMs(): number {
-  const min = Math.max(1, config.KORTIX_SANDBOX_AUTOSTOP_MINUTES || DEFAULT_AUTOSTOP_MINUTES);
-  return min * 60_000;
-}
-
-/**
- * THE BACKSTOP — the answer to "a box must NEVER run 24/7 when it is not in use".
- *
- * Every other liveness signal the reaper trusts is written by the box itself:
- * `metadata.lastTurnAt` and `metadata.executionLeaseUntil` are stamped by the
- * in-sandbox agent's heartbeat (execution-lease.ts `writeExecutionLease`, renewed
- * every 60s while it believes ANY opencode session is 'busy' OR 'retry'), and the
- * busy probe asks that same wedged daemon. A retry loop, a dropped opencode event
- * subscription, or any daemon wedge therefore renews its own reprieve forever —
- * measured live 2026-07-29: 188 of 279 active prod boxes held a live execution
- * lease, 182 of them older than 12h, and `metadata.idleObservedAt` was a JSON
- * null on EVERY row platform-wide because the lease veto returns before the arm
- * write and every lease renew force-nulls it. The idle-TTL stop path had never
- * fired in production, not once.
- *
- * So the ceiling below deliberately consults ONLY evidence the box cannot forge:
- * the sandbox row's creation time and real `usage_events` rows (see
- * `provenActivityAt`). Past this ceiling the box is stopped regardless of the
- * lease, regardless of the busy probe. A probe veto must never be unbounded.
- */
-export function hardStopCeilingMs(): number {
-  return Math.max(
-    autoStopTtlMs(),
-    positiveEnvInt('KORTIX_SANDBOX_HARD_STOP_MINUTES', DEFAULT_HARD_STOP_MINUTES) * 60_000,
-  );
-}
-
-/** Kill switch for the absolute ceiling. Default ON — enforcement is the default. */
-export function hardStopEnabled(): boolean {
-  return process.env.KORTIX_SANDBOX_HARD_STOP_ENABLED !== 'false';
-}
-
-/** Shorter idle window for trigger-fired boxes — no human is waiting on them,
- *  so every idle minute past turn end is pure billed dead time. */
-export function triggerAutoStopTtlMs(): number {
-  const min = Math.max(1, config.KORTIX_SANDBOX_TRIGGER_AUTOSTOP_MINUTES || DEFAULT_TRIGGER_AUTOSTOP_MINUTES);
-  return min * 60_000;
-}
-
-/** Sandbox rows carry the session's invocation source in `metadata.source`
- *  (stamped at provisioning). 'trigger:*' boxes are unattended; anything else
- *  (ui/slack/cli/missing) is treated as interactive — the safe direction. */
-export function isTriggerSession(metadata: Record<string, unknown> | null): boolean {
-  const source = metadata?.source;
-  return typeof source === 'string' && source.startsWith('trigger:');
-}
-
-/** When the reaper first OBSERVED the box idle (probe-confirmed). Null when
- *  never observed / cleared by a busy observation or an explicit resume. */
-export function idleObservedAtOf(metadata: Record<string, unknown> | null): Date | null {
-  const raw = metadata?.idleObservedAt;
-  if (typeof raw !== 'string') return null;
-  const d = new Date(raw);
-  return Number.isNaN(d.getTime()) ? null : d;
-}
-
-export type IdleConfirmAction = 'arm' | 'wait' | 'stop';
-
-/**
- * The idle TTL counts from OBSERVED idleness, not from the last LLM call —
- * the last usage_event can predate the real turn end by however long the
- * final tool run takes, and stopping "TTL after last LLM call" could kill a
- * box seconds after its turn actually finished. So the first probe-confirmed
- * idle observation only ARMS the timer; the stop fires once the box has
- * stayed observably idle for the full TTL, and any busy observation disarms.
- * Pure so the money semantics are exhaustively unit-tested.
- */
-export function decideIdleConfirm(input: {
-  idleObservedAt: Date | null;
-  now: Date;
-  ttlMs: number;
-}): IdleConfirmAction {
-  const { idleObservedAt, now, ttlMs } = input;
-  if (!idleObservedAt || idleObservedAt.getTime() > now.getTime()) return 'arm';
-  return now.getTime() - idleObservedAt.getTime() >= ttlMs ? 'stop' : 'wait';
-}
 
 export type ReconcileAction = 'none' | 'reconcile-stopped' | 'reconcile-removed';
 
 /**
  * Pure reconcile decision for a box the provider says is NOT running.
- * (Running boxes take the probe path: busy → alive, observed idle for the
- * TTL → stop.) 'unknown' is a transient provider error or a transitional
- * state (starting/resuming/migrating) — NEVER act on uncertainty; acting
- * could kill a healthy box or fight a wake.
+ * (Running boxes take the deadline path.) 'unknown' is a transient provider
+ * error or a transitional state (starting/resuming/migrating) — NEVER act on
+ * uncertainty; acting could kill a healthy box or fight a wake.
  */
 export function decideReconcile(providerStatus: SandboxStatus): ReconcileAction {
   // The provider currently reports the external box gone. Preserve its identity
@@ -126,72 +49,6 @@ export function decideReconcile(providerStatus: SandboxStatus): ReconcileAction 
   return 'none';
 }
 
-/**
- * Last MEANINGFUL activity for a sandbox row. Driven by `metadata.lastTurnAt`
- * (stamped at every turn boundary — the only thing that should keep a box alive)
- * with a fallback to row creation so a never-used box still ages out after the
- * grace TTL. Deliberately does NOT consider `last_used_at` (proxy traffic) or
- * any passive signal.
- */
-export function lastMeaningfulAt(row: {
-  metadata: Record<string, unknown> | null;
-  createdAt: Date;
-}): Date {
-  const stamped = row.metadata && typeof row.metadata.lastTurnAt === 'string'
-    ? new Date(row.metadata.lastTurnAt as string)
-    : null;
-  if (stamped && !Number.isNaN(stamped.getTime())) {
-    return stamped.getTime() >= row.createdAt.getTime() ? stamped : row.createdAt;
-  }
-  return row.createdAt;
-}
-
-/**
- * The UNFORGEABLE activity clock, and the only input to the absolute ceiling.
- *
- * `lastMeaningfulAt` above reads `metadata.lastTurnAt`, which the in-sandbox
- * agent rewrites to `now` on every 60s execution-lease renew — so a wedged box
- * keeps its own activity clock permanently fresh and can never age out. This
- * function reads only signals the box cannot write to:
- *
- *   - `createdAt` — when WE provisioned the row, and
- *   - the newest `usage_events` row for the session — a real LLM call, written
- *     by the gateway on the API side.
- *
- * A box with no LLM call since it was created is not running an agent turn, no
- * matter what its own daemon reports.
- */
-export function provenActivityAt(
-  row: { createdAt: Date },
-  lastUsageAt: Date | null,
-): Date {
-  if (lastUsageAt && !Number.isNaN(lastUsageAt.getTime()) && lastUsageAt.getTime() > row.createdAt.getTime()) {
-    return lastUsageAt;
-  }
-  return row.createdAt;
-}
-
-/**
- * The absolute stop decision. True → stop the box NOW, bypassing the execution
- * lease and the busy probe. `provenActivityAt` must come from
- * `provenActivityAt()` above; passing a box-authored timestamp here would
- * reintroduce the exact unbounded-veto bug this exists to kill.
- * Pure so the money semantics are exhaustively unit-tested.
- */
-export function decideHardStop(input: {
-  provenActivityAt: Date | null;
-  now: Date;
-  ceilingMs: number;
-  enabled?: boolean;
-}): boolean {
-  const { provenActivityAt: proven, now, ceilingMs } = input;
-  // Never act on uncertainty: a failed usage lookup yields null and must not
-  // stop anything (the caller passes null in that case, deliberately).
-  if (input.enabled === false || !proven) return false;
-  if (Number.isNaN(proven.getTime()) || proven.getTime() > now.getTime()) return false;
-  return now.getTime() - proven.getTime() >= ceilingMs;
-}
-
 export function isLifecycleTransitionInProgress(err: unknown): boolean {
   const msg = (err instanceof Error ? err.message : String(err)).toLowerCase();
   return msg.includes('state change in progress') || msg.includes('transition in progress');
@@ -205,18 +62,4 @@ export function isAlreadyNotRunning(err: unknown): boolean {
     msg.includes('already stopped') ||
     msg.includes('not found')
   );
-}
-
-/**
- * The metadata patch written when the reaper stops a box. `quiesce` marks an
- * idle-stop so passive traffic can't resurrect it (only an explicit open / new
- * turn clears it). Stopping never authorizes replacing a data-bearing runtime.
- */
-export function buildIdleStopMetadata(opts: { quiesce: boolean; nowIso: string }): Record<string, unknown> {
-  const meta: Record<string, unknown> = {};
-  if (opts.quiesce) {
-    meta.idleQuiesced = true;
-    meta.idleQuiescedAt = opts.nowIso;
-  }
-  return meta;
 }

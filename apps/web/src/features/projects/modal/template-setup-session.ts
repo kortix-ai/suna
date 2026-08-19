@@ -11,7 +11,7 @@ import {
 /**
  * Cloned from a marketplace item → don't drop the user on an empty project.
  * Starts a setup session that reads the seeded config and wires up its
- * integrations, so the caller can land the user there instead.
+ * connections, so the caller can land the user there instead.
  *
  * Returns the new session's id, or `null` if the setup session couldn't be
  * started (the failure is logged and surfaced via toast; the caller should

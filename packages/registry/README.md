@@ -52,7 +52,7 @@ Kortix-native ones:
 | `registry:command` | an OpenCode slash command `.md` |
 | `registry:tool` | a custom OpenCode tool (`.ts`) / plugin |
 | `registry:trigger` | a `kortix.yaml` `triggers:` block |
-| `registry:connector` | an integration definition (Pipedream/MCP/HTTP) |
+| `registry:connector` | a connector definition (Pipedream/MCP/HTTP) |
 | `registry:rules` | `AGENTS.md` / rules files |
 | `registry:memory` | seed memory files |
 | `registry:project` | a whole Kortix project scaffold |
@@ -64,10 +64,8 @@ drives categorization, icons, and validation.
 ### Target aliases
 
 A file's `target` says where it lands. Aliases expand against the consuming
-project's canonical OpenCode layout. Version 3 projects Kortix-managed system
-skills into the selected harness-native discovery directory. Optional
-marketplace skills still land at their declared target. A harness-specific
-optional skill must target that harness's native config directory:
+project's canonical OpenCode layout. Kortix-managed system skills and optional
+marketplace skills land in the OpenCode config directory:
 
 | alias | expands to |
 | --- | --- |

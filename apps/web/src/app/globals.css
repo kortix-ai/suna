@@ -175,7 +175,10 @@
 
 @theme inline {
   --color-background: var(--background);
+  --color-pane: var(--pane);
   --color-foreground: var(--foreground);
+  --color-foreground-strong: var(--foreground-strong);
+  --color-foreground-weak: var(--foreground-weak);
   --font-sans: var(--font-roobert);
   --font-mono: var(--font-roobert-mono);
   --color-sidebar-ring: var(--sidebar-ring);
@@ -194,6 +197,11 @@
   --color-ring: var(--ring);
   --color-input: var(--input);
   --color-border: var(--border);
+  /* Interaction overlays — translucent ink, not solid surfaces, so a hover or
+     selection tint blends over whatever substrate is behind it (canvas,
+     surface-1, an image). Used by Card's proximity highlight + selected fill. */
+  --color-hover: var(--hover);
+  --color-active: var(--active);
   --color-destructive-foreground: var(--destructive-foreground);
   --color-destructive: var(--destructive);
   --color-accent-foreground: var(--accent-foreground);
@@ -215,6 +223,73 @@
   --color-kortix-green: var(--kortix-green);
   --color-kortix-purple: var(--kortix-purple);
   --color-kortix-red: var(--kortix-red);
+  /* Emoji-picker active-cell tints (src/components/ui/emoji-picker.tsx).
+     Six hues the picker rotates through so the hovered/keyboard-active cell is
+     never the same colour as the cell above it. They live here rather than as
+     raw hsl() in the component because raw palette values in app code are
+     against the design system, and because the light/dark pair belongs in one
+     place. light-dark() works because :root sets color-scheme: light and .dark
+     sets color-scheme: dark (see the base layer below) — so these need no
+     `dark:` variant at the call site.
+
+     Two families, paired by hue. The fill stays pale so the grid reads calm;
+     the 1px inset ring carries the contrast. That split exists because the
+     active cell is the only visible cue for which emoji is selected —
+     frimousse gives the buttons tabIndex={-1} and no focus ring — so the state
+     indicator has to clear WCAG 1.4.11's 3:1 against --popover. A pale fill
+     cannot reach 3:1 on white at any saturation (it needs relative luminance
+     <= 0.30, i.e. roughly L <= 63%), so the ring is what meets the bar and the
+     fill is free to stay quiet. Measured ring ratios are 3.03–3.19:1. */
+  --color-emoji-fill-red: light-dark(hsl(4 46% 88%), hsl(4 28% 26%));
+  --color-emoji-fill-amber: light-dark(hsl(32 52% 87%), hsl(32 30% 25%));
+  --color-emoji-fill-green: light-dark(hsl(96 34% 87%), hsl(96 22% 24%));
+  --color-emoji-fill-teal: light-dark(hsl(178 36% 86%), hsl(178 26% 24%));
+  --color-emoji-fill-blue: light-dark(hsl(212 46% 88%), hsl(212 30% 27%));
+  --color-emoji-fill-violet: light-dark(hsl(280 32% 88%), hsl(280 22% 27%));
+  --color-emoji-ring-red: light-dark(hsl(4 46% 63%), hsl(4 46% 45%));
+  --color-emoji-ring-amber: light-dark(hsl(32 52% 51%), hsl(32 52% 35%));
+  --color-emoji-ring-green: light-dark(hsl(96 34% 46%), hsl(96 34% 32%));
+  --color-emoji-ring-teal: light-dark(hsl(178 36% 46%), hsl(178 36% 32%));
+  --color-emoji-ring-blue: light-dark(hsl(212 46% 60%), hsl(212 46% 42%));
+  --color-emoji-ring-violet: light-dark(hsl(280 32% 63%), hsl(280 32% 46%));
+  /* Glyph icon palette — a SEPARATE family from the emoji hues above.
+     The emoji hues are DERIVED from the glyph (see emoji-tint.ts) and must stay
+     stable, or every existing project changes colour. These eight are CHOSEN by
+     the user. Merging the two would have meant remapping the emoji six onto a
+     new eight; two palettes serving two masters is the honest model.
+
+     `light-dark()` works because :root sets color-scheme: light and .dark sets
+     color-scheme: dark — so these need no `dark:` variant anywhere.
+
+     The ring token paints BOTH the 1px inset ring and the glyph itself, so its
+     lightness has to clear 3:1 against the pale fill AND against --popover/
+     --card. Task 10 measured all 48 ring-vs-surface pairs (8 hues x 2 themes x
+     3 surfaces) against WCAG's 3:1 non-text threshold and tuned the L channel
+     only — hue and saturation are untouched, so all eight stay recognisable.
+     Light mode needed a small darkening on red/yellow/blue only (their L
+     started too close to the fill). Dark mode needed a much bigger lightening
+     across ALL EIGHT hues: the dark fills sit at L 24-27%, close enough to the
+     near-black --card/--popover (relative luminance ~0.007) that sRGB's gamma
+     curve compresses the ring-vs-fill gap far below 3:1 at the original
+     L 38-48%; every dark ring now sits at L 46-61% to clear it. See
+     .superpowers/sdd/2026-08-01-project-glyph-icons/task-10-report.md for the
+     full before/after table. */
+  --color-glyph-fill-grey: light-dark(hsl(220 8% 88%), hsl(220 6% 26%));
+  --color-glyph-fill-red: light-dark(hsl(4 46% 88%), hsl(4 28% 26%));
+  --color-glyph-fill-orange: light-dark(hsl(24 60% 88%), hsl(24 32% 26%));
+  --color-glyph-fill-yellow: light-dark(hsl(46 62% 87%), hsl(46 34% 25%));
+  --color-glyph-fill-lime: light-dark(hsl(84 42% 87%), hsl(84 26% 24%));
+  --color-glyph-fill-blue: light-dark(hsl(212 46% 88%), hsl(212 30% 27%));
+  --color-glyph-fill-purple: light-dark(hsl(275 34% 88%), hsl(275 24% 27%));
+  --color-glyph-fill-magenta: light-dark(hsl(318 40% 88%), hsl(318 26% 27%));
+  --color-glyph-ring-grey: light-dark(hsl(220 8% 50%), hsl(220 8% 58%));
+  --color-glyph-ring-red: light-dark(hsl(4 46% 53%), hsl(4 46% 60%));
+  --color-glyph-ring-orange: light-dark(hsl(24 60% 46%), hsl(24 60% 55%));
+  --color-glyph-ring-yellow: light-dark(hsl(46 62% 37%), hsl(46 55% 47%));
+  --color-glyph-ring-lime: light-dark(hsl(84 42% 37%), hsl(84 40% 46%));
+  --color-glyph-ring-blue: light-dark(hsl(212 46% 50%), hsl(212 46% 59%));
+  --color-glyph-ring-purple: light-dark(hsl(275 34% 56%), hsl(275 34% 61%));
+  --color-glyph-ring-magenta: light-dark(hsl(318 40% 52%), hsl(318 40% 61%));
   /* App typography scale. Keep html at 100% so browser and OS zoom
      preferences remain intact; adjust readable UI sizes through tokens. */
   --text-xs: 0.8125rem;
@@ -533,83 +608,78 @@
       opacity: 0;
     }
   }
-}
 
-/* Elevation — the Kortix shadow ladder.
-   Must live in @theme (not :root) or the shadow-* utilities silently keep
-   Tailwind's stock bottom-only values. Each step layers three shadows:
-   1. a tight contact shadow that grounds the surface,
-   2. a directional depth layer with negative spread (clean, no side bleed),
-   3. a 0-offset ambient halo so the shadow reads softly on all four sides.
-   Colors use light-dark(): the browser switches on color-scheme, so dark mode
-   needs no separate ladder and `dark:shadow-*` overrides are never needed.
-   Tinted shadows (shadow-black/10, shadow-kortix-base/20) keep working. */
-@theme {
-  --shadow-2xs:
-    0 1px 2px 0 light-dark(oklch(0 0 0 / 0.03), oklch(0 0 0 / 0.16)),
-    0 0 3px 0 light-dark(oklch(0 0 0 / 0.02), oklch(0 0 0 / 0.1));
-  --shadow-xs:
-    0 1px 2px 0 light-dark(oklch(0 0 0 / 0.04), oklch(0 0 0 / 0.18)),
-    0 0 4px 0 light-dark(oklch(0 0 0 / 0.03), oklch(0 0 0 / 0.12));
-  --shadow-sm:
-    0 1px 2px 0 light-dark(oklch(0 0 0 / 0.04), oklch(0 0 0 / 0.2)),
-    0 2px 4px -1px light-dark(oklch(0 0 0 / 0.03), oklch(0 0 0 / 0.16)),
-    0 0 6px 0 light-dark(oklch(0 0 0 / 0.03), oklch(0 0 0 / 0.12));
-  --shadow:
-    0 1px 2px 0 light-dark(oklch(0 0 0 / 0.04), oklch(0 0 0 / 0.2)),
-    0 2px 6px -1px light-dark(oklch(0 0 0 / 0.04), oklch(0 0 0 / 0.18)),
-    0 0 8px 0 light-dark(oklch(0 0 0 / 0.03), oklch(0 0 0 / 0.12));
-  --shadow-md:
-    0 1px 2px 0 light-dark(oklch(0 0 0 / 0.05), oklch(0 0 0 / 0.22)),
-    0 4px 10px -2px light-dark(oklch(0 0 0 / 0.05), oklch(0 0 0 / 0.2)),
-    0 0 12px 0 light-dark(oklch(0 0 0 / 0.04), oklch(0 0 0 / 0.14));
-  --shadow-lg:
-    0 1px 3px 0 light-dark(oklch(0 0 0 / 0.05), oklch(0 0 0 / 0.24)),
-    0 8px 20px -4px light-dark(oklch(0 0 0 / 0.06), oklch(0 0 0 / 0.24)),
-    0 0 16px 0 light-dark(oklch(0 0 0 / 0.04), oklch(0 0 0 / 0.14));
-  --shadow-xl:
-    0 2px 4px 0 light-dark(oklch(0 0 0 / 0.05), oklch(0 0 0 / 0.26)),
-    0 14px 28px -6px light-dark(oklch(0 0 0 / 0.08), oklch(0 0 0 / 0.3)),
-    0 0 22px 0 light-dark(oklch(0 0 0 / 0.05), oklch(0 0 0 / 0.16));
-  --shadow-2xl:
-    0 2px 6px 0 light-dark(oklch(0 0 0 / 0.06), oklch(0 0 0 / 0.28)),
-    0 24px 48px -10px light-dark(oklch(0 0 0 / 0.1), oklch(0 0 0 / 0.36)),
-    0 0 30px 0 light-dark(oklch(0 0 0 / 0.06), oklch(0 0 0 / 0.18));
-}
+  --animate-blink-cursor: blink-cursor 1.2s step-end infinite
+;
+  @keyframes blink-cursor {
+  0%, 49% {
+    opacity: 1;
+    }
+  50%, 100% {
+    opacity: 0;
+    }
+  }}
 
+/*
+ * Neutral ramp — Framer design system (VoltAgent/awesome-design-md).
+ * Hierarchy comes from surface lift (canvas -> surface-1 -> surface-2), never
+ * from opacity on type. Blue is a signal only: hyperlinks, focus, selection —
+ * never a fill or a background.
+ *
+ * Dark is the doc's palette verbatim. The doc ships no light mode, so light
+ * mirrors each surface's lift distance from canvas, anchored on the doc's own
+ * inverse-canvas (#ffffff) and inverse-ink (#000000).
+ *
+ *   role           dark        light
+ *   canvas         #090909     #ffffff
+ *   base           #0c0c0c     #ffffff
+ *   surface-1      #141414     #f4f4f4
+ *   surface-2      #1c1c1c     #ececec
+ *   ink            #ffffff     #000000
+ *   ink-muted      #999999     #666666
+ *   hairline       #262626     #e2e2e2
+ *   hairline-soft  #1a1a1a     #eeeeee
+ *   accent-blue    #0099ff     #0099ff
+ */
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.1448 0 0);
-  --card: oklch(0.9651 0 0);
-  --card-foreground: oklch(0.1448 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.1448 0 0);
-  --primary: oklch(0.2046 0 0);
-  --primary-foreground: oklch(0.9851 0 0);
-  --secondary: oklch(0.9502 0 0);
-  --secondary-foreground: oklch(0.2046 0 0);
-  --muted: oklch(0.9502 0 0);
-  --muted-foreground: oklch(0.5555 0 0);
-  --accent: oklch(0.9702 0 0);
-  --accent-foreground: oklch(0.2046 0 0);
+  --background: oklch(1 0 0); /* canvas */
+  --pane: oklch(1 0 0); /* #ffffff */
+  --foreground: oklch(0 0 0); /* ink */
+  --foreground-strong: var(--foreground); /* ink — alias for title-weight text */
+  --foreground-weak: var(--muted-foreground); /* ink-muted — alias for description-weight text */
+  --card: oklch(0.9672 0 0); /* surface-1 */
+  --card-foreground: oklch(0 0 0);
+  --popover: oklch(1 0 0); /* canvas — top surface, separated by hairline + shadow */
+  --popover-foreground: oklch(0 0 0);
+  --primary: oklch(0 0 0); /* ink — black pill CTA */
+  --primary-foreground: oklch(1 0 0);
+  --secondary: oklch(0.9431 0 0); /* surface-2 */
+  --secondary-foreground: oklch(0 0 0);
+  --muted: oklch(0.9431 0 0); /* surface-2 */
+  --muted-foreground: oklch(0.5103 0 0); /* ink-muted */
+  --accent: oklch(0.9672 0 0); /* surface-1 */
+  --accent-foreground: oklch(0 0 0);
   --destructive: oklch(0.583 0.2387 28.4765);
   --destructive-foreground: oklch(0.9851 0 0);
-  --border: oklch(0.8819 0 0);
-  --input: oklch(0.9612 0 0);
-  --ring: oklch(0.709 0 0);
+  --border: oklch(0.9128 0 0); /* hairline */
+  --input: oklch(0.9431 0 0); /* surface-2 */
+  --ring: oklch(0.669 0.1837 248.8066); /* accent-blue — focus only */
+  --hover: oklch(0 0 0 / 0.045); /* ink @ 4.5% — transient hover tint */
+  --active: oklch(0 0 0 / 0.075); /* ink @ 7.5% — persistent selected fill */
+  --focus-ring: var(--ring);
   --chart-1: oklch(0.8781 0.1688 91.8567);
   --chart-2: oklch(0.7724 0.1728 65.367);
   --chart-3: oklch(0.6671 0.1685 53.3814);
   --chart-4: oklch(0.557 0.1583 45.3594);
   --chart-5: oklch(0.4747 0.1358 44.9806);
-  --sidebar: oklch(0.9851 0 0);
-  --sidebar-foreground: oklch(0.1448 0 0);
-  --sidebar-primary: oklch(0.2046 0 0);
-  --sidebar-primary-foreground: oklch(0.9851 0 0);
-  --sidebar-accent: oklch(0.9702 0 0);
-  --sidebar-accent-foreground: oklch(0.2046 0 0);
-  --sidebar-border: oklch(0.9219 0 0);
-  --sidebar-ring: oklch(0.709 0 0);
+  --sidebar: oklch(0.9672 0 0); /* surface-1 */
+  --sidebar-foreground: oklch(0 0 0);
+  --sidebar-primary: oklch(0.669 0.1837 248.8066); /* accent-blue — selection */
+  --sidebar-primary-foreground: oklch(1 0 0);
+  --sidebar-accent: oklch(0.9431 0 0); /* surface-2 */
+  --sidebar-accent-foreground: oklch(0 0 0);
+  --sidebar-border: oklch(0.9128 0 0); /* hairline */
+  --sidebar-ring: oklch(0.669 0.1837 248.8066);
 
   --radius: 0.625rem;
 
@@ -637,38 +707,44 @@
 }
 
 .dark {
-  --background: oklch(0.1448 0 0);
-  --foreground: oklch(0.9851 0 0);
-  --card: oklch(0.2046 0 0);
-  --card-foreground: oklch(0.9851 0 0);
-  --popover: oklch(0.2046 0 0);
-  --popover-foreground: oklch(0.9851 0 0);
-  --primary: oklch(0.9219 0 0);
-  --primary-foreground: oklch(0.2046 0 0);
-  --secondary: oklch(0.2686 0 0);
-  --secondary-foreground: oklch(0.9851 0 0);
-  --muted: oklch(0.2686 0 0);
-  --muted-foreground: oklch(0.709 0 0);
-  --accent: oklch(0.2686 0 0);
-  --accent-foreground: oklch(0.9851 0 0);
+  --background: oklch(0.17 0 0); /* canvas #090909 */
+  --pane: oklch(0.1543 0 0); /* #0c0c0c */
+  --foreground: oklch(1 0 0); /* ink #ffffff */
+  --foreground-strong: var(--foreground); /* ink — alias for title-weight text */
+  --foreground-weak: var(--muted-foreground); /* ink-muted — alias for description-weight text */
+  --card: oklch(0.1913 0 0); /* surface-1 #141414 */
+  --card-foreground: oklch(1 0 0);
+  --popover: oklch(0.1913 0 0); /* surface-1 */
+  --popover-foreground: oklch(1 0 0);
+  --primary: oklch(1 0 0); /* white pill CTA */
+  --primary-foreground: oklch(0.1398 0 0);
+  --secondary: oklch(0.2264 0 0); /* surface-2 #1c1c1c */
+  --secondary-foreground: oklch(1 0 0);
+  --muted: oklch(0.2264 0 0); /* surface-2 */
+  --muted-foreground: oklch(0.683 0 0); /* ink-muted #999999 */
+  --accent: oklch(0.1913 0 0); /* surface-1 */
+  --accent-foreground: oklch(1 0 0);
   --destructive: oklch(0.7022 0.1892 22.2279);
   --destructive-foreground: oklch(0.9851 0 0);
-  --border: oklch(0.2629 0 0);
-  --input: oklch(0.2686 0 0);
-  --ring: oklch(0.5555 0 0);
+  --border: oklch(0.2686 0 0); /* hairline #262626 */
+  --input: oklch(0.2264 0 0); /* surface-2 */
+  --ring: oklch(0.669 0.1837 248.8066); /* accent-blue #0099ff — focus only */
+  --hover: oklch(1 0 0 / 0.06); /* ink @ 6% — transient hover tint */
+  --active: oklch(1 0 0 / 0.1); /* ink @ 10% — persistent selected fill */
+  --focus-ring: var(--ring);
   --chart-1: oklch(0.8781 0.1688 91.8567);
   --chart-2: oklch(0.7724 0.1728 65.367);
   --chart-3: oklch(0.6671 0.1685 53.3814);
   --chart-4: oklch(0.557 0.1583 45.3594);
   --chart-5: oklch(0.4747 0.1358 44.9806);
-  --sidebar: oklch(0.17 0 0);
-  --sidebar-foreground: oklch(0.9851 0 0);
-  --sidebar-primary: oklch(0.4878 0.2432 264.4045);
-  --sidebar-primary-foreground: oklch(0.9851 0 0);
-  --sidebar-accent: oklch(0.2686 0 0);
-  --sidebar-accent-foreground: oklch(0.9851 0 0);
-  --sidebar-border: oklch(1 0 0);
-  --sidebar-ring: oklch(0.5555 0 0);
+  --sidebar: oklch(0.1913 0 0); /* surface-1 */
+  --sidebar-foreground: oklch(1 0 0);
+  --sidebar-primary: oklch(0.669 0.1837 248.8066); /* accent-blue — selection */
+  --sidebar-primary-foreground: oklch(1 0 0);
+  --sidebar-accent: oklch(0.2264 0 0); /* surface-2 */
+  --sidebar-accent-foreground: oklch(1 0 0);
+  --sidebar-border: oklch(0.2178 0 0); /* hairline-soft #1a1a1a */
+  --sidebar-ring: oklch(0.669 0.1837 248.8066);
 
   --radius: 0.625rem;
 
@@ -712,7 +788,8 @@
 
   html {
     scroll-behavior: smooth;
-    font-size: 100%;
+    /* Base UI scale: 110% of the 16px default. Tailwind v4 spacing/text/radius tokens are rem-based off this root, so this one value scales nearly the whole app, same mechanism as browser zoom, baked in as the default. */
+    font-size: 110%;
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
@@ -771,6 +848,8 @@
       var(--font-mono), ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Monaco, Consolas,
       'Liberation Mono', 'Courier New', monospace, 'Noto Sans Mono CJK JP', 'Noto Sans Mono CJK KR',
       'Noto Sans Mono CJK SC', 'Noto Sans Mono CJK TC';
+    font-weight: 500;
+    line-height: 1.2;
   }
 }
 
@@ -899,6 +978,19 @@
   }
 }
 
+/* Catalogue card reveal — the cards a "View all" uncovers in a category grid.
+
+   Deliberately NOT `.kx-fade-up`. That is page-enter motion for a handful of
+   large blocks, where 300ms and 8px read as considered. This fires on 20+
+   dense cards at once, and at that count the same values read as a wave
+   crawling down the grid: half the travel and two thirds the duration land the
+   whole reveal inside the 300ms UI budget (200ms + a 90ms delay ceiling).
+
+   The delay arrives as a custom property rather than an inline
+   `animation-delay`, so the reduced-motion rule below can actually win. An
+   inline style beats a stylesheet declaration, which meant the stagger
+   survived `prefers-reduced-motion` on `.kx-fade-up` — the movement stopped
+   but the staged reveal did not. */
 @keyframes blur-fade-in {
   from {
     opacity: 0;
@@ -923,7 +1015,8 @@
 
 .kortix-markdown.streaming-active p:last-child,
 .kortix-markdown.streaming-active li:last-child,
-.kortix-markdown.streaming-active div:last-child:not(:has(table)):not(:has(.katex)):not(.katex-math-block) {
+.kortix-markdown.streaming-active
+  div:last-child:not(:has(table)):not(:has(.katex)):not(.katex-math-block) {
   display: inline;
 }
 
@@ -1190,7 +1283,7 @@ html[data-desktop='true'] .kx-desktop-ctrl-close:hover {
    sits underneath the lights in the sidebar's chevron-row, then the
    workspace selector below — full width, untouched. */
 html[data-desktop-platform='macos'] [data-side='left'] [data-sidebar='header'] {
-  padding-top: 40px;
+  padding-top: var(--kx-titlebar-inset);
   -webkit-app-region: drag;
   app-region: drag;
   transition: padding 240ms ease;
@@ -1204,7 +1297,7 @@ html[data-desktop='true'] [data-side='right'] [data-sidebar='header'] {
   height: 52px;
 }
 html[data-desktop-platform='macos'] [data-side='right'] [data-sidebar='header'] {
-  height: 40px !important;
+  height: var(--kx-titlebar-inset) !important;
 }
 /* Desktop has no collapsed icon rail: the project sidebar switches to
    `collapsible="offcanvas"` in the shell (project-sidebar.tsx), so a
@@ -1216,18 +1309,32 @@ html[data-desktop-platform='macos'] [data-side='right'] [data-sidebar='header'] 
    the traffic lights, and turns the bar into a drag region. */
 html[data-desktop='true'] [role='tablist'] {
   height: 52px;
+  /* Win/Linux only (0px on macOS): the min/max/close cluster floats over this
+     row's right end, so tabs must stop before it. */
+  padding-right: var(--kx-titlebar-controls-width);
 }
 html[data-desktop-platform='macos'] [role='tablist'] {
   -webkit-app-region: drag;
   app-region: drag;
-  height: 40px !important;
+  height: var(--kx-titlebar-inset) !important;
 }
 /* Tab-bar back/forward left padding for the macOS-collapsed-sidebar
    case is handled in JS (tab-bar.tsx) — read sidebar.state +
    desktopPlatform(), apply pl-7 conditionally. CSS-only is hard to
    keep correct as the sidebar state changes. */
+/* Tab label size in the shell.
+   NOTE: this wins over `tabsTriggerTextVariants` in components/ui/tabs.tsx —
+   a descendant selector on <html> outranks the utility class — so it is the
+   ONLY place desktop tab text can be changed. Editing the cva variants alone
+   looks correct and does nothing here.
+
+   Deliberately NOT divided by --kx-desktop-zoom. The band offsets above cancel
+   the zoom because they align to OS-drawn chrome that never scales; text has
+   nothing to align to and must shrink with the rest of the page, or it drifts
+   out of step with every label beside it. So this is an apparent
+   13 × 0.94 ≈ 12.2px, up from 12 × 0.94 ≈ 11.3px. */
 html[data-desktop='true'] [role='tablist'] [role='tab'] {
-  font-size: 12px;
+  font-size: 13px;
 }
 html[data-desktop-platform='macos'] [data-side='left'] [data-sidebar='header'] button,
 html[data-desktop-platform='macos'] [data-side='left'] [data-sidebar='header'] a,
@@ -1280,11 +1387,67 @@ html[data-desktop-platform='macos'] .kx-desktop-controls {
    controls, so top-reaching surfaces (the AppHeader, full-screen modals)
    never sit under them. Zero on the web; on desktop, tall enough to clear
    the macOS traffic lights / the Win-Linux control cluster. */
+/* Win/Linux baseline. The window controls are drawn by the web layer
+   (.kx-desktop-ctrl) top-RIGHT, so the top-LEFT corner is free and the app's
+   own control can hug it.
+
+   ─── The shell zoom, and who has to cancel it ───
+   The shell runs the page at DESKTOP_BASE_ZOOM (lib/desktop.ts) — real browser
+   zoom via webContents.setZoomFactor, which rescales the CSS pixel itself.
+
+   These baseline values are NOT compensated, on purpose. Every control this
+   block clears is drawn by the WEB layer (.kx-desktop-ctrl), so it shrinks by
+   exactly the same factor the reservation does; cancelling the zoom here would
+   reserve 124 window px for a cluster that now occupies 111.6. On Win/Linux
+   the top-LEFT corner has no OS chrome to align to at all, so the band simply
+   scales with the page.
+
+   macOS is the exception and compensates below — see that block. */
 html[data-desktop='true'] {
+  --kx-desktop-zoom: 0.94;
+  /* Box of a control sitting IN the band. `control-top` is derived from this
+     size, so the two must share a coordinate space or the centring drifts. */
+  --kx-titlebar-control-size: 28px;
   --kx-titlebar-inset: 28px;
+  /* min/max/close: 3 × 36px + 2px gaps + 4px padding. Any row reaching the top
+     of the window keeps its trailing controls out from under them. */
+  --kx-titlebar-controls-width: 124px;
+  /* Placement of the one control the app draws in the band, and of whatever
+     follows it. Consumed as `top-[var(…)]` / `left-[var(…)]` so the React
+     components carry no platform branch of their own. */
+  --kx-titlebar-control-top: 12px;
+  --kx-titlebar-control-left: 8px;
+  --kx-titlebar-content-left: 44px;
 }
+
+/* macOS band geometry. DERIVED — do not hand-edit: these mirror
+   MAC_TITLEBAR / macBandMetrics() in apps/desktop-electron/src/window-chrome.js,
+   which is what positions the traffic lights. The pair is asserted by
+   apps/web/src/features/workspace/project-layout/desktop-titlebar.test.ts. */
 html[data-desktop-platform='macos'] {
-  --kx-titlebar-inset: 40px;
+  /* THE reason this block divides and the baseline does not: the traffic
+     lights are drawn by the OS in WINDOW pixels and do not zoom. A literal
+     `left: 72px` would render at 72 × 0.9 = 64.8 window px and slide back
+     toward them — the exact overlap this file exists to prevent.
+
+     Dividing cancels it: 72/0.9 = 80 CSS px × 0.9 = 72 window px, whatever the
+     user's Cmd+/Cmd- has done. Numerators stay the true window-pixel geometry
+     from window-chrome.js, so there is still one source of truth.
+     setDesktopZoom() keeps the variable current; the seed above means the
+     FIRST paint is right rather than snapping after hydration. */
+  --kx-titlebar-control-size: calc(28px / var(--kx-desktop-zoom));
+  /* Band height. The lights are centered in it, so is everything else. */
+  --kx-titlebar-inset: calc(40px / var(--kx-desktop-zoom));
+  /* Right edge of the traffic-light cluster (10 + 12 + 20 × 2). */
+  --kx-titlebar-lights-end: calc(62px / var(--kx-desktop-zoom));
+  /* Top of a 28px control centered on the lights' midline. */
+  --kx-titlebar-control-top: calc(6px / var(--kx-desktop-zoom));
+  /* Left of that control — one gutter clear of the lights. */
+  --kx-titlebar-control-left: calc(72px / var(--kx-desktop-zoom));
+  /* Where content after that control starts. */
+  --kx-titlebar-content-left: calc(108px / var(--kx-desktop-zoom));
+  /* macOS controls are on the LEFT, so the right edge is free. */
+  --kx-titlebar-controls-width: 0px;
 }
 
 /* AppHeader (the breadcrumb bar on standalone pages like /projects, /accounts):
@@ -1293,26 +1456,33 @@ html[data-desktop-platform='macos'] {
 html[data-desktop='true'] .kx-app-header {
   padding-top: calc(var(--kx-titlebar-inset) + 1rem);
 }
-/* macOS: no reserved strip — the header row shares the title-bar band with
-   the traffic lights (same Linear-style approach as the workspace tab bar).
-   The band is a fixed 52px with content flex-centered, so the row sits on
-   the exact same line as the traffic lights (center y=26 — the app draws
-   its own lights there; see DesktopChrome → MacTrafficLights). The left
-   indent clears the ~80px light gutter only while the centered max-w-6xl
+/* macOS: no reserved strip — the header row IS the title-bar band, shared
+   with the traffic lights (same Linear-style approach as the workspace tab
+   bar). Height is the band itself, with `py-4` zeroed and content
+   flex-centered, so the row's midline is the lights' midline by
+   construction. It used to be a hand-picked 52px against lights centered at
+   30 — 4px out, and silently wrong again after any change to either number.
+
+   The left indent clears the light gutter only while the centered max-w-6xl
    container would underlap it; on wide windows it falls back to the web's
    px-mobile values (1.5rem below xl, 0 at xl+) so the header stays aligned
-   with the page. */
+   with the page. It lands on --kx-titlebar-control-left, the same x as the
+   shell's sidebar toggle, so everything the app draws in the band starts on
+   one vertical line. */
 html[data-desktop-platform='macos'] .kx-app-header {
-  min-height: 52px;
+  min-height: var(--kx-titlebar-inset);
   padding-top: 0;
   padding-bottom: 0;
-  padding-left: max(1.5rem, calc(84px - max(0px, (100vw - 72rem) / 2)));
+  padding-left: max(
+    1.5rem,
+    calc(var(--kx-titlebar-control-left) - max(0px, (100vw - 72rem) / 2))
+  );
   -webkit-app-region: drag;
   app-region: drag;
 }
 @media (min-width: 1280px) {
   html[data-desktop-platform='macos'] .kx-app-header {
-    padding-left: max(0px, calc(84px - (100vw - 72rem) / 2));
+    padding-left: max(0px, calc(var(--kx-titlebar-control-left) - (100vw - 72rem) / 2));
   }
 }
 html[data-desktop-platform='macos'] .kx-app-header button,
@@ -1337,37 +1507,47 @@ html[data-desktop='true'] .kx-titlebar-spacer {
   app-region: drag;
 }
 
-/* Customize overlay header: indent the title past the OS window controls on
-   desktop (macOS traffic lights on the left; Win/Linux min/max/close on the
-   right) WITHOUT adding any vertical space — keeps the bar flush like the web. */
-html[data-desktop-platform='macos'] .kx-customize-header {
-  padding-left: 96px;
+/* (`.kx-customize-header` used to live here. The Customize overlay is a
+   two-column grid now with no header bar of its own, so the class had no
+   element to match — the rules were dead. The overlay clears the band with a
+   `.kx-titlebar-spacer` as its first child instead, which also covers the
+   narrow-window nav variant the old left-only indent never did.) */
+
+/* ─── Rows that reach the top of the window ──────────────────────────────
+   A row rendered as the first in-flow child of the project shell starts at
+   y=0, so it shares the band with the OS window controls: the macOS traffic
+   lights on the left, the Win/Linux cluster on the right. Wear
+   `.kx-titlebar-row` and it indents past whichever applies. Indent only — the
+   row keeps its own height, exactly like .kx-files-header below.
+
+   `data-sidebar-collapsed` gates the left indent: an expanded sidebar covers
+   the lights (and the shell's toggle self-hides), so indenting then would
+   leave a visible hole. Set it from the same `state === 'collapsed'` the row
+   already reads. The right indent is unconditional — the Win/Linux controls
+   are always there, and the variable is 0px on macOS. */
+html[data-desktop='true'] .kx-titlebar-row {
+  padding-right: calc(0.5rem + var(--kx-titlebar-controls-width));
 }
-html[data-desktop='true']:not([data-desktop-platform='macos']) .kx-customize-header {
-  padding-right: 124px;
+html[data-desktop='true'] .kx-titlebar-row[data-sidebar-collapsed] {
+  padding-left: var(--kx-titlebar-content-left);
 }
 
 /* Files page header (/projects/[id]/files) — the one page header that reaches
    the top of the window with nothing above it, so it shares the title-bar row
-   with the OS window controls. Same no-extra-vertical-space approach as
-   .kx-customize-header, but the left indent also has to clear the shell's
-   floating sidebar toggle, which the Customize overlay doesn't have.
+   with the OS window controls. No extra vertical space, indent only.
 
-   Below md the header already drops the title under the chrome (`pt-14`), so
-   both indents are scoped to md+ where the title shares the traffic-light row.
-   Raw px on purpose: the lights and the toggle are positioned in window px,
-   while rem drifts with the desktop zoom level. */
+   Both indents are scoped to md+ where the title shares the traffic-light row. */
 @media (min-width: 768px) {
-  /* macOS: lights end at x=66, the shell's open-sidebar toggle spans 72→100.
-     Indent past both, leaving the same optical gap the web has at `pl-14`.
-     Only while collapsed — an expanded sidebar covers the lights itself. */
+  /* macOS: indent past the lights AND the shell's floating sidebar toggle —
+     --kx-titlebar-content-left is exactly "after both". Only while collapsed;
+     an expanded sidebar covers the lights itself. */
   html[data-desktop-platform='macos'] .kx-files-header[data-sidebar-collapsed] {
-    padding-left: 112px;
+    padding-left: var(--kx-titlebar-content-left);
   }
   /* Win/Linux: window controls live top-right, where the history / proposed-
      changes / view-mode controls sit. Left stays at the web's `pl-14`. */
   html[data-desktop='true']:not([data-desktop-platform='macos']) .kx-files-header {
-    padding-right: 124px;
+    padding-right: var(--kx-titlebar-controls-width);
   }
 }
 
@@ -1815,4 +1995,88 @@ html[data-desktop='true']:not([data-desktop-platform='macos']) .kx-customize-hea
 
 .dark .border-overlay {
   outline-color: rgba(255, 255, 255, 0.1);
+}
+
+/* ─── Composer editor (Task 12) ────────────────────────────────────────── */
+/* Coarse-pointer (touch) targets inside the composer toolbar — added once
+   here at the shell rather than per-button, since every toolbar button is a
+   plain <button> with no shared class today. */
+@media (pointer: coarse) {
+  .kortix-composer-toolbar button {
+    min-height: 2.5rem;
+    min-width: 2.5rem;
+  }
+}
+
+/* TipTap's Placeholder extension (composer/editor/extensions.ts) marks the
+   empty paragraph with `.is-editor-empty` + a `data-placeholder` attribute
+   and otherwise renders nothing — the `::before` content + color is always
+   the consumer's job. Nothing under composer/editor/ is stylesheet-owning
+   (it is pure TipTap wiring), so this is the shell's responsibility: without
+   it the placeholder text passed to `ComposerEditor` is present in the DOM
+   but invisible. Scoped to `.kortix-composer-editor` (the wrapper class
+   `ComposerEditor`'s `EditorContent` already renders). */
+.kortix-composer-editor .ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  color: var(--muted-foreground);
+  pointer-events: none;
+}
+
+/* The `/` trigger's inline hint — "/Type to search". `@tiptap/suggestion`
+   decorates the active trigger range with this class, adds `is-empty` while
+   no query characters have been typed yet, and copies the configured
+   `decorationContent` onto the span as `data-decoration-content` (see
+   `menus/slash-controller.ts`). This is the only thing that paints it.
+
+   Same shape as the placeholder rule above, and for the same two reasons:
+   `content: attr(...)` keeps the string out of the document (so it can never
+   be selected, copied, or serialized into the message), and
+   `pointer-events: none` keeps a click landing on it from moving the caret
+   into text that does not exist. It disappears the instant a character is
+   typed, because the plugin drops `is-empty` at that point. */
+.kortix-composer-editor .kortix-slash-trigger.is-empty::after {
+  content: attr(data-decoration-content);
+
+  /* Pinned rather than inherited by luck. This text renders immediately
+     beside a real typed character inside a contenteditable, so any drift in
+     size, weight or baseline between the two reads as a rendering bug rather
+     than as a hint. `font: inherit` covers every font-* longhand at once
+     (family, size, weight, style, variant) so a future rule on the editor
+     cannot desync the pseudo-element from the `/` next to it. */
+  font: inherit;
+  vertical-align: baseline;
+  line-height: 1;
+
+  /* The separation the copy cannot provide: CSS collapses leading whitespace
+     in `content`, so `content: " Type to search"` renders as "Type to
+     search" and the hint ends up glued to the slash — "/Type" reads as one
+     word whose first glyph is inexplicably darker than the rest. Padding is
+     the only way to put space there.
+
+     `em`, not `px`: the composer is `text-base` below 640px and `text-sm`
+     above it, so a fixed gap would be proportionally twice as wide on
+     desktop as on mobile. */
+  padding-left: 0.3em;
+
+  color: var(--muted-foreground);
+  pointer-events: none;
+  /* Belt and braces — pseudo-element content is already unselectable, but the
+     caret sits directly before this inside an editable region and the intent
+     is worth stating. */
+  user-select: none;
+}
+
+/* Fix round 1, Minor: the paused-on-approval placeholder keeps the old
+   amber warning emphasis (session-chat-input.tsx:1233 —
+   `text-amber-600 dark:text-amber-400`) instead of the plain muted color
+   above. `composer.tsx` applies `.composer-locked-approval` to the
+   editor's own wrapper only while `lockForApproval` is true; scoped to the
+   placeholder `::before` alone so it can never affect real typed text. */
+.composer-locked-approval .kortix-composer-editor .ProseMirror p.is-editor-empty:first-child::before {
+  color: var(--color-amber-600);
+}
+.dark .composer-locked-approval .kortix-composer-editor .ProseMirror p.is-editor-empty:first-child::before {
+  color: var(--color-amber-400);
 }

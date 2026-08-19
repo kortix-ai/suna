@@ -1,6 +1,4 @@
 'use client';
-import { ToolRegistry } from '@/features/session/tool/shared/registry';
-import type { ToolProps } from '@/features/session/tool/shared/types';
 import {
   BasicTool,
   partInput,
@@ -8,12 +6,11 @@ import {
   partStatus,
 } from '@/features/session/tool/shared/infrastructure';
 import { OutputBlock, ToolSection } from '@/features/session/tool/shared/output-block';
-import {
-  MessageCircle,
-} from 'lucide-react';
+import { ToolRegistry } from '@/features/session/tool/shared/registry';
+import type { ToolProps } from '@/features/session/tool/shared/types';
+import { ChatCircleIcon as MessageCircle } from '@phosphor-icons/react';
 
-
-export function SessionMessageTool({ part }: ToolProps) {
+export function SessionMessageTool({ part, forceOpen }: ToolProps) {
   const input = partInput(part);
   const output = partOutput(part);
   const status = partStatus(part);
@@ -24,13 +21,14 @@ export function SessionMessageTool({ part }: ToolProps) {
 
   return (
     <BasicTool
-      icon={<MessageCircle className="size-3.5 flex-shrink-0" />}
+      icon={<MessageCircle className="size-3.5 shrink-0" />}
       trigger={{
-        title: 'Message → Session',
+        title: 'Messaged a session',
         subtitle: sid,
         args: isOk ? ['sent'] : status === 'error' ? ['failed'] : [],
       }}
       defaultOpen={false}
+      forceOpen={forceOpen}
     >
       {message && (
         <div className="px-3 py-2">
@@ -46,4 +44,3 @@ ToolRegistry.register('session_message', SessionMessageTool);
 ToolRegistry.register('session-message', SessionMessageTool);
 ToolRegistry.register('oc-session_message', SessionMessageTool);
 ToolRegistry.register('oc-session-message', SessionMessageTool);
-

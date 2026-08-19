@@ -17,6 +17,7 @@ describe('create session command payload', () => {
         repoUrl: 'https://example.test/queue-principal.git',
         defaultBranch: 'main',
         manifestPath: 'kortix.yaml',
+        idempotencyKey: null,
         metadata: null,
         createdAt: now,
         updatedAt: now,
@@ -25,10 +26,16 @@ describe('create session command payload', () => {
       userId: crypto.randomUUID(),
       requestingPrincipalType: 'service_account',
       body: { connector_bindings: {} },
+      postCreate: [
+        { type: 'apply_trigger_session_access', triggerSlug: 'daily' },
+      ],
     } satisfies CreateSessionCommand;
 
     expect(createSessionCommandPayload(command)).toMatchObject({
       requestingPrincipalType: 'service_account',
+      postCreate: [
+        { type: 'apply_trigger_session_access', triggerSlug: 'daily' },
+      ],
     });
   });
 });

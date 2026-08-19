@@ -3,11 +3,11 @@ import { printBanner } from './banner.ts';
 import { runAccess } from './commands/access.ts';
 import { runAccounts } from './commands/accounts.ts';
 import { runAgents } from './commands/agents.ts';
+import { runApps } from './commands/apps.ts';
 import { runChannels } from './commands/channels.ts';
 import { runConnectors } from './commands/connectors.ts';
 import { runCr } from './commands/cr.ts';
 import { runEnv } from './commands/env.ts';
-import { runExecutor } from './commands/executor.ts';
 import { runFiles } from './commands/files.ts';
 import { runGitCredential } from './commands/git-credential.ts';
 import { runGateway } from './commands/gateway.ts';
@@ -20,12 +20,14 @@ import { runMarketplace } from './commands/marketplace.ts';
 import { runProjects } from './commands/projects.ts';
 import { runProviders } from './commands/providers.ts';
 import { runRegistry } from './commands/registry.ts';
+import { runAudit } from './commands/audit.ts';
 import { runRoles } from './commands/roles.ts';
 import { runSandboxes } from './commands/sandboxes.ts';
 import { runSchema } from './commands/schema.ts';
 import { runSecrets } from './commands/secrets.ts';
 import { runSelfHost } from './commands/self-host.ts';
 import { runSessionsChat } from './commands/sessions-chat.ts';
+import { runSessionsConnect } from './commands/sessions-connect.ts';
 import { runSessions } from './commands/sessions.ts';
 import { runShip } from './commands/ship.ts';
 import { SYSTEM_SKILLS_COMMAND, runSystemSkills } from './commands/system-skills.ts';
@@ -34,7 +36,9 @@ import { runUninstall } from './commands/uninstall.ts';
 import { runUpdate } from './commands/update.ts';
 import { runValidate } from './commands/validate.ts';
 import { runWhoami } from './commands/whoami.ts';
+import { runDoctor } from './commands/doctor.ts';
 import { renderContext, renderHostNotice } from './host-notice.ts';
+import { printPermissionDenialIdentity } from './token-denial.ts';
 import { C, header, pad, rule, visibleWidth } from './style.ts';
 import { confirm } from './prompts.ts';
 import {
@@ -149,6 +153,11 @@ const TIERS: readonly CommandTier[] = [
             blurb: 'List, create, restart project sessions',
           },
           {
+            name: 'connect',
+            args: '[session-id]',
+            blurb: 'Attach the full OpenCode TUI to a session (picker when no id given)',
+          },
+          {
             name: 'chat',
             args: '[session-id]',
             blurb: "Talk to a session's agent (REPL or --prompt)",
@@ -166,6 +175,11 @@ const TIERS: readonly CommandTier[] = [
           { name: 'ship', blurb: 'Create the cloud project (first run) + push your code' },
           { name: 'validate', blurb: "Statically validate this project's kortix.yaml" },
           {
+            name: 'doctor',
+            args: '[--no-session]',
+            blurb: 'End-to-end health check: auth, project, session, agent reply',
+          },
+          {
             name: 'schema',
             args: '[--version 1|2]',
             blurb: 'Print the canonical kortix.yaml/kortix.toml JSON Schema',
@@ -173,7 +187,7 @@ const TIERS: readonly CommandTier[] = [
         ],
       },
       {
-        title: 'Agents & integrations',
+        title: 'Agents & connectors',
         commands: [
           { name: 'agents', args: '<subcommand>', blurb: 'Set which model each agent runs on' },
           {
@@ -184,7 +198,7 @@ const TIERS: readonly CommandTier[] = [
           {
             name: 'connectors',
             args: '<subcommand>',
-            blurb: 'Manage integrations agents call as tools (Pipedream/MCP/HTTP)',
+            blurb: 'Manage connectors agents call as tools (Pipedream/MCP/HTTP)',
           },
           {
             name: 'secrets',
@@ -212,14 +226,14 @@ const TIERS: readonly CommandTier[] = [
             blurb: 'Manage sandbox images: templates, builds, health',
           },
           {
+            name: 'apps',
+            args: '<subcommand>',
+            blurb: 'Experimental: deploy serverless Apps with stable Kortix URLs',
+          },
+          {
             name: 'marketplace',
             args: '<subcommand>',
             blurb: 'Search, show, install, and inspect marketplace items',
-          },
-          {
-            name: 'executor',
-            args: '<subcommand>',
-            blurb: 'Call connectors as tools (discover/describe/call) + run the MCP server',
           },
         ],
       },
@@ -247,6 +261,11 @@ const TIERS: readonly CommandTier[] = [
             name: 'roles',
             args: '<subcommand>',
             blurb: 'Manage IAM custom roles + policy assignments (account-scoped)',
+          },
+          {
+            name: 'audit',
+            args: '<subcommand>',
+            blurb: 'Read the account audit trail (who did what, when)',
           },
           {
             name: 'grants',
@@ -281,7 +300,10 @@ function tierBand(label: string): string {
 }
 
 function renderHelp(): string {
-  const allCommands = TIERS.flatMap((t) => t.sections.flatMap((s) => s.commands));
+  const visibleCommands = (commands: readonly Command[]) => commands;
+  const allCommands = TIERS.flatMap((t) =>
+    t.sections.flatMap((s) => visibleCommands(s.commands)),
+  );
   const labelWidth = Math.max(
     ...allCommands.map((c) => (c.args ? `${c.name} ${c.args}` : c.name).length),
   );
@@ -290,7 +312,9 @@ function renderHelp(): string {
   lines.push(header('Kortix CLI', VERSION));
   lines.push(rule());
   for (const tier of TIERS) {
-    const sections = tier.sections.filter((s) => s.commands.length > 0);
+    const sections = tier.sections
+      .map((section) => ({ ...section, commands: visibleCommands(section.commands) }))
+      .filter((s) => s.commands.length > 0);
     if (sections.length === 0) continue;
     lines.push('');
     lines.push(tierBand(tier.label));
@@ -395,7 +419,9 @@ async function main(argv: string[]): Promise<number> {
   }
   // Bare `kortix` and explicit help are the same landing screen. Only the bare
   // form offers to update: `kortix --help` is what people (and scripts) reach
-  // for to READ something, and it must never block on a question.
+  // for to READ something, and it must never block on a question. Bare
+  // `kortix` must ALWAYS land here — the interactive session picker is an
+  // explicit verb (`kortix connect`), never the front door.
   if (argv.length === 0 || argv[0] === 'help' || argv[0] === '--help' || argv[0] === '-h') {
     await printLanding({ offerUpdate: argv.length === 0 });
     return 0;
@@ -411,10 +437,12 @@ async function main(argv: string[]): Promise<number> {
   if (argv[0] === 'git-credential') {
     return runGitCredential(argv.slice(1));
   }
-  // `executor` is a MACHINE surface (the in-sandbox agent parses stdout as JSON,
-  // and `executor mcp` speaks JSON-RPC on stdout). Skip the human-oriented host
-  // + update notices so its output stays clean.
-  if (argv[0] !== 'executor') {
+  const connectorMachineCommand =
+    argv[0] === 'connectors' &&
+    (['call', 'discover', 'mcp'].includes(argv[1] ?? '') ||
+      (argv[1] === 'show' && (argv[2] ?? '').includes('.')) ||
+      ((argv[1] === 'ls' || argv[1] === 'list') && argv.includes('--session')));
+  if (!connectorMachineCommand) {
     printActiveHostNotice(argv);
     await printUpdateNoticeForCommand(argv[0]);
   }
@@ -440,6 +468,9 @@ async function main(argv: string[]): Promise<number> {
   if (argv[0] === 'whoami') {
     return runWhoami(argv.slice(1));
   }
+  if (argv[0] === 'doctor') {
+    return runDoctor(argv.slice(1));
+  }
   if (argv[0] === 'token') {
     return runWhoami(['--token-only', ...argv.slice(1)]);
   }
@@ -464,17 +495,27 @@ async function main(argv: string[]): Promise<number> {
   if (argv[0] === 'gateway') {
     return runGateway(argv.slice(1));
   }
+  if (argv[0] === 'apps') {
+    return runApps(argv.slice(1));
+  }
   if (argv[0] === 'self-host') {
     return runSelfHost(argv.slice(1));
   }
   if (argv[0] === 'env') {
     return runEnv(argv.slice(1));
   }
-  if (argv[0] === 'sessions') {
+  // Singular `session` is a permanent alias — `kortix session new` is typed
+  // often enough that a "did you mean" round-trip is pure friction.
+  if (argv[0] === 'sessions' || argv[0] === 'session') {
     return runSessions(argv.slice(1));
   }
   if (argv[0] === 'chat') {
     return runSessionsChat(argv.slice(1));
+  }
+  // Top-level aliases for `sessions connect` — the flagship "land me in the
+  // TUI" verb deserves a first-class name.
+  if (argv[0] === 'connect' || argv[0] === 'attach') {
+    return runSessionsConnect(argv.slice(1));
   }
   if (argv[0] === 'files') {
     return runFiles(argv.slice(1));
@@ -487,9 +528,6 @@ async function main(argv: string[]): Promise<number> {
   }
   if (argv[0] === 'connectors') {
     return runConnectors(argv.slice(1));
-  }
-  if (argv[0] === 'executor') {
-    return runExecutor(argv.slice(1));
   }
   if (argv[0] === 'marketplace') {
     return runMarketplace(argv.slice(1));
@@ -518,6 +556,9 @@ async function main(argv: string[]): Promise<number> {
   }
   if (argv[0] === 'roles') {
     return runRoles(argv.slice(1));
+  }
+  if (argv[0] === 'audit') {
+    return runAudit(argv.slice(1));
   }
   if (argv[0] === 'grants') {
     return runGrants(argv.slice(1));
@@ -552,12 +593,16 @@ const KNOWN_COMMANDS = [
   'login',
   'logout',
   'whoami',
+  'doctor',
   'token',
   'hosts',
   'accounts',
   'projects',
   'sessions',
+  'session',
   'chat',
+  'connect',
+  'attach',
   'files',
   'cr',
   'triggers',
@@ -566,16 +611,17 @@ const KNOWN_COMMANDS = [
   'providers',
   'env',
   'gateway',
+  'apps',
   'channels',
   'sandboxes',
   'marketplace',
   'system-skills',
   'skills',
-  'executor',
   'registry',
   'agents',
   'access',
   'roles',
+  'audit',
   'grants',
   'update',
   'uninstall',
@@ -634,7 +680,7 @@ async function printUpdateNoticeForCommand(command: string): Promise<void> {
 }
 
 // `process.exit()` does NOT wait for a piped stdout/stderr to flush — on large
-// output (e.g. `kortix projects ls --all --json | jq`, or executor JSON the
+// output (e.g. `kortix projects ls --all --json | jq`, or connector JSON the
 // in-sandbox agent parses) it drops everything past the ~64KiB pipe buffer,
 // producing truncated/invalid output. Instead set the exit code and let the
 // runtime flush both streams and exit naturally. Release stdin first so an
@@ -651,6 +697,12 @@ function finish(code: number): void {
 }
 
 main(process.argv.slice(2))
+  // A refused call names the action, never the identity. Answer that here —
+  // once, after the command's own output, and only when something was refused.
+  .then(async (code) => {
+    await printPermissionDenialIdentity();
+    return code;
+  })
   .then((code) => finish(code))
   .catch((err: unknown) => {
     const msg = err instanceof Error ? err.message : String(err);

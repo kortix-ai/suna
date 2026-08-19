@@ -14,7 +14,8 @@
 
 import { createRoute, z } from '@hono/zod-openapi';
 import { manifestCandidatePaths } from '@kortix/manifest-schema';
-import { getAgentGrant } from '../../iam/agent-scope';
+import { requireFeatureFlag } from '../../feature-flags/gate';
+import { isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { getCatalogEntry } from '../../marketplace/catalog';
 import {
   buildRegistryProjectInstallPrompt,
@@ -83,6 +84,10 @@ async function handleMarketplaceInstallSession(c: any) {
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'write');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  // Flag gate AFTER membership authz. `marketplace` defaults ON platform-wide,
+  // so this only rejects a project that explicitly turned it off.
+  const gate = requireFeatureFlag(c, loaded.row.metadata, 'marketplace');
+  if (gate) return gate;
 
   const body = await readBody(c);
   const id = typeof body?.id === 'string' ? body.id.trim() : '';
@@ -121,10 +126,9 @@ async function handleMarketplaceInstallSession(c: any) {
     visibility: 'project',
     // Derive origin from the caller's token kind, same as POST /sessions (r7),
     // so a backend-driven install records origin='backend' rather than 'user'.
-    // No origin_ref is accepted here — the body is composed server-side.
     authType: c.get('authType') as string | undefined,
     apiKeyType: c.get('apiKeyType') as string | undefined,
-    inSession: c.get('sessionId') != null || getAgentGrant(c) != null,
+    inSession: isProjectSessionPrincipal(c),
     request: requestAuditContext(c),
     queuePolicy: 'never',
   });
@@ -147,7 +151,7 @@ projectsApp.openapi(
     },
     responses: {
       201: json(z.any(), 'Session started'),
-      ...errors(400, 404),
+      ...errors(400, 403, 404),
     },
   }),
   handleMarketplaceInstallSession,

@@ -116,8 +116,7 @@ export function ClickablePath({
     <span
       className={cn(
         'group/path inline-flex items-center gap-0.5',
-        'underline decoration-dotted decoration-1 underline-offset-2',
-        'text-foreground cursor-pointer decoration-blue-400/40 hover:text-blue-600 hover:decoration-blue-500/70 dark:hover:text-blue-400',
+        'text-foreground cursor-pointer hover:underline',
         'transition-colors',
         className,
       )}

@@ -91,7 +91,7 @@ model, the agent:
 The agent's only outputs are a **Docs suggestion** and a **Gmail draft** — never a
 sent reply, never an applied edit, never a signature. Counsel reviews both and
 decides what goes back to the counterparty. Credentials are encrypted in the
-secrets manager and injected at runtime, never shown to the model or written to
+secrets manager and injected at runtime, scoped to the agents you grant them to or written to
 logs.
 
 </Step>
@@ -117,12 +117,10 @@ review.
 An agent that touches an unsigned legal document needs a hard line between
 drafting and executing:
 
-- **Isolation.** Every run happens in its own microVM sandbox. The session can
-  reach only Gmail, Drive, and Docs, and only the redline and the draft leave
+- **Isolation.** Every run happens in its own isolated sandbox. The session is granted access only to Gmail, Drive, and Docs, and only the redline and the draft leave
   it.
 - **Scoped secrets.** The Gmail, Drive, and Docs credentials are encrypted in the
-  secrets manager and injected into the sandbox at runtime, never exposed to the
-  model or the logs.
+  secrets manager and injected into the sandbox at runtime, scoped to the agents you grant them to.
 - **Suggesting mode only.** Redlines land as Docs suggested edits, never a direct
   write to the document, and the original attachment is never overwritten,
   deleted, or moved.

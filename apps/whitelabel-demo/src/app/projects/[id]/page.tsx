@@ -6,7 +6,6 @@ import { AgentPicker } from '@/components/chat/agent-picker';
 import { ModelPicker } from '@/components/chat/model-picker';
 import {
   ConnectorBindingFields,
-  bindingLabels,
   useConnectorBindingChoices,
 } from '@/components/connector-bindings';
 import { ProjectShell } from '@/components/project-shell';
@@ -29,8 +28,12 @@ import {
   useVisibleAgents,
   writeStartStash,
 } from '@kortix/sdk/react';
-import { serverErrorBody } from '@/lib/api-error-body';
-import { classifySessionStartFailure } from '@/lib/session-start-error';
+import { ConnectRequiredCard } from '@/components/connect-required-card';
+import {
+  type ConnectorRequirement,
+  connectorRequirement,
+} from '@/lib/connector-required';
+import { sessionCreateFailure } from '@/lib/session-create-failure';
 import { NO_OVERRIDES, buildSessionCreateInput } from '@/lib/session-overrides';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowUp, Sparkles } from 'lucide-react';
@@ -39,14 +42,23 @@ import { useRef, useState } from 'react';
 import { toast } from 'sonner';
 
 const STARTERS = [
-  { label: 'Build a landing page', prompt: 'Build a clean, modern landing page for my product.' },
+  {
+    label: 'Build a landing page',
+    prompt: 'Build a clean, modern landing page for my product.',
+  },
   {
     label: 'Onboard the agent',
     prompt:
       'Onboard me — ask about my company, what we do, who our customers are, and our goals, then save it to project memory.',
   },
-  { label: 'Fix a bug', prompt: 'There is a bug in the app. Investigate it and propose a fix.' },
-  { label: 'Add a feature', prompt: 'Add a new feature to the app — ask me what I have in mind.' },
+  {
+    label: 'Fix a bug',
+    prompt: 'There is a bug in the app. Investigate it and propose a fix.',
+  },
+  {
+    label: 'Add a feature',
+    prompt: 'Add a new feature to the app — ask me what I have in mind.',
+  },
 ];
 
 export default function ProjectPage() {
@@ -64,19 +76,19 @@ function ProjectHome() {
   const ref = useRef<HTMLTextAreaElement>(null);
 
   const [prompt, setPrompt] = useState('');
-  // A connector this end-user must connect THEMSELVES before the session can
-  // start (409 CONNECTOR_CONNECTION_REQUIRED). Shown as a call to action rather
-  // than an error, because it is one.
-  const [connectPrompt, setConnectPrompt] = useState<{
-    connector: string;
-    message: string;
-  } | null>(null);
+  // The connector PRE-FLIGHT refusal: the session declares a connector with no
+  // usable connection, so the platform refused it before a sandbox booted.
+  // Shown as a call to action rather than an error, because it is one — and
+  // shown HERE rather than as a toast, because the alternative the user would
+  // otherwise get is a streamed agent apology they paid tokens for.
+  const [connectPrompt, setConnectPrompt] =
+    useState<ConnectorRequirement | null>(null);
   // Which shared connection each connector should run as. An alias absent from
   // this map keeps the connector's default, which is what an unbound alias
   // resolves to server-side anyway.
   const [bindings, setBindings] = useState<Record<string, string>>({});
 
-  // Only TEAM connections are offered: a wrapper has no personal identity
+  // Only project connections are offered: a wrapper has no personal identity
   // upstream, so a member's private connection cannot be bound at all. The
   // alias used to be hardcoded here, which meant exactly one connector could
   // ever be bound from this screen.
@@ -112,10 +124,15 @@ function ProjectHome() {
             sessionId,
             name: text.slice(0, 60),
             sandboxSlug: template,
-            connectionLabels: bindingLabels(connectors.data?.connectors ?? [], bindings),
           },
         ),
       );
+      // DELIBERATELY the full stash, prompt included. This app is the golden
+      // reference for an SDK consumer with no inbox client of its own: the
+      // SDK's `useSession` replay delivers `stash.prompt` once the runtime is
+      // ready, and that path must keep working. apps/web writes picks-only
+      // stashes instead and delivers the prompt as a durable inbox row
+      // (`create.pending_prompt` / `startSessionWithPrompt`).
       writeStartStash(sessionId, { prompt: text, model, agent });
       kortix
         .project(projectId)
@@ -128,22 +145,16 @@ function ProjectHome() {
       router.push(`/projects/${projectId}/sessions/${sessionId}`);
     },
     onError: (err: unknown) => {
-      // Two KaaB refusals need opposite responses, and a single generic toast
-      // told the user to fix something they often could not fix.
-      // The SDK's ApiError puts the parsed body on `data`/`details` and lifts
-      // `code` — it has no `body` field, so reading one made every KaaB refusal
-      // below unreachable.
-      const failure = classifySessionStartFailure(serverErrorBody(err));
-      if (failure.kind === 'connector_connection_required') {
-        setConnectPrompt({ connector: failure.connector, message: failure.message });
+      // A missing connector is the one create refusal with a real remedy, so it
+      // gets the card instead of a toast. Everything else keeps the shared
+      // classifier, which names the person who can fix each refusal.
+      const requirement = connectorRequirement(err);
+      if (requirement) {
+        setConnectPrompt(requirement);
         return;
       }
-      if (failure.kind === 'require_connectors_backend_origin') {
-        // Developer-facing: the end-user can do nothing about this.
-        toast.error(failure.message, { duration: 10_000 });
-        return;
-      }
-      toast.error(failure.message);
+      const failure = sessionCreateFailure(err);
+      toast.error(failure.title, { description: failure.detail });
     },
   });
 
@@ -157,7 +168,9 @@ function ProjectHome() {
           <div className="mx-auto mb-4 grid size-11 place-items-center rounded-2xl bg-brand/10">
             <Sparkles className="size-5 text-brand" />
           </div>
-          <h1 className="text-xl font-semibold tracking-tight">What would you like to build?</h1>
+          <h1 className="text-xl font-semibold tracking-tight">
+            What would you like to build?
+          </h1>
           <p className="mt-1.5 text-sm text-muted-foreground">
             Pick your template, agent, and model, then describe the task.
           </p>
@@ -171,34 +184,31 @@ function ProjectHome() {
             <ConnectorBindingFields
               choices={connectors.data?.connectors ?? []}
               value={bindings}
-              onChange={setBindings}
+              onChange={(next) => {
+                setBindings(next);
+                // The card describes the bindings that were sent. Once those
+                // change it is a verdict on a request that no longer exists.
+                setConnectPrompt(null);
+              }}
             />
           </div>
         )}
 
-        {/* Kortix-as-a-Backend: the session needs THIS end-user's own connection.
-            A call to action, not a failure — they can resolve it themselves,
-            and the previous generic toast gave them nothing to act on. */}
+        {/* Kortix-as-a-Backend: the session declares a connector with no usable
+            connection. A call to action, not a failure — and the card is honest
+            about which remedies actually exist for THIS connector, rather than
+            offering everyone a button that only works for shared ones. */}
         {connectPrompt && (
-          <div className="mb-4 rounded-2xl border border-brand/40 bg-brand/5 p-4 text-left">
-            <div className="text-sm font-medium">
-              Connect {connectPrompt.connector} to continue
-            </div>
-            <p className="mt-1 text-sm text-muted-foreground">{connectPrompt.message}</p>
-            <div className="mt-3 flex items-center gap-2">
-              <Button
-                size="sm"
-                onClick={() => {
-                  setConnectPrompt(null);
-                  if (prompt.trim()) start.mutate(prompt);
-                }}
-              >
-                I&apos;ve connected it — retry
-              </Button>
-              <Button size="sm" variant="ghost" onClick={() => setConnectPrompt(null)}>
-                Dismiss
-              </Button>
-            </div>
+          <div className="mb-4">
+            <ConnectRequiredCard
+              projectId={projectId}
+              requirement={connectPrompt}
+              onRetry={() => {
+                setConnectPrompt(null);
+                if (prompt.trim()) start.mutate(prompt.trim());
+              }}
+              onDismiss={() => setConnectPrompt(null)}
+            />
           </div>
         )}
 
@@ -251,7 +261,11 @@ function ProjectHome() {
               onClick={submit}
               aria-label="Start session"
             >
-              {launching ? <Loading className="size-4" /> : <ArrowUp className="size-4" />}
+              {launching ? (
+                <Loading className="size-4" />
+              ) : (
+                <ArrowUp className="size-4" />
+              )}
             </Button>
           </div>
         </div>

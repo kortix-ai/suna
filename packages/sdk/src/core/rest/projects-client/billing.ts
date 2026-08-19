@@ -23,6 +23,12 @@ export type BillingState =
   | 'payment_failed'
   | 'no_account';
 
+/**
+ * The public plan ladder. Exactly three rungs — every plan key an account can
+ * carry, current or grandfathered, belongs to one of them.
+ */
+export type PlanFamily = 'free' | 'team' | 'enterprise';
+
 export interface AccountState {
   credits: {
     total: number;
@@ -49,6 +55,41 @@ export interface AccountState {
   /** True when a Stripe subscription is currently providing service (distinct
    *  from `subscription.subscription_id`, which survives cancellation). */
   has_active_subscription?: boolean;
+  /**
+   * The plan the account BEHAVES as, named the way the product names plans.
+   *
+   * Distinct from `subscription` on purpose. `subscription.tier_key` is the
+   * STORED plan — the one Stripe sold. This block is the RESOLVED plan: an
+   * active admin-issued trial and the per-seat self-heal overlay it, so it
+   * reports the plan the server's gates actually enforce. Read it through
+   * {@link resolvedPlan}, which also covers responses from an API too old to
+   * send it.
+   *
+   * Optional: additive on the wire. The API sends it as of the plan-resolver
+   * rollout; older deployments omit it entirely.
+   */
+  plan?: {
+    /** Plan key — e.g. 'free', 'per_seat', 'tier_25_200', 'enterprise'. */
+    key: string;
+    /** Public ladder position: there are exactly three families. */
+    family: PlanFamily;
+    /** Customer-facing family name — 'Free' | 'Team' | 'Enterprise'. */
+    label: string;
+    /** Qualifier under the label, e.g. '$200/mo · grandfathered'. Null when
+     *  the plan needs no qualifier. */
+    sublabel: string | null;
+    /** Lifecycle: sellable today, sold-once-and-honored, defined-but-never-sold,
+     *  or the absence of a plan. */
+    status: 'current' | 'grandfathered' | 'retired' | 'non_plan';
+    /** How the recurring charge is computed. */
+    shape: 'none' | 'flat' | 'seat' | 'contract';
+    /** Strictly ordered ladder position (0 = no plan). Compare, don't display. */
+    rank: number;
+    /** `status === 'grandfathered'` — sold once, still honored exactly as sold.
+     *  Render the plan as it was sold instead of mapping it onto a current plan
+     *  it is not. */
+    is_grandfathered: boolean;
+  };
   subscription: {
     tier_key: string;
     tier_display_name: string;
@@ -138,6 +179,13 @@ export interface AccountState {
    *  hides the self-serve "Enterprise features — Demo" toggle and any
    *  "Request enterprise access" upsell when this is true. */
   enterprise_license_available?: boolean;
+  /** True when an operator flagged this account as a contracted cloud
+   *  Enterprise customer (`credit_accounts.enterprise_entitled`). The account
+   *  then resolves all enterprise entitlements regardless of billing tier, so
+   *  a deal that is BOTH Enterprise AND per-seat can hold both at once. The
+   *  frontend uses this to hide the self-serve demo toggle (a real contract
+   *  supersedes the demo). */
+  enterprise_entitled?: boolean;
   auto_topup?: {
     enabled: boolean;
     threshold: number;
@@ -255,6 +303,72 @@ export function getDefaultAccountState(): AccountState {
       monthly_credits: 0,
       can_purchase_credits: false,
     },
+  };
+}
+
+// ── Plan selectors ──────────────────────────────────────────────────────────
+
+/** What a UI needs to name an account's plan. */
+export interface ResolvedPlanView {
+  /** Which rung of the public ladder — the only value worth branching on. */
+  family: PlanFamily;
+  /** Customer-facing plan name, e.g. 'Team'. Never empty. */
+  label: string;
+  /** Qualifier to render muted after the label, e.g.
+   *  '$40/seat/mo · grandfathered'. Null when the plan needs none. */
+  sublabel: string | null;
+  /** Sold once, still honored exactly as sold, no longer offered. */
+  isGrandfathered: boolean;
+}
+
+/**
+ * Fallback family for an API that predates the `plan` block. `free` and `none`
+ * are the only two keys in the free family and `enterprise` is the only key in
+ * the enterprise family, so everything else is a Team-family plan — current or
+ * grandfathered.
+ */
+function planFamilyForTierKey(tierKey: string): PlanFamily {
+  const key = tierKey.trim().toLowerCase();
+  if (key === '' || key === 'free' || key === 'none') return 'free';
+  if (key === 'enterprise') return 'enterprise';
+  return 'team';
+}
+
+/**
+ * The plan an account BEHAVES as, as a UI should name it.
+ *
+ * Prefer this over `state.subscription.tier_key` for anything a person reads or
+ * any "is this account on a paid plan?" branch. `tier_key` is the STORED plan,
+ * which stays `free` for an account on an admin trial and for a paying per-seat
+ * team whose row is stale — branch on it and the UI contradicts the server.
+ *
+ * Degrades safely: an API too old to send `plan` still yields a family and a
+ * label, derived from `tier` / `subscription.tier_key`.
+ */
+export function resolvedPlan(state: AccountState | null | undefined): ResolvedPlanView {
+  const plan = state?.plan;
+  if (plan) {
+    return {
+      family: plan.family,
+      label: plan.label,
+      sublabel: plan.sublabel ?? null,
+      isGrandfathered: plan.is_grandfathered === true,
+    };
+  }
+
+  // No state at all reads as the default state — 'No Plan', the same name the
+  // rest of this module gives the absence of a plan.
+  const s = state ?? getDefaultAccountState();
+  const tierKey = (s.subscription?.tier_key || s.tier?.name || 'none').toString();
+  const label = (s.tier?.display_name || '').trim() || tierKey;
+  return {
+    family: planFamilyForTierKey(tierKey),
+    label,
+    // The old shape carries no qualifier and no lifecycle, so there is nothing
+    // honest to put here. Guessing "grandfathered" from a `tier_*` key would
+    // print a billing claim the response never made.
+    sublabel: null,
+    isGrandfathered: false,
   };
 }
 
@@ -450,6 +564,10 @@ export async function getBillingTierConfigurations(): Promise<BillingTierConfigu
  * slice before redirecting a freshly-authenticated user.
  */
 export interface AccountStateAppAccessView {
+  /** The RESOLVED plan key — authoritative over `subscription.tier_key`, which
+   *  is the STORED plan and stays `free` for an account on an admin trial.
+   *  Optional: an API older than the plan resolver omits the block. */
+  plan?: { key?: string | null } | null;
   subscription?: { tier_key?: string | null } | null;
   tier?: { name?: string | null } | null;
   credits?: { can_run?: boolean | null } | null;
@@ -680,15 +798,28 @@ export interface ConfigureAutoTopupInput {
   amount: number;
 }
 
-/** Configure (enable/disable, threshold, amount) auto-topup — recurring credit purchases. */
+/**
+ * Configure (enable/disable, threshold, amount) auto-topup — recurring credit
+ * purchases.
+ *
+ * `showErrors: false` — the single caller (`AutoTopupCard.handleSave`) already
+ * shows its own `errorToast` from the thrown error in its `catch` block. Without
+ * this, the SDK's global `onError` (wired to `handleApiError` in
+ * `apps/web/src/lib/kortix-config.ts`) ALSO toasted the same message, so one
+ * failed Save produced two stacked identical toasts.
+ */
 export async function configureAutoTopup(input: ConfigureAutoTopupInput): Promise<AutoTopupSettings> {
   return unwrap(
-    await backendApi.post<AutoTopupSettings>('/billing/auto-topup/configure', {
-      account_id: input.accountId,
-      enabled: input.enabled,
-      threshold: input.threshold,
-      amount: input.amount,
-    }),
+    await backendApi.post<AutoTopupSettings>(
+      '/billing/auto-topup/configure',
+      {
+        account_id: input.accountId,
+        enabled: input.enabled,
+        threshold: input.threshold,
+        amount: input.amount,
+      },
+      { showErrors: false },
+    ),
     'Failed to configure auto-topup',
   );
 }
@@ -786,10 +917,6 @@ export interface UsageBreakdownItem {
   day?: string;
   provider?: string | null;
   model?: string;
-  /** Present only for `group_by: 'end_user_ref'` — the wrapper's own end-user id. */
-  end_user_ref?: string;
-  /** @deprecated Renamed to `end_user_ref`. Echoed with the same value. */
-  origin_ref?: string;
   input_tokens: number;
   output_tokens: number;
   cached_tokens: number;
@@ -806,16 +933,7 @@ export interface UsageRollup {
 export interface UsageQueryOptions {
   start?: string;
   end?: string;
-  /**
-   * `end_user_ref` attributes spend to one end-user of a Kortix-as-a-Backend
-   * wrapper. Rows without one (all non-backend spend) have a NULL value and
-   * are excluded from that grouping.
-   */
-  groupBy?: 'model' | 'provider' | 'day' | 'end_user_ref' | 'origin_ref';
-  /** Narrow to a single end-user. Applies to the TOTALS as well as the breakdown. */
-  endUserRef?: string;
-  /** @deprecated Renamed to `endUserRef`. Still accepted. */
-  originRef?: string;
+  groupBy?: 'model' | 'provider' | 'day';
   /**
    * Which account to report on. REQUIRED whenever the caller could be looking at
    * an account other than their default: for a browser session the server reads
@@ -831,10 +949,13 @@ export async function getUsageRollup(options: UsageQueryOptions = {}): Promise<U
   const qs = new URLSearchParams();
   if (options.start) qs.set('start', options.start);
   if (options.end) qs.set('end', options.end);
-  if (options.groupBy) qs.set('group_by', options.groupBy);
-  // Prefer the new name; the alias still works for callers mid-migration.
-  const endUserRef = options.endUserRef ?? options.originRef;
-  if (endUserRef) qs.set('end_user_ref', endUserRef);
+  if (
+    options.groupBy === 'model' ||
+    options.groupBy === 'provider' ||
+    options.groupBy === 'day'
+  ) {
+    qs.set('group_by', options.groupBy);
+  }
   if (options.accountId) qs.set('account_id', options.accountId);
   const query = qs.toString();
   return unwrap(await backendApi.get<UsageRollup>(`/usage${query ? `?${query}` : ''}`));

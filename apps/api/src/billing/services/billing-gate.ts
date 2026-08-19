@@ -6,9 +6,9 @@ import {
   type BillingState,
   billingSnapshotFromAccount,
   billingStateAllowsRun,
-  hasLiveSubscription,
   hasSubscriptionRecord,
   resolveBillingState,
+  subscriptionBypassesWalletFloor,
 } from './billing-state';
 import { deductCredits } from './credits';
 import { ensureFreeTierAccountReady } from './free-tier';
@@ -114,12 +114,20 @@ export async function checkBillingActive(
 
   if (!billingStateAllowsRun(state)) return blockedResult(state, snapshot, billingModel);
 
-  // An active per-seat subscription isn't wallet-gated at all — no admission
+  // A PAYING per-seat subscription isn't wallet-gated at all — no admission
   // hold, no floor. This is the branch that makes `per_seat` + `active` + a
   // $0.0099 wallet a RUNNABLE account, which is why `can_run` on account-state
   // must be derived from this same state machine (see account-state.ts) rather
   // than from a bare wallet-floor check that contradicts it.
-  if (isPerSeatAccount(snapshot.billingModel) && hasLiveSubscription(snapshot)) {
+  //
+  // It calls the SAME predicate `resolveBillingState` used above. This used to
+  // be a locally-written `isPerSeatAccount && hasLiveSubscription`, which
+  // treated `past_due` / `incomplete` as exempt and let subscriptions that had
+  // stopped paying spend with no floor whatsoever. A non-paying per-seat
+  // account now reaches the admission hold below like any other account: it
+  // keeps running while it has credit, and blocks as `payment_failed` when it
+  // does not.
+  if (subscriptionBypassesWalletFloor(snapshot)) {
     return { ok: true };
   }
 

@@ -2,15 +2,22 @@
 
 import { useTranslations } from 'next-intl';
 
-import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import { X, ExternalLink, Info, AlertTriangle, AlertCircle, Clock } from 'lucide-react';
-import { useEffect, useState } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
-import { usePathname } from 'next/navigation';
-import { normalizeAppPathname } from '@kortix/sdk/instance-routes';
 import { useAdminRole } from '@/hooks/admin/use-admin-role';
 import type { MaintenanceConfig, MaintenanceLevel } from '@/lib/maintenance-store';
+import { cn } from '@/lib/utils';
+import { normalizeAppPathname } from '@kortix/sdk/instance-routes';
+import {
+  WarningCircleIcon as AlertCircle,
+  WarningIcon as AlertTriangle,
+  ClockIcon as Clock,
+  ArrowSquareOutIcon as ExternalLink,
+  InfoIcon as Info,
+  XIcon as X,
+} from '@phosphor-icons/react';
+import { AnimatePresence, m } from 'motion/react';
+import { usePathname } from 'next/navigation';
+import { useEffect, useState } from 'react';
 
 interface MaintenanceBannerProps {
   config: MaintenanceConfig;
@@ -158,7 +165,7 @@ export function MaintenanceBanner({ config }: MaintenanceBannerProps) {
   return (
     <AnimatePresence>
       {shouldRender && lc && (
-        <motion.div
+        <m.div
           key="maintenance-banner"
           initial={{ opacity: 0, y: 24, scale: 0.98 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -220,7 +227,7 @@ export function MaintenanceBanner({ config }: MaintenanceBannerProps) {
               </button>
             )}
           </div>
-        </motion.div>
+        </m.div>
       )}
     </AnimatePresence>
   );

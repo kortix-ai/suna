@@ -3,19 +3,15 @@
 import { KeyRound, ServerCog } from 'lucide-react';
 
 /**
- * Which of the TWO integration shapes this instance is running.
+ * Which of the two connector access modes this instance is running.
  *
- * They behave very differently and the difference is invisible otherwise, which
- * makes every other observation ambiguous — "is `end_user_ref` being stamped?"
- * has no answer until you know this:
+ * They use different credential and ownership boundaries:
  *
  *   - BACKEND (wrapper / KaaB): the server holds ONE Kortix key, every upstream
- *     call goes through this app's proxy, and `end_user_ref` is injected
- *     server-side from the signed-in user. Per-end-user metering, isolation and
- *     caps are all in play.
+ *     call goes through this app's proxy, and local policy enforces project
+ *     ownership and request limits.
  *   - DIRECT (SDK-only): the browser talks to Kortix with a key the user pasted.
- *     There is no wrapper, no server-side stamping, and none of the KaaB
- *     properties apply.
+ *     There is no wrapper authentication or local project ownership policy.
  *
  * A missing `KORTIX_API_KEY` silently falls back to DIRECT, so the badge is also
  * the fastest way to see that the server env did not load.
@@ -23,8 +19,8 @@ import { KeyRound, ServerCog } from 'lucide-react';
 export function ModeBadge({ wrapperMode }: { wrapperMode: boolean }) {
   const label = wrapperMode ? 'Backend mode' : 'Direct mode';
   const detail = wrapperMode
-    ? 'This server holds the Kortix key and stamps end_user_ref on every session. Per-end-user usage, isolation and caps apply.'
-    : 'The browser talks to Kortix with a key you pasted. No wrapper, no end_user_ref stamping — Kortix-as-a-Backend features do not apply.';
+    ? 'This server holds the Kortix key. Local policy applies authentication, project ownership, and request limits.'
+    : 'The browser talks to Kortix with a key you pasted. Wrapper authentication and local project ownership do not apply.';
 
   return (
     <span

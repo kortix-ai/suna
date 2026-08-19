@@ -1,4 +1,5 @@
 import { Hono } from 'hono'
+import { egressShimPort } from './egress-shim'
 import type { ServerWebSocket } from 'bun'
 
 import type { Config } from './config'
@@ -14,11 +15,9 @@ import { createPortProxyRouter } from './routes/port-proxy'
 import { createFilesRouter } from './routes/files'
 import { createFindRouter } from './routes/find'
 import { createPresentationRouter } from './routes/presentation'
-import { createAcpRouter, createOpenCodeSessionHistory } from './routes/acp'
-import webProxyRouter from './routes/web-proxy'
+import { createWebProxyRouter } from './routes/web-proxy'
 import { createPtyRegistry, createPtyRouter, type PtyAttachHandle, type PtyRegistry } from './routes/pty'
 import type { ProjectEnvStore } from './project-env'
-import type { AcpRuntime } from './acp/runtime'
 import {
   KORTIX_USER_CONTEXT_HEADER,
   verifyKortixUserContext,
@@ -53,6 +52,45 @@ const KORTIX_USER_CONTEXT_QUERY_PARAM = '__kortix_user_context'
 // value. Failing fast here instead gives a clean 502 that apps/api's own
 // retry+auto-wake loop can act on immediately.
 const UPSTREAM_RESPONSE_TIMEOUT_MS = 10_000
+
+// The exception the bound above cannot express, and the omission that produced
+// the "upstream unreachable" banner in chat (2026-08-11, session 9f6b0d87).
+//
+// The reasoning above holds for every endpoint that ANSWERS quickly and then
+// maybe streams — SSE, downloads, long polls. It does not hold for the two that
+// withhold headers until the work is DONE: opencode does not emit a byte of
+// `POST /session/:id/message` or `POST /session/:id/command` until the entire
+// reasoning + tool-call turn has finished. (`prompt_async` is the non-blocking
+// sibling the web UI normally uses; `/command` has no async variant, so every
+// `/` slash-command takes this path.)
+//
+// Bounding those at 10s does not detect a wedged opencode, it MANUFACTURES a
+// failure out of a healthy turn: measured, a trivial `/command` takes ~6s and a
+// real one minutes. Worse, the 502 it returns is the signal apps/api's retry
+// loop was built to act on — so a fail-fast designed to trigger a retry met a
+// retry loop that assumed idempotency, and one `/webapp` submit ran the agent
+// four times, each retry aborting the turn the previous one had started.
+//
+// A generous ceiling rather than none: a genuinely wedged opencode must still
+// be caught eventually, and apps/api's own 50s proxy budget already bounds what
+// the browser waits for. This only stops the daemon severing a live turn first.
+const LONG_TURN_RESPONSE_TIMEOUT_MS = 10 * 60_000
+
+/**
+ * Does opencode withhold this response until a whole turn completes?
+ *
+ * Mirrors `isLongTurnCompletionRequest` in
+ * `apps/api/src/sandbox-proxy/preview-retry-budget.ts` — the two layers must
+ * agree on which calls block, or the inner one aborts what the outer one is
+ * patiently waiting for. Keep them in sync; there is no shared module because
+ * the daemon ships inside the sandbox image and cannot import from apps/api.
+ */
+export function isBlockingTurnRequest(method: string, path: string): boolean {
+  return (
+    method.toUpperCase() === 'POST' &&
+    /^\/session\/[^/]+\/(?:message|command)(?:$|[/?#])/.test(path)
+  )
+}
 
 type OpencodeWsData = {
   // Absent when the client connects without an id — lookup-or-create then
@@ -111,7 +149,7 @@ export function buildOpencodeApp(
   projectEnv?: ProjectEnvStore,
   staticWebPort: number | null = null,
   ptyRegistry?: PtyRegistry,
-  acpRuntime?: AcpRuntime,
+  agentEnvFile?: string,
 ): Hono {
   const app = new Hono()
 
@@ -120,17 +158,12 @@ export function buildOpencodeApp(
   // a trailing slash doesn't fall through to the reverse proxy.
   // Health bypasses auth — it's how the cloud probes liveness mid-boot.
   const kortixRouter = new Hono()
-  const healthRouter = createHealthRouter(
-    cfg,
-    opencode,
-    bootTime,
-    bootState,
-    staticWebPort,
-    acpRuntime,
-  )
+  const healthRouter = createHealthRouter(cfg, opencode, bootTime, bootState, staticWebPort)
   const refreshRouter = createRefreshRouter(cfg, opencode)
-  const abortRouter = createAbortRouter(cfg)
-  const envRouter = projectEnv ? createEnvRouter(cfg, opencode, projectEnv) : null
+  const abortRouter = createAbortRouter(cfg, opencode)
+  const envRouter = projectEnv
+    ? createEnvRouter(cfg, opencode, projectEnv, { agentEnvFile })
+    : null
   // NOTE: /kortix/git is currently unused by the product (the agent commits +
   // opens change requests from a chat prompt). Kept as a host-driven primitive.
   const gitRouter = createGitRouter(cfg)
@@ -138,13 +171,6 @@ export function buildOpencodeApp(
   // (see routes/pty.ts). `ptyRegistry` is always passed by `startProxy`;
   // the parameter is optional only so tests can build the app without one.
   const ptyRouter = createPtyRouter(cfg, ptyRegistry ?? createPtyRegistry(cfg))
-  const acpRouter = createAcpRouter(
-    cfg,
-    () => opencode.getAcpConnection(),
-    () => bootState.initialOpenCodeSessionId ?? null,
-    createOpenCodeSessionHistory(cfg, () => opencode.getInternalUrl()),
-    acpRuntime,
-  )
   kortixRouter.route('/health', healthRouter)
   kortixRouter.route('/health/', healthRouter)
   kortixRouter.route('/refresh', refreshRouter)
@@ -155,8 +181,6 @@ export function buildOpencodeApp(
   kortixRouter.route('/git/', gitRouter)
   kortixRouter.route('/pty', ptyRouter)
   kortixRouter.route('/pty/', ptyRouter)
-  kortixRouter.route('/acp', acpRouter)
-  kortixRouter.route('/acp/', acpRouter)
   if (envRouter) {
     kortixRouter.route('/env', envRouter)
     kortixRouter.route('/env/', envRouter)
@@ -195,13 +219,36 @@ export function buildOpencodeApp(
   // The agent server's own port is blocked to prevent recursion; opencode's
   // internal port is reachable via the catch-all below, not /proxy.
   const portProxyRouter = createPortProxyRouter({
-    blockedPorts: new Set([cfg.servicePort]),
+    // The egress shim too. It already refuses a plain-HTTP request with 405
+    // (it is CONNECT-only) and its per-host TLS listeners reject an HTTP dial,
+    // so this closes a door that is bolted — but the shim is the one listener
+    // in the guest whose job is to sit in front of a credential, and "it fails
+    // closed today" is a weaker guarantee than "it is not routable".
+    blockedPorts: new Set([cfg.servicePort, egressShimPort()]),
   })
   app.route('/proxy', portProxyRouter)
 
   // /web-proxy/{scheme}/{host}/{path} — forward proxy that rewrites HTML/CSS
   // so external sites embed cleanly inside the internal browser iframe.
-  app.route('/web-proxy', webProxyRouter)
+  //
+  // Blocked loopback ports keep it off our own control plane: reaching the
+  // daemon or opencode through here would tunnel past every path-keyed control
+  // apps/api applies on the way in (agent authorization, connector gate, run
+  // cap, prompt idempotency, secret-grant re-mint).
+  app.route(
+    '/web-proxy',
+    createWebProxyRouter({
+      // BOTH halves of the opencode port pair. A verified reload swaps which
+      // one is live, and this set is built once — blocking only the current
+      // half would leave the other reachable the moment they trade places.
+      blockedSelfPorts: new Set([
+        cfg.servicePort,
+        egressShimPort(),
+        cfg.opencodeInternalPort,
+        cfg.opencodeStandbyPort,
+      ]),
+    }),
+  )
 
   // /file/* — the daemon owns the ENTIRE file API: reads (GET / list,
   // /content, /raw, /status) and writes (upload, delete, mkdir, rename). We do
@@ -295,7 +342,10 @@ export function buildOpencodeApp(
     // never fire again, so a long-lived SSE body already in flight (e.g.
     // /global/event) is never cut off mid-stream.
     const controller = new AbortController()
-    const responseTimer = setTimeout(() => controller.abort(), UPSTREAM_RESPONSE_TIMEOUT_MS)
+    const responseTimeoutMs = isBlockingTurnRequest(method, url.pathname)
+      ? LONG_TURN_RESPONSE_TIMEOUT_MS
+      : UPSTREAM_RESPONSE_TIMEOUT_MS
+    const responseTimer = setTimeout(() => controller.abort(), responseTimeoutMs)
     try {
       const fetchInit: RequestInit & { duplex?: 'half' } = {
         method,
@@ -325,7 +375,7 @@ export function buildOpencodeApp(
       if (timedOut) {
         logger.error('[proxy] upstream fetch timed out — opencode unresponsive', {
           path: url.pathname,
-          timeoutMs: UPSTREAM_RESPONSE_TIMEOUT_MS,
+          timeoutMs: responseTimeoutMs,
         })
       } else {
         logger.error('[proxy] upstream fetch failed', err)
@@ -353,7 +403,6 @@ export function startProxy(
   bootState: SandboxBootState = { repoMaterializationError: null, timeline: [] },
   projectEnv?: ProjectEnvStore,
   staticWebPort: number | null = null,
-  acpRuntime?: AcpRuntime,
 ): ProxyServer {
   // Mutable so restore-time reload() can hot-swap the handler in place; the
   // indirection below re-reads `app` per request, so reassigning it is enough.
@@ -361,16 +410,7 @@ export function startProxy(
   // Constructed once, outside reload() — pty state must survive a config
   // hot-swap (warm-snapshot restore) exactly like `opencode`/`bootState` do.
   const ptyRegistry = createPtyRegistry(cfg)
-  let app = buildOpencodeApp(
-    cfg,
-    opencode,
-    bootTime,
-    bootState,
-    projectEnv,
-    staticWebPort,
-    ptyRegistry,
-    acpRuntime,
-  )
+  let app = buildOpencodeApp(cfg, opencode, bootTime, bootState, projectEnv, staticWebPort, ptyRegistry)
 
   const server = Bun.serve<OpencodeWsData>({
     port: cfg.servicePort,
@@ -446,16 +486,7 @@ export function startProxy(
     port: boundPort,
     reload(next: Config) {
       currentCfg = next
-      app = buildOpencodeApp(
-        next,
-        opencode,
-        bootTime,
-        bootState,
-        projectEnv,
-        staticWebPort,
-        ptyRegistry,
-        acpRuntime,
-      )
+      app = buildOpencodeApp(next, opencode, bootTime, bootState, projectEnv, staticWebPort, ptyRegistry)
       logger.info('[proxy] reloaded with session config', { projectId: next.projectId })
     },
     async stop() {

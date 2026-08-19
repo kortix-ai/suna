@@ -7,7 +7,6 @@ description: >-
   Assembles and flags only — never posts a journal entry and never marks the
   books closed.
 mode: primary
-model: kortix/codex/gpt-5.5
 permission: allow
 ---
 

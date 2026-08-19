@@ -29,6 +29,7 @@ function projectRow(
     repoUrl: 'https://github.com/acme/demo',
     defaultBranch: 'main',
     manifestPath: 'kortix.yaml',
+    idempotencyKey: null,
     status: 'active',
     metadata: {},
     lastOpenedAt: NOW,
@@ -59,7 +60,9 @@ function sessionRow(
     origin: 'user',
     originRef: null,
     secretsAllowlist: null,
+    requiredConnectors: null,
     connectorBindingsInheritUnbound: false,
+    connectorBindingsConfigured: false,
     metadata: { name: 'Fix the login bug' },
     createdAt: NOW,
     updatedAt: NOW,
@@ -76,6 +79,8 @@ function sandboxRow(
     accountId: ACCOUNT_ID,
     projectId: PROJECT_ID,
     provider: 'platinum',
+    activeSince: NOW,
+    deadlineAt: NOW,
     externalId: 'sbx-123',
     baseUrl: 'https://sbx-123.proxy.kortix.com',
     status: 'active',
@@ -101,6 +106,7 @@ function secretRow(
     ownerUserId: null,
     description: null,
     strategy: 'runtime' as const,
+    consumer: 'sandbox' as const,
     egressPolicy: null,
     handlePrefix: null,
     rotatedAt: null,
@@ -116,8 +122,8 @@ function secretRow(
 describe('serializeProject ⇄ ProjectSchema', () => {
   test('output parses strictly and round-trips unchanged', () => {
     const out = serializeProject(projectRow(), {
-      projectRole: 'editor',
-      effectiveRole: 'editor',
+      projectRole: 'manager',
+      effectiveRole: 'manager',
     });
     expect(ProjectSchema.strict().parse(out)).toEqual(out);
   });
@@ -152,10 +158,12 @@ describe('serializeProject ⇄ ProjectSchema', () => {
     }
   });
 
-  test.each(['managed', 'local_docker', 'justavps', 'unknown']) (
+  test.each(['managed', 'justavps', 'unknown'])(
     'does not surface retired or unknown project pin %s',
     (provider) => {
-      const out = serializeProject(projectRow({ metadata: { default_sandbox_provider: provider } }));
+      const out = serializeProject(
+        projectRow({ metadata: { default_sandbox_provider: provider } }),
+      );
       expect(out.default_sandbox_provider).toBeNull();
       expect(ProjectSchema.strict().parse(out)).toEqual(out);
     },
@@ -164,22 +172,11 @@ describe('serializeProject ⇄ ProjectSchema', () => {
 
 describe('serializeSession ⇄ ProjectSessionSchema', () => {
   test('owner view parses strictly and round-trips unchanged', () => {
-    const out = serializeSession(
-      sessionRow({
-        metadata: {
-          name: 'Fix the login bug',
-          runtime_transport: 'acp',
-          runtime_harness: 'codex',
-          native_agent: 'reviewer',
-        },
-      }),
-      {
+    const out = serializeSession(sessionRow(), {
       viewerId: USER_ID,
       canManageProject: false,
-      },
-    );
+    });
     expect(ProjectSessionSchema.strict().parse(out)).toEqual(out);
-    expect(out.native_agent).toBe('reviewer');
   });
 
   test('restricted shared view with grants parses', () => {
@@ -213,6 +210,124 @@ describe('serializeSession ⇄ ProjectSessionSchema', () => {
     expect(parsed.name).toBe('Mine');
     expect(parsed.custom_name).toBe('Mine');
   });
+
+  test('runtime snapshot root title wins over the Kortix auto title', () => {
+    const out = serializeSession(
+      sessionRow({
+        metadata: {
+          name: 'Fix the login bug on the dashboard',
+          opencode_sessions: [
+            { id: 'ses_child', title: 'Sub-agent work', parent_id: 'ses_abc' },
+            { id: 'ses_abc', title: 'Dashboard Login Repair', parent_id: null },
+          ],
+        },
+      }),
+    );
+    const parsed = ProjectSessionSchema.strict().parse(out);
+    expect(parsed.name).toBe('Dashboard Login Repair');
+    expect(parsed.custom_name).toBeNull();
+  });
+
+  test('runtime root is matched by the pinned root id, not list order', () => {
+    const out = serializeSession(
+      sessionRow({
+        opencodeSessionId: 'ses_root',
+        metadata: {
+          name: 'Auto title',
+          opencode_sessions: [
+            { id: 'ses_other', title: 'Wrong Tree Root', parent_id: null },
+            { id: 'ses_root', title: 'Pinned Root Title', parent_id: null },
+          ],
+        },
+      }),
+    );
+    expect(ProjectSessionSchema.strict().parse(out).name).toBe('Pinned Root Title');
+  });
+
+  test('a parentless entry stands in when no snapshot entry matches the pin', () => {
+    const out = serializeSession(
+      sessionRow({
+        opencodeSessionId: null,
+        metadata: {
+          name: 'Auto title',
+          opencode_sessions: [
+            { id: 'ses_child', title: 'Child', parent_id: 'ses_root' },
+            { id: 'ses_root', title: 'Tree Root Title', parent_id: null },
+          ],
+        },
+      }),
+    );
+    expect(ProjectSessionSchema.strict().parse(out).name).toBe('Tree Root Title');
+  });
+
+  test('placeholder or blank runtime titles fall back to the Kortix auto title', () => {
+    const placeholder = serializeSession(
+      sessionRow({
+        metadata: {
+          name: 'Real Kortix Title',
+          opencode_sessions: [
+            { id: 'ses_abc', title: 'New session - 2026-08-09T10:00:00.000Z', parent_id: null },
+          ],
+        },
+      }),
+    );
+    expect(ProjectSessionSchema.strict().parse(placeholder).name).toBe('Real Kortix Title');
+
+    const blank = serializeSession(
+      sessionRow({
+        metadata: {
+          name: 'Real Kortix Title',
+          opencode_sessions: [{ id: 'ses_abc', title: '   ', parent_id: null }],
+        },
+      }),
+    );
+    expect(ProjectSessionSchema.strict().parse(blank).name).toBe('Real Kortix Title');
+  });
+
+  test('custom_name wins over the runtime snapshot title', () => {
+    const out = serializeSession(
+      sessionRow({
+        metadata: {
+          name: 'auto',
+          custom_name: 'Mine',
+          opencode_sessions: [{ id: 'ses_abc', title: 'Runtime Title', parent_id: null }],
+        },
+      }),
+    );
+    expect(ProjectSessionSchema.strict().parse(out).name).toBe('Mine');
+  });
+
+  test('a viewer without access never reads the runtime snapshot title', () => {
+    const out = serializeSession(
+      sessionRow({
+        metadata: {
+          name: 'auto',
+          opencode_sessions: [{ id: 'ses_abc', title: 'Runtime Title', parent_id: null }],
+        },
+      }),
+      { viewerId: 'someone-else', canAccess: false },
+    );
+    const parsed = ProjectSessionSchema.strict().parse(out);
+    expect(parsed.name).toBeNull();
+    expect(parsed.opencode_sessions).toEqual([]);
+  });
+
+  test("opencode's frozen placeholder reads as untitled, a real title does not", () => {
+    const placeholder = ProjectSessionSchema.strict().parse(
+      serializeSession(sessionRow({ metadata: { name: 'New session - 2026-07-28' } })),
+    );
+    expect(placeholder.name).toBeNull();
+
+    const veyrisPlaceholder = ProjectSessionSchema.strict().parse(
+      serializeSession(sessionRow({ metadata: { name: 'New agent' } })),
+    );
+    expect(veyrisPlaceholder.name).toBeNull();
+
+    const real = ProjectSessionSchema.strict().parse(
+      serializeSession(sessionRow({ metadata: { name: 'Set Up MS Graph' } })),
+    );
+    expect(real.name).toBe('Set Up MS Graph');
+  });
 });
 
 describe('serializeSandboxRow ⇄ ProjectSessionSandboxSchema', () => {
@@ -230,9 +345,7 @@ describe('serializeSandboxRow ⇄ ProjectSessionSandboxSchema', () => {
       retriable: false,
       sandbox: serializeSandboxRow(sandboxRow()),
       opencode_session_id: 'ses_abc',
-      runtime_transport: 'acp' as const,
-      runtime_harness: 'codex' as const,
-      native_agent: 'reviewer',
+      runtime_transport: 'rest' as const,
       runtime_url: '/p/sbx-123/8000',
       reason: 'pinned',
     };
@@ -247,9 +360,95 @@ describe('buildSecretView ⇄ SecretSchema', () => {
       name: 'OPENAI_API_KEY',
       shared: secretRow(),
       canManageShared: true,
+      projectMetadata: undefined,
     });
     expect(SecretSchema.strict().parse(out)).toEqual(out);
     expect(out.effective_source).toBe('shared');
+    expect(out).toMatchObject({
+      strategy: 'runtime',
+      consumer: 'sandbox',
+      delivery_status: 'available',
+      egress_policy: null,
+      strategy_locked: false,
+      last_rotated_at: null,
+      requires_rotation: false,
+    });
+  });
+
+  test('denied secret metadata reports disabled delivery and required rotation', () => {
+    const out = buildSecretView({
+      identifier: 'OPENAI_API_KEY',
+      name: 'OPENAI_API_KEY',
+      shared: secretRow({ strategy: 'denied', rotatedAt: null }),
+      canManageShared: true,
+      projectMetadata: undefined,
+    });
+
+    expect(SecretSchema.strict().parse(out)).toEqual(out);
+    expect(out).toMatchObject({
+      strategy: 'denied',
+      consumer: null,
+      delivery_status: 'disabled',
+      requires_rotation: true,
+    });
+  });
+
+  test('denied delivery requires a rotation newer than the strategy change', () => {
+    const out = buildSecretView({
+      identifier: 'OPENAI_API_KEY',
+      name: 'OPENAI_API_KEY',
+      shared: secretRow({
+        strategy: 'denied',
+        rotatedAt: new Date('2026-08-03T09:00:00.000Z'),
+        updatedAt: new Date('2026-08-03T10:00:00.000Z'),
+      }),
+      canManageShared: true,
+      projectMetadata: undefined,
+    });
+
+    expect(SecretSchema.strict().parse(out)).toEqual(out);
+    expect(out.requires_rotation).toBe(true);
+  });
+
+  test('generic HTTPS broker metadata reports an available server consumer', () => {
+    const egressPolicy = {
+      backend: 'kortix_fetch' as const,
+      rules: [{ host: 'api.example.com' }],
+      inject: { kind: 'header' as const, name: 'authorization' },
+    };
+    const out = buildSecretView({
+      identifier: 'OPENAI_API_KEY',
+      name: 'OPENAI_API_KEY',
+      shared: secretRow({ strategy: 'broker', consumer: 'http_broker', egressPolicy }),
+      canManageShared: true,
+      projectMetadata: undefined,
+    });
+
+    expect(SecretSchema.strict().parse(out)).toEqual(out);
+    expect(out).toMatchObject({
+      strategy: 'broker',
+      consumer: 'http_broker',
+      delivery_status: 'available',
+      egress_policy: egressPolicy,
+    });
+  });
+
+  test('LLM gateway metadata reports available delivery without a network policy', () => {
+    const out = buildSecretView({
+      identifier: 'OPENAI_API_KEY',
+      name: 'OPENAI_API_KEY',
+      shared: secretRow({ strategy: 'broker', consumer: 'llm_gateway' }),
+      canManageShared: true,
+      projectMetadata: undefined,
+    });
+
+    expect(SecretSchema.strict().parse(out)).toEqual(out);
+    expect(out).toMatchObject({
+      strategy: 'broker',
+      consumer: 'llm_gateway',
+      delivery_status: 'available',
+      egress_policy: null,
+    });
   });
 
   test('two identifiers sharing the same key parse as independent secrets', () => {
@@ -258,12 +457,14 @@ describe('buildSecretView ⇄ SecretSchema', () => {
       name: 'GOOGLE_MAPS_API_KEY',
       shared: secretRow({ identifier: 'GMAPS-primary', name: 'GOOGLE_MAPS_API_KEY' }),
       canManageShared: true,
+      projectMetadata: undefined,
     });
     const backup = buildSecretView({
       identifier: 'GMAPS-backup',
       name: 'GOOGLE_MAPS_API_KEY',
       shared: secretRow({ identifier: 'GMAPS-backup', name: 'GOOGLE_MAPS_API_KEY' }),
       canManageShared: true,
+      projectMetadata: undefined,
     });
     expect(SecretSchema.strict().parse(primary)).toEqual(primary);
     expect(SecretSchema.strict().parse(backup)).toEqual(backup);
@@ -277,6 +478,7 @@ describe('buildSecretView ⇄ SecretSchema', () => {
       name: 'OPENAI_API_KEY',
       personal: secretRow({ ownerUserId: USER_ID }),
       canManageShared: false,
+      projectMetadata: undefined,
     });
     const parsed = SecretSchema.strict().parse(out);
     expect(parsed.configured).toBe(false);
@@ -290,6 +492,7 @@ describe('buildSecretView ⇄ SecretSchema', () => {
       name: 'KORTIX_GIT_AUTH_TOKEN',
       shared: secretRow({ identifier: 'KORTIX_GIT_AUTH_TOKEN', name: 'KORTIX_GIT_AUTH_TOKEN' }),
       canManageShared: true,
+      projectMetadata: undefined,
     });
     const parsed = SecretSchema.strict().parse(out);
     expect(parsed.system).toBe(true);

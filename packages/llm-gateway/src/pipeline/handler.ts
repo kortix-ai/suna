@@ -1,6 +1,7 @@
 import type {
   AuthedPrincipal,
   AuthorizeResult,
+  GatewayAttemptFailure,
   GatewayConfig,
   GatewayHooks,
   GatewayLogger,
@@ -19,10 +20,23 @@ import {
   extractUsageFromJson,
   extractUsageFromSseBuffer,
   jsonHasContent,
+  jsonSoftFailureFrame,
 } from '../usage';
 import { gatewayErrorBody, gatewayErrorResponse } from './error-response';
 import { type RoutedUpstreamCandidate, runFailover } from './failover';
-import { type StreamProbeResult, probeStream, relayStream } from './streaming';
+import {
+  appendAttemptFailure,
+  errorFrameCode,
+  exhaustedRouteErrorCode,
+  failureChainMessage,
+  failureChainMetadata,
+} from './failure-chain';
+import {
+  type StreamProbeResult,
+  probeStream,
+  relayStream,
+  resolveStreamProbeTimeoutMs,
+} from './streaming';
 import { createTraceEmitter } from './trace';
 
 export interface ChatCompletionRequest {
@@ -52,10 +66,6 @@ export interface HandlerRuntime {
   captureBodies: boolean;
   capture: (value: unknown) => unknown;
   breakerFor: (provider: string) => CircuitBreaker;
-  /** Mirrors `config.maxCapturedBodyBytes` — also used to bound the live,
-   *  in-flight streaming response preview (see `relayStream`), not just the
-   *  post-hoc trace truncation. */
-  maxCapturedBodyBytes?: number;
 }
 
 function json(data: unknown, status = 200): Response {
@@ -146,7 +156,7 @@ function requestHasImage(body: Record<string, unknown>): boolean {
 // a few times — before falling over to a different candidate, and before ever
 // giving up — resolves the overwhelming majority of these transparently,
 // including the common case where there is only one candidate to begin with.
-const MAX_EMPTY_COMPLETION_ATTEMPTS_PER_CANDIDATE = 3;
+const MAX_INVALID_COMPLETION_ATTEMPTS_PER_CANDIDATE = 3;
 
 function idOf(principal: AuthedPrincipal) {
   return {
@@ -228,14 +238,14 @@ export async function handleChatCompletions(
   runtime: HandlerRuntime,
   req: ChatCompletionRequest,
 ): Promise<Response> {
-  const { hooks, config, logger, fetchImpl, captureBodies, capture, breakerFor, maxCapturedBodyBytes } =
-    runtime;
+  const { hooks, config, logger, fetchImpl, captureBodies, capture, breakerFor } = runtime;
 
   const requestId = newRequestId();
   const startedAt = new Date().toISOString();
   const startMs = Date.now();
 
   const emit = createTraceEmitter(hooks, logger, requestId, startedAt, startMs);
+  const requestBytes = new TextEncoder().encode(req.rawBody).byteLength;
 
   let lastMark = startMs;
   const lap = (): number => {
@@ -287,7 +297,7 @@ export async function handleChatCompletions(
     );
   };
 
-  step('received', { bytes: req.rawBody.length, hasAuthHeader: Boolean(req.authorization) });
+  step('received', { bytes: requestBytes, hasAuthHeader: Boolean(req.authorization) });
 
   const token = bearer(req.authorization);
   if (!token) {
@@ -341,19 +351,23 @@ export async function handleChatCompletions(
   // default (`maxRequestBytes` unset/0); when configured it turns an upstream
   // that silently drops an over-limit request into an immediate, actionable 413
   // instead of a multi-second retry storm that ends in a generic 502.
-  if (config.maxRequestBytes && req.rawBody.length > config.maxRequestBytes) {
+  if (config.maxRequestBytes && requestBytes > config.maxRequestBytes) {
     refundBillingHold(principal);
-    step('request_too_large', { bytes: req.rawBody.length, limit: config.maxRequestBytes });
+    step('request_too_large', { bytes: requestBytes, limit: config.maxRequestBytes });
     emit({
       ...id,
       status: 413,
       ok: false,
       errorCode: 'request_too_large',
-      errorMessage: `Request body ${req.rawBody.length} bytes exceeds limit ${config.maxRequestBytes}`,
+      errorMessage: `Request body ${requestBytes} bytes exceeds limit ${config.maxRequestBytes}`,
     });
     return gatewayErrorResponse(413, {
-      message: `Request body of ${req.rawBody.length} bytes exceeds the ${config.maxRequestBytes}-byte limit`,
-      code: 'request_too_large', provider: '', requestedModel: '', resolvedModel: '', requestId,
+      message: `Request body of ${requestBytes} bytes exceeds the ${config.maxRequestBytes}-byte limit`,
+      code: 'request_too_large',
+      provider: '',
+      requestedModel: '',
+      resolvedModel: '',
+      requestId,
       suggestion: 'Start a new session or reduce the conversation and attachment size, then retry.',
     });
   }
@@ -543,43 +557,38 @@ export async function handleChatCompletions(
 
   step('dispatch_upstream', { streaming, candidateCount: candidates.length, routeModels });
 
-  // An upstream can return a syntactically valid 200 with empty `choices`/content
-  // (seen from OpenRouter/z-ai) — a real failure mode, not a legitimate zero-output
-  // turn. That never throws, so runFailover's transport-level retry/failover never
-  // sees it. This loop adds a second failover tier on top: each candidate gets a
-  // few immediate retries in place (below), and only once it's exhausted its own
-  // retries is it excluded so the remaining candidates get a turn — only once
-  // every candidate has produced nothing do we give up and tell the caller,
-  // instead of silently forwarding a blank "stop".
+  // Some upstream failures arrive inside syntactically successful HTTP 200
+  // completions. Known forms are empty completions and an exact rate-limit
+  // sentence encoded as assistant text. The transport retry layer cannot see
+  // either form. This loop validates each completion before relaying bytes.
+  // Each candidate gets three attempts before failover.
   const exhaustedCandidates = new Set<string>();
-  const emptyAttemptsByCandidate = new Map<string, number>();
+  const invalidAttemptsByCandidate = new Map<string, number>();
   const candidateKey = ({ descriptor, routeModel }: RoutedUpstreamCandidate): string =>
-    `${routeModel}\u0000${descriptor.provider}\u0000${descriptor.resolvedModel ?? ''}`;
+    `${routeModel}\u0000${descriptor.provider}\u0000${descriptor.resolvedModel ?? ''}\u0000${descriptor.credentialRef ?? ''}`;
   const sleep = config.retry?.sleep ?? realSleep;
   const rand = config.retry?.rand ?? Math.random;
   const baseDelayMs = config.retry?.baseDelayMs ?? 250;
   const maxDelayMs = config.retry?.maxDelayMs ?? 8_000;
   const jitter = config.retry?.jitter ?? true;
 
-  // Records an empty completion from a routed candidate. Retries it (via
-  // a short backoff, then `continue`) while it's under budget; once exhausted,
-  // excludes it from `remaining` so the loop moves on to the next candidate (or
-  // to the all-candidates-empty exit if there isn't one).
-  const registerEmptyCompletion = async (
+  const registerInvalidCompletion = async (
     candidate: RoutedUpstreamCandidate,
+    kind: 'empty_completion' | 'rate_limit',
     fields: Record<string, unknown>,
   ): Promise<void> => {
     const key = candidateKey(candidate);
     const { descriptor, routeModel } = candidate;
-    const attempt = (emptyAttemptsByCandidate.get(key) ?? 0) + 1;
-    emptyAttemptsByCandidate.set(key, attempt);
-    const exhausted = attempt >= MAX_EMPTY_COMPLETION_ATTEMPTS_PER_CANDIDATE;
+    const attempt = (invalidAttemptsByCandidate.get(key) ?? 0) + 1;
+    invalidAttemptsByCandidate.set(key, attempt);
+    const exhausted = attempt >= MAX_INVALID_COMPLETION_ATTEMPTS_PER_CANDIDATE;
     logger.warn(
-      `[llm-gateway] empty completion from ${routeModel}@${descriptor.provider} (attempt ${attempt}/${MAX_EMPTY_COMPLETION_ATTEMPTS_PER_CANDIDATE}), ${exhausted ? 'failing over' : 'retrying same candidate'} ${requestId}`,
+      `[llm-gateway] ${kind} from ${routeModel}@${descriptor.provider} (attempt ${attempt}/${MAX_INVALID_COMPLETION_ATTEMPTS_PER_CANDIDATE}), ${exhausted ? 'failing over' : 'retrying same candidate'} ${requestId}`,
     );
-    step('empty_completion_retry', {
+    step('invalid_completion_retry', {
       provider: descriptor.provider,
       routeModel,
+      kind,
       attempt,
       exhausted,
       ...fields,
@@ -588,7 +597,11 @@ export async function handleChatCompletions(
       exhaustedCandidates.add(key);
       return;
     }
-    await sleep(backoffDelay(attempt, baseDelayMs, maxDelayMs, jitter, rand));
+    // A rate-limit rejection needs a slower request ramp than an empty
+    // completion. The injected test sleeper still removes this delay in tests.
+    const retryBaseDelayMs = kind === 'rate_limit' ? Math.max(baseDelayMs, 1_000) : baseDelayMs;
+    const retryMaxDelayMs = kind === 'rate_limit' ? Math.max(maxDelayMs, 8_000) : maxDelayMs;
+    await sleep(backoffDelay(attempt, retryBaseDelayMs, retryMaxDelayMs, jitter, rand));
   };
 
   let upstream: Response | null = null;
@@ -608,6 +621,10 @@ export async function handleChatCompletions(
   // (see the error-frame branch below). Surfaced in place of the generic
   // empty-completion 502 when every candidate ends up producing nothing usable.
   let lastErrorFrame: SseErrorFrame | null = null;
+  // Ordered, bounded diagnostics for every candidate rejected before the turn
+  // either succeeds or exhausts its route. This is the source of truth for the
+  // client error envelope and the observability summary.
+  let attemptFailures: GatewayAttemptFailure[] = [];
 
   // Usage from candidates the dispatch loop discarded (empty-completion retries
   // and failed-over attempts) before ever reaching settle(). A "malformed"
@@ -663,33 +680,47 @@ export async function handleChatCompletions(
       // Prefer the real upstream cause (overloaded, request too large, content
       // filter) that a candidate reported over the generic "empty" message that
       // would otherwise bury it.
-      const errorCode = lastErrorFrame ? 'upstream_error' : 'empty_completion';
-      const message = lastErrorFrame
-        ? lastErrorFrame.message
-        : 'All upstream candidates returned an empty completion';
+      const errorCode = exhaustedRouteErrorCode(attemptFailures);
+      const message = failureChainMessage(
+        attemptFailures,
+        'All upstream candidates returned an empty completion',
+        requestId,
+      );
       const status = lastErrorFrame ? statusForErrorFrame(lastErrorFrame) : 502;
       const failedCandidate = [...candidates].reverse().find((candidate) =>
         exhaustedCandidates.has(candidateKey(candidate)),
       );
       const failedDescriptor = failedCandidate?.descriptor;
+      const failureMetadata = failureChainMetadata(attemptFailures, false);
       emit({
         ...id,
         requestedModel,
-        resolvedModel: routedModel,
+        resolvedModel: failedDescriptor?.resolvedModel ?? routedModel,
+        provider: failedDescriptor?.provider ?? tried.at(-1) ?? '',
+        billingMode: failedDescriptor?.billingMode ?? 'none',
         streaming,
         status,
         ok: false,
         errorCode,
         errorMessage: message,
+        attempts,
         candidatesTried: tried,
+        attemptFailures,
         request: capture(payload),
-        metadata: routingMetadata(null),
+        metadata: {
+          ...routingMetadata(null),
+          ...(failureMetadata ? { gatewayFailure: failureMetadata } : {}),
+        },
       });
       return json(
         gatewayErrorBody({
           message,
           code: errorCode,
-          upstreamCode: lastErrorFrame?.code,
+          // Keep both code locations canonical for OpenAI-compatible clients.
+          // OpenCode 1.17.11 reads nested `error.code` from responseBody to
+          // decide whether it must compact after a provider rejection.
+          upstreamCode:
+            errorCode === 'context_length_exceeded' ? errorCode : lastErrorFrame?.code,
           provider: failedDescriptor?.provider ?? tried.at(-1) ?? '',
           requestedModel,
           resolvedModel: failedDescriptor?.resolvedModel ?? routedModel,
@@ -698,6 +729,7 @@ export async function handleChatCompletions(
             status === 401
               ? 'Check the provider credentials, or switch to another model.'
               : 'Retry the request. If the error continues, switch to another model.',
+          attemptFailures,
         }),
         status,
       );
@@ -722,6 +754,7 @@ export async function handleChatCompletions(
       fallbackOn,
       signal: req.signal,
       generationDefaultsForModel,
+      attemptFailures,
     });
 
     if (result.kind === 'response') {
@@ -737,7 +770,9 @@ export async function handleChatCompletions(
       modelsTried: modelsTriedThisRound,
       attempts: attemptsThisRound,
       dispatchedPayload: dispatchedPayloadThisRound,
+      attemptFailures: attemptFailuresThisRound,
     } = result.value;
+    attemptFailures = attemptFailuresThisRound;
     tried = [...tried, ...triedThisRound];
     modelsTried = [...modelsTried, ...modelsTriedThisRound]
       .filter((model, index, all) => all.indexOf(model) === index);
@@ -752,7 +787,8 @@ export async function handleChatCompletions(
         provider: chosenDescriptor.provider,
         routeModel: chosenRouteModel,
       });
-      if (jsonHasContent(data)) {
+      const softFailure = jsonSoftFailureFrame(data);
+      if (!softFailure && jsonHasContent(data)) {
         upstream = candidateUpstream;
         descriptor = chosenDescriptor;
         selectedRouteModel = chosenRouteModel;
@@ -763,31 +799,102 @@ export async function handleChatCompletions(
       // (a real generation that came back badly shaped) — capture any usage
       // before discarding the body.
       accumulateDiscardedUsage(extractUsageFromJson(data));
-      await registerEmptyCompletion(chosen, { streaming: false });
+      if (softFailure) {
+        lastErrorFrame = softFailure;
+        appendAttemptFailure(attemptFailures, {
+          provider: chosenDescriptor.provider,
+          routeModel: chosenRouteModel,
+          resolvedModel: chosenDescriptor.resolvedModel,
+          stage: 'completion_validation',
+          status: statusForErrorFrame(softFailure),
+          code: errorFrameCode(softFailure),
+          message: softFailure.message,
+        });
+      } else {
+        appendAttemptFailure(attemptFailures, {
+          provider: chosenDescriptor.provider,
+          routeModel: chosenRouteModel,
+          resolvedModel: chosenDescriptor.resolvedModel,
+          stage: 'completion_validation',
+          code: 'empty_completion',
+          message: 'Upstream returned a completion without usable content',
+        });
+      }
+      await registerInvalidCompletion(chosen, softFailure ? 'rate_limit' : 'empty_completion', {
+        streaming: false,
+      });
       continue;
     }
 
     if (!candidateUpstream.body) {
-      await registerEmptyCompletion(chosen, { streaming: true, reason: 'no_body' });
+      appendAttemptFailure(attemptFailures, {
+        provider: chosenDescriptor.provider,
+        routeModel: chosenRouteModel,
+        resolvedModel: chosenDescriptor.resolvedModel,
+        stage: 'completion_validation',
+        code: 'empty_completion',
+        message: 'Upstream returned a streaming response without a body',
+      });
+      await registerInvalidCompletion(chosen, 'empty_completion', {
+        streaming: true,
+        reason: 'no_body',
+      });
       continue;
     }
 
-    const probe = await probeStream(candidateUpstream.body, {
-      inactivityTimeoutMs: config.streamProbeTimeoutMs,
+    const streamProbeTimeoutMs = resolveStreamProbeTimeoutMs({
+      requestBytes,
+      provider: chosenDescriptor.provider,
+      model: chosenDescriptor.resolvedModel ?? chosenRouteModel,
+      configuredTimeoutMs: config.streamProbeTimeoutMs,
     });
-    if (probe.hasContent) {
+    const probe = await probeStream(candidateUpstream.body, {
+      inactivityTimeoutMs: streamProbeTimeoutMs,
+    });
+    // A slow candidate is not a broken one. The probe holds the response back
+    // only so a DEAD candidate can be swapped out before headers are committed;
+    // once it has merely run out of patience, the correct move is to commit the
+    // stream and let relayStream heartbeat downstream while the model works —
+    // not to cancel a healthy upstream mid-prefill and fail the turn. Failing
+    // over here is what produced the deterministic
+    // `upstream stream probe timeout exceeded (90000ms with no bytes)` on large
+    // Fable contexts (see PROBE_COMMIT_DEADLINE_MS in streaming.ts).
+    //
+    // Only a TIMEOUT commits. Every other content-free probe outcome below
+    // (structured error frame, transport read failure, cleanly-closed empty
+    // stream) is a real failure and still fails over.
+    const probeTimedOut = probe.readError?.code === 'stream_probe_timeout';
+    if (probe.hasContent || probeTimedOut) {
+      if (probeTimedOut) {
+        logger.info(
+          `[llm-gateway] committing slow-but-live upstream from ${chosenDescriptor.provider} ${requestId} after ${streamProbeTimeoutMs}ms with no bytes — relaying with heartbeats instead of failing over`,
+        );
+        step('upstream_slow_commit', {
+          provider: chosenDescriptor.provider,
+          routeModel: chosenRouteModel,
+          probeTimeoutMs: streamProbeTimeoutMs,
+        });
+      }
       upstream = candidateUpstream;
       descriptor = chosenDescriptor;
       selectedRouteModel = chosenRouteModel;
       streamProbe = probe;
       break;
     }
-    // A structured error frame is a definitive failure for THIS candidate, not the
-    // transient empty-stop hiccup the same-candidate retry targets — so exclude the
-    // candidate at once (no in-place retry) and remember the real error to surface
-    // if nothing usable ever arrives. Other candidates, if any, still get a turn.
+    // Most structured error frames are terminal for this candidate. A 429 is
+    // transient. Retry a 429 with rate-limit backoff before failover.
     if (probe.errorFrame) {
       lastErrorFrame = probe.errorFrame;
+      appendAttemptFailure(attemptFailures, {
+        provider: chosenDescriptor.provider,
+        routeModel: chosenRouteModel,
+        resolvedModel: chosenDescriptor.resolvedModel,
+        stage: 'stream_error',
+        status: statusForErrorFrame(probe.errorFrame),
+        code: errorFrameCode(probe.errorFrame),
+        message: probe.errorFrame.message,
+      });
+      await probe.reader.cancel('upstream completion rejected by gateway').catch(() => undefined);
       // `detail` carries the fields that actually identify WHICH part of the
       // request the upstream rejected (OpenAI-shaped backends: `type`/`param`).
       // Without it a body-level rejection logs as a bare "Bad Request" and is
@@ -803,11 +910,27 @@ export async function handleChatCompletions(
         code: probe.errorFrame.code,
         ...(errorDetail ? { detail: errorDetail } : {}),
       });
+      if (statusForErrorFrame(probe.errorFrame) === 429) {
+        await registerInvalidCompletion(chosen, 'rate_limit', {
+          streaming: true,
+          message: probe.errorFrame.message,
+          code: probe.errorFrame.code,
+        });
+        continue;
+      }
       exhaustedCandidates.add(candidateKey(chosen));
       continue;
     }
     if (probe.readError) {
       lastErrorFrame = probe.readError;
+      appendAttemptFailure(attemptFailures, {
+        provider: chosenDescriptor.provider,
+        routeModel: chosenRouteModel,
+        resolvedModel: chosenDescriptor.resolvedModel,
+        stage: 'stream_probe',
+        code: errorFrameCode(probe.readError),
+        message: probe.readError.message,
+      });
       logger.warn(
         `[llm-gateway] upstream stream read failed during probe from ${chosenDescriptor.provider} ${requestId}: "${probe.readError.message}"`,
       );
@@ -826,7 +949,15 @@ export async function handleChatCompletions(
       const decoded = new TextDecoder().decode(concatChunks(probe.chunks));
       accumulateDiscardedUsage(extractUsageFromSseBuffer(decoded));
     }
-    await registerEmptyCompletion(chosen, { streaming: true });
+    appendAttemptFailure(attemptFailures, {
+      provider: chosenDescriptor.provider,
+      routeModel: chosenRouteModel,
+      resolvedModel: chosenDescriptor.resolvedModel,
+      stage: 'completion_validation',
+      code: 'empty_completion',
+      message: 'Upstream stream closed before producing usable content',
+    });
+    await registerInvalidCompletion(chosen, 'empty_completion', { streaming: true });
   }
 
   // Every loop exit above either `return`s (transport failure / all-empty) or
@@ -848,7 +979,11 @@ export async function handleChatCompletions(
     selectedRouteModel,
   });
 
-  const traceMetadata = routingMetadata(selectedRouteModel);
+  const recoveredFailure = failureChainMetadata(attemptFailures, true);
+  const traceMetadata = {
+    ...routingMetadata(selectedRouteModel),
+    ...(recoveredFailure ? { gatewayFailure: recoveredFailure } : {}),
+  };
 
   const settle = async (
     usage: ExtractedUsage | null,
@@ -976,6 +1111,7 @@ export async function handleChatCompletions(
         : {}),
       attempts,
       candidatesTried: tried,
+      attemptFailures,
       usage: counts,
       upstreamCost,
       finalCost,
@@ -1001,7 +1137,13 @@ export async function handleChatCompletions(
     throw new Error(`unreachable: streaming dispatch exited without a probe result (${requestId})`);
   }
   const readable = relayStream({
-    primed: { reader: streamProbe.reader, chunks: streamProbe.chunks },
+    primed: {
+      reader: streamProbe.reader,
+      chunks: streamProbe.chunks,
+      // Present only when the probe committed on its deadline rather than on
+      // content; adopting it keeps the first post-commit chunk from being lost.
+      ...(streamProbe.pendingRead ? { pendingRead: streamProbe.pendingRead } : {}),
+    },
     captureBodies,
     requestId,
     logger,
@@ -1013,7 +1155,6 @@ export async function handleChatCompletions(
       requestId,
     },
     signal: req.signal,
-    maxCapturedBodyBytes,
   });
 
   return new Response(readable, {

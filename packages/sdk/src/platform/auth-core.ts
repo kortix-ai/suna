@@ -20,6 +20,13 @@ export interface TokenRetryOptions {
 	invalidateBetweenAttempts?: boolean;
 }
 
+const CLIENT_SOURCES = new Set(['api', 'cli', 'mobile', 'web']);
+
+export function normalizeClientSource(value?: string): string | null {
+	const normalized = value?.trim().toLowerCase();
+	return normalized && CLIENT_SOURCES.has(normalized) ? normalized : null;
+}
+
 function delay(ms: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -55,13 +62,15 @@ export async function withTokenRetry(
 export const DEFAULT_FETCH_TIMEOUT_MS = 30_000;
 
 /**
- * Long-lived streaming calls reached through the auth fetch injection point.
- * OpenCode REST uses `/global/event`. ACP uses `/kortix/acp/:sessionId`.
- * Both callers manage their own abort and reconnect lifecycle.
+ * The one long-lived streaming call reached through the auth fetch injection
+ * point — `openEventStream` (`state/event-stream.ts`) drives the opencode
+ * client's `global.event(...)` SSE endpoint (`GET {runtimeUrl}/global/event`).
+ * It manages its own lifecycle (heartbeat watchdog + explicit abort/reconnect
+ * loop) and must stay open far longer than any request timeout.
  */
 export function isStreamingRequest(input: RequestInfo | URL): boolean {
 	const url = input instanceof Request ? input.url : String(input);
-	return url.includes('/global/event') || url.includes('/kortix/acp/');
+	return url.includes('/global/event');
 }
 
 /**
@@ -97,6 +106,7 @@ export function buildAuthHeaders(
 	input: RequestInfo | URL,
 	init?: RequestInit,
 	token?: string | null,
+	clientSource?: string,
 ): Headers {
 	const headers = new Headers(input instanceof Request ? input.headers : undefined);
 	if (init?.headers) {
@@ -106,6 +116,10 @@ export function buildAuthHeaders(
 	}
 	if (token && !headers.has('Authorization')) {
 		headers.set('Authorization', `Bearer ${token}`);
+	}
+	const normalizedClientSource = normalizeClientSource(clientSource);
+	if (normalizedClientSource && !headers.has('X-Kortix-Client')) {
+		headers.set('X-Kortix-Client', normalizedClientSource);
 	}
 	return headers;
 }

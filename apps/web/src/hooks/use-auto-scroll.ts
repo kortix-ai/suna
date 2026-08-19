@@ -1,6 +1,8 @@
 'use client';
 
-import { useRef, useEffect, useCallback, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+
+import { createTurnAnchor } from '@/features/session/turn-anchor';
 
 /**
  * useAutoScroll — ChatGPT-style scroll.
@@ -53,10 +55,35 @@ interface UseAutoScrollReturn {
   scrollToAbsoluteBottom: () => void;
   /** Same as scrollToAbsoluteBottom but with smooth animation. */
   smoothScrollToAbsoluteBottom: () => void;
+  /**
+   * Anchor a SPECIFIC turn at the top of the viewport, as soon as it exists.
+   *
+   * Replaces the send path's `scrollToBottom(); setTimeout(…, 100)` pair, whose
+   * own comment admitted it fired "after the turn likely rendered". Both calls
+   * happened at send time and targeted "the last `[data-turn-id]`", so before
+   * the new turn committed they anchored the PREVIOUS one. See `turn-anchor.ts`.
+   */
+  anchorTurn: (turnId: string) => void;
 }
 
 /** How close to the bottom (px) counts as "at the bottom" for hiding the FAB. */
 const BOTTOM_THRESHOLD = 80;
+
+/**
+ * How close to the bottom (px) the reader must get before a downward
+ * wheel/touch intent re-arms follow. Deliberately tighter than
+ * BOTTOM_THRESHOLD: during phase-1 streaming the spacer keeps the viewport
+ * within BOTTOM_THRESHOLD of scrollHeight even while a reader is
+ * meaningfully scrolled up reading history, so using the same threshold for
+ * "resume" let a single jittery trackpad tick (deltaY > 0 for one frame) snap
+ * follow back on — and the very next RAF tick would then yank the viewport
+ * down to close the gap. Requiring the reader to actually reach
+ * RESUME_THRESHOLD bounds that first correction: the tick's `overflow` is
+ * exactly `distanceFromEnd` once the spacer has collapsed (phase 2), so by
+ * construction it can never exceed RESUME_THRESHOLD px — the re-arm cannot
+ * itself be seen as a snap.
+ */
+const RESUME_THRESHOLD = 12;
 
 const TURN_TOP_OFFSET = 24;
 
@@ -70,9 +97,24 @@ function measureTarget(scrollEl: HTMLDivElement, contentEl: HTMLDivElement): num
   return Math.max(0, scrollEl.scrollTop + (tr.top - sr.top) - TURN_TOP_OFFSET);
 }
 
+/** px distance from the absolute bottom of the scrollable content. */
+function distanceFromScrollEnd(el: HTMLDivElement): number {
+  return el.scrollHeight - el.scrollTop - el.clientHeight;
+}
+
 /** Classic "near the absolute bottom of scrollable content" check. */
 function isNearScrollEnd(el: HTMLDivElement): boolean {
-  return el.scrollHeight - el.scrollTop - el.clientHeight < BOTTOM_THRESHOLD;
+  return distanceFromScrollEnd(el) < BOTTOM_THRESHOLD;
+}
+
+/**
+ * Pure predicate: has the reader scrolled close enough to the end that a
+ * downward wheel/touch intent should re-arm follow? Extracted so the
+ * resume decision is testable without a browser — see RESUME_THRESHOLD for
+ * why this is stricter than isNearScrollEnd.
+ */
+export function shouldResumeFollow({ distanceFromEnd }: { distanceFromEnd: number }): boolean {
+  return distanceFromEnd < RESUME_THRESHOLD;
 }
 
 /** Whether the user has scrolled far enough from the bottom to warrant showing the FAB.
@@ -93,7 +135,10 @@ function isFarFromBottom(el: HTMLDivElement, spacerHeight: number): boolean {
  */
 const WORKING_IDLE_GRACE_MS = 1500;
 
-export function useAutoScroll({ working: workingRaw, hasContent = false }: UseAutoScrollOptions): UseAutoScrollReturn {
+export function useAutoScroll({
+  working: workingRaw,
+  hasContent = false,
+}: UseAutoScrollOptions): UseAutoScrollReturn {
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const spacerElRef = useRef<HTMLDivElement>(null);
@@ -122,7 +167,20 @@ export function useAutoScroll({ working: workingRaw, hasContent = false }: UseAu
   const userScrolledRef = useRef(false);
   const rafIdRef = useRef<number>(0);
   const workingRef = useRef(working);
-  workingRef.current = working;
+  // INVARIANT: this effect must stay declared before every other effect in
+  // this hook that reads `workingRef.current` — directly, or through
+  // `recalcSpacer` (below), which is the only reader. React runs passive
+  // effect setups in hook-declaration order within a commit (mount and
+  // update alike, StrictMode included), so an effect declared earlier here
+  // always sees the synced value before a later one runs in the same
+  // commit. Today that means the "Observers" and "RAF auto-scroll" effects
+  // below. If you add a `useLayoutEffect` anywhere in this hook, or an
+  // effect declared ABOVE this one that reads `workingRef.current`, it will
+  // see a stale value — layout effects run before passive effects, and
+  // earlier-declared passive effects run before this one syncs the ref.
+  useEffect(() => {
+    workingRef.current = working;
+  }, [working]);
   // Current spacer value for the RAF loop's contentH calculation.
   const spacerValRef = useRef(0);
   // Guard: true while a programmatic scroll (scrollToBottom/scrollToEnd) is
@@ -141,9 +199,7 @@ export function useAutoScroll({ working: workingRaw, hasContent = false }: UseAu
     const vh = el.clientHeight;
     const turns = content.querySelectorAll<HTMLElement>('[data-turn-id]');
     const last = turns[turns.length - 1];
-    let h = last
-      ? Math.max(0, vh - last.offsetHeight - TURN_TOP_OFFSET)
-      : vh;
+    let h = last ? Math.max(0, vh - last.offsetHeight - TURN_TOP_OFFSET) : vh;
 
     // Cap the spacer ONLY on fresh loads of an existing conversation (no
     // streaming yet this mount) — there the whitespace would look broken.
@@ -162,6 +218,8 @@ export function useAutoScroll({ working: workingRaw, hasContent = false }: UseAu
   // Re-run when `working` changes so that observers are created once the
   // scroll area actually mounts (it's conditionally rendered — refs may
   // be null on the initial mount during loading/welcome screen).
+  // Reads workingRef.current (via recalcSpacer) — must stay declared after
+  // the workingRef sync effect above. See the INVARIANT note there.
   useEffect(() => {
     const el = scrollRef.current;
     const content = contentRef.current;
@@ -170,7 +228,10 @@ export function useAutoScroll({ working: workingRaw, hasContent = false }: UseAu
     let rafId = 0;
     const schedule = () => {
       if (rafId) return;
-      rafId = requestAnimationFrame(() => { rafId = 0; recalcSpacer(); });
+      rafId = requestAnimationFrame(() => {
+        rafId = 0;
+        recalcSpacer();
+      });
     };
 
     const ro = new ResizeObserver(schedule);
@@ -181,18 +242,12 @@ export function useAutoScroll({ working: workingRaw, hasContent = false }: UseAu
 
     recalcSpacer();
 
-    return () => { ro.disconnect(); mo.disconnect(); cancelAnimationFrame(rafId); };
+    return () => {
+      ro.disconnect();
+      mo.disconnect();
+      cancelAnimationFrame(rafId);
+    };
   }, [recalcSpacer, working, hasContent]);
-
-  // ── isAtBottom (DOM-measured, uses measureTarget) ─────────────────
-  const isAtBottom = useCallback(() => {
-    const el = scrollRef.current;
-    const content = contentRef.current;
-    if (!el || !content) return true;
-    const target = measureTarget(el, content);
-    if (target === null) return true;
-    return el.scrollTop >= target - BOTTOM_THRESHOLD;
-  }, []);
 
   // ── Instant scroll: last turn at top ──────────────────────────────
   const scrollToEnd = useCallback(() => {
@@ -209,7 +264,9 @@ export function useAutoScroll({ working: workingRaw, hasContent = false }: UseAu
     const target = measureTarget(el, content);
     if (target !== null) el.scrollTop = target;
     // Release the guard after a frame so the instant scroll settles.
-    programmaticScrollTimer.current = setTimeout(() => { programmaticScrollRef.current = false; }, 50);
+    programmaticScrollTimer.current = setTimeout(() => {
+      programmaticScrollRef.current = false;
+    }, 50);
   }, [recalcSpacer]);
 
   // ── Smooth scroll: last turn at top ───────────────────────────────
@@ -226,7 +283,9 @@ export function useAutoScroll({ working: workingRaw, hasContent = false }: UseAu
     const target = measureTarget(el, content);
     if (target !== null) el.scrollTo({ top: target, behavior: 'smooth' });
     // Release the guard after smooth scroll completes (~400ms is typical).
-    programmaticScrollTimer.current = setTimeout(() => { programmaticScrollRef.current = false; }, 500);
+    programmaticScrollTimer.current = setTimeout(() => {
+      programmaticScrollRef.current = false;
+    }, 500);
   }, [recalcSpacer]);
 
   const scrollToLastTurn = useCallback(() => scrollToBottom(), [scrollToBottom]);
@@ -245,8 +304,65 @@ export function useAutoScroll({ working: workingRaw, hasContent = false }: UseAu
     programmaticScrollRef.current = true;
     clearTimeout(programmaticScrollTimer.current);
     el.scrollTop = el.scrollHeight - el.clientHeight;
-    programmaticScrollTimer.current = setTimeout(() => { programmaticScrollRef.current = false; }, 50);
+    programmaticScrollTimer.current = setTimeout(() => {
+      programmaticScrollRef.current = false;
+    }, 50);
   }, [recalcSpacer]);
+
+  // ── Anchor a specific turn once it lands ──────────────────────────────
+  // The DOM lives here; the retry/cancel lifecycle lives in `turn-anchor.ts`
+  // where it can be tested without a browser.
+  const anchorer = useMemo(
+    () =>
+      createTurnAnchor<HTMLElement>({
+        find: (turnId) =>
+          contentRef.current?.querySelector<HTMLElement>(
+            `[data-turn-id="${CSS.escape(turnId)}"]`,
+          ) ?? null,
+        anchor: (element) => {
+          const el = scrollRef.current;
+          if (!el) return;
+          recalcSpacer();
+          userScrolledRef.current = false;
+          setShowScrollButton(false);
+          programmaticScrollRef.current = true;
+          clearTimeout(programmaticScrollTimer.current);
+          const top = Math.max(
+            0,
+            el.scrollTop +
+              (element.getBoundingClientRect().top - el.getBoundingClientRect().top) -
+              TURN_TOP_OFFSET,
+          );
+          el.scrollTo({ top, behavior: 'auto' });
+          programmaticScrollTimer.current = setTimeout(() => {
+            programmaticScrollRef.current = false;
+          }, 50);
+        },
+        schedule: (fn) => {
+          const id = requestAnimationFrame(fn);
+          return () => cancelAnimationFrame(id);
+        },
+      }),
+    [recalcSpacer],
+  );
+
+  const anchorTurn = useCallback((turnId: string) => anchorer.request(turnId), [anchorer]);
+
+  // The reader taking over outranks a pending anchor. Without this, an anchor
+  // queued at send time fires into a viewport they have since scrolled away —
+  // which is the "it randomly just shot me up" report.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onWheel = () => anchorer.abandon();
+    const onTouch = () => anchorer.abandon();
+    el.addEventListener('wheel', onWheel, { passive: true });
+    el.addEventListener('touchmove', onTouch, { passive: true });
+    return () => {
+      el.removeEventListener('wheel', onWheel);
+      el.removeEventListener('touchmove', onTouch);
+    };
+  }, [anchorer, working, hasContent]);
 
   const smoothScrollToAbsoluteBottom = useCallback(() => {
     const el = scrollRef.current;
@@ -257,7 +373,9 @@ export function useAutoScroll({ working: workingRaw, hasContent = false }: UseAu
     programmaticScrollRef.current = true;
     clearTimeout(programmaticScrollTimer.current);
     el.scrollTo({ top: el.scrollHeight - el.clientHeight, behavior: 'smooth' });
-    programmaticScrollTimer.current = setTimeout(() => { programmaticScrollRef.current = false; }, 500);
+    programmaticScrollTimer.current = setTimeout(() => {
+      programmaticScrollRef.current = false;
+    }, 500);
   }, [recalcSpacer]);
 
   // On working → idle: deliberately NO re-anchor. The spacer keeps its full
@@ -271,6 +389,8 @@ export function useAutoScroll({ working: workingRaw, hasContent = false }: UseAu
   // Phase 1 (spacer > 0): scrollHeight is constant, no scrolling needed.
   //   The spacer shrinks as the turn grows — content fills in naturally.
   // Phase 2 (spacer = 0): scrollHeight grows. Follow the growth.
+  // Reads workingRef.current (via recalcSpacer) — must stay declared after
+  // the workingRef sync effect above. See the INVARIANT note there.
   useEffect(() => {
     if (!working) {
       // Not streaming — calculate spacer once (covers idle session loads
@@ -311,8 +431,11 @@ export function useAutoScroll({ working: workingRaw, hasContent = false }: UseAu
     };
 
     rafIdRef.current = requestAnimationFrame(tick);
-    return () => { active = false; cancelAnimationFrame(rafIdRef.current); };
-  }, [working, hasContent, isAtBottom, recalcSpacer]);
+    return () => {
+      active = false;
+      cancelAnimationFrame(rafIdRef.current);
+    };
+  }, [working, hasContent, recalcSpacer]);
 
   // ── Wheel intent ──────────────────────────────────────────────────
   // Depends on `working`/`hasContent` so listeners are (re-)attached
@@ -333,9 +456,10 @@ export function useAutoScroll({ working: workingRaw, hasContent = false }: UseAu
         });
       }
       if (e.deltaY > 0) {
-        // Resume only when the user has manually reached absolute bottom.
+        // Resume only when the user has manually reached RESUME_THRESHOLD of
+        // the absolute bottom — not merely BOTTOM_THRESHOLD (see its comment).
         requestAnimationFrame(() => {
-          if (isNearScrollEnd(el)) {
+          if (shouldResumeFollow({ distanceFromEnd: distanceFromScrollEnd(el) })) {
             userScrolledRef.current = false;
             setShowScrollButton(false);
           }
@@ -351,7 +475,9 @@ export function useAutoScroll({ working: workingRaw, hasContent = false }: UseAu
     const el = scrollRef.current;
     if (!el) return;
     let startY = 0;
-    const onStart = (e: TouchEvent) => { startY = e.touches[0]?.clientY ?? 0; };
+    const onStart = (e: TouchEvent) => {
+      startY = e.touches[0]?.clientY ?? 0;
+    };
     const onMove = (e: TouchEvent) => {
       const dy = startY - (e.touches[0]?.clientY ?? 0);
       if (Math.abs(dy) > 6) {
@@ -365,9 +491,9 @@ export function useAutoScroll({ working: workingRaw, hasContent = false }: UseAu
         });
       }
       if (dy > 10) {
-        // Swiping down → resume only at absolute bottom
+        // Swiping down → resume only within RESUME_THRESHOLD of absolute bottom.
         requestAnimationFrame(() => {
-          if (isNearScrollEnd(el)) {
+          if (shouldResumeFollow({ distanceFromEnd: distanceFromScrollEnd(el) })) {
             userScrolledRef.current = false;
             setShowScrollButton(false);
           }
@@ -376,7 +502,10 @@ export function useAutoScroll({ working: workingRaw, hasContent = false }: UseAu
     };
     el.addEventListener('touchstart', onStart, { passive: true });
     el.addEventListener('touchmove', onMove, { passive: true });
-    return () => { el.removeEventListener('touchstart', onStart); el.removeEventListener('touchmove', onMove); };
+    return () => {
+      el.removeEventListener('touchstart', onStart);
+      el.removeEventListener('touchmove', onMove);
+    };
   }, [working, hasContent]);
 
   // ── Keyboard / scrollbar drag catch-all ───────────────────────────
@@ -403,5 +532,16 @@ export function useAutoScroll({ working: workingRaw, hasContent = false }: UseAu
     return () => el.removeEventListener('scroll', handle);
   }, [working, hasContent]);
 
-  return { scrollRef, contentRef, spacerElRef, showScrollButton, scrollToBottom, scrollToLastTurn, scrollToEnd, scrollToAbsoluteBottom, smoothScrollToAbsoluteBottom };
+  return {
+    scrollRef,
+    contentRef,
+    spacerElRef,
+    showScrollButton,
+    scrollToBottom,
+    scrollToLastTurn,
+    scrollToEnd,
+    scrollToAbsoluteBottom,
+    smoothScrollToAbsoluteBottom,
+    anchorTurn,
+  };
 }

@@ -1,8 +1,15 @@
 import { accountHasAppAccess } from '@/lib/auth/account-access';
 import { buildDesktopBounceHtml, buildMobileBounceHtml } from '@/lib/auth/desktop-bounce';
-import { isInviteReturnUrl, resolveAuthRedirectBaseUrl, sanitizeAuthReturnUrl } from '@/lib/auth/return-url';
+import {
+  isInviteReturnUrl,
+  resolveAuthRedirectBaseUrl,
+  resolveNewAccountReturnUrl,
+  sanitizeAuthReturnUrl,
+} from '@/lib/auth/return-url';
 import {
   LAST_PROJECT_COOKIE,
+  POST_AUTH_INTENT_COOKIE,
+  POST_AUTH_INTENT_MAX_AGE,
   PROJECT_LANDING_PATH,
   parseLastProjectForUser,
   projectPathFromId,
@@ -170,6 +177,12 @@ export async function GET(request: NextRequest) {
         authEvent = isNewUser ? 'signup' : 'login';
         authMethod = data.user.app_metadata?.provider || 'email';
 
+        // OAuth/SSO signups reach this handler seconds after the account is
+        // created, so this is where a provider signup gets the rule the
+        // email flows already applied when they minted their link: a return
+        // URL the new account cannot own does not survive the signup.
+        if (isNewUser) finalDestination = resolveNewAccountReturnUrl(next);
+
         const pendingReferralCode = request.cookies.get('pending-referral-code')?.value;
         if (pendingReferralCode) {
           try {
@@ -227,8 +240,13 @@ export async function GET(request: NextRequest) {
             // received any redirect at all, so a fresh signup stared at a blank
             // callback page for the whole provision. `PROJECT_LANDING_PATH`
             // now paints instantly and does that work behind the real UI.
+            // `/settings/billing`, not `/projects/start`: this branch exists
+            // so an account with no app access is NOT given a project, and
+            // the landing door provisions one. The settings route mounts the
+            // panel directly for exactly this reason — see
+            // `features/workspace/settings/standalone-settings-route.tsx`.
             if (accountState && !accountHasAppAccess(accountState)) {
-              finalDestination = '/accounts';
+              finalDestination = '/settings/billing';
             }
           } catch (err) {
             console.warn('Could not check account state from backend:', err);
@@ -258,6 +276,17 @@ export async function GET(request: NextRequest) {
       redirectUrl.searchParams.set('auth_event', authEvent);
       redirectUrl.searchParams.set('auth_method', authMethod);
       const response = NextResponse.redirect(redirectUrl);
+
+      // Authentication just completed, and this redirect is about to land on
+      // the landing door with whatever referrer the magic link / IdP hop
+      // carried — usually a cross-origin one. The marker is what lets the door
+      // provision a first project anyway; without it a webmail signup is
+      // demoted to the projects list. See navigationMayCreateProject.
+      response.cookies.set(POST_AUTH_INTENT_COOKIE, '1', {
+        maxAge: POST_AUTH_INTENT_MAX_AGE,
+        path: '/',
+        sameSite: 'lax',
+      });
 
       // Clear stale legacy instance cookie so repo-first sessions do not inherit it after login.
       response.cookies.set(ACTIVE_INSTANCE_COOKIE, '', { maxAge: 0, path: '/' });

@@ -47,6 +47,7 @@ mock.module('../billing/repositories/credit-accounts', () => ({
   updateCreditAccount: async (accountId: string, data: Record<string, unknown>) => {
     state.updateCreditAccountCalls.push({ accountId, data });
   },
+  getSubscriptionInfo: async () => state.getCreditAccountResult,
 }));
 
 mock.module('../billing/repositories/customers', () => ({
@@ -156,7 +157,7 @@ describe('Stripe webhook canonicalization', () => {
       'acc_canonical_123',
       20,
       'Recovered Stripe subscription: 20 credits',
-      'legacy_sync:sub_legacy_123',
+      'subscription_activation:sub_legacy_123',
     ]);
     expect(state.stripeUpdateCalls).toHaveLength(1);
     expect(state.stripeUpdateCalls[0]).toEqual({

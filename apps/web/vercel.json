@@ -11,9 +11,9 @@
   ],
   "git": {
     "deploymentEnabled": {
-      "main": true,
+      "main": false,
       "staging": true,
-      "prod": true
+      "prod": false
     }
   }
 }

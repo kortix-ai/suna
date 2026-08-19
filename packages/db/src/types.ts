@@ -1,4 +1,4 @@
-import { sandboxes, kortixApiKeys, accounts, accountMembers, accountInvitations, accountGithubInstallations, acpSessionEnvelopes, auditEvents, usageEvents, gatewayRequestLogs, gatewayApiKeys, gatewayBudgets, projects, projectGitConnections, projectGitCredentials, projectMembers, projectSecrets, projectSessions, projectSessionSecretHandles, projectSnapshotBuilds, sandboxTemplates, sessionSandboxes, legacySandboxMigrations, creditAccounts, tunnelConnections, tunnelPermissions, tunnelPermissionRequests, tunnelAuditLogs, chatChannelBindings, chatInstalls, chatThreads } from './schema/kortix';
+import { sandboxes, kortixApiKeys, accounts, accountMembers, accountInvitations, accountGithubInstallations, auditEvents, usageEvents, gatewayRequestLogs, gatewayApiKeys, gatewayBudgets, projects, projectGitConnections, projectGitCredentials, projectMembers, projectSecrets, projectSessions, projectSessionSecretHandles, projectSnapshotBuilds, sandboxTemplates, sessionSandboxes, legacySandboxMigrations, creditAccounts, tunnelConnections, tunnelPermissions, tunnelPermissionRequests, tunnelAuditLogs, chatChannelBindings, chatInstalls, chatThreads } from './schema/kortix';
 import { apiKeys } from './schema/public';
 
 // Select types (what you get back from queries)
@@ -34,8 +34,6 @@ export type ProjectSession = typeof projectSessions.$inferSelect;
 export type NewProjectSession = typeof projectSessions.$inferInsert;
 export type ProjectSessionSecretHandle = typeof projectSessionSecretHandles.$inferSelect;
 export type NewProjectSessionSecretHandle = typeof projectSessionSecretHandles.$inferInsert;
-export type AcpSessionEnvelope = typeof acpSessionEnvelopes.$inferSelect;
-export type NewAcpSessionEnvelope = typeof acpSessionEnvelopes.$inferInsert;
 export type ProjectSnapshotBuild = typeof projectSnapshotBuilds.$inferSelect;
 export type NewProjectSnapshotBuild = typeof projectSnapshotBuilds.$inferInsert;
 export type SandboxTemplate = typeof sandboxTemplates.$inferSelect;

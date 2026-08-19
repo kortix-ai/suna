@@ -8,6 +8,7 @@ import { provisionSessionSandbox } from '../../platform/services/session-sandbox
 import { db } from '../../shared/db';
 import type { GitBackedProject } from '../git';
 import { RuntimeIdentityConflictError } from '../runtime-identity-error';
+import type { PreparedInitialSandboxTurn } from '../sandbox-turn-lifecycle';
 import type { ProjectRow } from './serializers';
 import { projectSessionMetadataMerge } from './session-metadata-merge';
 import { mergeSessionSandboxEnv } from './session-runtime-context';
@@ -26,6 +27,7 @@ export interface AllocateSessionRuntimeInput {
   sandboxSlug?: string;
   sessionMetadata: Record<string, unknown>;
   runtimeMetadata?: Record<string, unknown>;
+  initialTurn?: PreparedInitialSandboxTurn | null;
   extraEnvVars?: Record<string, string>;
   buildEnvVars: () => Promise<Record<string, string>>;
   resolveGitProject: () => Promise<GitBackedProject>;
@@ -69,6 +71,7 @@ async function allocateSessionRuntimeAsync(input: AllocateSessionRuntimeInput): 
         project_id: input.projectId,
         ...(input.runtimeMetadata ?? {}),
       },
+      initialTurn: input.initialTurn,
       extraEnvVars,
       projectMetadata: input.project.metadata,
       gitProject: {
@@ -112,7 +115,11 @@ async function allocateSessionRuntimeAsync(input: AllocateSessionRuntimeInput): 
         .set({
           status: 'failed',
           error: message,
-          metadata: { ...input.sessionMetadata, provisioning_error: message },
+          // Merge, never re-write `input.sessionMetadata`: that snapshot was
+          // taken before allocation started, so writing it back drops anything
+          // committed since — the generated title, remote_branch,
+          // the start timeline. The session is terminal here, so nothing retries.
+          metadata: projectSessionMetadataMerge({ provisioning_error: message }),
           updatedAt: new Date(),
         })
         .where(eq(projectSessions.sessionId, input.sessionId));

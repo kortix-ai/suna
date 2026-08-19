@@ -4,10 +4,13 @@ import { Button } from '@/components/ui/button';
 import { ButtonGroup } from '@/components/ui/button-group';
 import { Kbd, KbdGroup } from '@/components/ui/kbd';
 import { cn } from '@/lib/utils';
-import type { PageTree } from 'fumadocs-core/server';
-import { SidebarSeparator } from 'fumadocs-ui/components/layout/sidebar';
-import { useSearchContext, useSidebar } from 'fumadocs-ui/provider';
-import { PanelLeftIcon, Search } from 'lucide-react';
+import {
+  SidebarSimpleIcon as PanelLeftIcon,
+  MagnifyingGlassIcon as Search,
+} from '@phosphor-icons/react';
+import type * as PageTree from 'fumadocs-core/page-tree';
+import { SidebarSeparator, useSidebar } from 'fumadocs-ui/components/sidebar/base';
+import { useSearchContext } from 'fumadocs-ui/contexts/search';
 
 // App-Button replacements for fumadocs' built-in sidebar chrome (search
 // toggles, collapse trigger, collapsed floating control) so the docs share
@@ -35,8 +38,8 @@ export function DocsSearchButton() {
       <Search className="text-sidebar-foreground shrink-0" />
       <span className="flex-1 text-left">Search</span>
       <KbdGroup className="ml-auto opacity-0 transition-opacity duration-150 group-hover/row:opacity-100">
-        {hotKey.map((k, i) => (
-          <Kbd key={i}>{k.display}</Kbd>
+        {hotKey.map((k) => (
+          <Kbd key={String(k.display)}>{k.display}</Kbd>
         ))}
       </KbdGroup>
     </Button>

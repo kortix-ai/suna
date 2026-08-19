@@ -22,6 +22,7 @@
  */
 import {
   type AgentBlockV2,
+  resolveGrantSet,
   SLUG_RE,
   validateManifest,
   type ManifestIssue,
@@ -34,6 +35,72 @@ import type { ParsedManifest } from '../triggers';
  *  regex wasn't exported). */
 export function isValidAgentName(name: string): boolean {
   return SLUG_RE.test(name);
+}
+
+export type NormalizeRequiredConnectorsResult =
+  | { ok: true; block: Record<string, unknown> }
+  | { ok: false; error: string };
+
+function normalizeConnectorList(value: unknown, field: string): string[] | string {
+  if (!Array.isArray(value)) return `${field} must be a list of connector slugs`;
+  const normalized: string[] = [];
+  for (const item of value) {
+    if (typeof item !== 'string' || item.trim() === '') {
+      return `${field} must contain non-empty connector slugs`;
+    }
+    const slug = item.trim();
+    if (!normalized.includes(slug)) normalized.push(slug);
+  }
+  return normalized;
+}
+
+function equalConnectorSets(left: string[], right: string[]): boolean {
+  if (left.length !== right.length) return false;
+  const rightSet = new Set(right);
+  return left.every((slug) => rightSet.has(slug));
+}
+
+export function normalizeRequiredConnectorAliases(
+  source: Record<string, unknown>,
+): NormalizeRequiredConnectorsResult {
+  const canonicalRaw = source.connectors_required;
+  const legacyRaw = source.connectors_personal;
+  const canonical =
+    canonicalRaw === undefined ? undefined : normalizeConnectorList(canonicalRaw, 'connectors_required');
+  if (typeof canonical === 'string') return { ok: false, error: canonical };
+  const legacy =
+    legacyRaw === undefined ? undefined : normalizeConnectorList(legacyRaw, 'connectors_personal');
+  if (typeof legacy === 'string') return { ok: false, error: legacy };
+
+  if (canonical && legacy && !equalConnectorSets(canonical, legacy)) {
+    return {
+      ok: false,
+      error: 'connectors_personal must match connectors_required when both fields are present',
+    };
+  }
+
+  const block = { ...source };
+  delete block.connectors_personal;
+  const required = canonical ?? legacy;
+  if (canonicalRaw !== undefined || legacyRaw !== undefined) {
+    block.connectors_required = required ?? [];
+  } else {
+    delete block.connectors_required;
+  }
+  return { ok: true, block };
+}
+
+function pruneRequiredConnectors(block: Record<string, unknown>): void {
+  const required = block.connectors_required;
+  if (!Array.isArray(required)) return;
+  const connectors = resolveGrantSet(block.connectors, 'none');
+  if (connectors === 'all') return;
+  const granted = new Set(connectors === 'none' ? [] : connectors);
+  const kept = required.filter(
+    (value): value is string => typeof value === 'string' && granted.has(value),
+  );
+  if (kept.length > 0) block.connectors_required = kept;
+  else delete block.connectors_required;
 }
 
 export type ReadAgentBlockResult =
@@ -68,17 +135,64 @@ export function readAgentBlockV2(manifest: ParsedManifest, agentName: string): R
   if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) {
     return { ok: false, error: `agents.${agentName} is malformed (expected a table/object).` };
   }
-  return { ok: true, schemaVersion: 2, block: entry as AgentBlockV2, defaultAgent };
+  const normalized = normalizeRequiredConnectorAliases(entry as Record<string, unknown>);
+  if (!normalized.ok) return normalized;
+  return {
+    ok: true,
+    schemaVersion: 2,
+    block: normalized.block as AgentBlockV2,
+    defaultAgent,
+  };
 }
 
 export type ApplyAgentBlockResult =
   | { ok: true; raw: Record<string, unknown> }
   | { ok: false; error: string; issues?: ManifestIssue[] };
 
+function applyAgentMapBlock(
+  manifest: ParsedManifest,
+  agentName: string,
+  block: Record<string, unknown>,
+): ApplyAgentBlockResult {
+  if (!isValidAgentName(agentName)) {
+    return {
+      ok: false,
+      error: `"${agentName}" is not a valid agent name (lowercase letters, digits, dashes, underscores).`,
+    };
+  }
+  const rawAgents = manifest.raw.agents;
+  if (
+    rawAgents !== undefined &&
+    rawAgents !== null &&
+    (Array.isArray(rawAgents) || typeof rawAgents !== 'object')
+  ) {
+    return { ok: false, error: '`agents` is malformed in this manifest (expected a map).' };
+  }
+  const normalized = normalizeRequiredConnectorAliases(block);
+  if (!normalized.ok) return normalized;
+  pruneRequiredConnectors(normalized.block);
+  const nextAgents: Record<string, unknown> = {
+    ...(rawAgents as Record<string, unknown> | undefined),
+  };
+  nextAgents[agentName] = normalized.block;
+  const nextRaw = { ...manifest.raw, agents: nextAgents };
+
+  const result = validateManifest(nextRaw, manifest.format);
+  const errorIssues = result.issues.filter((issue) => issue.severity === 'error');
+  if (errorIssues.length > 0) {
+    return {
+      ok: false,
+      error: errorIssues.map((issue) => `${issue.path}: ${issue.message}`).join('; '),
+      issues: errorIssues,
+    };
+  }
+  return { ok: true, raw: nextRaw };
+}
+
 /**
  * Change the project-wide default agent without touching any agent block.
  * The manifest validator is the authority: the target must be a declared,
- * enabled v2 agent before the caller is allowed to commit the file.
+ * enabled map-based agent before the caller is allowed to commit the file.
  */
 export function applyDefaultAgentV2(
   manifest: ParsedManifest,
@@ -88,7 +202,7 @@ export function applyDefaultAgentV2(
     return {
       ok: false,
       error:
-        'This project uses a kortix_version 1 manifest. Upgrade to kortix_version 2 (kortix.yaml) to set a project default agent.',
+        'This project must use kortix_version 2 (kortix.yaml) to set a project default agent.',
     };
   }
   if (!isValidAgentName(agentName)) {
@@ -137,34 +251,11 @@ export function applyAgentBlockV2(
         'This project uses a kortix_version 1 manifest. Upgrade to kortix_version 2 (kortix.yaml) to edit the full agent configuration.',
     };
   }
-  if (!isValidAgentName(agentName)) {
-    return {
-      ok: false,
-      error: `"${agentName}" is not a valid agent name (lowercase letters, digits, dashes, underscores).`,
-    };
-  }
-  const rawAgents = manifest.raw.agents;
-  if (rawAgents !== undefined && rawAgents !== null && (Array.isArray(rawAgents) || typeof rawAgents !== 'object')) {
-    return { ok: false, error: '`agents` is malformed in this manifest (expected a map).' };
-  }
-  const nextAgents: Record<string, unknown> = { ...(rawAgents as Record<string, unknown> | undefined) };
-  nextAgents[agentName] = block;
-  const nextRaw = { ...manifest.raw, agents: nextAgents };
-
-  const result = validateManifest(nextRaw, manifest.format);
-  const errorIssues = result.issues.filter((i) => i.severity === 'error');
-  if (errorIssues.length > 0) {
-    return {
-      ok: false,
-      error: errorIssues.map((i) => `${i.path}: ${i.message}`).join('; '),
-      issues: errorIssues,
-    };
-  }
-  return { ok: true, raw: nextRaw };
+  return applyAgentMapBlock(manifest, agentName, block as Record<string, unknown>);
 }
 
 /**
- * Apply a secrets/connectors SCOPE edit to a v2 `agents:` MAP manifest — the v2
+ * Apply a secrets/connectors SCOPE edit to an `agents:` map manifest — the
  * counterpart of `applyAgentScope` in `../agents.ts` (which only handles the v1
  * `[[agents]]` array and would treat a v2 map as an empty array → "agent not
  * found"). Reads the agent's existing governance block, merges in JUST the two
@@ -184,11 +275,16 @@ export function applyAgentScopeV2(
   scope: {
     env?: string[] | 'all';
     connectors?: string[] | 'all';
-    /** v2 `connectors_personal` — the subset of `connectors` that must resolve to
-     *  the launching user's OWN connection. `[]` clears it. */
-    connectorsPersonal?: string[];
+    connectorsRequired?: string[];
   },
 ): ApplyAgentBlockResult & { notFound?: boolean } {
+  if (manifest.schemaVersion !== 2) {
+    return {
+      ok: false,
+      error:
+        'This project must use kortix_version 2 (kortix.yaml) to edit agent scope.',
+    };
+  }
   const rawAgents = manifest.raw.agents;
   const existing =
     rawAgents && typeof rawAgents === 'object' && !Array.isArray(rawAgents)
@@ -204,7 +300,9 @@ export function applyAgentScopeV2(
   if (typeof existing !== 'object' || Array.isArray(existing)) {
     return { ok: false, error: `agents.${agentName} is malformed (expected a table/object).` };
   }
-  const merged: Record<string, unknown> = { ...(existing as Record<string, unknown>) };
+  const normalized = normalizeRequiredConnectorAliases(existing as Record<string, unknown>);
+  if (!normalized.ok) return normalized;
+  const merged: Record<string, unknown> = normalized.block;
   if (scope.env !== undefined) {
     if (scope.env === 'all') merged.secrets = 'all';
     else if (scope.env.length === 0) delete merged.secrets;
@@ -215,28 +313,133 @@ export function applyAgentScopeV2(
     else if (scope.connectors.length === 0) delete merged.connectors;
     else merged.connectors = scope.connectors;
   }
-  if (scope.connectorsPersonal !== undefined) {
-    const personal = Array.from(new Set(scope.connectorsPersonal));
-    if (personal.length === 0) delete merged.connectors_personal;
-    else merged.connectors_personal = personal;
+  if (scope.connectorsRequired !== undefined) {
+    const required = Array.from(new Set(scope.connectorsRequired));
+    if (required.length === 0) delete merged.connectors_required;
+    else merged.connectors_required = required;
   }
-  // connectors_personal MUST stay a subset of connectors — the parser rejects the
-  // whole agent block otherwise, which would make the manifest unloadable and
-  // break session-create for that agent. Narrowing the grant (here, or in a
-  // separate edit that only touches `connectors`) therefore has to prune any
-  // personal entry that just lost its grant, rather than writing a manifest we
-  // know won't parse. 'all' grants everything, so nothing to prune there.
   const effectiveConnectors = merged.connectors;
-  const effectivePersonal = merged.connectors_personal;
-  if (Array.isArray(effectivePersonal)) {
-    if (effectiveConnectors === undefined) {
-      delete merged.connectors_personal;
+  const effectiveRequired = merged.connectors_required;
+  if (Array.isArray(effectiveRequired)) {
+    if (effectiveConnectors === undefined || effectiveConnectors === 'none') {
+      delete merged.connectors_required;
     } else if (Array.isArray(effectiveConnectors)) {
       const granted = new Set(effectiveConnectors as string[]);
-      const kept = (effectivePersonal as string[]).filter((alias) => granted.has(alias));
-      if (kept.length === 0) delete merged.connectors_personal;
-      else merged.connectors_personal = kept;
+      const kept = (effectiveRequired as string[]).filter((slug) => granted.has(slug));
+      if (kept.length === 0) delete merged.connectors_required;
+      else merged.connectors_required = kept;
     }
   }
-  return applyAgentBlockV2(manifest, agentName, merged as AgentBlockV2);
+  return applyAgentMapBlock(manifest, agentName, merged);
+}
+
+/** Grant membership. Case-insensitive, mirroring `listAdmits`
+ *  (../../secrets/strategy.ts) and `grantAdmits` (./serializers.ts) — a
+ *  hand-written `secrets:` list in kortix.yaml may use any case, and all three
+ *  answers must agree or the UI and the delivery gate disagree about whether a
+ *  secret is granted. */
+function listAdmits(list: readonly string[], identifier: string): boolean {
+  const target = identifier.toUpperCase();
+  return list.some((entry) => entry.toUpperCase() === target);
+}
+
+export type GrantSecretToAgentResult =
+  | {
+      ok: true;
+      raw: Record<string, unknown>;
+      /** The list already admitted the identifier — the caller must NOT commit. */
+      alreadyGranted: boolean;
+      adoptedGovernance: boolean;
+    }
+  | { ok: false; error: string; issues?: ManifestIssue[]; unsupportedV1?: boolean };
+
+/**
+ * Add ONE secret identifier to ONE agent's `secrets:` allowlist — the write
+ * behind the "No agent can receive this secret" warning
+ * (`delivery_blocked_reason: 'no_agent_grant'`, ./serializers.ts). Narrower
+ * than `applyAgentScopeV2` on purpose: that route replaces a whole grant set
+ * and refuses an undeclared agent, while this one only ever WIDENS, and
+ * upserts the agent entry when the roster does not name it yet.
+ *
+ * Three behaviours here are not obvious:
+ *
+ * 1. **`secrets: all` is expanded, not overwritten.** `resolveSecretDelivery`
+ *    withholds an `egress`/`broker` row from an `'all'` grant
+ *    (`agent_grant_unscoped`), so the grant HAS to become an explicit list for
+ *    the secret to arrive. Writing just this identifier would silently revoke
+ *    every other project secret from the agent, so `projectIdentifiers` — what
+ *    `'all'` currently resolves to — is written out alongside it. Delivery
+ *    today is unchanged; only a secret added LATER now needs its own grant.
+ * 2. **`adoptedGovernance` covers the absent manifest too.** `revision === null`
+ *    means no manifest file exists in the repo (`loadManifestForEdit`
+ *    synthesized one), so the commit publishes the project's first roster and
+ *    default-denies every agent it omits (../agents.ts) — the same hazard as
+ *    adding the first `agents:` block to an existing file.
+ * 3. **An already-admitting list is reported, never rewritten.** The caller
+ *    skips the commit, so the manifest keeps its author's ordering and casing.
+ */
+export function grantSecretToAgentV2(
+  manifest: ParsedManifest,
+  agentName: string,
+  identifier: string,
+  projectIdentifiers: readonly string[] = [],
+): GrantSecretToAgentResult {
+  if (manifest.schemaVersion !== 2) {
+    return {
+      ok: false,
+      unsupportedV1: true,
+      error:
+        'This project uses a kortix_version 1 manifest (kortix.toml). Upgrade to kortix_version 2 (kortix.yaml) to grant a secret to an agent.',
+    };
+  }
+  const rawAgents = manifest.raw.agents;
+  if (
+    rawAgents !== undefined &&
+    rawAgents !== null &&
+    (Array.isArray(rawAgents) || typeof rawAgents !== 'object')
+  ) {
+    return { ok: false, error: '`agents` is malformed in this manifest (expected a map).' };
+  }
+  const agentsMap = (rawAgents ?? undefined) as Record<string, unknown> | undefined;
+  const adoptedGovernance =
+    (manifest.revision ?? null) === null || !agentsMap || Object.keys(agentsMap).length === 0;
+
+  const existing = agentsMap?.[agentName];
+  if (existing === undefined || existing === null) {
+    const applied = applyAgentBlockV2(manifest, agentName, { secrets: [identifier] });
+    return applied.ok ? { ...applied, alreadyGranted: false, adoptedGovernance } : applied;
+  }
+  if (typeof existing !== 'object' || Array.isArray(existing)) {
+    return { ok: false, error: `agents.${agentName} is malformed (expected a table/object).` };
+  }
+  const normalized = normalizeRequiredConnectorAliases(existing as Record<string, unknown>);
+  if (!normalized.ok) return normalized;
+  const merged = normalized.block;
+
+  const current = merged.secrets;
+  if (Array.isArray(current)) {
+    const declared = current.filter((entry): entry is string => typeof entry === 'string');
+    // No commit, so nothing is adopted either.
+    if (listAdmits(declared, identifier)) {
+      return { ok: true, raw: manifest.raw, alreadyGranted: true, adoptedGovernance: false };
+    }
+    // Append to the author's entries verbatim. A non-string entry is left in
+    // place for `validateManifest` to reject, never quietly dropped.
+    merged.secrets = [...current, identifier];
+  } else if (resolveGrantSet(current, 'none') === 'all') {
+    // Every other project identifier, then the new one last so the diff reads
+    // as an addition. Both filters use the same case-insensitive rule the
+    // delivery gate does.
+    const expanded: string[] = [];
+    for (const entry of projectIdentifiers) {
+      if (listAdmits([identifier], entry) || listAdmits(expanded, entry)) continue;
+      expanded.push(entry);
+    }
+    merged.secrets = [...expanded, identifier];
+  } else {
+    merged.secrets = [identifier];
+  }
+
+  const applied = applyAgentMapBlock(manifest, agentName, merged);
+  return applied.ok ? { ...applied, alreadyGranted: false, adoptedGovernance } : applied;
 }

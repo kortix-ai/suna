@@ -120,6 +120,7 @@ function fetchWithAuth(
   headers: Headers,
   signal?: AbortSignal,
 ): Promise<Response> {
+  const fetchImpl = platformConfig().fetch ?? fetch;
   if (input instanceof Request) {
     // Clone the Request with our auth headers baked in.
     // This guarantees Authorization is part of the Request itself,
@@ -128,9 +129,9 @@ function fetchWithAuth(
       headers,
       ...(signal ? { signal } : {}),
     });
-    return fetch(authedRequest);
+    return fetchImpl(authedRequest);
   }
-  return fetch(input, { ...init, headers, ...(signal ? { signal } : {}) });
+  return fetchImpl(input, { ...init, headers, ...(signal ? { signal } : {}) });
 }
 
 // Timeout composition, streaming exemption, and header building live in
@@ -156,9 +157,16 @@ export async function authenticatedFetch(
   init?: RequestInit,
   options?: {
     retryOnAuthError?: boolean;
+    /**
+     * Override the default 30s request deadline. For request bodies large
+     * enough that 30s is a throughput limit rather than a hang detector — see
+     * `uploadTimeoutMsForBytes` in `core/files/client.ts`. A caller-supplied
+     * `init.signal` still composes with this; whichever fires first wins.
+     */
+    timeoutMs?: number;
   },
 ): Promise<Response> {
-  const { retryOnAuthError = true } = options ?? {};
+  const { retryOnAuthError = true, timeoutMs } = options ?? {};
 
   const token = await getAuthTokenWithRetry();
 
@@ -169,11 +177,15 @@ export async function authenticatedFetch(
     return syntheticUnauthenticatedResponse();
   }
 
-  const headers = buildAuthHeaders(input, init, token);
+  const clientSource = platformConfig().clientSource;
+  const headers = buildAuthHeaders(input, init, token, clientSource);
   // 30s default timeout for everything EXCEPT the long-lived SSE event
   // stream (see `withDefaultTimeout`) — a "Kortix as a Backend" wrapper must
   // never have a hung sandbox/daemon request wedge its handler forever.
-  const signal = withDefaultTimeout(input, init);
+  const signal =
+    timeoutMs === undefined
+      ? withDefaultTimeout(input, init)
+      : withDefaultTimeout(input, init, timeoutMs);
 
   // When the OpenCode SDK passes a Request object (single arg, no init),
   // we must construct a new Request with the auth headers baked in.
@@ -189,7 +201,7 @@ export async function authenticatedFetch(
       invalidateTokenCache();
       const newToken = await getAuthTokenWithRetry({ attempts: 2, baseDelayMs: 200 });
       if (newToken && newToken !== token) {
-        const retryHeaders = buildAuthHeaders(input, init, newToken);
+        const retryHeaders = buildAuthHeaders(input, init, newToken, clientSource);
         return fetchWithAuth(input, init, retryHeaders, signal);
       }
     }

@@ -27,9 +27,15 @@
  */
 
 import { TextWithPaths } from '@/components/common/clickable-path';
-import { CodeHighlight, UnifiedMarkdown } from '@/components/markdown/unified-markdown';
+import { CodeHighlight } from '@/components/markdown/code';
+import {
+  MarkdownFrontmatterCard,
+  parseFrontmatter,
+} from '@/components/markdown/markdown-frontmatter';
+import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
 import { Button } from '@/components/ui/button';
 import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
+import Loading from '@/components/ui/loading';
 import { FileContentRenderer } from '@/features/files/components/file-content-renderer';
 import { useBinaryBlob } from '@/features/files/hooks/use-binary-blob';
 import { useFileContent } from '@/features/files/hooks/use-file-content';
@@ -41,17 +47,16 @@ import { isHeicFile } from '@/lib/utils/heic-convert';
 import { isAppRouteUrl, parseLocalhostUrl } from '@/lib/utils/sandbox-url';
 import { buildStaticFileLocalUrl } from '@kortix/sdk';
 import {
-  AlertTriangle,
-  ChevronLeft,
-  ChevronRight,
-  ExternalLink,
+  WarningIcon as AlertTriangle,
+  CaretLeftIcon as ChevronLeft,
+  CaretRightIcon as ChevronRight,
+  ArrowSquareOutIcon as ExternalLink,
   FileIcon,
-  FileText,
-  FileWarning,
-  Globe,
-  Loader2,
-  Music,
-} from 'lucide-react';
+  FileTextIcon as FileText,
+  FileXIcon as FileWarning,
+  GlobeIcon as Globe,
+  MusicNotesIcon as Music,
+} from '@phosphor-icons/react';
 import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ImageRenderer } from './image-renderer';
 import { ViewerFrame } from './shared/viewer-frame';
@@ -129,7 +134,7 @@ const BLOB_TYPES = new Set(['image', 'video', 'audio', 'docx', 'pptx']);
 function RendererFallback({ className }: { className?: string }) {
   return (
     <div className={cn('flex items-center justify-center', className || 'h-[420px]')}>
-      <Loader2 className="text-muted-foreground/40 h-4 w-4 animate-spin" />
+      <Loading className="text-muted-foreground/40 h-4 w-4" />
     </div>
   );
 }
@@ -336,11 +341,36 @@ export function ShowContentRenderer({
     enabled: !!csvLoadPath,
   });
 
-  // HTML blob URL (inline content, no SDK call)
-  const htmlBlobUrl = useMemo(() => {
-    if (!isHtml || !content) return null;
-    const blob = new Blob([content], { type: 'text/html' });
-    return URL.createObjectURL(blob);
+  // HTML blob URL (inline content, no SDK call).
+  //
+  // Minted INSIDE the effect, never in render. `URL.createObjectURL` pins its
+  // Blob until revoked, so the revoke has to pair with the create — and the
+  // pairing only holds if the create is what the cleanup can undo. A
+  // `useMemo` cannot be: React StrictMode (on by default; next.config.ts does
+  // not disable it) runs mount → cleanup → mount in a single commit with NO
+  // re-render in between, so the cleanup revoked the URL the memo had already
+  // handed to the iframe, and the second setup had nothing to replace it
+  // with. The preview then rendered from a dead blob — blank in dev, and racy
+  // enough (it depends on whether the iframe finished loading before paint) to
+  // read as flaky rather than broken.
+  //
+  // Creating it here makes each URL the private property of one effect run:
+  // the cleanup revokes exactly the URL its own setup made, and the state
+  // update that follows re-renders the iframe onto the live one.
+  const [htmlBlobUrl, setHtmlBlobUrl] = useState<string | null>(null);
+  useEffect(() => {
+    // No reset needed on the way out of the HTML branch: the previous run's
+    // cleanup below already nulled whatever it had minted.
+    if (!isHtml || !content) return;
+    const objectUrl = URL.createObjectURL(new Blob([content], { type: 'text/html' }));
+    setHtmlBlobUrl(objectUrl);
+    return () => {
+      URL.revokeObjectURL(objectUrl);
+      // Never leave a revoked URL as the rendered `src`. On a content change
+      // the next setup overwrites this immediately, so the null is only ever
+      // observed when this effect is tearing down for good.
+      setHtmlBlobUrl((current) => (current === objectUrl ? null : current));
+    };
   }, [isHtml, content]);
 
   // Error fallback for FileContentRenderer (used for generic 'file' type)
@@ -452,7 +482,7 @@ export function ShowContentRenderer({
           rel="noopener noreferrer"
           className="group border-border/30 bg-muted/5 hover:bg-muted/20 flex w-full items-center gap-4 rounded-2xl border p-4 transition-colors"
         >
-          <div className="bg-muted/30 flex size-10 flex-shrink-0 items-center justify-center overflow-hidden rounded-lg">
+          <div className="bg-muted/30 flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-lg">
             {favicon ? (
               /* eslint-disable-next-line @next/next/no-img-element */
               <img
@@ -478,7 +508,7 @@ export function ShowContentRenderer({
               <div className="text-muted-foreground mt-1 line-clamp-2 text-xs">{description}</div>
             )}
           </div>
-          <ExternalLink className="text-muted-foreground/30 group-hover:text-muted-foreground/60 size-4 flex-shrink-0 transition-colors" />
+          <ExternalLink className="text-muted-foreground/30 group-hover:text-muted-foreground/60 size-4 shrink-0 transition-colors" />
         </a>
       </div>
     );
@@ -712,9 +742,16 @@ export function ShowContentRenderer({
   // Markdown — rendered
   // ═════════════════════════════════════════════════════════════════════════
   if (isMarkdown && content) {
+    // Same split the file viewer does. Handed the raw file, markdown reads a
+    // leading `---` block as prose — thematic break, then a setext underline
+    // that turns the whole metadata into one giant heading. Only the explicit
+    // markdown branch does this: a `---` in a plain TEXT file is a rule the
+    // author meant, and `parseFrontmatter` would be wrong to eat it.
+    const { frontmatter, body } = parseFrontmatter(content);
     return (
       <div data-scrollable={scrollableAttr} className={textWrap}>
-        <UnifiedMarkdown content={content} />
+        {frontmatter && <MarkdownFrontmatterCard data={frontmatter} />}
+        <UnifiedMarkdown content={body} />
       </div>
     );
   }
@@ -733,20 +770,30 @@ export function ShowContentRenderer({
   // ═════════════════════════════════════════════════════════════════════════
   // HTML — sandboxed iframe
   // ═════════════════════════════════════════════════════════════════════════
-  if (isHtml && content && htmlBlobUrl) {
+  if (isHtml && content) {
+    // The blob URL lands one commit after mount (see the effect above), so this
+    // branch owns BOTH states. Rendering the frame's box either way keeps the
+    // layout still and, more importantly, keeps the fall-through cascade below
+    // out of reach — otherwise the first paint of every HTML preview would be
+    // the markdown fallback rendering the page's own source.
+    const frameStyle = fill
+      ? { height: '100%' }
+      : { height: arCSS ? undefined : '540px', aspectRatio: arCSS || undefined };
     return (
-      <div className={cn('overflow-hidden', fill && 'h-full')}>
-        <iframe
-          src={htmlBlobUrl}
-          title={title || 'HTML Preview'}
-          className="w-full border-0 bg-white"
-          style={
-            fill
-              ? { height: '100%' }
-              : { height: arCSS ? undefined : '540px', aspectRatio: arCSS || undefined }
-          }
-          sandbox={getIframeSandbox({ isolateHtmlPreview: true })}
-        />
+      <div
+        data-component="html-preview"
+        className={cn('overflow-hidden', fill && 'h-full')}
+        style={htmlBlobUrl ? undefined : frameStyle}
+      >
+        {htmlBlobUrl && (
+          <iframe
+            src={htmlBlobUrl}
+            title={title || 'HTML Preview'}
+            className="w-full border-0 bg-white"
+            style={frameStyle}
+            sandbox={getIframeSandbox({ isolateHtmlPreview: true })}
+          />
+        )}
       </div>
     );
   }
@@ -758,7 +805,7 @@ export function ShowContentRenderer({
     return (
       <div className={cn('px-5 py-4', fill && 'flex h-full items-center')}>
         <div className="flex items-start gap-3">
-          <AlertTriangle className="mt-0.5 size-4 flex-shrink-0 text-red-500" />
+          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-red-500" />
           <p className="text-foreground text-sm whitespace-pre-wrap">
             <TextWithPaths text={content} />
           </p>
@@ -1016,7 +1063,7 @@ export function ShowCarousel({
 
           <FadedScrollArea
             orientation="horizontal"
-            fadeColor="from-background"
+            fadeColor="from-secondary"
             className="min-w-0 flex-1 overscroll-x-contain"
           >
             <div className="flex w-max min-w-0 items-center gap-1">

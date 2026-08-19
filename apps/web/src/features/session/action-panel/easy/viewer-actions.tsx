@@ -13,7 +13,10 @@ import { PublicShareLinkButton } from '@/components/projects/public-share-link-b
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
 import { useIsExpanded, useToggleExpanded } from '@/stores/kortix-computer-store';
-import { Maximize2, Minimize2 } from 'lucide-react';
+import {
+  ArrowsOutSimpleIcon as Maximize2,
+  ArrowsInSimpleIcon as Minimize2,
+} from '@phosphor-icons/react';
 
 /** Project-session ids a share link is scoped to. */
 export interface ShareContext {
@@ -76,11 +79,7 @@ export function PanelWidthButton({ isMobile }: { isMobile: boolean }) {
         aria-label={isExpanded ? 'Exit full screen' : 'Full screen'}
         className="size-7 active:scale-[0.96]"
       >
-        {isExpanded ? (
-          <Minimize2 className="size-3.5" />
-        ) : (
-          <Maximize2 className="size-3.5" />
-        )}
+        {isExpanded ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
       </Button>
     </Hint>
   );

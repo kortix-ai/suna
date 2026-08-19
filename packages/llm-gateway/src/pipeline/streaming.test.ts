@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { probeStream, relayStream } from './streaming';
+import { probeStream, relayStream, resolveStreamProbeTimeoutMs } from './streaming';
 
 const enc = new TextEncoder();
 const dec = new TextDecoder();
@@ -161,7 +161,7 @@ describe('probeStream', () => {
     expect(result.hasContent).toBe(false);
   });
 
-  test('times out and cancels a stream that opens but produces no bytes', async () => {
+  test('leaves a slow stream OPEN on timeout so the caller can commit it', async () => {
     const up = controllableUpstream();
     const result = await probeStream(up.stream, { inactivityTimeoutMs: 20 });
 
@@ -170,7 +170,162 @@ describe('probeStream', () => {
       message: 'upstream stream probe timeout exceeded (20ms with no bytes)',
       code: 'stream_probe_timeout',
     });
-    expect(up.cancelled).toBe(true);
+    // The whole point of the commit path: a still-prefilling upstream must not
+    // be cancelled. Cancelling here is what killed healthy large-context turns.
+    expect(up.cancelled).toBe(false);
+    expect(result.pendingRead).toBeDefined();
+  });
+
+  test('hands the in-flight read to the caller so no post-timeout chunk is lost', async () => {
+    const up = controllableUpstream();
+    const result = await probeStream(up.stream, { inactivityTimeoutMs: 20 });
+    expect(result.pendingRead).toBeDefined();
+
+    // The chunk the model finally produces resolves the read that was already
+    // in flight when the deadline expired. A caller that issued a fresh
+    // reader.read() instead would queue behind this promise and never see it.
+    up.push('data: {"choices":[{"delta":{"content":"late but real"}}]}\n\n');
+    const first = await result.pendingRead!;
+    expect(first.done).toBe(false);
+    expect(new TextDecoder().decode(first.value)).toContain('late but real');
+  });
+
+  test('holds and classifies the production soft rate-limit completion before relaying bytes', async () => {
+    const up = controllableUpstream();
+    up.push(
+      'data: {"choices":[{"delta":{"content":"Request rate increased too quickly."}}]}\n\n',
+    );
+    up.push(
+      'data: {"choices":[{"delta":{"content":" To ensure system stability, please adjust your client logic to scale requests more smoothly over time."}}]}\n\n',
+    );
+    up.push(
+      'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":0,"completion_tokens":0,"total_tokens":0}}\n\n',
+    );
+    up.push('data: [DONE]\n\n');
+    up.close();
+
+    const result = await probeStream(up.stream);
+
+    expect(result.hasContent).toBe(false);
+    expect(result.errorFrame).toEqual({
+      message:
+        'Request rate increased too quickly. To ensure system stability, please adjust your client logic to scale requests more smoothly over time.',
+      code: 429,
+      detail: { type: 'soft_rate_limit' },
+    });
+  });
+
+  test('relays the exact soft-failure sentence when streaming usage is non-zero', async () => {
+    const up = controllableUpstream();
+    up.push(
+      'data: {"choices":[{"delta":{"content":"Request rate increased too quickly. To ensure system stability, please adjust your client logic to scale requests more smoothly over time."}}]}\n\n',
+    );
+    up.push(
+      'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":12,"completion_tokens":20,"total_tokens":32}}\n\n',
+    );
+    up.push('data: [DONE]\n\n');
+    up.close();
+
+    const result = await probeStream(up.stream);
+
+    expect(result.hasContent).toBe(true);
+    expect(result.errorFrame).toBeUndefined();
+  });
+
+  test('does not release a soft-failure prefix at the normal chunk budget', async () => {
+    const up = controllableUpstream();
+    up.push(
+      'data: {"choices":[{"delta":{"content":"Request rate increased too quickly."}}]}\n\n',
+    );
+    for (let index = 0; index < 70; index += 1) up.push(': provider-heartbeat\n\n');
+    up.push(
+      'data: {"choices":[{"delta":{"content":" To ensure system stability, please adjust your client logic to scale requests more smoothly over time."}}]}\n\n',
+    );
+    up.push(
+      'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":0,"completion_tokens":0,"total_tokens":0}}\n\n',
+    );
+    up.close();
+
+    const result = await probeStream(up.stream);
+
+    expect(result.hasContent).toBe(false);
+    expect(result.errorFrame?.code).toBe(429);
+  });
+});
+
+describe('resolveStreamProbeTimeoutMs', () => {
+  test('keeps the 30-second default for an ordinary small prompt', () => {
+    expect(
+      resolveStreamProbeTimeoutMs({ requestBytes: 64_000, provider: 'openrouter', model: 'x' }),
+    ).toBe(30_000);
+  });
+
+  test('does not scale with request size — a 2MiB prompt gets the same deadline', () => {
+    expect(
+      resolveStreamProbeTimeoutMs({
+        requestBytes: 2_023_225,
+        provider: 'aster',
+        model: 'glm-5.2',
+      }),
+    ).toBe(30_000);
+  });
+
+  test('does not special-case a provider or model', () => {
+    expect(
+      resolveStreamProbeTimeoutMs({
+        requestBytes: 64_000,
+        provider: 'aster',
+        model: 'glm-5.2',
+      }),
+    ).toBe(30_000);
+  });
+
+  // Regression lock. The retired ladder was
+  // `30_000 + ceil((bytes - 64KiB) / 1MiB) * 15_000`, capped at 120_000, so
+  // every request body between 3,211,776 and 4,259,840 bytes resolved to
+  // exactly 90_000 — the deadline that deterministically killed healthy
+  // large-context Fable turns. No request size may ever produce it again.
+  test('no request size can resolve to the 90-second cliff again', () => {
+    for (let bytes = 0; bytes <= 16 * 1024 * 1024; bytes += 64 * 1024) {
+      const resolved = resolveStreamProbeTimeoutMs({
+        requestBytes: bytes,
+        provider: 'anthropic',
+        model: 'claude-fable-5',
+      });
+      expect(resolved).toBe(30_000);
+    }
+  });
+
+  test('an explicit operator timeout remains an exact override', () => {
+    expect(
+      resolveStreamProbeTimeoutMs({
+        requestBytes: 2_023_225,
+        provider: 'aster',
+        model: 'glm-5.2',
+        configuredTimeoutMs: 12_345,
+      }),
+    ).toBe(12_345);
+  });
+
+  test('zero keeps the default deadline', () => {
+    expect(
+      resolveStreamProbeTimeoutMs({
+        requestBytes: 64_000,
+        provider: 'aster',
+        model: 'glm-5.2',
+        configuredTimeoutMs: 0,
+      }),
+    ).toBe(30_000);
+  });
+
+  test('an extreme request is not given a longer deadline', () => {
+    expect(
+      resolveStreamProbeTimeoutMs({
+        requestBytes: 50 * 1024 * 1024,
+        provider: 'openrouter',
+        model: 'x',
+      }),
+    ).toBe(30_000);
   });
 });
 
@@ -340,23 +495,24 @@ describe('relayStream client abort propagation', () => {
   });
 });
 
-// Regression coverage for the unbounded-buffer finding: the live preview
-// retained for the trace must stay bounded regardless of total stream size,
-// while usage/error extraction (which needs to see every chunk) stays correct.
-describe('relayStream bounded response buffer', () => {
-  test('caps the retained response preview independent of total stream size, while still relaying everything to the client', async () => {
+// Regression coverage for the unbounded-buffer finding: usage/error
+// extraction stays O(1) per chunk (the incremental scanner) regardless of
+// total stream size. The trace preview retained alongside it is a separate
+// concern and is captured in FULL, uncapped — a log must show exactly what
+// was relayed to the client, never a truncated stand-in for it.
+describe('relayStream response buffer', () => {
+  test('retains the full response preview for the trace, matching everything relayed to the client', async () => {
     const up = controllableUpstream();
     let settledPreview: unknown = 'unset';
     const out = relayStream({
       upstreamBody: up.stream,
       captureBodies: true,
-      requestId: 'r-bounded-1',
+      requestId: 'r-full-1',
       logger: noop,
       settle: async (_usage, response) => {
         settledPreview = response;
       },
       heartbeatMs: 10_000,
-      maxCapturedBodyBytes: 32,
     });
     const collected = drain(out);
     const big = 'x'.repeat(5_000);
@@ -364,27 +520,28 @@ describe('relayStream bounded response buffer', () => {
     up.push('data: [DONE]\n\n');
     up.close();
     const text = await collected;
-    // The full stream still reaches the client verbatim...
-    expect(text.length).toBeGreaterThan(5_000);
     await delay(10); // let the detached finally run settle()
-    // ...but the retained preview never grows past the configured cap.
+    // The retained trace preview is byte-for-byte what reached the client —
+    // no truncation, no gap between the two.
     expect(typeof settledPreview).toBe('string');
-    expect((settledPreview as string).length).toBe(32);
+    expect((settledPreview as string).length).toBe(text.length);
+    expect(settledPreview).toBe(text);
   });
 
-  test('extracts usage correctly from a long stream even though the retained preview is capped well below it', async () => {
+  test('extracts usage correctly from a long stream while retaining the full preview alongside it', async () => {
     const up = controllableUpstream();
     let settledUsage: unknown = 'unset';
+    let settledPreview: unknown = 'unset';
     const out = relayStream({
       upstreamBody: up.stream,
       captureBodies: true,
-      requestId: 'r-bounded-2',
+      requestId: 'r-full-2',
       logger: noop,
-      settle: async (usage) => {
+      settle: async (usage, response) => {
         settledUsage = usage;
+        settledPreview = response;
       },
       heartbeatMs: 10_000,
-      maxCapturedBodyBytes: 16,
     });
     const collected = drain(out);
     const big = 'y'.repeat(10_000);
@@ -394,9 +551,10 @@ describe('relayStream bounded response buffer', () => {
     );
     up.push('data: [DONE]\n\n');
     up.close();
-    await collected;
+    const text = await collected;
     await delay(10);
     expect(settledUsage).toMatchObject({ promptTokens: 11, completionTokens: 22 });
+    expect(settledPreview).toBe(text);
   });
 });
 

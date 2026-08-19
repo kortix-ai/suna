@@ -24,10 +24,11 @@
 // retrievers.
 
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const APPS_WEB = resolve(new URL('.', import.meta.url).pathname, '..');
+const APPS_WEB = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const REPO_ROOT = resolve(APPS_WEB, '..', '..');
 const DOCS_ROOT = join(APPS_WEB, 'content', 'docs');
 const MANIFEST_PATH = join(APPS_WEB, 'src', 'lib', 'seo', 'content-timestamps.json');
@@ -36,7 +37,7 @@ const MANIFEST_PATH = join(APPS_WEB, 'src', 'lib', 'seo', 'content-timestamps.js
 // MARKETING_RECORDS mapping in src/lib/seo/public-content.ts; both lists must
 // stay in sync. A slug without a backing page.tsx (none today) is skipped.
 const MARKETING_SOURCES = {
-  index: 'apps/web/src/app/(public)/(marketing)/page.tsx',
+  index: 'apps/web/src/app/(public)/(marketing)/(home)/page.tsx',
   about: 'apps/web/src/app/(public)/(seo)/about/page.tsx',
   contact: 'apps/web/src/app/(public)/(marketing)/contact/page.tsx',
   developers: 'apps/web/src/app/(public)/(marketing)/developers/page.tsx',
@@ -45,6 +46,33 @@ const MARKETING_SOURCES = {
   marketplace: 'apps/web/src/app/(public)/(marketing)/marketplace/page.tsx',
   support: 'apps/web/src/app/(public)/(marketing)/support/page.tsx',
   legal: 'apps/web/src/app/(public)/(seo)/legal/page.tsx',
+  'agent-computer': 'apps/web/src/app/(public)/(marketing)/agent-computer/page.tsx',
+  'agents-and-skills': 'apps/web/src/app/(public)/(marketing)/agents-and-skills/page.tsx',
+  automations: 'apps/web/src/app/(public)/(marketing)/automations/page.tsx',
+  channels: 'apps/web/src/app/(public)/(marketing)/channels/page.tsx',
+  'company-as-code': 'apps/web/src/app/(public)/(marketing)/company-as-code/page.tsx',
+  connectors: 'apps/web/src/app/(public)/(marketing)/connectors/page.tsx',
+  security: 'apps/web/src/app/(public)/(marketing)/security/page.tsx',
+  'self-hosted': 'apps/web/src/app/(public)/(marketing)/self-hosted/page.tsx',
+  // Solutions: the hub, then one entry per role. The eight role pages share a
+  // single dynamic route, so the meaningful source of each one is its own
+  // content file — that is the file whose last commit dates the page.
+  solutions: 'apps/web/src/features/marketing/solutions/hub-page.tsx',
+  'solutions/sales': 'apps/web/src/features/marketing/solutions/roles/sales.ts',
+  'solutions/marketing': 'apps/web/src/features/marketing/solutions/roles/marketing.ts',
+  'solutions/product': 'apps/web/src/features/marketing/solutions/roles/product.ts',
+  'solutions/engineering': 'apps/web/src/features/marketing/solutions/roles/engineering.ts',
+  'solutions/finance': 'apps/web/src/features/marketing/solutions/roles/finance.ts',
+  'solutions/people': 'apps/web/src/features/marketing/solutions/roles/people.ts',
+  'solutions/it': 'apps/web/src/features/marketing/solutions/roles/it.ts',
+  'solutions/data-science': 'apps/web/src/features/marketing/solutions/roles/data-science.ts',
+  careers: 'apps/web/src/app/(public)/(seo)/careers/page.tsx',
+  changelog: 'apps/web/src/app/(public)/(seo)/changelog/page.tsx',
+  blog: 'apps/web/src/app/(public)/(seo)/blog/page.tsx',
+  'use-cases': 'apps/web/src/app/(public)/(seo)/use-cases/page.tsx',
+  download: 'apps/web/src/app/(public)/download/page.tsx',
+  help: 'apps/web/src/app/(utility)/help/page.tsx',
+  'help/credits': 'apps/web/src/app/(utility)/help/credits/page.tsx',
 };
 
 function gitAvailable() {
@@ -77,7 +105,20 @@ function lastCommitIso(pathRelativeToRepo) {
       encoding: 'utf8',
     });
     const trimmed = out.trim();
-    return trimmed || null;
+    if (trimmed) return new Date(trimmed).toISOString();
+  } catch {
+    // fall through to the mtime fallback
+  }
+  // A source file that exists on disk but has no commit touching it yet — a
+  // page written on a branch and not yet committed. `git log` is silent for it,
+  // which would leave its record without a `lastModified` and fail
+  // public-content.test.ts on every uncommitted new page. Fall back to the
+  // file's own modification time: it is the same "when did this content become
+  // publishable" signal, and the git value takes over on the first commit.
+  try {
+    const absolute = join(REPO_ROOT, pathRelativeToRepo);
+    if (!existsSync(absolute)) return null;
+    return statSync(absolute).mtime.toISOString();
   } catch {
     return null;
   }
@@ -91,10 +132,7 @@ function listDocsMdx() {
     const raw = execFileSync('find', [DOCS_ROOT, '-name', '*.mdx', '-type', 'f'], {
       encoding: 'utf8',
     });
-    return raw
-      .split('\n')
-      .filter(Boolean)
-      .sort();
+    return raw.split('\n').filter(Boolean).sort();
   } catch {
     return [];
   }
@@ -110,22 +148,8 @@ function slugifyDocs(relativePath) {
   return normalized.replace(/\/index$/, '');
 }
 
-function build() {
+function collectContentTimestampManifest() {
   const manifest = {};
-
-  if (!gitAvailable()) {
-    // No git or a shallow clone (Vercel's default checkout). In a shallow
-    // clone `git log -1 -- <path>` returns the single present commit for
-    // every file, which would overwrite the correct committed manifest
-    // (built in a full-history environment) with uniform build-time
-    // timestamps. Preserve the committed manifest by leaving it in place
-    // and returning without writing. public-content.ts reads the existing
-    // file; if none exists (fresh clone w/o a committed manifest), it falls
-    // back to undefined lastModified (the prior behavior). Return an empty
-    // object here only to signal "not regenerated"; the on-disk file is the
-    // source of truth at runtime.
-    return manifest;
-  }
 
   // Marketing pages
   for (const [slug, sourceRel] of Object.entries(MARKETING_SOURCES)) {
@@ -142,6 +166,23 @@ function build() {
     if (iso) manifest[`docs:${slug}`] = iso;
   }
 
+  return manifest;
+}
+
+function createContentTimestampManifest() {
+  if (!gitAvailable()) return {};
+  return collectContentTimestampManifest();
+}
+
+function refreshContentTimestamps() {
+  // No git or a shallow clone (Vercel's default checkout). In a shallow
+  // clone `git log -1 -- <path>` returns the single present commit for
+  // every file, which would overwrite the correct committed manifest
+  // (built in a full-history environment) with uniform build-time
+  // timestamps. Preserve the committed manifest by leaving it in place.
+  if (!gitAvailable()) return {};
+
+  const manifest = collectContentTimestampManifest();
   safeWrite(manifest);
   return manifest;
 }
@@ -160,11 +201,12 @@ function safeWrite(manifest) {
   }
 }
 
-try {
-  build();
-} catch {
-  // belt-and-suspenders: any uncaught error in build() is swallowed so the
-  // importing next.config.ts never fails to load.
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  try {
+    refreshContentTimestamps();
+  } catch {
+    // The manifest is an optimization. Direct generation must not block a build.
+  }
 }
 
-export { build, MANIFEST_PATH };
+export { createContentTimestampManifest, MANIFEST_PATH, refreshContentTimestamps };

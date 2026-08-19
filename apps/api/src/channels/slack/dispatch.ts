@@ -184,7 +184,7 @@ export async function maybePostPicker(
   const event = envelope.event;
   if (!event || !event.channel || event.bot_id) return;
   const isMention = event.type === 'app_mention';
-  const isDm = event.type === 'message' && event.channel_type === 'im' && !event.subtype;
+  const isDm = event.type === 'message' && event.channel_type === 'im' && (!event.subtype || event.subtype === 'file_share');
   if (!isMention && !isDm) return;
 
   await postProjectPicker({
@@ -430,7 +430,24 @@ export async function classifyEvent(
 ): Promise<EventClass> {
   if (event.type === 'app_mention') return 'mention';
   if (event.type !== 'message') return 'ignore';
-  if (event.subtype) return 'ignore';
+  if (event.subtype) {
+    // Allow these user-generated subtypes through:
+    //   file_share   — audio messages, images, documents, etc. (agent sees file info)
+    //   me_message   — /me actions (e.g. "/me waves hello")
+    //   bot_message  — messages from OTHER bots (our own bot is blocked by the
+    //                  separate bot_id/user===botUserId gate in dispatchSlackEvent)
+    // All other subtypes (message_changed, message_deleted, thread_broadcast,
+    // channel_join, etc.) remain ignored to avoid loops, redundancy, or system noise.
+    if (event.subtype === 'file_share' && event.files?.length) {
+      // pass through
+    } else if (event.subtype === 'me_message') {
+      // pass through — user-generated /me action
+    } else if (event.subtype === 'bot_message') {
+      // pass through — other bots' messages (our bot_id gate prevents self-loops)
+    } else {
+      return 'ignore';
+    }
+  }
   // A `message` that @-mentions the bot IS a mention. Slack does NOT reliably
   // deliver an `app_mention` for a mention made INSIDE an existing thread —
   // notably a thread that predates the bot joining the channel — there it arrives
@@ -552,7 +569,10 @@ export async function dispatchSlackEvent(projectId: string, envelope: SlackEnvel
   const msgKey = inboundMessageKey(teamId, event);
   if (msgKey && !(await claimInboundMessage(msgKey))) return;
 
-  if (eventClass === 'mention' && !stripMentions(event.text ?? '')) {
+  // A bare @mention with no text is a "what now?" prompt — post help text.
+  // But if the user attached files (e.g. an audio message), the files are the
+  // content, so don't stop here — send them to the agent.
+  if (eventClass === 'mention' && !stripMentions(event.text ?? '') && !event.files?.length) {
     if (config.SLACK_REQUIRE_USER_IDENTITY) {
       const [project] = await db
         .select({ accountId: projects.accountId })

@@ -1,36 +1,47 @@
 'use client';
-import { ToolRegistry } from '@/features/session/tool/shared/registry';
-import type { ToolProps } from '@/features/session/tool/shared/types';
 import {
   BasicTool,
   isErrorOutput,
-  ToolOutputFallback,
   partInput,
   partOutput,
+  ToolOutputFallback,
   useToolNavigation,
 } from '@/features/session/tool/shared/infrastructure';
-import {
-  ChevronRight,
-  Plus,
-} from 'lucide-react';
-import {
-  useMemo,
-} from 'react';
-
+import { ToolRegistry } from '@/features/session/tool/shared/registry';
+import type { ToolProps } from '@/features/session/tool/shared/types';
+import { PlusIcon as Plus } from '@phosphor-icons/react';
+import { useCallback, useMemo } from 'react';
 
 import { parseProjectCreateOutput } from '@/lib/utils/kortix-tool-output';
 
-export function ProjectCreateTool({ part }: ToolProps) {
+export function ProjectCreateTool({ part, defaultOpen, forceOpen }: ToolProps) {
   const input = partInput(part);
   const output = partOutput(part);
   const { enabled: navigationEnabled, openTab } = useToolNavigation();
   const name = (input.name as string) || '';
   const data = useMemo(() => parseProjectCreateOutput(output || ''), [output]);
   const displayName = data?.name || name;
+  // `isErrorOutput` trims the whole output and runs `JSON.parse` over it; it ran
+  // on every render of a row whose output stopped changing when the call ended.
+  const errored = useMemo(() => isErrorOutput(output), [output]);
 
-  if (isErrorOutput(output)) {
+  const handleOpenWorkspace = useCallback(() => {
+    openTab({
+      id: 'page:/workspace',
+      title: displayName,
+      type: 'page' as any,
+      href: '/workspace',
+    });
+  }, [openTab, displayName]);
+
+  if (errored) {
     return (
-      <BasicTool icon={<Plus />} trigger={{ title: 'Workspace', subtitle: displayName || 'failed' }}>
+      <BasicTool
+        icon={<Plus />}
+        trigger={{ title: 'Workspace', subtitle: displayName || 'failed' }}
+        defaultOpen={defaultOpen}
+        forceOpen={forceOpen}
+      >
         <ToolOutputFallback output={output} toolName="project_create" />
       </BasicTool>
     );
@@ -43,18 +54,7 @@ export function ProjectCreateTool({ part }: ToolProps) {
         title: 'Workspace',
         subtitle: displayName,
       }}
-      onClick={
-        navigationEnabled
-          ? () =>
-              openTab({
-                id: 'page:/workspace',
-                title: displayName,
-                type: 'page' as any,
-                href: '/workspace',
-              })
-          : undefined
-      }
-      rightAccessory={navigationEnabled ? <ChevronRight /> : undefined}
+      onClick={navigationEnabled ? handleOpenWorkspace : undefined}
     />
   );
 }
@@ -62,4 +62,3 @@ ToolRegistry.register('project_create', ProjectCreateTool);
 ToolRegistry.register('project-create', ProjectCreateTool);
 ToolRegistry.register('oc-project_create', ProjectCreateTool);
 ToolRegistry.register('oc-project-create', ProjectCreateTool);
-

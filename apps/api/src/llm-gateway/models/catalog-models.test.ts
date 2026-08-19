@@ -9,8 +9,8 @@ import { catalogModelForWireModel, gatewayModelCatalog } from './catalog-models'
 describe('gatewayModelCatalog — served catalog', () => {
   const full = gatewayModelCatalog('proj');
 
-  test('brands managed DeepSeek V4 Flash with the DeepSeek provider', () => {
-    expect(full['deepseek-v4-flash']?.provider).toBe('deepseek');
+  test('brands managed DeepSeek V4 Flash with the Kortix provider', () => {
+    expect(full['deepseek-v4-flash']?.provider).toBe('kortix');
   });
 
   test('serves Aster GLM pricing instead of a models.dev provider price', () => {
@@ -19,6 +19,67 @@ describe('gatewayModelCatalog — served catalog', () => {
       output: 4,
       cache_read: 0.2,
       cache_write: 1,
+    });
+  });
+
+  // Regression: managedModels() used to hardcode `temperature: true` for the
+  // whole managed lineup. gpt-5.6-luna REJECTS a client-sent temperature —
+  // OpenCode reads this served record, so advertising support 400s every
+  // Luna turn. Capabilities must come from the real catalog record via
+  // pricingRef; curated vision/limit still win.
+  test('managed gpt-5.6-luna serves its REAL capabilities (temperature:false, effort ladder)', () => {
+    const luna = full['gpt-5.6-luna'];
+    expect(luna).toBeDefined();
+    expect(luna?.temperature).toBe(false);
+    expect(luna?.reasoning_options?.[0]?.values).toEqual([
+      'none',
+      'low',
+      'medium',
+      'high',
+      'xhigh',
+      'max',
+    ]);
+    // Curated fields win over the models.dev record.
+    expect(luna?.attachment).toBe(true);
+    expect(luna?.limit?.context).toBe(1_050_000);
+    // Unresolvable pricingRef (glm-5.2) keeps the permissive defaults.
+    expect(full['glm-5.2']?.temperature).toBe(true);
+  });
+
+  test('serves Grok 4.6 capabilities and context-tier pricing from models.dev', () => {
+    expect(full['grok-4.6']).toMatchObject({
+      name: 'Grok 4.6',
+      provider: 'kortix',
+      reasoning: true,
+      reasoning_options: [{ type: 'effort', values: ['low', 'medium', 'high', 'xhigh'] }],
+      tool_call: true,
+      attachment: true,
+      structured_output: true,
+      temperature: true,
+      limit: { context: 500_000, output: 500_000 },
+      cost: {
+        input: 2,
+        output: 6,
+        cache_read: 0.5,
+        context_over_200k: { input: 4, output: 12, cache_read: 1 },
+      },
+    });
+  });
+
+  test('serves DeepSeek V4 Pro 0813 with its real capabilities and prices', () => {
+    expect(full['deepseek-v4-pro-0813']).toMatchObject({
+      name: 'DeepSeek V4 Pro 0813',
+      provider: 'kortix',
+      reasoning: true,
+      reasoning_options: [
+        { type: 'toggle' },
+        { type: 'effort', values: ['low', 'high', 'max'] },
+      ],
+      tool_call: true,
+      attachment: false,
+      temperature: true,
+      limit: { context: 1_048_575, output: 384_000 },
+      cost: { input: 1.74, output: 3.48, cache_read: 0.145 },
     });
   });
 
@@ -31,7 +92,7 @@ describe('gatewayModelCatalog — served catalog', () => {
 
   test('synthetic auto is absent; anonymous callers get managed-only', () => {
     expect(full.auto).toBeUndefined();
-    expect(full['claude-opus-4.8']).toBeDefined();
+    expect(full['deepseek-v4-flash']).toBeDefined();
     expect(full['glm-5.2']).toBeDefined();
 
     const managedOnly = gatewayModelCatalog(undefined);
@@ -76,7 +137,7 @@ describe('gatewayModelCatalog — served catalog', () => {
     // BYOK catalog entries brand as their real upstream provider.
     expect(full['anthropic/claude-opus-4-8']?.provider).toBe('anthropic');
     // Managed models brand as `kortix`.
-    expect(full['claude-opus-4.8']?.provider).toBe('kortix');
+    expect(full['deepseek-v4-flash']?.provider).toBe('kortix');
     expect(full['glm-5.2']?.provider).toBe('kortix');
     // Codex (ChatGPT subscription) models brand as their own `codex` provider,
     // distinct from the raw `openai` BYOK provider.
@@ -140,7 +201,7 @@ describe('gatewayModelCatalog — free-tier visibility', () => {
 
   test('free tier sees no managed Kortix models', () => {
     expect(freeFull.auto).toBeUndefined();
-    for (const id of ['claude-opus-4.8', 'claude-sonnet-4.6', 'glm-5.2', 'deepseek-v4-flash']) {
+    for (const id of ['claude-opus-4.8', 'claude-sonnet-4.6', 'glm-5.2', 'kimi-k3', 'deepseek-v4-flash']) {
       expect(freeFull[id], id).toBeUndefined();
     }
   });
@@ -181,21 +242,21 @@ describe('catalogModelForWireModel — generation-controls capability lookup', (
   // (temperature:false, reasoning_options up to 'xhigh'/'max'). Assert the
   // REAL entry, not just `reasoning:true` (which the synthetic fallback also
   // satisfied and so wouldn't have caught the regression).
+  // 2026-08-10 slim-down: the Claude managed ids this test used are
+  // deactivated. deepseek-v4-flash keeps the regression covered — its
+  // pricingRef ('openrouter/deepseek/deepseek-v4-flash') resolves to the REAL
+  // models.dev openrouter entry, whose reasoning_options ('high'/'xhigh') the
+  // synthetic fallback would not carry. (glm-5.2's 'z-ai/glm-5.2' is
+  // DELIBERATELY unresolvable — z-ai is not a models.dev provider id — so it
+  // cannot serve as the regression fixture.)
   test('resolves a managed bare id to its REAL catalog capabilities via pricingRef, not the synthetic fallback', () => {
-    const opus = catalogModelForWireModel('claude-opus-4.8');
-    expect(opus).toBeDefined();
-    expect(opus?.id).toBe('claude-opus-4-8');
-    expect(opus?.reasoning).toBe(true);
-    expect(opus?.temperature).toBe(false);
-    expect(opus?.reasoning_options?.[0]?.values).toEqual(['low', 'medium', 'high', 'xhigh', 'max']);
-    expect(opus?.limit?.output).toBe(128_000);
-
-    const sonnet = catalogModelForWireModel('claude-sonnet-4.6');
-    expect(sonnet).toBeDefined();
-    expect(sonnet?.id).toBe('claude-sonnet-4-6');
-    expect(sonnet?.reasoning).toBe(true);
-    expect(sonnet?.temperature).toBe(true);
-    expect(sonnet?.reasoning_options?.[0]?.values).toEqual(['low', 'medium', 'high', 'max']);
+    const flash = catalogModelForWireModel('deepseek-v4-flash');
+    expect(flash).toBeDefined();
+    expect(flash?.id).toBe('deepseek/deepseek-v4-flash');
+    expect(flash?.reasoning).toBe(true);
+    expect(flash?.temperature).toBe(true);
+    expect(flash?.reasoning_options?.[0]?.values).toEqual(['high', 'xhigh']);
+    expect(flash?.limit?.context).toBe(1_048_576);
   });
 
   test('does not resolve stale synthetic auto model ids', () => {

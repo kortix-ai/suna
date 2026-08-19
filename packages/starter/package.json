@@ -13,6 +13,8 @@
     "test": "bun test"
   },
   "devDependencies": {
+    "@kortix/llm-catalog": "workspace:*",
+    "@kortix/manifest-schema": "workspace:*",
     "@types/bun": "^1.1.0",
     "typescript": "^5.0.0"
   }

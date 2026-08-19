@@ -16,7 +16,7 @@ import type { GitBackedProject } from './types';
 
 export const execFileAsync = promisify(execFile);
 
-const refreshLocks = new Map<string, Promise<string>>();
+const refreshLocks = new Map<string, { promise: Promise<string>; forced: boolean }>();
 const lastRefreshAt = new Map<string, number>();
 
 /**
@@ -355,6 +355,17 @@ function looksLikeBareMirror(repoPath: string): boolean {
   );
 }
 
+/**
+ * Return the existing usable mirror without cloning or fetching it.
+ *
+ * Latency-sensitive remote-ref reads use this to enrich results from a warm
+ * cache. A cache miss must stay a cache miss on those request paths.
+ */
+export function existingProjectMirrorPath(project: GitBackedProject): string | null {
+  const repoPath = repoCachePath(project);
+  return looksLikeBareMirror(repoPath) ? repoPath : null;
+}
+
 async function doRefreshMirror(project: GitBackedProject, force = false) {
   const repoPath = repoCachePath(project);
   await mkdir(dirname(repoPath), { recursive: true });
@@ -428,7 +439,11 @@ async function doRefreshMirror(project: GitBackedProject, force = false) {
 
 export async function refreshMirror(project: GitBackedProject, force = false) {
   const current = refreshLocks.get(project.projectId);
-  if (current) return current;
+  if (current) {
+    if (!force || current.forced) return current.promise;
+    await current.promise;
+    return refreshMirror(project, true);
+  }
   const next = doRefreshMirror(project, force)
     .then(async (repoPath) => {
       // Bump the mirror dir's mtime on EVERY access (warm hits included) — the
@@ -438,8 +453,12 @@ export async function refreshMirror(project: GitBackedProject, force = false) {
       await utimes(repoPath, now, now).catch(() => {});
       return repoPath;
     })
-    .finally(() => refreshLocks.delete(project.projectId));
-  refreshLocks.set(project.projectId, next);
+    .finally(() => {
+      if (refreshLocks.get(project.projectId)?.promise === next) {
+        refreshLocks.delete(project.projectId);
+      }
+    });
+  refreshLocks.set(project.projectId, { promise: next, forced: force });
   return next;
 }
 

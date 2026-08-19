@@ -1,6 +1,7 @@
 import { describe, expect, it, mock } from 'bun:test';
 
 import type { ProjectSessionRow } from '../projects/lib/serializers';
+import { projectSessionMetadataMerge } from '../projects/lib/session-metadata-merge';
 
 // Mock the DB write and the sandbox session listing before importing the module.
 const dbUpdates: Array<Record<string, unknown>> = [];
@@ -40,21 +41,44 @@ function row(over: Partial<ProjectSessionRow> = {}): ProjectSessionRow {
   } as unknown as ProjectSessionRow;
 }
 
+async function waitFor(condition: () => boolean, timeoutMs = 1_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!condition()) {
+    if (Date.now() >= deadline) throw new Error('Timed out waiting for snapshot sync');
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+}
+
 describe('syncOpencodeSessionSnapshot', () => {
-  it('writes opencode_sessions and NEVER touches the title (metadata.name)', async () => {
+  it('MERGES opencode_sessions in-SQL and never rewrites the rest of metadata', async () => {
     dbUpdates.length = 0;
     listResult = {
       ok: true,
       sessions: [{ id: 'ses_root', title: 'A Real Title', parentID: null }],
     };
-    await syncOpencodeSessionSnapshot({ row: row(), externalId: 'ext' });
+    // A title the CAS commits between this pass's read and its write must
+    // survive: a read-modify-write of the whole object would drop it, and for a
+    // one-shot automation session nothing ever re-titles.
+    await syncOpencodeSessionSnapshot({
+      row: row({ metadata: { name: 'Set Up MS Graph' } } as Partial<ProjectSessionRow>),
+      externalId: 'ext',
+    });
     expect(dbUpdates).toHaveLength(1);
-    const metadata = dbUpdates[0].metadata as Record<string, unknown>;
-    const sessions = metadata.opencode_sessions as Array<{ id: string; title: string | null }>;
-    expect(sessions[0]).toMatchObject({ id: 'ses_root', title: 'A Real Title' });
-    // The snapshot carries each conversation's own title, but must not set the
-    // session's name — that is session-title-generate's sole responsibility.
-    expect('name' in metadata).toBe(false);
+    expect(dbUpdates[0].metadata).toEqual(
+      projectSessionMetadataMerge({
+        opencode_sessions: [
+          {
+            id: 'ses_root',
+            title: 'A Real Title',
+            parent_id: null,
+            project_id: null,
+            created_at: null,
+            updated_at: null,
+            archived_at: null,
+          },
+        ],
+      }),
+    );
   });
 
   it('no-ops when the snapshot is unchanged and on unreachable sandboxes', async () => {
@@ -99,7 +123,7 @@ describe('scheduleOpencodeSnapshotSync', () => {
     // A second schedule while the first is in flight is deduped.
     scheduleOpencodeSnapshotSync({ sessionId: 's', projectId: 'p', externalId: 'ext' }, opts);
     expect(pendingSnapshotSyncs()).toBe(1);
-    await new Promise((resolve) => setTimeout(resolve, 15));
+    await waitFor(() => calls.length === 2 && pendingSnapshotSyncs() === 0);
     expect(calls).toEqual(['s', 's']);
     expect(pendingSnapshotSyncs()).toBe(0);
   });
@@ -118,7 +142,7 @@ describe('scheduleOpencodeSnapshotSync', () => {
             },
           },
         );
-        await new Promise((resolve) => setTimeout(resolve, 15));
+        await waitFor(() => pendingSnapshotSyncs() === 0);
       })(),
     ).resolves.toBeUndefined();
   });

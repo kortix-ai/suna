@@ -22,6 +22,17 @@ import type { OpencodeTurnError } from './opencode-events';
 // at most MAX_ATTEMPTS resumes per session per WINDOW_MS, with growing backoff,
 // regardless of how the intervening turns ended. Exhausted budget → the error
 // relays/surfaces exactly as before this feature.
+//
+// T22 — STAGED REVERT: OpenCode's `session.revert` is a pointer on the session
+// row (`Session.revert?: { messageID, ... }`); nothing is deleted until the
+// NEXT prompt — from ANY producer — commits the truncation. Resuming a turn
+// while a revert is staged would deliver this resumer's own recovery prompt
+// with full pre-rewind context, silently committing the user's rewind out
+// from under them. `maybeResume` checks the session's live revert state both
+// before starting (the error may already have a revert staged) and again at
+// fire time after the backoff (a revert can be staged DURING the wait) — see
+// `readSessionRevertState`. Either hit stands auto-recovery down for that
+// error; the caller relays it exactly as before this feature.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const MAX_ATTEMPTS_PER_WINDOW = 3;
@@ -145,6 +156,28 @@ export function createTurnAutoResumer(deps: TurnAutoResumerDeps): TurnAutoResume
     }
   }
 
+  /**
+   * T22 — read whether the session has a STAGED OpenCode revert
+   * (`Session.revert?: { messageID, ... }`, `@opencode-ai/sdk` `types.gen`).
+   * Reuses the exact daemon pattern `readLastMessage` above already follows —
+   * `GET /session/{id}` on the same internal opencode URL, same `directory`
+   * query param, same bounded timeout — just the bare session shape instead
+   * of `/message`, since that's where `revert` lives. Fails OPEN (returns
+   * null) on any read failure: an unreachable/timed-out check must never
+   * itself block a legitimate resume.
+   */
+  async function readSessionRevertState(sessionId: string): Promise<{ staged: boolean } | null> {
+    try {
+      const url = `${deps.opencode.getInternalUrl()}/session/${encodeURIComponent(sessionId)}?directory=${encodeURIComponent(deps.cfg.workspace)}`;
+      const res = await fetchImpl(url, { signal: AbortSignal.timeout(5_000) });
+      if (!res.ok) return null;
+      const info = (await res.json()) as { revert?: unknown } | null;
+      return { staged: Boolean(info?.revert) };
+    } catch {
+      return null;
+    }
+  }
+
   async function deliverResume(sessionId: string, error: OpencodeTurnError): Promise<boolean> {
     try {
       const url = `${deps.opencode.getInternalUrl()}/session/${encodeURIComponent(sessionId)}/prompt_async?directory=${encodeURIComponent(deps.cfg.workspace)}`;
@@ -165,6 +198,16 @@ export function createTurnAutoResumer(deps: TurnAutoResumerDeps): TurnAutoResume
     if (!enabled()) return false;
     if (!error || !isTransientTurnError(error)) return false;
     if (!(await deps.isRoot(sessionId))) return false;
+
+    // T22: the error may already have a staged revert sitting on it — the
+    // user rewound history before (or right as) this turn failed. Stand down
+    // before spending resume budget; the caller relays the error exactly as
+    // before this feature.
+    const preResumeRevert = await readSessionRevertState(sessionId);
+    if (preResumeRevert?.staged) {
+      logger.info('[turn-auto-resume] session has a staged revert — standing down', { sessionId });
+      return false;
+    }
 
     const attemptIndex = takeBudget(sessionId);
     if (attemptIndex === null) {
@@ -203,6 +246,19 @@ export function createTurnAutoResumer(deps: TurnAutoResumerDeps): TurnAutoResume
         lastRole: last.role,
       });
       return true;
+    }
+
+    // T22: re-check for a revert staged DURING the backoff wait — the
+    // pre-resume check above only ruled it out at the moment the error first
+    // arrived. Cheap: same request shape as the pre-check, one more round
+    // trip right before the prompt that would otherwise commit the rewind.
+    const fireTimeRevert = await readSessionRevertState(sessionId);
+    if (fireTimeRevert?.staged) {
+      logger.info(
+        '[turn-auto-resume] session gained a staged revert during backoff — standing down',
+        { sessionId },
+      );
+      return false;
     }
 
     const delivered = await deliverResume(sessionId, error);

@@ -54,8 +54,36 @@ export function createCorsMiddleware(options: CorsMiddlewareOptions) {
       'tracestate',
       'X-Request-Id',
       'Last-Event-ID',
+      'X-Kortix-Client',
+      // Act-as impersonation. A header absent from this list is stripped by the
+      // browser's preflight, so the request arrives WITHOUT the grant and runs
+      // as the operator's own account — the exact silent mis-scoping the
+      // server-side design refuses to allow. It has to be declared here for the
+      // banner to ever be true in a browser.
+      'X-Kortix-Impersonate',
+      // Same reason for the platform-admin read-only bypass the SDK already
+      // attaches (setAdminBypass → `x-kortix-admin-bypass: 1`): without it, the
+      // header never survives a cross-origin preflight.
+      'X-Kortix-Admin-Bypass',
     ],
-    exposeHeaders: ['X-Next-Cursor', 'X-Request-Id'],
+    exposeHeaders: [
+      'X-Next-Cursor',
+      'X-Request-Id',
+      'X-Audit-Row-Count',
+      'X-Audit-Capped',
+      'X-Audit-Complete',
+      'X-Audit-Next-Cursor',
+      // The sandbox proxy's failure attribution (`proxy-hop.ts`). It HAS to be
+      // declared here and not only on the proxy's own response: this middleware
+      // is mounted with `app.use('*', …)` on the same app the proxy is routed
+      // into, and Hono's `Context.res` setter copies the middleware's headers
+      // onto the handler's response — the middleware's
+      // `Access-Control-Expose-Headers` overwrites the handler's. Without these
+      // two names the browser hides both headers from JS, the SDK probe reads
+      // null, and every failure is unattributed again.
+      'X-Kortix-Proxy-Hop',
+      'X-Kortix-Upstream-Status',
+    ],
     credentials: true,
     maxAge: 600,
   });

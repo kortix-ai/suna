@@ -21,6 +21,7 @@ export * from './model-enablement';
 export * from './agent-scope';
 export * from './agent-config';
 export * from './billing';
+export * from './session-costs';
 export * from './channels';
 export * from './gateway';
 export * from './transcription';
@@ -38,6 +39,7 @@ export * from './audit';
 export * from './setup-links';
 export * from './marketplace-catalog';
 export * from './templates';
+export * from './apps';
 
 // Cross-cutting types that originally lived in this module. Re-exported
 // explicitly (not the internal `unwrap` helper) to keep the surface identical.

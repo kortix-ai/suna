@@ -121,13 +121,63 @@ async function writeEdgeConfig(config: MaintenanceConfig): Promise<MaintenanceCo
 // Public API
 // ---------------------------------------------------------------------------
 
+const CONFIG_TTL_MS = 5_000;
+let cachedConfig: { value: MaintenanceConfig; expiresAt: number } | null = null;
+let inFlight: Promise<MaintenanceConfig> | null = null;
+
+function invalidateMaintenanceCache(): void {
+  cachedConfig = null;
+  inFlight = null;
+}
+
+/** Test-only. Clears the TTL cache so each test starts from a cold cache. */
+export function __resetMaintenanceCacheForTests(): void {
+  invalidateMaintenanceCache();
+}
+
+/**
+ * Middleware calls getMaintenanceConfig() on every non-public request, and in
+ * the App Router every client-side navigation is an RSC request that runs
+ * middleware. Uncached, that put a `no-store` fetch (2s timeout ceiling) plus an
+ * Edge Config read on the critical path of EVERY page-to-page transition.
+ *
+ * A 5s TTL takes that off the critical path without making the flag unusable:
+ * staleness is bounded to <=5s per runtime instance, everywhere — including
+ * immediately after an admin toggle. setMaintenanceConfig() does call
+ * invalidateMaintenanceCache(), but that only clears the cache in the process
+ * that handled the write: the Node runtime, via
+ * app/(system)/api/maintenance/route.ts. It cannot reach the cache that
+ * matters for navigation, which lives in middleware.ts — a separate bundle
+ * Next.js compiles for the Edge runtime, replicated per POP. The 5s TTL, not
+ * the invalidation, is the real bound on admin-toggle latency.
+ *
+ * `inFlight` coalesces: a burst of concurrent navigations on a cold cache shares
+ * one upstream read instead of issuing one each.
+ */
+export async function getMaintenanceConfig(): Promise<MaintenanceConfig> {
+  // The memory-store path does no I/O, so caching it would only add staleness.
+  if (!process.env.EDGE_CONFIG) return { ...memoryStore };
+
+  if (cachedConfig && cachedConfig.expiresAt > Date.now()) return cachedConfig.value;
+  if (inFlight) return inFlight;
+
+  inFlight = readMaintenanceConfig()
+    .then((config) => {
+      cachedConfig = { value: config, expiresAt: Date.now() + CONFIG_TTL_MS };
+      return config;
+    })
+    .finally(() => {
+      inFlight = null;
+    });
+
+  return inFlight;
+}
+
 /**
  * Read the database first. Reconcile Edge Config after every successful
  * database read. Use blocking Edge Config only when the API is unavailable.
  */
-export async function getMaintenanceConfig(): Promise<MaintenanceConfig> {
-  if (!process.env.EDGE_CONFIG) return { ...memoryStore };
-
+async function readMaintenanceConfig(): Promise<MaintenanceConfig> {
   try {
     const databaseConfig = await sdkGetMaintenanceConfig<MaintenanceConfig>({
       backendUrl: backendUrl(),
@@ -148,7 +198,12 @@ export async function getMaintenanceConfig(): Promise<MaintenanceConfig> {
       return null;
     });
     if (edgeConfig?.level === 'blocking') return edgeConfig;
-    return { ...AUTOMATIC_MAINTENANCE, updatedAt: new Date().toISOString() };
+    // Fail open: when the API is temporarily unavailable (deploy, blip, GC
+    // pause) and Edge Config doesn't have a blocking level, return normal
+    // operation instead of activating automatic maintenance. A blocking
+    // lockdown should only be triggerable by an explicit admin action,
+    // not by a transient API/network failure.
+    return { ...DEFAULT_CONFIG, updatedAt: new Date().toISOString() };
   }
 }
 
@@ -180,6 +235,7 @@ export async function setMaintenanceConfig(
 ): Promise<MaintenanceConfig> {
   if (!process.env.EDGE_CONFIG) {
     memoryStore = { ...config };
+    invalidateMaintenanceCache();
     return { ...memoryStore };
   }
 
@@ -188,5 +244,6 @@ export async function setMaintenanceConfig(
     accessToken,
   });
   await writeEdgeConfig(saved);
+  invalidateMaintenanceCache();
   return saved;
 }

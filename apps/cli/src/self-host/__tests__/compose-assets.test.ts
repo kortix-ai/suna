@@ -118,24 +118,37 @@ describe('full self-host Docker distribution', () => {
     });
   });
 
-  test('never mounts the Docker socket into kortix-api unless local-docker is selected', () => {
+  test('never mounts the Docker socket into kortix-api', () => {
     const document = parse(renderFullDockerCompose('kortix-default')) as {
       services: Record<string, { volumes?: string[]; environment?: Record<string, string> }>;
     };
     const api = document.services['kortix-api'];
     expect(api?.volumes ?? []).not.toContain('/var/run/docker.sock:/var/run/docker.sock');
-    expect(api?.environment?.LOCAL_DOCKER_NETWORK).toBeUndefined();
   });
 
-  test('mounts the Docker socket + points LOCAL_DOCKER_NETWORK at this Compose project\'s own network when local-docker is selected', () => {
-    const document = parse(renderFullDockerCompose('kortix-default', { localDockerConfigured: true })) as {
-      services: Record<string, { volumes?: string[]; environment?: Record<string, string> }>;
+  test('allows database-backed Supabase services to finish first-boot migrations', () => {
+    const document = parse(renderFullDockerCompose('kortix-default')) as {
+      services: Record<string, { healthcheck?: { retries?: number; start_period?: string } }>;
     };
-    const api = document.services['kortix-api'];
-    expect(api?.volumes).toContain('/var/run/docker.sock:/var/run/docker.sock');
-    expect(api?.environment?.LOCAL_DOCKER_NETWORK).toBe('kortix-default_default');
-    // Existing env (ALLOWED_SANDBOX_PROVIDERS etc.) must survive the merge.
-    expect(api?.environment?.ALLOWED_SANDBOX_PROVIDERS).toBe('${ALLOWED_SANDBOX_PROVIDERS}');
+    for (const serviceName of [
+      'supabase-auth',
+      'supabase-analytics',
+      'supabase-storage',
+    ]) {
+      expect(document.services[serviceName]?.healthcheck, serviceName).toMatchObject({
+        retries: 24,
+        start_period: '120s',
+      });
+    }
+  });
+
+  test('bounds Kong workers within the self-host memory limit', () => {
+    const document = parse(renderFullDockerCompose('kortix-default')) as {
+      services: Record<string, { environment?: Record<string, string> }>;
+    };
+    expect(
+      document.services['supabase-kong']?.environment?.KONG_NGINX_WORKER_PROCESSES,
+    ).toBe('2');
   });
 
   test('omits the cloudflared tunnel service when tunnel mode is not selected', () => {
@@ -354,29 +367,36 @@ describe('full self-host Docker distribution', () => {
     const document = parse(renderFullDockerCompose('kortix-default', { domainConfigured: true, tunnelConfigured: true })) as {
       services: Record<string, { mem_limit?: string; mem_reservation?: string; oom_score_adj?: number }>;
     };
-    const toMb = (value: string) => Number(value.replace(/m$/, ''));
+    const toMb = (value: string) => {
+      const defaultValue = value.match(/:-([0-9]+m)}$/)?.[1] ?? value;
+      return Number(defaultValue.replace(/m$/, ''));
+    };
     for (const [name, service] of Object.entries(document.services)) {
       expect(service.mem_limit, name).toBeDefined();
       expect(service.mem_reservation, name).toBeDefined();
     }
     const db = document.services['supabase-db'];
     expect(db?.oom_score_adj).toBeLessThan(0);
+    expect(document.services['kortix-api']?.mem_limit).toBe('${KORTIX_API_MEMORY_LIMIT:-640m}');
     const analytics = document.services['supabase-analytics'];
     const vector = document.services['supabase-vector'];
     expect(analytics?.oom_score_adj).toBeGreaterThan(0);
     expect(vector?.oom_score_adj).toBeGreaterThan(0);
-    // The full worst-case (every STEADY-STATE service simultaneously at its
-    // own ceiling) must still fit comfortably on an 8GB box — these are
-    // circuit-breaker ceilings, not a steady-state budget, but they must not
-    // be so generous that the documented floor is fiction. kortix-migrate is
-    // excluded: it's a one-shot job that runs to completion and exits before
-    // the app tier is ever rolled, never concurrent with the rest at steady
-    // state (see kortix-compose.yml: `restart: "no"`).
+    // The full worst-case (every STEADY-STATE service simultaneously at its own
+    // ceiling) must still fit a modern self-host box — these are circuit-breaker
+    // ceilings, not a steady-state budget (reservations, which schedule the box,
+    // sum far lower), but they must not be so generous the documented floor is
+    // fiction. The floor is 12GB: the llm-gateway carries a deliberately large
+    // 2GB ceiling so an image-heavy multimodal turn (bodies of tens of MiB, see
+    // DEFAULT_MAX_REQUEST_BYTES) can never OOM it; a small-box operator dials that
+    // back with KORTIX_GATEWAY_MEMORY_LIMIT. kortix-migrate is excluded: it's a
+    // one-shot job that exits before the app tier is ever rolled, never concurrent
+    // with the rest at steady state (see kortix-compose.yml: `restart: "no"`).
     const totalCeilingMb = Object.entries(document.services)
       .filter(([name]) => name !== 'kortix-migrate')
       .map(([, service]) => (service.mem_limit ? toMb(service.mem_limit) : 0))
       .reduce((a, b) => a + b, 0);
-    expect(totalCeilingMb).toBeLessThan(8 * 1024);
+    expect(totalCeilingMb).toBeLessThan(12 * 1024);
   });
 
   test('kortix-updater image is pinned by digest, never :latest or a bare floating :cli tag', () => {
@@ -573,6 +593,45 @@ describe('full self-host Docker distribution', () => {
     const migrateFailureBlock = perform.slice(migrateGuardIdx, perform.indexOf('fi', migrateGuardIdx));
     expect(migrateFailureBlock).toContain('write_status "failed"');
     expect(migrateFailureBlock).toContain('return 1');
+  });
+
+  test('updater.sh self-heals a migration that hit an unlogged-table storage-fork error (58P01), then retries once', () => {
+    const script = kortixRuntimeAssets['updater.sh'];
+    const runMigrate = script.slice(script.indexOf('run_migrate()'), script.indexOf('next_run_epoch()'));
+    // The reactive path fires only on the specific storage-fork error class,
+    // heals, and retries the migration exactly once before giving up.
+    expect(runMigrate).toContain('could not open file|58P01');
+    const detectIdx = runMigrate.indexOf('grep -qE "could not open file|58P01"');
+    const healIdx = runMigrate.indexOf('heal_supabase_unlogged', detectIdx);
+    const retryIdx = runMigrate.indexOf(`$COMPOSE run --rm --no-deps "$MIGRATE_SERVICE"`, healIdx);
+    expect(detectIdx).toBeGreaterThan(-1);
+    expect(healIdx).toBeGreaterThan(detectIdx);
+    expect(retryIdx).toBeGreaterThan(healIdx);
+    // A migration that fails for any OTHER reason must not trigger the heal.
+    expect(runMigrate).toContain('ERROR: migration failed; aborting');
+  });
+
+  test('updater.sh heal only ever resets UNLOGGED tables (never durable app data) and never fails the update', () => {
+    const script = kortixRuntimeAssets['updater.sh'];
+    const heal = script.slice(script.indexOf('heal_supabase_unlogged()'), script.indexOf('run_migrate()'));
+    // Targets are restricted to unlogged ordinary tables — the only relations
+    // safe to reset (no durability guarantee; app data is all LOGGED).
+    expect(heal).toContain("c.relpersistence = 'u'");
+    expect(heal).toContain("c.relkind = 'r'");
+    expect(heal).toContain('TRUNCATE');
+    // A table is reset ONLY when VACUUM fails with the storage-fork error class,
+    // never on a transient error (concurrent DROP, lock) — so a healthy
+    // disposable table (e.g. pg_net's request queue) is never truncated.
+    const truncateIdx = heal.indexOf('TRUNCATE');
+    const forkGateIdx = heal.indexOf('could not open file|58P01');
+    expect(forkGateIdx).toBeGreaterThan(-1);
+    expect(truncateIdx).toBeGreaterThan(forkGateIdx);
+    // Best-effort: it degrades gracefully (missing DB / not ready) and never
+    // returns nonzero, so the heal itself can never fail an update.
+    expect(heal).toContain('skipping unlogged-table heal');
+    expect(heal).not.toContain('return 1');
+    // Superuser + a bounded readiness wait, so it is safe to call mid-update.
+    expect(heal).toContain('pg_isready');
   });
 
   test('updater.sh leaves the old version serving when the new replicas never become healthy', () => {

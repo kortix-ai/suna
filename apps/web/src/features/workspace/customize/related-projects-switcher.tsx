@@ -5,16 +5,17 @@ import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/u
 import { groupProjectsByRepository } from '@/features/projects/project-repository-groups';
 import type { KortixProject } from '@kortix/sdk';
 import { listProjectsForAccount } from '@kortix/sdk';
+import { contract, qk } from '@kortix/sdk/react';
+import { GitBranchIcon as GitBranch } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
-import { GitBranch } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
 export function RelatedProjectsSwitcher({ project }: { project: KortixProject }) {
   const router = useRouter();
   const projectsQuery = useQuery({
-    queryKey: ['projects', project.account_id],
+    queryKey: qk.projects.list(project.account_id),
     queryFn: () => listProjectsForAccount(project.account_id),
-    staleTime: 20_000,
+    ...contract('inventory'),
   });
   const related =
     groupProjectsByRepository(projectsQuery.data ?? []).find((group) =>

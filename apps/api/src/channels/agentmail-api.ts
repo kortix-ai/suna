@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { config } from '../config';
 
 export interface AgentMailInbox {
@@ -12,6 +13,27 @@ export interface AgentMailWebhook {
 }
 
 const AGENTMAIL_REQUEST_TIMEOUT_MS = 15_000;
+
+/**
+ * Stable, connection-scoped AgentMail idempotency keys.
+ *
+ * A Kortix project may contain several email connections. Project-only client ids
+ * cause AgentMail to return the first inbox and webhook for every later connection.
+ * Hash the project/connection tuple so retries remain idempotent while distinct
+ * connections always provision distinct provider resources.
+ */
+export function agentMailProvisioningClientIds(projectId: string, connectionSlug: string) {
+  const scope = createHash('sha256')
+    .update(projectId)
+    .update('\0')
+    .update(connectionSlug.trim().toLowerCase())
+    .digest('hex')
+    .slice(0, 40);
+  return {
+    inbox: `kortix-inbox-${scope}`,
+    webhook: `kortix-webhook-${scope}`,
+  };
+}
 
 export class AgentMailApiError extends Error {
   readonly status: number | null;
@@ -43,11 +65,7 @@ export function resolveAgentMailApiKey(projectKey?: string | null): string | nul
 export function isAgentMailInboxLimitError(err: unknown): boolean {
   if (!(err instanceof AgentMailApiError)) return false;
   const bodyText =
-    typeof err.body === 'string'
-      ? err.body
-      : err.body
-        ? JSON.stringify(err.body)
-        : '';
+    typeof err.body === 'string' ? err.body : err.body ? JSON.stringify(err.body) : '';
   const haystack = `${err.message} ${bodyText}`.toLowerCase();
   return [
     /inbox(?:es)?\s+limit/,
@@ -107,11 +125,12 @@ async function agentMailRequest<T>(
     }
   }
   if (!res.ok) {
-    const msg = typeof data?.message === 'string'
-      ? data.message
+    const msg =
+      typeof data?.message === 'string'
+        ? data.message
         : typeof data?.name === 'string'
-        ? data.name
-        : text || `HTTP ${res.status}`;
+          ? data.name
+          : text || `HTTP ${res.status}`;
     throw new AgentMailApiError({ message: msg, status: res.status, body: data, path });
   }
   return data as T;

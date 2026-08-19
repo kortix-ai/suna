@@ -7,7 +7,6 @@ description: >-
   missing or invalid, and posts the batch to {{review_channel}}. Never
   approves a vendor or sets up payment or banking.
 mode: primary
-model: kortix/codex/gpt-5.5
 permission: allow
 ---
 

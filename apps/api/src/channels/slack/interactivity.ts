@@ -159,7 +159,7 @@ async function handleReviewAction(
   const verdict = reviewVerbToVerdict(parsed.verb);
   if (!verdict) return;
 
-  // Adapted items (change requests, executor approvals) keep their own act flow —
+  // Adapted items (change requests, connector approvals) keep their own act flow —
   // their verdict can't be applied through the native review path.
   if (isAdaptedId(parsed.id)) {
     await respondViaUrl(payload.response_url, {
@@ -191,7 +191,7 @@ async function handleReviewAction(
   }
 
   // The actor must be a linked Kortix user with write access to this project.
-  // Self-approve is allowed (launcher or any editor) — there's no separation-of-
+  // Self-approve is allowed (launcher or any manager) — there's no separation-of-
   // duties gate. No live mapping → nudge to connect / request access.
   const actor = await resolveSlackActor(teamId, slackUserId, item.accountId, thread.projectId);
   if ('reason' in actor) {

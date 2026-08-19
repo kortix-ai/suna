@@ -15,7 +15,7 @@
  *
  * Run:
  *   KORTIX_API_URL=http://localhost:8008/v1 KORTIX_API_KEY=kortix_pat_... \
- *     bun run playground/chat/14-change-default-model.ts claude-opus-4.8 [projectId]
+ *     bun run playground/chat/14-change-default-model.ts glm-5.2 [projectId]
  *
  * As an npm consumer, the import lines change to:
  *   import { createKortix } from '@kortix/sdk';
@@ -26,10 +26,13 @@ import { MANAGED_MODELS } from "@kortix/llm-catalog";
 import { createKortix } from "../../src/index";
 
 const MODEL_IDS = [
-  "claude-opus-4.8",
-  "claude-sonnet-4.6",
+  "grok-4.6",
   "glm-5.2",
   "deepseek-v4-flash",
+  "deepseek-v4-pro-0813",
+  "muse-spark-1.2",
+  "minimax-m3",
+  "gpt-5.6-luna",
 ] as const;
 
 type ManagedModelId = (typeof MODEL_IDS)[number];

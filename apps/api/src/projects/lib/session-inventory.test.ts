@@ -31,7 +31,9 @@ function row(
     origin: 'user',
     originRef: null,
     secretsAllowlist: null,
+    requiredConnectors: null,
     connectorBindingsInheritUnbound: false,
+    connectorBindingsConfigured: false,
     metadata: {},
     createdAt: new Date('2026-07-21T00:00:00.000Z'),
     updatedAt: new Date('2026-07-21T00:00:00.000Z'),
@@ -42,46 +44,7 @@ function row(
 const subject = { userId: VIEWER_ID, groupIds: [] };
 
 describe('selectSessionRowsForViewer', () => {
-  test('an end-user-filtered project scope drops rows the manager cannot open', () => {
-    // scope=project normally returns inaccessible rows with the end-user label
-    // redacted. Pairing that with ?end_user_ref= would turn it into an oracle:
-    // send a guessed handle, count the rows, learn whether that end-user exists
-    // here. An end-user-scoped question gets end-user-scoped rows.
-    const privateOther = row('private-other', { createdBy: OTHER_ID });
-    const mine = row('mine', { createdBy: VIEWER_ID });
-
-    const filtered = selectSessionRowsForViewer({
-      rows: [privateOther, mine],
-      scope: 'project',
-      canManageProject: true,
-      subject,
-      grantsBySession: new Map(),
-      callerSessionId: null,
-      endUserRefFiltered: true,
-      runtimeStatusBySession: new Map(),
-    });
-
-    expect(filtered.items.map((item) => item.row.sessionId)).toEqual(['mine']);
-
-    // ...and the unfiltered inventory is unchanged — a manager asking for the
-    // whole project still gets the whole project.
-    const unfiltered = selectSessionRowsForViewer({
-      rows: [privateOther, mine],
-      scope: 'project',
-      canManageProject: true,
-      subject,
-      grantsBySession: new Map(),
-      callerSessionId: null,
-      endUserRefFiltered: false,
-      runtimeStatusBySession: new Map(),
-    });
-    expect(unfiltered.items.map((item) => item.row.sessionId)).toEqual([
-      'private-other',
-      'mine',
-    ]);
-  });
-
-  test('manager project scope includes inaccessible, unavailable, and soft-deleted rows', () => {
+  test('manager project scope hides inaccessible rows and keeps accessible unavailable and soft-deleted rows', () => {
     const privateOther = row('private-other', { createdBy: OTHER_ID });
     const stoppedWithoutRuntime = row('stopped-lost', { status: 'stopped' });
     const deleted = row('deleted', {
@@ -99,25 +62,19 @@ describe('selectSessionRowsForViewer', () => {
       subject,
       grantsBySession: new Map(),
       callerSessionId: null,
-      endUserRefFiltered: false,
-    runtimeStatusBySession: new Map(),
+      runtimeStatusBySession: new Map(),
     });
 
     expect(selected.authorized).toBe(true);
     expect(selected.items.map((item) => item.row.sessionId)).toEqual([
-      'private-other',
       'stopped-lost',
       'deleted',
     ]);
     expect(selected.items[0]).toMatchObject({
-      canAccess: false,
-      runtimeStatus: null,
-    });
-    expect(selected.items[1]).toMatchObject({
       canAccess: true,
       runtimeStatus: null,
     });
-    expect(selected.items[2]).toMatchObject({
+    expect(selected.items[1]).toMatchObject({
       canAccess: true,
       deletedAt: '2026-07-20T10:00:00.000Z',
       deletedBy: VIEWER_ID,
@@ -132,11 +89,57 @@ describe('selectSessionRowsForViewer', () => {
       subject,
       grantsBySession: new Map(),
       callerSessionId: null,
-      endUserRefFiltered: false,
-    runtimeStatusBySession: new Map(),
+      runtimeStatusBySession: new Map(),
     });
 
     expect(selected).toEqual({ authorized: false, items: [] });
+  });
+
+  test('manager inventory includes trigger-created private rows and hides ordinary private rows', () => {
+    const selected = selectSessionRowsForViewer({
+      rows: [
+        row('trigger-private', {
+          createdBy: OTHER_ID,
+          metadata: {
+            source: 'trigger:scheduler',
+            trigger_kind: 'git',
+            trigger_slug: 'daily-review',
+          },
+        }),
+        row('human-private', { createdBy: OTHER_ID, metadata: {} }),
+      ],
+      scope: 'project',
+      canManageProject: true,
+      subject,
+      grantsBySession: new Map(),
+      callerSessionId: null,
+      runtimeStatusBySession: new Map(),
+    });
+
+    expect(selected.items.map(({ row: item, canAccess }) => [item.sessionId, canAccess])).toEqual([
+      ['trigger-private', true],
+    ]);
+  });
+
+  test('ordinary members still cannot access trigger-created private rows', () => {
+    const selected = selectSessionRowsForViewer({
+      rows: [row('trigger-private', {
+        createdBy: OTHER_ID,
+        metadata: {
+          source: 'trigger:scheduler',
+          trigger_kind: 'git',
+          trigger_slug: 'daily-review',
+        },
+      })],
+      scope: 'visible',
+      canManageProject: false,
+      subject,
+      grantsBySession: new Map(),
+      callerSessionId: null,
+      runtimeStatusBySession: new Map(),
+    });
+
+    expect(selected.items).toEqual([]);
   });
 
   test('visible scope preserves the existing visibility and resumability filters', () => {
@@ -155,14 +158,92 @@ describe('selectSessionRowsForViewer', () => {
       subject,
       grantsBySession: new Map(),
       callerSessionId: null,
-      endUserRefFiltered: false,
-    runtimeStatusBySession: new Map([['stopped-resumable', 'stopped']]),
+      runtimeStatusBySession: new Map([['stopped-resumable', 'stopped']]),
     });
 
     expect(selected.authorized).toBe(true);
     expect(selected.items.map((item) => item.row.sessionId)).toEqual([
       'own',
       'stopped-resumable',
+    ]);
+  });
+});
+
+/**
+ * The project shell pre-creates a warm session on mount so the sandbox is
+ * already up when the user finishes typing. Until its first prompt lands it
+ * holds no user work, so the sidebar must not show a session the user never
+ * started. ONE marker carries that — see projects/lib/warm-sessions.ts.
+ */
+describe('selectSessionRowsForViewer — warm sessions', () => {
+  function visible(rows: Array<typeof projectSessions.$inferSelect>) {
+    return selectSessionRowsForViewer({
+      rows,
+      scope: 'visible',
+      canManageProject: false,
+      subject,
+      grantsBySession: new Map(),
+      callerSessionId: null,
+      runtimeStatusBySession: new Map(),
+    }).items.map((item) => item.row.sessionId);
+  }
+
+  test('visible scope hides a warm session', () => {
+    expect(visible([row('own'), row('warm', { metadata: { warm: true } })])).toEqual(['own']);
+  });
+
+  test('a used session lists like any other — the first prompt drops the marker', () => {
+    expect(visible([row('used-warm', { metadata: {} })])).toEqual(['used-warm']);
+  });
+
+  // The reaper flips `project_sessions.status` to stopped and leaves the marker
+  // in place. That row must not surface through the resumable-stopped branch.
+  test('a reaped warm session stays hidden even though it looks resumable', () => {
+    const selected = selectSessionRowsForViewer({
+      rows: [row('reaped-warm', { status: 'stopped', metadata: { warm: true } })],
+      scope: 'visible',
+      canManageProject: false,
+      subject,
+      grantsBySession: new Map(),
+      callerSessionId: null,
+      runtimeStatusBySession: new Map([['reaped-warm', 'stopped']]),
+    });
+
+    expect(selected.items).toEqual([]);
+  });
+
+  // A manager auditing the project must see every session, warm ones included:
+  // they are real rows holding a real sandbox.
+  test('project scope keeps the warm session', () => {
+    const selected = selectSessionRowsForViewer({
+      rows: [row('own'), row('warm', { metadata: { warm: true } })],
+      scope: 'project',
+      canManageProject: true,
+      subject,
+      grantsBySession: new Map(),
+      callerSessionId: null,
+      runtimeStatusBySession: new Map(),
+    });
+
+    expect(selected.items.map((item) => item.row.sessionId)).toEqual(['own', 'warm']);
+  });
+
+  test('a malformed warm marker never hides a real session', () => {
+    const rows = [
+      row('no-metadata', { metadata: null }),
+      row('empty', { metadata: {} }),
+      row('string-marker', { metadata: { warm: 'true' } }),
+      row('array-marker', { metadata: { warm: [true] } }),
+      row('object-marker', { metadata: { warm: { state: 'available' } } }),
+      row('legacy-marker', { metadata: { warm_session: { state: 'available' } } }),
+    ];
+    expect(visible(rows)).toEqual([
+      'no-metadata',
+      'empty',
+      'string-marker',
+      'array-marker',
+      'object-marker',
+      'legacy-marker',
     ]);
   });
 });
@@ -207,29 +288,19 @@ describe('mergeSessionOwnerIdentities', () => {
   });
 });
 
-/**
- * Kortix-as-a-Backend isolation, at the LIST leg.
- *
- * The unit tests for `isSessionVisibleTo` cover the decision. This covers the
- * scenario the decision exists for, in the shape it actually occurs: a wrapper
- * creates every end-user's session under ONE credential, so `created_by` is
- * identical across them and cannot separate anybody.
- */
-describe('KaaB: one wrapper credential, many end-users', () => {
+describe('backend credential session isolation', () => {
   const WRAPPER = '33333333-3333-4333-8333-333333333333';
   const wrapperSubject = { userId: WRAPPER, groupIds: [] };
 
-  // Two end-users' sessions. Same creator, same visibility — the ONLY thing
-  // distinguishing them is which sandbox is asking.
   const alice = row('aaaa1111-1111-4111-8111-111111111111', {
     createdBy: WRAPPER,
     origin: 'backend',
-    originRef: 'end-user-alice',
+    originRef: null,
   });
   const bob = row('bbbb2222-2222-4222-8222-222222222222', {
     createdBy: WRAPPER,
     origin: 'backend',
-    originRef: 'end-user-bob',
+    originRef: null,
   });
 
   const select = (callerSessionId: string | null) =>
@@ -240,7 +311,6 @@ describe('KaaB: one wrapper credential, many end-users', () => {
       subject: wrapperSubject,
       grantsBySession: new Map(),
       callerSessionId,
-      endUserRefFiltered: false,
       runtimeStatusBySession: new Map(),
     });
 
@@ -279,9 +349,8 @@ describe('KaaB: one wrapper credential, many end-users', () => {
       subject,
       grantsBySession: new Map(),
       callerSessionId: mine.sessionId,
-      endUserRefFiltered: false,
       runtimeStatusBySession: new Map(),
     });
     expect(selected.items.every((item) => item.canAccess)).toBe(true);
   });
-})
+});

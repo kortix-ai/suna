@@ -22,7 +22,7 @@
  */
 
 import { and, gt, inArray, isNotNull, or } from 'drizzle-orm';
-import { sessionSandboxes } from '@kortix/db';
+import { appRuntimes, projectMonitorBoxes, sessionSandboxes } from '@kortix/db';
 import { config } from '../../config';
 import { db } from '../../shared/db';
 import { getProvider, type ProviderName } from '../../platform/providers';
@@ -65,19 +65,50 @@ export async function reapOrphanProviderBoxes(now = new Date()): Promise<OrphanR
   }
   if (boxes.length === 0) return zero;
 
-  // keepSet: never stop a box the DB considers live or touched recently.
-  const keepRows = await db
-    .select({ provider: sessionSandboxes.provider, externalId: sessionSandboxes.externalId })
-    .from(sessionSandboxes)
-    .where(
-      and(
-        isNotNull(sessionSandboxes.externalId),
-        or(
-          inArray(sessionSandboxes.status, ['active', 'provisioning']),
-          gt(sessionSandboxes.updatedAt, new Date(now.getTime() - ORPHAN_KEEP_RECENT_MS)),
+  // keepSet: never stop a Session, App, or MONITOR box the DB considers live or
+  // touched recently. All three share the provider fleet and labels.
+  //
+  // The monitor half is load-bearing, not defensive: a monitor box is
+  // PERSISTENT by design (autoStop 0) and has no session_sandboxes row, so
+  // without it this sweep would read every healthy monitor box as an orphan and
+  // stop it about an hour after it was created — every hour, forever.
+  const recentCutoff = new Date(now.getTime() - ORPHAN_KEEP_RECENT_MS);
+  const [sessionKeepRows, appKeepRows, monitorKeepRows] = await Promise.all([
+    db
+      .select({ provider: sessionSandboxes.provider, externalId: sessionSandboxes.externalId })
+      .from(sessionSandboxes)
+      .where(
+        and(
+          isNotNull(sessionSandboxes.externalId),
+          or(
+            inArray(sessionSandboxes.status, ['active', 'provisioning']),
+            gt(sessionSandboxes.updatedAt, recentCutoff),
+          ),
         ),
       ),
-    );
+    db
+      .select({ provider: appRuntimes.provider, externalId: appRuntimes.externalId })
+      .from(appRuntimes)
+      .where(
+        or(
+          inArray(appRuntimes.status, ['provisioning', 'starting', 'running', 'stopping']),
+          gt(appRuntimes.updatedAt, recentCutoff),
+        ),
+      ),
+    db
+      .select({
+        provider: projectMonitorBoxes.provider,
+        externalId: projectMonitorBoxes.externalId,
+      })
+      .from(projectMonitorBoxes)
+      .where(
+        or(
+          inArray(projectMonitorBoxes.status, ['provisioning', 'starting', 'running', 'stopping']),
+          gt(projectMonitorBoxes.updatedAt, recentCutoff),
+        ),
+      ),
+  ]);
+  const keepRows = [...sessionKeepRows, ...appKeepRows, ...monitorKeepRows];
   const keep = new Set(
     keepRows
       .filter((row): row is typeof row & { externalId: string } => !!row.externalId)
