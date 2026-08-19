@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 594,
+  "count": 595,
   "routes": [
     {
       "method": "GET",
@@ -2313,6 +2313,10 @@
     {
       "method": "GET",
       "path": "/v1/user-roles"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/webhooks/auth/send-email"
     },
     {
       "method": "POST",

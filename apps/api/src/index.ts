@@ -132,6 +132,8 @@ import {
 } from './projects/provider-transition/provider-transition-worker';
 import { accountsRouter } from './accounts';
 import { authRouter } from './auth';
+import { authEmailHookApp } from './auth/send-email-hook';
+import { describeEmailChain } from './lib/email/transport';
 import { scimRouter } from './scim';
 import { accountInvitesRouter } from './accounts/invites';
 import { auditApiRequest } from './shared/audit';
@@ -906,6 +908,7 @@ app.route('/v1/channels/slack/identity', slackIdentityApp); // /v1/channels/slac
 app.route('/v1/channels/teams/identity', teamsIdentityApp); // /v1/channels/teams/identity/bind — authed login bind
 app.route('/v1/webhooks/telegram', telegramWebhookApp); // /v1/webhooks/telegram/:projectId — Telegram updates
 app.route('/v1/webhooks/email', emailWebhookApp); // /v1/webhooks/email/agentmail — AgentMail inbound email (Svix-signed)
+app.route('/v1/webhooks/auth', authEmailHookApp); // /v1/webhooks/auth/send-email — Supabase Auth send-email hook (Standard Webhooks-signed)
 
 app.route('/v1/webhooks/sandbox', sandboxWebhooksApp); // /v1/webhooks/sandbox/{daytona,platinum} — provider lifecycle → close billing
 
@@ -1477,6 +1480,11 @@ async function shutdown(signal: string) {
 // route table without starting the DB schema check, background workers, or
 // signal handlers. Does NOT change production boot — there, import.meta.main is true.
 if (import.meta.main) {
+  // One line an operator can grep for when email "does not work": which
+  // providers EMAIL_URL resolved to, and the address mail is sent from. Never
+  // prints credentials.
+  console.log(`[email] ${describeEmailChain()}`);
+
   ensureSchema()
     .then(async () => {
       schemaReady = true;

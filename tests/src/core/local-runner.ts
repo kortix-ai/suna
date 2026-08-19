@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { localWebUrl } from './local-profile';
+import { LOCAL_AUTH_EMAIL_HOOK_SECRET, localWebUrl } from './local-profile';
 import {
   type LocalStackHandle,
   type LocalSupabaseHandle,
@@ -354,7 +354,13 @@ async function runLane(root: string, lane: LocalTestLane): Promise<LaneResult> {
   const startedAt = performance.now();
   console.log(`\n[test] START ${lane.name}: ${lane.command.join(' ')}`);
   try {
-    let env = { ...process.env, ...(lane.env ?? {}) };
+    // Every lane can sign a Supabase auth-hook request: the local stack starts
+    // the API with this same fixed secret (see local-stack.ts).
+    let env = {
+      ...process.env,
+      KE2E_AUTH_EMAIL_HOOK_SECRET: LOCAL_AUTH_EMAIL_HOOK_SECRET,
+      ...(lane.env ?? {}),
+    };
     if (lane.name === 'browser') {
       const topology = resolveLocalTopology(root);
       const supabase = await readLocalSupabaseEnvironment(topology);

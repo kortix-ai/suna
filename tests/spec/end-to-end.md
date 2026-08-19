@@ -773,6 +773,7 @@ supplied scope field without restarting the session.
 `PACC-6` `GET/POST /projects/:id/group-grants` · `PATCH/DELETE /:groupId` → manage; missing group_id → 400; unknown → 404.
 `BILL-10` per-seat: `POST /billing/sync-seat-quantity` · `claim-per-seat` → no-op/skipped on non-legacy.
 `AUTH-1` `POST /v1/auth/logout` → OWNER 200/204; ANON 200/401.
+`AUTH-2` `POST /v1/webhooks/auth/send-email` — Supabase Auth send-email hook, public + Standard Webhooks HMAC (`AUTH_EMAIL_HOOK_SECRET`, `v1,whsec_…`) over the RAW body. Unsigned → 401 (503 when no secret is configured); valid signature over a tampered body → 401; signed `magiclink` payload → 200 and the mail goes out through the one platform transport (`EMAIL_URL`); unknown `email_action_type` → 400.
 `BILL-11` `GET /billing/checkout-session/:sessionId` · `POST /billing/confirm-checkout-session` → unknown/missing → 4xx.
 `BILL-3b` `POST /billing/create-checkout-session` · `create-per-seat-checkout` · `create-portal-session` → Stripe URL or 400/500.
 `BILL-4b` `POST /billing/cancel-subscription` · `sync-seat-quantity` → NONMEMBER → 403.

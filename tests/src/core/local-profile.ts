@@ -111,3 +111,11 @@ export function localRunExitCode(summary: { failed: number; skipped: number; tod
 export function localWorkerCount(cpuCount = availableParallelism()): number {
   return Math.max(4, Math.min(16, Math.trunc(cpuCount)));
 }
+
+/**
+ * Signing secret for the Supabase send-email hook in the local profile. Fixed
+ * (not random) so a flow can sign a request the running API will accept, in the
+ * `v1,whsec_<base64>` form Supabase itself writes.
+ */
+export const LOCAL_AUTH_EMAIL_HOOK_SECRET =
+  'v1,whsec_bG9jYWwtZmxvdy1ydW5uZXItYXV0aC1lbWFpbC1ob29rLXNlY3JldA==';

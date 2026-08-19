@@ -580,6 +580,7 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "GET|v1|usage|session-costs",
   "GET|v1|usage|session-costs|:sessionId",
   "GET|v1|user-roles",
+  "POST|v1|webhooks|auth|send-email",
   "POST|v1|webhooks|email|agentmail",
   "POST|v1|webhooks|projects|:projectId|:slug",
   "POST|v1|webhooks|sandbox|daytona",

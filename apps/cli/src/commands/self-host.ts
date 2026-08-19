@@ -23,6 +23,8 @@ import {
   writeSupabaseVendorAssets,
 } from '../self-host/compose-assets.ts';
 import { SHARED_SELF_HOST_DEFAULTS } from '../self-host/shared-runtime-defaults.ts';
+import { applyEmailWiring } from '../self-host/email-wiring.ts';
+import { parseEmailTargets, redactUrl } from '@kortix/shared/email-url';
 import {
   CATEGORY_LABELS,
   groupSecretsByCategory,
@@ -630,6 +632,25 @@ function selfHostDoctor(flags: GlobalFlags): number {
         ? actual
         : `stale KORTIX_INSTANCE_DIR="${recorded}" (actual: ${actual}) — run \`kortix self-host configure\` (or any of init/start/update/env set) to reconcile`,
     });
+  }
+  if (existsSync(envPath(flags.instance))) {
+    // A malformed EMAIL_URL is silent otherwise: the API logs one line at the
+    // first send and then skips delivery, so the operator learns about it from
+    // a missing invite. Parse it here, with the same parser the API uses.
+    const env = loadEnv(flags.instance);
+    const raw = (env?.EMAIL_URL ?? '').trim();
+    if (raw) {
+      const { targets, errors } = parseEmailTargets(raw);
+      checks.push({
+        name: 'email-url',
+        ok: errors.length === 0 && targets.length > 0,
+        detail: errors.length
+          ? errors.join('; ')
+          : targets.length
+            ? `${targets.map((target) => target.kind).join(' → ')} (${redactUrl(raw.split(',')[0]!.trim())})`
+            : 'no usable provider',
+      });
+    }
   }
   const ok = checks.every((check) => check.ok);
   if (flags.json) {
@@ -1383,6 +1404,7 @@ async function selfHostEnvSet(args: string[], flags: GlobalFlags): Promise<numbe
   }
 
   const changedKeys: string[] = [];
+  const previousEmailUrl = env.EMAIL_URL ?? '';
 
   // `env set KEY` (no '=') — prompt interactively for exactly one key.
   if (args.length === 1 && !args[0]!.includes('=')) {
@@ -1415,9 +1437,18 @@ async function selfHostEnvSet(args: string[], flags: GlobalFlags): Promise<numbe
     }
   }
 
+  // EMAIL_URL is the one email setting; everything else it implies (the GoTrue
+  // send-email hook, its shared secret, the sender identity, and the auth
+  // behavior flags) is derived here rather than typed by the operator.
+  const wiring = applyEmailWiring(env, previousEmailUrl);
+  changedKeys.push(...wiring.changed);
+
   writeEnv(flags.instance, env);
   writeCompose(flags.instance, env);
   process.stdout.write(`${status.ok(`Updated ${changedKeys.join(', ')}`)}\n`);
+  for (const note of wiring.notes) {
+    process.stdout.write(`  ${C.dim}${note}${C.reset}\n`);
+  }
   return restartServicesForKeys(flags.instance, env, changedKeys);
 }
 
@@ -2030,7 +2061,7 @@ function shouldPrompt(flags: GlobalFlags): boolean {
 function renderConnectionSummary(env: SelfHostEnv): void {
   // The ONLY row gated as configured/missing here is the sandbox runtime — the
   // one connection the CLI still requires (see missingRequiredSecrets()).
-  // Everything else (managed git, LLM key, connectors, SMTP) is dashboard
+  // Everything else (managed git, LLM key, connectors, EMAIL_URL) is dashboard
   // territory — see renderAfterStartNote() below, not a CLI configured/missing
   // gate that would incorrectly suggest a CLI fix is needed.
   const provider = sandboxProviders(env)[0];
@@ -2064,7 +2095,7 @@ function renderConnectionSummary(env: SelfHostEnv): void {
  */
 function renderAfterStartNote(): void {
   process.stdout.write(
-    `  ${C.dim}After start ${C.reset}Sign in → Settings → Git to connect GitHub (projects) · connect your model key in the app (BYOK) · optional: connectors, SMTP — all in the dashboard.${C.reset}\n\n`,
+    `  ${C.dim}After start ${C.reset}Sign in → Settings → Git to connect GitHub (projects) · connect your model key in the app (BYOK) · optional: connectors · email with ${C.reset}env set EMAIL_URL=smtp://user:pass@host:587${C.dim}.${C.reset}\n\n`,
   );
 }
 
@@ -2240,6 +2271,20 @@ function defaultEnv(flags: GlobalFlags): SelfHostEnv {
     // Auth + agent sandbox defaults shared with every self-host flavor — see
     // shared-runtime-defaults.ts for why these must not be duplicated here.
     ...SHARED_SELF_HOST_DEFAULTS,
+    // ONE setting turns on email, for auth AND product mail alike:
+    //   kortix self-host env set EMAIL_URL=smtp://user:pass@smtp.example.com:587
+    // applyEmailWiring() derives the GoTrue send-email hook, the shared HMAC
+    // secret, the sender identity and the auth behavior flags from it.
+    EMAIL_URL: '',
+    EMAIL_FROM: '',
+    AUTH_EMAIL_HOOK_SECRET: '',
+    GOTRUE_HOOK_SEND_EMAIL_ENABLED: 'false',
+    GOTRUE_HOOK_SEND_EMAIL_URI: '',
+    // GoTrue refuses to boot without an SMTP host, so a fresh instance carries
+    // this inert placeholder quartet until real email is configured. The API
+    // recognizes exactly this combination as "not configured" rather than
+    // trying to deliver invites through it — see legacySmtpTarget() in
+    // apps/api/src/lib/email/transport.ts.
     SMTP_ADMIN_EMAIL: 'admin@localhost',
     SMTP_HOST: 'localhost',
     SMTP_PORT: '587',
@@ -2447,6 +2492,12 @@ function normalizeFullSupabaseEnv(instance: string, env: SelfHostEnv): void {
 
   env.API_EXTERNAL_URL = `${env.SUPABASE_PUBLIC_URL.replace(/\/$/, '')}/auth/v1`;
   env.SITE_URL = env.PUBLIC_URL;
+
+  // Reconcile the email-derived keys on every write. Passing the CURRENT
+  // EMAIL_URL as the previous value makes this a no-transition reconcile: the
+  // hook URI/secret self-heal, while the auth behavior flags are left exactly
+  // as the operator last set them.
+  applyEmailWiring(env, env.EMAIL_URL);
 
   // Always recomputed (never `||=`) — see the KORTIX_INSTANCE_DIR field's doc
   // comment on SelfHostEnv. Unconditional on purpose: if the instance

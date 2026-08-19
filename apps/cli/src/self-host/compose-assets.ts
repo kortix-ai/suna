@@ -323,6 +323,15 @@ export function renderFullDockerCompose(composeProject: string, options: RenderC
     authEnv.GOTRUE_RATE_LIMIT_TOKEN_REFRESH ||= '150';
     authEnv.GOTRUE_RATE_LIMIT_OTP ||= '30';
     authEnv.GOTRUE_RATE_LIMIT_ANONYMOUS_USERS ||= '30';
+    // Send-email hook. When EMAIL_URL is configured, GoTrue stops sending auth
+    // mail itself and posts each one to kortix-api instead, so magic links and
+    // confirmations use the same provider, sender and templates as invites —
+    // and work over Resend/SES, which GoTrue cannot speak at all. Values are
+    // substituted from .env at `docker compose` time; applyEmailWiring() in
+    // self-host/email-wiring.ts derives all three from EMAIL_URL.
+    authEnv.GOTRUE_HOOK_SEND_EMAIL_ENABLED = '${GOTRUE_HOOK_SEND_EMAIL_ENABLED}';
+    authEnv.GOTRUE_HOOK_SEND_EMAIL_URI = '${GOTRUE_HOOK_SEND_EMAIL_URI}';
+    authEnv.GOTRUE_HOOK_SEND_EMAIL_SECRETS = '${AUTH_EMAIL_HOOK_SECRET}';
     auth.environment = authEnv;
   }
   for (const serviceName of ['supabase-analytics', 'supabase-storage']) {
