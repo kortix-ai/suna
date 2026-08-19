@@ -75,6 +75,132 @@ getToken: async () =>
 The SDK calls `getToken` on every request, so a refreshed token takes effect
 automatically.
 
+## Sign in through the SDK
+
+`createKortixAuth` signs a user in and produces the token `createKortix` needs.
+Use it when your app has human users: each one gets their own identity and their
+own revocation, instead of sharing one long-lived key.
+
+```ts
+import { createKortix, createKortixAuth } from '@kortix/sdk';
+
+const backendUrl = 'https://api.kortix.com/v1';
+const auth = createKortixAuth({ backendUrl });
+const kortix = createKortix({ backendUrl, getToken: auth.getToken });
+
+await auth.signInWithPassword({ email, password });
+await kortix.projects.list();
+```
+
+Two objects, one seam. `createKortixAuth` produces the token; `createKortix`
+spends it. `auth.getToken` works unbound, so the line above needs no `.bind()`.
+
+### Discovery
+
+`createKortixAuth` makes one unauthenticated call, `GET /v1/auth/config`, to
+learn which sign-in service the deployment uses. Read the same values to render
+a login form:
+
+```ts
+const config = await auth.config();
+// { provider: 'supabase', url, anonKey, methods: ['magic', 'password'],
+//   providers: ['google'], signupsEnabled: true }
+```
+
+The result is memoized. Pass `config` in the options to skip discovery, for a
+self-host with known values or for a test.
+
+### Sign-in methods
+
+| Call | Effect |
+|---|---|
+| `signInWithPassword({ email, password })` | Returns a session. |
+| `signInWithOtp({ email, redirectTo })` | Sends a magic-link email. Returns `void` — no session exists yet. |
+| `verifyOtp({ email, token })` | Exchanges an emailed code for a session. |
+| `authorizeUrl(provider, { redirectTo })` | Returns a PKCE authorize URL. Your app performs the redirect. |
+| `exchangeCodeForSession(code)` | Exchanges the callback code for a session. |
+| `signOut({ scope })` | Revokes at GoTrue and clears local state. |
+
+`authorizeUrl` requires `crypto.subtle`. Where that API is absent it throws
+`KortixAuthError` with `code: 'pkce_unsupported'` instead of downgrading the
+flow.
+
+### Storage
+
+The session is persisted through a storage adapter. The SDK probes
+`localStorage` with a real write, read, and remove, then falls back to memory —
+so Safari private mode and a full quota degrade instead of throwing. Pass your
+own adapter for React Native or Expo:
+
+```ts
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+const auth = createKortixAuth({ backendUrl, storage: AsyncStorage });
+```
+
+The adapter interface is `getItem` / `setItem` / `removeItem`, and each may
+return a promise. The stored blob carries the GoTrue URL it belongs to. A blob
+from a different backend is discarded, so one browser profile can drive
+`dev-api` and `api` without cross-feeding tokens.
+
+### Token refresh
+
+`getToken()` is the seam, and it never throws. It returns `null` when no usable
+token exists, which the SDK already converts into a `401`.
+
+1. A cached token less than 30 seconds old is returned with no I/O.
+2. Concurrent callers share one request. Five cold calls produce one refresh.
+3. A stored token within 30 seconds of `exp` is refreshed before it is returned.
+   The expired token is never handed out.
+4. A `400` or `401` from the refresh clears the session and emits `SIGNED_OUT`.
+5. A network failure retries twice, at 300 ms and 600 ms, then returns the
+   last-known token while it is still inside `exp`. A flaky network does not
+   sign a user out.
+
+Refresh is lazy. `createKortixAuth` starts no timer, so there is nothing to
+dispose.
+
+### Change events
+
+```ts
+const unsubscribe = auth.onChange(({ event, session }) => { /* … */ });
+```
+
+| Event | When |
+|---|---|
+| `INITIAL` | Once per listener, with the session read from storage. |
+| `SIGNED_IN` | A password, OTP, or PKCE sign-in succeeded. |
+| `TOKEN_REFRESHED` | The access token was renewed. |
+| `USER_UPDATED` | `getUser({ force: true })` returned new user data. |
+| `SIGNED_OUT` | `signOut()` ran, or the refresh token was rejected. |
+
+The names match GoTrue's `onAuthStateChange`, so a `switch` written against
+supabase-js keeps working. Set `syncAcrossTabs: true` to follow sign-in and
+sign-out from another browser tab. It is off by default.
+
+Read the current session synchronously with `auth.getSession()` — an auth gate
+cannot render off a promise.
+
+### What this does not do
+
+- No MFA or TOTP. A deployment that enforces MFA returns its own error.
+- No SAML or SSO sign-in.
+- No redirect handling. `authorizeUrl` builds a URL; your app navigates and
+  calls `exchangeCodeForSession`. Implicit-flow `#access_token=` fragments are
+  not read.
+- No cookie or SSR session storage, and no Next.js middleware integration.
+- No sign-up with password, password reset, user update, or email change.
+- No phone OTP, anonymous sign-in, Web3, passkeys, or identity linking.
+
+`kortix.auth.*` is a different surface. Those are Kortix API routes you reach
+**with** a token — the sign-out audit record, account state, OAuth consent. To
+record the server-side audit trail on sign-out, call both:
+
+```ts
+await kortix.auth.logout();
+await auth.signOut();
+```
+
 ## Choose a credential
 
 | You are building | Use |
@@ -82,4 +208,5 @@ automatically.
 | A backend, script, or CI job | A personal access token, account-wide or project-scoped |
 | The Kortix CLI | `kortix login` (mints a personal access token) |
 | A web app on Kortix sign-in | A Supabase JWT |
+| An app that signs its own users in | `createKortixAuth` (a managed Supabase JWT) |
 | An automated caller with its own project assignment | A service account |

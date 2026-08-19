@@ -44,6 +44,44 @@ export {
   type SessionModel,
 } from './core/client/kortix';
 
+/**
+ * Optional sign-in: a token PRODUCER that sits in FRONT of the one auth seam.
+ *
+ * `createKortixAuth({ backendUrl })` discovers the deployment's GoTrue through
+ * one unauthenticated Kortix call (`GET /v1/auth/config`), signs a user in
+ * against it, persists and refreshes the session, and hands you the `getToken`
+ * `createKortix` already takes:
+ *
+ * ```ts
+ * const auth   = createKortixAuth({ backendUrl });
+ * const kortix = createKortix({ backendUrl, getToken: auth.getToken });
+ * await auth.signInWithPassword({ email, password });
+ * ```
+ *
+ * It never calls an authenticated Kortix route, never touches
+ * `authenticatedFetch`, and never reaches the session runtime — so it adds no
+ * second auth path. A host using a PAT never constructs it. Distinct from
+ * `kortix.auth.*`, which are Kortix auth ROUTES reached WITH a token; this
+ * module produces the token.
+ */
+export {
+  createKortixAuth,
+  createLocalStorageAuthStorage,
+  createMemoryAuthStorage,
+  fetchKortixAuthConfig,
+  KortixAuthError,
+  type KortixAuth,
+  type KortixAuthChange,
+  type KortixAuthConfig,
+  type KortixAuthEvent,
+  type KortixAuthMethod,
+  type KortixAuthOptions,
+  type KortixAuthSession,
+  type KortixAuthStorage,
+  type KortixAuthUser,
+  type KortixVerifyOtpType,
+} from './core/auth';
+
 /** Workspace file operations (daemon `/file` + `/find`), owned by the SDK. */
 export {
   SANDBOX_FS_ROOTS,

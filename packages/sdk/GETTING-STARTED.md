@@ -83,6 +83,25 @@ stack — admin-create a confirmed user, then password-grant — exactly as
 `tests/e2e/helpers/auth.ts` does; the root `AGENTS.md` ("Authenticating to the
 live API") walks through the four calls. A JWT works everywhere a PAT does.
 
+**Building an app with human users?** Do not ship one shared PAT. Let the SDK
+sign each user in and produce their own token:
+
+```ts
+import { createKortix, createKortixAuth } from '@kortix/sdk';
+
+const backendUrl = process.env.KORTIX_API_URL!;
+const auth = createKortixAuth({ backendUrl });
+const kortix = createKortix({ backendUrl, getToken: auth.getToken });
+
+await auth.signInWithPassword({ email, password });
+await kortix.projects.list();
+```
+
+`createKortixAuth` discovers the deployment's sign-in service with one
+unauthenticated call, persists the session, and refreshes it before it expires.
+Full contract: `apps/web/content/docs/sdk/auth.mdx`. Runnable:
+`examples/11-sign-in-and-run.ts`.
+
 ## 4. Create a project and a session
 
 Easiest: do it in the web UI at `localhost:3000` (create a project, open a

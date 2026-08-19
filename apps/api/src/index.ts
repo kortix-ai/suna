@@ -135,6 +135,7 @@ import { accountsRouter } from './accounts';
 import { authRouter } from './auth';
 import { authEmailHookApp } from './auth/send-email-hook';
 import { describeEmailChain } from './lib/email/transport';
+import { authConfigRouter } from './auth/config-route';
 import { scimRouter } from './scim';
 import { accountInvitesRouter } from './accounts/invites';
 import { auditApiRequest, shutdownAuditEvents } from './shared/audit';
@@ -808,6 +809,13 @@ app.openapi(
 
 // /v1/accounts/* — account & member management lives in ./accounts router.
 app.route('/v1/accounts', accountsRouter);
+// ORDER IS LOAD-BEARING. `authConfigRouter` carries no middleware and must be
+// registered FIRST so `GET /v1/auth/config` (public sign-in discovery for
+// @kortix/sdk) answers before `authRouter`'s `use('/*', supabaseAuth)` is
+// composed. Swapping these two lines silently gates /config or un-gates
+// /logout; the guard is the test in src/auth/config-route.test.ts that asserts
+// ANON /config is NOT 401 and ANON /logout IS, against this same app.
+app.route('/v1/auth', authConfigRouter);
 // /v1/auth/* — auth-side server endpoints (logout for now). Audit
 // events for login/logout/failed-login live in the auth middleware
 // + this router so SOC2 reviews see the full auth lifecycle.

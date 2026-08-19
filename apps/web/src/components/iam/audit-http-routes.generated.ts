@@ -157,6 +157,7 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "GET|v1|approval-links|:token",
   "GET|v1|apps|edge|tls-check",
   "POST|v1|auth|logout",
+  "GET|v1|auth|config",
   "GET|v1|billing|account-state",
   "GET|v1|billing|account-state|minimal",
   "POST|v1|billing|account|cancel-deletion",

@@ -23,7 +23,15 @@ export interface Provisioned {
   supabaseUserIds: string[];
 }
 
-const PASSWORD = 'Ke2e-passw0rd-Aa1!';
+/**
+ * The password every synthesized fixture user is created with. Exported so a
+ * flow can run a REAL password grant of its own — AUTH-3 proves the values
+ * `GET /v1/auth/config` hands out are usable, which needs a credential the
+ * flow can present to GoTrue directly rather than a JWT the fixture already
+ * minted.
+ */
+export const FIXTURE_USER_PASSWORD = 'Ke2e-passw0rd-Aa1!';
+const PASSWORD = FIXTURE_USER_PASSWORD;
 
 export interface SynthUser {
   user: AdminUser;

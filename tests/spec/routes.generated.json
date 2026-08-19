@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 595,
+  "count": 596,
   "routes": [
     {
       "method": "GET",
@@ -621,6 +621,10 @@
     {
       "method": "POST",
       "path": "/v1/auth/logout"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/auth/config"
     },
     {
       "method": "GET",

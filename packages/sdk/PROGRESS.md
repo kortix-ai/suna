@@ -117,12 +117,150 @@ pnpm --filter @kortix/sdk smoke:install   → ✔ install smoke test passed
 
 ---
 
-||||||| parent of f1d78e5ed1 (chore(sdk): claim boundary-close (public-share file reader, presentation metadata reader, facade completion))
+### 2026-08-19 — session `claude/sdk-central` — auth-module tasks 3-6 + the SDK half of task 8 — DONE
 
-### 2026-08-19 — session `claude/sdk-central` — claim: boundary-close: public-share file reader, presentation metadata reader, facade completion — IN PROGRESS
-||||||| parent of b4414e2815 (feat(sdk): public-share file readers, presentation metadata reader, facade completion)
-### 2026-08-19 — session `claude/sdk-central` — claim: boundary-close: public-share file reader, presentation metadata reader, facade completion — IN PROGRESS
+**Scope of this entry:** the `packages/sdk` module only — spec §7 tasks **3**
+(discovery/session/errors), **4** (GoTrue + storage), **5** (`createKortixAuth`),
+**6** (PKCE), and the SDK-facing part of **8** (docs, `AGENTS.md`, example).
+Tasks 1-2 (`apps/api` route + manifest), 7 (ke2e `AUTH-3`), and 9 (secrets +
+delivery) are separate agents' rows and are NOT claimed here.
 
+**Files added** — `src/core/auth/`: `errors.ts`, `base64.ts`, `session.ts`,
+`storage.ts`, `config.ts`, `gotrue.ts`, `client.ts`, `index.ts`, plus a
+colocated `.test.ts` per file (**101 tests in `src/core/auth`**; +103 across the
+suite, the other 2 being the new tripwire tests). **Files changed:**
+`src/index.ts` (one explicit re-export block), `src/index.isomorphic.test.ts`
+(bare-global scan extracted to `bareGlobalHits`, plus a positive control and a
+dedicated `core/auth/**` sweep), both surface snapshots (purely additive),
+`scripts/smoke-install.mjs` (the new exports are exercised from the packed
+tarball), `AGENTS.md` (seam amendment + layers line), `README.md`,
+`GETTING-STARTED.md`, `examples/11-sign-in-and-run.ts` + `examples/README.md`,
+and `apps/web/content/docs/sdk/auth.mdx`.
+
+**No new subpath**, so `exports` / `publishConfig.exports` / `SUBPATH_TIERS` are
+untouched and the three-synchronized-edits rule did not fire. `version`
+untouched at `0.3.0`.
+
+**Public surface (+15, all additive, zero removals or renames):**
+`createKortixAuth`, `fetchKortixAuthConfig`, `createMemoryAuthStorage`,
+`createLocalStorageAuthStorage`, `KortixAuthError`, and the types `KortixAuth`,
+`KortixAuthOptions`, `KortixAuthConfig`, `KortixAuthSession`, `KortixAuthUser`,
+`KortixAuthStorage`, `KortixAuthEvent`, `KortixAuthChange`, `KortixAuthMethod`,
+`KortixVerifyOtpType`. Snapshot diff read before re-recording: 20 insertions,
+0 deletions.
+
+**Two implementation decisions worth recording.**
+
+1. **`base64.ts` is hand-rolled, not `atob`/`btoa`.** Those are globals, and the
+   tripwire cannot see globals. A Hermes/RN host missing them would take a
+   `ReferenceError` on the first JWT decode, so the module depends on neither.
+   Asserted byte-identical to Node's `base64url` across all 256 byte values.
+2. **Hydration awaits discovery.** The persisted blob is URL-stamped and the
+   stamp is CHECKED, so the GoTrue url must be known before a stored session is
+   adopted. That is what makes one browser profile driving `dev-api` and `api`
+   structurally safe instead of cross-feeding tokens. Cost: one memoized
+   `GET /v1/auth/config` per process on a cold start. A host that wants zero
+   discovery passes `config` in the options.
+
+**Gates — real output, this turn:**
+
+```
+$ pnpm --filter @kortix/sdk test
+ 2449 pass
+ 0 fail
+Ran 2449 tests across 165 files. [22.89s]
+   (session baseline re-derived on the untouched tree first: 2346 pass, 0 fail,
+    158 files → +103 tests, +7 files)
+
+$ pnpm --filter @kortix/sdk typecheck
+> tsc --noEmit && tsc --noEmit -p examples/tsconfig.json
+   (clean, exit 0)
+
+$ pnpm --filter @kortix/sdk run smoke:install
+→ building dist/ → staging the published manifests → npm pack
+→ importing in Node ESM
+OK: @kortix/sdk and @kortix/executor-sdk import and construct from packed tarballs
+✔ install smoke test passed
+```
+
+The smoke assertion was negative-controlled: renaming the import to
+`createKortixAuthTYPO` fails the run with an ESM link `SyntaxError`, so the
+tarball genuinely resolves the new export rather than the check passing vacuously.
+
+**Shippable to production: YES for the SDK module** — every surface it owns is
+exercised against a real injected `fetch`, and it is inert until a host
+constructs it. **NOT YET end to end:** `GET /v1/auth/config` returns `503
+auth_config_unavailable` until `SUPABASE_ANON_KEY` is set per environment
+(spec §4), and dev verification belongs to task 9.
+
+**Unverified by this turn:** the live `apps/api` route (task 1's agent), the
+`AUTH-3` ke2e flow (task 7), any real browser (`localStorage` is exercised
+through a fake global, not Safari private mode), and React Native (PKCE throws
+`pkce_unsupported` there by design; sign-in itself is plain `fetch` + JSON).
+
+---
+
+### 2026-08-19 — session `claude/sdk-central` — CLAIM: auth-module — `createKortixAuth` + `/v1/auth/config` discovery — SPEC WRITTEN, SDK MODULE NOW IMPLEMENTED (see the entry above)
+
+**Claimed by:** session `claude/sdk-central`, worktree
+`/Users/markokraemer/Projects/kortix/suna-sdk-central`, branch `sdk-central`,
+HEAD `133dcfe088`. **No source code touched in this turn.**
+
+**Spec:** `docs/superpowers/specs/2026-08-19-sdk-auth-module.md`.
+
+**What it is.** A token *producer* so any first- or third-party app can do full
+Kortix login through the SDK alone:
+`createKortixAuth({ backendUrl }) → { getToken, signInWithPassword,
+signInWithOtp, verifyOtp, signOut, getUser, refresh, onChange }`, plumbed into
+the existing single seam via `createKortix({ getToken: auth.getToken })`.
+
+**Reconciliation with "Auth is exactly one seam" (`AGENTS.md:67-71`).** This is
+NOT a second transport. The module's entire outbound surface is GoTrue
+(`/auth/v1/*`, authorized by the public anon key) plus ONE unauthenticated
+Kortix call, `GET /v1/auth/config`. It never touches `authenticatedFetch`, never
+calls `backendApi`, never resolves a session runtime, never calls
+`configureKortix`. Spec §1.1 carries the producer-vs-transport table; §1.2
+carries the proposed `AGENTS.md` wording amendment and the one added line in the
+layers diagram.
+
+**Shape (spec §3).** New files under `src/core/auth/{config,gotrue,session,
+storage,errors,client}.ts`, all `isomorphic-core` tier, exported from the ROOT
+barrel. **No new subpath** — so no `exports` / `publishConfig.exports` /
+`SUBPATH_TIERS` edit, and the three-synchronized-edits rule does not fire.
+New public names are additive: `createKortixAuth`, `fetchKortixAuthConfig`,
+`createMemoryAuthStorage`, `createLocalStorageAuthStorage`, `KortixAuthError`,
+plus 10 types. `KortixAuthError` carries the `Kortix` prefix because `AuthError`
+is already published (the REST 401 class, `src/index.ts:136`) — the prefix
+earns its keep per `AGENTS.md:194-202`.
+
+**Semantics absorbed from `apps/web/src/lib/auth-token.ts`:** 30 s in-memory
+cache, single-flight dedup, `exp` decode with 30 s skew, refresh-token fallback,
+2 retries at 300/600 ms. Including its documented fix — `getSession()` returns a
+STORED-but-expired token and does not refresh (`auth-token.ts:164-177`), which
+is reproduced as a test, not a comment. `getToken` never throws (the seam's
+`null` already becomes a synthetic 401 at `core/http/auth.ts:176-178`), and no
+timer is created at construction.
+
+**Blocking deployment fact (spec §4), verified in this worktree:**
+`SUPABASE_ANON_KEY` is absent from `apps/api/.env`, `.env.dev`, `.env.prod` —
+present only in `.env.staging` — and `apps/api/src/config.ts` has no entry for
+it at all. Until it is set via `dotenvx set` per environment, the new route
+returns `503 auth_config_unavailable` there. Self-host already has it
+(`kortix-compose.yml:57` `env_file: .env`;
+`apps/cli/src/self-host/secrets-registry.ts:231`).
+
+**Non-goals (spec §5):** MFA, SAML/SSO, OAuth redirect handling beyond a PKCE
+URL builder + code exchange, `apps/web` cutover, cookie/SSR storage, password
+lifecycle beyond sign-in, phone/Web3/passkeys, a React hook, CORS widening,
+cross-tab sync on by default.
+
+**Open decisions (spec §8, need Jay):** `Access-Control-Allow-Origin: *` on this
+one route; whether to include `sso_enabled`; `apps/mobile` adoption.
+
+**Next session:** take task 1 of the §7 chain (`apps/api` config key + route +
+the mount-ordering guard test). TDD, RED first, gates pasted.
+
+---
 ### 2026-08-19 — session `claude/sdk-central` — boundary-close: public-share file reader + presentation metadata reader + `kortix.*` facade completion — DONE
 
 **Files:** `core/rest/platform-client/host-boundary.ts` (+5 exports) +
