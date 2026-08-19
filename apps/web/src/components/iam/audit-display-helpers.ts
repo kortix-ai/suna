@@ -595,6 +595,21 @@ const HTTP_PATTERNS: HttpPatternHandler[] = [
     }
     return null;
   },
+  // ── Role assignments + the permission catalog ────────────────────
+  // The canonical grant surface: ONE row per (principal, role, scope, object).
+  // It replaced the five endpoint families below, which stay mapped while they
+  // dual-write.
+  (m, s) => {
+    if (s[0] === 'accounts' && s[2] === 'iam' && s[3] === 'assignments') {
+      if (m === 'POST') return { title: 'Granted a role', kind: 'grant' };
+      if (m === 'DELETE') return { title: 'Revoked a role assignment', kind: 'revoke' };
+      if (m === 'GET') return { title: 'Listed role assignments', kind: 'read' };
+    }
+    if (s[0] === 'accounts' && s[2] === 'iam' && s[3] === 'permissions' && m === 'GET') {
+      return { title: 'Listed the permission catalog', kind: 'read' };
+    }
+    return null;
+  },
   // ── IAM policies (bare /iam/policies endpoints) ──────────────────
   // Fallback for rows logged as the raw HTTP path rather than a specific
   // iam.policy.* code (e.g. applying a policy template, or older rows from

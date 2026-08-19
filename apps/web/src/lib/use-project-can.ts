@@ -1,31 +1,23 @@
 'use client';
 
 /**
- * useProjectCan — per-action capability gating for a PROJECT, for the current
- * user. The project analogue of `usePermission`: instead of branching on the
- * coarse `effective_project_role === 'manager'` label, it probes the IAM engine
- * for the exact leaf action a route asserts (e.g. project.gitops.push), so a
- * custom role that DEACTIVATES one capability is reflected in the UI precisely.
+ * Project-scoped capability gating. The implementation is `useCan` /`useCans`
+ * in `@kortix/sdk/react`; this module keeps the two legacy names the app already
+ * calls, bound to the web auth provider.
  *
- * Rides the existing `usePermission`/`usePermissions` probe (no new endpoint):
- * a project-scoped probe `{ action, resourceType: 'project', resourceId }`.
- * The accountId the probe needs is resolved from the shared react-query cache of
- * the project itself (`qk.project.summary(projectId)`), so callers pass only
- * projectId.
- *
- * NOT a security boundary — the API re-checks every mutating route via
- * assertProjectCapability. This only decides what to show/enable. Probes are
- * cached 5min with no revoke-invalidation, so a just-changed role may lag until
- * the cache expires (consistent with usePermission).
+ * `useCan({ projectId }, action)` is the canonical spelling. It resolves the
+ * owning account from the shared project cache, so callers pass only a project
+ * id; pass `accountId` when you already hold it and the probe fires on the first
+ * render instead of after a second fetch.
  */
 
 import type { PermissionProbeInput, PermissionProbeTarget } from '@/lib/iam-client';
-import { usePermission, usePermissions, type UsePermissionResult } from '@/lib/use-permission';
-import { getProject } from '@kortix/sdk';
-import { contract, qk } from '@kortix/sdk/react';
-import { useQuery } from '@tanstack/react-query';
-import { useMemo } from 'react';
+import { useCan, useCans, type CanResult } from '@/lib/use-permission';
 
+export type { CanResult };
+
+/** The probe target for one project. Exported for callers that build a probe
+ *  list by hand (the member-capability panels). */
 export function projectPermissionTarget(
   projectId: string | undefined,
 ): Extract<PermissionProbeTarget, { resourceType: 'project' }> | undefined {
@@ -33,6 +25,7 @@ export function projectPermissionTarget(
   return { resourceType: 'project', resourceId: projectId };
 }
 
+/** N actions against one project, as a probe list. */
 export function projectPermissionProbes(
   projectId: string | undefined,
   actions: readonly string[],
@@ -41,85 +34,21 @@ export function projectPermissionProbes(
   return target ? actions.map((action) => ({ action, ...target })) : [];
 }
 
-/**
- * Resolve the owning account id. Callers that already hold it (e.g. a screen
- * that loaded the project under a DIFFERENT query key like qk.project.detail(id))
- * should pass `accountIdHint` — that skips the extra getProject round-trip AND,
- * more importantly, lets the IAM probe run on the FIRST render instead of being
- * disabled while a second fetch resolves. Without the hint we fall back to the
- * shared qk.project.summary(projectId) cache.
- */
-function useProjectAccountId(
-  projectId: string | undefined,
-  accountIdHint?: string,
-): string | undefined {
-  const { data } = useQuery({
-    queryKey: qk.project.summary(projectId ?? ''),
-    queryFn: () => getProject(projectId!),
-    // Don't even fire the query when the caller already handed us the account.
-    enabled: !!projectId && !accountIdHint,
-    ...contract('config'),
-  });
-  return projectId ? (accountIdHint ?? data?.account_id) : undefined;
-}
-
-/**
- * Coerce a probe result to "still loading" while the prerequisite accountId is
- * unresolved. A react-query query that is DISABLED (here: because accountId is
- * not known yet) reports `isLoading === false` in v5 — so a naive caller would
- * see `allowed:false, isLoading:false` and wrongly conclude "denied". Treating
- * the unresolved window as loading keeps the hide-by-default / optimistic-while-
- * loading contract intact.
- */
-function pendingWhileUnresolved(
-  result: UsePermissionResult,
-  resolved: boolean,
-): UsePermissionResult {
-  return resolved ? result : { allowed: false, reason: null, isLoading: true, isError: false };
-}
-
-/** Can the current user perform `action` on this project? Defaults to
- *  `allowed: false` (with `isLoading: true`) until the project/probe resolves. */
+/** Can the current user perform `action` on this project? */
 export function useProjectCan(
   projectId: string | undefined,
   action: string,
   options?: { accountId?: string },
-): UsePermissionResult {
-  const accountId = useProjectAccountId(projectId, options?.accountId);
-  const target = projectPermissionTarget(projectId);
-  const resolved = !!accountId && !!target;
-  const result = usePermission(resolved ? accountId : undefined, action, target);
-  return pendingWhileUnresolved(result, resolved);
+): CanResult {
+  return useCan({ projectId, accountId: options?.accountId }, action);
 }
 
-/**
- * Batch variant — one HTTP roundtrip for N project actions. Returns a map keyed
- * by action string so callers read `caps[ACTION].allowed`. Use this to gate a
- * whole screen (e.g. every customize rail item) in a single probe instead of
- * N hooks.
- *
- * `actions` MUST be stable across renders (declare module-level or wrap in
- * useMemo) — the query keys on the action list.
- */
+/** Batch variant — one roundtrip, answers keyed by action. `actions` must be
+ *  stable across renders. */
 export function useProjectCans(
   projectId: string | undefined,
   actions: readonly string[],
   options?: { accountId?: string },
-): Record<string, UsePermissionResult> {
-  const accountId = useProjectAccountId(projectId, options?.accountId);
-  const resolved = !!accountId && !!projectId;
-  const probes = useMemo<PermissionProbeInput[]>(
-    () => projectPermissionProbes(projectId, actions),
-    [actions, projectId],
-  );
-  const results = usePermissions(resolved ? accountId : undefined, probes);
-  return useMemo(() => {
-    const map: Record<string, UsePermissionResult> = {};
-    actions.forEach((action, i) => {
-      // Until accountId resolves the probe is disabled (isLoading:false in v5);
-      // report it as loading so callers keep their optimistic-while-loading path.
-      map[action] = pendingWhileUnresolved(results[i], resolved);
-    });
-    return map;
-  }, [actions, results, resolved]);
+): Record<string, CanResult> {
+  return useCans({ projectId, accountId: options?.accountId }, actions);
 }

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import { mockIamMembershipSyncNoop } from './helpers/iam-mocks';
+import { mockIamMembershipSyncNoop, mockIamReadModels } from './helpers/iam-mocks';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import {
@@ -104,6 +104,25 @@ function resetState() {
 // The engine module itself is the seam now — `../iam` re-exports it, and every
 // route calls it with the structured `Actor`. Mirror the role gate against the
 // test's mocked membership rows so viewer/non-member denial is still exercised.
+// The read models project from THIS suite's own row state — `account_members`
+// and `project_members` are what its db shim models, and the mirror trigger is
+// what would have derived the assignments from them on a real database.
+mockIamReadModels({
+  members: () =>
+    dbState.accountMemberRows.map((r) => ({
+      userId: r.userId,
+      accountId: r.accountId,
+      accountRole: r.accountRole,
+    })),
+  projectMembers: () =>
+    dbState.projectMemberRows.map((r) => ({
+      userId: r.userId,
+      accountId: ACCOUNT_ID,
+      projectId: r.projectId,
+      projectRole: r.projectRole,
+    })),
+});
+
 mock.module('../iam/authorize', () => {
   const isManager = (userId: string): boolean => {
     const am = dbState.accountMemberRows.find((r) => r.userId === userId && r.accountId === ACCOUNT_ID);
@@ -149,6 +168,12 @@ mock.module('../iam/authorize', () => {
       _t: string,
       ids: readonly string[],
     ) => [...ids],
+    // `mock.module` replaces the module wholesale: agent-access imports this
+    // memo for its candidate list, so a stub that omits it is a SyntaxError
+    // in every other importer. Empty = this project scopes no agent.
+    loadObjectGrants: Object.assign(async () => new Map(), { clear: () => {} }),
+    clearAuthorizeCaches: () => {},
+    isImplicitManager: (key: string | null) => key === 'owner' || key === 'admin',
   };
 });
 

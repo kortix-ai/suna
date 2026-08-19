@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
+import { mockIamReadModels } from './helpers/iam-mocks';
 import { accountInvitations, accountMembers, accounts, projectMembers, projects } from '@kortix/db';
 
 const OWNER_ID = '00000000-0000-4000-a000-000000000001';
@@ -242,6 +243,11 @@ function upsertInvite(values: any, set?: Record<string, unknown>) {
   return invite;
 }
 
+// The read models project from THIS suite's member rows — see mockIamReadModels.
+mockIamReadModels({
+  members: () => memberRows.map((m) => ({ userId: m.userId, accountId: m.accountId, accountRole: m.accountRole })),
+});
+
 // The engine module itself is the seam now — `../iam` re-exports it, and the
 // route layer calls it with the structured `Actor` the auth middleware built.
 mock.module('../iam/authorize', () => {
@@ -270,6 +276,12 @@ mock.module('../iam/authorize', () => {
       _t: string,
       ids: readonly string[],
     ) => [...ids],
+    // `mock.module` replaces the module wholesale: agent-access imports this
+    // memo for its candidate list, so a stub that omits it is a SyntaxError
+    // in every other importer. Empty = this project scopes no agent.
+    loadObjectGrants: Object.assign(async () => new Map(), { clear: () => {} }),
+    clearAuthorizeCaches: () => {},
+    isImplicitManager: (key: string | null) => key === 'owner' || key === 'admin',
   };
 });
 

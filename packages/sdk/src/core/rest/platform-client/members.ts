@@ -1,130 +1,20 @@
 /**
- * Platform API client — sandbox members, scopes, and legacy project ACL access.
+ * Platform API client — the project ACL that lives INSIDE a sandbox.
+ *
+ * The nine `*SandboxMember*` / `*SandboxScope*` exports that used to sit above
+ * this comment were deleted with the canonical-RBAC refactor. They had thrown
+ * on every call since the `sandbox_members` store was retired (0 rows), and
+ * were kept only so the public-surface snapshot would not move. Carrying nine
+ * functions and five types that cannot succeed is worse than one breaking
+ * change: it advertises a capability the platform does not have. Access to a
+ * project-session sandbox is the project's own access — see
+ * `createAssignment` / `listAssignments` in `projects-client/assignments.ts`.
  */
 
 import { authenticatedFetch } from '../../http/auth';
 import { stripTrailingSlashes } from '../../../platform/strings';
 import type { SandboxInfo } from './types';
 import { getSandboxUrl } from './urls';
-
-// ─── Sandbox members (team access) ───────────────────────────────────────────
-
-export type SandboxMemberRole = 'owner' | 'admin' | 'member';
-
-export interface SandboxMember {
-  user_id: string;
-  email: string | null;
-  role: SandboxMemberRole | null;
-  added_by: string | null;
-  added_at: string;
-  monthly_spend_cap_cents?: number | null;
-  current_period_cents?: number;
-}
-
-export interface SandboxPendingInvite {
-  invite_id: string;
-  email: string;
-  role: 'admin' | 'member';
-  invited_by: string | null;
-  created_at: string;
-  expires_at: string;
-}
-
-export interface SandboxMembersResponse {
-  sandbox_id: string;
-  can_manage: boolean;
-  viewer_user_id: string;
-  members: SandboxMember[];
-  pending_invites: SandboxPendingInvite[];
-}
-
-export interface AddSandboxMemberResult {
-  status: 'added' | 'invited';
-  user_id?: string;
-  email?: string;
-  role?: 'admin' | 'member';
-}
-
-export async function listSandboxMembers(sandboxId: string): Promise<SandboxMembersResponse> {
-  throw new Error('Sandbox members moved to project access; use project members for project-session sandboxes');
-}
-
-export async function addSandboxMember(
-  sandboxId: string,
-  email: string,
-  role: 'admin' | 'member' = 'member',
-): Promise<AddSandboxMemberResult> {
-  throw new Error('Sandbox members moved to project access; invite the user to the project instead');
-}
-
-export async function removeSandboxMember(sandboxId: string, userId: string): Promise<void> {
-  throw new Error('Sandbox members moved to project access; update project access instead');
-}
-
-export async function updateSandboxMemberRole(
-  sandboxId: string,
-  userId: string,
-  role: SandboxMemberRole,
-): Promise<void> {
-  throw new Error('Sandbox members moved to project access; update project access instead');
-}
-
-export async function updateSandboxMemberSpendCap(
-  sandboxId: string,
-  userId: string,
-  capCents: number | null,
-): Promise<void> {
-  throw new Error('Sandbox member spend caps are not exposed for project-session sandboxes');
-}
-
-export type ScopeEffect = 'grant' | 'revoke' | null;
-
-export interface SandboxScopeCatalogEntry {
-  scope: string;
-  label: string;
-  description: string;
-  group: string;
-}
-
-export interface SandboxMemberScopes {
-  sandbox_id: string;
-  user_id: string;
-  role: 'owner' | 'admin' | 'member' | null;
-  inherited: string[];
-  grants: string[];
-  revokes: string[];
-  effective: string[];
-  catalog: SandboxScopeCatalogEntry[];
-  groups: Record<string, string[]>;
-}
-
-export interface SandboxViewerScopes {
-  sandbox_id: string;
-  role: 'owner' | 'admin' | 'member' | null;
-  scopes: string[];
-}
-
-export async function getViewerSandboxScopes(
-  sandboxId: string,
-): Promise<SandboxViewerScopes> {
-  throw new Error('Sandbox scopes moved to project access for project-session sandboxes');
-}
-
-export async function getSandboxMemberScopes(
-  sandboxId: string,
-  userId: string,
-): Promise<SandboxMemberScopes> {
-  throw new Error('Sandbox scopes moved to project access for project-session sandboxes');
-}
-
-export async function updateSandboxMemberScope(
-  sandboxId: string,
-  userId: string,
-  scope: string,
-  effect: ScopeEffect,
-): Promise<void> {
-  throw new Error('Sandbox scopes moved to project access for project-session sandboxes');
-}
 
 // ─── Legacy project ACL inside a sandbox ─────────────────────────────────────
 //
@@ -202,6 +92,3 @@ export async function revokeSandboxProjectAccess(
   );
 }
 
-export async function revokeSandboxInvite(sandboxId: string, inviteId: string): Promise<void> {
-  throw new Error('Sandbox invites moved to project access for project-session sandboxes');
-}

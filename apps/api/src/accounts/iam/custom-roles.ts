@@ -12,7 +12,21 @@ import { iamPolicies, iamRoleActions, iamRoles, projects, serviceAccounts, accou
 import { json, errors, auth } from '../../openapi';
 import { db } from '../../shared/db';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
+import { loadSystemRoles } from '../../iam/catalog';
+import { countRoleBindings } from '../../iam/read-models';
 import { actorOf } from '../../iam/actor';
+import {
+  assignRole,
+  revokeAssignment,
+  updateAssignment,
+  type AssignmentRow,
+} from '../../iam/assignments';
+import type { ScopeType } from '../../iam/catalog';
+import {
+  customRoleBindings,
+  legacyToCanonicalPrincipal,
+  type CustomRoleBinding,
+} from '../../iam/read-models';
 import {
   invalidateIamCacheForPolicyPrincipal,
   invalidateIamCacheForRole,
@@ -21,26 +35,93 @@ import { iamRouter, AccountIdParam } from './app';
 import { auditIam, isUniqueViolation, readBody, requireEntitlement } from './helpers';
 import { listAgentServiceAccounts, ensureAgentServiceAccount } from '../../repositories/service-accounts';
 import { loadConfigWithFiles } from '../../projects/lib/project-resources';
-import {
-  ACTION_CATALOG_WIRE,
-  BUILTIN_BY_ID,
-  BUILTIN_PRESETS,
-  validateActions,
-  type BuiltinPreset,
-} from './role-presets';
+import { ACTION_CATALOG_WIRE, validateActions } from './role-presets';
 
 // ─── Serializers (match iam-client.ts wire shapes exactly) ──────────────────
 
-function serializeBuiltinRole(p: BuiltinPreset) {
+/**
+ * The stable WIRE ID of a seeded system role.
+ *
+ * `builtin:<key>`, not the row's uuid: published clients hold these ids, and
+ * `isSystemRoleId` is what makes "built-in roles cannot be edited, deleted or
+ * bound as a policy" a 400 instead of a 404.
+ *
+ * ONE alias, and it is an id alias only: the project floor role's key in the
+ * store is `member`, but `builtin:member` was already taken by the ACCOUNT
+ * floor role, so the project one keeps the id `builtin:user` it has always had.
+ * The `key` FIELD carries the store's key (`member`), which is what makes it
+ * usable as `role_key` on `POST /iam/assignments` — the round-trip that was
+ * broken while this list was built from a code constant.
+ */
+function systemRoleWireId(scopeType: string, key: string): string {
+  return scopeType === 'project' && key === 'member' ? 'builtin:user' : `builtin:${key}`;
+}
+
+/** Is this a seeded system role's wire id? Answered from the DB, not a constant. */
+async function isSystemRoleId(roleId: string): Promise<boolean> {
+  return (await systemRoleByWireId(roleId)) !== null;
+}
+
+function serializeSystemRole(r: {
+  key: string;
+  name: string;
+  description: string | null;
+  scopeType: string;
+}) {
   return {
-    role_id: `builtin:${p.key}`,
-    key: p.key,
-    name: p.name,
-    description: p.description,
-    resource_type: p.resourceType,
+    role_id: systemRoleWireId(r.scopeType, r.key),
+    key: r.key,
+    name: r.name,
+    description: r.description,
+    resource_type: (r.scopeType === 'account' ? 'account' : 'project') as 'account' | 'project',
     is_system: true,
     account_id: null as string | null,
   };
+}
+
+/** The render order the role editor has always used. */
+const SYSTEM_ROLE_ORDER = [
+  'project:manager',
+  'project:member',
+  'account:owner',
+  'account:admin',
+  'account:member',
+  'project:agent-user',
+];
+
+/**
+ * EVERY seeded system role, from `kortix.iam_roles` (account_id IS NULL).
+ *
+ * Including `agent-user`, which carries zero permissions and exists only so an
+ * object assignment has a role to point at. It is listed because it IS a system
+ * role and the guards below have to recognise it — omitting it made
+ * `PATCH /iam/roles/builtin:agent-user` answer "role not found" instead of
+ * "built-in roles cannot be edited".
+ */
+async function listSystemRolesWithDescription() {
+  const rows = await db
+    .select({
+      key: iamRoles.key,
+      name: iamRoles.name,
+      description: iamRoles.description,
+      scopeType: iamRoles.scopeType,
+    })
+    .from(iamRoles)
+    .where(isNull(iamRoles.accountId));
+  const rank = (r: { scopeType: string; key: string }) => {
+    const i = SYSTEM_ROLE_ORDER.indexOf(`${r.scopeType}:${r.key}`);
+    return i === -1 ? SYSTEM_ROLE_ORDER.length : i;
+  };
+  return rows.sort((a, b) => rank(a) - rank(b) || a.key.localeCompare(b.key));
+}
+
+/** The seeded role a wire id names, with its action set from `role_permissions`. */
+async function systemRoleByWireId(wireId: string) {
+  const roles = await loadSystemRoles();
+  for (const role of roles.byId.values()) {
+    if (systemRoleWireId(role.scopeType, role.key) === wireId) return role;
+  }
+  return null;
 }
 
 function serializeCustomRole(r: typeof iamRoles.$inferSelect) {
@@ -55,23 +136,71 @@ function serializeCustomRole(r: typeof iamRoles.$inferSelect) {
   };
 }
 
-// v1 is allow-only with no conditions: every persisted policy is an unconditional
-// allow. We surface effect/conditions so the pre-built UI renders, but only
-// 'allow' / {} are accepted on write.
-function serializePolicy(p: typeof iamPolicies.$inferSelect) {
+// Allow-only with no conditions: every binding is an unconditional allow. We
+// surface effect/conditions so the pre-built UI renders, but only 'allow' / {}
+// are accepted on write.
+//
+// `policy_id` is the ASSIGNMENT id. `iam_policies.policy_id` is not on the wire
+// any more — the assignment is the row that exists — and DELETE/PATCH accept
+// either id so a client holding a pre-cutover one still works.
+function serializeBinding(b: CustomRoleBinding) {
   return {
-    policy_id: p.policyId,
-    principal_type: p.principalType,
-    principal_id: p.principalId,
-    scope_type: p.scopeType,
-    scope_id: p.scopeId,
-    role_id: p.roleId,
+    policy_id: b.policyId,
+    principal_type: b.principalType,
+    principal_id: b.principalId,
+    scope_type: b.scopeType,
+    scope_id: b.scopeId,
+    role_id: b.roleId,
     effect: 'allow' as const,
     conditions: {},
-    expires_at: p.expiresAt ? p.expiresAt.toISOString() : null,
-    created_by: p.grantedBy,
-    created_at: p.createdAt.toISOString(),
+    expires_at: b.expiresAt ? b.expiresAt.toISOString() : null,
+    created_by: b.grantedBy,
+    created_at: b.createdAt.toISOString(),
   };
+}
+
+/** The same wire shape, straight off an `assignRole` result. */
+function serializeAssignment(row: AssignmentRow) {
+  return {
+    policy_id: row.assignmentId,
+    principal_type:
+      row.principalType === 'user'
+        ? 'member'
+        : row.principalType === 'service_account'
+          ? 'token'
+          : row.principalType,
+    principal_id: row.principalId,
+    scope_type: row.scopeType,
+    scope_id: row.scopeId,
+    role_id: row.roleId,
+    effect: 'allow' as const,
+    conditions: {},
+    expires_at: row.expiresAt ? row.expiresAt.toISOString() : null,
+    created_by: row.grantedBy,
+    created_at: row.createdAt.toISOString(),
+  };
+}
+
+/**
+ * Resolve an id the client sent to the binding it names.
+ *
+ * Two eras of id reach these routes: an `iam_policies.policy_id` from a
+ * pre-cutover response, and an assignment id from every response since. Both
+ * revoke the same access, and both paths remove BOTH rows — the legacy delete
+ * through the mirror trigger, the canonical one through `revokeAssignment`.
+ */
+async function resolveBindingId(
+  accountId: string,
+  id: string,
+): Promise<{ kind: 'legacy'; row: typeof iamPolicies.$inferSelect } | { kind: 'assignment'; row: CustomRoleBinding } | null> {
+  const [legacy] = await db
+    .select()
+    .from(iamPolicies)
+    .where(and(eq(iamPolicies.policyId, id), eq(iamPolicies.accountId, accountId)))
+    .limit(1);
+  if (legacy) return { kind: 'legacy', row: legacy };
+  const [binding] = (await customRoleBindings({ accountId })).filter((b) => b.policyId === id);
+  return binding ? { kind: 'assignment', row: binding } : null;
 }
 
 const Any = z.any();
@@ -123,9 +252,15 @@ iamRouter.openapi(
     const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ROLE_READ);
-    const custom = await db.select().from(iamRoles).where(eq(iamRoles.accountId, accountId));
+    // Both halves from `kortix.iam_roles`: the seeded system rows (account_id
+    // IS NULL) and this account's own. `is_system` is the column, not a
+    // hardcoded `true` beside a code constant that could drift from the seed.
+    const [system, custom] = await Promise.all([
+      listSystemRolesWithDescription(),
+      db.select().from(iamRoles).where(eq(iamRoles.accountId, accountId)),
+    ]);
     return c.json({
-      roles: [...BUILTIN_PRESETS.map(serializeBuiltinRole), ...custom.map(serializeCustomRole)],
+      roles: [...system.map(serializeSystemRole), ...custom.map(serializeCustomRole)],
     });
   },
 );
@@ -205,7 +340,7 @@ iamRouter.openapi(
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ROLE_UPDATE);
     const denied = await requireEntitlement(c, accountId, 'rbac');
     if (denied) return denied;
-    if (BUILTIN_BY_ID.has(roleId)) return c.json({ error: 'built-in roles cannot be edited' }, 400);
+    if (await isSystemRoleId(roleId)) return c.json({ error: 'built-in roles cannot be edited' }, 400);
     const role = await loadCustomRole(accountId, roleId);
     if (!role) return c.json({ error: 'role not found' }, 404);
 
@@ -244,7 +379,7 @@ iamRouter.openapi(
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ROLE_DELETE);
     // No entitlement gate: deleting a role is cleanup — a downgraded account
     // must always be able to remove custom roles it can no longer manage.
-    if (BUILTIN_BY_ID.has(roleId)) return c.json({ error: 'built-in roles cannot be deleted' }, 400);
+    if (await isSystemRoleId(roleId)) return c.json({ error: 'built-in roles cannot be deleted' }, 400);
     const role = await loadCustomRole(accountId, roleId);
     if (!role) return c.json({ error: 'role not found' }, 404);
 
@@ -279,8 +414,18 @@ iamRouter.openapi(
     const roleId = c.req.param('roleId');
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ROLE_READ);
 
-    const builtin = BUILTIN_BY_ID.get(roleId);
-    if (builtin) return c.json({ role_id: roleId, key: builtin.key, actions: [...builtin.actions] });
+    if (await isSystemRoleId(roleId)) {
+      // From `role_permissions`, not from the code preset: the seed is the
+      // source of truth for what a system role grants, and the engine expands
+      // the same rows.
+      const system = await systemRoleByWireId(roleId);
+      if (!system) return c.json({ error: 'role not found' }, 404);
+      return c.json({
+        role_id: roleId,
+        key: system.key,
+        actions: [...system.actions].sort(),
+      });
+    }
 
     const role = await loadCustomRole(accountId, roleId);
     if (!role) return c.json({ error: 'role not found' }, 404);
@@ -306,7 +451,7 @@ iamRouter.openapi(
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ROLE_UPDATE);
     const denied = await requireEntitlement(c, accountId, 'rbac');
     if (denied) return denied;
-    if (BUILTIN_BY_ID.has(roleId)) return c.json({ error: 'built-in role permissions are fixed' }, 400);
+    if (await isSystemRoleId(roleId)) return c.json({ error: 'built-in role permissions are fixed' }, 400);
     const role = await loadCustomRole(accountId, roleId);
     if (!role) return c.json({ error: 'role not found' }, 404);
 
@@ -350,13 +495,8 @@ iamRouter.openapi(
     const accountId = c.req.param('accountId');
     const roleId = c.req.param('roleId');
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ROLE_READ);
-    if (BUILTIN_BY_ID.has(roleId)) return c.json({ role_id: roleId, policy_count: 0 });
-    const [row] = await db
-      .select({ n: sql<number>`count(*)::int` })
-      .from(iamPolicies)
-      .where(and(eq(iamPolicies.roleId, roleId), eq(iamPolicies.accountId, accountId)))
-      .limit(1);
-    return c.json({ role_id: roleId, policy_count: Number(row?.n ?? 0) });
+    if (await isSystemRoleId(roleId)) return c.json({ role_id: roleId, policy_count: 0 });
+    return c.json({ role_id: roleId, policy_count: await countRoleBindings(accountId, roleId) });
   },
 );
 
@@ -377,19 +517,25 @@ iamRouter.openapi(
     const accountId = c.req.param('accountId');
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.POLICY_READ);
 
-    const conds = [eq(iamPolicies.accountId, accountId)];
     const pt = c.req.query('principalType');
     const pid = c.req.query('principalId');
     const st = c.req.query('scopeType');
     const sid = c.req.query('scopeId');
-    if (pt) conds.push(eq(iamPolicies.principalType, pt));
-    if (pid) conds.push(eq(iamPolicies.principalId, pid));
-    if (st) conds.push(eq(iamPolicies.scopeType, st));
-    if (sid === 'null') conds.push(isNull(iamPolicies.scopeId));
-    else if (sid) conds.push(eq(iamPolicies.scopeId, sid));
+    // An unknown principalType selects nothing, exactly as an equality filter
+    // on the old column did.
+    if (pt && pt !== 'member' && pt !== 'group' && pt !== 'token') {
+      return c.json({ policies: [] });
+    }
+    if (st && st !== 'account' && st !== 'project') return c.json({ policies: [] });
 
-    const rows = await db.select().from(iamPolicies).where(and(...conds));
-    return c.json({ policies: rows.map(serializePolicy) });
+    const rows = await customRoleBindings({
+      accountId,
+      ...(pt ? { principalType: pt as 'member' | 'group' | 'token' } : {}),
+      ...(pid ? { principalId: pid } : {}),
+      ...(st ? { scopeType: st as ScopeType } : {}),
+      ...(sid === 'null' ? { scopeId: null } : sid ? { scopeId: sid } : {}),
+    });
+    return c.json({ policies: rows.map(serializeBinding) });
   },
 );
 
@@ -488,25 +634,38 @@ iamRouter.openapi(
     const parsed = await parsePolicyInput(accountId, body);
     if (!parsed.ok) return c.json({ error: parsed.error }, parsed.status);
 
-    const [row] = await db
-      .insert(iamPolicies)
-      .values({
-        accountId,
-        principalType: parsed.value.principalType,
-        principalId: parsed.value.principalId,
-        roleId: parsed.value.roleId,
-        scopeType: parsed.value.scopeType,
-        scopeId: parsed.value.scopeId,
-        expiresAt: parsed.value.expiresAt,
-        grantedBy: userId,
-      })
-      .returning();
+    await db.insert(iamPolicies).values({
+      accountId,
+      principalType: parsed.value.principalType,
+      principalId: parsed.value.principalId,
+      roleId: parsed.value.roleId,
+      scopeType: parsed.value.scopeType,
+      scopeId: parsed.value.scopeId,
+      expiresAt: parsed.value.expiresAt,
+      grantedBy: userId,
+    });
+    // …and the canonical binding, through the ONE write path: it enforces the
+    // delegability ceiling (a role carrying a non-delegable action can no
+    // longer be BOUND, not just created), busts the caches, and emits the
+    // single `iam.assignment.granted` event. The mirror trigger already wrote
+    // the same identity inside the INSERT above, so the upsert here produces
+    // one row, not two.
+    const assignment = await assignRole(await actorOf(c, accountId), accountId, {
+      principal: {
+        type: legacyToCanonicalPrincipal(parsed.value.principalType)!,
+        id: parsed.value.principalId,
+      },
+      roleId: parsed.value.roleId,
+      scope: { type: parsed.value.scopeType as ScopeType, id: parsed.value.scopeId },
+      expiresAt: parsed.value.expiresAt,
+      source: 'manual',
+    });
     await invalidateIamCacheForPolicyPrincipal(parsed.value.principalType, parsed.value.principalId);
     await auditIam(c, {
       accountId,
       action: 'iam.policy.create',
       resourceType: 'account',
-      resourceId: row!.policyId,
+      resourceId: assignment.assignmentId,
       after: {
         principal_type: parsed.value.principalType,
         principal_id: parsed.value.principalId,
@@ -515,7 +674,7 @@ iamRouter.openapi(
         scope_id: parsed.value.scopeId,
       },
     });
-    return c.json(serializePolicy(row!), 201);
+    return c.json(serializeAssignment(assignment), 201);
   },
 );
 
@@ -536,18 +695,40 @@ iamRouter.openapi(
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.POLICY_DELETE);
     // No entitlement gate: revoking a policy binding is cleanup, always allowed.
 
-    const [row] = await db
-      .delete(iamPolicies)
-      .where(and(eq(iamPolicies.policyId, policyId), eq(iamPolicies.accountId, accountId)))
-      .returning();
-    if (!row) return c.json({ error: 'policy not found' }, 404);
-    await invalidateIamCacheForPolicyPrincipal(row.principalType, row.principalId);
+    const target = await resolveBindingId(accountId, policyId);
+    if (!target) return c.json({ error: 'policy not found' }, 404);
+    const before =
+      target.kind === 'legacy'
+        ? {
+            principal_type: target.row.principalType,
+            principal_id: target.row.principalId,
+            role_id: target.row.roleId,
+          }
+        : {
+            principal_type: target.row.principalType,
+            principal_id: target.row.principalId,
+            role_id: target.row.roleId,
+          };
+    if (target.kind === 'legacy') {
+      // The mirror trigger drops the canonical row inside this statement.
+      await db
+        .delete(iamPolicies)
+        .where(and(eq(iamPolicies.policyId, policyId), eq(iamPolicies.accountId, accountId)));
+    } else {
+      // The route asserted policy.delete; `revokeAssignment` would otherwise
+      // re-derive policy.create for a custom role. It removes the legacy row in
+      // the same transaction, so a pre-cutover replica cannot resurrect it.
+      await revokeAssignment(await actorOf(c, accountId), accountId, policyId, {
+        skipWriterAuthz: true,
+      });
+    }
+    await invalidateIamCacheForPolicyPrincipal(before.principal_type, before.principal_id);
     await auditIam(c, {
       accountId,
       action: 'iam.policy.delete',
       resourceType: 'account',
       resourceId: policyId,
-      before: { principal_type: row.principalType, principal_id: row.principalId, role_id: row.roleId },
+      before,
     });
     return c.json({ deleted: true });
   },
@@ -571,12 +752,27 @@ iamRouter.openapi(
     const body = await readBody(c);
     const ids = Array.isArray(body.policy_ids) ? body.policy_ids.filter((x: unknown): x is string => typeof x === 'string') : [];
     if (ids.length === 0) return c.json({ deleted: 0 });
-    const rows = await db
-      .delete(iamPolicies)
-      .where(and(eq(iamPolicies.accountId, accountId), inArray(iamPolicies.policyId, ids)))
-      .returning({ principalType: iamPolicies.principalType, principalId: iamPolicies.principalId });
-    for (const r of rows) await invalidateIamCacheForPolicyPrincipal(r.principalType, r.principalId);
-    return c.json({ deleted: rows.length });
+    // Ids of both eras can appear in one batch (a page rendered before the
+    // cutover, revoked after it), so each is resolved on its own.
+    const writer = await actorOf(c, accountId);
+    let deleted = 0;
+    for (const id of ids) {
+      const target = await resolveBindingId(accountId, id);
+      if (!target) continue;
+      if (target.kind === 'legacy') {
+        await db
+          .delete(iamPolicies)
+          .where(and(eq(iamPolicies.policyId, id), eq(iamPolicies.accountId, accountId)));
+      } else {
+        await revokeAssignment(writer, accountId, id, { skipWriterAuthz: true });
+      }
+      await invalidateIamCacheForPolicyPrincipal(
+        target.row.principalType,
+        target.row.principalId,
+      );
+      deleted++;
+    }
+    return c.json({ deleted });
   },
 );
 
@@ -599,12 +795,9 @@ iamRouter.openapi(
     const denied = await requireEntitlement(c, accountId, 'rbac');
     if (denied) return denied;
 
-    const [existing] = await db
-      .select()
-      .from(iamPolicies)
-      .where(and(eq(iamPolicies.policyId, policyId), eq(iamPolicies.accountId, accountId)))
-      .limit(1);
-    if (!existing) return c.json({ error: 'policy not found' }, 404);
+    const target = await resolveBindingId(accountId, policyId);
+    if (!target) return c.json({ error: 'policy not found' }, 404);
+    const existing = target.row;
 
     const body = await readBody(c);
     // Re-validate the scope/role/effect/expiry using the same rules as create,
@@ -623,26 +816,66 @@ iamRouter.openapi(
     );
     if (!parsed.ok) return c.json({ error: parsed.error }, parsed.status);
 
-    const [row] = await db
-      .update(iamPolicies)
-      .set({
-        roleId: parsed.value.roleId,
-        scopeType: parsed.value.scopeType,
-        scopeId: parsed.value.scopeId,
-        expiresAt: parsed.value.expiresAt,
-        updatedAt: new Date(),
-      })
-      .where(and(eq(iamPolicies.policyId, policyId), eq(iamPolicies.accountId, accountId)))
-      .returning();
+    // A binding's identity IS (principal, role, scope) — changing any of them
+    // is a different assignment, so the edit is a revoke plus a grant, not an
+    // in-place UPDATE of an immutable key. The legacy row is updated too while
+    // it still exists, so a pre-cutover replica sees the same change.
+    const writer = await actorOf(c, accountId);
+    let assignment: AssignmentRow;
+    if (target.kind === 'legacy') {
+      // The legacy row is still the one the mirror trigger derives from, so
+      // updating it re-points the canonical row for free.
+      const [row] = await db
+        .update(iamPolicies)
+        .set({
+          roleId: parsed.value.roleId,
+          scopeType: parsed.value.scopeType,
+          scopeId: parsed.value.scopeId,
+          expiresAt: parsed.value.expiresAt,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(iamPolicies.policyId, policyId), eq(iamPolicies.accountId, accountId)))
+        .returning();
+      await invalidateIamCacheForPolicyPrincipal(existing.principalType, existing.principalId);
+      await auditIam(c, {
+        accountId,
+        action: 'iam.policy.update',
+        resourceType: 'account',
+        resourceId: policyId,
+        after: { role_id: parsed.value.roleId, scope_type: parsed.value.scopeType, scope_id: parsed.value.scopeId },
+      });
+      return c.json(serializeBinding({
+        policyId: row!.policyId,
+        accountId,
+        principalType: row!.principalType as CustomRoleBinding['principalType'],
+        principalId: row!.principalId,
+        roleId: row!.roleId,
+        roleKey: '',
+        roleName: '',
+        scopeType: row!.scopeType as ScopeType,
+        scopeId: row!.scopeId,
+        expiresAt: row!.expiresAt,
+        grantedBy: row!.grantedBy,
+        createdAt: row!.createdAt,
+        updatedAt: row!.updatedAt ?? row!.createdAt,
+      }));
+    }
+    // An in-place re-point, NOT revoke+grant: the id is part of this route's
+    // contract, and a caller that PATCHes then DELETEs holds it.
+    assignment = await updateAssignment(writer, accountId, policyId, {
+      roleId: parsed.value.roleId,
+      scope: { type: parsed.value.scopeType as ScopeType, id: parsed.value.scopeId },
+      expiresAt: parsed.value.expiresAt,
+    });
     await invalidateIamCacheForPolicyPrincipal(existing.principalType, existing.principalId);
     await auditIam(c, {
       accountId,
       action: 'iam.policy.update',
       resourceType: 'account',
-      resourceId: policyId,
+      resourceId: assignment.assignmentId,
       after: { role_id: parsed.value.roleId, scope_type: parsed.value.scopeType, scope_id: parsed.value.scopeId },
     });
-    return c.json(serializePolicy(row!));
+    return c.json(serializeAssignment(assignment));
   },
 );
 
@@ -669,6 +902,7 @@ iamRouter.openapi(
     const customRoles = await db.select().from(iamRoles).where(eq(iamRoles.accountId, accountId));
     const roleIdByKey = new Map(customRoles.map((r) => [r.key, r.roleId]));
 
+    const importer = await actorOf(c, accountId);
     const result = { attempted: entries.length, created: 0, skipped: 0, errors: [] as Array<{ index: number; error: string }> };
     const bustedPrincipals: Array<{ t: string; id: string }> = [];
     for (let i = 0; i < entries.length; i++) {
@@ -707,6 +941,20 @@ iamRouter.openapi(
           scopeId: parsed.value.scopeId,
           expiresAt: parsed.value.expiresAt,
           grantedBy: userId,
+        });
+        // …and the canonical binding. This is also what makes the import
+        // idempotent: `assignRole` upserts on the assignment identity, where
+        // the legacy table has no unique constraint at all and re-importing the
+        // same file used to create duplicates.
+        await assignRole(importer, accountId, {
+          principal: {
+            type: legacyToCanonicalPrincipal(parsed.value.principalType)!,
+            id: parsed.value.principalId,
+          },
+          roleId: parsed.value.roleId,
+          scope: { type: parsed.value.scopeType as ScopeType, id: parsed.value.scopeId },
+          expiresAt: parsed.value.expiresAt,
+          source: 'manual',
         });
       } catch (err) {
         result.errors.push({ index: i, error: err instanceof Error ? err.message : 'insert failed' });
@@ -823,7 +1071,7 @@ async function parsePolicyInput(
 
   const roleId = typeof body.roleId === 'string' ? body.roleId : '';
   if (!roleId) return { ok: false, status: 400, error: 'roleId is required' };
-  if (BUILTIN_BY_ID.has(roleId)) {
+  if (await isSystemRoleId(roleId)) {
     return { ok: false, status: 400, error: 'built-in roles are assigned via project members/groups, not policies' };
   }
   const role = await loadCustomRole(accountId, roleId);

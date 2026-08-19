@@ -12,6 +12,84 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-19 — session `rbac-canonical` (P5) — BREAKING: the canonical assignment surface lands, the sandbox-member surface is deleted — DONE
+
+**Files:** `core/rest/projects-client/assignments.ts` + `assignments.test.ts`
+(NEW), `core/rest/projects-client/index.ts` (barrel), `core/client/kortix.ts`
+(`kortix.iam` namespace) + `kortix.test.ts` (+4 tests),
+`react/use-can.ts` + `use-can.test.ts` (NEW), `react/index.ts` (barrel),
+`core/rest/platform-client/members.ts` (−9 functions, −8 types) +
+`members.test.ts` + `index.test.ts`, both surface snapshots.
+
+**What.** The API replaced five grant stores (`account_members.account_role`,
+`project_members.project_role`, `project_group_grants`, `iam_policies`,
+`iam_resource_grants`) with ONE table, `role_assignments`, and one write path.
+This is the SDK half.
+
+1. **`assignments.ts`** — `listAssignments` / `createAssignment` /
+   `revokeAssignment` / `listPermissions` over
+   `GET|POST|DELETE /accounts/:id/iam/assignments` and
+   `GET /accounts/:id/iam/permissions`. Types: `RoleAssignment`, `Permission`,
+   `AssignmentInput`, `PrincipalRef`, `AssignmentPrincipalType`,
+   `AssignmentScopeType`, `AssignmentObjectType`, `AssignmentSource`,
+   `ListAssignmentsFilter`. A custom role is now ONE row — the old client had to
+   write a built-in baseline row and then a policy row, a two-store sequence
+   only the browser enforced.
+2. **`kortix.iam`** — the facade had NO iam namespace at all: a `createKortix()`
+   consumer could read a project's files through the object API but could not
+   answer "who can touch this account". Now `kortix.iam.{assignments, permissions,
+   roles, groups, agentIdentities, can, canBatch}`.
+3. **`react/use-can.ts`** — `useCan` / `useCans` / `usePermissionsFor` /
+   `invalidatePermissionProbes`, relocated from `apps/web/src/lib/`
+   (`use-permission.ts`, `use-project-can.ts`). The entire client-side
+   authorization layer was host-local, against the repo's "logic lives in the
+   SDK" rule, so every other host had no probe and fell back to reading a role
+   literal off a row.
+
+   `invalidatePermissionProbes(queryClient, { accountId, userId? })` is a
+   **cache contract, not a convenience**: probe verdicts are cached 5 minutes and
+   before this exactly ONE site in the whole product busted them
+   (`mfa-required-card.tsx`). Every assignment write calls it. A stale verdict is
+   a revoke that has not happened yet.
+
+**BREAKING — removed exports.** Nine functions and eight types went away:
+`listSandboxMembers`, `addSandboxMember`, `removeSandboxMember`,
+`updateSandboxMemberRole`, `updateSandboxMemberSpendCap`,
+`getViewerSandboxScopes`, `getSandboxMemberScopes`, `updateSandboxMemberScope`,
+`revokeSandboxInvite`; `SandboxMemberRole`, `SandboxMember`,
+`SandboxPendingInvite`, `SandboxMembersResponse`, `AddSandboxMemberResult`,
+`SandboxScopeCatalogEntry`, `SandboxMemberScopes`, `SandboxViewerScopes`,
+`ScopeEffect`.
+
+Every one of those functions `throw`s on the first line and has since the
+`sandbox_members` store was retired (0 rows in every environment). They were
+kept only so the surface snapshot would not move. **No alias is possible and
+none is wanted:** an alias preserves a call that cannot succeed. A consumer
+calling one today gets a runtime `Error`; after this they get a build error,
+which is the better failure. This is the alias-never-replace rule's stated
+exception — the name has no working replacement because the capability does not
+exist. Project-session sandbox access is the project's own access
+(`createAssignment` / `listAssignments`).
+
+`listSandboxProjectMembers` / `grantSandboxProjectAccess` /
+`revokeSandboxProjectAccess` are untouched — those are the kortix-master
+in-sandbox ACL and they work.
+
+**Gates.**
+
+```
+pnpm --filter @kortix/sdk typecheck   → clean
+pnpm --filter @kortix/sdk test        → 2307 pass, 2 skip, 0 fail, 158 files
+                                        (baseline before this change: 2283 / 2 / 0, 156 files)
+```
+
+Both snapshots regenerated with `UPDATE_SURFACE_SNAPSHOT=1` /
+`UPDATE_TYPE_SURFACE_SNAPSHOT=1` and the diff read line by line: +13 value names
+and +13 type names (additive), −9 value names and −8 type names (the deletion
+above, deliberate).
+
+---
+
 ### 2026-08-19 — session `member-model-picker` — the model picker is inert without an agent — DONE
 
 **Files:** `react/use-opencode-local.ts` (+ `use-opencode-local.test.ts`),

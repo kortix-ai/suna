@@ -45,9 +45,9 @@ export type OfferedProjectRole = 'member' | 'manager';
 export const PROJECT_ROLES_ASCENDING: OfferedProjectRole[] = ['member', 'manager'];
 
 /**
- * The lowest built-in role for a scope. A custom role is an ADDITIVE layer
- * on top of a built-in baseline, so choosing one sets the principal to this
- * role and then writes the `iam_policies` row.
+ * The lowest built-in role for a scope. A custom role is an ADDITIVE layer on
+ * top of a built-in baseline. It is now ONE assignment row of that role, not a
+ * built-in row plus a policy row — see `access-dialog.tsx`.
  */
 export const BUILTIN_BASELINE: { account: AccountRole; project: ProjectRole } = {
   account: 'member',

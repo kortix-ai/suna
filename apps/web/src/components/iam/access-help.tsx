@@ -72,25 +72,33 @@ export function AccessHelp({ accountId }: AccessHelpProps) {
     <div className="space-y-8">
       <Section
         title="The model"
-        description="Three things decide what someone can do: who they are, where, and with which role."
+        description="People, groups and agents get roles on an account, a project, or a single resource. A role is a set of permissions."
       >
         <div className={`${PANEL} divide-border divide-y`}>
           <div className="space-y-0.5 px-4 py-3">
             <p className="text-foreground text-sm font-medium">Principal</p>
             <p className="text-muted-foreground text-xs leading-relaxed">
-              A person, a group, or an email you invited that has not joined yet.
-            </p>
-          </div>
-          <div className="space-y-0.5 px-4 py-3">
-            <p className="text-foreground text-sm font-medium">Scope</p>
-            <p className="text-muted-foreground text-xs leading-relaxed">
-              The account, or one project. A group holds one role per project it is attached to.
+              A person, a group, an agent, or an email you invited that has not joined yet.
             </p>
           </div>
           <div className="space-y-0.5 px-4 py-3">
             <p className="text-foreground text-sm font-medium">Role</p>
             <p className="text-muted-foreground text-xs leading-relaxed">
-              Exactly one role per principal per scope — a built-in role or a custom one. Change it
+              A set of permissions. A permission is one action, like reading a secret or managing
+              members. Built-in roles cover the common sets; a custom role names its own.
+            </p>
+          </div>
+          <div className="space-y-0.5 px-4 py-3">
+            <p className="text-foreground text-sm font-medium">Scope</p>
+            <p className="text-muted-foreground text-xs leading-relaxed">
+              Where the role applies: the whole account, one project, or a single resource inside a
+              project — one agent, for example.
+            </p>
+          </div>
+          <div className="space-y-0.5 px-4 py-3">
+            <p className="text-foreground text-sm font-medium">Assignment</p>
+            <p className="text-muted-foreground text-xs leading-relaxed">
+              One principal, one role, one scope — one row. It can carry an expiry date. Change it
               from any row&apos;s Edit access.
             </p>
           </div>
@@ -131,8 +139,9 @@ export function AccessHelp({ accountId }: AccessHelpProps) {
             on a group, account-wide or on one project.
           </p>
           <p className="text-muted-foreground text-xs leading-relaxed">
-            A custom role is additive: the principal keeps the lowest built-in role for that scope,
-            and the custom role grants everything on top. Choosing a built-in role again removes it.
+            A custom role is additive and it is ONE assignment: the principal keeps whatever their
+            built-in role gives them, and the custom role grants everything on top. There is no
+            deny — a role can only ever add. Choosing a built-in role again removes it.
           </p>
           <Link
             href={`/accounts/${accountId}?tab=roles`}
@@ -159,9 +168,9 @@ export function AccessHelp({ accountId }: AccessHelpProps) {
       <Section title="Agents">
         <div className={`${PANEL} space-y-2 px-4 py-3`}>
           <p className="text-muted-foreground text-xs leading-relaxed">
-            Agents are a project resource, not a principal. Everyone with project access reaches all
-            of the project&apos;s agents by default; narrow that to a subset in Edit access under
-            Agents.
+            An agent is both. It is a resource you assign to people — narrow someone to a subset in
+            Edit access under Agents — and it is a principal in its own right: every agent has a
+            service-account identity that can hold roles like a person does.
           </p>
           <p className="text-muted-foreground text-xs leading-relaxed">
             Whoever can reach an agent also gets the agent&apos;s declared secrets and connectors to
@@ -173,8 +182,9 @@ export function AccessHelp({ accountId }: AccessHelpProps) {
             from anything on this page.
           </p>
           <p className="text-foreground text-xs leading-relaxed">
-            People get roles. Agents get Kortix CLI scopes in{' '}
-            <code className="text-foreground text-[11px]">kortix.yaml</code>. A session can only do
+            One vocabulary, two bindings. People, groups and agents get roles on an account, a
+            project, or a single resource. Agents additionally carry Kortix CLI scopes in{' '}
+            <code className="text-foreground text-[11px]">kortix.yaml</code>; a session can only do
             what both allow.
           </p>
         </div>

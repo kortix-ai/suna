@@ -1,4 +1,4 @@
-import { normalizeProjectRole } from '../../iam/role-perms';
+import { projectRoleGrants } from '../../iam/read-models';
 import { ACCOUNT_ACTIONS, PROJECT_ACTIONS, assertAuthorized, authorize, listAccessible } from '../../iam';
 import { actorOf } from '../../iam/actor';
 import { setContextField } from '../../lib/request-context';
@@ -21,7 +21,7 @@ import { buildProvisionContext, runProvision } from '../provision-core';
 import { loadProjectTriggers } from '../triggers';
 import { invalidateProjectMirror } from '../git';
 import { createRoute, z } from '@hono/zod-openapi';
-import { accountGithubInstallations, projectMembers, projects } from '@kortix/db';
+import { accountGithubInstallations, projects } from '@kortix/db';
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import { createHash } from 'node:crypto';
 import { enforceProjectQuota, loadProjectForUser, resolveProjectAccount, assertProjectCapability } from '../lib/access';
@@ -213,22 +213,15 @@ projectsApp.openapi(
 
   if (accessible.mode === 'none') return c.json([]);
 
-  // Build the project rows + per-row project_members metadata used by
-  // the UI to label effective_role. We still consult project_members
-  // because the IAM engine bridges it into authorize() but doesn't
-  // hand the per-row role back here — and the UI wants the original
-  // manager/member label, not just "allowed".
-  const grants = await db
-    .select({ projectId: projectMembers.projectId, projectRole: projectMembers.projectRole })
-    .from(projectMembers)
-    .where(and(
-      eq(projectMembers.accountId, scope.accountId),
-      eq(projectMembers.userId, scope.userId),
-    ));
-  const roleByProject = new Map(
-    // Fold retired stored values rather than casting — see normalizeProjectRole.
-    grants.map((g) => [g.projectId, normalizeProjectRole(g.projectRole)]),
-  );
+  // Build the project rows + the per-row role label the UI renders. The engine
+  // answers yes/no, not "at what tier", so the caller's own direct project
+  // assignments are read here — from `role_assignments`, the same store the
+  // verdict above came from.
+  const grants = await projectRoleGrants({
+    accountId: scope.accountId,
+    userId: scope.userId,
+  });
+  const roleByProject = new Map(grants.map((g) => [g.projectId, g.projectRole]));
 
   const baseWhere = and(
     eq(projects.accountId, scope.accountId),

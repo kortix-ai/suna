@@ -4,15 +4,11 @@
 import type { Context } from 'hono';
 import { createRoute, z } from '@hono/zod-openapi';
 import { json, errors, auth } from '../../openapi';
-import { and, eq, inArray, or } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import {
   accountGroupMembers,
   accountGroups,
   accountMembers,
-  iamPolicies,
-  iamRoles,
-  projectGroupGrants,
-  projectMembers,
   projects,
 } from '@kortix/db';
 import { db } from '../../shared/db';
@@ -28,6 +24,13 @@ import {
 import { actorForUser, actorOf, type Actor } from '../../iam/actor';
 import { resolveBatchProbes } from './batch-probes';
 import { listGroupsForMember } from '../../repositories/iam';
+import {
+  accountRoleFor,
+  customRoleBindings,
+  groupProjectGrants,
+  isAccountManagerRole,
+  projectRoleGrants,
+} from '../../iam/read-models';
 import {
   iamRouter,
   MemberParams,
@@ -232,10 +235,6 @@ iamRouter.openapi(
   type Role = 'manager' | 'member';
   const rank: Record<Role, number> = { member: 1, manager: 2 };
   const max = (a: Role, b: Role): Role => (rank[a] >= rank[b] ? a : b);
-  // Fold every retired tier into a live one at the DB-read boundary:
-  // `viewer`/`user` → `member`, the removed `editor` → `manager`.
-  const asRole = (raw: string): Role =>
-    raw === 'viewer' || raw === 'user' ? 'member' : raw === 'editor' ? 'manager' : (raw as Role);
 
   // Project info we'll need for every row in the response.
   const allProjects = await db
@@ -248,18 +247,10 @@ iamRouter.openapi(
     .where(eq(projects.accountId, accountId));
   const projectMeta = new Map(allProjects.map((p) => [p.projectId, p] as const));
 
-  // 1) implicit manager via account_role
-  const [membership] = await db
-    .select({ accountRole: accountMembers.accountRole })
-    .from(accountMembers)
-    .where(
-      and(
-        eq(accountMembers.accountId, accountId),
-        eq(accountMembers.userId, targetUserId),
-      ),
-    )
-    .limit(1);
-  if (!membership) {
+  // 1) implicit manager via the account-scope assignment. Membership IS that
+  // assignment now — no account role, no access, and nothing to report.
+  const accountRole = await accountRoleFor(accountId, targetUserId);
+  if (!accountRole) {
     return c.json({ projects: [], account_wide_policies: [] });
   }
 
@@ -267,28 +258,17 @@ iamRouter.openapi(
     string,
     { role: Role; sources: ('implicit' | 'direct' | 'group')[] }
   >();
-  if (membership.accountRole === 'owner' || membership.accountRole === 'admin') {
+  if (isAccountManagerRole(accountRole)) {
     for (const p of allProjects) {
       if (p.status !== 'active') continue;
       byProject.set(p.projectId, { role: 'manager', sources: ['implicit'] });
     }
   }
 
-  // 2) direct project_members rows
-  const directRows = await db
-    .select({
-      projectId: projectMembers.projectId,
-      role: projectMembers.projectRole,
-    })
-    .from(projectMembers)
-    .where(
-      and(
-        eq(projectMembers.accountId, accountId),
-        eq(projectMembers.userId, targetUserId),
-      ),
-    );
+  // 2) direct project assignments
+  const directRows = await projectRoleGrants({ accountId, userId: targetUserId });
   for (const r of directRows) {
-    const role = asRole(r.role);
+    const role = r.projectRole;
     const cur = byProject.get(r.projectId);
     if (cur) {
       cur.role = max(cur.role, role);
@@ -305,20 +285,9 @@ iamRouter.openapi(
     .where(eq(accountGroupMembers.userId, targetUserId));
   const groupIds = groupMembershipRows.map((g) => g.groupId);
   if (groupIds.length > 0) {
-    const grantRows = await db
-      .select({
-        projectId: projectGroupGrants.projectId,
-        role: projectGroupGrants.role,
-      })
-      .from(projectGroupGrants)
-      .where(
-        and(
-          eq(projectGroupGrants.accountId, accountId),
-          inArray(projectGroupGrants.groupId, groupIds),
-        ),
-      );
+    const grantRows = await groupProjectGrants({ accountId, groupIds });
     for (const r of grantRows) {
-      const role = asRole(r.role);
+      const role = r.role;
       const cur = byProject.get(r.projectId);
       if (cur) {
         cur.role = max(cur.role, role);
@@ -359,35 +328,13 @@ iamRouter.openapi(
     for (const g of groupNameRows) groupNameById.set(g.groupId, g.name);
   }
 
-  const principalFilter =
-    groupIds.length > 0
-      ? or(
-          and(eq(iamPolicies.principalType, 'member'), eq(iamPolicies.principalId, targetUserId)),
-          and(eq(iamPolicies.principalType, 'group'), inArray(iamPolicies.principalId, groupIds)),
-        )
-      : and(eq(iamPolicies.principalType, 'member'), eq(iamPolicies.principalId, targetUserId));
-
-  const policyRows = await db
-    .select({
-      policyId: iamPolicies.policyId,
-      principalType: iamPolicies.principalType,
-      principalId: iamPolicies.principalId,
-      roleId: iamPolicies.roleId,
-      roleKey: iamRoles.key,
-      roleName: iamRoles.name,
-      scopeType: iamPolicies.scopeType,
-      scopeId: iamPolicies.scopeId,
-      expiresAt: iamPolicies.expiresAt,
-    })
-    .from(iamPolicies)
-    .innerJoin(iamRoles, eq(iamRoles.roleId, iamPolicies.roleId))
-    .where(
-      and(
-        eq(iamPolicies.accountId, accountId),
-        principalFilter,
-        or(eq(iamPolicies.scopeType, 'project'), eq(iamPolicies.scopeType, 'account')),
-      ),
-    );
+  const policyRows = await customRoleBindings({
+    accountId,
+    principals: [
+      { type: 'member', id: targetUserId },
+      ...groupIds.map((id) => ({ type: 'group' as const, id })),
+    ],
+  });
 
   const customPolicyByProject = new Map<string, CustomRolePolicy[]>();
   const accountWidePolicies: CustomRolePolicy[] = [];

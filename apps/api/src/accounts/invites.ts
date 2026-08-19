@@ -16,6 +16,7 @@ import { onMemberAdded } from '../billing/services/seat-management';
 import { getMembership } from './core/app';
 import { makeOpenApiApp, json, errors, auth, ErrorSchema } from '../openapi';
 import { normalizeProjectRole } from '../iam/role-perms';
+import { assignRole, convertPendingAssignments, SYSTEM_ACTOR } from '../iam/assignments';
 
 export const accountInvitesRouter = makeOpenApiApp<AppEnv>();
 
@@ -181,6 +182,15 @@ async function applyBootstrapGrants(
             ...(g.expires_at ? { expiresAt: new Date(g.expires_at) } : {}),
           },
         });
+      // …and the canonical project grant, so the accept emits one
+      // `iam.assignment.granted` per project the inviter staged.
+      await assignRole(SYSTEM_ACTOR, invite.accountId, {
+        principal: { type: 'user', id: userId },
+        roleKey: g.role,
+        scope: { type: 'project', id: g.project_id },
+        expiresAt: g.expires_at ? new Date(g.expires_at) : null,
+        source: 'invite',
+      });
       applied.push({ project_id: g.project_id, role: g.role });
     } catch (err) {
       console.warn(
@@ -346,6 +356,20 @@ accountInvitesRouter.openapi(
     .onConflictDoNothing({
       target: [accountMembers.userId, accountMembers.accountId],
     });
+  // …and the canonical membership grant. `SYSTEM_ACTOR`: the writer is the
+  // INVITEE, who by definition holds no permission in this account yet — the
+  // invitation is the authorization. Best-effort, like every other canonical
+  // half: the mirror trigger already wrote the same row inside the INSERT.
+  try {
+    await assignRole(SYSTEM_ACTOR, invite.accountId, {
+      principal: { type: 'user', id: userId },
+      roleKey: invite.initialRole,
+      scope: { type: 'account' },
+      source: 'invite',
+    });
+  } catch (err) {
+    console.warn('[accept-invite] canonical account-membership assignment failed', err);
+  }
 
   // Stamp accepted_at on first accept. The isNull guard makes concurrent
   // accepts collapse to a single write without us caring who won — both
@@ -375,6 +399,15 @@ accountInvitesRouter.openapi(
   // to them and re-clicking the link never fixed it. applyBootstrapGrants is
   // idempotent, so re-running it on re-entry just heals the missing grant.
   const appliedGrants = await applyBootstrapGrants(invite, userId);
+
+  // Staged `pending` assignments become this user's own. Run on every accept
+  // for the same self-healing reason applyBootstrapGrants is: a partial earlier
+  // run must be repairable by clicking the link again.
+  try {
+    await convertPendingAssignments(invite.accountId, invite.email, userId);
+  } catch (err) {
+    console.warn('[accept-invite] converting pending assignments failed', err);
+  }
 
   return c.json({
     account_id: invite.accountId,

@@ -1,7 +1,7 @@
 import { FEATURE_DISABLED_CODE } from '@kortix/sdk';
 
 import { loadAuth, loadAuthForHost, type Auth } from './api/auth.ts';
-import { activeHostName, hasEnvTokenHost, listHosts } from './api/config.ts';
+import { activeAccount, activeHostName, hasEnvTokenHost, listHosts } from './api/config.ts';
 import { ApiError, clientFromAuth, type ApiClient } from './api/client.ts';
 import { loadLink, resolveProjectId } from './project-link.ts';
 import { ensureDefaultProjectBinding } from './project-bind.ts';
@@ -92,6 +92,50 @@ export async function resolveProjectContext(
     return null;
   }
   return { client: clientFromAuth(auth), projectId, auth };
+}
+
+export interface AccountContext {
+  client: ApiClient;
+  accountId: string;
+  auth: Auth;
+}
+
+/**
+ * Common setup for any ACCOUNT-scoped command (`/accounts/:id/...`): validate
+ * auth, resolve the account id, build a client already scoped to it.
+ *
+ * The canonical RBAC surface is account-scoped — `role_assignments`, the role
+ * catalog and the permission catalog all hang off `/accounts/:accountId/iam`,
+ * even for a grant that lands on ONE project. So `kortix access`, `kortix roles`
+ * and `kortix permissions` all need this, not `resolveProjectContext`.
+ *
+ * Account resolution order: `--account` → the active account → the host's
+ * default account from the stored credentials.
+ */
+export function resolveAccountContext(opts: {
+  accountArg?: string;
+  hostArg?: string;
+} = {}): AccountContext | null {
+  const auth = opts.hostArg ? loadAuthForHost(opts.hostArg) : loadAuth();
+  if (!auth?.token) {
+    if (opts.hostArg) {
+      process.stderr.write(
+        `${status.err(`Host "${opts.hostArg}" (--host) is not logged in.`)} Run ` +
+          `${C.cyan}kortix login --host ${opts.hostArg}${C.reset}.\n`,
+      );
+    } else {
+      process.stderr.write(`${status.err('Not logged in. Run `kortix login`.')}\n`);
+    }
+    return null;
+  }
+  const accountId = opts.accountArg || activeAccount()?.id || auth.account_id || '';
+  if (!accountId) {
+    process.stderr.write(
+      `${status.err('No active account. Run `kortix accounts use` or pass --account <id>.')}\n`,
+    );
+    return null;
+  }
+  return { client: clientFromAuth(auth, { accountId }), accountId, auth };
 }
 
 /**

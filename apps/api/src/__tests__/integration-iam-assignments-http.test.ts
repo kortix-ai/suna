@@ -245,6 +245,146 @@ describe.if(hasDatabase)('GET/POST/DELETE /v1/accounts/:accountId/iam/assignment
     expect(again.status).toBe(404);
   });
 
+  test('a malformed id is a 400 that names the field, not a 500 from the uuid cast', async () => {
+    const bad = await req('POST', `/v1/accounts/${ACCOUNT}/iam/assignments`, ownerToken, {
+      principal_type: 'user',
+      principal_id: 'not-a-uuid',
+      role_key: 'member',
+      scope_type: 'project',
+      scope_id: PROJECT,
+    });
+    expect(bad.status).toBe(400);
+    expect(JSON.stringify(await bad.json())).toContain('principal_id');
+
+    const badScope = await req('POST', `/v1/accounts/${ACCOUNT}/iam/assignments`, ownerToken, {
+      principal_type: 'user',
+      principal_id: target,
+      role_key: 'member',
+      scope_type: 'project',
+      scope_id: 'nope',
+    });
+    expect(badScope.status).toBe(400);
+    expect(JSON.stringify(await badScope.json())).toContain('scope_id');
+
+    const badRole = await req('POST', `/v1/accounts/${ACCOUNT}/iam/assignments`, ownerToken, {
+      principal_type: 'user',
+      principal_id: target,
+      role_id: 'builtin:manager',
+      scope_type: 'project',
+      scope_id: PROJECT,
+    });
+    expect(badRole.status).toBe(400);
+    expect(JSON.stringify(await badRole.json())).toContain('role_id');
+
+    const badFilter = await req(
+      'GET',
+      `/v1/accounts/${ACCOUNT}/iam/assignments?principal_type=user&principal_id=oops`,
+      ownerToken,
+    );
+    expect(badFilter.status).toBe(400);
+  });
+
+  test('a principal that does not exist is refused, for all three kinds', async () => {
+    const ghostUser = await req('POST', `/v1/accounts/${ACCOUNT}/iam/assignments`, ownerToken, {
+      principal_type: 'user',
+      principal_id: uid(),
+      role_key: 'member',
+      scope_type: 'project',
+      scope_id: PROJECT,
+    });
+    expect(ghostUser.status).toBe(404);
+    expect(JSON.stringify(await ghostUser.json())).toContain('user');
+
+    const ghostGroup = await req('POST', `/v1/accounts/${ACCOUNT}/iam/assignments`, ownerToken, {
+      principal_type: 'group',
+      principal_id: uid(),
+      role_key: 'member',
+      scope_type: 'project',
+      scope_id: PROJECT,
+    });
+    expect(ghostGroup.status).toBe(404);
+    expect(JSON.stringify(await ghostGroup.json())).toContain('group');
+
+    // The one that is more than cosmetic: an agent identity is auto-provisioned
+    // by name, so a grant planted against a guessed id would come alive the
+    // first time that agent is launched.
+    const ghostSa = await req('POST', `/v1/accounts/${ACCOUNT}/iam/assignments`, ownerToken, {
+      principal_type: 'service_account',
+      principal_id: uid(),
+      role_key: 'member',
+      scope_type: 'project',
+      scope_id: PROJECT,
+    });
+    expect(ghostSa.status).toBe(404);
+    expect(JSON.stringify(await ghostSa.json())).toContain('service account');
+  });
+
+  test('revoking a project role removes the mirrored legacy row too', async () => {
+    const created = (await (
+      await req('POST', `/v1/accounts/${ACCOUNT}/iam/assignments`, ownerToken, {
+        principal_type: 'user',
+        principal_id: target,
+        role_key: 'member',
+        scope_type: 'project',
+        scope_id: PROJECT,
+      })
+    ).json()) as { assignment_id: string };
+
+    const countLegacy = async () => {
+      const res = await db.execute(sql.raw(
+        `select count(*)::int as n from kortix.project_members
+          where project_id = '${PROJECT}' and user_id = '${target}'`,
+      ));
+      const rows = (res as unknown as { rows?: Array<{ n: number }> }).rows ??
+        (res as unknown as Array<{ n: number }>);
+      return Number(rows[0]!.n);
+    };
+    // The mirror trigger is one-way (legacy -> canonical), so `assignRole`
+    // alone leaves no legacy row. Write one the way a pre-cutover replica would,
+    // then prove the revoke takes BOTH.
+    await raw(
+      `insert into kortix.project_members (account_id, project_id, user_id, project_role)
+       values ('${ACCOUNT}','${PROJECT}','${target}','member')
+       on conflict (project_id, user_id) do update set project_role = 'member'`,
+    );
+    expect(await countLegacy()).toBe(1);
+
+    const res = await req(
+      'DELETE',
+      `/v1/accounts/${ACCOUNT}/iam/assignments/${created.assignment_id}`,
+      ownerToken,
+    );
+    expect(res.status).toBe(200);
+    // Gone from BOTH stores — otherwise a replica still running the old image
+    // would keep honouring it, and any UPDATE of it would resurrect the
+    // assignment through the trigger.
+    expect(await countLegacy()).toBe(0);
+  });
+
+  test('an unknown assignment id is a 404, not a 500', async () => {
+    const res = await req('DELETE', `/v1/accounts/${ACCOUNT}/iam/assignments/not-a-uuid`, ownerToken);
+    expect(res.status).toBe(404);
+  });
+
+  test("removing a principal's only account role is refused — offboarding has its own route", async () => {
+    const list = (await (
+      await req(
+        'GET',
+        `/v1/accounts/${ACCOUNT}/iam/assignments?principal_type=user&principal_id=${target}&scope_type=account`,
+        ownerToken,
+      )
+    ).json()) as { assignments: Array<{ assignment_id: string; role_key: string }> };
+    expect(list.assignments).toHaveLength(1);
+
+    const res = await req(
+      'DELETE',
+      `/v1/accounts/${ACCOUNT}/iam/assignments/${list.assignments[0]!.assignment_id}`,
+      ownerToken,
+    );
+    expect(res.status).toBe(409);
+    expect(JSON.stringify(await res.json())).toContain('members');
+  });
+
   test("the account's last owner cannot be revoked", async () => {
     const list = (await (
       await req(
@@ -262,6 +402,98 @@ describe.if(hasDatabase)('GET/POST/DELETE /v1/accounts/:accountId/iam/assignment
       ownerToken,
     );
     expect(res.status).toBe(409);
+  });
+});
+
+describe.if(hasDatabase)('GET /v1/accounts/:accountId/iam/roles', () => {
+  test('system roles come from the seeded DB rows, keys included', async () => {
+    const res = await req('GET', `/v1/accounts/${ACCOUNT}/iam/roles`, ownerToken);
+    expect(res.status).toBe(200);
+    const { roles } = (await res.json()) as {
+      roles: Array<{ role_id: string; key: string; is_system: boolean; resource_type: string }>;
+    };
+    const system = roles.filter((r) => r.is_system);
+    // All SIX seeded rows, the object-grant marker included — it is a system
+    // role, and the edit guards have to recognise it.
+    expect(system.map((r) => `${r.resource_type}:${r.key}`).sort()).toEqual([
+      'account:admin',
+      'account:member',
+      'account:owner',
+      'project:agent-user',
+      'project:manager',
+      'project:member',
+    ]);
+    // Ids stay `builtin:<key>`; the project floor role keeps `builtin:user`
+    // because `builtin:member` is the ACCOUNT floor role's id.
+    const projectFloor = system.find((r) => r.resource_type === 'project' && r.key === 'member');
+    expect(projectFloor!.role_id).toBe('builtin:user');
+  });
+
+  test('the key a role advertises is the key POST /iam/assignments accepts', async () => {
+    const { roles } = (await (
+      await req('GET', `/v1/accounts/${ACCOUNT}/iam/roles`, ownerToken)
+    ).json()) as { roles: Array<{ key: string; is_system: boolean; resource_type: string }> };
+    const key = roles.find((r) => r.is_system && r.resource_type === 'project' && r.key === 'member')!
+      .key;
+    const res = await req('POST', `/v1/accounts/${ACCOUNT}/iam/assignments`, ownerToken, {
+      principal_type: 'user',
+      principal_id: target,
+      role_key: key,
+      scope_type: 'project',
+      scope_id: PROJECT,
+    });
+    expect(res.status).toBe(201);
+    expect(await res.json()).toMatchObject({ role_key: 'member', scope_type: 'project' });
+  });
+
+  test('the historical project-role names still resolve', async () => {
+    // Published SDKs and the roles list's own `builtin:user` id speak `user`.
+    for (const roleKey of ['user', 'viewer', 'editor']) {
+      const res = await req('POST', `/v1/accounts/${ACCOUNT}/iam/assignments`, ownerToken, {
+        principal_type: 'user',
+        principal_id: target,
+        role_key: roleKey,
+        scope_type: 'project',
+        scope_id: PROJECT,
+      });
+      expect(res.status).toBe(201);
+      const body = (await res.json()) as { role_key: string };
+      expect(body.role_key).toBe(roleKey === 'editor' ? 'manager' : 'member');
+    }
+  });
+
+  test('a system role carries the description the seed gave it', async () => {
+    const { roles } = (await (
+      await req('GET', `/v1/accounts/${ACCOUNT}/iam/roles`, ownerToken)
+    ).json()) as {
+      roles: Array<{ key: string; is_system: boolean; resource_type: string; description: string | null }>;
+    };
+    const manager = roles.find((r) => r.is_system && r.key === 'manager')!;
+    expect(manager.description).toBeTruthy();
+    expect(manager.description).toContain('project');
+  });
+
+  test("a system role's permissions come from role_permissions", async () => {
+    const res = await req('GET', `/v1/accounts/${ACCOUNT}/iam/roles/builtin:user/permissions`, ownerToken);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { key: string; actions: string[] };
+    expect(body.key).toBe('member');
+    expect(body.actions).toContain('project.read');
+    expect(body.actions).toContain('project.session.start');
+    expect(body.actions).not.toContain('project.delete');
+  });
+
+  test('the object-grant marker is a system role and is not deletable', async () => {
+    // DELETE, not PATCH: PATCH runs the `rbac` entitlement gate first and would
+    // answer 402 here regardless of the role. Deleting a role is cleanup and
+    // carries no entitlement gate, so it reaches the built-in check.
+    const res = await req(
+      'DELETE',
+      `/v1/accounts/${ACCOUNT}/iam/roles/builtin:agent-user`,
+      ownerToken,
+    );
+    expect(res.status).toBe(400);
+    expect(JSON.stringify(await res.json())).toContain('built-in');
   });
 });
 
@@ -294,6 +526,22 @@ describe.if(hasDatabase)('GET /v1/accounts/:accountId/iam/permissions', () => {
     // The two spec §2.4 collapses stay collapsed.
     expect(permissions.some((p) => p.action === 'project.cr.open')).toBe(false);
     expect(permissions.some((p) => String(p.action).startsWith('trigger.'))).toBe(false);
+  });
+
+  test('every permission carries a real description', async () => {
+    const res = await req('GET', `/v1/accounts/${ACCOUNT}/iam/permissions`, ownerToken);
+    const { permissions } = (await res.json()) as {
+      permissions: Array<{ action: string; description: string }>;
+    };
+    // The role-capability matrix renders this string. An empty one sends the
+    // web back to humanizing the dotted action ("Project · Gitops · Push"),
+    // which tells an admin nothing about what the permission allows — which is
+    // exactly what the seed shipped before 20260819050000000.
+    const blank = permissions.filter((p) => !p.description || p.description.trim() === '');
+    expect(blank.map((p) => p.action)).toEqual([]);
+    expect(permissions.find((p) => p.action === 'project.gitops.push')!.description).toContain(
+      'Push commits',
+    );
   });
 
   test('scope_type narrows the catalog', async () => {

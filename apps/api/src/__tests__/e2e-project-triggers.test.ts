@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import { mockIamEngineAllowAll, mockIamMembershipSyncNoop } from './helpers/iam-mocks';
+import { mockIamEngineAllowAll, mockIamMembershipSyncNoop, mockIamReadModels } from './helpers/iam-mocks';
 import { createHmac, randomUUID } from 'node:crypto';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
@@ -110,6 +110,9 @@ function sign(rawBody: string, secret: string) {
 
 mockIamEngineAllowAll();
 
+// The hermetic db shim models the legacy tables; the read models project from
+// those rows rather than from `role_assignments`. See mockIamReadModels.
+mockIamReadModels();
 mockIamMembershipSyncNoop();
 
 mock.module('../projects/session-lifecycle/actor', () => ({

@@ -20,7 +20,10 @@ it stays connected across sessions.
 ## Grant access
 
 You grant access per capability: filesystem, shell, or desktop. You can scope
-each capability to allowed paths, commands, or desktop features. The agent
+each capability to allowed paths, commands, or desktop features. A capability
+grant is a per-resource setting on one machine, not a Kortix role. It grants no
+permission the role verdict denies — see
+[Accounts & access](/docs/accounts#per-feature-access-settings). The agent
 gets only what you grant. A call to an ungranted capability creates a
 permission request. Open the machine inside its Computer Tunnel profile to
 approve or deny the request.
@@ -32,12 +35,15 @@ the task needs.
 
 ## How the agent reaches a computer
 
-Pairing adds a machine to your account fleet. It does not grant a project access.
+Pairing adds a machine to your account fleet. It writes no assignment, so it
+grants no project access.
 Add **Computer Tunnel** from the project's [connector](/docs/connect/connectors)
 catalog, then select one or more paired machines for that profile.
 
-One profile can contain one machine or a group. You can create multiple profiles
-with different or overlapping groups. Each profile has independent agent grants
+One profile can contain one machine or a set of machines. A machine set is not an
+account group — an account group is a principal in the role model, and these are
+machines. You can create multiple profiles with different or overlapping machine
+sets. Each profile has independent agent grants
 and tool policies.
 
 The `list_computers` tool returns only machines assigned to the active profile.

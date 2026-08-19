@@ -131,7 +131,6 @@ import {
 } from '@/hooks/channels/use-teams-installations';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
-import { listProjectAccess } from '@kortix/sdk';
 import {
   type Agent,
   contract,
@@ -431,15 +430,11 @@ function ChannelBindingTableRow({
   projectDefaultAgent: string | null;
   canWrite: boolean;
 }) {
-  const accessQuery = useQuery({
-    queryKey: qk.project.access(projectId),
-    queryFn: () => listProjectAccess(projectId),
-    ...contract('inventory'),
-  });
-  // `can_manage` is the coarse project-manage flag; AND it with the real
-  // connector write leaf so a READ-only connector role can't edit bindings
-  // (the PATCH route asserts project.connector.write and would 403).
-  const canManage = Boolean(accessQuery.data?.can_manage) && canWrite;
+  // The binding PATCH route asserts `project.connector.write`, and `canWrite`
+  // already probes exactly that. This used to AND it with the roster's coarse
+  // `can_manage` flag — a role label by another name, and strictly redundant
+  // once the leaf is asked for directly.
+  const canManage = canWrite;
 
   // Same agent source as the chat input / schedules pickers (spec: "use the
   // same component everywhere"). `projectId` does a server-side fetch of the

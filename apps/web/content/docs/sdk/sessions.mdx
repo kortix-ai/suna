@@ -130,8 +130,8 @@ const { applied_live } = await s.changeModel('anthropic/claude-opus-4-8');
 
 Restarting the runtime is how the change takes effect, so an in-flight turn ends.
 `applied_live` is `true` when a running session took it now, `false` when it
-applies at the next start. Only the session owner or a project manager may change
-the model; anyone else gets `403`.
+applies at the next start. Only the session owner, or a caller with project-manager
+permissions, may change the model; anyone else gets `403`.
 
 `send()` resolves the runtime, then prompts it. `abort()` stops the current
 run without deleting the session.

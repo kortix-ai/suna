@@ -18,6 +18,7 @@ import {
   ScrollIcon as ScrollText,
   PlugsIcon as Unplug,
 } from '@phosphor-icons/react';
+import { invalidatePermissionProbes } from '@kortix/sdk/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { m, useReducedMotion } from 'motion/react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
@@ -1240,6 +1241,9 @@ function MembersCard({
   }, [members, search]);
 
   const invalidateMembers = () => {
+    // Membership, roles and invites all move verdicts. Probes are cached 5
+    // minutes, so a change that is not busted here renders as stale access.
+    void invalidatePermissionProbes(queryClient, { accountId: account.account_id });
     queryClient.invalidateQueries({
       queryKey: ['account-members', account.account_id],
     });
@@ -1700,10 +1704,9 @@ function MembersCard({
               id: editTarget.user_id,
               label: principalLabel(editTarget),
             },
-            current: {
-              role: editRoleValue,
-              policyId: accountPolicyByUser.get(editTarget.user_id)?.policy_id,
-            },
+            // No `assignmentId`: the roster still carries legacy policy ids,
+            // which are NOT assignment ids. The dialog reads the row back.
+            current: { role: editRoleValue },
           }}
           rbacEnabled={rbacEnabled}
           canManageRoles={canManageRoles}

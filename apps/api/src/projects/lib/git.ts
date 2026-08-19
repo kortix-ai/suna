@@ -29,6 +29,7 @@ import { authorize } from '../../iam/authorize';
 import { actorForToken } from '../../iam/actor';
 import type { RequestContext } from '../../iam/engine';
 import { registerPrincipalScopedMemo } from '../../iam/cache-invalidation';
+import { accountRoleFor } from '../../iam/read-models';
 import { PROJECT_GIT_AUTH_SECRET_NAME, ProjectGitConnectionRow, ProjectGitCredentialRow, ProjectRow, normalizeJsonObject, normalizeString } from './serializers';
 import {
   sessionWorkspaceAllowsRepositoryAccess,
@@ -46,12 +47,13 @@ const loadAccountMembership = ttlMemo({
   ttlMs: 15_000,
   keyFn: (userId: string, accountId: string) => `${userId}|${accountId}`,
   loader: async (userId: string, accountId: string) => {
-    const [membership] = await db
-      .select({ accountId: accountMembers.accountId, accountRole: accountMembers.accountRole })
-      .from(accountMembers)
-      .where(and(eq(accountMembers.userId, userId), eq(accountMembers.accountId, accountId)))
-      .limit(1);
-    return membership ?? null;
+    // Membership IS the account-scope assignment (spec §1). The
+    // `account_members.account_role` column this used to read is no longer
+    // written by every path — an assignment made through `assignRole()` leaves
+    // it stale on purpose — so reading it here would hand a project request a
+    // role the engine disagrees with.
+    const accountRole = await accountRoleFor(accountId, userId);
+    return accountRole ? { accountId, accountRole } : null;
   },
   shouldCache: (membership) => membership !== null,
 });

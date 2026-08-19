@@ -21,6 +21,7 @@ import { runProjects } from './commands/projects.ts';
 import { runProviders } from './commands/providers.ts';
 import { runRegistry } from './commands/registry.ts';
 import { runAudit } from './commands/audit.ts';
+import { runPermissions } from './commands/permissions.ts';
 import { runRoles } from './commands/roles.ts';
 import { runSandboxes } from './commands/sandboxes.ts';
 import { runSchema } from './commands/schema.ts';
@@ -255,12 +256,17 @@ const TIERS: readonly CommandTier[] = [
           {
             name: 'access',
             args: '<subcommand>',
-            blurb: 'Manage who can use this project (invite/grant/revoke)',
+            blurb: 'Grant, list and revoke role assignments (people, groups, agents)',
           },
           {
             name: 'roles',
             args: '<subcommand>',
-            blurb: 'Manage IAM custom roles + policy assignments (account-scoped)',
+            blurb: 'List system + custom roles and what each one permits',
+          },
+          {
+            name: 'permissions',
+            args: '<subcommand>',
+            blurb: 'Browse the permission catalog roles are built from',
           },
           {
             name: 'audit',
@@ -557,6 +563,9 @@ async function main(argv: string[]): Promise<number> {
   if (argv[0] === 'roles') {
     return runRoles(argv.slice(1));
   }
+  if (argv[0] === 'permissions' || argv[0] === 'perms') {
+    return runPermissions(argv.slice(1));
+  }
   if (argv[0] === 'audit') {
     return runAudit(argv.slice(1));
   }
@@ -621,6 +630,7 @@ const KNOWN_COMMANDS = [
   'agents',
   'access',
   'roles',
+  'permissions',
   'audit',
   'grants',
   'update',

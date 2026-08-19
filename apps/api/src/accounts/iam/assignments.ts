@@ -96,6 +96,11 @@ function oneOf<T extends readonly string[]>(values: T, raw: unknown): T[number] 
     : undefined;
 }
 
+// `principal_id`, `scope_id` and `role_id` are all bound into `::uuid` casts.
+// A malformed one used to reach Postgres and come back as SQLSTATE 22P02 — an
+// opaque 500 for what is plainly a client error.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 // ─── GET /accounts/{accountId}/iam/assignments ──────────────────────────────
 
 iamRouter.openapi(
@@ -138,6 +143,18 @@ iamRouter.openapi(
       );
     }
 
+    if (principalId && !UUID_RE.test(principalId)) {
+      return c.json({ error: 'principal_id must be a UUID' }, 400);
+    }
+    const scopeIdFilter = c.req.query('scope_id');
+    if (scopeIdFilter && !UUID_RE.test(scopeIdFilter)) {
+      return c.json({ error: 'scope_id must be a UUID' }, 400);
+    }
+    const roleIdFilter = c.req.query('role_id');
+    if (roleIdFilter && !UUID_RE.test(roleIdFilter)) {
+      return c.json({ error: 'role_id must be a UUID' }, 400);
+    }
+
     const rows = await listAssignments({
       accountId,
       principal:
@@ -145,10 +162,10 @@ iamRouter.openapi(
           ? { type: principalType as PrincipalKind, id: principalId }
           : undefined,
       scopeType: oneOf(SCOPE_TYPES, c.req.query('scope_type')) as ScopeType | undefined,
-      scopeId: c.req.query('scope_id') || undefined,
+      scopeId: scopeIdFilter || undefined,
       objectType: oneOf(OBJECT_TYPES, c.req.query('object_type')) as ObjectType | undefined,
       objectId: c.req.query('object_id') || undefined,
-      roleId: c.req.query('role_id') || undefined,
+      roleId: roleIdFilter || undefined,
       liveOnly: c.req.query('include_expired') !== 'true',
     });
     return c.json({ assignments: rows.map(serialize) });
@@ -200,6 +217,18 @@ iamRouter.openapi(
     const roleKey = body.role_key ?? body.roleKey ?? body.role;
     if (typeof roleId !== 'string' && typeof roleKey !== 'string') {
       return c.json({ error: 'role_id or role_key is required' }, 400);
+    }
+
+    // Shape first, so a malformed id is a 400 that names the field instead of a
+    // 500 from the `::uuid` cast underneath.
+    if (!UUID_RE.test(principalId)) {
+      return c.json({ error: 'principal_id must be a UUID' }, 400);
+    }
+    if (scopeId !== null && !UUID_RE.test(scopeId)) {
+      return c.json({ error: 'scope_id must be a project UUID or null' }, 400);
+    }
+    if (typeof roleId === 'string' && !UUID_RE.test(roleId)) {
+      return c.json({ error: 'role_id must be a UUID — use role_key for a built-in role' }, 400);
     }
 
     const objectType = oneOf(OBJECT_TYPES, body.object_type ?? body.objectType);
@@ -277,6 +306,7 @@ iamRouter.openapi(
   async (c: any) => {
     const accountId = c.req.param('accountId');
     const assignmentId = c.req.param('assignmentId');
+    if (!UUID_RE.test(assignmentId)) return c.json({ error: 'assignment not found' }, 404);
     // The last-owner guard lives in revokeAssignment, not here — it is the only
     // place that sees every revoke path (route, SCIM deprovision, expiry).
     const row = await revokeAssignment(await actorOf(c, accountId), accountId, assignmentId);

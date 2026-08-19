@@ -1,6 +1,7 @@
 import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { accountMembers, chatUserIdentities, projectAccessRequests, projects } from '@kortix/db';
 import { db } from '../../shared/db';
+import { accountRoleMap, isAccountManagerRole } from '../../iam/read-models';
 import { config } from '../../config';
 import { authorize } from '../../iam';
 import { actorForUser } from '../../iam/actor';
@@ -313,15 +314,9 @@ export async function notifyAdminsOfAccessRequest(input: {
   const token = await loadSlackTokenForProject(input.projectId);
   if (!token) return;
 
-  const admins = await db
-    .select({ userId: accountMembers.userId })
-    .from(accountMembers)
-    .where(
-      and(
-        eq(accountMembers.accountId, input.accountId),
-        inArray(accountMembers.accountRole, ['owner', 'admin']),
-      ),
-    );
+  const admins = [...(await accountRoleMap(input.accountId)).entries()]
+    .filter(([, role]) => isAccountManagerRole(role))
+    .map(([userId]) => ({ userId }));
   if (admins.length === 0) return;
 
   const email = (await lookupEmailsByUserIds([input.requesterUserId]).catch(() => null))?.get(

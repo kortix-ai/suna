@@ -67,6 +67,7 @@ mock.module('drizzle-orm', () => ({
   and: (...parts: unknown[]) => ({ op: 'and', parts }),
   or: (...parts: unknown[]) => ({ op: 'or', parts }),
   isNull: (column: string) => ({ op: 'isNull', column }),
+  isNotNull: (column: string) => ({ op: 'isNotNull', column }),
   inArray: (column: string, values: unknown[]) => ({ op: 'inArray', column, values }),
   gte: (column: string, value: unknown) => ({ op: 'gte', column, value }),
   lte: (column: string, value: unknown) => ({ op: 'lte', column, value }),
@@ -76,6 +77,10 @@ mock.module('drizzle-orm', () => ({
   sql: (...args: unknown[]) => ({ op: 'sql', args }),
 }));
 
+// `mock.module` replaces the module WHOLESALE, so every table this file's graph
+// touches has to be declared — `role_assignments` and `iam_roles` because the
+// account role is read from the canonical store now, `audit_events` because
+// `assignRole` writes one.
 mock.module('@kortix/db', () => ({
   accounts,
   accountMembers,
@@ -85,6 +90,14 @@ mock.module('@kortix/db', () => ({
   accountGroups,
   accountGroupMembers,
   projectMembers,
+  roleAssignments: {},
+  iamRoles: {},
+  iamRoleActions: {},
+  auditEvents: {},
+  serviceAccounts: {},
+  accountTokens: {},
+  objectPolicies: {},
+  permissions: {},
 }));
 
 mock.module('../shared/db', () => ({ db: fakeDb }));

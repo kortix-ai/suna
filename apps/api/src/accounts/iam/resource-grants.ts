@@ -17,8 +17,9 @@
 
 import { createRoute, z } from '@hono/zod-openapi';
 import { json, errors, auth } from '../../openapi';
-import { and, eq, inArray, ne } from 'drizzle-orm';
-import { accountGroups, iamResourceGrants, projects } from '@kortix/db';
+import { and, eq, inArray } from 'drizzle-orm';
+import { accountGroups, projects } from '@kortix/db';
+import { objectGrantRows } from '../../iam/read-models';
 import { db } from '../../shared/db';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
 import { actorOf } from '../../iam/actor';
@@ -67,37 +68,53 @@ iamRouter.openapi(
     // doc comment in ../../iam/resource-grants.ts) — new grants can't create
     // them and the account-wide view only surfaces the two live resource
     // kinds, same filter the per-project route applies.
-    const conds = [eq(iamResourceGrants.accountId, accountId), ne(iamResourceGrants.resourceType, 'secret')];
-
     const principalType = c.req.query('principalType');
-    if (principalType === 'member' || principalType === 'group') {
-      conds.push(eq(iamResourceGrants.principalType, principalType));
-    }
     const principalId = c.req.query('principalId');
-    if (principalId && isUuid(principalId)) {
-      conds.push(eq(iamResourceGrants.principalId, principalId));
-    }
     const projectId = c.req.query('projectId');
-    if (projectId && isUuid(projectId)) {
-      conds.push(eq(iamResourceGrants.projectId, projectId));
-    }
 
-    const rows = await db
-      .select({
-        grantId: iamResourceGrants.grantId,
-        projectId: projects.projectId,
-        projectName: projects.name,
-        resourceType: iamResourceGrants.resourceType,
-        resourceId: iamResourceGrants.resourceId,
-        principalType: iamResourceGrants.principalType,
-        principalId: iamResourceGrants.principalId,
-        grantedBy: iamResourceGrants.grantedBy,
-        createdAt: iamResourceGrants.createdAt,
-        expiresAt: iamResourceGrants.expiresAt,
+    // Object assignments from `role_assignments`, joined to their project the
+    // way the old `iam_resource_grants -> projects` query did: a grant whose
+    // project is gone is not part of the footprint.
+    const [grants, projectRows] = await Promise.all([
+      objectGrantRows({
+        accountId,
+        ...(projectId && isUuid(projectId) ? { projectId } : {}),
+      }),
+      db
+        .select({ projectId: projects.projectId, name: projects.name })
+        .from(projects)
+        .where(eq(projects.accountId, accountId)),
+    ]);
+    const projectById = new Map(projectRows.map((p) => [p.projectId, p] as const));
+
+    const rows = grants
+      .filter((g) => {
+        // Legacy 'secret' rows are a back-compat holdover (see the resourceType
+        // doc comment in ../../iam/resource-grants.ts) — the account-wide view
+        // surfaces only the two live resource kinds, same filter the
+        // per-project route applies.
+        if (g.resourceType === 'secret') return false;
+        if (
+          (principalType === 'member' || principalType === 'group') &&
+          g.principalType !== principalType
+        ) {
+          return false;
+        }
+        if (principalId && isUuid(principalId) && g.principalId !== principalId) return false;
+        return projectById.has(g.projectId);
       })
-      .from(iamResourceGrants)
-      .innerJoin(projects, eq(projects.projectId, iamResourceGrants.projectId))
-      .where(and(...conds));
+      .map((g) => ({
+        grantId: g.grantId,
+        projectId: g.projectId,
+        projectName: projectById.get(g.projectId)!.name,
+        resourceType: g.resourceType,
+        resourceId: g.resourceId,
+        principalType: g.principalType as string,
+        principalId: g.principalId,
+        grantedBy: g.grantedBy,
+        createdAt: g.createdAt,
+        expiresAt: g.expiresAt,
+      }));
 
     // Resolve principal labels in two batched lookups — same pattern as the
     // per-project route (projects/routes/resource-grants.ts): one

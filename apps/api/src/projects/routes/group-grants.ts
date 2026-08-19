@@ -11,12 +11,17 @@ import {
   listAssignments,
   SYSTEM_ACTOR,
 } from '../../iam/assignments';
+import {
+  accountRoleMap,
+  groupProjectGrants,
+  isAccountManagerRole,
+} from '../../iam/read-models';
 import { parseAssignableProjectRole, PROJECT_ROLE_INPUT_ERROR, type ProjectRole } from '../../iam/role-perms';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { createRoute, z } from '@hono/zod-openapi';
 import { accountGroupMembers, accountGroups, accountMembers, projectGroupGrants } from '@kortix/db';
-import { and, asc, eq, inArray, or } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { loadProjectForUser, parseExpiresAtBody, assertProjectCapability } from '../lib/access';
 import { AnyObject, GroupGrantSchema, projectsApp } from '../lib/app';
 import { normalizeString, readBody } from '../lib/serializers';
@@ -43,24 +48,34 @@ projectsApp.openapi(
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_READ);
 
-  const rows = await db
-    .select({
-      groupId: projectGroupGrants.groupId,
-      role: projectGroupGrants.role,
-      grantedBy: projectGroupGrants.grantedBy,
-      createdAt: projectGroupGrants.createdAt,
-      expiresAt: projectGroupGrants.expiresAt,
-      groupName: accountGroups.name,
-    })
-    .from(projectGroupGrants)
-    .innerJoin(accountGroups, eq(accountGroups.groupId, projectGroupGrants.groupId))
-    .where(eq(projectGroupGrants.projectId, projectId))
-    // Deterministic order — without ORDER BY, Postgres can return rows
-    // in heap-scan order, which shifts when the row is UPDATEd (e.g., a
-    // role change). The UI list would then visibly reshuffle after a
+  // From `role_assignments`, the store the engine reads. The group NAME is
+  // still identity data on `account_groups`, and the inner-join semantics are
+  // kept: an attachment whose group was deleted is not listed.
+  const [assignments, groupRows] = await Promise.all([
+    groupProjectGrants({ accountId: loaded.row.accountId, projectId }),
+    db
+      .select({ groupId: accountGroups.groupId, name: accountGroups.name })
+      .from(accountGroups)
+      .where(eq(accountGroups.accountId, loaded.row.accountId)),
+  ]);
+  const nameByGroup = new Map(groupRows.map((g) => [g.groupId, g.name] as const));
+  const rows = assignments
+    .filter((r) => nameByGroup.has(r.groupId))
+    .map((r) => ({
+      groupId: r.groupId,
+      role: r.role,
+      grantedBy: r.grantedBy,
+      createdAt: r.createdAt,
+      expiresAt: r.expiresAt,
+      groupName: nameByGroup.get(r.groupId)!,
+    }))
+    // Deterministic order — without it the UI list visibly reshuffles after a
     // role flip. Oldest attachments first matches the "Attached <date>"
     // subtitle most users scan along.
-    .orderBy(asc(projectGroupGrants.createdAt), asc(projectGroupGrants.groupId));
+    .sort(
+      (a, b) =>
+        a.createdAt.getTime() - b.createdAt.getTime() || a.groupId.localeCompare(b.groupId),
+    );
 
   // Per-group member breakdown so the UI can flag attachments where the
   // grant role won't apply uniformly. When a group includes account
@@ -72,25 +87,28 @@ projectsApp.openapi(
   type GroupStats = { total: number; overrideCount: number };
   const statsByGroup = new Map<string, GroupStats>();
   if (groupIds.length > 0) {
-    const memberRows = await db
-      .select({
-        groupId: accountGroupMembers.groupId,
-        accountRole: accountMembers.accountRole,
-        isSuperAdmin: accountMembers.isSuperAdmin,
-      })
-      .from(accountGroupMembers)
-      .innerJoin(
-        accountMembers,
-        and(
-          eq(accountMembers.userId, accountGroupMembers.userId),
-          eq(accountMembers.accountId, loaded.row.accountId),
-        ),
-      )
-      .where(inArray(accountGroupMembers.groupId, groupIds));
+    const [memberRows, accountRoles] = await Promise.all([
+      db
+        .select({
+          groupId: accountGroupMembers.groupId,
+          isSuperAdmin: accountMembers.isSuperAdmin,
+          userId: accountMembers.userId,
+        })
+        .from(accountGroupMembers)
+        .innerJoin(
+          accountMembers,
+          and(
+            eq(accountMembers.userId, accountGroupMembers.userId),
+            eq(accountMembers.accountId, loaded.row.accountId),
+          ),
+        )
+        .where(inArray(accountGroupMembers.groupId, groupIds)),
+      accountRoleMap(loaded.row.accountId),
+    ]);
     for (const m of memberRows) {
       const stats = statsByGroup.get(m.groupId) ?? { total: 0, overrideCount: 0 };
       stats.total += 1;
-        if (m.isSuperAdmin || m.accountRole === 'owner' || m.accountRole === 'admin') {
+      if (m.isSuperAdmin || isAccountManagerRole(accountRoles.get(m.userId) ?? null)) {
         stats.overrideCount += 1;
       }
       statsByGroup.set(m.groupId, stats);

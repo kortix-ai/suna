@@ -14,6 +14,7 @@ import {
 import { authorize, assertAuthorized } from '../../iam/authorize';
 import { actorOf, type Actor } from '../../iam/actor';
 import { assignRole, SYSTEM_ACTOR } from '../../iam/assignments';
+import { projectRoleForUser } from '../../iam/read-models';
 // Straight from `iam/denial-message`, not the `iam` barrel: the barrel and the
 // engine are both replaced wholesale by `mock.module` in several route tests,
 // and these two names are pure wording policy with no reason to live behind
@@ -241,16 +242,11 @@ const loadProjectMemberRole = ttlMemo({
   // invalidateByPrefix(`${userId}|`) busts it alongside the engine memos.
   keyFn: (projectId: string, userId: string) => `${userId}|${projectId}`,
   loader: async (projectId: string, userId: string): Promise<ProjectRole | null> => {
-    const [row] = await db
-      .select({ projectRole: projectMembers.projectRole })
-      .from(projectMembers)
-      .where(and(eq(projectMembers.projectId, projectId), eq(projectMembers.userId, userId)))
-      .limit(1);
-    // normalizeProjectRole, never a raw cast: the column can still hold a
-    // RETIRED value (`editor`, `user`, `viewer`) that no longer exists in the
-    // ProjectRole union. A cast would hand a rank-less string to
-    // PROJECT_ROLE_RANK / PROJECT_ROLE_PERMS and silently deny everything.
-    return normalizeProjectRole(row?.projectRole);
+    // From `role_assignments`, the store the verdict beside this label comes
+    // from. `project_members` is no longer written by every path — an
+    // assignment made through `assignRole()` leaves it untouched on purpose —
+    // so a label read from it can disagree with the gate that just ran.
+    return (await projectRoleForUser(projectId, userId)) as ProjectRole | null;
   },
   shouldCache: (role) => role !== null,
 });
@@ -357,6 +353,29 @@ export async function ensureOrgMembership(
     .insert(accountMembers)
     .values({ userId, accountId, accountRole: 'member' })
     .onConflictDoNothing();
+  // …and the canonical membership grant, through the ONE write path, so joining
+  // an account emits `iam.assignment.granted` like every other grant.
+  // `SYSTEM_ACTOR`: the two callers (accepting a project invite, approving an
+  // access request) were authorized by their own route, and the person being
+  // added is not the writer.
+  //
+  // Best-effort — the mirror trigger on the INSERT above already wrote the same
+  // canonical row, so a failure costs the audit event, not the membership.
+  try {
+    await assignRole(SYSTEM_ACTOR, accountId, {
+      principal: { type: 'user', id: userId },
+      roleKey: 'member',
+      scope: { type: 'account' },
+      source: 'system',
+    });
+  } catch (err) {
+    console.warn('[projects] canonical account-membership assignment failed', {
+      accountId,
+      userId,
+      err: (err as Error)?.message,
+    });
+  }
+  invalidateIamCacheForUser(userId);
   return 'member';
 }
 

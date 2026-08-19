@@ -5,6 +5,7 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { accountInvitations, accountMembers, roleAssignments } from '@kortix/db';
 import { and, eq, gt, isNull } from 'drizzle-orm';
 import { invalidateIamCacheForUser } from '../iam/cache-invalidation';
+import { accountRoleFor, countAccountOwners } from '../iam/read-models';
 import {
   assignRole,
   auditAssignmentRevoked,
@@ -66,17 +67,23 @@ type MemberRow = {
 };
 
 async function getMember(accountId: string, userId: string): Promise<MemberRow | null> {
-  const [member] = await db
-    .select({
-      userId: accountMembers.userId,
-      accountRole: accountMembers.accountRole,
-      scimExternalId: accountMembers.scimExternalId,
-      joinedAt: accountMembers.joinedAt,
-    })
-    .from(accountMembers)
-    .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, userId)))
-    .limit(1);
-  return member ?? null;
+  // Identity from `account_members`, ROLE from `role_assignments` — the store
+  // the engine reads. A SCIM `active` toggle that went through `assignRole()`
+  // leaves the legacy column stale on purpose, so serializing it here would
+  // report a role the IdP's own write did not produce.
+  const [[member], accountRole] = await Promise.all([
+    db
+      .select({
+        userId: accountMembers.userId,
+        scimExternalId: accountMembers.scimExternalId,
+        joinedAt: accountMembers.joinedAt,
+      })
+      .from(accountMembers)
+      .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, userId)))
+      .limit(1),
+    accountRoleFor(accountId, userId),
+  ]);
+  return member ? { ...member, accountRole: accountRole ?? 'member' } : null;
 }
 
 /**
@@ -204,11 +211,7 @@ async function deprovisionMember(accountId: string, userId: string): Promise<str
 /** Last-owner guard shared by every deprovision path. */
 async function isLastOwner(accountId: string, member: MemberRow): Promise<boolean> {
   if (member.accountRole !== 'owner') return false;
-  const owners = await db
-    .select({ userId: accountMembers.userId })
-    .from(accountMembers)
-    .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.accountRole, 'owner')));
-  return owners.length <= 1;
+  return (await countAccountOwners(accountId)) <= 1;
 }
 
 scimRouter.openapi(

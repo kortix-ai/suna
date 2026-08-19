@@ -177,13 +177,18 @@ deliberate application `502`.
 
 ## Access modes
 
+An App's access mode is a per-resource visibility setting on top of the role
+model, not a role. It decides who can open this one App. It grants no permission
+the role verdict denies. See
+[Accounts & access](/docs/accounts#per-feature-access-settings).
+
 New Apps are private. Choose one mode:
 
 | Mode | Who can open the App |
 |---|---|
 | `private` | The creator only |
-| `project` | Every member who can read the project |
-| `restricted` | Selected project members and groups |
+| `project` | Every principal who can read the project |
+| `restricted` | Selected users and groups |
 | `public` | Anyone, with no authentication |
 | `password` | Anyone with the App password |
 
@@ -210,8 +215,9 @@ or set it from the access modal.
 
 Being able to see an App listed and being able to open it are different
 verdicts. A project manager sees every App in the project, so a private App
-stays manageable when its creator leaves. The App record reports
-`viewer_can_access` for the second question.
+stays manageable when its creator leaves. An account owner and an account admin
+hold manager-equivalent access on every project, so the same applies to them.
+The App record reports `viewer_can_access` for the second question.
 
 ## Versions and rollback
 

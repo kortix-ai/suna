@@ -154,7 +154,7 @@ describe('iam_resource_grants — real DB round-trip + engine fold', () => {
       grantedBy: GRANTED_USER,
     });
     expect(await isProjectResourceAccessible(ctx.projectId, 'agent', 'temp-bot', OTHER_USER, [])).toBe(false);
-    const removed = await deleteResourceGrant(grantId, ctx.projectId);
+    const removed = await deleteResourceGrant(grantId, ctx.projectId, ctx.accountId);
     expect(removed).toBe(true);
     // Cache busted on delete → now unscoped → open again.
     expect(await isProjectResourceAccessible(ctx.projectId, 'agent', 'temp-bot', OTHER_USER, [])).toBe(true);

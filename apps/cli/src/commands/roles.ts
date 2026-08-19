@@ -1,27 +1,26 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { parse as parseToml, stringify as stringifyToml } from 'smol-toml';
-import { loadAuth } from '../api/auth.ts';
-import { activeAccount } from '../api/config.ts';
-import { clientFromAuth, type ApiClient } from '../api/client.ts';
-import { emitJson, surfaceApiError, takeFlagValue, takeFlagBool } from '../command-helpers.ts';
+import {
+  emitJson,
+  resolveAccountContext,
+  surfaceApiError,
+  takeFlagValue,
+  takeFlagBool,
+} from '../command-helpers.ts';
+import { findRole, type IamRole } from '../iam.ts';
 import { C, help, pad, status } from '../style.ts';
 
-// Account-scoped IAM custom roles + policy assignments. Mirrors the dashboard's
-// account Roles tab + per-project "Custom roles" card, and wraps the same
-// /accounts/:id/iam/{roles,policies,actions} routes the web SDK already uses.
+// Account-scoped IAM roles. `ls` / `show` / `permissions` read the whole
+// catalog — the seeded SYSTEM roles (owner/admin/member, manager/member,
+// agent-user) plus this account's CUSTOM ones. Only custom roles are editable.
+//
+// Binding a role to a principal is `kortix access grant`, which writes the ONE
+// grant table. The `assign` / `unassign` / `assignments` verbs here still write
+// the legacy policy store; it dual-writes into the same table, so they keep
+// working, but new work should use `kortix access`.
 
 type ResourceType = 'account' | 'project' | 'sandbox' | 'trigger' | 'channel' | 'member' | 'group';
 type PrincipalType = 'member' | 'group' | 'token';
-
-interface IamRole {
-  role_id: string;
-  key: string;
-  name: string;
-  description: string | null;
-  resource_type: ResourceType;
-  is_system: boolean;
-  account_id: string | null;
-}
 
 interface IamPolicy {
   policy_id: string;
@@ -43,20 +42,23 @@ interface ActionCatalogEntry {
 
 const HELP = help`Usage: kortix roles <subcommand> [options]
 
-Manage account-level custom roles + their policy assignments — the CLI face
-of the dashboard's Roles tab and a project's "Custom roles" card. Built-in
-roles (owner/admin/member, manager/member) are read-only references;
-custom roles are yours to create, edit, and bind.
+A role is a named set of permissions. People, groups and service accounts get
+roles; agents get Kortix CLI scopes in kortix.yaml. A session can only do what
+both allow.
+
+System roles (owner/admin/member, manager/member, agent-user) are read-only
+references; custom roles are yours to create, edit, and bind.
 
 Roles:
-  ls [--json]                         List roles (built-in + custom).
+  ls [--json]                         List roles (system + custom).
   show <role> [--json]                Show a role's permissions + usage.
-  actions [--json]                    List the permission catalog.
+  permissions <role> [--json]         List just a role's permissions.
+  actions [--json]                    Legacy catalog — use \`kortix permissions ls\`.
   create <key> --name <n> [opts]      Create a custom role.
   set-actions <role> --actions a,b    Replace a custom role's permissions.
   rm <role>                           Delete a custom role.
 
-Assignments (policies):
+Assignments (legacy policy store — prefer \`kortix access grant\`):
   assignments [--project <id>] [--json]   List policy bindings.
   assign <role> --to <type>:<id> [opts]   Bind a role to a principal.
   unassign <policy-id>                    Remove a binding.
@@ -87,7 +89,7 @@ Options:
 
 Examples:
   kortix roles ls
-  kortix roles actions
+  kortix roles permissions manager
   kortix roles create support_agent --name "Support Agent" \\
     --scope project --actions project.read,project.session.start,project.trigger.fire
   kortix roles assign support_agent --to member:<user-id> --project <project-id>
@@ -95,32 +97,6 @@ Examples:
   kortix roles export --out policies.toml
   kortix roles import policies.toml
 `;
-
-interface RolesContext {
-  client: ApiClient;
-  accountId: string;
-}
-
-/** Resolve the active (or --account) account + an account-scoped client. */
-function resolveAccountContext(accountArg?: string): RolesContext | null {
-  const auth = loadAuth();
-  if (!auth?.token) {
-    process.stderr.write(`${status.err('Not logged in. Run `kortix login`.')}\n`);
-    return null;
-  }
-  const accountId = accountArg || activeAccount()?.id || auth.account_id || '';
-  if (!accountId) {
-    process.stderr.write(
-      `${status.err('No active account. Run `kortix accounts use` or pass --account <id>.')}\n`,
-    );
-    return null;
-  }
-  return { client: clientFromAuth(auth, { accountId }), accountId };
-}
-
-function findRole(roles: IamRole[], ref: string): IamRole | undefined {
-  return roles.find((r) => r.key === ref || r.role_id === ref);
-}
 
 export async function runRoles(argv: string[]): Promise<number> {
   if (argv.length === 0 || argv[0] === '-h' || argv[0] === '--help') {
@@ -142,6 +118,7 @@ export async function runRoles(argv: string[]): Promise<number> {
     f.expires = takeFlagValue(rest, ['--expires']);
     f.out = takeFlagValue(rest, ['--out']);
     f.format = takeFlagValue(rest, ['--format']);
+    f.host = takeFlagValue(rest, ['--host']);
     json = takeFlagBool(rest, ['--json']);
   } catch (err) {
     process.stderr.write(`${status.err((err as Error).message)}\n`);
@@ -149,7 +126,7 @@ export async function runRoles(argv: string[]): Promise<number> {
   }
   const positional = rest.filter((a) => !a.startsWith('-'));
 
-  const ctx = resolveAccountContext(f.account);
+  const ctx = resolveAccountContext({ accountArg: f.account, hostArg: f.host });
   if (!ctx) return 1;
   const base = `/accounts/${ctx.accountId}/iam`;
 
@@ -164,7 +141,7 @@ export async function runRoles(argv: string[]): Promise<number> {
         process.stdout.write('\n');
         process.stdout.write(`  ${C.dim}${pad('KEY', keyW)}   ${pad('NAME', nameW)}   SCOPE      KIND${C.reset}\n`);
         for (const r of roles) {
-          const kind = r.is_system ? `${C.faded}built-in${C.reset}` : `${C.cyan}custom${C.reset}`;
+          const kind = r.is_system ? `${C.faded}system${C.reset}` : `${C.cyan}custom${C.reset}`;
           process.stdout.write(
             `  ${pad(r.key, keyW)}   ${pad(r.name, nameW)}   ${pad(r.resource_type, 8)}   ${kind}\n`,
           );
@@ -187,12 +164,37 @@ export async function runRoles(argv: string[]): Promise<number> {
           .catch(() => ({ policy_count: 0 }));
         if (json) return emitJson({ ...role, actions: perms.actions, ...usage }), 0;
         process.stdout.write('\n');
-        process.stdout.write(`  ${C.bold}${role.name}${C.reset}  ${C.faded}${role.key}${C.reset}${role.is_system ? `  ${C.faded}(built-in)${C.reset}` : ''}\n`);
+        process.stdout.write(`  ${C.bold}${role.name}${C.reset}  ${C.faded}${role.key}${C.reset}${role.is_system ? `  ${C.faded}(system)${C.reset}` : ''}\n`);
         if (role.description) process.stdout.write(`  ${C.dim}${role.description}${C.reset}\n`);
         process.stdout.write(`  ${C.dim}scope ${role.resource_type} · ${usage.policy_count} assignment${usage.policy_count === 1 ? '' : 's'}${C.reset}\n\n`);
         process.stdout.write(`  ${C.dim}PERMISSIONS (${perms.actions.length})${C.reset}\n`);
         for (const a of perms.actions.slice().sort()) process.stdout.write(`    ${a}\n`);
         process.stdout.write('\n');
+        return 0;
+      }
+
+      case 'permissions':
+      case 'perms': {
+        // Just the leaf actions, no usage round-trip — the shape `roles
+        // create --actions` / `set-actions --actions` consume.
+        const ref = positional[0];
+        if (!ref) return missing('a role key or id');
+        const { roles } = await ctx.client.get<{ roles: IamRole[] }>(`${base}/roles`);
+        const role = findRole(roles, ref);
+        if (!role) return notFound(`role "${ref}"`);
+        const perms = await ctx.client.get<{ role_id: string; key: string; actions: string[] }>(
+          `${base}/roles/${encodeURIComponent(role.role_id)}/permissions`,
+        );
+        const actions = perms.actions.slice().sort();
+        if (json) return emitJson({ role_id: role.role_id, key: role.key, is_system: role.is_system, actions }), 0;
+        process.stdout.write('\n');
+        process.stdout.write(
+          `  ${C.bold}${role.key}${C.reset}  ${C.faded}${role.resource_type} scope${role.is_system ? ' · system' : ''}${C.reset}\n\n`,
+        );
+        for (const a of actions) process.stdout.write(`  ${a}\n`);
+        process.stdout.write(
+          `\n  ${C.dim}${actions.length} permission${actions.length === 1 ? '' : 's'} · \`kortix permissions show <action>\` for one${C.reset}\n\n`,
+        );
         return 0;
       }
 
@@ -245,7 +247,7 @@ export async function runRoles(argv: string[]): Promise<number> {
         const role = findRole(roles, ref);
         if (!role) return notFound(`role "${ref}"`);
         if (role.is_system) {
-          process.stderr.write(`${status.err('Built-in roles are read-only — clone it as a custom role instead.')}\n`);
+          process.stderr.write(`${status.err('System roles are read-only — clone it as a custom role instead.')}\n`);
           return 2;
         }
         const actions = f.actions.split(',').map((a) => a.trim()).filter(Boolean);
@@ -263,7 +265,7 @@ export async function runRoles(argv: string[]): Promise<number> {
         const role = findRole(roles, ref);
         if (!role) return notFound(`role "${ref}"`);
         if (role.is_system) {
-          process.stderr.write(`${status.err('Built-in roles cannot be deleted.')}\n`);
+          process.stderr.write(`${status.err('System roles cannot be deleted.')}\n`);
           return 2;
         }
         await ctx.client.delete(`${base}/roles/${encodeURIComponent(role.role_id)}`);

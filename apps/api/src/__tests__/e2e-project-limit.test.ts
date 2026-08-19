@@ -12,7 +12,7 @@
  * created; under-limit → 201.
  */
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import { mockIamEngineAllowAll, mockIamMembershipSyncNoop } from './helpers/iam-mocks';
+import { mockIamEngineAllowAll, mockIamMembershipSyncNoop, mockIamReadModels } from './helpers/iam-mocks';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { accountMembers, projectMembers, projects } from '@kortix/db';
@@ -109,6 +109,9 @@ mock.module('../middleware/auth', () => ({
 }));
 
 mockIamEngineAllowAll();
+// The hermetic db shim models the legacy tables; the read models project
+// from those rows rather than from `role_assignments`. See mockIamReadModels.
+mockIamReadModels();
 mockIamMembershipSyncNoop();
 
 const actualGit = await import('../projects/git');

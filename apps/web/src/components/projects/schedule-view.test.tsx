@@ -108,10 +108,17 @@ describe('ScheduleView page chrome', () => {
     expect(shellChildren).not.toContain('Pause all triggers');
   });
 
-  test('the gear itself is manager-only — the same gate as the switch', () => {
-    expect(menu).toContain("effective_project_role === 'manager'");
+  // The gear and the switch behind it gate on the SAME leaf, and it is the leaf
+  // the route asserts: `PATCH /projects/:id/triggers/activation` requires
+  // `project.trigger.update`. It used to read `effective_project_role ===
+  // 'manager'`, a role label that a custom role holding exactly that leaf could
+  // never satisfy.
+  test('the gear gates on the leaf the activation route asserts', () => {
+    expect(menu).toContain('PROJECT_ACTIONS.PROJECT_TRIGGER_UPDATE');
     expect(menu).toContain('if (!canManage) return null;');
-    expect(menu).not.toContain('canWrite');
+    expect(menu).not.toContain("effective_project_role === 'manager'");
+    // Deliberately NOT the create gate the list's own button uses — a widening.
+    expect(menu).not.toContain('PROJECT_TRIGGER_CREATE');
   });
 
   // The paused STATE is not the paused CONTROL: a project that runs nothing on

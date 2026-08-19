@@ -42,12 +42,24 @@ describe('access help page', () => {
     expect(flat).not.toContain('Editor');
   });
 
-  // The single sentence that keeps the two authority systems apart. Without it
-  // people read "role" as covering what a running agent may do, which it does
-  // not — that is the manifest's Kortix CLI scopes.
-  test('it separates a person’s role from an agent’s Kortix CLI scopes', () => {
-    expect(flat).toContain('People get roles. Agents get Kortix CLI scopes in');
-    expect(flat).toContain('A session can only do what both allow.');
+  // The paragraph that keeps the two authority systems apart. Without it people
+  // read "role" as covering what a running agent may do, which it does not —
+  // that is the manifest's Kortix CLI scopes. Same wording as
+  // `content/docs/accounts.mdx`'s "one vocabulary, two bindings".
+  test('it states the one-vocabulary-two-bindings rule', () => {
+    expect(flat).toContain('One vocabulary, two bindings.');
+    expect(flat).toContain(
+      'People, groups and agents get roles on an account, a project, or a single resource.',
+    );
+    expect(flat).toContain('Agents additionally carry Kortix CLI scopes in');
+    expect(flat).toContain('a session can only do what both allow.');
+  });
+
+  // Every noun the model uses appears, once, on the page that teaches it.
+  test('it names the four nouns of the model', () => {
+    for (const noun of ['Principal', 'Role', 'Scope', 'Assignment']) {
+      expect(flat).toContain(`>${noun}</p>`);
+    }
   });
 
   test('the custom-roles section links to the Roles tab with a real accountId', () => {

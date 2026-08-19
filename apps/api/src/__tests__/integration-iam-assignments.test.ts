@@ -205,13 +205,36 @@ describe.if(hasDatabase)('assignRole / revokeAssignment', () => {
     const ownerRows = owners.filter((r) => r.roleKey === 'owner');
     expect(ownerRows).toHaveLength(2);
 
-    // Two owners: revoking one is fine.
+    // A DEMOTION is a grant plus a revoke: give the second owner the member
+    // floor first, so removing `owner` leaves them in the account. Revoking the
+    // only account role a principal holds is offboarding, and the assertion
+    // below pins that it is refused here and pointed at the route that does it
+    // completely (tokens + seat + identity row).
+    await assignRole(jwt(owner), ACCOUNT, {
+      principal: { type: 'user', id: secondOwner },
+      roleKey: 'member',
+      scope: { type: 'account' },
+    });
     const first = ownerRows.find((r) => r.principalId === secondOwner)!;
     await revokeAssignment(jwt(owner), ACCOUNT, first.assignmentId);
 
     // One owner left: revoking it must be refused.
     const last = ownerRows.find((r) => r.principalId === owner)!;
     await expect(revokeAssignment(jwt(owner), ACCOUNT, last.assignmentId)).rejects.toThrow(/last owner/);
+  });
+
+  test("a principal's ONLY account role cannot be revoked here — that is offboarding", async () => {
+    const [membership] = (
+      await listAssignments({
+        accountId: ACCOUNT,
+        scopeType: 'account',
+        principal: { type: 'user', id: plainMember },
+      })
+    ).filter((r) => r.roleIsSystem);
+    expect(membership).toBeDefined();
+    await expect(
+      revokeAssignment(jwt(owner), ACCOUNT, membership.assignmentId),
+    ).rejects.toThrow(/only account role/);
   });
 
   test('a revoke is visible to authorize immediately', async () => {

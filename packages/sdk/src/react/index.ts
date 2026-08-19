@@ -135,6 +135,23 @@ export * from './runtime-actions';
 // single `useProjectName` accessor, and the invalidation/optimistic-write
 // helpers that keep the projects-list and project-detail caches in sync. See
 // `query-keys.ts` for why the root segment is `'kx'` and not `'kortix'`.
+// The client-side authorization probe — relocated from `apps/web/src/lib/`
+// (`use-permission.ts` + `use-project-can.ts`), where it violated the "logic
+// lives in the SDK" rule and left every other host with no probe at all.
+// `invalidatePermissionProbes` is the cache contract every assignment write
+// must honour: a 5-minute stale verdict is a revoke that has not happened yet.
+export {
+  useCan,
+  useCans,
+  usePermissionsFor,
+  invalidatePermissionProbes,
+  permissionProbeKey,
+  permissionProbeBatchKey,
+  type CanResult,
+  type CanTarget,
+  type CanOptions,
+} from './use-can';
+
 export * from './query-keys';
 export * from './query-contracts';
 export * from './use-project-name';
