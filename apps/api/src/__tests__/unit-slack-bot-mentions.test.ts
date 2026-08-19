@@ -184,3 +184,41 @@ describe('source contracts', () => {
       .toEqual([]);
   });
 });
+
+// ── The gate AFTER isOwnBotEvent, which is why #6577 alone did not work ──────
+//
+// Opening the bot gate was necessary and not sufficient. The mention then hits
+// SLACK_REQUIRE_USER_IDENTITY (optBoolTrue — ON by default): resolveSlackActor
+// looks up chat_user_identities by the SENDER's Slack user id, a bot has no row,
+// so it answers `unlinked` and dispatch returns before the turn.
+//
+// Worse, it returned LOUDLY into a void: postIdentityPrompt posts an ephemeral
+// AND opens a DM, both addressed to slackUserId — the bot. Nobody sees either,
+// so the mention reads as "Kortix ignored it". Verified on dev f07c04f0 with a
+// real bot-to-bot mention (Slack ts 1787153374.887479).
+
+describe('a bot sender is never sent an identity prompt', () => {
+  const src = readFileSync(join(import.meta.dir, '..', 'channels', 'slack', 'dispatch.ts'), 'utf8');
+
+  test('postIdentityPrompt is guarded on the sender not being a bot', () => {
+    // BOTH sites: the bare-@mention branch and the main turn path. Checking only
+    // the first is how the second stayed unguarded — this test caught that.
+    const sites = [...src.matchAll(/await postIdentityPrompt\(/g)];
+    expect(sites.length, 'expected two identity-prompt sites').toBe(2);
+    for (const m of sites) {
+      const before = src.slice(Math.max(0, m.index! - 400), m.index!);
+      expect(before, 'an unlinked BOT gets an ephemeral + a DM it cannot read, and the mention looks ignored')
+        .toContain('if (!event.bot_id) {');
+    }
+  });
+
+  test('link-bot is routed and identity-flag gated', () => {
+    const cmds = readFileSync(join(import.meta.dir, '..', 'channels', 'slack', 'commands.ts'), 'utf8');
+    expect(cmds, 'the only way to make a bot resolvable is gone').toContain("case 'link-bot':");
+    expect(cmds, 'link-bot must write the same chat_user_identities row /login does')
+      .toContain('await linkSlackIdentity({ teamId: ctx.teamId, slackUserId: botUserId, userId: me.userId });');
+    const h = cmds.slice(cmds.indexOf('async function slashLinkBot'));
+    expect(h.slice(0, 1600), 'linking a bot must stay owner/admin gated — any app in the channel is a non-member')
+      .toContain('canManageSlackPolicy');
+  });
+});

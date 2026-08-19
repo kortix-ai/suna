@@ -16,7 +16,7 @@ import { listPickerModels, labelForModelRef } from '../../llm-gateway/models/pic
 import { isModelServableForAccount, resolveEffectiveModel } from '../../llm-gateway/resolution/default-model';
 import { chooseEffectiveAgent, toOpencodeModelRef, toWireModel } from '../../llm-gateway/resolution/effective';
 import { buildSlackLoginUrl } from './login';
-import { lookupSlackIdentity, revokeSlackIdentity } from './identity';
+import { linkSlackIdentity, lookupSlackIdentity, revokeSlackIdentity } from './identity';
 import { conversationPolicyLabel, normalizeConversationPolicy } from './participants';
 import { lookupEmailsByUserIds } from '../../accounts/core/app';
 import { filterAccessibleObjects, unscopedResourceIds } from '../../iam';
@@ -95,6 +95,8 @@ export async function handleSlashCommand(
     case 'policy':
     case 'conversation':
       return slashPolicy(ctx, arg);
+    case 'link-bot':
+      return config.SLACK_REQUIRE_USER_IDENTITY ? slashLinkBot(ctx, arg) : unknownSub(sub, ctx.command);
     case 'help':
       return slashHelp(ctx);
     default:
@@ -668,6 +670,47 @@ async function slashPolicy(ctx: SlashCtx, arg: string): Promise<SlashResponse> {
     text: ok
       ? `Slack session policy set to ${conversationPolicyLabel(next)} for this channel. Existing threads keep their original policy.`
       : 'That channel is no longer bound to a project.',
+  };
+}
+
+// ── Link a bot sender ────────────────────────────────────────────────────────
+// A bot has no Kortix account and can never run `/login`, so resolveSlackActor
+// answers `unlinked` for every message it sends and dispatch stops before the
+// turn. That is why an @-mention from another app looked like it did nothing at
+// all: the "connect your account" nudge is posted ephemerally AND DM'd to the
+// sender — a bot — where no human ever sees it.
+//
+// This binds a bot's Slack user id to the CALLER's Kortix account through the
+// same chat_user_identities row `/login` writes, so the existing authorization
+// applies unchanged: the linked user must still be a member of the project's
+// account and pass PROJECT_WRITE inside resolveSlackActor. Nothing is granted
+// here that the caller does not already have.
+//
+// Owner/admin gated, and deliberately NOT automatic: the identity gate exists to
+// stop a non-member acting, and any app that can post in the channel is a
+// non-member. Turning that off by default would reintroduce exactly the
+// impersonation SLACK_REQUIRE_USER_IDENTITY was added to prevent.
+async function slashLinkBot(ctx: SlashCtx, arg: string): Promise<SlashResponse> {
+  const selection = await currentChannelSelection(ctx);
+  if (!selection?.projectId) {
+    return { response_type: 'ephemeral', text: `No project bound to this channel. Run \`${ctx.command} switch\` first.` };
+  }
+  // Accept a raw id or a pasted <@U…> mention — Slack expands the latter as you type.
+  const botUserId = arg.trim().replace(/^<@|[|>].*$/g, '').toUpperCase();
+  if (!/^[UWB][A-Z0-9]{6,}$/.test(botUserId)) {
+    return { response_type: 'ephemeral', text: `Usage: \`${ctx.command} link-bot @TheBot\` — the bot whose @-mentions of Kortix should run.` };
+  }
+  const me = await lookupSlackIdentity(ctx.teamId, ctx.slackUserId);
+  if (!me) {
+    return { response_type: 'ephemeral', text: `Connect your own Kortix account first: \`${ctx.command} login\`.` };
+  }
+  if (!(await canManageSlackPolicy(ctx, selection.projectId))) {
+    return { response_type: 'ephemeral', text: 'Only a linked Kortix account owner or admin for this project can link a bot.' };
+  }
+  await linkSlackIdentity({ teamId: ctx.teamId, slackUserId: botUserId, userId: me.userId });
+  return {
+    response_type: 'ephemeral',
+    text: `Linked <@${botUserId}> to your Kortix account. Its @-mentions of Kortix in this workspace now run as you. Undo with \`${ctx.command} logout\` semantics via support, or re-link to someone else.`,
   };
 }
 
