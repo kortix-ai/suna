@@ -118,16 +118,36 @@ curl -s -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
          hook_send_email_enabled, hook_send_email_uri}'
 ```
 
-Then enable it:
+**A bare enable PATCH CLEARS the project's custom SMTP settings.** Verified on
+dev 2026-08-19: patching only the three `hook_send_email_*` fields left
+`smtp_host` / `smtp_port` / `smtp_user` / `smtp_admin_email` /
+`smtp_sender_name` all `null`. With the hook on that changes nothing — GoTrue
+no longer uses SMTP — but it silently removes the thing you would fall back TO,
+so a later `hook_send_email_enabled=false` lands on Supabase's built-in sender
+and its much lower rate limit instead of Resend.
+
+Send both halves in ONE patch so the fallback survives. `smtp_pass` for the
+Resend relay is that environment's `RESEND_API_KEY` (username is literally
+`resend`); read it from the env blob rather than retyping it:
+
 
 ```sh
+RESEND="$(aws secretsmanager get-secret-value --secret-id "kortix-${ENVNAME}-env" \
+  --region "$REGION" --query SecretString --output text | jq -r .RESEND_API_KEY)"
+
 curl -s -X PATCH -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
   -H 'content-type: application/json' \
   "https://api.supabase.com/v1/projects/$REF/config/auth" \
   -d "$(jq -nc --arg uri "https://dev-api.kortix.com/v1/webhooks/auth/send-email" \
-                --arg sec "$HOOK_SECRET" \
-        '{hook_send_email_enabled:true, hook_send_email_uri:$uri, hook_send_email_secrets:$sec}')" \
-  | jq '{hook_send_email_enabled, hook_send_email_uri}'
+                --arg sec "$HOOK_SECRET" --arg pass "$RESEND" \
+        '{hook_send_email_enabled:true, hook_send_email_uri:$uri, hook_send_email_secrets:$sec,
+          smtp_host:"smtp.resend.com", smtp_port:"465", smtp_user:"resend", smtp_pass:$pass,
+          smtp_admin_email:"noreply@kortix.cloud", smtp_sender_name:"Kortix"}')" >/dev/null
+
+# Read back BOTH halves — the enable and the surviving fallback.
+curl -s -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+  "https://api.supabase.com/v1/projects/$REF/config/auth" \
+  | jq '{hook_send_email_enabled, hook_send_email_uri, smtp_host, smtp_admin_email}'
 ```
 
 The same three fields exist in the dashboard under Authentication → Hooks →
@@ -165,3 +185,41 @@ Supabase resumes sending auth email itself the moment that returns.
   a silently missing mail, which is the intended behaviour.
 - **Rate limits.** Supabase's own per-hour auth-email cap stops applying;
   delivery is bounded by SES instead.
+
+## Why a promote does not undo any of this (verified 2026-08-19)
+
+Three mechanisms could plausibly drop `AUTH_EMAIL_HOOK_SECRET` on the next
+release. None of them does:
+
+- **`deploy-staging.yml`'s `sync-secret` job rewrites `kortix-staging-env` on
+  every deploy** — but it builds the payload from the EXISTING staging bundle
+  (`base="$(aws secretsmanager get-secret-value --secret-id kortix-staging-env …)"`)
+  and only overlays a fixed list of data-plane keys. It falls back to
+  `kortix-dev-env` solely when the staging secret does not exist yet. Operator-
+  added keys survive by design — the job comment says so explicitly.
+- **`deploy-prod.yml` never writes the API secret at all.** `sync-web-env.sh`
+  writes a DIFFERENT secret, `kortix-<env>-web-env` (the frontend bundle).
+- **Terraform only reads it** (`data "aws_secretsmanager_secret"`); there is no
+  `aws_secretsmanager_secret_version` resource anywhere in `infra/terraform`.
+
+And each task definition references the blob as a single `KORTIX_ENV_JSON`
+secret whose `valueFrom` is the bare secret ARN — no `:AWSCURRENT` stage and no
+version-id suffix. Check it for any environment with:
+
+```sh
+aws ecs describe-task-definition --task-definition "$(aws ecs describe-services \
+  --cluster "kortix-${ENVNAME}" --services "kortix-${ENVNAME}" --region "$REGION" \
+  --query 'services[0].taskDefinition' --output text)" --region "$REGION" \
+  --query 'taskDefinition.containerDefinitions[0].secrets'
+```
+
+Because the ARN carries no version pin, every new task resolves `AWSCURRENT` at start and picks the key up with no
+task-def change. That is why staging and prod need no rollout now — their
+release performs one anyway.
+
+## Do NOT enable the hook before that environment's release
+
+The secret being present is harmless on its own. Enabling the hook while the
+environment still runs an API without the route points GoTrue at a `404` and
+auth email stops entirely. Gate it on step 0 returning `401`, never on the
+secret being set.
