@@ -75,7 +75,7 @@ const stopTheBox = () =>
 async function readTurn(token: string): Promise<Record<string, unknown> | undefined> {
   return rows(
     await realDbModule.db.execute(sql`
-      SELECT state, end_reason FROM kortix.session_turns WHERE turn_token = ${token}`),
+      SELECT state, end_reason, error FROM kortix.session_turns WHERE turn_token = ${token}`),
   )[0];
 }
 
@@ -242,6 +242,10 @@ describe('the reaper backstop', () => {
     expect(await readTurn(t('orphan-parked'))).toMatchObject({
       state: 'ended',
       end_reason: 'runtime_gone',
+      // The backstop closes rows nobody witnessed end. Closing one SILENTLY is
+      // what makes a failed prompt look like a prompt nothing ever answered,
+      // so the reason's own sentence is written with it.
+      error: { name: 'RuntimeGone' },
     });
     expect(await readTurn(t('orphan-live'))).toMatchObject({ state: 'ended' });
     expect(await openRows()).toBe(0);
@@ -277,6 +281,35 @@ describe('the reaper backstop', () => {
     expect(await readTurn(t('orphan-reasoned'))).toMatchObject({
       state: 'ended',
       end_reason: 'failed',
+      // The sentence follows the reason the row KEPT, not the `runtime_gone`
+      // this pass would otherwise have assigned. The CASE that does that runs
+      // only here, against real Postgres.
+      error: { name: 'TurnFailed' },
+    });
+  });
+
+  test('a row that already carries an error keeps it, text and all', async () => {
+    // FIRST WRITER WINS. The relay named the failure; a backstop that ran
+    // afterwards knows strictly less and must not overwrite it.
+    await realDbModule.db.execute(sql`
+      INSERT INTO kortix.session_turns
+        (turn_token, session_id, sandbox_id, project_id, account_id, state, end_reason, error)
+      VALUES (${t('orphan-errored')}, ${SESSION_ID}, ${SANDBOX_ID}::uuid, ${PROJECT_ID}::uuid,
+              ${ACCOUNT_ID}::uuid, 'active', 'failed',
+              ${JSON.stringify({
+                name: 'ModelNotFound',
+                message: 'Model kortix/grok-4.6 not found',
+                recorded_at: '2026-08-19T00:00:00.000Z',
+              })}::jsonb)`);
+    await realDbModule.db.execute(sql`
+      UPDATE kortix.session_sandboxes SET status = 'stopped'
+       WHERE sandbox_id = ${SANDBOX_ID}::uuid`);
+
+    await settleOrphanedSandboxTurns();
+
+    expect(await readTurn(t('orphan-errored'))).toMatchObject({
+      state: 'ended',
+      error: { name: 'ModelNotFound', message: 'Model kortix/grok-4.6 not found' },
     });
   });
 

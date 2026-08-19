@@ -9,6 +9,10 @@ import type {
 	UserMessage,
 } from "@opencode-ai/sdk/v2/client";
 import { getTurnError, groupMessagesIntoTurns } from "../../core/turns";
+import {
+	selectSessionTranscript,
+	toHydrateEntries,
+} from "../session-sync/session-transcript-cache";
 import { ascendingId, Binary, sameSessionStatus, useSyncStore } from "./sync-store";
 
 // ============================================================================
@@ -707,6 +711,243 @@ describe("useSyncStore — session.error attaches to the turn that failed", () =
 		const turns = groupMessagesIntoTurns(useSyncStore.getState().getMessages("ses_1"));
 		expect(turns).toHaveLength(1);
 		expect(getTurnError(turns[0])).toBe("boom");
+	});
+});
+
+// ============================================================================
+// Durable turn errors — the server's own record of a failed turn, applied to a
+// transcript this tab may never have watched fail.
+//
+// The live `session.error` frame only reaches the tab that was open when the
+// turn died. Reload in a different browser and the transcript is N user
+// messages with nothing under them: opencode persists no assistant message for
+// a turn that failed before generation started. `GET .../turns` retains one row
+// per turn WITH its error, keyed by the user message id, and this is where that
+// answer becomes a rendered error block.
+// ============================================================================
+
+describe("useSyncStore — applyServerTurnErrors", () => {
+	const turnError = (message: string) => ({ name: "UnknownError", message });
+
+	test("attaches the error under the user message the turn answered", () => {
+		const store = useSyncStore.getState();
+		store.upsertMessage("ses_1", userMessage("msg_0000000000010000000000"));
+		store.upsertMessage("ses_1", {
+			...assistantMessage("msg_0000000000020000000000"),
+			parentID: "msg_0000000000010000000000",
+		});
+		store.upsertMessage("ses_1", userMessage("msg_0000000000030000000000"));
+
+		store.applyServerTurnErrors("ses_1", [
+			{
+				messageId: "msg_0000000000030000000000",
+				error: turnError("Model not found: kortix/grok-4.6"),
+			},
+		]);
+
+		const turns = groupMessagesIntoTurns(useSyncStore.getState().getMessages("ses_1"));
+		expect(turns).toHaveLength(2);
+		expect(getTurnError(turns[0])).toBeUndefined();
+		expect(getTurnError(turns[1])).toBe("Model not found: kortix/grok-4.6");
+	});
+
+	test("is idempotent with the live stub — same turn, one row", () => {
+		const store = useSyncStore.getState();
+		store.upsertMessage("ses_1", userMessage("msg_0000000000010000000000"));
+		store.applyEvent({
+			id: "evt_1",
+			type: "session.error",
+			properties: {
+				sessionID: "ses_1",
+				error: { name: "UnknownError", data: { message: "live copy" } },
+			},
+		} as never);
+		const liveId = useSyncStore.getState().messages.ses_1.find((m) => m.role === "assistant")?.id;
+
+		store.applyServerTurnErrors("ses_1", [
+			{ messageId: "msg_0000000000010000000000", error: turnError("server copy") },
+		]);
+
+		const assistants = useSyncStore
+			.getState()
+			.messages.ses_1.filter((m) => m.role === "assistant");
+		expect(assistants).toHaveLength(1);
+		expect(assistants[0].id).toBe(liveId!);
+		// The live frame got there first and is the same failure — it stands.
+		expect(getTurnError(groupMessagesIntoTurns(useSyncStore.getState().getMessages("ses_1"))[0])).toBe(
+			"live copy",
+		);
+	});
+
+	test("says nothing when the turn produced a real reply", () => {
+		const store = useSyncStore.getState();
+		store.upsertMessage("ses_1", userMessage("msg_0000000000010000000000"));
+		store.upsertMessage("ses_1", {
+			...assistantMessage("msg_0000000000020000000000"),
+			parentID: "msg_0000000000010000000000",
+		});
+
+		store.applyServerTurnErrors("ses_1", [
+			{ messageId: "msg_0000000000010000000000", error: turnError("late server copy") },
+		]);
+
+		expect(useSyncStore.getState().messages.ses_1).toHaveLength(2);
+		expect(
+			getTurnError(groupMessagesIntoTurns(useSyncStore.getState().getMessages("ses_1"))[0]),
+		).toBeUndefined();
+	});
+
+	test("patches a reply that exists but carries no error of its own", () => {
+		const store = useSyncStore.getState();
+		store.upsertMessage("ses_1", userMessage("msg_0000000000010000000000"));
+		store.upsertMessage("ses_1", {
+			...assistantMessage("msg_0000000000020000000000"),
+			parentID: "msg_0000000000010000000000",
+		});
+
+		store.applyServerTurnErrors(
+			"ses_1",
+			[{ messageId: "msg_0000000000010000000000", error: turnError("runtime went away") }],
+			{ patchEmptyReply: true },
+		);
+
+		expect(
+			getTurnError(groupMessagesIntoTurns(useSyncStore.getState().getMessages("ses_1"))[0]),
+		).toBe("runtime went away");
+	});
+
+	test("a synthetic never-ran failure renders exactly like a runtime one", () => {
+		const store = useSyncStore.getState();
+		store.upsertMessage("ses_1", userMessage("msg_0000000000010000000000"));
+
+		store.applyServerTurnErrors("ses_1", [
+			{
+				messageId: "msg_0000000000010000000000",
+				error: {
+					name: "TurnAbandoned",
+					message: "The runtime did not accept this prompt.",
+				},
+			},
+		]);
+
+		const turns = groupMessagesIntoTurns(useSyncStore.getState().getMessages("ses_1"));
+		expect(getTurnError(turns[0])).toBe("The runtime did not accept this prompt.");
+	});
+
+	test("ignores rows whose user message this transcript does not hold", () => {
+		const store = useSyncStore.getState();
+		store.upsertMessage("ses_1", userMessage("msg_0000000000010000000000"));
+
+		store.applyServerTurnErrors("ses_1", [
+			{ messageId: "msg_not_in_this_transcript", error: turnError("orphan") },
+			{ messageId: "", error: turnError("no id at all") },
+		]);
+
+		expect(useSyncStore.getState().messages.ses_1).toHaveLength(1);
+	});
+
+	test("applying the same server rows twice changes nothing", () => {
+		const store = useSyncStore.getState();
+		store.upsertMessage("ses_1", userMessage("msg_0000000000010000000000"));
+		const rows = [
+			{ messageId: "msg_0000000000010000000000", error: turnError("boom") },
+		];
+		store.applyServerTurnErrors("ses_1", rows);
+		const first = useSyncStore.getState().messages.ses_1;
+		store.applyServerTurnErrors("ses_1", rows);
+		// Same array identity: a no-op must not re-render every transcript
+		// consumer subscribed to this session.
+		expect(useSyncStore.getState().messages.ses_1).toBe(first);
+	});
+
+	test("the applied stub is reconciled like any other on a later hydrate", () => {
+		const store = useSyncStore.getState();
+		store.upsertMessage("ses_1", userMessage("msg_0000000000010000000000"));
+		store.applyServerTurnErrors("ses_1", [
+			{ messageId: "msg_0000000000010000000000", error: turnError("boom") },
+		]);
+
+		// The runtime later DID persist a reply for that turn.
+		store.hydrate("ses_1", [
+			{ info: userMessage("msg_0000000000010000000000"), parts: [] },
+			{
+				info: {
+					...assistantMessage("msg_0000000000020000000000"),
+					parentID: "msg_0000000000010000000000",
+				},
+				parts: [],
+			},
+		]);
+
+		expect(useSyncStore.getState().messages.ses_1.map((m) => m.id)).toEqual([
+			"msg_0000000000010000000000",
+			"msg_0000000000020000000000",
+		]);
+	});
+});
+
+// The two properties the error block is CLAIMED to have, asserted against the
+// real cache code rather than a hand-built snapshot: it comes back after a
+// reload of the same tab, and no later hydrate makes it blink.
+describe("useSyncStore — a turn error survives the reload and never flickers", () => {
+	function failedTurn() {
+		const store = useSyncStore.getState();
+		store.upsertMessage("ses_1", userMessage("msg_0000000000010000000000"));
+		store.applyEvent({
+			id: "evt_1",
+			type: "session.error",
+			properties: {
+				sessionID: "ses_1",
+				error: { name: "UnknownError", data: { message: "Model not found: kortix/grok-4.6" } },
+			},
+		} as never);
+		return store;
+	}
+	const serverTranscriptWithNoReply = () => [
+		{ info: userMessage("msg_0000000000010000000000"), parts: [] as Part[] },
+	];
+
+	test("the transcript cache carries it, and a fresh page paints it back", () => {
+		const store = failedTurn();
+
+		// EXACTLY what `writeCachedTranscript` mirrors to IndexedDB.
+		const cached = selectSessionTranscript(useSyncStore.getState(), "ses_1");
+		expect(cached).not.toBeNull();
+		expect(
+			cached!.messages.some((m) => (m as { error?: unknown }).error),
+		).toBe(true);
+
+		// A reload: brand-new store, first paint from disk.
+		store.reset();
+		useSyncStore.getState().hydrate("ses_1", toHydrateEntries(cached!));
+		const turns = groupMessagesIntoTurns(useSyncStore.getState().getMessages("ses_1"));
+		expect(turns).toHaveLength(1);
+		expect(getTurnError(turns[0])).toBe("Model not found: kortix/grok-4.6");
+
+		// The runtime reconcile that lands behind the repaint holds no reply for
+		// that turn — and must not take the repainted error with it.
+		useSyncStore.getState().hydrate("ses_1", serverTranscriptWithNoReply());
+		expect(
+			getTurnError(groupMessagesIntoTurns(useSyncStore.getState().getMessages("ses_1"))[0]),
+		).toBe("Model not found: kortix/grok-4.6");
+	});
+
+	test("repeated post-error hydrates keep the same row — no blink, no re-key", () => {
+		failedTurn();
+		const idOf = () =>
+			useSyncStore.getState().messages.ses_1.find((m) => m.role === "assistant")?.id;
+		const first = idOf();
+		expect(first).toBeDefined();
+
+		// `reconcileTail('session-error')`, then the ordinary transcript polls
+		// behind it. Each one returns the same reply-less transcript.
+		for (let i = 0; i < 3; i++) {
+			useSyncStore.getState().hydrate("ses_1", serverTranscriptWithNoReply());
+			expect(idOf()).toBe(first);
+			expect(
+				getTurnError(groupMessagesIntoTurns(useSyncStore.getState().getMessages("ses_1"))[0]),
+			).toBe("Model not found: kortix/grok-4.6");
+		}
 	});
 });
 

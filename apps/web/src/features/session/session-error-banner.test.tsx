@@ -88,3 +88,36 @@ describe('SessionRetryDisplay', () => {
     expect(html).toContain('context_length_exceeded');
   });
 });
+
+// ============================================================================
+// ModelNotFound for a managed (`kortix/…`) model — the one failure the sandbox
+// repairs by itself. Payload is verbatim from a live sandbox: opencode names
+// the frame `UnknownError`, so only the message text identifies it.
+// ============================================================================
+
+describe('TurnErrorDisplay — managed model not registered yet', () => {
+  const modelNotFound =
+    'Model not found: kortix/grok-4.6. Did you mean: 302ai/gemini-2.5-flash-nothink, abliteration-ai/abliterated-model?';
+
+  test('keeps the runtime text and adds the retry hint beneath it', () => {
+    const html = renderToStaticMarkup(<TurnErrorDisplay errorText={modelNotFound} />);
+    expect(html).toContain('Model not found: kortix/grok-4.6');
+    expect(html).toContain(
+      'This sandbox is registering the model now — send your message again in a few seconds.',
+    );
+  });
+
+  test('no hint for a model this platform does not serve — retrying cannot fix that', () => {
+    const html = renderToStaticMarkup(
+      <TurnErrorDisplay errorText="Model not found: openai/gpt-9. Did you mean: openai/gpt-4.1?" />,
+    );
+    expect(html).toContain('Model not found: openai/gpt-9');
+    expect(html).not.toContain('registering the model now');
+  });
+
+  test('no hint on any other failure', () => {
+    const html = renderToStaticMarkup(<TurnErrorDisplay errorText="Bad Gateway" />);
+    expect(html).toContain('Bad Gateway');
+    expect(html).not.toContain('registering the model now');
+  });
+});

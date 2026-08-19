@@ -1,5 +1,10 @@
 import { type OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
-import { DEFAULT_MAX_REQUEST_BYTES, createGateway } from '@kortix/llm-gateway';
+import {
+  DEFAULT_MAX_REQUEST_BYTES,
+  createGateway,
+  gzipRelayedBody,
+  sanitizeRelayedHeaders,
+} from '@kortix/llm-gateway';
 import { config } from '../config';
 import { auth, errors, json, makeOpenApiApp } from '../openapi';
 import { createInProcessGatewayHooks } from './hooks';
@@ -360,6 +365,13 @@ function modelsRoute(path: string) {
   });
 }
 
+/** The reverse-proxy tails that serve the model catalog (see `models` above and
+ *  the standalone pod's own alias list in apps/llm-gateway/src/server.ts). */
+function isCatalogTail(tail: string): boolean {
+  const path = tail.split('?')[0]?.replace(/\/+$/, '') || '/';
+  return path === '/models' || path.endsWith('/models');
+}
+
 // Single place that wires every LLM-gateway surface onto the API:
 //
 //   /v1/llm            In-process gateway running the FULL package pipeline
@@ -405,6 +417,10 @@ export function mountLlmGateway(app: OpenAPIHono): void {
     const models = (c: import('hono').Context) =>
       gateway.listModels(c.req.header('authorization'), {
         managedOnly: c.req.query('scope') === 'managed',
+        // Gzip when the client accepts it (~10:1 on this shape). The full
+        // catalog is ~3.3MB and a cross-region sandbox fetches it at boot.
+        acceptEncoding: c.req.header('accept-encoding') ?? null,
+        ifNoneMatch: c.req.header('if-none-match') ?? null,
       });
     const messages = async (c: import('hono').Context) =>
       gateway.messages({
@@ -473,9 +489,26 @@ export function mountLlmGateway(app: OpenAPIHono): void {
         }
         try {
           const upstream = await fetch(target, init);
+          // `fetch` DECOMPRESSES the upstream body transparently while copying
+          // the upstream's `Content-Encoding: gzip` header verbatim. Relaying
+          // both together labels plain bytes as gzip and the next client fails
+          // with a zlib error — measured on Bun 1.3.14 the moment the gateway
+          // pod started compressing `/models`. So the stale byte-description
+          // headers go, always.
+          const headers = sanitizeRelayedHeaders(upstream.headers);
+          // Then re-compress the ONE response big enough to be worth it. Bounded
+          // to the catalog route on purpose: it is a finite JSON body, whereas
+          // `/chat/completions` is an SSE stream that must never be buffered.
+          if (isCatalogTail(tail) && upstream.ok) {
+            const raw = await upstream.arrayBuffer();
+            const relayed = gzipRelayedBody(raw, c.req.header('accept-encoding'));
+            if (relayed.contentEncoding) headers.set('content-encoding', relayed.contentEncoding);
+            headers.set('vary', 'accept-encoding');
+            return new Response(relayed.body, { status: upstream.status, headers });
+          }
           return new Response(upstream.body, {
             status: upstream.status,
-            headers: upstream.headers,
+            headers,
           });
         } catch (err) {
           // Standalone gateway pod unreachable (network / DNS / pod down).

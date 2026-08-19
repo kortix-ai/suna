@@ -8,7 +8,7 @@ import {
   buildOpencodeConfigContent,
   configuredProviderModelIds,
   fetchManagedModels,
-  missingManagedModelIds,
+  missingPickerModelIds,
   refreshGatewayCatalogFile,
   resetManagedModelsStateForTests,
   settleManagedModelsPrefetch,
@@ -17,7 +17,12 @@ import {
   type Opencode,
 } from '../opencode'
 import { loadConfig } from '../config'
-import { reconcileManagedModels, resetManagedReconcileForTests } from '../main'
+import {
+  reconcileSelectableModelsAtBoot,
+  registerModelReconcile,
+  resetBootReconcileForTests,
+  resetModelReconcileForTests,
+} from '../model-reconcile'
 
 // The 2026-08-19 outage in one sentence: the image-baked catalog is frozen at
 // template-build time, the managed lineup is deployment config, so a managed
@@ -70,13 +75,15 @@ function providerModels(raw: string | undefined): Record<string, { name?: string
 
 beforeEach(() => {
   resetManagedModelsStateForTests()
-  resetManagedReconcileForTests()
+  resetBootReconcileForTests()
+  resetModelReconcileForTests()
 })
 
 afterEach(async () => {
   globalThis.fetch = realFetch
   resetManagedModelsStateForTests()
-  resetManagedReconcileForTests()
+  resetBootReconcileForTests()
+  resetModelReconcileForTests()
   await Promise.all(tempDirs.splice(0).map((d) => rm(d, { recursive: true, force: true })))
 })
 
@@ -113,12 +120,25 @@ describe('managed listing fetch', () => {
     expect(Date.now() - started).toBeLessThan(5_500)
   })
 
-  test('an empty managed set (free tier) is not an overlay', async () => {
+  // SELF-HOST semantics. `KORTIX_MANAGED_PROVIDER_ENABLED=false` (and a free-tier
+  // account) makes the gateway answer 200 with `{"models":{}}`. That is an
+  // ANSWER — "this deployment serves no managed models" — and it must be
+  // distinguishable from a FAILED fetch, which is the only case allowed to fall
+  // back to the bundled managed table. Collapsing the two put 7 phantom managed
+  // ids in a self-host picker; every one of them 404s at the gateway.
+  test('an explicitly EMPTY managed listing is an answer, not a failure', async () => {
     globalThis.fetch = (async () =>
       new Response(JSON.stringify({ models: {} }), { status: 200 })) as unknown as typeof fetch
 
-    expect(await fetchManagedModels('https://gw.kortix.test/v1', 'k')).toBeNull()
+    expect(await fetchManagedModels('https://gw.kortix.test/v1', 'k')).toEqual({})
   })
+
+  test('a FAILED fetch is null — the one case that keeps the bundled floor', async () => {
+    globalThis.fetch = (async () =>
+      new Response('nope', { status: 503 })) as unknown as typeof fetch
+
+    expect(await fetchManagedModels('https://gw.kortix.test/v1', 'k')).toBeNull()
+  }, 15_000)
 })
 
 describe('boot config composition', () => {
@@ -357,11 +377,14 @@ describe('post-spawn managed reconcile', () => {
     const restarts = { n: 0 }
     const marks: string[] = []
     const target = await targetPath()
-    const opts = { catalogTargetFile: target, turnProbe: async () => false }
+    registerModelReconcile({ opencode: fakeOpencode(restarts), cfg }, {
+      catalogTargetFile: target,
+      turnProbe: async () => false,
+    })
 
-    await reconcileManagedModels(fakeOpencode(restarts), cfg, (m) => marks.push(m), opts)
+    await reconcileSelectableModelsAtBoot((m: string) => marks.push(m))
     // Single-flight: a second call must never buy a second restart.
-    await reconcileManagedModels(fakeOpencode(restarts), cfg, (m) => marks.push(m), opts)
+    await reconcileSelectableModelsAtBoot((m: string) => marks.push(m))
 
     expect(restarts.n).toBe(1)
     expect(marks).toEqual(['managed-reconcile'])
@@ -388,12 +411,13 @@ describe('post-spawn managed reconcile', () => {
     const restarts = { n: 0 }
     const marks: string[] = []
     const target = await targetPath()
-    await reconcileManagedModels(fakeOpencode(restarts), cfg, (m) => marks.push(m), {
+    registerModelReconcile({ opencode: fakeOpencode(restarts), cfg }, {
       catalogTargetFile: target,
       turnProbe: async () => false,
     })
+    await reconcileSelectableModelsAtBoot((m: string) => marks.push(m))
 
-    expect(missingManagedModelIds(LIVE_MANAGED.models)).toEqual([])
+    expect(missingPickerModelIds(LIVE_MANAGED.models, null, new Set())).toEqual([])
     expect(restarts.n).toBe(0)
     expect(marks).toEqual(['managed-reconcile'])
     expect(await readFile(target, 'utf8').catch(() => null)).toBeNull()
@@ -402,15 +426,17 @@ describe('post-spawn managed reconcile', () => {
   test('never restarts across a live turn — or one it cannot read', async () => {
     for (const turnInFlight of [true, null] as const) {
       resetManagedModelsStateForTests()
-      resetManagedReconcileForTests()
+      resetBootReconcileForTests()
+      resetModelReconcileForTests()
       await bootWithLiveGateway()
 
       const restarts = { n: 0 }
       const target = await targetPath()
-      await reconcileManagedModels(fakeOpencode(restarts), cfg, () => {}, {
+      registerModelReconcile({ opencode: fakeOpencode(restarts), cfg }, {
         catalogTargetFile: target,
         turnProbe: async () => turnInFlight,
       })
+      await reconcileSelectableModelsAtBoot(() => {})
 
       expect(restarts.n).toBe(0)
       expect(await readFile(target, 'utf8').catch(() => null)).toBeNull()
@@ -429,10 +455,11 @@ describe('post-spawn managed reconcile', () => {
 
     const restarts = { n: 0 }
     const target = await targetPath()
-    await reconcileManagedModels(fakeOpencode(restarts), cfg, () => {}, {
+    registerModelReconcile({ opencode: fakeOpencode(restarts), cfg }, {
       catalogTargetFile: target,
       turnProbe: async () => false,
     })
+    await reconcileSelectableModelsAtBoot(() => {})
 
     expect(restarts.n).toBe(0)
   }, 15_000)

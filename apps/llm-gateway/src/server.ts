@@ -247,6 +247,13 @@ export function buildServer(): GatewayServer {
   }) =>
     gateway.listModels(c.req.header('authorization'), {
       managedOnly: c.req.query('scope') === 'managed',
+      // Gzip when the client accepts it. The full catalog is ~3.3MB of JSON and
+      // compresses ~10:1; its most latency-sensitive consumer is a cross-region
+      // sandbox fetching it at boot. Identical behavior to the in-process mount
+      // in apps/api/src/llm-gateway/wire.ts — one implementation, in
+      // @kortix/llm-gateway's catalogJsonResponse.
+      acceptEncoding: c.req.header('accept-encoding') ?? null,
+      ifNoneMatch: c.req.header('if-none-match') ?? null,
     });
 
   app.get('/models', models);

@@ -446,6 +446,109 @@ fail.
 
 ---
 
+### 2026-08-19 — session `durable-turn-errors` — a failed turn is readable after the tab that saw it is gone — DONE
+
+**Files:** `core/rest/projects-client/sessions.ts` (+`.test.ts`),
+`core/client/kortix.ts`, `browser/stores/sync-store.ts` (+`.test.ts`),
+`react/use-durable-turn-errors.ts` (+`.test.ts`, NEW), `react/use-session.ts`,
+both surface snapshots. The server half (the `session_turns.error` column, the
+recorder, `GET .../turns`, `last_ended.error`) is `apps/api` + `packages/db`,
+outside this package.
+
+**What.** A turn that fails before generation starts leaves the RUNTIME's
+transcript holding the user message and nothing else, so the failure existed
+only as a live `session.error` frame — which reaches exactly one tab. Reload in
+another browser and the turn read as a prompt nobody answered. The control
+plane now retains one settled row per turn WITH its error, keyed by the user
+message it answered, and this is the client half of reading it.
+
+`listSessionTurns(projectId, sessionId, {limit})` → `SessionTurnHistoryEntry[]`,
+newest first, plus `SessionTurnError` / `SessionTurnEndReason` /
+`SessionTurnHistoryState`, and `kortix.session(p,s).turns()` on the facade. A
+404 answers `[]` — the only ways to get one are a deployment older than the
+route and a session the caller cannot see, and neither is a reason to fail the
+transcript read it rides alongside; every other status still throws.
+`SessionTurnEnded` gains `message_id?` and `error?` as OPTIONAL fields: that
+type also appears in INPUT position (`SessionTurnObservation` on `./react`), so
+requiring them would break an external constructor at compile time.
+
+`useSyncStore.applyServerTurnErrors(sessionID, rows, options?)` puts those rows
+back onto the transcript through the SAME mechanism the live frame uses
+(`stubIdFor(userId)`), which is what makes the two idempotent by construction —
+whichever arrives first owns the row, the other is a no-op, and a no-op returns
+the identical state object so a repeated read costs no render. A turn whose
+reply really exists is left alone unless `patchEmptyReply`. Rows for prompts
+this transcript does not hold are skipped, and re-applied later if `loadOlder`
+brings them in.
+
+`useDurableTurnErrors` (NOT exported from `./react` — internal glue, mounted by
+`useSession`) reads once per mount and once per turn END (the falling edge of
+`working`), never on a timer, and re-applies whenever the transcript itself
+moves.
+
+**Gates.** `bun test` on the touched files: sessions client 65/0, sync-store
+161/0, the new hook 5/0, kortix facade 86/0, turns 148/0, tripwire +
+package-exports 72/0, use-session 67/0. `tsc --noEmit` + examples clean.
+Snapshots +22 names, 0 deletions. (The FULL `bun test src` remains 464-fail on
+this branch for a pre-existing cross-file fetch-stub leak — measured on the
+untouched tree.)
+
+**Browser proof — a browser that never saw the failure.** Live worktree stack,
+real sandbox, `POST .../prompts` with `kortix/does-not-exist-model`; the server
+recorded `end_reason: failed` + the real message. Opened in a FRESH Chromium
+profile (`indexedDB.databases()` → `[]` before navigation, so no cached
+transcript): the error block renders under that prompt, from exactly ONE
+`/turns?limit=50` request, still one after a further 45s idle. A second session
+showed the synthetic `TurnEndedUnknown` sentence rendering the same way.
+Screenshots in `output/session-error/durable/`.
+
+---
+
+### 2026-08-19 — session `model-not-found-hint` — the ONE error a retry actually fixes says so — DONE
+
+**Files:** `core/turns/errors.ts` (+`.test.ts`), both surface snapshots. The
+`apps/web` half (the hint line under the in-place error block) is outside this
+package.
+
+**What.** `extractModelNotFoundDetails(raw)` — recognizes "the runtime does not
+know this model" in any shape the failure reaches a host (the raw
+`session.error` frame, an `AssistantMessage.error`, an `Error`, or the
+flattened display string) and answers `{providerID, modelID, managed}`.
+`managed` is `providerID === 'kortix'`: a managed model missing from a sandbox
+is a stale catalog the daemon now repairs by itself (re-read the live managed
+set, rewrite the catalog, restart opencode), so retrying shortly is real
+advice; a BYOK/provider model that does not exist is a wrong selection and no
+retry fixes it. That distinction is the whole reason this lives in the SDK
+rather than in one host.
+
+Recognition is by MESSAGE, not by name: a live sandbox was made to fail with
+`model: kortix/does-not-exist-model` and both `session.error` frames off
+opencode's event stream came back named `UnknownError` — one plain, one
+prefixed `ProviderModelNotFoundError:` with a stack trace appended. Those two
+payloads are in the test verbatim, alongside production's third spelling
+(`ModelNotFound: kortix/grok-4.6`). The model half of the pattern admits an
+inner `.` but never a trailing one, so `grok-4.6` survives and the sentence's
+period does not.
+
+Additive only: 2 new names (`ModelNotFoundDetails`, `extractModelNotFoundDetails`)
+in each snapshot, no removals or renames.
+
+**Also** — two regression tests for the claims made about the in-place error
+block, asserted against the real cache code rather than a hand-built snapshot:
+`selectSessionTranscript` → `toHydrateEntries` → `hydrate` repaints the error
+after a reload of the same tab, and three successive reply-less hydrates keep
+the SAME row id (no re-key, so no remount, so no blink). Both were
+mutation-checked: dropping stubs from the cache write kills the first, a
+non-deterministic `stubIdFor` kills the second.
+
+**Gates.** `bun test src/core/turns` 148 pass / 0 fail, `src/browser/stores/sync-store.test.ts`
+153 / 0, `src/core/http` 154 / 0, surface snapshots 2 / 0; `tsc --noEmit` +
+examples clean. The FULL `bun test src` is 464 fail on this branch BEFORE any
+of these edits (measured by stashing them: 1855 pass / 464 fail, vs 1863 / 464
+after) — a pre-existing cross-file fetch-stub leak, not this work.
+
+---
+
 ### 2026-08-19 — session `session-error-turn` — a `session.error` belongs to the turn that failed — DONE
 
 **Files:** `browser/stores/sync-store.ts` (+`.test.ts`). The `apps/web` half (a

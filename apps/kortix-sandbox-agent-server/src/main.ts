@@ -20,15 +20,21 @@ import {
   createOpencodeSupervisor,
   hasKortixLlmGateway,
   OPENCODE_HOME,
-  missingManagedModelIds,
   refreshGatewayCatalogFile,
   scheduleCatalogWarm,
-  settleManagedModelsPrefetch,
-  startManagedModelsPrefetch,
-  writeManagedOverlayCatalogFile,
   waitForOpencodeReady,
   type Opencode,
 } from './opencode'
+// Keeps OpenCode's provider map in sync with the models this project's picker
+// can offer — managed AND connected-provider BYOK — for the whole life of the
+// box. See model-reconcile.ts for the invariant and the cost model.
+import {
+  noteTurnEnded,
+  reconcileSelectableModelsAtBoot,
+  registerModelReconcile,
+  selfHealMissingModel,
+  startCatalogPrefetches,
+} from './model-reconcile'
 import { relayBootTimelineToApi } from './boot-timeline-relay'
 import { repairOpencodeConfigDir } from './apple-double'
 import { ensureOpencodeConfigDeps } from './opencode-config-deps'
@@ -208,15 +214,15 @@ async function main() {
   installShutdownHandlers(opencode, server, staticWeb)
   bootMark('proxy-up')
 
-  // Learn the CURRENT managed lineup from the gateway this session bills
-  // against, concurrently with the repo clone. The managed set is deployment
-  // config and the image's baked catalog goes stale the moment it changes, so
-  // without this a managed model added after the last template build is absent
-  // from OpenCode's provider map and every turn on it dies with
-  // `ModelNotFound: kortix/<id>` (prod incident 2026-08-19). The result is
-  // consumed by buildOpencodeConfigContent at spawn; the clone is the boot
-  // long-pole, so the fetch costs no critical-path time.
-  startManagedModelsPrefetch(process.env.KORTIX_LLM_BASE_URL, process.env.KORTIX_LLM_API_KEY)
+  // Learn what the gateway this session bills against ACTUALLY serves — the
+  // managed lineup (~3KB) and the full catalog (~300KB gzipped) — concurrently
+  // with the repo clone. Both are deployment/registry state that moves faster
+  // than the sandbox image, so the image's baked catalog goes stale and a model
+  // it never heard of dies with `ModelNotFound: kortix/<id>` (prod incident
+  // 2026-08-19). Neither fetch is on the critical path: the boot config is built
+  // from what is already known, and the live answers are applied by the
+  // post-spawn reconcile. The clone is the boot long-pole either way.
+  startCatalogPrefetches()
 
   const repoMaterializePromise: Promise<void> = cfg.autoClone
     ? materializeRepo(cfg).catch((err) => {
@@ -422,111 +428,6 @@ function armSeedAdoption(
 // prompt/bootstrap was requested) and start the question-relay event loop.
 // Shared post-boot session runtime: create the initial opencode session when
 // requested and wire the question/turn event relay.
-// Once per daemon process. A second call is a no-op even if a second runtime
-// start happens (seed boot then fork adoption), so a box can never restart
-// OpenCode twice for the same reason.
-let managedReconcileRan = false
-
-/**
- * Post-spawn managed-model reconcile — the OFF-CRITICAL-PATH half of "the
- * sandbox learns the managed set from the API it talks to".
- *
- * The config build (buildOpencodeConfigContent) is synchronous by rule: it uses
- * only what is already known, because `opencode serve` cannot bind its port
- * until that file is written — awaiting the fetch there cost 1.6s of a 6.5s dev
- * boot. So the live answer is applied HERE instead, after the spawn and before
- * the initial prompt is delivered:
- *
- *   - settle the prefetch started at proxy-up (its own ≤5s budget, started at
- *     ~80ms — by the time OpenCode is spawning this is already resolved, so it
- *     costs ~0ms and runs concurrently with OpenCode's own cold start);
- *   - diff the live managed set against the provider map OpenCode actually
- *     booted with;
- *   - only a genuinely MISSING managed id — the model that would answer
- *     `ModelNotFound` — buys one controlled restart. The bundled managed table
- *     ships with every release, so the common case is a no-op.
- *
- * Never restarts across a live turn: `opencodeTurnInFlight` treats "cannot
- * tell" as busy, and a cold box with no pin answers a definite `false` without
- * a request.
- */
-/** Test seam: re-arm the once-per-process guard. */
-export function resetManagedReconcileForTests(): void {
-  managedReconcileRan = false
-}
-
-export async function reconcileManagedModels(
-  opencode: ReturnType<typeof createOpencodeSupervisor>,
-  cfg: Config,
-  bootMark: (label: string) => void,
-  // Test seams only — production always uses these defaults. The session
-  // catalog file lives under the daemon's own home (never `env.HOME`, see
-  // KORTIX_OPENCODE_CONFIG_PATH), and the live-turn probe is the real one.
-  opts: {
-    catalogTargetFile?: string
-    turnProbe?: (baseUrl: string, workspace: string) => Promise<boolean | null>
-  } = {},
-): Promise<void> {
-  if (managedReconcileRan) return
-  managedReconcileRan = true
-  const startedAt = Date.now()
-  try {
-    // Free in wall-clock terms: OpenCode is cold-starting in its OWN process
-    // (4.7-12s spawn→answering) while this waits, and the very next boot step
-    // blocks on that anyway. The prefetch's own ≤5s budget started at proxy-up,
-    // so it is normally already settled when this runs.
-    const live = await settleManagedModelsPrefetch()
-    if (!live) {
-      logger.info('[boot] managed reconcile: no live managed set; bundled managed models stand', {
-        ms: Date.now() - startedAt,
-      })
-      return
-    }
-    const missing = missingManagedModelIds(live)
-    if (missing.length === 0) {
-      logger.info('[boot] managed reconcile: opencode already has every managed model', {
-        managed: Object.keys(live).length,
-        ms: Date.now() - startedAt,
-      })
-      return
-    }
-    const probe = opts.turnProbe ?? opencodeTurnInFlight
-    const turnInFlight = await probe(opencode.getInternalUrl(), cfg.workspace)
-    if (turnInFlight !== false) {
-      logger.warn('[boot] managed reconcile: skipping restart — a turn is live or unreadable', {
-        missing,
-        turnInFlight,
-        ms: Date.now() - startedAt,
-      })
-      return
-    }
-    const written = writeManagedOverlayCatalogFile({
-      currentCatalogFile: process.env.KORTIX_LLM_CATALOG_FILE ?? '/opt/kortix/llm-catalog.json',
-      targetCatalogFile:
-        opts.catalogTargetFile ?? `${OPENCODE_HOME}/.config/kortix-llm-catalog.session.json`,
-      managed: live,
-    })
-    if (written) process.env.KORTIX_LLM_CATALOG_FILE = written
-    // OpenCode materializes provider models at process start, so the file alone
-    // changes nothing for the process that is already running.
-    await opencode.restart()
-    const ready = await waitForOpencodeReady(opencode, cfg.projectTarget)
-    logger.info('[boot] managed reconcile: restarted opencode with the missing managed models', {
-      missing,
-      managed: Object.keys(live).length,
-      catalogFile: written,
-      ready,
-      ms: Date.now() - startedAt,
-    })
-  } catch (err) {
-    logger.warn('[boot] managed reconcile failed; boot continues on the configured catalog', {
-      err: err instanceof Error ? err.message : String(err),
-      ms: Date.now() - startedAt,
-    })
-  } finally {
-    bootMark('managed-reconcile')
-  }
-}
 
 async function startSessionRuntime(
   opencode: ReturnType<typeof createOpencodeSupervisor>,
@@ -536,8 +437,12 @@ async function startSessionRuntime(
 ): Promise<void> {
   // BEFORE the event loop, the root resolution and any prompt delivery: a
   // restart here strands nothing, and the first turn must run on a provider map
-  // that has every managed model the picker offers.
-  await reconcileManagedModels(opencode, cfg, bootMark)
+  // that has every model the picker can offer — managed AND connected-provider
+  // BYOK. Registering the handles first is what lets a LATER trigger (an env
+  // push that connects a provider, a /kortix/refresh, a ModelNotFound) re-run
+  // the same reconcile without threading opencode/cfg through every route.
+  registerModelReconcile({ opencode, cfg })
+  await reconcileSelectableModelsAtBoot(bootMark)
   const auditRelay = createAuditRelay(
     async (events) => {
       const ctx = sandboxRelayContext(auditRelayToken(process.env))
@@ -587,11 +492,12 @@ async function startSessionRuntime(
     void relayTurnEndToApi(opencodeSessionId, 'idle', opencode, cfg).catch((err) =>
       logger.warn('[opencode-events] turn-end relay failed', { err: (err as Error).message }),
     )
+    // A reconcile that a live turn deferred can run now. No-op when nothing is
+    // pending, which is the overwhelmingly common case.
+    noteTurnEnded()
   }
   const onSessionError = (opencodeSessionId: string, error?: OpencodeTurnError) => {
-    void relayTurnEndToApi(opencodeSessionId, 'error', opencode, cfg, error).catch((err) =>
-      logger.warn('[opencode-events] turn-end relay failed', { err: (err as Error).message }),
-    )
+    void handleSessionErrorEvent(opencodeSessionId, error, opencode, cfg)
   }
   let initialTurnAcceptanceSettled = false
   let initialTurnAcceptanceInFlight = false
@@ -2242,6 +2148,61 @@ export function __resetRelayedTurnSignatures(): void {
   relayedTurnSignatures.clear()
 }
 
+/**
+ * A turn died. Record it, then (only then) consider repairing the runtime.
+ *
+ * THE ORDER IS LOAD-BEARING, and it is the whole reason this is a named
+ * function instead of an inline closure.
+ *
+ * `relayTurnEndToApi` reads OpenCode twice before it posts anything — the root's
+ * message list (`readRootTurnState`) and the session's `parentID`
+ * (`isRootOpencodeSession`). Both fail closed: an unreadable `parentID` answers
+ * `false`, which makes the relay return WITHOUT posting. So an OpenCode restart
+ * racing this relay does not merely delay the turn end, it DELETES it.
+ *
+ * What that costs is not cosmetic. With no relay, `completeSandboxTurn` never
+ * runs, the sandbox's turn record stays `active`, and the reaper then reads the
+ * root through `/kortix/health?turn=1`: last message is a user prompt, nothing
+ * answered it, so `turn_orphaned_prompt` is true and the prompt is REDELIVERED
+ * from the inbox with a freshly minted wire id (box-reaper.ts
+ * `redeliverAbandonedPrompt`). The user sees their own message twice.
+ *
+ * A `ModelNotFound` failure lands in exactly that shape — it dies ~2ms after the
+ * prompt, before any assistant message exists — which is precisely the case the
+ * self-heal below wants to restart for. So: relay first, all the way to its ack,
+ * and only then let anything restart OpenCode. A terminal error end
+ * (`isRetryable` unset ⇒ terminal, see the API's `isTerminalTurnEnd`) clears the
+ * turn record, and the reaper has nothing left to redeliver.
+ *
+ * Exported so the ordering itself is testable — it cannot be asserted from the
+ * outside once it is a closure.
+ */
+export async function handleSessionErrorEvent(
+  opencodeSessionId: string,
+  error: OpencodeTurnError | undefined,
+  opencode: Opencode,
+  cfg: Config,
+): Promise<void> {
+  try {
+    await relayTurnEndToApi(opencodeSessionId, 'error', opencode, cfg, error)
+  } catch (err) {
+    logger.warn('[opencode-events] turn-end relay failed', { err: (err as Error).message })
+  }
+  // A reconcile a live turn deferred can run now — after the relay, for the
+  // same reason.
+  noteTurnEnded()
+  // LAST LINE OF DEFENCE. The picker offered a model OpenCode's provider map
+  // does not have, and the turn has already died on it. Register the model and
+  // restart, so the user's NEXT send works. The failed prompt is deliberately
+  // NOT resent: the turn is on record as failed, the UI shows the error in
+  // place, and the user sends again if they want it.
+  try {
+    await selfHealMissingModel(error)
+  } catch (err) {
+    logger.warn('[models] self-heal failed', { err: (err as Error).message })
+  }
+}
+
 export async function relayTurnEndToApi(
   opencodeSessionId: string,
   status: 'idle' | 'error',
@@ -2322,12 +2283,29 @@ export async function relayTurnEndToApi(
 
   const { projectId, sessionId, token, apiRoot } = ctx
   const url = `${apiRoot}/projects/${encodeURIComponent(projectId)}/turn-stream`
+  // NAME THE TURN, or the end is unrecordable.
+  //
+  // apps/api's `completeSandboxTurn` clears a turn record by `messageId`. A
+  // prompt delivery always records one, so an end that carries none matches
+  // nothing: the route still answers 200, the daemon considers the turn closed,
+  // and the record survives as `active`. The reaper then reads the root, sees a
+  // prompt with nothing answering it, and REDELIVERS it with a freshly minted
+  // wire id — the user's own message, twice.
+  //
+  // Normally the id comes from the assistant message's `parentID`. A turn that
+  // failed before its first token has no assistant message at all (the
+  // `ModelNotFound` shape: `session.error` ~2ms after the prompt), so the
+  // failing prompt's own id is the only identity that exists. Scoped to an ERROR
+  // end on purpose: on an `idle` end a trailing user message is a QUEUED prompt
+  // that has not run, and attributing this end to it would close the wrong turn.
+  const turnMessageId =
+    turn.parentMessageId ?? (effectiveStatus === 'error' ? turn.lastUserMessageId : null)
   const payload = JSON.stringify({
     session_id: sessionId,
     kind: 'end',
     status: effectiveStatus,
     opencode_session_id: opencodeSessionId,
-    turn_message_id: turn.parentMessageId ?? undefined,
+    turn_message_id: turnMessageId ?? undefined,
     ...(error
       ? {
           error_name: error.name,
@@ -2379,6 +2357,23 @@ interface RootTurnState {
   /** The user message this assistant turn answers. This is the stable identity
    *  minted by the client and recorded by apps/api before prompt delivery. */
   parentMessageId: string | null
+  /**
+   * The root's newest USER message id, when that message is the newest message
+   * of any kind — i.e. a prompt nothing has answered yet.
+   *
+   * This is the ONLY identity a turn that failed before its first token has.
+   * `parentMessageId` is structurally null there (an assistant message is what
+   * carries it, and none was ever created), and apps/api's `completeSandboxTurn`
+   * can only clear a turn record it can NAME: its `exact_matches` CTE matches on
+   * `messageId`, and its fallback only matches records that have none. A prompt
+   * delivery always records one, so an end with no id clears nothing, the record
+   * stays `active`, and the reaper redelivers the prompt as abandoned.
+   *
+   * Same id space as `observeOpencodeDelivery`'s `messageId`: the client mints
+   * it, apps/api records it before delivery, and OpenCode persists it as the
+   * user message's own id.
+   */
+  lastUserMessageId: string | null
 }
 
 // Read the ROOT turn's outcome from its last assistant message — the same
@@ -2398,9 +2393,10 @@ async function readRootTurnState(
   try {
     const url = `${opencode.getInternalUrl()}/session/${encodeURIComponent(opencodeSessionId)}/message?directory=${encodeURIComponent(cfg.workspace)}`
     const res = await fetch(url, { signal: AbortSignal.timeout(5_000) })
-    if (!res.ok) return { completedAt: null, parentMessageId: null }
+    if (!res.ok) return { completedAt: null, parentMessageId: null, lastUserMessageId: null }
     const rows = (await res.json()) as Array<{
       info?: {
+        id?: string
         role?: string
         parentID?: string
         time?: { completed?: number }
@@ -2415,7 +2411,7 @@ async function readRootTurnState(
         }
       }
     }>
-    if (!Array.isArray(rows)) return { completedAt: null, parentMessageId: null }
+    if (!Array.isArray(rows)) return { completedAt: null, parentMessageId: null, lastUserMessageId: null }
     // The most recent assistant message decides the turn's outcome. Crucially,
     // stop at the turn boundary: if a USER message is the newest row (a pending or
     // follow-up turn that hasn't produced an assistant reply yet), treat the run
@@ -2423,17 +2419,25 @@ async function readRootTurnState(
     // error and relay it as this turn's failure.
     for (let i = rows.length - 1; i >= 0; i--) {
       const info = rows[i]?.info
-      if (info?.role === 'user') return { completedAt: null, parentMessageId: null }
+      // A USER message is the newest row: a prompt with no reply yet. The turn
+      // reads as clean/incomplete (never walk back into a PRIOR turn's error and
+      // relay it as this one's failure) — but the prompt's own id is carried
+      // out, because for a turn that died before its first token that id is the
+      // only thing that can name the turn to apps/api. See `lastUserMessageId`.
+      if (info?.role === 'user') {
+        return { completedAt: null, parentMessageId: null, lastUserMessageId: info.id ?? null }
+      }
       if (info?.role !== 'assistant') continue
       return {
         error: info.error ? flattenOpencodeError(info.error) : undefined,
         completedAt: info.time?.completed ?? null,
         parentMessageId: info.parentID ?? null,
+        lastUserMessageId: null,
       }
     }
-    return { completedAt: null, parentMessageId: null }
+    return { completedAt: null, parentMessageId: null, lastUserMessageId: null }
   } catch {
-    return { completedAt: null, parentMessageId: null }
+    return { completedAt: null, parentMessageId: null, lastUserMessageId: null }
   }
 }
 

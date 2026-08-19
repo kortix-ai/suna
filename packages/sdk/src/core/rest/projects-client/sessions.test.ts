@@ -7,6 +7,7 @@ import type {
   RemovedSessionPrompt,
   SessionPrompt,
   SessionTurn,
+  SessionTurnHistoryEntry,
   SessionTurnStatus,
 } from './sessions';
 import {
@@ -28,6 +29,7 @@ import {
   listProjectSessions,
   listSessionPrompts,
   listSessionPublicShares,
+  listSessionTurns,
   reloadProjectSessionConfig,
   reloadProjectSessionConfigStream,
   restartProjectSession,
@@ -1014,4 +1016,71 @@ test('a prompt call throws on a non-2xx instead of returning a half-answer', asy
       parts: [{ type: 'text', text: 'hi' }],
     }),
   ).rejects.toBeTruthy();
+});
+
+// ── The durable turn history ────────────────────────────────────────────────
+//
+// `GET .../turn` answers "what is running now, and how did the LAST one end".
+// After a reload in a browser that never saw the live `session.error` frame,
+// the client holds N user messages and needs to know which of them a turn
+// failed on — including turns older than the newest. That is this read.
+
+test('listSessionTurns hits GET /projects/:id/sessions/:id/turns', async () => {
+  nextResponse = { status: 200, body: { turns: [] } };
+  await listSessionTurns('P1', 'S1');
+  expect(last().url).toBe('http://test.local/projects/P1/sessions/S1/turns');
+  expect(last().method).toBe('GET');
+});
+
+test('listSessionTurns passes an explicit limit through as a query param', async () => {
+  nextResponse = { status: 200, body: { turns: [] } };
+  await listSessionTurns('P1', 'S1', { limit: 10 });
+  expect(last().url).toBe('http://test.local/projects/P1/sessions/S1/turns?limit=10');
+});
+
+// Same rule as `getSessionTurn` above: snake_case wire keys, handed through
+// untranslated, asserted by deep equality against a TYPED literal.
+test('listSessionTurns returns the rows verbatim, error and all', async () => {
+  const failed: SessionTurnHistoryEntry = {
+    turn_token: 't1',
+    message_id: 'msg_user_1',
+    opencode_session_id: 'ses_root',
+    state: 'ended',
+    end_reason: 'failed',
+    started_at: '2026-08-19T00:00:00.000Z',
+    ended_at: '2026-08-19T00:00:02.000Z',
+    error: {
+      name: 'UnknownError',
+      message: 'Model not found: kortix/grok-4.6',
+      status_code: 404,
+      is_retryable: true,
+      provider_id: 'kortix',
+      recorded_at: '2026-08-19T00:00:02.000Z',
+    },
+  };
+  const completed: SessionTurnHistoryEntry = {
+    turn_token: 't0',
+    message_id: null,
+    opencode_session_id: null,
+    state: 'ended',
+    end_reason: 'completed',
+    started_at: '2026-08-18T00:00:00.000Z',
+    ended_at: '2026-08-18T00:00:09.000Z',
+    error: null,
+  };
+  nextResponse = { status: 200, body: { turns: [failed, completed] } };
+  expect(await listSessionTurns('P1', 'S1')).toEqual([failed, completed]);
+});
+
+// A deployment that predates the history route answers 404. That is not a
+// reason to break the transcript: the caller asked "is there more to know",
+// and the honest answer is "nothing".
+test('listSessionTurns answers empty on a 404 rather than throwing', async () => {
+  nextResponse = { status: 404, body: { error: 'Not found' } };
+  expect(await listSessionTurns('P1', 'S1')).toEqual([]);
+});
+
+test('listSessionTurns still throws on a real failure', async () => {
+  nextResponse = { status: 500, body: { error: 'boom' } };
+  await expect(listSessionTurns('P1', 'S1')).rejects.toThrow();
 });

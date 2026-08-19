@@ -12,7 +12,11 @@ import { Item, ItemContent, ItemDescription, ItemMedia, ItemTitle } from '@/comp
 import Loading from '@/components/ui/loading';
 import { cn } from '@/lib/utils';
 import { useAccountSettingsModalStore } from '@/stores/account-settings-modal-store';
-import { isAbortError, type GatewayErrorDetails } from '@kortix/sdk';
+import {
+  extractModelNotFoundDetails,
+  isAbortError,
+  type GatewayErrorDetails,
+} from '@kortix/sdk';
 import type { KortixSendError } from '@kortix/sdk/react';
 import {
   WarningCircleIcon as AlertCircle,
@@ -270,6 +274,16 @@ export function TurnErrorDisplay({
     return <UsageLimitCard errorText={text} className={className} />;
   }
 
+  // A managed model the sandbox has not registered yet is the ONE failure here
+  // that repairs itself: opencode reads its provider→model map once at process
+  // start, so a model added to the platform after this box booted is unknown to
+  // it — and the daemon answers that by re-reading the live managed set and
+  // restarting opencode. The runtime's own text ("Model not found: kortix/…")
+  // reads like a dead end, so it gets one line saying the retry is worth it.
+  // Every other failure, including a model this platform does not serve at all,
+  // renders exactly as before — retrying a wrong selection fixes nothing.
+  const managedModelMissing = extractModelNotFoundDetails(text)?.managed === true;
+
   // Real errors → Checkpoint row. When the failure carries the gateway's
   // structured envelope (provider/suggestion/request_id), fold those into the
   // label so the provider/source of the failure stays visible.
@@ -292,6 +306,13 @@ export function TurnErrorDisplay({
         </CheckpointIcon>
         <CheckpointLabel className="overflow-visible whitespace-normal">{label}</CheckpointLabel>
       </Checkpoint>
+      {managedModelMissing ? (
+        // `pl-5` puts this line under the LABEL, not under the icon: the row
+        // above is icon (`size-4`) + `gap-0.5` + the label's own `px-1`.
+        <p className="text-muted-foreground mt-1 pl-5 text-xs text-pretty">
+          This sandbox is registering the model now — send your message again in a few seconds.
+        </p>
+      ) : null}
       <GatewayAttemptFailureList details={gateway} />
     </div>
   );

@@ -6,6 +6,8 @@ export type { GatewayErrorContext } from './pipeline/error-response';
 
 export { callUpstream } from './http';
 export type { CallUpstreamOptions, FetchImpl } from './http';
+export { catalogJsonResponse, gzipRelayedBody, sanitizeRelayedHeaders } from './http';
+export type { CatalogResponseOptions } from './http';
 
 export {
   CircuitBreaker,

@@ -10,6 +10,7 @@
  * `src/__tests__/integration-prompt-inbox.test.ts`.
  */
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { sessionTurns } from '@kortix/db';
 import { Hono } from 'hono';
 import * as realAccess from '../lib/access';
 import * as realLifecycle from '../session-lifecycle';
@@ -38,6 +39,8 @@ let commandTable: CommandRow[] = [];
 let sessionMetadata: Record<string, unknown> | null = {};
 let enqueued: Array<Record<string, unknown>> = [];
 let drains: Array<Record<string, unknown>> = [];
+/** `kortix.session_turns` rows, as the prompts read joins them. */
+let turnTable: Array<{ messageId: string; error: Record<string, unknown> | null }> = [];
 let enqueueResult: { deduped: boolean; row: CommandRow } | null = null;
 let billingOk = true;
 
@@ -72,10 +75,22 @@ const databaseMock = {
             if (String(table) === 'project_sessions') {
               return [{ metadata: sessionMetadata, accountId: ACCOUNT_ID }];
             }
+            // The TURN LEDGER, not the inbox: `GET .../prompts` joins the two
+            // so a queued row can say why the turn that carried it failed.
+            // Routed by table so the join is falsifiable here — reading it out
+            // of `commandTable` would answer "no error" whatever the ledger
+            // holds.
+            if (table === sessionTurns) {
+              const wanted = new Set(
+                [...render(predicate).matchAll(/\$"(msg_[^"]+)"/g)].map((m) => m[1]),
+              );
+              return turnTable.filter((t) => wanted.has(t.messageId) && t.error !== null);
+            }
             return commandTable.filter((r) => predicateOf(predicate)(r));
           },
           // biome-ignore lint/suspicious/noThenProperty: awaitable query builder.
-          then: (resolve: (rows: unknown[]) => unknown) => Promise.resolve(stage.rows()).then(resolve),
+          then: (resolve: (rows: unknown[]) => unknown) =>
+            Promise.resolve(stage.rows()).then(resolve),
         };
         return stage;
       },
@@ -134,9 +149,7 @@ function applyValues(r: CommandRow, values: Record<string, unknown>) {
 }
 
 /** The jsonb literals a `col || '{…}'::jsonb - 'key'` expression applies. */
-function jsonbPatch(
-  value: unknown,
-): { merge: Record<string, unknown>; remove: string[] } | null {
+function jsonbPatch(value: unknown): { merge: Record<string, unknown>; remove: string[] } | null {
   if (!value || typeof value !== 'object' || !('queryChunks' in (value as object))) return null;
   const rendered = render(value);
   const merge = [...rendered.matchAll(/'(\{[^']*\})'::jsonb/g)]
@@ -164,7 +177,8 @@ function predicateOf(predicate: unknown): (r: CommandRow) => boolean {
     if (ids.length > 0) {
       const wanted = new Set(ids);
       if (!wanted.has(r.commandId) && !wanted.has(r.sessionId ?? '')) return false;
-      if (wanted.has(r.commandId) === false && wanted.has(r.sessionId ?? '') === false) return false;
+      if (wanted.has(r.commandId) === false && wanted.has(r.sessionId ?? '') === false)
+        return false;
       // Both a session scope and a command scope may be present; every bound id
       // must match one of the row's own ids.
       for (const id of wanted) {
@@ -304,8 +318,7 @@ function app() {
   return application;
 }
 
-const base = (sessionId = SESSION_ID) =>
-  `/v1/projects/${PROJECT_ID}/sessions/${sessionId}/prompts`;
+const base = (sessionId = SESSION_ID) => `/v1/projects/${PROJECT_ID}/sessions/${sessionId}/prompts`;
 
 function post(body: unknown, sessionId = SESSION_ID) {
   return app().request(base(sessionId), {
@@ -323,6 +336,7 @@ const validBody = {
 
 beforeEach(() => {
   commandTable = [];
+  turnTable = [];
   sessionMetadata = {};
   enqueued = [];
   drains = [];
@@ -351,7 +365,11 @@ describe('POST .../prompts', () => {
   test('carries the client-minted wire id, the parts and the overrides into the payload', async () => {
     await post({
       ...validBody,
-      overrides: { agent: 'build', model: { providerID: 'p', modelID: 'm' }, directory: '/workspace' },
+      overrides: {
+        agent: 'build',
+        model: { providerID: 'p', modelID: 'm' },
+        directory: '/workspace',
+      },
     });
     expect(enqueued).toHaveLength(1);
     expect(enqueued[0].wireMessageId).toBe(WIRE_ID);
@@ -422,7 +440,12 @@ describe('POST .../prompts', () => {
   test('rejects a message id OpenCode cannot order', async () => {
     // A badly-shaped id sorts below the transcript and OpenCode reads the
     // prompt as already answered — the turn silently never runs.
-    for (const messageId of ['msg_TOOSHORT', 'cm_12', `${WIRE_ID}extra`, 'msg_ZZZZZZZZZZZZAbCdEfGhIjKlMn']) {
+    for (const messageId of [
+      'msg_TOOSHORT',
+      'cm_12',
+      `${WIRE_ID}extra`,
+      'msg_ZZZZZZZZZZZZAbCdEfGhIjKlMn',
+    ]) {
       const response = await post({ ...validBody, message_id: messageId });
       expect(response.status).toBe(400);
     }
@@ -449,7 +472,9 @@ describe('POST .../prompts', () => {
   });
 
   test('409s a session the user deleted', async () => {
-    visibleSession = { row: { sessionId: SESSION_ID, metadata: { deletedAt: '2026-08-17T00:00:00Z' } } };
+    visibleSession = {
+      row: { sessionId: SESSION_ID, metadata: { deletedAt: '2026-08-17T00:00:00Z' } },
+    };
     const response = await post(validBody);
     expect(response.status).toBe(409);
     expect(enqueued).toEqual([]);
@@ -481,10 +506,58 @@ describe('GET .../prompts', () => {
         text: 'say hi',
         attempts: 0,
         last_error: null,
+        error: null,
         created_at: '2026-08-18T00:00:00.000Z',
         available_at: '2026-08-18T00:00:00.000Z',
       },
     ]);
+  });
+
+  // TWO DIFFERENT FAILURES, and the inbox can only ever see one of them.
+  // `last_error` is why the control plane could not DELIVER the row.
+  // `error` is why the MODEL RUN that carried it failed — "ModelNotFound:
+  // kortix/grok-4.6" is only ever the second kind, it is written on the turn
+  // ledger, and before this it never reached the client at all.
+  test('carries the failed turn error of the row it belongs to', async () => {
+    const error = {
+      name: 'ModelNotFound',
+      message: 'Model kortix/grok-4.6 not found',
+      status_code: 404,
+      is_retryable: false,
+      provider_id: 'kortix',
+      recorded_at: '2026-08-18T00:00:05.000Z',
+    };
+    commandTable = [row()];
+    turnTable = [{ messageId: WIRE_ID, error }];
+    const body = await list();
+    expect(body.prompts[0].error).toEqual(error);
+    expect(body.prompts[0].last_error).toBeNull();
+  });
+
+  test('a row whose turn holds no error reads null, not an omitted field', async () => {
+    commandTable = [row()];
+    turnTable = [{ messageId: 'msg_someone_elses_turn', error: { name: 'X', message: 'y' } }];
+    const body = await list();
+    expect(body.prompts[0]).toHaveProperty('error', null);
+  });
+
+  // The drain RE-MINTS a mid-turn prompt's wire id, so the turn that failed is
+  // recorded under the forwarded id, not the one the client sent.
+  test('matches the REDELIVERED wire id, not only the client-minted one', async () => {
+    const error = {
+      name: 'ModelNotFound',
+      message: 'gone',
+      recorded_at: '2026-08-18T00:00:05.000Z',
+    };
+    commandTable = [
+      row({
+        status: 'succeeded',
+        result: { status: 'forwarded', forwarded_message_id: 'msg_0198f3a1b2c4ZzZzZzZzZzZzZz' },
+      }),
+    ];
+    turnTable = [{ messageId: 'msg_0198f3a1b2c4ZzZzZzZzZzZzZz', error }];
+    const body = await list();
+    expect(body.prompts[0].error).toEqual(error);
   });
 
   test('a claimed row reads `delivering`, and an admission-refused one reads `waiting` with its reason', async () => {
@@ -716,7 +789,9 @@ describe('POST .../prompts/:promptId/retry', () => {
     // prompt after the user interrupted the turn for a different one.
     // (That the promotion actually passes the ordering gate is proven against
     // real Postgres in `integration-prompt-inbox.test.ts`.)
-    commandTable = [row({ status: 'queued', result: { admission_reason: 'older_prompt_pending' } })];
+    commandTable = [
+      row({ status: 'queued', result: { admission_reason: 'older_prompt_pending' } }),
+    ];
     const response = await retry();
     expect(response.status).toBe(200);
     const body = (await response.json()) as Record<string, unknown>;

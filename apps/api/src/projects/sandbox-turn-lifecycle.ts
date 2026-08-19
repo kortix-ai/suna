@@ -14,6 +14,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import type { SessionTurnError } from '@kortix/db';
 import { type SQL, sql } from 'drizzle-orm';
 import type { DeadlineTarget } from './sandbox-deadline';
 import {
@@ -115,6 +116,150 @@ export type SessionTurnEndReason =
   | 'unknown';
 
 /**
+ * The terminal error, as the daemon's turn-end relay reports it.
+ *
+ * camelCase because that is the shape `routes/r4.ts` reads off the wire body
+ * (`error_name`, `error_message`, `error_status`, `error_retryable`,
+ * `error_provider`). It is converted to the stored snake_case shape here, in
+ * ONE place, so no caller can invent a third spelling.
+ */
+export interface SandboxTurnErrorInput {
+  name?: string;
+  message?: string;
+  statusCode?: number;
+  isRetryable?: boolean;
+  providerID?: string;
+}
+
+/**
+ * The cap on a stored `message`.
+ *
+ * The text is authored by OpenCode and can carry a whole provider response
+ * body. 4 KB is far more than any sentence a user reads and small enough that a
+ * session's retained history cannot be inflated by one pathological error.
+ */
+const TURN_ERROR_MESSAGE_MAX_BYTES = 4096;
+
+/**
+ * Credential shapes that must never be persisted, even inside an error a model
+ * provider wrote. Mirrors `SECRET_VALUE_RE` in `shared/audit.ts` — kept
+ * separate on purpose: the audit sanitizer REPLACES THE WHOLE VALUE, which is
+ * correct for an audit row and destroys the one sentence this column exists to
+ * show a user. Here only the matched span is masked.
+ */
+const TURN_ERROR_SECRET_RE =
+  /(?:bearer\s+[a-z0-9._~+/=-]+|sk-[a-z0-9_-]{12,}|gh[opusr]_[a-z0-9_]{12,}|kortix_(?:pat|sbx)_[a-z0-9_-]+|(?:token|secret|password|api[_-]?key)=\S+)/gi;
+
+/** Trim, redact, and cap one error sentence. Byte-bounded, not char-bounded:
+ *  the cap exists to bound STORAGE, and a multi-byte message would otherwise
+ *  pass a character count and still be 3x the size. */
+function turnErrorMessage(value: string): string {
+  const redacted = value.trim().replace(TURN_ERROR_SECRET_RE, '[redacted]');
+  const bytes = Buffer.from(redacted, 'utf8');
+  if (bytes.byteLength <= TURN_ERROR_MESSAGE_MAX_BYTES) return redacted;
+  // The ellipsis is 3 bytes of UTF-8 and counts against the cap — the point of
+  // the cap is the SIZE of what is stored, not the size of what was truncated.
+  // `toString` on a byte slice can split a code point; the decoder replaces the
+  // trailing partial sequence, which is then dropped rather than stored.
+  const head = bytes.subarray(0, TURN_ERROR_MESSAGE_MAX_BYTES - 3).toString('utf8');
+  return `${head.replace(/\uFFFD$/, '')}…`;
+}
+
+/**
+ * Build the row's `error` from what the daemon reported, or null when it
+ * reported nothing nameable.
+ *
+ * Null is not a failure: `completeSandboxTurn` is also how an ordinary
+ * `session.idle` lands, and a completed turn has no error. The synthetic
+ * fallbacks below cover the reasons that carry no text at all.
+ */
+export function normalizeTurnError(
+  input: SandboxTurnErrorInput | null | undefined,
+  recordedAt: Date = new Date(),
+): SessionTurnError | null {
+  const name = typeof input?.name === 'string' ? input.name.trim() : '';
+  const message = typeof input?.message === 'string' ? turnErrorMessage(input.message) : '';
+  const statusCode = typeof input?.statusCode === 'number' ? input.statusCode : undefined;
+  // A status code alone still explains a failure ("the provider returned 429"),
+  // so it is enough to record one; nothing at all is not.
+  if (!name && !message && statusCode === undefined) return null;
+  return {
+    name: name || 'TurnFailed',
+    message: message || (statusCode !== undefined ? `The model call failed (${statusCode}).` : ''),
+    ...(statusCode === undefined ? {} : { status_code: statusCode }),
+    ...(typeof input?.isRetryable === 'boolean' ? { is_retryable: input.isRetryable } : {}),
+    ...(typeof input?.providerID === 'string' && input.providerID.trim()
+      ? { provider_id: input.providerID.trim() }
+      : {}),
+    recorded_at: recordedAt.toISOString(),
+  };
+}
+
+/**
+ * The error a turn ends with when NOBODY reported one.
+ *
+ * "Nothing happened" must never be silent. A prompt the runtime never accepted,
+ * and a turn the box died in the middle of, are both failures the user is
+ * entitled to see — they just have no text of their own, because the component
+ * that would have written one is the component that went away. These sentences
+ * are the honest description of each reason and claim nothing further.
+ *
+ * `completed` returns null: a finished turn is not an error, and writing one
+ * would make every read have to re-derive that from `end_reason` anyway.
+ */
+export function syntheticTurnError(
+  reason: SessionTurnEndReason,
+  recordedAt: Date = new Date(),
+): SessionTurnError | null {
+  const recorded_at = recordedAt.toISOString();
+  switch (reason) {
+    case 'completed':
+      return null;
+    case 'abandoned':
+      return {
+        name: 'TurnAbandoned',
+        message: 'The runtime did not accept this prompt.',
+        recorded_at,
+      };
+    case 'runtime_gone':
+      return {
+        name: 'RuntimeGone',
+        message: 'The runtime stopped before this turn finished.',
+        recorded_at,
+      };
+    case 'failed':
+      return {
+        name: 'TurnFailed',
+        message: 'The turn failed and the runtime reported no detail.',
+        recorded_at,
+      };
+    default:
+      return {
+        name: 'TurnEndedUnknown',
+        message: 'This turn ended and no observer could say how.',
+        recorded_at,
+      };
+  }
+}
+
+/** The stored error as a bound jsonb parameter, or SQL NULL. */
+function turnErrorParam(error: SessionTurnError | null): SQL {
+  return error === null ? sql`NULL::jsonb` : sql`${JSON.stringify(error)}::jsonb`;
+}
+
+/**
+ * `syntheticTurnError` as SQL, for the two settles that close rows in bulk and
+ * therefore learn each row's reason only from the row itself. Built from the
+ * same function, so the sentences cannot drift from the per-row writers.
+ */
+function syntheticTurnErrorCase(reason: SQL): SQL {
+  const arms = (['completed', 'abandoned', 'runtime_gone', 'failed', 'unknown'] as const).map(
+    (value) => sql`WHEN ${value} THEN ${turnErrorParam(syntheticTurnError(value))}`,
+  );
+  return sql`CASE ${reason} ${sql.join(arms, sql` `)} ELSE NULL::jsonb END`;
+}
+
+/**
  * Ledger writes are OBSERVATION, never authority. `activeTurns` stays the
  * single lifecycle truth; a failed ledger write must never fail a prompt, a
  * turn acceptance, or a reaper pass. Log and continue.
@@ -211,12 +356,19 @@ function endedTurnLedger(
   owner: SessionTurnOwner,
   turns: EndedTurnRecord[],
   reason: SessionTurnEndReason,
+  // The reported error, when a caller has one. `undefined` means "use the
+  // reason's own sentence"; an explicit `null` means "this turn did not fail",
+  // which is what an idle completion passes.
+  error: SessionTurnError | null | undefined = undefined,
 ): SQL {
+  const stored = error === undefined ? syntheticTurnError(reason) : error;
+  const errorValue = turnErrorParam(stored);
   const values = sql.join(
     turns.map(
       (turn) => sql`(${turn.token}, ${owner.sessionId}, ${owner.sandboxId}::uuid,
           ${owner.projectId}::uuid, ${owner.accountId}::uuid,
           ${turn.opencodeSessionId}, ${turn.messageId}, 'ended', ${reason},
+          ${errorValue},
           ${
             turn.startedAtMs === null
               ? sql`now()`
@@ -228,12 +380,18 @@ function endedTurnLedger(
   );
   return sql`INSERT INTO kortix.session_turns
         (turn_token, session_id, sandbox_id, project_id, account_id,
-         opencode_session_id, message_id, state, end_reason, started_at,
+         opencode_session_id, message_id, state, end_reason, error, started_at,
          ended_at, created_at, updated_at)
       VALUES ${values}
       ON CONFLICT (turn_token) DO UPDATE SET
             state = 'ended',
             end_reason = EXCLUDED.end_reason,
+            -- FIRST WRITER WINS. An error is the reported cause of a failure;
+            -- a second finalizer reaching the same row (the reaper backstop
+            -- after a relayed failure, say) knows strictly less than the one
+            -- that named it. coalesce also keeps this UPSERT from blanking a
+            -- recorded error with a reason that carries none.
+            error = coalesce(kortix.session_turns.error, EXCLUDED.error),
             ended_at = now(),
             opencode_session_id = coalesce(kortix.session_turns.opencode_session_id,
                                            EXCLUDED.opencode_session_id),
@@ -288,7 +446,13 @@ function openableTurnOwner(sandboxId: string, token: string): SQL {
  */
 export function settleOpenSandboxTurnsQuery(sandboxId: string, reason: SessionTurnEndReason): SQL {
   return sql`UPDATE kortix.session_turns
-                SET state = 'ended', end_reason = ${reason}, ended_at = now(), updated_at = now()
+                SET state = 'ended', end_reason = ${reason},
+                    -- The reason's own sentence, and only where no reported
+                    -- error already stands: a turn the stop swept up was
+                    -- running when the box went away, and "nothing happened"
+                    -- must never read as an empty success.
+                    error = coalesce(error, ${turnErrorParam(syntheticTurnError(reason))}),
+                    ended_at = now(), updated_at = now()
               WHERE sandbox_id = ${sandboxId}::uuid
                 AND state <> 'ended'`;
 }
@@ -364,6 +528,12 @@ export async function settleOrphanedSandboxTurns(): Promise<number> {
       UPDATE kortix.session_turns t
          SET state = 'ended',
              end_reason = coalesce(t.end_reason, 'runtime_gone'),
+             -- Same rule as every other settle: a row this pass closes never
+             -- ran to an end anyone witnessed, so it gets the sentence of the
+             -- reason it ends up with — the one it already carried, or the
+             -- runtime_gone this pass assigns — unless a real error already
+             -- stands on it.
+             error = coalesce(t.error, ${syntheticTurnErrorCase(sql`coalesce(t.end_reason, 'runtime_gone')`)}),
              ended_at = coalesce(t.ended_at, now()),
              updated_at = now()
        WHERE t.state <> 'ended'
@@ -840,7 +1010,12 @@ export async function completeSandboxTurn(
   sessionId: string,
   status: 'idle' | 'error',
   identity?: Partial<SandboxTurnIdentity> | null,
-  error?: { isRetryable?: boolean } | null,
+  // The WHOLE reported error, not just its retryability: `isRetryable` decides
+  // whether this end is terminal, and the rest is the only description of the
+  // failure that will ever exist. When `session.error` fires before an
+  // assistant message, OpenCode persists nothing for the turn but the user
+  // message — drop this text here and the failure is unexplainable for ever.
+  error?: SandboxTurnErrorInput | null,
   graceMs = idleGraceMs(),
 ): Promise<boolean> {
   if (!isTerminalTurnEnd(status, error)) return false;
@@ -975,8 +1150,16 @@ export async function completeSandboxTurn(
   const turns = endedLedgerTurns(rows?.[0]?.ended_turns);
   if (owner && turns.length > 0) {
     const endReason: SessionTurnEndReason = status === 'error' ? 'failed' : 'completed';
+    // An idle end is not a failure, so it stores NO error even when the relay
+    // carried one (a retried 429 that then succeeded reports both). A failed
+    // end stores what the daemon reported, and falls back to the reason's own
+    // sentence when it reported nothing nameable.
+    const stored =
+      endReason === 'completed'
+        ? null
+        : (normalizeTurnError(error) ?? syntheticTurnError('failed'));
     await recordTurnLedger(
-      endedTurnLedger(owner, turns, endReason),
+      endedTurnLedger(owner, turns, endReason, stored),
       `complete ${turns.map((turn) => turn.token).join(',')} (${endReason})`,
     );
     // The backstop for an acceptance that never landed: `completed`/`failed`

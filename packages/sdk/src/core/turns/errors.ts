@@ -271,3 +271,73 @@ export function extractGatewayErrorDetails(raw: unknown): GatewayErrorDetails | 
 
   return undefined;
 }
+
+// ============================================================================
+// ModelNotFound — the runtime could not resolve the model the turn asked for
+// ============================================================================
+//
+// OpenCode materializes its provider→model map once, at process start, so a
+// model added to the platform after a sandbox booted is unknown to that
+// sandbox until it restarts: every turn on it dies ~2ms after the prompt with
+// `Model not found: kortix/<id>`. The sandbox daemon now repairs itself when
+// that happens (it re-reads the live managed set, rewrites the catalog and
+// restarts opencode), which turns a dead-end into a wait — but only a UI that
+// can RECOGNIZE this failure can tell the user that retrying is worth it.
+//
+// Recognition has to come off the message text. The wire frame is named
+// `UnknownError` for this failure (verified against a live sandbox — see
+// `errors.test.ts`), and opencode has shipped three spellings of the message
+// across versions, one of them with a stack trace appended.
+
+/** A model reference the runtime could not resolve. */
+export interface ModelNotFoundDetails {
+  /** The provider half of the reference, e.g. `kortix`. */
+  providerID: string;
+  /** The model half, e.g. `grok-4.6`. */
+  modelID: string;
+  /**
+   * Is this one of the models the platform serves through its own gateway
+   * (`providerID === 'kortix'`)?
+   *
+   * The distinction is what a host needs to know: a managed model missing from
+   * a sandbox is a stale catalog the daemon repairs on its own, so retrying
+   * shortly is the right advice. A BYOK/provider model that does not exist is
+   * a wrong selection, and no amount of retrying fixes it.
+   */
+  managed: boolean;
+}
+
+/** The provider id every model served through the Kortix gateway registers
+ *  under. Kept here rather than inlined so the one comparison a host makes on
+ *  this failure has a single definition. */
+const MANAGED_PROVIDER_ID = 'kortix';
+
+/**
+ * All three spellings, with an optional `ProviderModelNotFoundError:` /
+ * `ModelNotFound:` prefix, followed by `<provider>/<model>`.
+ *
+ * The model half deliberately admits an inner `.` (`grok-4.6`) but never a
+ * trailing one, so the sentence-ending period in "…kortix/grok-4.6. Did you
+ * mean:" stays out of the id.
+ */
+const MODEL_NOT_FOUND =
+  /(?:ProviderModelNotFoundError|ModelNotFoundError|ModelNotFound|Model not found)\s*:?\s*([A-Za-z0-9_-]+)\/([A-Za-z0-9_:-]+(?:\.[A-Za-z0-9_:-]+)*)/i;
+
+/**
+ * Recognize "the runtime does not know this model" in whatever shape the
+ * failure reaches a host — the raw `session.error` frame's `error` object, an
+ * `AssistantMessage.error`, an `Error`, or the flattened display string.
+ * `undefined` for every other failure, and for a model-not-found whose message
+ * carries no `provider/model` pair to report.
+ *
+ * Runs over `unwrapError`'s normalized message, so it costs one regex and
+ * inherits that function's JSON/double-encoding unwrapping for free.
+ */
+export function extractModelNotFoundDetails(raw: unknown): ModelNotFoundDetails | undefined {
+  if (raw == null) return undefined;
+  const match = MODEL_NOT_FOUND.exec(unwrapError(raw));
+  if (!match) return undefined;
+  const providerID = match[1];
+  const modelID = match[2];
+  return { providerID, modelID, managed: providerID.toLowerCase() === MANAGED_PROVIDER_ID };
+}

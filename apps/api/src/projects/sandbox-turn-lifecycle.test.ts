@@ -51,11 +51,13 @@ const {
   deliveringSandboxTurn,
   extractTurnIdentity,
   initialSandboxTurnMetadata,
+  normalizeTurnError,
   prepareInitialSandboxTurn,
   reconcileSandboxTurnDelivery,
   renewActiveSandboxTurn,
   storedSandboxTurn,
   storedSandboxTurns,
+  syntheticTurnError,
 } = await import('./sandbox-turn-lifecycle');
 
 beforeEach(() => {
@@ -678,5 +680,188 @@ describe('session_turns ledger dual-write', () => {
     await clearSandboxTurn('sb-1', 'turn-token', 60_000);
 
     expect(executed[0]).toContain('60');
+  });
+});
+
+/**
+ * THE TERMINAL ERROR — `session_turns.error`.
+ *
+ * OpenCode's `session.error` (a bad model id, a provider 4xx, an out-of-credit
+ * 402) can fire before any assistant message exists, and OpenCode then persists
+ * NOTHING for the turn but the user message. The relayed text is the only
+ * description of the failure that will ever exist, so dropping it makes a
+ * failed prompt indistinguishable from one nothing ever answered.
+ */
+describe('turn error normalization', () => {
+  const AT = new Date('2026-08-19T10:00:00.000Z');
+
+  test('carries the reported error through in the stored snake_case shape', () => {
+    expect(
+      normalizeTurnError(
+        {
+          name: 'ModelNotFound',
+          message: 'Model kortix/grok-4.6 not found',
+          statusCode: 404,
+          isRetryable: false,
+          providerID: 'kortix',
+        },
+        AT,
+      ),
+    ).toEqual({
+      name: 'ModelNotFound',
+      message: 'Model kortix/grok-4.6 not found',
+      status_code: 404,
+      is_retryable: false,
+      provider_id: 'kortix',
+      recorded_at: '2026-08-19T10:00:00.000Z',
+    });
+  });
+
+  test('returns null when the relay named nothing at all', () => {
+    // `completeSandboxTurn` is also how an ordinary session.idle lands. A
+    // completed turn must store no error, or every read has to re-derive "did
+    // this actually fail?" from end_reason anyway.
+    expect(normalizeTurnError(undefined, AT)).toBeNull();
+    expect(normalizeTurnError({}, AT)).toBeNull();
+    expect(normalizeTurnError({ name: '   ', message: '' }, AT)).toBeNull();
+  });
+
+  test('a status code alone is enough to record, and writes its own sentence', () => {
+    expect(normalizeTurnError({ statusCode: 429 }, AT)).toEqual({
+      name: 'TurnFailed',
+      message: 'The model call failed (429).',
+      status_code: 429,
+      recorded_at: '2026-08-19T10:00:00.000Z',
+    });
+  });
+
+  test('MASKS a credential the provider echoed back, and keeps the sentence', () => {
+    // The audit sanitizer replaces the whole value; that is right for an audit
+    // row and useless here — the user would be shown "[REDACTED]" instead of
+    // what went wrong. Only the matched span may be masked.
+    const error = normalizeTurnError(
+      {
+        name: 'AuthError',
+        message: 'upstream rejected Authorization: Bearer sk-live-abcdef123456',
+      },
+      AT,
+    );
+    expect(error?.message).not.toContain('sk-live-abcdef123456');
+    expect(error?.message).toContain('upstream rejected');
+    expect(error?.message).toContain('[redacted]');
+  });
+
+  test('caps the stored message at 4 KB of UTF-8', () => {
+    const error = normalizeTurnError({ name: 'Huge', message: 'x'.repeat(20_000) }, AT);
+    expect(Buffer.byteLength(error?.message ?? '', 'utf8')).toBeLessThanOrEqual(4096);
+    expect(error?.message.endsWith('…')).toBe(true);
+  });
+
+  test('a completed turn has no synthetic error; every other reason has one', () => {
+    expect(syntheticTurnError('completed', AT)).toBeNull();
+    for (const reason of ['abandoned', 'runtime_gone', 'failed', 'unknown'] as const) {
+      const error = syntheticTurnError(reason, AT);
+      expect(error?.name).toBeTruthy();
+      // Honest and short: the sentence describes the reason and claims nothing
+      // about a cause nobody observed.
+      expect(error?.message.length).toBeLessThan(120);
+    }
+  });
+});
+
+describe('the ledger records WHY a turn failed', () => {
+  const OWNER_ROW = {
+    session_id: 'sess-1',
+    sandbox_id: '11111111-1111-4111-8111-111111111111',
+    project_id: '22222222-2222-4222-8222-222222222222',
+    account_id: '33333333-3333-4333-8333-333333333333',
+  };
+  const ENDED = {
+    token: 'turn-token',
+    opencodeSessionId: 'ses_root',
+    messageId: 'msg_turn_1',
+    startedAtMs: 1_700_000_000_000,
+  };
+
+  test('a relayed session.error is written onto the row, text and all', async () => {
+    executeResults = [[{ ...OWNER_ROW, ended_turns: [ENDED], completed: true }]];
+    await completeSandboxTurn(
+      'sess-1',
+      'error',
+      { opencodeSessionId: 'ses_root', messageId: 'msg_turn_1' },
+      {
+        name: 'ModelNotFound',
+        message: 'Model kortix/grok-4.6 not found',
+        statusCode: 404,
+        isRetryable: false,
+        providerID: 'kortix',
+      },
+    );
+    expect(executed[1]).toContain('ModelNotFound');
+    expect(executed[1]).toContain('kortix/grok-4.6');
+    expect(executed[1]).toContain('"status_code":404');
+    // FIRST WRITER WINS on re-settle: a later finalizer knows strictly less.
+    expect(executed[1]).toContain('error = coalesce(kortix.session_turns.error, EXCLUDED.error)');
+  });
+
+  test('an error end with no reported text still stores a readable failure', async () => {
+    executeResults = [[{ ...OWNER_ROW, ended_turns: [ENDED], completed: true }]];
+    await completeSandboxTurn('sess-1', 'error', {
+      opencodeSessionId: 'ses_root',
+      messageId: 'msg_turn_1',
+    });
+    expect(executed[1]).toContain('TurnFailed');
+  });
+
+  test('an idle end stores NO error', async () => {
+    executeResults = [[{ ...OWNER_ROW, ended_turns: [ENDED], completed: true }]];
+    await completeSandboxTurn('sess-1', 'idle', {
+      opencodeSessionId: 'ses_root',
+      messageId: 'msg_turn_1',
+    });
+    expect(executed[1]).toContain('NULL::jsonb');
+    expect(executed[1]).not.toContain('TurnFailed');
+  });
+
+  test('an abandoned delivery says so, instead of ending silently', async () => {
+    // "The runtime never took this prompt" is the case the user experiences as
+    // NOTHING HAPPENING. It has no error text of its own — the component that
+    // would have written one is the component that went away.
+    executeResults = [
+      [
+        {
+          ...OWNER_ROW,
+          turn: {
+            token: 'turn-token',
+            state: 'delivering',
+            opencodeSessionId: 'ses_root',
+            messageId: 'msg_turn_1',
+          },
+          abandoned: true,
+        },
+      ],
+    ];
+    await abandonSandboxTurn({ sandboxId: OWNER_ROW.sandbox_id }, 'turn-token');
+    expect(executed[1]).toContain('TurnAbandoned');
+    expect(executed[1]).toContain('The runtime did not accept this prompt.');
+  });
+
+  test('a turn cleared because the runtime went away says THAT', async () => {
+    executeResults = [
+      [
+        {
+          ...OWNER_ROW,
+          turn: {
+            token: 'turn-token',
+            state: 'active',
+            opencodeSessionId: 'ses_root',
+            messageId: 'msg_turn_1',
+          },
+          cleared: true,
+        },
+      ],
+    ];
+    await clearSandboxTurn(OWNER_ROW.sandbox_id, 'turn-token');
+    expect(executed[1]).toContain('RuntimeGone');
   });
 });
