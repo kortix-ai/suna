@@ -26,6 +26,7 @@ let upsertCreditAccountCalls: any[] = [];
 let updateCreditAccountCalls: any[] = [];
 let upsertCustomerCalls: any[] = [];
 let stripeCancelSubCalls: any[] = [];
+let forgetWebhookEventCalls: string[] = [];
 
 beforeEach(() => {
   grantCreditsCalls = [];
@@ -35,6 +36,7 @@ beforeEach(() => {
   updateCreditAccountCalls = [];
   upsertCustomerCalls = [];
   stripeCancelSubCalls = [];
+  forgetWebhookEventCalls = [];
   mintYoloTokensCalls = [];
   resetMockRegistry();
 
@@ -82,6 +84,10 @@ beforeEach(() => {
   };
   mockRegistry.resetExpiringCredits = async (...args: any[]) => {
     resetExpiringCreditsCalls.push(args);
+  };
+
+  mockRegistry.forgetWebhookEvent = async (eventId: string) => {
+    forgetWebhookEventCalls.push(eventId);
   };
 
   // Track stripe.subscriptions.cancel calls (used by cancelFreeSubscriptionForUpgrade)
@@ -893,6 +899,95 @@ describe('RevenueCat', () => {
     // Should cancel old free subscription via stripe
     expect(stripeCancelSubCalls.length).toBe(1);
     expect(stripeCancelSubCalls[0]).toBe('sub_old_free');
+  });
+
+  // ─── Deleted accounts + failed-handler replay ─────────────────────────────
+  // A RevenueCat store subscription outlives account deletion: Apple/Google
+  // keep billing and RevenueCat keeps posting RENEWAL/INITIAL_PURCHASE at us.
+  // Without a guard those events re-activate a tier and grant credits on an
+  // account the user already deleted.
+
+  test('INITIAL_PURCHASE: skips a deleted account', async () => {
+    mockRegistry.getCreditAccount = async () => createMockCreditAccount({ paymentStatus: 'deleted' });
+
+    const body = createMockRevenueCatEvent('INITIAL_PURCHASE', {
+      product_id: 'kortix_plus_monthly',
+    });
+
+    await processRevenueCatWebhook(body);
+
+    expect(upsertCreditAccountCalls.length).toBe(0);
+    expect(grantCreditsCalls.length).toBe(0);
+  });
+
+  test('RENEWAL: skips a deleted account', async () => {
+    mockRegistry.getCreditAccount = async () => createMockCreditAccount({ paymentStatus: 'deleted' });
+
+    const body = createMockRevenueCatEvent('RENEWAL');
+
+    await processRevenueCatWebhook(body);
+
+    expect(resetExpiringCreditsCalls.length).toBe(0);
+    expect(updateCreditAccountCalls.length).toBe(0);
+  });
+
+  test('NON_RENEWING_PURCHASE: skips a deleted account', async () => {
+    mockRegistry.getCreditAccount = async () => createMockCreditAccount({ paymentStatus: 'deleted' });
+
+    const body = createMockRevenueCatEvent('NON_RENEWING_PURCHASE', { price: 25 });
+
+    await processRevenueCatWebhook(body);
+
+    expect(grantCreditsCalls.length).toBe(0);
+  });
+
+  // The dedupe marker is written BEFORE the handler runs. If the handler then
+  // throws, the marker must be cleared or RevenueCat's retry is swallowed as a
+  // duplicate and the purchase is never applied — money taken, no credits. The
+  // Stripe path already does this (processStripeWebhook's try/catch).
+  test('clears the dedupe marker when a RevenueCat handler throws', async () => {
+    mockRegistry.upsertCreditAccount = async () => {
+      throw new Error('revenuecat apply failed');
+    };
+
+    const body = createMockRevenueCatEvent('INITIAL_PURCHASE', {
+      id: 'rc_evt_fail_1',
+      event_id: 'rc_evt_fail_1',
+      product_id: 'kortix_plus_monthly',
+    });
+
+    let thrown: any = null;
+    try {
+      await processRevenueCatWebhook(body);
+    } catch (err) {
+      thrown = err;
+    }
+
+    expect(thrown).not.toBeNull();
+    expect(String(thrown.message)).toContain('revenuecat apply failed');
+    expect(forgetWebhookEventCalls).toEqual(['revenuecat:rc_evt_fail_1']);
+  });
+
+  // Clearing the marker above makes the event REPLAYABLE, so every RevenueCat
+  // grant needs a stable idempotency key or the retry double-grants.
+  test('grants carry a stable per-event idempotency key', async () => {
+    const purchase = createMockRevenueCatEvent('INITIAL_PURCHASE', {
+      product_id: 'kortix_plus_monthly',
+    });
+    await processRevenueCatWebhook(purchase);
+    const tierGrant = grantCreditsCalls.find((args: any[]) => args[2] === 'tier_grant');
+    expect(tierGrant).toBeDefined();
+    expect(tierGrant![5]).toBe('revenuecat:evt_rc_initial_purchase');
+
+    grantCreditsCalls = [];
+    const renewal = createMockRevenueCatEvent('RENEWAL');
+    await processRevenueCatWebhook(renewal);
+    expect(resetExpiringCreditsCalls[0][3]).toBe('revenuecat:evt_rc_renewal');
+
+    grantCreditsCalls = [];
+    const topup = createMockRevenueCatEvent('NON_RENEWING_PURCHASE', { price: 25 });
+    await processRevenueCatWebhook(topup);
+    expect(grantCreditsCalls[0][5]).toBe('revenuecat:evt_rc_non_renewing_purchase');
   });
 
   test('INITIAL_PURCHASE: skips cancel when no old Stripe subscription', async () => {
