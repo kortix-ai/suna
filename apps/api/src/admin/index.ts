@@ -349,24 +349,23 @@ adminApp.openapi(
     const { accountMembers } = await import('@kortix/db');
     const { and, eq } = await import('drizzle-orm');
 
-    const [target] = await db
-      .select({ accountRole: accountMembers.accountRole })
-      .from(accountMembers)
-      .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, userId)))
-      .limit(1);
-    if (!target) return c.json({ error: 'user is not a member of this account' }, 404);
-    if (target.accountRole === role) {
+    // The role comes from `role_assignments`, not from the legacy column: an
+    // assignment written straight through `assignRole()` leaves that column
+    // stale on purpose, and this console must not act on a stale value.
+    const { accountRoleFor, countAccountOwners } = await import('../iam/read-models');
+    const assignmentsModule = await import('../iam/assignments');
+    const { assignRole } = assignmentsModule;
+    const currentRole = await accountRoleFor(accountId, userId);
+    if (!currentRole) return c.json({ error: 'user is not a member of this account' }, 404);
+    const target = { accountRole: currentRole };
+    if (currentRole === role) {
       return c.json({ ok: true, user_id: userId, account_role: role });
     }
 
     // Never demote the last owner — an ownerless account is unrecoverable
     // through the product (every owner-gated route would 403 forever).
-    if (target.accountRole === 'owner' && role !== 'owner') {
-      const owners = await db
-        .select({ userId: accountMembers.userId })
-        .from(accountMembers)
-        .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.accountRole, 'owner')));
-      if (owners.length <= 1) {
+    if (currentRole === 'owner' && role !== 'owner') {
+      if ((await countAccountOwners(accountId)) <= 1) {
         return c.json({ error: 'cannot demote the last owner of an account' }, 400);
       }
     }
@@ -375,6 +374,20 @@ adminApp.openapi(
       .update(accountMembers)
       .set({ accountRole: role })
       .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, userId)));
+    // …and the canonical assignment. `SYSTEM_ACTOR`: the writer is a platform
+    // operator, not a member of this account — they hold no role in it to
+    // authorize against, which is exactly what the platform-admin gate on this
+    // route already established.
+    try {
+      await assignRole(assignmentsModule.SYSTEM_ACTOR, accountId, {
+        principal: { type: 'user', id: userId },
+        roleKey: role,
+        scope: { type: 'account' },
+        source: 'system',
+      });
+    } catch (err) {
+      console.warn('[admin] canonical account-role assignment failed', err);
+    }
 
     try {
       const { recordAuditEvent } = await import('../shared/audit');

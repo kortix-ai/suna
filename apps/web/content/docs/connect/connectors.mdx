@@ -16,7 +16,11 @@ machine.
 
 ## Connectors and connections
 
-A connector is the agent-facing permission package. It contains:
+A connector is the agent-facing reach package. It is not a role, and it holds no
+Kortix permission: an agent reaches a connector only when its manifest grant
+lists the slug and the role verdict allows the call. See
+[One vocabulary, two bindings](/docs/accounts#one-vocabulary-two-bindings). A
+connector contains:
 
 - a project-unique slug
 - a display name
@@ -32,8 +36,9 @@ The authorization strategy is:
 - `project` for connections available to eligible project members
 - `user` for a connection owned by the acting project member
 
-A service account cannot use a member's `user` connection. Multiple
-connectors can reference the same provider app. Use separate connectors
+A service account is a principal, but it is not a person, so it cannot use a
+member's `user` connection. Multiple connectors can reference the same provider
+app. Use separate connectors
 when one app needs different policies.
 
 ## Providers

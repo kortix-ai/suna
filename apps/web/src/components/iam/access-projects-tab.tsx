@@ -128,7 +128,7 @@ import {
   type ProjectAccessResponse,
   type ProjectRole,
 } from '@kortix/sdk';
-import { contract, qk } from '@kortix/sdk/react';
+import { contract, invalidatePermissionProbes, qk } from '@kortix/sdk/react';
 import {
   ArrowClockwiseIcon,
   ArrowSquareOutIcon,
@@ -427,14 +427,17 @@ function ProjectPicker({
  *  best-effort, never blocks the row: a slow or failed probe just shows
  *  "—"/no dot instead of an error. See header comment. */
 function ProjectListRow({ project, onSelect }: { project: KortixProject; onSelect: () => void }) {
-  // `GET /projects/:id/access-requests` asserts project.members.manage, which
-  // only `manager` holds (MANAGER_ONLY in `apps/api/src/iam/role-perms.ts`).
-  // Read the caller's own role off the project row the picker ALREADY has
-  // rather than firing an IAM probe per row: this list renders up to 20 rows
-  // and each probe is its own request, so the cheap answer is the one already
-  // on the wire. Without this, a plain project member got a guaranteed 403 per
-  // row — swallowed by `retry: false`, but a 403 per row all the same.
-  const canSeePendingRequests = project.effective_project_role === 'manager';
+  // `GET /projects/:id/access-requests` asserts `project.members.manage`, so ask
+  // for exactly that. It used to re-derive the answer from the row's role label
+  // to save a request per row — which made every custom role holding
+  // `project.members.manage` invisible here, the precise failure this refactor
+  // exists to remove. `project.account_id` is already on the row, so the probe
+  // costs one request and no project lookup, and its verdict is cached 5 minutes
+  // across every row and screen that asks the same question.
+  const canSeePendingRequests =
+    useProjectCan(project.project_id, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE, {
+      accountId: project.account_id,
+    }).allowed === true;
 
   const accessQuery = useQuery({
     queryKey: qk.project.access(project.project_id),
@@ -556,6 +559,10 @@ function ProjectAccessPanel({
   const projectAgentCount = projectResourcesQuery.data?.resources.agents.length;
 
   function invalidateAccess() {
+    // Every caller of this function has just changed who can do what on this
+    // project. Probe verdicts are cached 5 minutes; without this a revoke keeps
+    // rendering as access until the entry expires.
+    void invalidatePermissionProbes(queryClient, { accountId });
     queryClient.invalidateQueries({ queryKey: qk.project.access(projectId) });
     queryClient.invalidateQueries({ queryKey: qk.projects.scope() });
     queryClient.invalidateQueries({ queryKey: qk.project.summary(projectId) });
@@ -1086,7 +1093,6 @@ function MemberAccessRow({
                 role: editRole,
                 agentIds: directAgentIds.length > 0 ? directAgentIds : 'all',
                 expiresAt,
-                policyId: policy?.policy_id,
               },
               inheritedFrom,
             }),
@@ -1181,7 +1187,6 @@ function GroupAccessRowView({
                 role,
                 agentIds: agentIds.length > 0 ? agentIds : 'all',
                 expiresAt,
-                policyId: policy?.policy_id,
               },
             }),
         },

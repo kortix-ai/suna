@@ -54,7 +54,7 @@ mock.module('../shared/db', () => ({
 const realAccountTokens = await import('../repositories/account-tokens');
 const realApiKeys = await import('../repositories/api-keys');
 const realIamActions = await import('../iam/actions');
-const realIamDispatcher = await import('../iam/dispatcher');
+const realIamAuthorize = await import('../iam/authorize');
 
 mock.module('../repositories/account-tokens', () => ({
   ...realAccountTokens,
@@ -65,17 +65,22 @@ mock.module('../repositories/api-keys', () => ({
   validateSecretKey: async () => apiKeyResult,
 }));
 mock.module('../iam/actions', () => ({ ...realIamActions }));
-mock.module('../iam/dispatcher', () => ({
-  ...realIamDispatcher,
+mock.module('../iam/authorize', () => ({
+  ...realIamAuthorize,
+  // The acting token is now part of the Actor's credential, not a trailing
+  // argument — this assertion is the point of the test, so read it back out of
+  // the credential the git proxy built.
   authorize: async (
-    userId: string,
-    accountId: string,
+    actor: { userId: string; accountId: string; credential: { tokenId?: string } },
     action: string,
-    _t: unknown,
-    actingTokenId?: string,
   ) => {
-    authorizeCalls.push({ userId, accountId, action, actingTokenId });
-    return { allowed: authorizeAllowed };
+    authorizeCalls.push({
+      userId: actor.userId,
+      accountId: actor.accountId,
+      action,
+      actingTokenId: actor.credential.tokenId,
+    });
+    return { allowed: authorizeAllowed, reason: 'role' };
   },
 }));
 

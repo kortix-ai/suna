@@ -7,6 +7,7 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { json, errors, auth } from '../../openapi';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
+import { actorOf } from '../../iam/actor';
 import {
   createServiceAccount,
   deleteServiceAccount,
@@ -34,7 +35,7 @@ iamRouter.openapi(
   async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
-  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.TOKEN_READ);
+  await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.TOKEN_READ);
   const rows = await listServiceAccounts(accountId);
   return c.json({
     service_accounts: rows.map((sa) => ({
@@ -68,7 +69,7 @@ iamRouter.openapi(
   async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
-  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.TOKEN_CREATE);
+  await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.TOKEN_CREATE);
 
   const body = await readBody(c);
   const name = typeof body.name === 'string' ? body.name.trim() : '';
@@ -137,7 +138,7 @@ iamRouter.openapi(
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   const saId = c.req.param('saId');
-  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.TOKEN_REVOKE);
+  await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.TOKEN_REVOKE);
 
   const before = await getServiceAccount(accountId, saId);
   if (!before) return c.json({ error: 'service account not found' }, 404);
@@ -187,7 +188,7 @@ iamRouter.openapi(
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   const saId = c.req.param('saId');
-  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.TOKEN_REVOKE);
+  await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.TOKEN_REVOKE);
 
   const before = await getServiceAccount(accountId, saId);
   if (!before) return c.json({ error: 'service account not found' }, 404);

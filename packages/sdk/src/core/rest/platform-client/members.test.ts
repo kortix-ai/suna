@@ -20,15 +20,6 @@ mock.module('../../http/auth', () => ({
 }));
 
 const {
-  listSandboxMembers,
-  addSandboxMember,
-  removeSandboxMember,
-  updateSandboxMemberRole,
-  updateSandboxMemberSpendCap,
-  getViewerSandboxScopes,
-  getSandboxMemberScopes,
-  updateSandboxMemberScope,
-  revokeSandboxInvite,
   listSandboxProjectMembers,
   grantSandboxProjectAccess,
   revokeSandboxProjectAccess,
@@ -72,64 +63,6 @@ const sandbox: SandboxInfo = {
   created_at: '2026-01-01T00:00:00Z',
   updated_at: '2026-01-01T00:00:00Z',
 };
-
-// ─── Deliberate stubs — every one of these always rejects, regardless of input ──
-
-test('listSandboxMembers always rejects — moved to project access', async () => {
-  await expect(listSandboxMembers('sbx-1')).rejects.toThrow(
-    'Sandbox members moved to project access; use project members for project-session sandboxes',
-  );
-});
-
-test('addSandboxMember always rejects — invite to project instead', async () => {
-  await expect(addSandboxMember('sbx-1', 'a@b.com', 'member')).rejects.toThrow(
-    'Sandbox members moved to project access; invite the user to the project instead',
-  );
-});
-
-test('removeSandboxMember always rejects — update project access instead', async () => {
-  await expect(removeSandboxMember('sbx-1', 'user-1')).rejects.toThrow(
-    'Sandbox members moved to project access; update project access instead',
-  );
-});
-
-test('updateSandboxMemberRole always rejects — update project access instead', async () => {
-  await expect(updateSandboxMemberRole('sbx-1', 'user-1', 'admin')).rejects.toThrow(
-    'Sandbox members moved to project access; update project access instead',
-  );
-});
-
-test('updateSandboxMemberSpendCap always rejects — not exposed for project-session sandboxes', async () => {
-  await expect(updateSandboxMemberSpendCap('sbx-1', 'user-1', 5000)).rejects.toThrow(
-    'Sandbox member spend caps are not exposed for project-session sandboxes',
-  );
-});
-
-test('getViewerSandboxScopes always rejects — moved to project access', async () => {
-  await expect(getViewerSandboxScopes('sbx-1')).rejects.toThrow(
-    'Sandbox scopes moved to project access for project-session sandboxes',
-  );
-});
-
-test('getSandboxMemberScopes always rejects — moved to project access', async () => {
-  await expect(getSandboxMemberScopes('sbx-1', 'user-1')).rejects.toThrow(
-    'Sandbox scopes moved to project access for project-session sandboxes',
-  );
-});
-
-test('updateSandboxMemberScope always rejects — moved to project access', async () => {
-  await expect(updateSandboxMemberScope('sbx-1', 'user-1', 'files.read', 'grant')).rejects.toThrow(
-    'Sandbox scopes moved to project access for project-session sandboxes',
-  );
-});
-
-test('revokeSandboxInvite always rejects — moved to project access', async () => {
-  await expect(revokeSandboxInvite('sbx-1', 'invite-1')).rejects.toThrow(
-    'Sandbox invites moved to project access for project-session sandboxes',
-  );
-  // Stubs must not hit the network — they throw synchronously up front.
-  expect(calls.length).toBe(0);
-});
 
 // ─── Real functional ACL helpers — go through fetchKortixMaster ─────────────
 

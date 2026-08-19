@@ -683,13 +683,14 @@ export function GitView({ projectId }: { projectId: string }) {
     ...contract('config'),
   });
   // `detail.data.project` is a full `KortixProject`, so `RepositoryGroup` reads
-  // its `effective_project_role`/`default_branch`/`manifest_path` from this
-  // SAME query rather than firing a second project fetch — unchanged from the
-  // previous implementation.
+  // its `default_branch`/`manifest_path` from this SAME query rather than firing
+  // a second project fetch.
   const project = detail.data?.project;
-  const canManage = project?.effective_project_role === 'manager';
-  const canWrite = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_WRITE).allowed === true;
-  const canEdit = canManage || canWrite;
+  // One leaf, asked once. This used to be `role === 'manager' || project.write`,
+  // an OR that existed only because the role label could not express the leaf —
+  // every manager holds `project.write`, so the first half added nothing except
+  // a false positive for a custom role denied that leaf.
+  const canEdit = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_WRITE).allowed === true;
   const managed = project ? isManagedGithubProject(project) : false;
 
   return (

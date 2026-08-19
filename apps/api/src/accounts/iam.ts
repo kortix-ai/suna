@@ -38,5 +38,6 @@ import './iam/enterprise-demo'; // self-serve enterprise-preview toggle
 import './iam/policies'; // session policy, active sessions / revoke, PAT policy
 import './iam/service-accounts'; // service accounts (non-human IAM principals)
 import './iam/custom-roles'; // IAM v1: custom roles + action sets + principal→role policies
+import './iam/assignments'; // canonical: role_assignments CRUD + the permission catalog
 
 export { iamRouter } from './iam/app';

@@ -79,12 +79,13 @@
  * "This dashboard" / `kortix.yaml`, not `platform` / `UI` / `kortix.yaml`;
  * `is_default` is promoted out of the meta line into a `Default` badge.
  *
- * **Gate — preserved exactly.** `canManage` is
- * `projectQuery.data?.effective_project_role === 'manager'`, byte-identical
- * to `sandbox-view.tsx`'s own computation — not re-derived from
- * `useProjectCan` or any other permission source in scope. It gates the
- * header "New template" button, the empty-state action, and every
- * `TemplateCard` edit/delete/rebuild control, matching the original exactly.
+ * **Gate.** Template CRUD asks for `project.customize.write` — the leaf the
+ * routes actually assert (`POST|PATCH|DELETE /projects/:id/sandbox-templates`,
+ * `r2.ts`). It gates the header "New template" button, the empty-state action,
+ * and every `TemplateCard` edit/delete/rebuild control. It used to read
+ * `effective_project_role === 'manager'`, which showed the controls to a custom
+ * role that had been denied `project.customize.write` and hid them from one that
+ * had been granted it.
  *
  * **`useTranslations('hardcodedUi')` removed.** `sandbox-view.tsx` routed
  * its static English copy through `next-intl`'s `useTranslations` with
@@ -175,7 +176,13 @@ import { ErrorState } from '@/features/layout/section/error-state';
 import { useProjectManifestVersion } from '@/features/workspace/customize/migrate-to-v2/manifest-version';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { relativeTime } from '@/lib/relative-time';
-import { useProjectCan } from '@/lib/use-project-can';
+import { useProjectCans } from '@/lib/use-project-can';
+
+/** One batched probe for the two leaves this tab gates on. */
+const SANDBOX_TAB_ACTIONS = [
+  PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE,
+  PROJECT_ACTIONS.PROJECT_WRITE,
+] as const;
 import { cn } from '@/lib/utils';
 import {
   type KortixProject,
@@ -874,15 +881,12 @@ export function SandboxTab({ projectId }: { projectId: string }) {
     queryFn: () => getProject(projectId),
     ...contract('config'),
   });
-  // Byte-identical to `sandbox-view.tsx`'s own gate — see this file's header
-  // comment, "Gate — preserved exactly".
-  const canManage = projectQuery.data?.effective_project_role === 'manager';
-  // Deliberately WIDER than `canManage`, and deliberately not merged with it:
-  // `SandboxProviderRow` was gated by `manager OR project.write` in
-  // `general-tab.tsx`, and moving the row must not silently take the control
-  // away from a writer. The template CRUD gate above stays manager-only.
-  const canWrite = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_WRITE).allowed === true;
-  const canEditProvider = canManage || canWrite;
+  // Two different leaves, one batched probe. Template CRUD asserts
+  // `project.customize.write`; the provider row asserts `project.write`. They
+  // are deliberately NOT merged — a role may hold one without the other.
+  const caps = useProjectCans(projectId, SANDBOX_TAB_ACTIONS);
+  const canManage = caps[PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE]?.allowed === true;
+  const canEditProvider = caps[PROJECT_ACTIONS.PROJECT_WRITE]?.allowed === true;
   const { version: manifestVersion } = useProjectManifestVersion(projectId);
 
   const snapshotsQuery = useQuery({

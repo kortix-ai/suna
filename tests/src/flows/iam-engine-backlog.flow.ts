@@ -19,9 +19,17 @@
  *   GET  …/iam/members/:userId/effective?action=…[&resourceType=&resourceId=]
  *   POST …/iam/members/:userId/effective:batch
  * which return { allowed, reason, action, resource_type }. The `reason`
- * field is the engine's rationale (super_admin / account_role /
- * account_role_insufficient / no_project_membership / project_role /
+ * field is the engine's rationale (super_admin / role /
+ * account_role_insufficient / no_project_membership /
  * project_role_insufficient), letting us assert WHY a decision was made.
+ *
+ * The three ALLOW reasons the pre-canonical engine returned — `account_role`,
+ * `project_role`, `custom_policy` — collapsed into one, `role`, when
+ * `role_assignments` became the single grant table (spec §2.2). They all meant
+ * "a role the principal holds grants this action"; nothing rendered them, and
+ * the distinction only ever leaked which of five stores the row came from.
+ * The DENIAL reasons are unchanged — they name a constraint the caller can act
+ * on, and `denial-message.ts` is keyed on them.
  *
  * Covers IAM-4,5,6 (default/no-custom-role-bound behavior → fold into
  * effective reads) and IAM-9,10,11,12,13 (engine semantics). IAM-1,2,3,7,8,
@@ -73,7 +81,7 @@ flow('IAM-4', { domain: 'iam', routes: [R_EFFECTIVE] }, async (ctx) => {
       params: { accountId: team.id, userId: member.userId! },
       query: { action: 'account.read' },
     });
-    r.status(200).body().has('$.allowed', true).has('$.reason', 'account_role');
+    r.status(200).body().has('$.allowed', true).has('$.reason', 'role');
   });
 
   await ctx.step("member's account.write is denied (no policy can grant it)", async () => {
@@ -112,7 +120,7 @@ flow('IAM-5', { domain: 'iam', routes: [R_EFFECTIVE] }, async (ctx) => {
       params: { accountId: team.id, userId: admin.userId! },
       query: { action: 'account.write' },
     });
-    a.status(200).body().has('$.allowed', true).has('$.reason', 'account_role');
+    a.status(200).body().has('$.allowed', true).has('$.reason', 'role');
 
     const m = await ctx.client.as(ctx.P.OWNER).get(EFFECTIVE, {
       params: { accountId: team.id, userId: member.userId! },
@@ -153,7 +161,7 @@ flow('IAM-6', { domain: 'iam', routes: [R_EFFECTIVE] }, async (ctx) => {
         params: { accountId: team.id, userId: admin.userId! },
         query: { action: 'project.delete', resourceType: 'project', resourceId: project.id },
       });
-      r.status(200).body().has('$.allowed', true).has('$.reason', 'project_role');
+      r.status(200).body().has('$.allowed', true).has('$.reason', 'role');
     },
   );
 
@@ -244,12 +252,12 @@ flow(
           return r.json<{ allowed?: boolean; reason?: string }>();
         },
         {
-          until: (body) => body.allowed === true && body.reason === 'account_role',
+          until: (body) => body.allowed === true && body.reason === 'role',
           timeoutMs: 30_000,
           intervalMs: 1_000,
         },
       );
-      if (result.reason !== 'account_role') {
+      if (result.reason !== 'role') {
         throw new Error(`IAM-9 revoke did not converge: ${JSON.stringify(result)}`);
       }
     });
@@ -320,7 +328,7 @@ flow(
           params: { accountId: team.id, userId: member.userId! },
           query: { action: 'project.delete', resourceType: 'project', resourceId: project.id },
         });
-        r.status(200).body().has('$.allowed', true).has('$.reason', 'project_role');
+        r.status(200).body().has('$.allowed', true).has('$.reason', 'role');
       },
     );
   },
@@ -396,7 +404,7 @@ flow('IAM-12', { domain: 'iam', routes: [R_EFFECTIVE_BATCH, R_EFFECTIVE] }, asyn
       r.status(200)
         .body()
         .has('$.results[0].allowed', true)
-        .has('$.results[0].reason', 'account_role')
+        .has('$.results[0].reason', 'role')
         .has('$.results[1].allowed', false)
         .has('$.results[1].reason', 'account_role_insufficient')
         .has('$.results[2].allowed', false);
@@ -408,7 +416,7 @@ flow('IAM-12', { domain: 'iam', routes: [R_EFFECTIVE_BATCH, R_EFFECTIVE] }, asyn
       params: { accountId: team.id, userId: admin.userId! },
       query: { action: 'account.write' },
     });
-    r.status(200).body().has('$.allowed', true).has('$.reason', 'account_role');
+    r.status(200).body().has('$.allowed', true).has('$.reason', 'role');
   });
 
   await ctx.step(
@@ -419,7 +427,7 @@ flow('IAM-12', { domain: 'iam', routes: [R_EFFECTIVE_BATCH, R_EFFECTIVE] }, asyn
         params: { accountId: team.id, userId: member.userId! },
         query: { action: 'project.write', resourceType: 'project', resourceId: project.id },
       });
-      r.status(200).body().has('$.allowed', true).has('$.reason', 'project_role');
+      r.status(200).body().has('$.allowed', true).has('$.reason', 'role');
     },
   );
 });
@@ -476,7 +484,7 @@ flow(
           params: { accountId: team.id, userId: member.userId! },
           query: { action: 'project.delete', resourceType: 'project', resourceId: projectA.id },
         });
-        r.status(200).body().has('$.allowed', true).has('$.reason', 'project_role');
+        r.status(200).body().has('$.allowed', true).has('$.reason', 'role');
       },
     );
 

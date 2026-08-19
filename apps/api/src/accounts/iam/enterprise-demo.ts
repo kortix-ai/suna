@@ -16,6 +16,7 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { json, errors, auth } from '../../openapi';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
+import { actorOf } from '../../iam/actor';
 import { isDemoEnterprise } from '../../billing/repositories/credit-accounts';
 import { applyAdminOverride } from '../../billing/services/account-write-owner';
 import { isPlatformAdmin } from '../../shared/platform-roles';
@@ -40,7 +41,7 @@ iamRouter.openapi(
   async (c: any) => {
     const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
-    await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_READ);
+    await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_READ);
     return c.json({ enabled: await isDemoEnterprise(accountId) });
   },
 );

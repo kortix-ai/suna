@@ -1,6 +1,6 @@
 // What a 403 SAYS. Pure — no DB, no request, no Hono context beyond the
 // HTTPException it builds — and deliberately its own module rather than part of
-// `dispatcher.ts`: several route tests replace the dispatcher wholesale with
+// `authorize.ts`: several route tests replace the engine wholesale with
 // `mock.module`, so every name a non-test module imports from it is a name those
 // stubs must also declare. The wording policy has no reason to live behind that.
 

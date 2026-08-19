@@ -1,8 +1,10 @@
 import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { accountMembers, chatUserIdentities, projectAccessRequests, projects } from '@kortix/db';
 import { db } from '../../shared/db';
+import { accountRoleMap, isAccountManagerRole } from '../../iam/read-models';
 import { config } from '../../config';
 import { authorize } from '../../iam';
+import { actorForUser } from '../../iam/actor';
 import { PROJECT_ACTIONS } from '../../iam/actions';
 import { notifyProjectAccessRequestManagers } from '../../projects/lib/access-requests';
 import { lookupEmailsByUserIds } from '../../projects/lib/access';
@@ -45,9 +47,12 @@ export async function resolveSlackActor(
   if (!link) return { reason: 'unlinked' };
 
   if (!(await isAccountMember(link.userId, accountId))) return { reason: 'not_member' };
+  // A channel webhook carries no Kortix credential: it acts AS the Kortix user
+  // the Slack/Teams identity is linked to. Role-only is the honest classification
+  // and is exactly the authority this call had when the trailing `actingTokenId`
+  // was omitted.
   const verdict = await authorize(
-    link.userId,
-    accountId,
+    actorForUser(link.userId, accountId),
     PROJECT_ACTIONS.PROJECT_WRITE,
     { type: 'project', id: projectId },
   );
@@ -253,8 +258,7 @@ export async function createSlackAccessRequest(input: {
   const base = { requesterUserId: identity.userId, accountId: project.accountId };
   if (await isAccountMember(identity.userId, project.accountId)) {
     const verdict = await authorize(
-      identity.userId,
-      project.accountId,
+      actorForUser(identity.userId, project.accountId),
       PROJECT_ACTIONS.PROJECT_WRITE,
       { type: 'project', id: input.projectId },
     );
@@ -310,15 +314,9 @@ export async function notifyAdminsOfAccessRequest(input: {
   const token = await loadSlackTokenForProject(input.projectId);
   if (!token) return;
 
-  const admins = await db
-    .select({ userId: accountMembers.userId })
-    .from(accountMembers)
-    .where(
-      and(
-        eq(accountMembers.accountId, input.accountId),
-        inArray(accountMembers.accountRole, ['owner', 'admin']),
-      ),
-    );
+  const admins = [...(await accountRoleMap(input.accountId)).entries()]
+    .filter(([, role]) => isAccountManagerRole(role))
+    .map(([userId]) => ({ userId }));
   if (admins.length === 0) return;
 
   const email = (await lookupEmailsByUserIds([input.requesterUserId]).catch(() => null))?.get(

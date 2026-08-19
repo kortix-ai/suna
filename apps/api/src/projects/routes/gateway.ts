@@ -17,7 +17,7 @@ import { platformDefaultModelId } from '../../llm-gateway/models/served-managed-
 import { db } from '../../shared/db';
 import { auth, errors, json } from '../../openapi';
 import { authorize } from '../../iam';
-import { deriveRequestContext } from '../../iam/cache';
+import { actorOf } from '../../iam/actor';
 import { PROJECT_ACTIONS } from '../../iam/actions';
 import { assertProjectCapability, loadProjectForUser, lookupEmailsByUserIds } from '../lib/access';
 import { projectsApp } from '../lib/app';
@@ -60,14 +60,10 @@ async function canDo(
   accountId: string,
   action: string,
 ): Promise<boolean> {
-  const verdict = await authorize(
-    c.get('userId'),
-    accountId,
-    action,
-    { type: 'project', id: projectId },
-    c.get('iamTokenId'),
-    deriveRequestContext(c),
-  );
+  const verdict = await authorize(await actorOf(c, accountId), action, {
+    type: 'project',
+    id: projectId,
+  });
   return verdict.allowed;
 }
 

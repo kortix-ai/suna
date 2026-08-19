@@ -289,6 +289,8 @@ v2 removes `channels:` from the schema. Channel-to-agent routing (Slack, Microso
 
 A name-to-block map, keyed by agent name. This map is governance only — it grants what an agent may touch, never what it says or does.
 
+This block is the **second of the two bindings**: a principal gets roles from Kortix, and an agent additionally carries the Kortix CLI scopes declared here. A session can only do what both allow. See [One vocabulary, two bindings](/docs/accounts#one-vocabulary-two-bindings).
+
 ```yaml
 default_agent: kortix
 
@@ -313,7 +315,7 @@ agents:
 | `connectors`          | `none`  | Which connector slugs this agent may call. `all` means every connector.                                                                                                                                   |
 | `connectors_required` | `none`  | Connector slugs that must resolve an active, strategy-compatible authorization before sandbox startup. Must be a subset of `connectors`. A missing authorization returns `CONNECTOR_CONNECTION_REQUIRED`. |
 | `secrets`             | `none`  | Which project secrets this agent receives as sandbox env vars. Renamed from v1's `env`.                                                                                                                   |
-| `kortix_cli`          | `none`  | Which Kortix CLI and API actions this agent may perform. `all` means everything the launching user can do — an agent can never exceed its launcher.                                                       |
+| `kortix_cli`          | `none`  | Which Kortix CLI and API permissions this agent may exercise. `all` means everything the launching user's roles allow — an agent can never exceed its launcher.                                            |
 | `skills`              | `none`  | Which skills this agent may load.                                                                                                                                                                         |
 | `workspace`           | —       | Git-boundary mode: `runtime`, `read`, or `branch`. Validated against the enum; any other value is rejected.                                                                                               |
 
@@ -324,7 +326,7 @@ v2 is deny-by-default: an omitted `connectors`, `secrets`, `kortix_cli`, or `ski
 connector's `authorization_strategy` decides whether the authorization
 is project-owned or member-owned.
 
-`kortix_cli` grants come from a fixed set of project-scoped actions (`project.read`, `project.cr.open`, `project.cr.merge`, `project.trigger.*`, `project.secret.*`, `project.connector.*`, and more). Account-scoped actions — `member.*`, `billing.*`, `project.create` — can never be granted to an agent. Run `kortix validate --scopes` from inside a session to print the live, grantable list.
+`kortix_cli` grants come from a fixed set of project-scoped permissions (`project.read`, `project.cr.open`, `project.cr.merge`, `project.trigger.*`, `project.secret.*`, `project.connector.*`, and more). Account-scoped permissions — `member.*`, `billing.*`, `project.create` — can never be granted to an agent. Run `kortix validate --scopes` from inside a session to print the live, grantable list.
 
 ## When config changes take effect
 

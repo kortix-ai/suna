@@ -190,6 +190,11 @@ the project so a private one stays manageable when its creator leaves. Check
 this field before asking for an access session. Treat `undefined` as unknown,
 not as denied.
 
+`AppAccessMode` is a per-resource visibility setting on top of the role model,
+not a role. `restricted` names users and groups — the same principal types the
+role model uses. See
+[Accounts & access](/docs/accounts#per-feature-access-settings).
+
 `DockerfileAppSource` and `OciImageAppSource` require `command` and `port`.
 `StaticAppSource` and `BundleAppSource` do not.
 
@@ -260,7 +265,7 @@ await access.update.mutateAsync({ mode: 'project' });
 
 | Option | Default | Use `false` when |
 |---|---|---|
-| `policy` | `true` | The surface only previews the App. `GET …/access` is an administrative read and answers `403` for an ordinary member. |
+| `policy` | `true` | The surface only previews the App. `GET …/access` is an administrative read and answers `403` for a caller without project-manager permissions. |
 | `session` | `true` | The caller may see the App but not open it. Pass `app.viewer_can_access`. |
 
 A grid of Apps that leaves both options at `true` fires one policy read and one

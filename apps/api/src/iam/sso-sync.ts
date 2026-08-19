@@ -17,6 +17,7 @@
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { accountGroupMembers, accountGroups, accountInvitations, accountMembers } from '@kortix/db';
 import { db } from '../shared/db';
+import { assignRole, SYSTEM_ACTOR } from './assignments';
 import { invalidateIamCacheForUser } from './cache-invalidation';
 import {
   ensureAutoProvisionedGroup,
@@ -278,12 +279,37 @@ export async function syncSsoMembership(args: {
       .values({
         accountId: provider.accountId,
         userId: args.userId,
-        // SAML users default to 'member' — the IAM engine grants nothing
-        // off this alone (strict mode safe) and only reads under the
-        // legacy bridge. Real privileges come from group mappings.
+        // SAML users default to 'member'. Real privileges come from group
+        // mappings; this row is identity + the membership baseline.
         accountRole: 'member',
       })
       .onConflictDoNothing();
+    // …and the canonical grant, through the ONE write path. SSO JIT keeps
+    // bypassing user-authz by design — an IdP is not a user, and this runs
+    // inside the auth middleware where there is no caller to authorize — but it
+    // no longer bypasses the audit trail or the cache contract: `SYSTEM_ACTOR`
+    // skips only `assertWriterMayAssign`, and `source: 'sso'` records WHY the
+    // row exists so an admin reading the assignment can tell an IdP-provisioned
+    // membership from one a human granted.
+    //
+    // Best-effort: a failure here must not fail the SAML request. The mirror
+    // trigger on account_members has already written the same row inside the
+    // INSERT above, so the engine is correct either way; what a throw would cost
+    // is the audit event, not the grant.
+    try {
+      await assignRole(SYSTEM_ACTOR, provider.accountId, {
+        principal: { type: 'user', id: args.userId },
+        roleKey: 'member',
+        scope: { type: 'account' },
+        source: 'sso',
+      });
+    } catch (err) {
+      console.warn('[sso-sync] canonical membership assignment failed', {
+        accountId: provider.accountId,
+        userId: args.userId,
+        err: (err as Error)?.message,
+      });
+    }
     memberCreated = true;
     // JIT bypasses invite acceptance, so SCIM group memberships parked on a
     // pending invite for this email (scim/groups.ts) would strand forever —

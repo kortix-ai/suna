@@ -58,11 +58,28 @@ mock.module('../shared/resolve-account', () => ({
   resolveScopedAccountId: async () => TEST_USER_ID,
 }));
 
+// `assertAuthorized` now takes the structured Actor as its FIRST argument, so
+// the stub reads the action from position 2. The account-deletion routes reach
+// it through the barrel; `actorOf` is stubbed alongside because building a real
+// actor would read account_tokens through this suite's minimal db mock.
+// Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
+// declares only `actorOf` breaks every other importer of `iam/actor`
+// (`loadTokenBinding`, `actingPrincipal`, …) with a missing-export SyntaxError.
+const realIamActor = await import('../iam/actor');
+mock.module('../iam/actor', () => ({
+  ...realIamActor,
+  actorOf: async (c: { get(k: string): unknown }, accountId: string) => ({
+    userId: (c.get('userId') as string | undefined) ?? 'test-user',
+    accountId,
+    credential: { kind: 'jwt' as const },
+    ctx: {},
+  }),
+}));
 mock.module('../iam', () => ({
   ACCOUNT_ACTIONS: {
     ACCOUNT_DELETE: 'account.delete',
   },
-  assertAuthorized: async (_userId: string, _accountId: string, action: string) => {
+  assertAuthorized: async (_actor: unknown, action: string) => {
     if (action === 'account.delete' && !mockAccountDeleteAllowed) {
       throw new HTTPException(403, { message: "You don't have permission to delete accounts." });
     }

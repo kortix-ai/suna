@@ -85,6 +85,20 @@ describe('sandbox test workflow', () => {
     // teardown, so the sweep must be wired pre-run and `if: always()` post-run.
     expect(release).toContain('bun tests/bin/ke2e.ts gc --older-than 2h');
     expect(release).toContain('bun tests/bin/ke2e.ts gc --run-id');
+    // The pre-run sweep is a janitor, never a gate. On run 32226539107 its
+    // 15-minute JOB cap fired mid-delete, GitHub recorded the job as
+    // `cancelled` (which continue-on-error does not absorb), and every
+    // dependent shard was skipped. Two guards, both required: the gc STEP is
+    // bounded (a step timeout is a job *failure*), and the shard jobs run
+    // unless the whole workflow was cancelled.
+    const sweepBefore = release.slice(release.indexOf('  sweep-before:'), release.indexOf('  api:'));
+    expect(sweepBefore).toContain('continue-on-error: true');
+    expect(sweepBefore).toMatch(/- name: Reclaim test accounts older than 2h\n\s+timeout-minutes: 12/);
+    for (const job of ['  api:', '  browser:']) {
+      const start = release.indexOf(job);
+      const block = release.slice(start, release.indexOf('runs-on:', start));
+      expect(block, `${job.trim()} must not depend on the janitor's result`).toContain('if: ${{ !cancelled() }}');
+    }
     expect(release).toContain('RELEASE_SOURCE_SHA');
     expect(release).toContain('WEB_PROTECTION_PASSWORD');
     // Staging sits behind Vercel SSO deployment protection, which Basic-auth

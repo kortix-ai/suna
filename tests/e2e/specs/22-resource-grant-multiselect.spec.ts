@@ -136,24 +136,40 @@ test.describe('22 — Resource-grant multi-select', () => {
       await dialog.getByRole('tab', { name: 'Only these…', exact: true }).click();
       await dialog.getByRole('checkbox', { name: 'kortix', exact: true }).click();
 
-      const grantPostStatuses: number[] = [];
+      // Canonical RBAC: an agent grant is ONE role assignment — role
+      // `agent-user` on object (agent, kortix) — written through
+      // POST /accounts/:id/iam/assignments. The legacy POST /resource-grants
+      // must NOT be called by the dialog any more (it dual-writes only for
+      // pre-cutover clients); the legacy GET below still lists the grants
+      // because the dual-read window keeps both stores consistent.
+      const assignmentPosts: { status: number; objectType?: string; objectId?: string }[] = [];
+      const legacyGrantPosts: number[] = [];
       page.on('response', (r) => {
-        if (
-          r.request().method() === 'POST' &&
-          r.url().endsWith(`/v1/projects/${projectId}/resource-grants`)
-        ) {
-          grantPostStatuses.push(r.status());
+        const url = r.url();
+        const method = r.request().method();
+        if (method === 'POST' && /\/v1\/accounts\/[^/]+\/iam\/assignments$/.test(url)) {
+          let body: { object_type?: string; object_id?: string } = {};
+          try { body = JSON.parse(r.request().postData() ?? '{}'); } catch {}
+          assignmentPosts.push({ status: r.status(), objectType: body.object_type, objectId: body.object_id });
+        }
+        if (method === 'POST' && url.endsWith(`/v1/projects/${projectId}/resource-grants`)) {
+          legacyGrantPosts.push(r.status());
         }
       });
-      // 2 principals × 1 agent = 2 resource grants (plus one project-role
+      // 2 principals × 1 agent = 2 object assignments (plus one project-role
       // write per principal, which is not what this contract counts).
       await dialog.getByRole('button', { name: 'Grant access (2)', exact: true }).click();
       await expect(dialog).toHaveCount(0, { timeout: 15_000 });
       await expect
-        .poll(() => grantPostStatuses.length, { timeout: 10_000 })
+        .poll(
+          () => assignmentPosts.filter((p) => p.objectType === 'agent' && p.objectId === 'kortix').length,
+          { timeout: 10_000 },
+        )
         .toBe(2);
-      // POST /resource-grants returns 201 (created), not 200.
-      expect(grantPostStatuses).toEqual([201, 201]);
+      expect(
+        assignmentPosts.filter((p) => p.objectType === 'agent').map((p) => p.status),
+      ).toEqual([201, 201]);
+      expect(legacyGrantPosts).toEqual([]);
 
       // The access list re-renders with both people, each row carrying the
       // narrowed agent count — the actual two rows, not just a total.

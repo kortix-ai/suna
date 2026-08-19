@@ -4,9 +4,10 @@
 // policyMatchesTarget, checkConditions, actionPassesBoundary, system-role
 // permission cache) lived in this file until PR5d, when V2 became the only
 // authorization path. The file is kept as a type-only module so that
-// downstream importers (dispatcher, cache, repositories, route handlers,
-// tests) keep working without churn — the actual runtime now lives in
-// ./engine-v2 and is reached through ./dispatcher.
+// downstream importers keep working without churn. As of the canonical-RBAC
+// refactor NOTHING in the production graph imports this: it survives only to
+// type `./engine-v2`, which in turn survives only to feed the verdict-parity
+// harness during the dual-read window (spec §5). Both go with the cutover PR.
 //
 // AccessibleResources is the wider V1 union (it had an additional
 // 'all_except' variant) collapsed to what V2 actually returns.

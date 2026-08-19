@@ -8,7 +8,10 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 let dbResults: unknown[][] = [];
 function makeChain(): any {
   const chain: any = {};
-  for (const m of ['from', 'where', 'limit', 'orderBy', 'set', 'values', 'returning']) {
+  // `innerJoin` joined the list when the owner lookup moved to
+  // `role_assignments`: the role comes from the canonical store now, the
+  // `joined_at` ordering still from `account_members`.
+  for (const m of ['from', 'innerJoin', 'where', 'limit', 'orderBy', 'set', 'values', 'returning']) {
     chain[m] = () => chain;
   }
   chain.then = (resolve: (rows: unknown[]) => unknown) => Promise.resolve(resolve(dbResults.shift() ?? []));

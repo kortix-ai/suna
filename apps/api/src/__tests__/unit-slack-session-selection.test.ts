@@ -88,9 +88,8 @@ mock.module('../iam', () => ({
   ...realIam,
   authorize: async () => ({ allowed: true }),
   assertAuthorized: async () => {},
-  filterAccessibleProjectResources: async (
-    _userId: string,
-    _accountId: string,
+  filterAccessibleObjects: async (
+    _actor: unknown,
     _projectId: string,
     _resourceType: string,
     resourceIds: readonly string[],

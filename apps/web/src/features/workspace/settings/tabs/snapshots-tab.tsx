@@ -58,11 +58,10 @@
  * `settings-panel.tsx` — this tab is project-scoped only, same as `sandbox`,
  * and takes no `ACCOUNT_TAB_PERMISSION` entry.
  *
- * **Gate — preserved exactly.** `canManage` is
- * `projectQuery.data?.effective_project_role === 'manager'`, byte-identical to
- * `sandbox-view.tsx`'s own computation. It gates only the status banner's
- * Rebuild button; "Fix with agent" gates separately on
- * `status.fix_with_agent_available`, also unchanged.
+ * **Gate.** `canManage` probes `project.customize.write` — the leaf the rebuild
+ * route asserts, and the same leaf `sandbox-tab.tsx` gates template CRUD on. It
+ * gates only the status banner's Rebuild button; "Fix with agent" gates
+ * separately on `status.fix_with_agent_available`, unchanged.
  *
  * **`listProjectSnapshots` — shared endpoint, split rendering.** Both tabs call
  * the identical `useQuery({ queryKey: qk.project.snapshots(projectId) })`
@@ -98,7 +97,9 @@ import {
   formatSandboxProvider,
   formatSandboxProviders,
 } from '@/features/workspace/project-sidebar/footer/sandbox-alert-state';
+import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { relativeTime } from '@/lib/relative-time';
+import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import {
   type ProjectSnapshotBuild,
@@ -920,9 +921,8 @@ export function SnapshotsTab({ projectId }: { projectId: string }) {
     queryFn: () => getProject(projectId),
     ...contract('config'),
   });
-  // Byte-identical to `sandbox-tab.tsx`'s own gate — see this file's header
-  // comment, "Gate — preserved exactly".
-  const canManage = projectQuery.data?.effective_project_role === 'manager';
+  const canManage =
+    useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE).allowed === true;
 
   const snapshotsQuery = useQuery({
     queryKey: qk.project.snapshots(projectId),

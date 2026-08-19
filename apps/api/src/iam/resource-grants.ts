@@ -44,6 +44,9 @@
 import { and, eq, gt, isNull, or, sql } from 'drizzle-orm';
 import { iamResourceGrants } from '@kortix/db';
 import { db } from '../shared/db';
+import type { ObjectType as ObjectGrantType } from './catalog';
+import { assignRole, listAssignments, revokeAssignment, SYSTEM_ACTOR } from './assignments';
+import { objectGrantRows } from './read-models';
 import { ttlMemo } from '../shared/ttl-memo';
 import {
   invalidateIamCacheForProjectResources,
@@ -315,21 +318,24 @@ interface ResourceGrantRow {
   createdAt: Date;
 }
 
-/** Every grant for a project (for the Members UI). */
+/**
+ * Every grant for a project (for the Members UI), read from
+ * `kortix.role_assignments` — the store the engine decides on. `grant_id` is
+ * the ASSIGNMENT id; the DELETE route accepts either that or a legacy grant id,
+ * so a client holding one from either era can still revoke it.
+ */
 export async function listResourceGrants(projectId: string): Promise<ResourceGrantRow[]> {
-  return db
-    .select({
-      grantId: iamResourceGrants.grantId,
-      resourceType: iamResourceGrants.resourceType,
-      resourceId: iamResourceGrants.resourceId,
-      principalType: iamResourceGrants.principalType,
-      principalId: iamResourceGrants.principalId,
-      expiresAt: iamResourceGrants.expiresAt,
-      grantedBy: iamResourceGrants.grantedBy,
-      createdAt: iamResourceGrants.createdAt,
-    })
-    .from(iamResourceGrants)
-    .where(eq(iamResourceGrants.projectId, projectId));
+  const rows = await objectGrantRows({ projectId });
+  return rows.map((r) => ({
+    grantId: r.grantId,
+    resourceType: r.resourceType,
+    resourceId: r.resourceId,
+    principalType: r.principalType,
+    principalId: r.principalId,
+    expiresAt: r.expiresAt,
+    grantedBy: r.grantedBy,
+    createdAt: r.createdAt,
+  }));
 }
 
 /** Create or update a grant (idempotent on the unique principal+resource key). */
@@ -374,16 +380,78 @@ export async function upsertResourceGrant(input: {
       },
     })
     .returning({ grantId: iamResourceGrants.grantId });
+  // …and the canonical object assignment, through the ONE write path, so the
+  // grant carries an `iam.assignment.granted` audit event. The route already
+  // asserted `project.members.manage`; `SYSTEM_ACTOR` says the caller was
+  // authorized THERE rather than re-deriving a different action here.
+  //
+  // Best-effort: the mirror trigger on `iam_resource_grants` wrote the same
+  // canonical row inside the upsert above, so a failure costs the audit event,
+  // not the grant.
+  let assignmentId: string | null = null;
+  try {
+    const assignment = await assignRole(SYSTEM_ACTOR, input.accountId, {
+      principal: {
+        type: input.principalType === 'group' ? 'group' : 'user',
+        id: input.principalId,
+      },
+      roleKey: 'agent-user',
+      scope: { type: 'project', id: input.projectId },
+      object: { type: input.resourceType as ObjectGrantType, id: input.resourceId },
+      expiresAt: input.expiresAt ?? null,
+      source: 'manual',
+      grantedBy: input.grantedBy,
+    });
+    assignmentId = assignment.assignmentId;
+  } catch (err) {
+    console.warn('[resource-grants] canonical object assignment failed', {
+      projectId: input.projectId,
+      resourceType: input.resourceType,
+      resourceId: input.resourceId,
+      err: (err as Error)?.message,
+    });
+  }
   invalidateIamCacheForProjectResources(input.projectId);
-  return { grantId: row.grantId };
+  // The ASSIGNMENT id, so the id this returns is the id the list returns and
+  // the id the DELETE route takes. The legacy id is the fallback for the one
+  // case that has no assignment: the canonical write above failed.
+  return { grantId: assignmentId ?? row.grantId };
 }
 
-/** Delete a grant by id (scoped to the project so a stray id can't cross over). */
-export async function deleteResourceGrant(grantId: string, projectId: string): Promise<boolean> {
+/**
+ * Delete a grant by id, scoped to the project so a stray id can't cross over.
+ *
+ * Accepts EITHER id. `listResourceGrants` now returns assignment ids, but a
+ * client holding a legacy `iam_resource_grants.grant_id` — from a cached page,
+ * or from a response this API returned before the cutover — must still be able
+ * to revoke. Both paths remove both rows: the legacy delete fires the mirror
+ * trigger, and `revokeAssignment` deletes the legacy row itself.
+ */
+export async function deleteResourceGrant(
+  grantId: string,
+  projectId: string,
+  accountId: string,
+): Promise<boolean> {
   const deleted = await db
     .delete(iamResourceGrants)
     .where(and(eq(iamResourceGrants.grantId, grantId), eq(iamResourceGrants.projectId, projectId)))
     .returning({ grantId: iamResourceGrants.grantId });
+  if (deleted.length > 0) {
+    invalidateIamCacheForProjectResources(projectId);
+    return true;
+  }
+
+  const [assignment] = await listAssignments({
+    accountId,
+    scopeType: 'project',
+    scopeId: projectId,
+    liveOnly: false,
+  }).then((rows) => rows.filter((r) => r.assignmentId === grantId && r.objectType !== null));
+  if (!assignment) return false;
+  // The route asserted project.members.manage before calling; skip the
+  // grant-side re-derivation, which would ask for it again under a different
+  // name. SYSTEM_ACTOR because this repository function has no request actor.
+  await revokeAssignment(SYSTEM_ACTOR, accountId, grantId, { skipWriterAuthz: true });
   invalidateIamCacheForProjectResources(projectId);
-  return deleted.length > 0;
+  return true;
 }

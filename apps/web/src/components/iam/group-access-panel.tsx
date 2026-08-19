@@ -110,7 +110,7 @@ import {
   listAccountMembers,
   listProjectResourceGrants,
 } from '@kortix/sdk';
-import { contract, qk } from '@kortix/sdk/react';
+import { contract, invalidatePermissionProbes, qk } from '@kortix/sdk/react';
 
 const IDP_BADGE_TITLE =
   'This group is pushed by your identity provider via Directory Sync — its name and membership are managed there.';
@@ -164,6 +164,9 @@ export function GroupAccessPanel({
     mutationFn: () => deleteGroup(accountId, groupId),
     onSuccess: () => {
       successToast('Group deleted');
+      // Deleting a group revokes every assignment it carried, for every member
+      // of it — principals this screen cannot enumerate, so bust the account.
+      void invalidatePermissionProbes(queryClient, { accountId });
       queryClient.invalidateQueries({ queryKey: ['account-groups', accountId] });
       setDeleteOpen(false);
       onBack();
@@ -491,6 +494,8 @@ function GroupMembersCard({
     mutationFn: (userId: string) => removeGroupMember(accountId, groupId, userId),
     onSuccess: () => {
       successToast('Removed from group');
+      // Group membership IS how the assignment reaches this person.
+      void invalidatePermissionProbes(queryClient, { accountId });
       queryClient.invalidateQueries({ queryKey: ['group-members', accountId, groupId] });
       queryClient.invalidateQueries({ queryKey: ['account-groups', accountId] });
       setRemoveTarget(null);
@@ -734,6 +739,7 @@ function GroupProjectAccessCard({
     mutationFn: (projectId: string) => detachGroupFromProject(projectId, groupId),
     onSuccess: (_data, projectId) => {
       successToast('Group detached from project');
+      void invalidatePermissionProbes(queryClient, { accountId });
       invalidateGrants(projectId);
     },
     onError: (err: Error) => errorToast(err.message || 'Failed to detach'),
@@ -852,7 +858,6 @@ function GroupProjectAccessCard({
               role: roleValueFor(editTarget),
               agentIds: editAgentIds,
               expiresAt: editTarget.expires_at ?? null,
-              policyId: policyByProjectId.get(editTarget.project_id)?.policy_id,
             },
           }}
           rbacEnabled={rbacEnabled}

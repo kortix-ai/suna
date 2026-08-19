@@ -16,6 +16,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import { usePermissions } from '@/lib/use-permission';
 import { listProjectsForAccount, type KortixProject } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
@@ -44,8 +45,18 @@ export interface ProjectSelectProps {
   /** `''` for nothing chosen, or `PROJECT_SELECT_ALL` with `allOptionLabel`. */
   value: string;
   onChange: (projectId: string) => void;
-  /** Narrow the candidate list, e.g. `p => p.effective_project_role === 'manager'`. */
+  /** Narrow the candidate list by a project property. For "which projects may I
+   *  do X on?" use `requireAction` — a role label on the row cannot answer that. */
   filter?: (project: KortixProject) => boolean;
+  /**
+   * Keep only the projects on which the caller holds this permission leaf.
+   *
+   * ONE batched probe covers every candidate: `probeEffectivePermissions` takes
+   * a per-probe target, so N projects cost one request, not N. Candidates stay
+   * hidden until the probe answers — a picker that briefly offers a project the
+   * caller cannot act on produces a 403 on submit.
+   */
+  requireAction?: string;
   /** Hide these ids on top of `filter` — projects already attached. */
   excludeIds?: string[] | Set<string>;
   /** Adds a leading "every project" row carrying `PROJECT_SELECT_ALL`. */
@@ -70,6 +81,7 @@ export function ProjectSelect({
   placeholder = 'Choose a project',
   emptyText,
   enabled = true,
+  requireAction,
   id,
   className,
 }: ProjectSelectProps) {
@@ -81,7 +93,30 @@ export function ProjectSelect({
   });
 
   const all = useMemo(() => projectsQuery.data ?? [], [projectsQuery.data]);
-  const eligible = useMemo(() => (filter ? all.filter(filter) : all), [all, filter]);
+
+  // One batch probe over every candidate project. `probes` is empty (and the
+  // query disabled) when no `requireAction` was asked for.
+  const probes = useMemo(
+    () =>
+      requireAction
+        ? all.map((p) => ({
+            action: requireAction,
+            resourceType: 'project' as const,
+            resourceId: p.project_id,
+          }))
+        : [],
+    [all, requireAction],
+  );
+  const verdicts = usePermissions(accountId, probes);
+  const permitted = useMemo(() => {
+    if (!requireAction) return all;
+    return all.filter((_, i) => verdicts[i]?.allowed === true);
+  }, [all, requireAction, verdicts]);
+
+  const eligible = useMemo(
+    () => (filter ? permitted.filter(filter) : permitted),
+    [permitted, filter],
+  );
   const excludeSet = useMemo(() => (excludeIds ? new Set(excludeIds) : null), [excludeIds]);
   const candidates = useMemo(
     () =>

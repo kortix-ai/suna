@@ -1554,3 +1554,53 @@ test('ensureReady() caps each /start long-poll to the remaining deadline budget'
   // Uncapped this would be 30_000; capped to the remaining budget it's ≤ 300.
   expect(Math.max(...waits)).toBeLessThanOrEqual(300);
 });
+
+// ── kortix.iam — the canonical RBAC namespace ────────────────────────────────
+//
+// Before this, groups, roles, the action catalog and the permission probes were
+// reachable only as flat module exports: a `createKortix()` consumer could read
+// a project's file tree through the object API but could not answer "who can
+// touch this account, and how do I change that". These tests pin that the
+// namespace exists and that each method reaches the canonical route.
+
+test('kortix.iam.assignments covers list/create/revoke against ONE endpoint family', async () => {
+  await kortix.iam.assignments.list('ACC1', { scopeType: 'project', scopeId: 'PID1' });
+  expect(last().url).toContain('/accounts/ACC1/iam/assignments');
+  expect(last().url).toContain('scope_type=project');
+  expect(last().method).toBe('GET');
+
+  await kortix.iam.assignments.create('ACC1', {
+    principal: { type: 'user', id: 'U1' },
+    roleKey: 'manager',
+    scope: { type: 'project', id: 'PID1' },
+  });
+  expect(last().url).toContain('/accounts/ACC1/iam/assignments');
+  expect(last().method).toBe('POST');
+  expect(last().body).toMatchObject({ principal_type: 'user', role_key: 'manager' });
+
+  await kortix.iam.assignments.revoke('ACC1', 'AS1');
+  expect(last().url).toContain('/accounts/ACC1/iam/assignments/AS1');
+  expect(last().method).toBe('DELETE');
+});
+
+test('kortix.iam.permissions reads the catalog and one role’s leaves', async () => {
+  await kortix.iam.permissions.list('ACC1', { scopeType: 'account' });
+  expect(last().url).toContain('/accounts/ACC1/iam/permissions?scope_type=account');
+
+  await kortix.iam.permissions.forRole('ACC1', 'ROLE1');
+  expect(last().url).toContain('/accounts/ACC1/iam/roles/ROLE1/permissions');
+});
+
+test('kortix.iam.roles and kortix.iam.groups reach their collections', async () => {
+  await kortix.iam.roles.list('ACC1');
+  expect(last().url).toContain('/accounts/ACC1/iam/roles');
+
+  await kortix.iam.groups.list('ACC1');
+  expect(last().url).toContain('/accounts/ACC1/iam/groups');
+});
+
+test('kortix.iam.can probes one leaf for one principal', async () => {
+  await kortix.iam.can('ACC1', 'U1', { action: 'project.write', resourceType: 'project', resourceId: 'PID1' });
+  expect(last().url).toContain('/accounts/ACC1/iam/members/U1/effective?');
+  expect(last().url).toContain('action=project.write');
+});

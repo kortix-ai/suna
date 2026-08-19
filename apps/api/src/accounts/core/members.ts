@@ -11,10 +11,23 @@ import {
 import { and, eq, gt, inArray, isNull, sql } from 'drizzle-orm';
 import { onMemberAdded, onMemberRemoved } from '../../billing/services/seat-management';
 import { ACCOUNT_ACTIONS, assertAuthorized, authorize } from '../../iam';
+import { actorOf } from '../../iam/actor';
 import { invalidateIamCacheForUser } from '../../iam/cache-invalidation';
 import { parseAssignableProjectRole, PROJECT_ROLE_INPUT_ERROR, type ProjectRole } from '../../iam/role-perms';
 import { auth, errors, json } from '../../openapi';
 import { grantProjectRole } from '../../projects/lib/access';
+import {
+  accountRoleMap,
+  projectRoleGrants,
+} from '../../iam/read-models';
+import {
+  assignRole,
+  auditAssignmentRevoked,
+  deleteAccountScopeAssignments,
+  deleteProjectScopeAssignments,
+  listAssignments,
+  type Writer,
+} from '../../iam/assignments';
 import { revokeAllAccountTokensForUser } from '../../repositories/account-tokens';
 import { db } from '../../shared/db';
 import { lookupUserIdByEmail } from '../../shared/users';
@@ -34,6 +47,104 @@ import {
   parseRole,
   readBody,
 } from './app';
+
+
+/**
+ * The canonical half of an account-membership write.
+ *
+ * `account_members` is still written by these routes (a pre-cutover replica
+ * reads it, and the mirror trigger derives the assignment from it), but the
+ * ASSIGNMENT is what the engine reads, so every membership mutation goes
+ * through `assignRole` / the revoke audit as well. Doing both is safe: the
+ * trigger's upsert and `assignRole`'s upsert target the same identity index, so
+ * the pair produces exactly ONE row.
+ */
+async function grantAccountRole(
+  writer: Writer,
+  accountId: string,
+  userId: string,
+  role: AccountRole,
+): Promise<void> {
+  // Best-effort, like every other canonical half in this PR: the mirror trigger
+  // on the `account_members` write has ALREADY produced the same row, so the
+  // engine is correct either way. What this adds is the audit event and the
+  // delegability ceiling — bookkeeping that must never fail a membership change
+  // the route already authorized.
+  try {
+    await assignRole(writer, accountId, {
+      principal: { type: 'user', id: userId },
+      roleKey: role,
+      scope: { type: 'account' },
+      source: 'system',
+    });
+  } catch (err) {
+    console.warn('[members] canonical account-role assignment failed', {
+      accountId,
+      userId,
+      role,
+      err: (err as Error)?.message,
+    });
+  }
+}
+
+/**
+ * Emit the revoke events for the account-scope system assignments a legacy
+ * write just removed through the mirror trigger.
+ *
+ * `auditAssignmentRevoked`, not `revokeAssignment`: the caller has already run
+ * its own last-owner guard (and, for a role CHANGE, is replacing the row rather
+ * than removing access), so re-running the guard per row would 409 the very
+ * demotion the route just validated.
+ */
+async function auditAccountRoleRevoked(
+  writer: Writer,
+  accountId: string,
+  userId: string,
+  keep?: string,
+): Promise<void> {
+  try {
+    const rows = await listAssignments({
+      accountId,
+      principal: { type: 'user', id: userId },
+      scopeType: 'account',
+      liveOnly: false,
+    });
+    for (const row of rows) {
+      if (!row.roleIsSystem || row.objectType !== null) continue;
+      if (keep && row.roleKey === keep) continue;
+      await auditAssignmentRevoked(writer, accountId, row);
+    }
+  } catch (err) {
+    console.warn('[members] canonical account-role revoke audit failed', {
+      accountId,
+      userId,
+      err: (err as Error)?.message,
+    });
+  }
+}
+
+/** Every project assignment a member holds, revoked with its audit event. */
+async function auditProjectAssignmentsRevoked(
+  writer: Writer,
+  accountId: string,
+  userId: string,
+): Promise<void> {
+  try {
+    const rows = await listAssignments({
+      accountId,
+      principal: { type: 'user', id: userId },
+      scopeType: 'project',
+      liveOnly: false,
+    });
+    for (const row of rows) await auditAssignmentRevoked(writer, accountId, row);
+  } catch (err) {
+    console.warn('[members] canonical project-assignment revoke audit failed', {
+      accountId,
+      userId,
+      err: (err as Error)?.message,
+    });
+  }
+}
 
 // Routes are registered via this function (called by the orchestrator in the
 // original route-registration order).
@@ -65,18 +176,31 @@ export function registerMemberRoutes(): void {
       // MFA, group memberships, project grants): member-managers (owner / admin /
       // member.invite) see it on every row, everyone else only on their own —
       // enforced by canSeeSensitiveMemberColumns in the map below.
-      const canManageMembers = (await authorize(userId, accountId, ACCOUNT_ACTIONS.MEMBER_INVITE))
+      const canManageMembers = (await authorize(await actorOf(c, accountId), ACCOUNT_ACTIONS.MEMBER_INVITE))
         .allowed;
 
-      const rows = await db
-        .select({
-          userId: accountMembers.userId,
-          accountRole: accountMembers.accountRole,
-          isSuperAdmin: accountMembers.isSuperAdmin,
-          joinedAt: accountMembers.joinedAt,
-        })
-        .from(accountMembers)
-        .where(eq(accountMembers.accountId, accountId));
+      // `account_members` is the DIRECTORY (who is here, since when, and the
+      // is_super_admin bypass flag). The ROLE comes from `role_assignments` —
+      // the one store the engine reads — so this list can no longer disagree
+      // with what the gate says a moment later.
+      const [identityRows, accountRoles] = await Promise.all([
+        db
+          .select({
+            userId: accountMembers.userId,
+            isSuperAdmin: accountMembers.isSuperAdmin,
+            joinedAt: accountMembers.joinedAt,
+          })
+          .from(accountMembers)
+          .where(eq(accountMembers.accountId, accountId)),
+        accountRoleMap(accountId),
+      ]);
+      const rows = identityRows.map((r) => ({
+        ...r,
+        // Floor label for a directory row with no account-scope assignment:
+        // the engine denies that principal outright, so `member` is the
+        // weakest label that cannot overstate their access.
+        accountRole: accountRoles.get(r.userId) ?? 'member',
+      }));
 
       // Everyone in the account sees the full directory; sensitive columns are
       // gated per-row below.
@@ -89,16 +213,22 @@ export function registerMemberRoutes(): void {
       // projects don't clutter the chip. Group-derived and implicit
       // (owner/admin) access aren't rows in project_members, so neither is
       // enumerated here — that's the existing explicit_project_count scope.
-      const projectGrantRows = await db
-        .select({
-          userId: projectMembers.userId,
-          projectId: projectMembers.projectId,
-          role: projectMembers.projectRole,
-          name: projects.name,
-        })
-        .from(projectMembers)
-        .innerJoin(projects, eq(projectMembers.projectId, projects.projectId))
-        .where(and(eq(projectMembers.accountId, accountId), eq(projects.status, 'active')));
+      const [assignedGrants, activeProjects] = await Promise.all([
+        projectRoleGrants({ accountId }),
+        db
+          .select({ projectId: projects.projectId, name: projects.name })
+          .from(projects)
+          .where(and(eq(projects.accountId, accountId), eq(projects.status, 'active'))),
+      ]);
+      const projectNameById = new Map(activeProjects.map((p) => [p.projectId, p.name] as const));
+      const projectGrantRows = assignedGrants
+        .filter((g) => projectNameById.has(g.projectId))
+        .map((g) => ({
+          userId: g.userId,
+          projectId: g.projectId,
+          role: g.projectRole as string,
+          name: projectNameById.get(g.projectId)!,
+        }));
       const projectGrantCountByUser = new Map<string, number>();
       const projectsByUser = new Map<
         string,
@@ -253,7 +383,7 @@ export function registerMemberRoutes(): void {
 
       const membership = await getMembership(userId, accountId);
       if (!membership) return c.json({ error: 'Forbidden' }, 403);
-      await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.MEMBER_INVITE);
+      await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.MEMBER_INVITE);
 
       const body = await readBody(c);
       const email = normalizeEmail(body.email);
@@ -342,6 +472,13 @@ export function registerMemberRoutes(): void {
           accountId,
           accountRole: role,
         });
+        // …and the canonical grant, through the ONE write path, so the new
+        // member's role carries an `iam.assignment.granted` audit event and the
+        // delegability ceiling is checked. The route already asserted
+        // member.invite; `assignRole` additionally asserts member.update, which
+        // owner and admin both hold and no custom role can (both are
+        // non-delegable).
+        await grantAccountRole(await actorOf(c, accountId), accountId, targetUserId, role);
 
         // Billing v2 — mint YOLO + push +1 seat to Stripe (no-op for legacy).
         void onMemberAdded(accountId, targetUserId).catch(() => {});
@@ -453,7 +590,7 @@ export function registerMemberRoutes(): void {
       // Pending invites are member-management data — emails of people who
       // haven't even joined yet. Plain members get an empty list (not a 403)
       // so the members page renders without a special error path.
-      const canManageMembers = (await authorize(userId, accountId, ACCOUNT_ACTIONS.MEMBER_INVITE))
+      const canManageMembers = (await authorize(await actorOf(c, accountId), ACCOUNT_ACTIONS.MEMBER_INVITE))
         .allowed;
       if (!canManageMembers) return c.json([]);
 
@@ -504,7 +641,7 @@ export function registerMemberRoutes(): void {
       const membership = await getMembership(userId, accountId);
       if (!membership) return c.json({ error: 'Forbidden' }, 403);
       // Cancelling a pending invite is part of invite admin — same capability.
-      await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.MEMBER_INVITE);
+      await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.MEMBER_INVITE);
 
       await db
         .delete(accountInvitations)
@@ -551,7 +688,7 @@ export function registerMemberRoutes(): void {
 
       const membership = await getMembership(userId, accountId);
       if (!membership) return c.json({ error: 'Forbidden' }, 403);
-      await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.MEMBER_INVITE);
+      await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.MEMBER_INVITE);
 
       const expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
       const [updated] = await db
@@ -617,7 +754,7 @@ export function registerMemberRoutes(): void {
 
       const callerMembership = await getMembership(callerUserId, accountId);
       if (!callerMembership) return c.json({ error: 'Forbidden' }, 403);
-      await assertAuthorized(callerUserId, accountId, ACCOUNT_ACTIONS.MEMBER_REMOVE);
+      await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.MEMBER_REMOVE);
 
       const targetMembership = await getMembership(targetUserId, accountId);
       if (!targetMembership) return c.json({ error: 'Member not found' }, 404);
@@ -634,6 +771,13 @@ export function registerMemberRoutes(): void {
         }
       }
 
+      // Audit BEFORE the legacy deletes: the mirror triggers remove the
+      // canonical rows inside those statements, so afterwards there is nothing
+      // left to describe.
+      const remover = await actorOf(c, accountId);
+      await auditProjectAssignmentsRevoked(remover, accountId, targetUserId);
+      await auditAccountRoleRevoked(remover, accountId, targetUserId);
+
       await db
         .delete(projectMembers)
         .where(
@@ -645,6 +789,10 @@ export function registerMemberRoutes(): void {
         .where(
           and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, targetUserId)),
         );
+      // Belt and braces: an account-scope assignment written straight through
+      // `assignRole` has no `account_members` row behind it for the trigger to
+      // fire on, so removing membership must clear it explicitly.
+      await deleteAccountScopeAssignments(accountId, targetUserId);
       invalidateIamCacheForUser(targetUserId);
       // Offboarding is immediate: kill their PATs + live sandbox session tokens so a
       // removed member (and their running agents) can't keep acting on their bearer.
@@ -696,7 +844,7 @@ export function registerMemberRoutes(): void {
 
       const callerMembership = await getMembership(callerUserId, accountId);
       if (!callerMembership) return c.json({ error: 'Forbidden' }, 403);
-      await assertAuthorized(callerUserId, accountId, ACCOUNT_ACTIONS.MEMBER_UPDATE);
+      await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.MEMBER_UPDATE);
 
       const body = await readBody(c);
       const newRole = parseRole(body.role, ['owner', 'admin', 'member']);
@@ -708,7 +856,7 @@ export function registerMemberRoutes(): void {
       // Only an owner may assign or change the owner role.
       if (
         (newRole === 'owner' || targetMembership.accountRole === 'owner') &&
-        !(await authorize(callerUserId, accountId, ACCOUNT_ACTIONS.MEMBER_SUPER_ADMIN_GRANT))
+        !(await authorize(await actorOf(c, accountId), ACCOUNT_ACTIONS.MEMBER_SUPER_ADMIN_GRANT))
           .allowed
       ) {
         return c.json({ error: 'Only an owner can assign or change the owner role' }, 403);
@@ -736,21 +884,26 @@ export function registerMemberRoutes(): void {
         }
       }
 
+      const writer = await actorOf(c, accountId);
+      await auditAccountRoleRevoked(writer, accountId, targetUserId, newRole);
       await db
         .update(accountMembers)
         .set({ accountRole: newRole })
         .where(
           and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, targetUserId)),
         );
+      await grantAccountRole(writer, accountId, targetUserId, newRole);
 
       if (newRole === 'owner' || newRole === 'admin') {
         // Owners/admins get implicit Manager on every project; their direct
-        // project_members rows would shadow nothing useful, so clean them up.
+        // project assignments would shadow nothing useful, so clean them up.
+        await auditProjectAssignmentsRevoked(writer, accountId, targetUserId);
         await db
           .delete(projectMembers)
           .where(
             and(eq(projectMembers.accountId, accountId), eq(projectMembers.userId, targetUserId)),
           );
+        await deleteProjectScopeAssignments(accountId, targetUserId);
       }
       invalidateIamCacheForUser(targetUserId);
 
@@ -795,6 +948,10 @@ export function registerMemberRoutes(): void {
         }
       }
 
+      const leaver = await actorOf(c, accountId);
+      await auditProjectAssignmentsRevoked(leaver, accountId, userId);
+      await auditAccountRoleRevoked(leaver, accountId, userId);
+
       await db
         .delete(projectMembers)
         .where(and(eq(projectMembers.accountId, accountId), eq(projectMembers.userId, userId)));
@@ -802,6 +959,8 @@ export function registerMemberRoutes(): void {
       await db
         .delete(accountMembers)
         .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, userId)));
+      await deleteAccountScopeAssignments(accountId, userId);
+      await deleteProjectScopeAssignments(accountId, userId);
       invalidateIamCacheForUser(userId);
       // Leaving revokes your own tokens for this account (PATs + live sessions).
       // Never swallow a revocation failure — surface it so a stuck token is visible.

@@ -8,13 +8,17 @@ import {
   type SecretGrant,
   type ShareSubject,
 } from '../../connectors/share';
-import { authorize, assertAuthorized } from '../../iam';
-import { deriveRequestContext } from '../../iam/cache';
-// Straight from `iam/denial-message`, not the `iam` barrel or the dispatcher:
-// both of those are replaced wholesale by `mock.module` in several route tests,
-// so every name imported from them is a name those stubs must also declare.
-// These two are pure wording policy. Same reason `deriveRequestContext` above
-// comes from `iam/cache` directly.
+// Straight from the engine + the actor builder, not the barrel: the barrel is
+// replaced wholesale by `mock.module` in several route tests, so every name
+// imported from it is a name those stubs must also declare.
+import { authorize, assertAuthorized } from '../../iam/authorize';
+import { actorOf, type Actor } from '../../iam/actor';
+import { assignRole, SYSTEM_ACTOR } from '../../iam/assignments';
+import { projectRoleForUser } from '../../iam/read-models';
+// Straight from `iam/denial-message`, not the `iam` barrel: the barrel and the
+// engine are both replaced wholesale by `mock.module` in several route tests,
+// and these two names are pure wording policy with no reason to live behind
+// that.
 import { buildDenialError, denialReasonMessage } from '../../iam/denial-message';
 import { invalidateIamCacheForUser, registerPrincipalScopedMemo } from '../../iam/cache-invalidation';
 import { setContextField } from '../../lib/request-context';
@@ -120,7 +124,16 @@ export function callerHasManagerStanding(
 }
 
 export async function loadVisibleSession(
-  loaded: { row: ProjectRow; userId: string; effectiveRole: ProjectRole; adminBypass?: boolean },
+  loaded: {
+    row: ProjectRow;
+    userId: string;
+    effectiveRole: ProjectRole;
+    adminBypass?: boolean;
+    /** The request's canonical principal. Absent only in tests that build a
+     *  `loaded` shape by hand; the members.manage probe below then declines
+     *  rather than widening. */
+    actor?: Actor | null;
+  },
   sessionId: string,
   /**
    * The CALLER's own session, when the credential is bound to one (a sandbox
@@ -165,14 +178,14 @@ export async function loadVisibleSession(
     isSessionTargetVisibleToCaller(ownership) &&
     isTriggerCreatedSessionMetadata(row.metadata)
   ) {
-    canManageProject = (
-      await authorize(
-        loaded.userId,
-        loaded.row.accountId,
-        'project.members.manage',
-        { type: 'project', id: loaded.row.projectId },
-      )
-    ).allowed;
+    canManageProject = loaded.actor
+      ? (
+          await authorize(loaded.actor, 'project.members.manage', {
+            type: 'project',
+            id: loaded.row.projectId,
+          })
+        ).allowed
+      : false;
   }
   if (
     !isProjectSessionVisibleTo(
@@ -267,16 +280,11 @@ const loadProjectMemberRole = ttlMemo({
   // invalidateByPrefix(`${userId}|`) busts it alongside the engine memos.
   keyFn: (projectId: string, userId: string) => `${userId}|${projectId}`,
   loader: async (projectId: string, userId: string): Promise<ProjectRole | null> => {
-    const [row] = await db
-      .select({ projectRole: projectMembers.projectRole })
-      .from(projectMembers)
-      .where(and(eq(projectMembers.projectId, projectId), eq(projectMembers.userId, userId)))
-      .limit(1);
-    // normalizeProjectRole, never a raw cast: the column can still hold a
-    // RETIRED value (`editor`, `user`, `viewer`) that no longer exists in the
-    // ProjectRole union. A cast would hand a rank-less string to
-    // PROJECT_ROLE_RANK / PROJECT_ROLE_PERMS and silently deny everything.
-    return normalizeProjectRole(row?.projectRole);
+    // From `role_assignments`, the store the verdict beside this label comes
+    // from. `project_members` is no longer written by every path — an
+    // assignment made through `assignRole()` leaves it untouched on purpose —
+    // so a label read from it can disagree with the gate that just ran.
+    return (await projectRoleForUser(projectId, userId)) as ProjectRole | null;
   },
   shouldCache: (role) => role !== null,
 });
@@ -320,6 +328,35 @@ export async function grantProjectRole(input: {
         ...(input.expiresAt !== undefined ? { expiresAt: input.expiresAt } : {}),
       },
     });
+  // …and the canonical grant, through the ONE write path: it emits the single
+  // `iam.assignment.granted` audit event, enforces the delegability ceiling, and
+  // busts the caches. `SYSTEM_ACTOR` because the CALLER was already authorized
+  // by the route that got here (`project.members.manage`, asserted before this
+  // function is reached) — re-authorizing a different action here would 403 the
+  // invite-acceptance and access-request-approval paths, where the writer is the
+  // invitee or an approver acting on someone else's behalf.
+  //
+  // Best-effort: the mirror trigger on `project_members` has already written the
+  // same canonical row inside the upsert above, so a failure here costs the
+  // audit event, not the grant.
+  try {
+    await assignRole(SYSTEM_ACTOR, input.accountId, {
+      principal: { type: 'user', id: input.userId },
+      roleKey: input.role,
+      scope: { type: 'project', id: input.projectId },
+      expiresAt: input.expiresAt ?? null,
+      source: 'manual',
+      // The human who granted it. `SYSTEM_ACTOR` only says "this route already
+      // authorized the writer"; it does not mean nobody granted this.
+      grantedBy: input.grantedBy,
+    });
+  } catch (err) {
+    console.warn('[projects] canonical project-role assignment failed', {
+      projectId: input.projectId,
+      userId: input.userId,
+      err: (err as Error)?.message,
+    });
+  }
   // The role just changed — drop this user's cached authz so the new role is
   // effective on their next request, not after the ~15s TTL window.
   invalidateIamCacheForUser(input.userId);
@@ -357,6 +394,29 @@ export async function ensureOrgMembership(
     .insert(accountMembers)
     .values({ userId, accountId, accountRole: 'member' })
     .onConflictDoNothing();
+  // …and the canonical membership grant, through the ONE write path, so joining
+  // an account emits `iam.assignment.granted` like every other grant.
+  // `SYSTEM_ACTOR`: the two callers (accepting a project invite, approving an
+  // access request) were authorized by their own route, and the person being
+  // added is not the writer.
+  //
+  // Best-effort — the mirror trigger on the INSERT above already wrote the same
+  // canonical row, so a failure costs the audit event, not the membership.
+  try {
+    await assignRole(SYSTEM_ACTOR, accountId, {
+      principal: { type: 'user', id: userId },
+      roleKey: 'member',
+      scope: { type: 'account' },
+      source: 'system',
+    });
+  } catch (err) {
+    console.warn('[projects] canonical account-membership assignment failed', {
+      accountId,
+      userId,
+      err: (err as Error)?.message,
+    });
+  }
+  invalidateIamCacheForUser(userId);
   return 'member';
 }
 
@@ -490,12 +550,27 @@ export async function resolveProjectAccount(c: Context, body?: Record<string, un
   };
 }
 
-// Maps the high-level project access action onto the IAM action key
-// the engine recognises. Keep this narrow — these three labels cover
-// every gate this file uses; bespoke actions (project.trigger.fire,
-// project.trigger.create, project.secret.write, etc.) should call authorize()
-// directly with the exact action.
-
+/**
+ * THE alias table: the coarse `loadProjectForUser` parameter mapped onto a real
+ * permission from `kortix.permissions`. Nothing else in the system speaks the
+ * coarse vocabulary — bespoke actions (project.trigger.fire, project.secret.write,
+ * …) call `assertProjectCapability` with the exact leaf.
+ *
+ *   read        -> project.read
+ *   session     -> project.session.start
+ *   write       -> project.write
+ *   manage      -> project.write            (legacy admin-tier write)
+ *   members     -> project.members.manage   (member administration)
+ *   credentials -> project.credentials.issue (mint/revoke a project credential)
+ *
+ * `manage` KEEPS mapping to project.write on purpose: all 31 remaining `manage`
+ * call sites stack their own explicit leaf assert immediately after
+ * (project.customize.write, project.connector.write, project.secret.write, …),
+ * so the coarse gate is the membership-tier question and the leaf gate is the
+ * capability question. The two sites where that stack was MISSING are the ones
+ * routes.md §5.2 named — `POST|DELETE /projects/:id/cli-token` — and they now
+ * pass `credentials`.
+ */
 export function iamActionForProjectAccess(action: ProjectAccessAction): string {
   switch (action) {
     case 'read':
@@ -508,22 +583,27 @@ export function iamActionForProjectAccess(action: ProjectAccessAction): string {
     case 'write':
       return 'project.write';
     case 'manage':
-      // 'manage' historically meant "admin-tier write" — covers triggers,
-      // secrets, snapshots, CLI tokens, etc. Map to project.write (which
-      // a project manager has) so managers aren't accidentally locked out.
-      // Routes that need the stricter `project.members.manage` gate add
-      // an explicit assertProjectCapability() on top of loadProjectForUser.
       return 'project.write';
+    case 'members':
+      return 'project.members.manage';
+    case 'credentials':
+      // Minting or revoking a credential that outlives the request is its own
+      // capability, not "an admin-tier write". Before this leaf existed, a
+      // project CLI token could be minted by anyone holding project.write.
+      return 'project.credentials.issue';
   }
 }
 
+
 /**
  * Assert a SPECIFIC project capability (a leaf action like project.gitops.push)
- * for the current request, threading the acting token id off the request context
- * so the engine's agent-grant fold actually fires — `userRole ∩ agentGrant`. Use
- * this (not a bare `assertAuthorized`) for every per-capability route gate: a
- * bare call omits the token and the fold silently no-ops, which is exactly how
- * the per-route checks leaked the agent grant. 403s on denial.
+ * for the current request. 403s on denial.
+ *
+ * The acting credential no longer has to be threaded by hand: it is part of the
+ * `Actor` that `middleware/auth.ts` built, so the agent-grant fold and the token
+ * project-scope check cannot be skipped by forgetting an argument. `userId` is
+ * kept in the signature (194 call sites pass it) but is only used to assert that
+ * the caller and the request agree.
  */
 export async function assertProjectCapability(
   c: Context,
@@ -531,24 +611,19 @@ export async function assertProjectCapability(
   accountId: string,
   projectId: string,
   action: string,
-  // Optional per-RESOURCE narrowing: when supplied, the verdict is additionally
-  // intersected with iam_resource_grants for this specific agent/skill (see
-  // resource-grants.ts). Used by the agent/skill launch gates.
+  // Optional per-OBJECT narrowing: when supplied, the verdict is additionally
+  // intersected with the object grants for this specific agent/skill.
   resource?: { type: 'agent' | 'skill'; id: string },
 ): Promise<void> {
   if (isRepositoryProjectAction(action)) {
     await assertAgentSessionWorkspaceAllowsRepository(c, accountId, projectId);
   }
-  const actingTokenId =
-    ((c as unknown as { get(k: string): unknown }).get('iamTokenId') as string | undefined) ?? undefined;
-  await assertAuthorized(
-    userId,
-    accountId,
-    action,
-    { type: 'project', id: projectId, ...(resource ? { resource } : {}) },
-    actingTokenId,
-    deriveRequestContext(c),
-  );
+  const actor = await actorOf(c, accountId);
+  await assertAuthorized(actor, action, {
+    type: 'project',
+    id: projectId,
+    ...(resource ? { resource } : {}),
+  });
 }
 
 /**
@@ -574,16 +649,7 @@ export async function projectCapabilityAllowed(
   ) {
     return false;
   }
-  const actingTokenId =
-    ((c as unknown as { get(k: string): unknown }).get('iamTokenId') as string | undefined) ?? undefined;
-  const verdict = await authorize(
-    userId,
-    accountId,
-    action,
-    { type: 'project', id: projectId },
-    actingTokenId,
-    deriveRequestContext(c),
-  );
+  const verdict = await authorize(await actorOf(c, accountId), action, { type: 'project', id: projectId });
   return verdict.allowed;
 }
 
@@ -667,33 +733,25 @@ export async function loadProjectForUser(c: Context, projectId: string, action: 
   setContextField('accountId', row.accountId);
   setContextField('projectId', row.projectId);
 
-  const actingTokenId =
-    ((c as unknown as { get(k: string): unknown }).get('iamTokenId') as
-      | string
-      | undefined) ?? undefined;
-  const requestCtx = deriveRequestContext(c);
+  // ONE structured principal for the whole request, built from the credential
+  // that authenticated it. Rebuilt here only when the project's account differs
+  // from the one auth resolved (the dashboard case).
+  const actor = await actorOf(c, row.accountId);
+  const iamAction = iamActionForProjectAccess(action);
 
   // Membership, project role and the IAM verdict are independent lookups —
   // overlap them. Every project-scoped request runs this path; each DB
   // statement is a fast same-region roundtrip (~3ms measured, DB and API
   // both in eu-west-2), but they're serial by default, so running them in
   // parallel instead of stacked still matters at this call frequency.
-  // The engine consults super-admin bypass, direct + group policies,
-  // project_groups, AND the legacy account_role / project_members bridges
-  // (in non-strict mode), so it's strictly a superset of the old role-only
-  // check. Passing requestCtx is required for IP-allowlist / require-MFA
-  // policy conditions to evaluate against the current request.
+  // The verdict comes from `kortix.role_assignments` only. `membership` and
+  // `projectRole` are read here for the `accountRole` / `projectRole` /
+  // `effectiveRole` LABELS the four read models render — they are not part of
+  // the decision.
   const [membership, projectRole, verdict] = await Promise.all([
     getAccountMembership(userId, row.accountId),
     getProjectMemberRole(projectId, userId),
-    authorize(
-      userId,
-      row.accountId,
-      iamActionForProjectAccess(action),
-      { type: 'project', id: projectId },
-      actingTokenId,
-      requestCtx,
-    ),
+    authorize(actor, iamAction, { type: 'project', id: projectId }),
   ]);
 
   // A service account has NO account_members row — its access is purely its own
@@ -737,13 +795,12 @@ export async function loadProjectForUser(c: Context, projectId: string, action: 
 
   const accountRole = membership?.accountRole as AccountRole | undefined;
   if (!verdict.allowed && !adminBypass) {
-    const iamAction = iamActionForProjectAccess(action);
     // The engine already computed WHY. When the reason names a constraint other
     // than the caller's project role — an agent-session grant, a service
     // account's assigned role, MFA, token scope — report THAT.
     //
     // The role-probe below cannot: `project.read` is one of the two actions the
-    // agent-grant fold never gates (AGENT_GRANT_EXEMPT_ACTIONS in engine-v2),
+    // agent-grant fold never gates (AGENT_GRANT_EXEMPT_ACTIONS in iam/authorize),
     // so for an agent-session token the probe passes no matter what actually
     // denied the request. Every agent-scope and service-account-scope denial
     // therefore rendered as "your role is too low" — advice that told an
@@ -759,15 +816,15 @@ export async function loadProjectForUser(c: Context, projectId: string, action: 
     // all. Only do the second probe when the failed action was NOT already
     // 'read' — otherwise it's the same answer.
     if (action !== 'read') {
-      const readVerdict = await authorize(
-        userId,
-        row.accountId,
-        'project.read',
-        { type: 'project', id: projectId },
-        actingTokenId,
-        requestCtx,
-      );
+      const readVerdict = await authorize(actor, 'project.read', { type: 'project', id: projectId });
       if (readVerdict.allowed) {
+        // The two precise aliases name a real leaf, so they get the leaf's own
+        // wording ("manage project members" / "issue project credentials")
+        // rather than the coarse "change this project" — the coarse phrasing is
+        // what made a members-only denial read as a project-wide one.
+        if (action === 'members' || action === 'credentials') {
+          throw buildDenialError(iamAction, verdict.reason);
+        }
         const verb = action === 'manage' ? 'manage this project' : 'change this project';
         throw new HTTPException(403, {
           message: `Your role on this project doesn't let you ${verb}. Ask an account owner or admin to grant you a higher role.`,
@@ -797,6 +854,9 @@ export async function loadProjectForUser(c: Context, projectId: string, action: 
     projectRole,
     effectiveRole: effectiveRole as ProjectRole,
     adminBypass,
+    /** The request's canonical principal, so a handler that needs a second
+     *  verdict or an assignment write does not rebuild it. */
+    actor,
   };
 }
 

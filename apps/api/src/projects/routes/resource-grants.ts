@@ -320,7 +320,7 @@ projectsApp.openapi(
 
     // The id belongs to an agent/skill grant (iam_resource_grants). Secrets no
     // longer have a resource grant to remove — secret sharing was retired.
-    const removed = await deleteResourceGrant(grantId, projectId);
+    const removed = await deleteResourceGrant(grantId, projectId, loaded.row.accountId);
     if (!removed) return c.json({ error: 'grant not found' }, 404);
     return c.json({ ok: true });
   },

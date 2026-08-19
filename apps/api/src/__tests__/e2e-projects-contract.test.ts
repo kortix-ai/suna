@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import { mockIamMembershipSyncNoop } from './helpers/iam-mocks';
+import { mockIamMembershipSyncNoop, mockIamReadModels } from './helpers/iam-mocks';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import {
@@ -101,12 +101,29 @@ function resetState() {
   rejectedBranch = null;
 }
 
-// `authorize` / `assertAuthorized` / `listAccessibleResources` are re-exported
-// from `../iam` via `./dispatcher` (the V1 `./engine` was retired), so the role
-// gate must be mocked on the dispatcher. Mirror the legacy role gate against
-// the test's mocked membership rows so viewer/non-member denial is still
-// exercised after the IAM-engine switch.
-mock.module('../iam/dispatcher', () => {
+// The engine module itself is the seam now — `../iam` re-exports it, and every
+// route calls it with the structured `Actor`. Mirror the role gate against the
+// test's mocked membership rows so viewer/non-member denial is still exercised.
+// The read models project from THIS suite's own row state — `account_members`
+// and `project_members` are what its db shim models, and the mirror trigger is
+// what would have derived the assignments from them on a real database.
+mockIamReadModels({
+  members: () =>
+    dbState.accountMemberRows.map((r) => ({
+      userId: r.userId,
+      accountId: r.accountId,
+      accountRole: r.accountRole,
+    })),
+  projectMembers: () =>
+    dbState.projectMemberRows.map((r) => ({
+      userId: r.userId,
+      accountId: ACCOUNT_ID,
+      projectId: r.projectId,
+      projectRole: r.projectRole,
+    })),
+});
+
+mock.module('../iam/authorize', () => {
   const isManager = (userId: string): boolean => {
     const am = dbState.accountMemberRows.find((r) => r.userId === userId && r.accountId === ACCOUNT_ID);
     return am?.accountRole === 'owner' || am?.accountRole === 'admin';
@@ -124,13 +141,17 @@ mock.module('../iam/dispatcher', () => {
     return pr === 'manager';
   };
   return {
-    authorize: async (userId: string, _a: unknown, action: string) => ({ allowed: decide(userId, action) }),
-    assertAuthorized: async (userId: string, _a: unknown, action: string) => {
-      if (!decide(userId, action)) throw new HTTPException(403, { message: 'Forbidden' });
+    authorize: async (actor: { userId: string }, action: string) => ({
+      allowed: decide(actor.userId, action),
+      reason: 'role',
+    }),
+    assertAuthorized: async (actor: { userId: string }, action: string) => {
+      if (!decide(actor.userId, action)) throw new HTTPException(403, { message: 'Forbidden' });
     },
     // Account managers see every project ('all'); members see only the projects
     // they hold an explicit grant on ('allow_only'); outsiders see none.
-    listAccessibleResources: async (userId: string) => {
+    listAccessible: async (actor: { userId: string }) => {
+      const userId = actor.userId;
       const am = dbState.accountMemberRows.find((r) => r.userId === userId && r.accountId === ACCOUNT_ID);
       if (!am) return { mode: 'none', allowed: new Set<string>() };
       if (isManager(userId)) return { mode: 'all', allowed: new Set<string>() };
@@ -141,7 +162,18 @@ mock.module('../iam/dispatcher', () => {
         ? { mode: 'none', allowed }
         : { mode: 'allow_only', allowed };
     },
-    filterAccessibleProjectResources: async (_u: string, _a: string, _p: string, _t: string, ids: readonly string[]) => [...ids],
+    filterAccessibleObjects: async (
+      _actor: unknown,
+      _p: string,
+      _t: string,
+      ids: readonly string[],
+    ) => [...ids],
+    // `mock.module` replaces the module wholesale: agent-access imports this
+    // memo for its candidate list, so a stub that omits it is a SyntaxError
+    // in every other importer. Empty = this project scopes no agent.
+    loadObjectGrants: Object.assign(async () => new Map(), { clear: () => {} }),
+    clearAuthorizeCaches: () => {},
+    isImplicitManager: (key: string | null) => key === 'owner' || key === 'admin',
   };
 });
 

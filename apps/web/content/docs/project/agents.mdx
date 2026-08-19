@@ -30,7 +30,10 @@ every governance field.
 ## Governance is deny-by-default
 
 An agent with no `connectors`, `secrets`, `skills`, or `kortix_cli` key gets
-none of that access. Set a field to `all` to grant full access, or list
+none of that access. This grant is the second of the two bindings: the agent
+also holds roles as a `service_account` principal, and a session can only do
+what both allow — see
+[One vocabulary, two bindings](/docs/accounts#one-vocabulary-two-bindings). Set a field to `all` to grant full access, or list
 specific names. `default_agent` in `kortix.yaml` names the agent a session
 starts when you request no agent.
 

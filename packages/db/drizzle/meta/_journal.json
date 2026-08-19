@@ -365,6 +365,13 @@
       "when": 1787104143156,
       "tag": "20260819014903_gateway_otel_configs",
       "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1787112452646,
+      "tag": "20260819040732_rbac_canonical_model",
+      "breakpoints": true
     }
   ]
 }

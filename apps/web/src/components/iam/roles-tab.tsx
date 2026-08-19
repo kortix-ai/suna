@@ -28,6 +28,7 @@ import {
   ShieldIcon as Shield,
   TrashIcon as Trash2,
 } from '@phosphor-icons/react';
+import { invalidatePermissionProbes } from '@kortix/sdk/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 
@@ -81,7 +82,7 @@ import {
   deleteRole,
   getRolePermissions,
   getRoleUsage,
-  listActions,
+  listPermissions,
   listRoles,
   updateRole,
   updateRolePermissions,
@@ -506,9 +507,12 @@ function RoleDialog({
   );
   const [selected, setSelected] = useState<Set<string>>(() => new Set(prefill?.actions ?? []));
 
+  // The permission CATALOG — action, area, level, implies, delegable. The
+  // matrix builds its whole table from this; nothing about the grouping or the
+  // implication rules lives in the client any more.
   const actionsQuery = useQuery({
-    queryKey: ['iam-actions', accountId],
-    queryFn: () => listActions(accountId),
+    queryKey: ['iam-permissions', accountId],
+    queryFn: () => listPermissions(accountId),
     staleTime: 30_000,
   });
 
@@ -570,6 +574,9 @@ function RoleDialog({
     },
     onSuccess: () => {
       successToast('Role updated');
+      // A role's PERMISSION SET changed, so every verdict for every principal
+      // holding it moved. Nothing here can enumerate them — bust the account.
+      void invalidatePermissionProbes(queryClient, { accountId });
       queryClient.invalidateQueries({ queryKey: ['iam-roles', accountId] });
       queryClient.invalidateQueries({
         queryKey: ['iam-role-permissions', accountId, role!.role_id],
@@ -698,7 +705,7 @@ function RoleDialog({
           ) : (
             <RoleCapabilityMatrix
               scope={resourceType === 'account' ? 'account' : 'project'}
-              actions={actionsQuery.data}
+              permissions={actionsQuery.data}
               selected={selected}
               onChange={setSelected}
               disabled={isView || isPending}
@@ -754,6 +761,7 @@ function DeleteRoleConfirm({
     mutationFn: () => deleteRole(accountId, role.role_id),
     onSuccess: () => {
       successToast('Role deleted');
+      void invalidatePermissionProbes(queryClient, { accountId });
       queryClient.invalidateQueries({ queryKey: ['iam-roles', accountId] });
       onClose();
     },

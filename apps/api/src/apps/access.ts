@@ -4,6 +4,7 @@ import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { resolveShareSubject, type SecretGrant, type ShareSubject } from '../connectors/share';
 import { config } from '../config';
 import { authorize, PROJECT_ACTIONS } from '../iam';
+import { actorForToken, actorForUser } from '../iam/actor';
 import { db } from '../shared/db';
 
 export type AppAccessMode = 'private' | 'project' | 'restricted' | 'public' | 'password';
@@ -239,12 +240,14 @@ export async function appAccessibleToUser(
    */
   actingTokenId?: string,
 ): Promise<boolean> {
+  // The credential is part of the Actor: with an acting token id the engine
+  // applies the token's own limits (project binding + agent grant) on top of
+  // the user's role; without one (browser cookie/JWT, or the public-app proxy
+  // with a resolved viewer id) the verdict is role-only.
   const projectAccess = await authorize(
-    userId,
-    app.accountId,
+    await actorForToken(userId, app.accountId, actingTokenId),
     PROJECT_ACTIONS.PROJECT_READ,
     { type: 'project', id: app.projectId },
-    actingTokenId,
   );
   if (!projectAccess.allowed) return false;
   const subject = await resolveShareSubject(userId);
@@ -366,11 +369,9 @@ async function projectManager(
   actingTokenId?: string,
 ): Promise<boolean> {
   const verdict = await authorize(
-    userId,
-    accountId,
+    await actorForToken(userId, accountId, actingTokenId),
     PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE,
     { type: 'project', id: projectId },
-    actingTokenId,
   );
   return verdict.allowed;
 }

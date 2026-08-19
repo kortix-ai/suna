@@ -14,13 +14,16 @@
 // are only partially present both stay editable in the "Advanced" disclosure,
 // which auto-opens when the loaded role needs it.
 //
-// Implications (owner directive, 2026-08-18): checking a leaf checks everything
-// it implies, and unchecking a leaf unchecks everything that implies it — so
-// the matrix can never show a state the engine would read differently.
-//   • every Edit leaf of an area implies that area's View leaves
-//   • project.delete ⇒ project.write, account.delete ⇒ account.write
-//   • project.gitops.push / .merge / project.cr.merge ⇒ Files, Customize and
-//     Triggers edit (a push rewrites all three)
+// The AREAS, the View/Edit split and the IMPLICATIONS all come from the server:
+// `GET /accounts/:id/iam/permissions` returns `area`, `level` and `implies` per
+// action. This file used to hardcode all three — ~150 lines of tables plus an
+// implication graph the client invented and the engine did not enforce, so this
+// editor could write a role the engine then read differently. Now it renders the
+// engine's own data and owns only the words (`AREA_COPY`).
+//
+// Checking a leaf checks everything it implies; unchecking a leaf unchecks
+// everything that implies it, so the matrix can never show a state the engine
+// would read differently.
 
 import { MagnifyingGlassIcon } from '@phosphor-icons/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -36,7 +39,7 @@ import {
 } from '@/components/ui/input-group';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
-import type { ActionCatalogEntry } from '@/lib/iam-client';
+import type { Permission } from '@/lib/iam-client';
 
 // ─── The area table (§7 mapping) ────────────────────────────────────────────
 
@@ -55,215 +58,119 @@ export interface AreaDef {
   edit: readonly string[];
 }
 
-const PROJECT_AREAS: readonly AreaDef[] = [
-  {
-    key: 'project',
-    label: 'Project',
-    hint: 'The project itself — open it, rename it, delete it.',
-    view: ['project.read'],
-    edit: ['project.write', 'project.delete'],
-  },
-  {
-    key: 'sessions',
-    label: 'Sessions',
-    hint: 'Read transcripts, start and stop runs.',
-    view: ['project.session.read'],
-    edit: [
-      'project.session.start',
-      'project.session.stop',
-      'project.session.bindings.write',
-    ],
-  },
-  {
-    key: 'files',
-    label: 'Files',
-    hint: 'The project workspace tree.',
-    view: ['project.file.read'],
-    edit: ['project.file.write'],
-  },
-  {
-    key: 'customize',
+/** Display copy for an area key. The CATALOG owns which leaves are in which
+ *  area and what implies what; this owns only the words. An area the server
+ *  adds without an entry here renders with a humanized key and no hint, so a
+ *  new permission is never invisible. */
+const AREA_COPY: Record<string, { label: string; hint?: string; note?: string }> = {
+  project: { label: 'Project', hint: 'The project itself — open it, rename it, delete it.' },
+  sessions: { label: 'Sessions', hint: 'Read transcripts, start and stop runs.' },
+  files: { label: 'Files', hint: 'The project workspace tree.' },
+  customize: {
     label: 'Customize',
     hint: 'Agents, skills, connectors, commands, secrets, models, settings.',
-    view: [
-      'project.customize.read',
-      'project.agent.read',
-      'project.skill.read',
-      'project.connector.read',
-      'project.command.read',
-      'project.secret.read',
-    ],
-    edit: [
-      'project.customize.write',
-      'project.agent.write',
-      'project.skill.write',
-      'project.connector.write',
-      'project.connector.connections.manage',
-      'project.command.write',
-      'project.secret.write',
-    ],
   },
-  {
-    key: 'triggers',
-    label: 'Triggers',
-    hint: 'Schedules and webhooks, and firing them by hand.',
-    view: ['project.trigger.read'],
-    edit: [
-      'project.trigger.create',
-      'project.trigger.update',
-      'project.trigger.delete',
-      'project.trigger.fire',
-    ],
-  },
-  {
-    key: 'git',
+  triggers: { label: 'Triggers', hint: 'Schedules and webhooks, and firing them by hand.' },
+  git: {
     label: 'Git & Reviews',
     hint: 'Branches, change requests, and the review inbox.',
     note: 'Push access also grants Files, Customize and Triggers edit — a push rewrites those.',
-    view: ['project.gitops.read', 'project.review.read'],
-    edit: [
-      'project.gitops.push',
-      'project.gitops.merge',
-      'project.cr.open',
-      'project.cr.merge',
-      'project.review.submit',
-      'project.review.act',
-    ],
   },
-  {
-    key: 'apps',
-    label: 'Apps',
-    hint: 'Kortix Apps and what their public hostname serves.',
-    view: ['project.app.read'],
-    edit: ['project.app.write', 'project.app.deploy'],
-  },
-  {
-    key: 'spend',
-    label: 'Spend & gateway',
-    hint: 'Model spend, request logs, budgets and BYOK keys.',
-    view: ['project.gateway.spend.read', 'project.gateway.logs.read'],
-    edit: ['project.gateway.budget.set', 'project.gateway.keys.manage'],
-  },
-  {
-    key: 'members',
-    label: 'Members',
-    hint: 'Who has access to this project.',
-    view: ['project.members.read'],
-    edit: ['project.members.manage'],
-  },
-];
-
-const ACCOUNT_AREAS: readonly AreaDef[] = [
-  {
-    key: 'account',
-    label: 'Account',
-    hint: 'Account name, settings, and deleting the account.',
-    view: ['account.read'],
-    edit: ['account.write', 'account.delete'],
-  },
-  {
-    key: 'members',
-    label: 'Members',
-    hint: 'People in the account, and their account role.',
-    view: ['member.read'],
-    edit: ['member.invite', 'member.update', 'member.remove'],
-  },
-  {
-    key: 'groups',
-    label: 'Groups',
-    hint: 'Groups and who belongs to them.',
-    view: ['group.read'],
-    edit: ['group.create', 'group.update', 'group.delete', 'group.members.manage'],
-  },
-  {
-    key: 'roles',
-    label: 'Roles & policies',
-    hint: 'Custom roles and the assignments that hand them out.',
-    view: ['role.read', 'policy.read'],
-    edit: ['role.create', 'role.update', 'role.delete', 'policy.create', 'policy.delete'],
-  },
-  {
-    key: 'tokens',
-    label: 'Tokens',
-    hint: 'API keys and personal access tokens.',
-    view: ['token.read'],
-    edit: ['token.create', 'token.revoke'],
-  },
-  {
-    key: 'projects',
-    label: 'Projects',
-    hint: 'Creating a brand-new project in this account.',
-    view: [],
-    edit: ['project.create'],
-  },
-  {
-    key: 'billing',
-    label: 'Billing',
-    hint: 'Plan, invoices and payment method.',
-    view: ['billing.read'],
-    edit: ['billing.write'],
-  },
-  {
-    key: 'audit',
-    label: 'Audit',
-    hint: 'The account audit log.',
-    view: ['audit.read'],
-    edit: [],
-  },
-];
-
-/** The §7 area tables, keyed by role scope (`iam_roles.resource_type`). */
-export const AREA_TABLES: Record<CapabilityScope, readonly AreaDef[]> = {
-  project: PROJECT_AREAS,
-  account: ACCOUNT_AREAS,
+  apps: { label: 'Apps', hint: 'Kortix Apps and what their public hostname serves.' },
+  spend: { label: 'Spend & gateway', hint: 'Model spend, request logs, budgets and BYOK keys.' },
+  members: { label: 'Members', hint: 'Who has access.' },
+  account: { label: 'Account', hint: 'Account name, settings, and deleting the account.' },
+  groups: { label: 'Groups', hint: 'Groups and who belongs to them.' },
+  roles: { label: 'Roles', hint: 'Custom roles and the assignments that hand them out.' },
+  tokens: { label: 'Tokens', hint: 'API keys and personal access tokens.' },
+  projects: { label: 'Projects', hint: 'Creating a brand-new project in this account.' },
+  billing: { label: 'Billing', hint: 'Plan, invoices and payment method.' },
+  audit: { label: 'Audit', hint: 'The account audit log.' },
+  credentials: { label: 'Credentials', hint: 'Minting long-lived project tokens.' },
 };
+
+/** The display name for one catalog area. Exported so the member-capability
+ *  panels group by the same words this matrix does. */
+export function areaLabel(key: string): string {
+  return areaCopy(key).label;
+}
+
+/** A readable name for one permission. The catalog's `description` when it has
+ *  one, a humanized action string otherwise. */
+export function permissionLabel(permission: {
+  action: string;
+  description?: string;
+}): string {
+  return permission.description?.trim() || humanizeLeaf(permission.action);
+}
+
+function areaCopy(key: string) {
+  return (
+    AREA_COPY[key] ?? {
+      label: key
+        .split(/[_.-]/)
+        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+        .join(' '),
+    }
+  );
+}
+
+/** Permissions in one role scope, in catalog order. */
+function inScope(
+  scope: CapabilityScope,
+  permissions: readonly Permission[] | undefined,
+): Permission[] {
+  return (permissions ?? []).filter((p) => p.scope_type === scope);
+}
 
 /**
- * Leaf-level implications ON TOP of the automatic "every Edit leaf of an area
- * implies that area's View leaves". Key implies every leaf in its value.
+ * The area table, BUILT FROM THE CATALOG.
+ *
+ * `area` and `level` are columns on `kortix.permissions`, so the grouping the
+ * matrix renders is the grouping the engine ships. This used to be ~150 lines of
+ * hardcoded arrays in this file that had to be kept byte-identical to the server
+ * by hand — and had already drifted (`project.cr.open`/`project.cr.merge` were
+ * still listed here after the server collapsed them into `project.gitops.*`).
+ *
+ * `admin`-level leaves are placed in NEITHER column. They are the escalation
+ * leaves — granting super-admin, minting a credential that outlives the request —
+ * and every one of them is `delegable: false` in the catalog. Sweeping them into
+ * a cell would hand them out on an "Edit everything" click. They stay individual
+ * checkboxes in the Advanced disclosure, which is where a deliberate act belongs.
  */
-const EXTRA_IMPLICATIONS: Record<CapabilityScope, Record<string, readonly string[]>> = {
-  project: (() => {
-    const rewritesTheRepo = [
-      ...PROJECT_AREAS.find((a) => a.key === 'files')!.edit,
-      ...PROJECT_AREAS.find((a) => a.key === 'customize')!.edit,
-      ...PROJECT_AREAS.find((a) => a.key === 'triggers')!.edit,
-    ];
-    return {
-      'project.delete': ['project.write'],
-      'project.gitops.push': rewritesTheRepo,
-      'project.gitops.merge': rewritesTheRepo,
-      'project.cr.merge': rewritesTheRepo,
-    };
-  })(),
-  account: {
-    'account.delete': ['account.write'],
-  },
-};
-
-/** leaf → leaves it requires. Built once from the tables above. */
-const IMPLIES: Record<CapabilityScope, ReadonlyMap<string, readonly string[]>> = {
-  project: buildImplications('project'),
-  account: buildImplications('account'),
-};
-
-/** leaf → leaves that require it (the reverse of IMPLIES). */
-const REQUIRED_BY: Record<CapabilityScope, ReadonlyMap<string, readonly string[]>> = {
-  project: reverse(IMPLIES.project),
-  account: reverse(IMPLIES.account),
-};
-
-function buildImplications(scope: CapabilityScope): ReadonlyMap<string, readonly string[]> {
-  const map = new Map<string, string[]>();
-  const add = (from: string, to: readonly string[]) => {
-    const list = map.get(from) ?? [];
-    for (const leaf of to) if (leaf !== from && !list.includes(leaf)) list.push(leaf);
-    map.set(from, list);
-  };
-  for (const area of AREA_TABLES[scope]) {
-    for (const leaf of area.edit) add(leaf, area.view);
+export function buildAreaTable(
+  scope: CapabilityScope,
+  permissions: readonly Permission[] | undefined,
+): AreaDef[] {
+  const order: string[] = [];
+  const byArea = new Map<string, { view: string[]; edit: string[] }>();
+  for (const entry of inScope(scope, permissions)) {
+    let cell = byArea.get(entry.area);
+    if (!cell) {
+      cell = { view: [], edit: [] };
+      byArea.set(entry.area, cell);
+      order.push(entry.area);
+    }
+    if (entry.level === 'view') cell.view.push(entry.action);
+    else if (entry.level === 'edit') cell.edit.push(entry.action);
   }
-  for (const [from, to] of Object.entries(EXTRA_IMPLICATIONS[scope])) add(from, to);
+  // An area whose only leaves are `admin` gets no row — its leaves live in
+  // Advanced, and an empty row would read as "nothing here".
+  return order
+    .filter((key) => (byArea.get(key)!.view.length + byArea.get(key)!.edit.length) > 0)
+    .map((key) => ({ key, ...areaCopy(key), ...byArea.get(key)! }));
+}
+
+/** leaf → leaves it requires, straight off the catalog's `implies`. The client
+ *  used to invent this graph (`EXTRA_IMPLICATIONS`) and the engine did not
+ *  enforce it; now the engine seeds it and the client renders it. */
+export function buildImplications(
+  permissions: readonly Permission[] | undefined,
+): ReadonlyMap<string, readonly string[]> {
+  const map = new Map<string, string[]>();
+  for (const entry of permissions ?? []) {
+    map.set(entry.action, entry.implies.filter((leaf) => leaf !== entry.action));
+  }
   return map;
 }
 
@@ -340,10 +247,10 @@ function humanizeLeaf(action: string): string {
     .join(' · ');
 }
 
-/** Every leaf the §7 tables place in a cell, for one scope. */
-function mappedLeaves(scope: CapabilityScope): Set<string> {
+/** Every leaf the area table places in a cell, for one scope. */
+function mappedLeaves(areas: readonly AreaDef[]): Set<string> {
   const out = new Set<string>();
-  for (const area of AREA_TABLES[scope]) {
+  for (const area of areas) {
     for (const leaf of area.view) out.add(leaf);
     for (const leaf of area.edit) out.add(leaf);
   }
@@ -352,16 +259,18 @@ function mappedLeaves(scope: CapabilityScope): Set<string> {
 
 /**
  * Catalog leaves for `scope` that no cell covers. They are never dropped —
- * they render as individual checkboxes in the Advanced disclosure.
+ * they render as individual checkboxes in the Advanced disclosure. With the
+ * table built from the catalog this is normally empty; it stays because a
+ * selection can still carry a leaf the catalog no longer publishes.
  */
 export function unmappedLeaves(
   scope: CapabilityScope,
-  actions: readonly ActionCatalogEntry[] | undefined,
+  permissions: readonly Permission[] | undefined,
 ): string[] {
-  const mapped = mappedLeaves(scope);
-  return (actions ?? [])
-    .filter((a) => a.resource_type === scope && !mapped.has(a.action))
-    .map((a) => a.action);
+  const mapped = mappedLeaves(buildAreaTable(scope, permissions));
+  return inScope(scope, permissions)
+    .filter((p) => !mapped.has(p.action))
+    .map((p) => p.action);
 }
 
 function cellFold(
@@ -384,32 +293,35 @@ function cellFold(
 }
 
 /**
- * Fold a raw leaf set into per-cell state. `actions` is the full action
- * catalog (any scope); leaves outside `scope` are ignored. Passing an empty
- * catalog means "catalog unknown" and every table leaf is treated as real.
+ * Fold a raw leaf set into per-cell state. `permissions` is the full catalog
+ * (any scope) from `listPermissions`; leaves outside `scope` are ignored.
  */
 export function foldSelection(
   scope: CapabilityScope,
-  actions: readonly ActionCatalogEntry[] | undefined,
+  permissions: readonly Permission[] | undefined,
   selected: ReadonlySet<string>,
 ): CapabilityFold {
-  const catalog = (actions ?? []).filter((a) => a.resource_type === scope);
+  const catalog = inScope(scope, permissions);
   const available = catalog.length > 0 ? new Set(catalog.map((a) => a.action)) : null;
-  const labels = new Map(catalog.map((a) => [a.action, a.label]));
+  const table = buildAreaTable(scope, permissions);
 
-  const areas: AreaFold[] = AREA_TABLES[scope].map((area) => {
+  const areas: AreaFold[] = table.map((area) => {
     const view = cellFold('view', area.view, available, selected);
     const edit = cellFold('edit', area.edit, available, selected);
     return { area, view, edit, partial: view.state === 'partial' || edit.state === 'partial' };
   });
 
-  const mapped = mappedLeaves(scope);
+  const mapped = mappedLeaves(table);
   const seen = new Set<string>();
   const unmapped: UnmappedLeaf[] = [];
   for (const entry of catalog) {
     if (mapped.has(entry.action) || seen.has(entry.action)) continue;
     seen.add(entry.action);
-    unmapped.push({ action: entry.action, label: entry.label, selected: selected.has(entry.action) });
+    unmapped.push({
+      action: entry.action,
+      label: entry.description || humanizeLeaf(entry.action),
+      selected: selected.has(entry.action),
+    });
   }
   // A granted leaf the catalog no longer lists still has to stay reachable, or
   // saving the role would silently strip it.
@@ -421,20 +333,20 @@ export function foldSelection(
     unmapped.push({ action, label: humanizeLeaf(action), selected: true });
   }
 
-  const inScope = new Set<string>();
+  const reachable = new Set<string>();
   for (const area of areas) {
-    for (const leaf of area.view.leaves) inScope.add(leaf);
-    for (const leaf of area.edit.leaves) inScope.add(leaf);
+    for (const leaf of area.view.leaves) reachable.add(leaf);
+    for (const leaf of area.edit.leaves) reachable.add(leaf);
   }
-  for (const leaf of unmapped) inScope.add(leaf.action);
+  for (const leaf of unmapped) reachable.add(leaf.action);
 
   let selectedCount = 0;
-  for (const leaf of inScope) if (selected.has(leaf)) selectedCount += 1;
+  for (const leaf of reachable) if (selected.has(leaf)) selectedCount += 1;
 
   const needsAdvanced =
     areas.some((a) => a.partial) || unmapped.some((leaf) => leaf.selected);
 
-  return { areas, unmapped, selectedCount, totalCount: inScope.size, needsAdvanced };
+  return { areas, unmapped, selectedCount, totalCount: reachable.size, needsAdvanced };
 }
 
 /**
@@ -473,13 +385,13 @@ function resourceScopeOf(action: string): CapabilityScope {
 }
 
 function addLeaves(
-  scope: CapabilityScope,
+  permissions: readonly Permission[] | undefined,
   selected: ReadonlySet<string>,
   leaves: readonly string[],
-  available?: ReadonlySet<string> | null,
+  available: ReadonlySet<string> | null,
 ): Set<string> {
   const next = new Set(selected);
-  for (const leaf of closure(IMPLIES[scope], leaves)) {
+  for (const leaf of closure(buildImplications(permissions), leaves)) {
     if (available && !available.has(leaf) && !selected.has(leaf)) continue;
     next.add(leaf);
   }
@@ -487,23 +399,31 @@ function addLeaves(
 }
 
 function removeLeaves(
-  scope: CapabilityScope,
+  permissions: readonly Permission[] | undefined,
   selected: ReadonlySet<string>,
   leaves: readonly string[],
 ): Set<string> {
   const next = new Set(selected);
-  for (const leaf of closure(REQUIRED_BY[scope], leaves)) next.delete(leaf);
+  for (const leaf of closure(reverse(buildImplications(permissions)), leaves)) next.delete(leaf);
   return next;
 }
 
+function availableIn(
+  scope: CapabilityScope,
+  permissions: readonly Permission[] | undefined,
+): ReadonlySet<string> | null {
+  const catalog = inScope(scope, permissions);
+  return catalog.length > 0 ? new Set(catalog.map((p) => p.action)) : null;
+}
+
 /**
- * Toggle one cell. Checking pulls in everything the cell's leaves imply
- * (Edit ⇒ View, delete ⇒ write, push ⇒ Files/Customize/Triggers edit);
- * unchecking drops everything that implies them, so the matrix can never show
- * a granted leaf whose prerequisite is missing.
+ * Toggle one cell. Checking pulls in everything the cell's leaves imply;
+ * unchecking drops everything that implies them, so the matrix can never show a
+ * granted leaf whose prerequisite is missing.
  *
- * `available` (the catalog) is optional: when supplied, a leaf the API no
- * longer publishes is never added.
+ * The implication graph is the catalog's `implies` column — the SAME data the
+ * engine enforces. It used to be a client-invented graph the engine ignored,
+ * which meant this editor could write a role the engine read differently.
  */
 export function applyCell(
   scope: CapabilityScope,
@@ -511,14 +431,14 @@ export function applyCell(
   areaKey: string,
   kind: CellKind,
   checked: boolean,
-  available?: ReadonlySet<string> | null,
+  permissions: readonly Permission[] | undefined,
 ): Set<string> {
-  const area = AREA_TABLES[scope].find((a) => a.key === areaKey);
+  const area = buildAreaTable(scope, permissions).find((a) => a.key === areaKey);
   if (!area) return new Set(selected);
   const leaves = kind === 'view' ? area.view : area.edit;
   return checked
-    ? addLeaves(scope, selected, leaves, available)
-    : removeLeaves(scope, selected, leaves);
+    ? addLeaves(permissions, selected, leaves, availableIn(scope, permissions))
+    : removeLeaves(permissions, selected, leaves);
 }
 
 /** Toggle one raw leaf (the Advanced disclosure). Same implication rules. */
@@ -527,11 +447,11 @@ export function applyLeaf(
   selected: ReadonlySet<string>,
   action: string,
   checked: boolean,
-  available?: ReadonlySet<string> | null,
+  permissions: readonly Permission[] | undefined,
 ): Set<string> {
   return checked
-    ? addLeaves(scope, selected, [action], available)
-    : removeLeaves(scope, selected, [action]);
+    ? addLeaves(permissions, selected, [action], availableIn(scope, permissions))
+    : removeLeaves(permissions, selected, [action]);
 }
 
 /** "View everything" / "Edit everything" / "Clear". */
@@ -539,23 +459,23 @@ export function applyBulk(
   scope: CapabilityScope,
   selected: ReadonlySet<string>,
   action: 'view-all' | 'edit-all' | 'clear',
-  actions: readonly ActionCatalogEntry[] | undefined,
+  permissions: readonly Permission[] | undefined,
 ): Set<string> {
-  const catalog = (actions ?? []).filter((a) => a.resource_type === scope);
-  const available = catalog.length > 0 ? new Set(catalog.map((a) => a.action)) : null;
+  const catalog = inScope(scope, permissions);
+  const table = buildAreaTable(scope, permissions);
   if (action === 'clear') {
     const next = new Set(selected);
-    for (const leaf of mappedLeaves(scope)) next.delete(leaf);
+    for (const leaf of mappedLeaves(table)) next.delete(leaf);
     for (const entry of catalog) next.delete(entry.action);
     for (const leaf of selected) if (resourceScopeOf(leaf) === scope) next.delete(leaf);
     return next;
   }
   const leaves: string[] = [];
-  for (const area of AREA_TABLES[scope]) {
+  for (const area of table) {
     leaves.push(...area.view);
     if (action === 'edit-all') leaves.push(...area.edit);
   }
-  return addLeaves(scope, selected, leaves, available);
+  return addLeaves(permissions, selected, leaves, availableIn(scope, permissions));
 }
 
 // ─── Advanced grouping ──────────────────────────────────────────────────────
@@ -604,8 +524,10 @@ const MATRIX_NOTE =
 
 export interface RoleCapabilityMatrixProps {
   scope: CapabilityScope;
-  /** The full action catalog from `listActions`; filtered to `scope` here. */
-  actions: readonly ActionCatalogEntry[] | undefined;
+  /** The permission catalog from `listPermissions`. It carries `area`, `level`
+   *  and `implies`, so the areas, the columns and the implication rules this
+   *  editor enforces are all the server's, not this file's. */
+  permissions: readonly Permission[] | undefined;
   selected: Set<string>;
   onChange: (next: Set<string>) => void;
   disabled?: boolean;
@@ -613,7 +535,7 @@ export interface RoleCapabilityMatrixProps {
 
 export function RoleCapabilityMatrix({
   scope,
-  actions,
+  permissions,
   selected,
   onChange,
   disabled = false,
@@ -622,15 +544,11 @@ export function RoleCapabilityMatrix({
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const autoOpened = useRef(false);
 
-  const catalog = useMemo(
-    () => (actions ?? []).filter((a) => a.resource_type === scope),
-    [actions, scope],
+  const catalog = useMemo(() => inScope(scope, permissions), [permissions, scope]);
+  const fold = useMemo(
+    () => foldSelection(scope, permissions, selected),
+    [scope, permissions, selected],
   );
-  const available = useMemo(
-    () => (catalog.length > 0 ? new Set(catalog.map((a) => a.action)) : null),
-    [catalog],
-  );
-  const fold = useMemo(() => foldSelection(scope, actions, selected), [scope, actions, selected]);
 
   // Open Advanced by itself the first time a role arrives with a partial cell
   // or an unmapped grant — otherwise those leaves would be invisible.
@@ -655,7 +573,7 @@ export function RoleCapabilityMatrix({
 
   const advancedGroups = useMemo(() => {
     const entries = [
-      ...catalog.map((a) => ({ action: a.action, label: a.label })),
+      ...catalog.map((a) => ({ action: a.action, label: a.description || humanizeLeaf(a.action) })),
       ...fold.unmapped
         .filter((leaf) => !catalog.some((a) => a.action === leaf.action))
         .map((leaf) => ({ action: leaf.action, label: leaf.label })),
@@ -664,14 +582,14 @@ export function RoleCapabilityMatrix({
   }, [catalog, fold.unmapped, query]);
 
   function setCell(areaKey: string, kind: CellKind, checked: boolean) {
-    onChange(applyCell(scope, selected, areaKey, kind, checked, available));
+    onChange(applyCell(scope, selected, areaKey, kind, checked, permissions));
   }
 
   function setLeaf(action: string, checked: boolean) {
-    onChange(applyLeaf(scope, selected, action, checked, available));
+    onChange(applyLeaf(scope, selected, action, checked, permissions));
   }
 
-  if (catalog.length === 0 && (actions?.length ?? 0) > 0) {
+  if (catalog.length === 0 && (permissions?.length ?? 0) > 0) {
     return (
       <div className="space-y-2">
         <Label>Capabilities</Label>
@@ -715,7 +633,7 @@ export function RoleCapabilityMatrix({
           size="sm"
           className="text-muted-foreground hover:text-foreground h-8 px-2 text-xs"
           disabled={disabled}
-          onClick={() => onChange(applyBulk(scope, selected, 'view-all', actions))}
+          onClick={() => onChange(applyBulk(scope, selected, 'view-all', permissions))}
         >
           View everything
         </Button>
@@ -725,7 +643,7 @@ export function RoleCapabilityMatrix({
           size="sm"
           className="text-muted-foreground hover:text-foreground h-8 px-2 text-xs"
           disabled={disabled}
-          onClick={() => onChange(applyBulk(scope, selected, 'edit-all', actions))}
+          onClick={() => onChange(applyBulk(scope, selected, 'edit-all', permissions))}
         >
           Edit everything
         </Button>
@@ -735,7 +653,7 @@ export function RoleCapabilityMatrix({
           size="sm"
           className="text-muted-foreground hover:text-foreground h-8 px-2 text-xs"
           disabled={disabled}
-          onClick={() => onChange(applyBulk(scope, selected, 'clear', actions))}
+          onClick={() => onChange(applyBulk(scope, selected, 'clear', permissions))}
         >
           Clear
         </Button>

@@ -15,6 +15,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { type FormEvent, useCallback, useMemo, useState } from 'react';
 
+import { PROJECT_ACTIONS } from '@/lib/project-actions';
+import { useProjectCan } from '@/lib/use-project-can';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -208,7 +210,12 @@ export function SecretsView({ projectId }: { projectId: string }) {
   });
 
   const normalized = useMemo(() => normalizeResponse(secretsQuery.data), [secretsQuery.data]);
-  const canManage = normalized.can_manage ?? false;
+  // `project.secret.write` is the leaf every mutating secrets route asserts.
+  // The response's `can_manage` was the coarse project-manage flag, so a custom
+  // role that holds `project.secret.write` without the manager role saw a
+  // read-only page, and one denied the leaf saw editable controls that 403.
+  const canManage =
+    useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_SECRET_WRITE).allowed === true;
   const allRows = useMemo(() => buildRows(normalized), [normalized]);
 
   const missingRequired = allRows.filter((r) => r.requirement === 'required' && !r.configured);
@@ -532,7 +539,6 @@ function normalizeResponse(
     items: Array.isArray(data?.items) ? data!.items : [],
     required: Array.isArray(data?.required) ? data!.required : [],
     optional: Array.isArray(data?.optional) ? data!.optional : [],
-    can_manage: data?.can_manage,
     manifest_status: data?.manifest_status,
     manifest_path: data?.manifest_path,
     manifest_error: data?.manifest_error,

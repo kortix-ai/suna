@@ -447,16 +447,48 @@ A trigger starts a session from a schedule, a webhook, or a monitor (experimenta
 
 ### Access
 
-Who can use the linked project. Roles: `manager`, `member`.
+The CLI face of the one grant table. Every row is an **assignment**: one
+principal, one role, one scope, optionally narrowed to one object. See
+[Accounts & access](/docs/accounts#one-access-model) for the model. Account
+roles: `owner`, `admin`, `member`. Project roles: `manager`, `member`.
 
 | Command | Effect |
 | --- | --- |
-| `kortix access ls [--json]` | List members and their project roles. |
-| `kortix access invite <email> --role <r>` | Invite someone to the project. |
-| `kortix access grant <user-id> --role <r>` | Set a member's project role. |
-| `kortix access revoke <user-id>` | Remove a member's project access. |
+| `kortix access assignments [--project <id>\|--account\|--all] [--json]` | List assignments at one project, at the account, or everywhere. |
+| `kortix access grant --user <id\|email>\|--group <id>\|--service-account <id> --role <key\|id> [opts]` | Create one assignment. Prints the assignment id. |
+| `kortix access revoke <assignment-id>` | Revoke one assignment. |
+
+Grant options: `--project <id>` (default: the linked project), `--account` (the
+whole account), `--agent <name>` (narrow the grant to one agent — an object
+assignment), and `--expires <iso>` (auto-revoke timestamp). `--principal` filters
+a list, and takes `user:<id>`, `group:<id>`, `service_account:<id>`, or
+`pending:<email>`; a bare id is read as a user. An agent's identity is a
+`service_account`, so `--service-account <id>` is how you assign a role to an
+agent. `--user` accepts an email and resolves it against the account member
+directory.
+
+```bash
+kortix access grant --user alice@corp.com --role manager
+kortix access grant --user alice@corp.com --role admin --account
+kortix access grant --group 8f3c… --role member --project 1a2b…
+kortix access grant --user alice@corp.com --agent support-bot
+kortix access revoke 4d5e…
+```
+
+The project member verbs are a read model over the same assignments:
+
+| Command | Effect |
+| --- | --- |
+| `kortix access ls [--json]` | List the people with project access, their account role, and their effective project role. |
+| `kortix access invite <email> --role <r>` | Invite someone to the project. Creates a `pending` assignment. |
+| `kortix access grant <user-id> --role <r>` | Set a user's project role. |
+| `kortix access revoke <user-id>` | Remove a user's project access. |
 | `kortix access pending [--json]` | List pending invitations. |
 | `kortix access cancel <invite-id>` | Cancel a pending invitation. |
+
+A person, a group, or an agent gets roles from Kortix; an agent additionally
+carries Kortix CLI scopes in `kortix.yaml`, and a session can only do what both
+allow. See [One vocabulary, two bindings](/docs/accounts#one-vocabulary-two-bindings).
 
 ### Audit
 
@@ -481,31 +513,55 @@ include private-session metadata. Session reconstruction requires
 
 ### Roles
 
-Account-level custom IAM roles and policy bindings. Built-in roles are read-only references; custom roles are yours to create, edit, and bind.
+A role is a named set of permissions. System roles (`owner`, `admin`, `member`
+at account scope; `manager`, `member` at project scope; plus `agent-user`, the
+marker an object assignment carries) are read-only references. Custom roles are
+yours to create and edit, and need the enterprise `rbac` entitlement.
 
 | Command | Effect |
 | --- | --- |
-| `kortix roles ls [--json]` | List roles, built-in and custom. |
+| `kortix roles ls [--json]` | List roles, system and custom. |
 | `kortix roles show <role> [--json]` | Show one role's permissions and usage. |
-| `kortix roles actions [--json]` | List the permission catalog. |
+| `kortix roles permissions <role> [--json]` | List one role's permissions. |
 | `kortix roles create <key> --name <n> [options]` | Create a custom role. |
 | `kortix roles set-actions <role> --actions a,b` | Replace a custom role's permissions. |
 | `kortix roles rm <role>` | Delete a custom role. |
-| `kortix roles assignments [--project <id>] [--json]` | List policy bindings. |
-| `kortix roles assign <role> --to <type>:<id>` | Bind a role to a member, group, or token. |
-| `kortix roles unassign <policy-id>` | Remove a binding. |
-| `kortix roles export [--project <id>] [--out <file>] [--format toml\|json]` | Dump roles and bindings to a file. |
-| `kortix roles import <file>` | Apply a roles and bindings file. |
+| `kortix roles export [--project <id>] [--out <file>] [--format toml\|json]` | Dump roles and assignments to a file. |
+| `kortix roles import <file>` | Apply a roles and assignments file. |
 
-### Grants
+Bind a role to a principal with `kortix access grant`. The older `kortix roles
+assign` / `unassign` / `assignments` verbs still work and write the same table,
+but `kortix access` is the documented path. `kortix roles actions` is superseded
+by `kortix permissions ls`.
 
-Assigns project resources to people. Secrets and connectors live on agents; assigning an agent to a member grants everything that agent declares.
+A custom role only adds permissions. Kortix has no deny rule, so a role cannot
+withhold a permission from a manager.
+
+### Permissions
+
+The permission catalog, as data. One row per leaf action, with the scope it is
+decided at, whether it is delegable, and what it implies. Roles are built from
+these keys — `kortix roles create --actions` and `kortix roles set-actions` take
+exactly them. Alias: `kortix perms`.
 
 | Command | Effect |
 | --- | --- |
-| `kortix grants ls [--json]` | List grants, and which agents can be granted. |
-| `kortix grants assign <agent-name> --to <who> [--group]` | Assign an agent to a member, or a group with `--group`. |
-| `kortix grants revoke <grant-id>` | Remove a grant. |
+| `kortix permissions ls [--scope account\|project] [--area <a>] [--json]` | List the catalog. |
+| `kortix permissions show <action> [--json]` | Show one action in full. |
+
+### Grants
+
+Assigns one project object to a principal — an **object assignment**. Secrets and
+connectors live on agents, so assigning an agent to a person grants everything
+that agent declares. An agent is closed by default: a member reaches it only when
+an assignment names them or one of their groups. `kortix access grant --agent
+<name>` writes the same row.
+
+| Command | Effect |
+| --- | --- |
+| `kortix grants ls [--json]` | List object assignments, and which agents can be assigned. |
+| `kortix grants assign <agent-name> --to <who> [--group]` | Assign an agent to a user, or to a group with `--group`. |
+| `kortix grants revoke <grant-id>` | Revoke one object assignment. |
 
 ### Manifest validation
 

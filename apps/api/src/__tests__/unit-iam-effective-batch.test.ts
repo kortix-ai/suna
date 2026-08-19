@@ -22,14 +22,23 @@ import {
   type AuthorizeFn,
   type BatchProbe,
 } from '../accounts/iam/batch-probes';
+import type { Actor } from '../iam/actor';
 
-const TARGET_USER = 'user-1';
 const ACCOUNT = 'acct-1';
+// `resolveBatchProbes` now takes the SAME Actor the real gate takes (the probe
+// used to drop the acting credential and answer a question the gate never
+// asked), so the fixture is an Actor rather than a bare user id.
+const TARGET_ACTOR: Actor = {
+  userId: 'user-1',
+  accountId: ACCOUNT,
+  credential: { kind: 'jwt' },
+  ctx: {},
+};
 
 // A stand-in for the real `authorize` (which hits the DB). Lets us inject
 // transient failures deterministically.
 const makeAuthorize = (behaviour: (action: string) => 'allow' | 'deny' | 'throw'): AuthorizeFn =>
-  mock(async (_userId: string, _accountId: string, action: string) => {
+  mock(async (_actor: Actor, action: string) => {
     const v = behaviour(action);
     if (v === 'throw') throw new Error('simulated transient DB blip');
     return { allowed: v === 'allow', reason: v === 'allow' ? 'policy' : 'no_matching_policy' };
@@ -50,7 +59,7 @@ describe('resolveBatchProbes — per-probe isolation', () => {
     );
 
     // Must NOT throw — that was the whole bug (Promise.all rejected the batch).
-    const results = await resolveBatchProbes(probes, authorizeFn, TARGET_USER, ACCOUNT);
+    const results = await resolveBatchProbes(probes, authorizeFn, TARGET_ACTOR, ACCOUNT);
 
     expect(results).toHaveLength(3);
     // Probe 0 — allowed.
@@ -75,7 +84,7 @@ describe('resolveBatchProbes — per-probe isolation', () => {
     const probes = [accountProbe('account.write'), accountProbe('account.delete')];
     const authorizeFn = makeAuthorize(() => 'throw');
 
-    const results = await resolveBatchProbes(probes, authorizeFn, TARGET_USER, ACCOUNT);
+    const results = await resolveBatchProbes(probes, authorizeFn, TARGET_ACTOR, ACCOUNT);
 
     expect(results).toHaveLength(2);
     expect(results.every((r) => r.allowed === false && r.reason === 'probe_error')).toBe(true);
@@ -85,7 +94,7 @@ describe('resolveBatchProbes — per-probe isolation', () => {
     const probes = [accountProbe('account.write'), accountProbe('account.write')];
     const authorizeFn = makeAuthorize(() => 'allow');
 
-    const results = await resolveBatchProbes(probes, authorizeFn, TARGET_USER, ACCOUNT);
+    const results = await resolveBatchProbes(probes, authorizeFn, TARGET_ACTOR, ACCOUNT);
 
     expect(results).toHaveLength(2);
     expect(results.every((r) => r.allowed === true && r.reason === 'policy')).toBe(true);
@@ -100,7 +109,7 @@ describe('resolveBatchProbes — per-probe isolation', () => {
     ];
     const authorizeFn = makeAuthorize((a) => (a === 'account.write' ? 'throw' : 'allow'));
 
-    const results = await resolveBatchProbes(probes, authorizeFn, TARGET_USER, ACCOUNT);
+    const results = await resolveBatchProbes(probes, authorizeFn, TARGET_ACTOR, ACCOUNT);
 
     expect(results[0]).toMatchObject({ allowed: false, reason: 'probe_error' });
     expect(results[1]).toMatchObject({ allowed: false, reason: 'probe_error' });
@@ -115,7 +124,7 @@ describe('resolveBatchProbes — per-probe isolation', () => {
     ];
     const authorizeFn = makeAuthorize((a) => (a === 'project.read' ? 'allow' : 'throw'));
 
-    const results = await resolveBatchProbes(probes, authorizeFn, TARGET_USER, ACCOUNT);
+    const results = await resolveBatchProbes(probes, authorizeFn, TARGET_ACTOR, ACCOUNT);
 
     expect(results[0]).toMatchObject({
       action: 'project.read',
@@ -132,7 +141,7 @@ describe('resolveBatchProbes — per-probe isolation', () => {
 
   test('an empty probe list resolves to an empty result (no authorize calls)', async () => {
     const authorizeFn = makeAuthorize(() => 'allow');
-    const results = await resolveBatchProbes([], authorizeFn, TARGET_USER, ACCOUNT);
+    const results = await resolveBatchProbes([], authorizeFn, TARGET_ACTOR, ACCOUNT);
     expect(results).toEqual([]);
     expect((authorizeFn as unknown as { mock: { calls: unknown[] } }).mock.calls).toHaveLength(0);
   });
@@ -148,7 +157,7 @@ describe('resolveBatchProbes — per-probe isolation', () => {
     );
     const onProbeError = mock((_ctx: unknown) => {});
 
-    await resolveBatchProbes(probes, authorizeFn, TARGET_USER, ACCOUNT, onProbeError as never);
+    await resolveBatchProbes(probes, authorizeFn, TARGET_ACTOR, ACCOUNT, onProbeError as never);
 
     // Two probes failed → two structured-log callbacks (one each).
     expect(onProbeError).toHaveBeenCalledTimes(2);

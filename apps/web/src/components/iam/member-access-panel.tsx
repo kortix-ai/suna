@@ -84,12 +84,14 @@ import {
 import {
   listMemberGroups,
   listMemberProjectAccess,
+  listPermissions,
   listPolicies,
   setMemberSuperAdmin,
   type MemberGroupSummary,
   type MemberProjectAccess,
 } from '@/lib/iam-client';
 import { usePermission, usePermissionsFor } from '@/lib/use-permission';
+import { areaLabel, permissionLabel } from './role-capability-matrix';
 import { cn } from '@/lib/utils';
 import {
   listAccountMembers,
@@ -97,7 +99,7 @@ import {
   removeAccountMember,
   type IamPolicy,
 } from '@kortix/sdk';
-import { qk } from '@kortix/sdk/react';
+import { invalidatePermissionProbes, qk } from '@kortix/sdk/react';
 
 const PANEL = 'bg-popover rounded-md border';
 
@@ -199,6 +201,8 @@ export function MemberAccessPanel({
     mutationFn: (next: boolean) => setMemberSuperAdmin(accountId, memberUserId, next),
     onSuccess: (res) => {
       successToast(res.is_super_admin ? 'Granted super-admin' : 'Revoked super-admin');
+      // Super-admin is a total bypass: every verdict for this principal moves.
+      void invalidatePermissionProbes(queryClient, { accountId, userId: memberUserId });
       queryClient.invalidateQueries({ queryKey: ['account-members', accountId] });
       setGrantConfirmOpen(false);
       setRevokeConfirmOpen(false);
@@ -215,6 +219,7 @@ export function MemberAccessPanel({
     mutationFn: () => removeAccountMember(accountId, memberUserId),
     onSuccess: () => {
       successToast('Member removed');
+      void invalidatePermissionProbes(queryClient, { accountId, userId: memberUserId });
       queryClient.invalidateQueries({ queryKey: ['account-members', accountId] });
       queryClient.invalidateQueries({ queryKey: ['account', accountId] });
       setRemoveOpen(false);
@@ -399,7 +404,7 @@ export function MemberAccessPanel({
           mode={{
             kind: 'edit',
             principal: { type: 'member', id: member.user_id, label: memberLabel },
-            current: { role: accountRoleValue, policyId: accountPolicy?.policy_id },
+            current: { role: accountRoleValue },
           }}
           rbacEnabled={rbacEnabled}
           canManageRoles={canManageRoles}
@@ -639,7 +644,6 @@ function MemberProjectAccessSection({
               role: editRole,
               agentIds: editTarget.agentIds,
               expiresAt: editPolicy?.expires_at ?? null,
-              policyId: editPolicy?.policy_id,
             },
           }}
           inheritedFrom={(editTarget.project.custom_role_policies ?? [])
@@ -700,45 +704,55 @@ function MemberGroupsSection({
 // admin sees explicit policies + groups but can't easily tell which broad
 // powers the union grants.
 
-const CAPABILITY_GROUPS: Array<{
-  heading: string;
-  items: Array<{ label: string; action: string }>;
-}> = [
-  {
-    heading: 'Account',
-    items: [
-      { label: 'Rename account', action: 'account.write' },
-      { label: 'Delete account', action: 'account.delete' },
-      { label: 'Manage billing', action: 'billing.write' },
-      { label: 'Read audit log', action: 'audit.read' },
-    ],
-  },
-  {
-    heading: 'Members & groups',
-    items: [
-      { label: 'Invite members', action: 'member.invite' },
-      { label: 'Change member roles', action: 'member.update' },
-      { label: 'Remove members', action: 'member.remove' },
-      { label: 'Grant super-admin', action: 'member.super_admin.grant' },
-      { label: 'Create groups', action: 'group.create' },
-      { label: 'Manage policies', action: 'policy.create' },
-    ],
-  },
-  {
-    heading: 'Projects',
-    items: [
-      { label: 'Create projects', action: 'project.create' },
-      { label: 'Read every project', action: 'project.read' },
-      { label: 'Write every project', action: 'project.write' },
-      { label: 'Delete every project', action: 'project.delete' },
-    ],
-  },
-];
+/**
+ * The capability list, READ FROM THE CATALOG.
+ *
+ * This used to be two hand-curated arrays in this file — a 14-action grid and
+ * an 11-action simulator — that disagreed with each other and with the server.
+ * One of the simulator's rows named an action that is not a permission at all,
+ * so it could never answer anything but "denied".
+ *
+ * Now both read `GET /accounts/:id/iam/permissions`: every account-scope
+ * capability whose level is not `view` (a "power", not a read), grouped by the
+ * catalog's own `area`.
+ */
+function useAccountCapabilities(accountId: string | undefined, enabled: boolean) {
+  const query = useQuery({
+    queryKey: ['iam-permissions', accountId, 'account'],
+    queryFn: () => listPermissions(accountId as string, { scopeType: 'account' }),
+    enabled: enabled && !!accountId,
+    staleTime: 5 * 60_000,
+  });
 
-// Flat list of every capability we probe, in display order. The card uses
-// this to build a single batch request; the grouped layout below picks
-// each row out by index via FLAT_CAPABILITIES.
-const FLAT_CAPABILITIES = CAPABILITY_GROUPS.flatMap((g) => g.items);
+  const items = useMemo(
+    () =>
+      (query.data ?? [])
+        .filter((permission) => permission.level !== 'view')
+        .map((permission) => ({
+          action: permission.action,
+          label: permissionLabel(permission),
+          area: permission.area,
+        })),
+    [query.data],
+  );
+
+  const probes = useMemo(() => items.map((item) => ({ action: item.action })), [items]);
+
+  const groups = useMemo(() => {
+    const order: string[] = [];
+    const byArea = new Map<string, typeof items>();
+    for (const item of items) {
+      if (!byArea.has(item.area)) {
+        byArea.set(item.area, []);
+        order.push(item.area);
+      }
+      byArea.get(item.area)!.push(item);
+    }
+    return order.map((area) => ({ heading: areaLabel(area), items: byArea.get(area)! }));
+  }, [items]);
+
+  return { items, probes, groups, isLoading: query.isLoading };
+}
 
 function CapabilitiesCard({
   accountId,
@@ -747,17 +761,10 @@ function CapabilitiesCard({
   accountId: string;
   memberUserId: string;
 }) {
-  // Stable probe list — declared at module scope so the hook's queryKey is
-  // identical across renders. One HTTP roundtrip resolves all 14.
-  const results = usePermissionsFor(
-    accountId,
-    memberUserId,
-    FLAT_CAPABILITIES.map((c) => ({ action: c.action })),
-  );
-
-  // Build a quick lookup keyed by action so the grouped render finds its
-  // result without re-walking the array per row.
-  const byAction = new Map(FLAT_CAPABILITIES.map((c, i) => [c.action, results[i]] as const));
+  // One catalog read, then ONE batched probe over everything it named.
+  const { items, probes, groups } = useAccountCapabilities(accountId, true);
+  const results = usePermissionsFor(accountId, memberUserId, probes);
+  const byAction = new Map(items.map((item, i) => [item.action, results[i]] as const));
 
   return (
     <section className="space-y-2">
@@ -768,7 +775,7 @@ function CapabilitiesCard({
         </span>
       </div>
       <div className={cn(PANEL, 'divide-border divide-y')}>
-        {CAPABILITY_GROUPS.map((group) => (
+        {groups.map((group) => (
           <div key={group.heading} className="px-4 py-4">
             <p className="text-muted-foreground mb-2 text-xs font-medium">{group.heading}</p>
             <div className="grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2">
@@ -834,24 +841,6 @@ function CapabilityRow({
 // No backend changes — the /effective:batch endpoint already supports
 // arbitrary user_id targets (gated by member.read on the caller).
 
-const SIMULATOR_PROBES: Array<{
-  action: string;
-  label: string;
-  group: 'Account' | 'Projects' | 'Audit';
-}> = [
-  { action: 'account.write', label: 'Change account settings', group: 'Account' },
-  { action: 'member.invite', label: 'Invite members', group: 'Account' },
-  { action: 'member.remove', label: 'Remove members', group: 'Account' },
-  { action: 'group.create', label: 'Create groups', group: 'Account' },
-  { action: 'group.delete', label: 'Delete groups', group: 'Account' },
-  { action: 'project.create', label: 'Create projects', group: 'Projects' },
-  { action: 'project.write', label: 'Edit projects', group: 'Projects' },
-  { action: 'project.delete', label: 'Delete projects', group: 'Projects' },
-  { action: 'project.members.manage', label: 'Manage project members', group: 'Projects' },
-  { action: 'audit.read', label: 'View the audit log', group: 'Audit' },
-  { action: 'audit.export', label: 'Export audit events', group: 'Audit' },
-];
-
 function ViewAsUserDialog({
   open,
   onOpenChange,
@@ -871,29 +860,18 @@ function ViewAsUserDialog({
   // engine answers "can they perform this action on the account",
   // which is the question this dialog should answer; the per-project
   // breakdown is the job of the Projects section above.
-  const probes = useMemo(() => SIMULATOR_PROBES.map((p) => ({ action: p.action })), []);
+  // The SAME catalog-derived list the capabilities grid uses. Two curated
+  // arrays used to answer this question two different ways in one file.
+  const { items, probes, groups } = useAccountCapabilities(open ? accountId : undefined, open);
   const results = usePermissionsFor(
     open ? accountId : undefined,
     open ? memberUserId : undefined,
     probes,
   );
-  const grouped = useMemo(() => {
-    const groups: Record<
-      string,
-      Array<{ label: string; allowed: boolean; reason: string | null; isLoading: boolean }>
-    > = {};
-    SIMULATOR_PROBES.forEach((p, i) => {
-      const r = results[i];
-      if (!groups[p.group]) groups[p.group] = [];
-      groups[p.group].push({
-        label: p.label,
-        allowed: !!r?.allowed,
-        reason: r?.reason ?? null,
-        isLoading: !!r?.isLoading,
-      });
-    });
-    return groups;
-  }, [results]);
+  const byAction = useMemo(
+    () => new Map(items.map((item, i) => [item.action, results[i]] as const)),
+    [items, results],
+  );
 
   return (
     <Modal open={open} onOpenChange={onOpenChange}>
@@ -909,29 +887,32 @@ function ViewAsUserDialog({
         </ModalHeader>
 
         <ModalBody className="max-h-[60vh] space-y-4 overflow-y-auto">
-          {(['Account', 'Projects', 'Audit'] as const).map((sectionName) => (
-            <section key={sectionName} className="space-y-1.5">
-              <p className="text-muted-foreground text-xs font-medium">{sectionName}</p>
+          {groups.map((group) => (
+            <section key={group.heading} className="space-y-1.5">
+              <p className="text-muted-foreground text-xs font-medium">{group.heading}</p>
               <ul className="divide-border bg-popover divide-y rounded-md border">
-                {(grouped[sectionName] ?? []).map((row) => (
-                  <li key={row.label} className="flex items-start gap-3 px-3 py-2 text-sm">
-                    <span className="mt-0.5 shrink-0">
-                      {row.isLoading ? (
-                        <span className="bg-muted block size-3.5 animate-pulse rounded-full" />
-                      ) : row.allowed ? (
-                        <Check className="text-kortix-green size-3.5" />
-                      ) : (
-                        <X className="text-kortix-red size-3.5" />
-                      )}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-foreground">{row.label}</p>
-                      {!row.allowed && row.reason && !row.isLoading ? (
-                        <p className="text-muted-foreground text-xs">{row.reason}</p>
-                      ) : null}
-                    </div>
-                  </li>
-                ))}
+                {group.items.map((item) => {
+                  const probe = byAction.get(item.action);
+                  return (
+                    <li key={item.action} className="flex items-start gap-3 px-3 py-2 text-sm">
+                      <span className="mt-0.5 shrink-0">
+                        {probe?.isLoading ? (
+                          <span className="bg-muted block size-3.5 animate-pulse rounded-full" />
+                        ) : probe?.allowed ? (
+                          <Check className="text-kortix-green size-3.5" />
+                        ) : (
+                          <X className="text-kortix-red size-3.5" />
+                        )}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-foreground">{item.label}</p>
+                        {!probe?.allowed && probe?.reason && !probe.isLoading ? (
+                          <p className="text-muted-foreground text-xs">{probe.reason}</p>
+                        ) : null}
+                      </div>
+                    </li>
+                  );
+                })}
               </ul>
             </section>
           ))}

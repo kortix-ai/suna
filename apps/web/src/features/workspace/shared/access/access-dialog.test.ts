@@ -306,3 +306,58 @@ describe('bulk-group submit', () => {
     expect(fixedPrincipalsOf({ kind: 'grant' })).toEqual([]);
   });
 });
+
+// ─── The canonical write path ───────────────────────────────────────────────
+//
+// `access-dialog.tsx` is the ONE place the product writes an access grant, so
+// these are source pins on the shape of that write. A custom role must be one
+// `createAssignment` call, never a built-in write followed by a policy write —
+// the two-store sequence `Promise.allSettled` could leave half-applied.
+
+const dialogSource = await Bun.file(
+  new URL('./access-dialog.tsx', import.meta.url).pathname,
+).text();
+
+describe('the dialog writes assignments, not policies', () => {
+  test('the retired two-store write is gone', () => {
+    expect(dialogSource).not.toContain('createPolicy(');
+    expect(dialogSource).not.toContain('deletePolicy(');
+  });
+
+  test('a custom role is ONE createAssignment call', () => {
+    expect(dialogSource).toContain('function assignCustomRole(');
+    expect(dialogSource).toContain('return createAssignment(accountId, {');
+    // Every custom-role branch goes through that one writer.
+    const customRoleWrites = dialogSource.match(/assignCustomRole\(/g) ?? [];
+    expect(customRoleWrites.length).toBeGreaterThanOrEqual(5);
+  });
+
+  test('agent access is an OBJECT assignment carrying the agent-user role', () => {
+    expect(dialogSource).toContain("const OBJECT_ASSIGNMENT_ROLE_KEY = 'agent-user'");
+    expect(dialogSource).toContain('roleKey: OBJECT_ASSIGNMENT_ROLE_KEY');
+    expect(dialogSource).toContain("object: { type: 'agent', id: agentId }");
+    // The old per-resource grant endpoints are no longer reachable from here.
+    expect(dialogSource).not.toContain('createProjectResourceGrant(');
+    expect(dialogSource).not.toContain('deleteProjectResourceGrant(');
+  });
+
+  test('a revoke reads the assignment id back rather than trusting a legacy id', () => {
+    // `iam_policies.policy_id` is NOT `role_assignments.assignment_id` — the
+    // backfill mints a new uuid — so a stale roster id must never be revoked.
+    expect(dialogSource).toContain('async function unassignAgent(');
+    expect(dialogSource).toContain('async function revokeCustomRole(');
+    expect(dialogSource).toContain('listAssignments(accountId, {');
+  });
+
+  test('every write busts the permission-probe cache', () => {
+    expect(dialogSource).toContain('invalidatePermissionProbes(queryClient, { accountId })');
+  });
+
+  test('expiry is offered wherever an assignment is written', () => {
+    // It used to be offered only where the underlying store happened to have
+    // the column — a UI capability derived from an SDK gap.
+    expect(dialogSource).toContain(
+      "const expirySupported = scope.kind !== 'group' && mode.kind !== 'bulk-group';",
+    );
+  });
+});

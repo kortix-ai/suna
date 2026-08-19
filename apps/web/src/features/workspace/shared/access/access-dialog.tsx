@@ -8,10 +8,20 @@
 // `AddGroupMembersDialog`, `AttachToProjectDialog`, `GrantAccessDialog`,
 // `GrantAgentAccessDialog` and `CreateAssignmentDialog`.
 //
-// Custom-role semantics: a custom role is the scope's lowest built-in
-// baseline PLUS one `iam_policies` row. Choosing a built-in deletes that
-// row. That is why every save path here writes the built-in first and the
-// policy second.
+// Custom-role semantics: a custom role is ONE `role_assignments` row. It used to
+// be "the scope's lowest built-in baseline PLUS an `iam_policies` row", written
+// in that order from the browser and fanned out with `Promise.allSettled` — a
+// two-store sequence that only this file enforced and that a partial failure
+// could leave half-applied, with no server-side repair. Now `createAssignment`
+// writes one row and the server owns the ceiling.
+//
+// Agent access is the same shape: an OBJECT assignment — the `agent-user` role,
+// scoped to the project, naming one agent — not a separate grant table.
+//
+// Built-in ROLE changes still go through the legacy per-store routes while those
+// dual-write into `role_assignments`. Every write path here, legacy or not, ends
+// by calling `invalidatePermissionProbes`: verdicts are cached 5 minutes, and a
+// stale verdict is a revoke that has not happened yet.
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -35,15 +45,15 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsListCompact, TabsTriggerCompact } from '@/components/ui/tabs';
 import { errorToast, successToast, warningToast } from '@/components/ui/toast';
 import { UserAvatar } from '@/components/ui/user-avatar';
+import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { cn } from '@/lib/utils';
 import {
   addGroupMembers,
   attachGroupToProject,
-  createPolicy,
-  createProjectResourceGrant,
-  deletePolicy,
-  deleteProjectResourceGrant,
+  createAssignment,
   detachGroupFromProject,
+  listAssignments,
+  revokeAssignment,
   inviteAccountMember,
   inviteProjectMember,
   isInviteSent,
@@ -57,7 +67,7 @@ import {
   type ProjectAgentResourceItem,
   type ProjectRole,
 } from '@kortix/sdk';
-import { contract, qk } from '@kortix/sdk/react';
+import { contract, invalidatePermissionProbes, qk } from '@kortix/sdk/react';
 import { ArrowElbowDownRightIcon, KeyIcon, PlugIcon, PlusIcon, XIcon } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState, type ReactNode } from 'react';
@@ -77,6 +87,11 @@ import {
   roleValuesEqual,
   type RoleValue,
 } from './role-select';
+
+/** The system role an OBJECT assignment carries. It grants nothing on its own —
+ *  it marks "this principal may reach this object", and the principal's real
+ *  role decides what they may do with it (`apps/api/src/iam/authorize.ts`). */
+const OBJECT_ASSIGNMENT_ROLE_KEY = 'agent-user';
 
 // ─── Props ─────────────────────────────────────────────────────────────────
 
@@ -98,11 +113,12 @@ export interface AccessDialogCurrent {
   agentIds?: string[] | 'all';
   expiresAt?: string | null;
   /**
-   * The principal's EXISTING custom-role policy id at this scope. Required
-   * to switch away from (or change) a custom role — read it from the
-   * consumer's access-list data (`custom_role_policies[0].policy_id`).
+   * The principal's EXISTING custom-role assignment id at this scope. Supply it
+   * to switch away from (or change) a custom role and the dialog revokes exactly
+   * that row; without it the dialog reads the principal's assignments back and
+   * revokes the non-system, non-object one — correct, but one extra request.
    */
-  policyId?: string;
+  assignmentId?: string;
 }
 
 export type AccessDialogMode =
@@ -416,10 +432,6 @@ export function AccessDialog({
     () => resourceGrantsQuery.data?.resources.agents ?? [],
     [resourceGrantsQuery.data],
   );
-  const existingGrants = useMemo(
-    () => resourceGrantsQuery.data?.grants ?? [],
-    [resourceGrantsQuery.data],
-  );
 
   const selectedAgentDeclares = useMemo(() => {
     if (agents.mode !== 'subset' || agents.ids.length === 0) return null;
@@ -432,22 +444,25 @@ export function AccessDialog({
     return { secrets: union('secrets'), connectors: union('connectors') };
   }, [agents, projectAgents]);
 
-  // ── Expiry support ────────────────────────────────────────────────────
-  // `updateProjectAccess` carries no `expires_at` in the SDK, so a direct
-  // member on a BUILT-IN project role has nowhere to store one. Groups,
-  // invites and custom-role policies all do.
-  const expirySupported =
-    scope.kind === 'project' &&
-    (mode.kind === 'attach' ||
-      mode.kind === 'grant' ||
-      (mode.kind === 'edit' && (mode.principal.type === 'group' || isCustom)));
+  // ── Expiry ────────────────────────────────────────────────────────────
+  // `expires_at` is a column on every assignment, so every grant this dialog
+  // writes can carry one. It used to be offered only where the underlying store
+  // happened to have the column — a UI capability derived from an SDK gap.
+  // Group membership is the one exception: it is not an assignment.
+  const expirySupported = scope.kind !== 'group' && mode.kind !== 'bulk-group';
 
   // ── Invalidation ──────────────────────────────────────────────────────
   function invalidate(touchedProjectIds: string[]) {
+    // The probe cache FIRST. Every verdict this dialog can move is cached for 5
+    // minutes; without this a revoke keeps rendering as access until the entry
+    // expires. Account-wide, not per-user: a group or custom-role change moves
+    // verdicts for principals this dialog cannot enumerate.
+    void invalidatePermissionProbes(queryClient, { accountId });
     queryClient.invalidateQueries({ queryKey: ['account-members', accountId] });
     queryClient.invalidateQueries({ queryKey: ['account-groups', accountId] });
     queryClient.invalidateQueries({ queryKey: ['account-invites', accountId] });
     queryClient.invalidateQueries({ queryKey: ['iam-policies', accountId] });
+    queryClient.invalidateQueries({ queryKey: ['iam-assignments', accountId] });
     queryClient.invalidateQueries({ queryKey: ['account-resource-grants', accountId, 'agent'] });
     if (scope.kind === 'group') {
       queryClient.invalidateQueries({ queryKey: ['group-members', accountId, scope.groupId] });
@@ -478,6 +493,94 @@ export function AccessDialog({
     kind: 'invite' | 'other';
   }
 
+  // ── Assignment writers ────────────────────────────────────────────────
+  //
+  // ONE row per grant. `principalKind` maps this dialog's principal vocabulary
+  // (`member`/`group`) onto the canonical one (`user`/`group`) — the last place
+  // the two differ.
+  const principalKind = (type: 'member' | 'group') => (type === 'member' ? 'user' : 'group');
+
+  /** Bind a custom role. One row, at one scope, with the draft's expiry. */
+  function assignCustomRole(
+    principalType: 'member' | 'group',
+    principalId: string,
+    roleId: string,
+    projectScopeId: string | null,
+    expiresIso: string | undefined,
+  ) {
+    return createAssignment(accountId, {
+      principal: { type: principalKind(principalType), id: principalId },
+      roleId,
+      scope: projectScopeId
+        ? { type: 'project', id: projectScopeId }
+        : { type: 'account' },
+      ...(expiresIso ? { expiresAt: expiresIso } : {}),
+    });
+  }
+
+  /** Give one principal access to ONE agent: an object assignment carrying the
+   *  system `agent-user` role. Idempotent server-side — re-granting returns the
+   *  same assignment_id rather than a second row. */
+  function assignAgent(
+    principalType: 'member' | 'group',
+    principalId: string,
+    pid: string,
+    agentId: string,
+    expiresIso: string | undefined,
+  ) {
+    return createAssignment(accountId, {
+      principal: { type: principalKind(principalType), id: principalId },
+      roleKey: OBJECT_ASSIGNMENT_ROLE_KEY,
+      scope: { type: 'project', id: pid },
+      object: { type: 'agent', id: agentId },
+      ...(expiresIso ? { expiresAt: expiresIso } : {}),
+    });
+  }
+
+  /** Take one agent away. The assignment id is read back from the canonical
+   *  store rather than from the legacy grant row, so this stays correct once
+   *  the compatibility views are dropped. */
+  async function unassignAgent(
+    principalType: 'member' | 'group',
+    principalId: string,
+    pid: string,
+    agentId: string,
+  ) {
+    const rows = await listAssignments(accountId, {
+      principalType: principalKind(principalType),
+      principalId,
+      scopeType: 'project',
+      scopeId: pid,
+      objectType: 'agent',
+      objectId: agentId,
+    });
+    for (const row of rows) await revokeAssignment(accountId, row.assignment_id);
+  }
+
+  /** Drop the principal's existing custom-role assignment at this scope.
+   *  `current.assignmentId` is the row the roster handed us; without it, fall
+   *  back to a filtered read so an older cached row cannot strand a grant. */
+  async function revokeCustomRole(
+    principalType: 'member' | 'group',
+    principalId: string,
+    projectScopeId: string | null,
+    knownAssignmentId: string | undefined,
+  ) {
+    if (knownAssignmentId) {
+      await revokeAssignment(accountId, knownAssignmentId);
+      return;
+    }
+    const rows = await listAssignments(accountId, {
+      principalType: principalKind(principalType),
+      principalId,
+      scopeType: projectScopeId ? 'project' : 'account',
+      ...(projectScopeId ? { scopeId: projectScopeId } : {}),
+    });
+    for (const row of rows.filter((r) => !r.role_is_system && !r.object_type)) {
+      await revokeAssignment(accountId, row.assignment_id);
+    }
+  }
+
   function buildGrantTasks(): Task[] {
     const tasks: Task[] = [];
     const roleId = role.kind === 'custom' ? role.roleId : null;
@@ -504,15 +607,7 @@ export function AccessDialog({
           kind: 'other',
           run: async () => {
             await updateAccountMemberRole(accountId, userId, accountBuiltin);
-            if (roleId) {
-              await createPolicy(accountId, {
-                principalType: 'member',
-                principalId: userId,
-                scopeType: 'account',
-                scopeId: null,
-                roleId,
-              });
-            }
+            if (roleId) await assignCustomRole('member', userId, roleId, null, expiresIso);
             // Optional per-project grants, member role only.
             if (accountBuiltin === 'member') {
               for (const grant of projectGrants.filter((g) => g.project_id)) {
@@ -550,23 +645,9 @@ export function AccessDialog({
         kind: 'other',
         run: async () => {
           await updateProjectAccess(pid, userId, projectBuiltin);
-          if (roleId) {
-            await createPolicy(accountId, {
-              principalType: 'member',
-              principalId: userId,
-              scopeType: 'project',
-              scopeId: pid,
-              roleId,
-              ...(expiresIso ? { expires_at: expiresIso } : {}),
-            });
-          }
+          if (roleId) await assignCustomRole('member', userId, roleId, pid, expiresIso);
           for (const resourceId of agentIdsToGrant) {
-            await createProjectResourceGrant(pid, {
-              resourceType: 'agent',
-              resourceId,
-              principalType: 'member',
-              principalId: userId,
-            });
+            await assignAgent('member', userId, pid, resourceId, expiresIso);
           }
         },
       });
@@ -577,23 +658,9 @@ export function AccessDialog({
         kind: 'other',
         run: async () => {
           await attachGroupToProject(pid, groupId, projectBuiltin, expiresIso);
-          if (roleId) {
-            await createPolicy(accountId, {
-              principalType: 'group',
-              principalId: groupId,
-              scopeType: 'project',
-              scopeId: pid,
-              roleId,
-              ...(expiresIso ? { expires_at: expiresIso } : {}),
-            });
-          }
+          if (roleId) await assignCustomRole('group', groupId, roleId, pid, expiresIso);
           for (const resourceId of agentIdsToGrant) {
-            await createProjectResourceGrant(pid, {
-              resourceType: 'agent',
-              resourceId,
-              principalType: 'group',
-              principalId: groupId,
-            });
+            await assignAgent('group', groupId, pid, resourceId, expiresIso);
           }
         },
       });
@@ -623,19 +690,13 @@ export function AccessDialog({
           kind: 'other',
           run: async () => {
             if (!diff.roleChanged) return;
-            if (current.role.kind === 'custom' && current.policyId) {
-              await deletePolicy(accountId, current.policyId);
+            if (current.role.kind === 'custom') {
+              await revokeCustomRole('member', principal.id, null, current.assignmentId);
             }
             const next = (baselineBuiltinRole('account', role) ?? 'member') as AccountRole;
             await updateAccountMemberRole(accountId, principal.id, next);
             if (roleId) {
-              await createPolicy(accountId, {
-                principalType: 'member',
-                principalId: principal.id,
-                scopeType: 'account',
-                scopeId: null,
-                roleId,
-              });
+              await assignCustomRole('member', principal.id, roleId, null, expiresIso);
             }
           },
         },
@@ -661,40 +722,21 @@ export function AccessDialog({
           // Custom-role policy diff. A changed roleId (or a changed expiry
           // on a custom role) is delete-then-create so the row always
           // matches the draft exactly.
-          const policyDirty = diff.roleChanged || (diff.expiryChanged && isCustom);
-          if (policyDirty) {
-            if (current.role.kind === 'custom' && current.policyId) {
-              await deletePolicy(accountId, current.policyId);
+          const assignmentDirty = diff.roleChanged || (diff.expiryChanged && isCustom);
+          if (assignmentDirty) {
+            if (current.role.kind === 'custom') {
+              await revokeCustomRole('member', principal.id, pid, current.assignmentId);
             }
             if (roleId) {
-              await createPolicy(accountId, {
-                principalType: principal.type,
-                principalId: principal.id,
-                scopeType: 'project',
-                scopeId: pid,
-                roleId,
-                ...(expiresIso ? { expires_at: expiresIso } : {}),
-              });
+              await assignCustomRole(principal.type, principal.id, roleId, pid, expiresIso);
             }
           }
-          // Resource-grant diff.
+          // Object-assignment diff — one row per (principal, project, agent).
           for (const resourceId of diff.agentsAdded) {
-            await createProjectResourceGrant(pid, {
-              resourceType: 'agent',
-              resourceId,
-              principalType: principal.type,
-              principalId: principal.id,
-            });
+            await assignAgent(principal.type, principal.id, pid, resourceId, expiresIso);
           }
           for (const resourceId of diff.agentsRemoved) {
-            const grant = existingGrants.find(
-              (g) =>
-                g.resource_type === 'agent' &&
-                g.resource_id === resourceId &&
-                g.principal_type === principal.type &&
-                g.principal_id === principal.id,
-            );
-            if (grant) await deleteProjectResourceGrant(pid, grant.grant_id);
+            await unassignAgent(principal.type, principal.id, pid, resourceId);
           }
         },
       },
@@ -713,14 +755,7 @@ export function AccessDialog({
         run: async () => {
           await attachGroupToProject(attachProjectId, mode.principal.id, nextBuiltin, expiresIso);
           if (roleId) {
-            await createPolicy(accountId, {
-              principalType: 'group',
-              principalId: mode.principal.id,
-              scopeType: 'project',
-              scopeId: attachProjectId,
-              roleId,
-              ...(expiresIso ? { expires_at: expiresIso } : {}),
-            });
+            await assignCustomRole('group', mode.principal.id, roleId, attachProjectId, expiresIso);
           }
         },
       },
@@ -965,7 +1000,7 @@ export function AccessDialog({
                   accountId={accountId}
                   value={attachProjectId}
                   onChange={setAttachProjectId}
-                  filter={(project) => project.effective_project_role === 'manager'}
+                  requireAction={PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE}
                   excludeIds={excludeProjectIds}
                   disabled={pending}
                   enabled={open}

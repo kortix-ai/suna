@@ -19,6 +19,7 @@ import {
   TrashIcon,
   UsersIcon,
 } from '@phosphor-icons/react';
+import { invalidatePermissionProbes } from '@kortix/sdk/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { FormEvent, useMemo, useState } from 'react';
 
@@ -134,6 +135,7 @@ function GroupsList({
     mutationFn: (groupId: string) => deleteGroup(accountId, groupId),
     onSuccess: () => {
       successToast('Group deleted');
+      void invalidatePermissionProbes(queryClient, { accountId });
       queryClient.invalidateQueries({ queryKey: ['account-groups', accountId] });
       setDeleteTarget(null);
     },

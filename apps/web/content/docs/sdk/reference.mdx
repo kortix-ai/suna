@@ -41,7 +41,7 @@ kortix.runtime(); // OpenCode REST compatibility client
 | `list()` · `get(accountId)` | accounts you belong to · one account |
 | `create({ name })` · `updateName(accountId, name)` | create · rename an account |
 | `members(accountId)` · `invite(accountId, input)` | list members · invite one |
-| `updateMemberRole(accountId, userId, role)` · `removeMember(accountId, userId)` | change a role · remove a member |
+| `updateMemberRole(accountId, userId, role)` · `removeMember(accountId, userId)` | assign the account role · remove a member |
 | `invites(accountId)` | pending invites |
 | `cancelInvite(accountId, inviteId)` · `resendInvite(accountId, inviteId)` | cancel · resend a pending invite |
 | `leave(accountId)` | leave the account |
@@ -69,6 +69,33 @@ Each event includes `project_id`, `session_id`, `actor_type`, `source`, `outcome
 The API does not store request bodies, prompts, secrets, credentials, or raw
 connector arguments in the centralized event. Connector events can include a
 bounded argument preview that redacts credential-shaped fields and opaque data.
+
+### Access assignments
+
+Kortix has one grant record: an **assignment**. It binds one principal (`user`,
+`group`, `service_account`, or `pending`) to one role, at one scope (`account`,
+or one `project`), optionally narrowed to one object (`agent`, `skill`, `secret`,
+`app`, or `trigger`) and optionally carrying an `expires_at`. Group access,
+per-resource access, and custom-role bindings are all assignments. See
+[Accounts & access](/docs/accounts#one-access-model) for the model.
+
+The canonical REST surface is:
+
+| Method + path | Does |
+| --- | --- |
+| `GET /v1/accounts/{accountId}/iam/assignments` | list assignments, filtered by principal, scope, object, or role |
+| `POST /v1/accounts/{accountId}/iam/assignments` | create one assignment |
+| `DELETE /v1/accounts/{accountId}/iam/assignments/{assignmentId}` | revoke one assignment |
+| `GET /v1/accounts/{accountId}/iam/permissions` | the permission catalog, as data |
+| `GET /v1/accounts/{accountId}/iam/roles` · `…/roles/{roleId}/permissions` | roles · one role's permissions |
+
+The SDK exposes them as `listAssignments`, `createAssignment`,
+`revokeAssignment`, and `listPermissions`. A catalog row carries `action`,
+`scope_type`, `resource_type`, `delegable`, `description`, `area`, `level`, and
+`implies` — read it instead of hardcoding action strings.
+
+Assigning a custom role needs the account's `rbac` entitlement; the route answers
+`402` with `code: "entitlement_required"` without it.
 
 ### Account invites — `kortix.accountInvites`
 
@@ -107,8 +134,8 @@ A repeat that arrives while the first call is still provisioning gets `409` with
 `code: 'provision_in_flight'` rather than a `project_id` that call may still roll
 back. Retry with the same key.
 
-`project(id).sessions.list({ scope: 'project' })` is a manager-only lifecycle
-inventory. It adds accessible unavailable, warm, and soft-deleted sessions with
+`project(id).sessions.list({ scope: 'project' })` is a lifecycle inventory for a
+caller with project-manager permissions. It adds accessible unavailable, warm, and soft-deleted sessions with
 ownership and runtime-state metadata. Both list scopes omit every session the
 caller cannot open.
 
@@ -185,7 +212,7 @@ await p.llmCatalog();
 | `onboardingComplete` | mark project onboarding done |
 | `validateManifest(raw)` | validate a `kortix.yaml` (or legacy `kortix.toml`) manifest server-side |
 | `gitToken()` | mint a fresh scoped git push token (`409` for a bring-your-own repo) |
-| `setAgentScope(agentName, scope)` | bind an agent's allowed secrets and connectors |
+| `setAgentScope(agentName, scope)` | set an agent's allowed secrets and connectors in the manifest — the second binding, not a role |
 
 #### `p.tokens` — project-scoped API keys
 
@@ -221,24 +248,31 @@ project access.
 the session. Managed consumers use `broker`. The HTTPS broker method requires a
 session-scoped token and an active session handle.
 
-#### `p.access` — members, invites, requests
+#### `p.access` — project assignments, invites, requests
+
+Every method here reads or writes an assignment scoped to this project. Project
+roles are `manager` and `member`.
 
 | method | what |
 | --- | --- |
-| `list()` · `invite(email, role)` | members with access · invite a user |
-| `update(userId, role)` · `revoke(userId)` | change a role · remove access |
+| `list()` · `invite(email, role)` | principals with access · invite a user |
+| `update(userId, role)` · `revoke(userId)` | assign a project role · revoke the assignment |
 | `pendingInvites()` · `requests()` | outstanding invites · pending access requests |
 | `resendInvite(inviteId)` · `revokeInvite(inviteId)` · `approveRequest(id)` · `rejectRequest(id)` | resend/revoke an invite · approve/reject a request |
-| `groupGrants()` · `attachGroupGrant(...)` · `updateGroupGrant(...)` · `detachGroupGrant(...)` | list, grant, change, or remove an IAM group grant |
+| `groupGrants()` · `attachGroupGrant(...)` · `updateGroupGrant(...)` · `detachGroupGrant(...)` | the same assignments, with a `group` principal |
 
-`p.access.resourceGrants` grants a member or group access to one resource (an
-agent, a skill, a secret) instead of the whole project.
+`p.access.resourceGrants` is the **object assignment** view: it narrows a
+principal to one object in the project instead of the whole project. Kortix
+enforces object assignments on agents and skills today. An agent is closed by
+default — a member reaches it only when an assignment names them or one of their
+groups. An object assignment carries no permissions of its own, and it restricts a
+project manager as much as a member.
 
 | method | what |
 | --- | --- |
-| `resourceGrants.list()` | per-resource grants |
-| `resourceGrants.create(input)` | grant a member or group access to a resource |
-| `resourceGrants.remove(grantId)` | revoke a resource grant |
+| `resourceGrants.list()` | object assignments in this project |
+| `resourceGrants.create(input)` | assign one object to a user or a group |
+| `resourceGrants.remove(grantId)` | revoke one object assignment |
 
 #### `p.connectors` — tool connectors
 
@@ -313,8 +347,13 @@ webhook HMAC secret) applies to `type: 'webhook'`.
 string[] }` and defaults to `private`. This policy is account-local runtime
 state. It does not enter the portable `kortix.yaml` manifest. Updating only
 `session_access` creates no Git commit. A pinned session keeps its own sharing
-settings. Project managers can always open trigger-created sessions, including
+settings. A project manager can always open trigger-created sessions, including
 sessions that use `private` or selected-member access.
+
+`session_access` is a per-resource visibility setting on top of the role model,
+not a role. It decides who can open one trigger's sessions. It grants no
+permission the role verdict denies. See
+[Accounts & access](/docs/accounts#per-feature-access-settings).
 
 #### `p.marketplace` / `p.registry` — installed items
 

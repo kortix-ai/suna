@@ -11,6 +11,7 @@ import { EntityAvatar } from '@/components/ui/entity-avatar';
 import Loading from '@/components/ui/loading';
 import { useIsMobile } from '@/hooks/utils';
 import { relativeTime } from '@/lib/kortix/task-meta';
+import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { KortixProject } from '@kortix/sdk';
 import {
   ArrowUpRightIcon as ArrowUpRight,
@@ -20,24 +21,49 @@ import {
 } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 
+/**
+ * The two leaves this card's kebab gates on. Edit renames the project
+ * (`project.write`); Archive destroys it (`project.delete`) — two permissions,
+ * independently grantable.
+ *
+ * The card takes the ANSWERS as props rather than probing itself: a list renders
+ * many cards, and one batched `useCans` at the list level is one request for the
+ * whole grid instead of one per card. It also keeps this component free of auth
+ * context, so it renders in isolation.
+ */
+export const PROJECT_CARD_ACTIONS = [
+  PROJECT_ACTIONS.PROJECT_WRITE,
+  PROJECT_ACTIONS.PROJECT_DELETE,
+] as const;
+
 const ProjectCard = ({
   project,
   onOpen,
   onEdit,
   onArchive,
   archiving,
+  canEdit = false,
+  canArchive = false,
 }: {
   project: KortixProject;
   onOpen: () => void;
   onEdit: () => void;
   onArchive: () => void;
   archiving: boolean;
+  /** `project.write` — probe it once per list with `useCans`. Defaults to
+   *  false: a gate with no answer yet is a gate that is closed. */
+  canEdit?: boolean;
+  /** `project.delete`. Same contract. */
+  canArchive?: boolean;
 }) => {
   const isMobile = useIsMobile();
   const tHardcodedUi = useTranslations('hardcodedUi');
   const updatedLabel = relativeTime(project.updated_at);
-  const canManageProject =
-    project.effective_project_role === 'manager' || !project.effective_project_role;
+  // This was the ONE gate in the app that failed OPEN: `role === 'manager' ||
+  // !role` enabled Edit and Archive for every viewer whose row simply carried no
+  // role — including a row that carried none because the field was absent.
+  const canEditProject = canEdit;
+  const canArchiveProject = canArchive;
 
   return (
     <Card className="group bg-secondary/80 hover:bg-secondary relative p-0 transition-[background-color,transform] duration-150 ease-out has-[[data-card-press]:active]:scale-[0.98]">
@@ -98,12 +124,12 @@ const ProjectCard = ({
             {/* "Edit project", not "Rename": the modal behind it edits the
                 name AND the emoji, and the label was the only thing telling
                 anyone the icon could be changed at all. */}
-            <DropdownMenuItem onSelect={onEdit} disabled={!canManageProject}>
+            <DropdownMenuItem onSelect={onEdit} disabled={!canEditProject}>
               <PencilSimpleIcon className="size-4" />
               {tHardcodedUi.raw('autoFeaturesProjectsProjectCardJsxTextEditProjecta4dc3833')}
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onSelect={onArchive} disabled={archiving || !canManageProject}>
+            <DropdownMenuItem onSelect={onArchive} disabled={archiving || !canArchiveProject}>
               {archiving ? (
                 <Loading className="size-4 shrink-0" />
               ) : (

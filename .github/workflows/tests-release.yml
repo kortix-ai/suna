@@ -66,7 +66,14 @@ jobs:
           cache: pnpm
       - name: Install runner dependencies
         run: pnpm install --frozen-lockfile --filter @kortix/tests...
+      # Bounded at the STEP so a slow sweep ends as a job *failure* (which
+      # continue-on-error absorbs) — never as a job *cancelled*: on run
+      # 32226539107 the 15-minute job cap fired while gc was still deleting a
+      # day's worth of debris, GitHub recorded the job as cancelled, and every
+      # dependent shard was skipped. A janitor must never be able to skip the
+      # gate. Whatever it did not reach, the next run's sweep gets.
       - name: Reclaim test accounts older than 2h
+        timeout-minutes: 12
         run: bun tests/bin/ke2e.ts gc --older-than 2h
 
   # The deployed API suite, sharded by tests/src/core/shard.ts. Shard 1 owns
@@ -76,6 +83,10 @@ jobs:
   api:
     name: deployed api shard
     needs: sweep-before
+    # The pre-run sweep is best-effort. Run the shards whether it passed,
+    # failed, or was cancelled by its own cap — its result must never gate the
+    # release (see the note on sweep-before).
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     # Shard 1 carries the strictly sequential serial+global tail (35 flows), so
     # it is the critical path until the tail itself is cut. 40 minutes is a real
@@ -157,6 +168,7 @@ jobs:
   browser:
     name: deployed browser shard
     needs: sweep-before
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
