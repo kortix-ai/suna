@@ -766,6 +766,10 @@ describe('Preview proxy: ownership', () => {
         status: 503,
         hop: 'control_plane',
         upstream_status: null,
+        // Stable machine code + retry flag: a readiness 503 is a pending
+        // state a client re-polls, never a terminal error.
+        code: 'sandbox_not_ready',
+        retry: true,
       });
     },
   );
