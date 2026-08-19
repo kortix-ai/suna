@@ -131,6 +131,7 @@ export function SlashMenu({
         role="listbox"
         aria-label="Commands and actions"
         aria-activedescendant={`slash-row-${selectedIndex}`}
+        tabIndex={0}
         className="min-w-0 flex-1 space-y-2 overflow-y-auto p-2"
       >
         {sections.map((section) => (

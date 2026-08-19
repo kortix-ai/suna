@@ -32,7 +32,6 @@ import {
 } from "../helpers/session-auth";
 import {
   dismissOnboarding,
-  openSettingsTab,
   selectAccountForUi,
 } from "../helpers/ui";
 
@@ -56,16 +55,19 @@ interface TemplateCreateResult {
 }
 
 async function openSandboxSection(page: Page, projectId: string) {
-  await page.goto(`/projects/${projectId}`, { waitUntil: "domcontentloaded" });
-  await dismissOnboarding(page);
-  // "Sandbox templates" is the rail label for the `sandbox` tab (rail.ts) and
-  // the `SettingsTabHeader` title the pane renders from it.
-  const panel = await openSettingsTab(page, "Sandbox templates");
-  await expect(page).toHaveURL(new RegExp(`/projects/${projectId}$`), {
-    timeout: 30_000,
+  // Sandbox templates graduated out of the Mod+, Settings overlay onto the
+  // Customize bar's Settings tab (`settings-tabs.ts`'s `GRADUATED` map:
+  // `sandbox: (p) => \`/projects/${p}/config?section=sandbox\``). It is a
+  // plain page section now, not an overlay tab — navigate straight there
+  // instead of opening the (now Profile/Preferences/Connected-only) overlay.
+  await page.goto(`/projects/${projectId}/config?section=sandbox`, {
+    waitUntil: "domcontentloaded",
   });
+  await dismissOnboarding(page);
+  // "Sandbox templates" is the section label (`project-settings-sections.ts`)
+  // and the `SettingsTabHeader` title `sandbox-tab.tsx` still renders from it.
   await expect(
-    panel.getByRole("heading", { name: "Sandbox templates", exact: true }),
+    page.getByRole("heading", { name: "Sandbox templates", exact: true }),
   ).toBeVisible({ timeout: 30_000 });
 }
 

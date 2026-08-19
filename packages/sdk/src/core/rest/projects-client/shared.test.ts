@@ -1,26 +1,29 @@
-import { expect, test } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 
-import { unwrap } from './shared';
+import type { ProjectRole } from './shared';
 
-test('unwrap returns the data on success', () => {
-  expect(unwrap({ success: true, data: { a: 1 } })).toEqual({ a: 1 });
-});
+// Owner decision 2026-08-18: the built-in `editor` project role is removed.
+// Two project roles remain — `member` (read + run) and `manager` (everything).
+// Existing `editor` assignments become `manager`.
+//
+// This is a compile-time contract, so the assertions below are typed, not just
+// asserted: `EXTRA_ROLES` is `never` only while the union is exactly
+// manager|member. Widening the union again (or re-adding `editor`) makes
+// `noExtraRoles` a `false`-typed value initialised with `true`, which fails
+// `pnpm --filter @kortix/sdk typecheck`.
 
-test('unwrap throws the response error verbatim when one is present', () => {
-  const error = new Error('server says no');
-  expect(() => unwrap({ success: false, error })).toThrow('server says no');
-});
+type ExtraRoles = Exclude<ProjectRole, 'manager' | 'member'>;
+const noExtraRoles: [ExtraRoles] extends [never] ? true : false = true;
 
-test('unwrap falls back to the default message when there is no response error', () => {
-  expect(() => unwrap({ success: false })).toThrow('Project request failed');
-});
+type MissingRoles = Exclude<'manager' | 'member', ProjectRole>;
+const noMissingRoles: [MissingRoles] extends [never] ? true : false = true;
 
-test('unwrap falls back to a caller-supplied message instead of the generic default', () => {
-  expect(() => unwrap({ success: false }, 'Failed to connect')).toThrow('Failed to connect');
-});
+const ALL_PROJECT_ROLES: ProjectRole[] = ['manager', 'member'];
 
-test('unwrap treats success:true with no data as a failure too', () => {
-  expect(() => unwrap({ success: true }, 'Failed to load Slack manifest')).toThrow(
-    'Failed to load Slack manifest',
-  );
+describe('ProjectRole', () => {
+  test('is exactly manager | member — `editor` is removed', () => {
+    expect(noExtraRoles).toBe(true);
+    expect(noMissingRoles).toBe(true);
+    expect(ALL_PROJECT_ROLES).toEqual(['manager', 'member']);
+  });
 });

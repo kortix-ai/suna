@@ -717,6 +717,12 @@ base_url = "https://example.com"
 });
 
 describe('validateManifest — Kortix Apps', () => {
+  // This fixture used to set `NODE_ENV` here. It was never deployable: the API
+  // refuses reserved env names when it builds a deployment's environment, and
+  // `NODE_ENV` is on that list. The validator simply did not know, so the
+  // fixture encoded a manifest that passed `validate` and failed `deploy` —
+  // the exact drift `app-env-reserved.test.ts` now prevents. Renamed rather
+  // than deleted, because what this test is actually about is the v2 App map.
   test('rejects the retired v1 section and accepts the provider-neutral v2 map', () => {
     expect(summarize('kortix_version = 1\n[[apps]]\nslug = "site"').errorPaths).toContain('apps');
     const v2 = validateManifest(
@@ -738,7 +744,7 @@ apps:
       memory_gb: 2
       disk_gb: 10
     env:
-      NODE_ENV: production
+      APP_MODE: production
     secrets:
       DATABASE_URL: DATABASE_URL`,
       'yaml',

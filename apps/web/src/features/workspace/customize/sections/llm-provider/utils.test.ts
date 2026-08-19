@@ -1,12 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
-  costBandLabel,
   formatPricePerMillion,
   formatTokenCount,
-  formatWordCapacity,
   gatewayModelId,
-  modelPlainSummary,
   orderProviderRows,
   pickInitialTab,
   providerDisconnectPlan,
@@ -152,8 +149,8 @@ describe('orderProviderRows — a saved key never moves a row', () => {
       search,
     }).map((provider) => provider.id);
 
-  test('with nothing connected, the list is the first-class three in declared order', () => {
-    expect(order([])).toEqual(['anthropic', 'openai', 'google']);
+  test('the whole catalog renders, first-class three first, then catalog order', () => {
+    expect(order([])).toEqual(['anthropic', 'openai', 'google', 'groq', 'mistral']);
   });
 
   // THE regression. Anthropic is first before it has a key and first after.
@@ -163,15 +160,19 @@ describe('orderProviderRows — a saved key never moves a row', () => {
   });
 
   test('connecting every one of them still does not reorder anything', () => {
-    expect(order(['google', 'openai', 'anthropic'])).toEqual(['anthropic', 'openai', 'google']);
+    expect(order(['google', 'openai', 'anthropic'])).toEqual(order([]));
   });
 
-  test('a connected long-tail provider joins the list, after the first-class three', () => {
-    expect(order(['groq'])).toEqual(['anthropic', 'openai', 'google', 'groq']);
+  // THE second regression, and the reason the long tail is not sorted by
+  // connectedness: a connected provider keeps its catalog position instead of
+  // being promoted above the ones next to it.
+  test('connecting a long-tail provider does not move it either', () => {
+    expect(order(['groq'])).toEqual(['anthropic', 'openai', 'google', 'groq', 'mistral']);
   });
 
-  test('an unconnected long-tail provider stays out of the default list', () => {
-    expect(order([])).not.toContain('groq');
+  test('an unconnected long-tail provider is listed anyway — every provider shows', () => {
+    expect(order([])).toContain('groq');
+    expect(order([])).toContain('mistral');
   });
 
   test('a connected provider is never listed twice', () => {
@@ -199,8 +200,8 @@ describe('orderProviderRows — a saved key never moves a row', () => {
     expect(find('aws_access')).toEqual(['amazon-bedrock']);
   });
 
-  test('whitespace is not a search — it shows the default list, not everything', () => {
-    expect(order([], '   ')).toEqual(['anthropic', 'openai', 'google']);
+  test('whitespace is not a search — it shows the ordered full list, unfiltered', () => {
+    expect(order([], '   ')).toEqual(['anthropic', 'openai', 'google', 'groq', 'mistral']);
   });
 
   test('a first-class id missing from the catalog is skipped, not rendered empty', () => {
@@ -211,114 +212,6 @@ describe('orderProviderRows — a saved key never moves a row', () => {
       search: '',
     }).map((provider) => provider.id);
     expect(ids).toEqual(['openai']);
-  });
-});
-
-describe('formatWordCapacity — a context window in words', () => {
-  test('translates the common window sizes', () => {
-    expect(formatWordCapacity(200_000)).toBe('about 150,000 words');
-    expect(formatWordCapacity(128_000)).toBe('about 96,000 words');
-  });
-
-  test('switches to millions past a million words', () => {
-    expect(formatWordCapacity(2_000_000)).toBe('about 1.5 million words');
-  });
-
-  test('a million-token window is still counted in words, not millions', () => {
-    expect(formatWordCapacity(1_000_000)).toBe('about 750,000 words');
-  });
-
-  test('is empty for an unknown window, so the caller renders nothing', () => {
-    expect(formatWordCapacity(null)).toBe('');
-    expect(formatWordCapacity(undefined)).toBe('');
-    expect(formatWordCapacity(0)).toBe('');
-  });
-});
-
-describe('costBandLabel — price in words, and only price', () => {
-  test('bands on the output rate', () => {
-    expect(costBandLabel(0.5)).toBe('Low cost');
-    expect(costBandLabel(15)).toBe('Higher cost');
-    expect(costBandLabel(75)).toBe('Higher cost');
-  });
-
-  test('the boundaries land in the band above', () => {
-    expect(costBandLabel(1.99)).toBe('Low cost');
-    expect(costBandLabel(2)).toBe('Mid cost');
-    expect(costBandLabel(14.99)).toBe('Mid cost');
-  });
-
-  test('a free model says so', () => {
-    expect(costBandLabel(0)).toBe('Free to run');
-  });
-
-  test('is empty when the rate is unknown', () => {
-    expect(costBandLabel(null)).toBe('');
-    expect(costBandLabel(undefined)).toBe('');
-  });
-
-  /**
-   * The bands describe PRICE. If one of them ever starts implying quality
-   * ("best", "balanced", "recommended"), this file has no basis for the claim
-   * and the row starts steering a choice it is only supposed to inform.
-   */
-  test('no band makes a quality claim', () => {
-    const labels = [0, 0.5, 5, 50].map((usd) => costBandLabel(usd).toLowerCase());
-    for (const label of labels) {
-      for (const word of ['best', 'balanced', 'recommended', 'smartest', 'worst']) {
-        expect(label).not.toContain(word);
-      }
-    }
-  });
-});
-
-describe('modelPlainSummary — the one line under a model name', () => {
-  /**
-   * This single line carries everything the row used to spend three extra
-   * lines on — the wire id, the capability glyphs, and `200K ctx · $3.00 /
-   * $15.00 per 1M`. If it stops covering all three, the row silently loses
-   * information rather than looking wrong.
-   */
-  test('reads as cost, then capabilities, then size', () => {
-    expect(
-      modelPlainSummary({
-        reasoning: true,
-        vision: true,
-        outputUsdPerMillion: 15,
-        contextTokens: 200_000,
-      }),
-    ).toBe('Higher cost · reads images · thinks before answering · holds about 150,000 words');
-  });
-
-  test('drops the capabilities a model does not have', () => {
-    expect(modelPlainSummary({ vision: true, outputUsdPerMillion: 1 })).toBe(
-      'Low cost · reads images',
-    );
-  });
-
-  test('the context window is stated in words, never in tokens', () => {
-    const out = modelPlainSummary({ outputUsdPerMillion: 3, contextTokens: 128_000 });
-    expect(out).toBe('Mid cost · holds about 96,000 words');
-    expect(out).not.toContain('token');
-    expect(out).not.toContain('ctx');
-    expect(out).not.toContain('K');
-  });
-
-  test('an unknown context window adds nothing rather than a zero', () => {
-    expect(modelPlainSummary({ outputUsdPerMillion: 3, contextTokens: null })).toBe('Mid cost');
-  });
-
-  /**
-   * Tool calling is deliberately NOT in the summary — near every served model
-   * has it, so a phrase on 95% of rows is one more word to scan past and no
-   * information. It stays in the technical details line.
-   */
-  test('says nothing about tool calling', () => {
-    expect(modelPlainSummary({ reasoning: true, outputUsdPerMillion: 3 })).not.toContain('tool');
-  });
-
-  test('is empty when the catalog knows nothing, so the row renders no subtitle', () => {
-    expect(modelPlainSummary({})).toBe('');
   });
 });
 

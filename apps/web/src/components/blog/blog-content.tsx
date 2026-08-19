@@ -42,8 +42,11 @@ export type Block =
 const INLINE = /(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\([^)]+\))/g;
 
 function renderInline(text: string): ReactNode[] {
-  return text.split(INLINE).map((part, i) => {
-    const key = `${i}:${part}`;
+  const seen = new Map<string, number>();
+  return text.split(INLINE).map((part) => {
+    const n = seen.get(part) ?? 0;
+    seen.set(part, n + 1);
+    const key = n ? `${part}#${n}` : part;
     if (part.startsWith('**') && part.endsWith('**')) {
       return (
         <strong key={key} className="text-foreground font-semibold">
@@ -289,12 +292,34 @@ function BlockView({ block }: { block: Block }) {
   }
 }
 
+function blockContent(block: Block): string {
+  switch (block.type) {
+    case 'ul':
+      return block.items.join('|');
+    case 'code':
+      return block.code;
+    case 'logos':
+      return block.label ?? block.items.map((logo) => logo.domain).join('|');
+    case 'verdict':
+    case 'compare':
+      return block.them;
+    case 'cta':
+      return block.title;
+    default:
+      return block.text;
+  }
+}
+
 export function BlogContent({ blocks }: { blocks: Block[] }) {
+  const seen = new Map<string, number>();
   return (
     <div className="mt-10">
-      {blocks.map((block, i) => (
-        <BlockView key={`${block.type}:${i}`} block={block} />
-      ))}
+      {blocks.map((block) => {
+        const base = `${block.type}:${blockContent(block).slice(0, 80)}`;
+        const n = seen.get(base) ?? 0;
+        seen.set(base, n + 1);
+        return <BlockView key={n ? `${base}#${n}` : base} block={block} />;
+      })}
     </div>
   );
 }

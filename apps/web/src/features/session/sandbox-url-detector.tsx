@@ -328,12 +328,12 @@ export function CodeBlockEndpoints({ content, className }: CodeBlockEndpointsPro
   const safeContent = stripKortixSystemTags(rawContent);
 
   const urls = useMemo(() => {
-    return detectLocalhostUrls(safeContent)
-      .filter((d) => d.inCodeBlock)
-      .map((d) => ({
-        detected: d,
-        proxyUrl: proxyUrl(d.originalUrl) ?? d.originalUrl,
-      }));
+    const detected: { detected: DetectedLocalhostUrl; proxyUrl: string }[] = [];
+    for (const d of detectLocalhostUrls(safeContent)) {
+      if (!d.inCodeBlock) continue;
+      detected.push({ detected: d, proxyUrl: proxyUrl(d.originalUrl) ?? d.originalUrl });
+    }
+    return detected;
   }, [safeContent, proxyUrl]);
 
   if (urls.length === 0) return null;
@@ -345,7 +345,7 @@ export function CodeBlockEndpoints({ content, className }: CodeBlockEndpointsPro
         className,
       )}
     >
-      {[...urls, ...urls].map(({ detected: d, proxyUrl: resolved }) => (
+      {urls.map(({ detected: d, proxyUrl: resolved }) => (
         <SandboxUrlChip key={`code-${d.port}-${d.path}`} detected={d} proxyUrl={resolved} />
       ))}
     </div>

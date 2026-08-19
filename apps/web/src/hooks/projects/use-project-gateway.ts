@@ -1,10 +1,8 @@
 'use client';
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import {
-  type GatewayModelGenerationConfig,
-  type GatewayPlaygroundResponse,
   type SetGatewayBudgetInput,
   createGatewayKey,
   deleteGatewayBudget,
@@ -18,7 +16,6 @@ import {
   getGatewaySessions,
   listGatewayLogs,
   revokeGatewayKey,
-  runGatewayPlayground,
   setGatewayBudget,
 } from '@/lib/projects-gateway-client';
 import { contract, qk } from '@kortix/sdk/react';
@@ -68,12 +65,29 @@ export function useGatewayErrors(projectId: string | undefined, days = 30) {
   });
 }
 
+/** Matches the route's `LIST_LIMIT_MAX`, so one click pulls a full server page. */
+export const GATEWAY_LOGS_PAGE_SIZE = 100;
+
 export function useGatewayLogs(projectId: string | undefined, opts?: { ok?: boolean }) {
-  return useQuery({
+  return useInfiniteQuery({
     queryKey: qk.project.gatewayLogs(projectId ?? '', opts?.ok ?? null),
-    queryFn: () => listGatewayLogs(projectId!, { ok: opts?.ok, limit: 100 }),
+    queryFn: ({ pageParam }) =>
+      listGatewayLogs(projectId!, {
+        ok: opts?.ok,
+        limit: GATEWAY_LOGS_PAGE_SIZE,
+        offset: pageParam,
+      }),
+    initialPageParam: 0,
+    // The route hard-caps `limit` at 100 and hands back `next_offset` when more
+    // rows exist. Reading only the first page (what this hook used to do) capped
+    // the viewer at the 100 newest requests with nothing in the UI saying so.
+    getNextPageParam: (last) => last.next_offset ?? undefined,
     enabled: !!projectId,
-    refetchInterval: 10_000,
+    // Live-tail only while the newest page is the ONLY page. An infinite query
+    // refetches every loaded page on each tick, so polling after the reader has
+    // paged back through history means N requests per interval and rows moving
+    // under the keyboard cursor.
+    refetchInterval: (query) => ((query.state.data?.pages.length ?? 1) > 1 ? false : 10_000),
   });
 }
 
@@ -98,8 +112,7 @@ export function useSetGatewayBudget(projectId: string | undefined) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (input: SetGatewayBudgetInput) => setGatewayBudget(projectId!, input),
-    onSuccess: () =>
-      qc.invalidateQueries({ queryKey: qk.project.gatewayBudgets(projectId ?? '') }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.project.gatewayBudgets(projectId ?? '') }),
   });
 }
 
@@ -107,8 +120,7 @@ export function useDeleteGatewayBudget(projectId: string | undefined) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (budgetId: string) => deleteGatewayBudget(projectId!, budgetId),
-    onSuccess: () =>
-      qc.invalidateQueries({ queryKey: qk.project.gatewayBudgets(projectId ?? '') }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.project.gatewayBudgets(projectId ?? '') }),
   });
 }
 
@@ -137,19 +149,9 @@ export function useRevokeGatewayKey(projectId: string | undefined) {
   });
 }
 
-export interface RunGatewayPlaygroundInput {
-  prompt: string;
-  models: string[];
-  system?: string;
-  /** Per-model generation-parameter overrides for this run only — see
-   *  `runGatewayPlayground`'s doc comment. */
-  generationConfig?: Record<string, GatewayModelGenerationConfig>;
-}
-
-/** Run one prompt across up to 6 models side by side — no cache, always a fresh run. */
-export function useGatewayPlayground(projectId: string | undefined) {
-  return useMutation<GatewayPlaygroundResponse, Error, RunGatewayPlaygroundInput>({
-    mutationFn: ({ prompt, models, system, generationConfig }) =>
-      runGatewayPlayground(projectId!, prompt, models, system, generationConfig),
-  });
-}
+// The Playground's `useGatewayPlayground` hook lived here. Its one consumer,
+// `gateway-playground.tsx`, is deleted — a prompt box that fanned one message
+// across models, next to a product whose entire surface is a session that does
+// the same thing with the real runtime behind it. The transport
+// (`runGatewayPlayground`) and the API route it calls are untouched; only this
+// unused React binding is gone.

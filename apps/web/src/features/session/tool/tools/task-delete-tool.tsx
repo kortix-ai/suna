@@ -12,7 +12,7 @@ import { TrashIcon as Trash2 } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useMemo } from 'react';
 
-export function TaskDeleteTool({ part, forceOpen }: ToolProps) {
+export function TaskDeleteTool({ part, defaultOpen, forceOpen }: ToolProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const output = partOutput(part);
   const status = partStatus(part);
@@ -25,6 +25,7 @@ export function TaskDeleteTool({ part, forceOpen }: ToolProps) {
     <BasicTool
       icon={<Trash2 className="size-3.5 shrink-0" />}
       trigger={{ title: 'Delete task', subtitle: isError ? 'failed' : undefined }}
+      defaultOpen={defaultOpen}
       forceOpen={forceOpen}
     >
       {isError ? (

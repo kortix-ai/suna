@@ -124,7 +124,7 @@ export function ApplyPatchTool({ part, defaultOpen, forceOpen, locked }: ToolPro
               file.before != null || file.after != null || !!file.patch || !!file.diff;
 
             return (
-              <div key={i}>
+              <div key={`${typeKey}:${relPath}`}>
                 {/* Same row grammar as the file and source lists: leading
 								    glyph, name taking the free space, secondary detail parked
 								    right. The separator rules between files are gone — inside a

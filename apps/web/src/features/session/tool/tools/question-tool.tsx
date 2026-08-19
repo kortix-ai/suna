@@ -165,7 +165,7 @@ export function QuestionTool({
       {total > 0 ? (
         <div data-scrollable className="max-h-96 space-y-3 overflow-auto">
           {questions.map((q, i) => (
-            <div key={i} className={cn(i > 0 && 'border-border border-t pt-3')}>
+            <div key={q.question} className={cn(i > 0 && 'border-border border-t pt-3')}>
               <QuestionAnswerBlock question={q} index={i} answers={answers[i] ?? NO_ANSWERS} />
             </div>
           ))}

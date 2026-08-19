@@ -127,7 +127,7 @@ await kortix.project(pid).secrets.upsert({
 const visibleSessions = await kortix.project(pid).sessions.list();
 const projectInventory = await kortix
   .project(pid)
-  .sessions.list({ scope: "project" }); // manager only
+  .sessions.list({ scope: "project" }); // manager only; inaccessible rows omitted
 const warm = await kortix.project(pid).sessions.ensureWarm(); // ordinary session, pre-created
 
 // Sessions (id-bound handle)
@@ -494,7 +494,7 @@ Stable, tree-shakeable surfaces (also reachable via the facade). Not exhaustive
 | `@kortix/sdk/server`                                  | **Node/Bun only** — `runWithKortix`, `createScopedKortix`, `getScopedConfig` (per-request config isolation; see "Kortix as a Backend")                                                                                                                            |
 | `@kortix/sdk/react`                                   | every `useOpenCode*` hook + providers (reactive data), `useSession`, `useChatTurns`/`renderParts`, domain hooks (`useProjectSecrets`/`useProjectTriggers`/`useChangeRequests`)                                                                                    |
 | `@kortix/sdk/turns`                                   | framework-free part/turn classification (`classifyPart`, `classifyTurn`, `toolInfo`, turn grouping/cost helpers)                                                                                                                                                  |
-| `@kortix/sdk/files`                                   | workspace file ops (daemon `/file` + `/find`): `listFiles`, `readFile`, `readBlob`, `getFileStatus`, `findFiles`, `findText`, `uploadFile`, `deleteFile`, `mkdir`, `renameFile`, …                                                                                |
+| `@kortix/sdk/files`                                   | workspace file ops (daemon `/file` + `/find`): `listFiles`, `readFile`, `readBlob`, `getFileStatus`, `findFiles`, `findText`, `uploadFile`, `writeFile` (the only op that OVERWRITES — `uploadFile` never does), `deleteFile`, `mkdir`, `renameFile`, …           |
 | `@kortix/sdk/session`                                 | a session's runtime surface — `getSessionHealth`/`isRuntimeReady` + proxy/preview URL builders (`rewriteLocalhostUrl`, `proxyLocalhostUrl`, `detectLocalhostUrls`, …) + preview-auth helpers. **No "sandbox" in the public surface** — a session owns its runtime |
 | `@kortix/sdk/opencode-client`                         | `getClient`, `getClientForUrl` + the **full opencode v2 type surface** (`Event`, `Part`, `Message`, `Session`, `Pty`, `Config`, …)                                                                                                                                |
 | `@kortix/sdk/projects-client`                         | the raw REST functions (the facade wraps these)                                                                                                                                                                                                                   |

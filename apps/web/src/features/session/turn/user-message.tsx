@@ -256,6 +256,25 @@ const DCP_REASON_LABELS: Record<string, string> = {
   extraction: 'Extraction',
 };
 
+/**
+ * Stable content-derived React keys for immutable parsed lists whose items
+ * carry no id. Duplicate content gets an occurrence suffix so keys stay
+ * unique; the lists never reorder (they are pure derivations of one message
+ * text), so occurrence order is part of an item's identity.
+ */
+function withContentKeys<T>(
+  items: readonly T[],
+  contentOf: (item: T) => string,
+): { key: string; item: T }[] {
+  const seen = new Map<string, number>();
+  return items.map((item) => {
+    const content = contentOf(item);
+    const n = seen.get(content) ?? 0;
+    seen.set(content, n + 1);
+    return { key: n === 0 ? content : `${content}~${n}`, item };
+  });
+}
+
 function formatDCPTokens(tokens: number): string {
   if (tokens >= 1000) {
     const k = (tokens / 1000).toFixed(1).replace('.0', '');
@@ -329,19 +348,24 @@ function DCPNotificationCard({ notification }: { notification: DCPNotification }
           {/* Pruned items list */}
           {hasItems && (
             <div className="space-y-0.5">
-              {notification.items.map((item, i) => (
-                <div key={i} className="text-muted-foreground/80 flex items-center gap-2 text-xs">
-                  <span className="text-muted-foreground/40">
-                    {tHardcodedUi.raw('componentsSessionSessionChat.line1124JsxTextRarr')}
-                  </span>
-                  <span className="bg-muted/50 text-muted-foreground/70 rounded px-1 py-0.5 font-mono text-xs">
-                    {item.tool}
-                  </span>
-                  {item.description && (
-                    <span className="max-w-[300px] truncate">{item.description}</span>
-                  )}
-                </div>
-              ))}
+              {withContentKeys(notification.items, (it) => `${it.tool}:${it.description}`).map(
+                ({ key, item }) => (
+                  <div
+                    key={key}
+                    className="text-muted-foreground/80 flex items-center gap-2 text-xs"
+                  >
+                    <span className="text-muted-foreground/40">
+                      {tHardcodedUi.raw('componentsSessionSessionChat.line1124JsxTextRarr')}
+                    </span>
+                    <span className="bg-muted/50 text-muted-foreground/70 rounded px-1 py-0.5 font-mono text-xs">
+                      {item.tool}
+                    </span>
+                    {item.description && (
+                      <span className="max-w-[300px] truncate">{item.description}</span>
+                    )}
+                  </div>
+                ),
+              )}
             </div>
           )}
 
@@ -382,13 +406,22 @@ function DCPNotificationCard({ notification }: { notification: DCPNotification }
   );
 }
 
-const BUBBLE_TEXT = cn(
+/**
+ * Exported so `optimistic-turn.tsx` imports these instead of keeping its own
+ * copy. It used to keep one, "matching this file" by comment only — the two
+ * drifted on background shade once already (fixed), then drifted again on
+ * padding/radius (`px-3 py-2.5 rounded-lg` vs `px-4.5 py-3.5 rounded-xl`),
+ * which is a visible bubble-size jump the instant a sent message's optimistic
+ * turn hands over to the real server turn. A shared constant makes that
+ * handover a no-op instead of a maintenance promise.
+ */
+export const BUBBLE_TEXT = cn(
   'text-[0.9rem] leading-[22px] font-medium',
   'wrap-break-word whitespace-pre-wrap select-text',
 );
 
-const BUBBLE_SURFACE = cn(
-  'bg-sidebar dark:bg-muted text-foreground flex max-w-full  flex-col px-3 py-2.5 select-none rounded-lg',
+export const BUBBLE_SURFACE = cn(
+  'bg-sidebar dark:bg-muted text-foreground flex max-w-full flex-col px-4.5 py-3.5 select-none rounded-xl',
 );
 
 export interface NormalizedAttachment {
@@ -401,9 +434,22 @@ export interface NormalizedAttachment {
   pending?: boolean;
 }
 
+/**
+ * The attachment strip's input: message file-parts plus parsed upload refs.
+ *
+ * Uploads are keyed by POSITION first, then by their pending id or path. Keying
+ * on the path alone was a duplicate-key generator: an optimistic ref carries no
+ * path at all until the daemon answers, and three screenshots pasted in one
+ * message are all named `image.png`, so they used to produce three identical
+ * `upload:/workspace/uploads/image.png` keys and React collapsed them.
+ *
+ * A ref with no path is still in flight, so it renders `pending` — a spinner
+ * over its own name — instead of asking the sandbox for a file that does not
+ * exist yet.
+ */
 export function normalizeAttachments(
   parts: FilePart[],
-  uploads: ReadonlyArray<{ path: string; mime: string; filename: string }>,
+  uploads: ReadonlyArray<{ path: string; mime: string; filename: string; pending?: string }>,
 ): NormalizedAttachment[] {
   return [
     ...parts.map((file) => ({
@@ -412,12 +458,13 @@ export function normalizeAttachments(
       mime: file.mime,
       src: file.url,
     })),
-    ...uploads.map((file) => ({
-      key: `upload:${file.path}`,
+    ...uploads.map((file, index) => ({
+      key: `upload:${index}:${file.pending ?? file.path}`,
       filename: file.filename || getFilename(file.path),
       mime: file.mime,
-      src: file.path,
-      path: file.path,
+      src: file.path || undefined,
+      path: file.path || undefined,
+      pending: Boolean(file.pending) || !file.path,
     })),
   ];
 }
@@ -880,11 +927,13 @@ export function UserMessage({
 
   // Extract text from sticky parts, parse out <file> and <session_ref> XML references
   // Filter out both synthetic AND ignored parts from user-visible text
-  const visibleTextParts = stickyParts
-    .filter(isTextPart)
-    .filter(
-      (p) => (p as TextPart).text?.trim() && !(p as TextPart).synthetic && !(p as any).ignored,
-    ) as TextPart[];
+  const visibleTextParts = stickyParts.filter(
+    (p) =>
+      isTextPart(p) &&
+      (p as TextPart).text?.trim() &&
+      !(p as TextPart).synthetic &&
+      !(p as any).ignored,
+  ) as TextPart[];
   const rawVisibleText = visibleTextParts.map((p) => p.text).join('\n');
   const rawText = stripSystemPtyText(rawVisibleText);
   const { cleanText: textAfterReply, replyContext } = useMemo(
@@ -965,14 +1014,13 @@ export function UserMessage({
     : text;
 
   const copyText = useMemo(() => {
-    const textParts = message.parts.filter(
-      (p) => isTextPart(p) && !(p as TextPart).synthetic && !(p as any).ignored,
-    ) as TextPart[];
-    return textParts
-      .map((p) => stripSystemPtyText(p.text))
-      .filter((t) => t.trim())
-      .join('\n')
-      .trim();
+    const lines: string[] = [];
+    for (const p of message.parts) {
+      if (!isTextPart(p) || (p as TextPart).synthetic || (p as any).ignored) continue;
+      const stripped = stripSystemPtyText((p as TextPart).text);
+      if (stripped.trim()) lines.push(stripped);
+    }
+    return lines.join('\n').trim();
   }, [message.parts]);
 
   const rewindPromptText = useMemo(() => {
@@ -1020,9 +1068,9 @@ export function UserMessage({
   }, [rawText]);
 
   // Extract DCP notifications from ignored text parts (DCP plugin sends ignored user messages)
-  const ignoredTextParts = stickyParts
-    .filter(isTextPart)
-    .filter((p) => (p as any).ignored && (p as TextPart).text?.trim());
+  const ignoredTextParts = stickyParts.filter(
+    (p) => isTextPart(p) && (p as any).ignored && (p as TextPart).text?.trim(),
+  );
   const ignoredRawText = ignoredTextParts.map((p) => (p as TextPart).text).join('\n');
   const dcpNotifications = useMemo(() => {
     if (!ignoredRawText) return [];
@@ -1122,16 +1170,23 @@ export function UserMessage({
   // Build highlighted text segments — see `../mention-segments.ts`. The walk
   // used to live inline here and in `optimistic-turn.tsx`, and the two copies
   // had already diverged.
-  const segments = useMemo(
-    () =>
-      buildMentionSegments({
-        text: bodyText,
-        sourceRefs,
-        sessionTitles,
-        agentNames,
-      }),
-    [bodyText, sourceRefs, sessionTitles, agentNames],
-  );
+  const segments = useMemo(() => {
+    const segs = buildMentionSegments({
+      text: bodyText,
+      sourceRefs,
+      sessionTitles,
+      agentNames,
+    });
+    // A segment's identity is its character offset in the text — stable across
+    // renders, unlike the array index the keys used before.
+    const keyed = [];
+    let offset = 0;
+    for (const seg of segs) {
+      keyed.push({ ...seg, key: `${offset}-${seg.type ?? 'text'}` });
+      offset += seg.text.length;
+    }
+    return keyed;
+  }, [bodyText, sourceRefs, sessionTitles, agentNames]);
 
   const openSessionMention = (raw: string) => {
     // Direct session ID (ses_...) — navigate without title lookup
@@ -1168,12 +1223,14 @@ export function UserMessage({
   if (!hasUserContent && (dcpNotifications.length > 0 || systemNotifications.length > 0)) {
     return (
       <div className="flex w-full flex-col gap-1.5">
-        {systemNotifications.map((n, i) => (
-          <SystemNotificationCard key={`${n.tag}-${i}`} notification={n} />
+        {withContentKeys(systemNotifications, (n) => n.tag).map(({ key, item }) => (
+          <SystemNotificationCard key={key} notification={item} />
         ))}
-        {dcpNotifications.map((n, i) => (
-          <DCPNotificationCard key={i} notification={n} />
-        ))}
+        {withContentKeys(dcpNotifications, (n) => `${n.type}:${n.tokensSaved}`).map(
+          ({ key, item }) => (
+            <DCPNotificationCard key={key} notification={item} />
+          ),
+        )}
       </div>
     );
   }
@@ -1271,15 +1328,17 @@ export function UserMessage({
       {/* DCP notifications from ignored parts (rendered below user bubble if mixed) */}
       {dcpNotifications.length > 0 && (
         <div className="mt-1 flex w-full flex-col gap-1.5">
-          {dcpNotifications.map((n, i) => (
-            <DCPNotificationCard key={i} notification={n} />
-          ))}
+          {withContentKeys(dcpNotifications, (n) => `${n.type}:${n.tokensSaved}`).map(
+            ({ key, item }) => (
+              <DCPNotificationCard key={key} notification={item} />
+            ),
+          )}
         </div>
       )}
       {systemNotifications.length > 0 && (
         <div className="mt-1 flex w-full flex-col gap-1.5">
-          {systemNotifications.map((n, i) => (
-            <SystemNotificationCard key={`mixed-${n.tag}-${i}`} notification={n} />
+          {withContentKeys(systemNotifications, (n) => `mixed-${n.tag}`).map(({ key, item }) => (
+            <SystemNotificationCard key={key} notification={item} />
           ))}
         </div>
       )}
@@ -1312,17 +1371,17 @@ export function UserMessage({
                   {bodyText ? ' ' : null}
                 </>
               )}
-              {segments.map((seg, i) =>
+              {segments.map((seg) =>
                 seg.type === 'file' ? (
                   <MentionChip
-                    key={i}
+                    key={seg.key}
                     kind="file"
                     label={seg.text.replace(/^@/, '')}
                     onClick={() => openFileInComputer(seg.text.replace(/^@/, ''))}
                   />
                 ) : seg.type === 'session' ? (
                   <MentionChip
-                    key={i}
+                    key={seg.key}
                     kind="session"
                     label={seg.text.replace(/^@/, '')}
                     onClick={() => openSessionMention(seg.text.replace(/^@/, ''))}
@@ -1330,9 +1389,9 @@ export function UserMessage({
                 ) : seg.type === 'agent' ? (
                   // Static: an agent is named, not navigable. Same surface,
                   // no press affordance it cannot honour.
-                  <MentionChip key={i} kind="agent" label={seg.text.replace(/^@/, '')} />
+                  <MentionChip key={seg.key} kind="agent" label={seg.text.replace(/^@/, '')} />
                 ) : (
-                  <span key={i}>{seg.text}</span>
+                  <span key={seg.key}>{seg.text}</span>
                 ),
               )}
             </>

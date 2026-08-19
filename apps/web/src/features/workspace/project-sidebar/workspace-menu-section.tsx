@@ -1,8 +1,19 @@
 'use client';
 
 /**
- * The workspace-picker SUBMENU of the sidebar's account menu: search, every
- * workspace in every account, and the create row.
+ * The workspace-picker SUBMENU of the sidebar's account menu: search, the
+ * current account's settings, every workspace in every account, and the create
+ * row.
+ *
+ * Account settings appears twice, on purpose, and both are the same
+ * destination:
+ *
+ * - as a labelled row above the list, which is how you FIND it;
+ * - as what the already-active workspace row does when you click it, which is
+ *   the click that used to do nothing at all (`resolveWorkspaceRowNavigation`).
+ *
+ * The second is not a hidden gesture — it is the row that carries the account
+ * you are in, and the first row teaches the destination.
  *
  * Reached from "Switch Workspace" in that menu — a `DropdownMenuSub`, the same
  * shape as Theme and Help, so all three read as one family. Radix owns opening,
@@ -12,7 +23,7 @@
  * only: no `DropdownMenu`, no trigger, no portal of its own.
  */
 
-import { MagnifyingGlassIcon as Search } from '@phosphor-icons/react';
+import { GearSixIcon as CogOne, MagnifyingGlassIcon as Search } from '@phosphor-icons/react';
 import { useQueries, useQuery } from '@tanstack/react-query';
 import { useParams, usePathname, useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
@@ -22,6 +33,7 @@ import {
   DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { Input } from '@/components/ui/input';
@@ -30,6 +42,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import {
   filterWorkspaceGroups,
   groupWorkspacesByAccount,
+  resolveSwitcherAccountId,
+  resolveWorkspaceRowNavigation,
 } from '@/features/workspace/project-sidebar/workspace-grouping';
 import { cn } from '@/lib/utils';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
@@ -89,9 +103,9 @@ export function WorkspaceMenuSection() {
   // `groupWorkspacesByAccount` drops any account with zero workspaces, and
   // `undefined` data folds to `[]` on error, so without this the account would
   // vanish indistinguishably from "genuinely has no workspaces".
-  const failedAccounts = accounts
-    .map((account, i) => ({ account, result: workspaceQueries[i] }))
-    .filter(({ result }) => result.isError);
+  const failedAccounts = accounts.flatMap((account, i) =>
+    workspaceQueries[i].isError ? [{ account, result: workspaceQueries[i] }] : [],
+  );
 
   const groups = useMemo(
     () =>
@@ -104,6 +118,17 @@ export function WorkspaceMenuSection() {
   );
   const visibleGroups = useMemo(() => filterWorkspaceGroups(groups, query), [groups, query]);
 
+  // The account "Account settings" opens, and the account every row in the
+  // list below belongs to when there is only one. `null` while the user's
+  // accounts are still unknown — the row is withheld rather than pointed at
+  // `/accounts/null`. See `resolveSwitcherAccountId` for the order.
+  const switcherAccountId = resolveSwitcherAccountId({
+    accounts,
+    workspaces: allWorkspaces,
+    activeWorkspaceId: activeProjectId ?? null,
+    selectedAccountId,
+  });
+
   // A failed account never appears in `groups` (it has zero workspaces, and
   // `groupWorkspacesByAccount` drops those), so it must not count toward "empty"
   // either — that would show "No workspaces yet" over an account we simply failed
@@ -112,13 +137,23 @@ export function WorkspaceMenuSection() {
 
   // No explicit close: these are `DropdownMenuItem`s, and Radix closes the menu
   // on select unless the handler calls `preventDefault`.
-  const switchProject = (project: KortixProject) => {
-    if (project.project_id === activeProjectId) return;
-    beginSwitch(project.project_id);
-    // Keep the account store in step with the workspace actually being opened;
-    // otherwise account-scoped surfaces keep answering for the previous one.
-    if (project.account_id !== selectedAccountId) setSelectedAccountId(project.account_id);
-    router.push(`/projects/${project.project_id}`);
+  //
+  // Two destinations, not one — see `resolveWorkspaceRowNavigation`. The row
+  // you are already in used to `return` here, so clicking the one row the menu
+  // marks with a checkmark spent the click and did nothing; it now opens that
+  // workspace's ACCOUNT settings. `beginSwitch` and the account-store write are
+  // switch-only: there is no project switch to narrate, and the account is
+  // already the selected one.
+  const openWorkspaceRow = (project: KortixProject) => {
+    const target = resolveWorkspaceRowNavigation(project, activeProjectId);
+    if (target.kind === 'switch') {
+      beginSwitch(project.project_id);
+      // Keep the account store in step with the workspace actually being
+      // opened; otherwise account-scoped surfaces keep answering for the
+      // previous one.
+      if (project.account_id !== selectedAccountId) setSelectedAccountId(project.account_id);
+    }
+    router.push(target.href);
   };
 
   return (
@@ -143,6 +178,32 @@ export function WorkspaceMenuSection() {
           />
         </div>
       </div>
+
+      {/* Above the list, not in it. The account is what the workspaces below
+          hang off, so it reads first — and it is deliberately NOT dressed as a
+          workspace row: an icon where those carry an `EntityAvatar`, and a
+          separator under it, so nothing here looks like a workspace you could
+          switch to. Same icon + label dialect as the User Settings / Download
+          App rows one level up in `workspace-switcher.tsx`.
+
+          Withheld, not disabled, while the account id is unknown: a row that
+          exists but goes nowhere is worse than one that arrives with the rest
+          of the menu's content, and `selectedAccountId` is persisted so on a
+          returning visit it is there from the first paint. */}
+      {switcherAccountId ? (
+        <>
+          <div className="p-0.5">
+            <DropdownMenuItem
+              onSelect={() => router.push(`/accounts/${switcherAccountId}`)}
+              className="cursor-pointer px-1.5"
+            >
+              <CogOne />
+              <span className="min-w-0 flex-1 truncate">Account settings</span>
+            </DropdownMenuItem>
+          </div>
+          <DropdownMenuSeparator />
+        </>
+      ) : null}
 
       {/* Bounded so a long list scrolls inside the submenu rather than growing
           it past the viewport. `min-h` stops the panel collapsing to a sliver on
@@ -179,8 +240,11 @@ export function WorkspaceMenuSection() {
                     <DropdownMenuItem
                       key={workspace.project_id}
                       disabled={loading}
-                      onSelect={() => switchProject(workspace)}
-                      className={cn('cursor-pointer px-1.5', active && 'bg-muted/80')}
+                      onSelect={() => openWorkspaceRow(workspace)}
+                      className={cn(
+                        'group/workspace-row cursor-pointer px-1.5',
+                        active && 'bg-muted/80',
+                      )}
                     >
                       <EntityAvatar label={workspace.name} emoji={workspace.icon} size="sm" />
                       <span className="min-w-0 flex-1 truncate text-sm font-medium">
@@ -189,10 +253,21 @@ export function WorkspaceMenuSection() {
                       {loading ? (
                         <Loading className="text-muted-foreground size-3.5" />
                       ) : active ? (
-                        <CheckCircleSolid
-                          weight="fill"
-                          className="text-kortix-green size-3.5 shrink-0"
-                        />
+                        // The active row navigates to account settings rather
+                        // than switching, so pointing at it swaps the "you are
+                        // here" check for the destination's own icon. Stacked
+                        // rather than swapped in the tree so the trailing
+                        // column keeps one width and the label never reflows.
+                        <span className="relative size-4 shrink-0">
+                          <CheckCircleSolid
+                            weight="fill"
+                            className="text-kortix-green absolute top-0 left-0 transition-opacity duration-150 group-data-[highlighted]/workspace-row:opacity-0"
+                          />
+                          <CogOne
+                            aria-hidden
+                            className="text-muted-foreground absolute top-0 left-0 opacity-0 transition-opacity duration-150 group-data-[highlighted]/workspace-row:opacity-100"
+                          />
+                        </span>
                       ) : null}
                     </DropdownMenuItem>
                   );

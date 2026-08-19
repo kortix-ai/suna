@@ -1,85 +1,81 @@
 /**
- * Turn a queued message that was just removed back into something enqueueable.
+ * Undo for "Removed from queue", against the server inbox.
  *
- * This exists because the Undo button on "Removed from queue" used to rebuild
- * the entry from a hand-written field list — `text`, `mentions`, `agent`,
- * `model`, `variant` — written before the queue could hold anything else. When
- * the queue grew `command` (27279d2232), Undo kept dropping it: removing a
- * queued `/webapp` and pressing Undo returned a plain text message, and if that
- * command had no arguments its `text` is `''`, so the restored entry dispatched
- * an empty prompt. `files` had been dropped by the same list since the day it
- * was written.
+ * The queue row used to live in a browser store, so Undo rebuilt it from a
+ * hand-written field list and put it back at its old index. Every field the
+ * queue grew after that list was written got dropped — `command`, then `files`
+ * — and each drop was silent, under a button labelled "Undo".
  *
- * So this function names what it DROPS, never what it keeps. That inversion is
- * the entire point: a field added to the queue tomorrow is carried by default,
- * and only a deliberate edit here can stop carrying it. A keep-list is a
- * standing invitation to forget.
+ * The row is a server row now and `DELETE .../prompts/:id` hands back exactly
+ * what it destroyed. That response is the only lossless source: the row is
+ * HARD-deleted, and the list view carries only a 2000-char text preview with no
+ * parts at all, so restoring from the list would drop every attachment and the
+ * agent/model/variant picks. So this function names nothing — it re-POSTs what
+ * came back.
  *
- * What is dropped is the queue's own bookkeeping, and each for a reason:
- *
- *   - `id` / `clientMessageId` — minted by the store. The restored entry is a
- *     new entry; the old ids belong to a message that was removed.
- *   - `createdAt` — it is being queued now.
- *   - `attempts` / `lastError` — a restored entry has not been tried yet, and
- *     must not carry the error of a send that never happened. (Undo is offered
- *     for failed entries too, not only pending ones.)
- *
- * Position is not this function's business: `handleRemoveQueuedMessage` puts
- * the entry back at the index it came from, since enqueue always appends.
+ * There is no index to restore. Position in the inbox is `created_at`, and the
+ * server decides delivery order from it; an undone row goes to the back, which
+ * is where a message re-queued a moment later belongs. Its wire message id is
+ * re-minted for the same reason — see `restoreQueuedMessage`.
  */
 
-import { useMessageQueueStore } from '@/stores/message-queue-store';
-import type { EnqueueInput, WebQueuedMessage } from '@/stores/message-queue-store';
+import type { CreateSessionPromptInput, RemovedSessionPrompt } from '@kortix/sdk';
 
-export function restoreQueuedMessage(removed: WebQueuedMessage): EnqueueInput {
-  const {
-    id: _id,
-    clientMessageId: _clientMessageId,
-    createdAt: _createdAt,
-    attempts: _attempts,
-    lastError: _lastError,
-    ...carried
-  } = removed;
-  return carried;
+/**
+ * The re-POST body for a removed prompt: the original CONTENT, a fresh wire id.
+ *
+ * `clientMessageId` is the original, so the inbox's unique idempotency key
+ * makes a repeated undo a no-op rather than a second copy of the message.
+ *
+ * `messageId` is NOT. OpenCode resolves "has this prompt been answered?" by id
+ * ORDER, and the original id was minted when the row was first queued — before
+ * a turn that has been writing higher ids ever since. (Stop, remove, undo is
+ * the ordinary way this happens: by then the aborted turn has written its
+ * assistant messages.) Re-sending under that id makes OpenCode read the prompt
+ * as already answered: the row is marked succeeded, drops out of
+ * `GET /prompts`, and never runs — under a button labelled "Undo" that
+ * reported success. A re-queued prompt belongs at the END of the transcript,
+ * which is where a fresh mint puts it, and which is where `handleSend` puts
+ * every other message.
+ */
+export function restoreQueuedMessage(
+  removed: RemovedSessionPrompt,
+  mintMessageId: () => string,
+): CreateSessionPromptInput {
+  return {
+    clientMessageId: removed.client_message_id,
+    messageId: mintMessageId(),
+    parts: removed.parts,
+    ...(removed.overrides ? { overrides: removed.overrides } : {}),
+  };
 }
 
 /**
- * The Undo action for ONE removed queue entry. Restores it at the position it
- * came from, then refuses to run again.
+ * The Undo action for ONE removed prompt. Runs at most once.
  *
- * Running at most once is the whole reason this is a function rather than an
- * inline handler. `infoToast` renders `options.button` verbatim
- * (`components/ui/toast.tsx`) and the sonner id needed to dismiss the toast is
- * only in scope inside the toast's own render callback — so the button stays on
- * screen for the full 5s after it is pressed. A second press re-ran the restore
- * and the entry came back TWICE: two prompts, or since 27279d2232 two runs of
- * the same `/command`. Dismissing on the first press is the visible half of the
- * fix; the latch is the half that actually holds, because the dismiss animation
- * is not instant and a double-click beats it.
- *
- * `index` is where the entry sat in `pending`, i.e. `-1` when it was removed
- * from `failed`. Negative means "no position to restore" — append — because
- * reordering to a negative index clamps to the head and jumps the queue.
+ * The latch is belt-and-braces beside the server's unique index — a second POST
+ * would be deduped, not duplicated — but it is what stops the second request
+ * being issued at all. `infoToast` renders `options.button` verbatim
+ * (`components/ui/toast.tsx`), so the button stays on screen for the full 5s
+ * after it is pressed, and the dismiss animation is not instant.
  */
 export function createQueueUndoAction(args: {
-  sessionId: string;
-  removed: WebQueuedMessage;
-  /** Its old index in `pending`, or -1 when it came from `failed`. */
-  index: number;
+  removed: RemovedSessionPrompt;
+  /** A wire message id minted NOW, against the live transcript — see
+   *  `restoreQueuedMessage`. */
+  mintMessageId: () => string;
+  enqueue: (input: CreateSessionPromptInput) => Promise<unknown>;
   /** Close the toast that hosts this button. */
   dismiss?: () => void;
+  onError?: (cause: unknown) => void;
 }): () => void {
   let used = false;
   return () => {
     if (used) return;
     used = true;
     args.dismiss?.();
-    const store = useMessageQueueStore.getState();
-    store.enqueue(args.sessionId, restoreQueuedMessage(args.removed));
-    if (args.index < 0) return;
-    // `enqueue` always appends, so the entry is the tail until it is moved.
-    const pending = store.getSessionQueue(args.sessionId).pending;
-    const last = pending[pending.length - 1];
-    if (last) store.reorder(args.sessionId, last.id, args.index);
+    void args
+      .enqueue(restoreQueuedMessage(args.removed, args.mintMessageId))
+      .catch((cause) => args.onError?.(cause));
   };
 }

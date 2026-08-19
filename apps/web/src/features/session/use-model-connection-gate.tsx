@@ -98,10 +98,19 @@ export function useModelConnectionGate(
     () => (llmGatewayEnabled ? models : models.filter((m) => m.providerID !== 'kortix')),
     [models, llmGatewayEnabled],
   );
+  // `project.secret.read` is manager-tier, so for a project `member` this query
+  // was a guaranteed 403 on every project-home render — a permission check
+  // performed by asking the server to refuse. Gate it on the leaf instead.
+  // `allowed === true` also holds the query while the probe is still loading,
+  // so it fires once, when the answer is known, or not at all.
+  const canReadSecrets =
+    useProjectCan(projectId ?? undefined, PROJECT_ACTIONS.PROJECT_SECRET_READ, {
+      accountId: projectDetailQuery.data?.project.account_id,
+    }).allowed === true;
   const secretsQuery = useQuery({
     queryKey: qk.project.secrets(projectId ?? ''),
     queryFn: () => listProjectSecrets(projectId as string),
-    enabled: !!projectId && llmGatewayEnabled,
+    enabled: !!projectId && llmGatewayEnabled && canReadSecrets,
     ...contract('config'),
   });
   const { isPending: accountStatePending } = useAccountState();

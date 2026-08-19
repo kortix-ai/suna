@@ -1,8 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import {
   projectSessionConnectorBindings,
+  projectSessionGrants,
   projectSessionRuntimeContexts,
   projectSessions,
+  sessionLifecycleCommands,
 } from '@kortix/db';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { Context } from 'hono';
@@ -11,6 +13,12 @@ import { checkBillingActive } from '../../billing/services/billing-gate';
 import { accountMayUseManagedModels } from '../../billing/services/entitlements';
 import { type SandboxProviderName, config } from '../../config';
 import { agentMayUseConnector } from '../../iam/agent-scope';
+import {
+  loadSessionGrants,
+  resolveInheritedSessionSharing,
+  type SecretGrant,
+  type SessionVisibility,
+} from '../../connectors/share';
 import { setContextField } from '../../lib/request-context';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import {
@@ -42,6 +50,7 @@ import {
   workspaceFromLoadedAgents,
 } from '../agents';
 import { createRemoteSessionBranch, resolveCommitSha } from '../git';
+import { convertPendingPromptToInboxRow } from '../session-lifecycle/pending-prompt';
 import { resolveSessionSecretGrant } from './secret-grant';
 import {
   AmbiguousSecretGrantError,
@@ -84,6 +93,10 @@ import {
   generateSessionTitleFromFirstPrompt,
   titleSourceForCreate,
 } from '../session-title-generate';
+import {
+  type PreparedInitialSandboxTurn,
+  prepareInitialSandboxTurn,
+} from '../sandbox-turn-lifecycle';
 import { canOverride, resolveSessionOrigin } from './session-origin';
 import { sessionCreatedAuditAttribution } from './session-audit';
 import {
@@ -276,6 +289,7 @@ export async function buildSessionSandboxEnvVars(input: {
   baseRef: string;
   agentName: string;
   initialPrompt?: string | null;
+  initialTurn?: PreparedInitialSandboxTurn | null;
   opencodeModel?: string | null;
   /** Resolved per-project `llm_gateway` feature flag. Gateway ON →
    *  opencode is locked to the gateway and native provider keys are withheld;
@@ -508,6 +522,7 @@ export async function buildSessionSandboxEnvVars(input: {
       apiUrl: deriveKortixApiBase(),
       frontendUrl: sandboxFrontendBaseUrl(),
       initialPrompt: input.initialPrompt,
+      initialTurn: input.initialTurn,
       // Concrete session model after explicit → agent → project → account →
       // platform resolution. The sandbox uses it for the first OpenCode turn
       // and as the session's OpenCode config default.
@@ -577,6 +592,86 @@ export function sandboxCallbackUnreachableReason(): string | null {
   );
 }
 
+// One probe verdict is cached briefly: session create and restart are
+// user-facing paths and must not pay a fresh network round-trip on every call.
+const TUNNEL_PROBE_TTL_MS = 30_000;
+const TUNNEL_PROBE_TIMEOUT_MS = 3_000;
+let tunnelProbe: { base: string; reason: string | null; at: number } | null = null;
+
+/** Test seam: drop the cached verdict so a test can force a fresh probe. */
+export function resetTunnelProbeCache(): void {
+  tunnelProbe = null;
+}
+
+/**
+ * Liveness check for a quick-tunnel KORTIX_URL. The static loopback check
+ * above catches a MISSING tunnel; this catches a DEAD one. trycloudflare quick
+ * tunnels die server-side while the local `cloudflared` process stays up, and
+ * every sandbox created after that boots into a callback URL that can never
+ * answer — the runtime never becomes ready and the failure used to surface as
+ * a false "computer was lost" (incident 2026-08-14). Scoped to
+ * *.trycloudflare.com on purpose: deployed environments use a stable public
+ * URL and must not pay a self-probe on the session-create path.
+ */
+export async function sandboxCallbackDeadTunnelReason(
+  now = Date.now(),
+  base = deriveKortixApiBase(),
+  fetchImpl: typeof fetch = fetch,
+): Promise<string | null> {
+  let host: string;
+  try {
+    host = new URL(base).hostname.toLowerCase();
+  } catch {
+    return null; // sandboxCallbackUnreachableReason() already reports an invalid URL
+  }
+  if (!host.endsWith('.trycloudflare.com')) return null;
+  if (tunnelProbe && tunnelProbe.base === base && now - tunnelProbe.at < TUNNEL_PROBE_TTL_MS) {
+    return tunnelProbe.reason;
+  }
+  let reason: string | null = null;
+  try {
+    const res = await fetchImpl(`${base}/health`, {
+      signal: AbortSignal.timeout(TUNNEL_PROBE_TIMEOUT_MS),
+    });
+    if (!res.ok) {
+      reason =
+        `The dev tunnel at ${config.KORTIX_URL} answered ${res.status} to a health probe. ` +
+        `Cloud sandboxes cannot call back to this API through it, so a new sandbox would ` +
+        `boot but never become ready. Restart the dev stack (\`pnpm dev\`) to mint a fresh tunnel.`;
+    }
+  } catch {
+    reason =
+      `The dev tunnel at ${config.KORTIX_URL} is not answering. Cloud sandboxes cannot ` +
+      `call back to this API through it, so a new sandbox would boot but never become ` +
+      `ready. Restart the dev stack (\`pnpm dev\`) to mint a fresh tunnel.`;
+  }
+  tunnelProbe = { base, reason, at: now };
+  return reason;
+}
+
+/**
+ * Read the SPAWNING session's own sharing (visibility + grants), scoped to
+ * the same account and project as the session being created — a stale or
+ * cross-project caller id (should not happen; defense in depth) falls back
+ * to the caller's normal default rather than inheriting nothing.
+ */
+async function loadParentSessionSharing(
+  callerSessionId: string,
+  accountId: string,
+  projectId: string,
+): Promise<{ visibility: SessionVisibility; grants: SecretGrant[] } | null> {
+  const [parent] = await db
+    .select({ visibility: projectSessions.visibility, projectId: projectSessions.projectId })
+    .from(projectSessions)
+    .where(and(eq(projectSessions.sessionId, callerSessionId), eq(projectSessions.accountId, accountId)))
+    .limit(1);
+  if (!parent || parent.projectId !== projectId) return null;
+  const visibility = parent.visibility as SessionVisibility;
+  if (visibility !== 'restricted') return { visibility, grants: [] };
+  const grants = (await loadSessionGrants([callerSessionId])).get(callerSessionId) ?? [];
+  return { visibility, grants };
+}
+
 export async function createProjectSession(input: {
   project: ProjectRow;
   userId: string;
@@ -624,9 +719,21 @@ export async function createProjectSession(input: {
   headers?: Record<string, string>;
 }> {
   const { project, userId, body } = input;
-  const visibility = input.visibility ?? 'private';
   const projectId = project.projectId;
   const accountId = project.accountId;
+  // A session spawned by ANOTHER running session (a sub-agent/coordinator
+  // worker, via that session's own bound token) inherits the SPAWNING
+  // session's sharing instead of defaulting to private — see
+  // resolveInheritedSessionSharing. Automation callers (triggers, channels)
+  // always pass `visibility` explicitly, so the lookup is skipped for them.
+  const parentSharing =
+    input.visibility === undefined && input.callerSessionId
+      ? await loadParentSessionSharing(input.callerSessionId, accountId, projectId)
+      : null;
+  const { visibility, grants: inheritedGrants } = resolveInheritedSessionSharing(
+    input.visibility,
+    parentSharing,
+  );
   const parsedRuntimeContext = parseSessionRuntimeContext(body.runtime_context);
   if (!parsedRuntimeContext.ok) {
     return {
@@ -1066,7 +1173,8 @@ export async function createProjectSession(input: {
   const providerName: SandboxProviderName =
     'provider' in picked ? (picked.provider as SandboxProviderName) : await selectProvider();
 
-  const callbackUnreachable = sandboxCallbackUnreachableReason();
+  const callbackUnreachable =
+    sandboxCallbackUnreachableReason() ?? (await sandboxCallbackDeadTunnelReason());
   if (callbackUnreachable) {
     return {
       error: { status: 503, body: { error: callbackUnreachable, code: 'KORTIX_URL_UNREACHABLE' } },
@@ -1153,6 +1261,7 @@ export async function createProjectSession(input: {
   const sessionId = requestedSessionId ?? randomUUID();
 
   const initialPrompt = normalizeString(body.initial_prompt ?? body.initialPrompt);
+  const initialTurn = initialPrompt ? prepareInitialSandboxTurn() : null;
   const pendingPrompt =
     body.pending_prompt &&
     typeof body.pending_prompt === 'object' &&
@@ -1160,6 +1269,26 @@ export async function createProjectSession(input: {
     typeof (body.pending_prompt as Record<string, unknown>).text === 'string'
       ? (body.pending_prompt as Record<string, unknown>)
       : null;
+  // The first prompt becomes a durable inbox row in the SAME transaction as
+  // the session row — see `convertPendingPromptToInboxRow` for the contract
+  // (and why stored metadata keeps only the picks).
+  const pendingPromptConversion = pendingPrompt
+    ? convertPendingPromptToInboxRow({
+        pendingPrompt,
+        projectId,
+        accountId,
+        sessionId,
+        actorUserId: userId,
+      })
+    : null;
+  if (pendingPromptConversion?.error) {
+    return {
+      error: {
+        status: 400,
+        body: { error: `pending_prompt: ${pendingPromptConversion.error}` },
+      },
+    };
+  }
   const sessionName = normalizeString(body.name);
   // An explicit `title_source` means the baked prompt is a rendered envelope
   // (Slack/Teams/Telegram turn instructions + workspace/channel ids) and these
@@ -1194,7 +1323,10 @@ export async function createProjectSession(input: {
     ...requestMetadata,
     ...(sessionName ? { name: sessionName } : {}),
     ...(initialPrompt ? { initial_prompt: initialPrompt } : {}),
-    ...(pendingPrompt ? { pending_prompt: pendingPrompt } : {}),
+    // Picks only — the prompt itself is a durable inbox row (see below), and a
+    // pre-deploy web bundle replays `pending_prompt.text` client-side, so
+    // storing the text would double-send it.
+    ...(pendingPromptConversion ? { pending_prompt: pendingPromptConversion.metadataPicks } : {}),
     ...(explicitTitleSource
       ? { title_source: explicitTitleSource.slice(0, TITLE_SOURCE_MAX_CHARS) }
       : {}),
@@ -1265,6 +1397,16 @@ export async function createProjectSession(input: {
           })
           .returning({ sessionId: projectSessionRuntimeContexts.sessionId });
     }
+      if (pendingPromptConversion?.rowValues) {
+        // Same transaction as the session row: either the session exists WITH
+        // its first prompt durable, or neither does. No conflict handling —
+        // `sessionId` is fresh here, so the idempotency key cannot collide
+        // without the projectSessions PK colliding first.
+        await tx
+          .insert(sessionLifecycleCommands)
+          .values(pendingPromptConversion.rowValues)
+          .returning({ commandId: sessionLifecycleCommands.commandId });
+      }
       if (validatedConnectorBindings.bindings.length > 0) {
         await tx
           .insert(projectSessionConnectorBindings)
@@ -1281,6 +1423,15 @@ export async function createProjectSession(input: {
             })),
           )
           .returning({ sessionId: projectSessionConnectorBindings.sessionId });
+      }
+      if (inheritedGrants.length > 0) {
+        await tx.insert(projectSessionGrants).values(
+          inheritedGrants.map((g) => ({
+            sessionId,
+            principalType: g.principalType,
+            principalId: g.principalId,
+          })),
+        );
       }
       return row;
     });
@@ -1345,29 +1496,30 @@ export async function createProjectSession(input: {
       ]);
       const envPromise = baseShaPromise
         .then((baseSha) =>
-        buildSessionSandboxEnvVars({
-          accountId,
-          projectId,
-          sessionId,
-          userId,
-          repoUrl: project.repoUrl,
-          baseRef,
-          agentName,
-          initialPrompt,
-          opencodeModel,
-          llmGatewayEnabled,
-          platformMetaAgent,
-          freshSession: true,
-          baseSha,
-          defaultBranch: project.defaultBranch,
-          manifestPath: project.manifestPath,
-          workspaceMode,
-        }),
+          buildSessionSandboxEnvVars({
+            accountId,
+            projectId,
+            sessionId,
+            userId,
+            repoUrl: project.repoUrl,
+            baseRef,
+            agentName,
+            initialPrompt,
+            initialTurn,
+            opencodeModel,
+            llmGatewayEnabled,
+            platformMetaAgent,
+            freshSession: true,
+            baseSha,
+            defaultBranch: project.defaultBranch,
+            manifestPath: project.manifestPath,
+            workspaceMode,
+          }),
         )
         .then((envVars) => {
-        tl.mark('env-vars');
-        return envVars;
-      });
+          tl.mark('env-vars');
+          return envVars;
+        });
 
       const mergeSessionMetadata = async (extra: Record<string, unknown>) => {
         await db
@@ -1425,6 +1577,7 @@ export async function createProjectSession(input: {
         agentName,
         provider: providerName,
         metadata: { session_id: sessionId, project_id: projectId, ...(input.metadata ?? {}) },
+        initialTurn,
         extraEnvVars,
         projectMetadata: project.metadata,
         gitProject: {

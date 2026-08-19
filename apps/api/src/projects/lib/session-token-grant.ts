@@ -12,23 +12,16 @@
  *       -> the existing session receives connector_not_assigned
  *
  * Secrets are replaced through the pre-prompt env sync (see `secret-grant.ts`).
- * An operator can enable the strict secret-grant lock to refuse a boundary
- * switch because narrowing later cannot un-read a value the previous agent
- * already consumed. Connector and CLI grants have no such residue: they are
- * checked against this row at CALL time, so rewriting it genuinely re-scopes
- * every subsequent call.
+ * Nothing refuses a switch. Connector and CLI grants are checked against this
+ * row at CALL time, so rewriting it genuinely re-scopes every subsequent call —
+ * which is why the re-mint, not a refusal, is the mechanism that protects them.
  */
 
 import { type AgentGrant, accountTokens, projectSessions, projects } from '@kortix/db';
 import { and, eq, isNull } from 'drizzle-orm';
-import { config } from '../../config';
 import { db } from '../../shared/db';
 import { DEFAULT_AGENT_SENTINEL } from '../agents';
-import {
-  AgentSecretGrantMismatchError,
-  agentGrantDiffers,
-  resolveSessionAgentGrant,
-} from './secret-grant';
+import { agentGrantDiffers, resolveSessionAgentGrant } from './secret-grant';
 
 /** The re-mint could not be written. The caller must FAIL the prompt: letting it
  *  through would run the new agent against the previous agent's grant, which is
@@ -139,7 +132,6 @@ async function resolveCurrentGrant(input: {
   sessionId: string;
   sessionAgent: string;
   runningAgent: string;
-  enforceGrantLock: boolean;
   forceRefresh: boolean;
 }): Promise<AgentGrant | null> {
   try {
@@ -160,12 +152,9 @@ async function resolveCurrentGrant(input: {
       manifestPath: project?.manifestPath,
       sessionAgent: input.sessionAgent,
       requestedAgent: input.runningAgent,
-      enforceGrantLock: input.enforceGrantLock,
       forceRefresh: input.forceRefresh,
     });
   } catch (err) {
-    // A secret-boundary refusal is the env sync's error to report, not ours.
-    if (err instanceof AgentSecretGrantMismatchError) throw err;
     throw new SessionGrantRemintError(input.sessionId, err);
   }
 }
@@ -224,7 +213,6 @@ export async function remintGrantForAgentSwitch(input: {
   const running = await resolveCurrentGrant({
     ...input,
     runningAgent,
-    enforceGrantLock: config.KORTIX_ENFORCE_AGENT_SECRET_GRANT_LOCK,
     forceRefresh: true,
   });
   return applyResolvedGrant(input.sessionId, stored, running);
@@ -269,13 +257,11 @@ export async function reconcileStoredSessionAgentGrant(input: {
   }
 
   // This path refreshes connector and CLI authorization only. Secret delivery
-  // already ran at prompt time. Resolve this agent against itself so a connector
-  // call does not re-run the secret-boundary switch policy.
+  // already ran at prompt time, so resolve this agent against itself.
   const running = await resolveCurrentGrant({
     ...input,
     sessionAgent: runningAgent,
     runningAgent,
-    enforceGrantLock: false,
     forceRefresh: true,
   });
   await applyResolvedGrant(input.sessionId, stored, running);

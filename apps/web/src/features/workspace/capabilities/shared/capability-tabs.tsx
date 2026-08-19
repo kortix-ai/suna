@@ -1,29 +1,118 @@
 'use client';
 
-import { SidebarSimpleIcon as PanelLeft, ShieldCheckIcon } from '@phosphor-icons/react';
+import { ArrowUpRightIcon, SidebarSimpleIcon as PanelLeft } from '@phosphor-icons/react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useState } from 'react';
 
-import { PoliciesPanel } from '@/components/projects/policies-panel';
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
-import {
-  Sheet,
-  SheetBody,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from '@/components/ui/sheet';
 import { useOptionalSidebar } from '@/components/ui/sidebar';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   sidebarOpenerLabel,
   useShowPageSidebarOpener,
 } from '@/features/workspace/project-layout/sidebar-opener';
+import { TAB_PREFERENCE } from '@/features/workspace/project-sidebar/project-settings-nav';
+import { PROJECT_ACTIONS } from '@/lib/project-actions';
+import { useProjectCan, useProjectCans } from '@/lib/use-project-can';
+import { cn } from '@/lib/utils';
+import { getProjectDetail } from '@kortix/sdk';
+import { contract, qk } from '@kortix/sdk/react';
+import { useQuery } from '@tanstack/react-query';
 
-import { CAPABILITY_TABS, activeCapabilityTab, capabilityTabHref } from './capability-tab-routes';
+import {
+  CAPABILITY_TABS,
+  activeCapabilityTab,
+  capabilityTabHref,
+  type CapabilityTab,
+} from './capability-tab-routes';
+
+/**
+ * Every leaf this bar probes, in one batched request: the surface gate
+ * (`project.customize.read`) plus each tab's own read leaf, taken from
+ * `TAB_PREFERENCE` so the bar and the sidebar's Customize row can never
+ * disagree about which action a tab costs.
+ *
+ * Module-level and frozen — `useProjectCans` keys its query on the action
+ * list, so a fresh array per render would refetch forever.
+ */
+export const CAPABILITY_TAB_GATE_ACTIONS: readonly string[] = [
+  ...new Set([PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ, ...TAB_PREFERENCE.map((t) => t.action)]),
+];
+
+/**
+ * Which tabs to draw for this caller.
+ *
+ * Two gates, the same two the sidebar's Customize row applies, because this
+ * bar IS that row's destination:
+ *
+ *  1. `project.customize.read` — the whole Customize surface. It moved out of
+ *     the member floor role in #6522 (`apps/api/src/iam/role-perms.ts`), so a
+ *     plain project member gets NO tabs here. They had none of the entry
+ *     points either, but a direct URL still renders this layout, and a bar of
+ *     seven tabs that every one of them 403s on is exactly the "shown but not
+ *     openable" surface this gate exists to remove.
+ *  2. Each tab's own read leaf — a custom role can hold the surface and still
+ *     have one capability deactivated.
+ *
+ * Optimistic while a probe is in flight: a tab disappears only on a denial we
+ * actually received, so a slow `/effective` never blanks the bar for a
+ * manager mid-navigation.
+ */
+export function visibleCapabilityTabs(
+  caps: Record<string, { allowed: boolean }>,
+): readonly CapabilityTab[] {
+  if (caps[PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ]?.allowed === false) return [];
+  return CAPABILITY_TABS.filter((tab) => {
+    const pref = TAB_PREFERENCE.find((t) => t.key === tab.key);
+    return pref ? caps[pref.action]?.allowed !== false : true;
+  });
+}
+
+/**
+ * "Members" — the tab-shaped row-item that launches the account-level Access
+ * hub for this project, rather than a real capability page. It is NOT a
+ * `CapabilityTab`: `capabilityTabHref`/`activeCapabilityTab` are shape-
+ * sensitive to "every capability tab is a real page at /projects/<id>/<key>",
+ * and this row is not one — clicking it navigates away entirely. So it's a
+ * plain styled `Link` rendered as a `TabsList` sibling, matching a
+ * `TabsTrigger`'s exact classes for visual parity, but living outside the
+ * `Tabs`/`TabsTrigger` roving-tabindex/active-state machinery: it never lights
+ * up as "current" (you're never actually on it), and Radix never needs to
+ * reason about it as a tab panel.
+ *
+ * Needs the project's account_id, which this bar doesn't otherwise fetch —
+ * `qk.project.detail(projectId)` is the same query key the page shell above
+ * already populates, so this is a cache hit, not a second request.
+ *
+ * Gated on `project.members.read`, NOT `project.members.manage`: the hub's
+ * project panel renders read-only for anyone who can read the member list and
+ * probes `members.manage` itself for every write control it offers
+ * (`components/iam/access-projects-tab.tsx`). Gating this launcher on manage
+ * would hide a page a member can legitimately open.
+ */
+function MembersLaunchLink({ projectId }: { projectId: string }) {
+  const { data } = useQuery({
+    queryKey: qk.project.detail(projectId),
+    queryFn: () => getProjectDetail(projectId),
+    ...contract('config'),
+  });
+  const canReadMembers = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_READ);
+  const accountId = data?.project?.account_id;
+  if (canReadMembers.allowed === false) return null;
+  if (!accountId) return null;
+
+  return (
+    <Link
+      href={`/accounts/${accountId}?tab=access-projects&project=${projectId}`}
+      prefetch={false}
+      className="text-muted-foreground hover:text-foreground ml-auto flex w-fit flex-none items-center gap-1 px-1 py-3 text-sm font-medium whitespace-nowrap transition-colors"
+    >
+      Members
+      <ArrowUpRightIcon className="size-3 opacity-60" aria-hidden />
+    </Link>
+  );
+}
 
 /**
  * Sidebar opener — same rules as project-home / session header / sessions
@@ -62,67 +151,36 @@ function CapabilitySidebarToggle() {
 }
 
 /**
- * Project-wide connector rules. Far-right of the shared tab bar so it stays
- * reachable from Connectors, Skills, and Commands.
+ * Shared tab bar for
+ * /projects/[id]/{agent,connectors,skills,schedules,webhooks}. Lives in the
+ * `(capabilities)` route group layout so it does not remount when switching
+ * tabs. Each trigger wraps a real `next/link` via `asChild`.
  *
- * Opens as a Sheet, not a Modal: the panel is a long CRUD list that benefits
- * from a persistent side surface. No Hint — the button already shows its
- * label. No `before:-inset` hit expand — without `relative` that pseudo
- * stretches to the nearest positioned ancestor (this whole bar) and steals
- * clicks from the tab triggers.
- */
-function GlobalRulesControl({ projectId }: { projectId: string }) {
-  const [open, setOpen] = useState(false);
-
-  return (
-    <>
-      <Button
-        type="button"
-        variant="ghost"
-        size="sm"
-        aria-label="Global rules"
-        onClick={() => setOpen(true)}
-        // className="text-muted-foreground hover:text-foreground shrink-0 gap-1.5 active:scale-[0.96]"
-      >
-        <ShieldCheckIcon className="block size-4 md:hidden" />
-        <span className="hidden md:block">Global rules</span>
-      </Button>
-      <Sheet open={open} onOpenChange={setOpen}>
-        <SheetContent
-          side="right"
-          className="flex w-full flex-col gap-0 p-0 sm:max-w-xl md:max-w-2xl"
-        >
-          {/* `pr-12` clears the sheet's own close button, which is absolutely
-              positioned at `top-4 right-4`. */}
-          <SheetHeader className="border-border shrink-0 space-y-1 border-b px-5 py-4 pr-12 text-left">
-            <SheetTitle className="text-base font-medium">Global rules</SheetTitle>
-            <SheetDescription className="text-xs text-pretty">
-              Approval rules that apply to every connector in this project.
-            </SheetDescription>
-          </SheetHeader>
-          {/* The body is the only scroller, so the panel's save bar can stick
-              to its bottom edge. */}
-          <SheetBody className="min-h-0 gap-0 px-5 py-5">
-            <PoliciesPanel projectId={projectId} />
-          </SheetBody>
-        </SheetContent>
-      </Sheet>
-    </>
-  );
-}
-
-/**
- * Shared tab bar for /projects/[id]/{agent,connectors,skills}. Lives in
- * the `(capabilities)` route group layout so it does not remount when
- * switching tabs. Each trigger wraps a real `next/link` via `asChild`.
- *
- * One flex row, everything in flow: [sidebar toggle?] [tabs] [global rules].
+ * One flex row, everything in flow: [sidebar toggle?] [tabs].
  * Absolute overlays and expanded hit areas are forbidden here — they steal
  * pointer events across the row.
+ *
+ * Global rules used to sit at the far right of this bar. It is connector
+ * approval policy, not a project-wide setting, so it now lives at the far
+ * right of the Connectors page's own Discovery/All/Connected row
+ * (`connectors/connectors-page.tsx`). Nothing capability-wide belongs here —
+ * this bar navigates, it does not act.
  *
  * `shrink-0` keeps the bar pinned at full height inside the layout's `h-svh`
  * column; the page body below is the flex-1 scroller.
  */
+/**
+ * Settings trails the row, on the right — one `TabsList`, so the underline
+ * indicator, keyboard roving, and `role="tablist"` semantics stay unified;
+ * only the visual position of this tab changes. It reads as "how it's
+ * configured", a different register from the build-the-agent tabs to its
+ * left, and the gap says so without a second list or a divider. `ml-auto`
+ * now lives on `MembersLaunchLink` (the first trailing element in DOM order,
+ * rendered just before this array's tabs) — Settings trails it with no
+ * further margin of its own.
+ */
+const TRAILING_TABS: readonly CapabilityTab['key'][] = ['config'];
+
 export function CapabilityTabs({ projectId }: { projectId: string }) {
   const pathname = usePathname();
   const activeKey = activeCapabilityTab(pathname);
@@ -131,6 +189,8 @@ export function CapabilityTabs({ projectId }: { projectId: string }) {
   // shell it starts at y=0 and shares the band with the OS window controls.
   // Without the indent the first tab renders under the macOS traffic lights.
   const sidebar = useOptionalSidebar();
+  const caps = useProjectCans(projectId, CAPABILITY_TAB_GATE_ACTIONS);
+  const tabs = visibleCapabilityTabs(caps);
 
   return (
     <div
@@ -145,13 +205,16 @@ export function CapabilityTabs({ projectId }: { projectId: string }) {
           size="lg"
           className="h-auto w-full justify-start gap-5 border-b-0 px-2"
         >
-          {CAPABILITY_TABS.map((tab) => (
-            <TabsTrigger
-              key={tab.key}
-              value={tab.key}
-              asChild
-              className="w-fit flex-none px-1 py-3"
-            >
+          {tabs.filter((tab) => !TRAILING_TABS.includes(tab.key)).map((tab) => (
+            <TabsTrigger key={tab.key} value={tab.key} asChild className="w-fit flex-none px-1 py-3">
+              <Link href={capabilityTabHref(projectId, tab.key)} prefetch={true}>
+                {tab.label}
+              </Link>
+            </TabsTrigger>
+          ))}
+          <MembersLaunchLink projectId={projectId} />
+          {tabs.filter((tab) => TRAILING_TABS.includes(tab.key)).map((tab) => (
+            <TabsTrigger key={tab.key} value={tab.key} asChild className="w-fit flex-none px-1 py-3">
               <Link href={capabilityTabHref(projectId, tab.key)} prefetch={true}>
                 {tab.label}
               </Link>
@@ -159,7 +222,6 @@ export function CapabilityTabs({ projectId }: { projectId: string }) {
           ))}
         </TabsList>
       </Tabs>
-      <GlobalRulesControl projectId={projectId} />
     </div>
   );
 }

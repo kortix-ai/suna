@@ -24,7 +24,7 @@ export const SANDBOX_PROVIDER_FAILURE_MESSAGE =
 // predates the flag that is now the cheapest fix.
 export const UNSUPPORTED_SECRET_DELIVERY_MESSAGE =
   'This sandbox provider cannot enforce network-boundary secret delivery. ' +
-  'Turn on "Network boundary without Platinum" in Feature flags → Experimental, ' +
+  'Turn on "Network boundary in-guest shim" in Feature flags → Experimental, ' +
   'or run the project on Platinum, or change the secret delivery policy.';
 
 export const INVALID_SECRET_BOUNDARY_POLICY_MESSAGE =

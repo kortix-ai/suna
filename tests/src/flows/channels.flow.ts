@@ -711,7 +711,7 @@ flow(
     const memberOnly = await team.addMember("member");
     const editor = await team.addMember("member");
     await team.grantProjectRole(p.id, memberOnly.userId!, "user");
-    await team.grantProjectRole(p.id, editor.userId!, "editor");
+    await team.grantProjectRole(p.id, editor.userId!, "manager");
 
     const SEND_PRIMITIVES = [
       {

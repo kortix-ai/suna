@@ -1,6 +1,8 @@
+import { normalizeProjectRole } from '../../iam/role-perms';
 import {
   isSessionTargetVisibleToCaller,
-  isSessionVisibleTo,
+  isProjectSessionVisibleTo,
+  isTriggerCreatedSessionMetadata,
   loadSessionGrants,
   resolveShareSubject,
   type SecretGrant,
@@ -118,12 +120,31 @@ export async function loadVisibleSession(
   if (!row) return null;
   const subject = await resolveShareSubject(loaded.userId);
   const grants = (await loadSessionGrants([sessionId])).get(sessionId) ?? [];
+  const ownership = { origin: row.origin ?? null, sessionId, callerSessionId };
+  let canManageProject = roleAllows(loaded.effectiveRole, 'manage');
   if (
-    !isSessionVisibleTo(row.visibility as 'private' | 'project' | 'restricted', row.createdBy, grants, subject, {
-      origin: row.origin ?? null,
-      sessionId,
-      callerSessionId,
-    })
+    !canManageProject &&
+    isSessionTargetVisibleToCaller(ownership) &&
+    isTriggerCreatedSessionMetadata(row.metadata)
+  ) {
+    canManageProject = (
+      await authorize(
+        loaded.userId,
+        loaded.row.accountId,
+        'project.members.manage',
+        { type: 'project', id: loaded.row.projectId },
+      )
+    ).allowed;
+  }
+  if (
+    !isProjectSessionVisibleTo(
+      row.visibility as 'private' | 'project' | 'restricted',
+      row.createdBy,
+      grants,
+      subject,
+      ownership,
+      { metadata: row.metadata, canManageProject },
+    )
   ) {
     // A platform-admin bypass already verified for the parent project (see
     // loadProjectForUser) also covers a session that would otherwise be
@@ -140,7 +161,6 @@ export async function loadVisibleSession(
     });
   }
   const isOwner = row.createdBy === loaded.userId;
-  const canManageProject = roleAllows(loaded.effectiveRole, 'manage');
   return { row, subject, grants, isOwner, canManageProject, canManageSharing: isOwner || canManageProject };
 }
 
@@ -156,7 +176,7 @@ export async function loadVisibleSession(
  * is invisible to everyone but its creator under `isSessionVisibleTo`, so
  * the `canManageProject` half of `canManageSharing` could never be reached:
  * the route always 404'd on the visibility gate first, even for a real
- * project manager. A project member with no manage rights (e.g. an editor
+ * project manager. A project member with no manage rights (e.g. a plain member
  * who didn't create the session) still gets a truthful 403 (permission
  * denied) here, not a 404 (resource hidden) — they're a legitimate member of
  * the project the session lives in, not a stranger, so there's nothing to
@@ -214,7 +234,11 @@ const loadProjectMemberRole = ttlMemo({
       .from(projectMembers)
       .where(and(eq(projectMembers.projectId, projectId), eq(projectMembers.userId, userId)))
       .limit(1);
-    return (row?.projectRole as ProjectRole | undefined) ?? null;
+    // normalizeProjectRole, never a raw cast: the column can still hold a
+    // RETIRED value (`editor`, `user`, `viewer`) that no longer exists in the
+    // ProjectRole union. A cast would hand a rank-less string to
+    // PROJECT_ROLE_RANK / PROJECT_ROLE_PERMS and silently deny everything.
+    return normalizeProjectRole(row?.projectRole);
   },
   shouldCache: (role) => role !== null,
 });
@@ -448,7 +472,7 @@ export function iamActionForProjectAccess(action: ProjectAccessAction): string {
     case 'manage':
       // 'manage' historically meant "admin-tier write" — covers triggers,
       // secrets, snapshots, CLI tokens, etc. Map to project.write (which
-      // Project Editor has) so editors aren't accidentally locked out.
+      // a project manager has) so managers aren't accidentally locked out.
       // Routes that need the stricter `project.members.manage` gate add
       // an explicit assertProjectCapability() on top of loadProjectForUser.
       return 'project.write';

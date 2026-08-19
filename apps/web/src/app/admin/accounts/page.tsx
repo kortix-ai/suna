@@ -233,14 +233,22 @@ function billingActionsFor(account: AdminAccount): BillingAction[] {
   return actions;
 }
 
+const dateTimeFormat = new Intl.DateTimeFormat('en-US', {
+  month: 'short',
+  day: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+});
+
+const createdAtFormat = new Intl.DateTimeFormat('en-US', {
+  month: 'short',
+  day: 'numeric',
+  year: 'numeric',
+});
+
 function formatDateTime(value: string | null | undefined) {
   if (!value) return '—';
-  return new Date(value).toLocaleString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  return dateTimeFormat.format(new Date(value));
 }
 
 /**
@@ -416,7 +424,7 @@ export default function AdminAccountsPage() {
   // Seed from ?search= so cross-links (e.g. the Projects page's account cell)
   // land on a filtered list instead of the whole fleet.
   const urlSearchParams = useSearchParams();
-  const [searchInput, setSearchInput] = useState(urlSearchParams.get('search') ?? '');
+  const [searchInput, setSearchInput] = useState(() => urlSearchParams.get('search') ?? '');
   const search = useDebounce(searchInput);
   const [page, setPage] = useState(1);
   const [filters, setFilters] = useState<AccountFilters>(EMPTY_FILTERS);
@@ -657,13 +665,7 @@ export default function AdminAccountsPage() {
                     )}
                   </TableCell>
                   <TableCell className="text-muted-foreground text-xs">
-                    {account.createdAt
-                      ? new Date(account.createdAt).toLocaleDateString('en-US', {
-                          month: 'short',
-                          day: 'numeric',
-                          year: 'numeric',
-                        })
-                      : '—'}
+                    {account.createdAt ? createdAtFormat.format(new Date(account.createdAt)) : '—'}
                   </TableCell>
                 </TableRow>
               ))}

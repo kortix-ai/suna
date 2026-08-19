@@ -12,7 +12,7 @@ import { resolveFeatureFlag } from '../feature-flags/registry';
  *  - **In-guest shim (any other provider, notably Daytona).** The shim
  *    terminates the guest's TLS and relays to the broker route, which injects
  *    server-side. The guest still never holds the credential — see
- *    docs/NETWORK_BOUNDARY_ON_DAYTONA.md §7.4.
+ *    docs/NETWORK_BOUNDARY_WITHOUT_PLATINUM.md §7.4.
  *
  * This used to be `config.isPlatinumEnabled()` alone, which is why the feature
  * was unavailable to every production project: production runs on Daytona.

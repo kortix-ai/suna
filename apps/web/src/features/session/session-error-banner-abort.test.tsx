@@ -52,3 +52,51 @@ describe('a real user stop is still labelled "Interrupted"', () => {
     expect(markup).not.toContain('Interrupted');
   });
 });
+
+// T2: two DIFFERENT client-synthesized producers both patch
+// `{ name: 'AbortError' }` onto a message — `applyOptimisticAbort` (a real
+// user Stop, `data.reason: 'user'`) and `markSessionAbortedLocally` (pure
+// infrastructure — a runtime disposed and respawned mid-stream,
+// `data.reason: 'runtime-disposed'`). The banner must tell them apart.
+describe('reason-gated rendering — infra aborts never render as "Interrupted"', () => {
+  test('reason: "runtime-disposed" renders NOTHING — no Interrupted row, no error banner', () => {
+    const markup = render({
+      errorText: 'The operation was aborted because the runtime shut down.',
+      isAbort: true,
+      abortReason: 'runtime-disposed',
+    });
+    expect(markup).not.toContain('Interrupted');
+    // Not just the label — the whole checkpoint/error card must be absent,
+    // otherwise a runtime respawn still scars the transcript with an empty
+    // or generic card.
+    expect(markup.trim()).toBe('');
+  });
+
+  test('reason: "user" still renders the Interrupted row', () => {
+    const markup = render({
+      errorText: 'The operation was aborted.',
+      isAbort: true,
+      abortReason: 'user',
+    });
+    expect(markup).toContain('Interrupted');
+  });
+
+  test('an untagged abort (no reason) still renders the Interrupted row', () => {
+    const markup = render({
+      errorText: 'The operation was aborted.',
+      isAbort: true,
+      abortReason: undefined,
+    });
+    expect(markup).toContain('Interrupted');
+  });
+
+  test('a non-abort error is unaffected by an (impossible in practice) abortReason prop', () => {
+    const markup = render({
+      errorText: 'insufficient credits: Balance: $-1.00',
+      isAbort: false,
+      abortReason: 'runtime-disposed',
+    });
+    expect(markup).not.toContain('Interrupted');
+    expect(markup.length).toBeGreaterThan(0);
+  });
+});

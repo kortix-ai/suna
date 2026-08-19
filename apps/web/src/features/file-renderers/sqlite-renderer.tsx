@@ -70,12 +70,14 @@ import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useStat
 ModuleRegistry.registerModules([AllCommunityModule]);
 
 // AG Grid theme
+// AG Grid theme params are fixed px and don't inherit the CSS root font-size
+// scale — bumped by the same 1.1x factor to match.
 const gridTheme = themeQuartz.withParams({
-  spacing: 6,
-  headerFontSize: 12,
-  fontSize: 12,
-  rowHeight: 36,
-  headerHeight: 38,
+  spacing: 6.6,
+  headerFontSize: 13,
+  fontSize: 13,
+  rowHeight: 40,
+  headerHeight: 42,
   wrapperBorderRadius: 0,
   borderRadius: 0,
   cellHorizontalPaddingScale: 1,
@@ -360,12 +362,14 @@ export function SqliteRenderer({
         if (tableInfos.length > 0) {
           setSelectedTable(tableInfos[0].name);
         }
-        setIsLoading(false);
       } catch (e: unknown) {
         if (abortController.signal.aborted) return;
         console.error('[SqliteRenderer] Error:', e);
         if (!cancelled) {
           setError((e as Error)?.message || 'Failed to load database');
+        }
+      } finally {
+        if (!cancelled && !abortController.signal.aborted) {
           setIsLoading(false);
         }
       }
@@ -426,9 +430,10 @@ export function SqliteRenderer({
   const isEditable = !readOnly && selectedTableInfo?.type === 'table';
   const columnDefs = useMemo((): ColDef[] => {
     if (!tableData.columns.length) return [];
-    const pkColumns = new Set(
-      selectedTableInfo?.columns.filter((c) => c.pk).map((c) => c.name) ?? [],
-    );
+    const pkColumns = new Set<string>();
+    for (const c of selectedTableInfo?.columns ?? []) {
+      if (c.pk) pkColumns.add(c.name);
+    }
 
     return tableData.columns.map((col) => ({
       field: col,
@@ -1483,6 +1488,7 @@ export function SqliteRenderer({
                     'placeholder:text-muted-foreground/20',
                   )}
                   placeholder="NULL"
+                  aria-label={`${expandedCell.column} value`}
                   spellCheck={false}
                   autoFocus
                 />

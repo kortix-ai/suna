@@ -27,6 +27,18 @@ import { CheckpointDetailDialog } from './checkpoint-detail-dialog';
 // helpers
 // ---------------------------------------------------------------------------
 
+// Hoisted so render does not rebuild an Intl formatter per row. Output is
+// byte-identical: `toLocaleDateString()` ≡ `Intl.DateTimeFormat(undefined)`
+// and `toLocaleString(undefined, opts)` ≡ `Intl.DateTimeFormat(undefined, opts)`.
+const oldDateFormat = new Intl.DateTimeFormat();
+const fullDateTimeFormat = new Intl.DateTimeFormat(undefined, {
+  year: 'numeric',
+  month: 'short',
+  day: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+});
+
 function formatRelative(timestamp: number): string {
   const diff = Date.now() - timestamp;
   const seconds = Math.floor(diff / 1000);
@@ -41,17 +53,11 @@ function formatRelative(timestamp: number): string {
   if (days < 7) return `${days}d ago`;
   if (weeks < 5) return `${weeks}w ago`;
   if (months < 12) return `${months}mo ago`;
-  return new Date(timestamp).toLocaleDateString();
+  return oldDateFormat.format(new Date(timestamp));
 }
 
 function formatFull(timestamp: number): string {
-  return new Date(timestamp).toLocaleString(undefined, {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  return fullDateTimeFormat.format(new Date(timestamp));
 }
 
 function tsFromCommit(c: ProjectCommit): number {

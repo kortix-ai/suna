@@ -382,18 +382,21 @@ describe('full self-host Docker distribution', () => {
     const vector = document.services['supabase-vector'];
     expect(analytics?.oom_score_adj).toBeGreaterThan(0);
     expect(vector?.oom_score_adj).toBeGreaterThan(0);
-    // The full worst-case (every STEADY-STATE service simultaneously at its
-    // own ceiling) must still fit comfortably on an 8GB box — these are
-    // circuit-breaker ceilings, not a steady-state budget, but they must not
-    // be so generous that the documented floor is fiction. kortix-migrate is
-    // excluded: it's a one-shot job that runs to completion and exits before
-    // the app tier is ever rolled, never concurrent with the rest at steady
-    // state (see kortix-compose.yml: `restart: "no"`).
+    // The full worst-case (every STEADY-STATE service simultaneously at its own
+    // ceiling) must still fit a modern self-host box — these are circuit-breaker
+    // ceilings, not a steady-state budget (reservations, which schedule the box,
+    // sum far lower), but they must not be so generous the documented floor is
+    // fiction. The floor is 12GB: the llm-gateway carries a deliberately large
+    // 2GB ceiling so an image-heavy multimodal turn (bodies of tens of MiB, see
+    // DEFAULT_MAX_REQUEST_BYTES) can never OOM it; a small-box operator dials that
+    // back with KORTIX_GATEWAY_MEMORY_LIMIT. kortix-migrate is excluded: it's a
+    // one-shot job that exits before the app tier is ever rolled, never concurrent
+    // with the rest at steady state (see kortix-compose.yml: `restart: "no"`).
     const totalCeilingMb = Object.entries(document.services)
       .filter(([name]) => name !== 'kortix-migrate')
       .map(([, service]) => (service.mem_limit ? toMb(service.mem_limit) : 0))
       .reduce((a, b) => a + b, 0);
-    expect(totalCeilingMb).toBeLessThan(8 * 1024);
+    expect(totalCeilingMb).toBeLessThan(12 * 1024);
   });
 
   test('kortix-updater image is pinned by digest, never :latest or a bare floating :cli tag', () => {

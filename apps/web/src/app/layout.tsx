@@ -16,6 +16,7 @@ import { DESKTOP_INIT_SCRIPT, DESKTOP_UA_TOKEN } from '@/lib/desktop';
 import { getHardcodedUiServerText } from '@/lib/hardcoded-ui-server';
 import '@/lib/polyfills';
 import { getServerPublicEnv } from '@/lib/public-env-server';
+import { safeJsonForHtml } from '@/lib/security/safe-json';
 import { siteMetadata } from '@/lib/site-metadata';
 import { cn } from '@/lib/utils';
 import { featureFlags } from '@kortix/sdk/feature-flags';
@@ -195,7 +196,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
             Docker images get correct env vars regardless of build-time defaults. */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `window.__KORTIX_RUNTIME_CONFIG=${JSON.stringify(runtimeEnv)};window.__RUNTIME_ENV=window.__KORTIX_RUNTIME_CONFIG;`,
+            __html: `window.__KORTIX_RUNTIME_CONFIG=${safeJsonForHtml(runtimeEnv)};window.__RUNTIME_ENV=window.__KORTIX_RUNTIME_CONFIG;`,
           }}
         />
 
@@ -268,7 +269,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{
-            __html: JSON.stringify({
+            __html: safeJsonForHtml({
               '@context': 'https://schema.org',
               '@type': 'Organization',
               name: siteMetadata.name,
@@ -298,7 +299,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{
-            __html: JSON.stringify({
+            __html: safeJsonForHtml({
               '@context': 'https://schema.org',
               '@type': 'SoftwareApplication',
               name: siteMetadata.title,

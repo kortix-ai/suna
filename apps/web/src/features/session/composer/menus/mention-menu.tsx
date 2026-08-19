@@ -49,6 +49,9 @@ export function MentionMenu({
         role="listbox"
         aria-label="Mention suggestions"
         aria-activedescendant={`mention-row-${selectedIndex}`}
+        // Focusable for AT, but not a tab stop — keyboard interaction stays in
+        // the composer textarea, which proxies arrow/Enter to this listbox.
+        tabIndex={-1}
         className="max-h-[19rem] overflow-y-auto p-1.5"
       >
         {sections.map((section) => (

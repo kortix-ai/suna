@@ -26,10 +26,8 @@
 // three casualties were its Idempotency-Key-burn cases. Import the extracted
 // ../sandbox-proxy/pre-prompt-env-sync module, which binds no mocked module.
 import { describe, expect, test } from 'bun:test';
-import {
-  AgentSecretGrantMismatchError,
-  SecretGrantResolutionError,
-} from '../projects/lib/secret-grant';
+import { SecretGrantResolutionError } from '../projects/lib/secret-grant';
+import { SessionGrantRemintError } from '../projects/lib/session-token-grant';
 import {
   type PrePromptEnvSyncDeps,
   bodyWithoutPromptAgent,
@@ -256,13 +254,23 @@ describe('runPrePromptEnvSync — refusals and retries', () => {
     expect(rec.remint).toEqual([]);
   });
 
-  test('a grant mismatch refuses the turn with 409', async () => {
-    const rec = recorder({
-      envSyncError: () => new AgentSecretGrantMismatchError('default', 'writer'),
-    });
-    const refusal = await runSync(rec, COMMAND_BODY);
-    expect(refusal?.status).toBe(409);
-    expect(await refusal?.json()).toMatchObject({ code: 'AGENT_SWITCH_REQUIRES_NEW_SESSION' });
+  // Was: "a grant mismatch refuses the turn with 409". A differing grant is no
+  // longer a refusal anywhere — the env is re-scoped onto the agent that runs,
+  // so `/command` has no mismatch error left to map. What must stay true is that
+  // the only refusals reaching this path are 5xx "could not apply", never a
+  // permanent 409 telling the user to start a new session.
+  test('no grant failure refuses a turn with 409', async () => {
+    for (const err of [
+      new SecretGrantResolutionError('writer', new Error('manifest unreadable')),
+      new SessionGrantRemintError('ses_1', new Error('db down')),
+    ]) {
+      const rec = recorder({ envSyncError: () => err });
+      const refusal = await runSync(rec, COMMAND_BODY);
+      expect(refusal?.status).toBe(503);
+      expect(await refusal?.json()).not.toMatchObject({
+        code: 'AGENT_SWITCH_REQUIRES_NEW_SESSION',
+      });
+    }
   });
 
   test('a non-retryable env-sync failure refuses with 502', async () => {

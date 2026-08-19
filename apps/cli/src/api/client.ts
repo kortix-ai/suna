@@ -3,6 +3,7 @@ import { backendApi } from '@kortix/sdk';
 import type { Auth } from './auth.ts';
 import { secureRemoteBase } from './config.ts';
 import { withKortixScope } from './sdk.ts';
+import { rememberTokenIdentity, type AccountsMeBody } from './token-identity.ts';
 
 // Re-exported for callers/tests that reach it via the client module.
 export { secureRemoteBase };
@@ -80,6 +81,29 @@ function unwrap<T>(res: { data?: T; error?: unknown; success: boolean }): T {
   throw new ApiError(0, String(err ?? 'request failed'));
 }
 
+/** Is this the identity endpoint, with or without a query string? */
+function isMeEndpoint(endpoint: string): boolean {
+  return endpoint === '/accounts/me' || endpoint.startsWith('/accounts/me?');
+}
+
+/**
+ * Capture WHO the acting token is from any `/accounts/me` response.
+ *
+ * Every command that already fetches identity (whoami, projects, accounts,
+ * login, doctor, ship, the cross-host session scan) warms the token-identity
+ * cache here, so the host line can name the agent a sandbox token was minted
+ * for without ever adding a request of its own. Never throws: a cache write is
+ * never a reason to fail the call that produced the data.
+ */
+function captureIdentity(endpoint: string, token: string, data: unknown): void {
+  if (!isMeEndpoint(endpoint) || !token || !data || typeof data !== 'object') return;
+  try {
+    rememberTokenIdentity(token, data as AccountsMeBody);
+  } catch {
+    /* best effort */
+  }
+}
+
 async function request<T>(
   method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
   path: string,
@@ -90,8 +114,11 @@ async function request<T>(
   const options = { showErrors: false as const, timeout: CLI_REQUEST_TIMEOUT_MS };
   return withKortixScope(opts.auth, async () => {
     switch (method) {
-      case 'GET':
-        return unwrap<T>(await backendApi.get<T>(endpoint, options));
+      case 'GET': {
+        const data = unwrap<T>(await backendApi.get<T>(endpoint, options));
+        captureIdentity(endpoint, opts.auth.token, data);
+        return data;
+      }
       case 'POST':
         return unwrap<T>(await backendApi.post<T>(endpoint, body, options));
       case 'PUT':

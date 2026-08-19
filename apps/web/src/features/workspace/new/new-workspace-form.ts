@@ -50,12 +50,16 @@ export const INITIAL_FORM_STATE: NewWorkspaceFormState = {
  * "what gates submit" disagree.
  */
 export function filterCreatableAccounts(accounts: KortixAccount[]): KortixAccount[] {
-  return accounts.filter(
-    (account) => account.account_role === 'owner' || account.account_role === 'admin',
-  ).map((account) => ({
-    ...account,
-    name: account.name.trim().replaceAll('\'s Account', ''),
-  }));
+  const creatable: KortixAccount[] = [];
+  for (const account of accounts) {
+    if (account.account_role === 'owner' || account.account_role === 'admin') {
+      creatable.push({
+        ...account,
+        name: account.name.trim().replaceAll("'s Account", ''),
+      });
+    }
+  }
+  return creatable;
 }
 
 /**

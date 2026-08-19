@@ -3,15 +3,17 @@ import { PROJECT_ACTIONS, authorize } from '../../iam';
 import { assertAgentScope } from '../../iam/agent-scope';
 import { invalidateIamCacheForUser } from '../../iam/cache-invalidation';
 import { deriveRequestContext } from '../../iam/cache';
-import { normalizeProjectRole } from '../../iam/role-perms';
+import { normalizeProjectRole, parseAssignableProjectRole, PROJECT_ROLE_INPUT_ERROR } from '../../iam/role-perms';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { lookupUserIdByEmail } from '../../shared/users';
 import { foldEffectiveProjectAccess, isAccountManager, roleAllows, type AccountRole, type ProjectRole } from '../access';
 import { createRoute, z } from '@hono/zod-openapi';
 import { accountGroupMembers, accountGroups, accountInvitations, accountMembers, accounts, projectAccessRequests, projectGroupGrants, projectMembers, projects } from '@kortix/db';
-import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { iamPolicies, iamRoles } from '@kortix/db';
+import { and, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import { ensureOrgMembership, grantProjectRole, loadProjectForUser, lookupEmailsByUserIds, resolveUserIdentities, parseExpiresAtBody, assertProjectCapability } from '../lib/access';
+import { listResourceGrants } from '../../iam/resource-grants';
 import { notifyProjectAccessRequestManagers } from '../lib/access-requests';
 import {
   AccessMemberSchema,
@@ -178,9 +180,9 @@ projectsApp.openapi(
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
-  // Deletion is admin-only. Project Editor explicitly excludes
+  // Deletion is admin-only. The floor `member` role explicitly excludes
   // project.delete; loadProjectForUser('manage') would otherwise let
-  // editors through via project.write.
+  // members through via project.write.
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_DELETE);
 
   // Archiving is recoverable by default. Only an explicit purge permanently
@@ -233,54 +235,234 @@ projectsApp.openapi(
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_READ);
 
-  const [accountRows, grantRows, projectGroupRows] = await Promise.all([
-    db
-      .select({
-        userId: accountMembers.userId,
-        accountRole: accountMembers.accountRole,
-        joinedAt: accountMembers.joinedAt,
-      })
-      .from(accountMembers)
-      .where(eq(accountMembers.accountId, loaded.row.accountId)),
-    db
-      .select({
-        userId: projectMembers.userId,
-        projectRole: projectMembers.projectRole,
-        grantedBy: projectMembers.grantedBy,
-        createdAt: projectMembers.createdAt,
-        updatedAt: projectMembers.updatedAt,
-        expiresAt: projectMembers.expiresAt,
-      })
-      .from(projectMembers)
-      .where(eq(projectMembers.projectId, loaded.row.projectId)),
-    // V2 group grants attached to this project. Each row lifts everyone in
-    // the group to at least the grant's role on this project. Per-user
-    // membership lookup happens below; we fetch group → role mapping +
-    // name in one shot here so we can label sources on the response.
-    db
-      .select({
-        groupId: projectGroupGrants.groupId,
-        groupName: accountGroups.name,
-        role: projectGroupGrants.role,
-      })
-      .from(projectGroupGrants)
-      .innerJoin(accountGroups, eq(accountGroups.groupId, projectGroupGrants.groupId))
-      .where(eq(projectGroupGrants.projectId, loaded.row.projectId)),
-  ]);
+  const [accountRows, grantRows, projectGroupRows, customPolicyRows, resourceGrantRowsRaw, accountGroupRows] =
+    await Promise.all([
+      db
+        .select({
+          userId: accountMembers.userId,
+          accountRole: accountMembers.accountRole,
+          joinedAt: accountMembers.joinedAt,
+        })
+        .from(accountMembers)
+        .where(eq(accountMembers.accountId, loaded.row.accountId)),
+      db
+        .select({
+          userId: projectMembers.userId,
+          projectRole: projectMembers.projectRole,
+          grantedBy: projectMembers.grantedBy,
+          createdAt: projectMembers.createdAt,
+          updatedAt: projectMembers.updatedAt,
+          expiresAt: projectMembers.expiresAt,
+        })
+        .from(projectMembers)
+        .where(eq(projectMembers.projectId, loaded.row.projectId)),
+      // V2 group grants attached to this project. Each row lifts everyone in
+      // the group to at least the grant's role on this project. Per-user
+      // membership lookup happens below; we fetch group → role mapping +
+      // name in one shot here so we can label sources on the response.
+      db
+        .select({
+          groupId: projectGroupGrants.groupId,
+          groupName: accountGroups.name,
+          role: projectGroupGrants.role,
+        })
+        .from(projectGroupGrants)
+        .innerJoin(accountGroups, eq(accountGroups.groupId, projectGroupGrants.groupId))
+        .where(eq(projectGroupGrants.projectId, loaded.row.projectId)),
+      // IAM v1 custom-role policies bound to this project (scope_type='project',
+      // scope_id=this project) or account-wide (scope_type='account' — every
+      // project on this account, scope_id is NULL for that row shape; the
+      // account is already pinned by the accountId column, mirroring the
+      // engine-v2 actor-resolution query above). member/group principals only
+      // — a 'token' principal is a service account, not a human to fold onto
+      // the members list.
+      db
+        .select({
+          policyId: iamPolicies.policyId,
+          principalType: iamPolicies.principalType,
+          principalId: iamPolicies.principalId,
+          roleId: iamPolicies.roleId,
+          roleKey: iamRoles.key,
+          roleName: iamRoles.name,
+          scopeType: iamPolicies.scopeType,
+          expiresAt: iamPolicies.expiresAt,
+        })
+        .from(iamPolicies)
+        .innerJoin(iamRoles, eq(iamRoles.roleId, iamPolicies.roleId))
+        .where(
+          and(
+            eq(iamPolicies.accountId, loaded.row.accountId),
+            inArray(iamPolicies.principalType, ['member', 'group']),
+            or(
+              and(eq(iamPolicies.scopeType, 'project'), eq(iamPolicies.scopeId, loaded.row.projectId)),
+              eq(iamPolicies.scopeType, 'account'),
+            ),
+          ),
+        ),
+      // IAM v2 per-resource (agent/skill) grants for this project. Excludes
+      // 'secret' — secrets aren't a member/group-scoped resource surfaced on
+      // the access screen (see resource-grants.ts module doc).
+      listResourceGrants(loaded.row.projectId),
+      // All groups on this account, for name resolution below. Custom-role
+      // policies and resource grants can target a group that never got a
+      // project_group_grants row, so `projectGroupRows`'s name join above
+      // doesn't cover it — this is the superset lookup.
+      db
+        .select({ groupId: accountGroups.groupId, name: accountGroups.name })
+        .from(accountGroups)
+        .where(eq(accountGroups.accountId, loaded.row.accountId)),
+    ]);
 
-  // For every grant-bearing group, fetch its members so we can fold their
-  // inherited role into each user's effective access. One round-trip
-  // covering all groups at once.
+  const resourceGrantRows = resourceGrantRowsRaw.filter((r) => r.resourceType !== 'secret');
+  const groupNameById = new Map(accountGroupRows.map((g) => [g.groupId, g.name] as const));
+
+  // For every group referenced by ANY channel — project-role grant, custom
+  // policy, or resource grant — fetch its members so each can be folded onto
+  // the individual users below. One round-trip covering all groups at once.
   const grantGroupIds = projectGroupRows.map((g) => g.groupId);
-  const groupMemberRows = grantGroupIds.length
+  const policyGroupIds = customPolicyRows
+    .filter((r) => r.principalType === 'group')
+    .map((r) => r.principalId);
+  const resourceGrantGroupIds = resourceGrantRows
+    .filter((r) => r.principalType === 'group')
+    .map((r) => r.principalId);
+  const allGroupIds = Array.from(new Set([...grantGroupIds, ...policyGroupIds, ...resourceGrantGroupIds]));
+  const groupMemberRows = allGroupIds.length
     ? await db
         .select({
           groupId: accountGroupMembers.groupId,
           userId: accountGroupMembers.userId,
         })
         .from(accountGroupMembers)
-        .where(inArray(accountGroupMembers.groupId, grantGroupIds))
+        .where(inArray(accountGroupMembers.groupId, allGroupIds))
     : [];
+  const memberUserIdsByGroup = new Map<string, string[]>();
+  for (const m of groupMemberRows) {
+    const arr = memberUserIdsByGroup.get(m.groupId) ?? [];
+    arr.push(m.userId);
+    memberUserIdsByGroup.set(m.groupId, arr);
+  }
+
+  // Fold custom-role policies onto individual users (direct member principal,
+  // or every current member of a group principal) and, separately, keep the
+  // per-group view for `group_access` below.
+  type CustomRolePolicyEntry = {
+    policy_id: string;
+    role_id: string;
+    role_key: string;
+    role_name: string;
+    scope_type: 'project' | 'account';
+    source: 'direct' | 'group';
+    group_id: string | null;
+    group_name: string | null;
+    expires_at: string | null;
+  };
+  const customPoliciesByUser = new Map<string, CustomRolePolicyEntry[]>();
+  const customPoliciesByGroup = new Map<string, Omit<CustomRolePolicyEntry, 'source' | 'group_id' | 'group_name'>[]>();
+  for (const row of customPolicyRows) {
+    const base = {
+      policy_id: row.policyId,
+      role_id: row.roleId,
+      role_key: row.roleKey,
+      role_name: row.roleName,
+      scope_type: row.scopeType as 'project' | 'account',
+      expires_at: row.expiresAt?.toISOString() ?? null,
+    };
+    if (row.principalType === 'member') {
+      const arr = customPoliciesByUser.get(row.principalId) ?? [];
+      arr.push({ ...base, source: 'direct', group_id: null, group_name: null });
+      customPoliciesByUser.set(row.principalId, arr);
+    } else {
+      const groupId = row.principalId;
+      const groupName = groupNameById.get(groupId) ?? null;
+      const groupArr = customPoliciesByGroup.get(groupId) ?? [];
+      groupArr.push(base);
+      customPoliciesByGroup.set(groupId, groupArr);
+      for (const userId of memberUserIdsByGroup.get(groupId) ?? []) {
+        const arr = customPoliciesByUser.get(userId) ?? [];
+        arr.push({ ...base, source: 'group', group_id: groupId, group_name: groupName });
+        customPoliciesByUser.set(userId, arr);
+      }
+    }
+  }
+
+  // Fold resource grants (agent/skill) the same way.
+  type ResourceGrantEntry = {
+    grant_id: string;
+    resource_type: 'agent' | 'skill';
+    resource_id: string;
+    source: 'direct' | 'group';
+    group_id: string | null;
+    group_name: string | null;
+    expires_at: string | null;
+  };
+  const resourceGrantsByUser = new Map<string, ResourceGrantEntry[]>();
+  const resourceGrantsByGroup = new Map<string, Omit<ResourceGrantEntry, 'source' | 'group_id' | 'group_name'>[]>();
+  for (const row of resourceGrantRows) {
+    const base = {
+      grant_id: row.grantId,
+      resource_type: row.resourceType as 'agent' | 'skill',
+      resource_id: row.resourceId,
+      expires_at: row.expiresAt?.toISOString() ?? null,
+    };
+    if (row.principalType === 'member') {
+      const arr = resourceGrantsByUser.get(row.principalId) ?? [];
+      arr.push({ ...base, source: 'direct', group_id: null, group_name: null });
+      resourceGrantsByUser.set(row.principalId, arr);
+    } else {
+      const groupId = row.principalId;
+      const groupName = groupNameById.get(groupId) ?? null;
+      const groupArr = resourceGrantsByGroup.get(groupId) ?? [];
+      groupArr.push(base);
+      resourceGrantsByGroup.set(groupId, groupArr);
+      for (const userId of memberUserIdsByGroup.get(groupId) ?? []) {
+        const arr = resourceGrantsByUser.get(userId) ?? [];
+        arr.push({ ...base, source: 'group', group_id: groupId, group_name: groupName });
+        resourceGrantsByUser.set(userId, arr);
+      }
+    }
+  }
+
+  // Per-group directory: every group with a project-role grant, a custom-role
+  // policy, or a resource grant on this project. Built-in role comes from
+  // project_group_grants (V2 bulk-access channel); null when a group reaches
+  // this project only via a custom policy or resource grant.
+  const groupAccessById = new Map<
+    string,
+    {
+      group_id: string;
+      group_name: string | null;
+      built_in_role: string | null;
+      custom_role_policies: Omit<CustomRolePolicyEntry, 'source' | 'group_id' | 'group_name'>[];
+      resource_grants: Omit<ResourceGrantEntry, 'source' | 'group_id' | 'group_name'>[];
+    }
+  >();
+  const getGroupAccessEntry = (groupId: string, groupName: string | null) => {
+    let entry = groupAccessById.get(groupId);
+    if (!entry) {
+      entry = {
+        group_id: groupId,
+        group_name: groupName,
+        built_in_role: null,
+        custom_role_policies: [],
+        resource_grants: [],
+      };
+      groupAccessById.set(groupId, entry);
+    } else if (groupName && !entry.group_name) {
+      entry.group_name = groupName;
+    }
+    return entry;
+  };
+  for (const g of projectGroupRows) {
+    getGroupAccessEntry(g.groupId, g.groupName).built_in_role = g.role;
+  }
+  for (const [groupId, policies] of customPoliciesByGroup) {
+    getGroupAccessEntry(groupId, groupNameById.get(groupId) ?? null).custom_role_policies = policies;
+  }
+  for (const [groupId, grants] of resourceGrantsByGroup) {
+    getGroupAccessEntry(groupId, groupNameById.get(groupId) ?? null).resource_grants = grants;
+  }
+  const groupAccess = Array.from(groupAccessById.values());
 
   // Index: userId → list of { group_id, group_name, role } that contribute.
   type GroupSource = { group_id: string; group_name: string; role: ProjectRole };
@@ -295,7 +477,9 @@ projectsApp.openapi(
     arr.push({
       group_id: grant.groupId,
       group_name: grant.groupName,
-      role: grant.role as ProjectRole,
+      // Fold a retired stored value (`editor`/`user`/`viewer`) — the access
+      // list must never emit a role the API no longer accepts on write.
+      role: normalizeProjectRole(grant.role) ?? 'member',
     });
     groupSourcesByUser.set(m.userId, arr);
   }
@@ -313,7 +497,7 @@ projectsApp.openapi(
     .map((member) => {
       const accountRole = member.accountRole as AccountRole;
       const grant = grantsByUser.get(member.userId);
-      const projectRole = (grant?.projectRole as ProjectRole | undefined) ?? null;
+      const projectRole = normalizeProjectRole(grant?.projectRole);
       const groupSources = groupSourcesByUser.get(member.userId) ?? [];
 
       // Pure fold — see projects/access.ts for the precedence rules.
@@ -331,10 +515,10 @@ projectsApp.openapi(
         effective_project_role: fold.effective_project_role,
         has_implicit_access: isAccountManager(accountRole),
         /** What ultimately decided the effective role. UI labels with
-         *  it: "Manager (account admin)" vs "Editor (via Engineering)". */
+         *  it: "Manager (account admin)" vs "Member (via Engineering)". */
         effective_source: fold.effective_source,
         /** Every group attachment that includes this user. Lets the UI
-         *  list multi-source access ("Editor via Engineering + Viewer
+         *  list multi-source access ("Manager via Engineering + Member
          *  via Viewers") without further API calls. */
         group_sources: fold.group_sources,
         joined_at: member.joinedAt.toISOString(),
@@ -345,6 +529,13 @@ projectsApp.openapi(
          *  Group-derived expiries are surfaced per-source separately
          *  (not yet wired into group_sources — follow-up). */
         expires_at: grant?.expiresAt?.toISOString() ?? null,
+        /** Custom (IAM v1) role policies bound to this user, direct or via a
+         *  group they belong to — additive to `role`/`sources`, never folded
+         *  into `effective_project_role`. */
+        custom_role_policies: customPoliciesByUser.get(member.userId) ?? [],
+        /** IAM v2 per-resource (agent/skill) grants scoped to this user,
+         *  direct or via a group they belong to. */
+        resource_grants: resourceGrantsByUser.get(member.userId) ?? [],
       };
     })
     .sort((a, b) => {
@@ -359,6 +550,11 @@ projectsApp.openapi(
     can_manage: roleAllows(loaded.effectiveRole, 'manage'),
     viewer_user_id: loaded.userId,
     members,
+    /** Every group with SOME access to this project — a project-role grant,
+     *  a custom-role policy, or a per-resource grant — independent of the
+     *  per-user fold above. Lets the UI show group-level access directly
+     *  instead of only inferring it from members' `custom_role_policies`. */
+    group_access: groupAccess,
   });
 },
 );
@@ -482,7 +678,7 @@ projectsApp.openapi(
   const projectId = c.req.param('projectId');
   // Floor is 'read' (project membership); the real gate is the members.manage
   // leaf below, so a custom role granting ONLY members.manage (no project.write)
-  // works, and — matching the sibling approve/reject routes — a plain editor
+  // works, and — matching the sibling approve/reject routes — a plain member
   // (project.write but not members.manage) can't list pending access requests.
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -526,13 +722,13 @@ projectsApp.openapi(
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   // Approving an access request grants a project role to the requester —
   // membership management, NOT plain write. loadProjectForUser('manage') only
-  // maps to project.write (editor), so without this an editor could approve
+  // maps to project.write, so without this a non-manager could approve
   // requests and even hand out the 'manager' role. Gate on members.manage.
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
 
   const body = await readBody(c);
-  const role = body.role === undefined ? 'member' : normalizeProjectRole(body.role);
-  if (!role) return c.json({ error: 'role must be one of manager|editor|member' }, 400);
+  const role = body.role === undefined ? 'member' : parseAssignableProjectRole(body.role);
+  if (!role) return c.json({ error: PROJECT_ROLE_INPUT_ERROR }, 400);
 
   const [request] = await db
     .select()
@@ -672,9 +868,9 @@ projectsApp.openapi(
 
   const body = await readBody(c);
   const email = (typeof body.email === 'string' ? body.email : '').trim().toLowerCase();
-  const role = normalizeProjectRole(body.role);
+  const role = parseAssignableProjectRole(body.role);
   if (!email) return c.json({ error: 'email is required' }, 400);
-  if (!role) return c.json({ error: 'role must be one of manager|editor|member' }, 400);
+  if (!role) return c.json({ error: PROJECT_ROLE_INPUT_ERROR }, 400);
   const expires = parseExpiresAtBody(body.expires_at);
   if (!expires.ok) return c.json({ error: expires.error }, 400);
 
@@ -1089,13 +1285,13 @@ projectsApp.openapi(
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   // Member management is admin-only; loadProjectForUser('manage') now
-  // resolves to project.write (editor-tier), so we add an explicit
+  // resolves to project.write, so we add an explicit
   // stricter gate here.
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
 
   const body = await readBody(c);
-  const role = normalizeProjectRole(body.role);
-  if (!role) return c.json({ error: 'role must be one of manager|editor|member' }, 400);
+  const role = parseAssignableProjectRole(body.role);
+  if (!role) return c.json({ error: PROJECT_ROLE_INPUT_ERROR }, 400);
   const expires = parseExpiresAtBody(body.expires_at);
   if (!expires.ok) return c.json({ error: expires.error }, 400);
 

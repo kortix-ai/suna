@@ -60,8 +60,8 @@ export function ToolError({ error, toolName }: { error: string; toolName?: strin
         </div>
 
         <div className="space-y-2.5 px-2 pt-1 pb-2">
-          {validationIssues.map((issue, i) => (
-            <div key={i} className="space-y-1.5">
+          {validationIssues.map((issue) => (
+            <div key={`${issue.path.join('.')}:${issue.message}`} className="space-y-1.5">
               <div className="flex items-start gap-2">
                 <CircleAlert className="text-muted-foreground/60 mt-0.5 size-3.5 shrink-0" />
                 <div className="min-w-0 flex-1">

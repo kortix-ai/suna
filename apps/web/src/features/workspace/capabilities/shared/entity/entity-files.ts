@@ -58,20 +58,20 @@ function compareSegments(a: readonly string[], b: readonly string[]): number {
  */
 export function buildFileTree(paths: readonly string[], dir: string): FileNode[] {
   const prefix = dir ? `${dir}/` : '';
-  return paths
-    .filter((p) => (dir ? p.startsWith(prefix) : !p.includes('/')))
-    .map((p) => {
-      const rel = p.slice(prefix.length);
-      const segments = rel.split('/');
-      return { path: p, name: segments[segments.length - 1] ?? rel, depth: segments.length - 1, segments };
-    })
-    .sort((a, b) => {
-      const aEntry = a.name === 'SKILL.md' && a.depth === 0;
-      const bEntry = b.name === 'SKILL.md' && b.depth === 0;
-      if (aEntry !== bEntry) return aEntry ? -1 : 1;
-      return compareSegments(a.segments, b.segments);
-    })
-    .map(({ path, name, depth }) => ({ path, name, depth }));
+  const nodes: (FileNode & { segments: string[] })[] = [];
+  for (const p of paths) {
+    if (dir ? !p.startsWith(prefix) : p.includes('/')) continue;
+    const rel = p.slice(prefix.length);
+    const segments = rel.split('/');
+    nodes.push({ path: p, name: segments[segments.length - 1] ?? rel, depth: segments.length - 1, segments });
+  }
+  nodes.sort((a, b) => {
+    const aEntry = a.name === 'SKILL.md' && a.depth === 0;
+    const bEntry = b.name === 'SKILL.md' && b.depth === 0;
+    if (aEntry !== bEntry) return aEntry ? -1 : 1;
+    return compareSegments(a.segments, b.segments);
+  });
+  return nodes.map(({ path, name, depth }) => ({ path, name, depth }));
 }
 
 function extensionOf(path: string): string {

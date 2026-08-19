@@ -72,15 +72,19 @@ export function creditTransactionBadge(type: string): { label: string; variant: 
   return TRANSACTION_BADGES[type] ?? { label: type, variant: 'outline' };
 }
 
+// Hoisted so render does not rebuild the formatter per row — same fixed
+// locale and options as the previous inline `toLocaleString` call.
+const TRANSACTION_DATE_FORMAT = new Intl.DateTimeFormat('en-US', {
+  month: 'short',
+  day: 'numeric',
+  year: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+});
+
 function formatDate(value: string | null): string {
   if (!value) return '—';
-  return new Date(value).toLocaleString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  return TRANSACTION_DATE_FORMAT.format(new Date(value));
 }
 
 export function CreditTransactionsTable({ rows }: { rows: CreditTransactionRow[] }) {

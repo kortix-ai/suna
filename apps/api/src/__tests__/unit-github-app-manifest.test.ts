@@ -38,6 +38,12 @@ describe('buildGithubAppManifest', () => {
     expect(manifest.url).toBe('https://kortix.ai');
     expect(manifest.redirect_url).toBe('https://api.kortix.example/v1/platform/github-app/manifest-callback');
     expect(manifest.setup_url).toBe('https://api.kortix.example/v1/platform/github-app/install-callback');
+    // The OAuth callback is a SEPARATE registration from redirect_url —
+    // without it GitHub rejects oauth/authorize's redirect_uri and account
+    // linking can never complete on a manifest-created App.
+    expect(manifest.callback_urls).toEqual([
+      'https://api.kortix.example/v1/platform/github-app/oauth/callback',
+    ]);
     expect(manifest.public).toBe(false);
     expect(manifest.hook_attributes).toEqual({ url: 'https://kortix.ai', active: false });
     expect(manifest.default_events).toEqual([]);
@@ -46,6 +52,10 @@ describe('buildGithubAppManifest', () => {
       contents: 'write',
       pull_requests: 'write',
       metadata: 'read',
+      // Backs the App-native OAuth identity proof (oauth/authorize +
+      // oauth/callback) — GET /orgs/{org}/memberships/{user} and
+      // GET /user/memberships/orgs need it on a GitHub App user token.
+      members: 'read',
     });
   });
 

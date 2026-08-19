@@ -22,8 +22,11 @@
  * navigate to `/settings/<tab>` instead. `main` authored this row against the
  * deleted `SidePanelUserSettings` modal; this branch replaced that modal with
  * the panel (JAY-498), so the row was repointed rather than dropped.
- * Account settings (`/accounts/:id`) is reached from that panel — not from this
- * menu — so the switcher stays about the workspace.
+ * Account settings (`/accounts/:id`) is reached from the "Switch Workspace"
+ * submenu, at the top of it, above the workspace list — see
+ * `workspace-menu-section.tsx`. That is the one view in this menu already
+ * grouped BY account, so it is the only place where "which account" is not a
+ * guess. This top-level menu stays about the user and the workspace.
  *
  * The rows that are genuinely account-level and have nowhere else to live in
  * this panel — Install App, Theme, Help, Log out — are shared with `UserMenu`

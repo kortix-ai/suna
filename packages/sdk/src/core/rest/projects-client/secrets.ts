@@ -12,6 +12,7 @@ export type SecretConsumer =
   | 'http_broker'
   | 'network';
 export type SecretDeliveryStatus = 'available' | 'unavailable' | 'disabled';
+export type SecretDeliveryBlockedReason = 'no_agent_grant';
 export type SecretInjectionSlot =
   | { kind: 'header'; name: string; template?: string }
   | { kind: 'query'; name: string }
@@ -87,6 +88,16 @@ export interface ProjectSecret {
   consumer?: SecretConsumer | null;
   /** Whether the selected delivery path is usable in this deployment. */
   delivery_status?: SecretDeliveryStatus;
+  /** The agent-grant axis of delivery, orthogonal to `delivery_status`. A
+   *  secret whose path this deployment fully supports still reaches nothing
+   *  when the manifest's agent roster admits no agent for it. Null when some
+   *  agent admits it, or when the project has published no roster at all. */
+  delivery_blocked_reason?: SecretDeliveryBlockedReason | null;
+  /** Whether this project can inject at the network boundary at all — via the
+   *  provider edge or the in-guest shim, whichever it has. False makes every
+   *  `egress` secret undeliverable however well-formed its policy is, so a
+   *  caller rendering `strategy: 'egress'` needs this to explain the state. */
+  network_boundary_available?: boolean;
   /** Network policy metadata. The secret value is never present. */
   egress_policy?: SecretEgressPolicy | null;
   strategy_locked?: boolean;
@@ -120,7 +131,7 @@ export async function listProjectSecrets(projectId: string) {
     await backendApi.get<ProjectSecretsResponse>(
       `/projects/${projectId}/secrets`,
       // Background read fired from member-visible surfaces (model picker, LLM
-      // providers, agent editor) — project.secret.read is editor-tier, so a
+      // providers, agent editor) — project.secret.read is manager-tier, so a
       // plain member legitimately 403s here. Callers render their own state.
       { showErrors: false },
     ),

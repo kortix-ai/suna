@@ -166,8 +166,9 @@ describe('qk.project', () => {
   });
 
   // `listProjectSessions(id, { scope })` is a DIFFERENT server request per
-  // scope ('visible' filters to what the caller can see; 'project' is the
-  // manager-only unfiltered full inventory) — not a client-side filter of one
+  // scope ('visible' filters ordinary lifecycle rows; 'project' is the
+  // manager-only lifecycle inventory, but both omit inaccessible sessions) —
+  // not a client-side filter of one
   // response. The scope therefore has to be part of the key: sharing one
   // scope-less slot let a 'project' reader and a default reader silently
   // overwrite what the other saw. The two scoped forms are SIBLINGS, not

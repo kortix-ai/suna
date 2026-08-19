@@ -65,7 +65,7 @@ export default async function Page(props: { params: Promise<{ slug?: string[] }>
                   i === breadcrumbs.length - 1 && 'text-fd-primary font-medium',
                 );
                 return (
-                  <Fragment key={i}>
+                  <Fragment key={item.url ?? `${item.name}`}>
                     {i !== 0 && <ChevronRight className="size-3.5 shrink-0" />}
                     {item.url ? (
                       <Link

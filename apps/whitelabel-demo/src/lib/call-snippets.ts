@@ -277,7 +277,7 @@ function sessionPrompt(ctx: SnippetContext): CallSnippet {
     serverInjected: [],
     notes: [
       'The agent is per MESSAGE, not per session: `send(text, { agent })` overrides the sticky pick for that one turn.',
-      'A switch re-scopes secret delivery plus connector and Kortix CLI grants before the prompt runs. This only affects future access; it cannot erase a secret an earlier agent already read. Operators can opt into a strict immutable-grant mode that returns 409 AGENT_SWITCH_REQUIRES_NEW_SESSION.',
+      'A switch re-scopes secret delivery plus connector and Kortix CLI grants before the prompt runs. This only affects future access; it cannot erase a secret an earlier agent already read.',
     ],
   };
 }

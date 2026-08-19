@@ -14,11 +14,11 @@ import Loading from '@/components/ui/loading';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { useAuth } from '@/features/providers/auth-provider';
 import { InstantSessionShell } from '@/features/session/instant-session-shell';
+import { resolvePinnedRootSessionId } from '@/features/session/pinned-root-session';
 import { ProviderFailureRecovery } from '@/features/session/provider-failure-recovery';
 import {
   pendingSessionPromptForRecovery,
   provisioningFailurePresentation,
-  startStashFromPendingSessionPrompt,
 } from '@/features/session/provisioning-failure';
 import { SandboxLoadingBoundary } from '@/features/session/sandbox-loading-boundary';
 import { SessionChat } from '@/features/session/session-chat';
@@ -42,6 +42,7 @@ import {
   shouldMountSessionChat,
 } from '@/features/session/session-surface';
 import {
+  canRenderCachedTranscriptWhileSandboxDown,
   isDormantSessionWithoutRuntime,
   isUnmaterializedSessionFailure,
 } from '@/features/session/session-terminal-state';
@@ -70,18 +71,20 @@ import {
   getProjectDetail,
   listProjectSessions,
   sessionStartKey,
+  updateProjectSession,
 } from '@kortix/sdk';
 import { clearSessionFresh, isSessionFresh } from '@kortix/sdk/fresh-sessions';
 import { setActiveInstanceCookie } from '@kortix/sdk/instance-routes';
 import {
   type UseSessionResult,
+  clearStartStash,
   contract,
   migrateStash,
   qk,
   readStartStash,
+  startSessionWithPrompt,
   useRuntimeConnectionStore,
   useSession,
-  writeStartStash,
 } from '@kortix/sdk/react';
 
 /**
@@ -234,8 +237,33 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     restart.restart();
   };
   const handleProvisioningRetry = () => {
+    // A LEGACY hand-off (metadata.pending_prompt.text from a pre-conversion
+    // API, or a full-prompt stash) becomes a durable inbox row here — POSTed,
+    // not re-stashed, so this retry is the last time it can be lost. A session
+    // created by the current API needs nothing: its first prompt has been a
+    // durable row since the create transaction, and the restart alone re-arms
+    // delivery.
     if (pendingPrompt) {
-      writeStartStash(sessionId, startStashFromPendingSessionPrompt(pendingPrompt));
+      void startSessionWithPrompt(projectId, sessionId, {
+        parts: [{ type: 'text' as const, text: pendingPrompt.text }],
+        overrides: {
+          ...(pendingPrompt.agent ? { agent: pendingPrompt.agent } : {}),
+          ...(pendingPrompt.model ? { model: pendingPrompt.model } : {}),
+          ...(pendingPrompt.variant ? { variant: pendingPrompt.variant } : {}),
+        },
+      })
+        .then(() => {
+          clearStartStash(sessionId);
+          // Strip the recovered text so a later mount cannot enqueue it twice.
+          return updateProjectSession(projectId, sessionId, {
+            metadata: { pending_prompt: null },
+          }).catch(() => undefined);
+        })
+        .catch((error) => {
+          errorToast(
+            error instanceof Error ? error.message : 'Could not queue the saved prompt',
+          );
+        });
     }
     handleRestart();
   };
@@ -357,6 +385,21 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   // card. It needs its own terminal branch — see the render below.
   const runtimeIdentityUnavailable =
     !authLoading && !!user && isRuntimeIdentityUnavailable(sandbox);
+  // A stopped/errored sandbox with a renderable cached transcript should show
+  // the CONVERSATION, not the full-screen restart/waking card `fatal` forces
+  // below. `hasTranscript` is already the route's own veto signal (painted from
+  // the SDK sync store's IndexedDB/memory cache without waiting on a runtime —
+  // see the comment on `sawTranscript` above); reading it again here, rather
+  // than re-deriving cache presence, is what keeps this additive to the
+  // existing chat-mount path instead of a second cache implementation.
+  // Sending still waits on the runtime — `sessionComposerReadiness` shows its
+  // own "waking" notice above the composer, and a prompt submitted meanwhile
+  // becomes a durable inbox row the control plane delivers once the box is up,
+  // rather than being dropped.
+  const showCachedTranscriptWhileDown = canRenderCachedTranscriptWhileSandboxDown({
+    sandboxStatus: sandbox?.status,
+    hasCachedContent: hasTranscript,
+  });
   // Read the RAW `/start` stage, never `session.phase` — `phase` folds a
   // terminal stage together with a typed `/start` error and a transient
   // OpenCode REST error, so a still-provisioning session used to be classified
@@ -603,7 +646,12 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
       );
     }
 
-    if (fatal) {
+    // `showCachedTranscriptWhileDown` VETOES the terminal card below, exactly
+    // the way transcript evidence already vetoes the new-session shell above
+    // (`isNewSessionSurface`) — a session with renderable history is never a
+    // dead end, live sandbox or not. Falls through to the same dual-layer chat
+    // mount every non-fatal open uses; nothing here needs its own render path.
+    if (fatal && !showCachedTranscriptWhileDown) {
       // Stopped but resumable → we're auto-waking it. Show the boot loader, not a
       // dead-end, so the user just sees it come back (as a hard refresh would).
       if (autoResuming) {
@@ -818,14 +866,20 @@ function ActiveSessionChat({
   const selectedSession = selectedOpenCodeSessionId
     ? runtimeSessions.find((session) => session.id === selectedOpenCodeSessionId)
     : null;
-  // Pin the first resolved root id so the chat keeps its identity if the live
-  // value blips back to null mid-session. State, not a ref written during
-  // render: this component is already keyed per session by the route, so there
-  // is no cross-session reset to hand-roll, and a discarded render can no longer
+  // Pin the resolved root id so the chat keeps its identity if the live
+  // value blips back to null mid-session — but FOLLOW a non-null change: the
+  // SDK's pin precedence only climbs, so a different resolved id is a
+  // higher-authority correction (e.g. a stale persisted mirror displaced by
+  // the real /start pin) and holding the old latch would keep painting — and
+  // delivering into — the conversation the stale pin named. See
+  // resolvePinnedRootSessionId. State, not a ref written during render: this
+  // component is already keyed per session by the route, so there is no
+  // cross-session reset to hand-roll, and a discarded render can no longer
   // leave a pin behind that the state it belongs to never saw.
   const [pinnedRootSessionId, setPinnedRootSessionId] = useState<string | null>(null);
   useEffect(() => {
-    if (!pinnedRootSessionId && rootSessionId) setPinnedRootSessionId(rootSessionId);
+    const next = resolvePinnedRootSessionId(pinnedRootSessionId, rootSessionId);
+    if (next !== pinnedRootSessionId) setPinnedRootSessionId(next);
   }, [pinnedRootSessionId, rootSessionId]);
   const chatSessionId = selectedSession?.id ?? pinnedRootSessionId ?? rootSessionId ?? null;
 
@@ -847,6 +901,11 @@ function ActiveSessionChat({
   useEffect(() => {
     if (!chatSessionId) return;
     migrateStash(sessionId, chatSessionId);
+    // No queue hand-off beside it any more. The browser queue was keyed by the
+    // OpenCode session id, which changes as the pin resolves, so the instant
+    // shell's messages had to be moved from the route id onto the pin or they
+    // were orphaned (#6110). The inbox is keyed by the KORTIX session id — the
+    // route id — which never changes, so there is nothing to adopt.
   }, [sessionId, chatSessionId]);
 
   // ── Readiness benchmarking marks ───────────────────────────────────────

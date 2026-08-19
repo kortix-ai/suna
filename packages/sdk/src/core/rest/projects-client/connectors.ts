@@ -380,6 +380,8 @@ export interface OAuth2ClientCredentials {
   scopes?: string[];
   resource?: string;
   audience?: string;
+  /** Additional provider-required token form fields not owned by OAuth2 itself. */
+  token_params?: Record<string, string>;
 }
 
 export type OAuth2TokenEndpointAuthMethod =

@@ -71,6 +71,9 @@ export const AccountMemberSchema = z
     account_role: z.string(),
     is_super_admin: z.boolean(),
     explicit_project_count: z.number(),
+    /** Direct project grants only (mirrors explicit_project_count) — group-
+     *  derived and implicit (owner/admin) access aren't enumerated here. */
+    projects: z.array(z.object({ project_id: z.string(), name: z.string(), role: z.string() })),
     groups: z.array(z.object({ group_id: z.string(), name: z.string() })),
     active_pat_count: z.number(),
     has_verified_mfa: z.boolean(),

@@ -54,7 +54,10 @@ function parseArrayOutput(parsed: Record<string, unknown>): ParsedMemorySearchOu
 
     const filesRaw = row.files ?? row.file_paths ?? row.filePaths;
     const files = Array.isArray(filesRaw)
-      ? filesRaw.map((file) => asString(file).trim()).filter(Boolean)
+      ? filesRaw.flatMap((file) => {
+          const path = asString(file).trim();
+          return path ? [path] : [];
+        })
       : [];
 
     const confidenceValue = row.confidence;

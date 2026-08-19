@@ -3,10 +3,13 @@
 
 import { createRoute, z } from '@hono/zod-openapi';
 import { json, errors, auth } from '../../openapi';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, or } from 'drizzle-orm';
 import {
   accountGroupMembers,
+  accountGroups,
   accountMembers,
+  iamPolicies,
+  iamRoles,
   projectGroupGrants,
   projectMembers,
   projects,
@@ -188,12 +191,13 @@ iamRouter.openapi(
     await assertAuthorized(callerId, accountId, ACCOUNT_ACTIONS.MEMBER_READ);
   }
 
-  type Role = 'manager' | 'editor' | 'member';
-  const rank: Record<Role, number> = { member: 1, editor: 2, manager: 3 };
+  type Role = 'manager' | 'member';
+  const rank: Record<Role, number> = { member: 1, manager: 2 };
   const max = (a: Role, b: Role): Role => (rank[a] >= rank[b] ? a : b);
-  // Fold the retired `viewer` and `user` tiers into `member` at the DB-read boundary.
+  // Fold every retired tier into a live one at the DB-read boundary:
+  // `viewer`/`user` → `member`, the removed `editor` → `manager`.
   const asRole = (raw: string): Role =>
-    raw === 'viewer' || raw === 'user' ? 'member' : (raw as Role);
+    raw === 'viewer' || raw === 'user' ? 'member' : raw === 'editor' ? 'manager' : (raw as Role);
 
   // Project info we'll need for every row in the response.
   const allProjects = await db
@@ -218,7 +222,7 @@ iamRouter.openapi(
     )
     .limit(1);
   if (!membership) {
-    return c.json({ projects: [] });
+    return c.json({ projects: [], account_wide_policies: [] });
   }
 
   const byProject = new Map<
@@ -287,11 +291,96 @@ iamRouter.openapi(
     }
   }
 
+  // 4) custom-role iam_policies bound directly to this member, or to any
+  // group in `groupIds` (same array source 3 uses). These are DB-driven
+  // custom roles (see iam_policies / iam_roles in kortix.ts) — a wholly
+  // separate mechanism from the built-in manager/member tiers folded
+  // above, so they are surfaced as their own fields instead of being folded
+  // into `role`/`sources`. project-scoped policies (scope_type='project')
+  // attach to the matching entry already in `byProject`; account-scoped
+  // policies (scope_type='account') apply to every project and are
+  // reported once, top-level, instead of duplicated onto each entry.
+  type PolicySource = 'direct' | 'group';
+  interface CustomRolePolicy {
+    policy_id: string;
+    role_id: string;
+    role_key: string;
+    role_name: string;
+    source: PolicySource;
+    group_id: string | null;
+    group_name: string | null;
+    expires_at: string | null;
+  }
+
+  const groupNameById = new Map<string, string>();
+  if (groupIds.length > 0) {
+    const groupNameRows = await db
+      .select({ groupId: accountGroups.groupId, name: accountGroups.name })
+      .from(accountGroups)
+      .where(inArray(accountGroups.groupId, groupIds));
+    for (const g of groupNameRows) groupNameById.set(g.groupId, g.name);
+  }
+
+  const principalFilter =
+    groupIds.length > 0
+      ? or(
+          and(eq(iamPolicies.principalType, 'member'), eq(iamPolicies.principalId, targetUserId)),
+          and(eq(iamPolicies.principalType, 'group'), inArray(iamPolicies.principalId, groupIds)),
+        )
+      : and(eq(iamPolicies.principalType, 'member'), eq(iamPolicies.principalId, targetUserId));
+
+  const policyRows = await db
+    .select({
+      policyId: iamPolicies.policyId,
+      principalType: iamPolicies.principalType,
+      principalId: iamPolicies.principalId,
+      roleId: iamPolicies.roleId,
+      roleKey: iamRoles.key,
+      roleName: iamRoles.name,
+      scopeType: iamPolicies.scopeType,
+      scopeId: iamPolicies.scopeId,
+      expiresAt: iamPolicies.expiresAt,
+    })
+    .from(iamPolicies)
+    .innerJoin(iamRoles, eq(iamRoles.roleId, iamPolicies.roleId))
+    .where(
+      and(
+        eq(iamPolicies.accountId, accountId),
+        principalFilter,
+        or(eq(iamPolicies.scopeType, 'project'), eq(iamPolicies.scopeType, 'account')),
+      ),
+    );
+
+  const customPolicyByProject = new Map<string, CustomRolePolicy[]>();
+  const accountWidePolicies: CustomRolePolicy[] = [];
+  for (const r of policyRows) {
+    const source: PolicySource = r.principalType === 'group' ? 'group' : 'direct';
+    const groupId = source === 'group' ? r.principalId : null;
+    const entry: CustomRolePolicy = {
+      policy_id: r.policyId,
+      role_id: r.roleId,
+      role_key: r.roleKey,
+      role_name: r.roleName,
+      source,
+      group_id: groupId,
+      group_name: groupId ? (groupNameById.get(groupId) ?? null) : null,
+      expires_at: r.expiresAt ? r.expiresAt.toISOString() : null,
+    };
+    if (r.scopeType === 'account') {
+      accountWidePolicies.push(entry);
+    } else if (r.scopeType === 'project' && r.scopeId) {
+      const list = customPolicyByProject.get(r.scopeId);
+      if (list) list.push(entry);
+      else customPolicyByProject.set(r.scopeId, [entry]);
+    }
+  }
+
   const out: Array<{
     project_id: string;
     project_name: string;
     role: Role;
     sources: ('implicit' | 'direct' | 'group')[];
+    custom_role_policies: CustomRolePolicy[];
   }> = [];
   for (const [projectId, info] of byProject) {
     const meta = projectMeta.get(projectId);
@@ -301,10 +390,11 @@ iamRouter.openapi(
       project_name: meta.name,
       role: info.role,
       sources: info.sources,
+      custom_role_policies: customPolicyByProject.get(projectId) ?? [],
     });
   }
   out.sort((a, b) => a.project_name.localeCompare(b.project_name));
-  return c.json({ projects: out });
+  return c.json({ projects: out, account_wide_policies: accountWidePolicies });
   },
 );
 

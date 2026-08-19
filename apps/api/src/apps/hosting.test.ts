@@ -204,6 +204,34 @@ describe('AppHostingProvider', () => {
     expect(hosting.stop('platinum', 'box-1')).rejects.toThrow('provider stop failed');
   });
 
+  test('stop is a no-op when the runtime provider can no longer be constructed', async () => {
+    // A legacy runtime on a provider this box has since disabled: resolving it
+    // throws. Teardown must not surface that as an error — the remote sandbox is
+    // unreachable and effectively gone.
+    let resolveCalls = 0;
+    const hosting = new AppHostingProvider({
+      runtimeProvider: () => {
+        resolveCalls += 1;
+        throw new Error('Platinum provider requires PLATINUM_API_KEY to be set.');
+      },
+    });
+
+    await hosting.stop('platinum', 'box-1');
+
+    expect(resolveCalls).toBe(1);
+  });
+
+  test('remove is a no-op when the runtime provider can no longer be constructed', async () => {
+    const hosting = new AppHostingProvider({
+      runtimeProvider: () => {
+        throw new Error('Daytona provider requires DAYTONA_API_KEY to be set.');
+      },
+    });
+
+    // Resolves rather than rejecting; nothing to assert beyond no throw.
+    await hosting.remove('daytona', 'box-1');
+  });
+
   test('polls authenticated appd status until the runtime is ready', async () => {
     const { hosting, ingressCalls, fetchCalls } = dependencies();
     const status = await hosting.waitUntilReady('e2b', 'box-1', 'runtime-1', 1_000);

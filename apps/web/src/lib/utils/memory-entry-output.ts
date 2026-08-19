@@ -147,12 +147,21 @@ function parseObservationReport(text: string): ParsedObservationMemory | null {
   }
 
   if (!session) {
-    const sessionMatch = remainder.match(/Session:\s*([\s\S]*?)(?=\s+Created:|\s+Concepts:|\s+Files read:|$)/i);
+    const sessionMatch = remainder.match(
+      /Session:\s*([\s\S]*?)(?=\s+Created:|\s+Facts:|\s+Concepts:|\s+Files read:|$)/i,
+    );
     session = sessionMatch?.[1]?.trim() || null;
   }
 
   if (!created) {
-    const createdMatch = remainder.match(/Created:\s*([\s\S]*?)(?=\s+Concepts:|\s+Files read:|$)/i);
+    // `Facts:` belongs in this lookahead exactly as it does in `compactField`.
+    // Without it, an observation that lists its facts AFTER `Created:` put the
+    // whole fact block into the date — the view then rendered
+    // "2026-07-01 Facts: - Removed duplicate middleware" in the one-line meta
+    // row beside a calendar icon.
+    const createdMatch = remainder.match(
+      /Created:\s*([\s\S]*?)(?=\s+Facts:|\s+Concepts:|\s+Files read:|$)/i,
+    );
     created = createdMatch?.[1]?.trim() || null;
   }
 

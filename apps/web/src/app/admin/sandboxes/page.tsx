@@ -184,8 +184,8 @@ function StatStrip({
   };
   return (
     <div className="border-border/60 divide-border grid grid-cols-2 divide-x divide-y overflow-hidden rounded-2xl border lg:grid-cols-4 lg:divide-y-0">
-      {items.map((it, i) => (
-        <div key={i} className="min-w-0 p-4">
+      {items.map((it) => (
+        <div key={it.label} className="min-w-0 p-4">
           <div className="text-muted-foreground/70 truncate text-xs font-medium tracking-wider uppercase">
             {it.label}
           </div>
@@ -888,8 +888,8 @@ export default function ProvidersPage() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {an.recentErrors.map((e, i) => (
-                        <TableRow key={i}>
+                      {an.recentErrors.map((e) => (
+                        <TableRow key={`${e.provider}:${e.createdAt}:${e.error ?? ''}`}>
                           <TableCell>
                             <Badge variant="outline" size="sm" className="capitalize">
                               {e.provider}

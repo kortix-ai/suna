@@ -7,8 +7,10 @@ import {
 } from '../command-helpers.ts';
 import { C, help, pad, status } from '../style.ts';
 
-type ProjectRole = 'manager' | 'editor' | 'member';
-const ROLES: readonly ProjectRole[] = ['manager', 'editor', 'member'];
+// Two project roles. `editor` was removed on 2026-08-18 — the API answers
+// 400 for it, so the CLI never offers it.
+type ProjectRole = 'manager' | 'member';
+const ROLES: readonly ProjectRole[] = ['manager', 'member'];
 
 interface AccessMember {
   user_id: string;

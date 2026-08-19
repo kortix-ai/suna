@@ -212,6 +212,14 @@ const TITLE_WAIT_WINDOW_MS = 2 * 60_000;
  * Fails CLOSED on an unknown age: an unparseable or missing `created_at` cannot
  * be proven young, and guessing wrong in that direction is the unbounded poll
  * this window exists to prevent.
+ *
+ * The window opens from the LATER of creation and last activity. An adopted
+ * warm session was created when the user landed on the project home —
+ * possibly long before the send — but its title generation starts at the
+ * first prompt, i.e. at adoption, which stamps `metadata.last_activity_at`
+ * (apps/api/src/projects/routes/warm-sessions.ts). Windowing on `created_at`
+ * alone skipped the fast poll for exactly the sessions the home send
+ * produces.
  */
 export function isAwaitingTitle(session: ProjectSession, now: number): boolean {
   if (sessionTitleHasLanded(session)) return false;
@@ -219,7 +227,8 @@ export function isAwaitingTitle(session: ProjectSession, now: number): boolean {
     (session as { created_at?: string | null }).created_at ?? '',
   );
   if (!Number.isFinite(createdAt)) return false;
-  return now - createdAt <= TITLE_WAIT_WINDOW_MS;
+  const windowStart = Math.max(createdAt, promptActivityMs(session) ?? createdAt);
+  return now - windowStart <= TITLE_WAIT_WINDOW_MS;
 }
 
 /** Is any session in the list still waiting for its title? */

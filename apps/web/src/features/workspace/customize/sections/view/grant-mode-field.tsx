@@ -37,7 +37,7 @@ function GrantModeField({
 }) {
   const mode: GrantMode =
     value === 'all' ? 'all' : value === 'none' || value === undefined ? 'none' : 'pick';
-  const [wantPick, setWantPick] = useState(Array.isArray(value) && value.length > 0);
+  const [wantPick, setWantPick] = useState(() => Array.isArray(value) && value.length > 0);
   const effectiveMode: GrantMode =
     value === 'all'
       ? 'all'
@@ -114,9 +114,10 @@ export function GrantSetField({
     >
       {({ selected, toggle }) => {
         const optionIds = new Set(options.map((o) => o.id));
-        const orphans = [...selected]
-          .filter((id) => !optionIds.has(id))
-          .map((id) => ({ id, label: id }));
+        const orphans: { id: string; label: string }[] = [];
+        for (const id of selected) {
+          if (!optionIds.has(id)) orphans.push({ id, label: id });
+        }
         const rows = [...options, ...orphans];
         return rows.length === 0 ? (
           <p className="text-muted-foreground text-xs">{emptyLabel}</p>

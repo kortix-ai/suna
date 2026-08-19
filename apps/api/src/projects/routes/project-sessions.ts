@@ -27,11 +27,30 @@ import {
   requestAuditContext,
   serializeSession,
 } from '../lib/serializers';
+import { resolveAndAuthorizeAgent } from '../lib/agent-access';
 import { sendSessionCreateError } from '../lib/sessions';
 import { sessionHasMemberConnectorBinding } from '../lib/session-connector-bindings';
 import { createSession, deleteSession } from '../session-lifecycle';
 import { callerKortixSessionId } from '../lib/caller-session';
 import { selectSessionRowsForViewer, type ProjectSessionListScope } from '../lib/session-inventory';
+
+const SERVER_MANAGED_SESSION_METADATA_KEYS = [
+  'deletedAt',
+  'deletedBy',
+  'opencode_model',
+  'opencode_model_source',
+  'source',
+  'trigger_kind',
+  'trigger_slug',
+  'name',
+  'title_source',
+] as const;
+
+function serverManagedSessionMetadataKey(value: unknown): string | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const metadata = value as Record<string, unknown>;
+  return SERVER_MANAGED_SESSION_METADATA_KEYS.find((key) => hasOwn(metadata, key)) ?? null;
+}
 
 // Session routes. Invariant: session_id == sandbox_id == git branch name.
 
@@ -57,6 +76,13 @@ projectsApp.openapi(
   async (c: any) => {
   const projectId = c.req.param('projectId');
   const body = await readBody(c);
+  const serverManagedMetadataKey = serverManagedSessionMetadataKey(body.metadata);
+  if (serverManagedMetadataKey) {
+    return c.json(
+      { error: `metadata key is server-managed: ${serverManagedMetadataKey}` },
+      400,
+    );
+  }
   const loaded = await loadProjectForUser(c, projectId, 'session');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   // Per-agent gate: starting a session provisions compute. A scoped agent token
@@ -79,6 +105,15 @@ projectsApp.openapi(
   // scoped to. No-op when the agent isn't scoped (unscoped = project-wide) and
   // for owner/admins. Mirrors the agent the session core resolves (sessions.ts).
   const launchAgent = normalizeString(body.agent_name ?? body.agentName);
+  // Covers BOTH the named agent and — the case that was missing — the unnamed
+  // one. No `agent_name` does not mean "no agent": the session core falls back
+  // to the manifest's `default_agent`, and that agent must clear the same gate.
+  // Skipping it is how a member with no grants still got the fully-privileged
+  // default to answer their prompts while the composer showed nothing selected.
+  //
+  // Runs BEFORE the leaf assert below so its message wins. Both refuse the same
+  // requests; only this one can say WHICH agents the caller could pick instead.
+  const agentAccess = await resolveAndAuthorizeAgent(c, loaded, projectId, launchAgent);
   if (launchAgent) {
     await assertProjectCapability(
       c,
@@ -88,6 +123,14 @@ projectsApp.openapi(
       PROJECT_ACTIONS.PROJECT_AGENT_READ,
       { type: 'agent', id: launchAgent },
     );
+  }
+  // When the caller named no agent and this gate could not read one off the
+  // request/session/mirror, it picked the first agent the caller may use. For a
+  // member that pick has to BIND, because `createSession` resolves the agent
+  // again from the manifest and would otherwise start an agent this gate never
+  // approved. Managers and owners keep the manifest default untouched.
+  if (!launchAgent && agentAccess.memberTier && agentAccess.agentName) {
+    body.agent_name = agentAccess.agentName;
   }
   // Bound the client-supplied idempotency key at intake. It's stored in a unique
   // btree (index entry limit ~2704 bytes), so an oversized header would surface
@@ -226,7 +269,15 @@ projectsApp.openapi(
   const runtimeStatusBySession = new Map(runtimeRows.map((row) => [row.sessionId, row.status]));
 
   const subject = await resolveShareSubject(loaded.userId);
-  const canManageProject = roleAllows(loaded.effectiveRole, 'manage');
+  const canManageProject =
+    roleAllows(loaded.effectiveRole, 'manage') ||
+    (await projectCapabilityAllowed(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      'project.members.manage',
+    ));
   const grantsBySession = await loadSessionGrants(
     rows.filter((row) => row.visibility === 'restricted').map((row) => row.sessionId),
   );
@@ -439,29 +490,22 @@ projectsApp.openapi(
   // PUT /sessions/{id}/model, which validates it against the account. Planting
   // it through metadata skipped that check entirely, so a retired or
   // account-forbidden model could be stored and booted by the next cold provision.
+  // source / trigger_kind / trigger_slug identify sessions created by the
+  // durable trigger path. Manager visibility trusts all three fields, so only
+  // the server can write them.
   // name / title_source are owned by the title generator (the SINGLE writer of
   // metadata.name — see projects/session-title-generate.ts). A client that plants
   // a non-placeholder name pre-empts titling permanently, since `needsTitle` and
   // the CAS both then refuse; renaming is `body.name` → metadata.custom_name,
   // which is the supported, non-destructive override.
-  const SERVER_MANAGED_METADATA_KEYS = [
-    'deletedAt',
-    'deletedBy',
-    'opencode_model',
-    'opencode_model_source',
-    'name',
-    'title_source',
-  ];
-    const metadataInput =
-      body.metadata && typeof body.metadata === 'object' && !Array.isArray(body.metadata)
-    ? (body.metadata as Record<string, unknown>)
-    : null;
-  if (metadataInput) {
-    const forgedKey = SERVER_MANAGED_METADATA_KEYS.find((k) => hasOwn(metadataInput, k));
-    if (forgedKey) {
-      return c.json({ error: `metadata key is server-managed: ${forgedKey}` }, 400);
-    }
+  const forgedKey = serverManagedSessionMetadataKey(body.metadata);
+  if (forgedKey) {
+    return c.json({ error: `metadata key is server-managed: ${forgedKey}` }, 400);
   }
+  const metadata =
+    body.metadata && typeof body.metadata === 'object' && !Array.isArray(body.metadata)
+      ? (body.metadata as Record<string, unknown>)
+      : null;
 
   const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null);
   if (!visible) return c.json({ error: 'Not found' }, 404);
@@ -476,7 +520,6 @@ projectsApp.openapi(
   // and reverts the session to its auto title.
   const hasNameField = hasOwn(body, 'name');
   const name = normalizeString(body.name);
-  const metadata = metadataInput;
 
   if (hasNameField || metadata) {
     const nextMetadata: Record<string, unknown> = {

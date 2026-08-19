@@ -4,7 +4,7 @@
  *
  * Platinum injects at its own edge. Daytona has none, and cannot be pointed at
  * one (`outboundProxyUrl` is accepted and ignored — measured, see
- * docs/NETWORK_BOUNDARY_ON_DAYTONA.md §7). The way out is to notice the proxy
+ * docs/NETWORK_BOUNDARY_WITHOUT_PLATINUM.md §7). The way out is to notice the proxy
  * does two separable jobs:
  *
  *   1. terminate the guest's TLS  — can only happen INSIDE the guest

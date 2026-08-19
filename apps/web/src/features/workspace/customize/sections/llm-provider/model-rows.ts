@@ -73,11 +73,12 @@ export function buildModelGroups(models: FlatModel[], search = ''): ModelGroup[]
   }
 
   for (const group of groups.values()) {
-    const dated = new Set(
-      group.rows
-        .filter((row) => DATED_SUFFIX.test(row.model.modelID))
-        .map((row) => row.model.modelID.replace(DATED_SUFFIX, '')),
-    );
+    const dated = new Set<string>();
+    for (const row of group.rows) {
+      if (DATED_SUFFIX.test(row.model.modelID)) {
+        dated.add(row.model.modelID.replace(DATED_SUFFIX, ''));
+      }
+    }
     for (const row of group.rows) {
       row.isRollingAlias = !DATED_SUFFIX.test(row.model.modelID) && dated.has(row.model.modelID);
     }

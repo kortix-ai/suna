@@ -8,9 +8,8 @@
  * - MODEL — changeable. `PUT /sessions/{id}/model` re-points the running runtime.
  *   Restarts it, so the in-flight turn ends.
  * - AGENT — changeable PER PROMPT: each message names the agent it runs. The
- *   proxy re-scopes secret delivery and the server-side token grant before it
- *   forwards the prompt. An optional strict operator lock can still return
- *   409 AGENT_SWITCH_REQUIRES_NEW_SESSION for a secret-grant boundary.
+ *   proxy re-scopes secret delivery plus the connector and Kortix-CLI token
+ *   grant before it forwards the prompt.
  * - SECRETS and CONNECTOR BINDINGS — changeable, with SET semantics:
  *   `PUT /projects/{id}/sessions/{sid}/scope` REPLACES the list with the one
  *   sent, and it takes effect from the next prompt (the per-prompt env sync
@@ -25,8 +24,6 @@
  *       — reporting a plain success there would be false assurance, and false
  *       assurance is how a live credential gets left in place.
  */
-
-import { serverErrorBody } from './api-error-body';
 
 export type MidSessionCapability = 'changeable' | 'per_prompt' | 'fixed_at_create';
 
@@ -87,7 +84,6 @@ export function classifyModelChange(result: {
 
 export type AgentSwitchOutcome =
   | { kind: 'ok' }
-  | { kind: 'needs_new_session'; message: string }
   | { kind: 'grant_unresolved'; message: string }
   | { kind: 'unknown'; message: string };
 
@@ -99,11 +95,8 @@ interface UpstreamError {
 /**
  * Classify a prompt rejected because of the agent it asked to run.
  *
- * `AGENT_SWITCH_REQUIRES_NEW_SESSION` is only emitted when an operator enables
- * the optional strict grant lock. Retrying with the same agent will always fail.
- *
- * `AGENT_SECRET_GRANT_UNRESOLVED` is the opposite: the sandbox is fine and only
- * our ability to VERIFY entitlement failed, so retrying IS correct (503).
+ * `AGENT_SECRET_GRANT_UNRESOLVED` means the sandbox is fine and only our ability
+ * to VERIFY entitlement failed, so retrying IS correct (503).
  */
 export function classifyAgentSwitch(body: UpstreamError | null): AgentSwitchOutcome {
   const code = typeof body?.code === 'string' ? body.code : '';
@@ -112,9 +105,6 @@ export function classifyAgentSwitch(body: UpstreamError | null): AgentSwitchOutc
       ? body.error
       : 'The agent could not be switched.';
 
-  if (code === 'AGENT_SWITCH_REQUIRES_NEW_SESSION') {
-    return { kind: 'needs_new_session', message };
-  }
   if (code === 'AGENT_SECRET_GRANT_UNRESOLVED') {
     return { kind: 'grant_unresolved', message };
   }
@@ -122,69 +112,6 @@ export function classifyAgentSwitch(body: UpstreamError | null): AgentSwitchOutc
   return { kind: 'ok' };
 }
 
-/** A refused agent switch, with the agents the server named. */
-export interface AgentSwitchRefusal {
-  message: string;
-  /** The agent the message asked for. */
-  requestedAgent: string | null;
-  /** The agent this session started with. */
-  expectedAgent: string | null;
-}
-
-/** The `{...}` payload embedded in a runtime error's message text.
- *
- *  The refusal is raised by the sandbox proxy on the prompt itself, so it
- *  reaches a host as a generic runtime error whose message carries the JSON
- *  body rather than as a structured API error. Read both shapes, or the one
- *  refusal that CANNOT be retried renders as an ordinary "send failed". */
-function embeddedErrorBody(text: unknown): { code?: unknown; error?: unknown } | null {
-  if (typeof text !== 'string') return null;
-  const start = text.indexOf('{');
-  if (start < 0) return null;
-  try {
-    const parsed: unknown = JSON.parse(text.slice(start));
-    return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : null;
-  } catch {
-    return null;
-  }
-}
-
 function stringOrNull(value: unknown): string | null {
   return typeof value === 'string' && value.trim().length > 0 ? value : null;
-}
-
-/**
- * Recognise a send refused by an operator's strict immutable-grant policy.
- *
- * Returns null for every other failure: the caller offers "start a new session"
- * ONLY here, because that is the only resolution — retrying the same send fails
- * identically, forever.
- */
-export function agentSwitchRefusal(
-  error: { message?: string; cause?: unknown } | null | undefined,
-): AgentSwitchRefusal | null {
-  if (!error) return null;
-  const cause = error.cause as { message?: unknown } | undefined;
-
-  // Same refusal, two envelopes: a structured API error, or the JSON body
-  // carried inside a runtime error's message text. `fields` is the body
-  // itself, which is where the agent names live.
-  const candidates: Array<{ code?: unknown; error?: unknown; fields: Record<string, unknown> }> =
-    [];
-  const structured = serverErrorBody(cause);
-  if (structured) candidates.push({ ...structured, fields: structured.raw ?? {} });
-  for (const text of [cause?.message, error.message]) {
-    const parsed = embeddedErrorBody(text);
-    if (parsed) candidates.push({ ...parsed, fields: parsed as Record<string, unknown> });
-  }
-
-  for (const candidate of candidates) {
-    if (classifyAgentSwitch(candidate).kind !== 'needs_new_session') continue;
-    return {
-      message: stringOrNull(candidate.error) ?? 'That agent needs a new session.',
-      requestedAgent: stringOrNull(candidate.fields.requested_agent),
-      expectedAgent: stringOrNull(candidate.fields.expected_agent),
-    };
-  }
-  return null;
 }

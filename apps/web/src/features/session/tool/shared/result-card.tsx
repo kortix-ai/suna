@@ -1,8 +1,6 @@
 'use client';
 
-import { useContext } from 'react';
-
-import { ToolSurfaceContext } from '@/features/session/tool/shared/surface';
+import { useToolCardFrame, useToolIndent } from '@/features/session/tool/shared/surface';
 import { cn } from '@/lib/utils';
 
 /**
@@ -42,25 +40,41 @@ export function ToolResultCard({
    *  grep hits and patched files, none of which are errors. */
   tone?: keyof typeof TONE_CLASS;
 }) {
-  const surface = useContext(ToolSurfaceContext);
+  const indent = useToolIndent();
+  const frame = useToolCardFrame();
+  // A tint is not a frame. On the panel the row card already draws the neutral
+  // edge, so this card drops its own (see `useToolCardFrame`) — but a failure's
+  // `border-destructive/40 bg-destructive/10` is the signal itself, and the row
+  // card has no way to carry it. Destructive keeps its edge on both surfaces.
+  const framed = tone === 'destructive' || frame !== '';
 
   return (
     <div
       className={cn(
-        'rounded-md border p-1',
-        TONE_CLASS[tone],
-        // 28px = an inline row's icon column (`size-4`) plus its `gap-3`, so
-        // the card starts on the label's column. The panel surface has no such
-        // gutter and supplies its own padding, where the indent would only
-        // push content off-centre.
-        surface === 'inline' && 'mt-1.5 ml-7',
+        // `p-1` is the ONE inset that stays on the frame rather than moving to
+        // the body, and it survives the panel de-nest for that reason: the body
+        // is a scroll container, so padding put there scrolls away with the
+        // content and a scrolled row would sit flush against the border. 4px on
+        // the frame is a scrollbar gutter that cannot scroll — it keeps the
+        // scrollbar off the border and keeps a clipped row visibly clipped, and
+        // on the panel it nests 4px inside the row body's 12px rather than
+        // adding a second inset. The rows' own inset (`px-2 py-1.5`) is the
+        // callers' `bodyClassName`, inside the scroller where it belongs.
+        'p-1',
+        framed && ['rounded-md border', TONE_CLASS[tone]],
+        // The same `mt-1.5` seam + shared indent every other card under a tool
+        // row uses (`ToolCodeCard`, `ToolOutputCard`, `bash`'s command card),
+        // and gated the same way. The indent was `ml-7` — 28px, derived from a
+        // `gap-3` this row class does not have — so this card and
+        // `ToolCodeCard` disagreed by 6px on the very same expanded row. Both
+        // are inline-only: on the panel the card IS the disclosure body, whose
+        // `px-3 py-3` is the whole inset.
+        indent && 'mt-1.5',
+        indent,
         className,
       )}
     >
-      {/* Scrolling lives inside the padding so the scrollbar never rides the
-			    card's border, and a clipped row stays visibly clipped — the cue that
-			    there is more below. */}
-      <div data-scrollable className={cn('max-h-[19rem] overflow-auto', bodyClassName)}>
+      <div data-scrollable className={cn('max-h-96 overflow-auto', bodyClassName)}>
         {children}
       </div>
     </div>

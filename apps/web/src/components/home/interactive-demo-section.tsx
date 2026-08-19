@@ -93,7 +93,9 @@ function Panel({
         <div className="border-border flex items-center justify-between border-b px-4 py-2.5">
           <span className="text-foreground text-sm font-semibold">
             {title}
-            {count && <span className="text-muted-foreground ml-1.5 font-normal">{count}</span>}
+            {count ? (
+              <span className="text-muted-foreground ml-1.5 font-normal">{count}</span>
+            ) : null}
           </span>
           {action}
         </div>
@@ -179,6 +181,8 @@ function StatusDot({ on, label }: { on: boolean; label?: [string, string] }) {
   );
 }
 
+const knob = <span className="size-4 rounded-full bg-white shadow" />;
+
 function Toggle({ on, onClick }: { on: boolean; onClick?: () => void }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const className = cn(
@@ -186,7 +190,6 @@ function Toggle({ on, onClick }: { on: boolean; onClick?: () => void }) {
     on ? 'bg-kortix-green justify-end' : 'bg-muted-foreground/20 justify-start',
     onClick && 'cursor-pointer',
   );
-  const knob = <span className="size-4 rounded-full bg-white shadow" />;
   if (!onClick) return <span className={className}>{knob}</span>;
   return (
     <button
@@ -261,11 +264,11 @@ function HomePage({ nav, convo }: { nav: Nav; convo: DemoConversation }) {
                   <span className="min-w-0 flex-1">
                     <span className="text-foreground flex items-center gap-1.5 text-xs font-medium sm:text-sm">
                       {title}
-                      {count && (
+                      {count ? (
                         <Badge size="sm" variant="muted">
                           {count}
                         </Badge>
-                      )}
+                      ) : null}
                     </span>
                     <span className="text-muted-foreground mt-0.5 block truncate text-[11px] sm:text-xs">
                       {sub}
@@ -308,7 +311,7 @@ type AgentDef = {
 
 const AGENTS: AgentDef[] = [
   {
-    name: 'kortix',
+    name: 'Kortix',
     desc: 'General knowledge worker — full tool access; codes, researches, writes and runs ops end-to-end in an isolated sandbox.',
     icon: Bot,
     trigger: 'primary',
@@ -319,7 +322,7 @@ const AGENTS: AgentDef[] = [
     on: true,
   },
   {
-    name: 'pr-bot',
+    name: 'PR Bot',
     desc: 'Runs a thermo-nuclear review and stands up a one-click preview on every pull request to kortix-ai/kortix.',
     icon: GitPullRequest,
     trigger: 'webhook',
@@ -330,7 +333,7 @@ const AGENTS: AgentDef[] = [
     on: true,
   },
   {
-    name: 'memory-reflector',
+    name: 'Memory Reflector',
     desc: 'Reflects on recent activity and curates .kortix/memory, opening a memory CR each run.',
     icon: Brain,
     trigger: 'cron',
@@ -341,7 +344,7 @@ const AGENTS: AgentDef[] = [
     on: false,
   },
   {
-    name: 'researcher',
+    name: 'Researcher',
     desc: 'Deep multi-source research with structured synthesis, inline citations and charts.',
     icon: Search,
     trigger: 'manual',
@@ -352,7 +355,7 @@ const AGENTS: AgentDef[] = [
     on: true,
   },
   {
-    name: 'analyst',
+    name: 'Analyst',
     desc: 'Profiles the warehouse, writes performant SQL and ships a dashboard from a plain question.',
     icon: Database,
     trigger: 'manual',
@@ -363,7 +366,7 @@ const AGENTS: AgentDef[] = [
     on: true,
   },
   {
-    name: 'support-triage',
+    name: 'Support Triage',
     desc: 'Categorizes, prioritizes and routes inbound tickets, drafting an empathetic first reply.',
     icon: MessageSquare,
     trigger: 'webhook',
@@ -374,7 +377,7 @@ const AGENTS: AgentDef[] = [
     on: true,
   },
   {
-    name: 'deck-builder',
+    name: 'Deck Builder',
     desc: 'Turns a prompt and your latest data into board decks and polished presentations.',
     icon: FileText,
     trigger: 'manual',
@@ -385,7 +388,7 @@ const AGENTS: AgentDef[] = [
     on: false,
   },
   {
-    name: 'sdr',
+    name: 'SDR',
     desc: 'Enriches leads from the CRM, researches each account and drafts tailored outreach.',
     icon: FaUsers,
     trigger: 'manual',
@@ -521,6 +524,7 @@ function ConnectorsPage({ connectedExtra = [] }: { connectedExtra?: string[] }) 
     ([domain, name]) =>
       !query || name.toLowerCase().includes(query) || domain.toLowerCase().includes(query),
   );
+  const connectedExtraSet = new Set(connectedExtra);
   return (
     <div>
       <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
@@ -595,7 +599,7 @@ function ConnectorsPage({ connectedExtra = [] }: { connectedExtra?: string[] }) 
       {list.length > 0 ? (
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
           {list.map(([domain, name, connected]) => {
-            const justConnected = !connected && connectedExtra.includes(name);
+            const justConnected = !connected && connectedExtraSet.has(name);
             return (
               <div
                 key={name}
@@ -606,7 +610,7 @@ function ConnectorsPage({ connectedExtra = [] }: { connectedExtra?: string[] }) 
               >
                 <BrandLogo domain={domain} alt={name} />
                 <span className="text-foreground truncate text-sm font-medium">{name}</span>
-                <ConnectBadge connected={connected || connectedExtra.includes(name)} />
+                <ConnectBadge connected={connected || connectedExtraSet.has(name)} />
               </div>
             );
           })}
@@ -774,7 +778,7 @@ function ModelsPage({
 type ScheduleJob = { name: string; cron: string; when: string; next: string; on: boolean };
 
 const INITIAL_JOBS: ScheduleJob[] = [
-  { name: 'memory-reflector', cron: '0 */6 * * *', when: 'every 6 hours', next: 'in 2h', on: true },
+  { name: 'Memory reflector', cron: '0 */6 * * *', when: 'every 6 hours', next: 'in 2h', on: true },
   { name: 'Daily briefing', cron: '0 8 * * *', when: 'every day · 08:00', next: 'in 6h', on: true },
   {
     name: 'Weekly PR digest',

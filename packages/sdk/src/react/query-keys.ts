@@ -134,8 +134,10 @@ export const qk = {
      * (`core/rest/projects-client/sessions.ts`) is a DIFFERENT server
      * request per scope, not a client-side filter of one response —
      * `'visible'` (the default; matches passing no `options` at all) returns
-     * what the caller can see, `'project'` is the manager-only unfiltered
-     * full inventory (`apps/api/src/projects/lib/session-inventory.ts`).
+     * what the caller can see, while `'project'` is the manager-only lifecycle
+     * inventory that also includes accessible warm and soft-deleted rows
+     * (`apps/api/src/projects/lib/session-inventory.ts`). Neither scope returns
+     * sessions the caller cannot open.
      * Before this, both scopes shared one scope-less key, so whichever fetch
      * resolved last silently overwrote what the OTHER scope's readers saw —
      * the sidebar could render the unfiltered manager inventory, or the
@@ -186,6 +188,12 @@ export const qk = {
      */
     sessionSandbox: (id: string, sessionId: string) =>
       [...qk.project.session(id, sessionId), 'sandbox'] as const,
+    /** `listSessionPrompts` — the session's server-side prompt inbox. */
+    sessionPrompts: (id: string, sessionId: string) =>
+      [...qk.project.session(id, sessionId), 'prompts'] as const,
+    /** `getSessionTurn` — server truth about the turns running right now. */
+    sessionTurn: (id: string, sessionId: string) =>
+      [...qk.project.session(id, sessionId), 'turn'] as const,
 
     connectors: (id: string) => [...qk.project.scope(id), 'connectors'] as const,
     /** One connector's config — `getConnectorConfig(id, slug)`. */

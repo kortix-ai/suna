@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * Step 4 — connect the apps the team already lives in.
+ * Step 2 — connect the apps the team already lives in.
  *
  * Real Pipedream OAuth, inline. The whole step is skipped by the shell when
  * `isConnectorsEnabled()` is false (self-host without PIPEDREAM_*), so this
@@ -64,9 +64,10 @@ export function ToolsStep({
     staleTime: 60_000,
   });
 
-  const apps = (appsQuery.data?.pages ?? [])
-    .flatMap((p) => p.apps)
-    .filter((a) => !SLACK_SLUGS.has(a.slug));
+  const apps = (appsQuery.data?.pages ?? []).flatMap((p) =>
+    p.apps.filter((a) => !SLACK_SLUGS.has(a.slug)),
+  );
+  const existingSlugSet = new Set(existingSlugs);
   const notConfigured =
     appsQuery.isError && /501|not configured/i.test((appsQuery.error as Error)?.message ?? '');
 
@@ -120,7 +121,7 @@ export function ToolsStep({
               <>
                 <div className="flex flex-col gap-2">
                   {apps.map((app) => {
-                    const connected = existingSlugs.includes(app.slug);
+                    const connected = existingSlugSet.has(app.slug);
                     const connectedStatusId = `onboarding-tool-${app.slug}-connected`;
 
                     return (

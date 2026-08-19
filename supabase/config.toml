@@ -41,7 +41,18 @@ enable_signup = true
 enable_signup = true
 enable_confirmations = false
 
-# GitHub OAuth — used by both /auth (sign-in) and the project import flow.
+# GitHub OAuth — "Sign in with GitHub" on /auth, and NOTHING else.
+#
+# It deliberately does NOT back linking a GitHub App installation to an
+# account. That flow used to mint its identity proof here, which made an
+# unrelated feature depend on this provider's config and broke it in
+# production when the provider was switched off on one Supabase project. It
+# now uses the GitHub App's OWN OAuth client instead — see
+# apps/api/src/platform/routes/github-app.ts (oauth/authorize + oauth/callback)
+# and KORTIX_GITHUB_APP_CLIENT_ID/KORTIX_GITHUB_APP_CLIENT_SECRET. Keep the
+# two separate: this one is per-user product login, that one is
+# per-account/org GitHub App authority.
+#
 # Requires a GitHub OAuth App with callback http://127.0.0.1:54321/auth/v1/callback.
 # Set SUPABASE_AUTH_EXTERNAL_GITHUB_CLIENT_ID and
 # SUPABASE_AUTH_EXTERNAL_GITHUB_SECRET in the supabase CLI environment

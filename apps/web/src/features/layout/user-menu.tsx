@@ -244,13 +244,24 @@ export function UserMenu({
           {tI18nHardcoded.raw('autoFeaturesLayoutUserMenuJsxTextDownloadApps2765d8e7')}
         </DropdownMenuItem>
 
-        {/* Same store-vs-navigate reasoning as the row above — see
-            `openUserSettings`. The `isBillingEnabled() && canManageBilling`
-            gate is unchanged: the route renders the Billing tab for anyone who
-            reaches it, so the row staying hidden is what keeps a member without
-            `billing.write` from being handed the link. */}
-        {isBillingEnabled() && canManageBilling && (
-          <DropdownMenuItem onClick={() => openUserSettings('billing')} size="sm">
+        {/* `/accounts/<id>?tab=billing`, NOT `/settings/billing`. Billing is
+            an ACCOUNT setting and it left the settings overlay for the account
+            page; `parseSettingsTab('billing')` returns `null` now, so the old
+            href would have landed on the overlay's default tab. Gated on
+            `currentAccount` for the same reason — without an account id there
+            is no page to open. The `isBillingEnabled() && canManageBilling`
+            gate is unchanged: the page renders the Billing section for anyone
+            who reaches it, so the row staying hidden is what keeps a member
+            without `billing.write` from being handed the link. */}
+        {currentAccount && isBillingEnabled() && canManageBilling && (
+          <DropdownMenuItem
+            onClick={() =>
+              deferAfterClose(() =>
+                router.push(`/accounts/${currentAccount.account_id}?tab=billing`),
+              )
+            }
+            size="sm"
+          >
             <CreditCard />
             Billing
           </DropdownMenuItem>

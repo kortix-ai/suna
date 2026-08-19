@@ -40,16 +40,7 @@ import { getItemsForSurface, menuRegistry } from '@/lib/menu-registry';
  * what a query shows — so this file tests the real contract, not a model of it.
  */
 
-const IN_A_PROJECT: SettingsPaletteParams = {
-  hasProject: true,
-  flags: {
-    marketplaceEnabled: true,
-    llmGatewayAvailable: true,
-    voiceEnabled: true,
-    reviewEnabled: true,
-  },
-  billingEnabled: true,
-};
+const IN_A_PROJECT: SettingsPaletteParams = { hasProject: true };
 
 /** Mirrors `sanitizeCmdkValue` in command-palette.tsx. */
 function sanitize(value: string): string {
@@ -208,34 +199,34 @@ describe('only user-visible text is searchable', () => {
 // ============================================================================
 
 describe('queries return the rows they name', () => {
-  test('"member" reaches Members and NOT the account switcher', () => {
+  test('"member" reaches the project settings row and NOT the account switcher', () => {
     // The reported bug. `nav-accounts` carried `members` in its keyword bag.
+    // Members is a section of `/projects/<id>/config` now, so the row that
+    // answers is `proj-customize` rather than a derived settings row.
     const result = hits('member');
-    expect(result).toContain('settings:members');
+    expect(result).toContain('nav:proj-customize');
     expect(result).not.toContain('nav:nav-accounts');
     expect(hits('members')).not.toContain('nav:nav-accounts');
-    // ...and the two rows that DO answer it still do.
+    // ...and the other row that DOES answer it still does.
     expect(result).toContain('nav:proj-invite');
   });
 
-  test('"customize" returns the Customize door and its destination, not seventeen rows', () => {
+  test('"customize" returns one row, not seventeen', () => {
     // 12 settings tabs + 5 navigation rows carried the legacy `project
-    // customize` tail. `proj-customize`'s href is
-    // `/projects/{id}/settings/general`, so these two ARE the same place.
-    expect(hits('customize').sort()).toEqual(['nav:proj-customize', 'settings:general']);
+    // customize` tail. One row keeps the word, and it is the one that lands
+    // on the project's settings page.
+    expect(hits('customize')).toEqual(['nav:proj-customize']);
   });
 
-  test('"project" returns Projects, not every project-scoped row', () => {
+  test('"project" returns Projects and the project settings row, not every project-scoped row', () => {
     const result = hits('project');
     expect(result).toContain('nav:nav-projects');
-    // `general` keeps it inside the phrase "project settings", the pane's own
-    // former name.
-    expect(result.sort()).toEqual(['nav:nav-projects', 'settings:general']);
+    expect(result.sort()).toEqual(['nav:nav-projects']);
   });
 
   test('"proj" matches nothing by id', () => {
     // Ten `proj-*` rows used to answer this.
-    expect(hits('proj')).toEqual(['nav:nav-projects', 'settings:general']);
+    expect(hits('proj')).toEqual(['nav:nav-projects']);
   });
 
   test('"nav" and "pref" are not queries at all', () => {
@@ -245,22 +236,34 @@ describe('queries return the rows they name', () => {
   });
 
   test('"account" matches by word, never by group membership', () => {
-    // Every row whose `group` is `account` used to answer this. Those rows
-    // (`account-billing`, `account-tokens`) live on the userMenu surface, so
-    // the whole registry is checked, not just the palette's slice.
+    // The rule is structural: `group` is not part of the match text. It used
+    // to be checkable by asserting that NO row in the `account` group contains
+    // the word — which stopped being the right assertion when the eight
+    // account sections came back as palette rows labelled "Account · X". They
+    // contain the word because the user reads it on the row, which is exactly
+    // what this file allows; a group name would be a word the user never sees.
+    // So the check moved to where the word comes from: every matching row must
+    // own it in its own label or keywords, never inherit it from the group.
     for (const item of menuRegistry) {
-      if (item.group !== 'account') continue;
-      expect(buildPaletteSearchText(item).toLowerCase()).not.toContain('account');
+      const text = buildPaletteSearchText(item).toLowerCase();
+      if (!text.includes('account')) continue;
+      expect(`${item.label} ${item.keywords ?? ''}`.toLowerCase()).toContain('account');
     }
     const result = hits('account');
-    expect(result).toContain('nav:nav-accounts');
-    // Each remaining hit owns the word: "your account", "connected accounts",
-    // the organization account, a "service account" key.
+    // Every hit owns the word: the switcher, the nine "Account · X" sections,
+    // "your account", "connected accounts".
     expect(result.sort()).toEqual([
+      'nav:account-audit',
+      'nav:account-billing',
+      'nav:account-general',
+      'nav:account-groups',
+      'nav:account-identity',
+      'nav:account-members',
+      'nav:account-roles',
+      'nav:account-tokens',
+      'nav:account-usage',
       'nav:nav-accounts',
-      'settings:api-keys',
       'settings:connected',
-      'settings:organization',
       'settings:profile',
     ]);
   });
@@ -286,10 +289,10 @@ describe('queries return the rows they name', () => {
 
   test('"actions" and "navigation" stop being wildcards for their groups', () => {
     expect(hits('navigation')).toEqual([]);
-    // `open-session-audit` genuinely says "governed actions"; `usage` says
-    // "transactions". The other nine rows of the `actions` group said nothing
-    // of the sort and used to answer anyway.
-    expect(hits('actions').sort()).toEqual(['nav:open-session-audit', 'settings:usage']);
+    // `open-session-audit` genuinely says "governed actions"; the account
+    // Usage row says "transactions". The other nine rows of the `actions`
+    // group said nothing of the sort and used to answer anyway.
+    expect(hits('actions').sort()).toEqual(['nav:account-usage', 'nav:open-session-audit']);
     for (const key of ['nav:new-session', 'nav:compact-session', 'nav:view-changes']) {
       expect(hits('actions')).not.toContain(key);
     }
@@ -304,12 +307,19 @@ describe('queries return the rows they name', () => {
     expect(hits('agents')).toContain('nav:proj-agents');
     expect(hits('skills')).not.toContain('nav:restart-config');
     expect(hits('skills')).toContain('nav:proj-skills');
-    // The Marketplace installs both, so it keeps them.
-    expect(hits('skills')).toContain('settings:marketplace');
+    // The Marketplace installs both and used to keep the words. It is a
+    // section of `/projects/<id>/config` now, and that row deliberately drops
+    // 'agents'/'skills': it would shadow the two rows above, which ARE those
+    // pages, and `filteredNavItems` preserves declaration order rather than
+    // ranking by relevance.
+    expect(hits('skills')).toEqual(['nav:proj-skills']);
   });
 
-  test('"sso" reaches Identity, not Organization', () => {
-    expect(hits('sso')).toEqual(['settings:identity']);
+  test('"sso" reaches Identity, not the account General section', () => {
+    // Identity left the settings rail for `/accounts/[id]?tab=identity`; the
+    // query has to follow it onto the registry row, and must still not drag
+    // the account's General section in with it.
+    expect(hits('sso')).toEqual(['nav:account-identity']);
   });
 
   test('"connections" reaches Connectors, not Channels', () => {
@@ -317,14 +327,12 @@ describe('queries return the rows they name', () => {
   });
 
   test('"log" no longer drags Snapshots into an audit search', () => {
-    expect(hits('log')).toContain('settings:audit');
-    expect(hits('log')).not.toContain('settings:snapshots');
-    // `snapshots` still answers "record" — but through the pane description
-    // printed above the list ("the record of each time it prepared one"),
-    // which is text the user has read. That is the whole distinction: the word
-    // stays when the row says it, and goes when only a keyword bag did.
-    expect(hits('record')).toEqual(['settings:snapshots']);
-    expect(hits('history')).toContain('settings:snapshots');
+    expect(hits('log')).toContain('nav:account-audit');
+    // Snapshots is a section of `/projects/<id>/config` now. That row carries
+    // the word "snapshots" but deliberately NOT "logs" — the Models pane's
+    // sub-tab name — so an audit search still does not drag it in.
+    expect(hits('log')).not.toContain('nav:proj-customize');
+    expect(hits('snapshots')).toContain('nav:proj-customize');
   });
 });
 
@@ -352,11 +360,22 @@ describe('genuine synonyms still answer', () => {
     ['restart', 'nav:restart-config'],
     ['deployments', 'nav:proj-apps'],
     ['signout', 'nav:logout'],
-    ['env', 'settings:secrets'],
-    ['cron', 'settings:schedules'],
-    ['pat', 'settings:api-keys'],
+    // Was `settings:secrets`. Secrets is a section of
+    // `/projects/<id>/config`, so the row that answers is the page's.
+    ['env', 'nav:proj-customize'],
+    // Was `settings:schedules` / `settings:webhooks`. Both merged into one
+    // Triggers capability page, so the row that answers these queries is a
+    // single registry row now.
+    ['cron', 'nav:proj-triggers'],
+    ['recurring', 'nav:proj-triggers'],
+    ['endpoint', 'nav:proj-triggers'],
+    // `usage` left the overlay for `/accounts/[id]`, so its queries are
+    // answered by a registry row. `api-keys` came BACK on 2026-08-18 as the
+    // `tokens` tab (the personal half only), so `pat` reaches a settings row
+    // again — `nav:account-tokens` answers for service account tokens.
+    ['pat', 'settings:tokens'],
     ['hotkeys', 'settings:preferences'],
-    ['ledger', 'settings:usage'],
+    ['ledger', 'nav:account-usage'],
     ['configure', 'nav:proj-customize'],
   ];
 

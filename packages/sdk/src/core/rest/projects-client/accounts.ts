@@ -2,7 +2,13 @@
 
 import { backendApi } from '../../http/api-client';
 import type { ApiError } from '../../http/api/errors';
-import { type AccountRole, type ServerTokenOptions, serverTokenGet, unwrap } from './shared';
+import {
+  type AccountRole,
+  type ProjectRole,
+  type ServerTokenOptions,
+  serverTokenGet,
+  unwrap,
+} from './shared';
 
 export interface KortixAccount {
   account_id: string;
@@ -33,12 +39,21 @@ export interface AccountMemberGroup {
   name: string;
 }
 
+export interface AccountMemberProject {
+  project_id: string;
+  name: string;
+  role: ProjectRole;
+}
+
 export interface AccountMember {
   user_id: string;
   email: string | null;
   account_role: AccountRole;
   is_super_admin?: boolean;
   explicit_project_count?: number;
+  /** Direct project grants — same scope as explicit_project_count. Powers
+   *  the "N projects" chip and its "which ones" popover. */
+  projects?: AccountMemberProject[];
   groups?: AccountMemberGroup[];
   /** Number of active CLI Personal Access Tokens this user owns in
    *  this account. Lets the UI flag members with API automation. */
@@ -49,18 +64,25 @@ export interface AccountMember {
   joined_at: string;
 }
 
+export interface InviteProjectGrant {
+  project_id: string;
+  role?: ProjectRole;
+}
+
 export type InviteMemberResult =
   | {
       status: 'added';
       user_id: string;
       email: string;
       account_role: AccountRole;
+      project_grants: Array<{ project_id: string; role: ProjectRole }>;
     }
   | {
       status: 'pending';
       invite_id: string;
       email: string;
       account_role: AccountRole;
+      project_grants: Array<{ project_id: string; role: ProjectRole }>;
       expires_at: string;
       invite_url: string;
       email_sent: boolean;
@@ -137,7 +159,7 @@ export async function listAccountMembers(accountId: string) {
 
 export async function inviteAccountMember(
   accountId: string,
-  input: { email: string; role?: AccountRole },
+  input: { email: string; role?: AccountRole; project_grants?: InviteProjectGrant[] },
 ) {
   return unwrap(
     await backendApi.post<InviteMemberResult>(`/accounts/${accountId}/members`, input, {

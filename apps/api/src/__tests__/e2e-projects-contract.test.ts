@@ -117,10 +117,10 @@ mock.module('../iam/dispatcher', () => {
     if (am.accountRole === 'owner' || am.accountRole === 'admin') return true;
     const pm = dbState.projectMemberRows.find((r) => r.userId === userId && r.projectId === PROJECT_ID);
     const pr = pm?.projectRole ?? null;
-    if (action === 'project.read') return pr === 'member' || pr === 'editor' || pr === 'manager';
+    if (action === 'project.read') return pr === 'member' || pr === 'manager';
     // Session lifecycle: any project member (a plain `member` included) may run sessions.
-    if (action.startsWith('project.session.')) return pr === 'member' || pr === 'editor' || pr === 'manager';
-    if (action === 'project.write') return pr === 'editor' || pr === 'manager';
+    if (action.startsWith('project.session.')) return pr === 'member' || pr === 'manager';
+    if (action === 'project.write') return pr === 'manager';
     return pr === 'manager';
   };
   return {
@@ -746,30 +746,60 @@ describe('projects API contract', () => {
     const grant = await app.request(`/v1/projects/${PROJECT_ID}/access/${MEMBER_ID}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ role: 'editor' }),
+      body: JSON.stringify({ role: 'manager' }),
     });
     expect(grant.status).toBe(200);
     expect(await grant.json()).toMatchObject({
       user_id: MEMBER_ID,
       account_role: 'member',
-      project_role: 'editor',
-      effective_project_role: 'editor',
+      project_role: 'manager',
+      effective_project_role: 'manager',
       has_implicit_access: false,
     });
     expect(dbState.projectMemberRows).toContainEqual(expect.objectContaining({
       projectId: PROJECT_ID,
       userId: MEMBER_ID,
-      projectRole: 'editor',
+      projectRole: 'manager',
     }));
 
     access = await app.request(`/v1/projects/${PROJECT_ID}/access`);
     body = await access.json();
     const memberRow = body.members.find((member: any) => member.user_id === MEMBER_ID);
     expect(memberRow).toMatchObject({
-      project_role: 'editor',
-      effective_project_role: 'editor',
+      project_role: 'manager',
+      effective_project_role: 'manager',
       has_implicit_access: false,
     });
+
+    // The removed `editor` role is rejected on write, never folded to manager.
+    const rejected = await app.request(`/v1/projects/${PROJECT_ID}/access/${MEMBER_ID}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ role: 'editor' }),
+    });
+    expect(rejected.status).toBe(400);
+    expect((await rejected.json()).error).toContain('manager|member');
+
+    // …and a row that ALREADY says `editor` — what a pre-removal replica can
+    // still write mid-rollout, and what every un-migrated environment holds —
+    // is FOLDED to manager on read. The access list must never emit a role the
+    // API would reject on write.
+    const stored = dbState.projectMemberRows.find(
+      (r: any) => r.projectId === PROJECT_ID && r.userId === MEMBER_ID,
+    );
+    expect(stored).toBeDefined();
+    // Cast: the type no longer admits `editor`; the DB enum still can.
+    (stored as { projectRole: string }).projectRole = 'editor';
+
+    access = await app.request(`/v1/projects/${PROJECT_ID}/access`);
+    body = await access.json();
+    const foldedRow = body.members.find((member: any) => member.user_id === MEMBER_ID);
+    expect(foldedRow).toMatchObject({
+      project_role: 'manager',
+      effective_project_role: 'manager',
+    });
+
+    stored!.projectRole = 'manager';
 
     const ownerGrant = await app.request(`/v1/projects/${PROJECT_ID}/access/${OWNER_ID}`, {
       method: 'PUT',

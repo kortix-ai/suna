@@ -6,6 +6,16 @@ import Loading from '@/components/ui/loading';
 import { cn } from '@/lib/utils';
 import { CheckCircleIcon, ShieldWarningIcon, XCircleIcon, XIcon } from '@phosphor-icons/react';
 
+/** Matches `Date#toLocaleString()` with no options — date + time, default locale. */
+const requestedAtFormat = new Intl.DateTimeFormat(undefined, {
+  year: 'numeric',
+  month: 'numeric',
+  day: 'numeric',
+  hour: 'numeric',
+  minute: 'numeric',
+  second: 'numeric',
+});
+
 export interface ApprovalRequestData {
   action: string;
   risk: string | null;
@@ -290,7 +300,7 @@ export function ApprovalRequest({
           </div>
           <p className="text-muted-foreground text-xs text-pretty">
             {request.projectName ? `${request.projectName} · ` : ''}
-            Requested {new Date(request.requestedAt).toLocaleString()}
+            Requested {requestedAtFormat.format(new Date(request.requestedAt))}
           </p>
         </div>
         {resolved ? (

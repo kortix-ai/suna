@@ -426,7 +426,10 @@ export const useTabStore = create<TabState>()(
 
       getOrderedTabs: () => {
         const { tabs, tabOrder } = get();
-        return tabOrder.map((id) => tabs[id]).filter(Boolean);
+        return tabOrder.flatMap((id) => {
+          const tab = tabs[id];
+          return tab ? [tab] : [];
+        });
       },
     }),
     {

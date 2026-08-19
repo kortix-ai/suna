@@ -35,7 +35,10 @@ const experimentalFeature: FeatureFlagView = {
 describe('ExperimentalTabView', () => {
   test('renders the header title and description', () => {
     const out = renderToStaticMarkup(<ExperimentalTabView />);
-    expect(out).toContain('Experimental');
+    // "Feature flags", not "Experimental": the pane moved to
+    // `/projects/[id]/config?section=feature-flags` and took the name the
+    // `CustomizeSection` id has always used.
+    expect(out).toContain('Feature flags');
     expect(out).toContain('Features you can switch on before they are generally available.');
   });
 

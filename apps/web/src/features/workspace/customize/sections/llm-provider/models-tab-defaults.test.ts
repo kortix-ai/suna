@@ -105,15 +105,16 @@ describe('ModelsTab offers both default scopes', () => {
   });
 
   /**
-   * `modelPlainSummary` is the row's ONLY subtitle. The raw catalog figures it
-   * replaced must not creep back onto the row beside it.
+   * The row shows the same real numbers as the "Add provider" catalog
+   * (`provider-detail.tsx`) — context window, price per 1M, capability icons
+   * — instead of a prose paraphrase. One catalog, one set of facts.
    */
-  test('the row shows no raw catalog figures', () => {
-    expect(tabSource).toContain('modelPlainSummary({');
-    expect(tabSource).not.toContain('per 1M');
-    expect(tabSource).not.toContain('formatPricePerMillion');
-    expect(tabSource).not.toContain('formatTokenCount');
-    expect(tabSource).not.toContain('<ModelCapabilityIcons');
+  test('the row shows real catalog figures, not a paraphrase', () => {
+    expect(tabSource).toContain('formatPricePerMillion');
+    expect(tabSource).toContain('formatTokenCount');
+    expect(tabSource).toContain('<ModelCapabilityIcons');
+    expect(tabSource).toContain('per 1M');
+    expect(tabSource).not.toContain('modelPlainSummary');
   });
 
   test('the menu is gated on the model being offered, not on it lacking a scope', () => {
@@ -123,5 +124,37 @@ describe('ModelsTab offers both default scopes', () => {
     // refuses to default to it.
     expect(tabSource).not.toContain('!isProjectDefault && enabled');
     expect(tabSource).toContain('{enabled && (');
+  });
+});
+
+/**
+ * The list must not move when you flip a switch.
+ *
+ * "Start over" only exists once `usingDefaults` goes false — i.e. from the
+ * moment you touch your first model. It used to own a row of its own
+ * (`flex items-center justify-between … pb-2.5`, holding an empty `<p>` the
+ * rest of the time), so appearing inserted a 26px band and pushed the entire
+ * list down under the cursor that had just clicked a switch. Measured on the
+ * running app before the fix: the first provider group's top went 233.7px →
+ * 259.4px, and the gap under the search field went 20px → 46px.
+ *
+ * The fix is structural, so the guard is too: the conditional control shares
+ * the search field's always-present row, and there is no spacer row for it to
+ * grow.
+ */
+describe('selecting a model does not resize the layout above the list', () => {
+  test('"Start over" shares the search row instead of owning one', () => {
+    expect(tabSource).toContain('{(ownsSearch || !enablement.usingDefaults) && (');
+    expect(tabSource).toContain('<div className="mb-3 flex items-center gap-2">');
+    expect(tabSource).toContain('Start over');
+  });
+
+  test('the empty spacer row is gone', () => {
+    // The row and its placeholder `<p className="flex-1" />`, which existed
+    // only to push a sometimes-there button to the right.
+    expect(tabSource).not.toContain('<p className="flex-1" />');
+    expect(tabSource).not.toContain(
+      'className="flex items-center justify-between gap-3 px-1 pb-2.5"',
+    );
   });
 });

@@ -11,6 +11,8 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
+import Loading from '@/components/ui/loading';
+import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { DRAG_MIME } from '@/features/file-browser/components/file-tree-item';
@@ -29,6 +31,16 @@ import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useFileExplorerSource } from '../explorer-source';
 import { buildGitStatusMap } from '../hooks';
+import {
+  beginUploadBatch,
+  describeUploadSuccess,
+  IDLE_UPLOAD_PROGRESS,
+  partitionUploadBatch,
+  resolveUploadTarget,
+  settleUploadUnit,
+  uploadProgressLabel,
+  uploadProgressPercent,
+} from '../upload-batch';
 import { DriveGridView } from './drive-grid-view';
 import { DriveListView } from './drive-list-view';
 import { DriveToolbar } from './drive-toolbar';
@@ -122,7 +134,7 @@ export function DriveExplorer({
   const deleteButtonRef = useRef<HTMLButtonElement>(null);
 
   const [isDragOverPage, setIsDragOverPage] = useState(false);
-  const [uploadingCount, setUploadingCount] = useState(0);
+  const [uploadProgress, setUploadProgress] = useState(IDLE_UPLOAD_PROGRESS);
   const dragPageCounter = useRef(0);
 
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
@@ -357,40 +369,64 @@ export function DriveExplorer({
     fileInputRef.current?.click();
   }, []);
 
-  /** Upload a batch of files, showing per-file toasts */
+  /**
+   * Upload a batch of files, one at a time, with per-file toasts.
+   *
+   * `targetDirPath` is the folder the files were dropped ONTO; without it the
+   * batch lands in the directory being viewed.
+   *
+   * Oversized files are refused before any bytes move — see
+   * `upload-batch.ts`. The loop is sequential and never aborts on a failure,
+   * so one bad file cannot strand the rest of the batch.
+   */
   const handleUploadFiles = useCallback(
-    async (fileList: FileList | File[]) => {
-      const files = Array.from(fileList);
-      if (files.length === 0) return;
+    async (fileList: FileList | File[], targetDirPath?: string) => {
+      const { accepted, rejected } = partitionUploadBatch(Array.from(fileList));
 
-      setUploadingCount(files.length);
-      let successCount = 0;
+      for (const { reason } of rejected) errorToast(reason);
+      if (accepted.length === 0) return;
 
-      for (const file of files) {
+      const targetPath = resolveUploadTarget({
+        currentPath,
+        isRootPath,
+        dropTargetDir: targetDirPath,
+      });
+
+      setUploadProgress((prev) => beginUploadBatch(prev, accepted.length));
+      const uploaded: string[] = [];
+
+      for (const file of accepted) {
         try {
-          await uploadMutation.mutateAsync({
-            file,
-            targetPath: isRootPath ? undefined : currentPath,
-          });
-          successCount++;
+          await uploadMutation.mutateAsync({ file, targetPath });
+          uploaded.push(file.name);
         } catch (err) {
           errorToast(
             `Failed to upload ${file.name}: ${err instanceof Error ? err.message : 'Unknown error'}`,
           );
+        } finally {
+          setUploadProgress(settleUploadUnit);
         }
       }
 
-      setUploadingCount(0);
-
-      if (successCount > 0) {
-        successToast(
-          successCount === 1
-            ? `Uploaded ${files[0].name}`
-            : `Uploaded ${successCount} file${successCount > 1 ? 's' : ''}`,
-        );
-      }
+      const summary = describeUploadSuccess(uploaded);
+      if (summary) successToast(summary);
     },
     [uploadMutation, isRootPath, currentPath],
+  );
+
+  /**
+   * External files dropped onto a folder row upload INTO that folder.
+   *
+   * The row stops the event before the page-level handler sees it, so this
+   * also clears the page drop overlay — otherwise it would stay on screen.
+   */
+  const handleRowDropUpload = useCallback(
+    (files: File[], targetDirPath: string) => {
+      dragPageCounter.current = 0;
+      setIsDragOverPage(false);
+      void handleUploadFiles(files, targetDirPath);
+    },
+    [handleUploadFiles],
   );
 
   const handleFileInputChange = useCallback(
@@ -617,6 +653,9 @@ export function DriveExplorer({
           downloadDir(dirPath, dirName);
         }}
         isDownloading={isDirDownloading(isRootPath ? '/workspace' : currentPath)}
+        onUpload={canWrite ? handleUpload : undefined}
+        onNewFile={canWrite ? () => setIsCreatingFile(true) : undefined}
+        onNewFolder={canWrite ? () => setIsCreatingFolder(true) : undefined}
       />
 
       {/* Search overlay */}
@@ -631,6 +670,20 @@ export function DriveExplorer({
         multiple
       />
 
+      {/* Upload progress — determinate, and additive across overlapping batches */}
+      {uploadProgress.total > 0 && (
+        <div className="border-border/40 bg-background flex shrink-0 items-center gap-3 border-b px-4 py-2">
+          <Loading className="size-3.5 shrink-0" />
+          <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
+            Uploading {uploadProgressLabel(uploadProgress)}
+          </span>
+          <Progress
+            value={uploadProgressPercent(uploadProgress)}
+            className="bg-primary/15 h-1 min-w-0 flex-1"
+          />
+        </div>
+      )}
+
       {/* Inline create inputs (shown at top of file area) */}
       {canWrite && (isCreatingFolder || isCreatingFile) && (
         <div className="border-border/30 bg-muted/10 border-b px-4 py-2">
@@ -643,6 +696,7 @@ export function DriveExplorer({
                 value={newFolderName}
                 onChange={(e) => setNewFolderName(e.target.value)}
                 onKeyDown={(e) => {
+                  if (e.nativeEvent.isComposing) return;
                   if (e.key === 'Enter') handleCreateFolder();
                   if (e.key === 'Escape') {
                     setIsCreatingFolder(false);
@@ -666,6 +720,7 @@ export function DriveExplorer({
                 value={newFileName}
                 onChange={(e) => setNewFileName(e.target.value)}
                 onKeyDown={(e) => {
+                  if (e.nativeEvent.isComposing) return;
                   if (e.key === 'Enter') handleCreateFile();
                   if (e.key === 'Escape') {
                     setIsCreatingFile(false);
@@ -742,9 +797,42 @@ export function DriveExplorer({
               title={tHardcodedUi.raw(
                 'featuresProjectFilesComponentsDriveListView.line396JsxTextThisFolderIsEmpty',
               )}
-              description={tHardcodedUi.raw(
-                'featuresProjectFilesComponentsDriveListView.line398JsxTextNoFilesOrSubfoldersAtThisPathIn',
-              )}
+              description={
+                canWrite
+                  ? 'Upload a file or create one — you can also drop files anywhere on this page.'
+                  : tHardcodedUi.raw(
+                      'featuresProjectFilesComponentsDriveListView.line398JsxTextNoFilesOrSubfoldersAtThisPathIn',
+                    )
+              }
+              // An empty folder with no way to add a file is the worst case of
+              // the missing-affordance bug — surface upload here, not only in
+              // the toolbar menu.
+              action={
+                canWrite ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={handleUpload}
+                  >
+                    <Upload className="size-3.5 shrink-0" />
+                    Upload files
+                  </Button>
+                ) : undefined
+              }
+              secondaryAction={
+                canWrite ? (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={() => setIsCreatingFolder(true)}
+                  >
+                    <FolderPlus className="size-3.5 shrink-0" />
+                    New folder
+                  </Button>
+                ) : undefined
+              }
             />
           )}
 
@@ -766,6 +854,7 @@ export function DriveExplorer({
                   onCopy={handleCopy}
                   onCut={handleCut}
                   onDropMove={handleDropMove}
+                  onDropUpload={handleRowDropUpload}
                   gitStatusMap={gitStatusMap}
                   clipboardPath={clipboard?.path}
                   clipboardOperation={clipboard?.operation}
@@ -788,6 +877,7 @@ export function DriveExplorer({
                   onCopy={handleCopy}
                   onCut={handleCut}
                   onDropMove={handleDropMove}
+                  onDropUpload={handleRowDropUpload}
                   gitStatusMap={gitStatusMap}
                   clipboardPath={clipboard?.path}
                   clipboardOperation={clipboard?.operation}
@@ -801,15 +891,6 @@ export function DriveExplorer({
 
         {panels}
       </div>
-
-      {/* Upload progress indicator */}
-      {uploadingCount > 0 && (
-        <div className="absolute top-12 right-0 left-0 z-40">
-          <div className="bg-primary/20 h-0.5 w-full overflow-hidden">
-            <div className="bg-primary h-full w-full animate-pulse" />
-          </div>
-        </div>
-      )}
 
       {/* Drag & drop overlay */}
       {canWrite && isDragOverPage && (

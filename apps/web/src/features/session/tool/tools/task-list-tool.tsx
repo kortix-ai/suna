@@ -16,7 +16,7 @@ import { useMemo } from 'react';
 // on every render of every task row in a streaming session.
 const TASK_LIST_TRIGGER: TriggerTitle = { title: 'Tasks', subtitle: '', args: [] };
 
-export function TaskListTool({ part }: ToolProps) {
+export function TaskListTool({ part, forceOpen }: ToolProps) {
   const output = partOutput(part);
   // `isErrorOutput` trims the whole task list and attempts a `JSON.parse` over
   // it, from inside the JSX, on every render.
@@ -26,6 +26,7 @@ export function TaskListTool({ part }: ToolProps) {
       icon={<ListTodo className="size-3.5 shrink-0" />}
       trigger={TASK_LIST_TRIGGER}
       defaultOpen={false}
+      forceOpen={forceOpen}
     >
       {isError ? (
         <ToolOutputFallback output={output} toolName="task_list" />

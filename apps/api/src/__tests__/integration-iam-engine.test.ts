@@ -4,7 +4,7 @@
  * Proves the model an enterprise (acme-inc) relies on, end to end against a
  * fully ISOLATED account + project seeded here and torn down after:
  *   - deny-by-default (a plain member with no grant is denied)
- *   - built-in project roles (member ⊂ editor ⊂ manager)
+ *   - built-in project roles (member ⊂ manager)
  *   - account owner/admin are implicit Managers on every project
  *   - group → project role (the SCIM/SSO bulk-access channel), incl. max-rank
  *   - DB custom role → policy binding → enforcement, scoped to one project
@@ -43,7 +43,7 @@ async function seedMember(role: 'owner' | 'admin' | 'member'): Promise<string> {
   await db.insert(accountMembers).values({ userId, accountId: ACCOUNT, accountRole: role });
   return userId;
 }
-async function grantProject(userId: string, role: 'member' | 'editor' | 'manager') {
+async function grantProject(userId: string, role: 'member' | 'manager') {
   await db.insert(projectMembers).values({ accountId: ACCOUNT, projectId: PROJECT, userId, projectRole: role });
 }
 async function seedGroup(name: string): Promise<string> {
@@ -84,23 +84,29 @@ describe('authorizeV2 — deny-by-default + built-in project roles', () => {
     expect(await allow(u, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE, proj(PROJECT))).toBe(false);
   });
 
-  test("'editor' adds write + deploy but not member management", async () => {
-    const u = await seedMember('member');
-    await grantProject(u, 'editor');
-    expect(await allow(u, PROJECT_ACTIONS.PROJECT_WRITE, proj(PROJECT))).toBe(true);
-    expect(await allow(u, PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE, proj(PROJECT))).toBe(true);
-    expect(await allow(u, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE, proj(PROJECT))).toBe(false);
-  });
-
-  test("'manager' can manage members", async () => {
+  test("'manager' adds write + deploy AND member management", async () => {
     const u = await seedMember('member');
     await grantProject(u, 'manager');
+    expect(await allow(u, PROJECT_ACTIONS.PROJECT_WRITE, proj(PROJECT))).toBe(true);
+    expect(await allow(u, PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE, proj(PROJECT))).toBe(true);
+    expect(await allow(u, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE, proj(PROJECT))).toBe(true);
+  });
+
+  // The removed `editor` role: a row Postgres can still hold folds UP to
+  // manager on read, so an assignment written before the removal keeps working.
+  test("a stored 'editor' row is read as manager", async () => {
+    const u = await seedMember('member');
+    await db.insert(projectMembers).values({
+      accountId: ACCOUNT, projectId: PROJECT, userId: u, projectRole: 'editor' as never,
+    });
+    invalidateIamCacheForUser(u);
+    expect(await allow(u, PROJECT_ACTIONS.PROJECT_WRITE, proj(PROJECT))).toBe(true);
     expect(await allow(u, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE, proj(PROJECT))).toBe(true);
   });
 
   test('a grant on THIS project does not leak to another project', async () => {
     const u = await seedMember('member');
-    await grantProject(u, 'editor');
+    await grantProject(u, 'manager');
     expect(await allow(u, PROJECT_ACTIONS.PROJECT_WRITE, proj(PROJECT))).toBe(true);
     expect(await allow(u, PROJECT_ACTIONS.PROJECT_WRITE, proj(OTHER_PROJECT))).toBe(false);
   });
@@ -122,9 +128,9 @@ describe('authorizeV2 — group → project role (the SCIM/SSO bulk channel)', (
     const u = await seedMember('member');
     const g = await seedGroup(`eng-${uid().slice(0, 6)}`);
     await db.insert(accountGroupMembers).values({ groupId: g, userId: u });
-    await db.insert(projectGroupGrants).values({ projectId: PROJECT, groupId: g, accountId: ACCOUNT, role: 'editor' });
-    expect(await allow(u, PROJECT_ACTIONS.PROJECT_WRITE, proj(PROJECT))).toBe(true);
-    expect(await allow(u, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE, proj(PROJECT))).toBe(false);
+    await db.insert(projectGroupGrants).values({ projectId: PROJECT, groupId: g, accountId: ACCOUNT, role: 'member' });
+    expect(await allow(u, PROJECT_ACTIONS.PROJECT_READ, proj(PROJECT))).toBe(true);
+    expect(await allow(u, PROJECT_ACTIONS.PROJECT_WRITE, proj(PROJECT))).toBe(false);
   });
 
   test('two group grants → the HIGHER role wins (max-rank)', async () => {
@@ -167,7 +173,7 @@ describe('authorizeV2 — DB custom role → policy binding (allow-only union)',
 describe('authorizeV2 — revoke immediacy (cache invalidation)', () => {
   test('removing a project grant + invalidating denies on the very next check', async () => {
     const u = await seedMember('member');
-    await grantProject(u, 'editor');
+    await grantProject(u, 'manager');
     expect(await allow(u, PROJECT_ACTIONS.PROJECT_WRITE, proj(PROJECT))).toBe(true); // caches the actor+role
 
     await db

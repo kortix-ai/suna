@@ -2,33 +2,33 @@
 
 import { useTranslations } from 'next-intl';
 
-// Groups tab on the account page. List + create + delete + navigate to
-// detail. Mirrors Cloudflare's "User Groups" surface.
+// Groups tab on the account page. A picker (the list) or, when the hub's
+// `?group=<id>` param is set, that group's `GroupAccessPanel` — the exact
+// split `AccessProjectsTab` uses for `?project=<id>`. Opening a group used to
+// leave the hub for a standalone route, which dropped the left rail and read
+// as a different product next to the project panel; now it stays in the pane.
+//
+// The list is the shared `AccessList`/`AccessRow` — the same row every other
+// access surface renders. Only `CreateGroupDialog` stays local: it DEFINES a
+// group, it does not grant access, so it is not an `AccessDialog` mode.
 
 import {
-  DotsThreeIcon as MoreHorizontal,
-  PlusIcon as Plus,
-  MagnifyingGlassIcon as Search,
-  TrashIcon as Trash2,
-  UsersIcon as Users,
+  ArrowRightIcon,
+  MagnifyingGlassIcon,
+  PlusIcon,
+  TrashIcon,
+  UsersIcon,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useRouter } from 'next/navigation';
 import { FormEvent, useMemo, useState } from 'react';
 
+import { GroupAccessPanel } from '@/components/iam/group-access-panel';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
 import Hint from '@/components/ui/hint';
 import { InfoBanner } from '@/components/ui/info-banner';
-import { InlineMeta } from '@/components/ui/inline-meta';
 import { Input } from '@/components/ui/input';
 import {
   InputGroupSearch,
@@ -52,12 +52,13 @@ import { errorToast, successToast } from '@/components/ui/toast';
 import { useRequestDemo } from '@/features/contact/request-demo-provider';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
+import {
+  AccessList,
+  AccessRow,
+  RBAC_UPSELL_MESSAGE,
+  pluralize,
+} from '@/features/workspace/shared/access';
 import { type AccountGroup, createGroup, deleteGroup, listGroups } from '@/lib/iam-client';
-
-// Same wording the backend's requireEntitlement('rbac') 402 uses — keep it in
-// sync with apps/api/src/accounts/iam/helpers.ts ENTITLEMENT_LABEL.rbac.
-const RBAC_UPSELL_MESSAGE =
-  'Custom roles, policies, and groups are available on the Enterprise plan. Contact sales to enable it.';
 
 interface GroupsTabProps {
   accountId: string;
@@ -70,11 +71,53 @@ interface GroupsTabProps {
    * allowed), so the create action is disabled here rather than left to
    * fail with a 402 on submit. */
   rbacEnabled: boolean;
+  /** null = show the group list. A group id = show that group's access panel.
+   *  Controlled by the account page's `?group=` param, exactly like
+   *  `AccessProjectsTab`'s `?project=`. */
+  selectedGroupId: string | null;
+  onSelectGroup: (id: string | null) => void;
 }
 
-export function GroupsTab({ accountId, canCreate, rbacEnabled }: GroupsTabProps) {
+export function GroupsTab({
+  accountId,
+  canCreate,
+  rbacEnabled,
+  selectedGroupId,
+  onSelectGroup,
+}: GroupsTabProps) {
+  if (selectedGroupId) {
+    return (
+      <GroupAccessPanel
+        key={selectedGroupId}
+        accountId={accountId}
+        groupId={selectedGroupId}
+        rbacEnabled={rbacEnabled}
+        onBack={() => onSelectGroup(null)}
+      />
+    );
+  }
+  return (
+    <GroupsList
+      accountId={accountId}
+      canCreate={canCreate}
+      rbacEnabled={rbacEnabled}
+      onSelectGroup={onSelectGroup}
+    />
+  );
+}
+
+function GroupsList({
+  accountId,
+  canCreate,
+  rbacEnabled,
+  onSelectGroup,
+}: {
+  accountId: string;
+  canCreate: boolean;
+  rbacEnabled: boolean;
+  onSelectGroup: (id: string) => void;
+}) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const router = useRouter();
   const queryClient = useQueryClient();
   const openDemo = useRequestDemo();
   const [createOpen, setCreateOpen] = useState(false);
@@ -111,14 +154,14 @@ export function GroupsTab({ accountId, canCreate, rbacEnabled }: GroupsTabProps)
   const createAction = canCreate ? (
     rbacEnabled ? (
       <Button onClick={() => setCreateOpen(true)} size="sm" variant="secondary" className="gap-1.5">
-        <Plus className="size-4" />
+        <PlusIcon className="size-4" />
         Create a group
       </Button>
     ) : (
       <Hint label={RBAC_UPSELL_MESSAGE} side="top" className="max-w-xs">
         <span className="inline-flex items-center gap-1.5">
           <Button size="sm" variant="secondary" className="gap-1.5" disabled>
-            <Plus className="size-4" />
+            <PlusIcon className="size-4" />
             Create a group
           </Button>
           <Badge variant="outline" size="sm">
@@ -131,6 +174,10 @@ export function GroupsTab({ accountId, canCreate, rbacEnabled }: GroupsTabProps)
 
   const total = groupsQuery.data?.length ?? 0;
   const settled = !groupsQuery.isLoading && !groupsQuery.isError;
+
+  // Stays in the hub: the account page turns this into
+  // `?tab=groups&group=<id>` and mounts `GroupAccessPanel` in this same pane.
+  const openGroup = onSelectGroup;
 
   return (
     <div className="space-y-4">
@@ -168,7 +215,7 @@ export function GroupsTab({ accountId, canCreate, rbacEnabled }: GroupsTabProps)
 
       <InputGroupSearch>
         <InputGroupSearchIcon>
-          <Search />
+          <MagnifyingGlassIcon />
         </InputGroupSearchIcon>
         <InputGroupSearchInput
           placeholder="Search by user group name"
@@ -202,7 +249,7 @@ export function GroupsTab({ accountId, canCreate, rbacEnabled }: GroupsTabProps)
 
       {settled && filtered.length === 0 && (
         <EmptyState
-          icon={Users}
+          icon={UsersIcon}
           size="sm"
           title={search ? 'No groups match your search' : 'No groups yet'}
           description={
@@ -216,74 +263,62 @@ export function GroupsTab({ accountId, canCreate, rbacEnabled }: GroupsTabProps)
       )}
 
       {!groupsQuery.isLoading && filtered.length > 0 && (
-        <ul className="space-y-2">
-          {filtered.map((g) => {
-            const memberCount = g.member_count ?? 0;
-            const projectCount = g.project_count ?? 0;
-            return (
-              <li
-                key={g.group_id}
-                onClick={() => router.push(`/accounts/${accountId}/groups/${g.group_id}`)}
-                className="bg-popover hover:bg-popover-foreground/5 flex cursor-pointer items-center gap-3 rounded-md border px-4 py-2.5 transition-colors"
-              >
-                <EntityAvatar icon={Users} size="md" />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-foreground truncate text-sm font-medium">{g.name}</span>
-                    <Badge
-                      variant="outline"
-                      size="sm"
-                      className={g.source === 'scim' ? undefined : 'capitalize'}
-                      title={
-                        g.source === 'scim'
-                          ? 'Pushed by your identity provider via Directory Sync — name and membership are managed there.'
-                          : undefined
-                      }
-                    >
-                      {g.source === 'scim' ? 'Synced from IdP' : g.source}
-                    </Badge>
-                  </div>
-                  <span className="text-muted-foreground text-xs">
-                    <InlineMeta>
-                      {g.description || null}
-                      <span>
-                        {memberCount} member{memberCount === 1 ? '' : 's'}
-                      </span>
-                      <span>
-                        {projectCount} project{projectCount === 1 ? '' : 's'}
-                      </span>
-                    </InlineMeta>
-                  </span>
-                </div>
-                {canCreate ? (
-                  <div onClick={(e) => e.stopPropagation()} className="shrink-0">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="text-muted-foreground hover:text-foreground size-7"
-                          aria-label={`Actions for ${g.name}`}
-                        >
-                          <MoreHorizontal className="size-3.5" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="w-44">
-                        <DropdownMenuItem onSelect={() => setDeleteTarget(g)} className="gap-2">
-                          <Trash2 className="size-3.5" />
-                          Delete group
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
-                ) : null}
-              </li>
-            );
-          })}
-        </ul>
+        <AccessList>
+          {filtered.map((g) => (
+            <AccessRow
+              key={g.group_id}
+              leading={<EntityAvatar icon={UsersIcon} size="md" />}
+              title={g.name}
+              badges={
+                <Badge
+                  variant="outline"
+                  size="sm"
+                  className={g.source === 'scim' ? undefined : 'capitalize'}
+                  title={
+                    g.source === 'scim'
+                      ? 'Pushed by your identity provider via Directory Sync — name and membership are managed there.'
+                      : undefined
+                  }
+                >
+                  {g.source === 'scim' ? 'Synced from IdP' : g.source}
+                </Badge>
+              }
+              metaParts={[
+                g.description || null,
+                pluralize(g.member_count ?? 0, 'member'),
+                pluralize(g.project_count ?? 0, 'project'),
+              ].filter(Boolean)}
+              onClick={() => openGroup(g.group_id)}
+              kebabLabel={`Actions for ${g.name}`}
+              kebab={[
+                {
+                  label: 'Open',
+                  icon: <ArrowRightIcon className="size-3.5" />,
+                  onSelect: () => openGroup(g.group_id),
+                },
+                ...(canCreate
+                  ? [
+                      {
+                        label: 'Delete group',
+                        icon: <TrashIcon className="size-3.5" />,
+                        variant: 'destructive' as const,
+                        separated: true,
+                        onSelect: () => setDeleteTarget(g),
+                      },
+                    ]
+                  : []),
+              ]}
+            />
+          ))}
+        </AccessList>
       )}
 
-      <CreateGroupDialog open={createOpen} onOpenChange={setCreateOpen} accountId={accountId} />
+      <CreateGroupDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        accountId={accountId}
+        onCreated={onSelectGroup}
+      />
 
       <ConfirmDialog
         open={!!deleteTarget}
@@ -311,14 +346,16 @@ function CreateGroupDialog({
   open,
   onOpenChange,
   accountId,
+  onCreated,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   accountId: string;
+  /** Opens the brand-new group's panel in the hub — no route change. */
+  onCreated: (groupId: string) => void;
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
-  const router = useRouter();
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
 
@@ -331,7 +368,7 @@ function CreateGroupDialog({
       setName('');
       setDescription('');
       onOpenChange(false);
-      router.push(`/accounts/${accountId}/groups/${group.group_id}`);
+      onCreated(group.group_id);
     },
     onError: (err: Error) => errorToast(err.message || 'Failed to create group'),
   });
@@ -354,7 +391,7 @@ function CreateGroupDialog({
         onOpenChange(next);
       }}
     >
-      <ModalContent className="lg:max-w-md">
+      <ModalContent className="sm:max-w-md">
         <ModalHeader>
           <ModalTitle>Create a group</ModalTitle>
           <ModalDescription>
@@ -397,6 +434,7 @@ function CreateGroupDialog({
             <Button
               type="button"
               variant="outline-ghost"
+              size="sm"
               onClick={() => onOpenChange(false)}
               disabled={createMutation.isPending}
             >
@@ -404,6 +442,7 @@ function CreateGroupDialog({
             </Button>
             <Button
               type="submit"
+              size="sm"
               disabled={!name.trim() || createMutation.isPending}
               className="gap-1.5"
             >

@@ -56,9 +56,9 @@ function toPost(page: any): Post {
 /** All published use cases, newest first. Drafts are excluded in production. */
 export function getAllUseCases(): Post[] {
   const includeDrafts = process.env.NODE_ENV !== 'production';
-  return useCasesSource
-    .getPages()
-    .filter((page) => includeDrafts || !(page.data as PostFrontmatter).draft)
-    .map(toPost)
-    .sort((a, b) => b.data.date.localeCompare(a.data.date));
+  const posts: Post[] = [];
+  for (const page of useCasesSource.getPages()) {
+    if (includeDrafts || !(page.data as PostFrontmatter).draft) posts.push(toPost(page));
+  }
+  return posts.sort((a, b) => b.data.date.localeCompare(a.data.date));
 }

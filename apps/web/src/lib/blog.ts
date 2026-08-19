@@ -81,9 +81,11 @@ function toPost(entry: BlogPostEntry): Post {
 /** All published posts, newest first. Drafts are excluded in production. */
 export function getAllPosts(): Post[] {
   const includeDrafts = process.env.NODE_ENV !== 'production';
-  return BLOG_POSTS.filter((entry) => includeDrafts || !entry.draft)
-    .map(toPost)
-    .sort((a, b) => b.data.date.localeCompare(a.data.date));
+  const posts: Post[] = [];
+  for (const entry of BLOG_POSTS) {
+    if (includeDrafts || !entry.draft) posts.push(toPost(entry));
+  }
+  return posts.sort((a, b) => b.data.date.localeCompare(a.data.date));
 }
 
 /** The full registry entry (including the renderable blocks) for one post. */

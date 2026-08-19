@@ -123,13 +123,13 @@ flow(
           .as(ctx.P.OWNER)
           .post(
             '/v1/projects/:projectId/access-requests/:requestId/approve',
-            { role: 'editor' },
+            { role: 'manager' },
             { params: { projectId: project.id, requestId: approveRequestId } },
           );
         r.status(200)
           .body()
           .has('$.request.status', 'approved')
-          .has('$.member.project_role', 'editor');
+          .has('$.member.project_role', 'manager');
       },
     );
 
@@ -189,10 +189,10 @@ flow(
     });
 
     await ctx.step(
-      'an editor (project.write but not members.manage) cannot approve → 403',
+      'a floor project member (no members.manage) cannot approve → 403',
       async () => {
         const editorOnly = await team.addMember('member');
-        await team.grantProjectRole(project.id, editorOnly.userId!, 'editor');
+        await team.grantProjectRole(project.id, editorOnly.userId!, 'member');
         const requesterC = await team.addMember('member');
         const seeded = await ctx.client
           .as(requesterC)

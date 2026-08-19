@@ -19,6 +19,12 @@ import {
 } from '@/hooks/tunnel/use-tunnel';
 import { cn } from '@/lib/utils';
 
+// Hoisted: the registry is a module constant, so the grantable subset never
+// changes — no need to re-filter it on every render.
+const GRANTABLE_CAPABILITIES = CAPABILITY_REGISTRY.filter((cap) =>
+  ['filesystem', 'shell', 'desktop'].includes(cap.key),
+);
+
 export default function DeviceAuthorizePage() {
   return (
     <Suspense fallback={<AuthPendingScreen />}>
@@ -175,9 +181,7 @@ function DeviceAuthorize() {
               </p>
             </div>
             <div className="border-border divide-border/60 divide-y overflow-hidden rounded-md border">
-              {CAPABILITY_REGISTRY.filter((cap) =>
-                ['filesystem', 'shell', 'desktop'].includes(cap.key),
-              ).map((cap) => {
+              {GRANTABLE_CAPABILITIES.map((cap) => {
                 const CapIcon = cap.icon;
                 const selected = selectedCaps.has(cap.key);
                 return (

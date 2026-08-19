@@ -23,6 +23,12 @@ export interface GitHubAppStatus {
    *  'pat' = a personal/fine-grained access token, via `setGitHubAppPat` or
    *  `MANAGED_GIT_GITHUB_TOKEN`. 'none' = unconfigured. */
   source: 'db' | 'env' | 'pat' | 'none';
+  /** Whether the App's own OAuth client (client_id/client_secret) is set —
+   *  required for the account-linking "Continue with GitHub" identity proof
+   *  (apps/(auth)/github/setup). Independent of `configured`: the manifest
+   *  flow always sets both together, but `setGitHubAppFromExisting` can leave
+   *  this false if an operator pastes App creds without OAuth credentials. */
+  oauth_configured: boolean;
 }
 
 /** Whether a GitHub App is configured for this platform, and (if so) which one. */
@@ -76,6 +82,13 @@ export interface GitHubAppExistingInput {
   /** The id of this App's installation on the target account/org. */
   installationId: string;
   slug?: string;
+  /** The App's own OAuth client id/secret (GitHub settings → General →
+   *  "Client secrets"). Optional — without these the App-JWT/installation
+   *  half still works, but the account-linking "Continue with GitHub"
+   *  identity proof stays unconfigured for this App until they're supplied
+   *  here or via KORTIX_GITHUB_APP_CLIENT_ID/SECRET. */
+  clientId?: string;
+  clientSecret?: string;
 }
 
 /**
@@ -93,6 +106,8 @@ export async function setGitHubAppFromExisting(
       private_key: input.privateKey,
       installation_id: input.installationId,
       slug: input.slug,
+      client_id: input.clientId,
+      client_secret: input.clientSecret,
     },
     { showErrors: false },
   );

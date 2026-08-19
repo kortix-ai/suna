@@ -1,7 +1,11 @@
 'use client';
 
 import type { ProviderListResponse } from '@kortix/sdk/react';
+import { ArrowCounterClockwiseIcon } from '@phosphor-icons/react';
 
+import { Button } from '@/components/ui/button';
+import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card';
+import Loading from '@/components/ui/loading';
 import type { FlatModel } from '../model-flatten';
 import type { ModelDefaultControls } from '../model-selector';
 import { ModelSelector } from '../model-selector';
@@ -81,7 +85,17 @@ export interface ComposerToolbarProps {
 
   projectId: string | undefined;
 
+  /** Rendered in the right cluster, ahead of send/stop. The composer passes
+   *  this only for the `'inline'` underbar placement — with the `'row'`
+   *  placement the slot lives on `ComposerUnderbar` instead, and handing it to
+   *  both would render it twice. */
   toolbarSlot?: React.ReactNode;
+  /**
+   * The session sits on a rewound path. A compact Restore control renders
+   * beside send/stop because send is the action that commits the path — the
+   * warning lives at the moment it matters, not in a banner above the card.
+   */
+  rewind?: { pending?: boolean; onRestore: () => void };
   /** Rendered FIRST in the left cluster, before the model selector. */
   leading?: React.ReactNode;
 
@@ -101,6 +115,8 @@ export interface ComposerToolbarProps {
   submitDisabled: boolean;
   disabled: boolean;
   modelUnavailable: boolean;
+  /** No agent is available to this user — the send is refused. See composer.tsx. */
+  agentUnavailable?: boolean;
   onSubmit: () => void;
 }
 
@@ -121,6 +137,7 @@ export function ComposerToolbar({
   onVariantChange,
   projectId,
   toolbarSlot,
+  rewind,
   leading,
   onTranscription,
   voiceDisabled,
@@ -137,6 +154,7 @@ export function ComposerToolbar({
   submitDisabled,
   disabled,
   modelUnavailable,
+  agentUnavailable = false,
   onSubmit,
 }: ComposerToolbarProps) {
   const showModel = (models.length > 0 || modelRequired) && !!onModelChange;
@@ -173,6 +191,34 @@ export function ComposerToolbar({
       </div>
 
       <div className="flex shrink-0 items-center gap-1.5">
+        {rewind && (
+          <HoverCard openDelay={0} closeDelay={0}>
+            <HoverCardTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                disabled={rewind.pending}
+                onClick={rewind.onRestore}
+                className="text-muted-foreground hover:text-foreground gap-1.5"
+              >
+                {rewind.pending ? (
+                  <Loading className="size-3.5 shrink-0" />
+                ) : (
+                  <ArrowCounterClockwiseIcon className="size-3.5 shrink-0" />
+                )}
+                Restore
+              </Button>
+            </HoverCardTrigger>
+            <HoverCardContent className="px-3 py-2 text-sm text-balance">
+              Session rewound — sending a new prompt commits this path. Restore keeps the removed
+              messages and file changes.
+            </HoverCardContent>
+          </HoverCard>
+        )}
+
+        {toolbarSlot}
+
         <SendStopControl
           isSending={isSending}
           isBusy={isBusy}
@@ -187,6 +233,7 @@ export function ComposerToolbar({
           submitDisabled={submitDisabled}
           disabled={disabled}
           modelUnavailable={modelUnavailable}
+          agentUnavailable={agentUnavailable}
           onSubmit={onSubmit}
         />
       </div>

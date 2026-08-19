@@ -5,9 +5,16 @@ import { useParams } from 'next/navigation';
 import { CapabilityTabs } from '@/features/workspace/capabilities/shared/capability-tabs';
 
 /**
- * Shared shell for /projects/[id]/{agent,connectors,skills}. The `(capabilities)`
- * route group keeps the segment out of the URL. The tab bar lives here — not
- * in each page — so it does not remount when switching tabs.
+ * Shared shell for /projects/[id]/{agent,connectors,skills,triggers,models,
+ * secrets,members,config,customize}. `channels` is under this group too, but
+ * only as a redirect into `connectors?scope=channels` — it is not a tab. `customize` (the index/hub page, and
+ * its legacy `[section]` redirect) lives under this group too, on purpose —
+ * the bar stays visible even on the page that introduces every tab in it, so
+ * "landing on the index" never means "the tabs disappeared." No `customize`
+ * entry in `CAPABILITY_TABS` means `activeCapabilityTab()` highlights none of
+ * them there, which is correct: the index is not any one of the tabs.
+ * The `(capabilities)` route group keeps the segment out of the URL. The tab bar
+ * lives here — not in each page — so it does not remount when switching tabs.
  *
  * **`h-svh`, and it is what pins the tab bar.** This box used to be
  * `min-h-0 flex-1`, which reads correct and is not: NOTHING above it has a

@@ -1,8 +1,13 @@
 import type { QueryClient } from '@tanstack/react-query';
 
+import { sessionStartKey } from '../core/rest/projects-client';
 import { qk } from './query-keys';
 
-type SessionTitleQueryClient = Pick<QueryClient, 'getQueryData' | 'refetchQueries'>;
+type SessionTitleQueryClient = Pick<QueryClient, 'getQueryData' | 'refetchQueries'> & {
+  /** Optional so lean test fakes (and older callers) keep working; a real
+   *  QueryClient always has it. */
+  getQueryState?: QueryClient['getQueryState'];
+};
 
 interface SessionTitleRefreshOptions {
   delaysMs?: number[];
@@ -46,19 +51,31 @@ function cachedSessionHasTitle(
 }
 
 function refetchSessionTitleQueries(
-  queryClient: Pick<QueryClient, 'refetchQueries'>,
+  queryClient: SessionTitleQueryClient,
   projectId: string,
   sessionId: string,
 ): Promise<unknown[]> {
+  // An adopted warm session is revealed by /start dropping `metadata.warm`.
+  // While THIS session's /start is still in flight, a sessions-list refetch
+  // can beat it, observe the row still hidden, and overwrite the adopting
+  // tab's optimistic seed (warm-session-seed.ts in apps/web) — so the list
+  // half waits for the next ladder pass. The detail refetch stays: the
+  // session route serves the owner regardless of the marker.
+  const startFetching =
+    queryClient.getQueryState?.(sessionStartKey(projectId, sessionId))?.fetchStatus === 'fetching';
   return Promise.all([
     // The broad sessions-family prefix, not just the default-scope list: it
     // reaches the list in EVERY scope plus every session/messages entry
     // beneath it, so a manager-only 'project'-scope reader picks up the
     // resolved title too, not only the default 'visible' one.
-    queryClient.refetchQueries({
-      queryKey: qk.project.sessionsScope(projectId),
-      type: 'active',
-    }),
+    ...(startFetching
+      ? []
+      : [
+          queryClient.refetchQueries({
+            queryKey: qk.project.sessionsScope(projectId),
+            type: 'active',
+          }),
+        ]),
     queryClient.refetchQueries({
       queryKey: qk.project.session(projectId, sessionId),
       type: 'active',

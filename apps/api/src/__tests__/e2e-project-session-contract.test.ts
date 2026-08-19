@@ -8,6 +8,7 @@ import {
   projectSessionRuntimeContexts,
   projectSessions,
   projects,
+  sessionLifecycleCommands,
   sessionSandboxes,
 } from '@kortix/db';
 import type { SQL } from 'drizzle-orm';
@@ -61,6 +62,7 @@ let opencodeEnsureReason: 'unchanged' | 'healed' | 'not_ready' | 'unreachable' =
 let activeSessionCount = 0;
 let sessionRow: typeof projectSessions.$inferSelect | null;
 let lastSessionInsertValues: Record<string, unknown> | null = null;
+const lifecycleCommandInserts: Array<Record<string, unknown>> = [];
 let lastSessionListWhere: unknown = null;
 // `active_since` / `deadline_at` are assigned by a DB trigger, never by
 // application code, so these HTTP-contract fixtures deliberately omit them —
@@ -130,6 +132,7 @@ function resetState() {
   opencodeEnsureReason = 'unchanged';
   activeSessionCount = 0;
   lastSessionInsertValues = null;
+  lifecycleCommandInserts.length = 0;
   lastProvisionInput = null;
   projectRow.repoUrl = `https://github.com/${TEST_GITHUB_OWNER}/contract-project.git`;
   projectRow.defaultBranch = 'main';
@@ -716,6 +719,17 @@ mock.module('../shared/db', () => ({
             runtimeContextRows = [row];
             return [row];
           }
+          if (table === sessionLifecycleCommands) {
+            lifecycleCommandInserts.push(values);
+            return [
+              {
+                ...values,
+                commandId: `cmd-${lifecycleCommandInserts.length}`,
+                attempts: 0,
+                createdAt: new Date('2026-01-02T00:00:00Z'),
+              },
+            ];
+          }
           if (table !== projectSessions) return [];
           lastSessionInsertValues = values;
           sessionRow = {
@@ -1127,6 +1141,47 @@ describe('project session API contract', () => {
 
     expect(response.status).toBe(201);
     expect((await response.json()).agent_name).toBe('meta');
+  });
+
+  test('a session-bound spawn inherits the SPAWNING session sharing, not the private default', async () => {
+    // The caller's own session (sessionRow / SESSION_ID) is shared project-wide.
+    // A worker it spawns must be reachable by the same grantees, not fall back
+    // to the private default — otherwise sharing the coordinator would not
+    // actually share anything it spawns. See resolveInheritedSessionSharing.
+    sessionRow = { ...sessionRow!, visibility: 'project' };
+    const app = createApp();
+    const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${SESSION_BOUND_PAT}`,
+      },
+      body: JSON.stringify({ provider: 'daytona', base_ref: 'main' }),
+    });
+
+    expect(response.status).toBe(201);
+    const created = await response.json();
+    expect(created.metadata?.spawned_by_session).toBe(SESSION_ID);
+    expect(created.visibility).toBe('project');
+  });
+
+  test('a plain browser create is NOT session-bound, so it keeps the private default', async () => {
+    // Same shared-project-wide parent state as above, but with the Supabase
+    // browser auth path (no Authorization header) instead of a session-bound
+    // PAT — proves inheritance is gated on an actual spawning session, not
+    // just on the existence of an unrelated session row in the fixture.
+    sessionRow = { ...sessionRow!, visibility: 'project' };
+    const app = createApp();
+    const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider: 'daytona', base_ref: 'main' }),
+    });
+
+    expect(response.status).toBe(201);
+    const created = await response.json();
+    expect(created.metadata?.spawned_by_session).toBeUndefined();
+    expect(created.visibility).toBe('private');
   });
 
   test('GET project session inventory rejects callers without project.session.read', async () => {
@@ -1597,17 +1652,6 @@ describe('project session API contract', () => {
 
   test('derives session origin from the caller token without session attribution fields', async () => {
     const app = createApp();
-    const bodySpoof = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        provider: 'daytona',
-        base_ref: 'main',
-        metadata: { source: 'system:forged' },
-      }),
-    });
-    expect(bodySpoof.status).toBe(201);
-    expect(((await bodySpoof.json()) as { origin: string }).origin).toBe('user');
 
     const userRes = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
       method: 'POST',
@@ -1649,6 +1693,29 @@ describe('project session API contract', () => {
     expect(patBody.origin).toBe('backend');
     expect(patBody).not.toHaveProperty('end_user_ref');
     expect(patBody).not.toHaveProperty('origin_ref');
+  });
+
+  test('rejects client-supplied trigger authorization metadata at session create', async () => {
+    const app = createApp();
+    for (const [key, value] of [
+      ['source', 'trigger:scheduler'],
+      ['trigger_kind', 'git'],
+      ['trigger_slug', 'forged-trigger'],
+    ] as const) {
+      const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider: 'daytona',
+          base_ref: 'main',
+          metadata: { [key]: value },
+        }),
+      });
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({
+        error: `metadata key is server-managed: ${key}`,
+      });
+    }
   });
 
   test('runtime workspaces deny repository metadata and clone credentials to both session tokens', async () => {
@@ -2066,6 +2133,18 @@ describe('project session API contract', () => {
       {
         body: { metadata: { title_source: 'zzz' } },
         message: 'metadata key is server-managed: title_source',
+      },
+      {
+        body: { metadata: { source: 'trigger:scheduler' } },
+        message: 'metadata key is server-managed: source',
+      },
+      {
+        body: { metadata: { trigger_kind: 'git' } },
+        message: 'metadata key is server-managed: trigger_kind',
+      },
+      {
+        body: { metadata: { trigger_slug: 'forged-trigger' } },
+        message: 'metadata key is server-managed: trigger_slug',
       },
       {
         body: { random: 'field' },
@@ -2542,7 +2621,195 @@ describe('project session API contract', () => {
     expect(sandboxProvisionCalls).toBe(0);
   });
 
-  test('dashboard start preserves a sandbox that stayed stopped after wake grace', async () => {
+  // ═══ THE MID-TURN PARK THIS CLOSES ═══
+  // Incident 2026-08-17T20:40:03Z (session 0fc6897a, Daytona f468056d): a box
+  // was durably stopped WHILE ITS TURN WAS RUNNING, `stopReason:
+  // provider_reconcile`, while Daytona's own autoStopInterval was 720 minutes.
+  // This endpoint is polled every second and Daytona folds `stopping` and
+  // `pending_stop` into `stopped` (platform/providers/daytona-state.ts), so ONE
+  // transitional read parked the row, settled the live turn's ledger
+  // `runtime_gone` and kicked the client into the wake flow with the turn's work
+  // lost. Unlike account deletion or the orphan sweep, this caller has NOT
+  // stopped the box itself — it is a pure observation, so it must confirm.
+  test('dashboard start does NOT park a box mid-turn on one stopped provider read', async () => {
+    const app = createApp();
+    sessionRow = {
+      ...sessionRow!,
+      sandboxProvider: 'daytona',
+      status: 'running',
+      opencodeSessionId: 'ses_root_existing',
+    };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'daytona',
+        externalId: 'box-mid-turn',
+        baseUrl: null,
+        status: 'active',
+        config: {},
+        metadata: {
+          activeTurns: {
+            'live-token': {
+              token: 'live-token',
+              state: 'active',
+              opencodeSessionId: 'ses_root_existing',
+              messageId: 'msg_live',
+              startedAtMs: Date.now() - 60_000,
+            },
+          },
+        },
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-02T00:00:00Z'),
+        updatedAt: new Date('2026-01-02T00:00:00Z'),
+      },
+    ];
+    providerStatus = 'stopped';
+
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+      method: 'POST',
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      stage: 'starting',
+      retriable: true,
+      reason: 'runtime_stop_unconfirmed',
+    });
+    // The row keeps its turn authority, the box is never stopped, and nothing
+    // is woken: the next poll either sees `running` again or earns the
+    // confirmation one window later.
+    expect(sessionSandboxRows[0]?.status).toBe('active');
+    expect(
+      (sessionSandboxRows[0]?.metadata as Record<string, unknown>).activeTurns,
+    ).toBeDefined();
+    expect(providerStartCalls).toBe(0);
+    expect(
+      (sessionSandboxRows[0]?.metadata as Record<string, unknown>).pendingStopObservedAtMs,
+    ).toEqual(expect.any(Number));
+  });
+
+  test('dashboard start parks a mid-turn box once a SECOND stopped read confirms it', async () => {
+    const app = createApp();
+    sessionRow = {
+      ...sessionRow!,
+      sandboxProvider: 'daytona',
+      status: 'running',
+      opencodeSessionId: 'ses_root_existing',
+    };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'daytona',
+        externalId: 'box-mid-turn-confirmed',
+        baseUrl: null,
+        status: 'active',
+        config: {},
+        metadata: {
+          activeTurns: {
+            'live-token': {
+              token: 'live-token',
+              state: 'active',
+              opencodeSessionId: 'ses_root_existing',
+              messageId: 'msg_live',
+              startedAtMs: Date.now() - 60_000,
+            },
+          },
+          // An earlier poll recorded the first observation, longer ago than
+          // MIDTURN_STOP_CONFIRMATION_MS.
+          pendingStopObservedAtMs: Date.now() - 20_000,
+        },
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-02T00:00:00Z'),
+        updatedAt: new Date('2026-01-02T00:00:00Z'),
+      },
+    ];
+    providerStatus = 'stopped';
+
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+      method: 'POST',
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      stage: 'starting',
+      retriable: true,
+      reason: 'runtime_waking',
+    });
+    expect(providerStartCalls).toBe(1);
+  });
+
+  // ═══ THE ARMED-AND-NEVER-DISARMED MARKER THIS CLOSES ═══
+  // This endpoint is polled about once a second, and it can ARM the mid-turn
+  // stop confirmation. If it never disarms it, two transient `pending_stop`
+  // misreads MINUTES apart — with hundreds of healthy `running` reads in
+  // between — read as one confirmed provider transition and park a live box.
+  // A confirmation is about ONE transition, so a `running` answer from any
+  // observer ends it.
+  test('dashboard start drops the pending-stop marker when the provider says running', async () => {
+    const app = createApp();
+    sessionRow = {
+      ...sessionRow!,
+      sandboxProvider: 'daytona',
+      status: 'running',
+      opencodeSessionId: 'ses_root_existing',
+    };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'daytona',
+        externalId: 'box-mid-turn-recovered',
+        baseUrl: null,
+        status: 'active',
+        config: {},
+        metadata: {
+          activeTurns: {
+            'live-token': {
+              token: 'live-token',
+              state: 'active',
+              opencodeSessionId: 'ses_root_existing',
+              messageId: 'msg_live',
+              startedAtMs: Date.now() - 60_000,
+            },
+          },
+          // Armed by an earlier poll that read the transitional `pending_stop`.
+          pendingStopObservedAtMs: Date.now() - 5_000,
+        },
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-02T00:00:00Z'),
+        updatedAt: new Date('2026-01-02T00:00:00Z'),
+      },
+    ];
+    providerStatus = 'running';
+
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+      method: 'POST',
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ stage: 'ready' });
+    expect(
+      (sessionSandboxRows[0]?.metadata as Record<string, unknown>).pendingStopObservedAtMs,
+    ).toBeUndefined();
+    // The turn authority is untouched — only the confirmation is.
+    expect(
+      (sessionSandboxRows[0]?.metadata as Record<string, unknown>).activeTurns,
+    ).toBeDefined();
+  });
+
+  // Incident 2026-08-14: a wake that ran out of time is NOT evidence the
+  // provider lost the box — the provider just answered `stopped`, which proves
+  // the box exists. The row parks retriable instead of being preserved as
+  // "computer was lost" (docs/incidents/2026-08-14-computer-lost-false-alarm-and-boot-failures.md).
+  test('dashboard start parks (not preserves) a sandbox that stayed stopped after wake grace', async () => {
     const app = createApp();
     sessionRow = {
       ...sessionRow!,
@@ -2578,8 +2845,8 @@ describe('project session API contract', () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({
       stage: 'failed',
-      retriable: false,
-      reason: 'runtime_identity_unavailable',
+      retriable: true,
+      reason: 'runtime_wake_timeout',
       sandbox: { external_id: 'box-stuck-stopped', status: 'stopped' },
     });
 
@@ -2587,6 +2854,11 @@ describe('project session API contract', () => {
     expect(sandboxProvisionCalls).toBe(0);
     expect(sessionSandboxRows).toHaveLength(1);
     expect(sessionSandboxRows[0]?.externalId).toBe('box-stuck-stopped');
+    // A park must never carry the loss flag the web renders as "computer was
+    // lost", and must record which failure parked it.
+    const parkedMetadata = sessionSandboxRows[0]?.metadata as Record<string, unknown>;
+    expect(parkedMetadata.runtimeIdentityState).toBeUndefined();
+    expect(parkedMetadata.stopReason).toBe('runtime_wake_failed');
   });
 
   test('dashboard start trusts live runtime health when the provider status stays unknown', async () => {
@@ -3038,7 +3310,13 @@ describe('project session API contract', () => {
     expect(sandboxProvisionCalls).toBe(0);
   });
 
-  test('dashboard start preserves a running sandbox whose OpenCode runtime never becomes reachable', async () => {
+  // Incident 2026-08-14: this exact population — a RUNNING box whose runtime
+  // never became ready (a dead local tunnel blocked the guest's git clone) —
+  // was preserved as "computer was lost" while both provider control planes
+  // showed the box alive. A failed boot on a present box parks retriable and
+  // stops the provider box, so a DB-stopped row cannot keep burning unmetered
+  // compute.
+  test('dashboard start parks (not preserves) a running sandbox whose OpenCode runtime never becomes reachable', async () => {
     const app = createApp();
     sessionRow = {
       ...sessionRow!,
@@ -3077,8 +3355,8 @@ describe('project session API contract', () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({
       stage: 'failed',
-      retriable: false,
-      reason: 'runtime_identity_unavailable',
+      retriable: true,
+      reason: 'runtime_unreachable_timeout',
       sandbox: { external_id: 'box-opencode-dead', status: 'stopped' },
     });
 
@@ -3086,6 +3364,11 @@ describe('project session API contract', () => {
     expect(sandboxProvisionCalls).toBe(0);
     expect(sessionSandboxRows).toHaveLength(1);
     expect(sessionSandboxRows[0]?.externalId).toBe('box-opencode-dead');
+    // The box was RUNNING when the boot failed: the park must stop it.
+    expect(providerStopCalls).toBe(1);
+    const parkedMetadata = sessionSandboxRows[0]?.metadata as Record<string, unknown>;
+    expect(parkedMetadata.runtimeIdentityState).toBeUndefined();
+    expect(parkedMetadata.stopReason).toBe('runtime_boot_failed');
   });
 
   test('restart of a provider-removed sandbox refuses replacement and preserves identity', async () => {
@@ -3385,7 +3668,7 @@ describe('project session API contract', () => {
     expect(env.KORTIX_OPENCODE_MODEL).toBe('anthropic/claude-sonnet-4-6');
   });
 
-  test('session create persists a pending prompt without injecting it into the sandbox', async () => {
+  test('session create turns a pending prompt into a durable inbox row, not a client hand-off', async () => {
     const app = createApp();
     const pendingPrompt = {
       text: 'Map this parcel.',
@@ -3400,16 +3683,88 @@ describe('project session API contract', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         provider: 'daytona',
+        session_id: SESSION_ID,
         pending_prompt: pendingPrompt,
       }),
     });
 
     expect(response.status).toBe(201);
-    expect(await response.json()).toMatchObject({
-      metadata: { pending_prompt: pendingPrompt },
+    // The prompt is a durable row the moment the create returns — the
+    // wake-then-deliver machinery runs it even if the tab closes before the
+    // page ever mounts. The stored metadata keeps ONLY the picks: `text` is
+    // deliberately stripped, because a pre-deploy web bundle replays
+    // `pending_prompt.text` client-side and would double-send it.
+    const body = await response.json();
+    expect(body.metadata.pending_prompt).toEqual({
+      agent: 'default',
+      model: { providerID: 'kortix', modelID: 'claude-sonnet-4-5' },
+      variant: 'high',
+      attachment_names: ['parcel.geojson'],
+    });
+    expect(lifecycleCommandInserts.length).toBe(1);
+    const row = lifecycleCommandInserts[0] as any;
+    expect(row.commandType).toBe('continue_session');
+    expect(row.sessionId).toBe(SESSION_ID);
+    expect(row.idempotencyKey).toBe(`prompt:${SESSION_ID}:pending-first`);
+    expect(row.payload.text).toBe('Map this parcel.');
+    expect(row.payload.clientMessageId).toBe(`pending:${SESSION_ID}`);
+    // Minted with no transcript to place against, so the drain re-mints it
+    // against the live root before delivering.
+    expect(row.payload.wireMessageId).toMatch(/^msg_[0-9a-f]{12}[A-Za-z0-9]{14}$/);
+    expect(row.payload.remintOnDelivery).toBe(true);
+    expect(row.payload.parts).toEqual([{ type: 'text', text: 'Map this parcel.' }]);
+    expect(row.payload.overrides).toEqual({
+      agent: 'default',
+      model: { providerID: 'kortix', modelID: 'claude-sonnet-4-5' },
+      variant: 'high',
+      directory: null,
     });
     await flushUntil(() => sandboxProvisionCalls === 1);
     expect(lastProvisionInput!.extraEnvVars?.KORTIX_INITIAL_PROMPT).toBeUndefined();
+  });
+
+  test('a pending prompt with data-URL file parts rides the row; an empty one makes no row', async () => {
+    const app = createApp();
+    const withParts = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        provider: 'daytona',
+        pending_prompt: {
+          text: 'Look at this screenshot.',
+          parts: [
+            { type: 'text', text: 'Look at this screenshot.' },
+            {
+              type: 'file',
+              mime: 'image/png',
+              url: 'data:image/png;base64,AAAA',
+              filename: 'shot.png',
+            },
+          ],
+        },
+      }),
+    });
+    expect(withParts.status).toBe(201);
+    expect(lifecycleCommandInserts.length).toBe(1);
+    expect((lifecycleCommandInserts[0] as any).payload.parts).toEqual([
+      { type: 'text', text: 'Look at this screenshot.' },
+      { type: 'file', mime: 'image/png', url: 'data:image/png;base64,AAAA', filename: 'shot.png' },
+    ]);
+
+    lifecycleCommandInserts.length = 0;
+    // Whitespace text with only attachment NAMES (no parts) is a hand-off with
+    // nothing deliverable in it: picks are stored, no row is made. (Bare
+    // whitespace text alone is already a 400 from the contract schema.)
+    const blank = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        provider: 'daytona',
+        pending_prompt: { text: '   ', attachment_names: ['late.png'] },
+      }),
+    });
+    expect(blank.status).toBe(201);
+    expect(lifecycleCommandInserts.length).toBe(0);
   });
 
   test('allows only user-owned PATCH fields', async () => {

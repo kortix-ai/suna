@@ -28,10 +28,7 @@
  */
 import type { ProviderName } from '../platform/providers';
 import type { syncSandboxEnvForPrompt } from '../projects/lib/sandbox-env-sync';
-import {
-  AgentSecretGrantMismatchError,
-  SecretGrantResolutionError,
-} from '../projects/lib/secret-grant';
+import { SecretGrantResolutionError } from '../projects/lib/secret-grant';
 import {
   SessionGrantRemintError,
   type remintGrantForAgentSwitch,
@@ -176,40 +173,21 @@ export function bodyWithoutPromptAgent(
   }
 }
 
-export function agentSwitchConflictResponse(
-  expectedAgent: string,
-  requestedAgent: string,
-  origin?: string,
-): Response {
-  return jsonProxyError(
-    {
-      error: 'agent switch requires a new session',
-      code: 'AGENT_SWITCH_REQUIRES_NEW_SESSION',
-      expected_agent: expectedAgent,
-      requested_agent: requestedAgent,
-    },
-    409,
-    origin,
-  );
-}
-
 /**
  * Map a secret-grant failure from the pre-prompt env sync onto its response, or
  * null when the error is an ordinary env-sync failure the caller should handle
  * with its existing retry/502 logic.
  *
- * Both cases refuse the prompt rather than forwarding it: the sandbox's env is
+ * Every case refuses the prompt rather than forwarding it: the sandbox's env is
  * provisioned for ONE agent's grant, so a prompt we can't prove is entitled to
  * that env must not reach OpenCode. See projects/lib/secret-grant.ts.
  */
 export function secretGrantErrorResponse(err: unknown, origin?: string): Response | null {
-  // The prompt asked for an agent whose grant differs from the session's. 409,
-  // matching the existing agent-immutability contract the web client already
-  // codes against — re-scoping now cannot un-read what the session's agent
-  // already pulled into the box.
-  if (err instanceof AgentSecretGrantMismatchError) {
-    return agentSwitchConflictResponse(err.sessionAgent, err.requestedAgent, origin);
-  }
+  // NOTE: no branch here returns 409. A prompt naming a different agent is
+  // never refused — it is re-scoped. Every case below is "we could not APPLY
+  // the re-scope", which is a 503 the client should retry, not a permanent
+  // conflict the user must resolve by starting a new session.
+  //
   // We could not establish what this agent may read. 503 rather than 502: the
   // sandbox is fine, our ability to VERIFY entitlement is what failed, and
   // retrying is the correct client response.

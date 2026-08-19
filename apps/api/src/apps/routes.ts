@@ -12,8 +12,9 @@ import { PROJECT_ACTIONS } from '../iam';
 import { auth, errors, json } from '../openapi';
 import { pauseComputeSession } from '../billing/services/compute-metering';
 import { config, type SandboxProviderName } from '../config';
-import { getProvider } from '../platform/providers';
+import { tryGetProvider } from '../platform/providers';
 import { db } from '../shared/db';
+import { inspectDatabaseError } from '../shared/database-errors';
 import {
   AppArtifactStorageUnavailableError,
   createAppArtifactUploadUrl,
@@ -24,19 +25,57 @@ import { AppHostingProvider } from './hosting';
 import { deploymentEventsAsLogs } from './logs';
 import { ensureAppRuntimeRunning, loadPublicApp } from './public-proxy';
 import { type AppSourceSpec } from './spec';
+import { appPublicUrl } from './hostnames';
 import { AppBudgetExceededError } from './budget';
+import {
+  APP_MACHINE_LIMITS,
+  AppAccountUnfundedError,
+  AppLimitError,
+  assertAppBudgetWithinLimits,
+  assertAppMachineWithinLimits,
+  assertAppQuotaAvailable,
+} from './limits';
 import { assertProjectCapability, loadProjectForUser } from '../projects/lib/access';
 import { callerKortixSessionId } from '../projects/lib/caller-session';
 import { projectsApp } from '../projects/lib/app';
 import { requireFeatureFlag } from '../feature-flags/gate';
 import {
   appAccessibleToUser,
+  appsOpenableByUser,
   appAccessSessionUrl,
+  appVisibleToUser,
+  filterAppsVisibleToUser,
   persistAppAccessPolicy,
   serializeAppAccessPolicy,
   validateAppAccessPrincipals,
   type AppAccessMode,
 } from './access';
+
+/** The machine bounds an App shares with a session sandbox. Stated here so the
+ *  published OpenAPI schema carries the real ceiling instead of a number the
+ *  runtime would refuse. */
+const CpuSchema = z.number().int().min(APP_MACHINE_LIMITS.cpu.min).max(APP_MACHINE_LIMITS.cpu.max);
+const MemorySchema = z.number().int().min(APP_MACHINE_LIMITS.memory.min).max(APP_MACHINE_LIMITS.memory.max);
+const DiskSchema = z.number().int().min(APP_MACHINE_LIMITS.disk.min).max(APP_MACHINE_LIMITS.disk.max);
+
+/** Translate an App resource refusal into its documented HTTP answer. */
+function appLimitResponse(c: any, error: unknown): Response | null {
+  if (error instanceof AppLimitError) {
+    return c.json({ error: error.message, code: error.code, ...error.detail }, error.status);
+  }
+  if (error instanceof AppAccountUnfundedError) {
+    return c.json({ error: error.message, code: error.reason, ...error.detail }, 402);
+  }
+  if (error instanceof AppBudgetExceededError) {
+    return c.json({
+      error: error.message,
+      code: 'app_budget_exceeded',
+      spent_usd: error.spentUsd,
+      budget_usd: error.budgetUsd,
+    }, 402);
+  }
+  return null;
+}
 
 const AppObject = z.object({}).passthrough().openapi('KortixApp');
 const DeploymentObject = z.object({}).passthrough().openapi('KortixAppDeployment');
@@ -120,16 +159,19 @@ function sourceFromWire(input: z.infer<typeof SourceSchema>): AppSourceSpec {
   }
 }
 
-export function appPublicUrl(row: { slug: string; routeKey: string }): string {
-  const localPort = process.env.KORTIX_APPS_LOCAL_PORT || String(config.PORT);
-  if (process.env.KORTIX_APPS_LOCAL === 'true' || config.KORTIX_URL.includes('localhost')) {
-    return `http://${row.routeKey}.apps.localhost:${localPort}`;
-  }
-  const domain = (process.env.KORTIX_APPS_BASE_DOMAIN || 'apps.kortix.com').replace(/^\.+|\.+$/g, '');
-  return `https://${config.INTERNAL_KORTIX_ENV}-${row.slug}-${row.routeKey}.${domain}`;
-}
+export { appPublicUrl } from './hostnames';
 
-function serializeApp(row: typeof apps.$inferSelect) {
+/**
+ * `viewerCanAccess` is the caller's OPEN verdict, which is not the same as the
+ * verdict that put this App in their list — a project manager sees every App so
+ * that a private one stays manageable, and may or may not be allowed to open
+ * it. The client needs both: without this it optimistically mints an access
+ * session per card and collects a 403 for every App it may only manage.
+ *
+ * Defaults to true so the single-App serializations that have already run the
+ * check are not forced to restate it.
+ */
+function serializeApp(row: typeof apps.$inferSelect, viewerCanAccess = true) {
   return {
     app_id: row.appId,
     account_id: row.accountId,
@@ -145,6 +187,7 @@ function serializeApp(row: typeof apps.$inferSelect) {
     idle_timeout_seconds: row.idleTimeoutSeconds,
     monthly_budget_usd: Number(row.monthlyBudgetUsd),
     last_request_at: row.lastRequestAt?.toISOString() ?? null,
+    viewer_can_access: viewerCanAccess,
     created_at: row.createdAt.toISOString(),
     updated_at: row.updatedAt.toISOString(),
   };
@@ -198,6 +241,17 @@ function appDeploymentActorType(c: any): 'human' | 'agent' | 'service_account' |
   return 'human';
 }
 
+/** The App capability a route needs. Apps own these leaves outright — they no
+ *  longer borrow project.customize.write / project.gitops.read, so a custom
+ *  role can grant or revoke Apps without touching any other capability. */
+type AppCapability = 'read' | 'write' | 'deploy';
+
+const APP_CAPABILITY_ACTION: Record<AppCapability, string> = {
+  read: PROJECT_ACTIONS.PROJECT_APP_READ,
+  write: PROJECT_ACTIONS.PROJECT_APP_WRITE,
+  deploy: PROJECT_ACTIONS.PROJECT_APP_DEPLOY,
+};
+
 /**
  * Membership + capability + `apps` flag, in that order. Returns the loaded
  * project on success, or the Response the route must return:
@@ -208,15 +262,19 @@ function appDeploymentActorType(c: any): 'human' | 'agent' | 'service_account' |
  *     "turn it on in Settings" answer beats a misleading 404.
  * A capability denial still throws (403) from assertProjectCapability.
  */
-async function authorizedProject(c: any, projectId: string, write = false) {
-  const loaded = await loadProjectForUser(c, projectId, write ? 'write' : 'read');
+async function authorizedProject(
+  c: any,
+  projectId: string,
+  capability: AppCapability = 'read',
+) {
+  const loaded = await loadProjectForUser(c, projectId, capability === 'read' ? 'read' : 'write');
   if (!loaded) return c.json({ error: 'Not found' }, 404) as Response;
   await assertProjectCapability(
     c,
     loaded.userId,
     loaded.row.accountId,
     projectId,
-    write ? PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE : PROJECT_ACTIONS.PROJECT_GITOPS_READ,
+    APP_CAPABILITY_ACTION[capability],
   );
   const gate = requireFeatureFlag(c, loaded.row.metadata, 'apps');
   if (gate) return gate;
@@ -232,6 +290,19 @@ async function scopedApp(projectId: string, appId: string) {
   return row ?? null;
 }
 
+/**
+ * The App a caller may act on, or null. Holding project.app.read is necessary
+ * but not sufficient: the App access policy decides WHICH Apps in the project
+ * the caller sees (see appVisibleToUser). An App the caller cannot see answers
+ * 404, never 403 — a member must not learn that a teammate's private App
+ * exists from the status code.
+ */
+async function visibleApp(projectId: string, appId: string, userId: string) {
+  const row = await scopedApp(projectId, appId);
+  if (!row) return null;
+  return (await appVisibleToUser(row, userId)) ? row : null;
+}
+
 projectsApp.openapi(
   createRoute({
     method: 'get', path: '/{projectId}/apps', tags: ['apps'], summary: 'List Apps', ...auth,
@@ -240,12 +311,14 @@ projectsApp.openapi(
   }),
   async (c: any) => {
     const projectId = c.req.param('projectId');
-    const gate = await authorizedProject(c, projectId);
-    if (gate instanceof Response) return gate;
+    const loaded = await authorizedProject(c, projectId);
+    if (loaded instanceof Response) return loaded;
     const rows = await db.select().from(apps)
       .where(and(eq(apps.projectId, projectId), isNull(apps.deletedAt)))
       .orderBy(desc(apps.createdAt));
-    return c.json({ apps: rows.map(serializeApp) });
+    const visible = await filterAppsVisibleToUser(rows, loaded.userId);
+    const openable = await appsOpenableByUser(visible, loaded.userId);
+    return c.json({ apps: visible.map((row) => serializeApp(row, openable.has(row.appId))) });
   },
 );
 
@@ -265,9 +338,9 @@ projectsApp.openapi(
   }),
   async (c: any) => {
     const { projectId, appId } = c.req.param();
-    const gate = await authorizedProject(c, projectId);
-    if (gate instanceof Response) return gate;
-    const row = await scopedApp(projectId, appId);
+    const loaded = await authorizedProject(c, projectId);
+    if (loaded instanceof Response) return loaded;
+    const row = await visibleApp(projectId, appId, loaded.userId);
     return row ? c.json(await serializeAppAccessPolicy(row)) : c.json({ error: 'Not found' }, 404);
   },
 );
@@ -288,9 +361,9 @@ projectsApp.openapi(
   }),
   async (c: any) => {
     const { projectId, appId } = c.req.param();
-    const loaded = await authorizedProject(c, projectId, true);
+    const loaded = await authorizedProject(c, projectId, 'write');
     if (loaded instanceof Response) return loaded;
-    const current = await scopedApp(projectId, appId);
+    const current = await visibleApp(projectId, appId, loaded.userId);
     if (!current) return c.json({ error: 'Not found' }, 404);
     const body = c.req.valid('json');
     if (body.mode === 'password' && !body.password && !current.accessPasswordHash) {
@@ -333,7 +406,7 @@ projectsApp.openapi(
     const { projectId, appId } = c.req.param();
     const loaded = await authorizedProject(c, projectId);
     if (loaded instanceof Response) return loaded;
-    const row = await scopedApp(projectId, appId);
+    const row = await visibleApp(projectId, appId, loaded.userId);
     if (!row) return c.json({ error: 'Not found' }, 404);
     if (row.accessMode !== 'public' && row.accessMode !== 'password' && !(await appAccessibleToUser(row, loaded.userId))) {
       return c.json({ error: 'App access denied' }, 403);
@@ -353,22 +426,31 @@ projectsApp.openapi(
       params: z.object({ projectId: z.string().uuid() }),
       body: { content: { 'application/json': { schema: z.object({
         slug: z.string().min(1).max(63), name: z.string().min(1).max(200),
-        cpu: z.number().int().min(1).max(64).default(1),
-        memory_gb: z.number().int().min(1).max(512).default(2),
-        disk_gb: z.number().int().min(1).max(2048).default(10),
+        cpu: CpuSchema.default(1),
+        memory_gb: MemorySchema.default(2),
+        disk_gb: DiskSchema.default(10),
         idle_timeout_seconds: z.number().int().min(120).max(86400).default(300),
         monthly_budget_usd: z.number().min(0).max(100000).default(5),
       }) } } },
     },
-    responses: { 201: json(AppObject, 'App'), ...errors(400, 403, 404, 409) },
+    responses: { 201: json(AppObject, 'App'), ...errors(400, 402, 403, 404, 409) },
   }),
   async (c: any) => {
     const projectId = c.req.param('projectId');
-    const loaded = await authorizedProject(c, projectId, true);
+    const loaded = await authorizedProject(c, projectId, 'write');
     if (loaded instanceof Response) return loaded;
     const body = c.req.valid('json');
     const slug = body.slug.toLowerCase();
     if (!APP_SLUG.test(slug)) return c.json({ error: 'slug must contain lowercase letters, numbers, and single hyphens' }, 400);
+    try {
+      assertAppMachineWithinLimits({ cpu: body.cpu, memoryGb: body.memory_gb, diskGb: body.disk_gb });
+      assertAppBudgetWithinLimits(body.monthly_budget_usd);
+      await assertAppQuotaAvailable(loaded.row.accountId);
+    } catch (error) {
+      const refusal = appLimitResponse(c, error);
+      if (refusal) return refusal;
+      throw error;
+    }
     try {
       const [row] = await db.insert(apps).values({
         accountId: loaded.row.accountId, projectId, slug, name: body.name.trim(),
@@ -379,7 +461,12 @@ projectsApp.openapi(
       }).returning();
       return c.json(serializeApp(row!), 201);
     } catch (error) {
-      if ((error as { code?: string }).code === '23505') return c.json({ error: 'An App with this slug already exists' }, 409);
+      // Drizzle wraps the postgres.js error, so the SQLSTATE lives on
+      // error.cause.code, NOT error.code — reading error.code left this branch
+      // dead and a duplicate-slug create returned 500 instead of 409.
+      // inspectDatabaseError walks the .cause chain for the real pgCode.
+      if (inspectDatabaseError(error)?.pgCode === '23505')
+        return c.json({ error: 'An App with this slug already exists' }, 409);
       throw error;
     }
   },
@@ -400,7 +487,7 @@ projectsApp.openapi(
   }),
   async (c: any) => {
     const projectId = c.req.param('projectId');
-    const loaded = await authorizedProject(c, projectId, true);
+    const loaded = await authorizedProject(c, projectId, 'deploy');
     if (loaded instanceof Response) return loaded;
     const body = c.req.valid('json');
     const artifactId = randomUUID();
@@ -440,7 +527,7 @@ projectsApp.openapi(
   }),
   async (c: any) => {
     const { projectId, artifactId } = c.req.param();
-    const gate = await authorizedProject(c, projectId, true);
+    const gate = await authorizedProject(c, projectId, 'deploy');
     if (gate instanceof Response) return gate;
     const body = c.req.valid('json');
     const [artifact] = await db.update(appArtifacts).set({
@@ -462,9 +549,9 @@ projectsApp.openapi(
   }),
   async (c: any) => {
     const { projectId, appId } = c.req.param();
-    const gate = await authorizedProject(c, projectId);
-    if (gate instanceof Response) return gate;
-    const row = await scopedApp(projectId, appId);
+    const loaded = await authorizedProject(c, projectId);
+    if (loaded instanceof Response) return loaded;
+    const row = await visibleApp(projectId, appId, loaded.userId);
     return row ? c.json(serializeApp(row)) : c.json({ error: 'Not found' }, 404);
   },
 );
@@ -475,18 +562,29 @@ projectsApp.openapi(
     request: {
       params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }),
       body: { content: { 'application/json': { schema: z.object({
-        name: z.string().min(1).max(200).optional(), cpu: z.number().int().min(1).max(64).optional(),
-        memory_gb: z.number().int().min(1).max(512).optional(), disk_gb: z.number().int().min(1).max(2048).optional(),
+        name: z.string().min(1).max(200).optional(), cpu: CpuSchema.optional(),
+        memory_gb: MemorySchema.optional(), disk_gb: DiskSchema.optional(),
         idle_timeout_seconds: z.number().int().min(120).max(86400).optional(), monthly_budget_usd: z.number().min(0).max(100000).optional(),
       }) } } },
     },
-    responses: { 200: json(AppObject, 'App'), ...errors(403, 404) },
+    responses: { 200: json(AppObject, 'App'), ...errors(400, 403, 404) },
   }),
   async (c: any) => {
     const { projectId, appId } = c.req.param();
-    const gate = await authorizedProject(c, projectId, true);
-    if (gate instanceof Response) return gate;
+    const loaded = await authorizedProject(c, projectId, 'write');
+    if (loaded instanceof Response) return loaded;
+    if (!(await visibleApp(projectId, appId, loaded.userId))) {
+      return c.json({ error: 'Not found' }, 404);
+    }
     const body = c.req.valid('json');
+    try {
+      assertAppMachineWithinLimits({ cpu: body.cpu, memoryGb: body.memory_gb, diskGb: body.disk_gb });
+      assertAppBudgetWithinLimits(body.monthly_budget_usd);
+    } catch (error) {
+      const refusal = appLimitResponse(c, error);
+      if (refusal) return refusal;
+      throw error;
+    }
     const [row] = await db.update(apps).set({
       ...(body.name !== undefined ? { name: body.name.trim() } : {}),
       ...(body.cpu !== undefined ? { cpuCores: body.cpu } : {}),
@@ -508,16 +606,23 @@ projectsApp.openapi(
   }),
   async (c: any) => {
     const { projectId, appId } = c.req.param();
-    const gate = await authorizedProject(c, projectId, true);
-    if (gate instanceof Response) return gate;
-    const row = await scopedApp(projectId, appId);
+    const loaded = await authorizedProject(c, projectId, 'write');
+    if (loaded instanceof Response) return loaded;
+    const row = await visibleApp(projectId, appId, loaded.userId);
     if (!row) return c.json({ error: 'Not found' }, 404);
     const runtimes = await db.select().from(appRuntimes)
       .innerJoin(appDeployments, eq(appRuntimes.deploymentId, appDeployments.deploymentId))
       .where(eq(appDeployments.appId, appId));
     for (const item of runtimes) {
       const runtime = item.app_runtimes;
-      await getProvider(runtime.provider as SandboxProviderName).remove(runtime.externalId).catch(() => {});
+      // Best-effort remote teardown. A legacy runtime can name a provider this
+      // box has since disabled or retired (e.g. platinum after switching to
+      // e2b-only); tryGetProvider returns null there instead of throwing, so a
+      // dead provider never blocks the delete. pauseComputeSession runs
+      // unconditionally — it stops billing and must not depend on the provider
+      // being reachable.
+      const provider = tryGetProvider(runtime.provider);
+      if (provider) await provider.remove(runtime.externalId).catch(() => {});
       await pauseComputeSession(runtime.runtimeId).catch(() => {});
     }
     await db.update(apps).set({ deletedAt: new Date(), desiredState: 'stopped', activeDeploymentId: null, updatedAt: new Date() })
@@ -543,9 +648,9 @@ projectsApp.openapi(
   }),
   async (c: any) => {
     const { projectId, appId } = c.req.param();
-    const loaded = await authorizedProject(c, projectId, true);
+    const loaded = await authorizedProject(c, projectId, 'deploy');
     if (loaded instanceof Response) return loaded;
-    const app = await scopedApp(projectId, appId);
+    const app = await visibleApp(projectId, appId, loaded.userId);
     if (!app) return c.json({ error: 'Not found' }, 404);
     const body = c.req.valid('json');
     const [artifact] = await db.select().from(appArtifacts).where(and(
@@ -590,9 +695,11 @@ projectsApp.openapi(
   }),
   async (c: any) => {
     const { projectId, appId } = c.req.param();
-    const gate = await authorizedProject(c, projectId);
-    if (gate instanceof Response) return gate;
-    if (!(await scopedApp(projectId, appId))) return c.json({ error: 'Not found' }, 404);
+    const loaded = await authorizedProject(c, projectId);
+    if (loaded instanceof Response) return loaded;
+    if (!(await visibleApp(projectId, appId, loaded.userId))) {
+      return c.json({ error: 'Not found' }, 404);
+    }
     const rows = await db.select().from(appDeployments).where(eq(appDeployments.appId, appId)).orderBy(desc(appDeployments.version));
     return c.json({ deployments: rows.map(serializeDeployment) });
   },
@@ -606,9 +713,11 @@ projectsApp.openapi(
   }),
   async (c: any) => {
     const { projectId, appId, deploymentId } = c.req.param();
-    const gate = await authorizedProject(c, projectId);
-    if (gate instanceof Response) return gate;
-    if (!(await scopedApp(projectId, appId))) return c.json({ error: 'Not found' }, 404);
+    const loaded = await authorizedProject(c, projectId);
+    if (loaded instanceof Response) return loaded;
+    if (!(await visibleApp(projectId, appId, loaded.userId))) {
+      return c.json({ error: 'Not found' }, 404);
+    }
     const [deployment] = await db.select().from(appDeployments).where(and(eq(appDeployments.deploymentId, deploymentId), eq(appDeployments.appId, appId))).limit(1);
     if (!deployment) return c.json({ error: 'Not found' }, 404);
     const events = await db.select().from(appDeploymentEvents).where(eq(appDeploymentEvents.deploymentId, deploymentId)).orderBy(appDeploymentEvents.createdAt);
@@ -627,9 +736,11 @@ projectsApp.openapi(
   }),
   async (c: any) => {
     const { projectId, appId, deploymentId } = c.req.param();
-    const gate = await authorizedProject(c, projectId);
-    if (gate instanceof Response) return gate;
-    if (!(await scopedApp(projectId, appId))) return c.json({ error: 'Not found' }, 404);
+    const loaded = await authorizedProject(c, projectId);
+    if (loaded instanceof Response) return loaded;
+    if (!(await visibleApp(projectId, appId, loaded.userId))) {
+      return c.json({ error: 'Not found' }, 404);
+    }
     const [deployment] = await db.select().from(appDeployments).where(and(
       eq(appDeployments.deploymentId, deploymentId),
       eq(appDeployments.appId, appId),
@@ -671,13 +782,13 @@ for (const action of ['start', 'stop'] as const) {
     createRoute({
       method: 'post', path: `/{projectId}/apps/{appId}/${action}`, tags: ['apps'], summary: `${action} an App`, ...auth,
       request: { params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }) },
-      responses: { 200: json(AppObject, 'App'), ...errors(402, 403, 404, 409, 503) },
+      responses: { 200: json(AppObject, 'App'), ...errors(402, 403, 404, 409, 429, 503) },
     }),
     async (c: any) => {
       const { projectId, appId } = c.req.param();
-      const gate = await authorizedProject(c, projectId, true);
-      if (gate instanceof Response) return gate;
-      const app = await scopedApp(projectId, appId);
+      const loaded = await authorizedProject(c, projectId, 'deploy');
+      if (loaded instanceof Response) return loaded;
+      const app = await visibleApp(projectId, appId, loaded.userId);
       if (!app) return c.json({ error: 'Not found' }, 404);
       if (!app.activeDeploymentId) return c.json({ error: 'App has no active deployment' }, 409);
       const [row] = await db.update(apps).set({ desiredState: action === 'start' ? 'running' : 'stopped', updatedAt: new Date() }).where(eq(apps.appId, appId)).returning();
@@ -711,14 +822,8 @@ for (const action of ['start', 'stop'] as const) {
           if (error instanceof Response) {
             return c.json(await error.json(), error.status as 402 | 409 | 503);
           }
-          if (error instanceof AppBudgetExceededError) {
-            return c.json({
-              error: error.message,
-              code: 'app_budget_exceeded',
-              spent_usd: error.spentUsd,
-              budget_usd: error.budgetUsd,
-            }, 402);
-          }
+          const refusal = appLimitResponse(c, error);
+          if (refusal) return refusal;
           return c.json({
             error: 'App start failed',
             detail: error instanceof Error ? error.message : String(error),
@@ -734,13 +839,13 @@ projectsApp.openapi(
   createRoute({
     method: 'post', path: '/{projectId}/apps/{appId}/rollback', tags: ['apps'], summary: 'Roll back an App', ...auth,
     request: { params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }), body: { content: { 'application/json': { schema: z.object({ deployment_id: z.string().uuid() }) } } } },
-    responses: { 200: json(AppObject, 'App'), ...errors(402, 403, 404, 409, 503) },
+    responses: { 200: json(AppObject, 'App'), ...errors(402, 403, 404, 409, 429, 503) },
   }),
   async (c: any) => {
     const { projectId, appId } = c.req.param();
-    const gate = await authorizedProject(c, projectId, true);
-    if (gate instanceof Response) return gate;
-    const app = await scopedApp(projectId, appId);
+    const loaded = await authorizedProject(c, projectId, 'deploy');
+    if (loaded instanceof Response) return loaded;
+    const app = await visibleApp(projectId, appId, loaded.userId);
     if (!app) return c.json({ error: 'Not found' }, 404);
     const { deployment_id: deploymentId } = c.req.valid('json');
     const [deployment] = await db.select().from(appDeployments).where(and(eq(appDeployments.deploymentId, deploymentId), eq(appDeployments.appId, appId), eq(appDeployments.status, 'ready'))).limit(1);
@@ -762,14 +867,8 @@ projectsApp.openapi(
       await db.update(apps).set({ desiredState: app.desiredState, updatedAt: new Date() })
         .where(eq(apps.appId, appId));
       if (error instanceof Response) return c.json(await error.json(), error.status as 402 | 409 | 503);
-      if (error instanceof AppBudgetExceededError) {
-        return c.json({
-          error: error.message,
-          code: 'app_budget_exceeded',
-          spent_usd: error.spentUsd,
-          budget_usd: error.budgetUsd,
-        }, 402);
-      }
+      const refusal = appLimitResponse(c, error);
+      if (refusal) return refusal;
       return c.json({
         error: 'Rollback runtime failed to start',
         detail: error instanceof Error ? error.message : String(error),

@@ -88,7 +88,7 @@ const SEARCH_THRESHOLD = 6;
 const POLICY_QUERY_STALE_MS = 5_000;
 
 const LOCKED_REASON =
-  'A project rule already decides this tool. Change it under Global rules in the capability tabs.';
+  'A project rule already decides this tool. Change it under Global rules on the Connectors page.';
 
 type PoliciesData = Awaited<ReturnType<typeof getConnectorPolicies>>;
 
@@ -257,10 +257,13 @@ export function ConnectorTools({
   // exact count. Project-locked paths are excluded: writing a connector rule
   // under a project rule changes nothing.
   const [bulk, setBulk] = useState<{ group: ToolGroup; choice: PolicyChoice } | null>(null);
-  const bulkPathsFor = (group: ToolGroup) =>
-    group.actions
-      .map((action) => action.path)
-      .filter((path) => !isLockedByProject(path, effective));
+  const bulkPathsFor = (group: ToolGroup) => {
+    const paths: string[] = [];
+    for (const action of group.actions) {
+      if (!isLockedByProject(action.path, effective)) paths.push(action.path);
+    }
+    return paths;
+  };
   const bulkPaths = bulk ? bulkPathsFor(bulk.group) : [];
 
   // ── Advanced: pattern rules ─────────────────────────────────────────────
@@ -344,7 +347,7 @@ export function ConnectorTools({
           title={`${projectLockedCount} ${projectLockedCount === 1 ? 'tool is' : 'tools are'} decided by a project rule`}
         >
           Project rules apply to every connector and are evaluated first, so those tools cannot be
-          changed here. Edit them under Global rules in the capability tabs.
+          changed here. Edit them under Global rules on the Connectors page.
         </InfoBanner>
       ) : null}
 

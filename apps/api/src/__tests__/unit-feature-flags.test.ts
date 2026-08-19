@@ -95,13 +95,17 @@ describe('resolveFeatureFlag — explicit override wins', () => {
     ).toBe(false);
   });
 
-  test('apps is explicit opt-in', () => {
+  test('apps is a STABLE flag and still explicit opt-in', () => {
+    // Apps is no longer labelled experimental on any surface. Stability is a
+    // badge, not a gate: the flag stays off until a project opts in, exactly
+    // as before. `experimental` here is the metadata STORAGE key, which the
+    // registry pins as a stable storage detail.
     expect(resolveFeatureFlag({}, 'apps')).toBe(false);
     expect(resolveFeatureFlag({ experimental: { apps: true } }, 'apps')).toBe(true);
     expect(resolveFeatureFlag({ experimental: { apps: false } }, 'apps')).toBe(false);
     expect(findCatalogFlag('apps')).toMatchObject({
       name: 'Apps',
-      stability: 'experimental',
+      stability: 'stable',
       available: true,
       enabled: false,
     });

@@ -13,9 +13,7 @@ import { Bubble, BubbleContent } from '@/components/ui/bubble';
 import { Button } from '@/components/ui/button';
 import { Marker, MarkerContent, MarkerIcon } from '@/components/ui/marker';
 import { Message } from '@/components/ui/message';
-import { NewSessionDialog } from '@/components/new-session-dialog';
 import { SessionScope } from '@/components/workbench/session-scope';
-import { agentSwitchRefusal } from '@/lib/mid-session-change';
 import { sendFailureTitle } from '@/lib/send-failure';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ChangesPanel } from '@/components/workbench/changes-panel';
@@ -26,8 +24,8 @@ import { qk } from '@/lib/query-keys';
 import { cn } from '@/lib/utils';
 import type { UseSessionResult } from '@kortix/sdk/react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, Plus, RotateCw, Sparkles } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { AlertTriangle, RotateCw, Sparkles } from 'lucide-react';
+import { useEffect, useRef } from 'react';
 import { toast } from 'sonner';
 
 /** The workbench tabs: Chat + the SDK-powered Files / Changes / Preview panels. */
@@ -109,11 +107,6 @@ function Thread({ session: c }: { session: UseSessionResult }) {
     onError: () => toast.error('Could not reconnect the runtime'),
   });
 
-  // A send refused because the message named an agent this session cannot run.
-  // It arrives as an ordinary runtime error, so it has to be recognised before
-  // the generic failure panel swallows the one refusal with a real remedy.
-  const agentSwitch = agentSwitchRefusal(c.sendError);
-
   const runtimeReady = c.runtimePhase === 'ready';
   // "Down" = was connected, now confirmed unreachable (a drop, not the initial boot).
   const runtimeDown = c.switched && c.runtimePhase === 'unreachable';
@@ -133,25 +126,11 @@ function Thread({ session: c }: { session: UseSessionResult }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runtimeDown]);
 
-  // Stall watchdog: if the agent is "working" but nothing has streamed for a
-  // while, the run likely lost its runtime — surface it instead of an endless
-  // spinner. Any new message/part or a busy-state change resets the timer.
-  const [stalled, setStalled] = useState(false);
-  const lastActivityRef = useRef(Date.now());
-  useEffect(() => {
-    lastActivityRef.current = Date.now();
-    setStalled(false);
-  }, [c.messages, c.isBusy, c.hasPending]);
-  useEffect(() => {
-    if (!c.isBusy) {
-      setStalled(false);
-      return;
-    }
-    const id = setInterval(() => {
-      if (Date.now() - lastActivityRef.current > 60_000) setStalled(true);
-    }, 5_000);
-    return () => clearInterval(id);
-  }, [c.isBusy]);
+  // No stall watchdog here any more. `c.isBusy` is the working projection
+  // (bounded, fed by GET .../turn), and the server closes wedged turns itself
+  // (the husk finalizer) — a 60s client clock could only contradict that
+  // authority, and it fired on any long tool call, a slow model, or a
+  // backgrounded tab.
 
   return (
     <>
@@ -241,48 +220,11 @@ function Thread({ session: c }: { session: UseSessionResult }) {
             <p className="mb-2 text-center text-xs text-muted-foreground">
               Connecting to the runtime…
             </p>
-          ) : stalled && c.isBusy ? (
-            <div className="mb-2 flex items-center justify-between gap-3 rounded-xl border border-border bg-muted/40 px-3.5 py-2.5">
-              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                <AlertTriangle className="size-3.5 shrink-0" />
-                The agent has gone quiet — it may have lost its runtime.
-              </div>
-              <Button size="sm" variant="secondary" className="h-7 gap-1.5" onClick={c.cancel}>
-                Stop
-              </Button>
-            </div>
           ) : null}
           {/* A rejected send used to be SILENT: the optimistic bubble vanished,
               the typed text was gone, and nothing said why. useSession surfaces
-              a typed sendError — read it, and name the KaaB refusals the
-              generic message would otherwise swallow. */}
-          {agentSwitch ? (
-            // Operators can opt into an immutable secret-grant boundary. When
-            // they do, retrying the same switch cannot succeed in this session.
-            <div className="mx-4 mb-2 rounded-lg border border-brand/40 bg-brand/5 px-3 py-2.5">
-              <div className="text-sm font-medium">
-                {agentSwitch.requestedAgent
-                  ? `${agentSwitch.requestedAgent} needs its own session`
-                  : 'That agent needs its own session'}
-              </div>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                {agentSwitch.expectedAgent
-                  ? `This session is running as ${agentSwitch.expectedAgent}, and the two have different secret access. Start a new session to use it.`
-                  : 'It has different secret access than the agent this session started with. Start a new session to use it.'}
-              </p>
-              <div className="mt-2">
-                <NewSessionDialog
-                  projectId={c.projectId}
-                  initialAgent={agentSwitch.requestedAgent}
-                  trigger={
-                    <Button size="sm" variant="secondary" className="h-7 gap-1.5">
-                      <Plus className="size-3.5" /> Start a new session
-                    </Button>
-                  }
-                />
-              </div>
-            </div>
-          ) : c.sendError ? (
+              a typed sendError — read it and say what failed. */}
+          {c.sendError ? (
             <div className="mx-4 mb-2 rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm">
               <div className="font-medium">{sendFailureTitle(c.sendError)}</div>
               <p className="mt-0.5 text-xs text-muted-foreground">{c.sendError.message}</p>

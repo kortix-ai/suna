@@ -1,280 +1,120 @@
 import { describe, expect, test } from 'bun:test';
-import {
-  UPGRADE_ITEM,
-  filterRailGroups,
-  isRailItemActive,
-  railGroups,
-  railItemMatches,
-  type RailFlags,
-} from './rail';
+import { isRailItemActive, railGroups, railItemForTab } from './rail';
+import { SETTINGS_TABS } from './settings-tabs';
 import type { RailItem } from './type';
 
 const item = (tab: RailItem['tab']): RailItem => ({ tab, label: tab });
 
-const flags = (overrides: Partial<RailFlags> = {}): RailFlags => ({
-  marketplaceEnabled: false,
-  llmGatewayAvailable: false,
-  voiceEnabled: false,
-  reviewEnabled: false,
-  ...overrides,
-});
+const tabsOf = (): string[] => railGroups().flatMap((g) => g.items.map((i) => i.tab));
 
-const tabsOf = (f: RailFlags): string[] => railGroups(f).flatMap((g) => g.items.map((i) => i.tab));
-
+/**
+ * The rail is what is LEFT in the settings overlay, and that is now exactly
+ * the person-scoped tabs. Twenty-one rows left it in two moves: eight
+ * account-scoped ones (Organization, Billing, Usage, Groups, Roles, Identity,
+ * Audit log, API keys) for `/accounts/[id]`, and thirteen project-scoped ones
+ * (General, Members, Secrets, Channels, Repositories, Models, Sandbox
+ * templates, Snapshots, Marketplace, Review, Voice, Feature flags, Upgrades)
+ * for `/projects/[id]/config`. These tests pin that they are gone from HERE —
+ * `capabilities/project-settings/project-settings-sections.test.ts` pins that
+ * they arrived THERE.
+ */
 describe('railGroups', () => {
-  test('renders the five groups in order', () => {
-    expect(railGroups(flags()).map((g) => g.label)).toEqual([
-      'You',
-      'Workspace',
-      'Agent',
-      'Organization',
-      'Developer',
-    ]);
+  test('renders one group: You', () => {
+    expect(railGroups().map((g) => g.label)).toEqual(['You']);
   });
 
-  test('with every flag off it holds the static tabs only', () => {
-    const tabs = tabsOf(flags());
-    expect(tabs).toContain('profile');
-    expect(tabs).toContain('channels');
-    expect(tabs).toContain('billing');
-    expect(tabs).not.toContain('voice');
-    expect(tabs).not.toContain('review');
-    expect(tabs).not.toContain('marketplace');
+  test('holds exactly the person-scoped tabs, in order', () => {
+    // `tokens` (labelled "API keys") rejoined on 2026-08-18 — a person's own
+    // keys are person-scoped; only the service-account half is account
+    // configuration and it stayed on `/accounts/[id]`.
+    expect(tabsOf()).toEqual(['profile', 'preferences', 'connected', 'tokens']);
   });
 
-  test('each flag adds exactly its own tab', () => {
-    expect(tabsOf(flags({ voiceEnabled: true }))).toContain('voice');
-    expect(tabsOf(flags({ reviewEnabled: true }))).toContain('review');
-    expect(tabsOf(flags({ marketplaceEnabled: true }))).toContain('marketplace');
+  test('every rail tab is a live SettingsTab, and every live SettingsTab has a rail row', () => {
+    expect([...tabsOf()].sort()).toEqual([...SETTINGS_TABS].sort());
   });
 
-  test('two flags in one group both land — the rail.ts:110 regression', () => {
-    const tabs = tabsOf(
-      flags({ marketplaceEnabled: true, reviewEnabled: true, voiceEnabled: true }),
-    );
-    expect(tabs).toContain('marketplace');
-    expect(tabs).toContain('review');
-    expect(tabs).toContain('voice');
+  test('takes no flags — nothing left in the rail varies by one', () => {
+    expect(railGroups.length).toBe(0);
   });
 
-  test('every flag on yields 25 content tabs', () => {
-    // 27 before the `main` merge — Computers graduated to the standalone
-    // Connectors page (#6313), taking the `agent_tunnel`-gated rail row and
-    // the whole `computers` tab with it. 26 until Instructions was removed:
-    // that tab only ever rendered `CommandsView`, and the project-level
-    // instructions surface it was named for never existed.
-    const all = flags({
-      marketplaceEnabled: true,
-      llmGatewayAvailable: true,
-      voiceEnabled: true,
-      reviewEnabled: true,
-    });
-    expect(tabsOf(all)).toHaveLength(25);
+  test('returns a stable reference, so memoized callers do no work', () => {
+    expect(railGroups()).toBe(railGroups());
   });
 
-  test('no tab appears in two groups', () => {
-    const tabs = tabsOf(
-      flags({ marketplaceEnabled: true, voiceEnabled: true, reviewEnabled: true }),
-    );
-    expect(new Set(tabs).size).toBe(tabs.length);
+  test('the project-configuration tabs are gone, not merely hidden', () => {
+    const tabs = tabsOf();
+    for (const gone of [
+      'general',
+      'members',
+      'secrets',
+      'channels',
+      'repositories',
+      'models',
+      'sandbox',
+      'snapshots',
+      'marketplace',
+      'review',
+      'voice',
+      'experimental',
+      'feature-flags',
+      'upgrades',
+    ]) {
+      expect(tabs).not.toContain(gone);
+    }
   });
 
-  test('upgrades is not in the scrolling groups — it is pinned', () => {
-    expect(tabsOf(flags())).not.toContain('upgrades');
-  });
-
-  // Ported from the legacy Customize overlay's rail test + IA checkpoints test, which
-  // covered this same rail before the settings-panel cutover deleted the
-  // legacy Customize overlay and its own rail module.
-  test('uses Secrets as the user-facing tab name', () => {
-    const secrets = railGroups(flags())
-      .flatMap((group) => group.items)
-      .find((railItem) => railItem.tab === 'secrets');
-    expect(secrets?.label).toBe('Secrets');
-  });
-
-  test('repositories (renamed from git) and sandbox templates are reachable, with no dead changes/dev tab', () => {
-    const tabs = tabsOf(flags());
-    expect(tabs).toContain('repositories');
-    expect(tabs).toContain('sandbox');
-    const sandbox = railGroups(flags())
-      .flatMap((g) => g.items)
-      .find((i) => i.tab === 'sandbox');
-    expect(sandbox?.label).toBe('Sandbox templates');
-    expect(tabs).not.toContain('changes');
-    expect(tabs).not.toContain('dev');
-  });
-
-  test('the rail excludes standalone agent, connectors and skills pages', () => {
-    const tabs = tabsOf(
-      flags({
-        marketplaceEnabled: true,
-        llmGatewayAvailable: true,
-        voiceEnabled: true,
-        reviewEnabled: true,
-      }),
-    );
-    // Agent, Connectors and Skills graduated to their own routed pages — a
-    // rail tab here would open a settings pane that has no case for them.
-    expect(tabs).not.toContain('agent');
-    expect(tabs).not.toContain('agents');
-    expect(tabs).not.toContain('connectors');
-    expect(tabs).not.toContain('skills');
-    // Computers joined them on `main` (#6313) — it is a connector now.
-    expect(tabs).not.toContain('computers');
-  });
-
-  test('the sections that stayed from Customize are untouched', () => {
-    const tabs = tabsOf(flags());
-    expect(tabs).toContain('secrets');
-    expect(tabs).toContain('channels');
-    expect(tabs).toContain('members');
-  });
-
-  test('instructions has no rail row — the tab was removed, not hidden', () => {
-    // Every flag ON, so this cannot pass merely because a gate is closed.
-    const allOn = flags({
-      marketplaceEnabled: true,
-      llmGatewayAvailable: true,
-      voiceEnabled: true,
-      reviewEnabled: true,
-    });
-    expect(tabsOf(allOn)).not.toContain('instructions');
-  });
-
-  test('models is reachable in the rail regardless of the llm gateway flag — unlike the legacy llm-management row, it is not flag-gated', () => {
-    expect(tabsOf(flags())).toContain('models');
-    expect(tabsOf(flags({ llmGatewayAvailable: true }))).toContain('models');
-  });
-
-  test('organization (JAY-546) is first in the Organization group, before billing', () => {
-    const org = railGroups(flags()).find((g) => g.label === 'Organization');
-    expect(org?.items.map((i) => i.tab)[0]).toBe('organization');
-    expect(org?.items.map((i) => i.tab)).toContain('billing');
-  });
-
-  test('organization uses "General" as its user-facing label', () => {
-    const organization = railGroups(flags())
-      .flatMap((g) => g.items)
-      .find((i) => i.tab === 'organization');
-    expect(organization?.label).toBe('General');
+  test('the account-scoped and standalone-page tabs are gone too', () => {
+    const tabs = tabsOf();
+    for (const gone of [
+      'organization',
+      'billing',
+      'usage',
+      'groups',
+      'roles',
+      'identity',
+      'audit',
+      'api-keys',
+      'agent',
+      'agents',
+      'connectors',
+      'skills',
+      'computers',
+      'schedules',
+      'webhooks',
+    ]) {
+      expect(tabs).not.toContain(gone);
+    }
   });
 
   test('a tab reachable in the rail is the one the panel can activate', () => {
     // The panel bounces to the default tab when no rail item matches, so a
-    // gated tab MUST resolve through isRailItemActive to be reachable.
-    const items = railGroups(flags({ reviewEnabled: true })).flatMap((g) => g.items);
-    expect(items.some((i) => isRailItemActive(i, 'review'))).toBe(true);
+    // rail tab MUST resolve through isRailItemActive to be reachable.
+    const items = railGroups().flatMap((g) => g.items);
+    for (const tab of SETTINGS_TABS) {
+      expect(items.some((i) => isRailItemActive(i, tab))).toBe(true);
+    }
   });
 });
 
 describe('isRailItemActive', () => {
-  test('an item matches its own tab', () => {
-    expect(isRailItemActive(item('members'), 'members')).toBe(true);
-    expect(isRailItemActive(item('members'), 'secrets')).toBe(false);
-  });
-
-  test('plain items are independent rail items with no shared activation', () => {
-    expect(isRailItemActive(item('channels'), 'secrets')).toBe(false);
-    expect(isRailItemActive(item('channels'), 'repositories')).toBe(false);
-    expect(isRailItemActive(item('secrets'), 'channels')).toBe(false);
-    expect(isRailItemActive(item('secrets'), 'repositories')).toBe(false);
-    expect(isRailItemActive(item('repositories'), 'channels')).toBe(false);
-    expect(isRailItemActive(item('repositories'), 'secrets')).toBe(false);
-  });
-
-  test('models stands in for every llm sub-tab', () => {
-    expect(isRailItemActive(item('models'), 'models')).toBe(true);
-    expect(isRailItemActive(item('models'), 'llm-logs')).toBe(true);
-    expect(isRailItemActive(item('models'), 'llm-budgets')).toBe(true);
-    expect(isRailItemActive(item('models'), 'llm-management')).toBe(true);
-    expect(isRailItemActive(item('models'), 'llm-providers')).toBe(true);
-    expect(isRailItemActive(item('models'), 'members')).toBe(false);
-  });
-
-  test('the models item is not active for a non-llm tab', () => {
-    expect(isRailItemActive(item('models'), 'channels')).toBe(false);
-    expect(isRailItemActive(item('models'), 'repositories')).toBe(false);
+  test('an item matches its own tab and nothing else', () => {
+    expect(isRailItemActive(item('profile'), 'profile')).toBe(true);
+    expect(isRailItemActive(item('profile'), 'preferences')).toBe(false);
+    expect(isRailItemActive(item('connected'), 'connected')).toBe(true);
+    expect(isRailItemActive(item('connected'), 'profile')).toBe(false);
   });
 });
 
-describe('filterRailGroups', () => {
-  const all = () => railGroups(flags());
-  const shape = (gs: readonly { label: string; items: readonly RailItem[] }[]) =>
-    gs.map((g) => [g.label, g.items.map((i) => i.tab)] as const);
-
-  test('a blank query returns the same groups, by identity', () => {
-    const groups = all();
-    expect(filterRailGroups(groups, '')).toBe(groups);
-    expect(filterRailGroups(groups, '   ')).toBe(groups);
+describe('railItemForTab', () => {
+  test('resolves every live tab to its row', () => {
+    for (const tab of SETTINGS_TABS) {
+      expect(railItemForTab(tab)?.tab).toBe(tab);
+    }
   });
 
-  // The headline requirement: a match keeps its GROUP, heading and all — a
-  // result is never a bare row floating where five groups used to be.
-  test('a matching row keeps its group heading, and every other group goes', () => {
-    expect(shape(filterRailGroups(all(), 'profile'))).toEqual([['You', ['profile']]]);
-  });
-
-  test('matching is case-insensitive and ignores surrounding space', () => {
-    expect(shape(filterRailGroups(all(), '  PROFILE '))).toEqual([['You', ['profile']]]);
-  });
-
-  test('a group name is itself a query, and keeps all of its rows', () => {
-    const [group, ...rest] = filterRailGroups(all(), 'organization');
-    expect(rest).toEqual([]);
-    expect(group.label).toBe('Organization');
-    // Not re-filtered against the query — only one of these rows contains the
-    // word "organization" in its own label or description.
-    expect(group.items.map((i) => i.tab)).toEqual(
-      all()
-        .find((g) => g.label === 'Organization')!
-        .items.map((i) => i.tab),
-    );
-  });
-
-  test('a row is findable by its description, not only its label', () => {
-    // `api-keys`: "Let the Kortix CLI, a script, or a CI job use this workspace."
-    expect(shape(filterRailGroups(all(), 'cli'))).toEqual([['Developer', ['api-keys']]]);
-  });
-
-  test('groups keep their original order when several match', () => {
-    // Three, not two: `experimental`'s description ("Features you can switch on
-    // before they are generally available.") contains "general" as a substring.
-    // That is the filter working as designed — the test above pins that a row
-    // is findable by its description — and it is the cost of substring matching
-    // over prose. The invariant this test exists for is the ORDER: Workspace
-    // before Organization before Developer, matching `STATIC_GROUPS`.
-    expect(filterRailGroups(all(), 'general').map((g) => g.label)).toEqual([
-      'Workspace',
-      'Organization',
-      'Developer',
-    ]);
-  });
-
-  test('a query nothing matches returns no groups at all', () => {
-    expect(filterRailGroups(all(), 'zzzznotathing')).toEqual([]);
-  });
-
-  test('it never invents a row that railGroups did not produce', () => {
-    const visible = filterRailGroups(all(), 'e').flatMap((g) => g.items.map((i) => i.tab));
-    const every = tabsOf(flags());
-    expect(visible.every((t) => every.includes(t))).toBe(true);
-  });
-});
-
-describe('railItemMatches', () => {
-  test('a blank query matches everything, so the pinned rows stay put', () => {
-    expect(railItemMatches(UPGRADE_ITEM, '')).toBe(true);
-    expect(railItemMatches(UPGRADE_ITEM, '  ')).toBe(true);
-  });
-
-  test('it filters the pinned Upgrades row like any other', () => {
-    expect(railItemMatches(UPGRADE_ITEM, 'upgrade')).toBe(true);
-    expect(railItemMatches(UPGRADE_ITEM, 'profile')).toBe(false);
-  });
-
-  test('an item with no description matches on its label alone', () => {
-    expect(railItemMatches(item('profile'), 'prof')).toBe(true);
-    expect(railItemMatches(item('profile'), 'billing')).toBe(false);
+  test('returns undefined for a tab that left the rail — the header renders nothing rather than a wrong title', () => {
+    expect(railItemForTab('members' as never)).toBeUndefined();
+    expect(railItemForTab('upgrades' as never)).toBeUndefined();
   });
 });

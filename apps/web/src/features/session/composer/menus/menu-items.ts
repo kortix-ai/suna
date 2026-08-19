@@ -79,26 +79,28 @@ export function buildMentionSections({
   // subagents ARE listed here today, which is plausibly how you delegate to
   // a subagent by name. Changing that is a product decision for Jay, not
   // something to fold into this refactor — see the pinning test below.
-  const agentRows: MenuRow[] = agents
-    .filter((a) => (a.name || '').toLowerCase().includes(q))
-    .map((a) => ({ index: index++, kind: 'agent' as const, label: a.name || '', value: a.name || '' }));
+  const agentRows: MenuRow[] = [];
+  for (const a of agents) {
+    if (!(a.name || '').toLowerCase().includes(q)) continue;
+    agentRows.push({ index: index++, kind: 'agent', label: a.name || '', value: a.name || '' });
+  }
   if (agentRows.length) sections.push({ kind: 'agent', heading: 'Agents', items: agentRows });
 
-  const sessionRows: MenuRow[] = sessions
-    .filter((s) => !s.parentID && !s.time.archived && s.id !== currentSessionId)
-    .filter((s) => sessionMatchesQuery(s, q))
-    .slice(0, SESSION_LIMIT)
-    .map((s) => {
-      const ago = formatRelativeTime(s.time.updated, now);
-      const count = s.summary?.files;
-      return {
-        index: index++,
-        kind: 'session' as const,
-        label: s.title || s.id,
-        value: s.id,
-        description: count ? `${ago} · ${count} file${count === 1 ? '' : 's'} changed` : ago,
-      };
+  const sessionRows: MenuRow[] = [];
+  for (const s of sessions) {
+    if (sessionRows.length >= SESSION_LIMIT) break;
+    if (s.parentID || s.time.archived || s.id === currentSessionId) continue;
+    if (!sessionMatchesQuery(s, q)) continue;
+    const ago = formatRelativeTime(s.time.updated, now);
+    const count = s.summary?.files;
+    sessionRows.push({
+      index: index++,
+      kind: 'session',
+      label: s.title || s.id,
+      value: s.id,
+      description: count ? `${ago} · ${count} file${count === 1 ? '' : 's'} changed` : ago,
     });
+  }
   if (sessionRows.length) sections.push({ kind: 'session', heading: 'Sessions', items: sessionRows });
 
   const fileRows: MenuRow[] = files

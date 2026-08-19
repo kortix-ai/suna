@@ -106,7 +106,9 @@ export function OpenChangeRequestDialog({
 }: OpenChangeRequestDialogProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const lastSessionRef = useRef<ProjectSession | null>(session);
-  if (session) lastSessionRef.current = session;
+  useEffect(() => {
+    if (session) lastSessionRef.current = session;
+  }, [session]);
   const activeSession = session ?? lastSessionRef.current;
   const sessionMode = activeSession !== null;
 

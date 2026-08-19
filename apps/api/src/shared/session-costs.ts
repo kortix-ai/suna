@@ -22,6 +22,12 @@ import { resolveSessionOwnerIdentities } from '../projects/lib/access';
 import type { SessionOwnerIdentity } from '../projects/lib/session-inventory';
 import type { CostSort, CostWindow } from './cost-window';
 import { db } from './db';
+import {
+  kortixBilledSpendSql,
+  providerBilledSpendSql,
+  rowTotalSpendSql,
+  totalSpendSql,
+} from './llm-spend';
 
 type NumericValue = number | string | null | undefined;
 type TemporalValue = Date | string | null | undefined;
@@ -47,6 +53,10 @@ export interface SessionCostSummary {
   updated_at: string;
   last_activity_at: string | null;
   llm_cost: number;
+  /** The `llm_cost` slice debited from the Kortix wallet. */
+  llm_kortix_cost: number;
+  /** The `llm_cost` slice paid straight to your own provider on your own key. */
+  llm_provider_cost: number;
   compute_cost: number;
   total_cost: number;
   request_count: number;
@@ -142,6 +152,13 @@ interface SessionBaseRow {
 interface LlmAggregateRow {
   sessionId?: string | null;
   llmCost: NumericValue;
+  // REQUIRED, not optional. `listSessionCosts` hand-builds this literal from a
+  // subquery whose projected columns are enumerated one by one — an optional
+  // field there compiles fine with the projection missing and silently reports
+  // $0.00 for the split, which is the exact class of bug this module exists to
+  // fix. Required makes the compiler catch a forgotten projection.
+  llmKortixCost: NumericValue;
+  llmProviderCost: NumericValue;
   requestCount: NumericValue;
   errorCount: NumericValue;
   inputTokens: NumericValue;
@@ -264,6 +281,8 @@ export function assembleSessionCostSummary(input: {
     updated_at: requiredIsoValue(input.session.updatedAt),
     last_activity_at: latestIsoValue(input.llm?.lastAt, input.compute?.lastAt),
     llm_cost: llmCost,
+    llm_kortix_cost: numberValue(input.llm?.llmKortixCost),
+    llm_provider_cost: numberValue(input.llm?.llmProviderCost),
     compute_cost: computeCost,
     total_cost: sumCosts(llmCost, computeCost),
     request_count: numberValue(input.llm?.requestCount),
@@ -342,7 +361,9 @@ export function mergeLegacyGatewaySessionRows(
 // The LLM aggregate columns, shared by the windowed subquery that feeds the
 // session list and the all-time scalar query that feeds the session detail.
 const llmAggregateFields = {
-  llmCost: sql<number>`coalesce(sum(${gatewayRequestLogs.finalCost}), 0)::float8`,
+  llmCost: totalSpendSql,
+  llmKortixCost: kortixBilledSpendSql,
+  llmProviderCost: providerBilledSpendSql,
   requestCount: sql<number>`count(*)::int`,
   errorCount: sql<number>`count(*) filter (where not ${gatewayRequestLogs.ok})::int`,
   inputTokens: sql<number>`coalesce(sum(${gatewayRequestLogs.inputTokens}), 0)::float8`,
@@ -368,6 +389,8 @@ function llmAggregateSubquery(accountId: string, window: CostWindow) {
     .select({
       sessionId: gatewayRequestLogs.sessionId,
       llmCost: llmAggregateFields.llmCost.as('llm_cost'),
+      llmKortixCost: llmAggregateFields.llmKortixCost.as('llm_kortix_cost'),
+      llmProviderCost: llmAggregateFields.llmProviderCost.as('llm_provider_cost'),
       requestCount: llmAggregateFields.requestCount.as('request_count'),
       errorCount: llmAggregateFields.errorCount.as('error_count'),
       inputTokens: llmAggregateFields.inputTokens.as('input_tokens'),
@@ -479,7 +502,7 @@ async function loadReconciliation(
   const [llmResult, computeResult] = await Promise.all([
     db
       .select({
-        cost: sql<number>`coalesce(sum(${gatewayRequestLogs.finalCost}), 0)::float8`,
+        cost: totalSpendSql,
         requests: sql<number>`count(*)::int`,
       })
       .from(gatewayRequestLogs)
@@ -622,6 +645,8 @@ export async function listSessionCosts(input: {
         createdAt: projectSessions.createdAt,
         updatedAt: projectSessions.updatedAt,
         llmCost: llm.llmCost,
+        llmKortixCost: llm.llmKortixCost,
+        llmProviderCost: llm.llmProviderCost,
         requestCount: llm.requestCount,
         errorCount: llm.errorCount,
         inputTokens: llm.inputTokens,
@@ -665,6 +690,8 @@ export async function listSessionCosts(input: {
       owner: row.ownerId ? ownerById.get(row.ownerId) : undefined,
       llm: {
         llmCost: row.llmCost,
+        llmKortixCost: row.llmKortixCost,
+        llmProviderCost: row.llmProviderCost,
         requestCount: row.requestCount,
         errorCount: row.errorCount,
         inputTokens: row.inputTokens,
@@ -707,7 +734,7 @@ async function loadModelUsage(
       outputTokens: sql<number>`coalesce(sum(${gatewayRequestLogs.outputTokens}), 0)::float8`,
       cachedTokens: sql<number>`coalesce(sum(${gatewayRequestLogs.cachedTokens}), 0)::float8`,
       cacheWriteTokens: sql<number>`coalesce(sum(${gatewayRequestLogs.cacheWriteTokens}), 0)::float8`,
-      cost: sql<number>`coalesce(sum(${gatewayRequestLogs.finalCost}), 0)::float8`,
+      cost: totalSpendSql,
       lastAt: sql<Date>`max(${gatewayRequestLogs.createdAt})`,
     })
     .from(gatewayRequestLogs)
@@ -715,7 +742,7 @@ async function loadModelUsage(
       and(eq(gatewayRequestLogs.accountId, accountId), eq(gatewayRequestLogs.sessionId, sessionId)),
     )
     .groupBy(gatewayRequestLogs.provider, gatewayRequestLogs.resolvedModel)
-    .orderBy(desc(sql`sum(${gatewayRequestLogs.finalCost})`));
+    .orderBy(desc(totalSpendSql));
 
   return rows.map((row) => ({
     provider: row.provider,
@@ -740,7 +767,7 @@ async function loadLedgerEntries(
       .select({
         id: gatewayRequestLogs.logId,
         occurredAt: gatewayRequestLogs.createdAt,
-        cost: gatewayRequestLogs.finalCost,
+        cost: rowTotalSpendSql,
         provider: gatewayRequestLogs.provider,
         model: gatewayRequestLogs.resolvedModel,
         requestId: gatewayRequestLogs.requestId,
@@ -874,7 +901,7 @@ export async function listProjectGatewaySessionSpend(input: {
         sessionId: gatewayRequestLogs.sessionId,
         requests: sql<number>`count(*)::int`,
         errors: sql<number>`count(*) filter (where not ${gatewayRequestLogs.ok})::int`,
-        cost: sql<number>`coalesce(sum(${gatewayRequestLogs.finalCost}), 0)::float8`,
+        cost: totalSpendSql,
         tokens: sql<number>`coalesce(sum(${gatewayRequestLogs.inputTokens} + ${gatewayRequestLogs.outputTokens}), 0)::float8`,
         models: sql<number>`count(distinct ${gatewayRequestLogs.requestedModel})::int`,
         lastAt: sql<Date | null>`max(${gatewayRequestLogs.createdAt})`,

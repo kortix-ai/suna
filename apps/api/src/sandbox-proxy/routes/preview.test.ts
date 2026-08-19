@@ -1,16 +1,16 @@
 import { describe, expect, test } from 'bun:test';
 
 import { getRequestContext, runWithContext } from '../../lib/request-context';
-import {
-  AgentSecretGrantMismatchError,
-  SecretGrantResolutionError,
-} from '../../projects/lib/secret-grant';
+import { SecretGrantResolutionError } from '../../projects/lib/secret-grant';
+import { SessionGrantRemintError } from '../../projects/lib/session-token-grant';
 import { KORTIX_SERVICE_CALL_HEADER } from '../../shared/kortix-user-context';
+import { PROXY_HOP_HEADER, PROXY_UPSTREAM_STATUS_HEADER } from '../proxy-hop';
 import {
   STRIP_FORWARD_HEADERS,
   bindSandboxRequestContext,
   isProxiedBaseReset,
   longTurnTimeoutResponse,
+  portUnreachableResponse,
   secretGrantErrorResponse,
   shouldAutoResumeStoppedSandbox,
 } from './preview';
@@ -156,18 +156,29 @@ describe('longTurnTimeoutResponse', () => {
 });
 
 describe('secretGrantErrorResponse', () => {
-  test('a grant-changing agent switch is a 409 the web client already codes against', async () => {
-    const res = secretGrantErrorResponse(new AgentSecretGrantMismatchError('narrow', 'broad'), '');
-    expect(res).not.toBeNull();
-    expect(res?.status).toBe(409);
-    const body = (await res?.json()) as {
-      code: string;
-      expected_agent: string;
-      requested_agent: string;
-    };
-    expect(body.code).toBe('AGENT_SWITCH_REQUIRES_NEW_SESSION');
-    expect(body.expected_agent).toBe('narrow');
-    expect(body.requested_agent).toBe('broad');
+  // The agent-switch 409 is GONE. A prompt naming a different agent is
+  // re-scoped, never refused, so no error this function handles may map to a
+  // permanent conflict — every one is "we could not APPLY the re-scope", which
+  // the client must retry. This test is the guard against a 409 creeping back.
+  test('no grant failure maps to a 409 — a switch is never refused', async () => {
+    for (const err of [
+      new SecretGrantResolutionError('kortix', new Error('git unreachable')),
+      new SessionGrantRemintError('ses_1', new Error('db down')),
+    ]) {
+      const res = secretGrantErrorResponse(err, '');
+      expect(res).not.toBeNull();
+      expect(res?.status).not.toBe(409);
+      expect(res?.status).toBe(503);
+      const body = (await res?.json()) as { code: string };
+      expect(body.code).not.toBe('AGENT_SWITCH_REQUIRES_NEW_SESSION');
+    }
+  });
+
+  test('a failed grant re-mint is a 503, so the prompt is retried rather than dropped', async () => {
+    const res = secretGrantErrorResponse(new SessionGrantRemintError('ses_1', new Error('db')), '');
+    expect(res?.status).toBe(503);
+    const body = (await res?.json()) as { code: string };
+    expect(body.code).toBe('AGENT_SWITCH_GRANT_UNAPPLIED');
   });
 
   test('an unresolvable grant is a 503, not the generic unreachable 502', async () => {
@@ -187,7 +198,7 @@ describe('secretGrantErrorResponse', () => {
 
   test('reflects CORS origin like every other proxy response', () => {
     const res = secretGrantErrorResponse(
-      new AgentSecretGrantMismatchError('a', 'b'),
+      new SecretGrantResolutionError('a', new Error('git unreachable')),
       'https://app.kortix.ai',
     );
     expect(res?.headers.get('Access-Control-Allow-Origin')).toBe('https://app.kortix.ai');
@@ -260,5 +271,111 @@ describe('the service-call header cannot be injected through the proxy', () => {
     for (const name of STRIP_FORWARD_HEADERS) {
       expect(name).toBe(name.toLowerCase());
     }
+  });
+});
+
+// A failed probe used to arrive as a bare 502/503 and every client had to guess
+// which of four hops produced it. The web app guessed "the sandbox is gone" and
+// painted "Waking this session up…" over a session whose dev server was simply
+// not listening. The hop is that missing fact, on the header AND in the body so
+// a browser probe that never reads the body still gets it.
+describe('portUnreachableResponse carries hop attribution', () => {
+  const jsonHeaders = new Headers({ accept: 'application/json' });
+
+  test('the control plane answering "this row is not active" says so', async () => {
+    const res = portUnreachableResponse({
+      port: 8000,
+      status: 503,
+      origin: 'https://app.kortix.test',
+      incomingHeaders: jsonHeaders,
+      reason: 'sandbox not ready (status: stopped)',
+      hop: 'control_plane',
+    });
+    expect(res.status).toBe(503);
+    expect(res.headers.get(PROXY_HOP_HEADER)).toBe('control_plane');
+    expect(res.headers.get(PROXY_UPSTREAM_STATUS_HEADER)).toBeNull();
+    expect(await res.json()).toEqual({
+      error: 'sandbox not ready (status: stopped)',
+      port: 8000,
+      status: 503,
+      hop: 'control_plane',
+      upstream_status: null,
+    });
+  });
+
+  test('a dead daemon reports the upstream status it actually saw', async () => {
+    const res = portUnreachableResponse({
+      port: 8000,
+      status: 502,
+      origin: 'https://app.kortix.test',
+      incomingHeaders: jsonHeaders,
+      reason: 'sandbox port unreachable',
+      hop: 'daemon',
+      upstreamStatus: 502,
+    });
+    expect(res.headers.get(PROXY_HOP_HEADER)).toBe('daemon');
+    expect(res.headers.get(PROXY_UPSTREAM_STATUS_HEADER)).toBe('502');
+    expect(await res.json()).toMatchObject({ hop: 'daemon', upstream_status: 502 });
+  });
+
+  test("a dead app port is the user's own process, and says so", async () => {
+    const res = portUnreachableResponse({
+      port: 3000,
+      status: 502,
+      origin: '',
+      incomingHeaders: jsonHeaders,
+      reason: 'sandbox port unreachable',
+      hop: 'upstream_port',
+      upstreamStatus: 502,
+    });
+    expect(res.headers.get(PROXY_HOP_HEADER)).toBe('upstream_port');
+    expect(await res.json()).toMatchObject({ hop: 'upstream_port' });
+  });
+
+  test('a provider ingress that never resolved is its own hop', async () => {
+    const res = portUnreachableResponse({
+      port: 8000,
+      status: 502,
+      origin: '',
+      incomingHeaders: jsonHeaders,
+      reason: 'sandbox upstream unreachable',
+      hop: 'provider_ingress',
+    });
+    expect(res.headers.get(PROXY_HOP_HEADER)).toBe('provider_ingress');
+  });
+
+  test('a browser navigation still gets the friendly HTML — and the hop headers with it', async () => {
+    const res = portUnreachableResponse({
+      port: 3000,
+      status: 502,
+      origin: 'https://app.kortix.test',
+      incomingHeaders: new Headers({ accept: 'text/html' }),
+      reason: 'sandbox port unreachable',
+      hop: 'upstream_port',
+      upstreamStatus: 502,
+    });
+    expect(res.headers.get('Content-Type')).toContain('text/html');
+    expect(res.headers.get(PROXY_HOP_HEADER)).toBe('upstream_port');
+    expect(await res.text()).toContain('<!doctype html>');
+  });
+
+  // The probe runs cross-origin (dev.kortix.com → dev-api.kortix.com). Without
+  // this the browser hides both headers from JS and every failure reads as an
+  // unattributed one — the exact ambiguity this step removes.
+  test('both hop headers are CORS-exposed so a cross-origin probe can read them', () => {
+    const res = portUnreachableResponse({
+      port: 8000,
+      status: 502,
+      origin: 'https://app.kortix.test',
+      incomingHeaders: jsonHeaders,
+      reason: 'sandbox upstream unreachable',
+      hop: 'daemon',
+      upstreamStatus: 502,
+    });
+    const exposed = (res.headers.get('Access-Control-Expose-Headers') ?? '')
+      .split(',')
+      .map((name) => name.trim().toLowerCase());
+    expect(exposed).toContain(PROXY_HOP_HEADER.toLowerCase());
+    expect(exposed).toContain(PROXY_UPSTREAM_STATUS_HEADER.toLowerCase());
   });
 });

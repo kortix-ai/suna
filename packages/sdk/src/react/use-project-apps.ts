@@ -97,24 +97,51 @@ export function useAppDeployments(
   return { ...query, deploy, rollback };
 }
 
+export interface UseAppAccessOptions {
+  /**
+   * Fetch the access POLICY as well as the session. Defaults to true.
+   *
+   * `GET .../apps/{id}/access` is an administrative read — a caller without
+   * `project.customize.write` gets a 403. A list of Apps only needs the SESSION
+   * (the short-lived URL its preview tile loads), so a grid of N Apps was firing
+   * N policy reads it never displayed, every one of them a 403 for an ordinary
+   * member. Pass `false` there and let the surface that actually edits access
+   * (the access modal) be the one that asks for it.
+   */
+  policy?: boolean;
+  /**
+   * Mint the access SESSION. Defaults to true.
+   *
+   * Same failure as `policy`, one endpoint over: `POST .../access-session` is
+   * 403 for any App the caller may see but not open, and a card that renders a
+   * live thumbnail asks for one on mount. A grid of N such Apps produced N
+   * console errors and a broken tile, for a state that is not an error — the
+   * App is simply not yours to open. Pass `App.viewer_can_access` here.
+   */
+  session?: boolean;
+}
+
 /** App access policy plus a short-lived URL that exchanges into a host-only cookie. */
 export function useAppAccess(
   projectId: string | null | undefined,
   appId: string | null | undefined,
+  options: UseAppAccessOptions = {},
 ) {
   const queryClient = useQueryClient();
+  const wantsPolicy = options.policy ?? true;
+  const wantsSession = options.session ?? true;
   const queryKey = qk.project.appAccess(projectId ?? '', appId ?? '');
   const sessionQueryKey = qk.project.appAccessSession(projectId ?? '', appId ?? '');
   const policy = useQuery({
     queryKey,
     queryFn: () => getAppAccess(projectId as string, appId as string),
-    enabled: !!projectId && !!appId,
+    enabled: !!projectId && !!appId && wantsPolicy,
     ...contract('config'),
   });
   const session = useQuery({
     queryKey: sessionQueryKey,
     queryFn: () => createAppAccessSession(projectId as string, appId as string),
-    enabled: !!projectId && !!appId,
+    enabled: !!projectId && !!appId && wantsSession,
     staleTime: 4 * 60_000,
     gcTime: 5 * 60_000,
     retry: false,

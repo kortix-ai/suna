@@ -79,9 +79,13 @@ describe('user menu settings entry points', () => {
     expect(useSettingsPanelStore.getState().tab).toBe('profile');
   });
 
-  test('the settings panel store opens on the billing tab when asked for it', () => {
-    useSettingsPanelStore.getState().openSettings('billing');
-    expect(useSettingsPanelStore.getState().tab).toBe('billing');
+  test('the settings panel store opens on the preferences tab when asked for it', () => {
+    // Was `billing`. Billing is not a `SettingsTab` any more — it is a section
+    // of `/accounts/[id]`, and the menu row that opens it navigates there
+    // directly (see the row-target test below). `preferences` is a surviving
+    // tab that exercises the same store contract.
+    useSettingsPanelStore.getState().openSettings('preferences');
+    expect(useSettingsPanelStore.getState().tab).toBe('preferences');
   });
 
   /**
@@ -117,7 +121,7 @@ describe('user menu settings entry points', () => {
    * `useSettingsPanelStore` and `openSettings` repeatedly — cannot defeat the
    * absence assertion.
    */
-  test('the settings and billing rows navigate to /settings/<tab> instead of writing to the store', async () => {
+  test('the settings and billing rows navigate instead of writing to the store', async () => {
     const source = await Bun.file(new URL('./user-menu.tsx', import.meta.url)).text();
     const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
 
@@ -128,7 +132,15 @@ describe('user menu settings entry points', () => {
 
     const calls = [...code.matchAll(/openUserSettings\('([^']+)'\)/g)].map((m) => m[1]);
     expect(calls).toContain('profile');
-    expect(calls).toContain('billing');
+    // Billing no longer goes through `openUserSettings`: it is an ACCOUNT
+    // setting, it left the overlay for `/accounts/[id]`, and
+    // `parseSettingsTab('billing')` returns `null` — so `/settings/billing`
+    // would have fallen back to the default tab. The row builds the account
+    // URL directly. Both halves are asserted so a revert to the old href
+    // fails here.
+    expect(calls).not.toContain('billing');
+    expect(code).toContain('?tab=billing');
+    expect(code).not.toContain('/settings/billing');
   });
 
   /**

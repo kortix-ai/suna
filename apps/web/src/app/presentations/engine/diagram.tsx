@@ -223,12 +223,14 @@ export function Link({
         <AnimatePresence>
           {fire ? (
             <m.span
-              initial={{ left: back ? '100%' : '0%', opacity: 0 }}
-              animate={{ left: back ? '0%' : '100%', opacity: [0, 1, 1, 0] }}
+              initial={{ x: back ? '100%' : '0%', opacity: 0 }}
+              animate={{ x: back ? '0%' : '100%', opacity: [0, 1, 1, 0] }}
               exit={{ opacity: 0 }}
               transition={{ duration: 1.1, ease: 'easeInOut', repeat: Infinity, repeatDelay: 0.35 }}
-              className="bg-foreground absolute top-1/2 size-1.5 -translate-y-1/2 rounded-full"
-            />
+              className="absolute inset-0"
+            >
+              <span className="bg-foreground absolute top-1/2 left-0 size-1.5 -translate-y-1/2 rounded-full" />
+            </m.span>
           ) : null}
         </AnimatePresence>
       </div>

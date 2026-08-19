@@ -7,7 +7,7 @@
  */
 import { readFileSync, statSync } from 'node:fs';
 import { config } from '../config';
-import { getSupabase } from '../shared/supabase';
+import { getSupabase, toPublicStorageUrl } from '../shared/supabase';
 import { ensureBackupBucket } from '../projects/legacy-migration-storage';
 
 function arg(flag: string): string | undefined {
@@ -36,7 +36,7 @@ async function main() {
   if (signed.error || !signed.data?.signedUrl) throw signed.error ?? new Error('failed to sign url');
 
   console.log(`\n✓ uploaded to ${bucket}/${path}`);
-  console.log(`\nDownload link (valid ${days} days):\n${signed.data.signedUrl}\n`);
+  console.log(`\nDownload link (valid ${days} days):\n${toPublicStorageUrl(signed.data.signedUrl)}\n`);
 }
 
 await main();

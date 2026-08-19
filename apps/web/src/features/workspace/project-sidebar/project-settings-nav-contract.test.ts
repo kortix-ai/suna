@@ -22,11 +22,10 @@ function fnSource(name: string): string {
 }
 
 /**
- * The labels do not follow the destinations here, so these tests exist mostly
- * to stop someone "fixing" the pairing back on intuition:
- *
- *   Customize row -> the capability ROUTE (the bar's first tab)
- *   Settings row  -> the Customize OVERLAY
+ * The label does not follow the destination here, so these tests exist mostly
+ * to stop someone "fixing" it back on intuition: Customize row -> the
+ * capability ROUTE (the bar's first tab), not the Settings overlay — that
+ * overlay's own dedicated row is gone (see the describe block below).
  */
 describe('project Customize sidebar entry (the routed one)', () => {
   test('navigates with a prefetching Link, not router.push', () => {
@@ -38,7 +37,10 @@ describe('project Customize sidebar entry (the routed one)', () => {
     expect(navItem).toContain('<Link');
     expect(navItem).toMatch(/prefetch(\s|>|$)/);
     expect(navItem).not.toContain('prefetch={false}');
-    expect(navItem).toContain('capabilityTabHref(projectId, tab)');
+    // The href is the Customize INDEX now, not `capabilityTabHref(projectId,
+    // tab)` — the row lands on a card grid over every tab, not straight into
+    // whichever one the caller happens to be able to read first.
+    expect(navItem).toContain('`/projects/${projectId}/customize`');
     expect(navItem).toContain('asChild');
     expect(navItem).not.toContain('router.push');
   });
@@ -63,13 +65,15 @@ describe('project Customize sidebar entry (the routed one)', () => {
     expect(SOURCE).not.toMatch(/TAB_PREFERENCE[\s\S]*?key: 'agents'/);
   });
 
-  test('reads all three capability leaves, not one', () => {
+  test('reads every capability leaf, not one', () => {
     // Gating the whole entry on connector read alone would strand a caller who
     // may open Skills but not Connectors. Commands is gated in the overlay, not
-    // here — its standalone page was removed.
+    // here — its standalone page was removed. Schedules and Webhooks are two
+    // views of one resource, so they share `project.trigger.read`.
     expect(SOURCE).toContain('PROJECT_AGENT_READ');
     expect(SOURCE).toContain('PROJECT_CONNECTOR_READ');
     expect(SOURCE).toContain('PROJECT_SKILL_READ');
+    expect(SOURCE).toContain('PROJECT_TRIGGER_READ');
     expect(fnSource('ProjectCustomizeNavItem')).toContain('useCapabilityTab(projectId)');
   });
 
@@ -92,13 +96,31 @@ describe('project Customize sidebar entry (the routed one)', () => {
     const hook = SOURCE.slice(hookStart, SOURCE.indexOf('\n}', hookStart));
     const probeCount = (hook.match(/useProjectCan\(/g) ?? []).length;
 
-    expect(tabCount).toBe(3);
+    expect(tabCount).toBe(CAPABILITY_TABS.length);
     expect(probeCount).toBe(tabCount);
   });
 
   test('stays visible while a probe is loading', () => {
     // Optimistic until an explicit deny — same rule as ProjectFilesNavItem.
     expect(SOURCE).toContain('p.allowed || p.isLoading');
+  });
+
+  test('is gated on project.customize.read, on top of the per-tab read leaves', () => {
+    // Was project.customize.write — an audited live bug: .write conflated
+    // "may see the surface" with "may change things on it", so a role that
+    // could browse a tab was denied the only discovery path to it. .write
+    // still gates every individual mutation on every page beneath this row.
+    //
+    // PROJECT_CUSTOMIZE_READ lives in MANAGER_EXTRAS, not
+    // PROJECT_MEMBER_BASELINE (moved by #6522), so a plain project `member`
+    // gets no row here at all — every page under it 403s for them. The same
+    // leaf gates the project-home setup tiles and the capability tab bar.
+    // Optimistic like every other probe here: hide only on an explicit
+    // `false`, never while loading.
+    const navItem = fnSource('ProjectCustomizeNavItem');
+
+    expect(navItem).toContain('useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ)');
+    expect(navItem).toContain('if (canCustomize.allowed === false) return null;');
   });
 
   test('closes the mobile drawer on navigate', () => {
@@ -118,54 +140,19 @@ describe('project Customize sidebar entry (the routed one)', () => {
   });
 });
 
-describe('project Settings sidebar entry (the overlay one)', () => {
-  test('opens the Settings overlay, it does not navigate', () => {
-    // The overlay floats over the current page on purpose (settings-panel-store):
-    // routing there instead would drop you out of whatever session you were in.
-    const navItem = fnSource('ProjectSettingsNavItem');
-
-    expect(navItem).toContain('openSettings()');
-    expect(navItem).not.toContain('<Link');
-    expect(navItem).not.toContain('capabilityTabHref');
-    expect(navItem).not.toContain('router.push');
-  });
-
-  test('is ungated and takes its active state from the overlay flag', () => {
-    // useCapabilityTab reads connector/skill.read — the leaves the capability
-    // ROUTE needs. The overlay also holds Agents, LLM providers, Members, and
-    // Commands (whose standalone page was removed), so gating it on those two
-    // would hide it from a caller who can still use most of what is inside. And
-    // an overlay has no pathname, so active state has to come from the store.
-    const navItem = fnSource('ProjectSettingsNavItem');
-
-    expect(navItem).not.toContain('useCapabilityTab');
-    expect(navItem).not.toContain('useProjectCan');
-    expect(navItem).not.toContain('usePathname');
-    expect(navItem).toContain('useSettingsPanelStore((s) => s.open)');
-  });
-
-  test('closes the mobile drawer on open', () => {
-    expect(fnSource('ProjectSettingsNavItem')).toContain('setOpenMobile(false)');
-  });
-
-  test('renders the Settings label and the Mod+, keycap', () => {
-    const navItem = fnSource('ProjectSettingsNavItem');
-
-    expect(navItem).toContain('Settings');
-    expect(navItem).toContain("<Kbd>{isMac ? '⌘' : 'Ctrl'}</Kbd>");
-    expect(navItem).toContain('<Kbd>,</Kbd>');
-  });
-
-  test('derives isMac by comparison, not from the raw useDevice() string', () => {
-    // useDevice() returns 'mac' | 'windows' | 'linux' | 'unknown'. The row this
-    // replaced did `const isMac = useDevice()`, so `isMac ? '⌘' : 'Ctrl'` was
-    // always truthy and Windows users were shown ⌘.
-    expect(SOURCE).toContain("useDevice() === 'mac'");
+describe('the old Settings overlay sidebar entry is gone', () => {
+  // It opened the exact same User Settings overlay a click on the workspace
+  // switcher already opens, one level up (Jay, 2026-08-17) — a second row to
+  // an identical destination. The overlay itself, and its Mod+, shortcut
+  // (`useSettingsKeyboardShortcut`, pinned below), are unchanged.
+  test('ProjectSettingsNavItem no longer exists', () => {
+    expect(SOURCE).not.toContain('export function ProjectSettingsNavItem');
+    expect(SOURCE).not.toContain('<Kbd>');
   });
 });
 
 describe('the Mod+, shortcut', () => {
-  test('goes where the row it is printed on goes — the overlay', () => {
+  test('still opens the overlay, with no row left to print the keycap on', () => {
     const hook = fnSource('useSettingsKeyboardShortcut');
 
     expect(hook).toContain("event.key === ','");

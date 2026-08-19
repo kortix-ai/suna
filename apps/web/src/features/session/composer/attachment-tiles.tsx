@@ -160,7 +160,7 @@ export function AttachmentTiles({
           // (an outer plain `relative` wrapper, an inner `overflow-hidden`
           // thumbnail box) — `relative` on a `contents` element is inert, so
           // that split has to live one level in from the `<li>`, not on it.
-          <li key={i} className="contents">
+          <li key={af.kind === 'local' ? af.localUrl : af.url} className="contents">
             <div className="group relative">
               <div title={name} className={af.isImage ? TILE_SURFACE : FILE_TILE_SURFACE}>
                 {af.isImage ? (

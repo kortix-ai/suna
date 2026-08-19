@@ -14,6 +14,8 @@ import { MentionChip } from '@/features/session/mention-chip';
 import { buildMentionSegments } from '@/features/session/mention-segments';
 import { SessionBusyIndicator } from '@/features/session/session-busy-indicator';
 import {
+  BUBBLE_SURFACE,
+  BUBBLE_TEXT,
   MessageAttachments,
   type NormalizedAttachment,
   UserMessageActions,
@@ -22,22 +24,12 @@ import { cn } from '@/lib/utils';
 import { getFilename } from '@/lib/utils/file-utils';
 import { openTabAndNavigate } from '@/stores/tab-store';
 
-/**
- * Matches `BUBBLE_SURFACE` / `BUBBLE_TEXT` in `turn/user-message.tsx`.
- *
- * The dark fill was `dark:bg-sidebar-accent-foreground/9` here and
- * `dark:bg-muted` there — the exact drift this file's header warns about,
- * introduced a day apart (2c7a689aca, then 4ea9ffb620) and visible as the
- * bubble changing shade the instant the optimistic turn handed over to the
- * server turn. `dark:bg-muted` is the later decision, so it wins.
- */
-const BUBBLE_SURFACE = cn(
-  'bg-sidebar dark:bg-muted text-foreground flex max-w-full flex-col rounded-lg px-3 py-2.5 select-none',
-);
-const BUBBLE_TEXT = cn(
-  'text-[0.9rem] leading-[22px] font-medium',
-  'wrap-break-word whitespace-pre-wrap select-text',
-);
+// `BUBBLE_SURFACE` / `BUBBLE_TEXT` are imported from `turn/user-message.tsx`,
+// not redeclared here. A local copy drifted twice already — first the dark
+// fill (`dark:bg-sidebar-accent-foreground/9` vs `dark:bg-muted`, fixed), then
+// the padding/radius (`px-3 py-2.5 rounded-lg` vs `px-4.5 py-3.5 rounded-xl`)
+// — each drift a visible bubble jump the instant the optimistic turn handed
+// over to the real server turn. One constant, imported, cannot drift.
 
 /**
  * The optimistic turn — the user's message plus the assistant's waiting row,
@@ -127,12 +119,16 @@ function OptimisticUserBubble({
   const attachments = useMemo(
     (): NormalizedAttachment[] =>
       files.map((f, i) => ({
-        key: `optimistic:${f.path}:${i}`,
+        // Position first: an in-flight ref has no path to key on, and two
+        // attachments with the same name would otherwise share a key.
+        key: `optimistic:${i}:${f.pending ?? f.path}`,
         filename: getFilename(f.filename || f.path),
         mime: f.mime,
-        src: f.path,
-        path: f.path,
-        pending: deferPreview,
+        // An upload that has not landed has no sandbox path to resolve. Passing
+        // the old PREDICTED path made the tile fetch a file that did not exist.
+        src: f.path || undefined,
+        path: f.path || undefined,
+        pending: deferPreview || Boolean(f.pending) || !f.path,
       })),
     [files, deferPreview],
   );
@@ -211,10 +207,17 @@ export function HighlightMentions({
 
   const sessionTitles = useMemo(() => sessions.map((s) => s.title), [sessions]);
 
-  const segments = useMemo(
-    () => buildMentionSegments({ text: cleanText, sessionTitles, agentNames }),
-    [cleanText, sessionTitles, agentNames],
-  );
+  const segments = useMemo(() => {
+    const built = buildMentionSegments({ text: cleanText, sessionTitles, agentNames });
+    // Key each segment by its source offset in the text — content-derived and
+    // unique per segment, even when the same mention appears twice.
+    let offset = 0;
+    return built.map((seg) => {
+      const key = `${offset}:${seg.type ?? 'text'}`;
+      offset += seg.text.length;
+      return { ...seg, key };
+    });
+  }, [cleanText, sessionTitles, agentNames]);
 
   const openSessionMention = (raw: string) => {
     // Direct session ID (ses_...) — navigate without title lookup
@@ -239,28 +242,28 @@ export function HighlightMentions({
 
   return (
     <>
-      {segments.map((seg, i) =>
+      {segments.map((seg) =>
         seg.type === 'file' ? (
           // Static when there is no runtime to open the file in yet (the
           // instant shell) — a chip that looks pressable and does nothing is
           // worse than one that plainly does not.
           <MentionChip
-            key={i}
+            key={seg.key}
             kind="file"
             label={seg.text.replace(/^@/, '')}
             onClick={onFileClick ? () => onFileClick(seg.text.replace(/^@/, '')) : undefined}
           />
         ) : seg.type === 'session' ? (
           <MentionChip
-            key={i}
+            key={seg.key}
             kind="session"
             label={seg.text.replace(/^@/, '')}
             onClick={() => openSessionMention(seg.text.replace(/^@/, ''))}
           />
         ) : seg.type === 'agent' ? (
-          <MentionChip key={i} kind="agent" label={seg.text.replace(/^@/, '')} />
+          <MentionChip key={seg.key} kind="agent" label={seg.text.replace(/^@/, '')} />
         ) : (
-          <span key={i}>{seg.text}</span>
+          <span key={seg.key}>{seg.text}</span>
         ),
       )}
     </>

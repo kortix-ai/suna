@@ -32,7 +32,7 @@ export function isLongTurnCompletionRequest(request: { method: string; path: str
   );
 }
 
-function isUploadRequest(request: { method: string; path: string }): boolean {
+export function isUploadRequest(request: { method: string; path: string }): boolean {
   return request.method.toUpperCase() === 'POST' && /^\/file\/upload(?:$|[/?#])/.test(request.path);
 }
 

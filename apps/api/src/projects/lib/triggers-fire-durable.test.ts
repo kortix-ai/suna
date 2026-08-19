@@ -149,6 +149,12 @@ describe('fireGitTrigger — durable prompt delivery', () => {
 
     expect(enqueueCalls).toHaveLength(0);
     expect(createCalls).toHaveLength(1);
+    expect(createCalls[0]).toMatchObject({
+      visibility: 'private',
+      postCreate: [
+        { type: 'apply_trigger_session_access', triggerSlug: 'daily' },
+      ],
+    });
     expect(result).toMatchObject({ status: 'fired', sessionId: 'sess-new' });
   });
 

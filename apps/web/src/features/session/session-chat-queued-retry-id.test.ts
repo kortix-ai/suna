@@ -28,14 +28,20 @@ describe('a queue retry re-sends ONE delivery, not two', () => {
   // reported failure would be delivered twice, and the second delivery aborts
   // the turn the first one started. `clientMessageId` is what makes a retry the
   // same submission.
-  test('the queue dispatch carries the entry stable key into handleSend', () => {
-    // The key itself is packed by `mergeQueuedBatch` (overrides.clientMessageId
-    // = the head entry's — asserted behaviorally in queued-batch.test.ts); this
-    // proves the dispatch hands those overrides to `handleSend` unmodified.
-    const dispatch = between('const sendQueuedBatch = useCallback(', 'const queueDrain =');
+  test('a retry re-runs the SERVER row, so the key is never re-derived here', () => {
+    // REWRITTEN with the browser drain's deletion. There used to be a local
+    // dispatch that merged a claimed batch and handed `overrides.clientMessageId`
+    // to `handleSend`, and the risk it carried was that the merge dropped the
+    // key and the retry minted a new one. There is no local dispatch: a retry is
+    // `POST .../prompts/:id/retry`, which re-queues the row UNDER ITS ORIGINAL
+    // wire id server-side, so the key cannot be re-derived wrongly by a client.
+    const retry = between(
+      'const handleRetryQueuedMessage = useCallback(',
+      '// Associate stashed command info',
+    );
 
-    expect(dispatch).toContain('mergeQueuedBatch(batch)');
-    expect(dispatch).toContain('handleSend(merged.text, merged.files, merged.mentions, merged.overrides)');
+    expect(retry).toContain('promptInbox.retry(id)');
+    expect(retry).not.toContain('clientMessageId');
   });
 
   test('handleSend accepts it as an override rather than minting its own', () => {
@@ -44,28 +50,31 @@ describe('a queue retry re-sends ONE delivery, not two', () => {
     expect(signature).toContain('clientMessageId?: string');
   });
 
-  test('BOTH wire paths forward it — the sessionState one and the fallback', () => {
-    // Two send paths exist (`sessionState.sendParts` when the session runtime
-    // hook is mounted, `sendAndRecover` otherwise). Threading only one leaves
-    // the other duplicating on retry, which is the harder half to notice.
-    const send = between('const result = sessionState', 'if (!result.ok) {');
-    const forwards = send.match(/clientMessageId: overrides\.clientMessageId/g) ?? [];
+  test('there is now exactly ONE wire path, and it is the server prompt inbox', () => {
+    // REWRITTEN. There used to be two send paths — `sessionState.sendParts`
+    // when the session runtime hook was mounted, `sendAndRecover` otherwise —
+    // and each had to thread the submission key separately. Both are gone: the
+    // composer POSTs a durable row to `POST .../prompts`, and the SERVER
+    // decides when it is delivered. One path cannot disagree with itself.
+    const send = between('const result = await (async () => {', 'if (!result.ok) {');
 
-    expect(send).toContain('sessionState.sendParts(');
-    expect(send).toContain('sendAndRecover({');
-    expect(forwards).toHaveLength(2);
+    expect(send).toContain('promptInbox.enqueue({');
+    expect(send).not.toContain('sessionState.sendParts(');
+    expect(send).not.toContain('sendAndRecover({');
+    // The wire id is minted HERE, by the SDK, and carried with the submission —
+    // the control plane cannot place one, and `messageID` above is the
+    // optimistic-render id, which encodes the wrong bits for the wire.
+    expect(send).toContain('mintSessionWireMessageId(sessionId, clientMessageId)');
+    // Recovery on a failed enqueue is unchanged.
+    expect(send).toContain('recoverFromSendFailure(sessionId, messageID, cause');
   });
 
   test('a direct composer send stays unnamed, so identical text sent twice is two turns', () => {
     // The opposite failure: keying every send off one value would resurrect the
     // silent-drop bug this branch exists to fix. Only the queue names a
     // submission, and each enqueue mints its own key.
-    const composer = between(
-      'const handleSendWithDraftClear = useCallback(',
-      '[handleSend, failedStartDraft, sessionId]',
-    );
+    const composer = between('await handleSend(text, files, mentions);', 'prefill={composerPrefill}');
 
-    expect(composer).toContain('handleSend(text, files, mentions)');
     expect(composer).not.toContain('clientMessageId');
   });
 });

@@ -1,5 +1,6 @@
 'use client';
 
+import { SessionSharedIcon } from '@/components/projects/session-shared-icon';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -40,12 +41,12 @@ import {
   settingsPaletteGroups,
   settingsPaletteSearchText,
 } from '@/features/workspace/settings-palette-items';
-import type { RailFlags } from '@/features/workspace/settings/rail';
 import {
   DEFAULT_SETTINGS_TAB,
   resolveSettingsOverlayHref,
   type SettingsTab,
 } from '@/features/workspace/settings/settings-tabs';
+import { useSettingsAccountId } from '@/features/workspace/settings/use-settings-account-id';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { type MenuItemDef, type SettingsTabId, getItemsForSurface } from '@/lib/menu-registry';
 import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
@@ -59,6 +60,7 @@ import {
   type KortixAccount,
   type KortixProject,
   type ProjectSession,
+  getProjectDetail,
   listAccounts,
   listProjectSessions,
   listProjectsForAccount,
@@ -98,6 +100,7 @@ import { useWorkspaceSearch } from '@/features/files';
 import { MODEL_SELECTOR_PROVIDER_IDS, ProviderLogo } from '@/features/providers/provider-branding';
 import { DiffDialog } from '@/features/session/diff-dialog';
 import { CompactModal } from '@/features/session/header/compact-modal';
+import { pickerGroupId, pickerGroupLabel } from '@/features/session/model-grouping';
 import { flattenModels } from '@/features/session/session-chat-input';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { isBillingEnabled } from '@/lib/config';
@@ -129,7 +132,7 @@ import {
   useModelStore,
   useRuntimeMessages,
 } from '@kortix/sdk/react';
-import { chalkColors, formatRelativeTime } from '@kortix/shared';
+import { capitalizeWords, chalkColors, formatRelativeTime } from '@kortix/shared';
 import { UsersIcon as UsersSolid } from '@phosphor-icons/react';
 import { useTheme } from 'next-themes';
 
@@ -206,10 +209,14 @@ export function buildPaletteSearchText(item: { label: string; keywords?: string 
  * entry was removed rather than mapped — see `menu-registry.ts`.
  */
 export const LEGACY_SETTINGS_TAB_MAP: Partial<Record<SettingsTabId, SettingsTab>> = {
-  general: 'general',
-  billing: 'billing',
-  tokens: 'api-keys',
-  transactions: 'usage',
+  // `billing`, `tokens` and `transactions` are gone. They mapped onto the
+  // overlay's `billing` / `api-keys` / `usage` tabs, and all three tabs left
+  // the overlay for `/accounts/[id]`. There is no `SettingsTab` to map them
+  // to any more, and mapping them to a survivor would open Settings on an
+  // unrelated pane — so the registry rows that spoke those ids became plain
+  // `kind: 'navigate'` rows pointed straight at the account page instead
+  // (`account-billing`, `account-tokens`, `account-usage` in
+  // `lib/menu-registry.ts`).
   appearance: 'preferences',
   sounds: 'preferences',
   shortcuts: 'preferences',
@@ -324,9 +331,9 @@ function FileSearchPage({
             }
             forceMount
           >
-            {matches.map((match, i) => (
+            {matches.map((match) => (
               <CommandItem
-                key={`${filePath}:${match.line_number}:${i}`}
+                key={`${filePath}:${match.line_number}:${match.lines || ''}`}
                 value={sanitizeCmdkValue(`content ${filePath} ${match.lines} ${match.line_number}`)}
                 onSelect={() => onSelect(filePath, match.line_number)}
               >
@@ -381,17 +388,16 @@ function MessagesPage({
   const turns = useMemo(() => (messages ? groupMessagesIntoTurns(messages) : []), [messages]);
 
   const items = useMemo(() => {
-    return turns
-      .map((turn) => {
-        const textParts = turn.userMessage.parts.filter(isTextPart) as TextPart[];
-        const raw = textParts.map((p) => p.text).join(' ');
-        const stripped = stripHtmlTags(stripKortixSystemTags(raw)).trim();
-        return {
-          id: turn.userMessage.info.id,
-          text: stripped,
-        };
-      })
-      .filter((item) => item.text.length > 0);
+    const result: { id: string; text: string }[] = [];
+    for (const turn of turns) {
+      const textParts = turn.userMessage.parts.filter(isTextPart) as TextPart[];
+      const raw = textParts.map((p) => p.text).join(' ');
+      const stripped = stripHtmlTags(stripKortixSystemTags(raw)).trim();
+      if (stripped.length > 0) {
+        result.push({ id: turn.userMessage.info.id, text: stripped });
+      }
+    }
+    return result;
   }, [turns]);
 
   const filtered = useMemo(() => {
@@ -513,6 +519,17 @@ export function CommandPalette() {
     enabled: open && !!projectId,
     ...contract('inventory'),
   });
+  // Same query key every other project surface fetches (page.tsx,
+  // project-shell.tsx) — dedupes against that cache entry. Resolves the
+  // account the "Invite members" command lands on, via the same fallback
+  // `project-shell.tsx` uses for its account-scoped tabs.
+  const { data: paletteProjectDetail } = useQuery({
+    queryKey: qk.project.detail(projectId ?? ''),
+    queryFn: () => getProjectDetail(projectId!),
+    enabled: open && !!projectId,
+    ...contract('config'),
+  });
+  const inviteMembersAccountId = useSettingsAccountId(paletteProjectDetail?.project?.account_id);
   const sendToSession = useChatSendStore((state) => state.sendToSession);
   const currentProjectSession = projectSessionsList?.find(
     (session) => session.session_id === currentSessionId,
@@ -670,22 +687,41 @@ export function CommandPalette() {
   const hasQuery = query.trim().length > 0;
   const queryLongEnough = query.trim().length >= 2;
   const allPaletteItems = useMemo(() => {
-    return getItemsForSurface('commandPalette')
-      .filter((item) => {
-        if (LEGACY_PALETTE_HIDDEN.has(item.id)) return false;
-        if (item.id === 'toggle-sidebar' && !sidebarCtx) return false;
-        if (item.requiresBilling && !billingEnabled) return false;
-        if (item.requiresSession && !currentSessionId) return false;
-        if (item.requiresProject && !projectId) return false;
-        if (item.requiresFlag && !projectFlags[item.requiresFlag]) return false;
-        return true;
-      })
-      .map((item) =>
-        item.href?.includes('{projectId}') && projectId
-          ? { ...item, href: item.href.replaceAll('{projectId}', projectId) }
-          : item,
-      );
-  }, [billingEnabled, currentSessionId, projectId, sidebarCtx, projectFlags]);
+    const result: MenuItemDef[] = [];
+    for (const item of getItemsForSurface('commandPalette')) {
+      if (LEGACY_PALETTE_HIDDEN.has(item.id)) continue;
+      if (item.id === 'toggle-sidebar' && !sidebarCtx) continue;
+      if (item.requiresBilling && !billingEnabled) continue;
+      if (item.requiresSession && !currentSessionId) continue;
+      if (item.requiresProject && !projectId) continue;
+      if (item.requiresFlag && !projectFlags[item.requiresFlag]) continue;
+      // Token substitution. An href that still holds an UNRESOLVED token after
+      // this is dropped, not offered: navigating to a literal
+      // `/accounts/{accountId}?tab=billing` is a 404, and offering a row that
+      // cannot go anywhere is worse than not offering it. `{projectId}` rows
+      // already declare `requiresProject: true` and are filtered above;
+      // `{accountId}` rows are filtered here, off the token itself, so a new
+      // account-scoped row can never ship without the guard.
+      let href = item.href;
+      if (href?.includes('{projectId}')) {
+        if (!projectId) continue;
+        href = href.replaceAll('{projectId}', projectId);
+      }
+      if (href?.includes('{accountId}')) {
+        if (!selectedAccountId) continue;
+        href = href.replaceAll('{accountId}', selectedAccountId);
+      }
+      result.push(href === item.href ? item : { ...item, href });
+    }
+    return result;
+  }, [
+    billingEnabled,
+    currentSessionId,
+    projectId,
+    selectedAccountId,
+    sidebarCtx,
+    projectFlags,
+  ]);
 
   const filteredNavItems = useMemo(() => {
     if (!hasQuery) return allPaletteItems;
@@ -715,32 +751,12 @@ export function CommandPalette() {
     });
   }, [allPaletteItems, hasQuery, query]);
 
-  /**
-   * The settings rail's flags, in the rail's own vocabulary.
-   *
-   * `llmGatewayAvailable` is passed for completeness only — `railGroups`
-   * never reads it (rail.ts documents that the Models row is ungated on
-   * purpose), which is exactly why the derived Models row no longer inherits
-   * the `llm_gateway` gate the old `proj-llm` registry entry carried.
-   */
-  const railFlags = useMemo<RailFlags>(
-    () => ({
-      marketplaceEnabled: projectFlags.marketplace,
-      llmGatewayAvailable: projectFlags.llm_gateway,
-      voiceEnabled: projectFlags.voice,
-      reviewEnabled: projectFlags.review_center,
-    }),
-    [projectFlags],
-  );
-
+  // No `flags` argument any more: Marketplace, Review and Voice were the only
+  // flag-gated rail rows and all three moved to `/projects/<id>/config`, whose
+  // own sub-nav composes them. Nothing left in the rail varies by flag.
   const allSettingsGroups = useMemo(
-    () =>
-      settingsPaletteGroups({
-        hasProject: !!projectId,
-        flags: railFlags,
-        billingEnabled,
-      }),
-    [projectId, railFlags, billingEnabled],
+    () => settingsPaletteGroups({ hasProject: !!projectId }),
+    [projectId],
   );
 
   const filteredSettingsGroups = useMemo(
@@ -803,13 +819,20 @@ export function CommandPalette() {
       { providerID: string; providerName: string; models: typeof visibleModels }
     >();
     for (const m of visibleModels) {
-      const existing = groups.get(m.providerID);
+      // Under the gateway every model is registered as opencode provider
+      // `kortix`, so `m.providerName` is always "Kortix" — even for a BYOK
+      // Anthropic/Bedrock model. Group/label by the resolved REAL upstream
+      // provider instead. Safe to call unconditionally: for a native
+      // (non-gateway) model `pickerGroupId` already returns `m.providerID`
+      // as-is. See model-grouping.ts's doc comment.
+      const groupID = pickerGroupId(m);
+      const existing = groups.get(groupID);
       if (existing) {
         existing.models.push(m);
       } else {
-        groups.set(m.providerID, {
-          providerID: m.providerID,
-          providerName: m.providerName,
+        groups.set(groupID, {
+          providerID: groupID,
+          providerName: pickerGroupLabel(groupID, m),
           models: [m],
         });
       }
@@ -1321,10 +1344,21 @@ export function CommandPalette() {
     setDiffOpen(true);
   }, [currentSessionId, close]);
 
+  /**
+   * "Invite members" — the project Members capability tab is gone; access
+   * for a project is now granted from the account hub's Access tab, scoped to
+   * this project via `?project=`. There is no one-shot "open the grant
+   * dialog" intent to carry across (the old `membersTab: 'invite'` field
+   * belonged to the deleted page's sub-tab model, with no equivalent here) —
+   * landing pre-filtered on this project's row is enough. Nice-to-have: wire
+   * a real "open grant dialog" intent once `AccessProjectsTab` exposes a prop
+   * for it.
+   */
   const handleInviteMembers = useCallback(() => {
-    useSettingsPanelStore.getState().openSettings('members', { membersTab: 'invite' });
+    if (!projectId || !inviteMembersAccountId) return;
+    router.push(`/accounts/${inviteMembersAccountId}?tab=access-projects&project=${projectId}`);
     close();
-  }, [close]);
+  }, [close, projectId, inviteMembersAccountId, router]);
 
   const handleOverlayClose = useCallback(
     (set: (open: boolean) => void) => (overlayOpen: boolean) => {
@@ -1750,6 +1784,7 @@ export function CommandPalette() {
                           >
                             <MessageCircle className="size-4 shrink-0" />
                             <span className="flex-1 truncate">{sessionName(session)}</span>
+                            <SessionSharedIcon session={session} />
                             <span className="text-muted-foreground/30 shrink-0 text-xs tabular-nums">
                               {formatRelativeTime(
                                 new Date(sessionLastActivityAt(session)).getTime(),
@@ -1912,6 +1947,7 @@ export function CommandPalette() {
                           >
                             <MessageCircle className="size-4 shrink-0" />
                             <span className="flex-1 truncate">{sessionName(session)}</span>
+                            <SessionSharedIcon session={session} />
                             {session.session_id === params?.sessionId && (
                               <Check className="text-primary h-3.5 w-3.5 shrink-0" />
                             )}
@@ -2055,7 +2091,9 @@ export function CommandPalette() {
                             <Bot className="size-5 shrink-0" />
                           </div>
                           <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-                            <span className="truncate text-sm font-medium">{agent.name}</span>
+                            <span className="truncate text-sm font-medium">
+                              {capitalizeWords(agent.name)}
+                            </span>
                             {agent.description && (
                               <span className="text-muted-foreground/50 truncate text-xs">
                                 {agent.description}
@@ -2098,7 +2136,7 @@ export function CommandPalette() {
                             )}
                           </div>
                           <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-                            <span className="truncate text-sm capitalize">{agent.name}</span>
+                            <span className="truncate text-sm">{capitalizeWords(agent.name)}</span>
                             {agent.description && (
                               <span className="text-muted-foreground/50 truncate text-xs">
                                 {agent.description}
@@ -2294,6 +2332,7 @@ export function CommandPalette() {
                     >
                       <MessageCircle className="text-muted-foreground size-4 shrink-0" />
                       <span className="flex-1 truncate">{sessionName(session)}</span>
+                      <SessionSharedIcon session={session} />
                       <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
                         {formatRelativeTime(new Date(sessionLastActivityAt(session)).getTime())}
                       </span>

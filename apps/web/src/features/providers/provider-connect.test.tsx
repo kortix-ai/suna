@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 import {
   FIRST_CLASS_PROVIDER_IDS,
+  PROVIDER_PAGE_SIZE,
   ProviderConnectView,
   providerKeyFieldId,
   type ProviderConnectRow,
@@ -368,6 +369,115 @@ describe('ProviderConnectView — the long-tail detail path', () => {
     expect(out).not.toContain('data-provider-search');
     expect(out).not.toContain('data-provider-row=');
     expect(out).not.toContain('role="dialog"');
+  });
+});
+
+/**
+ * The list pages. The search does not.
+ *
+ * Both halves are pinned because either one alone is the wrong screen: a list
+ * with no `Load more` is the 184-row wall this file's header describes, and a
+ * `Load more` that also gates the search results is the "Show 181 more
+ * providers" disclosure it deleted, wearing a different label. The host decides
+ * what is in `rows`; the view's job is to say what is missing and offer the
+ * way to it, and only when there is something missing.
+ */
+describe('ProviderConnectView — Load more', () => {
+  test('a batch size is declared, and it is a screen and not a catalogue', () => {
+    expect(PROVIDER_PAGE_SIZE).toBe(12);
+  });
+
+  test('offers Load more with the remainder counted, when rows are held back', () => {
+    const out = renderToStaticMarkup(
+      <ProviderConnectView {...props({ hiddenCount: 172, onLoadMore: () => {} })} />,
+    );
+    expect(out).toContain('data-provider-load-more');
+    expect(out).toContain('Load more');
+    // Says how many of how many — the button is the bottom of a list, not a
+    // door with a number on it.
+    expect(out).toContain('3');
+    expect(out).toContain('175');
+  });
+
+  test('no Load more when every matching row is already on screen', () => {
+    const out = renderToStaticMarkup(
+      <ProviderConnectView {...props({ hiddenCount: 0, onLoadMore: () => {} })} />,
+    );
+    expect(out).not.toContain('data-provider-load-more');
+    expect(out).not.toContain('Load more');
+  });
+
+  test('no Load more when the host offers no way to load more', () => {
+    const out = renderToStaticMarkup(<ProviderConnectView {...props({ hiddenCount: 172 })} />);
+    expect(out).not.toContain('data-provider-load-more');
+  });
+
+  // The count in the search placeholder is the CATALOGUE's, never the page's —
+  // it is the promise that typing reaches all of them.
+  test('the search still counts every provider, not the ones rendered', () => {
+    const out = renderToStaticMarkup(
+      <ProviderConnectView {...props({ totalCount: 184, hiddenCount: 172, onLoadMore: () => {} })} />,
+    );
+    expect(out).toContain('Search 184 providers…');
+  });
+});
+
+/**
+ * A provider whose credential takes more than one field — Bedrock's bearer
+ * token + region, Vertex's JSON + project + location.
+ *
+ * Saving one used to erase the difference between its fields: both placeholders
+ * became the same "Saved — paste a new key to replace it", and only the LAST
+ * field showed the saved check and the remove button. Two identical-looking
+ * rows, one of which could be cleared. Both defects are pinned here.
+ */
+describe('ProviderConnectView — a saved multi-field provider', () => {
+  const BEDROCK = row({
+    id: 'amazon-bedrock',
+    label: 'AWS Bedrock',
+    envVars: ['AWS_BEARER_TOKEN_BEDROCK', 'AWS_REGION'],
+    placeholders: { AWS_BEARER_TOKEN_BEDROCK: 'Bearer token bedrock', AWS_REGION: 'Region' },
+    connected: true,
+  });
+
+  test('each field keeps its own name once it is saved', () => {
+    const out = renderToStaticMarkup(<ProviderConnectView {...props({ rows: [BEDROCK] })} />);
+    expect(out).toContain('Bearer token bedrock — saved, paste a new one to replace it');
+    expect(out).toContain('Region — saved, paste a new one to replace it');
+    // The generic sentence belongs to single-field providers only — it is what
+    // made these two rows indistinguishable.
+    expect(out).not.toContain('placeholder="Saved — paste a new key to replace it"');
+  });
+
+  test('every saved field gets the check and the remove, not just the last', () => {
+    const out = renderToStaticMarkup(
+      <ProviderConnectView {...props({ rows: [BEDROCK], onRemoveKey: () => {} })} />,
+    );
+    expect(out.match(/aria-label="Key saved"/g)?.length).toBe(2);
+    expect(out.match(/aria-label="Remove the AWS Bedrock key"/g)?.length).toBe(2);
+  });
+
+  test('a single-field provider keeps the sentence it always had', () => {
+    const out = renderToStaticMarkup(
+      <ProviderConnectView {...props({ rows: [{ ...ANTHROPIC, connected: true }] })} />,
+    );
+    expect(out).toContain('Saved — paste a new key to replace it');
+  });
+
+  // Typing into either field is an EDIT of the whole credential, so the saved
+  // report gives way across the group — not just on the field being typed in.
+  test('typing into one field drops the saved report on both', () => {
+    const out = renderToStaticMarkup(
+      <ProviderConnectView
+        {...props({
+          rows: [BEDROCK],
+          onRemoveKey: () => {},
+          values: { 'amazon-bedrock:AWS_REGION': 'us-east-1' },
+        })}
+      />,
+    );
+    expect(out).not.toContain('aria-label="Key saved"');
+    expect(out).not.toContain('aria-label="Remove the AWS Bedrock key"');
   });
 });
 

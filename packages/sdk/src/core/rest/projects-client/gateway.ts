@@ -21,7 +21,22 @@ export interface GatewayLogRow {
   output_tokens: number;
   cached_tokens: number;
   cache_write_tokens: number;
+  /**
+   * What Kortix debited from your wallet — managed inference, or the platform
+   * fee on a BYOK route.
+   */
+  kortix_cost: number;
+  /**
+   * What you paid your own provider directly, on your own key. Always 0 for
+   * Kortix-managed (`billing_mode: 'credits'`) traffic, where the upstream
+   * price is Kortix's wholesale cost rather than yours.
+   */
+  provider_cost: number;
+  /** `kortix_cost + provider_cost` — every dollar this request cost you. */
+  total_cost: number;
+  /** @deprecated Identical to `provider_cost`. */
   upstream_cost: number;
+  /** @deprecated Identical to `kortix_cost`. */
   final_cost: number;
   streaming: boolean;
   billing_mode: string | null;
@@ -45,7 +60,19 @@ export interface GatewayOverview {
   window_days: number;
   requests: number;
   errors: number;
+  /** Total LLM spend in the window: `kortix_cost + provider_cost`. */
   total_cost: number;
+  /**
+   * What Kortix debited from your wallet — managed inference, or the platform
+   * fee on a BYOK route.
+   */
+  kortix_cost: number;
+  /**
+   * What you paid your own provider directly, on your own key. Always 0 for
+   * Kortix-managed (`billing_mode: 'credits'`) traffic, where the upstream
+   * price is Kortix's wholesale cost rather than yours.
+   */
+  provider_cost: number;
   input_tokens: number;
   output_tokens: number;
 }
@@ -54,7 +81,19 @@ export interface GatewaySeriesPoint {
   day: string;
   requests: number;
   errors: number;
+  /** Total LLM spend on this day: `kortix_cost + provider_cost`. */
   cost: number;
+  /**
+   * What Kortix debited from your wallet — managed inference, or the platform
+   * fee on a BYOK route.
+   */
+  kortix_cost: number;
+  /**
+   * What you paid your own provider directly, on your own key. Always 0 for
+   * Kortix-managed (`billing_mode: 'credits'`) traffic, where the upstream
+   * price is Kortix's wholesale cost rather than yours.
+   */
+  provider_cost: number;
   input_tokens: number;
   output_tokens: number;
   p50: number;
@@ -82,7 +121,19 @@ export interface GatewayModelStat {
   provider: string;
   requests: number;
   errors: number;
+  /** Total spend on this model: `kortix_cost + provider_cost`. */
   cost: number;
+  /**
+   * What Kortix debited from your wallet — managed inference, or the platform
+   * fee on a BYOK route.
+   */
+  kortix_cost: number;
+  /**
+   * What you paid your own provider directly, on your own key. Always 0 for
+   * Kortix-managed (`billing_mode: 'credits'`) traffic, where the upstream
+   * price is Kortix's wholesale cost rather than yours.
+   */
+  provider_cost: number;
   tokens: number;
 }
 

@@ -64,6 +64,64 @@ function assistantMsg(
   return { info: { id, role: 'assistant', parentID }, parts };
 }
 
+describe('groupMessagesIntoTurns — display order is by time.created, id is the tiebreak', () => {
+  // The Essentia case (2026-08-18): a steering prompt into a child session went
+  // out under a wire id minted 2 minutes in the past (the client's clock-skew
+  // backdate, with no transcript to lift against). Ordered by id, that ONE
+  // message teleported to the top of the thread. OpenCode stamps
+  // `time.created` at persistence — the box's clock, not the client's — so
+  // ordering by it degrades a bad id to slightly-odd placement at worst.
+  const at = (id: string, role: 'user' | 'assistant', created: number, parentID?: string) =>
+    ({ info: { id, role, parentID, time: { created } }, parts: [] }) as MessageWithPartsLike;
+
+  test('a backdated wire id does NOT teleport a later prompt to the top', () => {
+    const turns = groupMessagesIntoTurns([
+      // Stored id-sorted, as the sync store keeps them: the steer's id sorts first.
+      at('msg_000000000001steer', 'user', 5_000),
+      at('msg_000000000100first', 'user', 1_000),
+      at('msg_000000000200reply', 'assistant', 2_000, 'msg_000000000100first'),
+      at('msg_000000000300reply2', 'assistant', 3_000, 'msg_000000000100first'),
+    ]);
+    expect(turns.map((t) => t.userMessage.info.id)).toEqual([
+      'msg_000000000100first',
+      'msg_000000000001steer',
+    ]);
+    expect(turns[0].assistantMessages.map((m) => m.info.id)).toEqual([
+      'msg_000000000200reply',
+      'msg_000000000300reply2',
+    ]);
+  });
+
+  test('equal timestamps fall back to id order, so the sort is total and stable', () => {
+    const turns = groupMessagesIntoTurns([
+      at('msg_b', 'user', 1_000),
+      at('msg_a', 'user', 1_000),
+    ]);
+    expect(turns.map((t) => t.userMessage.info.id)).toEqual(['msg_a', 'msg_b']);
+  });
+
+  test('a message with no timestamp sorts as newest — an optimistic stub is the latest thing', () => {
+    const turns = groupMessagesIntoTurns([
+      { info: { id: 'msg_0stub', role: 'user' }, parts: [] },
+      at('msg_9real', 'user', 1_000),
+    ]);
+    expect(turns.map((t) => t.userMessage.info.id)).toEqual(['msg_9real', 'msg_0stub']);
+  });
+
+  test('sequential fallback linking follows the DISPLAY order, not the input order', () => {
+    // An assistant message with no parentID attaches to the user turn that
+    // precedes it in display order.
+    const turns = groupMessagesIntoTurns([
+      at('msg_2', 'assistant', 2_500),
+      at('msg_1', 'user', 1_000),
+      at('msg_3', 'user', 3_000),
+    ]);
+    expect(turns[0].userMessage.info.id).toBe('msg_1');
+    expect(turns[0].assistantMessages.map((m) => m.info.id)).toEqual(['msg_2']);
+    expect(turns[1].assistantMessages).toEqual([]);
+  });
+});
+
 describe('groupMessagesIntoTurns', () => {
   test('groups assistant messages under their parent user message', () => {
     const turns = groupMessagesIntoTurns([

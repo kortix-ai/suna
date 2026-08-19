@@ -94,7 +94,14 @@ export async function applySandboxLifecycle(
 ): Promise<{ action: SandboxLifecycleOutcome; changed: boolean }> {
   if (!externalId) return { action: 'noop', changed: false };
   if (outcome === 'stopped') {
-    const changed = await reconcileSandboxStoppedByExternalId(externalId);
+    // An unsolicited observation, and `classifyLifecycle` folds the
+    // TRANSITIONAL `stopping` / `archiving` into it — so while a turn is open
+    // this must be confirmed by a second observation before it parks the box
+    // (incident 2026-08-17T20:40:03Z, session 0fc6897a). The reaper's poll
+    // supplies that second observation within one pass.
+    const changed = await reconcileSandboxStoppedByExternalId(externalId, new Date(), {
+      confirmMidTurnStop: true,
+    });
     return { action: 'stopped', changed };
   }
   if (outcome === 'removed') {

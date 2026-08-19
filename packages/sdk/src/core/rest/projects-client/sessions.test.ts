@@ -1,12 +1,21 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
-import { isSessionFresh } from '../../http/fresh-sessions';
-import type { CreateProjectSessionInput, ProjectSession } from './sessions';
+import { clearSessionFresh, isSessionFresh } from '../../http/fresh-sessions';
+import type {
+  CreateProjectSessionInput,
+  ProjectSession,
+  RemovedSessionPrompt,
+  SessionPrompt,
+  SessionTurn,
+  SessionTurnStatus,
+} from './sessions';
 import {
   createProjectSession,
+  createSessionPrompt,
   createSessionPublicShare,
   claimWarmProjectSession,
   deleteProjectSession,
+  deleteSessionPrompt,
   ensureWarmProjectSession,
   getProjectSession,
   getProjectSessionConfigState,
@@ -14,12 +23,16 @@ import {
   getSessionAudit,
   getSessionPreviewCandidates,
   getSessionTranscript,
+  getSessionTurn,
   getVoiceTranscript,
   listProjectSessions,
+  listSessionPrompts,
   listSessionPublicShares,
   reloadProjectSessionConfig,
   reloadProjectSessionConfigStream,
   restartProjectSession,
+  holdSessionPrompts,
+  retrySessionPrompt,
   revokeSessionPublicShare,
   setProjectSessionScope,
   setProjectSessionSharing,
@@ -186,6 +199,52 @@ test('ensureWarmProjectSession POSTs the server-owned warm-session request', asy
   expect(result.reused).toBe(true);
 });
 
+test('ensureWarmProjectSession does NOT mark a REUSED session fresh — a reused session is by definition not fresh', async () => {
+  clearSessionFresh('WARM-REUSED-1');
+  nextResponse = {
+    status: 200,
+    body: {
+      session: { session_id: 'WARM-REUSED-1' },
+      reused: true,
+      workspace_refresh: { status: 'unchanged' },
+    },
+  };
+  await ensureWarmProjectSession('P1');
+  expect(isSessionFresh('WARM-REUSED-1')).toBe(false);
+});
+
+test('ensureWarmProjectSession marks a freshly-created session fresh (reused: false)', async () => {
+  clearSessionFresh('WARM-NEW-1');
+  nextResponse = {
+    status: 200,
+    body: {
+      session: { session_id: 'WARM-NEW-1' },
+      reused: false,
+      workspace_refresh: { status: 'unchanged' },
+    },
+  };
+  await ensureWarmProjectSession('P1');
+  expect(isSessionFresh('WARM-NEW-1')).toBe(true);
+});
+
+test('ensureWarmProjectSession forwards exclude_session_id in the request body when given', async () => {
+  nextResponse = {
+    status: 200,
+    body: { session: { session_id: 'WARM-2' }, reused: false, workspace_refresh: { status: 'skipped' } },
+  };
+  await ensureWarmProjectSession('P1', { excludeSessionId: 'JUST-TAKEN-1' });
+  expect(last().body).toEqual({ exclude_session_id: 'JUST-TAKEN-1' });
+});
+
+test('ensureWarmProjectSession omits exclude_session_id when not given', async () => {
+  nextResponse = {
+    status: 200,
+    body: { session: { session_id: 'WARM-3' }, reused: false, workspace_refresh: { status: 'skipped' } },
+  };
+  await ensureWarmProjectSession('P1', {});
+  expect(last().body).toEqual({});
+});
+
 test('ensureWarmProjectSession keeps a declined warm session out of the global error sink', async () => {
   const onError = mock(() => {});
   configureKortix({
@@ -298,6 +357,97 @@ test('getSessionTranscript builds the query string from limit/chars options', as
 
   await getSessionTranscript('P1', 'S1');
   expect(last().url).toBe('http://test.local/projects/P1/sessions/S1/transcript');
+});
+
+test('getSessionTurn hits GET /projects/:id/sessions/:id/turn', async () => {
+  nextResponse = { status: 200, body: { turns: [] } };
+  await getSessionTurn('P1', 'S1');
+  expect(last().url).toBe('http://test.local/projects/P1/sessions/S1/turn');
+  expect(last().method).toBe('GET');
+});
+
+// The wire keys are snake_case and this reader hands them through UNTRANSLATED.
+// Deep equality is the point: every other payload on the session surface is
+// snake_case, and these names are a published type, so a later camelCase
+// "tidy-up" would be a breaking change for every installed consumer.
+test('getSessionTurn returns a live turn verbatim', async () => {
+  // Typed, not inferred: the annotation is a second assertion — it fails to
+  // compile if a field is renamed, dropped, or retyped on the published shape.
+  const turn: SessionTurn = {
+    turn_token: 't1',
+    state: 'active',
+    message_id: 'msg_1',
+    opencode_session_id: 'ses_root',
+    started_at: '2026-08-17T00:00:00.000Z',
+    accepted_at: '2026-08-17T00:00:01.000Z',
+  };
+  nextResponse = { status: 200, body: { turns: [turn] } satisfies SessionTurnStatus };
+  const result = await getSessionTurn('P1', 'S1');
+  expect(result).toEqual({ turns: [turn] });
+});
+
+// `turns` is a LIST because a session really can hold two open turns at once —
+// a trigger delivery and a web prompt land as separate tokens. A reader that
+// collapsed them would report the older one as not running, which is the
+// phantom-idle this endpoint exists to end.
+test('getSessionTurn carries every concurrent turn through', async () => {
+  const turns: SessionTurn[] = [
+    {
+      turn_token: 't-web',
+      state: 'delivering',
+      message_id: 'msg_B',
+      opencode_session_id: null,
+      started_at: '2026-08-17T12:00:02.000Z',
+      accepted_at: null,
+    },
+    {
+      turn_token: 't-trigger',
+      state: 'active',
+      message_id: 'msg_A',
+      opencode_session_id: 'ses_root',
+      started_at: '2026-08-17T12:00:00.000Z',
+      accepted_at: '2026-08-17T12:00:00.400Z',
+    },
+  ];
+  nextResponse = { status: 200, body: { turns } satisfies SessionTurnStatus };
+  const result = await getSessionTurn('P1', 'S1');
+  expect(result.turns).toEqual(turns);
+});
+
+test('getSessionTurn surfaces last_ended when nothing is running', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      turns: [],
+      last_ended: {
+        turn_token: 't0',
+        end_reason: 'runtime_gone',
+        ended_at: '2026-08-17T00:00:09.000Z',
+      },
+    } satisfies SessionTurnStatus,
+  };
+  const result = await getSessionTurn('P1', 'S1');
+  expect(result.turns).toEqual([]);
+  expect(result.last_ended).toEqual({
+    turn_token: 't0',
+    end_reason: 'runtime_gone',
+    ended_at: '2026-08-17T00:00:09.000Z',
+  });
+});
+
+// The whole reason `last_ended` is OPTIONAL rather than nullable: its absence is
+// what separates "this session has never run a turn" from "the last one just
+// finished", and a caller cannot make that call from an empty `turns` alone.
+test('getSessionTurn distinguishes a session that never ran a turn', async () => {
+  nextResponse = { status: 200, body: { turns: [] } satisfies SessionTurnStatus };
+  const result = await getSessionTurn('P1', 'S1');
+  expect(result.turns).toEqual([]);
+  expect(result.last_ended).toBeUndefined();
+});
+
+test('getSessionTurn throws on a failed request', async () => {
+  nextResponse = { status: 404, body: { error: 'Not found' } };
+  expect(getSessionTurn('P1', 'S1')).rejects.toThrow();
 });
 
 test('getVoiceTranscript hits GET .../voice-transcript and builds the query string from cursor/limit', async () => {
@@ -663,4 +813,182 @@ test('session contracts omit usage attribution keys', () => {
   const listOptions: IsNever<SessionAttributionKey<ListOptions>> = true;
 
   expect([createInput, response, listOptions]).toEqual([true, true, true]);
+});
+
+// ── The prompt inbox ────────────────────────────────────────────────────────
+//
+// A prompt is durable from the instant the composer accepts it. Before this the
+// queue lived in the browser's localStorage, so a closed tab, a second device
+// or a crash lost it silently. These four readers are the whole client surface.
+
+test('createSessionPrompt POSTs the submission name, the wire id, the parts and the picks', async () => {
+  nextResponse = {
+    status: 202,
+    body: { prompt_id: 'cmd-1', state: 'queued', message_id: 'msg_a', deduped: false },
+  };
+  const result = await createSessionPrompt('P1', 'S1', {
+    clientMessageId: 'q_1',
+    messageId: 'msg_a',
+    parts: [{ type: 'text', text: 'say hi' }],
+    overrides: { agent: 'build', model: { providerID: 'p', modelID: 'm' } },
+  });
+  expect(last().url).toBe('http://test.local/projects/P1/sessions/S1/prompts');
+  expect(last().method).toBe('POST');
+  // snake_case on the wire, like every other payload on this surface.
+  expect(last().body).toEqual({
+    client_message_id: 'q_1',
+    message_id: 'msg_a',
+    parts: [{ type: 'text', text: 'say hi' }],
+    overrides: { agent: 'build', model: { providerID: 'p', modelID: 'm' } },
+  });
+  expect(result).toEqual({
+    prompt_id: 'cmd-1',
+    state: 'queued',
+    message_id: 'msg_a',
+    deduped: false,
+  });
+});
+
+test('createSessionPrompt asks for a server re-mint only when the caller says its id is stale', async () => {
+  // A caller that minted its id somewhere the live transcript was unreadable
+  // (the one-time localStorage migration) says so, and the server re-mints
+  // against the live root before delivering. Absent by default: an ordinary
+  // send mints against a transcript it can see, and re-minting it would be a
+  // sandbox read on the delivery path of every message.
+  nextResponse = {
+    status: 202,
+    body: { prompt_id: 'cmd-1', state: 'queued', message_id: 'msg_a', deduped: false },
+  };
+  await createSessionPrompt('P1', 'S1', {
+    clientMessageId: 'q_1',
+    messageId: 'msg_a',
+    parts: [{ type: 'text', text: 'say hi' }],
+    remintOnDelivery: true,
+  });
+  expect(last().body).toEqual({
+    client_message_id: 'q_1',
+    message_id: 'msg_a',
+    parts: [{ type: 'text', text: 'say hi' }],
+    remint_on_delivery: true,
+  });
+
+  await createSessionPrompt('P1', 'S1', {
+    clientMessageId: 'q_2',
+    messageId: 'msg_b',
+    parts: [{ type: 'text', text: 'say hi' }],
+  });
+  expect(last().body).toEqual({
+    client_message_id: 'q_2',
+    message_id: 'msg_b',
+    parts: [{ type: 'text', text: 'say hi' }],
+  });
+});
+
+test('createSessionPrompt reports a dedupe rather than hiding it', async () => {
+  // Same `clientMessageId` = the SAME durable row, enforced by a unique index.
+  // The caller needs to know it re-named an existing prompt instead of adding
+  // a second one.
+  nextResponse = {
+    status: 200,
+    body: { prompt_id: 'cmd-1', state: 'delivering', message_id: 'msg_a', deduped: true },
+  };
+  const result = await createSessionPrompt('P1', 'S1', {
+    clientMessageId: 'q_1',
+    messageId: 'msg_a',
+    parts: [{ type: 'text', text: 'say hi' }],
+  });
+  expect(result.deduped).toBe(true);
+  expect(last().body).toEqual({
+    client_message_id: 'q_1',
+    message_id: 'msg_a',
+    parts: [{ type: 'text', text: 'say hi' }],
+  });
+});
+
+test('listSessionPrompts hits GET .../prompts and hands the rows through verbatim', async () => {
+  const prompt: SessionPrompt = {
+    prompt_id: 'cmd-1',
+    client_message_id: 'q_1',
+    message_id: 'msg_a',
+    state: 'waiting',
+    reason: 'turn_active',
+    text: 'say hi',
+    attempts: 0,
+    last_error: null,
+    created_at: '2026-08-18T00:00:00.000Z',
+    available_at: '2026-08-18T00:00:02.000Z',
+  };
+  nextResponse = { status: 200, body: { prompts: [prompt] } };
+  const result = await listSessionPrompts('P1', 'S1');
+  expect(last().url).toBe('http://test.local/projects/P1/sessions/S1/prompts');
+  expect(last().method).toBe('GET');
+  expect(result).toEqual({ prompts: [prompt] });
+});
+
+test('deleteSessionPrompt DELETEs one prompt and returns what it removed', async () => {
+  // The removal is offered with an Undo, and the row is hard-deleted, so this
+  // response is the only place the full body still exists. Restoring from the
+  // list view instead drops attachments and overrides and truncates the text.
+  const removed: RemovedSessionPrompt = {
+    prompt_id: 'cmd-1',
+    client_message_id: 'q_1',
+    message_id: 'msg_a',
+    parts: [
+      { type: 'text', text: 'say hi' },
+      { type: 'file', mime: 'image/png', url: 'https://files.test/a.png' },
+    ],
+    overrides: { model: { providerID: 'anthropic', modelID: 'claude-x' } },
+  };
+  nextResponse = { status: 200, body: { removed } };
+  expect(await deleteSessionPrompt('P1', 'S1', 'cmd-1')).toEqual(removed);
+  expect(last().url).toBe('http://test.local/projects/P1/sessions/S1/prompts/cmd-1');
+  expect(last().method).toBe('DELETE');
+});
+
+test('retrySessionPrompt POSTs .../retry and returns the requeued row', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      prompt_id: 'cmd-1',
+      client_message_id: 'q_1',
+      message_id: 'msg_a',
+      state: 'queued',
+      reason: null,
+      text: 'say hi',
+      attempts: 0,
+      last_error: null,
+      created_at: '2026-08-18T00:00:00.000Z',
+      available_at: '2026-08-18T00:00:00.000Z',
+    },
+  };
+  const result = await retrySessionPrompt('P1', 'S1', 'cmd-1');
+  expect(last().url).toBe('http://test.local/projects/P1/sessions/S1/prompts/cmd-1/retry');
+  expect(last().method).toBe('POST');
+  // The wire id is UNCHANGED by a retry: the proxy's delivery claim is keyed on
+  // it, so a retry of a delivery that actually landed is still absorbed.
+  expect(result.message_id).toBe('msg_a');
+  expect(result.state).toBe('queued');
+});
+
+test('holdSessionPrompts POSTs .../prompts/hold with the flag and returns the queue', async () => {
+  // Stop has to reach the QUEUE, and the queue is on the server now: pausing a
+  // browser-local drain leaves the admission gate free to deliver the very
+  // message the user pressed Stop to get ahead of.
+  nextResponse = { status: 200, body: { prompts: [] } };
+  const result = await holdSessionPrompts('P1', 'S1', true);
+  expect(last().url).toBe('http://test.local/projects/P1/sessions/S1/prompts/hold');
+  expect(last().method).toBe('POST');
+  expect(last().body).toEqual({ held: true });
+  expect(result).toEqual({ prompts: [] });
+});
+
+test('a prompt call throws on a non-2xx instead of returning a half-answer', async () => {
+  nextResponse = { status: 402, body: { error: 'out of credits' } };
+  await expect(
+    createSessionPrompt('P1', 'S1', {
+      clientMessageId: 'q_1',
+      messageId: 'msg_a',
+      parts: [{ type: 'text', text: 'hi' }],
+    }),
+  ).rejects.toBeTruthy();
 });

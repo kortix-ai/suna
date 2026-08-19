@@ -4,6 +4,7 @@ import { useMutation } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { getClient } from '../../core/runtime/client';
 import { logger } from '../../core/http/logger';
+import { isAbortError } from '../../core/http/abort-error';
 import { useSyncStore } from '../../browser/stores/sync-store';
 import type { PromptPart, SendMessageOptions } from './keys';
 import { canQueryOpenCodeSession, unwrap } from './shared';
@@ -207,20 +208,30 @@ export function ascendingId(prefix: 'msg' | 'prt' = 'msg'): string {
 // One prompt submission = one client-minted `messageID`.
 //
 // The Kortix sandbox proxy refuses to deliver a prompt body it may already have
-// delivered. It identifies a delivery by the caller's `Idempotency-Key` header
-// or — when there is none, which is always for a browser, since that header is
-// not on the API's CORS allow-list — by a **sha256 of the request body**, with a
-// 60s TTL (`apps/api/src/sandbox-proxy/prompt-dedupe.ts`, `promptDeliveryKey`).
-// A repeat is answered `200 {"status":"duplicate","deduplicated":true}` and
-// never reaches opencode.
+// delivered. It identifies a delivery, in precedence order, by the caller's
+// `Idempotency-Key` header (never set by a browser — not on the API's CORS
+// allow-list); THEN by the wire `messageID` this module mints below, when the
+// body carries one; and only when neither is present, by a sha256 of the
+// request body. The dedupe cache holds a claim for 10 minutes — long enough to
+// outlive a sandbox wake from auto-stop, which routinely exceeds the 60s this
+// TTL used to be
+// (`apps/api/src/sandbox-proxy/prompt-dedupe.ts`, `promptDeliveryKey`,
+// `claimPromptDelivery`). A repeat is answered
+// `200 {"status":"duplicate","deduplicated":true}` and never reaches opencode.
 //
-// The payload below is built from the session id, the mapped parts (whose
-// client ids are dropped), and the model/agent picks — nothing else. So sending
-// the same text twice within 60s produced a BYTE-IDENTICAL body, and the second
-// submission was silently lost: no error, no turn, nothing on screen. Minting a
-// per-submission id makes the two bodies differ by construction, while a RETRY
-// of one submission keeps its id so the proxy's real duplicate protection still
-// fires (see the retry loop in `promptOpenCodeMessage`).
+// Because the dedupe key is now the id, not the bytes, a RETRY of one
+// submission (same messageID, body possibly re-serialized) is still recognized
+// as the same delivery, AND a genuinely new submission with byte-identical text
+// (a user sending "continue" twice on purpose) is never mistaken for a repeat
+// just because the words match — it mints its own fresh id and goes through.
+// Before this module existed, the payload below was built from the session id,
+// the mapped parts (whose client ids are dropped), and the model/agent picks —
+// nothing else — so sending the same text twice produced a BYTE-IDENTICAL body,
+// and the second submission was silently lost: no error, no turn, nothing on
+// screen. Minting a per-submission id fixes that at the source; keying the
+// proxy's dedupe on that id (rather than the bytes) is the second half — it
+// means the fix holds even if two submissions' bodies ever happen to collide
+// for a reason that has nothing to do with the user's intent.
 //
 // "One submission" is bigger than one call. The internal retry loop is only the
 // retry the SDK owns; a host retries too — apps/web's message queue re-dispatches
@@ -293,8 +304,29 @@ const BASE62 = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
 let lastMintedSessionId = '';
 let lastMintedWireId = BigInt(0);
 
-/** The highest id-clock value this session's transcript already shows, or null. */
-function newestKnownMessageTime(sessionId: string): bigint | null {
+/**
+ * The highest id-clock value this session's transcript already shows that a
+ * mint may place itself above, or null.
+ *
+ * `ceiling` is what makes this a bounded scan rather than a plain max, and it
+ * is load-bearing. The same store also holds ids that are NOT opencode wire
+ * ids: every send inserts an OPTIMISTIC user message keyed by `ascendingId`,
+ * which keeps the HIGH hex digits of the id clock (`msg_1a01…`) where opencode
+ * keeps the LOW ones (`msg_0141…`) — about 2.8e13 above every real id, and it
+ * still matches the 12-hex shape. Taking the max over everything therefore
+ * returned that optimistic id, the correction bound then refused it, and the
+ * lift never engaged AT ALL in the real app. A prompt sent inside
+ * {@link CLOCK_SKEW_BACKDATE_MS} of the previous reply then went out with a
+ * wire id BELOW that reply, opencode read it as already answered, and the turn
+ * never ran — no error, nothing on screen. (Reproduced in the browser on the
+ * worktree stack: reply at T, prompt at T+70s, id 50s below it, no assistant
+ * message ever created.)
+ *
+ * So an id this mint could not possibly have to sort against is skipped, not
+ * allowed to veto the correction for the whole session. A wrapped or garbage
+ * id is handled by the same rule, which is what the bound was for originally.
+ */
+function newestKnownMessageTime(sessionId: string, ceiling: bigint): bigint | null {
   const messages = useSyncStore.getState().messages[sessionId];
   if (!messages?.length) return null;
   let newest: bigint | null = null;
@@ -302,6 +334,7 @@ function newestKnownMessageTime(sessionId: string): bigint | null {
     const match = WIRE_MESSAGE_ID_TIME.exec(message?.id ?? '');
     if (!match) continue;
     const encoded = BigInt(`0x${match[1]}`);
+    if (encoded > ceiling) continue;
     if (newest === null || encoded > newest) newest = encoded;
   }
   return newest;
@@ -328,8 +361,10 @@ function newestKnownMessageTime(sessionId: string): bigint | null {
 function mintPromptMessageId(sessionId: string): string {
   let encoded =
     (BigInt(Date.now() - CLOCK_SKEW_BACKDATE_MS) * WIRE_ID_TIME_SCALE) & WIRE_ID_TIME_MASK;
-  const newest = newestKnownMessageTime(sessionId);
-  if (newest !== null && newest >= encoded && newest - encoded <= MAX_WIRE_ID_CLOCK_CORRECTION) {
+  // The bound lives in the scan, so one unplaceable id skips itself instead of
+  // cancelling the correction for every id in the transcript.
+  const newest = newestKnownMessageTime(sessionId, encoded + MAX_WIRE_ID_CLOCK_CORRECTION);
+  if (newest !== null && newest >= encoded) {
     encoded = newest + BigInt(1);
   }
   if (sessionId === lastMintedSessionId && encoded <= lastMintedWireId) {
@@ -378,6 +413,106 @@ function submissionWireId(sessionId: string, clientMessageId: string | undefined
   return minted;
 }
 
+/**
+ * The wire `messageID` for one submission, for a host that does NOT send
+ * through `promptOpenCodeMessage`.
+ *
+ * The server-side prompt inbox (`createSessionPrompt`) needs the id up front:
+ * the control plane cannot mint one, because placing an id correctly means
+ * reading THIS session's transcript, and only this process holds it. Do not
+ * substitute `ascendingId('msg')` — it encodes the HIGH bits of the id clock,
+ * so it sorts below every server-minted id and OpenCode reads the prompt as
+ * already answered. See the warning on `ascendingId`.
+ *
+ * Same memo as an in-band send: one `clientMessageId` always resolves to one
+ * wire id, so a retry of a submission keeps the id the proxy's delivery claim
+ * is keyed on.
+ */
+export function mintSessionWireMessageId(
+  sessionId: string,
+  clientMessageId?: string,
+): string {
+  return submissionWireId(sessionId, clientMessageId);
+}
+
+// ============================================================================
+// T9 — cancel() cancels in-flight delivery.
+//
+// Before this, `promptOpenCodeMessage`'s boot/wake retry loop (below) had no
+// `AbortSignal` at all: a prompt still retrying its ~30s backoff when the
+// user hit Stop kept going, and — if the sandbox woke up mid-retry — landed
+// AFTER the abort and ran the stale text. This registry lets `cancel()`
+// reach every in-flight delivery for a session and stop it before its next
+// attempt, whether that attempt is mid-network-call (aborts the underlying
+// `fetch` via `signal`) or mid-backoff-sleep (rejects the sleep immediately
+// instead of waiting it out).
+//
+// Scoped by session, not global: aborting one session's Stop must never touch
+// another session's in-flight send (two tabs, or two sessions polling
+// concurrently).
+// ============================================================================
+
+const inFlightDeliveries = new Map<string, Set<AbortController>>();
+
+/** Register one delivery's controller under its session; returns the
+ *  unregister function to call once the delivery settles (success, failure,
+ *  or abort) so a finished delivery is never reachable by a later abort. */
+function registerDelivery(sessionId: string, controller: AbortController): () => void {
+  let set = inFlightDeliveries.get(sessionId);
+  if (!set) {
+    set = new Set();
+    inFlightDeliveries.set(sessionId, set);
+  }
+  set.add(controller);
+  return () => {
+    set?.delete(controller);
+    if (set && set.size === 0) inFlightDeliveries.delete(sessionId);
+  };
+}
+
+/**
+ * Abort every in-flight `promptOpenCodeMessage` delivery for a session — the
+ * primary effect `cancel()`/`stop()` need before the abort even reaches the
+ * server: a delivery that has not yet started its next attempt when this
+ * runs never starts one, and a delivery mid-network-call gets its underlying
+ * `fetch` aborted via `signal`.
+ *
+ * Returns the number of deliveries this call aborted (0 when none were in
+ * flight for the session — not an error, just nothing to do).
+ */
+export function abortInFlightDeliveries(sessionId: string): number {
+  const set = inFlightDeliveries.get(sessionId);
+  if (!set || set.size === 0) return 0;
+  const controllers = [...set];
+  for (const controller of controllers) controller.abort();
+  return controllers.length;
+}
+
+/** The shape `isAbortError` (`@kortix/sdk` core) recognizes on identity alone
+ *  — matches a real `AbortController`/`fetch` abort's `.name`. */
+function deliveryAbortError(): SendOpenCodeMessageError {
+  const err = new Error('The operation was aborted.') as SendOpenCodeMessageError;
+  err.name = 'AbortError';
+  return err;
+}
+
+/** A `setTimeout` that rejects immediately (with the abort error, not a
+ *  timeout) when `signal` aborts, instead of waiting out the full delay. */
+function abortableDelay(ms: number, signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return Promise.reject(deliveryAbortError());
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(deliveryAbortError());
+    };
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
 export interface SendOpenCodeMessageArgs {
   sessionId: string;
   parts: PromptPart[];
@@ -395,11 +530,22 @@ export interface SendOpenCodeMessageArgs {
   messageID?: string;
   /**
    * Stable name for the SUBMISSION this call dispatches — the host's own key,
-   * e.g. `QueuedMessageInput.clientMessageId`. Two calls carrying the same one
-   * are the same submission and send the same wire `messageID`, so the proxy's
-   * body-hash dedupe still absorbs a host-level retry. Two different ones are
-   * two submissions and always differ, so a deliberate identical re-send is
-   * never swallowed.
+   * e.g. `QueuedMessageInput.clientMessageId`.
+   *
+   * **The contract: same id = same logical send, retry-safe. New logical send
+   * = new id.** Two calls carrying the same `clientMessageId` are a RETRY of
+   * one submission and send the same wire `messageID`, so the proxy's
+   * messageID-keyed dedupe (`prompt-dedupe.ts`, `promptDeliveryKey`) still
+   * absorbs a host-level retry — even one that lands minutes later, after a
+   * wake. Two different `clientMessageId`s are two DIFFERENT submissions and
+   * always mint two different wire ids, so a deliberate identical re-send (the
+   * user sending "continue" twice on purpose) is never swallowed as a
+   * duplicate. A caller that mints a NEW `clientMessageId` for what is
+   * actually a retry of an old one loses the dedupe protection; a caller that
+   * reuses an OLD `clientMessageId` for what is actually a brand-new send gets
+   * silently swallowed (the trap this module exists to close) — so a
+   * caller emitting a genuinely new send after a stop/cancel must always mint
+   * a fresh id, never reuse the aborted send's.
    *
    * Any string works — this is an identity, not a format. The wire id is minted
    * here from it.
@@ -466,48 +612,65 @@ export async function promptOpenCodeMessage({
     ...(options?.variant && { variant: options.variant }),
   };
 
-  for (let attempt = 1; ; attempt++) {
-    let status: number | undefined;
-    let error: unknown;
-    try {
-      // Resolve the client INSIDE the retry loop, not once before it. During
-      // the sandbox-loading window `getClient()` throws "Server URL not
-      // ready" (see opencode/client.ts) — that's a boot-phase condition
-      // exactly like the proxy's 503 "opencode not ready" below, so it must
-      // participate in the SAME boot/wake retry window rather than propagate
-      // instantly with zero retries. A brand-new session's very first prompt
-      // can race the runtime url being pinned; without this the send throws
-      // before a single retry and the prompt is dropped.
-      const client = getClient();
-      // The SDK resolves (not rejects) on HTTP errors, returning
-      // { error, response } instead of throwing.
-      const result = await client.session.promptAsync(payload);
-      if (!result?.error) return; // 204 — server accepted the prompt.
-      error = result.error;
-      status = (result.response as Response | undefined)?.status;
-    } catch (err) {
-      error = err; // thrown = transport failure (no status) OR getClient() not-ready.
-    }
-
-    const delay = getSendRetryDelayMs(attempt, status, error);
-    if (delay === null) {
-      const err =
-        error && typeof error === 'object' ? (error as Record<string, unknown>) : undefined;
-      const errData =
-        err?.data && typeof err.data === 'object' ? (err.data as Record<string, unknown>) : undefined;
-      const message = errData?.message || err?.message || 'Failed to send message';
-      const wrapped = new Error(
-        typeof message === 'string' ? message : 'Failed to send message',
-      ) as SendOpenCodeMessageError;
-      if (status) {
-        wrapped.status = status;
-        wrapped.response = { status };
+  // One controller per delivery, registered under the session so
+  // `abortInFlightDeliveries` (called by `cancel()`/`stop()`) can reach it —
+  // and unregistered as soon as this delivery settles, so a finished delivery
+  // is never reachable by a LATER abort call for the same session.
+  const controller = new AbortController();
+  const unregister = registerDelivery(sessionId, controller);
+  try {
+    for (let attempt = 1; ; attempt++) {
+      if (controller.signal.aborted) throw deliveryAbortError();
+      let status: number | undefined;
+      let error: unknown;
+      try {
+        // Resolve the client INSIDE the retry loop, not once before it. During
+        // the sandbox-loading window `getClient()` throws "Server URL not
+        // ready" (see opencode/client.ts) — that's a boot-phase condition
+        // exactly like the proxy's 503 "opencode not ready" below, so it must
+        // participate in the SAME boot/wake retry window rather than propagate
+        // instantly with zero retries. A brand-new session's very first prompt
+        // can race the runtime url being pinned; without this the send throws
+        // before a single retry and the prompt is dropped.
+        const client = getClient();
+        // The SDK resolves (not rejects) on HTTP errors, returning
+        // { error, response } instead of throwing. The `signal` here reaches
+        // the underlying `fetch` (the generated client's `Config` extends
+        // `RequestInit`) — an abort mid-network-call actually cancels the
+        // in-flight request, not just the SDK-side bookkeeping.
+        const result = await client.session.promptAsync(payload, { signal: controller.signal });
+        if (!result?.error) return; // 204 — server accepted the prompt.
+        error = result.error;
+        status = (result.response as Response | undefined)?.status;
+      } catch (err) {
+        if (controller.signal.aborted || isAbortError(err)) throw deliveryAbortError();
+        error = err; // thrown = transport failure (no status) OR getClient() not-ready.
       }
-      wrapped.data = err?.data ?? err;
-      throw wrapped;
+
+      const delay = getSendRetryDelayMs(attempt, status, error);
+      if (delay === null) {
+        const err =
+          error && typeof error === 'object' ? (error as Record<string, unknown>) : undefined;
+        const errData =
+          err?.data && typeof err.data === 'object' ? (err.data as Record<string, unknown>) : undefined;
+        const message = errData?.message || err?.message || 'Failed to send message';
+        const wrapped = new Error(
+          typeof message === 'string' ? message : 'Failed to send message',
+        ) as SendOpenCodeMessageError;
+        if (status) {
+          wrapped.status = status;
+          wrapped.response = { status };
+        }
+        wrapped.data = err?.data ?? err;
+        throw wrapped;
+      }
+      logger.warn('promptOpenCodeMessage retrying send', { sessionId, attempt, status });
+      // Abortable — a cancel arriving while this delivery is waiting out its
+      // backoff must reject IMMEDIATELY, not wait out the remaining delay.
+      await abortableDelay(delay, controller.signal);
     }
-    logger.warn('promptOpenCodeMessage retrying send', { sessionId, attempt, status });
-    await new Promise((resolve) => setTimeout(resolve, delay));
+  } finally {
+    unregister();
   }
 }
 
@@ -533,32 +696,101 @@ export function useSendOpenCodeMessage() {
   });
 }
 
+/**
+ * POST the abort to the runtime for a session, then re-read server status and
+ * force-update the store if it still reports busy (the SSE `session.idle`
+ * event should arrive on its own; this is the fallback for a missed one).
+ *
+ * Extracted from `useAbortOpenCodeSession`'s mutationFn — same reasoning as
+ * `promptOpenCodeMessage`: a plain async function is directly testable
+ * without a mutation/hook context, and `awaitAbortSettlement` below calls it
+ * (via the mutation's `mutateAsync`, so retry/pending state stay react-query-
+ * driven) without needing to render a hook to prove the failure path.
+ *
+ * Throws on a genuine abort failure — the caller (the mutation's `retry: 2`,
+ * then `awaitAbortSettlement`) decides what to do with that; this function
+ * itself never swallows it.
+ */
+export async function abortOpenCodeSession(sessionId: string): Promise<void> {
+  const client = getClient();
+  const result = await client.session.abort({ sessionID: sessionId });
+  unwrap(result);
+  // After abort succeeds, the SSE stream should deliver session.idle event.
+  // If the UI stays stuck, it means the SSE event wasn't received/processed.
+  // The optimistic idle status we set in handleStop should handle this, but
+  // if for some reason the abort HTTP call returned but SSE didn't update,
+  // we force-refresh the session status from the server.
+  try {
+    const statusResult = await client.session.status();
+    const statuses = statusResult.data;
+    const serverStatus = statuses?.[sessionId];
+    if (serverStatus && serverStatus.type !== 'idle') {
+      // Server still thinks we're busy - update the store with server's view
+      // This can happen if SSE events were missed
+      useSyncStore.getState().setStatus(sessionId, serverStatus);
+    }
+  } catch {
+    // Non-critical — SSE will eventually deliver the correct status
+  }
+}
+
 export function useAbortOpenCodeSession() {
   return useMutation({
-    mutationFn: async (sessionId: string) => {
-      const client = getClient();
-      const result = await client.session.abort({ sessionID: sessionId });
-      unwrap(result);
-      // After abort succeeds, the SSE stream should deliver session.idle event.
-      // If the UI stays stuck, it means the SSE event wasn't received/processed.
-      // The optimistic idle status we set in handleStop should handle this, but
-      // if for some reason the abort HTTP call returned but SSE didn't update,
-      // we force-refresh the session status from the server.
-      try {
-        const statusResult = await client.session.status();
-        const statuses = statusResult.data;
-        const serverStatus = statuses?.[sessionId];
-        if (serverStatus && serverStatus.type !== 'idle') {
-          // Server still thinks we're busy - update the store with server's view
-          // This can happen if SSE events were missed
-          useSyncStore.getState().setStatus(sessionId, serverStatus);
-        }
-      } catch {
-        // Non-critical — SSE will eventually deliver the correct status
-      }
-    },
+    mutationFn: abortOpenCodeSession,
     retry: 2,
     retryDelay: 300,
+    // Kept — apps/web's `session-chat.tsx` calls `.mutate(sessionId)`
+    // fire-and-forget at two call sites and does not want a global
+    // mutation-cache error handler to fire for an abort that the UI already
+    // shows as idle optimistically. This does NOT re-introduce the silent
+    // swallow `awaitAbortSettlement` exists to fix: `cancel()`/`stop()` below
+    // call `mutateAsync` and read the real settlement (success, the thrown
+    // error, or a bounded timeout) — `onError` is a side-effect callback only,
+    // it never prevents `mutateAsync`'s returned promise from rejecting.
     onError: () => {},
   });
+}
+
+/** How `cancel()`/`stop()`'s abort settled — see `awaitAbortSettlement`. */
+export type AbortSettlement =
+  | { status: 'aborted' }
+  | { status: 'failed'; error: unknown }
+  | { status: 'timed-out' }
+  | { status: 'skipped' };
+
+const DEFAULT_ABORT_SETTLEMENT_TIMEOUT_MS = 5000;
+
+/**
+ * Await an abort call's settlement — success, a real failure, or a bounded
+ * timeout — instead of the fire-and-forget `.mutate()` `cancel()`/`stop()`
+ * used to do. `runAbort` is normally `() => abortMutation.mutateAsync(sessionId)`
+ * (keeps react-query's own retry/`isPending` state); this takes it as a plain
+ * callback so it's directly testable without rendering a hook.
+ *
+ * Never rejects: every branch resolves to a distinguishable `AbortSettlement`
+ * the caller can read, which is the point — a swallowed `onError` used to
+ * mean a failed abort left the UI's optimistic idle state as the only signal,
+ * with nothing to tell a caller whether the server actually agreed.
+ */
+export async function awaitAbortSettlement(
+  runAbort: () => Promise<void>,
+  timeoutMs: number = DEFAULT_ABORT_SETTLEMENT_TIMEOUT_MS,
+): Promise<AbortSettlement> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timedOut = new Promise<AbortSettlement>((resolve) => {
+    timer = setTimeout(() => resolve({ status: 'timed-out' }), timeoutMs);
+  });
+  const settled = (async (): Promise<AbortSettlement> => {
+    try {
+      await runAbort();
+      return { status: 'aborted' };
+    } catch (error) {
+      return { status: 'failed', error };
+    }
+  })();
+  try {
+    return await Promise.race([settled, timedOut]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
 }

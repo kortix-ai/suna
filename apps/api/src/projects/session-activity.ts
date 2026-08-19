@@ -27,6 +27,11 @@ import { WARM_SESSION_METADATA_KEY } from './lib/warm-sessions';
  * This stamp is written from the one place that already knows a turn is real:
  * the preview proxy, after the prompt dedupe claim succeeds. It touches only
  * the database, so it cannot fail for any of the reasons the snapshot does.
+ *
+ * Warm-session adoption also stamps this key once, at `/start`
+ * (`dropWarmSessionMarkerOnAdopt`, projects/routes/warm-sessions.ts): the
+ * take that fires that `/start` is itself a user send, and the first prompt
+ * re-stamps here seconds later.
  */
 export const SESSION_LAST_ACTIVITY_KEY = 'last_activity_at';
 

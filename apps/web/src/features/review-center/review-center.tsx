@@ -457,7 +457,10 @@ export function ReviewCenter({
       return;
     }
     const known = knownIdsRef.current;
-    const arrived = items.filter((i) => !known.has(i.id)).map((i) => i.id);
+    const arrived: string[] = [];
+    for (const item of items) {
+      if (!known.has(item.id)) arrived.push(item.id);
+    }
     if (arrived.length > 0) {
       setFreshIds((prev) => {
         const n = new Set(prev);
@@ -635,10 +638,10 @@ export function ReviewCenter({
       setSelectedIds(new Set());
       return;
     }
+    const itemIds = new Set(items.map((x) => x.id));
     let next = items;
     for (const id of ids) {
-      const it = items.find((x) => x.id === id);
-      if (!it) continue;
+      if (!itemIds.has(id)) continue;
       next = setStatus(next, id, 'approved');
     }
     apply(
