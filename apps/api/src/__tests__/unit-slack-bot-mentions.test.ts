@@ -234,8 +234,15 @@ describe('a bot sender is never sent an identity prompt', () => {
     expect(cmds, 'link-bot must write the same chat_user_identities row /login does')
       .toContain('await linkSlackIdentity({ teamId: ctx.teamId, slackUserId: botUserId, userId: me.userId });');
     const h = fnBody(cmds, 'slashLinkBot');
-    expect(h, 'linking a bot must stay owner/admin gated — any app in the channel is a non-member')
-      .toContain('canManageSlackPolicy');
+    // NOT owner/admin. Linking binds the bot to the CALLER's own account, so it
+    // delegates the caller's authority and can never exceed it — the same shape
+    // as issuing yourself an API key. An admin-only gate was actively wrong: an
+    // admin linking a channel-triggerable bot is MORE dangerous than a member
+    // doing it. The gate is the one every Slack message already passes.
+    expect(h, 'the gate must be "could you have done this work yourself", via resolveSlackActor')
+      .toContain('resolveSlackActor(ctx.teamId, ctx.slackUserId, proj.accountId, selection.projectId)');
+    expect(h, 'an owner/admin requirement is the wrong shape for self-delegation')
+      .not.toContain('canManageSlackPolicy');
   });
 });
 
@@ -265,6 +272,13 @@ describe('link-bot refuses anything that is not a verified bot', () => {
     // `bot !== true` is load-bearing: `!bot` would also refuse, but a truthy
     // check like `bot === false` alone would let null through and link a human.
     expect(handler, 'uncertainty must refuse, not fall through').toContain('if (bot !== true) {');
+  });
+
+  test('the link is always to the CALLER — never to a third party', () => {
+    // This is what makes the relaxed gate safe: you can only ever delegate your
+    // own authority, so there is no privilege to escalate.
+    const h = fnBody(readFileSync(join(import.meta.dir, '..', 'channels', 'slack', 'commands.ts'), 'utf8'), 'slashLinkBot');
+    expect(h).toContain('userId: me.userId');
   });
 
   test('an id already linked to someone else is never silently re-pointed', () => {
