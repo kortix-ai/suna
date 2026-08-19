@@ -271,6 +271,92 @@ export function getPublicShareByToken<T = Record<string, unknown>>(
   return requestJson<T>(`/p/public-share/${encodeURIComponent(token)}`, options);
 }
 
+export interface PublicShareFileOptions {
+  signal?: AbortSignal;
+  /**
+   * Defaults to `no-store`. A share can be revoked or the file rewritten at any
+   * moment, and a cached 200 would keep showing content the owner has pulled.
+   */
+  cache?: RequestCache;
+}
+
+export interface PublicShareFileText {
+  text: string;
+  /** Raw `content-type` header — the caller decides how to render it. */
+  mimeType: string;
+}
+
+export interface PublicShareFileBlob {
+  blob: Blob;
+  mimeType: string;
+}
+
+const ABSOLUTE_HTTP_URL = /^https?:\/\//i;
+
+/**
+ * Absolute URL for the body of a file share.
+ *
+ * `getPublicShareByToken` returns `share.proxy_path` — a root-relative path that
+ * already carries the `/v1` prefix (`/v1/p/public-share/:token/file`). Only the
+ * origin is missing, so this joins the API origin to it rather than appending to
+ * the API base, which would emit `/v1/v1/...`. An already-absolute value (the
+ * legacy `share.public_url`) is passed through unchanged.
+ */
+export function buildPublicShareFileUrl(backendUrl: string, proxyPath: string): string {
+  if (ABSOLUTE_HTTP_URL.test(proxyPath)) return proxyPath;
+  let origin: string;
+  try {
+    origin = new URL(apiBase(backendUrl)).origin;
+  } catch {
+    throw new HostBoundaryError('Invalid backendUrl for a public share file', 400, null);
+  }
+  return `${origin}${proxyPath.startsWith('/') ? proxyPath : `/${proxyPath}`}`;
+}
+
+/**
+ * Read the body of a file share. Anonymous by design: the share token in the
+ * path is the entire authorization, so no Authorization header is ever sent.
+ */
+export async function fetchPublicShareFile(
+  backendUrl: string,
+  proxyPath: string,
+  options?: PublicShareFileOptions,
+): Promise<Response> {
+  const response = await fetch(buildPublicShareFileUrl(backendUrl, proxyPath), {
+    cache: options?.cache ?? 'no-store',
+    ...(options?.signal ? { signal: options.signal } : {}),
+  });
+  if (!response.ok) {
+    const body = await parseResponseBody(response);
+    throw new HostBoundaryError(errorMessage(response, body), response.status, body);
+  }
+  return response;
+}
+
+function responseMimeType(response: Response): string {
+  return response.headers.get('content-type') || 'application/octet-stream';
+}
+
+export async function readPublicShareFileText(
+  backendUrl: string,
+  proxyPath: string,
+  options?: PublicShareFileOptions,
+): Promise<PublicShareFileText> {
+  const response = await fetchPublicShareFile(backendUrl, proxyPath, options);
+  const mimeType = responseMimeType(response);
+  return { text: await response.text(), mimeType };
+}
+
+export async function readPublicShareFileBlob(
+  backendUrl: string,
+  proxyPath: string,
+  options?: PublicShareFileOptions,
+): Promise<PublicShareFileBlob> {
+  const response = await fetchPublicShareFile(backendUrl, proxyPath, options);
+  const mimeType = responseMimeType(response);
+  return { blob: await response.blob(), mimeType };
+}
+
 export function startSessionWithToken(
   projectId: string,
   sessionId: string,

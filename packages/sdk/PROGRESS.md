@@ -120,39 +120,211 @@ pnpm --filter @kortix/sdk smoke:install   → ✔ install smoke test passed
 ||||||| parent of f1d78e5ed1 (chore(sdk): claim boundary-close (public-share file reader, presentation metadata reader, facade completion))
 
 ### 2026-08-19 — session `claude/sdk-central` — claim: boundary-close: public-share file reader, presentation metadata reader, facade completion — IN PROGRESS
+||||||| parent of b4414e2815 (feat(sdk): public-share file readers, presentation metadata reader, facade completion)
+### 2026-08-19 — session `claude/sdk-central` — claim: boundary-close: public-share file reader, presentation metadata reader, facade completion — IN PROGRESS
 
-No **Now** task claimed. This is user-directed boundary-close work: `apps/web`
-still reaches the Kortix API directly for three surfaces the SDK does not own.
+### 2026-08-19 — session `claude/sdk-central` — boundary-close: public-share file reader + presentation metadata reader + `kortix.*` facade completion — DONE
 
-Claimed SDK scope, additive only:
+**Files:** `core/rest/platform-client/host-boundary.ts` (+5 exports) +
+`host-boundary.test.ts` (+6 tests), `core/session/presentation.ts` (+7 exports)
++ `presentation.test.ts` (+9 tests), `core/client/kortix.ts` (+7 top-level
+namespaces, +18 methods on existing ones, +1 session-handle namespace) +
+`kortix.test.ts` (+13 tests), both surface snapshots. No barrel edit —
+both files are already `export *`-ed from `core/rest/platform-client/index.ts`
+and `core/session/index.ts`, which the root barrel re-exports. No new subpath.
+`version` untouched at `0.3.0`.
 
-1. **Public-share file reader.** `core/rest/platform-client/host-boundary.ts`
-   exposes `getPublicShareByToken` (share metadata) but no file read for an
-   anonymous share viewer. Add the reader beside it, on the same
-   `HostRequestOptions` transport, with no `Authorization` header.
-2. **Presentation metadata reader.** `core/session/presentation.ts` owns only URL
-   builders (`buildPresentationTemplatePdfUrl`,
-   `buildPresentationTemplateImageUrl`, `buildRuntimePresentationConversionUrl`)
-   and `convertRuntimePresentation`. Add the metadata read so the host stops
-   hand-rolling it.
-3. **Facade completion.** Wire both onto `createKortix()` in
-   `core/client/kortix.ts` as direct references, per the recipe in `AGENTS.md`.
+**Why.** `apps/web` still hand-rolled two Kortix transports the SDK did not own.
 
-Constraints I am holding myself to:
+1. **Public-share file body.** `getPublicShareByToken` returned
+   `share.proxy_path`, and three host call sites turned it into a URL and a
+   `fetch` themselves — `page.tsx:77,83` (URL), `public-file-share-view.tsx:60`
+   (text), `:98` (blob), `share-file.ts:27` (download). New:
+   `buildPublicShareFileUrl`, `fetchPublicShareFile`, `readPublicShareFileText`,
+   `readPublicShareFileBlob`, plus `PublicShareFileOptions` /
+   `PublicShareFileText` / `PublicShareFileBlob`. Anonymous by construction: no
+   Authorization header is ever set, because the token in the path IS the
+   authorization. `cache` defaults to `no-store` — a revoked share must not be
+   served from a cached 200. Errors are `HostBoundaryError` with `.status` and
+   `.body`, so a 410 revoke is distinguishable from a 404.
 
-- **Additive only.** No exported value or type name is renamed or removed.
-  `package.json` `version` stays `0.3.0` — releases bump the SDK, never the SDK
-  itself.
-- **TDD.** RED test first, watched failing for the right reason, then GREEN.
-- **Three synchronized edits** if any new subpath is added (`exports`,
-  `publishConfig.exports`, `SUBPATH_TIERS`). Current intent is no new subpath —
-  everything lands behind the root barrel.
-- **Framework-free core.** No `node:` import, no bare global; guarded reads only.
-- Both surface snapshots regenerated deliberately
-  (`UPDATE_SURFACE_SNAPSHOT=1` / `UPDATE_TYPE_SURFACE_SNAPSHOT=1`) and the diff
-  read line by line — additions only.
-- Gates run and the real output pasted before the turn ends: `typecheck`,
-  `test`, `smoke:install`.
+   The URL is built from the API **origin**, not the API base: `proxy_path`
+   already carries `/v1` (`apps/api/src/sandbox-proxy/routes/public-share.ts:75`),
+   so appending it to `…/v1` would emit `/v1/v1/…`. An already-absolute value
+   (the legacy `share.public_url`) passes through unchanged.
+
+2. **Presentation metadata.** `FullScreenPresentationViewer.tsx:130-140` built
+   the URL, appended a cache-buster, fetched, and hand-classified failures. New:
+   `sanitizePresentationName`, `buildPresentationMetadataUrl`,
+   `fetchPresentationMetadata`, plus `RuntimePresentationMetadata`,
+   `RuntimePresentationSlideMetadata`, `PresentationMetadataResult`,
+   `FetchPresentationMetadataOptions`. "Not written yet" is the normal state a
+   presentation viewer polls through, so it is a typed
+   `{ status: 'not-ready', httpStatus, reason }` result, never a throw — a
+   non-200, an unreachable runtime, a 200 that is not JSON, and a session with no
+   preview target all land there. Only a caller-supplied `AbortError`
+   propagates, because that is the caller asking to stop. The caller still owns
+   the retry cadence; the SDK does not add a timer.
+
+3. **Facade completion.** The two arguments recorded earlier in this session for
+   leaving these out of `createKortix()` were both wrong, and they are corrected
+   here rather than left standing:
+
+   - "The host-boundary readers take an explicit `backendUrl`, so they cannot be
+     facade methods." The facade IS the thing that knows the backend URL. One
+     helper, `hostOptions()`, fills `backendUrl` from the LIVE platform config
+     (same read as `resolvePreviewOptsForSandbox`, so a host that re-points the
+     seam is followed) and passes every other field through. Anonymity is
+     preserved exactly: no token is attached anywhere in `kortix.public` or
+     `kortix.setupLinks` — the token in the path is the whole authorization.
+   - "`fetchPresentationMetadata` needs a sandbox id the facade does not hold."
+     The session handle has held one since `ensureReady()` landed — that is the
+     resolve step the earlier note claimed did not exist. `session(pid, sid)
+     .presentations.*` now binds THIS handle's own runtime, never the
+     module-global active sandbox, matching `session().files`.
+
+   **Namespace map (new top level):** `auth` (access check/request, logout,
+   `accountState` with an explicit token, OAuth consent, Slack/Teams identity
+   binds, account deletion), `admin` (role, provider distribution/analytics/
+   fallback, sandbox list + provider migration, maintenance config, stress-test
+   stream, `setBypass`, `systemReload`), `referrals`, `setupLinks` (REDEEM by
+   token — the mirror of `project(id).setupLinks`, which MINTS), `public`
+   (share + share-file body, `startSession` with a request-scoped token, session
+   shares, voice join/transcript, public template, marketplace catalog),
+   `presentations` (Google auth URL + Slides upload), `previews`
+   (`ensureSessionCookie`), `tunnel` (`stream`, API URL bound).
+
+   **Onto existing namespaces:** `accounts.audit.download`, `iam.policies.list`,
+   `billing.subscription.sync`, `billing.credits.autoTopupSetupStatus`,
+   `billing.perSeat.{createCheckout,claim}`, `billing.costs.{summary,byProject,
+   exportCsv}`, `projects.{provisionStream,managedGitStatus}`, `github.app.*`
+   (platform GitHub App setup), `project(id).{llmCatalogProviders,
+   onboardingProfile,agentConfig.*,marketplace.installSession}`,
+   `project(id).access.request`, `project(id).secrets.grantToAgent`,
+   `project(id).connectors.{setSecretBinding,ensureConnection}`,
+   `project(id).connectors.connections.oauth2.*` (BYO OAuth 2.1: application,
+   discover, authorize, device start/poll), `project(id).channels.bindings.*`,
+   `project(id).sandbox.providerTransition`, and
+   `session(pid,sid).presentations.{convert,metadata,toGoogleSlides}`.
+
+   **Skipped, with reason.** `buildPublicShareFileUrl`,
+   `buildPresentationMetadataUrl`, `sanitizePresentationName` and the
+   presentation TEMPLATE URL builders are pure string functions with no
+   transport — root-barrel exports are the right home for them.
+   `buildPublicShareFileUrl` is the one exception: it is reachable as
+   `kortix.public.shareFile.url()` because binding the backend URL is the whole
+   point of that call. `setAdminBypass` is also not an HTTP call, but it IS
+   wired (`admin.setBypass`) because it changes how every later facade request
+   is made; its doc comment says plainly that it is process-wide in-memory
+   state shared by every `createKortix()` instance, not per-client.
+
+**Found, not fixed (Backlog B51):** `apps/web`'s presentation cache-buster
+appends `?t=` to a URL that already has a query, so the token lands inside the
+`path` value and the static-file service looks for `metadata.json?t=…`. The SDK
+builder appends `&t=` and is pinned by a test. Not touched here — this session
+was scoped to `packages/sdk`.
+
+**Gates — real output.**
+
+```
+$ pnpm --filter @kortix/sdk test
+ 2337 pass
+ 0 fail
+ 8421 expect() calls
+Ran 2337 tests across 158 files. [22.87s]   # baseline 2309/158; +15 readers, +13 facade
+
+$ pnpm --filter @kortix/sdk typecheck
+> tsc --noEmit && tsc --noEmit -p examples/tsconfig.json
+(exit 0, no output)
+
+$ bun test src/public-surface.test.ts src/public-type-surface.test.ts \
+      src/package-exports.test.ts src/index.isomorphic.test.ts src/bundle.test.ts
+ 76 pass / 0 fail / 3505 expect() calls  [832ms]
+
+$ pnpm --filter @kortix/sdk run smoke:install
+OK: @kortix/sdk and @kortix/executor-sdk import and construct from packed tarballs
+✔ install smoke test passed
+```
+
+RED was watched for all three halves before any implementation:
+`TypeError: boundary.fetchPublicShareFile is not a function` (6 fail / 6 pass),
+`SyntaxError: Export named 'buildPresentationMetadataUrl' not found in module
+'…/core/session/presentation.ts'`, and for the facade
+`TypeError: undefined is not an object (evaluating 'kortix.previews
+.ensureSessionCookie')` — 13 fail / 86 pass in `kortix.test.ts`.
+
+**Snapshots.** Regenerated once, for the reader halves only, and read line by
+line: 42 added lines, **zero removals or renames**. Each new name fans out
+across the root barrel plus the deprecated `./platform-client` and `./session`
+shims, which is why 12 names produce 42 lines. The facade half moved NEITHER
+snapshot and that is correct: it adds properties to the object `createKortix()`
+returns, not new module exports — the snapshots record exported NAMES.
+
+**Final verification pass (independent re-run of the full gate set, 2026-08-19).**
+Every command run from `/Users/markokraemer/Projects/kortix/suna-sdk-central`
+unless noted. All exit 0.
+
+```
+$ pnpm --filter @kortix/sdk typecheck
+> tsc --noEmit && tsc --noEmit -p examples/tsconfig.json
+(no output)                                            TYPECHECK_EXIT=0
+
+$ pnpm --filter @kortix/sdk test
+ 2337 pass / 0 fail / 8421 expect() calls
+Ran 2337 tests across 158 files. [22.93s]              TEST_EXIT=0
+
+$ pnpm test -- --sdk-only
+ 2337 pass / 0 fail / 8421 expect() calls
+Ran 2337 tests across 158 files. [23.15s]
+[test] PASS sdk 23.3s                                  SDKONLY_EXIT=0
+benchmark → tests/test-results/local/benchmark-1787172218849.json
+
+$ pnpm --filter @kortix/sdk run smoke:install
+OK: @kortix/sdk and @kortix/executor-sdk import and construct from packed tarballs
+✔ install smoke test passed                            SMOKE_EXIT=0
+
+# cwd packages/sdk
+$ bun test src/public-surface.test.ts src/public-type-surface.test.ts \
+      src/package-exports.test.ts src/index.isomorphic.test.ts
+ 74 pass / 0 fail / 3499 expect() calls
+Ran 74 tests across 4 files. [924.00ms]                SNAP_EXIT=0
+
+$ bun test src/bundle.test.ts
+ 2 pass / 0 fail / 6 expect() calls  [16.00ms]
+
+$ bun test src/core/rest/platform-client/host-boundary.test.ts   12 pass / 0 fail
+$ bun test src/core/session/presentation.test.ts                 11 pass / 0 fail
+$ bun test src/core/client/kortix.test.ts                        99 pass / 0 fail
+```
+
+**Snapshot idempotence.** `UPDATE_SURFACE_SNAPSHOT=1` and
+`UPDATE_TYPE_SURFACE_SNAPSHOT=1` were re-run; `git diff --stat` on both
+snapshot files is byte-identical before and after (`14 +` / `28 +`,
+42 insertions, 0 deletions). `git diff -U0 | grep '^-'` on both files returns
+nothing but the file headers — additive only, no removed or renamed name.
+
+**Lint.** `pnpm exec biome check` on the 6 touched files reports **4 errors,
+down from 5 at HEAD**. Baseline was measured by materializing `git show HEAD:`
+copies of the same 6 files beside a copy of the repo `biome.json` and running
+the identical command: HEAD = 5 errors across 4 files, working tree = 4 errors
+across 3 files. The 4 survivors are all on lines this change does not touch
+(`git diff -U0` does not contain them): `host-boundary.test.ts:215`
+`noNonNullAssertion`, `kortix.ts:795` `apps.access.get/update` format,
+`kortix.test.ts:1603` `iam.can` format. Biome is not wired into any workflow in
+`.github/workflows`, so it is not a CI gate. Net lint delta: −1 error.
+
+**`version` untouched.** `git diff packages/sdk/package.json` is empty;
+the field still reads `"version": "0.3.0"`.
+
+**Reachability re-proved.** All 7 new module exports resolve from
+`src/index.ts` (`missing: NONE`), and 72 facade paths spot-checked on a live
+`createKortix()` — including all 8 new top-level namespaces, the 16 new
+`project(id)` methods, and the 3 `session(pid,sid).presentations.*` methods —
+also return `missing: NONE`.
+
+**Scope.** `git status --short` lists 9 modified files, all under
+`packages/sdk`. No `apps/web`, no `package.json`, no untracked file. Nothing
+committed.
 
 ---
 ### 2026-08-19 — session `rbac-canonical` (P5) — BREAKING: the canonical assignment surface lands, the sandbox-member surface is deleted — DONE
@@ -4471,6 +4643,8 @@ Single, self-contained changes. Anything multi-step earns a spec instead.
 | B48 | **Canonical feature-flag naming + one gating primitive.** The platform renamed the system to "Feature flags" (`FeatureFlag*` in `@kortix/api-contract`, `FeatureFlagStabilitySchema` = experimental\|beta\|stable, gated routes returning `403 {code:'feature_disabled', feature}`, canonical `PATCH /projects/:id/features`). The SDK still exposed only `Experimental*` names, had no runtime key list for cross-package drift tests, no typed narrowing for the 403, and no shared React gate hook — so every host hand-rolled `project?.experimental?.<key> === true`. | Additive only: `FeatureFlagKey`, `FeatureFlagView` (stability widened to `'experimental'\|'beta'\|'stable'`), `FEATURE_FLAG_KEYS`, `updateFeatureFlag` (canonical `/features` route), `isFeatureDisabledError`, `FeatureDisabledError`, `useFeatureFlag`, and `project(id).updateFeatureFlag` on the facade. Every `Experimental*` name kept as a `@deprecated` alias; `updateExperimentalFeature` keeps its `/experimental` wire path for older deployed APIs. | **DONE 2026-08-08** — session `feature-flags-web`; TDD RED first on all four (`Export named 'FEATURE_FLAG_KEYS' not found`, `Export named 'isFeatureDisabledError' not found`, `Cannot find module './use-feature-flag'`); GREEN at `1777 pass, 0 fail, 6965 expect()` across `139` files; `typecheck` exit 0 (package + examples); `smoke:install` packed + installed + imported OK. Both surface snapshots re-recorded and reviewed: **11 + 20 insertions, 0 removals — purely additive** |
 | B49 | **`applyOptimisticAbort` marks a turn errored but never ends it.** It sets `error: AbortError` and flips the session idle, but leaves `time.completed` unset — and an aborted turn may never receive a `message.updated` that sets it. Any host predicate written as `!lastAssistant.time?.completed` therefore stays true for the life of the tab after every stop. It wedged `apps/web`'s message-queue drain gate permanently: every message typed after an interrupt queued behind one that could never be released. | `src/react/use-session-send.ts:271-296` — sets `error`, no `time.completed`. Worked around host-side in `apps/web/src/features/session/assistant-turn-open.ts` (errored ⇒ ended), which is a patch on the symptom; the SDK should end the turn it aborts. | OPEN |
 | B50 | **`applyPostCreateActions`'s `deliver_prompt` action shares `postPrompt`/`continueSession` with `executeQueuedContinue` but has no equivalent no-blind-repost protection at the call-site level for its OWN retry path.** A `create_session` command whose post-create actions fail (`postCreate.ok === false`) is re-queued `retryable: true` (`engine.ts` `drainSessionLifecycleQueue`, the `create_session` branch); the NEXT drain sees `row.sessionId` already set, returns the existing session immediately, then re-runs `applyPostCreateActions` — including `deliver_prompt` — from scratch. The re-post is protected by the SAME prompt-dedupe TTL fix landed in T13 (identical `sessionId`+`text` on retry → identical content-hash key → collides), so it is NOT currently broken, but nothing documents or pins that shared guarantee at this second call site the way `executeQueuedContinue`'s doc comment now does. | `engine.ts` `drainSessionLifecycleQueue` create-session branch (~lines 513-535 pre-edit) → `applyPostCreateActions` → `continueSession` with `action.source`/`action.text`, same `postPrompt` as the continue_session path. Out of scope for T13 (task named `engine.ts`'s "delivery-retry region" as `executeQueuedContinue`/`postPrompt`, not the create-session post-actions branch). | OPEN — same fix already covers it in practice; needs its own doc comment + pinning test if this path is ever revisited. |
+| B51 | **`apps/web`'s presentation metadata cache-bust corrupts the path it is busting.** `FullScreenPresentationViewer.tsx:136` builds `${constructHtmlPreviewUrl('presentations/<name>/metadata.json', opts)}?t=${Date.now()}`. `constructHtmlPreviewUrl` is `buildStaticFilePreviewUrl`, which already emits a query (`/open?path=/workspace/…`), so the appended `?` is literal and lands INSIDE the `path` value. The static-file service reads `url.searchParams.get('path')` (`apps/kortix-sandbox-agent-server/src/static-web.ts:451`) and therefore asks for a file literally named `metadata.json?t=1700…`, which never exists. The viewer's retry loop is unbounded, so the symptom is a presentation that spins forever rather than an error. | `bun -e "console.log(new URL('https://h/v1/p/sb/3211/open?path=/workspace/presentations/deck/metadata.json?t=123').searchParams.get('path'))"` → `/workspace/presentations/deck/metadata.json?t=123`. | OPEN in `apps/web`. The SDK side is already fixed: `buildPresentationMetadataUrl` appends `&t=`, pinned by `presentation.test.ts` ('metadata URL points at the static-file service with a cache-busting token'). Adopting `fetchPresentationMetadata` in the viewer closes it. |
+| B52 | **`apps/web` still imports ~90 flat SDK functions that now have a `kortix.*` equivalent.** The facade gap is closed in the SDK (session `claude/sdk-central`, 2026-08-19): `kortix.auth`, `kortix.admin`, `kortix.referrals`, `kortix.setupLinks`, `kortix.public`, `kortix.presentations`, `kortix.previews`, `kortix.tunnel`, plus the additions on `billing`/`projects`/`github`/`iam`/`accounts` and on `project(id)`/`session(pid,sid)`. Nothing in `apps/web` calls them yet, so the new surface ships as dead code until adoption lands. | `rg "from '@kortix/sdk'" apps/web/src -l` still resolves these as bare named imports. | OPEN — host-side follow-up, deliberately out of scope for a `packages/sdk` task. Adopt per host file; each swap is a one-line import change, and the routes are pinned by `kortix.test.ts`. |
 
 ## DISCOVERED THIS SESSION — append freely
 

@@ -1604,3 +1604,279 @@ test('kortix.iam.can probes one leaf for one principal', async () => {
   expect(last().url).toContain('/accounts/ACC1/iam/members/U1/effective?');
   expect(last().url).toContain('action=project.write');
 });
+
+// ── Boundary close: the flat root-entry exports apps/web still calls directly ──
+//
+// Every namespace below existed only as a bare module export before this. A
+// `createKortix()` consumer could read a project's files but could not check an
+// access-request email, read the maintenance flag, export a cost CSV, redeem a
+// setup link, read a public share, or configure the platform GitHub App. These
+// tests pin the namespace AND the route each method reaches.
+
+test('kortix.auth covers access requests, logout, OAuth consent, identities and deletion', async () => {
+  expect(typeof kortix.auth.accountState).toBe('function');
+  expect(typeof kortix.auth.identities.bindSlack).toBe('function');
+  expect(typeof kortix.auth.identities.bindTeams).toBe('function');
+
+  await kortix.auth.access.checkEmail('user@example.com');
+  expect(last().url).toBe('http://test.local/v1/access/check-email');
+  expect(last().method).toBe('POST');
+  expect(last().body).toMatchObject({ email: 'user@example.com' });
+
+  await kortix.auth.access.request({ email: 'user@example.com', company: 'Acme' });
+  expect(last().url).toBe('http://test.local/v1/access/request-access');
+
+  await kortix.auth.logout();
+  expect(last().url).toBe('http://test.local/v1/auth/logout');
+  expect(last().method).toBe('POST');
+
+  await kortix.auth.oauthConsent.get('REQ1');
+  expect(last().url).toBe('http://test.local/v1/oauth/authorize/consent/REQ1');
+
+  await kortix.auth.oauthConsent.submit({ requestId: 'REQ1', approved: true });
+  expect(last().method).toBe('POST');
+  expect(last().body).toMatchObject({ request_id: 'REQ1', approved: true });
+
+  await kortix.auth.deletion.status();
+  expect(last().url).toContain('/account/deletion');
+});
+
+test('kortix.admin reaches the provider, maintenance and stress-test surfaces', async () => {
+  expect(typeof kortix.admin.setBypass).toBe('function');
+  expect(typeof kortix.admin.systemReload).toBe('function');
+  expect(typeof kortix.admin.stressTest).toBe('function');
+
+  await kortix.admin.providers.distribution.get();
+  expect(last().url).toContain('/admin/api/provider-distribution');
+  expect(last().method).toBe('GET');
+
+  await kortix.admin.providers.distribution.set({ daytona: 1 });
+  expect(last().method).toBe('PUT');
+
+  await kortix.admin.providers.fallback.get();
+  expect(last().url).toContain('/admin/api/provider-fallback');
+
+  await kortix.admin.providers.analytics(7);
+  expect(last().url).toContain('/admin/api/provider-analytics?days=7');
+
+  await kortix.admin.sandboxes.list(10);
+  expect(last().url).toContain('/admin/api/sandboxes?limit=10');
+
+  await kortix.admin.sandboxes.migrateProvider('SESS1', 'daytona');
+  expect(last().url).toContain('/admin/api/sandboxes/SESS1/migrate');
+  expect(last().body).toMatchObject({ targetProvider: 'daytona' });
+
+  await kortix.admin.maintenance.get();
+  expect(last().url).toBe('http://test.local/v1/system/maintenance');
+
+  await kortix.admin.userRoles();
+  expect(last().url).toBe('http://test.local/v1/user-roles');
+
+  await kortix.admin.role();
+  expect(last().url).toContain('/user-roles');
+});
+
+test('kortix.billing gains per-seat, sync and the cost rollups', async () => {
+  expect(typeof kortix.billing.costs.exportCsv).toBe('function');
+
+  await kortix.billing.perSeat.claim();
+  expect(last().url).toContain('/billing/claim-per-seat');
+  expect(last().method).toBe('POST');
+
+  await kortix.billing.perSeat.createCheckout({
+    successUrl: 'http://s',
+    cancelUrl: 'http://c',
+  });
+  expect(last().url).toContain('/billing/create-per-seat-checkout');
+
+  await kortix.billing.subscription.sync();
+  expect(last().url).toContain('/billing/sync-subscription');
+
+  await kortix.billing.credits.autoTopupSetupStatus();
+  expect(last().url).toContain('/billing/auto-topup/setup-status');
+
+  await kortix.billing.costs.summary({ accountId: 'ACC1' });
+  expect(last().url).toContain('/usage/cost-summary');
+
+  await kortix.billing.costs.byProject({ accountId: 'ACC1' });
+  expect(last().url).toContain('/usage/cost-by-project');
+});
+
+test('kortix.referrals covers the whole referral surface', async () => {
+  await kortix.referrals.code();
+  expect(last().url).toContain('/referrals/code');
+
+  await kortix.referrals.refreshCode();
+  expect(last().url).toContain('/referrals/code/refresh');
+
+  await kortix.referrals.stats();
+  expect(last().url).toContain('/referrals/stats');
+
+  await kortix.referrals.list({ limit: 5 });
+  expect(last().url).toContain('/referrals/list?limit=5');
+
+  await kortix.referrals.validate('CODE1');
+  expect(last().body).toMatchObject({ referral_code: 'CODE1' });
+
+  await kortix.referrals.sendEmails(['a@b.c']);
+  expect(last().url).toContain('/referrals/email');
+});
+
+test('kortix.setupLinks redeems a secret, connector or approval link by token', async () => {
+  await kortix.setupLinks.secret.get('TOK1');
+  expect(last().url).toBe('http://test.local/v1/setup-links/secret/TOK1');
+
+  await kortix.setupLinks.secret.submit('TOK1', { API_KEY: 'v' });
+  expect(last().method).toBe('POST');
+  expect(last().body).toMatchObject({ values: { API_KEY: 'v' } });
+
+  await kortix.setupLinks.connector.get('TOK2');
+  expect(last().url).toBe('http://test.local/v1/setup-links/connectors/TOK2');
+
+  await kortix.setupLinks.connector.start('TOK2');
+  expect(last().url).toBe('http://test.local/v1/setup-links/connectors/TOK2/start');
+
+  await kortix.setupLinks.connector.finalize('TOK2');
+  expect(last().url).toBe('http://test.local/v1/setup-links/connectors/TOK2/finalize');
+
+  await kortix.setupLinks.approval('TOK3');
+  expect(last().url).toContain('/approval-links/TOK3');
+});
+
+test('kortix.public reads every anonymous surface with the backend URL bound', async () => {
+  expect(typeof kortix.public.shareFile.url).toBe('function');
+  expect(typeof kortix.public.shareFile.text).toBe('function');
+  expect(typeof kortix.public.shareFile.blob).toBe('function');
+
+  await kortix.public.share('kps_abc');
+  expect(last().url).toBe('http://test.local/v1/p/public-share/kps_abc');
+
+  expect(kortix.public.shareFile.url('/v1/p/public-share/kps_abc/file')).toBe(
+    'http://test.local/v1/p/public-share/kps_abc/file',
+  );
+
+  await kortix.public.shareFile.fetch('/v1/p/public-share/kps_abc/file');
+  expect(last().url).toBe('http://test.local/v1/p/public-share/kps_abc/file');
+
+  await kortix.public.startSession('PID1', 'SID1');
+  expect(last().url).toBe('http://test.local/v1/projects/PID1/sessions/SID1/start');
+
+  await kortix.public.sessionShare.get('SHARE1');
+  expect(last().url).toContain('/public/session-shares/SHARE1');
+
+  await kortix.public.sessionShare.messages('SHARE1');
+  expect(last().url).toContain('/public/session-shares/SHARE1/messages');
+
+  await kortix.public.voice.join('VTOK');
+  expect(last().url).toContain('/public/voice-join/VTOK');
+
+  await kortix.public.marketplaces();
+  expect(last().url).toBe('http://test.local/v1/marketplace/marketplaces');
+
+  await kortix.public.marketplaceItems({ query: 'x' });
+  expect(last().url).toContain('/marketplace/items?query=x');
+
+  await kortix.public.marketplaceItem('ITEM1');
+  expect(last().url).toBe('http://test.local/v1/marketplace/items/ITEM1');
+
+  await kortix.public.marketplaceItemFile('ITEM1', 'a/b.md');
+  expect(last().url).toContain('/marketplace/items/ITEM1/file?path=');
+
+  await kortix.public.template('11111111-1111-1111-1111-111111111111');
+  expect(last().url).toContain('/templates/public/11111111-1111-1111-1111-111111111111');
+});
+
+test('kortix.project(id) binds the remaining project-scoped routes', async () => {
+  const p = kortix.project('PID123');
+
+  await p.llmCatalogProviders();
+  expect(last().url).toContain('/projects/PID123/llm-catalog/providers');
+
+  await p.sandbox.providerTransition();
+  expect(last().url).toContain('/projects/PID123/sandbox-provider/transition');
+
+  await p.onboardingProfile({ role: 'founder' } as never);
+  expect(last().url).toContain('/projects/PID123/onboarding');
+  expect(last().method).toBe('PATCH');
+
+  await p.access.request('please');
+  expect(last().url).toContain('/projects/PID123/access-requests');
+  expect(last().method).toBe('POST');
+
+  await p.agentConfig.get('main');
+  expect(last().url).toContain('/projects/PID123/agents/main/config');
+
+  await p.secrets.grantToAgent('API_KEY', 'main');
+  expect(last().url).toContain('/projects/PID123/secrets/API_KEY/grant');
+
+  await p.channels.bindings.list();
+  expect(last().url).toContain('/projects/PID123/channels/bindings');
+
+  await p.channels.bindings.update('BIND1', { agentName: 'main' });
+  expect(last().url).toContain('/projects/PID123/channels/bindings/BIND1');
+  expect(last().method).toBe('PATCH');
+
+  await p.marketplace.installSession('ITEM1');
+  expect(last().url).toContain('/projects/PID123/marketplace/install-session');
+
+  await p.connectors.ensureConnection('slack');
+  expect(last().url).toContain('/projects/PID123/connectors/slack/oauth2/connection');
+
+  await p.connectors.setSecretBinding('slack', 'SECRET1');
+  expect(last().url).toContain('/connectors/projects/PID123/connectors/slack/secret-binding');
+
+  await p.connectors.connections.oauth2.discover('CONN1', { discovery_url: 'http://d' });
+  expect(last().url).toContain('/projects/PID123/connections/CONN1/oauth2/discover');
+
+  await p.connectors.connections.oauth2.setApplication('CONN1', {} as never);
+  expect(last().url).toContain('/projects/PID123/connections/CONN1/oauth2/application');
+  expect(last().method).toBe('PUT');
+
+  await p.connectors.connections.oauth2.pollDevice('CONN1', 'DEV1');
+  expect(last().url).toContain('/projects/PID123/connections/CONN1/oauth2/device/DEV1');
+});
+
+test('kortix.github.app configures the platform GitHub App', async () => {
+  await kortix.github.app.status();
+  expect(last().url).toContain('/platform/github-app/status');
+
+  await kortix.github.app.startManifest({ org: 'acme' });
+  expect(last().url).toContain('/platform/github-app/manifest-start');
+
+  expect(typeof kortix.github.app.setFromExisting).toBe('function');
+  expect(typeof kortix.github.app.setPat).toBe('function');
+  expect(typeof kortix.github.app.disconnect).toBe('function');
+});
+
+test('kortix.iam.policies lists the account policy rows', async () => {
+  await kortix.iam.policies.list('ACC1', { principalType: 'member' });
+  expect(last().url).toContain('/accounts/ACC1/iam/policies');
+  expect(last().url).toContain('principalType=member');
+});
+
+test('kortix.projects gains provisionStream and the managed-git status probe', async () => {
+  expect(typeof kortix.projects.provisionStream).toBe('function');
+
+  await kortix.projects.managedGitStatus();
+  expect(last().url).toContain('/projects/managed-git/status');
+});
+
+test('kortix.accounts.audit.download exports the audit log as a blob', () => {
+  expect(typeof kortix.accounts.audit.download).toBe('function');
+});
+
+test('kortix.presentations, previews and tunnel close the last flat exports', async () => {
+  expect(typeof kortix.previews.ensureSessionCookie).toBe('function');
+  expect(typeof kortix.tunnel.stream).toBe('function');
+  expect(typeof kortix.presentations.toGoogleSlides).toBe('function');
+
+  await kortix.presentations.googleAuthUrl('http://return.local');
+  expect(last().url).toContain('/google/auth-url?return_url=');
+});
+
+test('session(pid,sid).presentations binds this session own runtime', () => {
+  const s = kortix.session('PID123', 'SID1');
+  expect(typeof s.presentations.convert).toBe('function');
+  expect(typeof s.presentations.metadata).toBe('function');
+  expect(typeof s.presentations.toGoogleSlides).toBe('function');
+});

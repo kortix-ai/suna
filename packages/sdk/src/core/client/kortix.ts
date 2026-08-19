@@ -17,11 +17,23 @@ import type { OpencodeClient } from '@opencode-ai/sdk/v2/client';
  * for ergonomics. Reactive data still comes from `@kortix/sdk/react` hooks.
  */
 import * as F from '../files/client';
-import { getClient, getClientForUrl } from '../runtime/client';
+import { getClient, getClientForUrl, systemReload } from '../runtime/client';
+import { setAdminBypass } from '../http/api-client';
 import { ApiError } from '../http/api/errors';
 import { type KortixPlatformConfig, configureKortix, platformConfig } from '../http/config';
+import * as B from '../rest/platform-client';
 import * as P from '../rest/projects-client';
 import { getSessionHealth } from '../session/health';
+import {
+  type ConvertRuntimePresentationOptions,
+  type FetchPresentationMetadataOptions,
+  type RuntimePresentationFormat,
+  type RuntimePresentationMetadata,
+  convertRuntimePresentation,
+  fetchPresentationMetadata,
+} from '../session/presentation';
+import { ensurePreviewSessionCookie } from '../session/preview-auth';
+import { createTunnelEventStream } from '../stream/fetch-sse';
 import { type SubdomainUrlOptions, proxyLocalhostUrl, rewriteLocalhostUrl } from '../session/url';
 import { setCurrentRuntime } from '../session/current-runtime';
 import {
@@ -134,6 +146,35 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     return { sandboxId, backendPort, apiBaseUrl };
   }
 
+  /**
+   * The API base URL in effect right now.
+   *
+   * Reads the LIVE platform config for the same reason
+   * `resolvePreviewOptsForSandbox` does: a host may re-point the seam after
+   * `createKortix()` and every URL the facade builds must follow it.
+   */
+  function backendUrlNow(): string {
+    return platformConfig().backendUrl ?? config.backendUrl;
+  }
+
+  /**
+   * Fill in `backendUrl` for a host-boundary call.
+   *
+   * The readers in `platform-client/host-boundary` take an EXPLICIT
+   * `HostRequestOptions` because they use raw `fetch` (never `backendApi`) —
+   * that is what lets an anonymous visitor, a server action with a
+   * request-scoped token, or a download reach the API without the configured
+   * client. The facade already knows the backend URL, so callers pass only what
+   * varies (`accessToken`, `signal`, `cache`, `next`, `headers`), and an
+   * explicit `backendUrl` still wins.
+   *
+   * No token is attached here: these routes are authorized by the token in the
+   * path (a share/setup-link/invite token) or by nothing at all.
+   */
+  function hostOptions(options?: Partial<B.HostRequestOptions>): B.HostRequestOptions {
+    return { ...options, backendUrl: options?.backendUrl ?? backendUrlNow() };
+  }
+
   /** Account-scoped operations. */
   const accounts = {
     list: P.listAccounts,
@@ -160,6 +201,17 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     audit: {
       log: P.listAccountAudit,
       export: P.exportAccountAudit,
+      /**
+       * The same export as a downloadable Blob + its `Content-Disposition`
+       * filename and the `x-audit-*` paging headers. Explicit-transport (raw
+       * `fetch`) because `backendApi` only ever parses JSON — pass
+       * `accessToken` when calling from a server action.
+       */
+      download: (
+        accountId: string,
+        query: Parameters<typeof B.downloadAccountAudit>[1],
+        options?: Partial<B.HostRequestOptions>,
+      ) => B.downloadAccountAudit(accountId, query, hostOptions(options)),
       webhooks: {
         list: P.listAccountAuditWebhooks,
         create: P.createAccountAuditWebhook,
@@ -216,6 +268,14 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     /** Auto-provisioned agent identities — the principal picker for binding a
      *  role to an agent. */
     agentIdentities: P.listAgentIdentities,
+    /**
+     * The policy rows behind the assignments — read-only. `assignments` is
+     * still the only grant store; this is the diagnostic view of what the
+     * engine holds for a principal or a scope.
+     */
+    policies: {
+      list: P.listPolicies,
+    },
     /** Ask the engine. This is the ONLY authorization read a client should make:
      *  probe the LEAF a route asserts, never a role label. */
     can: P.probeEffectivePermission,
@@ -264,6 +324,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       cancelScheduledChange: (accountId?: string) => P.cancelScheduledChange(accountId),
       prorationPreview: (newPriceId: string, accountId?: string) =>
         P.getProrationPreview(newPriceId, accountId),
+      /** Re-read Stripe and rewrite the local subscription record (repair path). */
+      sync: P.syncSubscription,
     },
 
     /** One-off credit purchases + recurring auto-topup configuration. */
@@ -272,6 +334,29 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       autoTopupSettings: (accountId?: string) => P.getAutoTopupSettings(accountId),
       configureAutoTopup: (input: Parameters<typeof P.configureAutoTopup>[0]) =>
         P.configureAutoTopup(input),
+      /** Can auto-topup actually charge? (a payment method must exist). */
+      autoTopupSetupStatus: P.getAutoTopupSetupStatus,
+    },
+
+    /** Per-seat (team) billing — the seat-count subscription, not credits. */
+    perSeat: {
+      createCheckout: P.createPerSeatCheckout,
+      /** Move an existing account onto per-seat billing and settle the credit. */
+      claim: P.claimPerSeatBilling,
+    },
+
+    /**
+     * Spend rollups over finalized LLM + compute cost (`/v1/usage/cost-*`).
+     * `sessionCosts` above is the per-session record; this is the aggregate.
+     */
+    costs: {
+      summary: P.getCostSummary,
+      byProject: P.listCostByProject,
+      /**
+       * CSV export as a Blob. It is a real authenticated `fetch`, not a URL:
+       * the route requires a Bearer token, so a bare `<a href>` 401s.
+       */
+      exportCsv: P.fetchCostExportCsv,
     },
   };
 
@@ -297,6 +382,14 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     /** Create a project backed by a brand-new Kortix-managed GitHub repo. */
     createRepo: P.createProjectRepo,
     provision: P.provisionProject,
+    /**
+     * Same provision, with server-observed progress events. Browser/Bun only —
+     * React Native has no streaming response body, so RN hosts call
+     * `provision` instead.
+     */
+    provisionStream: P.provisionProjectStream,
+    /** Is Kortix-managed git configured on this deployment? (self-host may not be). */
+    managedGitStatus: P.getManagedGitStatus,
     update: P.updateProject,
     archive: P.archiveProject,
     llmCatalog: P.getProjectLlmCatalog,
@@ -318,6 +411,18 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     linkInstallation: P.linkGitHubInstallation,
     saveInstallation: P.saveGitHubInstallation,
     deleteInstallation: P.deleteGitHubInstallation,
+    /**
+     * The PLATFORM's own GitHub App (self-host setup), not a user's
+     * installation: create one from a manifest, paste an existing one, fall
+     * back to a PAT, or disconnect managed-git entirely.
+     */
+    app: {
+      status: B.getGitHubAppStatus,
+      startManifest: B.startGitHubAppManifest,
+      setFromExisting: B.setGitHubAppFromExisting,
+      setPat: B.setGitHubAppPat,
+      disconnect: B.disconnectGitHubApp,
+    },
   };
 
   /** Public share links for a sandbox port (`/v1/p/share`) — sandbox-scoped, not project-scoped. */
@@ -348,6 +453,239 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       add: (input: Parameters<typeof P.addMarketplaceSource>[0]) => P.addMarketplaceSource(input),
       remove: (id: string) => P.removeMarketplaceSource(id),
     },
+  };
+
+  /**
+   * Identity at the platform edge — everything about WHO the caller is that is
+   * not an account/project grant (that is `iam`).
+   *
+   * Most of these are host-boundary calls: the caller is anonymous (waitlist,
+   * OAuth consent screen) or is a server action holding a request-scoped token.
+   * The facade supplies the backend URL; pass `accessToken` when you have one.
+   */
+  const auth = {
+    /** Waitlist / allowlist gate on the sign-up page. */
+    access: {
+      checkEmail: <T = Record<string, unknown>>(
+        email: string,
+        options?: Partial<B.HostRequestOptions>,
+      ) => B.checkAccessEmail<T>(email, hostOptions(options)),
+      request: (
+        input: Parameters<typeof B.submitAccessRequest>[0],
+        options?: Partial<B.HostRequestOptions>,
+      ) => B.submitAccessRequest(input, hostOptions(options)),
+    },
+    /** Tell the API the session ended (audit trail + server-side cleanup). */
+    logout: (options?: Partial<B.HostRequestOptions>) =>
+      B.recordPlatformLogout(hostOptions(options)),
+    /**
+     * Read the account's app-access state with an EXPLICIT token — the
+     * server-side post-auth redirect decision, made before any client exists.
+     * Never throws: `null` means "can't tell yet".
+     */
+    accountState: P.fetchAccountStateWithToken,
+    /** The OAuth 2.1 consent screen a third-party client is redirected to. */
+    oauthConsent: {
+      get: (requestId: string, options?: Partial<B.HostRequestOptions>) =>
+        B.getOAuthConsentRequest(requestId, hostOptions(options)),
+      submit: (
+        input: Parameters<typeof B.submitOAuthConsent>[0],
+        options?: Partial<B.HostRequestOptions>,
+      ) => B.submitOAuthConsent(input, hostOptions(options)),
+    },
+    /** Link a chat-platform user id to this Kortix account, by one-time token. */
+    identities: {
+      bindSlack: P.bindSlackIdentity,
+      bindTeams: P.bindTeamsIdentity,
+    },
+    /** Self-serve account deletion (scheduled, cancellable, or immediate). */
+    deletion: {
+      status: P.getAccountDeletionStatus,
+      request: P.requestAccountDeletion,
+      cancel: P.cancelAccountDeletion,
+      deleteNow: P.deleteAccountImmediately,
+    },
+  };
+
+  /**
+   * Platform-operator surface (`/admin/*`, `/system/*`). Every call is
+   * authorization-gated server-side for a platform admin — the namespace being
+   * present on the facade grants nothing.
+   */
+  const admin = {
+    /** Is the caller a platform admin, and at which level? */
+    role: P.getAdminRole,
+    /** Same row, read with an EXPLICIT token (server-side gate). */
+    userRoles: <T = unknown[]>(options?: Partial<B.HostRequestOptions>) =>
+      B.getUserRolesWithToken<T>(hostOptions(options)),
+    sandboxes: {
+      list: P.listAdminSandboxes,
+      migrateProvider: P.migrateAdminSandboxProvider,
+    },
+    /** Sandbox-provider weighting, analytics, and the cross-provider fallback. */
+    providers: {
+      analytics: P.getAdminProviderAnalytics,
+      distribution: {
+        get: P.getAdminProviderDistribution,
+        set: P.setAdminProviderDistribution,
+      },
+      fallback: {
+        get: P.getAdminProviderFallback,
+        set: P.setAdminProviderFallback,
+      },
+    },
+    /** The maintenance-window banner + hard gate. */
+    maintenance: {
+      get: <T>(options?: Partial<B.HostRequestOptions>) =>
+        B.getMaintenanceConfig<T>(hostOptions(options)),
+      set: <T>(maintenanceConfig: T, options?: Partial<B.HostRequestOptions>) =>
+        B.setMaintenanceConfig<T>(maintenanceConfig, hostOptions(options)),
+    },
+    /** Raw NDJSON progress stream of an admin stress-test run. */
+    stressTest: (input: Record<string, unknown>, options?: Partial<B.HostRequestOptions>) =>
+      B.openStressTestStream(input, hostOptions(options)),
+    /**
+     * Read-only admin bypass for THIS client. Not an HTTP call — it flips a
+     * module-level flag that makes every later request carry
+     * `x-kortix-admin-bypass: 1`; the API honors it only for a real platform
+     * admin on a `read` action. In-memory and process-wide, so it is shared by
+     * every `createKortix()` instance in the tab and resets on reload.
+     */
+    setBypass: setAdminBypass,
+    /**
+     * Reload the ACTIVE sandbox runtime's own services (opencode
+     * `/kortix/refresh` or `/global/dispose`). Runtime-scoped, not REST —
+     * requires a globally-active runtime, unlike the session handle's methods.
+     */
+    systemReload,
+  };
+
+  /** Referral program — the account's own code, its stats, and invitations. */
+  const referrals = {
+    code: P.getReferralCode,
+    refreshCode: P.refreshReferralCode,
+    validate: P.validateReferralCode,
+    stats: P.getReferralStats,
+    list: P.listReferrals,
+    sendEmails: P.sendReferralEmails,
+  };
+
+  /**
+   * REDEEMING a setup link — the recipient side, addressed by token alone.
+   * `project(id).setupLinks` is the other half: an agent MINTING one.
+   *
+   * The secret and connector links carry their own authority (that is the
+   * point — the recipient is often not a Kortix user). `approval` does not: the
+   * token only says which decision is being asked for, so the caller must be a
+   * signed-in manager on that project.
+   */
+  const setupLinks = {
+    secret: {
+      get: (token: string, options?: Partial<B.HostRequestOptions>) =>
+        B.getSecretSetupLink(token, hostOptions(options)),
+      submit: (
+        token: string,
+        values: Record<string, string>,
+        options?: Partial<B.HostRequestOptions>,
+      ) => B.submitSecretSetupLink(token, values, hostOptions(options)),
+    },
+    connector: {
+      get: (token: string, options?: Partial<B.HostRequestOptions>) =>
+        B.getConnectorSetupLink(token, hostOptions(options)),
+      start: (token: string, options?: Partial<B.HostRequestOptions>) =>
+        B.startConnectorSetupLink(token, hostOptions(options)),
+      finalize: (token: string, options?: Partial<B.HostRequestOptions>) =>
+        B.finalizeConnectorSetupLink(token, hostOptions(options)),
+    },
+    /** REQUIRES a signed-in manager/launcher on the project (401/403 otherwise). */
+    approval: P.getApprovalLink,
+  };
+
+  /**
+   * Anonymous reads — the logged-out surfaces (a shared session, a public
+   * template, the marketplace catalog, a voice join link).
+   *
+   * No Authorization header is ever attached: the token in the path IS the
+   * authorization, and a share can be revoked at any moment. The facade only
+   * binds the backend URL.
+   */
+  const publicApi = {
+    /** Resolve a `kps_…` share token into its metadata. */
+    share: <T = Record<string, unknown>>(token: string, options?: Partial<B.HostRequestOptions>) =>
+      B.getPublicShareByToken<T>(token, hostOptions(options)),
+    /**
+     * The BODY of a `resource_type: 'file'` share. Pass the `proxy_path` the
+     * share metadata carries — it already includes the `/v1` prefix, so this
+     * joins it to the API ORIGIN, not the API base.
+     */
+    shareFile: {
+      url: (proxyPath: string) => B.buildPublicShareFileUrl(backendUrlNow(), proxyPath),
+      fetch: (proxyPath: string, options?: B.PublicShareFileOptions) =>
+        B.fetchPublicShareFile(backendUrlNow(), proxyPath, options),
+      text: (proxyPath: string, options?: B.PublicShareFileOptions) =>
+        B.readPublicShareFileText(backendUrlNow(), proxyPath, options),
+      blob: (proxyPath: string, options?: B.PublicShareFileOptions) =>
+        B.readPublicShareFileBlob(backendUrlNow(), proxyPath, options),
+    },
+    /** Start a session with an explicit request-scoped token (server action). */
+    startSession: (projectId: string, sessionId: string, options?: Partial<B.HostRequestOptions>) =>
+      B.startSessionWithToken(projectId, sessionId, hostOptions(options)),
+    /** A publicly shared session transcript, by share id. */
+    sessionShare: {
+      get: P.getPublicSessionShare,
+      messages: P.getPublicSessionShareMessages,
+    },
+    /** A voice join link: the LiveKit credentials, and the call's transcript. */
+    voice: {
+      join: P.getPublicVoiceJoin,
+      transcript: P.getPublicVoiceTranscript,
+    },
+    /** A publicly shared project template, by share id. */
+    template: <T>(shareId: string, signal?: AbortSignal) =>
+      B.getPublicTemplate<T>(backendUrlNow(), shareId, signal),
+    marketplaces: <T = { marketplaces: unknown[] }>(options?: Partial<B.HostRequestOptions>) =>
+      B.listPublicMarketplaces<T>(hostOptions(options)),
+    marketplaceItems: <T = { items: unknown[] }>(
+      query?: B.PublicMarketplaceQuery,
+      options?: Partial<B.HostRequestOptions>,
+    ) => B.listPublicMarketplaceItems<T>(hostOptions(options), query),
+    marketplaceItem: <T = Record<string, unknown>>(
+      id: string,
+      options?: Partial<B.HostRequestOptions>,
+    ) => B.getPublicMarketplaceItem<T>(id, hostOptions(options)),
+    marketplaceItemFile: <T = Record<string, unknown>>(
+      id: string,
+      path: string,
+      options?: Partial<B.HostRequestOptions>,
+    ) => B.getPublicMarketplaceItemFile<T>(id, path, hostOptions(options)),
+  };
+
+  /**
+   * Presentation export (`/v1/google/*`, `/v1/presentation-tools/*`).
+   * The runtime-side conversion + metadata read live on the SESSION handle
+   * (`session(pid, sid).presentations`) — they need that session's own sandbox.
+   */
+  const presentations = {
+    /** Google OAuth consent URL for the Slides upload. */
+    googleAuthUrl: P.getGoogleAuthUrl,
+    /** Convert a workspace presentation and upload it to Google Slides. */
+    toGoogleSlides: P.convertPresentationToGoogleSlides,
+  };
+
+  /** Preview-proxy access (the `__preview_session` cookie an iframe needs). */
+  const previews = {
+    /**
+     * Mint/refresh the preview cookie for a preview URL's proxy origin. Never
+     * throws — `false` means "not a preview URL, no token, or the exchange
+     * failed", and callers proceed and let the proxy answer.
+     */
+    ensureSessionCookie: ensurePreviewSessionCookie,
+  };
+
+  /** Deployment tunnel events (`/v1/tunnel/events`), with the API URL bound. */
+  const tunnel = {
+    stream: (options: Parameters<typeof createTunnelEventStream>[1]) =>
+      createTunnelEventStream(backendUrlNow(), options),
   };
 
   /** Id-bound handle for a single project: every sub-resource, projectId pre-applied. */
@@ -392,6 +730,26 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         P.pipedreamConnectConnection(projectId, ...a),
       pipedreamFinalize: (...a: DropFirst<Parameters<typeof P.pipedreamFinalizeConnection>>) =>
         P.pipedreamFinalizeConnection(projectId, ...a),
+      /**
+       * Bring-your-own OAuth 2.1 app on ONE connection: register the client,
+       * discover the provider's metadata, then run either the redirect or the
+       * device-code grant. The device grant is the one an agent can drive
+       * headlessly — start it, show the user the code, then poll.
+       */
+      oauth2: {
+        setApplication: (...a: DropFirst<Parameters<typeof P.putConnectionOAuth2Application>>) =>
+          P.putConnectionOAuth2Application(projectId, ...a),
+        discover: (...a: DropFirst<Parameters<typeof P.discoverConnectionOAuth2>>) =>
+          P.discoverConnectionOAuth2(projectId, ...a),
+        authorize: (...a: DropFirst<Parameters<typeof P.startConnectionOAuth2Authorization>>) =>
+          P.startConnectionOAuth2Authorization(projectId, ...a),
+        startDevice: (
+          ...a: DropFirst<Parameters<typeof P.startConnectionOAuth2DeviceAuthorization>>
+        ) => P.startConnectionOAuth2DeviceAuthorization(projectId, ...a),
+        pollDevice: (
+          ...a: DropFirst<Parameters<typeof P.pollConnectionOAuth2DeviceAuthorization>>
+        ) => P.pollConnectionOAuth2DeviceAuthorization(projectId, ...a),
+      },
     };
     return {
       get: (opts?: Parameters<typeof P.getProject>[1]) => P.getProject(projectId, opts),
@@ -402,10 +760,30 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       update: (input: Parameters<typeof P.updateProject>[1]) => P.updateProject(projectId, input),
       archive: () => P.archiveProject(projectId),
       llmCatalog: () => P.getProjectLlmCatalog(projectId),
+      /** The PROVIDER rows of the live catalog — works for non-gateway projects too. */
+      llmCatalogProviders: (options?: Parameters<typeof P.getProjectLlmCatalogProviders>[1]) =>
+        P.getProjectLlmCatalogProviders(projectId, options),
       modelPicker: () => P.getProjectModelPicker(projectId),
       sandboxHealth: () => P.getProjectSandboxHealth(projectId),
       onboardingComplete: (...a: DropFirst<Parameters<typeof P.setProjectOnboardingComplete>>) =>
         P.setProjectOnboardingComplete(projectId, ...a),
+      /**
+       * Save the onboarding SURVEY answers. Deliberately separate from
+       * `onboardingComplete`: sending completion from a survey save would end
+       * onboarding at the first question.
+       */
+      onboardingProfile: (profile: Parameters<typeof P.setProjectOnboardingProfile>[1]) =>
+        P.setProjectOnboardingProfile(projectId, profile),
+      /** The agent block a `kortix.yaml` declares — read and rewrite it. */
+      agentConfig: {
+        get: (agentName: string) => P.getAgentConfig(projectId, agentName),
+        update: (...a: DropFirst<Parameters<typeof P.updateAgentConfig>>) =>
+          P.updateAgentConfig(projectId, ...a),
+      },
+      /** Install a marketplace item into this project (commits onto its branch). */
+      marketplace: {
+        installSession: (itemId: string) => P.createMarketplaceInstallSession(projectId, itemId),
+      },
 
       /** Provider-neutral serverless Apps owned by this project. */
       apps: {
@@ -486,10 +864,19 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
           P.pollProjectProviderOAuth(projectId, ...a),
         removeProviderOAuth: (provider: string) =>
           P.deleteProjectProviderOAuth(projectId, provider),
+        /**
+         * Declare one secret for one agent — the one-click fix for a
+         * `no_agent_grant` delivery verdict. Distinct from `setAgentScope`,
+         * which REPLACES an agent's whole grant set.
+         */
+        grantToAgent: (...a: DropFirst<Parameters<typeof P.grantSecretToAgent>>) =>
+          P.grantSecretToAgent(projectId, ...a),
       },
 
       access: {
         list: () => P.listProjectAccess(projectId),
+        /** Ask for access to a project you cannot open (non-member path). */
+        request: (message?: string) => P.requestProjectAccess(projectId, message),
         invite: (...a: DropFirst<Parameters<typeof P.inviteProjectMember>>) =>
           P.inviteProjectMember(projectId, ...a),
         update: (...a: DropFirst<Parameters<typeof P.updateProjectAccess>>) =>
@@ -545,6 +932,11 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
           P.setConnectorCredential(projectId, ...a),
         setSensitive: (...a: DropFirst<Parameters<typeof P.setConnectorSensitive>>) =>
           P.setConnectorSensitive(projectId, ...a),
+        /** Point a connector at a project secret for its credential (null unbinds). */
+        setSecretBinding: (...a: DropFirst<Parameters<typeof P.setConnectorSecretBinding>>) =>
+          P.setConnectorSecretBinding(projectId, ...a),
+        /** Get (or create) the connection row an OAuth 2.1 flow needs for a connector. */
+        ensureConnection: (slug: string) => P.ensureProjectConnectorConnection(projectId, slug),
         connections,
         policies: {
           get: (...a: DropFirst<Parameters<typeof P.getConnectorPolicies>>) =>
@@ -703,6 +1095,16 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
 
       /** Slack + email + Meet channel connections. */
       channels: {
+        /**
+         * The per-conversation bindings a channel installation owns (which
+         * agent, which model, which conversation policy for one Slack channel
+         * or email address).
+         */
+        bindings: {
+          list: () => P.listChannelBindings(projectId),
+          update: (...a: DropFirst<Parameters<typeof P.updateChannelBinding>>) =>
+            P.updateChannelBinding(projectId, ...a),
+        },
         slack: {
           installation: () => P.getSlackInstallation(projectId),
           connect: (input: Parameters<typeof P.connectSlack>[1]) =>
@@ -768,6 +1170,13 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         /** Pin/clear the per-project sandbox provider (null = follow the platform default). */
         setProvider: (provider: Parameters<typeof P.updateProjectSandboxProvider>[1]) =>
           P.updateProjectSandboxProvider(projectId, provider),
+        /**
+         * Poll the durable provider migration `setProvider` starts when it
+         * returns `kind: 'preparation'`, until `latest` is terminal or null.
+         */
+        providerTransition: (
+          options?: Parameters<typeof P.getProjectSandboxProviderTransition>[1],
+        ) => P.getProjectSandboxProviderTransition(projectId, options),
       },
 
       /** Bind specific secrets + connectors to an agent (the inheritance pyramid's declaration step). */
@@ -1085,6 +1494,47 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       proxyUrl: (url?: string) =>
         proxyLocalhostUrl(url, resolvePreviewOptsForSandbox(requireReady('proxyUrl').sandboxId)),
 
+      /**
+       * Presentations the agent wrote into THIS session's workspace.
+       *
+       * Every call resolves this handle's own runtime first (same contract as
+       * `send`/`files`) — never the module-global "active" sandbox, so a host
+       * with two open sessions cannot read one session's deck through the
+       * other's proxy. The account-level export helpers (`googleAuthUrl`) stay
+       * on the top-level `presentations` namespace.
+       */
+      presentations: {
+        /** Convert `presentations/<name>/` to a PDF or PPTX Blob (polls while it renders). */
+        convert: async (
+          format: RuntimePresentationFormat,
+          presentationPath: string,
+          options?: ConvertRuntimePresentationOptions,
+        ) =>
+          convertRuntimePresentation(
+            format,
+            (await ensureReady()).runtimeUrl,
+            presentationPath,
+            options,
+          ),
+        /**
+         * Read one presentation's `metadata.json` off the static-file service.
+         * A deck is written slide by slide, so "not there yet" comes back as
+         * `status: 'not-ready'` — never thrown. The caller owns the retry cadence.
+         */
+        metadata: async <T = RuntimePresentationMetadata>(
+          presentationName: string,
+          fetchOptions?: FetchPresentationMetadataOptions,
+        ) =>
+          fetchPresentationMetadata<T>(
+            presentationName,
+            resolvePreviewOptsForSandbox((await ensureReady()).sandboxId),
+            fetchOptions,
+          ),
+        /** Upload this session's deck to Google Slides (needs `presentations.googleAuthUrl` first). */
+        toGoogleSlides: async (presentationPath: string) =>
+          P.convertPresentationToGoogleSlides(presentationPath, (await ensureReady()).runtimeUrl),
+      },
+
       // ── agent actions (opinionated wrappers over the runtime) ────────────
       // These do the right thing end-to-end for scripts/non-React hosts: ensure
       // the runtime is up, resolve the OpenCode session id, and act through a
@@ -1276,6 +1726,22 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     connectStatus,
     /** Public marketplace catalog browse + sources (`/v1/marketplace/*`, not project-scoped). */
     marketplace,
+    /** Identity at the platform edge — access requests, consent, logout, deletion. */
+    auth,
+    /** Platform-operator surface (`/admin/*`, `/system/*`) — gated server-side. */
+    admin,
+    /** Referral program — code, stats, invitations. */
+    referrals,
+    /** REDEEM a setup link by token (`project(id).setupLinks` mints them). */
+    setupLinks,
+    /** Anonymous reads — shared sessions, public templates, the catalog, voice links. */
+    public: publicApi,
+    /** Presentation export (Google Slides). Runtime-side conversion is on the session handle. */
+    presentations,
+    /** Preview-proxy cookie exchange for an embedded preview. */
+    previews,
+    /** Deployment tunnel event stream. */
+    tunnel,
     /** The pasted-API-key UX check — `GET /accounts/me`, never throws. */
     validateToken: P.validateToken,
     /** Escape hatch: the typed opencode client for the active sandbox. */
