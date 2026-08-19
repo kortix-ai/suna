@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import type { ApiClient } from '../api/client.ts';
+import { ApiError, type ApiClient } from '../api/client.ts';
 import type { ProjectSummary } from '../api/types.ts';
 import {
   authHeaderArgs,
@@ -216,8 +216,80 @@ test('ship reconciles the remote manifest independently of connector prompts', a
 
   expect(calls).toEqual([
     {
-      path: '/executor/projects/proj_1/connectors/sync',
+      path: '/connectors/projects/proj_1/connectors/sync',
       body: undefined,
     },
   ]);
+});
+
+describe('stale-CLI warning on a 404 from the connector routes', () => {
+  function stderrCapture() {
+    const chunks: string[] = [];
+    const original = process.stderr.write.bind(process.stderr);
+    (process.stderr as unknown as { write: unknown }).write = ((chunk: unknown) => {
+      chunks.push(String(chunk));
+      return true;
+    }) as unknown as typeof process.stderr.write;
+    return {
+      chunks,
+      restore: () => {
+        (process.stderr as unknown as { write: unknown }).write = original;
+      },
+    };
+  }
+
+  function throwingClient(status: number): ApiClient {
+    return {
+      apiBase: 'https://api.kortix.test',
+      post: async () => {
+        throw new ApiError(status, `Not Found: ${status}`);
+      },
+    } as unknown as ApiClient;
+  }
+
+  test('a 404 sync tells the user their CLI is out of date and how to fix it', async () => {
+    const capture = stderrCapture();
+    try {
+      // The whole point: it still does not throw. A reconcile failure must never
+      // invalidate the git push that already succeeded.
+      await reconcileShippedManifest(throwingClient(404), 'proj_1');
+    } finally {
+      capture.restore();
+    }
+    const out = capture.chunks.join('');
+    expect(out).toContain('404');
+    expect(out).toContain('out of date');
+    expect(out).toContain('kortix update');
+    expect(out).toContain('Connectors were NOT reconciled');
+  });
+
+  test('a non-404 failure stays silent — it is transient and the server retries', async () => {
+    for (const status of [0, 401, 409, 500, 502, 503]) {
+      const capture = stderrCapture();
+      try {
+        await reconcileShippedManifest(throwingClient(status), 'proj_1');
+      } finally {
+        capture.restore();
+      }
+      expect(capture.chunks.join('')).toBe('');
+    }
+  });
+
+  test('a non-ApiError failure stays silent', async () => {
+    const capture = stderrCapture();
+    try {
+      await reconcileShippedManifest(
+        {
+          apiBase: 'https://api.kortix.test',
+          post: async () => {
+            throw new Error('socket hang up');
+          },
+        } as unknown as ApiClient,
+        'proj_1',
+      );
+    } finally {
+      capture.restore();
+    }
+    expect(capture.chunks.join('')).toBe('');
+  });
 });

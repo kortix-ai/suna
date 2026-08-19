@@ -1,121 +1,119 @@
 'use client';
 
 /**
- * Small reusable UI primitives shared across the agent editor's sibling files
- * (permission-editor.tsx, grant-mode-field.tsx, the per-layer field sections,
- * and agent-editor.tsx itself).
+ * Layout primitives for the agent editor. Three shapes and nothing else: a
+ * titled section, a row (label left, control right), and a block (label above
+ * a full-width control).
+ *
+ * There is deliberately NO icon slot. Every group used to open with a glyph —
+ * a stack, a chip, a gauge, a shield — and not one of them named anything the
+ * words beside it did not already say. Type carries the hierarchy: section
+ * titles at `text-sm font-medium`, help at `text-xs text-muted-foreground`.
+ * Those two sizes are the whole scale; nothing in the editor is smaller.
  */
 
-import { Badge } from '@/components/ui/badge';
-import { Label } from '@/components/ui/label';
-import { cn } from '@/lib/utils';
-import type { RobotIcon as Bot } from '@phosphor-icons/react';
+import type { ReactNode } from 'react';
 
-export function Segmented<T extends string>({
-  options,
-  value,
-  onChange,
-  allowUnset,
-}: {
-  options: readonly { value: T; label: string }[];
-  value: T | undefined;
-  onChange: (v: T | undefined) => void;
-  /** When set, clicking the active option again clears it (back to inherit). */
-  allowUnset?: boolean;
-}) {
-  return (
-    <div className="border-border/70 inline-flex overflow-hidden rounded-md border">
-      {options.map((o) => {
-        const active = value === o.value;
-        return (
-          <button
-            key={o.value}
-            type="button"
-            onClick={() => onChange(allowUnset && active ? undefined : o.value)}
-            className={cn(
-              'px-2.5 py-1.5 text-xs capitalize transition-[color,background-color,transform] active:scale-[0.96]',
-              active
-                ? 'bg-secondary text-foreground font-medium'
-                : 'text-muted-foreground hover:bg-muted/50',
-            )}
-          >
-            {o.label}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-export function FieldRow({
-  label,
-  hint,
+/**
+ * One titled group of settings. Rows inside are separated by hairlines rather
+ * than boxed individually — the editor sits on `bg-popover` already, so a
+ * second popover-tinted panel on top of it would draw a border and no contrast.
+ */
+export function EditorSection({
+  title,
+  description,
   children,
 }: {
-  label: React.ReactNode;
-  hint?: string;
-  children: React.ReactNode;
+  title: string;
+  description?: ReactNode;
+  children: ReactNode;
 }) {
   return (
-    <div className="space-y-1.5">
-      <div className="flex items-baseline gap-2">
-        <Label className="text-xs">{label}</Label>
-        {hint ? <span className="text-muted-foreground/60 text-[11px]">{hint}</span> : null}
+    <section className="space-y-2">
+      <div className="space-y-1">
+        <h3 className="text-foreground text-sm font-medium">{title}</h3>
+        {description ? (
+          <p className="text-muted-foreground text-xs leading-relaxed text-pretty">{description}</p>
+        ) : null}
       </div>
-      {children}
-    </div>
+      <div className="divide-border/60 divide-y">{children}</div>
+    </section>
   );
 }
 
-export function SectionHeader({ icon: Icon, title }: { icon: typeof Bot; title: string }) {
+/**
+ * Label and help on the left, control on the right — for anything that fits a
+ * switch, a select, a slider, or a short input. Stacks under `sm` so a narrow
+ * pane never squeezes the control down to nothing.
+ */
+export function SettingRow({
+  label,
+  help,
+  children,
+}: {
+  label: string;
+  help?: ReactNode;
+  children: ReactNode;
+}) {
   return (
-    <div className="flex items-center gap-2">
-      <Icon className="text-muted-foreground/70 size-3.5 shrink-0" />
-      <span className="text-foreground/80 text-xs font-medium tracking-wide uppercase">
-        {title}
-      </span>
+    <div className="flex flex-col gap-2 py-3.5 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
+      <SettingLabel label={label} help={help} />
+      <div className="w-full shrink-0 sm:w-60">{children}</div>
     </div>
   );
 }
 
 /**
- * The top-level layer divider — makes the Kortix/OpenCode split visually
- * unmistakable (spec §2.2 structural refactor: "Kortix concerns and OpenCode
- * concerns are 100% distinct"). Each layer's fields sit in their own labeled
- * group below this header.
+ * Label and help above a full-width control — for anything a row cannot hold:
+ * a textarea, a grant checklist, the permission tree.
  */
-export function LayerHeader({
+export function SettingBlock({
   label,
-  tone,
-  description,
-  icon: Icon,
+  help,
+  children,
 }: {
   label: string;
-  tone: 'kortix' | 'outline';
-  description: string;
-  icon: typeof Bot;
+  help?: ReactNode;
+  children: ReactNode;
 }) {
   return (
-    <div className="border-border/60 flex items-center gap-2.5 border-b pb-2.5">
-      <span
-        className={cn(
-          'flex size-6 shrink-0 items-center justify-center rounded-sm',
-          tone === 'kortix' ? 'bg-kortix-base/20' : 'bg-muted',
-        )}
-      >
-        <Icon
-          className={cn(
-            'size-3.5',
-            tone === 'kortix' ? 'text-foreground' : 'text-muted-foreground',
-          )}
-        />
-      </span>
-      <Badge variant={tone} size="sm" className="shrink-0 tracking-wide uppercase">
-        {label}
-      </Badge>
-      <p className="text-muted-foreground/70 min-w-0 text-[11px] leading-relaxed text-pretty">
-        {description}
-      </p>
+    <div className="space-y-2.5 py-3.5">
+      <SettingLabel label={label} help={help} />
+      {children}
     </div>
+  );
+}
+
+/**
+ * The label pair. A plain `<span>`, not `<Label>`: none of these controls take
+ * an id we could point `htmlFor` at, and a `<label>` that references nothing
+ * is a dangling a11y reference plus a cursor that lies. Each control carries
+ * its own `aria-label` instead.
+ */
+function SettingLabel({ label, help }: { label: string; help?: ReactNode }) {
+  return (
+    <div className="min-w-0 space-y-1">
+      <span className="text-foreground block text-sm font-medium">{label}</span>
+      {help ? (
+        <p className="text-muted-foreground text-xs leading-relaxed text-pretty">{help}</p>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * A text button that lives inside a help line — "Reset", "Clear". Text, not an
+ * icon: at this size an icon is a guess, and the word is three characters
+ * longer.
+ */
+export function InlineAction({ onClick, children }: { onClick: () => void; children: ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="text-foreground underline decoration-dotted underline-offset-2 transition-opacity hover:opacity-70"
+    >
+      {children}
+    </button>
   );
 }

@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { Hono } from 'hono';
+import * as realPreviewOwnership from '../shared/preview-ownership';
+import * as realRequestContext from '../lib/request-context';
+import * as realAuthAudit from '../shared/auth-audit';
+import * as realSentry from '../lib/sentry';
+import * as realSsoSync from '../iam/sso-sync';
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 // Two projects under the same account, each with its own sandbox — this is
@@ -67,20 +72,28 @@ mock.module('../shared/supabase', () => ({
 
 // Sandbox → project resolution, keyed by sandboxId the same way the real
 // session_sandboxes lookup would be (uuid/externalId → project_id).
+// Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
+// lists exports by hand deletes every export it omits — the failure surfaces in
+// whatever unrelated file imports the missing name next, attributed to no test.
 mock.module('../shared/preview-ownership', () => ({
+  ...realPreviewOwnership,
   canAccessPreviewSandbox: async () => true,
   resolveSandboxProjectId: async (sandboxId: string) =>
     sandboxProjectByOwnSandboxId[sandboxId] ?? null,
 }));
 
+// Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
+// lists exports by hand deletes every export it omits — the failure surfaces in
+// whatever unrelated file imports the missing name next, attributed to no test.
 mock.module('../shared/auth-audit', () => ({
+  ...realAuthAudit,
   auditLoginSuccess: () => {},
   auditLoginFail: () => {},
 }));
 
-mock.module('../lib/sentry', () => ({ setSentryUser: () => {} }));
-mock.module('../lib/request-context', () => ({ setContextField: () => {} }));
-mock.module('../iam/sso-sync', () => ({ syncSsoMembership: async () => {} }));
+mock.module('../lib/sentry', () => ({ ...realSentry, setSentryUser: () => {} }));
+mock.module('../lib/request-context', () => ({ ...realRequestContext, setContextField: () => {} }));
+mock.module('../iam/sso-sync', () => ({ ...realSsoSync, syncSsoMembership: async () => {} }));
 
 const { combinedAuth } = await import('./auth');
 
@@ -94,6 +107,9 @@ function appWithProbe() {
     }),
   );
   app.get('/v1/projects/:projectId', (c) =>
+    c.json({ userId: c.get('userId' as never), projectId: c.req.param('projectId') }),
+  );
+  app.get('/v1/connectors/projects/:projectId/catalog', (c) =>
     c.json({ userId: c.get('userId' as never), projectId: c.req.param('projectId') }),
   );
   app.get('/v1/skills', (c) => c.json({ ok: true }));
@@ -152,6 +168,24 @@ describe('project-scoped PAT on the sandbox-proxy path', () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.projectId).toBe(PROJECT_A);
+  });
+
+  test('project-scoped PAT can reach its own canonical /v1/connectors/projects/:id/* routes', async () => {
+    const res = await appWithProbe().request(`/v1/connectors/projects/${PROJECT_A}/catalog`, {
+      headers: { Authorization: 'Bearer kortix_pat_project_a' },
+    });
+
+    expect(res.status).toBe(200);
+    expect((await res.json()).projectId).toBe(PROJECT_A);
+  });
+
+  test('project-scoped PAT cannot reach another project through connector routes', async () => {
+    const res = await appWithProbe().request(`/v1/connectors/projects/${PROJECT_B}/catalog`, {
+      headers: { Authorization: 'Bearer kortix_pat_project_a' },
+    });
+
+    expect(res.status).toBe(403);
+    expect(await res.text()).toContain('Project-scoped token cannot access a different project');
   });
 
   // The in-sandbox `KORTIX_CLI_TOKEN` IS a project+session-scoped PAT, and

@@ -29,6 +29,8 @@ export interface UpstreamDescriptor {
   kind: ProviderKind;
   baseUrl: string;
   apiKey: string;
+  /** Stable non-secret identifier for credentials that share one provider. */
+  credentialRef?: string;
   billingMode: BillingMode;
   markup: number;
   appName?: string;

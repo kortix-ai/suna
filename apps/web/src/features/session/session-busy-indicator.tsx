@@ -1,8 +1,9 @@
 'use client';
 
-import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
+import { AnimatePresence, m, useReducedMotion } from 'motion/react';
 import { useEffect, useRef, useState } from 'react';
 
+import { SessionDotMatrix } from '@/components/ui/dot-matrix/session-dot-matrix';
 import { TextShimmer } from '@/components/ui/text-shimmer';
 import { cn } from '@/lib/utils';
 
@@ -41,11 +42,18 @@ export function SessionBusyIndicator({
   statusText,
   retryLabel,
   ambient = false,
+  sessionId,
   className,
 }: {
   statusText?: string;
   retryLabel?: string;
   ambient?: boolean;
+  /**
+   * Keys the dot-matrix glyph: each session hashes to its own variant
+   * (`SessionDotMatrix`), stable for that session's whole life. Session-less
+   * surfaces (home demo, debug harness) omit it and keep the default glyph.
+   */
+  sessionId?: string;
   className?: string;
 }): React.ReactElement {
   const reduceMotion = useReducedMotion() ?? false;
@@ -78,7 +86,7 @@ export function SessionBusyIndicator({
   const swap = reduceMotion ? FADE_SWAP : ROLL_SWAP;
 
   return (
-    <motion.div
+    <m.div
       role="status"
       aria-live="polite"
       data-testid="session-busy-indicator"
@@ -87,27 +95,30 @@ export function SessionBusyIndicator({
         className,
       )}
     >
+      <SessionDotMatrix sessionId={sessionId} size={14} className="shrink-0" />
       <span className="relative min-w-0 flex-1" aria-hidden>
         {isRetrying ? (
           <span className="text-muted-foreground/70 block truncate text-sm leading-5">{label}</span>
         ) : (
           <span className="relative block min-w-0 overflow-hidden leading-5">
             <AnimatePresence mode="popLayout">
-              <motion.span
+              <m.span
                 key={label}
                 initial={hasMounted.current ? swap.initial : swap.animate}
                 animate={swap.animate}
                 exit={swap.exit}
                 transition={swap.transition}
-                className="block min-w-0 whitespace-nowrap will-change-transform"
+                className="block min-w-0 whitespace-nowrap"
               >
-                <TextShimmer className="truncate text-sm leading-5">{label}</TextShimmer>
-              </motion.span>
+                <TextShimmer className="truncate text-center align-middle text-sm leading-5">
+                  {label}
+                </TextShimmer>
+              </m.span>
             </AnimatePresence>
           </span>
         )}
       </span>
       <span className="sr-only">{label}</span>
-    </motion.div>
+    </m.div>
   );
 }

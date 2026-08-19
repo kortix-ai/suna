@@ -1,10 +1,32 @@
 'use client';
 
-import { Icon } from '@/features/icon/icon';
+import { Claude } from '@/features/icon/icons/claude';
+import { Gemini } from '@/features/icon/icons/gemini';
+import { Github } from '@/features/icon/icons/github';
+import { Gmail } from '@/features/icon/icons/gmail';
+import { Linear } from '@/features/icon/icons/linear';
+import { MicrosoftTeams } from '@/features/icon/icons/microsoft-teams';
+import { Notion } from '@/features/icon/icons/notion';
+import { OpenAI } from '@/features/icon/icons/open-ai';
+import { Slack } from '@/features/icon/icons/slack';
 import Image from 'next/image';
 import type { ReactNode } from 'react';
 
-type IconKey = keyof typeof Icon;
+/** `MODELS`/`TOOLS` select a logo by name at runtime, so they can't be
+ *  statically resolved to a single import — this explicit map is the smallest
+ *  set that covers both rows. */
+const ROW_ICONS = {
+  Claude,
+  OpenAI,
+  Gemini,
+  Slack,
+  MicrosoftTeams,
+  Notion,
+  Linear,
+  Github,
+  Gmail,
+} as const;
+type IconKey = keyof typeof ROW_ICONS;
 
 /** Models Kortix can run, and a sample of the tools it connects to. These are
  *  capabilities we actually ship — not customer logos, which we neither name
@@ -21,7 +43,7 @@ function Row({ label, keys, extra }: { label: string; keys: IconKey[]; extra?: R
       </span>
       <div className="flex flex-wrap items-center justify-center gap-x-7 gap-y-4">
         {keys.map((key) => {
-          const Glyph = Icon[key] as ((p: { className?: string }) => ReactNode) | undefined;
+          const Glyph = ROW_ICONS[key] as ((p: { className?: string }) => ReactNode) | undefined;
           if (!Glyph) return null;
           return (
             <span key={key}>
@@ -39,7 +61,7 @@ function Row({ label, keys, extra }: { label: string; keys: IconKey[]; extra?: R
 export function LogoStrip() {
   return (
     <section aria-label="Models and tools Kortix works with" className="py-14 sm:py-16">
-      <div className="mx-auto flex max-w-7xl flex-col px-6 items-center gap-8 lg:flex-row lg:justify-between">
+      <div className="mx-auto flex max-w-7xl flex-col items-center gap-8 px-6 lg:flex-row lg:justify-between">
         <Row
           label="Runs any model"
           keys={MODELS}

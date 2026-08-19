@@ -54,17 +54,17 @@ export function ConnectorBindingFields({
   onChange,
 }: {
   choices: ConnectorBindingChoice[];
-  /** Alias -> authorization id. An alias absent from this map stays on the default. */
+  /** Alias -> connection id. An alias absent from this map stays on the default. */
   value: Record<string, string>;
   onChange: (next: Record<string, string>) => void;
 }) {
   if (choices.length === 0) return null;
 
-  const set = (alias: string, authorizationId: string | null) => {
+  const set = (alias: string, connectionId: string | null) => {
     const next = { ...value };
     // Unbinding REMOVES the alias rather than storing an empty string: the
     // create body must omit it entirely so the server resolves its own default.
-    if (authorizationId) next[alias] = authorizationId;
+    if (connectionId) next[alias] = connectionId;
     else delete next[alias];
     onChange(next);
   };
@@ -114,8 +114,8 @@ export function ConnectorBindingFields({
                 <SelectItem value={DEFAULT_VALUE}>Project default</SelectItem>
                 {choice.connections.map((connection) => (
                   <SelectItem
-                    key={connection.authorizationId}
-                    value={connection.authorizationId}
+                    key={connection.connectionId}
+                    value={connection.connectionId}
                   >
                     {connection.label}
                     {connection.isDefault ? ' (default)' : ''}

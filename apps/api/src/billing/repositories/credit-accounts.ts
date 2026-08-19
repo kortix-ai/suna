@@ -22,20 +22,27 @@ export async function isDemoEnterprise(accountId: string): Promise<boolean> {
   return row?.demoEnterprise ?? false;
 }
 
-/**
- * Flip the enterprise-demo flag. Upserts the credit row so a brand-new account
- * (no billing row yet) can still preview the enterprise surface — all other
- * columns fall back to their schema defaults (tier 'free', legacy billing, …).
- */
-export async function setDemoEnterprise(accountId: string, enabled: boolean): Promise<void> {
-  await db
-    .insert(creditAccounts)
-    .values({ accountId, demoEnterprise: enabled })
-    .onConflictDoUpdate({
-      target: creditAccounts.accountId,
-      set: { demoEnterprise: enabled, updatedAt: new Date().toISOString() },
-    });
+/** Whether the account is flagged as a contracted cloud Enterprise customer.
+ *  When true the account resolves all enterprise entitlements (SSO/SCIM/RBAC/
+ *  audit) regardless of its billing tier — decoupling feature entitlements
+ *  from the commercial billing model. Set by an operator when a contract is
+ *  signed. Distinct from the self-serve demo flag (`isDemoEnterprise`). */
+export async function isEnterpriseEntitled(accountId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ enterpriseEntitled: creditAccounts.enterpriseEntitled })
+    .from(creditAccounts)
+    .where(eq(creditAccounts.accountId, accountId))
+    .limit(1);
+  return row?.enterpriseEntitled ?? false;
 }
+
+// NOTE — there are deliberately no `setEnterpriseEntitled` /
+// `setManagedModelsOverride` / `setDemoEnterprise` writers here any more.
+// Those three columns are ADMIN-OWNED (billing/services/account-write-owner.ts):
+// every write goes through `applyAdminOverride`, which enforces the ownership
+// boundary against provider sync and invalidates the billing cache. A private
+// per-column setter is exactly the bypass that boundary exists to prevent.
+// The readers above stay — reading is not a write.
 
 export async function getCreditBalance(accountId: string) {
   const [row] = await db
@@ -63,6 +70,10 @@ export async function getSubscriptionInfo(accountId: string) {
       stripeSubscriptionStatus: creditAccounts.stripeSubscriptionStatus,
       trialStatus: creditAccounts.trialStatus,
       trialEndsAt: creditAccounts.trialEndsAt,
+      trialStartedAt: creditAccounts.trialStartedAt,
+      trialTier: creditAccounts.trialTier,
+      trialSeats: creditAccounts.trialSeats,
+      managedModelsOverride: creditAccounts.managedModelsOverride,
       commitmentType: creditAccounts.commitmentType,
       commitmentEndDate: creditAccounts.commitmentEndDate,
       scheduledTierChange: creditAccounts.scheduledTierChange,
@@ -87,6 +98,11 @@ export async function getSubscriptionInfo(accountId: string) {
       autoTopupCustomized: creditAccounts.autoTopupCustomized,
       // Operator-set per-account concurrent-session override (NULL = use tier).
       maxConcurrentSessions: creditAccounts.maxConcurrentSessions,
+      // The JSONB override map. Selected because callers feed this row
+      // straight to `resolveBillingFromRow` (account-state.ts:96); omitting it
+      // would make an override silently vanish on that path while applying
+      // everywhere else.
+      entitlementOverrides: creditAccounts.entitlementOverrides,
     })
     .from(creditAccounts)
     .where(eq(creditAccounts.accountId, accountId))

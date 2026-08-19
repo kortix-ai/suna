@@ -14,11 +14,44 @@ import type { ProviderModalTab } from '@/stores/provider-modal-store';
 import { useProviderModalStore } from '@/stores/provider-modal-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import { getProjectDetail, listProjectSecrets } from '@kortix/sdk';
-import { type ModelKey } from '@kortix/sdk/react';
+import { contract, type ModelKey, qk } from '@kortix/sdk/react';
 import type { FlatModel } from './session-chat-input';
 
-export function projectProviderModalTab(tab: ProviderModalTab): 'connected' | 'catalog' | 'models' {
-  return tab === 'providers' ? 'catalog' : tab;
+/**
+ * `ProviderModalTab` is the caller-facing vocabulary ('providers' | 'connected'
+ * | 'models'). JAY-510 merged the modal's 'catalog' and 'connected' tabs into
+ * one `providers` surface, so both of those now resolve to it; only 'models'
+ * still names a distinct tab.
+ */
+export function projectProviderModalTab(tab: ProviderModalTab): 'providers' | 'models' {
+  return tab === 'models' ? 'models' : 'providers';
+}
+
+/**
+ * Which project this gate acts on. An explicitly passed id wins; the `[id]`
+ * route segment is the fallback.
+ *
+ * The fallback is what every original caller relies on — they all render under
+ * `/projects/[id]`. The explicit id exists because the onboarding wizard's plan
+ * step now also runs on `/new` (`app/(app)/new`), which has NO `[id]` segment:
+ * there the route yields `null`, `modal` is therefore `null`, and
+ * `openConnectProvider` renders nothing while the step's only control never
+ * advances the wizard.
+ *
+ * `!== undefined`, never `??`: a caller that deliberately passes `null` means
+ * "act on no project", and must not silently inherit whatever route it happens
+ * to be rendered under.
+ *
+ * Exported so this rule is provable — the hook itself cannot be rendered in
+ * `apps/web`'s test harness (no jsdom, and `mock.module` is process-wide across
+ * a non---isolate `bun test` run).
+ */
+export function resolveGateProjectId(
+  explicitId: string | null | undefined,
+  routeId: unknown,
+): string | null {
+  if (explicitId !== undefined) return explicitId;
+  return typeof routeId === 'string' ? routeId : null;
 }
 
 /**
@@ -31,19 +64,26 @@ export function projectProviderModalTab(tab: ProviderModalTab): 'connected' | 'c
  * (default `[]` for callers that only need the routing actions). This is
  * deliberately NOT `models.length > 0`: the raw provider catalog can carry
  * models the project does not offer. See `isModelOffered` for the check.
+ *
+ * `options.projectId` names the project explicitly, for callers that render
+ * outside `/projects/[id]`. Omitting it keeps the original route-inferred
+ * behaviour verbatim — see `resolveGateProjectId`.
  */
-export function useModelConnectionGate(models: FlatModel[] = []) {
+export function useModelConnectionGate(
+  models: FlatModel[] = [],
+  options?: { projectId?: string | null },
+) {
   const openProviderModal = useProviderModalStore((s) => s.openProviderModal);
   const openUpgradeDialog = useUpgradeDialogStore((s) => s.openUpgradeDialog);
 
   const params = useParams<{ id?: string }>();
-  const projectId = typeof params?.id === 'string' ? params.id : null;
+  const projectId = resolveGateProjectId(options?.projectId, params?.id);
 
   const projectDetailQuery = useQuery({
-    queryKey: ['project-detail', projectId],
+    queryKey: qk.project.detail(projectId ?? ''),
     queryFn: () => getProjectDetail(projectId as string),
     enabled: !!projectId,
-    staleTime: 30_000,
+    ...contract('config'),
   });
   const llmGatewayEnabled = isLlmGatewayEnabled(projectDetailQuery.data?.project);
   const canWriteProviders =
@@ -52,19 +92,26 @@ export function useModelConnectionGate(models: FlatModel[] = []) {
     }).allowed === true;
 
   const [projectModalOpen, setProjectModalOpen] = useState(false);
-  const [projectModalTab, setProjectModalTab] = useState<'connected' | 'catalog' | 'models'>(
-    'catalog',
-  );
+  const [projectModalTab, setProjectModalTab] = useState<'providers' | 'models'>('providers');
 
   const baseModels = useMemo(
     () => (llmGatewayEnabled ? models : models.filter((m) => m.providerID !== 'kortix')),
     [models, llmGatewayEnabled],
   );
+  // `project.secret.read` is manager-tier, so for a project `member` this query
+  // was a guaranteed 403 on every project-home render — a permission check
+  // performed by asking the server to refuse. Gate it on the leaf instead.
+  // `allowed === true` also holds the query while the probe is still loading,
+  // so it fires once, when the answer is known, or not at all.
+  const canReadSecrets =
+    useProjectCan(projectId ?? undefined, PROJECT_ACTIONS.PROJECT_SECRET_READ, {
+      accountId: projectDetailQuery.data?.project.account_id,
+    }).allowed === true;
   const secretsQuery = useQuery({
-    queryKey: ['project-secrets', projectId],
+    queryKey: qk.project.secrets(projectId ?? ''),
     queryFn: () => listProjectSecrets(projectId as string),
-    enabled: !!projectId && llmGatewayEnabled,
-    staleTime: 10_000,
+    enabled: !!projectId && llmGatewayEnabled && canReadSecrets,
+    ...contract('config'),
   });
   const { isPending: accountStatePending } = useAccountState();
   // Availability is SERVER-resolved, never re-derived here. `/model-picker`
@@ -146,10 +193,15 @@ export function useModelConnectionGate(models: FlatModel[] = []) {
   ) : null;
 
   // Billing off (self-host default): there's no Kortix plan to upgrade to and
-  // no <GlobalUpgradeModal/> mounted anywhere to respond to openUpgrade() (see
-  // app-providers.tsx's `isBillingEnabled() && <GlobalUpgradeModal />`) — an
-  // "Upgrade" button would be a dead click. Callers should hide it and only
-  // offer "bring your own key" when this is false.
+  // no <GlobalUpgradeModal/> mounted anywhere to respond to openUpgrade()
+  // (every host mounts it behind the same flag — `app-providers.tsx`'s
+  // `isBillingEnabled() && <GlobalUpgradeModal />`, and the same line on
+  // `/new`) — an "Upgrade" button would be a dead click. Callers should hide it
+  // and only offer "bring your own key" when this is false.
+  //
+  // This flag answers "is billing ON", NOT "is a host MOUNTED". A route that
+  // enables billing without mounting one still yields a dead click — which is
+  // exactly why `/new` had to mount its own.
   const showUpgradeOption = isBillingEnabled();
 
   return {

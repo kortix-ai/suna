@@ -13,7 +13,6 @@ const ORIGINAL_STDERR_WRITE = process.stderr.write;
 const ORIGINAL_SANDBOX_ENV = {
   KORTIX_API_URL: process.env.KORTIX_API_URL,
   KORTIX_CLI_TOKEN: process.env.KORTIX_CLI_TOKEN,
-  KORTIX_EXECUTOR_TOKEN: process.env.KORTIX_EXECUTOR_TOKEN,
   KORTIX_FRONTEND_URL: process.env.KORTIX_FRONTEND_URL,
   KORTIX_PROJECT_ID: process.env.KORTIX_PROJECT_ID,
   KORTIX_TOKEN: process.env.KORTIX_TOKEN,
@@ -64,7 +63,6 @@ function captureOutput() {
 function clearSandboxEnvOverrides() {
   delete process.env.KORTIX_API_URL;
   delete process.env.KORTIX_CLI_TOKEN;
-  delete process.env.KORTIX_EXECUTOR_TOKEN;
   delete process.env.KORTIX_FRONTEND_URL;
   delete process.env.KORTIX_PROJECT_ID;
   delete process.env.KORTIX_TOKEN;
@@ -199,8 +197,36 @@ describe('kortix marketplace', () => {
     expect(stderr).toBe('');
   });
 
-  test('rejects removed deterministic subcommands (install/status/updates/update/remove)', async () => {
-    for (const sub of ['install', 'add', 'status', 'installed', 'updates', 'outdated', 'update', 'remove', 'rm']) {
+  test('starts an agent-driven install session for a marketplace item', async () => {
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      expect(url).toBe('https://api.test/v1/projects/project-1/marketplace/install-session');
+      expect(init?.method).toBe('POST');
+      expect(JSON.parse(String(init?.body))).toEqual({ id: 'kortix-starter:pdf' });
+      return new Response(
+        JSON.stringify({ session_id: 'session-install-1', project_id: 'project-1' }),
+        { status: 201, headers: JSON_HEADERS },
+      );
+    }) as typeof fetch;
+
+    const code = await runMarketplace([
+      'install',
+      'kortix-starter:pdf',
+      '--project',
+      'project-1',
+      '--json',
+    ]);
+
+    expect(code).toBe(0);
+    expect(JSON.parse(stdout)).toMatchObject({
+      session_id: 'session-install-1',
+      project_id: 'project-1',
+    });
+    expect(stderr).toBe('');
+  });
+
+  test('rejects removed deterministic lifecycle subcommands', async () => {
+    for (const sub of ['add', 'status', 'installed', 'updates', 'outdated', 'update', 'remove', 'rm']) {
       const code = await runMarketplace([sub, 'pdf']);
       expect(code).toBe(2);
       expect(stderr).toContain(`unknown subcommand "${sub}"`);

@@ -148,11 +148,11 @@ export const SCRIPT: Command[] = [
     ],
   },
 
-  /* 3 ── connectors connect → Integrations: Linear connects ───────────────── */
+  /* 3 ── connectors connect → Connectors: Linear connects ─────────────────── */
   {
     input: 'kortix connectors connect linear',
     beats: [
-      nav('integrations'),
+      nav('connectors'),
       wait(260),
       out([t('  Open this URL to authorize:', 'dim')]),
       out([t('  https://pipedream.com/connect?token=ctok_9f2a…', 'cyan')]),
@@ -163,11 +163,11 @@ export const SCRIPT: Command[] = [
     ],
   },
 
-  /* 4 ── connectors connect → Integrations: Notion connects ───────────────── */
+  /* 4 ── connectors connect → Connectors: Notion connects ─────────────────── */
   {
     input: 'kortix connectors connect notion',
     beats: [
-      nav('integrations'),
+      nav('connectors'),
       wait(220),
       out([t('  Open this URL to authorize:', 'dim')]),
       out([t('  https://pipedream.com/connect?token=ctok_a7d1…', 'cyan')]),

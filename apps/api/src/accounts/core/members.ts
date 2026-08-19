@@ -6,12 +6,15 @@ import {
   accountMembers,
   accounts,
   projectMembers,
+  projects,
 } from '@kortix/db';
-import { and, count, eq, gt, isNull, sql } from 'drizzle-orm';
+import { and, eq, gt, inArray, isNull, sql } from 'drizzle-orm';
 import { onMemberAdded, onMemberRemoved } from '../../billing/services/seat-management';
 import { ACCOUNT_ACTIONS, assertAuthorized, authorize } from '../../iam';
 import { invalidateIamCacheForUser } from '../../iam/cache-invalidation';
+import { parseAssignableProjectRole, PROJECT_ROLE_INPUT_ERROR, type ProjectRole } from '../../iam/role-perms';
 import { auth, errors, json } from '../../openapi';
+import { grantProjectRole } from '../../projects/lib/access';
 import { revokeAllAccountTokensForUser } from '../../repositories/account-tokens';
 import { db } from '../../shared/db';
 import { lookupUserIdByEmail } from '../../shared/users';
@@ -80,17 +83,33 @@ export function registerMemberRoutes(): void {
       const visibleRows = rows;
 
       const emails = await lookupEmailsByUserIds(rows.map((r) => r.userId));
+      // Direct project grants per member, one batched query (name + role, not
+      // just a count) — powers both the "N projects" chip and a popover
+      // listing exactly which projects. Active projects only; archived
+      // projects don't clutter the chip. Group-derived and implicit
+      // (owner/admin) access aren't rows in project_members, so neither is
+      // enumerated here — that's the existing explicit_project_count scope.
       const projectGrantRows = await db
         .select({
           userId: projectMembers.userId,
-          n: count(),
+          projectId: projectMembers.projectId,
+          role: projectMembers.projectRole,
+          name: projects.name,
         })
         .from(projectMembers)
-        .where(eq(projectMembers.accountId, accountId))
-        .groupBy(projectMembers.userId);
-      const projectGrantCountByUser = new Map(
-        projectGrantRows.map((r) => [r.userId, Number(r.n ?? 0)]),
-      );
+        .innerJoin(projects, eq(projectMembers.projectId, projects.projectId))
+        .where(and(eq(projectMembers.accountId, accountId), eq(projects.status, 'active')));
+      const projectGrantCountByUser = new Map<string, number>();
+      const projectsByUser = new Map<
+        string,
+        Array<{ project_id: string; name: string; role: string }>
+      >();
+      for (const r of projectGrantRows) {
+        projectGrantCountByUser.set(r.userId, (projectGrantCountByUser.get(r.userId) ?? 0) + 1);
+        const list = projectsByUser.get(r.userId) ?? [];
+        list.push({ project_id: r.projectId, name: r.name, role: r.role });
+        projectsByUser.set(r.userId, list);
+      }
 
       // Group memberships for every member, in one query — so the member list can
       // show which groups each person belongs to without N round-trips. Wrapped so
@@ -180,6 +199,7 @@ export function registerMemberRoutes(): void {
               explicit_project_count: showSensitive
                 ? (projectGrantCountByUser.get(r.userId) ?? 0)
                 : 0,
+              projects: showSensitive ? (projectsByUser.get(r.userId) ?? []) : [],
               groups: showSensitive ? (groupsByUser.get(r.userId) ?? []) : [],
               active_pat_count: showSensitive ? (patCountByUser.get(r.userId) ?? 0) : 0,
               has_verified_mfa: showSensitive ? (mfaByUser.get(r.userId) ?? false) : false,
@@ -205,7 +225,18 @@ export function registerMemberRoutes(): void {
         body: {
           content: {
             'application/json': {
-              schema: z.object({ email: z.string(), role: z.string().optional() }),
+              schema: z.object({
+                email: z.string(),
+                role: z.string().optional(),
+                // Project access to grant alongside the invite — applied
+                // immediately if the invitee already has a Kortix account,
+                // or staged on the pending invite (same bootstrap_grants
+                // column POST /projects/:id/access/invite already writes)
+                // and applied automatically when they accept.
+                project_grants: z
+                  .array(z.object({ project_id: z.string(), role: z.string().optional() }))
+                  .optional(),
+              }),
             },
           },
         },
@@ -229,6 +260,66 @@ export function registerMemberRoutes(): void {
       if (!email) return c.json({ error: 'A valid email is required' }, 400);
 
       const role: AccountRole = parseRole(body.role, ['admin', 'member']) ?? 'member';
+
+      // Project grants only apply to `member` invites — an admin/owner
+      // already holds implicit Manager on every project in the account (see
+      // the PATCH role-change handler below, which strips their direct
+      // project_members rows for the same reason), so a grant would be
+      // redundant at best and misleading at worst.
+      const rawGrants: Array<{ project_id?: unknown; role?: unknown }> = Array.isArray(
+        body.project_grants,
+      )
+        ? body.project_grants
+        : [];
+      let projectGrants: Array<{ project_id: string; role: ProjectRole }> = [];
+      if (rawGrants.length > 0 && role === 'member') {
+        const requestedIds = [
+          ...new Set(
+            rawGrants
+              .map((g) => (typeof g.project_id === 'string' ? g.project_id : null))
+              .filter((v): v is string => v !== null),
+          ),
+        ];
+        // Never trust a client-supplied project_id at face value — confirm
+        // it actually belongs to THIS account before granting, so a bad or
+        // malicious payload can't plant a cross-account project_members row.
+        const owned = requestedIds.length
+          ? await db
+              .select({ projectId: projects.projectId })
+              .from(projects)
+              .where(
+                and(eq(projects.accountId, accountId), inArray(projects.projectId, requestedIds)),
+              )
+          : [];
+        const ownedIds = new Set(owned.map((p) => p.projectId));
+        for (const g of rawGrants) {
+          const projectId = typeof g.project_id === 'string' ? g.project_id : null;
+          if (!projectId || !ownedIds.has(projectId)) continue;
+          // An omitted role still defaults to the floor tier; a role that was
+          // SPELLED OUT and is not assignable (the removed `editor`, a typo) is
+          // a 400, never a silent downgrade to `member` or upgrade to `manager`.
+          const grantRole = g.role === undefined ? 'member' : parseAssignableProjectRole(g.role);
+          if (!grantRole) return c.json({ error: PROJECT_ROLE_INPUT_ERROR }, 400);
+          projectGrants.push({ project_id: projectId, role: grantRole });
+        }
+      }
+
+      // Trial seat gate — covers both branches below (direct add + invite).
+      const { trialSeatLimitBlocksNewMember } = await import(
+        '../../billing/services/seat-management'
+      );
+      const seatBlock = await trialSeatLimitBlocksNewMember(accountId);
+      if (seatBlock) {
+        return c.json(
+          {
+            error: `Your trial includes ${seatBlock.limit} ${seatBlock.limit === 1 ? 'seat' : 'seats'} and all are in use. Contact the Kortix team to extend the trial.`,
+            code: 'trial_seat_limit_reached',
+            limit: seatBlock.limit,
+            members: seatBlock.members,
+          },
+          403,
+        );
+      }
 
       // Need account name for the invite email
       const [accountRow] = await db
@@ -255,12 +346,23 @@ export function registerMemberRoutes(): void {
         // Billing v2 — mint YOLO + push +1 seat to Stripe (no-op for legacy).
         void onMemberAdded(accountId, targetUserId).catch(() => {});
 
+        for (const g of projectGrants) {
+          await grantProjectRole({
+            accountId,
+            projectId: g.project_id,
+            userId: targetUserId,
+            role: g.role,
+            grantedBy: userId,
+          });
+        }
+
         return c.json(
           {
             status: 'added',
             user_id: targetUserId,
             email,
             account_role: role,
+            project_grants: projectGrants,
           },
           201,
         );
@@ -269,6 +371,14 @@ export function registerMemberRoutes(): void {
       // User doesn't exist — create or refresh a pending invitation.
       // Upsert on the unique (account_id, email) index; if one exists,
       // refresh expires_at + initial_role (e.g. inviter changed role).
+      // bootstrap_grants is fully replaced (not merged) on every call — the
+      // caller resubmits the complete desired project-access set each time,
+      // same "what you see is what you get" contract project_grants above
+      // documents; a re-invite that no longer lists a project drops it.
+      const bootstrapGrants = projectGrants.map((g) => ({
+        project_id: g.project_id,
+        role: g.role,
+      }));
       const expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
       const [invite] = await db
         .insert(accountInvitations)
@@ -278,6 +388,7 @@ export function registerMemberRoutes(): void {
           invitedBy: userId,
           initialRole: role,
           expiresAt,
+          bootstrapGrants,
         })
         .onConflictDoUpdate({
           target: [accountInvitations.accountId, accountInvitations.email],
@@ -287,6 +398,7 @@ export function registerMemberRoutes(): void {
             invitedBy: userId,
             // Clear any prior accepted_at so a refreshed invite is "pending" again.
             acceptedAt: null,
+            bootstrapGrants,
           },
         })
         .returning();
@@ -305,6 +417,7 @@ export function registerMemberRoutes(): void {
           invite_id: invite.inviteId,
           email,
           account_role: invite.initialRole,
+          project_grants: bootstrapGrants,
           expires_at: invite.expiresAt.toISOString(),
           invite_url: buildInviteUrl(invite.inviteId),
           // false = email skipped or failed; UI surfaces the link so admin can share manually.

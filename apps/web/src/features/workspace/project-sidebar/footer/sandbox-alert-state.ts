@@ -64,14 +64,13 @@ const PROVIDER_LABEL: Record<string, string> = {
   daytona: 'Daytona',
   platinum: 'Platinum',
   e2b: 'E2B',
-  'local-docker': 'Local Docker',
 };
 
 export function formatSandboxProvider(provider: string): string {
   return PROVIDER_LABEL[provider] ?? provider.charAt(0).toUpperCase() + provider.slice(1);
 }
 
-/** `Daytona`, `Daytona and E2B`, `Daytona, E2B and Platinum`. */
+/** `Daytona`, `Daytona and Platinum`, `Daytona, Platinum and E2B`. */
 export function formatSandboxProviders(providers: readonly string[]): string {
   const names = providers.map(formatSandboxProvider);
   if (names.length <= 1) return names[0] ?? '';

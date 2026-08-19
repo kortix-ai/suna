@@ -240,8 +240,13 @@ export async function GET(request: NextRequest) {
             // received any redirect at all, so a fresh signup stared at a blank
             // callback page for the whole provision. `PROJECT_LANDING_PATH`
             // now paints instantly and does that work behind the real UI.
+            // `/settings/billing`, not `/projects/start`: this branch exists
+            // so an account with no app access is NOT given a project, and
+            // the landing door provisions one. The settings route mounts the
+            // panel directly for exactly this reason — see
+            // `features/workspace/settings/standalone-settings-route.tsx`.
             if (accountState && !accountHasAppAccess(accountState)) {
-              finalDestination = '/accounts';
+              finalDestination = '/settings/billing';
             }
           } catch (err) {
             console.warn('Could not check account state from backend:', err);

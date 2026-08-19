@@ -1,9 +1,9 @@
 // The sandbox-deadline anchor guard, executed by a REAL PostgreSQL.
 //
-// This trigger is the only thing that makes the 24-hour cap a bound rather than
-// a suggestion, so it is tested by running the SHIPPED migration text — not a
-// TypeScript re-description of it — against a disposable server. Every case below
-// is a defect review found in the first cut:
+// The trigger owns `active_since` as immutable provider-run observability and
+// preserves the resume floor. It no longer caps active-turn deadlines at 24
+// hours. The test runs the SHIPPED migrations against a disposable server.
+// Every case below is a defect review found in the first cut:
 //
 //   I1  the anchor was immutable only WHILE status='active', so plain application
 //       Drizzle moved the cap's left operand on any UPDATE that landed the row
@@ -97,9 +97,10 @@ describe.skipIf(!dockerAvailable)('session_sandboxes anchor guard — real Postg
     }
     if (!ready) throw new Error('Disposable PostgreSQL did not become ready');
 
-    // The shipped migration, minus the parts that need the real table to already
-    // exist (the ALTER that adds the columns, and the backfill). The trigger
-    // function and the CHECK — the load-bearing objects — are taken verbatim.
+    // The original shipped migration supplies the table objects. The newest
+    // lifecycle migration then removes the old CHECK and installs the current
+    // trigger. Tests must exercise the final migration state, not the 2026-07-30
+    // intermediate state.
     const migration = await Bun.file(
       resolve(import.meta.dir, '..', 'migrations', '20260730000452547_sandbox_deadline.sql'),
     ).text();
@@ -117,6 +118,17 @@ describe.skipIf(!dockerAvailable)('session_sandboxes anchor guard — real Postg
     ).text();
     if (!repairMigration.includes('CREATE OR REPLACE FUNCTION')) {
       throw new Error('repair migration no longer replaces the deadline guard');
+    }
+    const activeTurnMigration = await Bun.file(
+      resolve(
+        import.meta.dir,
+        '..',
+        'migrations',
+        '20260817150000000_active_turn_lifecycle_no_wall_clock_cap.sql',
+      ),
+    ).text();
+    if (!activeTurnMigration.includes('DROP CONSTRAINT IF EXISTS')) {
+      throw new Error('active-turn migration no longer removes the deadline cap');
     }
 
     psql(`
@@ -147,6 +159,7 @@ describe.skipIf(!dockerAvailable)('session_sandboxes anchor guard — real Postg
       $$;
 
       ${repairMigration}
+      ${activeTurnMigration}
     `);
   }, 60_000);
 
@@ -155,7 +168,7 @@ describe.skipIf(!dockerAvailable)('session_sandboxes anchor guard — real Postg
   });
 
   describe('INSERT', () => {
-    test('anchors at now() and floors a bare row at 20 minutes', () => {
+    test('anchors at now() and floors a bare row at 15 minutes', () => {
       psql(`
         DELETE FROM kortix.session_sandboxes WHERE sandbox_id = '${BOX}';
         INSERT INTO kortix.session_sandboxes(sandbox_id, session_id, provider, status)
@@ -163,7 +176,7 @@ describe.skipIf(!dockerAvailable)('session_sandboxes anchor guard — real Postg
       `);
 
       expect(
-        scalar(`SELECT deadline_at - active_since = interval '20 minutes'
+        scalar(`SELECT deadline_at - active_since = interval '15 minutes'
                   FROM kortix.session_sandboxes WHERE sandbox_id = '${BOX}'`),
       ).toBe('t');
     });
@@ -277,7 +290,7 @@ describe.skipIf(!dockerAvailable)('session_sandboxes anchor guard — real Postg
     // application code (in-place restart, identity recovery, the boot completion
     // itself) with no provider stop anywhere in sight. Under the first cut each
     // such flip handed the box a fresh 24 hours.
-    test('REGRESSION: active -> provisioning -> active does NOT reset the cap', () => {
+    test('REGRESSION: active -> provisioning -> active does NOT reset the provider-run anchor', () => {
       reseed('active');
       const before = scalar(
         `SELECT active_since FROM kortix.session_sandboxes WHERE sandbox_id = '${BOX}'`,
@@ -352,7 +365,7 @@ describe.skipIf(!dockerAvailable)('session_sandboxes anchor guard — real Postg
         scalar(`SELECT active_since = '${anchored}'::timestamptz
                   FROM kortix.session_sandboxes WHERE sandbox_id = '${BOX}'`),
       ).toBe('t');
-    });
+    }, 15_000);
 
     test('REGRESSION: flipping out and back a hundred times buys nothing', () => {
       reseed('active');
@@ -507,14 +520,14 @@ describe.skipIf(!dockerAvailable)('session_sandboxes anchor guard — real Postg
       ).toBe('t');
     });
 
-    test('an EXPIRED deadline is still refloored to 20 minutes on resume', () => {
+    test('an EXPIRED deadline is still refloored to 15 minutes on resume', () => {
       reseed('active', "interval '-1 hour'");
       psql(`UPDATE kortix.session_sandboxes SET status = 'stopped' WHERE sandbox_id = '${BOX}'`);
       psql(`UPDATE kortix.session_sandboxes SET status = 'active' WHERE sandbox_id = '${BOX}'`);
 
       expect(
-        scalar(`SELECT deadline_at > now() + interval '19 minutes'
-                  AND deadline_at < now() + interval '21 minutes'
+        scalar(`SELECT deadline_at > now() + interval '14 minutes'
+                  AND deadline_at < now() + interval '16 minutes'
                   FROM kortix.session_sandboxes WHERE sandbox_id = '${BOX}'`),
       ).toBe('t');
     });
@@ -533,12 +546,10 @@ describe.skipIf(!dockerAvailable)('session_sandboxes anchor guard — real Postg
       ).toBe('t');
     });
 
-    // Carrying a live grant across a flip late in a stretch must not raise 23514
-    // and 500 a path whose whole job is to recover a box. (Since I4 the anchor is
-    // also refreshed on this path, so the clamp is belt-and-braces rather than
-    // the thing doing the work — what is asserted is the OUTCOME: no 23514, and
-    // the row still satisfies the cap.)
-    test('a flip at the very edge of the cap succeeds instead of raising 23514', () => {
+    // Carrying a live grant across a flip late in a provider run must not raise
+    // 23514. The resume floor can cross the old 24-hour boundary because a
+    // verified active turn now has no wall-clock cap.
+    test('a flip across the former cap succeeds and preserves a live deadline', () => {
       reseed('active', "interval '4 hours'");
       // Age the stretch to 23h55m by rebuilding the row with an old anchor: the
       // only writer that can set an old anchor is the INSERT branch, so park and
@@ -552,8 +563,7 @@ describe.skipIf(!dockerAvailable)('session_sandboxes anchor guard — real Postg
          WHERE sandbox_id = '${BOX}';
         ALTER TABLE kortix.session_sandboxes ENABLE TRIGGER trg_session_sandboxes_anchor_guard;
       `);
-      // A provisioning flip carries the anchor forward (I2), so the 20-minute
-      // floor would breach the cap by 15 minutes if it were not clamped.
+      // A provisioning flip carries the anchor forward and applies the floor.
       psql(
         `UPDATE kortix.session_sandboxes SET status = 'provisioning' WHERE sandbox_id = '${BOX}'`,
       );
@@ -565,18 +575,14 @@ describe.skipIf(!dockerAvailable)('session_sandboxes anchor guard — real Postg
       expect(flip.exitCode).toBe(0);
       expect(flip.output).not.toContain('23514');
       expect(
-        scalar(`SELECT deadline_at <= active_since + interval '24 hours'
+        scalar(`SELECT deadline_at > active_since + interval '24 hours'
                   FROM kortix.session_sandboxes WHERE sandbox_id = '${BOX}'`),
       ).toBe('t');
     });
 
-    // The CHECK must stay REACHABLE — it exists to catch a future writer that
-    // computes a deadline past the cap, and a blanket clamp would hide exactly
-    // that class of bug.
-    // I4. The one case where I2's witness requirement and I3's cap clamp combined
-    // into a row that goes 'active' ALREADY EXPIRED — so the reaper stops the box
-    // the proxy just started and the user's first prompt is refused
-    // `sandbox_run_cap_reached` for a session that never ran 24 hours.
+    // The old cap made an unwitnessed park with a stale anchor resume already
+    // expired. The current trigger keeps the anchor for observability and floors
+    // the deadline independently.
     test('REGRESSION: an UNWITNESSED park with a stale anchor still resumes LIVE', () => {
       reseed('active');
       // Park from `provisioning` with the external box intact — a real transition
@@ -611,23 +617,22 @@ describe.skipIf(!dockerAvailable)('session_sandboxes anchor guard — real Postg
                   FROM kortix.session_sandboxes WHERE sandbox_id = '${BOX}'`),
       ).toBe('t');
       expect(
-        scalar(`SELECT deadline_at BETWEEN now() + interval '19 minutes'
-                                      AND now() + interval '21 minutes'
+        scalar(`SELECT deadline_at BETWEEN now() + interval '14 minutes'
+                                      AND now() + interval '16 minutes'
                   FROM kortix.session_sandboxes WHERE sandbox_id = '${BOX}'`),
       ).toBe('t');
     });
 
-    // The same row, one step further: the grant the API would then issue must
-    // actually land in the future, because that RETURNING is what decides
-    // 'granted' vs 'at_cap' (and therefore whether the prompt is refused).
-    test('REGRESSION: a turn grant on that resumed row reports live, not at_cap', () => {
+    // Active-turn renewal is monotone and intentionally independent of the old
+    // anchor ceiling.
+    test('REGRESSION: an active-turn grant crosses the former cap', () => {
       const live = psql(
         `UPDATE kortix.session_sandboxes s
-            SET deadline_at = LEAST(
-                  s.active_since + make_interval(secs => 86400),
-                  GREATEST(s.deadline_at, now() + make_interval(secs => 14400)))
+            SET deadline_at = GREATEST(
+                  s.deadline_at,
+                  now() + make_interval(secs => 14400))
           WHERE s.sandbox_id = '${BOX}' AND s.status IN ('active', 'provisioning')
-         RETURNING (s.deadline_at > now()) AS live`,
+         RETURNING (s.deadline_at > s.active_since + interval '24 hours') AS live`,
         false,
         ['-t', '-A'],
       ).output;
@@ -636,9 +641,8 @@ describe.skipIf(!dockerAvailable)('session_sandboxes anchor guard — real Postg
       expect(live).not.toContain('f');
     });
 
-    // I4 must not become a general re-anchor: churn INSIDE the cap still buys
-    // nothing, which is the whole of I2.
-    test('I4 does not reopen I2 — churn inside the cap still buys no re-anchor', () => {
+    // Removing the cap must not make the provider-run anchor caller-mutable.
+    test('status churn still buys no provider-run re-anchor', () => {
       reseed('active');
       psql(`
         ALTER TABLE kortix.session_sandboxes DISABLE TRIGGER trg_session_sandboxes_anchor_guard;
@@ -655,7 +659,7 @@ describe.skipIf(!dockerAvailable)('session_sandboxes anchor guard — real Postg
       ).toBe('t');
     });
 
-    test('a caller stating a deadline past the cap still gets 23514', () => {
+    test('a caller can state a deadline past the former cap', () => {
       reseed('active');
       const rejected = psql(
         `\\set VERBOSITY verbose
@@ -665,8 +669,12 @@ describe.skipIf(!dockerAvailable)('session_sandboxes anchor guard — real Postg
         true,
       );
 
-      expect(rejected.exitCode).not.toBe(0);
-      expect(rejected.output).toContain('23514');
+      expect(rejected.exitCode).toBe(0);
+      expect(rejected.output).not.toContain('23514');
+      expect(
+        scalar(`SELECT deadline_at > active_since + interval '10 days'
+                  FROM kortix.session_sandboxes WHERE sandbox_id = '${BOX}'`),
+      ).toBe('t');
     });
   });
 });

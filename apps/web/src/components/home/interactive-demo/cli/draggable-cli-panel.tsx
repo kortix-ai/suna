@@ -1,7 +1,7 @@
 'use client';
 
 import { cn } from '@/lib/utils';
-import { motion } from 'motion/react';
+import { m } from 'motion/react';
 import { useCallback, useEffect, useRef, useState, type HTMLAttributes } from 'react';
 
 export type CliDragHandleProps = HTMLAttributes<HTMLDivElement> & {
@@ -167,7 +167,7 @@ export function DraggableCliPanel({
   if (!entranceReady || (!isDesktop && !show) || (canDrag && pos === null)) return null;
 
   return (
-    <motion.div
+    <m.div
       initial={{ opacity: 0, y: 32 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5, ease: 'easeOut' }}
@@ -191,6 +191,6 @@ export function DraggableCliPanel({
         },
         dragging,
       })}
-    </motion.div>
+    </m.div>
   );
 }

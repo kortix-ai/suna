@@ -2,8 +2,9 @@
 
 import { errorToast } from '@/components/ui/toast';
 import { isBillingEnabled } from '@/lib/config';
-import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import { useSubscriptionStore } from '@/stores/subscription-store';
+import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
+import { resolvedPlan } from '@kortix/sdk';
 import { useCallback } from 'react';
 
 interface UseDownloadRestrictionOptions {
@@ -55,11 +56,13 @@ export function useDownloadRestriction(
   const accountState = useSubscriptionStore((state) => state.accountState);
   const { openUpgradeDialog } = useUpgradeDialogStore();
 
-  const isFreeTier =
-    accountState?.subscription &&
-    (accountState.subscription.tier_key === 'free' ||
-      accountState.subscription.tier_key === 'none' ||
-      !accountState.subscription.tier_key);
+  // The RESOLVED plan family — `free` and `none` are the only two keys in it,
+  // so this covers the same plans the tier_key compare did, and additionally
+  // stops restricting downloads for an account on an admin trial (stored
+  // tier_key `free`, but paid everywhere the server enforces).
+  const isFreeTier = accountState?.subscription
+    ? resolvedPlan(accountState).family === 'free'
+    : undefined;
 
   // Downloads are restricted if user is on free tier and billing is enabled
   const isRestricted = isFreeTier && isBillingEnabled();

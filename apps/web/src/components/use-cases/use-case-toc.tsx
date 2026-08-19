@@ -13,7 +13,11 @@ export function UseCaseToc({ items }: { items: TocItem[] }) {
   const [active, setActive] = useState('');
 
   useEffect(() => {
-    const ids = items.map((item) => item.url.replace(/^#/, '')).filter(Boolean);
+    const ids: string[] = [];
+    for (const item of items) {
+      const id = item.url.replace(/^#/, '');
+      if (id) ids.push(id);
+    }
     if (ids.length === 0) return;
 
     const observer = new IntersectionObserver(

@@ -65,11 +65,16 @@ function getScrapeContent(result: ScrapeResult): { content: string; allowHtml?: 
  * whether it was searched or scraped.
  */
 function ScrapeResultItem({ result }: { result: ScrapeResult }) {
-  const url = safeHttpUrl(result.url);
-  if (!url) return null;
+  // `getScrapeContent` trims and slices up to 8000 characters of page text and
+  // then runs `looksLikeHtml` over the copy. That ran in this body on every
+  // render of the row — for every scraped page in the list — even though only
+  // the expanded disclosure reads it. `results` is memoised upstream, so each
+  // `result` identity is stable and these memos actually hold.
+  const url = useMemo(() => safeHttpUrl(result.url), [result.url]);
+  const hostname = useMemo(() => (url ? wsDomain(url) : ''), [url]);
+  const { content, allowHtml } = useMemo(() => getScrapeContent(result), [result]);
 
-  const hostname = wsDomain(url);
-  const { content, allowHtml } = getScrapeContent(result);
+  if (!url) return null;
 
   return (
     <Disclosure className="group">
@@ -129,7 +134,7 @@ export function ScrapeWebpageTool({ part, defaultOpen, forceOpen, locked }: Tool
 
   return (
     <BasicTool
-      icon={<GlobeIcon className="size-3.5 flex-shrink-0" />}
+      icon={<GlobeIcon className="size-3.5 shrink-0" />}
       trigger={
         <>
           <div className="flex min-w-0 flex-1 items-center gap-1.5">
@@ -149,9 +154,19 @@ export function ScrapeWebpageTool({ part, defaultOpen, forceOpen, locked }: Tool
         // together with nothing marking where one page ends. Same hairline
         // `bash-tool` puts between a command and its output.
         <ToolResultCard className="[&>*>*+*]:border-border/60 [&>*>*+*]:border-t">
-          {results.map((result, idx) => (
-            <ScrapeResultItem key={`${result.url}-${idx}`} result={result} />
-          ))}
+          {(() => {
+            const seen = new Map<string, number>();
+            return results.map((result) => {
+              const n = seen.get(result.url) ?? 0;
+              seen.set(result.url, n + 1);
+              return (
+                <ScrapeResultItem
+                  key={n ? `${result.url}#${n}` : result.url}
+                  result={result}
+                />
+              );
+            });
+          })()}
         </ToolResultCard>
       ) : null}
     </BasicTool>

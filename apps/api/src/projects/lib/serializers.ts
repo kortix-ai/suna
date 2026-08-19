@@ -1,4 +1,10 @@
-import type { Project, ProjectSession, Secret } from '@kortix/api-contract';
+import type {
+  Project,
+  ProjectSession,
+  Secret,
+  SecretDeliveryBlockedReason,
+  SecretDeliveryStrategy,
+} from '@kortix/api-contract';
 import {
   type accountGithubInstallations,
   type projectGitConnections,
@@ -9,9 +15,10 @@ import {
 } from '@kortix/db';
 import { and, desc, eq, isNull, or } from 'drizzle-orm';
 import type { Context } from 'hono';
+import { normalizeAuditClientSource } from '../../shared/audit-client-source';
 import { type SandboxProviderName, config } from '../../config';
-import { type SecretGrant, visibilityToIntent } from '../../executor/share';
-import { buildExperimentalCatalog, resolveExperimentalFeatures } from '../../experimental/features';
+import { type SecretGrant, visibilityToIntent } from '../../connectors/share';
+import { buildFeatureFlagCatalog, resolveFeatureFlags } from '../../feature-flags/registry';
 import { db } from '../../shared/db';
 import type { listSandboxTemplates, listSnapshotBuilds } from '../../snapshots/builder';
 import {
@@ -21,12 +28,14 @@ import {
 } from '../../snapshots/error-classify';
 import { templateSlugFromBuildSlug } from '../../snapshots/ppwarm-names';
 import type { ProjectRole } from '../access';
+import type { ProjectConfigSummary } from '../git/types';
 import { type GitHubRepo, isGithubAppConfigured } from '../github';
 import { parseGitHubRepoUrl } from './git';
-import { isPlaceholderOpencodeTitle } from './opencode-title';
+import { isPlaceholderOpencodeTitle, runtimeRootTitleFromSnapshot } from './opencode-title';
 import { normalizeProjectGlyph } from './project-glyph';
 import { normalizeProjectIcon } from './project-icon';
 import { proxyGitUrl } from './sessions';
+import { networkBoundaryDeliveryAvailable } from '../../secrets/network-boundary-availability';
 
 export const CODEX_AUTH_JSON_SECRET_NAME = 'CODEX_AUTH_JSON';
 
@@ -43,6 +52,7 @@ export type RequestAuditContext = {
   path: string;
   ip: string | null;
   userAgent: string | null;
+  clientReportedSource?: string | null;
 };
 
 export const UUID_V4_REGEX = /^[0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
@@ -61,7 +71,7 @@ export function serializeSession(
     grants?: SecretGrant[];
     /** The viewing user, to compute is_owner / can_manage_sharing. */
     viewerId?: string;
-    /** Viewer can manage the project (account owner/admin, or a project editor). */
+    /** Viewer can manage the project (account owner/admin, or a project manager). */
     canManageProject?: boolean;
     /** Resolved email of the session owner, for "shared by X" display. */
     ownerEmail?: string | null;
@@ -101,6 +111,11 @@ export function serializeSession(
   const rawAutoName =
     canAccess && typeof row.metadata?.name === 'string' ? row.metadata.name : null;
   const autoName = isPlaceholderOpencodeTitle(rawAutoName) ? null : rawAutoName;
+  // The runtime's own root-conversation title (already access-gated: the
+  // snapshot above is [] when canAccess is false). It outranks the generated
+  // auto title so list reads resolve the SAME string the session header shows
+  // live, but never a user rename.
+  const runtimeTitle = runtimeRootTitleFromSnapshot(opencodeSessions, row.opencodeSessionId);
   return {
     session_id: row.sessionId,
     account_id: row.accountId,
@@ -111,14 +126,14 @@ export function serializeSession(
     sandbox_id: row.sandboxId,
     sandbox_url: row.sandboxUrl,
     opencode_session_id: row.opencodeSessionId,
-    name: customName ?? autoName,
+    name: customName ?? runtimeTitle ?? autoName,
     custom_name: customName,
     agent_name: row.agentName,
     status: row.status,
     error: row.error,
-    // A row the caller cannot ACCESS is still listed (scope=project shows a
-    // manager the whole project) but must not carry the session's CONTENT.
-    // metadata holds initial_prompt — the literal text an end-user typed.
+    // Inventory filters inaccessible rows. Keep this boundary fail-closed for
+    // other callers that serialize with canAccess=false. Metadata holds
+    // initial_prompt — the literal text an end-user typed.
     metadata: canAccess ? (row.metadata ?? {}) : {},
     opencode_sessions: opencodeSessions,
     // Ownership + org-visibility (Phase 2 session sharing).
@@ -148,7 +163,7 @@ export function serializeSession(
  * Load a session and enforce that the viewer can SEE it (owner, project-wide,
  * or in the allow-list). Returns null for both not-found and not-visible so we
  * never reveal the existence of a private session. Also reports whether the
- * viewer may manage its sharing (account owner/admin, or a project editor).
+ * viewer may manage its sharing (account owner/admin, or a project manager).
  */
 
 function dashboardBaseUrl(): string {
@@ -194,11 +209,12 @@ export function serializeProject(
     project_role: access?.projectRole ?? null,
     effective_project_role: access?.effectiveRole ?? null,
     dashboard_url: `${dashboardBaseUrl()}/projects/${row.projectId}`,
-    // Experimental features (Customize → Settings → Experimental) — `experimental`
-    // is the effective on/off map; `experimental_features` is the self-describing
-    // catalog the UI renders from. SoT = ../../experimental/features.
-    experimental: resolveExperimentalFeatures(row.metadata),
-    experimental_features: buildExperimentalCatalog(row.metadata),
+    // Feature flags (Settings → Feature flags) — `experimental` is the effective
+    // on/off map; `experimental_features` is the self-describing catalog the UI
+    // renders from. Both wire names are historical and STABLE; do not rename
+    // them. SoT = ../../feature-flags/registry.
+    experimental: resolveFeatureFlags(row.metadata),
+    experimental_features: buildFeatureFlagCatalog(row.metadata),
     // Per-project sandbox-provider override (Customize → Settings). `default_sandbox_provider`
     // is the current pin (null = follow the platform default/distribution);
     // `available_sandbox_providers` is the enabled set the picker offers
@@ -280,10 +296,74 @@ export function requestAuditContext(c: Context): RequestAuditContext {
     path: c.req.path,
     ip: clientIp(c),
     userAgent: c.req.header('user-agent') || null,
+    clientReportedSource: normalizeAuditClientSource(c.req.header('x-kortix-client')),
   };
 }
 
 export type SecretRow = typeof projectSecrets.$inferSelect;
+
+/**
+ * The slice of a loaded `ProjectConfigSummary` the agent-grant axis needs. A
+ * `Pick`, so a route hands the whole loaded config straight through.
+ */
+export type SecretAgentGrantConfig = Pick<ProjectConfigSummary, 'agent_discovery' | 'agents'>;
+
+/** Grant membership. Case-insensitive, mirroring `listAdmits` in
+ *  ../../secrets/strategy.ts — a hand-written `secrets:` list in kortix.yaml may
+ *  use any case, and the two answers must agree. */
+function grantAdmits(list: string[], identifier: string): boolean {
+  const target = identifier.toUpperCase();
+  return list.some((entry) => entry.toUpperCase() === target);
+}
+
+/**
+ * Can any agent receive this secret? Returns the block reason, or null.
+ *
+ * `resolveSecretDelivery` (../../secrets/strategy.ts) hands an `egress`/`broker`
+ * secret to a session only when some agent's `secrets:` list is an explicit
+ * ARRAY naming this IDENTIFIER. `'all'` and an absent list both withhold it as
+ * `agent_grant_unscoped`, so neither counts as a grant here. Matching is by
+ * identifier, never by the env-var `name` — several identifiers may share one
+ * name.
+ *
+ * The tri-state forbids guessing, so read `agent_discovery` for what
+ * `resolveConfigAgents` (../git/config.ts) actually means by it:
+ *
+ *   `opencode`   — the manifest yielded NO agent specs AND NO parse errors, i.e.
+ *                  it declared no `agents:` at all (or there is no manifest).
+ *                  `grantFromLoadedAgents` then resolves to a null grant, which
+ *                  `resolveSecretDelivery` withholds. CERTAIN: no session can
+ *                  ever receive this secret. A native `.opencode` agent does not
+ *                  rescue it — grants come only from manifest specs.
+ *   `declarative`, agents non-empty — the manifest parsed and its declarations
+ *                  are the complete grant set. CERTAIN either way.
+ *   `declarative`, agents EMPTY — the only ambiguous state, and it is reached by
+ *                  a manifest that FAILED to parse (specs empty, errors present)
+ *                  or one whose agents are all disabled. Report null.
+ *
+ * Getting this backwards would be worse than useless in both directions: silent
+ * on the commonest broken setup (no `agents:` block), and crying wolf on a
+ * manifest we merely failed to read.
+ */
+export function secretDeliveryBlockedReason(
+  identifier: string,
+  strategy: SecretDeliveryStrategy,
+  config: SecretAgentGrantConfig | null | undefined,
+): SecretDeliveryBlockedReason | null {
+  if (strategy !== 'egress' && strategy !== 'broker') return null;
+  if (!config) return null;
+  if (config.agent_discovery === 'opencode') return 'no_agent_grant';
+  // Anything other than the two known modes is a config we do not understand —
+  // including a partial object from a caller that resolved only part of it.
+  if (config.agent_discovery !== 'declarative') return null;
+  const agents = config.agents;
+  if (!Array.isArray(agents) || agents.length === 0) return null;
+  const granted = agents.some((agent) => {
+    const env = agent.scope?.env;
+    return Array.isArray(env) && grantAdmits(env, identifier);
+  });
+  return granted ? null : 'no_agent_grant';
+}
 
 /**
  * The view of one project secret (one IDENTIFIER): the shared/project row
@@ -301,6 +381,22 @@ export function buildSecretView(input: {
   shared?: SecretRow;
   personal?: SecretRow;
   canManageShared: boolean;
+  /** The project's loaded config, for the agent-grant axis. Omit it and every
+   *  pre-existing field is unchanged; `delivery_blocked_reason` reports null. */
+  agentGrants?: SecretAgentGrantConfig | null;
+  /**
+   * The project's `metadata` column, for the per-project boundary flag.
+   *
+   * REQUIRED, and deliberately so. It feeds `network_boundary_available` and
+   * `delivery_status`, which the web control and the CLI read to decide whether
+   * this delivery mode can be offered at all. As an optional parameter a caller
+   * that simply forgot it still typechecked and silently reported the old
+   * Platinum-only answer — a wrong feature verdict, invisible to tsc and to
+   * every test that did not happen to look. Required turns that into a compile
+   * error. Pass `undefined` explicitly for a caller that genuinely has no
+   * project; that reads as closed, never as "unset".
+   */
+  projectMetadata: unknown;
 }): Secret {
   const { identifier, name, shared, personal, canManageShared } = input;
   const system = isSystemProjectSecretName(name);
@@ -308,6 +404,35 @@ export function buildSecretView(input: {
   const mineActive = Boolean(personal?.active);
   const effectiveSource: 'mine' | 'shared' | 'none' =
     personal && mineActive ? 'mine' : shared ? 'shared' : 'none';
+  const deliveryRow = shared ?? personal;
+  const strategy = deliveryRow?.strategy ?? 'runtime';
+  const requiresRotation =
+    strategy !== 'runtime' &&
+    (!deliveryRow?.rotatedAt || deliveryRow.rotatedAt < deliveryRow.updatedAt);
+  const backend = deliveryRow?.egressPolicy?.backend;
+  const legacyConsumer =
+    strategy === 'runtime'
+      ? 'sandbox'
+      : strategy === 'denied'
+        ? null
+        : strategy === 'egress'
+          ? 'network'
+          : backend === 'llm_gateway'
+            ? 'llm_gateway'
+            : backend === 'connector'
+              ? 'connector'
+              : backend === 'git_proxy'
+                ? 'git_proxy'
+                : backend === 'kortix_fetch'
+                  ? 'http_broker'
+                  : null;
+  const storedConsumer =
+    strategy === 'denied'
+      ? null
+      : deliveryRow?.scope === 'connector'
+        ? 'connector'
+        : (deliveryRow?.consumer ?? legacyConsumer);
+  const consumer = storedConsumer;
   return {
     identifier,
     name,
@@ -329,8 +454,33 @@ export function buildSecretView(input: {
       : null,
     // What actually gets injected into my sessions for this identifier.
     effective_source: effectiveSource,
-    // Members manage only their own override; editors also manage the shared row.
+    // Members manage only their own override; managers also manage the shared row.
     can_manage_shared: canManageShared && !system,
+    strategy,
+    consumer,
+    delivery_status:
+      (strategy === 'runtime' && consumer === 'sandbox') ||
+      (strategy === 'broker' && consumer === 'llm_gateway') ||
+      (strategy === 'broker' && consumer === 'git_proxy') ||
+      (strategy === 'broker' && consumer === 'http_broker' && backend === 'kortix_fetch') ||
+      (strategy === 'egress' &&
+        consumer === 'network' &&
+        networkBoundaryDeliveryAvailable(input.projectMetadata)) ||
+      consumer === 'connector'
+        ? 'available'
+        : strategy === 'denied'
+          ? 'disabled'
+          : 'unavailable',
+    // Two axes, deliberately not folded together. `delivery_status` answers
+    // "does this deployment support the mode" and stays 'available' on a missing
+    // grant, because the CLI, the SDK and the web chip all key off that meaning.
+    // The grant axis is per-project and lives here.
+    delivery_blocked_reason: secretDeliveryBlockedReason(identifier, strategy, input.agentGrants),
+    network_boundary_available: networkBoundaryDeliveryAvailable(input.projectMetadata),
+    egress_policy: deliveryRow?.egressPolicy ?? null,
+    strategy_locked: deliveryRow?.strategyLocked ?? false,
+    last_rotated_at: deliveryRow?.rotatedAt?.toISOString() ?? null,
+    requires_rotation: requiresRotation,
   };
 }
 
@@ -339,11 +489,22 @@ export function buildSecretView(input: {
  * own override merged). Used by the secrets list + returned after a write.
  */
 
-export async function loadSecretViewsForUser(
-  projectId: string,
-  userId: string,
-  canManageShared: boolean,
-): Promise<ReturnType<typeof buildSecretView>[]> {
+export async function loadSecretViewsForUser(input: {
+  projectId: string;
+  userId: string;
+  canManageShared: boolean;
+  /** The loaded project's `metadata` column — see `buildSecretView`. */
+  projectMetadata: unknown;
+  /** The project's loaded config. Callers that have already read it pass it so
+   *  every row reports the agent-grant axis; omitting it reports null. */
+  agentGrants?: SecretAgentGrantConfig | null;
+}): Promise<ReturnType<typeof buildSecretView>[]> {
+  // NAMED, not positional. `projectMetadata` is `unknown`, so it accepts any
+  // argument — as a positional parameter it silently swallowed the `agentGrants`
+  // that a call site passed in that slot, and typechecked while doing it. That
+  // is the same class of invisible failure the required flag exists to prevent,
+  // so the whole signature is by name.
+  const { projectId, userId, canManageShared, projectMetadata, agentGrants } = input;
   const rows = await db
     .select()
     .from(projectSecrets)
@@ -370,6 +531,8 @@ export async function loadSecretViewsForUser(
       shared: slot.shared,
       personal: slot.personal,
       canManageShared,
+      agentGrants,
+      projectMetadata,
     }),
   );
 }
@@ -603,7 +766,7 @@ export function serializeTemplate(t: Awaited<ReturnType<typeof listSandboxTempla
   };
 }
 
-const PROJECT_ROLES = ['editor', 'member'] as const;
+const PROJECT_ROLES = ['manager', 'member'] as const;
 
 export type ProjectGroupGrantRole = (typeof PROJECT_ROLES)[number];
 
@@ -611,5 +774,21 @@ export function isProjectRole(v: unknown): v is ProjectGroupGrantRole {
   return typeof v === 'string' && (PROJECT_ROLES as readonly string[]).includes(v);
 }
 
-// GET /v1/projects/:projectId/group-grants
-// List every group attached to this project, with the role + group name.
+/**
+ * Parse a bounded positive integer query parameter, or report why it is invalid.
+ * Shared by every paged read route (transcript, voice transcript, approvals).
+ */
+export function parseBoundedPositiveInt(
+  raw: string | undefined,
+  fallback: number,
+  min: number,
+  max: number,
+  label: string,
+): { ok: true; value: number } | { ok: false; error: string } {
+  if (raw === undefined || raw === '') return { ok: true, value: fallback };
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < min || value > max) {
+    return { ok: false, error: `${label} must be an integer between ${min} and ${max}` };
+  }
+  return { ok: true, value };
+}

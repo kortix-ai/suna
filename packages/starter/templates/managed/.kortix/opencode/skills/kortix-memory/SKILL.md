@@ -1,6 +1,6 @@
 ---
 name: kortix-memory
-description: How to read, write, and curate project memory in `.kortix/memory/` — the project brain. Load this skill whenever you (or the memory-reflector agent) need to add, update, or reorganize what this project knows about itself. Defines the rubric for what belongs in memory, the file structure, and the change-request flow for landing memory edits on `main`.
+description: How to read, write, and curate project memory in `.kortix/memory/` — the project brain. Load this skill whenever you (or the harness-reflector agent) need to add, update, or reorganize what this project knows about itself. Defines the rubric for what belongs in memory, the file structure, and the change-request flow for landing memory edits on `main`.
 ---
 
 <skill name="kortix-memory">
@@ -8,14 +8,14 @@ description: How to read, write, and curate project memory in `.kortix/memory/` 
 <overview>
 Every Kortix project has a **project brain** at `.kortix/memory/` — a
 folder of curated markdown files describing what this project is,
-which integrations it talks to, the conventions the team works by, and
+which connections it uses, the conventions the team works by, and
 the decisions worth not re-litigating.
 
 `MEMORY.md` is the **index**. Memory is **not** auto-injected into the
 prompt — the **memory protocol** is: at the start of a task, `view`
 `.kortix/memory` with the `memory` tool to read the index and recover
 prior context, then `view` the sub-files (`overview.md`,
-`integrations.md`, etc.) the index points at when they're relevant.
+`connections.md`, etc.) the index points at when they're relevant.
 Record anything durable as you go — your context window may reset at
 any time, so what isn't written to `.kortix/memory/` is lost.
 
@@ -23,8 +23,9 @@ Memory is **continuously CRUD'd**:
 
 - Regular sessions add or update memory whenever they discover
   something durable worth keeping.
-- The `memory-reflector` agent (`.kortix/opencode/agents/memory-reflector.md`)
-  runs on a cron, surveys recent activity, and curates the folder.
+- The `harness-reflector` agent (`.kortix/opencode/agents/harness-reflector.md`)
+  runs on a cron, surveys recent activity, and curates the folder as the
+  memory pass of the `kortix-harness-refinement` protocol.
 - Both consult this skill for the rubric.
 
 Memory is **team-shared**: it lives in the repo, every session sees the
@@ -35,10 +36,11 @@ never by pushing directly.
 <when-to-load>
 Load this skill when you:
 
-- Discover a project convention, integration detail, decision, or
+- Discover a project convention, connection detail, decision, or
   workaround that should outlast this session
 - Notice the project brain is out of date or contradicts current code
-- Are the `memory-reflector` agent doing your scheduled reflection run
+- Are the `harness-reflector` agent running the memory pass of your
+  scheduled reflection run
 - Want to know if something is worth writing down (use the rubric below)
 - Need to add, rename, split, or delete a memory file
 - Want to know how memory edits reach `main`
@@ -52,7 +54,7 @@ memory is about durable knowledge, not session state.
 .kortix/memory/
 ├── MEMORY.md           Index. `view` this first. One line per sub-file.
 ├── overview.md         What this project IS — purpose, shape, stakeholders.
-├── integrations.md     Third parties, MCP servers, channels, executor connectors.
+├── connections.md      Third parties, MCP servers, channels, and connectors.
 ├── conventions.md      Coding patterns, naming, do / don't, style decisions.
 └── decisions.md        Architectural and business decisions worth not re-debating.
 ```
@@ -78,7 +80,7 @@ there's enough depth to warrant a click.
   one-sentence pitch.
 - **Architecture-level decisions** — why we use X over Y, which
   service owns what, the data flow.
-- **Integration details** — which third parties / MCP servers /
+- **Connection details** — which third parties / MCP servers /
   channels are wired, what credentials they need, how they're scoped.
 - **Conventions** — naming, code style, branching, review norms — the
   stuff that's *de facto* across the codebase but not stated.
@@ -140,7 +142,7 @@ on `main` through the normal change-request flow (below).
 
 1. `view` `.kortix/memory` to see what's there.
 2. Identify the right file. Most additions fit `overview.md`,
-   `integrations.md`, `conventions.md`, or `decisions.md`. `create` a
+   `connections.md`, `conventions.md`, or `decisions.md`. `create` a
    new file only when a topic deserves its own page.
 3. Edit with `str_replace` / `insert`. Keep entries short, factual, and
    consistent with the surrounding prose.
@@ -170,24 +172,24 @@ The user reviews and merges. Don't merge your own CR.
 
 <reflector>
 
-The `memory-reflector` agent
-(`.kortix/opencode/agents/memory-reflector.md`) is a thin wrapper
-around this skill — its job is to:
+Scheduled memory curation is the fourth pass of the `harness-reflector`
+agent (`.kortix/opencode/agents/harness-reflector.md`) — the
+continual-harness loop. On that pass it:
 
-1. Load this skill.
-2. Survey recent project activity (git log since last run, recent
-   merged CRs, the active session transcript if invoked from one).
-3. Decide what's worth keeping per the **rubric** above.
-4. CRUD `.kortix/memory/` accordingly.
-5. Open a single CR titled `memory: …`.
-6. Exit silently if nothing is worth changing.
+1. Loads this skill.
+2. Surveys recent project activity (git log since last run, recent
+   merged CRs, session digests via `kortix sessions digest`).
+3. Decides what's worth keeping per the **rubric** above.
+4. CRUDs `.kortix/memory/` accordingly.
+5. Folds the memory edits into its single `harness: …` CR.
+6. Leaves memory untouched when nothing is worth changing.
 
-To change *what the reflector remembers*, edit the **rubric** section
-of this skill. The reflector reads it fresh every run, so a merged CR
-to this file takes effect on the next reflection.
+To change *what gets remembered*, edit the **rubric** section of this
+skill's project copy. The reflector reads it fresh every run, so a
+merged CR to this file takes effect on the next reflection.
 
 To change *when the reflector runs*, edit the `triggers:` entry
-named `memory-reflector` in `kortix.yaml`. The cron sweep picks up
+named `harness-reflector` in `kortix.yaml`. The cron sweep picks up
 changes within a few seconds of the CR merging.
 
 </reflector>

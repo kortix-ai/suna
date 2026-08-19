@@ -21,9 +21,9 @@ Invite a teammate by email from the account's members page. They get access as s
 
 Inside a project, each person holds one role:
 
-- **Member** — runs sessions and triggers.
-- **Editor** — also edits the project and manages triggers.
-- **Manager** — also manages members and gateway keys, and deletes the project.
+- **Member** — runs sessions and fires triggers. Read-only otherwise.
+- **Manager** — everything: edits the project, manages triggers, connectors,
+  skills, secrets and members, holds the gateway keys, and deletes the project.
 
 Set these from the project's access settings.
 
@@ -34,6 +34,8 @@ If you belong to more than one account, switch between them from the account swi
 ## Tokens
 
 Kortix signs you in with a personal access token (`kortix_pat_...`). A service account (`kortix_sa_...`) is a separate, non-human credential with no project access until you grant it.
+
+The two live on two surfaces, because they belong to two different owners. Your own API keys are in your settings, at **Settings → API keys** (`/settings/tokens`) — only you see them, and they stop working when your membership does. Service account tokens are account configuration, at **Account → Tokens**, beside the key rules that govern expiry.
 
 See [SDK authentication](/docs/sdk/auth) for the full token model.
 

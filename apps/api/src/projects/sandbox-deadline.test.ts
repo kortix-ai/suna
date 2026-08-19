@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { mockConfigModule } from './reaping/test-support/mock-config';
 
 // The module only ever issues raw SQL, so the assertions below are about the
 // STATEMENT SHAPE — which is the whole safety argument: an extend must contain
@@ -6,8 +7,7 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 // LEAST and never GREATEST, and neither may assign active_since.
 let executed: string[] = [];
 /** What the mocked driver returns from `db.execute`. `undefined` reproduces a
- *  driver whose shape this module does not recognise; the writer must then fail
- *  OPEN rather than refuse a user's prompt. */
+ *  driver response returned by `db.execute`. */
 let executeResult: unknown;
 let executeThrows: Error | null = null;
 
@@ -18,7 +18,11 @@ function render(query: unknown): string {
   if (query === null || query === undefined) return '';
   // Interpolated primitives are stored raw by drizzle, not wrapped in Param.
   if (typeof query !== 'object') return String(query);
-  const node = query as { queryChunks?: unknown[]; value?: unknown; name?: unknown };
+  const node = query as {
+    queryChunks?: unknown[];
+    value?: unknown;
+    name?: unknown;
+  };
   if (Array.isArray(node.queryChunks)) return node.queryChunks.map(render).join(' ');
   if (Array.isArray(node.value)) return node.value.join('');
   if (node.value !== undefined) return String(node.value);
@@ -26,7 +30,11 @@ function render(query: unknown): string {
   return '';
 }
 
-mock.module('../config', () => ({ config: { KORTIX_SANDBOX_AUTOSTOP_MINUTES: 15 } }));
+/** Collapse the rendered statement's whitespace so an assertion can be about
+ *  the EXPRESSION SHAPE without depending on how drizzle spaced the chunks. */
+const squish = (sql: string) => sql.replace(/\s+/g, ' ');
+
+mock.module('../config', () => mockConfigModule());
 mock.module('../shared/db', () => ({
   db: {
     execute: async (query: unknown) => {
@@ -38,16 +46,17 @@ mock.module('../shared/db', () => ({
 }));
 
 const {
-  ABSOLUTE_RUN_CAP_MS,
+  NON_TURN_DEADLINE_CAP_MS,
   extendSandboxDeadline,
+  extendUnconfirmedTurnDeadline,
   grantWarmPoolLifetime,
   idleGraceMs,
   isSandboxAuthored,
   isTurnStartRequest,
-  observeTurnStart,
   shortenSandboxDeadline,
   shortenSandboxDeadlineOnTurnEnd,
   turnGrantMs,
+  turnUnconfirmedDripMs,
 } = await import('./sandbox-deadline');
 
 beforeEach(() => {
@@ -56,6 +65,7 @@ beforeEach(() => {
   executeThrows = null;
   delete process.env.KORTIX_SANDBOX_TURN_GRANT_MINUTES;
   delete process.env.KORTIX_SANDBOX_WARM_GRANT_MINUTES;
+  delete process.env.KORTIX_SANDBOX_TURN_UNCONFIRMED_DRIP_MINUTES;
 });
 
 describe('the constants', () => {
@@ -67,8 +77,8 @@ describe('the constants', () => {
     expect(idleGraceMs()).toBe(15 * 60_000);
   });
 
-  test('the absolute cap mirrors the DB CHECK at 24h', () => {
-    expect(ABSOLUTE_RUN_CAP_MS).toBe(24 * 3_600_000);
+  test('non-turn observations are capped at 24h', () => {
+    expect(NON_TURN_DEADLINE_CAP_MS).toBe(24 * 3_600_000);
   });
 
   test('the grant is tunable, so it can be tightened without a code change', () => {
@@ -76,11 +86,9 @@ describe('the constants', () => {
     expect(turnGrantMs()).toBe(60 * 60_000);
   });
 
-  // The documented kill switch: a grant longer than the cap makes every extend
-  // clamp at active_since + 24h, neutralising the feature with no rollback.
-  test('KILL SWITCH: an absurd grant still cannot exceed the cap', () => {
+  test('an absurd non-turn grant still clamps to the cap', () => {
     process.env.KORTIX_SANDBOX_TURN_GRANT_MINUTES = '100000';
-    expect(turnGrantMs()).toBeGreaterThan(ABSOLUTE_RUN_CAP_MS);
+    expect(turnGrantMs()).toBeGreaterThan(NON_TURN_DEADLINE_CAP_MS);
   });
 });
 
@@ -92,8 +100,29 @@ describe('extendSandboxDeadline — control-plane-observed, monotone, capped', (
     expect(sql).toContain('LEAST'); // the cap
     expect(sql).toContain('GREATEST'); // monotonic: a concurrent extend can't be lost
     expect(sql).toContain('active_since +');
-    expect(sql).toContain('86400'); // ABSOLUTE_RUN_CAP_MS in seconds
+    expect(sql).toContain('86400'); // NON_TURN_DEADLINE_CAP_MS in seconds
     expect(sql).toContain('14400'); // the 4h grant in seconds
+  });
+
+  // ═══ THE MID-TURN KILL THIS CLOSES ═══
+  // The expression used to be LEAST(active_since + 24h, GREATEST(deadline_at,
+  // now() + grant)), which SHORTENS the deadline of any box whose provider run
+  // is already past the anchor cap. Active-turn renewal is deliberately uncapped
+  // (sandbox-turn-lifecycle.ts) and migration 20260817150000000 dropped the
+  // `session_sandboxes_deadline_within_cap` CHECK precisely so an observed turn
+  // may outlive 24h — so on a 30h-old box holding a turn renewed to now + 4h,
+  // any extend rewrote deadline_at to a value ~6h IN THE PAST and the next
+  // reaper pass parked the box mid-turn. An "extend" may never contract.
+  test('REGRESSION: GREATEST-first, so no extend can ever move a deadline backwards', async () => {
+    await extendSandboxDeadline({ sessionId: 'sess-1' });
+
+    // The shape IS the proof: GREATEST(s.deadline_at, X) >= s.deadline_at for
+    // every X, whatever the anchor says. The cap lives INSIDE it, so it still
+    // bounds what THIS observation may grant without contracting what an
+    // uncapped active-turn renewal already granted.
+    expect(squish(executed[0])).toMatch(
+      /deadline_at = GREATEST\( ?s\.deadline_at, LEAST\( ?s\.active_since \+ make_interval/,
+    );
   });
 
   test('NEVER assigns active_since — the DB trigger owns the anchor', async () => {
@@ -128,77 +157,10 @@ describe('extendSandboxDeadline — control-plane-observed, monotone, capped', (
   });
 });
 
-// ═══ THE DEFECT THIS CLOSES ═══
-// The extend clamps at `active_since + 24h`. Once a box has burned its whole
-// stretch that value is in the PAST, so a fire-and-forget extend on the prompt
-// path ACCEPTED the user's message and let the reaper stop the box seconds
-// later — mid-work, message swallowed. Accepting work you are about to kill is
-// worse than refusing it, so the prompt paths ask, and refuse at the cap.
-describe('observeTurnStart — refuse at the cap instead of accepting then killing', () => {
-  test('a box with life left is GRANTED the turn', async () => {
-    executeResult = [{ live: true }];
-
-    expect(await observeTurnStart({ sessionId: 'sess-1' })).toBe('granted');
-  });
-
-  test('REGRESSION: a box at its 24h cap is refused, not accepted-then-killed', async () => {
-    // The UPDATE ran and clamped to active_since + 24h, which is already past.
-    executeResult = [{ live: false }];
-
-    expect(await observeTurnStart({ sessionId: 'sess-1' })).toBe('at_cap');
-  });
-
-  test('no matching live row is distinguishable from a cap hit', async () => {
-    executeResult = [];
-
-    expect(await observeTurnStart({ sessionId: 'sess-1' })).toBe('no_box');
-  });
-
-  test('it issues exactly the same monotone, capped statement as an extend', async () => {
-    executeResult = [{ live: true }];
-    await observeTurnStart({ sessionId: 'sess-1' });
-    const observed = executed[0];
-
-    executed = [];
-    await extendSandboxDeadline({ sessionId: 'sess-1' });
-
-    expect(observed).toBe(executed[0]);
-  });
-
-  test('it reports liveness from the DB clock, never from the API pod clock', async () => {
-    executeResult = [{ live: true }];
-    await observeTurnStart({ sessionId: 'sess-1' });
-
-    expect(executed[0]).toContain('RETURNING');
-    expect(executed[0]).toContain('deadline_at > now()');
-  });
-
-  test('reads the node-postgres { rows } shape as well as the postgres-js array', async () => {
-    executeResult = { rows: [{ live: false }] };
-
-    expect(await observeTurnStart({ sessionId: 'sess-1' })).toBe('at_cap');
-  });
-
-  // Refusing a user's prompt because a driver returned an unfamiliar shape, or
-  // because the DB blipped, is far worse than granting one turn too many — the
-  // CHECK is still the real bound either way.
-  test('FAILS OPEN on an unrecognised driver shape', async () => {
-    executeResult = undefined;
-
-    expect(await observeTurnStart({ sessionId: 'sess-1' })).toBe('granted');
-  });
-
-  test('FAILS OPEN when the write itself throws', async () => {
-    executeThrows = new Error('db down');
-
-    expect(await observeTurnStart({ sessionId: 'sess-1' })).toBe('granted');
-  });
-});
-
 // ═══ THE FEATURE-DEFEATING BUG THIS CLOSES ═══
 // The warm exemption was deleted with no replacement. An unclaimed warm box has
 // no turns, no LLM calls and no human traffic, so it can NEVER receive an extend
-// — every warm box was reaped at its 20-minute boot floor before it could be
+// — every warm box was reaped at its 15-minute boot floor before it could be
 // handed out, which defeats the warm pool outright.
 describe('grantWarmPoolLifetime — the one box that can never be observed', () => {
   test('REGRESSION: a warm box is granted its bounded hour at bake time', async () => {
@@ -222,7 +184,9 @@ describe('grantWarmPoolLifetime — the one box that can never be observed', () 
 
   test('the warm lifetime is tunable', async () => {
     process.env.KORTIX_SANDBOX_WARM_GRANT_MINUTES = '10';
-    await grantWarmPoolLifetime('sb-1', { warm_session: { state: 'available' } });
+    await grantWarmPoolLifetime('sb-1', {
+      warm_session: { state: 'available' },
+    });
 
     expect(executed[0]).toContain('600');
   });
@@ -231,8 +195,116 @@ describe('grantWarmPoolLifetime — the one box that can never be observed', () 
     executeThrows = new Error('db down');
 
     expect(
-      await grantWarmPoolLifetime('sb-1', { warm_session: { state: 'available' } }),
+      await grantWarmPoolLifetime('sb-1', {
+        warm_session: { state: 'available' },
+      }),
     ).toBeUndefined();
+  });
+});
+
+// ═══ THE MID-TURN STARVATION THIS CLOSES ═══
+// Incident 2026-08-17T20:40:03Z (session 0fc6897a, Daytona f468056d): the box
+// held a control-plane-minted turn record for its whole life and `deadlineGrant`
+// never left `boot_floor`. The daemon on that warm snapshot answered the turn
+// probe with nothing readable, so `observeSandboxTurn` never returned `active`,
+// `renewActiveSandboxTurn` never ran, and the box died on the 15-minute resume
+// floor WHILE ITS TURN WAS RUNNING. A renewal that starves must not be silent.
+describe('extendUnconfirmedTurnDeadline — the bounded drip for a mute daemon', () => {
+  test('is monotone, so a concurrent extend can never be lost', async () => {
+    await extendUnconfirmedTurnDeadline('sb-1');
+
+    expect(squish(executed[0])).toMatch(
+      /deadline_at = GREATEST\( ?s\.deadline_at, now\(\) \+ make_interval/,
+    );
+  });
+
+  // ═══ THE SILENT NO-OP THIS CLOSES ═══
+  // The drip shared `cappedDeadline` with the non-turn extend, so it read
+  // GREATEST(deadline_at, LEAST(active_since + 24h, now + 15m)). `active_since`
+  // is the IMMUTABLE anchor of the current provider run (migration
+  // 20260817150000000), so on a box running longer than 24h the inner LEAST is
+  // already in the PAST and the GREATEST returns deadline_at unchanged — the
+  // drip did NOTHING for exactly the long-running mid-turn boxes it exists to
+  // save, while still RETURNING true and stamping `deadlineGrant:
+  // 'turn_unconfirmed'`, so the row and the log both claimed a box was being
+  // kept alive whose deadline never moved.
+  //
+  // The anchor cap is a bound on NON-TURN observations. This box holds turn
+  // authority the control plane minted, and `renewActiveSandboxTurn` — the same
+  // evidence class, only stronger — is deliberately uncapped for that reason.
+  // What bounds the drip is the caller's freshness gate (reaping/box-reaper.ts):
+  // a record past its own state's bound stops earning horizons at all.
+  test('REGRESSION: the anchor cap cannot turn the drip into a silent no-op', async () => {
+    await extendUnconfirmedTurnDeadline('sb-1');
+
+    expect(executed[0]).not.toContain('active_since');
+    expect(executed[0]).not.toContain('86400');
+  });
+
+  test('grants ONE liveness horizon, not a turn grant', async () => {
+    // 15 minutes, so a genuinely dead runtime stops getting the drip within one
+    // horizon of its turn record ageing out — never the 4-hour turn grant, which
+    // an unreadable daemon has not earned.
+    expect(turnUnconfirmedDripMs()).toBe(15 * 60_000);
+    await extendUnconfirmedTurnDeadline('sb-1');
+    expect(executed[0]).toContain('900');
+    expect(executed[0]).not.toContain('14400');
+  });
+
+  test('stamps deadlineGrant, so a drip-fed box is visible in the row', async () => {
+    // `deadlineGrant` is what the incident triage read first, and it said
+    // `boot_floor` for a box that was being kept alive by nothing at all.
+    await extendUnconfirmedTurnDeadline('sb-1');
+
+    expect(executed[0]).toContain('deadlineGrant');
+    expect(executed[0]).toContain('turn_unconfirmed');
+  });
+
+  test('merges the stamp into jsonb — never assigns the metadata column', async () => {
+    await extendUnconfirmedTurnDeadline('sb-1');
+
+    expect(executed[0]).toContain('coalesce');
+    expect(executed[0]).toContain("'{}'::jsonb");
+  });
+
+  test('NEVER assigns active_since — the DB trigger owns the anchor', async () => {
+    await extendUnconfirmedTurnDeadline('sb-1');
+
+    expect(executed[0]).not.toMatch(/SET[\s\S]*active_since\s*=/);
+  });
+
+  test('only ever touches a live box, addressed by sandbox id', async () => {
+    await extendUnconfirmedTurnDeadline('sb-1');
+
+    expect(executed[0]).toContain("status = 'active'");
+    expect(executed[0]).toContain('sandbox_id');
+    expect(executed[0]).toContain('sb-1');
+  });
+
+  test('the drip is tunable, so it can be tightened without a code change', async () => {
+    process.env.KORTIX_SANDBOX_TURN_UNCONFIRMED_DRIP_MINUTES = '5';
+    expect(turnUnconfirmedDripMs()).toBe(5 * 60_000);
+    await extendUnconfirmedTurnDeadline('sb-1');
+    expect(executed[0]).toContain('300');
+  });
+
+  test('reports whether it moved a row', async () => {
+    executeResult = [{ extended: true }];
+    expect(await extendUnconfirmedTurnDeadline('sb-1')).toBe(true);
+
+    executeResult = [];
+    expect(await extendUnconfirmedTurnDeadline('sb-1')).toBe(false);
+  });
+
+  test('a failed drip never fails the reaper pass', async () => {
+    executeThrows = new Error('db down');
+    const warn = console.warn;
+    console.warn = () => {};
+    try {
+      expect(await extendUnconfirmedTurnDeadline('sb-1')).toBe(false);
+    } finally {
+      console.warn = warn;
+    }
   });
 });
 
@@ -277,13 +349,17 @@ describe('shortenSandboxDeadlineOnTurnEnd — a retry is not a turn end', () => 
   });
 
   test('REGRESSION: a RETRYABLE error writes NOTHING — the turn is still running', async () => {
-    await shortenSandboxDeadlineOnTurnEnd('sess-1', 'error', { isRetryable: true });
+    await shortenSandboxDeadlineOnTurnEnd('sess-1', 'error', {
+      isRetryable: true,
+    });
 
     expect(executed).toEqual([]);
   });
 
   test('a permanent error shortens the box', async () => {
-    await shortenSandboxDeadlineOnTurnEnd('sess-1', 'error', { isRetryable: false });
+    await shortenSandboxDeadlineOnTurnEnd('sess-1', 'error', {
+      isRetryable: false,
+    });
 
     expect(executed).toHaveLength(1);
   });
@@ -346,7 +422,7 @@ describe('isSandboxAuthored — the box may never extend its own life', () => {
   });
 
   test('a SESSION-SCOPED PAT is sandbox-authored even though apiKeyType is unset', () => {
-    // KORTIX_CLI_TOKEN / KORTIX_EXECUTOR_TOKEN: injected into every box and used
+    // `KORTIX_CLI_TOKEN`: injected into every box and used
     // by the in-box `kortix` CLI. Its auth branch never sets apiKeyType, so a
     // gate testing apiKeyType alone let the box hold itself open indefinitely.
     expect(isSandboxAuthored(undefined, 'session-abc')).toBe(true);

@@ -69,8 +69,8 @@ test('isInviteSent returns false for a plain ProjectAccessMember shape', () => {
     user_id: 'u1',
     email: 'a@b.com',
     account_role: 'member',
-    project_role: 'editor',
-    effective_project_role: 'editor',
+    project_role: 'manager',
+    effective_project_role: 'manager',
     has_implicit_access: false,
     joined_at: '2026-01-01',
     granted_by: null,
@@ -151,11 +151,11 @@ test('listProjectAccess GETs the project access roster', async () => {
 });
 
 test('updateProjectAccess PUTs { role } to /access/:userId', async () => {
-  nextResponse = { status: 200, body: { user_id: 'u1', project_role: 'editor' } };
-  await updateProjectAccess('P1', 'u1', 'editor');
+  nextResponse = { status: 200, body: { user_id: 'u1', project_role: 'manager' } };
+  await updateProjectAccess('P1', 'u1', 'manager');
   expect(last().url).toContain('/projects/P1/access/u1');
   expect(last().method).toBe('PUT');
-  expect(last().body).toEqual({ role: 'editor' });
+  expect(last().body).toEqual({ role: 'manager' });
 });
 
 test('revokeProjectAccess DELETEs /access/:userId', async () => {
@@ -246,23 +246,23 @@ test('attachGroupToProject sends a real expires_at string when given', async () 
 });
 
 test('updateProjectGroupGrant PATCHes with { role } only when expiresAt is undefined', async () => {
-  nextResponse = { status: 200, body: { project_id: 'P1', group_id: 'g1', role: 'editor' } };
-  await updateProjectGroupGrant('P1', 'g1', 'editor');
+  nextResponse = { status: 200, body: { project_id: 'P1', group_id: 'g1', role: 'manager' } };
+  await updateProjectGroupGrant('P1', 'g1', 'manager');
   expect(last().url).toContain('/projects/P1/group-grants/g1');
   expect(last().method).toBe('PATCH');
-  expect(last().body).toEqual({ role: 'editor' });
+  expect(last().body).toEqual({ role: 'manager' });
 });
 
 test('updateProjectGroupGrant PATCHes with expires_at: null to clear expiry', async () => {
-  nextResponse = { status: 200, body: { project_id: 'P1', group_id: 'g1', role: 'editor' } };
-  await updateProjectGroupGrant('P1', 'g1', 'editor', null);
-  expect(last().body).toEqual({ role: 'editor', expires_at: null });
+  nextResponse = { status: 200, body: { project_id: 'P1', group_id: 'g1', role: 'manager' } };
+  await updateProjectGroupGrant('P1', 'g1', 'manager', null);
+  expect(last().body).toEqual({ role: 'manager', expires_at: null });
 });
 
 test('updateProjectGroupGrant PATCHes with a real expires_at string when given', async () => {
-  nextResponse = { status: 200, body: { project_id: 'P1', group_id: 'g1', role: 'editor' } };
-  await updateProjectGroupGrant('P1', 'g1', 'editor', '2026-12-31T00:00:00Z');
-  expect(last().body).toEqual({ role: 'editor', expires_at: '2026-12-31T00:00:00Z' });
+  nextResponse = { status: 200, body: { project_id: 'P1', group_id: 'g1', role: 'manager' } };
+  await updateProjectGroupGrant('P1', 'g1', 'manager', '2026-12-31T00:00:00Z');
+  expect(last().body).toEqual({ role: 'manager', expires_at: '2026-12-31T00:00:00Z' });
 });
 
 test('detachGroupFromProject DELETEs /group-grants/:groupId', async () => {

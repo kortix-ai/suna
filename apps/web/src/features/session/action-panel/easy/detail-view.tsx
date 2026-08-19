@@ -34,7 +34,7 @@ import {
 } from '@phosphor-icons/react';
 import {
   AnimatePresence,
-  motion,
+  m,
   type TargetAndTransition,
   type Transition,
   useReducedMotion,
@@ -142,7 +142,7 @@ export function DetailSidebarToggle({ className }: { className?: string }) {
  * over it, flush to the right edge so an arrival slides in from off-panel.
  *
  * This used to be copy-pasted into `easy-panel.tsx`'s standalone terminal
- * `motion.div`, which is exactly how the terminal drifted into looking like its
+ * `m.div`, which is exactly how the terminal drifted into looking like its
  * own sidebar instead of a view inside this shell. Shared, the two cannot drift.
  */
 const CARD_FRAME =
@@ -542,7 +542,7 @@ export function DetailLayer({
                 lets the fresh content take over the flow immediately instead
                 of stacking under the outgoing one mid-fade. */}
             <AnimatePresence mode="popLayout" initial={false}>
-              <motion.div
+              <m.div
                 key={detail?.key ?? 'empty'}
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
@@ -572,7 +572,7 @@ export function DetailLayer({
                 {/* Pinned below the drawer body — same row the desktop card
                     shows, so paging reads as one behavior wherever you are. */}
                 {detail?.nav && <DetailNav nav={detail.nav} />}
-              </motion.div>
+              </m.div>
             </AnimatePresence>
           </DrawerContent>
         </Drawer>
@@ -599,7 +599,7 @@ export function DetailLayer({
           only hides it from assistive tech, and `pointer-events-none` only
           blocks the mouse; neither stops Shift+Tab walking backward into it
           from the freshly-focused detail. */}
-      <motion.div
+      <m.div
         animate={covered ? { x: '-12%', opacity: 0 } : { x: 0, opacity: 1 }}
         transition={transition}
         className={cn('h-full w-full', covered && 'pointer-events-none')}
@@ -607,11 +607,11 @@ export function DetailLayer({
         inert={covered || undefined}
       >
         {children}
-      </motion.div>
+      </m.div>
 
       <AnimatePresence custom={persistentOpen}>
         {detail && (
-          <motion.div
+          <m.div
             // Constant key: this is the CARD, and paging between siblings
             // never rebuilds it — only opening (mount) and closing (unmount)
             // do, which is what earns the slide. A key on `detail.key` here
@@ -656,7 +656,7 @@ export function DetailLayer({
                 card's own open — the slide above already carries that
                 arrival — and only animates key changes after that, i.e. nav. */}
             <AnimatePresence mode="popLayout" initial={false}>
-              <motion.div
+              <m.div
                 key={detail.key}
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
@@ -690,9 +690,9 @@ export function DetailLayer({
                   {detail.body}
                 </div>
                 {detail.nav && <DetailNav nav={detail.nav} />}
-              </motion.div>
+              </m.div>
             </AnimatePresence>
-          </motion.div>
+          </m.div>
         )}
       </AnimatePresence>
 
@@ -706,7 +706,7 @@ export function DetailLayer({
           close. `initial` is the closed resting state, so the first-ever
           activation plays the same arrival every later open does. */}
       {persistentActivated && persistentLayer && (
-        <motion.div
+        <m.div
           initial={{ x: '100%', opacity: 0 }}
           animate={persistentMotion.target}
           transition={persistentMotion.transition}
@@ -725,7 +725,7 @@ export function DetailLayer({
             <CloseButton onClose={persistentLayer.onClose} />
           </div>
           <div className="min-h-0 flex-1 overflow-hidden">{persistentLayer.body}</div>
-        </motion.div>
+        </m.div>
       )}
     </div>
   );
@@ -757,12 +757,28 @@ export function collapseSnapshots(parts: ToolPart[]): ToolPart[] {
 }
 
 /** The real tool views for a set of calls — the escape hatch's payload. */
-export function ToolParts({ parts, sessionId }: { parts: ToolPart[]; sessionId: string }) {
+export function ToolParts({
+  parts,
+  sessionId,
+  summary,
+}: {
+  parts: ToolPart[];
+  sessionId: string;
+  /**
+   * A plain-language sentence to show above the raw tool views (W3) — e.g.
+   * "Read 3 files". Opt-in: only the Context card's tool-group rows
+   * (`context-card.tsx`) pass one, built by reusing `narrateStep`/
+   * `narrateFailedStep` over the group's own `parts`. `StepDetailBody` leaves
+   * this unset — a Progress step's narration already sits in the detail's
+   * own header, and repeating it here would just say the same line twice.
+   */
+  summary?: string;
+}) {
   const visible = collapseSnapshots(parts);
   // A step's own icon already went red for this (StepIcon, ContextCard) — but
-  // that badge is one glance from the panel's home. Once the user has actually
-  // opened the failed step, the detail must say so too, not just show a tool
-  // view that looks the same as a success (W7).
+  // that glance lives on the panel's home, one screen back. Once the user has
+  // actually opened the failed step, the detail must say so too, not just show
+  // a tool view that looks the same as a success (failed-call aggregation).
   const failed = visible.some(
     (part) => (part.state as { status?: string } | undefined)?.status === 'error',
   );
@@ -777,16 +793,31 @@ export function ToolParts({ parts, sessionId }: { parts: ToolPart[]; sessionId: 
           // search that shows 5 of its 20 results behind an inner scrollbar is
           // hiding what the user opened it to see. The detail's own container
           // scrolls instead. Same un-cap the Advanced stepper applies.
-          '[&_[data-scrollable]]:max-h-none [&_[data-scrollable]]:overflow-visible',
+          // Height only, not overflow: overflow-visible kills the x-axis
+          // scrollbar ToolCodeCard needs for long mono lines, clipping
+          // memory/read/edit/write output at the card frame.
+          '[&_[data-scrollable]]:max-h-none',
         )}
       >
+        {summary && <p className="text-muted-foreground text-sm text-pretty">{summary}</p>}
         {failed && (
           <div className="border-kortix-red/30 bg-kortix-red/5 text-foreground rounded-md border px-3 py-2 text-sm">
             This step hit a problem — the details below show what happened.
           </div>
         )}
+        {/* One rendered call → open it; several → every row starts closed and
+            the detail reads as a list of what happened, which is the only way
+            a three-call step is skimmable at all. Counted on `visible`, not
+            `parts`: `collapseSnapshots` can fold three `todo_write` calls into
+            the single row that is actually drawn, and that lone row is a
+            single-part detail by every measure the reader has. */}
         {visible.map((part) => (
-          <ToolPartRenderer key={part.callID} part={part} sessionId={sessionId} defaultOpen />
+          <ToolPartRenderer
+            key={part.callID}
+            part={part}
+            sessionId={sessionId}
+            defaultOpen={visible.length === 1}
+          />
         ))}
       </div>
     </ToolSurfaceContext.Provider>

@@ -7,7 +7,9 @@ import type { Capabilities, Env } from './env';
 
 export type Capability = keyof Capabilities;
 
-export type ProjectRole = 'user' | 'editor' | 'manager';
+// Two assignable project roles. `user` is the legacy spelling of `member`
+// (still folded server-side); `editor` was removed on 2026-08-18 and now 400s.
+export type ProjectRole = 'user' | 'member' | 'manager';
 
 /** A provisioned identity with the data flows assert against. */
 export interface Principal extends Identity {
@@ -59,7 +61,12 @@ export interface TeamFixture {
   /** Grant a project role to an account member (PUT access). */
   grantProjectRole(projectId: string, userId: string, role: ProjectRole): Promise<void>;
   /** Create a project owned by this team account. */
-  project(opts?: { name?: string; seed?: boolean; managedGit?: boolean }): Promise<CreatedProject>;
+  project(opts?: {
+    name?: string;
+    seed?: boolean;
+    managedGit?: boolean;
+    metadata?: Record<string, unknown>;
+  }): Promise<CreatedProject>;
 }
 
 /** Fixture sugar bound to the current run (auto-tracked for teardown). */
@@ -76,6 +83,7 @@ export interface Fixtures {
     accountId?: string;
     seed?: boolean;
     managedGit?: boolean;
+    metadata?: Record<string, unknown>;
   }): Promise<CreatedProject>;
   /**
    * A single shared, READ-ONLY project provisioned once per run and reused — use
@@ -97,6 +105,12 @@ export interface Fixtures {
   team(opts?: { name?: string; enterprise?: boolean }): Promise<TeamFixture>;
   /** Create an isolated user with only its personal account (auto-torn-down). */
   user(opts?: { label?: string }): Promise<Principal>;
+  /**
+   * Create an isolated user with a SPECIFIC email (auto-torn-down). Use this to
+   * become the addressee of a previously-created account/project invite — the
+   * accept/decline handlers reject callers whose email doesn't match the invite.
+   */
+  userWithEmail(email: string, opts?: { label?: string }): Promise<Principal>;
   /** A unique run-scoped name with the e2e-<runId>- prefix. */
   name(slug: string): string;
 }

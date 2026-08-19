@@ -75,7 +75,7 @@ export function useSubmitReviewItem() {
 }
 
 /**
- * Resolve an executor approval (`exec:` adapted review item) directly from the
+ * Resolve a connector approval (`call:` adapted review item) directly from the
  * inbox — the SAME call + payload the in-session approval prompt uses
  * (`resolveApproval`, via `SessionApprovalPrompt` → `useResolveApproval` in
  * session-audit-shared.tsx). A decision always applies to the one call that

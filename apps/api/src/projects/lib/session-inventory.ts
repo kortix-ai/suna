@@ -1,9 +1,10 @@
 import {
-  isSessionVisibleTo,
+  isProjectSessionVisibleTo,
   type SecretGrant,
   type ShareSubject,
-} from '../../executor/share';
+} from '../../connectors/share';
 import type { projectSessions, sessionSandboxes } from '@kortix/db';
+import { isWarmProjectSession } from './warm-sessions';
 
 type ProjectSessionRow = typeof projectSessions.$inferSelect;
 type RuntimeStatus = typeof sessionSandboxes.$inferSelect.status;
@@ -95,7 +96,7 @@ export function selectSessionRowsForViewer(input: {
       typeof metadata.deletedBy === 'string' ? metadata.deletedBy : null;
     const runtimeStatus =
       input.runtimeStatusBySession.get(row.sessionId) ?? null;
-    const canAccess = isSessionVisibleTo(
+    const canAccess = isProjectSessionVisibleTo(
       row.visibility as 'private' | 'project' | 'restricted',
       row.createdBy,
       input.grantsBySession.get(row.sessionId) ?? [],
@@ -105,12 +106,16 @@ export function selectSessionRowsForViewer(input: {
         sessionId: row.sessionId,
         callerSessionId: input.callerSessionId,
       },
+      { metadata: row.metadata, canManageProject: input.canManageProject },
     );
     return { row, canAccess, runtimeStatus, deletedAt, deletedBy };
   });
 
   if (input.scope === 'project') {
-    return { authorized: true, items };
+    // A list row is a disclosure. Keep manager-only lifecycle coverage for
+    // sessions the manager can open, including warm and soft-deleted rows, but
+    // never return an inaccessible session as a redacted breadcrumb.
+    return { authorized: true, items: items.filter((item) => item.canAccess) };
   }
 
   return {
@@ -118,6 +123,14 @@ export function selectSessionRowsForViewer(input: {
     items: items.filter((item) => {
       if (item.deletedAt) return false;
       if (!item.canAccess) return false;
+      // A warm session the user never prompted holds no work of theirs, so
+      // listing it is noise: they would see a session in the sidebar they never
+      // started. The marker is dropped by the first prompt, and from that moment
+      // the row lists like any other session. See lib/warm-sessions.ts.
+      //
+      // `visible` scope only. The `project` scope keeps accessible warm rows for
+      // lifecycle inspection, but it also applies the access filter above.
+      if (isWarmProjectSession(item.row.metadata)) return false;
       return item.row.status !== 'stopped' || item.runtimeStatus === 'stopped';
     }),
   };

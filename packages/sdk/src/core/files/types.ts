@@ -77,3 +77,15 @@ export interface UploadResult {
   path: string;
   size: number;
 }
+
+/**
+ * Result of an overwrite-in-place write (`writeFile`).
+ *
+ * `path` is always the path that was asked for — `writeFile` throws rather than
+ * report a different landing path, which is exactly what the raw upload
+ * endpoint does on a collision.
+ */
+export interface WriteFileResult {
+  path: string;
+  bytes: number;
+}

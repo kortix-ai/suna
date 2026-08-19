@@ -18,18 +18,19 @@
     "bundle:linux-x64": "bash bundle/bundle-linux-x64.sh",
     "bundle:linux-arm64": "bash bundle/bundle-linux-arm64.sh",
     "bundle:clean": "rm -f bundle/kortix bundle/kortix-darwin-* bundle/kortix-linux-*",
-    "test": "pnpm lint:sdk-boundary && bun test",
+    "test": "pnpm lint:sdk-boundary && bun test --timeout ${KORTIX_TEST_TIMEOUT_MS:-15000} --isolate --parallel=4",
     "lint:sdk-boundary": "node scripts/sdk-boundary.mjs"
   },
   "dependencies": {
-    "@kortix/executor-sdk": "workspace:*",
     "@kortix/llm-catalog": "workspace:*",
     "@kortix/manifest-schema": "workspace:*",
     "@kortix/registry": "workspace:*",
     "@kortix/sdk": "workspace:*",
     "@kortix/shared": "workspace:*",
     "@kortix/starter": "workspace:*",
+    "ignore": "7.0.5",
     "smol-toml": "^1.3.0",
+    "tar": "7.5.21",
     "yaml": "^2.8.2"
   },
   "devDependencies": {

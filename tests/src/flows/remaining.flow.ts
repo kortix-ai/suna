@@ -116,8 +116,8 @@ flow(
   {
     domain: "connectors",
     routes: [
-      "POST /v1/executor/projects/:projectId/connectors/:slug/connect",
-      "POST /v1/executor/projects/:projectId/connectors/:slug/connect/finalize",
+      "POST /v1/connectors/projects/:projectId/connectors/:slug/connect",
+      "POST /v1/connectors/projects/:projectId/connectors/:slug/connect/finalize",
     ],
   },
   async (ctx) => {
@@ -125,22 +125,22 @@ flow(
     await ctx.step("pipedream connect on unknown connector → 404/501", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .post("/v1/executor/projects/:projectId/connectors/:slug/connect", {}, { params: { projectId: p.id, slug: "nope" } });
+        .post("/v1/connectors/projects/:projectId/connectors/:slug/connect", {}, { params: { projectId: p.id, slug: "nope" } });
       r.status([404, 501, 403, 400]);
     });
     await ctx.step("pipedream finalize on unknown connector → 404/501", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .post("/v1/executor/projects/:projectId/connectors/:slug/connect/finalize", {}, { params: { projectId: p.id, slug: "nope" } });
+        .post("/v1/connectors/projects/:projectId/connectors/:slug/connect/finalize", {}, { params: { projectId: p.id, slug: "nope" } });
       r.status([404, 501, 403, 400]);
     });
   },
 );
 
-flow("CONN-11", { domain: "connectors", routes: ["POST /v1/executor/webhook/pipedream"] }, async (ctx) => {
-  await ctx.step("pipedream webhook — bad/unsigned payload → rejected", async () => {
-    const r = await ctx.client.as(ctx.P.ANON).post("/v1/executor/webhook/pipedream", { event: "x" });
-    r.status([200, 400, 401, 404]);
+flow("CONN-11", { domain: "connectors", routes: ["POST /v1/connectors/webhook/pipedream"] }, async (ctx) => {
+  await ctx.step("pipedream webhook — bad/unsigned payload rejected, or feature disabled", async () => {
+    const r = await ctx.client.as(ctx.P.ANON).post("/v1/connectors/webhook/pipedream", { event: "x" });
+    r.status([200, 400, 401, 404, 501]);
   });
 });
 

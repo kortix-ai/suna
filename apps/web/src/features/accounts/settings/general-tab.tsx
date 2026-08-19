@@ -42,9 +42,17 @@ import {
 import { isBillingEnabled } from '@/lib/config';
 import { createClient } from '@/lib/supabase/client';
 import { cn } from '@/lib/utils';
-import { ClockIcon as Clock, WarningIcon as DangerTriangleSolid } from '@phosphor-icons/react';
-import { AnimatePresence, motion, MotionConfig } from 'motion/react';
+import { useCurrentAccountStore } from '@/stores/current-account-store';
+import { listAccounts } from '@kortix/sdk';
+import {
+  ArrowUpRightIcon as ArrowUpRight,
+  ClockIcon as Clock,
+  WarningIcon as DangerTriangleSolid,
+} from '@phosphor-icons/react';
+import { useQuery } from '@tanstack/react-query';
+import { AnimatePresence, m, MotionConfig } from 'motion/react';
 import { useTranslations } from 'next-intl';
+import { useRouter } from 'next/navigation';
 import * as React from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { LanguageSwitcher } from './language-switcher';
@@ -53,6 +61,23 @@ export function GeneralTab({ onClose }: { onClose: () => void }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const t = useTranslations('settings.general');
   const tCommon = useTranslations('common');
+  const router = useRouter();
+  const { selectedAccountId, setSelectedAccountId } = useCurrentAccountStore();
+  const accountsQuery = useQuery({
+    queryKey: ['accounts'],
+    queryFn: listAccounts,
+    staleTime: 60_000,
+  });
+  const accountId = selectedAccountId ?? accountsQuery.data?.[0]?.account_id ?? null;
+
+  useEffect(() => {
+    const accounts = accountsQuery.data;
+    if (!accounts?.length) return;
+    if (!selectedAccountId || !accounts.find((a) => a.account_id === selectedAccountId)) {
+      setSelectedAccountId(accounts[0]!.account_id);
+    }
+  }, [accountsQuery.data, selectedAccountId, setSelectedAccountId]);
+
   const [userName, setUserName] = useState('');
   const [userEmail, setUserEmail] = useState('');
   const [avatarUrl, setAvatarUrl] = useState('');
@@ -72,17 +97,40 @@ export function GeneralTab({ onClose }: { onClose: () => void }) {
   const cancelDeletion = useCancelAccountDeletion();
   const deleteImmediately = useDeleteAccountImmediately();
   const accountDeletionSupported = deletionStatus?.supported ?? !isCheckingStatus;
+  const avatarPreviewRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    avatarPreviewRef.current = avatarPreview;
+  }, [avatarPreview]);
+
+  // Closing the settings panel without saving (or cancelling out of it)
+  // unmounts this component while avatarPreview is still holding a blob
+  // URL — neither handleAvatarChange's replace-guard nor handleSave's
+  // post-save revoke runs in that case, so free it here on unmount. The
+  // ref (kept in sync above) always holds the latest preview, so this
+  // empty-deps effect's cleanup revokes whatever is current when it
+  // fires, not a value captured once at mount.
+  useEffect(() => {
+    return () => {
+      if (avatarPreviewRef.current) {
+        URL.revokeObjectURL(avatarPreviewRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const fetchUserData = async () => {
       setIsLoading(true);
-      const { data } = await supabase.auth.getUser();
-      if (data.user) {
-        setUserName(data.user.user_metadata?.name || data.user.email?.split('@')[0] || '');
-        setUserEmail(data.user.email || '');
-        setAvatarUrl(data.user.user_metadata?.avatar_url || '');
+      try {
+        const { data } = await supabase.auth.getUser();
+        if (data.user) {
+          setUserName(data.user.user_metadata?.name || data.user.email?.split('@')[0] || '');
+          setUserEmail(data.user.email || '');
+          setAvatarUrl(data.user.user_metadata?.avatar_url || '');
+        }
+      } finally {
+        setIsLoading(false);
       }
-      setIsLoading(false);
     };
 
     fetchUserData();
@@ -110,6 +158,12 @@ export function GeneralTab({ onClose }: { onClose: () => void }) {
       if (file.size > 5 * 1024 * 1024) {
         errorToast(t('profilePicture.tooLarge'));
         return;
+      }
+      // Picking a second file before saving replaces avatarPreview without
+      // ever passing through handleSave's revoke below — free the old
+      // preview URL here so it doesn't leak.
+      if (avatarPreview) {
+        URL.revokeObjectURL(avatarPreview);
       }
       setAvatarFile(file);
       const previewUrl = URL.createObjectURL(file);
@@ -307,6 +361,32 @@ export function GeneralTab({ onClose }: { onClose: () => void }) {
           <LanguageSwitcher />
         </div>
 
+        {accountId ? (
+          <div className="space-y-2">
+            <h2 className="text-foreground text-base font-semibold">
+              {t('accountSettings.title')}
+            </h2>
+            <Item variant="outline" className="items-start">
+              <ItemContent>
+                <ItemDescription>{t('accountSettings.description')}</ItemDescription>
+              </ItemContent>
+              <ItemActions>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    onClose();
+                    router.push(`/accounts/${accountId}`);
+                  }}
+                >
+                  {t('accountSettings.button')}
+                  <ArrowUpRight className="size-3.5" />
+                </Button>
+              </ItemActions>
+            </Item>
+          </div>
+        ) : null}
+
         {isBillingEnabled() && accountDeletionSupported ? (
           <div className="space-y-2">
             <h2 className="text-foreground text-base font-semibold">{t('deleteAccount.title')}</h2>
@@ -378,16 +458,16 @@ export function GeneralTab({ onClose }: { onClose: () => void }) {
               </ModalHeader>
               <ModalBody className="overflow-hidden">
                 <MotionConfig transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}>
-                  <motion.div layout className="space-y-4">
-                    <motion.div layout>
+                  <m.div layout className="space-y-4">
+                    <m.div layout>
                       <InfoBanner tone="warning" icon={<DangerTriangleSolid weight="fill" />}>
                         {deletionType === 'immediate'
                           ? t('deleteAccount.warningImmediate')
                           : t('deleteAccount.warningGracePeriod')}
                       </InfoBanner>
-                    </motion.div>
+                    </m.div>
 
-                    <motion.div layout className="space-y-2">
+                    <m.div layout className="space-y-2">
                       <p className="text-sm font-medium">{t('deleteAccount.whenDelete')}</p>
                       <ul className="text-muted-foreground list-disc space-y-1.5 pl-4 text-xs sm:pl-5 sm:text-sm">
                         <li>{t('deleteAccount.agentsDeleted')}</li>
@@ -397,7 +477,7 @@ export function GeneralTab({ onClose }: { onClose: () => void }) {
                         <li>{t('deleteAccount.billingRemoved')}</li>
                         <AnimatePresence initial={false}>
                           {deletionType === 'grace-period' && (
-                            <motion.li
+                            <m.li
                               key="scheduled-30-days"
                               className="list-item"
                               initial={{ opacity: 0, height: 0 }}
@@ -405,13 +485,13 @@ export function GeneralTab({ onClose }: { onClose: () => void }) {
                               exit={{ opacity: 0, height: 0 }}
                             >
                               {t('deleteAccount.scheduled30Days')}
-                            </motion.li>
+                            </m.li>
                           )}
                         </AnimatePresence>
                       </ul>
-                    </motion.div>
+                    </m.div>
 
-                    <motion.div layout className="space-y-3">
+                    <m.div layout className="space-y-3">
                       <Label className="text-sm">{t('deleteAccount.chooseDeletionType')}</Label>
                       <RadioGroup
                         value={deletionType}
@@ -437,9 +517,9 @@ export function GeneralTab({ onClose }: { onClose: () => void }) {
                           variant="outline"
                         />
                       </RadioGroup>
-                    </motion.div>
+                    </m.div>
 
-                    <motion.div layout className="space-y-2">
+                    <m.div layout className="space-y-2">
                       <Label htmlFor="delete-confirm" className="text-sm">
                         {t('deleteAccount.confirmText')}
                       </Label>
@@ -451,8 +531,8 @@ export function GeneralTab({ onClose }: { onClose: () => void }) {
                         placeholder={t('deleteAccount.confirmPlaceholder')}
                         autoComplete="off"
                       />
-                    </motion.div>
-                  </motion.div>
+                    </m.div>
+                  </m.div>
                 </MotionConfig>
               </ModalBody>
               <ModalFooter className="w-full sm:justify-between">

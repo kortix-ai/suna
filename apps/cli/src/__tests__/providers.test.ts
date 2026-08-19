@@ -93,3 +93,29 @@ describe('runProviders set — validation before any network call', () => {
     expect(chunks.join('')).toContain('--region');
   });
 });
+
+describe('provider positional help', () => {
+  test('login <provider> --help short-circuits before project resolution and OAuth', async () => {
+    const chunks: string[] = [];
+    const errors: string[] = [];
+    const stdout = process.stdout.write;
+    const stderr = process.stderr.write;
+    (process.stdout as any).write = (chunk: unknown) => {
+      chunks.push(String(chunk));
+      return true;
+    };
+    (process.stderr as any).write = (chunk: unknown) => {
+      errors.push(String(chunk));
+      return true;
+    };
+    try {
+      const code = await runProviders(['login', 'openai', '--help']);
+      expect(code).toBe(0);
+    } finally {
+      (process.stdout as any).write = stdout;
+      (process.stderr as any).write = stderr;
+    }
+    expect(chunks.join('')).toContain('Usage: kortix providers login <provider>');
+    expect(errors.join('')).toBe('');
+  });
+});

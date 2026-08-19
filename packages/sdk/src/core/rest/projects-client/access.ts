@@ -145,7 +145,7 @@ export type InviteProjectMemberResult =
       message: string;
       /** Public invite link — share manually when email delivery is skipped. */
       invite_url: string;
-      /** false = invite email skipped (e.g. Mailtrap unconfigured) or failed. */
+      /** false = invite email skipped (e.g. no email provider configured) or failed. */
       email_sent: boolean;
       email_skip_reason: string | null;
     };
@@ -375,7 +375,7 @@ export async function deleteProjectResourceGrant(projectId: string, grantId: str
 
 // ─── Approvals (APPROVE / ASK / BLOCK inbox) ────────────────────────────────
 
-/** An executor action a policy gated as `require_approval`, still awaiting a
+/** A connector call a policy gated as `require_approval`, still awaiting a
  *  human decision. */
 export interface PendingApproval {
   execution_id: string;

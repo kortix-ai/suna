@@ -1,9 +1,26 @@
 import { hostname, platform, arch, release } from 'os';
-import { trustedCredential, trustedHttpUrl, type TunnelConfig } from './config';
+import { buildTunnelWsUrl, trustedCredential, type TunnelConfig } from './config';
+import { agentTunnelVersion } from './version';
+import { c } from './terminal';
 import { CapabilityRegistry } from './capabilities/index';
 import { PermissionGuard } from './security/permission-guard';
 import type { LocalPermission } from './security/permission-guard';
 import { signMessage, verifyMessageSignature } from '../shared/crypto';
+
+export const AGENT_VERSION = agentTunnelVersion();
+
+/**
+ * Relay close codes that mean the credential itself is bad. They are terminal:
+ * reconnecting with the same token can never succeed.
+ */
+export const AUTH_REJECTED_CLOSE_CODES: readonly number[] = [4001, 4003];
+
+/**
+ * The relay closes an already-registered socket with this code when a second
+ * process authenticates with the same credential. Only one agent may hold a
+ * tunnel, so this is terminal for the displaced process.
+ */
+export const AGENT_REPLACED_CLOSE_CODE = 4004;
 
 interface JsonRpcRequest {
   jsonrpc: '2.0';
@@ -23,18 +40,7 @@ interface JsonRpcNotification {
 }
 
 type IncomingMessage = JsonRpcRequest | JsonRpcNotification;
-
-const c = {
-  reset:   '\x1b[0m',
-  bold:    '\x1b[1m',
-  dim:     '\x1b[2m',
-  cyan:    '\x1b[36m',
-  green:   '\x1b[32m',
-  yellow:  '\x1b[33m',
-  red:     '\x1b[31m',
-  white:   '\x1b[97m',
-  gray:    '\x1b[90m',
-};
+const MAX_RPC_MESSAGE_SIZE = 5 * 1024 * 1024;
 
 function log(icon: string, msg: string) {
   const safeIcon = icon.replace(/[\r\n]/g, ' ');
@@ -42,7 +48,18 @@ function log(icon: string, msg: string) {
   process.stdout.write(`  ${safeIcon} ${c.dim}${safeMsg}${c.reset}\n`);
 }
 
+export interface TunnelAgentHooks {
+  /**
+   * Fires when the relay closes the connection for a reason reconnecting cannot
+   * fix. The agent has already stopped retrying by this point.
+   */
+  onTerminalClose?: (info: { code: number; reason: TerminalCloseReason }) => void;
+}
+
+export type TerminalCloseReason = 'credential-rejected' | 'replaced';
+
 export class TunnelAgent {
+  private hooks: TunnelAgentHooks;
   private ws: WebSocket | null = null;
   private registry: CapabilityRegistry;
   private permissionGuard: PermissionGuard;
@@ -61,10 +78,11 @@ export class TunnelAgent {
   private lastNonce = 0;
   private responseNonce = 0;
 
-  constructor(config: TunnelConfig, registry: CapabilityRegistry) {
+  constructor(config: TunnelConfig, registry: CapabilityRegistry, hooks: TunnelAgentHooks = {}) {
     this.config = config;
     this.registry = registry;
     this.permissionGuard = new PermissionGuard();
+    this.hooks = hooks;
   }
 
   connect(): void {
@@ -122,7 +140,12 @@ export class TunnelAgent {
       this.uptimeInterval = setInterval(() => { this.uptime++; }, 1000);
 
       // Send auth handshake as first message (token never in URL)
-      this.send({ type: 'auth', token: trustedCredential(this.config.token, 'token') });
+      this.send({
+        type: 'auth',
+        token: trustedCredential(this.config.token, 'token'),
+        capabilities: this.registry.getCapabilityNames(),
+        agentVersion: AGENT_VERSION,
+      });
     });
 
     this.ws.addEventListener('message', (event) => {
@@ -141,8 +164,25 @@ export class TunnelAgent {
 
       if (!this.isShuttingDown) {
         if (event.code === 4001) {
-          log(`${c.red}✗${c.reset}`, `Authentication failed — check your token`);
+          this.isShuttingDown = true;
+          log(`${c.red}✗${c.reset}`, `Credential rejected — run \`agent-tunnel connect --reauth\` to pair again`);
+          this.hooks.onTerminalClose?.({ code: event.code, reason: 'credential-rejected' });
           return; // Don't reconnect on auth failure
+        }
+        if (event.code === 4003) {
+          this.isShuttingDown = true;
+          log(`${c.red}✗${c.reset}`, `Device credential was revoked — run \`agent-tunnel connect --reauth\` to pair again`);
+          this.hooks.onTerminalClose?.({ code: event.code, reason: 'credential-rejected' });
+          return;
+        }
+        if (event.code === AGENT_REPLACED_CLOSE_CODE) {
+          this.isShuttingDown = true;
+          log(
+            `${c.yellow}○${c.reset}`,
+            `Another Agent Tunnel process connected with these credentials — stopping this process`,
+          );
+          this.hooks.onTerminalClose?.({ code: event.code, reason: 'replaced' });
+          return;
         }
         log(`${c.yellow}○${c.reset}`, `Disconnected ${c.gray}(code: ${event.code})${c.reset}`);
         this.scheduleReconnect();
@@ -155,6 +195,11 @@ export class TunnelAgent {
   }
 
   private async handleMessage(raw: string): Promise<void> {
+    if (typeof raw !== 'string' || Buffer.byteLength(raw, 'utf8') > MAX_RPC_MESSAGE_SIZE) {
+      log(`${c.red}✗${c.reset}`, `Rejected oversized or non-text relay message`);
+      try { this.ws?.close(4002, 'message too large'); } catch {}
+      return;
+    }
     let msg: any;
     try {
       msg = JSON.parse(raw);
@@ -166,7 +211,16 @@ export class TunnelAgent {
     // Handle auth_ok — server sends signing key after successful auth
     if (msg.type === 'auth_ok' && msg.signingKey) {
       this.signingKey = msg.signingKey;
-      log(`${c.green}●${c.reset}`, `Connected ${c.reset}${c.gray}(${this.registry.getCapabilityNames().join(', ')})${c.reset}`);
+      const capabilityNames = this.registry.getCapabilityNames();
+      if (capabilityNames.length === 0) {
+        // Reporting a bare "Connected ()" hides that this tunnel is inert.
+        log(
+          `${c.yellow}!${c.reset}`,
+          `Connected, but no capabilities are enabled — this tunnel cannot do anything. Run \`agent-tunnel connect --reauth\` to pair again.`,
+        );
+      } else {
+        log(`${c.green}●${c.reset}`, `Connected ${c.reset}${c.gray}(${capabilityNames.join(', ')})${c.reset}`);
+      }
       if (this.stableConnectionTimer) clearTimeout(this.stableConnectionTimer);
       this.stableConnectionTimer = setTimeout(() => {
         this.reconnectAttempts = 0;
@@ -267,7 +321,7 @@ export class TunnelAgent {
     const { id, method, params = {} } = request;
 
     const permissionId = params.permissionId as string | undefined;
-    const permission = this.permissionGuard.getPermission(permissionId);
+    const permission = this.permissionGuard.getPermissionForMethod(permissionId, method);
     if (!permission) {
       this.sendSignedError(id, -32000, `Permission denied: ${permissionId ? 'invalid or expired permission' : 'no permissionId provided'}`);
       return;
@@ -310,7 +364,20 @@ export class TunnelAgent {
       const sig = signMessage(this.signingKey, payload, nonce);
       const signed = { ...data, _sig: sig, _nonce: nonce };
       try {
-        this.ws.send(JSON.stringify(signed));
+        const encoded = JSON.stringify(signed);
+        if (Buffer.byteLength(encoded, 'utf8') > MAX_RPC_MESSAGE_SIZE) {
+          if ('result' in data && typeof data.id === 'string') {
+            this.sendSignedError(
+              data.id,
+              -32003,
+              'RPC result exceeds the maximum tunnel message size',
+            );
+            return;
+          }
+          this.ws.close(4002, 'message too large');
+          return;
+        }
+        this.ws.send(encoded);
       } catch (err) {
         log(`${c.red}✗${c.reset}`, `Send failed`);
       }
@@ -320,6 +387,10 @@ export class TunnelAgent {
   private send(data: unknown): void {
     if (this.ws?.readyState === WebSocket.OPEN) {
       try {
+        // The auth handshake carries the credential read from the local config
+        // file to the relay by design. loadConfig() validates the file and
+        // trustedCredential() rejects control characters before it gets here.
+        // lgtm[js/file-access-to-http]
         this.ws.send(JSON.stringify(data));
       } catch (err) {
         log(`${c.red}✗${c.reset}`, `Send failed`);
@@ -339,7 +410,7 @@ export class TunnelAgent {
           platform: platform(),
           arch: arch(),
           osVersion: release(),
-          agentVersion: '0.1.2',
+          agentVersion: AGENT_VERSION,
         },
       },
     });
@@ -362,19 +433,6 @@ export class TunnelAgent {
   }
 
   private buildWsUrl(): string {
-    const base = trustedHttpUrl(this.config.apiUrl)
-      .replace(/^http:/, 'ws:')
-      .replace(/^https:/, 'wss:');
-
-    if (base.startsWith('ws://') && !base.includes('localhost') && !base.includes('127.0.0.1')) {
-      log(`${c.red}!${c.reset}`, `${c.red}WARNING: Connecting over unencrypted ws:// to a remote host. Token will be sent in plaintext. Use https:// API URL for production.${c.reset}`);
-    }
-
-    const wsPath = this.config.wsPath || '/ws';
-    const params = new URLSearchParams({
-      tunnelId: trustedCredential(this.config.tunnelId, 'tunnelId'),
-    });
-
-    return `${base}${wsPath}?${params.toString()}`;
+    return buildTunnelWsUrl(this.config);
   }
 }

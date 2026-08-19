@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
+  agentScopedModelSelectionKey,
   formatModelString,
   formatPromptModel,
   modelProviderMode,
@@ -16,6 +17,26 @@ describe('OpenCode local model selection scoping', () => {
     expect(scopedModelSelectionKey('session-1', 'native')).toBe('native:session-1');
     expect(scopedModelSelectionKey('session-1', 'gateway')).toBe('gateway:session-1');
     expect(scopedModelSelectionKey(undefined, 'native')).toBeUndefined();
+  });
+
+  test('keeps the per-agent model slot keyed by agent name when an agent is loaded', () => {
+    expect(agentScopedModelSelectionKey('gateway', 'kortix')).toBe('gateway:kortix');
+    expect(agentScopedModelSelectionKey('native', 'kortix')).toBe('native:kortix');
+  });
+
+  // A project `member` is deny-by-default on agents, so the composer's agent
+  // roster is empty until an explicit resource grant names them. The model pick
+  // must still persist: the picker listed every enabled model, but every click
+  // was a no-op because the ONLY durable slot was keyed on the (absent) agent
+  // and the project-home composer has no sessionId either. Selection must not
+  // depend on agent access — the same rule `currentModelKey` already documents
+  // on the READ side.
+  test('still yields a durable slot when no agent is accessible', () => {
+    const key = agentScopedModelSelectionKey('gateway', undefined);
+    expect(key).toBe('gateway:');
+    expect(key).not.toBe(agentScopedModelSelectionKey('native', undefined));
+    // Stable across calls, so a write is readable back by the next render.
+    expect(agentScopedModelSelectionKey('gateway', undefined)).toBe(key);
   });
 
   test('detects gateway mode from the Kortix provider', () => {

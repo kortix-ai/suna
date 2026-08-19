@@ -26,8 +26,9 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const APPS_WEB = resolve(new URL('.', import.meta.url).pathname, '..');
+const APPS_WEB = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const REPO_ROOT = resolve(APPS_WEB, '..', '..');
 const DOCS_ROOT = join(APPS_WEB, 'content', 'docs');
 const MANIFEST_PATH = join(APPS_WEB, 'src', 'lib', 'seo', 'content-timestamps.json');
@@ -50,7 +51,7 @@ const MARKETING_SOURCES = {
   automations: 'apps/web/src/app/(public)/(marketing)/automations/page.tsx',
   channels: 'apps/web/src/app/(public)/(marketing)/channels/page.tsx',
   'company-as-code': 'apps/web/src/app/(public)/(marketing)/company-as-code/page.tsx',
-  integrations: 'apps/web/src/app/(public)/(marketing)/integrations/page.tsx',
+  connectors: 'apps/web/src/app/(public)/(marketing)/connectors/page.tsx',
   security: 'apps/web/src/app/(public)/(marketing)/security/page.tsx',
   'self-hosted': 'apps/web/src/app/(public)/(marketing)/self-hosted/page.tsx',
   // Solutions: the hub, then one entry per role. The eight role pages share a
@@ -104,7 +105,7 @@ function lastCommitIso(pathRelativeToRepo) {
       encoding: 'utf8',
     });
     const trimmed = out.trim();
-    if (trimmed) return trimmed;
+    if (trimmed) return new Date(trimmed).toISOString();
   } catch {
     // fall through to the mtime fallback
   }
@@ -131,10 +132,7 @@ function listDocsMdx() {
     const raw = execFileSync('find', [DOCS_ROOT, '-name', '*.mdx', '-type', 'f'], {
       encoding: 'utf8',
     });
-    return raw
-      .split('\n')
-      .filter(Boolean)
-      .sort();
+    return raw.split('\n').filter(Boolean).sort();
   } catch {
     return [];
   }
@@ -150,22 +148,8 @@ function slugifyDocs(relativePath) {
   return normalized.replace(/\/index$/, '');
 }
 
-function build() {
+function collectContentTimestampManifest() {
   const manifest = {};
-
-  if (!gitAvailable()) {
-    // No git or a shallow clone (Vercel's default checkout). In a shallow
-    // clone `git log -1 -- <path>` returns the single present commit for
-    // every file, which would overwrite the correct committed manifest
-    // (built in a full-history environment) with uniform build-time
-    // timestamps. Preserve the committed manifest by leaving it in place
-    // and returning without writing. public-content.ts reads the existing
-    // file; if none exists (fresh clone w/o a committed manifest), it falls
-    // back to undefined lastModified (the prior behavior). Return an empty
-    // object here only to signal "not regenerated"; the on-disk file is the
-    // source of truth at runtime.
-    return manifest;
-  }
 
   // Marketing pages
   for (const [slug, sourceRel] of Object.entries(MARKETING_SOURCES)) {
@@ -182,6 +166,23 @@ function build() {
     if (iso) manifest[`docs:${slug}`] = iso;
   }
 
+  return manifest;
+}
+
+function createContentTimestampManifest() {
+  if (!gitAvailable()) return {};
+  return collectContentTimestampManifest();
+}
+
+function refreshContentTimestamps() {
+  // No git or a shallow clone (Vercel's default checkout). In a shallow
+  // clone `git log -1 -- <path>` returns the single present commit for
+  // every file, which would overwrite the correct committed manifest
+  // (built in a full-history environment) with uniform build-time
+  // timestamps. Preserve the committed manifest by leaving it in place.
+  if (!gitAvailable()) return {};
+
+  const manifest = collectContentTimestampManifest();
   safeWrite(manifest);
   return manifest;
 }
@@ -200,11 +201,12 @@ function safeWrite(manifest) {
   }
 }
 
-try {
-  build();
-} catch {
-  // belt-and-suspenders: any uncaught error in build() is swallowed so the
-  // importing next.config.ts never fails to load.
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  try {
+    refreshContentTimestamps();
+  } catch {
+    // The manifest is an optimization. Direct generation must not block a build.
+  }
 }
 
-export { build, MANIFEST_PATH };
+export { createContentTimestampManifest, MANIFEST_PATH, refreshContentTimestamps };

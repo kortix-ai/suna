@@ -16,7 +16,6 @@ let origin = '';
 let originalCwd = '';
 let previousConfigFile: string | undefined;
 let previousCliToken: string | undefined;
-let previousExecutorToken: string | undefined;
 let previousApiUrl: string | undefined;
 let previousProjectId: string | undefined;
 let previousServiceToken: string | undefined;
@@ -44,14 +43,12 @@ describe('sessions new CLI flow', () => {
     originalCwd = process.cwd();
     previousConfigFile = process.env.KORTIX_CONFIG_FILE;
     previousCliToken = process.env.KORTIX_CLI_TOKEN;
-    previousExecutorToken = process.env.KORTIX_EXECUTOR_TOKEN;
     previousApiUrl = process.env.KORTIX_API_URL;
     previousProjectId = process.env.KORTIX_PROJECT_ID;
     previousServiceToken = process.env.KORTIX_TOKEN;
     previousBashEnv = process.env.BASH_ENV;
     previousDisableSandboxEnvFile = process.env.KORTIX_DISABLE_SANDBOX_ENV_FILE;
     delete process.env.KORTIX_CLI_TOKEN;
-    delete process.env.KORTIX_EXECUTOR_TOKEN;
     delete process.env.KORTIX_API_URL;
     delete process.env.KORTIX_PROJECT_ID;
     delete process.env.KORTIX_TOKEN;
@@ -69,9 +66,10 @@ describe('sessions new CLI flow', () => {
     writeFileSync(join(repo, 'README.md'), '# test repo\n', 'utf8');
     git(['add', 'README.md'], repo);
     git(['commit', '-m', 'initial'], repo);
-    git(['-c', 'init.defaultBranch=main', 'init', '--bare', origin]);
+    // Copy the initial repository directly. Repeating a setup push in every
+    // test can wait on Git maintenance locks during the loaded package lane.
+    git(['clone', '--quiet', '--bare', repo, origin]);
     git(['remote', 'add', 'origin', origin], repo);
-    git(['push', '--quiet', 'origin', 'main'], repo);
 
     mkdirSync(join(repo, '.kortix'), { recursive: true });
     writeFileSync(
@@ -197,8 +195,6 @@ describe('sessions new CLI flow', () => {
     else process.env.KORTIX_CONFIG_FILE = previousConfigFile;
     if (previousCliToken === undefined) delete process.env.KORTIX_CLI_TOKEN;
     else process.env.KORTIX_CLI_TOKEN = previousCliToken;
-    if (previousExecutorToken === undefined) delete process.env.KORTIX_EXECUTOR_TOKEN;
-    else process.env.KORTIX_EXECUTOR_TOKEN = previousExecutorToken;
     if (previousApiUrl === undefined) delete process.env.KORTIX_API_URL;
     else process.env.KORTIX_API_URL = previousApiUrl;
     if (previousProjectId === undefined) delete process.env.KORTIX_PROJECT_ID;
@@ -247,6 +243,23 @@ describe('sessions new CLI flow', () => {
     expect(sessionCreateBody).not.toHaveProperty('agent_name');
   });
 
+  test('creates a session with explicit connector scope', async () => {
+    const code = await runSessions([
+      'new',
+      '--no-connectors',
+      '--require-connector',
+      'gmail',
+      '--require-connector',
+      'gmail',
+    ]);
+
+    expect(code).toBe(0);
+    expect(sessionCreateBody).toMatchObject({
+      connector_bindings: {},
+      require_connectors: ['gmail'],
+    });
+  });
+
   test('a removed session attribution option exits before an API request', async () => {
     const removedFlag = ['--', 'origin', '-ref'].join('');
     const code = await runSessions(['new', removedFlag, 'customer-42']);
@@ -271,7 +284,7 @@ describe('sessions new CLI flow', () => {
         sandbox_url: `http://127.0.0.1/v1/p/external-${runningId}/8000`,
         opencode_session_id: 'ses_test',
         name: 'Digest target',
-        agent_name: 'memory-reflector',
+        agent_name: 'harness-reflector',
         status: 'running',
         error: null,
         metadata: { opencode_sessions: [{ title: 'Digest target' }] },

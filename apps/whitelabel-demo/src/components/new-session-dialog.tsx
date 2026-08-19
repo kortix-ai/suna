@@ -61,7 +61,7 @@ export function NewSessionDialog({
 }: {
   projectId: string;
   trigger: React.ReactNode;
-  /** Pre-picked agent — used when a refused agent switch sends someone here. */
+  /** Pre-selected agent for the new session. */
   initialAgent?: string | null;
 }) {
   const [open, setOpen] = useState(false);
@@ -73,7 +73,7 @@ export function NewSessionDialog({
         <DialogHeader>
           <DialogTitle>New session</DialogTitle>
           <DialogDescription>
-            Set the initial agent, secrets, and connector authorizations. You
+            Set the initial agent, secrets, and connections. You
             can change the session scope later.
           </DialogDescription>
         </DialogHeader>

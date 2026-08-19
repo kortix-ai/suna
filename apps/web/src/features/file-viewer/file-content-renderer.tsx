@@ -8,8 +8,8 @@ import { MarkdownWithFrontmatter } from '@/components/markdown/markdown-frontmat
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { InfoBanner } from '@/components/ui/info-banner';
-import { errorToast, successToast } from '@/components/ui/toast';
 import Loading from '@/components/ui/loading';
+import { errorToast, successToast } from '@/components/ui/toast';
 import {
   appendPreviewToken,
   isSubdomainPreviewUrl,
@@ -17,12 +17,12 @@ import {
 } from '@/hooks/use-authenticated-preview-url';
 import { useHeicBlob } from '@/hooks/use-heic-url';
 import { getAuthToken } from '@/lib/auth-token';
-import { getActiveStaticFileHealthUrl, getActiveStaticFilePreviewUrl } from '@kortix/sdk/react';
 import { getIframeSandbox } from '@/lib/security/iframe-sandbox';
 import { cn } from '@/lib/utils';
 import { isHeicFile } from '@/lib/utils/heic-convert';
 import { findDiagnosticsForFile, useDiagnosticsStore } from '@/stores/diagnostics-store';
 import { toSandboxAbsolutePath } from '@kortix/sdk';
+import { getActiveStaticFileHealthUrl, getActiveStaticFilePreviewUrl } from '@kortix/sdk/react';
 import {
   WarningIcon as AlertTriangle,
   BracketsCurlyIcon as Braces,
@@ -303,6 +303,8 @@ export interface FileContentRendererProps {
   /** PDF only: start the zoom plugin at fit-to-page instead of the numeric
    *  default. No effect on any other file category. */
   fitOnOpen?: boolean;
+  /** Additional class name for the code editor */
+  codeEditorEditorClassName?: string;
 }
 
 export function FileContentRenderer({
@@ -319,6 +321,7 @@ export function FileContentRenderer({
   onMarkdownPreviewChange,
   onStatusChange,
   fitOnOpen = false,
+  codeEditorEditorClassName,
 }: FileContentRendererProps) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -1007,8 +1010,10 @@ export function FileContentRenderer({
               <PptxRenderer
                 blob={rawBlob}
                 binaryUrl={blobUrl}
+                filePath={filePath}
                 fileName={fileName}
                 className="h-full"
+                onDownload={handleDownload}
               />
             </Suspense>
           )}
@@ -1063,6 +1068,7 @@ export function FileContentRenderer({
           {/* HTML source — shown when preview toggle is off */}
           {isHtmlFile && !isHtmlPreview && !isLoading && !error && fileContent?.type === 'text' && (
             <CodeEditor
+              editorClassName={codeEditorEditorClassName}
               key={`html-source-${filePath}-${discardKey}`}
               {...codeEditorProps}
               className={readOnly ? 'min-h-full' : 'h-full'}
@@ -1121,10 +1127,23 @@ export function FileContentRenderer({
                     />
                   </div>
                 ) : isMarkdownPreview && isMarkdownFile ? (
+                  // Markdown is prose, so it gets a measure. The markdown root
+                  // renders at text-[15px]; full-bleed on a wide viewport that
+                  // is ~190 characters per line, well past the comfortable
+                  // 65-90. `max-w-2xl` is the same reading column the customize
+                  // sections use, and it is a no-op in panels already narrower
+                  // than 672px. Deliberately not applied to the code editor:
+                  // code line length is the author's decision, and a narrow
+                  // column would only add horizontal scrolling.
+                  //
+                  // The cap sits on an inner element so the scroll container
+                  // stays full width and its scrollbar rides the panel edge.
                   <div key={filePath} className="h-full w-full overflow-auto p-6">
-                    <MarkdownWithFrontmatter
-                      content={hasUnsavedChanges ? latestContentRef.current : displayContent}
-                    />
+                    <div className="mx-auto w-full max-w-2xl">
+                      <MarkdownWithFrontmatter
+                        content={hasUnsavedChanges ? latestContentRef.current : displayContent}
+                      />
+                    </div>
                   </div>
                 ) : (
                   <CodeEditor

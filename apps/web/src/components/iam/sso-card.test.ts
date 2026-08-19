@@ -28,12 +28,22 @@ describe('SSO card — no internal provider plumbing in the UI', () => {
   });
 
   test('edits thread the stored provider id under the hood', () => {
-    expect(source).toContain('existing!.supabase_sso_provider_id');
+    expect(source).toContain('existing.supabase_sso_provider_id');
   });
 
-  test('new providers register via metadata import only', () => {
-    expect(source).toContain('const importing = !existing');
-    expect(source).toContain('importSsoProviderFromMetadata');
+  // Creating a provider = importing IdP metadata, and that form lives in the
+  // guided wizard (features/sso-setup). The card's dialog is edit-only; its
+  // old create branch was unreachable and duplicated the wizard verbatim.
+  test('the card carries no create/import branch — the wizard owns registration', () => {
+    expect(source).not.toContain('importSsoProviderFromMetadata');
+    expect(source).not.toContain('metadata_xml');
+    expect(source).not.toContain('metadata_url');
+    expect(source).not.toContain('Import & configure');
+    expect(source).toContain('existing: SsoProvider;');
+  });
+
+  test('the unconfigured card points at the guided wizard instead', () => {
+    expect(source).toContain('/sso-setup');
   });
 });
 
@@ -54,10 +64,14 @@ describe('SSO card — service provider details block', () => {
     expect(source).not.toContain('SupabaseStudio');
   });
 
-  test('offers a copy affordance for each SP value', () => {
-    expect(source).toContain('Copy Identifier (Entity ID)');
-    expect(source).toContain('Copy Reply URL (ACS)');
-    expect(source).toContain('copyToClipboard');
+  // The copy affordance is the shared `CopyRow` primitive
+  // (features/workspace/shared/access/copy-row.tsx) — no local copy handler,
+  // no hand-rolled <code> + icon-button pair.
+  test('offers a copy affordance for each SP value, via the shared CopyRow', () => {
+    expect(source).toContain("from '@/features/workspace/shared/access'");
+    expect(flatSource).toMatch(/<CopyRow label="Identifier \(Entity ID\)"/);
+    expect(flatSource).toMatch(/<CopyRow label="Reply URL \(ACS\)"/);
+    expect(source).not.toContain('copyToClipboard');
   });
 
   test('renders the values in a collapsed disclosure (both states) and inside the edit dialog', () => {
@@ -71,6 +85,19 @@ describe('SSO card — service provider details block', () => {
     // Null-origin handling is unit-tested in lib/saml-sp.test.ts; the card
     // just guards the render on the derived value.
     expect(source).toMatch(/\{spUrls && \([\s\S]*?<SpDetails/);
+  });
+});
+
+describe('SSO card — group mapping uses the ONE principal picker', () => {
+  test('the IAM-group field is PrincipalPicker, not a bespoke Select', () => {
+    expect(flatSource).toContain('<PrincipalPicker');
+    expect(flatSource).toContain("kinds={['group']}");
+    expect(flatSource).toContain('selection="single"');
+  });
+
+  test('no local group Select survives', () => {
+    expect(source).not.toContain('listGroups');
+    expect(source).not.toContain('<SelectItem');
   });
 });
 

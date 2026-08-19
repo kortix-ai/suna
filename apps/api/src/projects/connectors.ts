@@ -2,7 +2,7 @@
  * `connectors` list parsing for the project manifest (`kortix.yaml`; a legacy
  * v1 project may instead declare `[[connectors]]` in `kortix.toml`).
  *
- * A connector is one named integration the Executor can call — Pipedream,
+ * A connector is one named external system the connector gateway can call — Pipedream,
  * MCP, OpenAPI, Postman, GraphQL, or raw HTTP. The manifest holds the *definition*
  * (provider, endpoint/spec, auth method + which project-secret to use) and,
  * for the policy layer, each connector's `policies:` list. The
@@ -47,7 +47,7 @@ import {
   type PolicyArgCondition,
   areValidConditions,
   normalizeConditions,
-} from '../executor/policy';
+} from '../connectors/policy';
 import { isValidSecretName } from './secrets';
 import { MANIFEST_FILENAME, type ParsedManifest } from './triggers';
 
@@ -70,8 +70,7 @@ const PROVIDERS: readonly ConnectorProvider[] = [
   'channel',
   'computer',
 ];
-export type ConnectorAuthorizationStrategy =
-  (typeof CONNECTOR_AUTHORIZATION_STRATEGIES)[number];
+export type ConnectorAuthorizationStrategy = (typeof CONNECTOR_AUTHORIZATION_STRATEGIES)[number];
 
 /**
  * Platform-owned slugs and the ONLY provider allowed to use each. These are
@@ -83,12 +82,15 @@ export type ConnectorAuthorizationStrategy =
  * NAME so a Pipedream Slack can't be added (the picker already hides it).
  *
  *  - `kortix_slack` → channel only (the Slack channel materializes under it; see
- *    executor/channels.ts SLACK_CHANNEL_CONNECTOR_SLUG).
- *  - `computer`     → computer only (the Agent Computer Tunnel connector).
+ *    connector/channels.ts SLACK_CHANNEL_CONNECTOR_SLUG).
+ *  - `computer`     → computer only (default Computers profile slug).
+ * Additional Computers profile slugs are created through the connector API.
+ * They never pass through manifest parsing because machine ids are account
+ * control-plane identities, not repository configuration.
  * See KORTIX-206 + docs/specs/computer-connector.md. The pairs themselves are
  * canonically defined in `@kortix/manifest-schema` (imported above) — this
  * `export` just preserves this module's existing public surface, since
- * executor/manifest-crud.ts imports `RESERVED_SLUG_PROVIDERS` from here.
+ * connector/manifest-crud.ts imports `RESERVED_SLUG_PROVIDERS` from here.
  */
 export { RESERVED_SLUG_PROVIDERS };
 /** The reserved slug the built-in Slack channel materializes under. */
@@ -140,7 +142,7 @@ interface ConnectorAuthSpec {
   secret: string | null;
 }
 
-/** Tool-call policy action — mirrors executor's `approve | require_approval | block`. */
+/** Tool-call policy action — mirrors connector's `approve | require_approval | block`. */
 export type ConnectorPolicyAction = 'always_run' | 'require_approval' | 'block';
 const POLICY_ACTIONS: readonly ConnectorPolicyAction[] = [
   'always_run',
@@ -174,7 +176,7 @@ export interface ConnectorSpec {
    *  `credential = "per_user"` is tolerated (legacy, warning-only) but always
    *  resolves to `shared` here — it can never round-trip back into git. */
   credentialMode: 'shared';
-  /** Which authorization owner can supply credentials for this profile. */
+  /** Which authorization owner can supply credentials for this connector. */
   authorizationStrategy: ConnectorAuthorizationStrategy;
   /** Sensitive connector (email/files/secrets-bearing): reads gate too — every
    *  action defaults to require_approval unless an explicit policy opens it. */
@@ -194,6 +196,12 @@ export interface ConnectorSpec {
   baseUrl: string | null;
   /** channel: chat platform (slack | …) — selects the fixed action catalog + API base. */
   platform: ChannelPlatform | null;
+  /** computer: legacy single-machine binding. */
+  tunnelId?: string | null;
+  /** computer: profile-scoped machine allowlist. */
+  tunnelIds?: string[] | null;
+  /** computer: verified owner accounts for the selected machine allowlist. */
+  tunnelAccountIds?: string[] | null;
   /** openapi/postman/graphql/http: a URL or repo-relative file path. Optional for graphql. */
   spec: string | null;
   // ── shared ──
@@ -209,7 +217,7 @@ export interface ConnectorSpec {
    * NOT SECRETS: these values live in the manifest, in git, in plaintext —
    * exactly like `baseUrl`. The credential belongs in `auth` + the platform
    * credential store, and the auth header ALWAYS wins over a static header
-   * with the same name (executor/execute.ts `applyConnectorHeaders`), so a
+   * with the same name (connector/execute.ts `applyConnectorHeaders`), so a
    * static header can never spoof or clobber it.
    */
   headers: Record<string, string>;
@@ -376,6 +384,7 @@ export function manifestHashForConnector(spec: ConnectorSpec): string {
     endpoint: spec.endpoint,
     baseUrl: spec.baseUrl,
     platform: spec.platform,
+    tunnelIds: spec.tunnelIds ?? (spec.tunnelId ? [spec.tunnelId] : null),
     spec: spec.spec,
     auth: spec.auth,
     authAuto: spec.authAuto ?? false,
@@ -476,11 +485,7 @@ function parseConnectorEntry(
     strategyRaw &&
     !(CONNECTOR_AUTHORIZATION_STRATEGIES as readonly string[]).includes(strategyRaw)
   ) {
-    return err(
-      slug,
-      'authorization_strategy must be "project" or "user"',
-      filename,
-    );
+    return err(slug, 'authorization_strategy must be "project" or "user"', filename);
   }
   const authorizationStrategy: ConnectorAuthorizationStrategy =
     (strategyRaw as ConnectorAuthorizationStrategy) || 'project';
@@ -587,15 +592,18 @@ function parseProviderFields(
         filename,
       );
     }
-    return { ok: true, value: { ...base, platform: platform as ChannelPlatform } };
+    return {
+      ok: true,
+      value: { ...base, platform: platform as ChannelPlatform },
+    };
   }
 
   if (provider === 'computer') {
-    // Synth-only: connecting a machine over the Agent Computer Tunnel auto-
-    // materializes a single `computer` connector. It can't be declared by hand.
+    // API-only: profiles select account-owned machines through the connector
+    // API. Tunnel ids must not enter repository configuration.
     return err(
       slug,
-      'provider="computer" is managed automatically when you connect a machine (Computers) — it cannot be declared in kortix.yaml',
+      'provider="computer" is managed through the connector API (Computers) — it cannot be declared in kortix.yaml',
       filename,
     );
   }
@@ -673,7 +681,7 @@ function parseAuth(
   }
   const prefix = typeof row.prefix === 'string' && row.prefix.trim() ? row.prefix.trim() : null;
 
-  // `secret` is optional — credentials live in the platform (executor_credentials),
+  // `secret` is optional — credentials live in the platform (connection_credentials),
   // not as a named project secret. If present it's validated for back-compat.
   const secret = typeof row.secret === 'string' && row.secret.trim() ? row.secret.trim() : null;
   if (secret && !isValidSecretName(secret)) {
@@ -684,7 +692,10 @@ function parseAuth(
     );
   }
 
-  return { ok: true, value: { type: type as ConnectorAuthType, in: inRaw, name, prefix, secret } };
+  return {
+    ok: true,
+    value: { type: type as ConnectorAuthType, in: inRaw, name, prefix, secret },
+  };
 }
 
 /**
@@ -701,7 +712,7 @@ function parseAuth(
  *
  * The rules (RFC 7230 token names, no CR/LF in values, caps, no
  * transport-owned names) live in `@kortix/manifest-schema` so the CR-merge
- * gate, this parser and the executor can never drift. Values are NOT secrets —
+ * gate, this parser and the connector can never drift. Values are NOT secrets —
  * they sit in git in plaintext; the credential goes in `auth`.
  */
 function parseHeaders(

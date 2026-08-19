@@ -1,7 +1,7 @@
 /**
  * Agent-minted SETUP LINKS — the authenticated half.
  *
- * The in-sandbox agent (its KORTIX_EXECUTOR_TOKEN / KORTIX_CLI_TOKEN is a
+ * The in-sandbox agent (its `KORTIX_CLI_TOKEN` is a
  * session-scoped PAT, accepted by supabaseAuth) calls these to mint a
  * short-lived link it can hand to a human to (a) enter a project secret value,
  * or (b) 1-click connect a Pipedream app.
@@ -14,8 +14,8 @@
 import { auth, errors, json } from '../../openapi';
 import { config } from '../../config';
 import { createRoute, z } from '@hono/zod-openapi';
-import { connectLinkEligibility } from '../../executor/db-deps';
-import { pipedreamConfigured } from '../../executor/pipedream';
+import { connectLinkEligibility } from '../../connectors/db-deps';
+import { pipedreamConfigured } from '../../connectors/pipedream';
 import { mintSetupLink, type SecretFieldSpec } from '../../setup-links/token';
 import { isValidSecretName } from '../secrets';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
@@ -95,7 +95,7 @@ projectsApp.openapi(
     const scope = normalizeString(body.scope) === 'connector' ? 'connector' : 'runtime';
     const { token, expiresAt } = mintSetupLink(
       projectId,
-      { kind: 'secret', fields, scope, uid: loaded.userId },
+      { kind: 'secret', fields, scope, uid: loaded.userId, sid: (c.get('sessionId') as string | undefined) ?? null },
       { expiresInMinutes: typeof body.expires_in_minutes === 'number' ? body.expires_in_minutes : undefined },
     );
 
@@ -187,7 +187,13 @@ projectsApp.openapi(
 
     const { token, expiresAt } = mintSetupLink(
       projectId,
-      { kind: 'connector', slug, app: conn.app, uid: loaded.userId },
+      {
+        kind: 'connector',
+        slug,
+        app: conn.app,
+        uid: loaded.userId,
+        sid: (c.get('sessionId') as string | undefined) ?? null,
+      },
       { expiresInMinutes: typeof body.expires_in_minutes === 'number' ? body.expires_in_minutes : undefined },
     );
 

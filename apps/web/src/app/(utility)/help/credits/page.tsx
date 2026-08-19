@@ -191,7 +191,7 @@ export default function CreditsPage() {
                   </p>
                   <ul className="text-muted-foreground space-y-2 text-sm">
                     <li className="flex items-start gap-2">
-                      <span className="bg-primary mt-1.5 h-1.5 w-1.5 flex-shrink-0 rounded-full" />
+                      <span className="bg-primary mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full" />
                       <span>
                         <strong className="text-foreground">
                           {tHardcodedUi.raw('appHelpCreditsPage.line162JsxTextAiModels')}
@@ -202,7 +202,7 @@ export default function CreditsPage() {
                       </span>
                     </li>
                     <li className="flex items-start gap-2">
-                      <span className="bg-primary mt-1.5 h-1.5 w-1.5 flex-shrink-0 rounded-full" />
+                      <span className="bg-primary mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full" />
                       <span>
                         <strong className="text-foreground">
                           {tHardcodedUi.raw('appHelpCreditsPage.line166JsxTextToolUsage')}
@@ -213,7 +213,7 @@ export default function CreditsPage() {
                       </span>
                     </li>
                     <li className="flex items-start gap-2">
-                      <span className="bg-primary mt-1.5 h-1.5 w-1.5 flex-shrink-0 rounded-full" />
+                      <span className="bg-primary mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full" />
                       <span>
                         <strong className="text-foreground">
                           {tHardcodedUi.raw('appHelpCreditsPage.line170JsxTextImageSearch')}
@@ -224,7 +224,7 @@ export default function CreditsPage() {
                       </span>
                     </li>
                     <li className="flex items-start gap-2">
-                      <span className="bg-primary mt-1.5 h-1.5 w-1.5 flex-shrink-0 rounded-full" />
+                      <span className="bg-primary mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full" />
                       <span>
                         <strong className="text-foreground">
                           {tHardcodedUi.raw('appHelpCreditsPage.line174JsxTextBringYourOwnKey')}

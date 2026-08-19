@@ -62,7 +62,7 @@ default_agent: <name>          # REQUIRED — must resolve to a declared, enable
 agents:
   <name>:
     enabled: true                # optional; false = can't start sessions (default true)
-    connectors: all               # profile slugs | "all" | "none"
+    connectors: all               # connector slugs | "all" | "none"
     secrets: all                  # renamed from v1's "env" — names | "all" | "none"
     kortix_cli: all                # kortix_cli leaf names | "all" | "none"
     skills: all                    # names of .kortix/opencode/skills/* this agent may invoke | "all" | "none"

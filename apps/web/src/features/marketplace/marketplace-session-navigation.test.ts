@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import { clearSessionFresh, isSessionFresh } from '@kortix/sdk/fresh-sessions';
+import { qk } from '@kortix/sdk/react';
 import {
   marketplaceInstallSessionHref,
   prepareMarketplaceInstallSessionNavigation,
@@ -44,7 +45,7 @@ describe('marketplace install session navigation', () => {
     expect(isSessionFresh(sessionId)).toBe(false);
     expect(prefetchedRoutes).toEqual(['/projects/project-123/sessions/session-123']);
     expect(prefetchedQueries).toHaveLength(1);
-    expect(invalidatedQueries).toEqual([{ queryKey: ['project-sessions', 'project-123'] }]);
+    expect(invalidatedQueries).toEqual([{ queryKey: qk.project.sessionsScope('project-123') }]);
   });
 
   test('returns null and does nothing when no session was created', () => {

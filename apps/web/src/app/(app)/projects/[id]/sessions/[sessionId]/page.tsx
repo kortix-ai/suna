@@ -8,17 +8,17 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 
 import { ClientErrorBoundary } from '@/components/common/error-boundary';
-import { sessionDisplayLabel } from '@/components/projects/session-label';
+import { isLegacyMigratedSession, sessionDisplayLabel } from '@/components/projects/session-label';
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { useAuth } from '@/features/providers/auth-provider';
 import { InstantSessionShell } from '@/features/session/instant-session-shell';
+import { resolvePinnedRootSessionId } from '@/features/session/pinned-root-session';
 import { ProviderFailureRecovery } from '@/features/session/provider-failure-recovery';
 import {
-  pendingSessionPromptFromMetadata,
+  pendingSessionPromptForRecovery,
   provisioningFailurePresentation,
-  startStashFromPendingSessionPrompt,
 } from '@/features/session/provisioning-failure';
 import { SandboxLoadingBoundary } from '@/features/session/sandbox-loading-boundary';
 import { SessionChat } from '@/features/session/session-chat';
@@ -27,8 +27,13 @@ import {
   canMountSessionChat,
   canShowSessionChat,
   findInitialSessionPin,
+  gatedRuntimeError,
 } from '@/features/session/session-load-state';
-import { isAutoResuming, isSandboxResumable } from '@/features/session/session-resume';
+import {
+  isAutoResuming,
+  isRuntimeIdentityUnavailable,
+  isSandboxResumable,
+} from '@/features/session/session-resume';
 import { canPollSessionStart } from '@/features/session/session-start-gate';
 import { SessionStartingLoader } from '@/features/session/session-starting-loader';
 import {
@@ -37,13 +42,14 @@ import {
   shouldMountSessionChat,
 } from '@/features/session/session-surface';
 import {
+  canRenderCachedTranscriptWhileSandboxDown,
   isDormantSessionWithoutRuntime,
   isUnmaterializedSessionFailure,
 } from '@/features/session/session-terminal-state';
 import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
 import { useAccountState } from '@/hooks/billing';
-import { useRestartProjectSession } from '@/hooks/projects/use-restart-project-session';
 import { useSandboxConnection } from '@/hooks/platform/use-sandbox-connection';
+import { useRestartProjectSession } from '@/hooks/projects/use-restart-project-session';
 import {
   billingDialogArgs,
   billingGateCopy,
@@ -58,21 +64,27 @@ import {
   useSessionSwitchStore,
 } from '@/stores/session-switch-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
+import { projectSessionsRefetchInterval } from '@/features/workspace/project-sidebar/project-session-list-helpers';
 import {
+  type ProjectSession,
   formatRuntimeError,
   getProjectDetail,
   listProjectSessions,
   sessionStartKey,
+  updateProjectSession,
 } from '@kortix/sdk';
 import { clearSessionFresh, isSessionFresh } from '@kortix/sdk/fresh-sessions';
 import { setActiveInstanceCookie } from '@kortix/sdk/instance-routes';
 import {
   type UseSessionResult,
+  clearStartStash,
+  contract,
   migrateStash,
+  qk,
   readStartStash,
+  startSessionWithPrompt,
   useRuntimeConnectionStore,
   useSession,
-  writeStartStash,
 } from '@kortix/sdk/react';
 
 /**
@@ -134,12 +146,13 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   // wrote does not need a sandbox, let alone an entitlement re-check.
   // Scope to the account that OWNS this project (team account), not the viewer's.
   const { data: projectDetail } = useQuery({
-    queryKey: ['project-detail', projectId],
+    queryKey: qk.project.detail(projectId),
     queryFn: () => {
       if (!projectId) throw new Error('Missing project id');
       return getProjectDetail(projectId);
     },
     enabled: !!projectId,
+    ...contract('config'),
   });
   const projectAccountId = projectDetail?.project?.account_id ?? undefined;
   const { data: accountState } = useAccountState({
@@ -157,14 +170,31 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   const billingBlocked =
     isBillingEnabled() && accountLoaded && !billingStateAllowsRun(billingState);
   const { data: projectSessions } = useQuery({
-    queryKey: ['project-sessions', projectId],
+    queryKey: qk.project.sessions(projectId),
     queryFn: () => listProjectSessions(projectId),
     enabled: !!user && !!projectId,
-    staleTime: 10_000,
+    // This query feeds the session HEADER's title. It had no interval at all,
+    // so it never refetched — the header was only ever correct because it
+    // shares this cache entry with the sidebar's list, and went stale the
+    // moment the sidebar was unmounted or had stopped polling. The name is
+    // written server-side seconds AFTER the first prompt with no event to
+    // announce it (see `sessionTitleHasLanded`), so a query that never
+    // refetches can never show it.
+    //
+    // `hasOpenSession: true` unconditionally: this route IS an open session.
+    refetchInterval: (query) =>
+      projectSessionsRefetchInterval({
+        sessions: query.state.data as ProjectSession[] | undefined,
+        hasOpenSession: true,
+      }),
     refetchOnWindowFocus: false,
+    ...contract('inventory'),
   });
   const currentProjectSession = projectSessions?.find((item) => item.session_id === sessionId);
-  const pendingPrompt = pendingSessionPromptFromMetadata(currentProjectSession?.metadata);
+  const pendingPrompt = pendingSessionPromptForRecovery(
+    sessionId,
+    currentProjectSession?.metadata,
+  );
   const initialOpenCodeSessionId = findInitialSessionPin(projectSessions, sessionId);
 
   // ONE hook owns the runtime: POST /start (idempotent provision/resume + the
@@ -207,8 +237,33 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     restart.restart();
   };
   const handleProvisioningRetry = () => {
+    // A LEGACY hand-off (metadata.pending_prompt.text from a pre-conversion
+    // API, or a full-prompt stash) becomes a durable inbox row here — POSTed,
+    // not re-stashed, so this retry is the last time it can be lost. A session
+    // created by the current API needs nothing: its first prompt has been a
+    // durable row since the create transaction, and the restart alone re-arms
+    // delivery.
     if (pendingPrompt) {
-      writeStartStash(sessionId, startStashFromPendingSessionPrompt(pendingPrompt));
+      void startSessionWithPrompt(projectId, sessionId, {
+        parts: [{ type: 'text' as const, text: pendingPrompt.text }],
+        overrides: {
+          ...(pendingPrompt.agent ? { agent: pendingPrompt.agent } : {}),
+          ...(pendingPrompt.model ? { model: pendingPrompt.model } : {}),
+          ...(pendingPrompt.variant ? { variant: pendingPrompt.variant } : {}),
+        },
+      })
+        .then(() => {
+          clearStartStash(sessionId);
+          // Strip the recovered text so a later mount cannot enqueue it twice.
+          return updateProjectSession(projectId, sessionId, {
+            metadata: { pending_prompt: null },
+          }).catch(() => undefined);
+        })
+        .catch((error) => {
+          errorToast(
+            error instanceof Error ? error.message : 'Could not queue the saved prompt',
+          );
+        });
     }
     handleRestart();
   };
@@ -253,7 +308,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
       // query that /start never touches, so opening a session left the dot stale
       // until a manual refresh. Refresh the list once the runtime switches in so
       // the status flips to running on its own.
-      queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] });
+      queryClient.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId) });
     }
   }, [session.switched, sandbox, queryClient, projectId]);
 
@@ -325,6 +380,26 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     !!user &&
     !!sandbox &&
     (sandbox.status === 'error' || sandbox.status === 'stopped');
+  // A preserved-unavailable identity is `status: 'stopped'` + an `external_id`,
+  // so it satisfies `fatal` above and used to render the ordinary "restart it"
+  // card. It needs its own terminal branch — see the render below.
+  const runtimeIdentityUnavailable =
+    !authLoading && !!user && isRuntimeIdentityUnavailable(sandbox);
+  // A stopped/errored sandbox with a renderable cached transcript should show
+  // the CONVERSATION, not the full-screen restart/waking card `fatal` forces
+  // below. `hasTranscript` is already the route's own veto signal (painted from
+  // the SDK sync store's IndexedDB/memory cache without waiting on a runtime —
+  // see the comment on `sawTranscript` above); reading it again here, rather
+  // than re-deriving cache presence, is what keeps this additive to the
+  // existing chat-mount path instead of a second cache implementation.
+  // Sending still waits on the runtime — `sessionComposerReadiness` shows its
+  // own "waking" notice above the composer, and a prompt submitted meanwhile
+  // becomes a durable inbox row the control plane delivers once the box is up,
+  // rather than being dropped.
+  const showCachedTranscriptWhileDown = canRenderCachedTranscriptWhileSandboxDown({
+    sandboxStatus: sandbox?.status,
+    hasCachedContent: hasTranscript,
+  });
   // Read the RAW `/start` stage, never `session.phase` — `phase` folds a
   // terminal stage together with a typed `/start` error and a transient
   // OpenCode REST error, so a still-provisioning session used to be classified
@@ -399,17 +474,11 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     submitted: shellSubmitted,
   });
 
-  // `sandbox_id` is nullable on the wire: the `/start` path always serves a
-  // non-null id (it serializes the `session_sandboxes` uuid PK), but the
-  // optimistic cache seed (`projectSessionStartSeed`, fed by the
-  // `project_sessions` row) can carry a `null` `sandbox_id` — e.g. a legacy
-  // Suna-migration session whose `project_sessions.sandbox_id` was minted null
-  // and never back-filled by provisioning (which only writes `sandbox_url`).
-  // The `SessionCacheWarmer` seeds that into React Query, so `useSession` can
-  // hand us a truthy `sandbox` whose `sandbox_id` is null; guard the `.slice`
-  // so a null id degrades to the bare label instead of crashing the page
-  // (Better Stack pattern e6d0e044 — `Cannot read properties of null (reading
-  // 'slice')` on this exact line).
+  // `sandbox_id` was nullable on legacy project-session inventory rows. Keep
+  // this render guard even though the current `/start` response serializes the
+  // non-null `session_sandboxes` primary key. A malformed cached response must
+  // degrade to the bare label instead of crashing the page (Better Stack pattern
+  // e6d0e044 — `Cannot read properties of null (reading 'slice')`).
   const sandboxLabel = sandbox?.sandbox_id
     ? `session ${sandbox.sandbox_id.slice(0, 8)}`
     : undefined;
@@ -526,6 +595,26 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     // into the FAILURE card above and claim a session that merely stopped had
     // failed before it ever got a computer.
     if (dormantWithoutRuntime) {
+      // A migrated session's first open lands here by design: it has never had
+      // a computer. "Stopped" would be a lie — nothing ever ran. Say what it is
+      // and make the CTA the restore it actually performs.
+      if (currentProjectSession && isLegacyMigratedSession(currentProjectSession)) {
+        return (
+          <InlineSessionError
+            title="Legacy session"
+            message="This conversation was imported from Suna. Restore the session to load its chat history — its files are already in the project under legacy/."
+            detail={restart.errorMessage ?? undefined}
+            action={
+              <RestartSessionButton
+                restart={restart}
+                onRestart={handleRestart}
+                label="Restore session"
+                pendingLabel="Restoring…"
+              />
+            }
+          />
+        );
+      }
       return (
         <InlineSessionError
           title="This session is stopped"
@@ -536,7 +625,33 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
       );
     }
 
-    if (fatal) {
+    // The provider lost this session's computer. THIS MUST NEVER HAPPEN, and
+    // when it does the only honest UI is a hard stop: nothing here is
+    // restartable (`/start` answers `retriable: false`, `POST /restart` answers
+    // 409 forever), and this session cannot be reconstructed.
+    //
+    // It must NOT fall through to the generic stopped card below, which offers
+    // a Restart button whose only possible outcome is that 409 — the loop prod
+    // session ad4b63ac hit on 2026-08-13. It must also NEVER silently continue
+    // into a fresh session: the server deliberately preserved this identity
+    // instead of attaching a replacement box, and the UI must not undo that.
+    // Say what happened, name the id, and stop.
+    if (runtimeIdentityUnavailable) {
+      return (
+        <InlineSessionError
+          title="This session's computer was lost"
+          message="Its cloud sandbox disappeared on the provider side, so this session cannot be restarted or recovered. This is a fault on our end, not something you did — it has been reported automatically. Anything committed and pushed from this session is safe in your project's repository."
+          detail={sandbox?.external_id ? `${sandbox.provider} · ${sandbox.external_id}` : undefined}
+        />
+      );
+    }
+
+    // `showCachedTranscriptWhileDown` VETOES the terminal card below, exactly
+    // the way transcript evidence already vetoes the new-session shell above
+    // (`isNewSessionSurface`) — a session with renderable history is never a
+    // dead end, live sandbox or not. Falls through to the same dual-layer chat
+    // mount every non-fatal open uses; nothing here needs its own render path.
+    if (fatal && !showCachedTranscriptWhileDown) {
       // Stopped but resumable → we're auto-waking it. Show the boot loader, not a
       // dead-end, so the user just sees it come back (as a hard refresh would).
       if (autoResuming) {
@@ -647,9 +762,13 @@ function ProjectSessionRuntimeConnection({ children }: { children: ReactNode }) 
 function RestartSessionButton({
   restart,
   onRestart,
+  label = 'Restart session',
+  pendingLabel = 'Restarting…',
 }: {
   restart: { isPending: boolean };
   onRestart: () => void;
+  label?: string;
+  pendingLabel?: string;
 }) {
   return (
     <Button
@@ -665,7 +784,7 @@ function RestartSessionButton({
       ) : (
         <RotateCcw className="size-3.5 shrink-0" />
       )}
-      {restart.isPending ? 'Restarting…' : 'Restart session'}
+      {restart.isPending ? pendingLabel : label}
     </Button>
   );
 }
@@ -728,7 +847,18 @@ function ActiveSessionChat({
   const runtimeSessions = sessionState.runtimeSessions;
   const sessionsLoading = sessionState.runtimeSessionsLoading;
   const sessionsListed = sessionState.runtimeSessionsListed;
-  const runtimeError = sessionState.runtimeError;
+  // Gate on `phase`, not the raw field: `sessionState.runtimeError` can be a
+  // benign 503 racing a live `/start` wake (a parked sandbox resuming), which
+  // `derivePhase` (@kortix/sdk) holds as `'starting'` until `/start` itself
+  // settles or gives up (~61.5s worst case). Reading the raw field rendered
+  // the panic card — and marked `chatShowable` below true, ending the loading
+  // skeleton with nothing to show — for every such race; `phase === 'error'`
+  // is the SDK's own answer to "is this real." `canShowSessionChat` below
+  // gets this SAME gated value, so both consumers agree.
+  const runtimeError = gatedRuntimeError({
+    phase: sessionState.phase,
+    runtimeError: sessionState.runtimeError,
+  });
 
   const restart = useRestartProjectSession(projectId, sessionId);
 
@@ -736,14 +866,20 @@ function ActiveSessionChat({
   const selectedSession = selectedOpenCodeSessionId
     ? runtimeSessions.find((session) => session.id === selectedOpenCodeSessionId)
     : null;
-  // Pin the first resolved root id so the chat keeps its identity if the live
-  // value blips back to null mid-session. State, not a ref written during
-  // render: this component is already keyed per session by the route, so there
-  // is no cross-session reset to hand-roll, and a discarded render can no longer
+  // Pin the resolved root id so the chat keeps its identity if the live
+  // value blips back to null mid-session — but FOLLOW a non-null change: the
+  // SDK's pin precedence only climbs, so a different resolved id is a
+  // higher-authority correction (e.g. a stale persisted mirror displaced by
+  // the real /start pin) and holding the old latch would keep painting — and
+  // delivering into — the conversation the stale pin named. See
+  // resolvePinnedRootSessionId. State, not a ref written during render: this
+  // component is already keyed per session by the route, so there is no
+  // cross-session reset to hand-roll, and a discarded render can no longer
   // leave a pin behind that the state it belongs to never saw.
   const [pinnedRootSessionId, setPinnedRootSessionId] = useState<string | null>(null);
   useEffect(() => {
-    if (!pinnedRootSessionId && rootSessionId) setPinnedRootSessionId(rootSessionId);
+    const next = resolvePinnedRootSessionId(pinnedRootSessionId, rootSessionId);
+    if (next !== pinnedRootSessionId) setPinnedRootSessionId(next);
   }, [pinnedRootSessionId, rootSessionId]);
   const chatSessionId = selectedSession?.id ?? pinnedRootSessionId ?? rootSessionId ?? null;
 
@@ -765,6 +901,11 @@ function ActiveSessionChat({
   useEffect(() => {
     if (!chatSessionId) return;
     migrateStash(sessionId, chatSessionId);
+    // No queue hand-off beside it any more. The browser queue was keyed by the
+    // OpenCode session id, which changes as the pin resolves, so the instant
+    // shell's messages had to be moved from the route id onto the pin or they
+    // were orphaned (#6110). The inbox is keyed by the KORTIX session id — the
+    // route id — which never changes, so there is nothing to adopt.
   }, [sessionId, chatSessionId]);
 
   // ── Readiness benchmarking marks ───────────────────────────────────────
@@ -777,12 +918,9 @@ function ActiveSessionChat({
   useEffect(() => {
     if (!chatSessionId) return;
     sessionMark(sessionId, 'chat-ready');
-    const sb = queryClient.getQueryData<{ metadata?: Record<string, unknown> }>([
-      'project',
-      'session-sandbox',
-      projectId,
-      sessionId,
-    ]);
+    const sb = queryClient.getQueryData<{ metadata?: Record<string, unknown> }>(
+      qk.project.sessionSandbox(projectId, sessionId),
+    );
     finishSessionTiming(sessionId, sb?.metadata?.provisionTimeline);
   }, [chatSessionId, sessionId, projectId, queryClient]);
 

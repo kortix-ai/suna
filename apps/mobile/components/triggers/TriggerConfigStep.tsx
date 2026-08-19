@@ -21,7 +21,7 @@ import { Loading } from '../loading/loading';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import type { ComposioTriggerType, TriggerApp, Model } from '@/api/types';
-import type { ComposioProfile } from '@/hooks/useComposio';
+import type { ComposioConnection } from '@/hooks/useComposio';
 import { useLanguage } from '@/contexts/LanguageContext';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -73,11 +73,11 @@ interface TriggerConfigStepProps {
   app: TriggerApp | null;
   config: Record<string, any>;
   onConfigChange: (config: Record<string, any>) => void;
-  profileId: string;
-  onProfileChange: (profileId: string) => void;
-  profiles: ComposioProfile[];
-  isLoadingProfiles: boolean;
-  onCreateProfile: () => void;
+  connectionId: string;
+  onConnectionChange: (connectionId: string) => void;
+  connections: ComposioConnection[];
+  isLoadingConnections: boolean;
+  onCreateConnection: () => void;
   triggerName: string;
   onTriggerNameChange: (name: string) => void;
   agentPrompt: string;
@@ -87,13 +87,13 @@ interface TriggerConfigStepProps {
   isConfigValid: boolean;
 }
 
-interface ProfileListItemProps {
-  profile: ComposioProfile;
+interface ConnectionListItemProps {
+  connection: ComposioConnection;
   isSelected: boolean;
   onPress: () => void;
 }
 
-function ProfileListItem({ profile, isSelected, onPress }: ProfileListItemProps) {
+function ConnectionListItem({ connection, isSelected, onPress }: ConnectionListItemProps) {
   const { t } = useLanguage();
   const scale = useSharedValue(1);
 
@@ -132,9 +132,9 @@ function ProfileListItem({ profile, isSelected, onPress }: ProfileListItemProps)
       </View>
       <View className="ml-3 flex-1">
         <Text className="font-roobert-medium text-base text-foreground">
-          {profile.profile_name}
+          {connection.connection_name}
         </Text>
-        {profile.is_connected && (
+        {connection.is_connected && (
           <View className="mt-1 flex-row items-center gap-2">
             <View className="h-1.5 w-1.5 rounded-full bg-green-500" />
             <Text className="font-roobert-medium text-xs text-green-600 dark:text-green-400">
@@ -157,11 +157,11 @@ export function TriggerConfigStep({
   app,
   config,
   onConfigChange,
-  profileId,
-  onProfileChange,
-  profiles,
-  isLoadingProfiles,
-  onCreateProfile,
+  connectionId,
+  onConnectionChange,
+  connections,
+  isLoadingConnections,
+  onCreateConnection,
   triggerName,
   onTriggerNameChange,
   agentPrompt,
@@ -180,7 +180,9 @@ export function TriggerConfigStep({
     return null;
   }
 
-  const connectedProfiles = profiles.filter((p) => p.is_connected && p.toolkit_slug === app.slug);
+  const connectedConnections = connections.filter(
+    (connection) => connection.is_connected && connection.toolkit_slug === app.slug
+  );
 
   // Helper to check if user can access a model
   const canAccessModel = (modelItem: Model): boolean => {
@@ -211,24 +213,24 @@ export function TriggerConfigStep({
         </View>
       )}
 
-      {/* Loading Profiles */}
-      {isLoadingProfiles && (
+      {/* Loading connections */}
+      {isLoadingConnections && (
         <View className="items-center justify-center py-12">
           <ActivityIndicator size="small" color={isDark ? '#FFFFFF' : '#121215'} />
           <Text className="mt-4 font-roobert text-sm text-muted-foreground">
-            {t('triggers.loadingProfiles')}
+            {t('triggers.loadingConnections')}
           </Text>
         </View>
       )}
 
-      {/* No Connected Profiles */}
-      {!isLoadingProfiles && connectedProfiles.length === 0 && (
+      {/* No connected connections */}
+      {!isLoadingConnections && connectedConnections.length === 0 && (
         <View className="items-center py-12">
           <View className="mb-3 h-12 w-12 items-center justify-center rounded-xl bg-muted">
             <Icon as={Info} size={24} className="text-muted-foreground" />
           </View>
           <Text className="mb-2 font-roobert-semibold text-base text-foreground">
-            {t('triggers.noConnectedProfile')}
+            {t('triggers.noConnectedConnection')}
           </Text>
           <Text className="mb-4 text-center text-sm text-muted-foreground">
             {t('triggers.connectAppFirst', { app: app.name })}
@@ -237,7 +239,7 @@ export function TriggerConfigStep({
       )}
 
       {/* Configuration Form */}
-      {connectedProfiles.length > 0 && (
+      {connectedConnections.length > 0 && (
         <>
           {/* Trigger Config */}
           <View className="mt-4 rounded-2xl border border-border bg-card p-4">
@@ -268,27 +270,27 @@ export function TriggerConfigStep({
             </View>
 
             <View className="space-y-6">
-              {/* Profile Selector */}
+              {/* Connection selector */}
               <View className="space-y-3">
                 <Text className="font-roobert-semibold text-sm text-foreground">
-                  {t('triggers.connectionProfile')} *
+                  {t('triggers.connection')} *
                 </Text>
-                {isLoadingProfiles ? (
+                {isLoadingConnections ? (
                   <View className="items-center py-4">
                     <ActivityIndicator size="small" className="text-muted-foreground" />
                   </View>
                 ) : (
                   <>
-                    {connectedProfiles.map((profile) => (
-                      <ProfileListItem
-                        key={profile.profile_id}
-                        profile={profile}
-                        isSelected={profileId === profile.profile_id}
-                        onPress={() => onProfileChange(profile.profile_id)}
+                    {connectedConnections.map((connection) => (
+                      <ConnectionListItem
+                        key={connection.connection_id}
+                        connection={connection}
+                        isSelected={connectionId === connection.connection_id}
+                        onPress={() => onConnectionChange(connection.connection_id)}
                       />
                     ))}
                     <Pressable
-                      onPress={onCreateProfile}
+                      onPress={onCreateConnection}
                       className="flex-row items-center rounded-2xl border border-dashed border-primary bg-primary/5 p-4 active:opacity-80">
                       <View className="h-10 w-10 items-center justify-center rounded-xl bg-primary">
                         <Icon

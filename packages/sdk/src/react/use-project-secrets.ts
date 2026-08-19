@@ -9,12 +9,17 @@ import {
   upsertProjectSecret,
   type ProjectSecretsResponse,
 } from '../core/rest/projects-client';
+import { contract } from './query-contracts';
+import { qk } from './query-keys';
 
 /** Stable query-key factory — reuse this to read/invalidate the same cache
  *  entry `useProjectSecrets` populates (e.g. from a settings page shell that
- *  doesn't itself call the hook). */
+ *  doesn't itself call the hook). Delegates to `qk.project.secrets` — the
+ *  SAME entry every other `listProjectSecrets` reader in `apps/web` shares
+ *  (Customize secrets view, agents view, connected-providers, the LLM
+ *  provider connect forms). */
 export const projectSecretsKey = (projectId: string | null | undefined) =>
-  ['project-secrets', projectId] as const;
+  qk.project.secrets(projectId ?? '');
 
 /**
  * Project secrets — list + the mutations a settings screen needs (shared
@@ -30,6 +35,7 @@ export function useProjectSecrets(projectId: string | null | undefined) {
     queryKey,
     queryFn: () => listProjectSecrets(projectId as string),
     enabled: !!projectId,
+    ...contract('config'),
   });
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey });

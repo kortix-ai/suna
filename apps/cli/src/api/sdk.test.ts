@@ -83,6 +83,11 @@ describe('withKortixScope', () => {
     expect(token).toBe('kortix_pat_test');
   });
 
+  test('identifies scoped backend requests as CLI traffic', async () => {
+    const source = await withKortixScope(auth(), async () => platformConfig().clientSource);
+    expect(source).toBe('cli');
+  });
+
   test('isolates concurrent scopes so a multi-host scan never crosses tokens', async () => {
     const [first, second] = await Promise.all([
       withKortixScope(auth({ api_base: 'https://one.kortix.com', token: 'one' }), async () => {

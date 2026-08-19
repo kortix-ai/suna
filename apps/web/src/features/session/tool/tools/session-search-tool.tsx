@@ -45,13 +45,18 @@ export function SessionSearchTool({ part, defaultOpen, forceOpen, locked }: Tool
     return results;
   }, [output]);
 
-  const noResults = status === 'completed' && hits.length === 0 && !isErrorOutput(output);
+  // `isErrorOutput` trims the whole output and runs `JSON.parse` over it. It is
+  // read from the body (not from a branch), so it re-scanned the payload on
+  // every render, open or collapsed.
+  const outputIsError = useMemo(() => isErrorOutput(output), [output]);
+
+  const noResults = status === 'completed' && hits.length === 0 && !outputIsError;
 
   return (
     <BasicTool
-      icon={<Search className="size-3.5 flex-shrink-0" />}
+      icon={<Search className="size-3.5 shrink-0" />}
       trigger={{
-        title: 'Session Search',
+        title: 'Searched sessions',
         subtitle: query ? `"${query}"` : '',
         args: hits.length > 0 ? [`${hits.length} results`] : noResults ? ['no matches'] : [],
       }}
@@ -60,14 +65,14 @@ export function SessionSearchTool({ part, defaultOpen, forceOpen, locked }: Tool
       locked={locked}
     >
       {hits.length > 0 ? (
-        <div data-scrollable className="divide-border/20 max-h-72 divide-y overflow-auto">
+        <div data-scrollable className="divide-border/20 max-h-96 divide-y overflow-auto">
           {hits.map((h) => (
             <div key={h.id} className="hover:bg-muted/20 px-3 py-2 transition-colors">
               <div className="mb-0.5 flex items-center gap-2">
                 <span className="text-foreground flex-1 truncate text-xs font-medium">
                   {h.title || '(untitled)'}
                 </span>
-                <span className="text-muted-foreground/40 bg-muted/40 flex-shrink-0 rounded px-1 font-mono text-xs">
+                <span className="text-muted-foreground/40 bg-muted/40 shrink-0 rounded px-1 font-mono text-xs">
                   {h.score}
                 </span>
               </div>

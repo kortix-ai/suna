@@ -165,7 +165,7 @@ export const DocMarkdown = React.memo<DocMarkdownProps>(
           </blockquote>
         ),
 
-        hr: () => <hr className="border-border/60 my-6 h-px border-0 border-t" />,
+        hr: () => <hr className="border-border my-6 h-px border-0 border-t" />,
 
         table: ({ children }: { children?: React.ReactNode }) => (
           <div className="border-border my-5 overflow-x-auto rounded-md border">

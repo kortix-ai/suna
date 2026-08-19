@@ -9,7 +9,7 @@ const discoverSource = existsSync(discoverPath) ? readFileSync(discoverPath, 'ut
 describe('feature-flagged Discover connector marketplace', () => {
   test('keeps Easy Connect and adds Discover only for explicit project opt-in', () => {
     expect(connectorsSource).toContain(
-      'projectQuery.data?.project?.experimental?.connectors_api_discover === true',
+      "const discoverEnabled = useFeatureFlag(projectId, 'connectors_api_discover').enabled;",
     );
     expect(connectorsSource).toContain(
       '<TabsTrigger value="apps">{easyConnectLabel}</TabsTrigger>',
@@ -32,29 +32,29 @@ describe('feature-flagged Discover connector marketplace', () => {
 
   test('renders direct records before separately labelled Pipedream OAuth entries', () => {
     expect(discoverSource).toContain(
-      'const discoverCards = [...integrationCards, ...pipedreamOAuthCards]',
+      'const discoverCards = [...connectorCards, ...pipedreamOAuthCards]',
     );
     expect(discoverSource).toContain('Pipedream OAuth');
     expect(discoverSource).toContain("app.authType === 'oauth'");
-    expect(discoverSource.indexOf('...integrationCards')).toBeLessThan(
+    expect(discoverSource.indexOf('...connectorCards')).toBeLessThan(
       discoverSource.indexOf('...pipedreamOAuthCards'),
     );
   });
 
   test('opens direct records as source variants instead of routing through Pipedream', () => {
-    expect(discoverSource).toContain('getDiscoverIntegration(projectId, selectedIntegration.id)');
+    expect(discoverSource).toContain('getDiscoverConnector(projectId, selectedConnector.id)');
     expect(discoverSource).toContain('variant.connector');
     expect(discoverSource).toContain('Configure manually');
   });
 
-  test('collects an explicit profile before creating either integration type', () => {
-    expect(discoverSource).toContain('<ConnectorProfileModal');
+  test('collects an explicit connection before creating either connector type', () => {
+    expect(discoverSource).toContain('<ConnectorConnectionModal');
     expect(discoverSource).toContain('existingSlugs={existingSlugs}');
     expect(discoverSource).toContain(
-      'proposeConnectorProfileSlug(profileDisplayName, existingSlugs)',
+      'proposeConnectorConnectionSlug(connectionDisplayName, existingSlugs)',
     );
     expect(discoverSource).toContain('createOnlyConnectorDraft(draft)');
-    expect(discoverSource).toContain('authorization_strategy: profile.authorizationStrategy');
+    expect(discoverSource).toContain('authorization_strategy: connection.authorizationStrategy');
   });
 
   test('does not mislabel a domain card as only its feed-provided MCP surface', () => {
@@ -62,7 +62,7 @@ describe('feature-flagged Discover connector marketplace', () => {
       "const subtitle = isOAuth ? 'Pipedream OAuth' : 'Direct surfaces';",
     );
     expect(discoverSource).not.toContain(
-      "const subtitle = isOAuth ? 'Pipedream OAuth' : integrationKindLabel(card.item.kind);",
+      "const subtitle = isOAuth ? 'Pipedream OAuth' : connectorKindLabel(card.item.kind);",
     );
   });
 });

@@ -5,6 +5,7 @@ import {
   SessionSyncController,
   createHttpSessionSyncController,
   loadCompleteSessionHistory,
+  type SessionSyncControllerOptions,
   type SessionSyncPage,
   type SessionSyncScheduler,
 } from './session-sync-controller';
@@ -411,13 +412,17 @@ describe('SessionSyncController', () => {
     const clock = createScheduler();
     const requests: Array<{ limit: number; before?: string }> = [];
     const statuses: SessionStatus[] = [];
+    let statusReads = 0;
     const controller = new SessionSyncController({
       sessionId: 'session-1',
       loadPage: async (request) => {
         requests.push(request);
         return page([]);
       },
-      loadStatus: async () => ({ type: 'idle' }) as SessionStatus,
+      loadStatus: async () => {
+        statusReads += 1;
+        return { type: 'idle' } as SessionStatus;
+      },
       hydrate: () => {},
       markLoaded: () => {},
       setStatus: (status) => statuses.push(status),
@@ -436,14 +441,24 @@ describe('SessionSyncController', () => {
     clock.advance(10_000);
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(requests).toHaveLength(2);
-    expect(statuses).toEqual([{ type: 'idle' }]);
+    // The poll reconciles the TAIL and nothing else. Its status half read the
+    // runtime over REST and wrote the answer into the slot SSE frames land in,
+    // which made a REST poll indistinguishable from the runtime's own voice —
+    // and re-stamped the stream observation on every tick, so the bound that
+    // stops a dead stream from deciding was never reached. `GET .../turn` is
+    // the status authority now, and the controller's own `setBusy` is already
+    // driven FROM that projection, so a fourth stamped input could only
+    // confirm or latch, never correct.
+    expect(statuses).toEqual([]);
+    expect(statusReads).toBe(0);
   });
 
-  test('starts transcript liveness reconciliation when a REST prompt is accepted', async () => {
+  test('the caller\'s working signal, and only it, starts transcript liveness reconciliation', async () => {
     const clock = createScheduler();
     const requests: Array<{ limit: number; before?: string }> = [];
     const hydrated: string[][] = [];
     const statuses: SessionStatus[] = [];
+    let statusReads = 0;
     const controller = new SessionSyncController({
       sessionId: 'session-1',
       loadPage: async (request) => {
@@ -453,7 +468,10 @@ describe('SessionSyncController', () => {
           { id: 'assistant-new', role: 'assistant', parentID: 'user-new' },
         ]);
       },
-      loadStatus: async () => ({ type: 'idle' }) as SessionStatus,
+      loadStatus: async () => {
+        statusReads += 1;
+        return { type: 'idle' } as SessionStatus;
+      },
       hydrate: (messages) => hydrated.push(messages.map((message) => message.info.id)),
       markLoaded: () => {},
       setStatus: (status) => statuses.push(status),
@@ -461,72 +479,47 @@ describe('SessionSyncController', () => {
       livenessIntervalMs: 10_000,
     });
 
-    controller.beginPromptObservation();
+    // Nothing polls until someone says the session is working. The controller
+    // does not decide that any more — `projectWorking` does, from the server's
+    // turn authority — so an unattended controller is silent.
+    clock.advance(10_001);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(requests).toHaveLength(0);
+
+    controller.setBusy(true);
     clock.advance(10_001);
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(requests).toHaveLength(1);
     expect(hydrated).toEqual([['user-new', 'assistant-new']]);
-    expect(statuses).toEqual([{ type: 'idle' }]);
+    // The tail is repaired; no status is claimed or even read. `loadStatus` /
+    // `setStatus` remain on the options type only because 0.12.8 published
+    // them — see their `@deprecated` banners.
+    expect(statuses).toEqual([]);
+    expect(statusReads).toBe(0);
   });
 
-  test('keeps REST prompt completion busy until runtime idle is stable after real work starts', () => {
-    let now = 0;
-    let timeout:
-      | {
-          handler: () => void;
-          dueAt: number;
-        }
-      | undefined;
-    const scheduler = {
-      now: () => now,
-      setInterval: () => 1,
-      clearInterval: () => {},
-      setTimeout: (handler: () => void, delayMs: number) => {
-        timeout = { handler, dueAt: now + delayMs };
-        return 2;
-      },
-      clearTimeout: () => {
-        timeout = undefined;
-      },
-    };
-    const advance = (ms: number) => {
-      now += ms;
-      if (timeout && timeout.dueAt <= now) {
-        const handler = timeout.handler;
-        timeout = undefined;
-        handler();
-      }
-    };
+  test('the snapshot holds transcript state only — never a busy opinion', async () => {
     const controller = new SessionSyncController({
       sessionId: 'session-1',
       loadPage: async () => page([]),
+      loadStatus: async () => ({ type: 'busy' }) as SessionStatus,
       hydrate: () => {},
       markLoaded: () => {},
-      scheduler,
     });
 
-    controller.beginPromptObservation();
-    expect(controller.getSnapshot().isPromptObservedBusy).toBe(true);
+    await controller.start();
+    controller.noteActivity();
 
-    controller.observePromptStatus({ type: 'idle' });
-    advance(1_000);
-    expect(controller.getSnapshot().isPromptObservedBusy).toBe(true);
-
-    controller.observePromptStatus({ type: 'busy' });
-    controller.observePromptStatus({ type: 'idle' });
-    advance(400);
-    expect(controller.getSnapshot().isPromptObservedBusy).toBe(true);
-
-    controller.observePromptStatus({ type: 'busy' });
-    advance(1_000);
-    expect(controller.getSnapshot().isPromptObservedBusy).toBe(true);
-
-    controller.observePromptStatus({ type: 'idle' });
-    advance(499);
-    expect(controller.getSnapshot().isPromptObservedBusy).toBe(true);
-    advance(1);
-    expect(controller.getSnapshot().isPromptObservedBusy).toBe(false);
+    // The three transcript fields, and nothing else. `isPromptObservedBusy`
+    // lived here and latched: it was inferred from silence, and every signal
+    // that could have released it can be lost.
+    expect(Object.keys(controller.getSnapshot()).sort()).toEqual([
+      'freshness',
+      'hasOlder',
+      'isLoadingOlder',
+    ]);
+    expect('isPromptObservedBusy' in controller.getSnapshot()).toBe(false);
   });
 
   test('marks an empty or failed initial read as loaded', async () => {

@@ -1,4 +1,6 @@
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type { KortixSendErrorConnector } from '@kortix/sdk/react';
 
 import { connectorNoticeCopy } from './connector-required-notice';
@@ -56,5 +58,37 @@ describe('connectorNoticeCopy', () => {
 
   test('an empty set yields an empty label rather than the string "undefined"', () => {
     expect(connectorNoticeCopy([])).toEqual({ label: '', connectable: [] });
+  });
+});
+
+/**
+ * The card shipped correct and rendered nothing for weeks.
+ *
+ * It was mounted with `error={sessionState?.sendError}`. The SDK sets
+ * `sendError` only inside `useSession.send()`; this app has always sent through
+ * `sendParts`, so that value is permanently null. And `TurnErrorDisplay`
+ * deliberately `return null`s for `kind: 'connector'` to leave the remedy to
+ * this card — so a refused turn produced NO card and NO pill. The server
+ * refused correctly, the SDK classified correctly, and the user saw silence.
+ *
+ * Every unit test here passed throughout, because they all test the pure copy
+ * helper. These two assert the wiring instead. They read the source rather than
+ * render it: `session-chat.tsx` is ~3700 lines with a deep provider tree, and a
+ * test that cannot be written without a full harness is a test nobody adds.
+ */
+const SESSION_CHAT = readFileSync(join(import.meta.dir, 'session-chat.tsx'), 'utf8');
+
+describe('ConnectorRequiredNotice is wired to a value that is actually set', () => {
+  test('it is fed commandError, never the always-null sendError', () => {
+    const mount = SESSION_CHAT.split('<ConnectorRequiredNotice')[1]?.split('/>')[0];
+    expect(mount).toBeTruthy();
+    expect(mount).toContain('error={commandError}');
+    expect(mount).not.toContain('sendError');
+  });
+
+  test('commandError is populated on a send failure', () => {
+    // The other half of the invariant: feeding the card a state nobody writes
+    // would fail exactly the same way, silently.
+    expect(SESSION_CHAT).toContain('setCommandError(result.error)');
   });
 });

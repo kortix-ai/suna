@@ -90,7 +90,7 @@ const DropdownMenuSubContent = React.forwardRef<
     side?: 'top' | 'bottom' | 'left' | 'right';
     align?: 'start' | 'center' | 'end';
   }
->(({ className, side, align, sideOffset = 4, style, ...props }, ref) => {
+>(({ className, side, align, sideOffset = 5, style, ...props }, ref) => {
   const depth = useDialogDepth();
 
   return (

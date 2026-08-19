@@ -76,7 +76,7 @@ projectsApp.openapi(
     const visible = await loadSessionForSharing(loaded, sessionId, c.get('sessionId') ?? null);
     if (!visible) return c.json({ error: 'Not found' }, 404);
     if (!visible.canManageSharing) {
-      return c.json({ error: 'Only the session owner or an editor can view public shares' }, 403);
+      return c.json({ error: 'Only the session owner or a project manager can view public shares' }, 403);
     }
 
     return c.json({ shares: await listPublicSharesForSession(sessionId) });
@@ -112,7 +112,7 @@ projectsApp.openapi(
     const visible = await loadSessionForSharing(loaded, sessionId, c.get('sessionId') ?? null);
     if (!visible) return c.json({ error: 'Not found' }, 404);
     if (!visible.canManageSharing) {
-      return c.json({ error: 'Only the session owner or an editor can create public shares' }, 403);
+      return c.json({ error: 'Only the session owner or a project manager can create public shares' }, 403);
     }
     if (
       await sessionHasMemberConnectorBinding({
@@ -123,8 +123,8 @@ projectsApp.openapi(
     ) {
       return c.json(
         {
-          error: 'Sessions using a personal connector profile cannot be shared publicly',
-          code: 'PERSONAL_CONNECTOR_PROFILE_REQUIRES_PRIVATE_SESSION',
+          error: 'Sessions using a personal connection cannot be shared publicly',
+          code: 'PERSONAL_CONNECTOR_CONNECTION_REQUIRES_PRIVATE_SESSION',
         },
         409,
       );
@@ -171,7 +171,7 @@ projectsApp.openapi(
     const visible = await loadSessionForSharing(loaded, sessionId, c.get('sessionId') ?? null);
     if (!visible) return c.json({ error: 'Not found' }, 404);
     if (!visible.canManageSharing) {
-      return c.json({ error: 'Only the session owner or an editor can revoke public shares' }, 403);
+      return c.json({ error: 'Only the session owner or a project manager can revoke public shares' }, 403);
     }
 
     const share = await revokePublicShare(sessionId, shareId);

@@ -9,6 +9,8 @@
  * single-file version. No React / DOM / framework imports allowed.
  */
 
+import { extractGatewayErrorDetails, unwrapError } from './errors';
+import { isReasoningPart, isTextPart, isToolPart } from './parts';
 import type {
   MessageInfoLike,
   MessageWithPartsLike,
@@ -18,13 +20,11 @@ import type {
   PartWithMessage,
   RetryInfo,
   SessionStatusLike,
-  ToolPartLike,
   TokenUsageLike,
+  ToolPartLike,
   TurnCostInfo,
   TurnLike,
 } from './types';
-import { extractGatewayErrorDetails, unwrapError } from './errors';
-import { isReasoningPart, isTextPart, isToolPart } from './parts';
 
 // ============================================================================
 // Internal wire shapes (structural casts, never exported)
@@ -144,80 +144,80 @@ export function computeStatusFromPart(part: PartLike | undefined): string | unde
       case 'session_start_background':
       case 'session-spawn':
       case 'session-start-background':
-        return 'Delegating to agent...';
+        return 'Handing off to an agent...';
       case 'agent_spawn':
       case 'agent-spawn':
       case 'agent_task':
       case 'agent-task':
-        return 'Delegating to agent...';
+        return 'Handing off to an agent...';
       case 'agent_task_update':
       case 'agent-task-update':
       case 'task_update':
       case 'task-update':
-        return 'Updating task...';
+        return 'Updating progress...';
       case 'agent_message':
       case 'agent-message':
       case 'agent_task_message':
       case 'agent-task-message':
       case 'task_message':
       case 'task-message':
-        return 'Messaging agent...';
+        return 'Checking in with an agent...';
       case 'task_create':
       case 'task-create':
       case 'task_start':
       case 'task-start':
-        return 'Creating task...';
+        return 'Starting a new task...';
       case 'task_list':
       case 'task-list':
-        return 'Listing tasks...';
+        return 'Reviewing the task list...';
       case 'task_done':
       case 'task-done':
-        return 'Updating task...';
+        return 'Updating progress...';
       case 'todowrite':
       case 'todoread':
         return 'Planning...';
       case 'read':
-        return 'Gathering context...';
+        return 'Reading files...';
       case 'list':
       case 'grep':
       case 'glob':
-        return 'Searching codebase...';
+        return 'Searching files...';
       case 'webfetch':
       case 'scrape-webpage':
-        return 'Fetching web page...';
+        return 'Reading a web page...';
       case 'websearch':
       case 'web-search':
       case 'web_search':
-        return 'Searching web...';
+        return 'Searching the web...';
       case 'image-search':
-        return 'Searching images...';
+        return 'Searching for images...';
       case 'image-gen':
-        return 'Generating image...';
+        return 'Creating an image...';
       case 'video-gen':
-        return 'Generating video...';
+        return 'Creating a video...';
       case 'presentation-gen':
-        return 'Creating presentation...';
+        return 'Creating a presentation...';
       case 'show':
       case 'show-user':
-        return 'Showing output...';
+        return 'Sharing the result...';
       case 'edit':
       case 'write':
       case 'morph_edit':
-        return 'Making edits...';
+        return 'Making changes...';
       case 'bash':
-        return 'Running commands...';
+        return 'Working on the computer...';
       case 'apply_patch':
-        return 'Applying patches...';
+        return 'Making changes...';
       case 'prune':
-        return 'Pruning context...';
+        return 'Tidying up memory...';
       case 'distill':
-        return 'Distilling context...';
+        return 'Tidying up memory...';
       case 'compress':
-        return 'Compressing context...';
+        return 'Tidying up memory...';
       case 'context_info':
-        return 'Updating context info...';
+        return 'Refreshing memory...';
       default:
-        return `Running ${(part as PartLike as ToolPartLike).tool}...`;
+        return 'Working on it...';
     }
   }
 
@@ -274,13 +274,13 @@ export function getTurnStatus(
         }
       }
       // Fall through to parent status
-      return 'Delegating to agent...';
+      return 'Handing off to an agent...';
     }
 
     const s = computeStatusFromPart(p);
     if (s) return s;
   }
-  return 'Considering next steps...';
+  return 'Figuring out what’s next...';
 }
 
 // ============================================================================
@@ -494,10 +494,12 @@ export function formatTokens(tokens: number): string {
 export function getRetryInfo(status: SessionStatusLike | undefined): RetryInfo | undefined {
   if (!status || status.type !== 'retry') return undefined;
   const retry = status as RetryStatusLike;
+  const fullMessage = unwrapError(retry.message);
   return {
     attempt: retry.attempt,
-    message: retry.message.length > 60 ? `${retry.message.slice(0, 60)}...` : retry.message,
+    message: fullMessage.length > 60 ? `${fullMessage.slice(0, 60)}...` : fullMessage,
     next: retry.next,
+    details: extractGatewayErrorDetails(retry.message),
   };
 }
 

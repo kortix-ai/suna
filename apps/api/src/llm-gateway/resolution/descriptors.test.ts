@@ -1,20 +1,41 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import * as realTiers from '../../billing/services/tiers';
 
 const config: Record<string, unknown> = {
   KORTIX_MANAGED_PROVIDER_ENABLED: true,
   ASTER_API_KEY: 'aster-test-key',
   ASTER_API_URL: 'https://api.asterlab.ai/v1',
+  OPENROUTER_API_KEY: 'openrouter-test-key',
+  OPENROUTER_API_URL: 'https://openrouter.ai/api/v1',
 };
 mock.module('../../config', () => ({ config }));
-mock.module('../../billing/services/tiers', () => ({ llmPriceMarkup: () => 2 }));
+// Spread the real module — see the note in resolve-candidates.test.ts. Listing
+// three exports by hand silently removed every other one from the registry.
+mock.module('../../billing/services/tiers', () => ({
+  ...realTiers,
+  getTierEntitlements: () => ({}),
+  llmPriceMarkup: () => 2,
+  tierHasEntitlement: () => false,
+}));
 
 // Stand in for the live models.dev pricing cache (router/config/model-pricing)
 // with a tiny fixed catalog keyed by BASE (unprefixed) Bedrock model ids —
 // mirrors what models.dev actually publishes for Bedrock: it has never heard
 // of a cross-region inference-profile id like `us.anthropic.claude-...`.
-const CATALOG: Record<string, { inputPer1M: number; outputPer1M: number }> = {
+const CATALOG: Record<string, { inputPer1M: number; outputPer1M: number; cacheReadPer1M?: number; contextOver200k?: { inputPer1M: number; outputPer1M: number; cacheReadPer1M?: number; contextThreshold: number } }> = {
   'amazon-bedrock/anthropic.claude-opus-4-8': { inputPer1M: 15, outputPer1M: 75 },
   'amazon-bedrock/amazon.nova-micro-v1:0': { inputPer1M: 0.035, outputPer1M: 0.14 },
+  'openrouter/x-ai/grok-4.6': {
+    inputPer1M: 2,
+    outputPer1M: 6,
+    cacheReadPer1M: 0.5,
+    contextOver200k: {
+      inputPer1M: 4,
+      outputPer1M: 12,
+      cacheReadPer1M: 1,
+      contextThreshold: 200_000,
+    },
+  },
 };
 const getModelPricing = mock(
   (providerId: string, modelId: string) => CATALOG[`${providerId}/${modelId}`] ?? null,
@@ -203,5 +224,82 @@ describe('managed AsterLab descriptor', () => {
         },
       }),
     ]);
+  });
+});
+
+describe('managed Grok 4.6 descriptor', () => {
+  test('routes through OpenRouter xAI with context-tier pricing', () => {
+    expect(managedCandidates({
+      id: 'grok-4.6',
+      name: 'Grok 4.6',
+      upstreamModelId: 'x-ai/grok-4.6',
+      transport: 'openrouter',
+      pricingRef: 'openrouter/x-ai/grok-4.6',
+      tier: 'flagship',
+      vision: true,
+      limit: { context: 500_000, output: 500_000 },
+      openrouterProvider: { order: ['xai'], allow_fallbacks: true },
+    })).toEqual([expect.objectContaining({
+      provider: 'openrouter',
+      kind: 'openai-compat',
+      baseUrl: 'https://openrouter.ai/api/v1',
+      apiKey: 'openrouter-test-key',
+      resolvedModel: 'x-ai/grok-4.6',
+      billingMode: 'credits',
+      markup: 2,
+      pricing: {
+        inputPerMillion: 2,
+        outputPerMillion: 6,
+        cachedInputPerMillion: 0.5,
+        cacheWritePerMillion: undefined,
+        tiers: undefined,
+        contextOver200k: {
+          inputPerMillion: 4,
+          outputPerMillion: 12,
+          cachedInputPerMillion: 1,
+          cacheWritePerMillion: undefined,
+          contextThreshold: 200_000,
+        },
+      },
+      bodyExtras: { provider: { order: ['xai'], allow_fallbacks: true } },
+    })]);
+  });
+});
+
+describe('managed DeepSeek V4 Pro 0813 descriptor', () => {
+  test('routes DeepSeek V4 Pro 0813 through the reachable GMICloud endpoint', () => {
+    expect(managedCandidates({
+      id: 'deepseek-v4-pro-0813',
+      name: 'DeepSeek V4 Pro 0813',
+      upstreamModelId: 'deepseek/deepseek-v4-pro-0813',
+      transport: 'openrouter',
+      pricingRef: 'openrouter/deepseek/deepseek-v4-pro-0813',
+      pricing: {
+        inputPerMillion: 1.74,
+        cachedInputPerMillion: 0.145,
+        outputPerMillion: 3.48,
+      },
+      tier: 'balanced',
+      vision: false,
+      limit: { context: 1_048_575, output: 384_000 },
+      openrouterProvider: {
+        order: ['gmicloud'],
+        allow_fallbacks: true,
+      },
+    })).toEqual([expect.objectContaining({
+      provider: 'openrouter',
+      resolvedModel: 'deepseek/deepseek-v4-pro-0813',
+      pricing: expect.objectContaining({
+        inputPerMillion: 1.74,
+        cachedInputPerMillion: 0.145,
+        outputPerMillion: 3.48,
+      }),
+      bodyExtras: {
+        provider: {
+          order: ['gmicloud'],
+          allow_fallbacks: true,
+        },
+      },
+    })]);
   });
 });

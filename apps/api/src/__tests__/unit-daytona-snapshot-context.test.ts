@@ -1,11 +1,11 @@
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { chmod, mkdir, symlink } from 'node:fs/promises';
+import { chmod, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import {
-  buildCliExecutorSourceDigest,
+  buildCliConnectorSourceDigest,
   buildFileSha256,
 } from '@kortix/shared/sandbox-runtime-artifact';
 
@@ -30,10 +30,9 @@ setTestEnv('INTERNAL_KORTIX_ENV', 'dev');
 const fixtureRoot = mkdtempSync(join(tmpdir(), 'kortix-daytona-context-test-'));
 const agentPath = join(fixtureRoot, 'kortix-agent');
 const cliPath = join(fixtureRoot, 'kortix');
-const cliAttestationPath = join(fixtureRoot, 'kortix-executor-runtime.attestation.json');
+const cliAttestationPath = join(fixtureRoot, 'kortix-connectors-runtime.attestation.json');
 const entrypointPath = join(fixtureRoot, 'entrypoint.sh');
 const slackCliPath = join(fixtureRoot, 'slack-cli');
-const executorSdkPath = join(fixtureRoot, 'executor-sdk');
 const opencodeConfigPath = join(fixtureRoot, 'opencode-config');
 
 writeFileSync(agentPath, '#!/bin/sh\n');
@@ -43,7 +42,7 @@ writeFileSync(
   cliAttestationPath,
   `${JSON.stringify({
     schema_version: 1,
-    source_sha256: await buildCliExecutorSourceDigest(
+    source_sha256: await buildCliConnectorSourceDigest(
       resolve(import.meta.dir, '../../../cli'),
     ),
     binary_sha256: await buildFileSha256(cliPath),
@@ -54,12 +53,6 @@ await chmod(agentPath, 0o755);
 await chmod(cliPath, 0o755);
 await chmod(entrypointPath, 0o755);
 await mkdir(slackCliPath, { recursive: true });
-await mkdir(executorSdkPath, { recursive: true });
-await mkdir(join(executorSdkPath, 'node_modules'), { recursive: true });
-await symlink(
-  '/definitely-not-present/typescript',
-  join(executorSdkPath, 'node_modules', 'typescript'),
-);
 await mkdir(opencodeConfigPath, { recursive: true });
 
 // Set per-test (NOT at module load): build-context reads these lazily, so setting
@@ -71,7 +64,6 @@ beforeEach(() => {
   process.env.KORTIX_SNAPSHOT_CLI_ATTESTATION_PATH = cliAttestationPath;
   process.env.KORTIX_SNAPSHOT_ENTRYPOINT_PATH = entrypointPath;
   process.env.KORTIX_SNAPSHOT_SLACK_CLI_PATH = slackCliPath;
-  process.env.KORTIX_SNAPSHOT_EXECUTOR_SDK_PATH = executorSdkPath;
   process.env.KORTIX_SNAPSHOT_OPENCODE_CONFIG_PATH = opencodeConfigPath;
   getSnapshotImpl = async () => ({ state: snapshotState() });
   deleteSnapshotImpl = async () => {};
@@ -80,7 +72,6 @@ beforeEach(() => {
 let dockerfileSeen = '';
 let scaffoldPresentAtDaytonaBoundary = false;
 let scaffoldBareAtDaytonaBoundary = false;
-let executorNodeModulesPresentAtProviderBoundary = false;
 let warmGitArchivePresentAtDaytonaBoundary = false;
 // One push per build attempt — the composed Dockerfile path (== context dir).
 // Each entry is a DISTINCT temp dir iff the adapter re-staged a fresh context.
@@ -104,9 +95,6 @@ mock.module('@daytonaio/sdk', () => ({
         execFileSync('git', ['--git-dir', scaffoldPath, 'rev-parse', '--is-bare-repository'], {
           encoding: 'utf8',
         }).trim() === 'true';
-      executorNodeModulesPresentAtProviderBoundary = existsSync(
-        join(path, '..', 'kortix-executor-sdk', 'node_modules'),
-      );
       warmGitArchivePresentAtDaytonaBoundary = existsSync(
         join(path, '..', 'kortix-warm-repo-git.tar'),
       );
@@ -152,7 +140,6 @@ describe('Daytona snapshot build context', () => {
     expect(dockerfileSeen).toContain('COPY scaffold.git /opt/kortix/scaffold.git');
     expect(scaffoldPresentAtDaytonaBoundary).toBe(true);
     expect(scaffoldBareAtDaytonaBoundary).toBe(true);
-    expect(executorNodeModulesPresentAtProviderBoundary).toBe(false);
   });
 
   test('uploads Git metadata as one visible archive and restores .git in the image', async () => {

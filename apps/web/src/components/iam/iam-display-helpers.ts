@@ -12,12 +12,13 @@
 //      so self-add is a one-click action.
 //
 //   3. Labelling a project Members row that has access only via a group
-//      ("Inherited Editor via Engineering + 1 more").
+//      ("Inherited Manager via Engineering + 1 more").
 
 export type AccountRole = 'owner' | 'admin' | 'member';
-// `member` is the project floor role; `viewer` was folded into it and is no
-// longer emitted by the API.
-export type ProjectRole = 'manager' | 'editor' | 'member';
+// Two project roles. `member` is the floor role; `viewer`/`user` folded into it
+// and `editor` was REMOVED on 2026-08-18 (folded into `manager`). The API never
+// emits either retired value.
+export type ProjectRole = 'manager' | 'member';
 
 export interface AccountMeta {
   email: string | null;
@@ -104,7 +105,6 @@ export function floatCurrentUserFirst<T extends { user_id: string }>(
 
 const PROJECT_ROLE_LABEL: Record<ProjectRole, string> = {
   manager: 'Manager',
-  editor: 'Editor',
   member: 'Member',
 };
 

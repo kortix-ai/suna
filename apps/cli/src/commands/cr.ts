@@ -15,7 +15,7 @@ const HELP = help`Usage: kortix cr <subcommand> [options]
 Open, review, and merge Kortix change requests. A CR proposes merging one
 version (branch) into another inside a project. The CR layer is Kortix-
 native — it works on top of any git host (GitHub, GitLab, plain
-git) without per-host integration.
+git) without a per-host adapter.
 
 Subcommands:
   ls [--status open|merged|closed|all]   List CRs. Default: open.

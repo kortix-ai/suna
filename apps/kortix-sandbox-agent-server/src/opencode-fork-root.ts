@@ -18,11 +18,11 @@
  * daemon restarts reuse the fork's own root via the normal idempotent path.
  */
 
+export { OPENCODE_SEED_BAKED_PIN_PATH } from './runtime-state'
+
 /** Well-known marker recording the SEED's pre-baked root id. Lives next to
  *  OPENCODE_SESSION_PIN_PATH and is frozen into the warm snapshot, so every fork
  *  inherits it. Absent on cold sessions and after a fork has rotated. */
-export const OPENCODE_SEED_BAKED_PIN_PATH = '/var/run/kortix/opencode-seed-baked-id'
-
 /**
  * True when the fork's currently-resolved root is the shared seed-baked root and
  * must NOT be reused — the caller then mints a fresh per-session root instead.

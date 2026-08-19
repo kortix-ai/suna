@@ -21,6 +21,7 @@ function cfg(overrides: Partial<Config> = {}): Config {
   return {
     servicePort: 8000,
     opencodeInternalPort: 4096,
+    opencodeStandbyPort: 4097,
     staticPort: 3211,
     workspace,
     projectTarget: workspace,
@@ -40,6 +41,9 @@ function cfg(overrides: Partial<Config> = {}): Config {
     gitUserEmail: 'agent@kortix.ai',
     cloneFilter: 'blob:none',
     cloneDepth: 1,
+    workload: '',
+    monitorsJson: '',
+    monitorBoxEpoch: '',
     ...overrides,
   }
 }

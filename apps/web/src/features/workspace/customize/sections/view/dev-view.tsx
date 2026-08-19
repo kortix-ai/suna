@@ -20,23 +20,27 @@ import {
   StepperTrigger,
 } from '@/components/ui/stepper';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { Icon } from '@/features/icon/icon';
+import { Claude } from '@/features/icon/icons/claude';
+import { Codex } from '@/features/icon/icons/codex';
+import { Cursor } from '@/features/icon/icons/cursor';
+import { RuntimeMark as OpenCode } from '@/features/icon/icons/open-code';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { useCopy } from '@/hooks/use-copy';
-import { getProject, inviteRepoCollaborator, isManagedGithubProject } from '@kortix/sdk';
-import { PROJECT_ACTIONS } from '@/lib/project-actions';
-import { useProjectCan } from '@/lib/use-project-can';
 import { getEnv } from '@/lib/env-config';
+import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useDeploymentCliInstallCommand } from '@/lib/use-deployment-cli-install-command';
+import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
+import { getProject, inviteRepoCollaborator, isManagedGithubProject } from '@kortix/sdk';
+import { contract, qk } from '@kortix/sdk/react';
 import CustomizeSectionWrapper from '../component/section-wrapper';
 
 export function DevView({ projectId }: { projectId: string }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const projectQuery = useQuery({
-    queryKey: ['project', projectId],
+    queryKey: qk.project.summary(projectId),
     queryFn: () => getProject(projectId),
-    staleTime: 20_000,
+    ...contract('config'),
   });
 
   const project = projectQuery.data;
@@ -246,8 +250,8 @@ function CommandBlock({ lines }: { lines: string[] }) {
     <div className="group border-border bg-muted relative overflow-hidden rounded-md border">
       <pre className="scrollbar-hide overflow-x-auto px-3.5 py-3 pr-12 text-sm leading-relaxed">
         <code className="text-foreground font-mono">
-          {lines.map((line, i) => (
-            <div key={i} className="flex">
+          {lines.map((line) => (
+            <div key={line} className="flex">
               <span className="min-w-0 break-all">{line}</span>
             </div>
           ))}
@@ -272,10 +276,10 @@ function CommandBlock({ lines }: { lines: string[] }) {
 type LauncherIcon = ComponentType<{ className?: string }>;
 
 const LAUNCHERS: { label: string; command: string; icon: LauncherIcon }[] = [
-  { label: 'Claude Code', command: 'claude', icon: Icon.Claude },
-  { label: 'Cursor', command: 'cursor .', icon: Icon.Cursor },
-  { label: 'Codex', command: 'codex', icon: Icon.Codex },
-  { label: 'opencode', command: 'opencode', icon: Icon.OpenCode },
+  { label: 'Claude Code', command: 'claude', icon: Claude },
+  { label: 'Cursor', command: 'cursor .', icon: Cursor },
+  { label: 'Codex', command: 'codex', icon: Codex },
+  { label: 'opencode', command: 'opencode', icon: OpenCode },
 ];
 
 function Launchers() {

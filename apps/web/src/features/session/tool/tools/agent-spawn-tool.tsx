@@ -29,13 +29,21 @@ import { useContext, useMemo, useState } from 'react';
 
 import { cleanWorkerOutput } from '@/features/session/tool/shared/agent-helpers';
 
-export function AgentSpawnTool({ part, forceOpen }: ToolProps) {
+export function AgentSpawnTool({ part, defaultOpen, forceOpen }: ToolProps) {
   const surface = useContext(ToolSurfaceContext);
   const input = partInput(part);
   const status = partStatus(part);
   const output = partOutput(part);
-  const description = getAgentCardLabel(input);
-  const verification = firstMeaningfulLine(input.verification_condition, 120);
+  // Both walk the input's prose: `getAgentCardLabel` tries up to five fields and
+  // `firstMeaningfulLine` splits each one on every newline before taking the
+  // first non-blank. A spawn carries a whole prompt, so that is a full scan plus
+  // a line array per render — and this row re-renders on every frame of the
+  // child session's stream, because `useRuntimeMessages` below subscribes to it.
+  const description = useMemo(() => getAgentCardLabel(input), [input]);
+  const verification = useMemo(
+    () => firstMeaningfulLine(input.verification_condition, 120),
+    [input],
+  );
   const isRunning = status === 'running' || status === 'pending';
   const isCompleted = status === 'completed';
 
@@ -67,7 +75,7 @@ export function AgentSpawnTool({ part, forceOpen }: ToolProps) {
   return (
     <>
       <BasicTool
-        icon={<Cpu className="size-3.5 flex-shrink-0" />}
+        icon={<Cpu className="size-3.5 shrink-0" />}
         trigger={{
           title: 'Spawn agent',
           subtitle: isRunning
@@ -80,6 +88,7 @@ export function AgentSpawnTool({ part, forceOpen }: ToolProps) {
         badge={
           isCompleted && childToolParts.length > 0 ? `${childToolParts.length} steps` : undefined
         }
+        defaultOpen={defaultOpen}
         forceOpen={forceOpen}
       >
         {/* The verification condition and whatever the worker returned are one
@@ -111,14 +120,14 @@ export function AgentSpawnTool({ part, forceOpen }: ToolProps) {
                 <OutputBlock text={cleanedOutput} markdown />
               ) : isCompleted && childToolParts.length > 0 ? (
                 <div className="space-y-0.5">
-                  {childToolParts.slice(-3).map((tp, i) => {
+                  {childToolParts.slice(-3).map((tp) => {
                     const info = getToolInfo(tp.tool, partInput(tp) as Record<string, any>);
                     return (
                       <div
-                        key={i}
+                        key={tp.id}
                         className="text-muted-foreground flex items-center gap-1.5 truncate text-xs"
                       >
-                        <Check className="text-muted-foreground/50 size-2.5 flex-shrink-0" />
+                        <Check className="text-muted-foreground/50 size-2.5 shrink-0" />
                         {info.title}
                         {info.subtitle ? ` · ${info.subtitle}` : ''}
                       </div>
@@ -136,7 +145,14 @@ export function AgentSpawnTool({ part, forceOpen }: ToolProps) {
         ) : null}
 
         {surface === 'panel' && childToolParts.length > 0 && (
-          <div className="border-border/30 border-t p-3">
+          // Full-bleed seam, not a nested box. The panel row body already
+          // supplies the 12px gutter this sits in, so a `p-3` here inset the
+          // activity list a second time (24px of gutter around a 420px pane)
+          // and pulled the hairline in from both edges — a second frame drawn
+          // inside the row card's. `-mx-3` cancels the body's horizontal inset
+          // so the `border-t` spans the card edge to edge, `px-3` puts the
+          // content back where it was, and only the top inset survives.
+          <div className="border-border/30 -mx-3 border-t px-3 pt-3">
             <SubAgentActivity childSessionId={childSessionId} parts={childToolParts} />
           </div>
         )}

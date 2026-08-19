@@ -27,11 +27,13 @@ ID, and the branch name are the same value. See
 | `s.update(input)` | `PATCH …/sessions/:sid` | Renames the session or updates metadata |
 | `s.start(waitMs?)` | `POST …/sessions/:sid/start` | Provisions and boots the runtime |
 | `s.restart()` | `POST …/sessions/:sid/restart` | Restarts the runtime; keeps the same sandbox |
+| `s.reloadConfig(input?)` | `POST …/sessions/:sid/reload` | Recompiles agent config and replaces the runtime after validation |
+| `s.reloadConfigStream(input, onEvent)` | `POST …/sessions/:sid/reload-stream` | Runs the same reload and emits server-confirmed progress phases |
 | `s.stop()` | `POST …/sessions/:sid/stop` | Stops the runtime; the session stays |
 | `s.delete()` | `DELETE …/sessions/:sid` | Deletes the session |
 | `s.setSharing(intent)` | `PUT …/sharing` | Sets sharing and visibility |
 | `s.cost()` | `GET /usage/session-costs/:sid` | Reads finalized LLM and compute cost without starting the runtime |
-| `s.scope()` | `GET …/sessions/:sid/scope` | Reads stored secret narrowing and materialized connector authorizations |
+| `s.scope()` | `GET …/sessions/:sid/scope` | Reads stored secret narrowing and materialized connection bindings |
 | `s.rescope(input)` | `PUT …/sessions/:sid/scope` | Replaces supplied scope fields for the next prompt or tool call |
 | `s.commit(input?)` | — | Commits the agent's work |
 
@@ -39,6 +41,19 @@ ID, and the branch name are the same value. See
   `s.delete()` deletes the session and its runtime. This cannot be undone. To pause a session
   without losing it, call `s.stop()` instead.
 </Callout>
+
+Use the streamed method when the caller displays reload progress:
+
+```ts
+await s.reloadConfigStream({ refresh_repo: false }, (event) => {
+  if (event.type === 'phase') console.log(event.phase);
+});
+```
+
+The phases are `checking-session`, `refreshing-workspace`, `compiling-config`,
+`applying-config`, and `confirming-config`. The server omits
+`refreshing-workspace` when `refresh_repo` is `false`. The
+`applying-config` phase includes the daemon's validated runtime replacement.
 
 Three more read methods round out the handle:
 
@@ -123,12 +138,18 @@ run without deleting the session.
 
 ## Session scope and cost
 
-Read the stored secret narrowing and materialized connector authorizations.
+Read the stored secret narrowing and materialized connection bindings.
 `secrets_allowlist: null` means the agent's secret grant applies:
 
 ```ts
 const scope = await s.scope();
+scope.connector_bindings_configured; // false = inherits the project defaults
 ```
+
+`connector_bindings` is the RESOLVED map, so it looks the same for a session
+that overrode its connectors and one that inherits the project defaults. Read
+`connector_bindings_configured` to tell them apart before rendering the scope or
+sending it back.
 
 Replace one or both scope fields:
 
@@ -136,15 +157,30 @@ Replace one or both scope fields:
 await s.rescope({
   secrets: ['DATABASE_URL'],
   connector_bindings: {
-    github: { authorization_id: authorizationId },
+    github: { connection_id: connectionId },
   },
 });
 ```
 
 Each supplied field replaces its complete previous value. Omit a field to leave
-it unchanged. Connector authorization changes apply to the next tool call.
+it unchanged. Connection changes apply to the next tool call.
 Secret removal stops future delivery but cannot remove an already disclosed
 value from model context or an existing process.
+
+Both axes have an explicit way back to the default. They are not the same as an
+empty value:
+
+```ts
+await s.rescope({
+  secrets: null, // inherit the agent's secret grant
+  connector_bindings: null, // drop the override; inherit the project defaults
+});
+```
+
+`secrets: []` and `connector_bindings: {}` are the opposite instruction: an
+explicit "no project secrets" and "no connectors at all", project defaults
+included. A session that sends `{}` where it meant `null` fails closed on every
+alias it did not name.
 
 Read the unified cost record:
 
@@ -303,26 +339,36 @@ The OpenCode `sessionID` here is not the session ID you pass to
 
 ## Warm a project session
 
-Use the server-owned warm-session operations when a project landing page needs
-one empty runtime before the first prompt.
+Call `ensureWarm()` when a project landing page needs one runtime ready before
+the first prompt.
 
 ```ts
 const project = kortix.project(projectId);
 const warm = await project.sessions.ensureWarm();
 
-await kortix.session(projectId, warm.session.session_id).ensureReady();
-
-const claimed = await project.sessions.claimWarm({
-  session_id: warm.session.session_id,
-  agent_name: selectedAgent,
-  sandbox_slug: selectedSandbox,
-});
+// An ORDINARY session. Prompt it like any other.
+await kortix.session(projectId, warm.session.session_id).send("Build me a widget");
 ```
 
-`ensureWarm()` creates or reuses one available session for the current user.
-`claimWarm()` atomically reserves that session before navigation or prompt
-delivery. A `409` response means another client claimed it or the selected
-agent or sandbox differs.
+`ensureWarm()` creates, or returns, one unused session for the current user. It
+is the same create `sessions.create()` runs, with the project's defaults: same
+billing gate, same concurrent-session cap, same connector requirements. The only
+difference is `metadata.warm`, which hides the session from
+`sessions.list()` until its first prompt lands.
+
+Treat it as speculative. A `409 WARM_SESSION_UNAVAILABLE` means the account has
+no concurrent-session headroom to spare or the project cannot be warmed right
+now — fall through to `sessions.create()`, which reports the real reason.
+
+The warm session carries the project's DEFAULT agent and sandbox. If the user
+picks a different one, abandon it and call `sessions.create()`: an unused warm
+session is hidden and reaped on its own.
+
+<Callout type="warn">
+`claimWarm()` is deprecated. A warm session is an ordinary session, so there is
+nothing to claim — navigate to it and prompt it. The call still works for
+consumers pinned to the older shape and is removed in the next major.
+</Callout>
 
 ## Handling errors
 

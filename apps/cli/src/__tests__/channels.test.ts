@@ -12,7 +12,6 @@ const ORIGINAL_STDERR_WRITE = process.stderr.write;
 
 const ENV_KEYS = [
   'KORTIX_CLI_TOKEN',
-  'KORTIX_EXECUTOR_TOKEN',
   'KORTIX_TOKEN',
   'KORTIX_API_URL',
   'KORTIX_PROJECT_ID',
@@ -58,7 +57,7 @@ let state: MockState;
 let installationGets = 0;
 let teamsInstall: typeof TEAMS_INSTALLATION | null = null;
 
-function writeConfig(): void {
+function writeConfig(url = 'https://api.test'): void {
   const file = join(tmp, 'config.json');
   writeFileSync(
     file,
@@ -66,7 +65,7 @@ function writeConfig(): void {
       active: 'test',
       hosts: {
         test: {
-          url: 'https://api.test',
+          url,
           token: 'tok_test',
           user_id: 'user_1',
           user_email: 'user@example.test',
@@ -272,6 +271,18 @@ describe('kortix channels status', () => {
     expect(parsed.connected).toBe(true);
     expect(parsed.installation.workspaceId).toBe('T012AB3CD');
   });
+
+  test('prints one /v1 mount when the configured host already includes /v1', async () => {
+    writeConfig('https://api.test/v1');
+    state.installation = INSTALLATION;
+
+    const code = await runChannels(['status']);
+
+    expect(code).toBe(0);
+    const out = stripAnsi(stdout);
+    expect(out).toContain('https://api.test/v1/webhooks/slack/proj_1');
+    expect(out).not.toContain('/v1/v1/');
+  });
 });
 
 describe('kortix channels --platform teams', () => {
@@ -313,24 +324,29 @@ describe('kortix channels --platform teams', () => {
     expect(parsed.orgInstalled).toBe(false);
   });
 
-  test('connect with the `teams` experiment off → points at Settings, not at server env vars', async () => {
+  test('connect with the `teams` feature flag off → points at Settings on stderr, not at server env vars', async () => {
     state.teamsEnabled = false;
     const code = await runChannels(['connect', '--platform', 'teams']);
     expect(code).toBe(1);
-    const out = stripAnsi(stdout);
-    expect(out).toContain('Customize → Settings → Experimental');
-    expect(out).not.toContain(TEAMS_CONSENT_URL);
-    expect(out).not.toContain('MICROSOFT_APP_ID');
+    // A rejection is an error: it belongs on stderr, worded exactly like the
+    // server's feature-flag gate so both sides read identically.
+    const err = stripAnsi(stderr);
+    expect(err).toContain(
+      'Microsoft Teams is not enabled for this project. Enable it in Settings → Feature flags.',
+    );
+    expect(stripAnsi(stdout)).toBe('');
+    expect(err).not.toContain(TEAMS_CONSENT_URL);
+    expect(err).not.toContain('MICROSOFT_APP_ID');
   });
 
-  test('connect with the experiment on but no bot credentials → points at the credentials', async () => {
+  test('connect with the feature flag on but no bot credentials → points at the credentials', async () => {
     state.oauthAvailable = false;
     const code = await runChannels(['connect', '--platform', 'teams']);
     expect(code).toBe(1);
     const out = stripAnsi(stdout);
     expect(out).toContain('MICROSOFT_APP_ID');
     expect(out).toContain('bring your own bot');
-    expect(out).not.toContain('Settings → Experimental');
+    expect(out).not.toContain('Settings → Feature flags');
   });
 
   test('invalid --platform value → exit 2', async () => {

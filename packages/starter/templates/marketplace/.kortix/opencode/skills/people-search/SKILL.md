@@ -78,7 +78,7 @@ The web path above (`people_search`) works standalone and covers most asks. If t
 
 **Check what's connected:**
 ```sh
-kortix executor connectors          # or the `connectors` MCP tool
+kortix connectors ls                # or the `connectors` MCP tool
 ```
 A connector qualifies if its job is people/company data. (CRMs like Salesforce/HubSpot can enrich *known* contacts too, but don't discover new ones — treat them as a supplement.) Nothing connected → stay on the web path above; it already answers most asks, and it's fine to offer to wire one up without blocking the request.
 
@@ -92,10 +92,10 @@ A connector qualifies if its job is people/company data. (CRMs like Salesforce/H
 **Filter — same discipline as the web path.** A curated index still returns loose matches. Phrase criteria as exclusions and judge each candidate against the fielded data returned; don't skip this step just because the connector felt more authoritative.
 
 **Wiring up a connector (when none exists).** Don't send the user to a dashboard — use the credentials flow (`kortix-system` → *Credentials & setup links*):
-- Pipedream-backed app (most prospecting tools): `kortix executor add apollo --provider pipedream --app apollo`, then `kortix executor connect apollo` to mint a 1-click link.
+- Pipedream-backed app (most prospecting tools): `kortix connectors add apollo --provider pipedream --app apollo --apply`, then `kortix connectors connect apollo` to mint a 1-click link.
 - API-key provider (e.g. a People Data Labs key): `kortix secrets request PDL_API_KEY --scope connector`.
 
-Surface the URL, end your turn, and verify it landed (`kortix executor connectors` / `kortix secrets ls`) when the user returns.
+Surface the URL, end your turn, and verify it landed (`kortix connectors ls` / `kortix secrets ls`) when the user returns.
 
 **Output differences on the connector path:**
 - Source line names the connector, not "Web Search" — `**Found via:** Apollo`.

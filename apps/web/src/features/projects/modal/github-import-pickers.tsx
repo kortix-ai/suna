@@ -10,7 +10,7 @@ import {
 import Loading from '@/components/ui/loading';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Separator } from '@/components/ui/separator';
-import { Icon } from '@/features/icon/icon';
+import { Github } from '@/features/icon/icons/github';
 import { cn } from '@/lib/utils';
 import type { GitHubRepository, GitHubRepositoryBranch } from '@kortix/sdk';
 import {
@@ -208,7 +208,7 @@ export function RepositoryPicker({
       placeholder="Search repositories"
       searchPlaceholder="Search repositories"
       emptyLabel="No repositories found"
-      icon={<Icon.Github className="size-4" />}
+      icon={<Github className="size-4" />}
       onValueChange={onValueChange}
       onSearchChange={onSearchChange}
     />

@@ -41,7 +41,7 @@ export const KORTIX_ITEM_TYPES = [
   'registry:command', // an OpenCode slash command .md
   'registry:tool', // a custom OpenCode tool (.ts) or plugin
   'registry:trigger', // a kortix.yaml triggers: block (declarative)
-  'registry:connector', // an integration definition (Pipedream/MCP/HTTP)
+  'registry:connector', // a connector definition (Pipedream/MCP/HTTP)
   'registry:rules', // AGENTS.md / rules files
   'registry:memory', // seed memory files
   'registry:project', // a whole Kortix project (full repo scaffold)

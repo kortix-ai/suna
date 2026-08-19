@@ -4,7 +4,7 @@
  * `relayBootTimelineToApi`), persisted via boot-timeline-store.ts's
  * `recordBootTimeline`.
  *
- * WIRING NOTES FOR THE INTEGRATOR (both outside this file's scope):
+ * WIRING NOTES FOR THE CONNECTOR (both outside this file's scope):
  *   1. Mount this router in platform/index.ts:
  *        import { bootTimelineRouter } from './routes/boot-timeline';
  *        platformApp.route('/boot-timeline', bootTimelineRouter);
@@ -21,6 +21,7 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { and, eq, inArray } from 'drizzle-orm';
 import { sessionSandboxes } from '@kortix/db';
+import { pinSandboxEgressIp, requestEgressIp } from '../services/sandbox-egress-pin';
 import { db } from '../../shared/db';
 import { auth, errors, json, makeOpenApiApp } from '../../openapi';
 import type { AppEnv } from '../../types';
@@ -88,6 +89,15 @@ bootTimelineRouter.openapi(
     if (!sandbox) {
       return c.json({ error: 'sandbox token is not scoped to this session' }, 403);
     }
+
+    // Pin the sandbox's egress address on the way past. THIS call is the right
+    // moment: it is the daemon, authenticated with the SANDBOX credential, and
+    // it happens before the agent can run — so the pin cannot be set by whoever
+    // reaches the API first. Fire-and-forget for the same reason as the
+    // timeline: a failed pin must never fail a boot.
+    void pinSandboxEgressIp(sandboxId, requestEgressIp(c)).catch((err) =>
+      console.warn('[egress-pin] could not pin sandbox egress ip (ignored):', err?.message ?? err),
+    );
 
     // Fire-and-forget — this is telemetry, not a durability contract the
     // caller should wait on (see recordBootTimeline's doc comment).

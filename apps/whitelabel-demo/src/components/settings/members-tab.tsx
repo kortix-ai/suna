@@ -28,8 +28,8 @@ import { Check, Mail, Send, Trash2, Users, X } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
-type Role = 'editor' | 'member';
-const ROLES: Role[] = ['editor', 'member'];
+type Role = 'manager' | 'member';
+const ROLES: Role[] = ['manager', 'member'];
 
 export function MembersTab({ projectId }: { projectId: string }) {
   const qc = useQueryClient();

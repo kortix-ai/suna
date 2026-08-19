@@ -7,6 +7,7 @@ import { KortixLetterField } from '@/components/ui/marketing/kortix-letter-field
 import { UseCasesBrowser } from '@/components/use-cases/use-cases-browser';
 import { UseCasesCta } from '@/components/use-cases/use-cases-cta';
 import { getAllUseCases } from '@/lib/use-cases';
+import { safeJsonForHtml } from '@/lib/security/safe-json';
 import { siteMetadata } from '@/lib/site-metadata';
 
 const TITLE = 'Use Cases';
@@ -76,7 +77,7 @@ export default function UseCasesIndexPage() {
     <main className="bg-background relative min-h-screen">
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        dangerouslySetInnerHTML={{ __html: safeJsonForHtml(jsonLd) }}
       />
 
       {/* Hero — animated letter field backdrop, like the marketing pages. */}

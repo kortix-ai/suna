@@ -41,9 +41,10 @@ import { startTemplateSetupSession } from '@/features/projects/modal/template-se
 import { useInstallMarketplaceItemAsSession } from '@/hooks/marketplace';
 import type { MarketplaceItem, MarketplaceItemDetail } from '@/lib/marketplace-client';
 import { isManagedGitUnavailableError } from '@/lib/onboarding/ensure-first-project';
-import { useCustomizeStore } from '@/stores/customize-store';
+import { useSettingsPanelStore } from '@/stores/settings-panel-store';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { getManagedGitStatus, listAccounts, provisionProject } from '@kortix/sdk';
+import { qk } from '@kortix/sdk/react';
 import { capabilityCount, hasCapabilities } from './marketplace-install';
 import { useProjectPicker } from './marketplace-project-picker';
 import { prepareMarketplaceInstallSessionNavigation } from './marketplace-session-navigation';
@@ -73,7 +74,7 @@ export function AddToProjectModal({
 }) {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const closeCustomize = useCustomizeStore((s) => s.close);
+  const closeCustomize = useSettingsPanelStore((s) => s.close);
   const isProject = item.type === 'registry:project';
   const humanizedTitle = item.title.replaceAll('-', ' ');
 
@@ -155,7 +156,10 @@ export function AddToProjectModal({
           starter_template: 'general-knowledge-worker',
           source_item_id: isProject ? item.id : undefined,
         });
-        queryClient.invalidateQueries({ queryKey: ['projects'] });
+        // qk.projects.scope(): restores the reach the old bare
+        // projects-literal prefix match had — every account's list, and the
+        // accountless slot the marketplace picker itself reads.
+        queryClient.invalidateQueries({ queryKey: qk.projects.scope() });
 
         const sessionId = isProject
           ? await startTemplateSetupSession(project, { itemId: item.id, title: item.title })

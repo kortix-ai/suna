@@ -3,7 +3,7 @@
 // `code` (the web's step-up dialog keys on it); every other reason stays a
 // plain humanized message with no code leak.
 import { describe, expect, test } from 'bun:test';
-import { buildDenialError } from '../iam/dispatcher';
+import { buildDenialError } from '../iam/denial-message';
 
 describe('buildDenialError', () => {
   test('account_mfa_required → 403 with machine-readable code in the body', async () => {

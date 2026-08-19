@@ -84,7 +84,7 @@ describe('connector authorization strategy', () => {
       ownerType: 'external',
       ownerId: 'agentmail:inbox-1',
       metadata: {
-        channel_profile: true,
+        channel_connection: true,
         inbox_id: 'inbox-1',
       },
     });
@@ -109,7 +109,7 @@ describe('connector authorization strategy', () => {
         ownerType: 'external',
         ownerId: 'agentmail:inbox-1',
         metadata: {
-          channel_profile: true,
+          channel_connection: true,
           inbox_id: 'inbox-1',
         },
       }),
@@ -121,7 +121,7 @@ describe('connector authorization strategy', () => {
         ownerType: 'external',
         ownerId: 'managed-1',
         metadata: {
-          channel_profile: true,
+          channel_connection: true,
           inbox_id: 'inbox-1',
         },
       }),

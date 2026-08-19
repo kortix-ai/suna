@@ -3,7 +3,14 @@
 import { rm } from 'node:fs/promises';
 import { Template, waitForProcess } from 'e2b';
 import { config } from '../../config';
-import { DEFAULT_CPU, DEFAULT_MEMORY_GB, stageBuildContext } from '../build-context';
+import { e2bDomain } from '../../platform/providers/e2b-domain';
+import {
+  DEFAULT_CPU,
+  DEFAULT_MEMORY_GB,
+  stageBuildContext,
+  stageAppBuildContext,
+  stageMetaBuildContext,
+} from '../build-context';
 import { shortLivedObservation } from '../observation-cache';
 import { isE2BConcurrentBuildConflict, waitForConcurrentE2BBuild } from './e2b-build-conflict';
 import type {
@@ -21,15 +28,22 @@ interface E2BTemplateView {
   buildStatus?: string;
 }
 
+/**
+ * Template builds must land on the SAME cluster the runtime provider boots
+ * from, so `domain` is passed explicitly here too — the SDK would otherwise
+ * fall back to its own `e2b.app` default and build the template somewhere the
+ * sandbox can never be created. See platform/providers/e2b-domain.
+ */
 function connectionOpts() {
-  return { apiKey: config.E2B_API_KEY, requestTimeoutMs: 30_000 } as const;
+  return {
+    apiKey: config.E2B_API_KEY,
+    domain: e2bDomain(),
+    requestTimeoutMs: 30_000,
+  } as const;
 }
 
 function apiBaseUrl(): string {
-  const domain = config.E2B_DOMAIN.trim()
-    .replace(/^https?:\/\//, '')
-    .replace(/\/+$/, '');
-  return `https://api.${domain}`;
+  return `https://api.${e2bDomain()}`;
 }
 
 async function listTemplates(): Promise<E2BTemplateView[]> {
@@ -71,12 +85,17 @@ class E2BAdapter implements SandboxProviderAdapter {
       throw new Error('E2BAdapter.buildSnapshot: neither image nor userDockerfile set');
     }
     const userDockerfile = input.userDockerfile ?? `FROM ${input.image}\n`;
-    const context = await stageBuildContext(
-      input.snapshotName,
-      userDockerfile,
-      input.warmRepo,
-      input.isShared,
-    );
+    const context =
+      input.runtimeProfile === 'app'
+        ? await stageAppBuildContext(input.snapshotName, userDockerfile, input.appContext!)
+        : input.runtimeProfile === 'meta'
+        ? await stageMetaBuildContext()
+        : await stageBuildContext(
+            input.snapshotName,
+            userDockerfile,
+            input.warmRepo,
+            input.isShared,
+          );
     observeTemplates.invalidate();
     try {
       // fromDockerfile() converts the Dockerfile ENTRYPOINT into E2B's start

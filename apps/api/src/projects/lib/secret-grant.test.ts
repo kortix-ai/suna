@@ -16,7 +16,6 @@ mock.module('../agents', () => ({
 }));
 
 const {
-  AgentSecretGrantMismatchError,
   agentGrantDiffers,
   SecretGrantResolutionError,
   effectiveRunningAgent,
@@ -158,48 +157,45 @@ describe('secretGrantEnvDiffers', () => {
 describe('secretGrantEnvForRunningAgent', () => {
   test('no switch returns the running agent grant unchanged', () => {
     const l = loaded([spec('kortix', ['STRIPE'])]);
-    expect(secretGrantEnvForRunningAgent(l, 'kortix', 'kortix')).toEqual(['STRIPE']);
+    expect(secretGrantEnvForRunningAgent(l, 'kortix')).toEqual(['STRIPE']);
   });
 
-  test('a switch between agents with equal grants is allowed', () => {
+  test('a switch between agents with equal grants resolves the running agent', () => {
     const l = loaded([spec('a', ['STRIPE']), spec('b', ['stripe'])]);
-    expect(secretGrantEnvForRunningAgent(l, 'a', 'b')).toEqual(['stripe']);
+    expect(secretGrantEnvForRunningAgent(l, 'b')).toEqual(['stripe']);
   });
 
-  test('a switch that would widen the grant is refused', () => {
+  // The four tests below used to assert a throw. A grant change is no longer a
+  // refusal — the env is re-scoped onto whichever agent runs. Each one now pins
+  // the RESOLVED grant, which is the property that actually protects secrets.
+  test('a switch that widens the grant resolves to the wider running grant', () => {
     const l = loaded([spec('narrow', ['STRIPE']), spec('broad', 'all')]);
-    expect(() => secretGrantEnvForRunningAgent(l, 'narrow', 'broad')).toThrow(
-      AgentSecretGrantMismatchError,
-    );
+    expect(secretGrantEnvForRunningAgent(l, 'broad')).toBe('all');
   });
 
-  test('a switch that would narrow the grant is also refused', () => {
+  test('a switch that narrows the grant resolves to the narrower running grant', () => {
     const l = loaded([spec('narrow', ['STRIPE']), spec('broad', 'all')]);
-    expect(() => secretGrantEnvForRunningAgent(l, 'broad', 'narrow')).toThrow(
-      AgentSecretGrantMismatchError,
-    );
+    expect(secretGrantEnvForRunningAgent(l, 'narrow')).toEqual(['STRIPE']);
   });
 
-  test('an undeclared agent gets the default-deny grant and is refused against a granted session', () => {
+  test('an undeclared agent gets the default-deny grant, not the session agent grant', () => {
     const l = loaded([spec('kortix', 'all')]);
-    expect(() => secretGrantEnvForRunningAgent(l, 'kortix', 'ghost')).toThrow(
-      AgentSecretGrantMismatchError,
-    );
+    // The point: 'ghost' must NOT inherit kortix's `all`. Default-deny is an
+    // empty list, so a switch to an undeclared agent reads nothing.
+    expect(secretGrantEnvForRunningAgent(l, 'ghost')).toEqual([]);
   });
 
-  test('an ungoverned session switching to an all-granted agent is not a privilege change', () => {
+  test('an ungoverned session switching to an all-granted agent resolves to all', () => {
     const l = loaded([spec('kortix', 'all')], 'kortix');
-    expect(secretGrantEnvForRunningAgent(l, 'default', 'kortix')).toBe('all');
+    expect(secretGrantEnvForRunningAgent(l, 'kortix')).toBe('all');
   });
 
-  test('the kill switch degrades to the running agent grant instead of the session one', () => {
+  test('the resolved grant never depends on the session agent — only on the running one', () => {
     const l = loaded([spec('narrow', ['STRIPE']), spec('broad', 'all')]);
-    expect(secretGrantEnvForRunningAgent(l, 'broad', 'narrow', false)).toEqual(['STRIPE']);
-  });
-
-  test('the kill switch never restores the session agent grant on a switch', () => {
-    const l = loaded([spec('narrow', ['STRIPE']), spec('broad', 'all')]);
-    expect(secretGrantEnvForRunningAgent(l, 'narrow', 'broad', false)).toBe('all');
+    // Same running agent, and there is no second argument that could change the
+    // answer. This is the invariant the removed lock kept breaking.
+    expect(secretGrantEnvForRunningAgent(l, 'narrow')).toEqual(['STRIPE']);
+    expect(secretGrantEnvForRunningAgent(l, 'broad')).toBe('all');
   });
 });
 
@@ -255,15 +251,23 @@ describe('resolveSessionSecretGrant', () => {
     ).resolves.toEqual(['npm_token']);
   });
 
-  test('refuses a requested agent whose grant differs from the session agent', async () => {
+  test('re-scopes a requested agent whose grant differs, in BOTH directions', async () => {
     loadProjectAgentsImpl = async () =>
       loaded([spec('narrow', ['NPM_TOKEN']), spec('broad', 'all')]);
+    // Widening: this exact call used to reject with a 409 all the way out to the
+    // user, including when the operator flag was off (the network-boundary leg
+    // hit the resolver's `?? true` default). It must resolve.
     await expect(
       resolveSessionSecretGrant({ ...PROJECT, sessionAgent: 'narrow', requestedAgent: 'broad' }),
-    ).rejects.toThrow(AgentSecretGrantMismatchError);
+    ).resolves.toBe('all');
+    // Narrowing: the running agent's smaller grant wins. The session agent's
+    // wider grant must not leak into the switched-to agent's env.
+    await expect(
+      resolveSessionSecretGrant({ ...PROJECT, sessionAgent: 'broad', requestedAgent: 'narrow' }),
+    ).resolves.toEqual(['NPM_TOKEN']);
   });
 
-  test('re-scopes to the running agent when the optional strict lock is disabled', async () => {
+  test('re-scopes the FULL grant onto the running agent', async () => {
     loadProjectAgentsImpl = async () =>
       loaded([
         spec('narrow', ['NPM_TOKEN'], { connectors: ['registry'], kortixCli: [] }),
@@ -274,7 +278,6 @@ describe('resolveSessionSecretGrant', () => {
       ...PROJECT,
       sessionAgent: 'narrow',
       requestedAgent: 'broad',
-      enforceGrantLock: false,
     });
 
     expect(grant).toMatchObject({

@@ -10,14 +10,14 @@ explains managed models vs. your own provider key (BYOK), how Kortix picks a
 model automatically, and two billing gotchas to know.
 
 This page applies to projects with the LLM Gateway on. LLM Gateway is an
-experimental setting, and it is on by default for cloud projects. Check or
-toggle it in Customize → Experimental.
+experimental [feature flag](/docs/feature-flags), and it is on by default for
+cloud projects. Check or toggle it in Settings → Experimental.
 
 ## Managed models and BYOK
 
 A model id has one of three shapes:
 
-- **Managed** — a bare id, like `claude-opus-4.8` or `glm-5.2`. Kortix
+- **Managed** — a bare id, like `grok-4.6` or `deepseek-v4-pro-0813`. Kortix
   supplies the credentials. Cloud accounts pay with Kortix credits.
 - **BYOK** — a `provider/model` id, like `anthropic/claude-opus-4-8`. You
   supply the key. Your provider account pays.

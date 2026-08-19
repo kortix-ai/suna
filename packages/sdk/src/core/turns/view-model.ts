@@ -179,6 +179,25 @@ function webSearchViewModel(tool: ToolView): Extract<ToolViewModel, { kind: 'web
 
 const EXIT_CODE_RE = /<exit_code>\s*(-?\d+)\s*<\/exit_code>/;
 
+/**
+ * The shell exit code the bash tool appends to its output, or `undefined`.
+ *
+ * Exported because a host cannot recover this any other way. The tag is part of
+ * a trailing machine block that every consumer strips before display (see
+ * `stripInternalTagTail`), and once it is gone a failed command is
+ * indistinguishable from a successful one: a build that exits 1 prints to
+ * stdout exactly like a build that exits 0, and the error-shaped-output
+ * heuristics used elsewhere give up on long payloads.
+ *
+ * `undefined` rather than `0` when there is no tag. A missing verdict and a
+ * successful one are different facts, and collapsing them would report every
+ * untagged call as a success.
+ */
+export function shellExitCode(rawOutput: string): number | undefined {
+	const match = rawOutput.match(EXIT_CODE_RE);
+	return match ? Number(match[1]) : undefined;
+}
+
 // Linear (indexOf-based) tag strippers — the regex forms
 // (`/<bash_metadata>[\s\S]*?<\/bash_metadata>/g` and a lazy tail matcher)
 // backtrack polynomially on adversarial output (CodeQL js/polynomial-redos),
@@ -234,8 +253,7 @@ function stripAnsiLocal(str: string): string {
 function shellViewModel(tool: ToolView): Extract<ToolViewModel, { kind: 'shell' }> {
   const command = firstString(tool.input?.command) ?? '';
   const raw = tool.output ?? '';
-  const exitMatch = raw.match(EXIT_CODE_RE);
-  const exitCode = exitMatch ? Number(exitMatch[1]) : undefined;
+  const exitCode = shellExitCode(raw);
   const cleaned = stripAnsiLocal(
     stripInternalTagTail(stripTagBlocks(raw, '<bash_metadata>', '</bash_metadata>')),
   ).trim();

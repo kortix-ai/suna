@@ -9,7 +9,7 @@ describe('ProjectIconPicker', () => {
     // Wrapped in TooltipProvider: the Emoji tab is the default active panel,
     // and EmojiPicker wraps its skin-tone selector in Hint (components/ui/hint.tsx),
     // which throws `Tooltip must be used within TooltipProvider` without one —
-    // see outputs-card.test.tsx / sandbox-view.test.tsx for the same house fix.
+    // see outputs-card.test.tsx / snapshots-tab.test.tsx for the same house fix.
     const html = renderToStaticMarkup(
       <TooltipProvider>
         <ProjectIconPicker onEmojiSelect={() => {}} onGlyphSelect={() => {}} />

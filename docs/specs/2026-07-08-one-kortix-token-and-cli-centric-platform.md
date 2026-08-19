@@ -46,7 +46,7 @@ Identity tokens (who is calling):
 | --- | --- | --- | --- | --- |
 | 1 | Supabase user JWT | (JWT) | human, browser | Supabase Auth |
 | 2 | Personal access token | `kortix_pat_` | human, laptop/automation | `kortix login`, dashboard (`apps/api/src/accounts/core/tokens.ts`) |
-| 3 | Session executor token | `kortix_pat_` + `session_id` + `agent_grant` + `service_account_id` (same `account_tokens` table) | launching user ∩ agent grant | every session provision (`mintExecutorToken`, `apps/api/src/platform/services/session-sandbox.ts:108`) |
+| 3 | Session connector token | `kortix_pat_` + `session_id` + `agent_grant` + `service_account_id` (same `account_tokens` table) | launching user ∩ agent grant | every session provision (`mintConnectorToken`, `apps/api/src/platform/services/session-sandbox.ts:108`) |
 | 4 | Sandbox daemon token | `kortix_sb_` | the daemon machine — no user identity | every session provision |
 | 5 | Service account | `kortix_sa_` | non-human IAM principal | dashboard, or auto-minted identity-only per `[[agents]]` agent (secret discarded) |
 | 6 | User API key | `kortix_` | the account, programmatic | dashboard API-keys page |
@@ -72,22 +72,24 @@ Non-identity credentials:
 - **All identity tokens already converge to one principal shape** in one
   middleware (`apps/api/src/middleware/auth.ts` → `AuthVariables`). There is
   no per-token-type divergence downstream; only optional fields differ.
-- **The session executor token already implements the "one token" model**:
+- **The session connector token already implements the "one token" model**:
   it is a `kortix_pat_` row with `project_id`, `session_id`, `agent_grant`,
   `service_account_id`. Locally the same prefix is a plain human PAT. The
   model is right; the sprawl is everything *around* it.
-- **`KORTIX_LLM_API_KEY` is the same executor PAT** — the sandbox already
+- **`KORTIX_LLM_API_KEY` is the same connector PAT** — the sandbox already
   authenticates to the LLM gateway with its one identity token.
 - **Exactly two secrets matter inside a sandbox**: the identity token and the
   daemon machine token. But they are injected under **six names**
-  (`KORTIX_CLI_TOKEN`/`KORTIX_EXECUTOR_TOKEN`; `KORTIX_SANDBOX_TOKEN`/
+  (`KORTIX_CLI_TOKEN`; `KORTIX_SANDBOX_TOKEN`/
   `KORTIX_TOKEN`/`INTERNAL_SERVICE_KEY`/`TUNNEL_TOKEN` — the last three are
   one value, `apps/api/src/platform/services/sandbox-auth.ts:52-58`).
-- **Agent switching is not enforced.** `KORTIX_ENFORCE_SESSION_AGENT_LOCK`
-  defaults off (`apps/api/src/config.ts:146-153`); a switched agent inherits
-  the boot agent's grant. The in-repo TODO says the correct fix is per-agent
-  re-mint. The hot-swap mechanism to inject a re-minted token without an
-  opencode restart **already exists** (`setExecutorProxyToken`,
+- **Agent switching is allowed, and identity follows the agent.** The proxy
+  re-mints the session token's `agent_grant` before every prompt from the
+  running agent's `[[agents]]` block (`remintGrantForAgentSwitch`), so a
+  switched agent never inherits the boot agent's grant. `project.agent.read` on
+  the target agent authorizes the switch; without it the proxy returns `403
+  AGENT_NOT_AUTHORIZED`. The hot-swap mechanism to inject a re-minted token
+  without an opencode restart **already exists** (`setConnectorProxyToken`,
   `apps/kortix-sandbox-agent-server/src/llm-proxy.ts`) — built for warm-fork
   restore, reusable for switch.
 - **Acting identity is user∩grant, not the agent**, unless the agent's
@@ -132,7 +134,7 @@ cap:        launching user's role                (never exceeded)
 project_id: optional — narrows to one project
 session_id: optional — narrows to one session
 agent:      optional — the agent whose grant applies (kortixCli/connectors/env)
-expiry:     per lifecycle policy (PAT) or session lifetime (executor)
+expiry:     per lifecycle policy (PAT) or session lifetime (connector)
 ```
 
 Acting identity by context:
@@ -160,7 +162,7 @@ server tokens, user-context header, internal service key.
 | --- | --- |
 | `kyolo_` | delete (confirm zero live callers first) |
 | Session LLM token | delete or wire properly (confirm consumer) |
-| `KORTIX_TOKEN`, `KORTIX_EXECUTOR_TOKEN`, `INTERNAL_SERVICE_KEY`+`TUNNEL_TOKEN` in-sandbox aliases | rename to the two canonical names; drop aliases (new sandbox images only — same rollout caveat as the opencode-wedge fix) |
+| `KORTIX_TOKEN`, `INTERNAL_SERVICE_KEY`+`TUNNEL_TOKEN` in-sandbox aliases | rename to the two canonical names; drop aliases (new sandbox images only — same rollout caveat as the opencode-wedge fix) |
 | `kortix_` user API key | absorb into the token family: it is a PAT (or SA token) with no narrowing claims |
 | `kortix_gw_` gateway key | absorb: a project-scoped token whose grant is LLM-only (`kortixCli: [], connectors: [], llm: true`) — gateway already accepts PATs, so this is a mint-surface change, not an auth change |
 | `kortix_sa_` bearer | keep the principal, unify the credential: an SA-owned row in `account_tokens` (`principal_type` column) so minting/listing/revocation/expiry policy is one system |
@@ -187,18 +189,18 @@ non-identity credentials each documented with one sentence of why they exist.
 
 Closes the agent-switch hole and turns switching into a feature:
 
-- [ ] Mint the executor token per (session, **agent**) instead of per
+- [ ] Mint the connector token per (session, **agent**) instead of per
       session.
-- [ ] On a prompt requesting a different declared agent: instead of 409,
-      re-mint a token for that agent's grant and hot-swap it into the
-      in-sandbox credential proxy (`setExecutorProxyToken` /
-      `setLlmProxyToken` — mechanism exists) before the prompt reaches tool
-      execution. Persist `project_sessions.agent_name`.
+- [x] On a prompt requesting a different declared agent: re-mint the session
+      token's `agent_grant` for that agent before the prompt reaches tool
+      execution (`remintGrantForAgentSwitch`). The 409 is deleted.
+- [ ] Persist `project_sessions.agent_name` on a switch. Nothing writes that
+      column today, so it stays the create-time agent.
 - [ ] Undeclared agent in a governed project → reject (existing
       default-deny / `AGENT_NOT_DECLARED` paths).
 - [ ] Revoke the previous agent's token on switch (one live identity token
       per sandbox at any moment).
-- [ ] Delete `KORTIX_ENFORCE_SESSION_AGENT_LOCK` (the lock becomes
+- [x] Delete `KORTIX_ENFORCE_SESSION_AGENT_LOCK` (the lock becomes
       unnecessary: switching is safe because identity follows the agent).
 - [ ] Flip the default acting identity: session tokens authorize as the
       agent's standing SA ∩ launching-user cap (today SA identity is opt-in
@@ -291,7 +293,7 @@ a manifest annotation away.
 
 | Area | Status |
 | --- | --- |
-| Projects, auth/hosts/accounts, sessions core, CR, triggers, secrets/env, connectors/executor, Slack channel, sandbox templates, marketplace core, LLM providers, per-agent model, project access, grants, IAM roles/policies, self-host, files (read) | **Parity** |
+| Projects, auth/hosts/accounts, sessions core, CR, triggers, secrets/env, connectors/connector, Slack channel, sandbox templates, marketplace core, LLM providers, per-agent model, project access, grants, IAM roles/policies, self-host, files (read) | **Parity** |
 | Marketplace custom sources, access-requests, sandbox provider/live list, GitHub installation mgmt, custom LLM provider | Partial |
 | Session sharing / commit-push / session audit | Full gap |
 | **Session permission/approval + question replies** | Full gap |
@@ -331,8 +333,15 @@ a manifest annotation away.
 
 1. One live identity token per sandbox at any moment, bound to
    (project, session, agent).
-2. Agent switch = new token minted for the target agent's grant before any
-   tool executes under it; the old token is revoked.
+2. Agent switch = the target agent's grant is applied before any tool executes
+   under it. SHIPPED as a re-mint of `account_tokens.agent_grant` on the live
+   token, not as a new token: `remintGrantForAgentSwitch` rewrites the grant row
+   per prompt, and the connector and Kortix-CLI gates read that row at call
+   time. The token VALUE is unchanged, so nothing is revoked.
+   Known limit: two concurrent prompts naming different agents on one session
+   race, and the last writer wins (`session-token-grant.ts:200-206`). One row
+   serves one box, so this needs a per-turn credential to close — which is what
+   minting a fresh token per switch would buy.
 3. An agent can never exceed the launching user's role (unchanged).
 4. The sandbox machine token never carries user identity and is never
    accepted as one (unchanged, now explicit).
@@ -379,5 +388,5 @@ a manifest annotation away.
 - [ ] Phase A0 PRs (each independently shippable).
 - [x] Phase B0 login/binding UX PR (small, high-visibility) — PR #4297.
 - [ ] Spike: per-agent re-mint + hot-swap on a dev sandbox (Phase A1
-      de-risk) — prove `setExecutorProxyToken` works for a live switch.
+      de-risk) — prove `setConnectorProxyToken` works for a live switch.
 - [ ] Convert the parity table into tracked issues.

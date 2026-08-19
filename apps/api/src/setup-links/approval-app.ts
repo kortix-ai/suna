@@ -1,4 +1,4 @@
-import { executorConnectors, executorExecutions, projectSessions, projects } from '@kortix/db';
+import { connectors, connectorCalls, projectSessions, projects } from '@kortix/db';
 /**
  * Approval links — the AUTHENTICATED half, mounted at /v1/approval-links.
  *
@@ -27,7 +27,7 @@ import { executorConnectors, executorExecutions, projectSessions, projects } fro
  */
 import { and, eq } from 'drizzle-orm';
 import { Hono } from 'hono';
-import { summarizeArgsPreview } from '../executor/args-preview';
+import { summarizeArgsPreview } from '../connectors/args-preview';
 import { PROJECT_ACTIONS } from '../iam';
 import { assertProjectCapability, loadProjectForUser } from '../projects/lib/access';
 import { mayResolveApproval } from '../projects/lib/approval-authority';
@@ -53,21 +53,22 @@ approvalLinksApp.get('/:token', async (c) => {
 
   const [row] = await db
     .select({
-      executionId: executorExecutions.executionId,
-      sessionId: executorExecutions.sessionId,
-      actionPath: executorExecutions.actionPath,
-      connectorId: executorExecutions.connectorId,
-      status: executorExecutions.status,
-      risk: executorExecutions.risk,
-      resultSummary: executorExecutions.resultSummary,
-      createdAt: executorExecutions.createdAt,
-      resolvedAt: executorExecutions.resolvedAt,
+      executionId: connectorCalls.executionId,
+      sessionId: connectorCalls.sessionId,
+      actingUserId: connectorCalls.actingUserId,
+      actionPath: connectorCalls.actionPath,
+      connectorId: connectorCalls.connectorId,
+      status: connectorCalls.status,
+      risk: connectorCalls.risk,
+      resultSummary: connectorCalls.resultSummary,
+      createdAt: connectorCalls.createdAt,
+      resolvedAt: connectorCalls.resolvedAt,
     })
-    .from(executorExecutions)
+    .from(connectorCalls)
     .where(
       and(
-        eq(executorExecutions.executionId, executionId),
-        eq(executorExecutions.projectId, projectId),
+        eq(connectorCalls.executionId, executionId),
+        eq(connectorCalls.projectId, projectId),
       ),
     )
     .limit(1);
@@ -89,8 +90,8 @@ approvalLinksApp.get('/:token', async (c) => {
     isManager = false;
   }
 
-  let targetCreatedBy: string | null = null;
-  let targetOrigin: string | null = null;
+  let targetCreatedBy: string | null = row.sessionId ? null : row.actingUserId;
+  let targetOrigin: string | null = row.sessionId ? null : 'user';
   if (row.sessionId) {
     const [session] = await db
       .select({ createdBy: projectSessions.createdBy, origin: projectSessions.origin })
@@ -108,6 +109,9 @@ approvalLinksApp.get('/:token', async (c) => {
     targetSessionOrigin: targetOrigin,
     targetSessionCreatedBy: targetCreatedBy,
     callerUserId: loaded.userId,
+    callerAuthType:
+      ((c as unknown as { get(key: string): unknown }).get('authType') as string | undefined) ??
+      null,
     callerSessionId: callerKortixSessionId(c),
   });
   if (!verdict.allowed) {
@@ -117,7 +121,12 @@ approvalLinksApp.get('/:token', async (c) => {
             error: 'An agent cannot resolve its own approval — a human must approve or deny this',
             code: 'APPROVAL_REQUIRES_HUMAN',
           }
-        : { error: 'Only a project manager or the session launcher can resolve this' },
+        : verdict.reason === 'non_human_caller'
+          ? {
+              error: 'Sign in with a Kortix account to review this approval',
+              code: 'APPROVAL_REQUIRES_HUMAN',
+            }
+          : { error: 'Only a project manager or the session launcher can resolve this' },
       403,
     );
   }
@@ -131,9 +140,9 @@ approvalLinksApp.get('/:token', async (c) => {
   let connectorSlug: string | null = null;
   if (row.connectorId) {
     const [connector] = await db
-      .select({ slug: executorConnectors.slug })
-      .from(executorConnectors)
-      .where(eq(executorConnectors.connectorId, row.connectorId))
+      .select({ slug: connectors.slug })
+      .from(connectors)
+      .where(eq(connectors.connectorId, row.connectorId))
       .limit(1);
     connectorSlug = connector?.slug ?? null;
   }
@@ -156,12 +165,12 @@ approvalLinksApp.get('/:token', async (c) => {
     action: row.actionPath,
     connector: connectorSlug,
     risk: row.risk,
-    // 'pending_approval' = still actionable. Anything else means someone (or the
-    // hold expiring) already settled it; the page renders a read-only outcome
-    // rather than buttons that would 409.
+    // 'pending_approval' is actionable. Every terminal status renders a
+    // read-only outcome instead of buttons that would return 409.
     status: row.status,
     pending: row.status === 'pending_approval' && !row.resolvedAt,
     args_preview: argsPreview,
+    review_complete: summary.args_preview_complete === true,
     args_summary: summarizeArgsPreview(argsPreview),
     policy_source: typeof summary.policy_source === 'string' ? summary.policy_source : null,
     requested_at: row.createdAt.toISOString(),

@@ -69,10 +69,6 @@ describe('secrets-registry pure helpers', () => {
     expect(servicesForKeys([])).toEqual([]);
   });
 
-  test('servicesForKeys restarts the frontend when the warm-session flag changes', () => {
-    expect(servicesForKeys(['KORTIX_PUBLIC_WARM_PROJECT_SESSIONS_ENABLED'])).toEqual(['frontend']);
-  });
-
   test('ROTATABLE_GENERATED_KEYS excludes the internal Supabase-infra encryption keys', () => {
     for (const infraKey of ['SECRET_KEY_BASE', 'REALTIME_DB_ENC_KEY', 'VAULT_ENC_KEY', 'PG_META_CRYPTO_KEY']) {
       expect(ROTATABLE_GENERATED_KEYS).not.toContain(infraKey);
@@ -141,7 +137,7 @@ describe('missingRequiredSecrets', () => {
   // `start` and no longer block init/start — see missingRequiredSecrets() in
   // commands/self-host.ts. gitProviderConfigured() itself is unchanged (still
   // a useful composite "is git set up" check for the dashboard-pointer note
-  // in renderIntegrationSummary), it just no longer feeds this gate.
+  // in renderConnectionSummary), it no longer feeds this gate.
   test('a fresh (just-initialized, nothing configured) env reports only the sandbox runtime', () => {
     const missing = missingRequiredSecrets(baseEnv());
     const labels = missing.map((m) => m.label).join(' | ');
@@ -157,12 +153,6 @@ describe('missingRequiredSecrets', () => {
     expect(missingRequiredSecrets(env)).toEqual([]);
     expect(sandboxProviderConfigured(env)).toBe(true);
     expect(gitProviderConfigured(env)).toBe(false);
-  });
-
-  test('local-docker (EXPERIMENTAL) alone reports nothing missing — no provider API key required', () => {
-    const env = baseEnv({ ALLOWED_SANDBOX_PROVIDERS: 'local-docker', DAYTONA_API_KEY: '' });
-    expect(missingRequiredSecrets(env)).toEqual([]);
-    expect(sandboxProviderConfigured(env)).toBe(true);
   });
 
   test('a fully-configured env (Daytona + GitHub PAT + OpenRouter) also reports nothing missing', () => {

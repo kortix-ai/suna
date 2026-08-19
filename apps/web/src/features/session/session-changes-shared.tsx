@@ -7,13 +7,12 @@
  * and the status badges in one place means the two surfaces never drift.
  */
 
-import { useQuery } from '@tanstack/react-query';
 import { useCallback, useState } from 'react';
 
 import { STATUS_TEXT } from '@/components/ui/status';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { getProjectSession } from '@kortix/sdk';
 import { useChatSendStore } from '@/stores/chat-send-store';
+import { useProjectSession } from '@kortix/sdk/react';
 
 /** git-status status → single-letter badge, using the canonical status tones. */
 export const CHANGE_STATUS_BADGE: Record<string, { letter: string; cls: string; label: string }> = {
@@ -27,12 +26,9 @@ export function useSessionBaseRef(
   projectId: string | undefined,
   gitSessionId: string | undefined,
 ): string {
-  const sessionQuery = useQuery({
-    queryKey: ['project', 'session', projectId, gitSessionId],
-    queryFn: () => getProjectSession(projectId!, gitSessionId!),
-    enabled: !!projectId && !!gitSessionId,
-    staleTime: 60_000,
-  });
+  // `useProjectSession` owns the key, the freshness contract and the fetcher
+  // for this entry — see its doc comment for why all three readers must agree.
+  const sessionQuery = useProjectSession(projectId, gitSessionId);
   return sessionQuery.data?.base_ref ?? 'main';
 }
 

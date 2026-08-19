@@ -37,6 +37,9 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { PROVISIONING_SESSION_STATUSES } from '../../projects/lib/session-status';
+import * as realAgents from '../../projects/agents';
+import * as realProviders from '../providers';
+import * as realComputeMetering from '../../billing/services/compute-metering';
 
 const dialect = new PgDialect();
 
@@ -75,6 +78,8 @@ let providerFallbackEnabled = false;
 let providerNamesRequested: string[] = [];
 let providerCreateErrors: Record<string, string | undefined> = {};
 let imageRequests: Array<Record<string, unknown>> = [];
+let accountTokenCreateCalls: Array<Record<string, unknown>> = [];
+let serviceAccountCreateCalls: Array<Record<string, unknown>> = [];
 
 function compile(condition: unknown): { sql: string; params: unknown[] } {
   try {
@@ -173,7 +178,11 @@ mock.module('../../shared/db', () => ({
   },
 }));
 
+// Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
+// lists exports by hand deletes every export it omits — the failure surfaces in
+// whatever unrelated file imports the missing name next, attributed to no test.
 mock.module('../providers', () => ({
+  ...realProviders,
   getProvider: (name: string) => {
     providerNamesRequested.push(name);
     return {
@@ -224,6 +233,16 @@ mock.module('../../snapshots/builder', () => ({
       built: false,
     };
   },
+  ensureMetaSandboxImage: async (opts: Record<string, unknown>) => {
+    imageRequests.push(opts);
+    return {
+      snapshotName: 'snap-meta-1',
+      slug: 'meta',
+      contentHash: 'meta-hash-1',
+      isDefault: false,
+      built: false,
+    };
+  },
   deleteSandboxImage: async () => {},
   resolveTemplate: async (_project: unknown, _slug: unknown) => ({}),
 }));
@@ -236,7 +255,11 @@ mock.module('./provider-events', () => ({
   },
 }));
 
+// Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
+// lists exports by hand deletes every export it omits — the failure surfaces in
+// whatever unrelated file imports the missing name next, attributed to no test.
 mock.module('../../billing/services/compute-metering', () => ({
+  ...realComputeMetering,
   startComputeSession: async (input: { sandboxId: string; accountId: string; provider: string }) => {
     computeSessionsOpened.push(input);
     onComputeOpened?.();
@@ -248,11 +271,17 @@ mock.module('../../repositories/api-keys', () => ({
 }));
 
 mock.module('../../repositories/account-tokens', () => ({
-  createAccountToken: async (_opts: unknown) => ({ secretKey: 'exec-tok-1' }),
+  createAccountToken: async (opts: Record<string, unknown>) => {
+    accountTokenCreateCalls.push(opts);
+    return { secretKey: 'exec-tok-1' };
+  },
 }));
 
 mock.module('../../repositories/service-accounts', () => ({
-  ensureAgentServiceAccount: async (_opts: unknown) => null,
+  ensureAgentServiceAccount: async (opts: Record<string, unknown>) => {
+    serviceAccountCreateCalls.push(opts);
+    return null;
+  },
 }));
 
 mock.module('../../shared/account-limits', () => ({
@@ -264,6 +293,7 @@ mock.module('../../projects/triggers', () => ({
 }));
 
 mock.module('../../projects/agents', () => ({
+  ...realAgents,
   resolveAgentGrant: async (_agentName: string, _gitProject: unknown) => null,
 }));
 
@@ -308,6 +338,8 @@ beforeEach(() => {
   providerNamesRequested = [];
   providerCreateErrors = {};
   imageRequests = [];
+  accountTokenCreateCalls = [];
+  serviceAccountCreateCalls = [];
 });
 
 function baseOpts() {
@@ -325,6 +357,30 @@ function baseOpts() {
 }
 
 describe('provisionSessionSandbox — mid-provision delete race', () => {
+  test('meta sessions receive a full project grant without a standing service-account ceiling', async () => {
+    await provisionSessionSandbox({
+      ...baseOpts(),
+      agentName: 'meta',
+      sandboxSlug: 'meta',
+    });
+
+    expect(accountTokenCreateCalls).toHaveLength(1);
+    expect(accountTokenCreateCalls[0]).toMatchObject({
+      accountId: ACCOUNT_ID,
+      userId: USER_ID,
+      projectId: PROJECT_ID,
+      sessionId: SANDBOX_ID,
+      agentGrant: {
+        agent: 'meta',
+        kortixCli: 'all',
+        connectors: [],
+        env: [],
+      },
+      serviceAccountId: null,
+    });
+    expect(serviceAccountCreateCalls).toHaveLength(0);
+  });
+
   test('session starts request the OpenCode runtime image', async () => {
     const opened = waitFor((resolve) => {
       onComputeOpened = resolve;

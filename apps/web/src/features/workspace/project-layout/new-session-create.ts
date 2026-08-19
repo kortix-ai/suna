@@ -1,10 +1,11 @@
 import type { ComposerOptions } from '@/features/session/composer-chat-input';
-import type { SessionConnectorBindings } from '@kortix/sdk';
+import type { SessionConnectorBindingsInput } from '@kortix/sdk';
+import { isMetaAgentName, META_SANDBOX_SLUG } from '@kortix/shared';
 
 export interface NewSessionCreateInput {
   sandbox_slug?: string;
   agent_name?: string;
-  connector_bindings?: SessionConnectorBindings;
+  connector_bindings?: SessionConnectorBindingsInput;
   inherit_unbound?: boolean;
 }
 
@@ -26,16 +27,23 @@ export function buildNewSessionCreateInput(
   options: Pick<ComposerOptions, 'agent' | 'scope'> & { sandbox_slug?: string } = {},
 ): NewSessionCreateInput | undefined {
   const input: NewSessionCreateInput = {};
-  if (options.sandbox_slug) input.sandbox_slug = options.sandbox_slug;
+  if (isMetaAgentName(options.agent)) {
+    input.sandbox_slug = META_SANDBOX_SLUG;
+  } else if (options.sandbox_slug) {
+    input.sandbox_slug = options.sandbox_slug;
+  }
   if (options.agent) input.agent_name = options.agent;
   if (
     options.scope?.availability.connector_bindings &&
-    options.scope.draft.connector_bindings !== undefined
+    options.scope.draft.connector_bindings !== undefined &&
+    options.scope.draft.connector_bindings_inherited !== true
   ) {
     input.connector_bindings = Object.fromEntries(
       Object.entries(options.scope.draft.connector_bindings).map(([alias, binding]) => [
         alias,
-        { authorization_id: binding.authorization_id },
+        {
+          connection_id: binding.connection_id,
+        },
       ]),
     );
     input.inherit_unbound = false;

@@ -256,6 +256,259 @@ flow(
   },
 );
 
+// MEM-6 — role-transition matrix on PATCH /members/:userId. MEM-3 only covered
+// member→admin (promotion) + invalid role → 400. The PATCH handler
+// (apps/api/src/accounts/core/members.ts:579-648) encodes several invariants
+// that were unproven:
+//   - same-role PATCH → 200 {unchanged:true} (idempotent no-op)
+//   - admin demotes member→member (admin CAN demote a non-owner) → 200
+//   - admin cannot demote an owner → 403 ("Only an owner can assign or change
+//     the owner role") — distinct from the last-owner 409
+//   - admin cannot promote anyone to owner → 403 ("Only owners can grant the
+//     owner role") — the privilege-escalation guard
+//   - demote the LAST owner → 409 ("Cannot demote the last owner")
+//   - PATCH an unknown userId → 404 ("Member not found")
+flow(
+  'MEM-6',
+  {
+    domain: 'accounts',
+    routes: ['PATCH /v1/accounts/:accountId/members/:userId'],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const admin = await team.addMember('admin');
+    const member = await team.addMember('member');
+
+    await ctx.step('OWNER demotes admin → member (downward transition) → 200', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .patch(
+          '/v1/accounts/:accountId/members/:userId',
+          { role: 'member' },
+          { params: { accountId: team.id, userId: admin.userId! } },
+        );
+      r.status(200).body().has('$.account_role', 'member');
+    });
+    await ctx.step('PATCH same role → 200 {unchanged:true} (idempotent no-op)', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .patch(
+          '/v1/accounts/:accountId/members/:userId',
+          { role: 'member' },
+          { params: { accountId: team.id, userId: member.userId! } },
+        );
+      r.status(200).body().has('$.unchanged', true).has('$.account_role', 'member');
+    });
+    await ctx.step(
+      'admin cannot demote an owner → 403 (only an owner can change the owner role)',
+      async () => {
+        // OWNER is the only owner on this throwaway team; an admin trying to
+        // change OWNER's role (even to owner — the "change the owner role" branch
+        // fires whenever the TARGET is an owner) → 403.
+        const r = await ctx.client
+          .as(admin)
+          .patch(
+            '/v1/accounts/:accountId/members/:userId',
+            { role: 'admin' },
+            { params: { accountId: team.id, userId: ctx.P.OWNER.userId! } },
+          );
+        r.status(403);
+      },
+    );
+    await ctx.step(
+      'admin cannot promote anyone to owner → 403 (privilege-escalation guard)',
+      async () => {
+        const r = await ctx.client
+          .as(admin)
+          .patch(
+            '/v1/accounts/:accountId/members/:userId',
+            { role: 'owner' },
+            { params: { accountId: team.id, userId: member.userId! } },
+          );
+        r.status(403);
+      },
+    );
+    await ctx.step('PATCH an unknown userId → 404 (Member not found)', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .patch(
+          '/v1/accounts/:accountId/members/:userId',
+          { role: 'member' },
+          { params: { accountId: team.id, userId: '00000000-0000-4000-a000-000000000000' } },
+        );
+      r.status(404);
+    });
+    await ctx.step('OWNER demoting the last owner → 409 (cannot orphan the account)', async () => {
+      // OWNER is the sole owner of this throwaway team; demoting them would
+      // orphan it. The last-owner guard fires (countOwners <= 1) → 409.
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .patch(
+          '/v1/accounts/:accountId/members/:userId',
+          { role: 'admin' },
+          { params: { accountId: team.id, userId: ctx.P.OWNER.userId! } },
+        );
+      r.status(409);
+    });
+  },
+);
+
+// MEM-7 — `project_grants` on POST /members: the centralized-IAM redesign's
+// "one invite, pick account role + project(s)" dialog needs the invite to
+// carry project access, not just an account role. Proves the four cases the
+// handler (apps/api/src/accounts/core/members.ts:227-291) encodes:
+//   - existing-user invite + a grant for a project THIS account owns →
+//     applied immediately (grantProjectRole), visible on GET .../access.
+//   - a grant naming a project from a DIFFERENT account is silently
+//     dropped, never inserted — the ownership check must not trust the
+//     client-supplied project_id.
+//   - a pending invite (new email, no Kortix user yet) stages the grant on
+//     bootstrap_grants; it lands only once the addressee accepts.
+//   - an `admin` invite ignores project_grants outright — admins already
+//     hold implicit Manager on every project (mirrors applyBootstrapGrants'
+//     own initialRole==='member' gate in accounts/invites.ts).
+flow(
+  'MEM-7',
+  {
+    domain: 'accounts',
+    serial: true,
+    routes: [
+      'POST /v1/accounts/:accountId/members',
+      'GET /v1/projects/:projectId/access',
+      'POST /v1/account-invites/:inviteId/accept',
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const p = await team.project();
+    const otherTeam = await ctx.fixtures.team();
+    const otherProject = await otherTeam.project();
+
+    await ctx.step(
+      'existing user + project_grants for an owned project → applied immediately',
+      async () => {
+        const invitee = await ctx.fixtures.userWithEmail(
+          `${ctx.fixtures.name('mem7-existing')}@ke2e.kortix.test`.toLowerCase(),
+          { label: 'MEM7-EXISTING' },
+        );
+        const r = await ctx.client.as(ctx.P.OWNER).post(
+          '/v1/accounts/:accountId/members',
+          {
+            email: invitee.email,
+            role: 'member',
+            project_grants: [{ project_id: p.id, role: 'manager' }],
+          },
+          { params: { accountId: team.id } },
+        );
+        r.status(201)
+          .body()
+          .has('$.status', 'added')
+          .has('$.project_grants[0].project_id', p.id)
+          .has('$.project_grants[0].role', 'manager');
+
+        const access = await ctx.client
+          .as(ctx.P.OWNER)
+          .get('/v1/projects/:projectId/access', { params: { projectId: p.id } });
+        access.status(200);
+        const row = access
+          .json<{ members: any[] }>()
+          .members.find((m) => m.user_id === invitee.userId);
+        if (!row) throw new Error('invited user missing from project access list');
+        if (row.effective_project_role !== 'manager')
+          throw new Error(`expected manager, got ${row.effective_project_role}`);
+      },
+    );
+
+    await ctx.step(
+      'a grant naming a project from a DIFFERENT account is silently dropped',
+      async () => {
+        const invitee = await ctx.fixtures.userWithEmail(
+          `${ctx.fixtures.name('mem7-crossacct')}@ke2e.kortix.test`.toLowerCase(),
+          { label: 'MEM7-CROSSACCT' },
+        );
+        const r = await ctx.client.as(ctx.P.OWNER).post(
+          '/v1/accounts/:accountId/members',
+          {
+            email: invitee.email,
+            role: 'member',
+            project_grants: [{ project_id: otherProject.id, role: 'manager' }],
+          },
+          { params: { accountId: team.id } },
+        );
+        r.status(201).body().has('$.status', 'added').has('$.project_grants', []);
+
+        const access = await ctx.client
+          .as(ctx.P.OWNER)
+          .get('/v1/projects/:projectId/access', { params: { projectId: otherProject.id } });
+        access.status(200);
+        const row = access
+          .json<{ members: any[] }>()
+          .members.find((m) => m.user_id === invitee.userId);
+        if (row) throw new Error('cross-account project grant was NOT supposed to land');
+      },
+    );
+
+    await ctx.step(
+      'pending invite (no Kortix user yet) stages the grant, applied on accept',
+      async () => {
+        const inviteEmail = `${ctx.fixtures.name('mem7-pending')}@${ctx.env.testEmailDomain}`.toLowerCase();
+        let inviteId = '';
+        const r = await ctx.client.as(ctx.P.OWNER).post(
+          '/v1/accounts/:accountId/members',
+          {
+            email: inviteEmail,
+            role: 'member',
+            project_grants: [{ project_id: p.id, role: 'manager' }],
+          },
+          { params: { accountId: team.id } },
+        );
+        r.status(201)
+          .body()
+          .has('$.status', 'pending')
+          .has('$.project_grants[0].project_id', p.id)
+          .has('$.project_grants[0].role', 'manager');
+        inviteId = r.json<any>().invite_id;
+
+        const addressee = await ctx.fixtures.userWithEmail(inviteEmail, {
+          label: 'MEM7-PENDING-ADDRESSEE',
+        });
+        const accept = await ctx.client
+          .as(addressee)
+          .post('/v1/account-invites/:inviteId/accept', {}, { params: { inviteId } });
+        accept.status(200).body().has('$.account_id', team.id);
+
+        const access = await ctx.client
+          .as(ctx.P.OWNER)
+          .get('/v1/projects/:projectId/access', { params: { projectId: p.id } });
+        access.status(200);
+        const row = access
+          .json<{ members: any[] }>()
+          .members.find((m) => m.user_id === addressee.userId);
+        if (!row) throw new Error('accepted invitee missing from project access list');
+        if (row.effective_project_role !== 'manager')
+          throw new Error(`expected manager, got ${row.effective_project_role}`);
+      },
+    );
+
+    await ctx.step('an admin invite ignores project_grants — admins already have implicit access', async () => {
+      const invitee = await ctx.fixtures.userWithEmail(
+        `${ctx.fixtures.name('mem7-admin')}@ke2e.kortix.test`.toLowerCase(),
+        { label: 'MEM7-ADMIN' },
+      );
+      const r = await ctx.client.as(ctx.P.OWNER).post(
+        '/v1/accounts/:accountId/members',
+        {
+          email: invitee.email,
+          role: 'admin',
+          project_grants: [{ project_id: p.id, role: 'manager' }],
+        },
+        { params: { accountId: team.id } },
+      );
+      r.status(201).body().has('$.status', 'added').has('$.project_grants', []);
+    });
+  },
+);
+
 flow(
   'INV-1',
   { domain: 'accounts', routes: ['GET /v1/accounts/:accountId/invites'] },

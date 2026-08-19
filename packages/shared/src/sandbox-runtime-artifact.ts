@@ -1,7 +1,7 @@
 import { type Hash, createHash } from 'node:crypto';
 import { constants, createReadStream } from 'node:fs';
 import { type FileHandle, lstat, open, readdir, readlink } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 
 export interface RuntimeArtifact {
   label: string;
@@ -20,33 +20,43 @@ export interface RuntimeArtifactFingerprintInput {
 }
 
 /**
- * Files that can change `kortix executor` inside a sandbox.
+ * Files that can change `kortix connectors` inside a sandbox.
  *
  * Paths are relative to `apps/cli`. The snapshot identity and the compiled
  * binary attestation both use this one list.
  */
-export const CLI_EXECUTOR_RUNTIME_FILES = [
-  'src/executor',
-  'src/commands/executor.ts',
+export const CLI_CONNECTOR_RUNTIME_FILES = [
+  'src/connector-gateway',
+  'src/commands/connector-gateway.ts',
   'src/api/auth.ts',
   'src/api/client.ts',
   'src/api/config.ts',
   // The CLI's one seam onto `@kortix/sdk`. `src/api/client.ts` imports it, so
-  // every in-sandbox `kortix executor` call resolves its transport through this
-  // file — a change to it changes the executor's behavior and MUST move the
+  // every in-sandbox `kortix connectors` call resolves its transport through this
+  // file — a change to it changes the connector's behavior and MUST move the
   // snapshot's runtime identity. Left out, an edit here shipped a stale binary
-  // under an unchanged snapshot name (apps/api/src/snapshots/__tests__/cli-executor-closure.test.ts
+  // under an unchanged snapshot name (apps/api/src/snapshots/__tests__/cli-connector-closure.test.ts
   // is the guard that catches it).
   'src/api/sdk.ts',
   'src/api/sandbox-env.ts',
+  // `src/api/client.ts` records what the acting token resolves to from every
+  // `/accounts/me` response, so this file is compiled into the connector
+  // binary. It deliberately declares its own `AccountsMeBody` instead of
+  // importing `src/api/types.ts` — that file changes with every API type
+  // addition, and hashing it would re-mint every project's runtime identity on
+  // edits that cannot affect the connector.
+  'src/api/token-identity.ts',
   'src/project-link.ts',
 ] as const;
 
 const CLI_RUNTIME_EXCLUDES = ['node_modules', '.bin', 'dist', '.turbo', '.cache'] as const;
 
-export function cliExecutorRuntimeArtifacts(cliRoot: string): RuntimeArtifact[] {
+export function cliConnectorRuntimeArtifacts(
+  cliRoot: string,
+  sdkRoot = resolve(cliRoot, '../../packages/sdk'),
+): RuntimeArtifact[] {
   return [
-    ...CLI_EXECUTOR_RUNTIME_FILES.map((relativePath) => ({
+    ...CLI_CONNECTOR_RUNTIME_FILES.map((relativePath) => ({
       // Preserve the existing snapshot-fingerprint labels. The paths moved
       // from an apps/cli/src-relative list to this apps/cli-relative list.
       label: `kortix-cli-${relativePath.replace(/^src\//, '')}`,
@@ -54,17 +64,26 @@ export function cliExecutorRuntimeArtifacts(cliRoot: string): RuntimeArtifact[] 
       excludeNames: CLI_RUNTIME_EXCLUDES,
     })),
     { label: 'kortix-cli-pkg', path: join(cliRoot, 'package.json') },
+    {
+      label: 'kortix-sdk-src',
+      path: join(sdkRoot, 'src'),
+      excludeNames: CLI_RUNTIME_EXCLUDES,
+    },
+    { label: 'kortix-sdk-pkg', path: join(sdkRoot, 'package.json') },
   ];
 }
 
 /**
- * Deterministic digest of the source that defines the in-sandbox Executor CLI.
+ * Deterministic digest of the source that defines the in-sandbox Connector CLI.
  *
  * The CLI build writes this digest beside the compiled binary. The snapshot
  * builder recomputes it before upload and rejects a stale binary.
  */
-export function buildCliExecutorSourceDigest(cliRoot: string): Promise<string> {
-  return buildArtifactContentDigest(cliExecutorRuntimeArtifacts(cliRoot));
+export function buildCliConnectorSourceDigest(
+  cliRoot: string,
+  sdkRoot?: string,
+): Promise<string> {
+  return buildArtifactContentDigest(cliConnectorRuntimeArtifacts(cliRoot, sdkRoot));
 }
 
 /**

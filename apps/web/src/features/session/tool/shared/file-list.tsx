@@ -111,12 +111,12 @@ export function ToolListRow({
       {chevron && (
         <ChevronRight
           className={cn(
-            'text-muted-foreground/60 size-3.5 flex-shrink-0 transition-transform',
+            'text-muted-foreground/60 size-3.5 shrink-0 transition-transform',
             chevron === 'expanded' && 'rotate-90',
           )}
         />
       )}
-      <span className="text-muted-foreground/60 group-hover:text-foreground/70 flex-shrink-0 transition-colors [&>svg]:size-4">
+      <span className="text-muted-foreground/60 group-hover:text-foreground/70 shrink-0 transition-colors [&>svg]:size-4">
         {icon}
       </span>
       <span
@@ -136,12 +136,12 @@ export function ToolListRow({
         {name}
       </span>
       {dir && (
-        <span className="text-muted-foreground max-w-[40%] flex-shrink-0 truncate font-mono text-sm">
+        <span className="text-muted-foreground max-w-[40%] shrink-0 truncate font-mono text-sm">
           {dir}
         </span>
       )}
       {trailing !== undefined && trailing !== null && (
-        <span className="text-muted-foreground flex-shrink-0 text-sm tabular-nums">{trailing}</span>
+        <span className="text-muted-foreground shrink-0 text-sm tabular-nums">{trailing}</span>
       )}
     </div>
   );
@@ -160,11 +160,11 @@ export function InlineFileList({
 }) {
   return (
     <div>
-      {paths.map((fp, i) => {
+      {paths.map((fp) => {
         const dp = toDisplayPath(fp);
         return (
           <ToolListRow
-            key={i}
+            key={fp}
             icon={<FileText />}
             name={getFilename(dp) ?? dp}
             dir={getDirectory(dp)}
@@ -198,7 +198,7 @@ export function InlineGrepResults({
         const isExpanded = expandedIndex === i;
 
         return (
-          <div key={i}>
+          <div key={group.filePath}>
             <ToolListRow
               icon={<FileText />}
               name={getFilename(dp) ?? dp}
@@ -217,7 +217,7 @@ export function InlineGrepResults({
                     key={j}
                     className="border-border/10 flex items-start gap-0 border-b last:border-b-0"
                   >
-                    <span className="text-muted-foreground/50 w-10 flex-shrink-0 py-1 pr-2 text-right font-mono text-xs select-none">
+                    <span className="text-muted-foreground/50 w-10 shrink-0 py-1 pr-2 text-right font-mono text-xs select-none">
                       {match.line}
                     </span>
                     <span className="text-foreground/70 py-1 pr-2 font-mono text-xs leading-relaxed break-all">

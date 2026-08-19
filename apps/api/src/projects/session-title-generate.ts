@@ -23,13 +23,15 @@ import { projectSessionMetadataMerge } from './lib/session-metadata-merge';
 //     baked into the sandbox and runs in-guest, so create is its only chance;
 //   - first HTTP prompt: sessions created empty (the whole web UI, warm claim,
 //     CLI/SDK) carry their first prompt as an OpenCode REST request body.
-// One short call to the internal LLM gateway over just that text. Nothing else
-// writes `metadata.name`.
+// At most two bounded calls to the internal LLM gateway use only that text. A
+// deterministic prompt excerpt guarantees a title when both calls fail.
+// Nothing else writes `metadata.name`.
 //
 // Fire-and-forget by contract: idempotent, best-effort, and it never blocks or
 // fails the request it hangs off.
 
 const MAX_TITLE_LENGTH = 64;
+const DEFAULT_GENERATION_TIMEOUT_MS = 15_000;
 // OpenAI-compatible reasoning models count hidden reasoning and visible text
 // against the same output ceiling. A 24-token ceiling let the managed
 // DeepSeek fallback spend every token on reasoning and return empty content.
@@ -72,6 +74,9 @@ async function internalGateway(): Promise<ReturnType<typeof createGateway>> {
  *  whitespace, bound the length, and reject a placeholder-shaped result. */
 export function sanitizeGeneratedTitle(raw: string | null | undefined): string | null {
   if (typeof raw !== 'string') return null;
+  // A code fence means the model answered the message instead of titling it —
+  // never let a task attempt become a project-visible session name.
+  if (raw.includes('```')) return null;
   let title = raw.replace(/[\r\n]+/g, ' ').trim();
   title = title
     .replace(/^["'`]+/, '')
@@ -82,6 +87,29 @@ export function sanitizeGeneratedTitle(raw: string | null | undefined): string |
   if (title.length > MAX_TITLE_LENGTH) title = title.slice(0, MAX_TITLE_LENGTH).trim();
   if (!title || isPlaceholderOpencodeTitle(title)) return null;
   return title;
+}
+
+/** Last-resort title when every configured model fails. Keep the first prompt
+ * recognizable, but bound it to a sidebar-sized phrase. */
+function deterministicTitleFromPrompt(raw: string): string | null {
+  const normalized = raw
+    .replace(/^[\s#>*`"'-]+/, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!normalized) return null;
+
+  const words = normalized.split(' ');
+  let candidate = '';
+  for (const word of words.slice(0, 8)) {
+    const next = candidate ? `${candidate} ${word}` : word;
+    if (next.length > MAX_TITLE_LENGTH) break;
+    candidate = next;
+  }
+  if (!candidate) candidate = normalized.slice(0, MAX_TITLE_LENGTH);
+  candidate = candidate.replace(/[\s.,!?;:'"`-]+$/, '').trim();
+  if (!candidate) return null;
+  if (isPlaceholderOpencodeTitle(candidate)) candidate = `Topic: ${candidate}`;
+  return sanitizeGeneratedTitle(candidate);
 }
 
 export interface PromptInfo {
@@ -163,12 +191,34 @@ function contentToString(content: unknown): string | null {
   return null;
 }
 
+/** The completion request a title is generated with (exported for tests —
+ *  the `max_tokens` floor is load-bearing, see TITLE_MAX_TOKENS). */
+export function titleCompletionBody(model: string, promptText: string): string {
+  // The first message is DATA, not a request: passed bare, smaller models
+  // ignore the system prompt and start performing the task (emitting code
+  // for "create a demo PDF…"). Quoting it inside an explicit titling
+  // instruction in the user turn keeps them on task.
+  const userContent =
+    'Write the title for a chat session whose first message follows between the markers. ' +
+    'Do NOT answer or perform the message — only title it.\n' +
+    `<<<FIRST_MESSAGE\n${promptText.slice(0, TITLE_SOURCE_MAX_CHARS)}\nFIRST_MESSAGE\n>>>` +
+    '\nReply with ONLY the title: 3 to 6 words, Title Case.';
+  return JSON.stringify({
+    model,
+    stream: false,
+    max_tokens: TITLE_MAX_TOKENS,
+    messages: [
+      { role: 'system', content: TITLE_SYSTEM_PROMPT },
+      { role: 'user', content: userContent },
+    ],
+  });
+}
 async function generateViaGateway(
   model: string,
   authorization: string,
   promptText: string,
 ): Promise<string | null> {
-  const rawBody = JSON.stringify(buildSessionTitleRequestBody(model, promptText));
+  const rawBody = titleCompletionBody(model, promptText);
   const gateway = await internalGateway();
   const res = await gateway.chatCompletions({ authorization, rawBody });
   if (!res.ok) {
@@ -179,18 +229,6 @@ async function generateViaGateway(
     choices?: Array<{ message?: { content?: unknown } }>;
   } | null;
   return contentToString(data?.choices?.[0]?.message?.content);
-}
-
-export function buildSessionTitleRequestBody(model: string, promptText: string) {
-  return {
-    model,
-    stream: false,
-    max_tokens: TITLE_MAX_TOKENS,
-    messages: [
-      { role: 'system', content: TITLE_SYSTEM_PROMPT },
-      { role: 'user', content: promptText.slice(0, TITLE_SOURCE_MAX_CHARS) },
-    ],
-  };
 }
 
 async function loadRow(sessionId: string, projectId: string): Promise<ProjectSessionRow | null> {
@@ -252,29 +290,33 @@ function platformDefaultModel(): string | null {
  * ever a model the gateway will actually serve for this account+project. The
  * unconditional platform default is a trap: it is a MANAGED id, so on a free
  * tier (or a deployment with no managed provider) the gateway refuses it and
- * every prompt pays a mint → doomed completion → revoke, forever, leaving the
- * session untitled anyway. Skipping cheaply is the honest outcome.
+ * every prompt pays a mint → doomed completion → revoke. The caller skips that
+ * spend and persists its deterministic prompt excerpt instead.
  *
  */
-async function resolveFallbackModel(input: GenerateSessionTitleInput): Promise<string | null> {
-  const [{ getCachedAccountTier }, { tierGrantsAllModels }, resolution] = await Promise.all([
+async function resolveFallbackModel(
+  input: GenerateSessionTitleInput,
+  excludedModel?: string,
+): Promise<string | null> {
+  const [{ accountMayUseManagedModels }, resolution] = await Promise.all([
     import('../billing/services/entitlements'),
-    import('../billing/services/tiers'),
     import('../llm-gateway/resolution/default-model'),
   ]);
   const scope = {
     userId: input.userId,
     accountId: input.accountId,
     projectId: input.projectId,
-    freeModelsOnly: config.KORTIX_BILLING_INTERNAL_ENABLED
-      ? !tierGrantsAllModels(await getCachedAccountTier(input.accountId))
-      : false,
+    freeModelsOnly: !(await accountMayUseManagedModels(input.accountId)),
   };
   const resolved = await resolution.resolveEffectiveModel({ ...scope, explicit: null });
-  const candidate = resolved.model ?? platformDefaultModel();
-  if (!candidate) return null;
-  const model = toWireModel(candidate);
-  return (await resolution.isModelServableForAccount({ ...scope, model })) ? model : null;
+  const candidates = [resolved.model, platformDefaultModel()];
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    const model = toWireModel(candidate);
+    if (model === excludedModel) continue;
+    if (await resolution.isModelServableForAccount({ ...scope, model })) return model;
+  }
+  return null;
 }
 
 /** The model the session was started with, in gateway wire form. */
@@ -346,7 +388,45 @@ export interface GenerateSessionTitleOptions {
   ) => Promise<{ secret: string; keyId: string } | null>;
   revokeKey?: (projectId: string, keyId: string) => Promise<void>;
   persist?: (row: ProjectSessionRow, title: string) => Promise<void>;
-  fallbackModel?: (input: GenerateSessionTitleInput) => Promise<string | null>;
+  fallbackModel?: (
+    input: GenerateSessionTitleInput,
+    excludedModel?: string,
+  ) => Promise<string | null>;
+  generationTimeoutMs?: number;
+}
+
+async function generateWithDeadline(
+  generate: NonNullable<GenerateSessionTitleOptions['generate']>,
+  model: string,
+  authorization: string,
+  promptText: string,
+  sessionId: string,
+  timeoutMs: number,
+): Promise<string | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let timedOut = false;
+  try {
+    const timeout = new Promise<null>((resolve) => {
+      timer = setTimeout(() => {
+        timedOut = true;
+        resolve(null);
+      }, Math.max(1, timeoutMs));
+    });
+    const result = await Promise.race([generate(model, authorization, promptText), timeout]);
+    if (timedOut) {
+      appLogger.warn('[title-generate] model attempt timed out', { sessionId, model, timeoutMs });
+    }
+    return result;
+  } catch (err) {
+    appLogger.warn('[title-generate] model attempt failed', {
+      sessionId,
+      model,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return null;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 /**
@@ -386,6 +466,7 @@ export async function generateSessionTitleFromFirstPrompt(
   const revoke =
     options.revokeKey ?? ((projectId, keyId) => deleteGatewayKey(projectId, keyId).then(() => {}));
   const fallbackModel = options.fallbackModel ?? resolveFallbackModel;
+  const generationTimeoutMs = options.generationTimeoutMs ?? DEFAULT_GENERATION_TIMEOUT_MS;
 
   try {
     const row = await load(input.sessionId, input.projectId);
@@ -403,20 +484,57 @@ export async function generateSessionTitleFromFirstPrompt(
     // only the last resort has to prove itself.
     const model =
       input.modelHint?.trim() || sessionModel(row) || (await fallbackModel(input)) || null;
+    let title: string | null = null;
     if (!model) {
       appLogger.warn('[title-generate] no servable model to title with', {
         sessionId: input.sessionId,
       });
-      return;
+    } else {
+      const minted = await mint(input.accountId, input.projectId, input.userId);
+      if (minted) {
+        try {
+          title = sanitizeGeneratedTitle(
+            await generateWithDeadline(
+              generate,
+              model,
+              `Bearer ${minted.secret}`,
+              promptText,
+              input.sessionId,
+              generationTimeoutMs,
+            ),
+          );
+          if (!title) {
+            const retryModel = await fallbackModel(input, model);
+            if (retryModel && retryModel !== model) {
+              appLogger.warn('[title-generate] retrying with servable fallback model', {
+                sessionId: input.sessionId,
+                rejectedModel: model,
+                retryModel,
+              });
+              title = sanitizeGeneratedTitle(
+                await generateWithDeadline(
+                  generate,
+                  retryModel,
+                  `Bearer ${minted.secret}`,
+                  promptText,
+                  input.sessionId,
+                  generationTimeoutMs,
+                ),
+              );
+            }
+          }
+        } finally {
+          await revoke(input.projectId, minted.keyId).catch(() => {});
+        }
+      }
     }
-
-    const minted = await mint(input.accountId, input.projectId, input.userId);
-    if (!minted) return;
-    let title: string | null = null;
-    try {
-      title = sanitizeGeneratedTitle(await generate(model, `Bearer ${minted.secret}`, promptText));
-    } finally {
-      await revoke(input.projectId, minted.keyId).catch(() => {});
+    if (!title) {
+      title = deterministicTitleFromPrompt(promptText);
+      if (title) {
+        appLogger.warn('[title-generate] using deterministic prompt fallback', {
+          sessionId: input.sessionId,
+        });
+      }
     }
     if (!title) return;
 

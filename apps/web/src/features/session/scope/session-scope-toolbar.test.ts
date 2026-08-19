@@ -1,7 +1,11 @@
 import type { SessionScope, SessionScopeInput } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 
-import type { SessionScopeSelectionCatalog } from './session-scope-model';
+import {
+  createSessionScopeDraft,
+  resetSessionConnectorBindings,
+  type SessionScopeSelectionCatalog,
+} from './session-scope-model';
 import {
   commitSessionScopeDraft,
   createNewSessionScopeInitialization,
@@ -12,12 +16,14 @@ const scope = (overrides: Partial<SessionScope> = {}): SessionScope => ({
   secrets_allowlist: ['MAIL_TOKEN'],
   required_connectors: null,
   connector_bindings: {
-    mail: { authorization_id: 'authorization-mail' },
+    mail: { connection_id: 'connection-mail' },
   },
   dropped_secrets: [],
   added_secrets: [],
   dropped_bindings: [],
   retroactive: true,
+  connector_bindings_configured: false,
+  connector_bindings_inherit_unbound: true,
   detail: 'Current session scope.',
   ...overrides,
 });
@@ -29,16 +35,16 @@ const catalog = (
     status: 'ready',
     items: [{ identifier: 'MAIL_TOKEN', name: 'Mail token' }],
   },
-  connector_profiles: {
+  connector_connections: {
     status: 'ready',
     items: [
       {
         slug: 'mail',
         name: 'Mail',
         authorization_strategy: 'project',
-        authorizations: [
+        connections: [
           {
-            authorization_id: 'authorization-mail',
+            connection_id: 'connection-mail',
             label: 'Project mail',
             is_default: true,
           },
@@ -65,17 +71,28 @@ describe('getSessionScopeAvailability', () => {
 });
 
 describe('createNewSessionScopeInitialization', () => {
-  test('commits default-deny scope before the first prompt', () => {
+  test('commits an unrestricted (null) secrets scope before the first prompt', () => {
+    // `null` is the no-override state — the session inherits the agent's grant,
+    // exactly like a server-created session. `[]` would be an explicit "inject
+    // zero project secrets", which silently denied every browser-created session
+    // its grant. Connector access previews every visible default connection.
+    // Untouched defaults remain server-resolved until the user changes them.
     expect(createNewSessionScopeInitialization(catalog())).toEqual({
       draft: {
-        secrets: [],
-        connector_bindings: {},
+        secrets: null,
+        connector_bindings: {
+          mail: { connection_id: 'connection-mail' },
+        },
+        connector_bindings_inherited: true,
         require_connectors: [],
       },
       commit: {
         draft: {
-          secrets: [],
-          connector_bindings: {},
+          secrets: null,
+          connector_bindings: {
+            mail: { connection_id: 'connection-mail' },
+          },
+          connector_bindings_inherited: true,
           require_connectors: [],
         },
         availability: {
@@ -95,12 +112,18 @@ describe('createNewSessionScopeInitialization', () => {
       ),
     ).toEqual({
       draft: {
-        connector_bindings: {},
+        connector_bindings: {
+          mail: { connection_id: 'connection-mail' },
+        },
+        connector_bindings_inherited: true,
         require_connectors: [],
       },
       commit: {
         draft: {
-          connector_bindings: {},
+          connector_bindings: {
+            mail: { connection_id: 'connection-mail' },
+          },
+          connector_bindings_inherited: true,
           require_connectors: [],
         },
         availability: {
@@ -114,9 +137,14 @@ describe('createNewSessionScopeInitialization', () => {
 
 describe('commitSessionScopeDraft', () => {
   test('saves a complete active-session replacement from authoritative read-back', async () => {
+    // The session already HOLDS a connector override, so its bindings are a
+    // user selection and the save must resend them in full — a partial map
+    // would silently drop whatever it left out.
     let replacement: SessionScopeInput | undefined;
+    const previous = scope({ connector_bindings_configured: true });
     const response = scope({
       secrets_allowlist: ['ISSUE_TOKEN'],
+      connector_bindings_configured: true,
       retroactive: false,
     });
 
@@ -124,7 +152,7 @@ describe('commitSessionScopeDraft', () => {
       sessionId: 'session-1',
       draft: { secrets: ['ISSUE_TOKEN'] },
       catalog: catalog(),
-      previousScope: scope(),
+      previousScope: previous,
       replaceScope: async (input) => {
         replacement = input;
         return response;
@@ -134,11 +162,56 @@ describe('commitSessionScopeDraft', () => {
     expect(replacement).toEqual({
       secrets: ['ISSUE_TOKEN'],
       connector_bindings: {
-        mail: { authorization_id: 'authorization-mail' },
+        mail: { connection_id: 'connection-mail' },
       },
       require_connectors: [],
     });
     expect(result?.retroactive).toBeFalse();
+  });
+
+  test('an untouched save on an inheriting session writes no connector override', async () => {
+    // The bug this replaced: opening the panel on an existing session and
+    // pressing Save posted the server-resolved bindings back as an explicit
+    // override, so `connector_bindings_configured` flipped to true and every
+    // unbound alias started failing closed — with nothing in the UI asking for
+    // it.
+    let replacement: SessionScopeInput | undefined;
+    const previous = scope({ connector_bindings_configured: false });
+
+    await commitSessionScopeDraft({
+      sessionId: 'session-1',
+      draft: createSessionScopeDraft(previous, catalog()),
+      catalog: catalog(),
+      previousScope: previous,
+      replaceScope: async (input) => {
+        replacement = input;
+        return previous;
+      },
+    });
+
+    expect(replacement).toBeDefined();
+    expect(Object.hasOwn(replacement as SessionScopeInput, 'connector_bindings')).toBe(false);
+  });
+
+  test('a reset on an overridden session sends the null clear verb', async () => {
+    let replacement: SessionScopeInput | undefined;
+    const previous = scope({ connector_bindings_configured: true });
+
+    await commitSessionScopeDraft({
+      sessionId: 'session-1',
+      draft: resetSessionConnectorBindings(
+        createSessionScopeDraft(previous, catalog()),
+        catalog(),
+      ),
+      catalog: catalog(),
+      previousScope: previous,
+      replaceScope: async (input) => {
+        replacement = input;
+        return scope({ connector_bindings_configured: false });
+      },
+    });
+
+    expect(replacement?.connector_bindings).toBeNull();
   });
 
   test('omits an unavailable catalog axis from active-session replacement', async () => {
@@ -148,7 +221,7 @@ describe('commitSessionScopeDraft', () => {
       sessionId: 'session-1',
       draft: {
         connector_bindings: {
-          mail: { authorization_id: 'authorization-mail-2' },
+          mail: { connection_id: 'connection-mail-2' },
         },
         require_connectors: [],
       },
@@ -164,7 +237,7 @@ describe('commitSessionScopeDraft', () => {
 
     expect(replacement).toEqual({
       connector_bindings: {
-        mail: { authorization_id: 'authorization-mail-2' },
+        mail: { connection_id: 'connection-mail-2' },
       },
       require_connectors: [],
     });
@@ -178,7 +251,7 @@ describe('commitSessionScopeDraft', () => {
       draft: {
         secrets: null,
         connector_bindings: {
-          mail: { authorization_id: 'authorization-mail' },
+          mail: { connection_id: 'connection-mail' },
         },
         require_connectors: [],
       },
@@ -196,7 +269,7 @@ describe('commitSessionScopeDraft', () => {
         draft: {
           secrets: null,
           connector_bindings: {
-            mail: { authorization_id: 'authorization-mail' },
+            mail: { connection_id: 'connection-mail' },
           },
           require_connectors: [],
         },
@@ -215,7 +288,7 @@ describe('commitSessionScopeDraft', () => {
       draft: {},
       catalog: {
         secrets: { status: 'unavailable' },
-        connector_profiles: { status: 'unavailable' },
+        connector_connections: { status: 'unavailable' },
       },
       replaceScope: async () => scope(),
       onCommittedDraft: (commit) => committed.push(commit),

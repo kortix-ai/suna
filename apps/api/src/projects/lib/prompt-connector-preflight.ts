@@ -2,14 +2,14 @@
  * Refusing a PROMPT whose connectors cannot serve it — before the sandbox sees it.
  *
  * The pre-flight that already exists runs at session CREATE and at warm-claim
- * (projects/lib/sessions.ts, routes/r7.ts). A mid-session prompt passed through
+ * (projects/lib/sessions.ts, routes/project-sessions.ts). A mid-session prompt passed through
  * ungated, so the founder's session answered "Still no active connectors. The
- * Gmail connector is gone from the executor catalog." — the agent improvising an
+ * Gmail connector is gone from the connector catalog." — the agent improvising an
  * apology, mid-turn, about something the platform knew before the first byte.
  *
  * That is the whole failure the pre-flight exists to prevent, and it was only
  * ever prevented at create. Nothing about the reason is create-specific: a
- * connection can be revoked, a profile deactivated, or a scope re-pointed at any
+ * connection can be revoked, a connector deactivated, or a scope re-pointed at any
  * moment, and every one of those lands on the next prompt.
  *
  * WHAT COUNTS AS REQUIRED — the union of three sources, because no one of them
@@ -18,7 +18,7 @@
  *   1. The session's own `requiredConnectors`. What the caller declared for THIS
  *      session, including an alias with no connection yet — the only source that
  *      can express "this session needs Gmail" before a Gmail account exists to
- *      point at. A binding row cannot: `profile_id` is NOT NULL.
+ *      point at. A binding row cannot: `connection_id` is NOT NULL.
  *   2. The RUNNING agent's manifest `connectors_required`. Re-read per prompt so
  *      a manifest change takes effect without restarting the session — and read
  *      for the agent this prompt actually runs, not the one the session booted
@@ -29,7 +29,7 @@
  *      since been revoked, which the other two do not.
  *
  * FAIL CLOSED ON THE VERDICT, NEVER ON THE LOOKUP. Only a positive "this alias
- * has no usable profile" may refuse the prompt. A git blip or a DB error means we
+ * has no usable connection" may refuse the prompt. A git blip or a DB error means we
  * could not establish the answer, which is a 503 the client retries — never a 409
  * telling somebody to connect an account that is, in fact, already connected.
  */
@@ -43,11 +43,11 @@ import { and, eq } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import { loadProjectAgents, requiredConnectorsForAgent } from '../agents';
 import { effectiveRunningAgent } from './secret-grant';
-import type { ConnectorAuthorizationRequiredProfile } from '@kortix/api-contract';
+import type { RequiredConnectorConnection } from '@kortix/api-contract';
 import { canonicalConnectorAlias } from '../../shared/connector-alias';
 import {
-  RequiredConnectorProfileUnavailableError,
-  missingRequiredConnectorAuthorizationsForSession,
+  RequiredConnectorConnectionUnavailableError,
+  missingRequiredConnectorConnectionsForSession,
 } from './session-connector-bindings';
 
 /**
@@ -72,7 +72,11 @@ export class PromptConnectorPreflightUnresolved extends Error {
 export type PromptConnectorVerdict =
   | { ok: true }
   /** The alias is a connector on the project, but nothing usable is connected to it. */
-  | { ok: false; kind: 'authorization_required'; profiles: ConnectorAuthorizationRequiredProfile[] }
+  | {
+      ok: false;
+      kind: 'authorization_required';
+      connections: RequiredConnectorConnection[];
+    }
   /** The alias is not a connector on this project at all — only a manifest change fixes it. */
   | { ok: false; kind: 'unavailable'; aliases: string[] };
 
@@ -99,7 +103,7 @@ export function unionRequiredAliases(input: {
   return [...seen];
 }
 
-export async function missingPromptConnectorAuthorizations(input: {
+export async function missingPromptConnectorConnections(input: {
   accountId: string;
   projectId: string;
   sessionId: string;
@@ -183,7 +187,7 @@ export async function missingPromptConnectorAuthorizations(input: {
   if (aliases.length === 0) return { ok: true };
 
   try {
-    const missing = await missingRequiredConnectorAuthorizationsForSession({
+    const missing = await missingRequiredConnectorConnectionsForSession({
       accountId: input.accountId,
       projectId: input.projectId,
       sessionId: input.sessionId,
@@ -191,10 +195,10 @@ export async function missingPromptConnectorAuthorizations(input: {
     });
     return missing.length === 0
       ? { ok: true }
-      : { ok: false, kind: 'authorization_required', profiles: missing };
+      : { ok: false, kind: 'authorization_required', connections: missing };
   } catch (err) {
     // The one throw from that helper that IS a verdict rather than a failure.
-    if (err instanceof RequiredConnectorProfileUnavailableError) {
+    if (err instanceof RequiredConnectorConnectionUnavailableError) {
       return { ok: false, kind: 'unavailable', aliases: err.aliases };
     }
     throw new PromptConnectorPreflightUnresolved(err);

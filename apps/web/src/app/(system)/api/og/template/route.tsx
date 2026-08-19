@@ -144,15 +144,15 @@ export async function GET(request: NextRequest) {
                   <span style={{ color: '#e2e8f0', fontSize: '18px', fontWeight: 600 }}>
                     {template.mcp_requirements.length}
                   </span>
-                  <span style={{ color: '#64748b', fontSize: '18px' }}>integrations</span>
+                  <span style={{ color: '#64748b', fontSize: '18px' }}>connectors</span>
                 </div>
               )}
             </div>
             {template.tags && template.tags.length > 0 && (
               <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '40px' }}>
-                {template.tags.slice(0, 5).map((tag: string, index: number) => (
+                {template.tags.slice(0, 5).map((tag: string) => (
                   <div
-                    key={index}
+                    key={tag}
                     style={{
                       backgroundColor: '#1e293b',
                       borderRadius: '8px',

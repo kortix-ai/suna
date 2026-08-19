@@ -67,6 +67,7 @@ type PinnedProps = {
   onGlyphChange: (glyph: GlyphSelection) => void;
   onClear?: () => void;
   disabled?: boolean;
+  align?: 'start' | 'center' | 'end';
 };
 const signaturePin: (props: PinnedProps) => unknown = ProjectIconField;
 
@@ -369,11 +370,13 @@ describe('ProjectIconField popover geometry', () => {
     expect(Number(declared?.[2])).toBe(2);
   });
 
-  test('the popover hangs off the trigger’s leading edge', () => {
-    // align="start" is a layout decision, not a default: the trigger is the
-    // leftmost control in the modal row, so `center` or `end` would push a
-    // 278px popover out past the modal's edge.
-    expect(code).toMatch(/<PopoverContent[\s\S]*?align="start"/);
+  test('the popover defaults to hanging off the trigger’s leading edge', () => {
+    // Default is `start` — `/new` and the create modal put the trigger on the
+    // leading edge of its row, so `center`/`end` would push a ~278px popover
+    // past the edge. Hosts that need the other side (Settings' trailing Icon
+    // row) pass `align` through; the prop is forwarded, not hardcoded.
+    expect(code).toMatch(/align\s*=\s*['"]start['"]/);
+    expect(code).toMatch(/<PopoverContent[\s\S]*?align=\{align\}/);
   });
 
   test('the popover dialog has an accessible name', () => {
@@ -408,7 +411,12 @@ describe('ProjectIconField conventions', () => {
 
     // All three faces need one shared, fixed box or they cross-fade in
     // different places and the button's width jumps mid-swap.
-    expect(code).toMatch(/relative inline-flex size-\d/);
+    // The box is conditional since the unset face became the workspace's own
+    // initial tile, which FILLS the trigger; emoji and glyph keep the measured
+    // size-6 box. Both arms still live in one `cn()` on one span, which is what
+    // 'shared box' means here.
+    expect(code).toMatch(/relative inline-flex items-center justify-center/);
+    expect(code).toMatch(/'size-full' : 'size-6'/);
     expect(code.match(/absolute inset-0/g)).toHaveLength(1);
   });
 
@@ -479,7 +487,11 @@ describe('ProjectIconField conventions', () => {
   test('the three faces share a box the widest of them actually fits', () => {
     // A text-lg emoji measures 21px. size-5 is 18.39px, so the glyph hung
     // 2.61px out of the box the cross-fade scales and blurs within.
-    expect(code).toMatch(/relative inline-flex size-6 items-center justify-center/);
+    // The box is conditional since the unset face became the workspace's own
+    // initial tile, which fills the trigger; emoji and glyph keep the measured
+    // size-6 box.
+    expect(code).toMatch(/relative inline-flex items-center justify-center/);
+    expect(code).toContain("'size-6'");
   });
 
   test('the RENDERED button names exact transition properties, never all', () => {

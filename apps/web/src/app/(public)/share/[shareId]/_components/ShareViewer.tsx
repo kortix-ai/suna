@@ -16,7 +16,7 @@ import {
   ThumbsDownIcon as ThumbsDown,
   ThumbsUpIcon as ThumbsUp,
 } from '@phosphor-icons/react';
-import { AnimatePresence, motion } from 'motion/react';
+import { AnimatePresence, m } from 'motion/react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 // ============================================================================
@@ -188,7 +188,7 @@ function ShareHeader({ sessionTitle }: { sessionTitle: string }) {
   };
 
   return (
-    <header className="bg-background sticky top-0 z-20 h-12 w-full flex-shrink-0 sm:h-14">
+    <header className="bg-background sticky top-0 z-20 h-12 w-full shrink-0 sm:h-14">
       <div className="flex h-full items-center justify-between px-3 sm:px-4">
         {/* Left side — title + "Shared" badge */}
         <div className="flex min-w-0 flex-1 items-center gap-1">
@@ -201,7 +201,7 @@ function ShareHeader({ sessionTitle }: { sessionTitle: string }) {
         </div>
 
         {/* Right side — Copy Link */}
-        <div className="flex flex-shrink-0 items-center gap-1">
+        <div className="flex shrink-0 items-center gap-1">
           <TooltipProvider delayDuration={300}>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -248,7 +248,7 @@ function ShareMessageView({ message }: { message: PublicSessionTranscriptMessage
 function UserBubble({ text }: { text: string }) {
   return (
     <div className="flex justify-end">
-      <div className="bg-card flex max-w-[90%] overflow-hidden rounded-3xl rounded-br-lg border px-4 py-3 break-words">
+      <div className="bg-card flex max-w-[90%] overflow-hidden rounded-3xl rounded-br-lg border px-4 py-3 wrap-break-word">
         <div className="min-w-0 flex-1 space-y-2">
           <UnifiedMarkdown content={text} />
         </div>
@@ -268,15 +268,15 @@ function AssistantBlock({ text }: { text: string }) {
         <img
           src="/kortix-logomark-white.svg"
           alt="Kortix"
-          className="flex-shrink-0 invert dark:invert-0"
+          className="shrink-0 invert dark:invert-0"
           style={{ height: '12px', width: 'auto' }}
         />
       </div>
 
       {/* Text content */}
-      <div className="flex w-full break-words">
+      <div className="flex w-full wrap-break-word">
         <div className="min-w-0 flex-1 space-y-1.5">
-          <div className="overflow-hidden break-words">
+          <div className="overflow-hidden wrap-break-word">
             <UnifiedMarkdown content={text} />
           </div>
 
@@ -345,7 +345,7 @@ function MessageActions({ text, className }: { text: string; className?: string 
       {/* Thumbs up */}
       <AnimatePresence mode="popLayout">
         {!disliked && (
-          <motion.div
+          <m.div
             initial={{ opacity: 0, scale: 0.5, width: 0 }}
             animate={{ opacity: 1, scale: 1, width: 'auto' }}
             exit={{ opacity: 0, scale: 0.5, width: 0 }}
@@ -359,14 +359,14 @@ function MessageActions({ text, className }: { text: string; className?: string 
             >
               <ThumbsUp className="h-3.5 w-3.5" fill={liked ? 'currentColor' : 'none'} />
             </Button>
-          </motion.div>
+          </m.div>
         )}
       </AnimatePresence>
 
       {/* Thumbs down */}
       <AnimatePresence mode="popLayout">
         {!liked && (
-          <motion.div
+          <m.div
             initial={{ opacity: 0, scale: 0.5, width: 0 }}
             animate={{ opacity: 1, scale: 1, width: 'auto' }}
             exit={{ opacity: 0, scale: 0.5, width: 0 }}
@@ -380,7 +380,7 @@ function MessageActions({ text, className }: { text: string; className?: string 
             >
               <ThumbsDown className="h-3.5 w-3.5" fill={disliked ? 'currentColor' : 'none'} />
             </Button>
-          </motion.div>
+          </m.div>
         )}
       </AnimatePresence>
     </div>

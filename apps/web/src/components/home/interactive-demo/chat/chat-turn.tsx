@@ -4,7 +4,7 @@ import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
 import { AgentAvatar } from '@/components/ui/agent-avatar';
 import { Badge } from '@/components/ui/badge';
 import { SessionBusyIndicator } from '@/features/session/session-busy-indicator';
-import { AnimatePresence, motion } from 'motion/react';
+import { AnimatePresence, m } from 'motion/react';
 import { useTranslations } from 'next-intl';
 import { Reveal } from '../../reveal';
 import { SkillsRead } from './skill-reads';
@@ -15,7 +15,7 @@ export function UserBubble({ text }: { text: string }) {
   return (
     <div className="ml-auto flex w-full max-w-[80%] flex-col items-end gap-2 self-end">
       <div className="bg-sidebar dark:bg-sidebar-accent-foreground/9 text-foreground flex w-fit max-w-full flex-col rounded-lg px-3 py-2.5">
-        <div className="text-[0.9rem] leading-[22px] font-medium break-words whitespace-pre-wrap select-text">
+        <div className="text-[0.9rem] leading-5.5 font-medium wrap-break-word whitespace-pre-wrap select-text">
           {text}
         </div>
       </div>
@@ -43,7 +43,7 @@ export function AssistantTurn({
         <AgentAvatar isDefault size={22} />
         <span className="text-foreground text-sm font-medium">Kortix</span>
         <AnimatePresence mode="wait" initial={false}>
-          <motion.span
+          <m.span
             key={isDone ? 'done' : 'working'}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -53,7 +53,7 @@ export function AssistantTurn({
             <Badge size="sm" variant={isDone ? 'badgeSuccess' : 'secondary'}>
               {isDone ? 'done' : 'working'}
             </Badge>
-          </motion.span>
+          </m.span>
         </AnimatePresence>
         <span className="text-muted-foreground ml-auto text-xs">
           {tI18nHardcoded.raw('autoComponentsHomeInteractiveDemoChatChatTurnJsxTextJust8e271ae4')}
@@ -62,14 +62,14 @@ export function AssistantTurn({
 
       <AnimatePresence>
         {thinking && skills.length === 0 && (
-          <motion.div
+          <m.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0, y: -4 }}
             transition={{ duration: 0.25 }}
           >
             <SessionBusyIndicator ambient statusText={sc.thinkingLabel} />
-          </motion.div>
+          </m.div>
         )}
       </AnimatePresence>
 

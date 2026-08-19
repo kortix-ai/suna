@@ -10,8 +10,9 @@
 // `publishConfig` (main/types/exports/files/type). This script promotes that
 // onto the top-level manifest npm reads from the tarball — so the published
 // package is correct regardless of whether the npm client honours publishConfig
-// overrides — then validates that every published entrypoint actually exists in
-// the build output (catches drift between publishConfig and the emitted dist/).
+// overrides — then validates that every published entrypoint and executable
+// actually exists in the build output (catches drift between publishConfig and
+// the emitted dist/).
 //
 // Run from the package directory AFTER `bun run build`:
 //
@@ -63,9 +64,9 @@ for (const field of ['dependencies', 'peerDependencies', 'optionalDependencies']
   }
 }
 
-// 4) Validate that every published entrypoint exists in dist/ — a missing target
-//    means the build did not emit what publishConfig advertises, which would
-//    publish a broken package. Fail loudly instead.
+// 4) Validate that every published entrypoint and executable exists — a missing
+//    target means the build did not emit or include what the manifest advertises,
+//    which would publish a broken package. Fail loudly instead.
 const targets = new Set();
 const add = (v) => {
   if (typeof v === 'string' && v.startsWith('./')) targets.add(v);
@@ -80,6 +81,14 @@ const walkExports = (entry) => {
   else if (entry && typeof entry === 'object') for (const v of Object.values(entry)) walkExports(v);
 };
 walkExports(pkg.exports);
+const addBin = (target) => {
+  if (typeof target !== 'string' || target.length === 0) return;
+  targets.add(target.startsWith('./') ? target : `./${target}`);
+};
+if (typeof pkg.bin === 'string') addBin(pkg.bin);
+else if (pkg.bin && typeof pkg.bin === 'object') {
+  for (const target of Object.values(pkg.bin)) addBin(target);
+}
 const missing = [...targets].filter((t) => !existsSync(t));
 if (missing.length) {
   console.error(`stage-npm-publish: ${pkg.name} declares entrypoints missing from the build output:`);
@@ -96,5 +105,5 @@ if (pkg.browser || pkg.unpkg || pkg.jsdelivr) {
   console.log(`  browser:${pkg.browser ?? '(none)'}  unpkg:${pkg.unpkg ?? '(none)'}  jsdelivr:${pkg.jsdelivr ?? '(none)'}`);
 }
 console.log(`  files:  ${JSON.stringify(pkg.files ?? [])}`);
-console.log(`  exports:${Object.keys(pkg.exports ?? {}).length} entrypoint(s), all present in dist/`);
+console.log(`  exports:${Object.keys(pkg.exports ?? {}).length} entrypoint(s), all targets present`);
 if (pinned.length) console.log(`  pinned: ${pinned.join(', ')}`);

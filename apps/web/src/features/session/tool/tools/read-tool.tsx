@@ -22,9 +22,9 @@ import type { ToolProps } from '@/features/session/tool/shared/types';
 import { useOcFileOpen } from '@/features/session/use-oc-file-open';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
 import { getFilename } from '@/ui';
-import { FileIcon, FileTextIcon, FolderIcon as Folder } from '@phosphor-icons/react';
+import { FileIcon, FolderIcon as Folder, ReadCvLogoIcon } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
-import { useContext, useMemo } from 'react';
+import { useCallback, useContext, useMemo } from 'react';
 
 export function ReadTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -38,7 +38,11 @@ export function ReadTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const filePath = (input.filePath as string) || (streamingInput.filePath as string) || undefined;
   const filename = getFilename(filePath) || '';
   const ext = filename.split('.').pop() || '';
-  const { openPreview } = useFilePreviewStore();
+  // Field selector, not the whole store: destructuring `useFilePreviewStore()`
+  // subscribes to every field, and `openPreview` writes `isOpen`/`filePath`/
+  // `lineNumber`. Opening one file preview therefore re-rendered every `read`
+  // row on screen, none of which read any of those fields.
+  const openPreview = useFilePreviewStore((s) => s.openPreview);
   const { toDisplayPath } = useOcFileOpen();
 
   const isStalePending = !running && !filename && (status === 'pending' || status === 'running');
@@ -57,17 +61,21 @@ export function ReadTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
 
   const content = parsed?.type === 'file' ? parsed.content : '';
 
+  const handleSubtitleClick = useCallback(() => {
+    if (filePath) openPreview(filePath);
+  }, [filePath, openPreview]);
+
   return (
     <>
       <BasicTool
-        icon={<FileTextIcon className="size-3.5 flex-shrink-0" />}
+        icon={<ReadCvLogoIcon className="size-3.5 shrink-0" />}
         trigger={{
           title: 'Read',
           subtitle: isStalePending
             ? undefined
             : filename || (isStalePending ? 'Working...' : undefined),
         }}
-        onSubtitleClick={filePath ? () => openPreview(filePath) : undefined}
+        onSubtitleClick={filePath ? handleSubtitleClick : undefined}
         defaultOpen={defaultOpen}
         forceOpen={forceOpen}
         locked={locked}
@@ -77,17 +85,17 @@ export function ReadTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
           <ToolCodeCard code={content} language={ext} />
         ) : parsed?.type === 'directory' && parsed.entries && parsed.entries.length > 0 ? (
           <ToolResultCard bodyClassName="space-y-0.5 px-2 py-1.5">
-            {parsed.entries.map((entry, i) => {
+            {parsed.entries.map((entry) => {
               const isDir = entry.endsWith('/');
               return (
                 <div
-                  key={i}
+                  key={entry}
                   className="text-muted-foreground/80 flex items-center gap-1.5 font-mono text-xs"
                 >
                   {isDir ? (
-                    <Folder className="text-muted-foreground/40 size-3 flex-shrink-0" />
+                    <Folder className="text-muted-foreground/40 size-3 shrink-0" />
                   ) : (
-                    <FileIcon className="text-muted-foreground/40 size-3 flex-shrink-0" />
+                    <FileIcon className="text-muted-foreground/40 size-3 shrink-0" />
                   )}
                   <span className="truncate">{entry}</span>
                 </div>
@@ -108,13 +116,18 @@ export function ReadTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
       </BasicTool>
       {surface !== 'panel' && loaded.length > 0 && (
         <div className="mt-1 space-y-0.5 pl-2">
-          {loaded.map((filepath, i) => (
+          {loaded.map((filepath) => (
             <div
-              key={i}
+              key={filepath}
               role="button"
               tabIndex={0}
               onClick={() => openPreview(filepath)}
-              onKeyDown={(e) => e.key === 'Enter' && openPreview(filepath)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  openPreview(filepath);
+                }
+              }}
               className="text-muted-foreground hover:text-foreground group flex cursor-pointer items-center gap-1.5 text-xs transition-colors"
             >
               <span className={STATUS_TEXT.success}>+</span>

@@ -42,11 +42,11 @@ export type NormalizeRequiredConnectorsResult =
   | { ok: false; error: string };
 
 function normalizeConnectorList(value: unknown, field: string): string[] | string {
-  if (!Array.isArray(value)) return `${field} must be a list of connector profile slugs`;
+  if (!Array.isArray(value)) return `${field} must be a list of connector slugs`;
   const normalized: string[] = [];
   for (const item of value) {
     if (typeof item !== 'string' || item.trim() === '') {
-      return `${field} must contain non-empty connector profile slugs`;
+      return `${field} must contain non-empty connector slugs`;
     }
     const slug = item.trim();
     if (!normalized.includes(slug)) normalized.push(slug);
@@ -331,4 +331,115 @@ export function applyAgentScopeV2(
     }
   }
   return applyAgentMapBlock(manifest, agentName, merged);
+}
+
+/** Grant membership. Case-insensitive, mirroring `listAdmits`
+ *  (../../secrets/strategy.ts) and `grantAdmits` (./serializers.ts) — a
+ *  hand-written `secrets:` list in kortix.yaml may use any case, and all three
+ *  answers must agree or the UI and the delivery gate disagree about whether a
+ *  secret is granted. */
+function listAdmits(list: readonly string[], identifier: string): boolean {
+  const target = identifier.toUpperCase();
+  return list.some((entry) => entry.toUpperCase() === target);
+}
+
+export type GrantSecretToAgentResult =
+  | {
+      ok: true;
+      raw: Record<string, unknown>;
+      /** The list already admitted the identifier — the caller must NOT commit. */
+      alreadyGranted: boolean;
+      adoptedGovernance: boolean;
+    }
+  | { ok: false; error: string; issues?: ManifestIssue[]; unsupportedV1?: boolean };
+
+/**
+ * Add ONE secret identifier to ONE agent's `secrets:` allowlist — the write
+ * behind the "No agent can receive this secret" warning
+ * (`delivery_blocked_reason: 'no_agent_grant'`, ./serializers.ts). Narrower
+ * than `applyAgentScopeV2` on purpose: that route replaces a whole grant set
+ * and refuses an undeclared agent, while this one only ever WIDENS, and
+ * upserts the agent entry when the roster does not name it yet.
+ *
+ * Three behaviours here are not obvious:
+ *
+ * 1. **`secrets: all` is expanded, not overwritten.** `resolveSecretDelivery`
+ *    withholds an `egress`/`broker` row from an `'all'` grant
+ *    (`agent_grant_unscoped`), so the grant HAS to become an explicit list for
+ *    the secret to arrive. Writing just this identifier would silently revoke
+ *    every other project secret from the agent, so `projectIdentifiers` — what
+ *    `'all'` currently resolves to — is written out alongside it. Delivery
+ *    today is unchanged; only a secret added LATER now needs its own grant.
+ * 2. **`adoptedGovernance` covers the absent manifest too.** `revision === null`
+ *    means no manifest file exists in the repo (`loadManifestForEdit`
+ *    synthesized one), so the commit publishes the project's first roster and
+ *    default-denies every agent it omits (../agents.ts) — the same hazard as
+ *    adding the first `agents:` block to an existing file.
+ * 3. **An already-admitting list is reported, never rewritten.** The caller
+ *    skips the commit, so the manifest keeps its author's ordering and casing.
+ */
+export function grantSecretToAgentV2(
+  manifest: ParsedManifest,
+  agentName: string,
+  identifier: string,
+  projectIdentifiers: readonly string[] = [],
+): GrantSecretToAgentResult {
+  if (manifest.schemaVersion !== 2) {
+    return {
+      ok: false,
+      unsupportedV1: true,
+      error:
+        'This project uses a kortix_version 1 manifest (kortix.toml). Upgrade to kortix_version 2 (kortix.yaml) to grant a secret to an agent.',
+    };
+  }
+  const rawAgents = manifest.raw.agents;
+  if (
+    rawAgents !== undefined &&
+    rawAgents !== null &&
+    (Array.isArray(rawAgents) || typeof rawAgents !== 'object')
+  ) {
+    return { ok: false, error: '`agents` is malformed in this manifest (expected a map).' };
+  }
+  const agentsMap = (rawAgents ?? undefined) as Record<string, unknown> | undefined;
+  const adoptedGovernance =
+    (manifest.revision ?? null) === null || !agentsMap || Object.keys(agentsMap).length === 0;
+
+  const existing = agentsMap?.[agentName];
+  if (existing === undefined || existing === null) {
+    const applied = applyAgentBlockV2(manifest, agentName, { secrets: [identifier] });
+    return applied.ok ? { ...applied, alreadyGranted: false, adoptedGovernance } : applied;
+  }
+  if (typeof existing !== 'object' || Array.isArray(existing)) {
+    return { ok: false, error: `agents.${agentName} is malformed (expected a table/object).` };
+  }
+  const normalized = normalizeRequiredConnectorAliases(existing as Record<string, unknown>);
+  if (!normalized.ok) return normalized;
+  const merged = normalized.block;
+
+  const current = merged.secrets;
+  if (Array.isArray(current)) {
+    const declared = current.filter((entry): entry is string => typeof entry === 'string');
+    // No commit, so nothing is adopted either.
+    if (listAdmits(declared, identifier)) {
+      return { ok: true, raw: manifest.raw, alreadyGranted: true, adoptedGovernance: false };
+    }
+    // Append to the author's entries verbatim. A non-string entry is left in
+    // place for `validateManifest` to reject, never quietly dropped.
+    merged.secrets = [...current, identifier];
+  } else if (resolveGrantSet(current, 'none') === 'all') {
+    // Every other project identifier, then the new one last so the diff reads
+    // as an addition. Both filters use the same case-insensitive rule the
+    // delivery gate does.
+    const expanded: string[] = [];
+    for (const entry of projectIdentifiers) {
+      if (listAdmits([identifier], entry) || listAdmits(expanded, entry)) continue;
+      expanded.push(entry);
+    }
+    merged.secrets = [...expanded, identifier];
+  } else {
+    merged.secrets = [identifier];
+  }
+
+  const applied = applyAgentMapBlock(manifest, agentName, merged);
+  return applied.ok ? { ...applied, alreadyGranted: false, adoptedGovernance } : applied;
 }

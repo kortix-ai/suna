@@ -105,7 +105,10 @@ describe('sessionScopeRows', () => {
 describe('authoritative session scope', () => {
   const current = {
     secrets_allowlist: ['PRIMARY_TOKEN'],
-    connector_bindings: { gmail: { authorization_id: 'auth-primary' } },
+    required_connectors: null,
+    connector_bindings: { gmail: { connection_id: 'auth-primary' } },
+    connector_bindings_configured: true,
+    connector_bindings_inherit_unbound: true,
     dropped_secrets: [],
     added_secrets: [],
     dropped_bindings: [],
@@ -113,7 +116,7 @@ describe('authoritative session scope', () => {
     detail: 'Current scope.',
   };
 
-  test('reads connector authorization identifiers from the scope response', () => {
+  test('reads connection identifiers from the scope response', () => {
     expect(readScopeBindingIds(current.connector_bindings)).toEqual({
       gmail: 'auth-primary',
     });
@@ -126,7 +129,7 @@ describe('authoritative session scope', () => {
       }),
     ).toEqual({
       secrets: [],
-      connector_bindings: { gmail: { authorization_id: 'auth-primary' } },
+      connector_bindings: { gmail: { connection_id: 'auth-primary' } },
     });
   });
 
@@ -137,7 +140,7 @@ describe('authoritative session scope', () => {
       }),
     ).toEqual({
       secrets: ['PRIMARY_TOKEN'],
-      connector_bindings: { slack: { authorization_id: 'auth-slack' } },
+      connector_bindings: { slack: { connection_id: 'auth-slack' } },
     });
   });
 

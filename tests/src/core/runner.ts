@@ -8,11 +8,18 @@ import { resolve } from "node:path";
 import { Client } from "./client";
 import { withRecorder, type StepRecorder } from "./context";
 import { AssertionError } from "./expect";
-import { allFlows, clearRegistry, type RegisteredFlow } from "./flow";
+import {
+  allFlows,
+  clearRegistry,
+  DEFAULT_FLOW_ATTEMPTS,
+  type RegisteredFlow,
+} from "./flow";
 import { loadEnv, type Env } from "./env";
 import { log } from "./log";
+import { formatFlowProgress, redactSensitiveLogText } from "./progress";
 import { partitionParallelFlows } from "./lanes";
 import { mapWithConcurrency } from "./concurrency";
+import { planLocalFlows } from "./local-profile";
 import { ke2eRetryDelayMs } from "./client";
 import {
   summarize,
@@ -27,6 +34,7 @@ import type { FlowContext } from "./types";
 import { buildWorld, type World } from "../fixtures/world";
 
 export interface RunOptions {
+  profile?: "all" | "local";
   ids?: string[];
   domains?: string[];
   tags?: string[];
@@ -93,7 +101,13 @@ async function runOneFlow(
   const flowStart = performance.now();
   // Every flow gets one clean retry for errors explicitly marked as
   // infrastructure failures. Assertion failures never retry.
-  const maxAttempts = f.meta.retry?.attempts ?? 2;
+  const configuredAttempts = Number(
+    process.env.KE2E_DEFAULT_FLOW_ATTEMPTS ?? DEFAULT_FLOW_ATTEMPTS,
+  );
+  const defaultAttempts = Number.isFinite(configuredAttempts)
+    ? Math.max(1, Math.trunc(configuredAttempts))
+    : DEFAULT_FLOW_ATTEMPTS;
+  const maxAttempts = f.meta.retry?.attempts ?? defaultAttempts;
 
   // Capability gating → skip with reason.
   const missing = (f.meta.requires ?? []).filter((cap) => !env.capabilities[cap]);
@@ -111,7 +125,17 @@ async function runOneFlow(
     steps.length = 0;
     const stack = world.newStack();
     const ctx: FlowContext = {
-      client: new Client(env.apiUrl),
+      // Every flow's client retries gateway-generated transient 502/503/504
+      // (incl. the Cloudflare worker's MAINTENANCE_MODE laundering of an
+      // overloaded staging origin — see accounts.flow.ts and
+      // isKe2eTransientGatewayResponse). This is SAFE because that classifier
+      // requires the response to carry NO x-request-id; a genuine app 5xx does
+      // carry one and is never retried. Retrying at the request layer (not just
+      // on .status() gates) also self-heals body-only assertions that would
+      // otherwise surface the laundered 503 as a hard AssertionError.
+      client: new Client(env.apiUrl).withTransientGatewayRetries(
+        Number(process.env.KE2E_GATEWAY_RETRIES ?? 3),
+      ),
       P: world.principals,
       env,
       track: (kind, id, meta) => stack.push(kind, id, meta),
@@ -146,6 +170,10 @@ async function runOneFlow(
       // Never retry assertion failures — only infra signals.
       const retryable = !(err instanceof AssertionError) && (err as any)?.ke2eRetryable === true;
       if (!retryable || attempt >= maxAttempts) break;
+      log.warn(
+        `retry ${f.id} after attempt ${attempt}/${maxAttempts}: ` +
+          `${redactSensitiveLogText((err as Error)?.message ?? String(err))}`,
+      );
       await new Promise((resolve) => setTimeout(resolve, ke2eRetryDelayMs(err)));
     }
   }
@@ -218,7 +246,25 @@ function positiveWorkerCount(value: number | undefined, fallback: number): numbe
 export async function runSuite(opts: RunOptions): Promise<RunResult> {
   const env = loadEnv();
   await discoverFlows();
-  const flows = allFlows().filter((f) => selected(f, opts));
+  const candidates = allFlows().filter((f) => selected(f, opts));
+  const localPlan = opts.profile === "local" ? planLocalFlows(candidates) : null;
+  const flows = localPlan?.runnable ?? candidates;
+  if (flows.length === 0) {
+    const excluded = localPlan?.excluded
+      .map((flow) => `${flow.id} (${flow.reason})`)
+      .join(", ");
+    throw new Error(
+      excluded
+        ? `no local flows selected; excluded: ${excluded}`
+        : "no flows matched the selected filters",
+    );
+  }
+  if (localPlan) {
+    log.info(
+      `local profile: ${flows.length}/${candidates.length} selected · ` +
+        `${localPlan.excluded.length} external/todo excluded`,
+    );
+  }
   const routesHit = new Set<string>();
   const startedAt = new Date().toISOString();
   const start = performance.now();
@@ -231,12 +277,34 @@ export async function runSuite(opts: RunOptions): Promise<RunResult> {
     const globalLane = flows.filter((f) => f.meta.global);
 
     const out: FlowResult[] = [];
+    let started = 0;
+    let completed = 0;
+    const runTrackedFlow = async (flow: RegisteredFlow): Promise<FlowResult> => {
+      started += 1;
+      log.step(`[${started}/${flows.length}] START ${flow.id}`);
+      try {
+        const result = await runOneFlow(flow, env, world, routesHit);
+        completed += 1;
+        const progress = formatFlowProgress(result, completed, flows.length);
+        if (result.status === "pass") log.pass(progress);
+        else if (result.status === "fail") log.fail(progress);
+        else log.skip(progress);
+        return result;
+      } catch (error) {
+        completed += 1;
+        log.fail(
+          `[${completed}/${flows.length}] ERROR ${flow.id} — ` +
+            `${redactSensitiveLogText((error as Error)?.message ?? String(error))}`,
+        );
+        throw error;
+      }
+    };
     if (opts.workers !== undefined) {
       const workers = positiveWorkerCount(opts.workers, 4);
       log.info(`lanes: ${parallelLane.length} parallel flows · ${workers} explicit workers`);
       out.push(
         ...(await mapWithConcurrency(parallelLane, workers, (f) =>
-          runOneFlow(f, env, world, routesHit),
+          runTrackedFlow(f),
         )),
       );
     } else {
@@ -254,15 +322,15 @@ export async function runSuite(opts: RunOptions): Promise<RunResult> {
           `${sandboxLane.length} sandbox flows × ${sandboxWorkers} workers`,
       );
       const [apiResults, sandboxResults] = await Promise.all([
-        mapWithConcurrency(apiLane, apiWorkers, (f) => runOneFlow(f, env, world, routesHit)),
+        mapWithConcurrency(apiLane, apiWorkers, runTrackedFlow),
         mapWithConcurrency(sandboxLane, sandboxWorkers, (f) =>
-          runOneFlow(f, env, world, routesHit),
+          runTrackedFlow(f),
         ),
       ]);
       out.push(...apiResults, ...sandboxResults);
     }
-    for (const f of serialLane) out.push(await runOneFlow(f, env, world, routesHit));
-    for (const f of globalLane) out.push(await runOneFlow(f, env, world, routesHit));
+    for (const f of serialLane) out.push(await runTrackedFlow(f));
+    for (const f of globalLane) out.push(await runTrackedFlow(f));
 
     out.sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));
     const durationMs = performance.now() - start;
@@ -274,6 +342,9 @@ export async function runSuite(opts: RunOptions): Promise<RunResult> {
       target: env.target,
       gitSha: opts.gitSha ?? null,
       capabilities: env.capabilities as unknown as Record<string, boolean>,
+      profile: opts.profile ?? "all",
+      excludedFlows: localPlan?.excluded ?? [],
+      fixtureStats: world.fixtureStats(),
       routesHit: [...routesHit].sort(),
       flows: out,
       summary: summarize(out, durationMs),

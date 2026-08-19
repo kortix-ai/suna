@@ -232,6 +232,132 @@
       "when": 1785514015171,
       "tag": "20260731160655_session_required_connectors",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1785702120462,
+      "tag": "20260802202200_executor_attachments",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1785953661988,
+      "tag": "20260805181421_session_pending_questions",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1785961753530,
+      "tag": "20260805202913_secret_consumer_boundary",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1785963447201,
+      "tag": "20260805205727_provision_idempotency_key",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1786024867650,
+      "tag": "20260806140107_connector_physical_cutover",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1786028633408,
+      "tag": "20260806150353_connector_compat_removal",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1786067397287,
+      "tag": "20260807014957_add_kortix_apps",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1786114559482,
+      "tag": "20260807145559_app_deployment_provenance_schema_sync",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1786121841282,
+      "tag": "20260807165721_remove_local_docker_provider",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1786129586815,
+      "tag": "20260807190626_trial_and_entitlement_overrides",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1786137170442,
+      "tag": "20260807211250_add_app_access_control_rebase",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1786196649694,
+      "tag": "20260808134409_centralized_audit_v2",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1786306539063,
+      "tag": "20260809201539_preserve_tunnel_audit_history",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1786449706506,
+      "tag": "20260811120146_account_entitlement_overrides",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1786453326204,
+      "tag": "20260811130206_impersonation_grants",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1786501589424,
+      "tag": "20260812022629_monitor_events_and_boxes",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1786503220628,
+      "tag": "20260812025340_monitor_workload_type",
+      "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1786997013968,
+      "tag": "20260817200333_session_turns",
+      "breakpoints": true
     }
   ]
 }

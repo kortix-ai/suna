@@ -54,6 +54,15 @@ export function CodePanel({
 }): ReactNode {
   const Line = lang === 'yaml' ? YamlLine : ShellLine;
 
+  // Fixed, ordered snippet — key each line by its content, with an occurrence
+  // counter so repeated lines (e.g. blanks) stay unique.
+  const seen = new Map<string, number>();
+  const keyedLines = lines.map((line) => {
+    const n = seen.get(line) ?? 0;
+    seen.set(line, n + 1);
+    return { line, key: `${lang}-${line}#${n}` };
+  });
+
   return (
     <div className={cn('border-border bg-card flex h-full flex-col rounded-sm border', className)}>
       <div className="border-border flex items-center gap-3 border-b px-4 py-3">
@@ -68,9 +77,8 @@ export function CodePanel({
       <div className="bg-background min-h-0 flex-1 overflow-x-auto rounded-b-sm px-5 py-4">
         <pre className="font-mono text-[12.5px] leading-[1.85]">
           <code>
-            {lines.map((line, i) => (
-              // Fixed, ordered snippet: the index is the identity of the line.
-              <span key={`${lang}-${i}`} className="block whitespace-pre">
+            {keyedLines.map(({ line, key }) => (
+              <span key={key} className="block whitespace-pre">
                 {line === '' ? ' ' : <Line line={line} />}
               </span>
             ))}

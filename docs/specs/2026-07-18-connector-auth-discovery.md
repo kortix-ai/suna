@@ -17,7 +17,7 @@ OAuth consent flow).
   expose it (document fields or HTTP `WWW-Authenticate` challenges).
 - Every discovered scheme is returned to callers. Kortix recommends and applies
   the best executable scheme, while retaining warnings for alternatives,
-  combinations, or schemes the executor cannot yet sign.
+  combinations, or schemes the connector cannot yet sign.
 - Secret values embedded in a source are never copied, returned, logged, or
   committed. Variable names, header/query placement, prefixes, OAuth endpoints,
   flows, and scopes are metadata and may be preserved.
@@ -30,7 +30,7 @@ OAuth consent flow).
 - `status`: `detected | none | ambiguous | unsupported`
 - `recommended`: the existing executable connector auth shape, or `null`
 - `candidates[]`: source, normalized scheme, placement/name/prefix, OAuth
-  metadata, request coverage, and executor support
+  metadata, request coverage, and connector support
 - `warnings[]`: conflicts, compound requirements, and unsupported signing modes
 
 The executable auth shape remains backward compatible:

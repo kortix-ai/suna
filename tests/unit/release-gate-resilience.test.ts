@@ -6,6 +6,7 @@ import {
   isKe2eTransientGatewayResponse,
   ke2eRetryDelayMs,
 } from '../src/core/client';
+import { DEFAULT_FLOW_ATTEMPTS } from '../src/core/flow';
 import { waitFor } from '../src/core/poll';
 import type { Captured } from '../src/core/result';
 
@@ -40,6 +41,10 @@ function capturedResponse(status: number, headers: Record<string, string>): Res 
 }
 
 describe('release gate transient failure resilience', () => {
+  it('allows three attempts for transient flow failures by default', () => {
+    expect(DEFAULT_FLOW_ATTEMPTS).toBe(3);
+  });
+
   beforeEach(async () => {
     vi.stubEnv('KE2E_PROVISION_CONCURRENCY', '2');
     vi.stubEnv('KE2E_PROVISION_MIN_INTERVAL_MS', '0');

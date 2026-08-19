@@ -247,7 +247,7 @@ async function waitForConversationSession(tenantId: string, conversationId: stri
 const TURN_INSTRUCTIONS = [
   'How to work:',
   '- First, load the `kortix-teams` skill via the `skill` tool for the canonical reference on posting in Teams (step/send semantics, Adaptive Cards, tone).',
-  '- The `teams` CLI needs no token in your sandbox — every command runs through the Kortix Executor (the bot credential is resolved server-side).',
+  '- The `teams` CLI needs no token in your sandbox — every command runs through the Kortix Connector (the bot credential is resolved server-side).',
   '- As you go, post a short progress checkpoint before each major step:',
   '    teams step "Reading the incident logs"',
   '  Keep them human and brief — a few per task — and post one right before anything slow so the conversation always shows fresh progress.',

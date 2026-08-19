@@ -263,6 +263,51 @@ export function SessionPanelProvider({
     setDetailOpen(detail !== null || terminalOpen);
   }, [detail, terminalOpen, setDetailOpen]);
 
+  // Publish the same fact SESSION-KEYED, which `toggleRightPanel` (⌘I) reads to
+  // decide what reopening the right side brings back.
+  //
+  // Two flags rather than one because they answer different questions.
+  // `detailOpen` above is "is a detail on screen right now" and is reset
+  // store-side whenever the panel closes; this one is "does this session still
+  // HAVE a detail to return to", which must survive the panel closing — ⌘I
+  // closes the panel without discarding `detail`, and that is precisely what
+  // makes the next press restore it. Keyed by session because sessions kept in
+  // background tabs stay mounted, so an unkeyed flag would have the last
+  // provider to render answer for all of them.
+  const setDetailContent = useKortixComputerStore((s) => s.setDetailContent);
+  useEffect(() => {
+    setDetailContent(sessionId, detail !== null || terminalOpen);
+  }, [sessionId, detail, terminalOpen, setDetailContent]);
+
+  // A SESSION CHANGE ends the detail's life. ⌘I is a minimise within a session,
+  // so the detail survives it — but only until the user leaves. Come back and
+  // the right side starts over: ⌘I opens the cards, not the browser tab you had
+  // up on a page you have since navigated away from.
+  //
+  // Keyed on the store's active session rather than on this provider's own
+  // `sessionId`, so BOTH ends of a switch are covered by one effect: the
+  // session being left drops its detail, and the one being entered drops
+  // anything it was still holding from an earlier visit.
+  //
+  // Firing on mount is harmless and intentional — `detail` is null then, so
+  // both updates are no-ops. Functional updates keep this depending on the
+  // session change alone, so it cannot loop through its own state.
+  const activeSessionId = useKortixComputerStore((s) => s._activeSessionId);
+  useEffect(() => {
+    setDetail((current) => (current ? null : current));
+    setTerminalOpen((open) => (open ? false : open));
+  }, [activeSessionId]);
+
+  // Forget the session when its provider goes away: an unmounted provider has
+  // dropped its detail state, so a `true` left behind would promise ⌘I content
+  // that no longer exists and reopen an empty panel. Read through `getState()`
+  // so the teardown cannot capture a stale action, and so it runs on unmount
+  // ONLY, never on a content change.
+  useEffect(
+    () => () => useKortixComputerStore.getState().setDetailContent(sessionId, null),
+    [sessionId],
+  );
+
   // Mutual exclusion: the terminal layer and a `detail` never show at once —
   // opening one closes the other, and the toggle records HOW (`terminalSwap`):
   // over a detail it's a crossfade, from home it's the arrival slide.

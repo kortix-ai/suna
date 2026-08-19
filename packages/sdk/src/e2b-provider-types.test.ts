@@ -25,17 +25,15 @@ test('E2B is accepted anywhere consumers select or observe a sandbox provider', 
   ]).toEqual(['e2b', 'e2b', 'e2b', 'e2b', 'e2b', 'e2b']);
 });
 
-test('retired providers are rejected by every public provider contract', () => {
+test('other retired providers remain rejected by every public provider contract', () => {
   // @ts-expect-error managed is not a sandbox provider
   const managed: SandboxProviderName = 'managed';
-  // @ts-expect-error local_docker is not a sandbox provider
-  const localDocker: ProjectSessionSandbox['provider'] = 'local_docker';
   // @ts-expect-error justavps is not a sandbox provider
   const justavps: NonNullable<CreateProjectSessionInput['provider']> = 'justavps';
   // @ts-expect-error retired providers cannot be persisted as project pins
   const retiredProjectPin: NonNullable<KortixProject['default_sandbox_provider']> = 'managed';
   // @ts-expect-error retired providers cannot be sent by the project pin mutation
-  const retiredUpdate: NonNullable<Parameters<typeof updateProjectSandboxProvider>[1]> = 'local_docker';
+  const retiredUpdate: NonNullable<Parameters<typeof updateProjectSandboxProvider>[1]> = 'managed';
 
-  expect([managed, localDocker, justavps, retiredProjectPin, retiredUpdate]).toHaveLength(5);
+  expect([managed, justavps, retiredProjectPin, retiredUpdate]).toHaveLength(4);
 });

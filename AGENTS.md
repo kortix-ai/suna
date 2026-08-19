@@ -1,5 +1,12 @@
 # Kortix project
 
+## Linear tracking
+
+Capability-page work uses Team `Jay`, project `customize`, and the milestone that
+matches the active phase. Search before creating issues. Move the active issue to
+`In Progress` before editing. Mark it `Done` only after the change is merged,
+deployed to dev, and verified there.
+
 ## What "ownership" means
 
 The words "can you own this?", "are you on it?", and "can you take care of this?"
@@ -103,6 +110,16 @@ Being exceptional on paper is simple — it's a combination of Ownership, Agency
 and actual Merit/Skill. It's hard, because you have to not only be very smart but
 also crazy driven to push like a motherfucker and want to feel every edge and
 corner to make sure the output is good.
+
+## Learnings: incident rules live in the `learnings` skill
+
+`.claude/skills/learnings/SKILL.md` is the append-only register of rules paid
+for with real downtime — each with the incident that taught it and the
+automation that enforces it. Load it before writing or reviewing a DB
+migration, touching deploy/release workflows, planning a promote, or responding
+to a prod incident. After resolving ANY incident or near-miss, append its rule
+there in the same session — an incident that leaves no learning behind is not
+finished.
 
 ## How to communicate: precise, technically accurate, no fluff
 
@@ -282,6 +299,7 @@ mocked internals when a real surface exists.
   bury the actionable testing path in a paragraph.
 
 ### The stack (already wired)
+
 - **Web** — Next.js dev server on `http://localhost:3000`.
 - **API** — Bun server on `http://localhost:8008/v1` (`/health` returns JSON).
 - **Supabase** — local, on `http://127.0.0.1:54321` (Docker).
@@ -308,7 +326,9 @@ localhost:8008/v1/health`, `lsof -iTCP:3000 -sTCP:LISTEN`.
 > don't bypass them. Full procedure: the **dotenvx-secrets** skill.
 
 ### Authenticating to the live API (for scripts/tests)
+
 Mint a real JWT against local Supabase, then call the API with it:
+
 1. `SUPABASE_SERVICE_ROLE_KEY` lives in `apps/api/.env`; the anon key
    (`NEXT_PUBLIC_SUPABASE_ANON_KEY`) in `apps/web/.env`.
 2. Create a confirmed user: `POST 127.0.0.1:54321/auth/v1/admin/users`
@@ -322,33 +342,82 @@ Mint a real JWT against local Supabase, then call the API with it:
 
 See `tests/e2e/helpers/auth.ts` for the exact calls.
 
-### End-to-end harnesses
-- `pnpm --filter @kortix/tests test:e2e` — Playwright UI specs.
-- `pnpm --filter @kortix/tests test:e2e:gate5:local` — local Gate 5 verifier.
-- `pnpm --filter @kortix/tests test:e2e:gate5:target` — target Gate 5 rehearsal.
-- `tests/README.md` indexes the current E2E and Gate 5 harnesses.
+### One local testing system
 
-### End-to-end tests — `ke2e` (the canonical API suite + source of truth)
-- `suna/tests/` is the **one** black-box REST e2e suite (`ke2e` runner). It hits
-  a **live deployed API** over HTTP (`staging-api.kortix.com` / `dev-api.kortix.com` / local / prod) with
-  **real services** — no mocking. Every test maps 1:1 to a flow ID in
-  `tests/spec/end-to-end.md`; a coverage gate checks that mapping against the
-  authoritative route manifest (`tests/spec/routes.generated.json`).
-- **WIP — NOT yet enforced.** ke2e is still being built out (most flows aren't
-  written yet) and does **not** gate PRs, promotes, or deploys right now. The
-  intended end-state is test-as-source-of-truth (touch an API contract → update
-  `tests/spec/end-to-end.md` + add/adjust the flow + keep `ke2e coverage` green),
-  but treat that as aspirational guidance until the suite is complete and turned on.
-  See the `ke2e-tests` skill for how it works.
-- Run: `cd tests && bun bin/ke2e.ts run --domain system,access` (public, no creds);
-  auth'd domains need `KE2E_OWNER_EMAIL/PASSWORD` + `KE2E_LIVE_CONFIRM=1`. Open
-  `test-results/<runId>/report.html` for every request/response.
-- Regenerate the route manifest after adding/removing routes:
-  `bun run apps/api/scripts/dump-routes.ts`.
-- Provisioning is slow (snapshot build up to ~9 min, sandbox up to ~5 min) —
-  flows that boot sandboxes have generous timeouts; run long checks in the background.
+- `pnpm test` is the only repository-level test command. It runs local REST and
+  CLI flows, SDK tests, runner unit tests, route coverage, and worktree tests
+  concurrently.
+- `pnpm test -- --id ACC-4` runs one flow. `--domain access` runs one domain.
+- `pnpm test -- --sdk-only` runs only `packages/sdk` tests.
+- `pnpm test -- --browser-only` runs Playwright browser journeys. It starts the
+  deterministic local stack.
+- Local browser runs use two Playwright workers. CI browser shards use one.
+- `pnpm test -- --packages-only` runs every app/package test and publish check.
+- `pnpm test -- --full` adds browser journeys and every app/package test. It
+  starts the deterministic local stack.
+- `pnpm test -- --target-smoke` verifies the deployed staging API and gateway
+  SHA, then runs the tagged Playwright staging smoke. Release CI supplies the
+  staging credentials and `RELEASE_SOURCE_SHA`.
+- `pnpm test -- --target-full` verifies the same deployed SHA, then runs every
+  configured staging REST, CLI, and Playwright journey. The production release
+  gate uses this command and fails on any excluded API flow.
+- Browser and full modes reuse only a running API that proves the deterministic
+  test profile. Stop an ordinary development stack before either command.
+- Every root run writes lane and total timings to
+  `tests/test-results/local/benchmark-<timestamp>.json`.
+- GitHub Actions runs core, browser, and package modes in three disposable warm
+  sandboxes through `.github/workflows/tests.yml`. The slowest lane defines the
+  gate duration. Set `provider` to `platinum`, `daytona`, or `auto`. Auto tries
+  Platinum first. It uses Daytona only when Platinum infrastructure throws. A
+  non-zero test exit does not trigger fallback.
+- Platinum warm restore readiness is capped at 2 minutes. A missing marker or
+  unreachable guest after that cap triggers Daytona in `auto` mode. Cold
+  template creation retains its separate 45-minute budget.
+- Both providers fetch and verify the exact SHA, upload `tests/test-results`,
+  and delete the sandbox. The sandbox worker is infrastructure only. Do not add
+  CI-only test logic.
+- Release tests run `pnpm test -- --target-full` against deployed staging. They block
+  production when API or gateway health reports a SHA other than
+  `RELEASE_SOURCE_SHA`, when any API flow is excluded, or when a configured
+  Playwright journey fails.
+- The `preview` label creates one full self-host preview in a persistent warm
+  Platinum sandbox. `auto` uses Daytona only for a Platinum infrastructure
+  failure. The preview has its own PostgreSQL, Supabase, API, gateway, frontend,
+  Mailpit, and HTTPS origin.
+- Preview CI runs `pnpm test -- --target-full` against that origin. The sticky
+  pull request comment links the origin and its `/_tests/` HTML report.
+- A preview head change deletes the sandbox and removes the stale `preview`
+  label. Unlabel, close, and scheduled reconciliation also delete the sandbox.
+- Preview warm images contain dependencies and Docker layers only. They never
+  contain a database or runtime secret.
+- Preview Mailpit handles authentication and invite email. The dedicated
+  preview GitHub App runs the managed repository and CLI push flows. OAuth
+  initiation is the only allowed preview browser exclusion.
+
+### Product flow source of truth
+
+- `tests/spec/end-to-end.md` contains the natural-language contract and stable
+  flow IDs.
+- `tests/src/flows/*.flow.ts` implements the contracts through HTTP and real CLI
+  processes. Do not import API handlers.
+- Write each `ctx.step()` as a complete action and observable result. Cover
+  setup, authentication, action, read-back proof, negative paths, and cleanup.
+- Keep every flow's `meta.routes` synchronized with
+  `tests/spec/routes.generated.json`. Regenerate the manifest with
+  `bun run apps/api/scripts/dump-routes.ts` after route changes.
+- The local profile uses local Supabase, PostgreSQL, API, gateway, and bare Git
+  repositories. It excludes Stripe, cloud sandboxes, managed GitHub repositories,
+  and external email delivery explicitly.
+- Use Playwright only for browser-visible behavior. API-only assertions belong
+  in REST flows. SDK tests remain in `packages/sdk`.
+- Do not add another cross-cutting test harness, Makefile lane, contract suite,
+  Testcontainers suite, load suite, mutation suite, visual suite, accessibility
+  suite, or ad hoc smoke script under `tests/`.
+- Read `tests/README.md` and the repository `testing` skill before changing the
+  test system.
 
 ### Release topology — dev, staging, prod
+
 - **`main` = dev trunk.** It is the repo default branch and deploys to
   `dev.kortix.com` / `dev-api.kortix.com`. Direct pushes are allowed; breaking or
   incomplete development can live here while it is being shaken out.
@@ -364,11 +433,12 @@ See `tests/e2e/helpers/auth.ts` for the exact calls.
 - **`prod` = production.** Production moves only through **Promote to Production**,
   which uses `staging` as the source, opens a reviewed release PR into `prod`,
   publishes the release artifacts, and rolls production after merge.
-- If `qa-staging` or a staging runtime check points at `dev.kortix.com` or
+- If a staging runtime check points at `dev.kortix.com` or
   `dev-api.kortix.com`, treat that as a broken staging setup, not a passing
   staging gate.
 
 ### Driving the real UI (chrome-devtools MCP)
+
 - Routes are auth-gated (`/dashboard`, `/projects/*` → redirect to `/auth`
   unauthenticated); sign in first (seed a user as above, then log in via the
   `/auth` form, or inject the Supabase session).
@@ -381,9 +451,19 @@ See `tests/e2e/helpers/auth.ts` for the exact calls.
   can take 30–60s; warm it with `curl` or use a generous navigation timeout.
 
 ### Frontend type/lint gate
-- `apps/web` `tsc --noEmit` emits ~1500 BOGUS `TS2786` / `IntrinsicAttributes`
-  errors from a React 19↔18 types mismatch — ignore those; grep for YOUR files.
-- `npx eslint <files>` should be clean.
+
+- `apps/web` `tsc --noEmit` is clean apart from ~15 known `@types/bun`
+  `test.each` errors in 3 test files (`app/(system)/api/og/template/template-url.test.ts`,
+  `features/file-viewer/preview-fit.test.tsx`,
+  `features/session/action-panel/easy/easy-panel-logic.test.ts`).
+  The old ~1500 `TS2786` / `IntrinsicAttributes` noise from a React 19↔18
+  types mismatch (two copies of `@types/react` in one program — `packages/sdk`
+  had its own) is gone as of the Next 16 upgrade. If `TS2786` appears again,
+  treat it as a genuine duplicate-`@types/react` regression and investigate —
+  do not wave it through.
+- `npx eslint <files>` should be clean of errors. `eslint .` across the whole
+  app currently reports ~455 warnings, mostly `react-hooks/*` React Compiler
+  rules pending a dedicated audit — expected until that audit lands.
 
 ### Frontend design standard — Jay/Kortix bar
 

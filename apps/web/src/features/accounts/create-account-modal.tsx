@@ -16,10 +16,10 @@ import {
   ModalTitle,
 } from '@/components/ui/modal';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { Plus } from '@/features/icon/icons/plus';
 import { createAccount, type KortixAccount } from '@kortix/sdk';
 import { useMutation } from '@tanstack/react-query';
 import { FormEvent, useState } from 'react';
-import { Icon } from '../icon/icon';
 
 export function CreateAccountModal({
   open,
@@ -102,7 +102,7 @@ export function CreateAccountModal({
               Cancel
             </Button>
             <Button type="submit" className="gap-1.5" disabled={mutation.isPending}>
-              {mutation.isPending ? <Loading /> : <Icon.Plus />}
+              {mutation.isPending ? <Loading /> : <Plus />}
               {tHardcodedUi.raw('componentsAccountsCreateAccountModal.line99JsxTextCreateAccount')}
             </Button>
           </ModalFooter>

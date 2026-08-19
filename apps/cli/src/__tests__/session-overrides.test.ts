@@ -18,6 +18,10 @@ describe('parseSessionOverrides', () => {
       'STRIPE_KEY',
       '--connector',
       'gmail=prof-1',
+      '--require-connector',
+      'gmail',
+      '--require-connector',
+      'gmail',
       '--context',
       'tier=pro',
       'positional',
@@ -26,7 +30,8 @@ describe('parseSessionOverrides', () => {
     expect(out).toEqual({
       model: 'anthropic/claude-opus-4-8',
       secrets: ['GMAIL_TOKEN', 'STRIPE_KEY'],
-      connectors: { gmail: { authorization_id: 'prof-1' } },
+      connectors: { gmail: { connection_id: 'prof-1' } },
+      requiredConnectors: ['gmail'],
       runtimeContext: { tier: 'pro' },
     });
     // Only the override flags are consumed; the positional survives.
@@ -59,14 +64,14 @@ describe('parseSessionOverrides', () => {
     ]);
     expect(out.model).toBe('gpt-x');
     expect(out.connectors).toEqual({
-      gmail: { authorization_id: 'p1' },
-      slack: { authorization_id: 'p2' },
+      gmail: { connection_id: 'p1' },
+      slack: { connection_id: 'p2' },
     });
   });
 
   test('rejects a malformed --connector / --context pair', () => {
     expect(() => parseSessionOverrides(['--connector', 'noeq'])).toThrow(
-      /alias=authorization_id/,
+      /alias=connection_id/,
     );
     expect(() => parseSessionOverrides(['--context', 'noeq'])).toThrow(/key=value/);
   });
@@ -78,5 +83,16 @@ describe('parseSessionOverrides', () => {
 
   test('rejects --secret together with --no-secrets', () => {
     expect(() => parseSessionOverrides(['--secret', 'X', '--no-secrets'])).toThrow(/not both/);
+  });
+
+  test('--no-connectors creates an explicit empty binding map', () => {
+    expect(parseSessionOverrides(['--no-connectors']).connectors).toEqual({});
+    expect(parseSessionOverrides([]).connectors).toBeUndefined();
+  });
+
+  test('rejects --connector together with --no-connectors', () => {
+    expect(() =>
+      parseSessionOverrides(['--connector', 'gmail=prof-1', '--no-connectors']),
+    ).toThrow(/not both/);
   });
 });

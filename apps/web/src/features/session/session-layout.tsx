@@ -32,7 +32,7 @@ import {
 import { useTabStore } from '@/stores/tab-store';
 import { useUserPreferencesStore } from '@/stores/user-preferences-store';
 import type { SessionStartStage } from '@kortix/sdk';
-import { useRuntimeMessages, useSessionStateStore } from '@kortix/sdk/react';
+import { useRuntimeMessages, useSessionStateStore, useSessionWorking } from '@kortix/sdk/react';
 import { SidebarSimpleIcon as PanelRight } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import type React from 'react';
@@ -91,13 +91,27 @@ export const SessionLayout = memo(function SessionLayout({
   }, [isSidePanelOpen, setIsSidePanelOpen]);
 
   const isActiveTab = useTabStore((s) => s.activeTabId === sessionId);
+  const isInTabSystem = useTabStore((s) => !!s.tabs[sessionId]);
+  // "This layout is the one on screen." A session inside the tab system is
+  // visible when it is the active tab; a session on the standalone
+  // /projects/:id/sessions/:id route has no tab and is always the visible one.
+  const isVisibleLayout = isInTabSystem ? isActiveTab : true;
 
+  // Tell the store which session owns the right side, and close it.
+  //
+  // This used to be gated on `isActiveTab` alone and skipped for transient
+  // sessions, so on the standalone route — and in the window before
+  // `tab-store.activeTabId` catches up with a navigation — it never fired.
+  // The store kept the PREVIOUS session's `isSidePanelOpen`, so opening a
+  // second session rendered its panel already open with nothing to put in it:
+  // the empty loading panel. Firing on visibility covers every entry path
+  // (fresh navigation, tab switch, back/forward, transient → real handoff),
+  // and `setActiveSession` closes both surfaces, so a session you have just
+  // arrived at never inherits the last one's right side.
   useEffect(() => {
-    if (transient) return;
-    if (isActiveTab) {
-      setActiveSession(sessionId);
-    }
-  }, [transient, isActiveTab, sessionId, setActiveSession]);
+    if (!isVisibleLayout) return;
+    setActiveSession(sessionId);
+  }, [isVisibleLayout, sessionId, setActiveSession]);
 
   const storedPanelView = useSessionBrowserStore((s) => s.viewBySession[sessionId]);
   const panelView = normalizeSessionPanelLayoutView(storedPanelView);
@@ -109,14 +123,26 @@ export const SessionLayout = memo(function SessionLayout({
   const togglePanelMode = useUserPreferencesStore((s) => s.togglePanelMode);
   const isEasy = panelMode === 'easy';
 
-  // The session's own busy/retry status — the exact same signal
+  // The session's own working state — literally the same projection
   // `session-chat.tsx` reads (as `isServerBusy`) to drive its own working
-  // indicator, and the same store `tab-bar.tsx`/`session-list.tsx` read for
-  // their busy dots. EasyPanel ORs this with its part-derived running flag so
-  // an inter-tool-call gap (assistant text streaming, no tool part active)
-  // doesn't read as "finished" — see EasyPanel's `deriveIsRunning`.
+  // indicator, over one shared `GET .../turn` cache entry and one shared send
+  // receipt. It used to be the raw SSE status slot instead, and a dropped
+  // end-of-turn frame left THIS panel reporting "running" while the composer
+  // beside it correctly read idle — so `useDeliverableReadiness` never saw the
+  // running→settled transition and the W1 "ready" chip never fired for that run.
+  //
+  // A transient sub-session has no Kortix session row for `/turn` to answer
+  // about, so it keeps the stream slot — repaired on every stream (re)connect
+  // by the status-snapshot reconciler in `use-opencode-events`.
   const sessionStatus = useSessionStateStore((s) => s.sessionStatus[sessionId]);
-  const isSessionBusy = sessionStatus?.type === 'busy' || sessionStatus?.type === 'retry';
+  const working = useSessionWorking(projectId ?? '', projectSessionId ?? '', {
+    enabled: !!projectId && !!projectSessionId,
+    runtimeSessionId: sessionId,
+  });
+  const isSessionBusy =
+    projectId && projectSessionId
+      ? working.state === 'working'
+      : sessionStatus?.type === 'busy' || sessionStatus?.type === 'retry';
 
   // W1/W9 — announce finished deliverables and blocked-on-you states while the
   // panel is closed. Headless: writes the ready chip; the header renders it.
@@ -196,9 +222,6 @@ export const SessionLayout = memo(function SessionLayout({
   const handleEnabled = shouldShowPanel && !isExpanded;
   const handleVisible = handleEnabled;
 
-  const isInTabSystem = useTabStore((s) => !!s.tabs[sessionId]);
-
-  const isVisibleLayout = isInTabSystem ? isActiveTab : true;
   useEffect(() => {
     if (transient) return;
     if (!isVisibleLayout) return;
@@ -209,10 +232,10 @@ export const SessionLayout = memo(function SessionLayout({
       }
     };
   }, [transient, isVisibleLayout, sessionId, setActivePanelSession]);
-  // No ⌘I / Ctrl+I binding. The shortcut used to toggle the right-hand panel;
-  // that panel is content-driven now and has no "open it empty" state worth a
-  // key, and the floating action panel has its chevron in the chat. Owner
-  // direction: the panels are opened by their own controls, not by a hotkey.
+  // ⌘I / Ctrl+I lives on `SessionActionPanelColumn` — it toggles the RIGHT SIDE
+  // as a whole (`toggleRightPanel`), so it closes this detail panel too. The
+  // detail panel is still content-driven: the key never opens it empty, only
+  // back onto content this session already has.
 
   const [isAnimating, setIsAnimating] = useState(false);
 
@@ -439,9 +462,10 @@ export const SessionLayout = memo(function SessionLayout({
   // Easy mode has no header either: it is the three cards and nothing else. No
   // title, no view tabs, no mode button, no border. The mode is switched from
   // Settings → Appearance and the command palette. Nothing here is a dead end:
-  // the detail card carries its own close button and Escape, which is the only
-  // way this panel closes now — the header toggle is gone and there is no
-  // keyboard shortcut for either panel.
+  // the detail card carries its own close button and Escape, and ⌘I / Ctrl+I
+  // closes the right side from anywhere. The two differ on purpose: the card's
+  // own close DISCARDS the detail (it is done with), while ⌘I only puts it
+  // away — press it again and the same detail comes back.
   const effectivePanelHeader = booting || isEasy ? null : panelHeader;
   const effectivePanelBody = booting ? (
     <SessionStartingLoader
@@ -625,9 +649,8 @@ function PanelHeaderSwitcher({
       side="bottom"
       sideOffset={4}
       delayDuration={300}
-      // No keyboard hint here any more: there is no panel shortcut at all
-      // (see the note where the ⌘I effect used to live). This button is the
-      // only way to toggle the detail panel in Advanced mode.
+      // No ⌘I hint here: that shortcut toggles the right side as a whole, and
+      // this Advanced-mode button is a narrower thing — the detail panel only.
       label={<span className="flex items-center gap-1.5">{isSidePanelOpen ? 'Close' : 'Open'} panel</span>}
     >
       <Button

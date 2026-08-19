@@ -66,7 +66,7 @@ export const STATIC_PUBLIC_ROUTES = [
   '/enterprise',
   '/help',
   '/help/credits',
-  '/integrations',
+  '/connectors',
   '/legal',
   '/marketplace',
   '/pricing',
@@ -256,12 +256,12 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
   },
   {
     kind: 'marketing',
-    slug: 'integrations',
+    slug: 'connectors',
     title: 'Kortix connectors',
     description:
       'Connect 3,000+ apps, MCP servers, OpenAPI, GraphQL and raw HTTP once for the whole company. Agents reach them through one scoped token — credentials stay server-side, every action is allowed, gated, or blocked, and every call is logged.',
-    htmlPath: '/integrations',
-    markdownPath: '/markdown/integrations.md',
+    htmlPath: '/connectors',
+    markdownPath: '/markdown/connectors.md',
   },
   {
     kind: 'marketing',
@@ -573,8 +573,10 @@ function sourceDocuments(kind: 'docs' | 'use-case'): SourceDocument[] {
 }
 
 function blogRecords(): PublicContentRecord[] {
-  return BLOG_POSTS.filter((post) => process.env.NODE_ENV !== 'production' || !post.draft)
-    .map((post) => ({
+  const records: (PublicContentRecord & { lastModified: string })[] = [];
+  for (const post of BLOG_POSTS) {
+    if (process.env.NODE_ENV === 'production' && post.draft) continue;
+    records.push({
       kind: 'blog' as const,
       slug: post.slug,
       title: post.title,
@@ -582,8 +584,9 @@ function blogRecords(): PublicContentRecord[] {
       htmlPath: `/blog/${post.slug}`,
       markdownPath: `/markdown/blog/${post.slug}.md`,
       lastModified: `${post.date}T00:00:00.000Z`,
-    }))
-    .sort((a, b) => b.lastModified.localeCompare(a.lastModified));
+    });
+  }
+  return records.sort((a, b) => b.lastModified.localeCompare(a.lastModified));
 }
 
 export function areUseCasesPublic(): boolean {
@@ -663,14 +666,15 @@ function renderMarketingMarkdown(record: PublicContentRecord): string {
   ];
 
   if (record.slug === 'pricing' || record.slug === 'enterprise') {
-    const plans = PRICING_PLANS.filter(
-      (plan) => record.slug === 'pricing' || plan.id === 'enterprise',
-    ).map(
-      (plan) =>
+    const plans: string[] = [];
+    for (const plan of PRICING_PLANS) {
+      if (record.slug !== 'pricing' && plan.id !== 'enterprise') continue;
+      plans.push(
         `## ${plan.name}\n\n${plan.price}${plan.unit ? ` ${plan.unit}` : ''}\n\n${plan.note}\n\n${plan.features
           .map((feature) => `- ${feature}`)
           .join('\n')}`,
-    );
+      );
+    }
     return `${documentHeader(record)}\n\n${plans.join('\n\n')}`;
   }
 

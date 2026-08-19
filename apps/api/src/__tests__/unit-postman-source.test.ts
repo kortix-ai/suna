@@ -3,7 +3,7 @@ import {
   parsePostmanApiEntity,
   parsePostmanApiIndex,
   resolvePostmanSource,
-} from '../executor/postman-source';
+} from '../connectors/postman-source';
 
 describe('Postman repository metadata', () => {
   test('parses the repeated API ids from .postman/api', () => {

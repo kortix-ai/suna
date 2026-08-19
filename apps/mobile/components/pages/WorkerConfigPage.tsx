@@ -2,7 +2,7 @@
  * Worker Configuration Page
  *
  * Full page view for configuring workers
- * Supports: Instructions, Tools, Integrations, Triggers
+ * Supports: Instructions, Tools, Connections, Triggers
  */
 
 import React, { useState, useEffect } from 'react';
@@ -18,20 +18,20 @@ import { useAgent, useUpdateAgent } from '@/lib/agents/hooks';
 import { Loading } from '../loading/loading';
 import { InstructionsScreen } from '../workers/screens/InstructionsScreen';
 import { ToolsScreen } from '../workers/screens/ToolsScreen';
-import { IntegrationsScreen } from '../workers/screens/IntegrationsScreen';
+import { ConnectionsScreen } from '../workers/screens/ConnectionsScreen';
 import { TriggersScreen } from '../workers/screens/TriggersScreen';
 
 interface WorkerConfigPageProps {
   workerId: string;
-  initialView?: 'instructions' | 'tools' | 'integrations' | 'triggers';
+  initialView?: 'instructions' | 'tools' | 'connections' | 'triggers';
 }
 
-type ConfigView = 'instructions' | 'tools' | 'integrations' | 'triggers';
+type ConfigView = 'instructions' | 'tools' | 'connections' | 'triggers';
 
 const menuItems = [
   { id: 'instructions' as const, label: 'Instructions', icon: Brain },
   { id: 'tools' as const, label: 'Tools', icon: Wrench },
-  { id: 'integrations' as const, label: 'Integrations', icon: Server },
+  { id: 'connections' as const, label: 'Connections', icon: Server },
   { id: 'triggers' as const, label: 'Triggers', icon: Zap },
 ];
 
@@ -45,7 +45,7 @@ export function WorkerConfigPage({
   // Read params directly from route to react to changes
   const { workerId: routeWorkerId, view: routeView } = useLocalSearchParams<{
     workerId?: string;
-    view?: 'instructions' | 'tools' | 'integrations' | 'triggers';
+    view?: 'instructions' | 'tools' | 'connections' | 'triggers';
   }>();
 
   // Use route params if available, otherwise fall back to props
@@ -151,8 +151,8 @@ export function WorkerConfigPage({
           <InstructionsScreen agentId={workerId} onUpdate={() => {}} />
         ) : activeView === 'tools' ? (
           <ToolsScreen agentId={workerId} onUpdate={() => {}} />
-        ) : activeView === 'integrations' ? (
-          <IntegrationsScreen agentId={workerId} onUpdate={() => {}} />
+        ) : activeView === 'connections' ? (
+          <ConnectionsScreen agentId={workerId} onUpdate={() => {}} />
         ) : (
           <TriggersScreen agentId={workerId} onUpdate={() => {}} />
         )}

@@ -3,14 +3,12 @@ import { readFileSync } from 'node:fs';
 import worker from './worker.mjs';
 
 const env = {
-  ACTIVE_BACKEND: 'eks',
-  BACKEND_EKS: 'https://api-eks.kortix.com',
+  ACTIVE_BACKEND: 'ecs-fargate',
   BACKEND_ECS_FARGATE: 'https://api-fargate.kortix.com',
   BACKEND_US_EAST_2: 'https://api-use2-shadow.kortix.com',
   // Gateway is deliberately on a DIFFERENT active backend than the API, to prove
   // the two services flip independently.
   GATEWAY_ACTIVE_BACKEND: 'ecs-fargate',
-  GATEWAY_BACKEND_EKS: 'https://gateway-eks.kortix.com',
   GATEWAY_BACKEND_ECS_FARGATE: 'https://gateway-fargate.kortix.com',
   GATEWAY_BACKEND_US_EAST_2: 'https://gateway-use2-shadow.kortix.com',
 };
@@ -42,9 +40,9 @@ describe('api-router worker', () => {
     const stagingVars = wrangler.match(
       /\[env\.staging\.vars\]([\s\S]*?)(?=\n\[env\.|\s*$)/,
     )?.[1];
-    expect(stagingVars).toContain('ACTIVE_BACKEND = "eks"');
+    expect(stagingVars).toContain('ACTIVE_BACKEND = "ecs-fargate"');
     expect(deployWorkflow).toContain(
-      '{type:"plain_text", name:"ACTIVE_BACKEND", text:"eks"}',
+      '{type:"plain_text", name:"ACTIVE_BACKEND", text:"ecs-fargate"}',
     );
   });
 
@@ -91,6 +89,69 @@ describe('api-router worker', () => {
     expect(shadowWorkflow).toContain(
       '[ "$api_commit" != "$SOURCE_SHA" ] || [ "$gateway_commit" != "$SOURCE_SHA" ]',
     );
+  });
+
+  test('injects the environment secret as one JSON blob instead of per-key selectors', () => {
+    const ecsDeploy = readFileSync(
+      new URL('../../../scripts/ecs-deploy.sh', import.meta.url),
+      'utf8',
+    );
+    const apiEntry = readFileSync(
+      new URL('../../../../apps/api/src/index.ts', import.meta.url),
+      'utf8',
+    );
+    const gatewayEntry = readFileSync(
+      new URL('../../../../apps/llm-gateway/src/main.ts', import.meta.url),
+      'utf8',
+    );
+
+    expect(ecsDeploy).toContain('name: "KORTIX_ENV_JSON"');
+    expect(ecsDeploy).not.toContain('keys\n      | map({ name: .');
+    expect(apiEntry.indexOf("import './environment-secret';")).toBeLessThan(
+      apiEntry.indexOf("import './lib/sentry';"),
+    );
+    expect(gatewayEntry.indexOf("import './environment-secret';")).toBeLessThan(
+      gatewayEntry.indexOf("import { config } from './config';"),
+    );
+  });
+
+  test('requires an explicit database migration gate for live production ECS rolls', () => {
+    const ecsDeploy = readFileSync(
+      new URL('../../../scripts/ecs-deploy.sh', import.meta.url),
+      'utf8',
+    );
+    const prodWorkflow = readFileSync(
+      new URL('../../../../.github/workflows/deploy-prod.yml', import.meta.url),
+      'utf8',
+    );
+    const shadowWorkflow = readFileSync(
+      new URL(
+        '../../../../.github/workflows/deploy-prod-us-east-2-shadow.yml',
+        import.meta.url,
+      ),
+      'utf8',
+    );
+
+    expect(ecsDeploy).toContain('refusing live $ENV rollout without --database-migrated');
+    expect(prodWorkflow.match(/--database-migrated/g)?.length).toBe(2);
+    expect(shadowWorkflow.match(/--database-migrated/g)?.length).toBe(2);
+  });
+
+  test('keeps production API tasks at the incident-tested 4 GiB and three-task floor', () => {
+    const prodTerraform = readFileSync(
+      new URL('../../../terraform/environments/prod/main.tf', import.meta.url),
+      'utf8',
+    );
+    const shadowTerraform = readFileSync(
+      new URL('../../../terraform/environments/prod-us-east-2-shadow/main.tf', import.meta.url),
+      'utf8',
+    );
+
+    expect(prodTerraform).toMatch(/module "api"[\s\S]*?task_memory\s*=\s*4096/);
+    expect(prodTerraform).toMatch(/module "api"[\s\S]*?desired_count\s*=\s*3/);
+    expect(prodTerraform).toMatch(/module "api"[\s\S]*?min_capacity\s*=\s*3/);
+    expect(shadowTerraform).toMatch(/module "api"[\s\S]*?task_memory\s*=\s*4096/);
+    expect(shadowTerraform).toMatch(/module "api"[\s\S]*?secrets_blob_arn\s*=\s*var\.secret_arn/);
   });
 
   test('runs privileged US workflows only from the protected prod branch', () => {
@@ -149,13 +210,13 @@ describe('api-router worker', () => {
       env,
     );
 
-    expect(proxiedUrl).toBe('https://api-eks.kortix.com/v1/health/live');
+    expect(proxiedUrl).toBe('https://api-fargate.kortix.com/v1/health/live');
     expect(response.status).toBe(200);
     expect(response.headers.get('Strict-Transport-Security')).toBe(
       'max-age=31536000',
     );
     expect(response.headers.get('X-Content-Type-Options')).toBe('nosniff');
-    expect(response.headers.get('X-Backend')).toBe('eks');
+    expect(response.headers.get('X-Backend')).toBe('ecs-fargate');
     expect(response.headers.get('X-Backend-Service')).toBe('api');
   });
 
@@ -215,7 +276,7 @@ describe('api-router worker', () => {
     globalThis.fetch = async (request) => {
       fetchedUrls.push(fetchUrl(request));
       if (
-        fetchUrl(request) === 'https://api-eks.kortix.com/v1/system/maintenance'
+        fetchUrl(request) === 'https://api-fargate.kortix.com/v1/system/maintenance'
       ) {
         return new Response('unavailable', { status: 503 });
       }
@@ -233,7 +294,7 @@ describe('api-router worker', () => {
     );
 
     expect(fetchedUrls).toEqual([
-      'https://api-eks.kortix.com/v1/system/maintenance',
+      'https://api-fargate.kortix.com/v1/system/maintenance',
       'https://kortix.com/api/maintenance',
     ]);
     expect(response.status).toBe(200);
@@ -266,7 +327,7 @@ describe('api-router worker', () => {
     );
 
     expect(fetchedUrls).toEqual([
-      'https://api-eks.kortix.com/v1/system/maintenance',
+      'https://api-fargate.kortix.com/v1/system/maintenance',
     ]);
     expect(response.headers.get('X-Maintenance-Source')).toBe('database');
     expect(await response.json()).toMatchObject({ level: 'none' });
@@ -279,7 +340,7 @@ describe('api-router worker', () => {
     };
     globalThis.fetch = async (request) => {
       if (
-        fetchUrl(request) === 'https://api-eks.kortix.com/v1/system/maintenance'
+        fetchUrl(request) === 'https://api-fargate.kortix.com/v1/system/maintenance'
       ) {
         return new Response('unavailable', { status: 503 });
       }
@@ -324,7 +385,7 @@ describe('api-router worker', () => {
 
     expect(response.status).toBe(200);
     expect(fetchedUrls).toEqual([
-      'https://api-eks.kortix.com/v1/system/maintenance',
+      'https://api-fargate.kortix.com/v1/system/maintenance',
     ]);
   });
 
@@ -428,7 +489,7 @@ describe('api-router worker', () => {
     expect(response.status).toBe(200);
     expect(fetchedUrls).toEqual([
       'https://kortix.com/api/maintenance',
-      'https://api-eks.kortix.com/v1/accounts',
+      'https://api-fargate.kortix.com/v1/accounts',
     ]);
   });
 
@@ -456,7 +517,7 @@ describe('api-router worker', () => {
     expect(response.status).toBe(201);
     expect(fetchedUrls).toEqual([
       'https://kortix.com/api/maintenance',
-      'https://api-eks.kortix.com/v1/projects',
+      'https://api-fargate.kortix.com/v1/projects',
     ]);
   });
 
@@ -472,7 +533,7 @@ describe('api-router worker', () => {
       env,
     );
 
-    expect(fetchedUrls).toEqual(['https://api-eks.kortix.com/v1/accounts']);
+    expect(fetchedUrls).toEqual(['https://api-fargate.kortix.com/v1/accounts']);
     expect(response.status).toBe(503);
     expect(response.headers.get('Content-Type')).toBe('application/json');
     expect(await response.json()).toMatchObject({
@@ -526,7 +587,7 @@ describe('api-router worker', () => {
     );
 
     expect(proxiedUrl).toBe(
-      'https://api-eks.kortix.com/v1/p/sbx_123/8000/kortix/pty/kpty_123/connect',
+      'https://api-fargate.kortix.com/v1/p/sbx_123/8000/kortix/pty/kpty_123/connect',
     );
     expect(proxiedUpgrade).toBe('websocket');
     expect(response).toBe(upgradeResponse);

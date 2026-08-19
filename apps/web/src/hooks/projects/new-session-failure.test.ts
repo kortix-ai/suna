@@ -1,11 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 
-import {
-  getConnectorAuthorizationRequiredProfiles,
-  resolveCreateFailure,
-} from './new-session-failure';
+import { getRequiredConnectorConnections, resolveCreateFailure } from './new-session-failure';
 
-const connectorProfiles = [
+const connectorConnections = [
   {
     id: '653ca2f1-fe4c-4df4-932a-dc3045885ddb',
     slug: 'gmail-read',
@@ -30,81 +27,80 @@ describe('resolveCreateFailure', () => {
     expect(resolveCreateFailure('concurrent_session_limit')).toBe('silent');
   });
 
-  test('a missing connector authorization opens the connect-to-start gate', () => {
-    expect(resolveCreateFailure('CONNECTOR_AUTHORIZATION_REQUIRED')).toBe('connect');
+  test('request deadlines stay silent because the server can complete after the client stops waiting', () => {
+    expect(resolveCreateFailure('TIMEOUT')).toBe('silent');
+    expect(resolveCreateFailure('request_deadline')).toBe('silent');
+  });
+
+  test('a missing connection opens the connect-to-start gate', () => {
+    expect(resolveCreateFailure('CONNECTOR_CONNECTION_REQUIRED')).toBe('connect');
   });
 
   test('an unconfigured connector does NOT open the gate — nothing to connect to', () => {
-    // REQUIRED_CONNECTOR_PROFILE_UNAVAILABLE means the project has no such
+    // REQUIRED_CONNECTOR_CONNECTION_UNAVAILABLE means the project has no such
     // connector. Opening the gate would ask the user to connect an account to
     // a connector that does not exist, and no amount of connecting clears it.
-    expect(resolveCreateFailure('REQUIRED_CONNECTOR_PROFILE_UNAVAILABLE')).toBe('toast');
+    expect(resolveCreateFailure('REQUIRED_CONNECTOR_CONNECTION_UNAVAILABLE')).toBe('toast');
   });
 
-  test('CONNECTOR_CONNECTION_REQUIRED is not a code the API emits', () => {
-    // It was routed to the gate for as long as it was written down, and the API
-    // has never sent it. A branch on a code that cannot arrive is dead forever;
-    // this pins that it stays out rather than being re-added by resemblance.
-    expect(resolveCreateFailure('CONNECTOR_CONNECTION_REQUIRED')).toBe('toast');
-  });
-
-  test('everything else — including codeless network failures — surfaces a toast, never a redirect', () => {
+  test('other failures surface a toast, never a redirect', () => {
     expect(resolveCreateFailure(undefined)).toBe('toast');
-    expect(resolveCreateFailure('TIMEOUT')).toBe('toast');
     expect(resolveCreateFailure('internal_error')).toBe('toast');
   });
 });
 
-describe('getConnectorAuthorizationRequiredProfiles', () => {
-  test('preserves every structured connector profile in response order', () => {
+describe('getRequiredConnectorConnections', () => {
+  test('preserves every structured connection in response order', () => {
     expect(
-      getConnectorAuthorizationRequiredProfiles({
-        code: 'CONNECTOR_AUTHORIZATION_REQUIRED',
+      getRequiredConnectorConnections({
+        code: 'CONNECTOR_CONNECTION_REQUIRED',
         data: {
-          code: 'CONNECTOR_AUTHORIZATION_REQUIRED',
-          message: 'Connect the required connector profiles before starting this session.',
-          connector_profiles: connectorProfiles,
+          code: 'CONNECTOR_CONNECTION_REQUIRED',
+          message: 'Create the required connections before starting this session.',
+          connector_connections: connectorConnections,
         },
       }),
-    ).toEqual(connectorProfiles);
+    ).toEqual(connectorConnections);
   });
 
   test('accepts the structured body from the SDK details alias', () => {
     expect(
-      getConnectorAuthorizationRequiredProfiles({
-        code: 'CONNECTOR_AUTHORIZATION_REQUIRED',
+      getRequiredConnectorConnections({
+        code: 'CONNECTOR_CONNECTION_REQUIRED',
         details: {
-          code: 'CONNECTOR_AUTHORIZATION_REQUIRED',
-          message: 'Connect the required connector profiles before starting this session.',
-          connector_profiles: connectorProfiles,
+          code: 'CONNECTOR_CONNECTION_REQUIRED',
+          message: 'Create the required connections before starting this session.',
+          connector_connections: connectorConnections,
         },
       }),
-    ).toEqual(connectorProfiles);
+    ).toEqual(connectorConnections);
   });
 
-  test('rejects empty or malformed connector profile payloads', () => {
+  test('rejects empty or malformed connection payloads', () => {
     expect(
-      getConnectorAuthorizationRequiredProfiles({
-        code: 'CONNECTOR_AUTHORIZATION_REQUIRED',
-        data: { connector_profiles: [] },
+      getRequiredConnectorConnections({
+        code: 'CONNECTOR_CONNECTION_REQUIRED',
+        data: { connector_connections: [] },
       }),
     ).toBeNull();
     expect(
-      getConnectorAuthorizationRequiredProfiles({
-        code: 'CONNECTOR_AUTHORIZATION_REQUIRED',
+      getRequiredConnectorConnections({
+        code: 'CONNECTOR_CONNECTION_REQUIRED',
         data: {
-          connector_profiles: [{ ...connectorProfiles[0], authorization_strategy: 'workspace' }],
+          connector_connections: [
+            { ...connectorConnections[0], authorization_strategy: 'workspace' },
+          ],
         },
       }),
     ).toBeNull();
     // A real adjacent refusal that carries `connectors`, never
-    // `connector_profiles` — reading a gate roster out of it would be inventing
+    // `connector_connections` — reading a gate roster out of it would be inventing
     // one. (This case used to be written with the phantom
     // CONNECTOR_CONNECTION_REQUIRED, which proved nothing: an unreachable code
     // is rejected whatever the reader does.)
     expect(
-      getConnectorAuthorizationRequiredProfiles({
-        code: 'REQUIRED_CONNECTOR_PROFILE_UNAVAILABLE',
+      getRequiredConnectorConnections({
+        code: 'REQUIRED_CONNECTOR_CONNECTION_UNAVAILABLE',
         data: { connectors: ['gmail-read'] },
       }),
     ).toBeNull();

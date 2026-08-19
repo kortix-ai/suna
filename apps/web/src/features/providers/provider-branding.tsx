@@ -133,21 +133,21 @@ export function ProviderLogo({
   const iconDef = PROVIDER_ICON_MAP[providerID];
 
   const sizeClasses = {
-    small: 'size-7',
+    small: 'size-8',
     default: 'size-9',
     large: 'size-11',
   };
 
   const iconSizes = {
-    small: 14,
-    default: 18,
-    large: 22,
+    small: 20,
+    default: 22,
+    large: 24,
   };
 
   return (
     <span
       className={cn(
-        'flex items-center justify-center rounded-lg bg-zinc-100 dark:bg-zinc-800 shrink-0',
+        'bg-muted flex shrink-0 items-center justify-center rounded-md',
         sizeClasses[size],
         className,
       )}
@@ -159,12 +159,15 @@ export function ProviderLogo({
           alt=""
           width={iconSizes[size]}
           height={iconSizes[size]}
-          className="object-contain dark:invert"
+          className={cn(
+            'object-contain dark:invert',
+            iconDef.src === '/kortix-symbol.svg' && 'size-3',
+          )}
         />
       ) : (
         <span
           className={cn(
-            'font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-300',
+            'font-semibold tracking-wide text-zinc-600 uppercase dark:text-zinc-300',
             size === 'small' ? 'text-xs' : size === 'large' ? 'text-xs' : 'text-xs',
           )}
         >

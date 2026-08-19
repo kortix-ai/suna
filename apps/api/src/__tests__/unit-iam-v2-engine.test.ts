@@ -66,17 +66,17 @@ describe('deriveEffectiveProjectRole', () => {
     expect(deriveEffectiveProjectRole('member', 'member', [])).toBe('member');
   });
 
-  test('member with only a group Editor → editor', () => {
-    expect(deriveEffectiveProjectRole('member', null, ['editor'])).toBe('editor');
+  test('member with only a group Manager → manager', () => {
+    expect(deriveEffectiveProjectRole('member', null, ['manager'])).toBe('manager');
   });
 
-  test('member with direct Member + group Editor → editor (max wins)', () => {
-    expect(deriveEffectiveProjectRole('member', 'member', ['editor'])).toBe('editor');
+  test('member with direct Member + group Manager → manager (max wins)', () => {
+    expect(deriveEffectiveProjectRole('member', 'member', ['manager'])).toBe('manager');
   });
 
   test('member with multiple group grants → max of all', () => {
-    expect(deriveEffectiveProjectRole('member', null, ['member', 'editor', 'member'])).toBe('editor');
-    expect(deriveEffectiveProjectRole('member', null, ['member', 'manager', 'editor'])).toBe('manager');
+    expect(deriveEffectiveProjectRole('member', null, ['member', 'member'])).toBe('member');
+    expect(deriveEffectiveProjectRole('member', null, ['member', 'manager', 'member'])).toBe('manager');
   });
 
   test('owner stays Manager even when group says Member (no demotion)', () => {
@@ -201,7 +201,7 @@ describe('agent grant central fold (userRole ∩ agentGrant)', () => {
     expect(agentGrantGates('project', PROJECT_ACTIONS.PROJECT_SECRET_WRITE)).toBe(true);
     expect(agentGrantGates('project', PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE)).toBe(true);
     expect(agentGrantGates('project', PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE)).toBe(true);
-    // connector.write MUST be gated — the executor connector-admin fold depends
+    // connector.write MUST be gated — the connector-admin fold depends
     // on it (a regression adding it to AGENT_GRANT_EXEMPT_ACTIONS would reopen
     // the scoped-agent connector-admin bypass).
     expect(agentGrantGates('project', PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE)).toBe(true);

@@ -8,16 +8,18 @@ import {
 } from '@/lib/billing/billing-gate-state';
 import { isBillingEnabled } from '@/lib/config';
 import { getProjectDetail } from '@kortix/sdk';
+import { contract, qk } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
 
 export function useProjectCanRun(projectId: string | undefined) {
   const { data: projectDetail, isLoading: projectLoading } = useQuery({
-    queryKey: ['project-detail', projectId],
+    queryKey: qk.project.detail(projectId ?? ''),
     queryFn: () => {
       if (!projectId) throw new Error('Missing project id');
       return getProjectDetail(projectId);
     },
     enabled: !!projectId,
+    ...contract('config'),
   });
 
   const accountId = projectDetail?.project?.account_id ?? undefined;

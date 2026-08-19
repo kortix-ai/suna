@@ -1,10 +1,13 @@
 import { PLATFORM_DEFAULT_MODEL_ID } from '@kortix/llm-catalog';
+import { hydrateEnvironmentSecret } from '@kortix/shared';
 import { z } from 'zod';
 import { SLACK_BOT_SCOPES } from './channels/slack-manifest';
 import {
   DEFAULT_LLM_GATEWAY_FALLBACK_POLICIES,
   parseFallbackPolicies,
 } from './llm-gateway/routing/policy-config';
+
+hydrateEnvironmentSecret();
 
 /**
  * Running sandbox version.
@@ -17,12 +20,7 @@ export const SANDBOX_VERSION = process.env.SANDBOX_VERSION || 'unknown';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
-// 'local-docker' is EXPERIMENTAL — see platform/providers/local-docker.ts.
-// It runs sandboxes as plain Docker containers on THIS machine (the one
-// running kortix-api) via the local Docker socket — no cloud provider
-// account, no multi-node scheduling. Same contract as every other provider;
-// no caller may special-case its name (see provider-boundary.test.ts).
-export type SandboxProviderName = 'daytona' | 'platinum' | 'e2b' | 'local-docker';
+export type SandboxProviderName = 'daytona' | 'platinum' | 'e2b';
 type InternalKortixEnv = 'dev' | 'staging' | 'prod' | 'preview';
 
 // ─── Zod Helpers ────────────────────────────────────────────────────────────
@@ -127,6 +125,16 @@ const envSchema = z.object({
     .string()
     .min(1, 'SUPABASE_URL is required')
     .refine((v) => /^https?:\/\//.test(v), { message: 'SUPABASE_URL must be a valid HTTP(S) URL' }),
+  // Public origin for CLIENT-facing Supabase Storage URLs. On a self-host box
+  // SUPABASE_URL is an internal Docker hostname (http://supabase-kong:8000) that
+  // no browser/CLI/remote-sandbox can resolve; this is the box's public origin
+  // (e.g. https://essentia.kortix.cloud) used to rewrite signed URLs on the way
+  // out (see toPublicStorageUrl). Optional: unset on managed cloud, where
+  // SUPABASE_URL is already public and no rewrite is needed.
+  SUPABASE_PUBLIC_URL: z
+    .string()
+    .refine((v) => v === '' || /^https?:\/\//.test(v), { message: 'SUPABASE_PUBLIC_URL must be a valid HTTP(S) URL' })
+    .optional(),
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1, 'SUPABASE_SERVICE_ROLE_KEY is required'),
 
   // ── API Key Hashing (REQUIRED) ───────────────────────────────────────────
@@ -143,6 +151,18 @@ const envSchema = z.object({
   // Global background-worker switch. API-only and migration-shadow deployments
   // keep request handling active while disabling every recurring write loop.
   KORTIX_WORKERS_ENABLED: optBoolTrue,
+  /**
+   * Enforce the sandbox egress pin on the secret-broker route (default ON).
+   *
+   * A kill switch, not a feature flag. The pin blocks a session token used from
+   * outside its own sandbox — but the broker route also serves
+   * `kortix secrets call` and the connector MCP, so if a provider ever
+   * reassigns a running sandbox's egress address the pin would 403 real work.
+   * Set this to `false` to fall back to log-only while that is investigated,
+   * instead of reverting a deploy. Watch for `[secret-broker] refused an
+   * off-sandbox token use`.
+   */
+  KORTIX_SANDBOX_EGRESS_PIN_ENFORCED: optBoolTrue,
   // Kortix-owned session titles: the moment a session's first prompt text is
   // known server-side (at create when it carries one, else on the first HTTP
   // prompt), generate the title ourselves via the internal LLM gateway instead
@@ -247,23 +267,6 @@ const envSchema = z.object({
   // (consumed by daytonaLifecycle()). Main's 3-day auto-archive default already
   // keeps a hibernated box in the fast-resume "stopped" tier far longer than the
   // earlier 120m, so the pause/resume win is subsumed there.
-  // Lock a session to the agent it booted with: the preview proxy 409s a prompt
-  // that asks OpenCode to run a different agent. GATED OFF by default — it was
-  // added for a future per-agent executor-token auth model that isn't built yet,
-  // and meanwhile it blocks legitimate in-session agent switching and
-  // false-positives on new sessions (the picker can send the first agent in the
-  // list before the session's real default resolves). TODO(marko): re-enable once
-  // the executor token is re-minted per requested agent before tool execution.
-  KORTIX_ENFORCE_SESSION_AGENT_LOCK: optBoolFalse,
-
-  // Optional strict lock for operators that require one immutable secret grant
-  // per sandbox. OFF by default: an in-session agent switch re-resolves the
-  // running agent's grant, replaces the OpenCode env, and re-mints the session
-  // token's connector/Kortix-CLI grant before the prompt is forwarded. Enabling
-  // this flag refuses only switches whose secret grants differ. See
-  // projects/lib/secret-grant.ts.
-  KORTIX_ENFORCE_AGENT_SECRET_GRANT_LOCK: optBoolFalse,
-
   // Mandatory declared agents (docs/specs/2026-07-05-agent-first-config-unification.md
   // §2.1/§3 Phase 2). GATED OFF platform-wide by default — flipping it on would
   // immediately reject every session/trigger on a pre-existing, agent-less project.
@@ -324,7 +327,7 @@ const envSchema = z.object({
   ),
   TEAMS_REQUIRE_USER_IDENTITY: optBoolTrue,
   // Whether the Teams channel is offered is NOT an operator env var — it is the
-  // per-project `teams` experimental feature (experimental/features.ts).
+  // per-project `teams` feature flag (feature-flags/registry.ts).
   TEAMS_APP_NAME: optStrDefault('Kortix'),
 
   // ── LLM Providers (optional — only needed in cloud mode) ─────────────────
@@ -338,6 +341,29 @@ const envSchema = z.object({
   // Manager bundle. Self-host deployments leave it unset.
   ASTER_API_URL: optUrl('https://api.asterlab.ai/v1'),
   ASTER_API_KEY: optStr,
+  // Whether network-boundary secrets may be delivered by the IN-GUEST shim on
+  // providers that have no credential edge of their own (i.e. Daytona, which is
+  // production). The shim terminates the guest's TLS and relays to the broker
+  // route; the credential stays server-side either way.
+  //
+  // Whether a session's sandbox gets the `kortix-connectors` OpenCode MCP
+  // server (KORTIX_CONNECTORS_MCP_ENABLED in the guest). It exposes the
+  // connector meta-tools plus `secret_call`, the only way to use an
+  // HTTPS-broker secret — those have no env var and no readable value, so
+  // without a tool the model has to find a shell command in a prompt file.
+  //
+  // ON by default: the tools are the discoverable surface for capabilities the
+  // agent already has. This is the operator kill switch — it takes the MCP
+  // server away fleet-wide without a code change.
+  //
+  // optBoolTrue disables on the literal string `false` ONLY: `0`, `no` and
+  // `off` all leave it ON. Write `CONNECTORS_MCP_ENABLED=false`.
+  //
+  // The email channel sets the guest variable itself from durable session
+  // metadata (session-channel-env.ts) and keeps the face either way — that
+  // channel was the only consumer before this flag, so turning this off
+  // restores the previous behaviour rather than regressing email sessions.
+  CONNECTORS_MCP_ENABLED: optBoolTrue,
   // Managed LLM gateway (/v1/llm) — the `kortix` OpenCode provider routes every
   // sandbox model call here. Off by default.
   LLM_GATEWAY_ENABLED: optBoolFalse,
@@ -370,7 +396,12 @@ const envSchema = z.object({
   // constant baked into the gateway binary. Operators can replace the default
   // and define any number of exact-match fallback policies without code changes.
   LLM_GATEWAY_DEFAULT_MODEL: optStrDefault(PLATFORM_DEFAULT_MODEL_ID),
-  LLM_GATEWAY_VISION_MODEL: optStrDefault('claude-sonnet-4.6'),
+  // Target when a DEFAULT-model request carries image input and the default
+  // model lacks vision. Empty = no reroute (the request goes to the default
+  // model as-is). gpt-5.6-luna is the cheapest vision-capable managed model
+  // ($0.20/$1.20) — the default platform model (deepseek-v4-flash) is
+  // text-only.
+  LLM_GATEWAY_VISION_MODEL: optStrDefault('gpt-5.6-luna'),
   LLM_GATEWAY_FALLBACK_POLICIES: optFallbackPolicies,
   // Optional JSON array replacing the platform managed-model overlay (transport,
   // upstream id, pricing ref, capabilities). Empty uses the bundled last-known
@@ -382,7 +413,7 @@ const envSchema = z.object({
   // BYOK resilience: when a user's own provider key hits a rate-limit / quota /
   // billing error (429/402/403), fall over to THIS managed model (billed as
   // Kortix credits) so the turn survives instead of erroring. Empty disables.
-  LLM_GATEWAY_BYOK_FALLBACK_MODEL: optStrDefault('claude-sonnet-4.6'),
+  LLM_GATEWAY_BYOK_FALLBACK_MODEL: optStrDefault('deepseek-v4-flash'),
   // Dev: reverse-proxy /v1/llm-gateway/* to a standalone gateway on this port,
   // so sandboxes reach it through the API's own tunnel (no separate tunnel).
   LLM_GATEWAY_PROXY_PORT: optInt(0),
@@ -486,24 +517,6 @@ const envSchema = z.object({
   E2B_DOMAIN: optStrDefault('e2b.dev'),
   E2B_TEMPLATE: optStr,
 
-  // ── Local Docker — EXPERIMENTAL sandbox provider (same-machine only) ────
-  // Runs sandboxes as Docker containers on the SAME host as kortix-api, via
-  // the local Docker socket. No API key required — "configured" means the
-  // Docker daemon is reachable, checked lazily at first provider use (create/
-  // start/stop/status), never at boot (self-host must still start with no
-  // Docker access so the operator can reach the dashboard).
-  //   LOCAL_DOCKER_NETWORK     — Docker network every kortix-sb-* container
-  //     joins, so kortix-api can reach it by container DNS name
-  //     (http://kortix-sb-<id>:<port>). The self-host CLI points this at the
-  //     Compose project's own default network when local-docker is selected
-  //     (see kortix-compose.yml). Auto-created (idempotent) if missing, so a
-  //     bare `pnpm dev` / standalone use still works.
-  //   LOCAL_DOCKER_SOCKET_PATH — override for the Docker Engine unix socket.
-  //     Empty = dockerode's own default (respects DOCKER_HOST, else
-  //     /var/run/docker.sock).
-  LOCAL_DOCKER_NETWORK: optStrDefault('kortix-local-docker'),
-  LOCAL_DOCKER_SOCKET_PATH: optStr,
-
   // ── Sandbox Platform ──────────────────────────────────────────────────────
   // Public API base URL, without a route suffix. Auto-derived from PORT in local mode.
   KORTIX_URL: optStr,
@@ -557,7 +570,7 @@ const envSchema = z.object({
   // ── Frontend (optional) ──────────────────────────────────────────────────
   FRONTEND_URL: optUrl('http://localhost:3000'),
 
-  // ── Pipedream Connect (optional — powers the Executor's 1-click connectors) ─
+  // ── Pipedream Connect (optional — powers the Connector's 1-click connectors) ─
   PIPEDREAM_CLIENT_ID: optStr,
   PIPEDREAM_CLIENT_SECRET: optStr,
   PIPEDREAM_PROJECT_ID: optStr,
@@ -599,7 +612,24 @@ const envSchema = z.object({
   SANDBOX_VERSION: optStr, // dev override: skip npm registry lookup for latest version
   GITHUB_TOKEN: optStr, // optional: authenticated GitHub API calls for changelog
 
-  // ── Mailtrap (optional — provisioning email notifications) ────────────────
+  // ── Transactional email (provider chain: SES → Resend → Mailtrap) ─────────
+  // Every provider is optional; the transport tries each configured one in
+  // EMAIL_PROVIDER_ORDER and falls through on failure. See lib/email/transport.ts.
+  EMAIL_PROVIDER_ORDER: optStrDefault('ses,resend,mailtrap'),
+  // AWS SES (SigV4-signed SESv2 HTTP API). ECS uses its task role. Static
+  // credentials remain optional for local and self-hosted deployments.
+  AWS_SES_REGION: optStrDefault('us-east-2'),
+  AWS_SES_ACCESS_KEY_ID: optStr,
+  AWS_SES_SECRET_ACCESS_KEY: optStr,
+  // Resend (https://resend.com).
+  RESEND_API_KEY: optStr,
+  // Override sender for the Resend leg only — needed while the primary from-
+  // domain is not yet claimed/verified in the Resend team. The intended from
+  // address is preserved as Reply-To.
+  RESEND_FROM_EMAIL: optStr,
+  // Local-only HTTP capture. The deterministic test profile points this at
+  // Supabase Mailpit. Deployed environments leave it unset.
+  MAILPIT_API_URL: optStr,
   MAILTRAP_API_TOKEN: optStr,
   MAILTRAP_FROM_EMAIL: optStrDefault('noreply@kortix.com'),
   MAILTRAP_FROM_NAME: optStrDefault('Kortix'),
@@ -644,7 +674,6 @@ export const KNOWN_PROVIDERS: readonly SandboxProviderName[] = [
   'daytona',
   'platinum',
   'e2b',
-  'local-docker',
 ] as const;
 
 /**
@@ -775,7 +804,17 @@ function validateEnv(): z.infer<typeof envSchema> {
   if (tunnelEnabled && !raw.TUNNEL_SIGNING_SECRET) {
     issues.push({
       var: 'TUNNEL_SIGNING_SECRET',
-      message: 'Required when tunnel is enabled — used for HMAC signing key derivation',
+      message: 'Required when tunnel is enabled — protects device-handoff token derivation',
+      level: 'error',
+    });
+  } else if (
+    tunnelEnabled &&
+    typeof raw.TUNNEL_SIGNING_SECRET === 'string' &&
+    Buffer.byteLength(raw.TUNNEL_SIGNING_SECRET, 'utf8') < 24
+  ) {
+    issues.push({
+      var: 'TUNNEL_SIGNING_SECRET',
+      message: 'Must contain at least 24 bytes of secret material',
       level: 'error',
     });
   }
@@ -893,6 +932,7 @@ export const config = {
   // Single master switch — see schema docstring above.
   KORTIX_BILLING_INTERNAL_ENABLED: env.KORTIX_BILLING_INTERNAL_ENABLED,
   KORTIX_WORKERS_ENABLED: env.KORTIX_WORKERS_ENABLED,
+  KORTIX_SANDBOX_EGRESS_PIN_ENFORCED: env.KORTIX_SANDBOX_EGRESS_PIN_ENFORCED,
   SESSION_TITLE_GENERATION_ENABLED: env.SESSION_TITLE_GENERATION_ENABLED,
   KORTIX_TEMPLATES_ENABLED: env.KORTIX_TEMPLATES_ENABLED,
   OPENAPI_PUBLIC_DOCS: env.OPENAPI_PUBLIC_DOCS,
@@ -904,12 +944,13 @@ export const config = {
 
   // ─── Supabase ──────────────────────────────────────────────────────────────
   SUPABASE_URL: env.SUPABASE_URL,
+  SUPABASE_PUBLIC_URL: env.SUPABASE_PUBLIC_URL,
   SUPABASE_SERVICE_ROLE_KEY: env.SUPABASE_SERVICE_ROLE_KEY,
 
   // ─── API Key Hashing ──────────────────────────────────────────────────────
   API_KEY_SECRET: env.API_KEY_SECRET,
 
-  // ─── Pipedream Connect (Executor 1-click connectors) ──────────────────────
+  // ─── Pipedream Connect (Connector 1-click connectors) ──────────────────────
   PIPEDREAM_CLIENT_ID: env.PIPEDREAM_CLIENT_ID,
   PIPEDREAM_CLIENT_SECRET: env.PIPEDREAM_CLIENT_SECRET,
   PIPEDREAM_PROJECT_ID: env.PIPEDREAM_PROJECT_ID,
@@ -943,8 +984,6 @@ export const config = {
   CODE_STORAGE_API_BASE: env.CODE_STORAGE_API_BASE,
   CODE_STORAGE_GIT_HOST: env.CODE_STORAGE_GIT_HOST,
   KORTIX_GIT_PROXY: env.KORTIX_GIT_PROXY,
-  KORTIX_ENFORCE_SESSION_AGENT_LOCK: env.KORTIX_ENFORCE_SESSION_AGENT_LOCK,
-  KORTIX_ENFORCE_AGENT_SECRET_GRANT_LOCK: env.KORTIX_ENFORCE_AGENT_SECRET_GRANT_LOCK,
   KORTIX_REQUIRE_DECLARED_AGENTS: env.KORTIX_REQUIRE_DECLARED_AGENTS,
 
   // ─── Legacy migration ─────────────────────────────────────────────────────
@@ -979,6 +1018,7 @@ export const config = {
   OPENROUTER_API_KEY: env.OPENROUTER_API_KEY,
   ASTER_API_URL: env.ASTER_API_URL,
   ASTER_API_KEY: env.ASTER_API_KEY,
+  CONNECTORS_MCP_ENABLED: env.CONNECTORS_MCP_ENABLED,
   LLM_GATEWAY_ENABLED: env.LLM_GATEWAY_ENABLED,
   // Unset → follow billing (cloud keeps its revenue lineup even if the env
   // blob misses the var; self-host stays off). Explicit value always wins.
@@ -1038,9 +1078,6 @@ export const config = {
   E2B_API_KEY: env.E2B_API_KEY,
   E2B_DOMAIN: env.E2B_DOMAIN,
   E2B_TEMPLATE: env.E2B_TEMPLATE,
-  LOCAL_DOCKER_NETWORK: env.LOCAL_DOCKER_NETWORK,
-  LOCAL_DOCKER_SOCKET_PATH: env.LOCAL_DOCKER_SOCKET_PATH,
-
   // ─── Sandbox Provisioning (Platform) ──────────────────────────────────────
   KORTIX_URL: env.KORTIX_URL,
   ALLOWED_SANDBOX_PROVIDERS: allowedProviders,
@@ -1134,7 +1171,14 @@ export const config = {
   SANDBOX_VERSION_OVERRIDE: env.SANDBOX_VERSION,
   GITHUB_TOKEN: env.GITHUB_TOKEN,
 
-  // ─── Mailtrap (Email Notifications) ────────────────────────────────────────
+  // ─── Transactional email (provider chain) ──────────────────────────────────
+  EMAIL_PROVIDER_ORDER: env.EMAIL_PROVIDER_ORDER,
+  AWS_SES_REGION: env.AWS_SES_REGION,
+  AWS_SES_ACCESS_KEY_ID: env.AWS_SES_ACCESS_KEY_ID,
+  AWS_SES_SECRET_ACCESS_KEY: env.AWS_SES_SECRET_ACCESS_KEY,
+  RESEND_API_KEY: env.RESEND_API_KEY,
+  RESEND_FROM_EMAIL: env.RESEND_FROM_EMAIL,
+  MAILPIT_API_URL: env.MAILPIT_API_URL,
   MAILTRAP_API_TOKEN: env.MAILTRAP_API_TOKEN,
   MAILTRAP_FROM_EMAIL: env.MAILTRAP_FROM_EMAIL,
   MAILTRAP_FROM_NAME: env.MAILTRAP_FROM_NAME,
@@ -1163,12 +1207,6 @@ export const config = {
         return !!this.PLATINUM_API_KEY;
       case 'e2b':
         return !!this.E2B_API_KEY;
-      // No API key: "enabled" means selected. Docker socket reachability is
-      // checked lazily at first real use (create/start/stop/status) — see
-      // platform/providers/local-docker.ts — never here, so an operator can
-      // still start the API/dashboard before Docker is wired up.
-      case 'local-docker':
-        return true;
       default: {
         const exhaustive: never = name;
         return exhaustive;
@@ -1192,10 +1230,6 @@ export const config = {
 
   isPlatinumEnabled(): boolean {
     return this.ALLOWED_SANDBOX_PROVIDERS.includes('platinum') && !!this.PLATINUM_API_KEY;
-  },
-
-  isLocalDockerEnabled(): boolean {
-    return this.ALLOWED_SANDBOX_PROVIDERS.includes('local-docker');
   },
 
   isE2BEnabled(): boolean {

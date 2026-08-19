@@ -115,6 +115,298 @@ flow(
   },
 );
 
+flow(
+  "SEC-8",
+  {
+    domain: "secrets",
+    routes: [
+      "POST /v1/projects/:projectId/secrets",
+      "GET /v1/projects/:projectId/secrets",
+      "PUT /v1/projects/:projectId/secrets/:identifier/strategy",
+      "POST /v1/projects/:projectId/secrets/:identifier/broker",
+      "POST /v1/projects/:projectId/secrets/:identifier/grant",
+      "POST /v1/projects/:projectId/secrets/sync",
+      "GET /v1/accounts/:accountId/audit",
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team({ enterprise: true });
+    const p = await team.project();
+    let networkBoundaryAvailable = false;
+
+    await ctx.step("create returns explicit runtime delivery metadata", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          "/v1/projects/:projectId/secrets",
+          { name: "CONTROL_PLANE_KEY", value: "control-plane-value" },
+          { params: { projectId: p.id } },
+        );
+      r.status(200)
+        .body()
+        .has("$.strategy", "runtime")
+        .has("$.consumer", "sandbox")
+        .has("$.delivery_status", "available")
+        .has("$.requires_rotation", false);
+      networkBoundaryAvailable = r.json<{ network_boundary_available?: boolean }>().network_boundary_available === true;
+    });
+
+    await ctx.step("manager disables sandbox delivery", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .put(
+          "/v1/projects/:projectId/secrets/:identifier/strategy",
+          { strategy: "denied" },
+          { params: { projectId: p.id, identifier: "CONTROL_PLANE_KEY" } },
+        );
+      r.status(200)
+        .body()
+        .has("$.strategy", "denied")
+        .has("$.consumer", null)
+        .has("$.delivery_status", "disabled")
+        .has("$.requires_rotation", true);
+    });
+
+    await ctx.step("manager synchronizes the current policy to active sessions", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          "/v1/projects/:projectId/secrets/sync",
+          {},
+          { params: { projectId: p.id } },
+        );
+      r.status(200)
+        .body()
+        .has("$.ok", true)
+        .has("$.active_sandboxes", 0)
+        .has("$.targeted", 0)
+        .has("$.synced", 0)
+        .has("$.failed", 0)
+        .has("$.exported", 0)
+        .has("$.results", []);
+    });
+
+    await ctx.step("runtime delivery stays disabled until rotation", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .put(
+          "/v1/projects/:projectId/secrets/:identifier/strategy",
+          { strategy: "runtime" },
+          { params: { projectId: p.id, identifier: "CONTROL_PLANE_KEY" } },
+        );
+      r.status(409).body().has("$.code", "secret_rotation_required");
+    });
+
+    await ctx.step("broker delivery requires an outbound policy", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .put(
+          "/v1/projects/:projectId/secrets/:identifier/strategy",
+          { strategy: "broker" },
+          { params: { projectId: p.id, identifier: "CONTROL_PLANE_KEY" } },
+        );
+      r.status(400).body().has("$.code", "secret_delivery_policy_required");
+    });
+
+    await ctx.step("generic HTTPS broker accepts a validated policy", async () => {
+      const policy = {
+        backend: "kortix_fetch",
+        rules: [{ host: "api.example.com", methods: ["POST"], path: "/v1/*" }],
+        inject: { kind: "header", name: "authorization", template: "Bearer {{secret}}" },
+      };
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .put(
+          "/v1/projects/:projectId/secrets/:identifier/strategy",
+          { strategy: "broker", egress_policy: policy, handle_prefix: "svc_" },
+          { params: { projectId: p.id, identifier: "CONTROL_PLANE_KEY" } },
+        );
+      r.status(200)
+        .body()
+        .has("$.strategy", "broker")
+        .has("$.consumer", "http_broker")
+        .has("$.delivery_status", "available")
+        .has("$.egress_policy", policy);
+    });
+
+    await ctx.step("transparent egress follows the deployment capability", async () => {
+      const policy = {
+        rules: [{ host: "api.example.com" }],
+        inject: { kind: "header", name: "authorization", template: "Bearer {{secret}}" },
+      };
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .put(
+          "/v1/projects/:projectId/secrets/:identifier/strategy",
+          {
+            strategy: "egress",
+            egress_policy: policy,
+          },
+          { params: { projectId: p.id, identifier: "CONTROL_PLANE_KEY" } },
+        );
+      if (networkBoundaryAvailable) {
+        r.status(200)
+          .body()
+          .has("$.strategy", "egress")
+          .has("$.consumer", "network")
+          .has("$.delivery_status", "available")
+          .has("$.egress_policy", policy);
+      } else {
+        r.status(409).body().has("$.code", "secret_delivery_unavailable");
+      }
+    });
+
+    // The grant route's success path commits kortix.yaml, and the local profile
+    // has no writable git backend — every sibling manifest-writing route
+    // (agents/:agentName/scope in IAM-*, agents/:agentName/config in PROJ-*) is
+    // covered the same way, at the boundary the profile can reach. The commit
+    // itself is covered by apps/api/src/__tests__/unit-secret-grant-route.test.ts.
+    await ctx.step("granting an unknown secret is refused", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          "/v1/projects/:projectId/secrets/:identifier/grant",
+          { agent: "kortix" },
+          { params: { projectId: p.id, identifier: "NO_SUCH_SECRET" } },
+        );
+      r.status(404);
+    });
+
+    await ctx.step("granting rejects a malformed identifier before touching the manifest", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          "/v1/projects/:projectId/secrets/:identifier/grant",
+          { agent: "kortix" },
+          { params: { projectId: p.id, identifier: "not a valid identifier" } },
+        );
+      r.status(400);
+    });
+
+    await ctx.step("granting requires an agent name", async () => {
+      // Status only: the OpenAPI request validator rejects the body before the
+      // handler runs, so the envelope is its ZodError shape, not the handler's
+      // `{ code: 'invalid_body' }`. The handler's own codes are asserted in
+      // apps/api/src/__tests__/unit-secret-grant-route.test.ts.
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          "/v1/projects/:projectId/secrets/:identifier/grant",
+          {},
+          { params: { projectId: p.id, identifier: "CONTROL_PLANE_KEY" } },
+        );
+      r.status(400);
+    });
+
+    await ctx.step("transparent egress rejects controls the provider cannot enforce", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .put(
+          "/v1/projects/:projectId/secrets/:identifier/strategy",
+          {
+            strategy: "egress",
+            egress_policy: {
+              rules: [{ host: "api.example.com", methods: ["POST"] }],
+              inject: { kind: "header", name: "authorization" },
+            },
+          },
+          { params: { projectId: p.id, identifier: "CONTROL_PLANE_KEY" } },
+        );
+      r.status(400).body().has("$.code", "secret_delivery_policy_invalid");
+    });
+
+    await ctx.step("broker execution requires a session-scoped agent token", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          "/v1/projects/:projectId/secrets/:identifier/broker",
+          {
+            url: "https://api.example.com/v1/messages",
+            method: "POST",
+            body_base64: "e30=",
+          },
+          { params: { projectId: p.id, identifier: "CONTROL_PLANE_KEY" } },
+        );
+      r.status(403).body().has("$.code", "session_agent_token_required");
+    });
+
+    await ctx.step("rotation permits runtime delivery", async () => {
+      const rotate = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          "/v1/projects/:projectId/secrets",
+          { name: "CONTROL_PLANE_KEY", value: "rotated-control-plane-value" },
+          { params: { projectId: p.id } },
+        );
+      rotate
+        .status(200)
+        .body()
+        .has("$.strategy", networkBoundaryAvailable ? "egress" : "broker")
+        .has("$.requires_rotation", false);
+
+      const restore = await ctx.client
+        .as(ctx.P.OWNER)
+        .put(
+          "/v1/projects/:projectId/secrets/:identifier/strategy",
+          { strategy: "runtime" },
+          { params: { projectId: p.id, identifier: "CONTROL_PLANE_KEY" } },
+        );
+      restore
+        .status(200)
+        .body()
+        .has("$.strategy", "runtime")
+        .has("$.requires_rotation", false);
+    });
+
+    await ctx.step("central audit reconstructs the strategy change without a value", async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get("/v1/accounts/:accountId/audit", {
+        params: { accountId: team.id },
+        query: { project_id: p.id, action: "secret.strategy.changed" },
+      });
+      r.status(200).body().exists("$.events[0]");
+      const events = r.json<{ events: Array<Record<string, unknown>> }>().events;
+      const matchingEvents = events.filter((item) => item.action === "secret.strategy.changed");
+      const event = matchingEvents[0];
+      if (!event || matchingEvents.length < 3) throw new Error("strategy audit events missing");
+      if (
+        event.project_id !== p.id ||
+        event.resource_type !== "project_secret" ||
+        JSON.stringify(matchingEvents).includes("control-plane-value")
+      ) {
+        throw new Error(`unsafe strategy audit event: ${JSON.stringify(event)}`);
+      }
+    });
+  },
+);
+
+flow(
+  "CONN-ATT-AUTH",
+  {
+    domain: "secrets",
+    routes: [
+      "POST /v1/connectors/attachments",
+      "POST /v1/connectors/projects/:projectId/attachments",
+    ],
+  },
+  async (ctx) => {
+    await ctx.step("anonymous attachment upload is rejected", async () => {
+      const r = await ctx.client.as(ctx.P.ANON).post("/v1/connectors/attachments", {});
+      r.status(401);
+    });
+
+    await ctx.step("anonymous project attachment upload is rejected", async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .post(
+          "/v1/connectors/projects/:projectId/attachments",
+          {},
+          { params: { projectId: "00000000-0000-4000-a000-000000000000" } },
+        );
+      r.status(401);
+    });
+  },
+);
+
 // SEC-7 — agent-minted secret setup links: the authenticated mint side
 // (POST /secret-requests, projects/routes/setup-links.ts) and the PUBLIC,
 // token-gated consume side (GET/POST /v1/setup-links/secret/:token,

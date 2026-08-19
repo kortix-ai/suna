@@ -17,6 +17,45 @@ flow(
       const r = await ctx.client.as(ctx.P.OWNER).get('/v1/billing/account-state');
       r.status(200);
     });
+    await ctx.step('account state carries the resolved `plan` block', async () => {
+      // `plan` names the plan the account BEHAVES as (trial / per-seat self-heal
+      // applied); `subscription.tier_key` stays the STORED plan Stripe sold.
+      // A fresh owner has no trial and no seat subscription, so the two agree —
+      // that agreement is the invariant this pins, along with the block being
+      // present and fully populated.
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/billing/account-state');
+      const state = r.status(200).json<{
+        plan?: Record<string, unknown>;
+        subscription: { tier_key: string };
+        tier: { name: string };
+      }>();
+      r.body()
+        .exists('$.plan')
+        .exists('$.plan.key')
+        .exists('$.plan.family')
+        .exists('$.plan.label')
+        .exists('$.plan.status')
+        .exists('$.plan.shape')
+        .exists('$.plan.is_grandfathered')
+        .has('$.plan.key', state.subscription.tier_key)
+        .has('$.tier.name', state.subscription.tier_key);
+      if (typeof state.plan?.rank !== 'number') {
+        throw new Error(`plan.rank must be a number, got ${JSON.stringify(state.plan?.rank)}`);
+      }
+      // `is_grandfathered` is resolved from the account's stored
+      // is_grandfathered_free column, so on a shared long-lived fixture account
+      // it is legitimately data-dependent — pin the TYPE, not a fixed value.
+      // (A fixed `false` here flaked the release gate once the shared OWNER
+      // account was grandfathered upstream.)
+      if (typeof state.plan?.is_grandfathered !== 'boolean') {
+        throw new Error(
+          `plan.is_grandfathered must be a boolean, got ${JSON.stringify(state.plan?.is_grandfathered)}`,
+        );
+      }
+      if (!['free', 'team', 'enterprise'].includes(String(state.plan?.family))) {
+        throw new Error(`plan.family must be a public family, got ${String(state.plan?.family)}`);
+      }
+    });
     await ctx.step('OWNER reads the minimal account-state variant → 200', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).get('/v1/billing/account-state/minimal');
       r.status(200);

@@ -172,6 +172,26 @@ function repairToolPairing(messages: ModelMessage[]): ModelMessage[] {
   return out;
 }
 
+// A conversation must end on a user/tool turn. A TRAILING ASSISTANT message (a
+// "prefill") wedges strict backends across the board — Bedrock/Anthropic
+// reasoning Claude 400s ("This model does not support assistant message prefill.
+// The conversation must end with a user message.") and the ChatGPT-Codex
+// Responses backend returns an empty 200 stream (surfacing as empty_completion).
+// It reaches the gateway when a turn is cancelled mid-generation and the client
+// replays the half-finished assistant turn in history — the same replayed-partial
+// failure mode `repairToolPairing` and the empty-content backfill already repair.
+// Drop the trailing assistant turn(s) so the request ends on a user/tool message.
+// Applied UNCONDITIONALLY in toModelMessages, like repairToolPairing: it only ever
+// makes a request MORE valid (no provider requires a trailing assistant, and agent
+// flows never intend one). Pure + non-mutating. Never strips to empty (an
+// all-assistant history is degenerate — leave it for the upstream to reject).
+function stripTrailingAssistantPrefill(messages: ModelMessage[]): ModelMessage[] {
+  let end = messages.length;
+  while (end > 0 && messages[end - 1].role === 'assistant') end--;
+  if (end === messages.length || end === 0) return messages;
+  return messages.slice(0, end);
+}
+
 // OpenAI chat.completions messages → AI SDK ModelMessage[]. System messages are
 // hoisted into `system` (kept separate so provider prompt-caching works). The
 // role/tool-call/tool-result shape mirrors what the native transports build, but
@@ -245,11 +265,11 @@ export function toModelMessages(rawMessages: unknown): {
 
   return {
     system: systemParts.filter(Boolean).join('\n\n') || undefined,
-    messages: repairToolPairing(out),
+    messages: stripTrailingAssistantPrefill(repairToolPairing(out)),
   };
 }
 
-// OpenAI `tools` → an AI SDK ToolSet with NO `execute`. Without an executor the
+// OpenAI `tools` → an AI SDK ToolSet with NO `execute`. Without an implementation the
 // SDK surfaces the model's tool call in the stream and stops the step (it never
 // tries to run the tool), which is exactly the relay-to-client behaviour the
 // gateway needs — opencode executes tools, not us.

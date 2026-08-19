@@ -21,13 +21,13 @@ export function ErrorDetails({ error }: { error: Error & { digest?: string } }) 
           {error.digest ? ` · ${error.digest}` : ''}
         </span>
       </div>
-      <div className="break-words text-sm leading-snug text-foreground/90">{message}</div>
+      <div className="wrap-break-word text-sm leading-snug text-foreground/90">{message}</div>
       {stack && (
         <details className="group mt-2">
           <summary className="cursor-pointer select-none text-[10px] uppercase tracking-wide text-muted-foreground/60 outline-none">
             Stack
           </summary>
-          <pre className="mt-1.5 max-h-36 overflow-auto whitespace-pre-wrap break-words rounded-2xl border border-border/60 bg-background/60 p-2 font-mono text-[10px] leading-relaxed text-muted-foreground">
+          <pre className="mt-1.5 max-h-36 overflow-auto whitespace-pre-wrap wrap-break-word rounded-2xl border border-border/60 bg-background/60 p-2 font-mono text-[10px] leading-relaxed text-muted-foreground">
             {stack}
           </pre>
         </details>

@@ -1,21 +1,24 @@
 'use client';
 
-import { Button } from '@/components/ui/button';
-import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import Loading from '@/components/ui/loading';
+import { Button } from '@/components/ui/button';
+import Hint from '@/components/ui/hint';
 import { TextShimmer } from '@/components/ui/text-shimmer';
 import { prefersPreviewLink } from '@/features/session/preview-url-fallback';
 import {
   isShowContentUnavailable,
+  isShowPayloadEmpty,
   type ShowLoadStatus,
 } from '@/features/session/show-availability';
 import {
   InlineServicePreview,
+  BoundActivateContext,
   partInput,
   ServicePreviewActions,
   type ServicePreviewState,
   ToolRunningContext,
   ToolSurfaceContext,
+  useToolNavigation,
 } from '@/features/session/tool/shared/infrastructure';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import {
@@ -27,24 +30,17 @@ import {
   ShowContentRenderer,
   showDomain,
   ShowFileActions,
-  showTypeIcon,
+  ShowHeaderAvatars,
+  ShowHeaderIcon,
   useServicePreview,
 } from '@/features/session/tool/shared/show-helpers';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { safeHttpUrl } from '@/lib/safe-url';
 import { cn } from '@/lib/utils';
 import { isAppRouteUrl, parseLocalhostUrl } from '@/lib/utils/sandbox-url';
-import { CaretRightIcon as CaretRight, GlobeIcon as Globe } from '@phosphor-icons/react';
+import { GlobeIcon as Globe } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
-import {
-  createContext,
-  type ReactNode,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useState,
-} from 'react';
+import { createContext, type ReactNode, useContext, useMemo, useState } from 'react';
 
 // The header owns a single preview state for the active item; the carousel gets it
 // through context so its viewport and the header controls drive the same iframe.
@@ -58,29 +54,14 @@ function CarouselServicePreview({ url, label }: { url: string; label?: string })
   return <InlineServicePreview url={url} label={label} />;
 }
 
-export function ShowTool({ part, sessionId, defaultOpen = false, forceOpen, locked }: ToolProps) {
+export function ShowTool({ part, sessionId }: ToolProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const input = partInput(part);
   const running = useContext(ToolRunningContext);
 
   const fill = useContext(ToolSurfaceContext) === 'panel';
-
-  // Inline disclosure state. `BasicTool` used to own this; the two behaviours
-  // it enforced are kept verbatim — `forceOpen` pins the body open, and
-  // `locked` refuses the collapse half of a toggle.
-  const [open, setOpen] = useState(defaultOpen);
-
-  useEffect(() => {
-    if (forceOpen) setOpen(true);
-  }, [forceOpen]);
-
-  const handleOpenChange = useCallback(
-    (value: boolean) => {
-      if (locked && !value) return;
-      setOpen(value);
-    },
-    [locked],
-  );
+  const activate = useContext(BoundActivateContext);
+  const { enabled: navigationEnabled } = useToolNavigation();
 
   const title = (input.title as string) || '';
   const description = (input.description as string) || '';
@@ -89,7 +70,6 @@ export function ShowTool({ part, sessionId, defaultOpen = false, forceOpen, lock
   const url = (input.url as string) || '';
   const content = (input.content as string) || '';
   const aspectRatio = (input.aspect_ratio as string) || '';
-  const theme = (input.theme as string) || 'default';
   const language = (input.language as string) || '';
 
   const items = useMemo<ShowCarouselItem[] | null>(() => {
@@ -114,18 +94,19 @@ export function ShowTool({ part, sessionId, defaultOpen = false, forceOpen, lock
   const activePath = isCarousel ? currentItem?.path || '' : path;
   const activeTitle = isCarousel ? currentItem?.title || '' : title;
 
-  const activeHasLocalhostUrl = !!parseLocalhostUrl(activeUrl) && !isAppRouteUrl(activeUrl);
-
-  const activeIsHtmlFilePath =
-    !!activePath &&
-    SHOW_HTML_EXT_RE.test(activePath) &&
-    (activeType === 'file' || activeType === 'html');
-
-  const resolvedPreviewUrl = activeHasLocalhostUrl
-    ? activeUrl
-    : activeIsHtmlFilePath
-      ? buildHtmlStaticUrl(activePath)
-      : '';
+  // Resolving the preview target parses `activeUrl` as a URL twice
+  // (`parseLocalhostUrl`, then `isAppRouteUrl`) and scans `activePath` with the
+  // extension regex. None of it depends on render state, so uncached it ran on
+  // every frame of every `show` row still mounted in the transcript.
+  const resolvedPreviewUrl = useMemo(() => {
+    const hasLocalhostUrl = !!parseLocalhostUrl(activeUrl) && !isAppRouteUrl(activeUrl);
+    if (hasLocalhostUrl) return activeUrl;
+    const isHtmlFilePath =
+      !!activePath &&
+      SHOW_HTML_EXT_RE.test(activePath) &&
+      (activeType === 'file' || activeType === 'html');
+    return isHtmlFilePath ? buildHtmlStaticUrl(activePath) : '';
+  }, [activeUrl, activePath, activeType]);
   const isWebsitePreview = !!resolvedPreviewUrl;
 
   /**
@@ -133,10 +114,21 @@ export function ShowTool({ part, sessionId, defaultOpen = false, forceOpen, lock
    * `ShowContentRenderer` routes them to each viewer's native toolbar slot, or
    * supplies the row itself for the viewers that ship none. There is never a
    * second header stacked above the viewer.
+   *
+   * On the inline (chat) surface the card header owns the toolbar, so these
+   * stay out of the renderer there and only land in the header row.
    */
   const fileActions =
     !isWebsitePreview && activePath ? (
       <ShowFileActions path={activePath} inPanel={fill} />
+    ) : undefined;
+  const contentActions =
+    !isCarousel && !isWebsitePreview && !activePath && content && activate && navigationEnabled ? (
+      <Hint label="Open in the panel" side="top">
+        <Button type="button" onClick={activate} size="xs" className="active:scale-[0.96]">
+          Preview
+        </Button>
+      </Hint>
     ) : undefined;
   const preview = useServicePreview(
     resolvedPreviewUrl,
@@ -146,30 +138,62 @@ export function ShowTool({ part, sessionId, defaultOpen = false, forceOpen, lock
 
   // Precomputed up front (pure derivations over state already resolved above)
   // so both the loading body and the main body can feed the same safe title
-  // into the inline row below — mirrors the `showLabel`-style precedence
+  // into the inline header — mirrors the `showLabel`-style precedence
   // (title > description/domain fallback > generic label), never the raw
   // path/URL. `showDomain` echoes its input verbatim when URL parsing fails,
   // so the type==='url' fallback is gated through `safeHttpUrl` first (the
   // same pattern show-content-renderer.tsx uses): a relative or non-http(s)
   // value never reaches the always-visible subtitle — it degrades to 'Link'.
-  const safeSubtitleUrl = type === 'url' ? safeHttpUrl(url) : null;
+  const safeSubtitleUrl = useMemo(() => (type === 'url' ? safeHttpUrl(url) : null), [type, url]);
+  const subtitleDomain = useMemo(
+    () => (safeSubtitleUrl ? showDomain(safeSubtitleUrl) : ''),
+    [safeSubtitleUrl],
+  );
   const displayTitle = isCarousel
     ? title || `${items!.length} items`
-    : title ||
-      (type === 'error'
-        ? 'Error'
-        : type === 'url'
-          ? (safeSubtitleUrl && showDomain(safeSubtitleUrl)) || 'Link'
-          : 'Output');
+    : title || (type === 'error' ? 'Error' : type === 'url' ? subtitleDomain || 'Link' : 'Output');
 
   const headerIcon = isCarousel ? currentItem?.type || 'image' : isWebsitePreview ? 'url' : type;
+
+  // Inline card header owns the toolbar. Panel keeps the actions inside the
+  // renderer / website header as before.
+  const inlineToolbar = isWebsitePreview ? (
+    <ServicePreviewActions preview={preview} />
+  ) : (
+    fileActions || contentActions
+  );
+
+  // `prefersPreviewLink` parses the candidate URL; it is an argument to the
+  // availability gate below, so it was re-parsed on every render.
+  const previewIsLinkOnly = useMemo(
+    () => prefersPreviewLink(preview.previewUrl),
+    [preview.previewUrl],
+  );
+
+  // Nothing was handed over: no items, no path, no url, no content — only
+  // metadata about an artifact that never arrived. Every branch of
+  // `ShowContentRenderer` is guarded on one of those fields, so the cascade
+  // falls through to a fallback with all four sub-conditions false and the card
+  // renders as a header over an empty box. Draw nothing instead.
+  //
+  // The chat transcript drops the part one level higher (`isEmptyShowPart`, so
+  // no blank row or rail is left behind); this is the same verdict applied at
+  // the renderer, which is what the Action Panel and /debug/tools reach.
+  //
+  // `running` is the guard, not the status: a call still streaming its
+  // arguments has an empty input because the input has not arrived yet, and its
+  // header carries the spinner that says so.
+  const hasNothingToShow = useMemo(
+    () => isShowPayloadEmpty({ items, path, url, content }),
+    [items, path, url, content],
+  );
+  if (!running && hasNothingToShow) return null;
 
   let body: ReactNode;
 
   if (running && !type && !items) {
-    // Only the panel surface (no trigger button) still needs the bespoke
-    // loading card. Inline, the trigger button already carries the running
-    // spinner — rendering the card too would double up the indicators.
+    // Only the panel surface still needs the bespoke loading card. Inline, the
+    // card header carries the running spinner.
     body = fill ? (
       <div className="bg-card flex h-full items-center justify-center overflow-hidden">
         <div className="flex items-center gap-3 px-5 py-4">
@@ -187,7 +211,7 @@ export function ShowTool({ part, sessionId, defaultOpen = false, forceOpen, lock
       contentStatus,
       isWebsitePreview,
       previewHasError: preview.hasError,
-      previewIsLinkOnly: prefersPreviewLink(preview.previewUrl),
+      previewIsLinkOnly,
     })
   ) {
     // The artifact didn't load (renamed/deleted file, dead preview). Never
@@ -219,13 +243,10 @@ export function ShowTool({ part, sessionId, defaultOpen = false, forceOpen, lock
     );
   } else {
     body = (
-      <div
-        className={cn(
-          'overflow-hidden',
-          fill ? 'flex h-full flex-col' : cn('border-border rounded-md border'),
-        )}
-      >
-        {isWebsitePreview && (
+      <div className={cn('overflow-hidden', fill ? 'flex h-full flex-col' : 'min-h-0 flex-1')}>
+        {/* Panel website header stays; inline moves these actions into the
+            card header so there is only one chrome row. */}
+        {isWebsitePreview && fill && (
           <div className="border-border flex shrink-0 items-center justify-between gap-3 border-b px-4 py-1">
             <div className="flex min-w-0 flex-1 items-center gap-2">
               <Globe className="text-muted-foreground/50 size-3.5 shrink-0" />
@@ -245,7 +266,7 @@ export function ShowTool({ part, sessionId, defaultOpen = false, forceOpen, lock
                 LocalhostPreview={CarouselServicePreview}
                 onIndexChange={setCarouselIndex}
                 fill={fill}
-                toolbarActions={fileActions}
+                toolbarActions={fill ? fileActions : undefined}
               />
             </ActiveServicePreviewContext.Provider>
           ) : isWebsitePreview ? (
@@ -265,7 +286,7 @@ export function ShowTool({ part, sessionId, defaultOpen = false, forceOpen, lock
                   LocalhostPreview={InlineServicePreview}
                   fill={fill}
                   onStatusChange={setContentStatus}
-                  toolbarActions={fileActions}
+                  toolbarActions={fill ? fileActions : undefined}
                 />
               </div>
               {description && !title && (
@@ -285,44 +306,36 @@ export function ShowTool({ part, sessionId, defaultOpen = false, forceOpen, lock
   // filling the pane with no shell wrapper.
   if (fill) return body;
 
-  // Inline (chat) surface: a `w-fit` outline button reveals the payload in
-  // place. Its label is the payload's RESOLVED title (`displayTitle`) — never a
-  // raw path or URL, which is what the `safeHttpUrl` gate above guarantees. The
-  // button hugs its content instead of spanning the column: `show` is one action
-  // in the transcript, and a full-bleed row reads as a section header for
-  // everything under it.
+  // Inline (chat) surface: plain card — header row + always-visible payload.
   return (
-    <Disclosure open={open} onOpenChange={handleOpenChange} className="group/show">
-      <DisclosureTrigger>
-        <Button
-          type="button"
-          variant="accent"
-          size="sm"
-          data-component="tool-trigger"
-          className="w-fit max-w-full justify-start gap-2 font-normal border"
-        >
-          {/* `Loading`'s base sets `in-data-[slot=button]:text-background`, which
-              is invisible on a transparent outline button — the same trailing-`!`
-              override the auth buttons use puts the color back. */}
-          {running ? (
-            <Loading className="text-muted-foreground! size-4 shrink-0" />
+    <div
+      data-component="tool-trigger"
+      className="bg-secondary flex w-full flex-col overflow-hidden rounded-lg"
+    >
+      <div className="flex items-center justify-between gap-2 px-2 py-1.5">
+        <div className="text-foreground flex min-w-0 items-center gap-2 px-1 text-xs [&>svg]:size-4">
+          {running && !type && !items ? (
+            <Loading className="text-muted-foreground size-4 shrink-0" />
+          ) : isCarousel && items!.length > 1 ? (
+            <ShowHeaderAvatars items={items!} />
           ) : (
-            showTypeIcon(headerIcon)
+            <ShowHeaderIcon
+              type={headerIcon}
+              path={activePath || undefined}
+              url={activeUrl || undefined}
+              title={displayTitle}
+            />
           )}
           <span className="min-w-0 truncate" title={displayTitle}>
             {displayTitle}
           </span>
-          <CaretRight
-            className={cn(
-              'text-muted-foreground/50 size-3 shrink-0 transition-transform',
-              'group-data-[state=open]/show:rotate-90',
-            )}
-          />
-        </Button>
-      </DisclosureTrigger>
-
-      <DisclosureContent contentClassName="pt-2 text-xs">{body}</DisclosureContent>
-    </Disclosure>
+        </div>
+        {inlineToolbar ? (
+          <div className="flex shrink-0 items-center gap-1">{inlineToolbar}</div>
+        ) : null}
+      </div>
+      <div className="min-h-0 overflow-hidden">{body}</div>
+    </div>
   );
 }
 ToolRegistry.register('show', ShowTool);

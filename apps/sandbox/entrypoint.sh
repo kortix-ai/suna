@@ -38,7 +38,13 @@ if [ "$(id -u)" -eq 0 ] && id kortix >/dev/null 2>&1; then
   if command -v setpriv >/dev/null 2>&1; then
     exec setpriv --reuid kortix --regid kortix --init-groups "$0" "$@"
   fi
-  exec sudo -u kortix -- env \
+  # -E keeps the caller's environment. sudo's default env_reset drops every
+  # KORTIX_* var, so the daemon would come up with no session identity — no
+  # egress shim, no CLI auth — and still pass its health check. The explicit
+  # assignments after `env` continue to win for the four they name. setpriv
+  # ships on the base image so this fallback should never run, which is exactly
+  # why a silent env loss here would be so hard to spot.
+  exec sudo -E -u kortix -- env \
     HOME=/home/kortix USER=kortix LOGNAME=kortix PATH="${PATH}" \
     "$0" "$@"
 fi

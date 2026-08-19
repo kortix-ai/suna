@@ -14,12 +14,13 @@ import { TextShimmer } from '@/components/ui/text-shimmer';
 import { errorToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 import { restartProjectSession, sessionStartKey, type SessionStartStage } from '@kortix/sdk';
+import { qk } from '@kortix/sdk/react';
 import {
   CheckCircleIcon as CheckCircleSolid,
   ArrowCounterClockwiseIcon as RotateCcw,
 } from '@phosphor-icons/react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
+import { AnimatePresence, m, useReducedMotion } from 'motion/react';
 import { useTranslations } from 'next-intl';
 import { useEffect, useRef, useState } from 'react';
 
@@ -159,14 +160,14 @@ function useBootProgress(stage: SessionStartStage): { active: number; now: numbe
 
   // Reset the per-stage clock whenever the backend stage changes, so the
   // soft-advance measures time spent in the CURRENT stage (not since mount).
-  const stageEnteredAt = useRef(now);
-  const prevStage = useRef(stage);
-  if (prevStage.current !== stage) {
-    prevStage.current = stage;
-    stageEnteredAt.current = now;
+  const [stageEnteredAt, setStageEnteredAt] = useState(now);
+  const [prevStage, setPrevStage] = useState(stage);
+  if (prevStage !== stage) {
+    setPrevStage(stage);
+    setStageEnteredAt(now);
   }
 
-  return { active: activeStep(stage, now - stageEnteredAt.current), now };
+  return { active: activeStep(stage, now - stageEnteredAt), now };
 }
 
 /**
@@ -241,7 +242,7 @@ function StepGlyph({ done, current }: { done: boolean; current: boolean }) {
   return (
     <span className="relative flex size-3.5 items-center justify-center">
       <AnimatePresence initial={false} mode="popLayout">
-        <motion.span
+        <m.span
           key={done ? 'done' : 'pending'}
           initial={{ scale: 0.25, opacity: 0, filter: 'blur(4px)' }}
           animate={{ scale: 1, opacity: 1, filter: 'blur(0px)' }}
@@ -257,7 +258,7 @@ function StepGlyph({ done, current }: { done: boolean; current: boolean }) {
           ) : (
             <StepRing spinning={current} />
           )}
-        </motion.span>
+        </m.span>
       </AnimatePresence>
     </span>
   );
@@ -315,7 +316,7 @@ function BootCompactMessage({
             actually announced; on the message itself it unmounts before it can be. */}
         <div className="min-h-13" aria-live="polite">
           <AnimatePresence initial={false} mode="wait">
-            <motion.div
+            <m.div
               key={step.label}
               initial={{ opacity: 0, y: reduce ? 0 : 4 }}
               animate={{ opacity: 1, y: 0, transition: MESSAGE_IN }}
@@ -325,7 +326,7 @@ function BootCompactMessage({
                 {step.label}
               </h2>
               <p className="text-muted-foreground mt-1 text-sm text-pretty">{step.description}</p>
-            </motion.div>
+            </m.div>
           </AnimatePresence>
         </div>
         {footer}
@@ -353,7 +354,7 @@ function BootStepList({ active }: { active: number }) {
         const done = i < active;
         const current = i === active;
         return (
-          <motion.div
+          <m.div
             key={step.label}
             className="flex items-start gap-2.5"
             initial={{ opacity: 0, y: reduce ? 0 : 4 }}
@@ -389,7 +390,7 @@ function BootStepList({ active }: { active: number }) {
                 </StepperTitle>
               )}
             </div>
-          </motion.div>
+          </m.div>
         );
       })}
     </Stepper>
@@ -408,7 +409,7 @@ function BootHint({ slow }: { slow: boolean }) {
   return (
     <span className="relative flex min-h-4 items-center">
       <AnimatePresence initial={false} mode="popLayout">
-        <motion.span
+        <m.span
           key={copy}
           initial={{ opacity: 0, filter: 'blur(3px)' }}
           animate={{ opacity: 1, filter: 'blur(0px)' }}
@@ -417,7 +418,7 @@ function BootHint({ slow }: { slow: boolean }) {
           className="text-muted-foreground text-[11px] leading-relaxed"
         >
           {copy}
-        </motion.span>
+        </m.span>
       </AnimatePresence>
     </span>
   );
@@ -458,7 +459,7 @@ export function RestartFallback({
   return (
     <AnimatePresence>
       {show ? (
-        <motion.div
+        <m.div
           initial={{ opacity: 0, y: reduce ? 0 : 6 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: reduce ? 0 : 4 }}
@@ -497,7 +498,7 @@ export function RestartFallback({
             )}
             {pending ? 'Restarting…' : 'Restart session'}
           </Button>
-        </motion.div>
+        </m.div>
       ) : null}
     </AnimatePresence>
   );
@@ -552,7 +553,7 @@ export function SessionStartingLoader({
       clockStart.current = Date.now();
       queryClient.invalidateQueries({ queryKey: sessionStartKey(projectId!, sessionId!) });
       queryClient.invalidateQueries({
-        queryKey: ['project', 'session-sandbox', projectId, sessionId],
+        queryKey: qk.project.sessionSandbox(projectId ?? '', sessionId ?? ''),
       });
     },
     onError: (err) => {

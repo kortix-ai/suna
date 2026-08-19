@@ -5,7 +5,7 @@ import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
 import { LLM_PROVIDERS, type LlmProviderEntry, type LlmProviderModel } from '@/lib/llm-providers';
 import { getManagedModel, isProviderAuthSatisfied } from '@kortix/llm-catalog';
 import { getProjectDetail, listProjectSecrets } from '@kortix/sdk';
-import { useRuntimeProviders } from '@kortix/sdk/react';
+import { contract, qk, useRuntimeProviders } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
 
@@ -24,17 +24,17 @@ export function useConnectedProviders(projectId: string, enabled: boolean) {
   // won't otherwise notice). See use-live-catalog.ts.
   const catalogRevision = useLlmProviderCatalogRevision();
   const projectDetailQuery = useQuery({
-    queryKey: ['project-detail', projectId],
+    queryKey: qk.project.detail(projectId),
     queryFn: () => getProjectDetail(projectId),
-    staleTime: 30_000,
+    ...contract('config'),
     enabled,
   });
   const llmGatewayEnabled = isLlmGatewayEnabled(projectDetailQuery.data?.project);
 
   const secretsQuery = useQuery({
-    queryKey: ['project-secrets', projectId],
+    queryKey: qk.project.secrets(projectId),
     queryFn: () => listProjectSecrets(projectId),
-    staleTime: 10_000,
+    ...contract('config'),
     enabled,
   });
 
@@ -61,34 +61,34 @@ export function useConnectedProviders(projectId: string, enabled: boolean) {
     const connectedIds = new Set(ocProviders?.connected ?? []);
     const kortix = (ocProviders?.all ?? []).find((p) => p.id === 'kortix');
     if (!kortix || !connectedIds.has('kortix')) return null;
-    const models: LlmProviderModel[] = Object.entries(kortix.models ?? {})
-      .filter(([id]) => MANAGED_MODEL_ID_SET.has(id))
-      .map(([id, m]) => {
-        // Best-effort capability/limit passthrough for the "Models in depth"
-        // display (models-tab.tsx / catalog-tab.tsx) — the opencode provider
-        // snapshot mirrors these when it has them; `vision`/`limit` otherwise
-        // fall back to `@kortix/llm-catalog`'s curated managed-model table,
-        // the canonical home for both (see MANAGED_MODELS' doc comment —
-        // managed slugs aren't reliably on models.dev, so this table is
-        // authoritative for them, not a guess).
-        const raw = m as {
-          name?: string;
-          release_date?: string;
-          reasoning?: boolean;
-          tool_call?: boolean;
-          limit?: { context?: number; output?: number };
-        };
-        const managed = getManagedModel(id);
-        return {
-          id,
-          name: (raw.name || id).replace('(latest)', '').trim(),
-          released: raw.release_date ?? null,
-          reasoning: raw.reasoning,
-          tool_call: raw.tool_call,
-          attachment: managed?.vision,
-          limit: raw.limit ?? managed?.limit,
-        };
+    const models: LlmProviderModel[] = [];
+    for (const [id, m] of Object.entries(kortix.models ?? {})) {
+      if (!MANAGED_MODEL_ID_SET.has(id)) continue;
+      // Best-effort capability/limit passthrough for the "Models in depth"
+      // display (models-tab.tsx / catalog-tab.tsx) — the opencode provider
+      // snapshot mirrors these when it has them; `vision`/`limit` otherwise
+      // fall back to `@kortix/llm-catalog`'s curated managed-model table,
+      // the canonical home for both (see MANAGED_MODELS' doc comment —
+      // managed slugs aren't reliably on models.dev, so this table is
+      // authoritative for them, not a guess).
+      const raw = m as {
+        name?: string;
+        release_date?: string;
+        reasoning?: boolean;
+        tool_call?: boolean;
+        limit?: { context?: number; output?: number };
+      };
+      const managed = getManagedModel(id);
+      models.push({
+        id,
+        name: (raw.name || id).replace('(latest)', '').trim(),
+        released: raw.release_date ?? null,
+        reasoning: raw.reasoning,
+        tool_call: raw.tool_call,
+        attachment: managed?.vision,
+        limit: raw.limit ?? managed?.limit,
       });
+    }
     return {
       id: 'kortix',
       label: kortix.name || 'Kortix',

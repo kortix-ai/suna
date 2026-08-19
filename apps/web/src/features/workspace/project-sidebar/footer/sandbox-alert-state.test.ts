@@ -194,8 +194,8 @@ describe('formatSandboxProviders', () => {
     expect(formatSandboxProviders([])).toBe('');
     expect(formatSandboxProviders(['daytona'])).toBe('Daytona');
     expect(formatSandboxProviders(['daytona', 'e2b'])).toBe('Daytona and E2B');
-    expect(formatSandboxProviders(['daytona', 'e2b', 'local-docker'])).toBe(
-      'Daytona, E2B and Local Docker',
+    expect(formatSandboxProviders(['daytona', 'e2b', 'platinum'])).toBe(
+      'Daytona, E2B and Platinum',
     );
   });
 });

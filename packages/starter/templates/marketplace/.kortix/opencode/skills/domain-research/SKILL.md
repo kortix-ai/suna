@@ -27,46 +27,46 @@ No env vars, no API keys, no setup. Just run it.
 
 ```bash
 # Single or multiple domains (comma-separated)
-uv run "$SCRIPT" check "example.com"
-uv run "$SCRIPT" check "myproject.com,myproject.io,myproject.ai,myproject.dev"
+python3 "$SCRIPT" check "example.com"
+python3 "$SCRIPT" check "myproject.com,myproject.io,myproject.ai,myproject.dev"
 ```
 
 ### Search keyword across TLDs
 
 ```bash
 # Default: .com .net .org .io .co .ai .dev .app .xyz .me .tech .cloud + more
-uv run "$SCRIPT" search "myproject"
+python3 "$SCRIPT" search "myproject"
 
 # Custom TLDs
-uv run "$SCRIPT" search "myproject" --tlds ".com,.io,.ai,.dev,.app,.co"
+python3 "$SCRIPT" search "myproject" --tlds ".com,.io,.ai,.dev,.app,.co"
 ```
 
 ### WHOIS / RDAP lookup
 
 ```bash
 # Full registration details (registrar, dates, status, nameservers, contacts)
-uv run "$SCRIPT" whois google.com
-uv run "$SCRIPT" whois kortix.ai
+python3 "$SCRIPT" whois google.com
+python3 "$SCRIPT" whois kortix.ai
 ```
 
 ### Expiry check
 
 ```bash
 # When does it expire? How many days left?
-uv run "$SCRIPT" expiry kortix.ai
+python3 "$SCRIPT" expiry kortix.ai
 ```
 
 ### Nameservers
 
 ```bash
-uv run "$SCRIPT" nameservers google.com
+python3 "$SCRIPT" nameservers google.com
 ```
 
 ### Bulk check from file
 
 ```bash
 # File with one domain per line
-uv run "$SCRIPT" bulk domains.txt
+python3 "$SCRIPT" bulk domains.txt
 ```
 
 ---

@@ -385,7 +385,7 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
                     <span className="text-muted-foreground shrink-0 font-mono text-sm tabular-nums">
                       #{cr.number}
                     </span>
-                    <span className="line-clamp-2 min-w-0 break-words">{cr.title}</span>
+                    <span className="line-clamp-2 min-w-0 wrap-break-word">{cr.title}</span>
                   </ModalTitle>
                   <StatusBadge status={cr.status} />
                 </div>
@@ -430,12 +430,20 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
             >
               {manifestIssues.length > 0 ? (
                 <ul className="mt-1 list-disc space-y-0.5 pl-5 font-mono text-xs [&_li]:break-all">
-                  {manifestIssues.map((issue, idx) => (
-                    <li key={`${issue.path}-${idx}`}>
-                      {issue.path}: {issue.message}
-                      {issue.line ? ` (line ${issue.line})` : ''}
-                    </li>
-                  ))}
+                  {(() => {
+                    const seen = new Map<string, number>();
+                    return manifestIssues.map((issue) => {
+                      const base = `${issue.path}:${issue.line ?? ''}:${issue.message}`;
+                      const n = seen.get(base) ?? 0;
+                      seen.set(base, n + 1);
+                      return (
+                        <li key={n ? `${base}#${n}` : base}>
+                          {issue.path}: {issue.message}
+                          {issue.line ? ` (line ${issue.line})` : ''}
+                        </li>
+                      );
+                    });
+                  })()}
                 </ul>
               ) : (
                 <span>
@@ -609,7 +617,7 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
                     </div>
                     <div className="border-border space-y-2.5 border-t p-3">
                       {cr?.description && (
-                        <div className="text-muted-foreground text-sm break-words [&_pre]:overflow-x-auto">
+                        <div className="text-muted-foreground text-sm wrap-break-word [&_pre]:overflow-x-auto">
                           <UnifiedMarkdown content={cr.description} />
                         </div>
                       )}

@@ -20,6 +20,7 @@ const kortix = createKortix({ backendUrl, getToken });
 kortix.accounts; // account / team operations
 kortix.accountInvites; // invite accept/decline by token alone
 kortix.projects; // top-level project operations
+kortix.connectors; // Connector calls scoped by an agent-minted token
 kortix.project(id); // id-bound project handle
 kortix.session(pid, sid); // id-bound session handle → see Sessions
 kortix.github; // GitHub App install + repo linking
@@ -50,12 +51,12 @@ kortix.runtime(); // OpenCode REST compatibility client
 
 | method | what |
 | --- | --- |
-| `tokens.list(accountId?)` | list your API keys |
+| `tokens.list(accountId?, options?)` | list API keys — the whole account's, or only your own with `{ mine: true }` |
 | `tokens.create(input)` | mint one — `{ accountId?, name, expiresAt?, projectId? }` |
 | `tokens.revoke(tokenId, accountId?)` | revoke one |
 
 `accounts.audit` is the enterprise reconstruction log. It combines authenticated
-API requests with semantic session, executor, approval, and computer events.
+API requests with semantic session, connector, approval, and computer events.
 
 | method | what |
 | --- | --- |
@@ -66,7 +67,7 @@ API requests with semantic session, executor, approval, and computer events.
 Each event includes `project_id`, `session_id`, `actor_type`, `source`, `outcome`,
 `request_id`, `trace_id`, and `correlation_id` when the action supplies them.
 The API does not store request bodies, prompts, secrets, credentials, or raw
-connector arguments in the centralized event. Executor events can include a
+connector arguments in the centralized event. Connector events can include a
 bounded argument preview that redacts credential-shaped fields and opaque data.
 
 ### Account invites — `kortix.accountInvites`
@@ -84,7 +85,7 @@ Reached by invite token alone — the invitee may not be a member yet.
 | `list()` · `listForAccount(accountId)` | your projects · projects in an account |
 | `get(id)` · `detail(id)` | summary · full detail |
 | `create(input)` · `createRepo(input)` | from an existing `repo_url` · new empty GitHub repo |
-| `provision(input)` | new project on a new Kortix-managed repo, seeded with a starter template — `{ name, account_id?, seed_starter?, starter_template?, marketplace_items?, source_item_id? }` |
+| `provision(input)` | new project on a new Kortix-managed repo, seeded with a starter template — `{ name, account_id?, seed_starter?, starter_template?, marketplace_items?, source_item_id?, idempotency_key? }` |
 | `update(id, input)` · `archive(id)` | update settings · archive |
 | `llmCatalog(id)` · `modelPicker(id)` | full · compact model catalog for a selector |
 | `sandboxTemplates(id)` · `sandboxHealth(id)` | sandbox build templates · build health |
@@ -93,9 +94,23 @@ Reached by invite token alone — the invitee may not be a member yet.
 `provision` creates a new project; it does not start an existing project's
 sandbox. Start a session instead — see [Sessions](/docs/sdk/sessions).
 
-`project(id).sessions.list({ scope: 'project' })` is a manager-only inventory:
-private, unavailable, and soft-deleted sessions, with ownership and
-runtime-state metadata.
+Send `idempotency_key` when a retry is possible — a reload, a second tab, a
+timeout you retried. `provision` mints a brand-new managed repo per call, so
+without a key those all create real duplicate projects. Reuse one key for every
+attempt at a single logical create and the repeats return the project the first
+attempt made (201, same `project_id`, `push_token: null`). The key identifies the
+attempt, not the payload — reusing one with a different `name` returns the first
+project and ignores the new value, so mint a fresh key per distinct create.
+Creating a second project with the same **name** and no key still works.
+
+A repeat that arrives while the first call is still provisioning gets `409` with
+`code: 'provision_in_flight'` rather than a `project_id` that call may still roll
+back. Retry with the same key.
+
+`project(id).sessions.list({ scope: 'project' })` is a manager-only lifecycle
+inventory. It adds accessible unavailable, warm, and soft-deleted sessions with
+ownership and runtime-state metadata. Both list scopes omit every session the
+caller cannot open.
 
 ### GitHub — `kortix.github`
 
@@ -174,7 +189,7 @@ await p.llmCatalog();
 
 #### `p.tokens` — project-scoped API keys
 
-Auto-minted at session create as `KORTIX_TOKEN`; can also be minted by hand.
+Auto-minted at session create as `KORTIX_CLI_TOKEN`; can also be minted by hand.
 
 | method | what |
 | --- | --- |
@@ -195,10 +210,16 @@ project access.
 
 | method | what |
 | --- | --- |
-| `list()` · `upsert({ name, value })` | all project secrets · create or update one |
-| `remove(name)` | delete a secret |
+| `list()` · `upsert(input)` | list metadata · create or update a write-only value and delivery policy |
+| `setStrategy(identifier, strategy, options?)` | change the consumer and delivery policy |
+| `broker(identifier, request)` | execute a session-authorized, policy-bound HTTPS request |
+| `remove(identifier)` | delete a secret |
 | `setPersonal(name, value)` · `removePersonal(name)` | set · remove a per-user override |
 | `setGitCredential(input)` | set a git auth credential |
+
+`runtime` with consumer `sandbox` is the only policy that exposes plaintext to
+the session. Managed consumers use `broker`. The HTTPS broker method requires a
+session-scoped token and an active session handle.
 
 #### `p.access` — members, invites, requests
 
@@ -223,19 +244,23 @@ agent, a skill, a secret) instead of the whole project.
 
 | method | what |
 | --- | --- |
+| `catalog()` · `tools()` | callable Connector catalog · flattened `<connector>.<action>` tools |
+| `search(query, options?)` · `describe(tool)` | find · inspect one callable tool |
+| `call(tool, args?)` | call one `<connector>.<action>` tool through the server-side gateway |
+| `uploadAttachment(content, input)` | upload bytes and receive an opaque attachment handle for a later call |
 | `list()` · `config(connectorId)` | configured connectors · one connector's config |
 | `create(input)` | add a connector |
 | `auth.discover(input)` | preview auth from an OpenAPI spec, Postman collection, or endpoint |
 | `remove(connectorId)` · `sync()` | delete a connector · re-sync connectors |
 | `setName(connectorId, name)` · `setSensitive(connectorId, sensitive)` | rename · mark it sensitive (extra approval gating) |
-| `setAuthorizationStrategy(slug, strategy)` | select `project` or `user` authorization ownership |
+| `setAuthorizationStrategy(slug, strategy)` | select `project` or `user` connection ownership |
 | `setCredentialMode(connectorId, mode)` · `setCredential(connectorId, input)` | switch source · set the credential value |
 | `policies.get(connectorId)` · `policies.set(connectorId, policies)` | read · replace its tool policies |
-| `authorizations.list()` · `authorizations.reconcile(input)` | list · create/update connected accounts |
-| `authorizations.updateCredential(authorizationId, input)` | rotate an authorization credential |
-| `authorizations.revoke(authorizationId)` · `authorizations.activate(authorizationId)` | deny · restore an authorization live |
+| `connections.list()` · `connections.reconcile(input)` | list · create/update connected accounts |
+| `connections.updateCredential(connectionId, input)` | rotate a connection credential |
+| `connections.revoke(connectionId)` · `connections.activate(connectionId)` | deny · restore a connection |
 
-`p.connectors.discover` browses the direct-integration catalog. It is **experimental** and off by default — enable it per project under Customize → Settings → Experimental → "Connectors API Discover". Easy Connect (Pipedream) remains the default connector marketplace.
+`p.connectors.discover` browses the direct-connector catalog. It is **experimental** and off by default — enable it per project under [Settings → Experimental](/docs/feature-flags) → "Connectors API Discover". Easy Connect (Pipedream) remains the default connector marketplace.
 
 | method | what |
 | --- | --- |
@@ -248,13 +273,13 @@ returns OAuth apps only. Connect API-key apps directly instead.
 | --- | --- |
 | `pipedream.listApps(params?)` · `pipedream.connect(input)` · `pipedream.finalize(input)` | browse the app catalog · start a connect flow · finalize it |
 
-A connector profile defines the tool, provider app, authorization strategy, and
-policies. `authorizations` stores its connected accounts. A session can select
-one with `connector_bindings: { alias: { authorization_id } }`. Credentials
+A connector defines the tool, provider app, authorization strategy, and
+policies. `connections` stores its connected accounts. A session can select
+one with `connector_bindings: { alias: { connection_id } }`. Credentials
 stay encrypted and resolve per request.
 
-The deprecated `profiles` facade aliases `authorizations`. New code uses
-authorization terminology.
+`connections` is the only active authorization facade. The retired
+`authorizations` and `profiles` names are not part of the current SDK surface.
 
 #### `p.policies` — project policies
 
@@ -277,11 +302,19 @@ templating.
 | `fire(triggerId)` | run it now |
 | `setActivation(paused)` | pause or resume every trigger on the project |
 
-`create(input)` takes `{ name, type: 'cron' | 'webhook', prompt_template,
+`create(input)` takes `{ name, type: 'cron' | 'webhook' | 'monitor', prompt_template,
 slug?, agent?, model?, enabled?, session_mode?, session_id?, cron?, run_at?,
-timezone?, secret_env? }`. `name` and `prompt_template` are required.
+timezone?, secret_env?, session_access? }`. `name` and `prompt_template` are required.
 `cron`/`run_at` are mutually exclusive (`type: 'cron'`); `secret_env` (the
 webhook HMAC secret) applies to `type: 'webhook'`.
+
+`session_access` controls who can open sessions the trigger creates. It is
+`{ mode: 'private' | 'members' | 'project', memberIds: string[], groupIds:
+string[] }` and defaults to `private`. This policy is account-local runtime
+state. It does not enter the portable `kortix.yaml` manifest. Updating only
+`session_access` creates no Git commit. A pinned session keeps its own sharing
+settings. Project managers can always open trigger-created sessions, including
+sessions that use `private` or selected-member access.
 
 #### `p.marketplace` / `p.registry` — installed items
 
@@ -337,14 +370,14 @@ A change request (CR) is how a session's work merges into the default branch.
 The session handle is the heart of the runtime — see
 [Sessions](/docs/sdk/sessions).
 
-`create(input)` accepts `connector_bindings` keyed by connector-profile slug.
-Each value names an `authorization_id`. It also accepts `secrets` for
+`create(input)` accepts `connector_bindings` keyed by connector-connection slug.
+Each value names a `connection_id`. It also accepts `secrets` for
 backend-origin secret narrowing and `require_connectors` for mandatory
-connector profiles.
+connectors.
 
-#### `p.approvals` — the executor approval inbox
+#### `p.approvals` — the connector approval inbox
 
-Pending executor-gated actions awaiting a decision — backs the
+Pending connector-gated actions awaiting a decision — backs the
 permission-approval UX (`APPROVE` / `ASK` / `BLOCK`).
 
 | method | what |
@@ -373,7 +406,7 @@ fallback chain, each model attempted at most once; `fallbackOn` is
 
 #### `p.channels` — Slack / email / voice
 
-Integration surfaces that let an agent act as a Slack app, an email address,
+Connector surfaces that let an agent act as a Slack app, an email address,
 or join a realtime voice call.
 
 | method | what |
@@ -399,10 +432,25 @@ Account, agent, and project-scoped model defaults, resolved by the gateway.
 then sets it as `default_agent` in the project's `kortix.yaml`. New sessions
 prefer this agent unless a user picks another one.
 
-#### `p.updateExperimentalFeature` — feature flags
+#### `p.updateFeatureFlag` — feature flags
 
-`p.updateExperimentalFeature(feature, enabled)` toggles an experimental
-feature for the project. Pass `enabled: null` to clear the override.
+`p.updateFeatureFlag(feature, enabled)` turns one feature flag on or off for the
+project. Pass `enabled: null` to clear the override and fall back to the
+platform default. It calls the canonical `PATCH /v1/projects/:id/features`.
+
+`feature` is one of `FEATURE_FLAG_KEYS` (exported from `@kortix/sdk`, typed as
+`FeatureFlagKey`). The caller needs the project's `project.customize.write`
+permission; the route answers `403` otherwise.
+
+Every flag-gated route rejects the same way while the flag is off: HTTP `403`
+with `{ error, code: "feature_disabled", feature }`. Use `isFeatureDisabledError(error)`
+to branch on it and `featureDisabledKey(error)` to read the flag key — never
+match on the message text.
+
+`p.updateExperimentalFeature(feature, enabled)` is the **deprecated** alias. It
+keeps calling the deprecated route alias `PATCH /v1/projects/:id/experimental`
+so consumers pinned to an older deployed API keep working. Use
+`p.updateFeatureFlag` in new code.
 
 #### `p.sandbox` — templates and snapshot builds
 
@@ -835,9 +883,17 @@ const childMap = childMapByParent(sessions);
 const descendants = allDescendantIds(childMap, sessionId);
 ```
 
-Retry state: `getRetryInfo(sessionStatus)` returns `{ attempt, message, next
-}` when `status.type === 'retry'`, with `message` capped to 60 characters.
-`getRetryMessage(sessionStatus)` returns the full message.
+Retry state: `getRetryInfo(sessionStatus)` returns `{ attempt, message, next,
+details? }` when `status.type === 'retry'`, with `message` capped to 60
+characters. `details` preserves a structured LLM-gateway envelope when present:
+the final provider, gateway code, request ID, suggestion, upstream status, and
+ordered candidate failures. Each candidate failure contains `attempt`,
+`provider`, `routeModel`, `resolvedModel`, `stage`, optional `status`, `code`,
+and `message`. Legacy plain-text retries return `details: undefined`.
+`getRetryMessage(sessionStatus)` returns the full unwrapped message. When
+OpenCode retains only that message, the gateway composite still includes the
+request ID and each candidate's provider, resolved model, HTTP status, code,
+and bounded message.
 
 ### Structural types
 

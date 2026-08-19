@@ -4,7 +4,9 @@ import { type MigrationLedgerRow, planMigrationLedgerRepair } from './migration-
 const LEGACY_SQL = '20260729181733802_sandbox_deadline';
 const LEGACY_INDEX = '20260729181804675_sandbox_deadline_index.concurrent';
 const CURRENT_SQL = '20260730000452547_sandbox_deadline';
-const EXECUTOR = '20260729215216867_executor_policy_arg_conditions';
+const CONNECTOR = '20260729215216867_executor_policy_arg_conditions';
+const LEGACY_APP_ACCESS = '20260807192000000_add_app_access_control';
+const LEGACY_APP_ACCESS_VALIDATE = '20260807192000001_validate_app_access_constraints';
 const RUN_ON = new Date('2026-07-29T16:46:37.325Z');
 
 function row(name: string, runOn = RUN_ON): MigrationLedgerRow {
@@ -14,17 +16,17 @@ function row(name: string, runOn = RUN_ON): MigrationLedgerRow {
 describe('planMigrationLedgerRepair', () => {
   test('does nothing for a fresh or already-repaired ledger', () => {
     expect(planMigrationLedgerRepair([])).toBeNull();
-    expect(planMigrationLedgerRepair([row(EXECUTOR), row(CURRENT_SQL)])).toBeNull();
+    expect(planMigrationLedgerRepair([row(CONNECTOR), row(CURRENT_SQL)])).toBeNull();
   });
 
-  test('plans the dev repair and identifies the missing executor migration', () => {
+  test('plans the dev repair and identifies the missing connector migration', () => {
     const plan = planMigrationLedgerRepair([
       row(LEGACY_SQL),
       row(LEGACY_INDEX, new Date('2026-07-29T16:46:39.752Z')),
     ]);
 
     expect(plan).toEqual({
-      executorMigrationIsMissing: true,
+      connectorMigrationIsMissing: true,
       legacyRunOn: RUN_ON,
       renames: [
         { legacyName: LEGACY_SQL, currentName: CURRENT_SQL },
@@ -36,11 +38,33 @@ describe('planMigrationLedgerRepair', () => {
     });
   });
 
-  test('does not reapply an executor migration that already exists', () => {
-    const plan = planMigrationLedgerRepair([row(EXECUTOR), row(LEGACY_SQL)]);
+  test('does not reapply a connector migration that already exists', () => {
+    const plan = planMigrationLedgerRepair([row(CONNECTOR), row(LEGACY_SQL)]);
 
-    expect(plan?.executorMigrationIsMissing).toBe(false);
+    expect(plan?.connectorMigrationIsMissing).toBe(false);
     expect(plan?.renames).toEqual([{ legacyName: LEGACY_SQL, currentName: CURRENT_SQL }]);
+  });
+
+  test('maps the applied app-access filenames without requiring connector repair', () => {
+    const plan = planMigrationLedgerRepair([
+      row(LEGACY_APP_ACCESS),
+      row(LEGACY_APP_ACCESS_VALIDATE),
+    ]);
+
+    expect(plan).toEqual({
+      connectorMigrationIsMissing: false,
+      legacyRunOn: null,
+      renames: [
+        {
+          legacyName: LEGACY_APP_ACCESS,
+          currentName: '20260807211250000_add_app_access_control',
+        },
+        {
+          legacyName: LEGACY_APP_ACCESS_VALIDATE,
+          currentName: '20260807211250001_validate_app_access_constraints',
+        },
+      ],
+    });
   });
 
   test('rejects a ledger that contains both names for one migration', () => {

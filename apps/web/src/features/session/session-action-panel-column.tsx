@@ -26,10 +26,24 @@
  * session is the chat plus the one thing being looked at. No state is written
  * for that — closing the detail brings the column back as it was.
  *
- * The chevron is the only way to open it — there is no keyboard shortcut.
+ * ⌘I / Ctrl+I lives here, but it does NOT mean "toggle this column". It means
+ * "toggle the right side", which is `toggleRightPanel` in the store: close
+ * whatever is docked there — this column, a detail panel, or both — and, when
+ * nothing is, reopen what this session was last showing, falling back to this
+ * column. One key for one visual region. The memory is session-scoped: leave
+ * the session and the key is back to opening this column.
+ *
+ * The binding lives on this component only because this is the surface that is
+ * always mounted for a session (the detail panel is content-driven and may
+ * have nothing to render). It stays mounted while `hidden` under a detail,
+ * which is what lets the key close that detail.
+ *
+ * The chevron is unaffected: it is this column's own control, so it toggles
+ * this column and nothing else.
  */
 
 import Hint from '@/components/ui/hint';
+import { Kbd, KbdGroup } from '@/components/ui/kbd';
 import { ActionPanel } from '@/features/session/action-panel';
 import { useOptionalSessionPanel } from '@/features/session/action-panel/session-panel-provider';
 import { useIsMobile } from '@/hooks/utils';
@@ -39,14 +53,20 @@ import {
   useIsSidePanelOpen,
   useReadyChip,
   useToggleActionPanel,
+  useToggleRightPanel,
 } from '@/stores/kortix-computer-store';
+import { useTabStore } from '@/stores/tab-store';
 import { CaretDoubleLeftIcon, CaretDoubleRightIcon } from '@phosphor-icons/react';
-import { motion, useReducedMotion } from 'motion/react';
+import { m, useReducedMotion } from 'motion/react';
+import { useEffect } from 'react';
 
 /** The panel's open width. The inner content is pinned to it so the cards keep
  *  their true width while the container widens — they slide into view rather
  *  than reflowing from squashed to correct on every frame. */
 const PANEL_WIDTH = 380;
+
+const isMac = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform);
+const modSymbol = isMac ? '⌘' : 'Ctrl';
 
 /**
  * Motion. This is the one place in this work that animates a LAYOUT property,
@@ -66,7 +86,11 @@ export function SessionActionPanelColumn() {
   const panel = useOptionalSessionPanel();
   const isMobile = useIsMobile();
   const isOpen = useIsActionPanelOpen();
+  // The chevron's own action — it is this column's control, so it moves this
+  // column and nothing else.
   const toggle = useToggleActionPanel();
+  // ⌘I's action — the whole right side, whichever surface is docked there.
+  const toggleRight = useToggleRightPanel();
   const readyChip = useReadyChip();
   const reduce = useReducedMotion();
   // The right-hand detail panel is showing a browser, a terminal, a file
@@ -74,13 +98,36 @@ export function SessionActionPanelColumn() {
   // this flag is true exactly when one of those is on screen.
   const detailPanelOpen = useIsSidePanelOpen();
 
+  const sessionId = panel?.sessionId;
+  const isInTabSystem = useTabStore((s) => (sessionId ? !!s.tabs[sessionId] : false));
+  const isActiveTab = useTabStore((s) => (sessionId ? s.activeTabId === sessionId : false));
+  // Inactive session tabs stay mounted. Only the visible tab may own ⌘I, or
+  // every background layout would flip the shared `isActionPanelOpen` flag.
+  const shouldHandleHotkey = !!panel && !isMobile && (isInTabSystem ? isActiveTab : true);
+
+  useEffect(() => {
+    if (!shouldHandleHotkey) return;
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'i' || e.key === 'I')) {
+        e.preventDefault();
+        // NOT `toggle()` — see this file's header. The key owns the right side;
+        // the chevron owns this column. Binding the key to the column left the
+        // detail panel (browser, terminal, files, a preview) with no keyboard
+        // close at all, and pressing ⌘I under one silently moved a column the
+        // detail was covering.
+        toggleRight();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [shouldHandleHotkey, toggleRight]);
+
   // No provider means no panel to render: `SessionChat` also renders read-only
   // inside `sub-session-modal.tsx`, outside `SessionLayout`. Mobile has no
   // column either — at 375px a side column is the whole screen, so the cards
   // stay in the bottom drawer they have always used.
   if (!panel || isMobile) return null;
 
-  const sessionId = panel.sessionId;
   const showReadyDot = readyChip?.sessionId === sessionId && !isOpen;
   const label = isOpen ? 'Collapse pane' : 'Expand pane';
 
@@ -105,7 +152,20 @@ export function SessionActionPanelColumn() {
       )}
       data-testid="session-action-panel"
     >
-      <Hint side="left" sideOffset={4} delayDuration={300} label={label}>
+      <Hint
+        side="left"
+        sideOffset={4}
+        delayDuration={300}
+        label={
+          <span className="flex items-center gap-1.5">
+            {label}
+            <KbdGroup className='bg-transparent'>
+              <Kbd className="font-mono">{modSymbol}</Kbd>
+              <Kbd className="font-mono">I</Kbd>
+            </KbdGroup>
+          </span>
+        }
+      >
         <button
           type="button"
           aria-label={label}
@@ -150,18 +210,34 @@ export function SessionActionPanelColumn() {
           width immediately instead of playing an arrival nobody asked for.
           The transition ternary is safe here precisely BECAUSE this element
           never unmounts: there is no exiting node holding stale props. */}
-      <motion.div
+      <m.div
         initial={false}
         animate={{ width: isOpen ? PANEL_WIDTH : 0 }}
         transition={reduce ? { duration: 0 } : isOpen ? ENTER : EXIT}
         aria-hidden={!isOpen}
         inert={!isOpen || undefined}
-        className="max-h-full min-h-0 overflow-hidden"
+        // `self-stretch` against the column's `items-start`: the cards inside
+        // divide the available height between them, and "available" has to be
+        // a real number for that to mean anything. Left at `items-start` this
+        // box was only as tall as its content, so `h-full` further down
+        // resolved against nothing and every card fell back to its natural
+        // height — the stack the panel used to be.
+        className="min-h-0 self-stretch overflow-hidden"
       >
-        <div className="max-h-full overflow-y-auto pr-3" style={{ width: PANEL_WIDTH }}>
+        {/* `h-full` hands that height down to the card column. The
+            `overflow-y-auto` stays as the last resort: the cards below Outputs
+            are deliberately unshrinkable, so if they alone exceed the panel —
+            a fully expanded Context with a long file list on a short window —
+            something has to give, and scrolling the whole column is a better
+            failure than clipping a card. In every ordinary case Outputs
+            absorbs the difference and this never engages. */}
+        <div
+          className="scrollbar-minimal h-full overflow-y-auto overscroll-contain pr-3"
+          style={{ width: PANEL_WIDTH }}
+        >
           <ActionPanel />
         </div>
-      </motion.div>
+      </m.div>
     </div>
   );
 }

@@ -16,6 +16,7 @@ import { and, eq, isNull, ne, or } from 'drizzle-orm';
 import { sandboxTemplates, projects } from '@kortix/db';
 import {
   AGENT_BROWSER_VERSION,
+  ANYDOC_VERSION,
   BUN_SHA256_AMD64,
   BUN_SHA256_ARM64,
   BUN_VERSION,
@@ -49,7 +50,7 @@ import {
 import { computeSnapshotHash } from './hash';
 import {
   buildRuntimeArtifactFingerprint,
-  cliExecutorRuntimeArtifacts,
+  cliConnectorRuntimeArtifacts,
 } from './runtime-fingerprint';
 import { getSandboxProvider, type SandboxProviderAdapter } from './providers';
 import { dirname, join, resolve } from 'node:path';
@@ -67,8 +68,6 @@ const MACHINE_DOC_PATH = process.env.KORTIX_SNAPSHOT_MACHINE_DOC_PATH
   || resolve(REPO_ROOT, 'apps/sandbox/MACHINE.md');
 const SLACK_CLI_SRC_PATH = process.env.KORTIX_SNAPSHOT_SLACK_CLI_PATH
   || resolve(REPO_ROOT, 'apps/sandbox/slack-cli');
-const EXECUTOR_SDK_SRC_PATH = process.env.KORTIX_SNAPSHOT_EXECUTOR_SDK_PATH
-  || resolve(REPO_ROOT, 'packages/executor-sdk');
 // Source of the `kortix` CLI binary baked into every sandbox. We fingerprint
 // the SOURCE (not the compiled binary, which `bun build --compile` produces
 // non-deterministically) so a CLI code change rebuilds snapshots while a
@@ -76,19 +75,19 @@ const EXECUTOR_SDK_SRC_PATH = process.env.KORTIX_SNAPSHOT_EXECUTOR_SDK_PATH
 //
 // Scope: only the files whose change can alter what the CLI does INSIDE a
 // sandbox. The single compiled `kortix` binary bakes ALL of apps/cli/src, but a
-// session only ever invokes `kortix executor` / `kortix executor mcp` — the rest
+// session only ever invokes `kortix connectors` / `kortix connectors mcp` — the rest
 // (`ship`, `cr`, `tunnel`, `self-host`, `accounts`, the whole `init`/scaffold
 // surface, …) is developer-facing and runs on a laptop, never in the sandbox.
 // Hashing the WHOLE tree meant every dev-only CLI edit re-minted every project's
 // runtime identity AND moved the non-agent `swapKey`, which DISABLES the cheap
 // agent-swap fast path and forces a full O(all-projects) rebuild (measured: ~4 of
 // 11 forced mass-rebuilds over 2 weeks were pure dev-CLI churn). So we hash the
-// in-sandbox executor import-closure instead of `apps/cli/src` wholesale.
+// in-sandbox connector import-closure instead of `apps/cli/src` wholesale.
 //
-// This closure is asserted complete by snapshots/__tests__/cli-executor-closure
-// .test.ts, which re-derives it from the `kortix executor` entrypoints and fails
+// This closure is asserted complete by snapshots/__tests__/cli-connector-closure
+// .test.ts, which re-derives it from the `kortix connectors` entrypoints and fails
 // if a new import escapes the hashed set — so scoping can never silently ship a
-// stale in-sandbox executor. packages/starter (scaffolding) and packages/
+// stale in-sandbox connector. packages/starter (scaffolding) and packages/
 // manifest-schema (only reached by laptop-side `ship`/`validate`) are likewise
 // never in the sandbox and are deliberately not fingerprinted.
 const CLI_ROOT = resolve(REPO_ROOT, 'apps/cli');
@@ -209,7 +208,15 @@ const FINGERPRINT_EXCLUDES = ['node_modules', '.bin', 'dist', '.turbo', '.cache'
 // skill tells it never to fall back to a raw API, so it would report a retired
 // feature as a transient provider failure mid-call.
 // v37: require a source digest beside the compiled sandbox CLI.
-const RUNTIME_LAYER_VERSION = 'verified-runtime-artifacts-v38';
+// v39: bake the pinned Python package floor (runtime-versions.json
+// `pythonPackages`) into the managed interpreter — starter skills and bare
+// `python3` run with zero per-script resolution or runtime PyPI downloads.
+// v40: create a private, kortix-owned /var/run/kortix before daemon startup.
+// Platinum replaces /run and starts the image as `kortix`, so that directory
+// does not survive provider startup.
+// v41: store durable daemon state under /home/kortix/.local/state/kortix. This
+// path remains writable when a provider replaces /run or discards image USER.
+const RUNTIME_LAYER_VERSION = 'verified-runtime-artifacts-v41';
 const DEFAULT_CPU = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_CPU', 2);
 const DEFAULT_MEMORY_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_MEMORY_GB', 4);
 const DEFAULT_DISK_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_DISK_GB', 20);
@@ -597,7 +604,7 @@ export async function computeTemplateIdentity(
   const hash = computeSnapshotHash({ ...hashInputs, runtimeFingerprint });
   // swapKey identifies EVERYTHING the agent-swap does NOT touch: the user image,
   // the spec, and the NON-agent runtime layer (opencode/entrypoint/CLI/slack-cli/
-  // executor-sdk/manifest-schema/layer+browser versions). It is computed by hashing
+  // SDK/manifest-schema/layer+browser versions). It is computed by hashing
   // the same inputs with the non-agent runtime fingerprint in place of the full one.
   // Two identities with the SAME swapKey differ ONLY by the agent binary → the swap
   // is sound. A change to the user image, spec, OR any non-agent runtime artifact
@@ -891,7 +898,8 @@ function validateTemplateMutation(args: { image?: unknown; dockerfilePath?: unkn
 
 // The runtime layer bakes source artifacts into every template's rootfs. Exactly
 // TWO are the kortix-agent binary; the rest (entrypoint, in-sandbox CLI surface,
-// slack-cli, executor-sdk) are the non-agent runtime. The agent-swap fast path
+// slack-cli, SDK-backed Connector client) are the non-agent runtime. The
+// agent-swap fast path
 // replaces ONLY the agent, so the builder must prove the NON-agent runtime is
 // byte-identical before swapping — hence the split into two artifact sets.
 const AGENT_RUNTIME_ARTIFACTS = [
@@ -903,11 +911,10 @@ const NON_AGENT_RUNTIME_ARTIFACTS = [
   { label: 'kortix-opencode-warmup', path: OPENCODE_WARMUP_PATH },
   { label: 'kortix-machine-doc', path: MACHINE_DOC_PATH },
   { label: 'kortix-slack-cli', path: SLACK_CLI_SRC_PATH, excludeNames: FINGERPRINT_EXCLUDES },
-  { label: 'kortix-executor-sdk', path: EXECUTOR_SDK_SRC_PATH, excludeNames: FINGERPRINT_EXCLUDES },
-  // Only the in-sandbox `kortix executor` closure (NOT the whole apps/cli/src) —
-  // see CLI_EXECUTOR_RUNTIME_FILES in @kortix/shared. Labels carry the relative
-  // path so two files cannot collide.
-  ...cliExecutorRuntimeArtifacts(CLI_ROOT),
+  // Only the in-sandbox `kortix connectors` closure (NOT the whole apps/cli/src) —
+  // see CLI_CONNECTOR_RUNTIME_FILES in @kortix/shared. This artifact set also
+  // includes @kortix/sdk because the compiled CLI owns the Connector client.
+  ...cliConnectorRuntimeArtifacts(CLI_ROOT),
 ];
 // Both version strings fold in the layer/opencode/browser/sandbox constants — all
 // NON-agent inputs (bumped when the layer/opencode/browser change, not the agent
@@ -924,9 +931,9 @@ const runtimeIntegrityKey = () =>
     BUN_SHA256_ARM64,
   ].join(':');
 const runtimeVersionKey = () =>
-  `${SANDBOX_VERSION}:${RUNTIME_LAYER_VERSION}:${PNPM_VERSION}:${NODE_VERSION}:${NPM_VERSION}:${UV_VERSION}:${PYTHON_VERSION}:${BUN_VERSION}:${OPENCODE_VERSION}:${AGENT_BROWSER_VERSION}:${runtimeIntegrityKey()}`;
+  `${SANDBOX_VERSION}:${RUNTIME_LAYER_VERSION}:${PNPM_VERSION}:${NODE_VERSION}:${NPM_VERSION}:${UV_VERSION}:${PYTHON_VERSION}:${BUN_VERSION}:${OPENCODE_VERSION}:${AGENT_BROWSER_VERSION}:${ANYDOC_VERSION}:${runtimeIntegrityKey()}`;
 const sandboxVersionStr = () =>
-  `${SANDBOX_VERSION}:layer:${RUNTIME_LAYER_VERSION}:pnpm:${PNPM_VERSION}:node:${NODE_VERSION}:npm:${NPM_VERSION}:uv:${UV_VERSION}:python:${PYTHON_VERSION}:bun:${BUN_VERSION}:oc:${OPENCODE_VERSION}:ab:${AGENT_BROWSER_VERSION}:integrity:${runtimeIntegrityKey()}`;
+  `${SANDBOX_VERSION}:layer:${RUNTIME_LAYER_VERSION}:pnpm:${PNPM_VERSION}:node:${NODE_VERSION}:npm:${NPM_VERSION}:uv:${UV_VERSION}:python:${PYTHON_VERSION}:bun:${BUN_VERSION}:oc:${OPENCODE_VERSION}:ab:${AGENT_BROWSER_VERSION}:anydoc:${ANYDOC_VERSION}:integrity:${runtimeIntegrityKey()}`;
 
 let runtimeFingerprintCache: { key: string; value: string } | null = null;
 let runtimeFingerprintInflight: Promise<string> | null = null;
@@ -972,7 +979,7 @@ export async function currentRuntimeArtifactFingerprint(): Promise<string> {
 
 /**
  * Fingerprint of the runtime layer EXCLUDING the kortix-agent binary. Changes iff
- * a NON-agent runtime input moved — opencode/entrypoint/CLI/slack-cli/executor-sdk/
+ * a NON-agent runtime input moved — opencode/entrypoint/CLI/slack-cli/SDK/
  * manifest-schema source, or the layer/browser/sandbox version constants. The
  * agent-swap fast path is sound ONLY when this is byte-identical between the
  * predecessor and the new identity (i.e. the agent binary is the SOLE runtime

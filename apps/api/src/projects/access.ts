@@ -23,7 +23,7 @@ export function roleAllows(role: ProjectRole | null, action: ProjectAccessAction
   if (action === 'read') return true;
   // Every project role can use sessions — `member` is the base *usable* role.
   if (action === 'session') return true;
-  if (action === 'write') return role === 'editor' || role === 'manager';
+  if (action === 'write') return role === 'manager';
   return role === 'manager';
 }
 

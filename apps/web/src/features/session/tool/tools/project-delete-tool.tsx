@@ -11,7 +11,7 @@ export function ProjectDeleteTool({ part }: ToolProps) {
   const project = (input.project as string) || '';
   return (
     <BasicTool
-      icon={<Trash2 className="text-muted-foreground/40 size-3.5 flex-shrink-0" />}
+      icon={<Trash2 className="text-muted-foreground/40 size-3.5 shrink-0" />}
       trigger={{
         title: 'Workspace',
         subtitle: tHardcodedUi.raw(

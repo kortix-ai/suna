@@ -1,6 +1,7 @@
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
-import { Icon } from '@/features/icon/icon';
+import { Close } from '@/features/icon/icons/close';
+import { isSilentTimeoutMessage } from '@/lib/timeout-toast-policy';
 import { cn } from '@/lib/utils';
 import {
   CheckCircleIcon as GoCheckCircleFill,
@@ -99,7 +100,7 @@ export const successToast = (message: string, options?: ToastOptions) => {
             onClick={() => toast.dismiss(t)}
             aria-label="Close notification"
           >
-            <Icon.Close size={16} aria-hidden="true" />
+            <Close size={16} aria-hidden="true" />
           </Button>
         </div>
       </div>
@@ -131,7 +132,7 @@ export const progressToast = (message: string, options?: ToastOptions): string |
             onClick={() => toast.dismiss(t)}
             aria-label="Close notification"
           >
-            <Icon.Close size={16} aria-hidden="true" />
+            <Close size={16} aria-hidden="true" />
           </Button>
         </div>
       </div>
@@ -167,7 +168,7 @@ export const loadingToast = <T,>(
             onClick={() => toast.dismiss(t)}
             aria-label="Close notification"
           >
-            <Icon.Close size={16} aria-hidden="true" />
+            <Close size={16} aria-hidden="true" />
           </Button>
         </div>
       </div>
@@ -200,6 +201,8 @@ export const loadingToast = <T,>(
 };
 
 export const errorToast = (message: string, options?: ToastOptions) => {
+  if (isSilentTimeoutMessage(message)) return;
+
   const isMobile = window.innerWidth <= 768;
 
   toast.custom(
@@ -226,7 +229,7 @@ export const errorToast = (message: string, options?: ToastOptions) => {
             onClick={() => toast.dismiss(t)}
             aria-label="Close notification"
           >
-            <Icon.Close size={16} aria-hidden="true" />
+            <Close size={16} aria-hidden="true" />
           </Button>
         </div>
       </div>
@@ -258,7 +261,7 @@ export const infoToast = (message: string, options?: ToastOptions) => {
             onClick={() => toast.dismiss(t)}
             aria-label="Close notification"
           >
-            <Icon.Close size={16} aria-hidden="true" />
+            <Close size={16} aria-hidden="true" />
           </Button>
         </div>
       </div>
@@ -290,11 +293,24 @@ export const warningToast = (message: string, options?: ToastOptions) => {
             onClick={() => toast.dismiss(t)}
             aria-label="Close notification"
           >
-            <Icon.Close size={16} aria-hidden="true" />
+            <Close size={16} aria-hidden="true" />
           </Button>
         </div>
       </div>
     ),
     toastData(options, options?.duration || DEFAULT_DURATION, isMobile),
   );
+};
+
+/**
+ * Dismiss a toast by the `id` it was created with.
+ *
+ * Exists so feature code can retract a PERSISTENT toast when the condition it
+ * reports goes away — a `duration: Infinity` notice with an action button has to
+ * be revocable, or it outlives the problem and offers to fix something already
+ * fixed. Wrapped here rather than importing sonner in a feature: this module is
+ * the toast surface.
+ */
+export const dismissToast = (id: string | number) => {
+  toast.dismiss(id);
 };

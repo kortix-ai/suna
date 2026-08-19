@@ -13,6 +13,7 @@ import { supabaseAuth } from '../middleware/auth';
 import { getSupabase } from '../shared/supabase';
 import { createInviteAcceptRateLimitMiddleware } from '../shared/rate-limit';
 import { onMemberAdded } from '../billing/services/seat-management';
+import { getMembership } from './core/app';
 import { makeOpenApiApp, json, errors, auth, ErrorSchema } from '../openapi';
 import { normalizeProjectRole } from '../iam/role-perms';
 
@@ -79,7 +80,7 @@ async function lookupAuthEmail(userId: string | null): Promise<string | null> {
 // unrelated future code path can't break invite acceptance.
 type ValidatedGrant = {
   project_id: string;
-  role: 'manager' | 'editor' | 'member';
+  role: 'manager' | 'member';
   expires_at: string | null;
 };
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -309,6 +310,28 @@ accountInvitesRouter.openapi(
   // never written (see below).
   if (!alreadyAccepted && isExpired(invite)) {
     return c.json({ error: 'This invite has expired. Ask the owner to send a new one.' }, 410);
+  }
+
+  // Trial seat gate — authoritative check at the moment membership is actually
+  // written. Only blocks a NEW member: a re-entering existing member must
+  // still pass to heal grants below.
+  const existingMembership = await getMembership(userId, invite.accountId);
+  if (!existingMembership) {
+    const { trialSeatLimitBlocksNewMember } = await import(
+      '../billing/services/seat-management'
+    );
+    const seatBlock = await trialSeatLimitBlocksNewMember(invite.accountId);
+    if (seatBlock) {
+      return c.json(
+        {
+          error: `This team's trial includes ${seatBlock.limit} ${seatBlock.limit === 1 ? 'seat' : 'seats'} and all are in use. Ask the owner to contact the Kortix team.`,
+          code: 'trial_seat_limit_reached',
+          limit: seatBlock.limit,
+          members: seatBlock.members,
+        },
+        403,
+      );
+    }
   }
 
   // Ensure account membership. onConflictDoNothing on the (user, account) unique

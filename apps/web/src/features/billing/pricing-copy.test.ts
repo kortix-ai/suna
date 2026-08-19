@@ -78,3 +78,48 @@ describe('pricing model billing copy', () => {
     }
   });
 });
+
+/**
+ * The seat grant is stated in two packages and they drift silently.
+ *
+ * apps/api owns the real number (`INCLUDED_CREDITS_PER_SEAT_USD`); apps/web
+ * restates it for the pricing page, the calculator and the post-checkout toast.
+ * Nothing connected them, so the toast sat at a hardcoded $20 while the API
+ * granted $25 — quoting a customer a grant $5/seat smaller than the one they
+ * had just paid for, on the screen right after they paid.
+ *
+ * Read from the API source rather than importing it: apps/web must not take a
+ * build dependency on apps/api, but it can still refuse to disagree with it.
+ */
+describe('seat grant agrees with the API', () => {
+  const apiTiersSource = readFileSync(
+    join(import.meta.dir, '../../../../api/src/billing/services/tiers.ts'),
+    'utf8',
+  );
+
+  function apiConstant(name: string): number {
+    const m = apiTiersSource.match(new RegExp(`export const ${name} = (\\d+(?:\\.\\d+)?)`));
+    if (!m) throw new Error(`${name} not found in apps/api tiers.ts`);
+    return Number(m[1]);
+  }
+
+  test('SEAT_GRANT_USD equals INCLUDED_CREDITS_PER_SEAT_USD', async () => {
+    const { SEAT_GRANT_USD } = await import('./compute-pricing');
+    expect(SEAT_GRANT_USD).toBe(apiConstant('INCLUDED_CREDITS_PER_SEAT_USD'));
+  });
+
+  test('the pooled-credit figure is that grant in credits', async () => {
+    const { TEAM_CREDITS_PER_SEAT, CREDITS_PER_USD } = await import('./compute-pricing');
+    expect(TEAM_CREDITS_PER_SEAT / CREDITS_PER_USD).toBe(
+      apiConstant('INCLUDED_CREDITS_PER_SEAT_USD'),
+    );
+  });
+
+  test('the seat PRICE is not confused with the seat GRANT', () => {
+    // $40 is charged, $25 is granted. Conflating them is the exact error the
+    // seat-management card shipped ("adds $40/mo and grants $40 of credits").
+    expect(apiConstant('PER_SEAT_PRICE_USD')).not.toBe(
+      apiConstant('INCLUDED_CREDITS_PER_SEAT_USD'),
+    );
+  });
+});

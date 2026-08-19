@@ -3,6 +3,8 @@
  * Trigger create commits the project manifest (a real git commit).
  */
 import { flow } from '../core/flow';
+import { createDatabaseSession } from '../fixtures/database-project';
+import { enableEnterpriseDemo } from '../fixtures/enterprise-demo';
 
 flow(
   'TRG-1',
@@ -175,16 +177,9 @@ flow(
     let roleId = '';
 
     await ctx.step(
-      'enable enterprise-demo (entitles this account for custom-role writes)',
+      'platform admin enables enterprise-demo (entitles this account for custom-role writes)',
       async () => {
-        const r = await ctx.client
-          .as(ctx.P.OWNER)
-          .put(
-            '/v1/accounts/:accountId/iam/enterprise-demo',
-            { enabled: true },
-            { params: { accountId: team.id } },
-          );
-        r.status(200).body().has('$.enabled', true);
+        await enableEnterpriseDemo(ctx, team.id);
       },
     );
 
@@ -681,6 +676,249 @@ flow(
     });
     await ctx.step('activation missing paused → 400', async () => {
       const r = await owner.patch('/v1/projects/:projectId/triggers/activation', {}, { params });
+      r.status(400);
+    });
+  },
+);
+flow(
+  'TRG-14',
+  {
+    domain: 'triggers',
+    routes: [
+      'POST /v1/projects/:projectId/triggers',
+      'PATCH /v1/projects/:projectId/triggers/:slug',
+      'GET /v1/projects/:projectId/triggers',
+      'GET /v1/projects/:projectId/files/history',
+      'GET /v1/projects/:projectId/sessions',
+      'GET /v1/projects/:projectId/sessions/:sessionId',
+      'POST /v1/accounts/:accountId/iam/groups',
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team({ enterprise: true });
+    const project = await team.project({ managedGit: true });
+    const manager = await team.addMember('member');
+    if (!manager.userId) throw new Error('trigger access manager fixture has no user id');
+    await team.grantProjectRole(project.id, manager.userId, 'manager');
+    const teammate = await team.addMember('member');
+    const teammateUserId = teammate.userId;
+    if (!teammateUserId) throw new Error('trigger access teammate fixture has no user id');
+    await team.grantProjectRole(project.id, teammateUserId, 'user');
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const groupResponse = await owner.post(
+      '/v1/accounts/:accountId/iam/groups',
+      { name: ctx.fixtures.name('trigger-access-group') },
+      { params: { accountId: team.id } },
+    );
+    groupResponse.status(201);
+    const groupId = groupResponse.json<{ group_id: string }>().group_id;
+    let manifestCommitHashes: string[] = [];
+    const triggerPrivateSessionId = await createDatabaseSession(ctx.env, {
+      projectId: project.id,
+      accountId: team.id,
+      userId: crypto.randomUUID(),
+      visibility: 'private',
+      metadata: {
+        source: 'trigger:scheduler',
+        trigger_kind: 'git',
+        trigger_slug: 'access-policy-target',
+      },
+    });
+    const humanPrivateSessionId = await createDatabaseSession(ctx.env, {
+      projectId: project.id,
+      accountId: team.id,
+      userId: crypto.randomUUID(),
+      visibility: 'private',
+      metadata: {},
+    });
+
+    await ctx.step('omitted session_access defaults to private', async () => {
+      const r = await owner.post(
+        '/v1/projects/:projectId/triggers',
+        {
+          name: 'Access policy target',
+          type: 'cron',
+          cron: '0 0 3 * * *',
+          timezone: 'UTC',
+          prompt_template: 'x',
+        },
+        { params: { projectId: project.id } },
+      );
+      r.status(201);
+      const access = r.json<{
+        triggers: Array<{
+          session_access: { mode: string; memberIds: string[]; groupIds: string[] };
+        }>;
+      }>().triggers[0]?.session_access;
+      if (
+        JSON.stringify(access) !== JSON.stringify({ mode: 'private', memberIds: [], groupIds: [] })
+      ) {
+        throw new Error(`unexpected default session_access: ${JSON.stringify(access)}`);
+      }
+      const history = await owner.get('/v1/projects/:projectId/files/history', {
+        params: { projectId: project.id },
+        query: { path: 'kortix.yaml' },
+      });
+      history.status(200);
+      manifestCommitHashes = history
+        .json<{ commits: Array<{ hash: string }> }>()
+        .commits.map((commit) => commit.hash);
+    });
+
+    await ctx.step(
+      'project manager opens a private trigger session but not a private human session',
+      async () => {
+        const triggerSession = await ctx.client.as(manager).get(
+          '/v1/projects/:projectId/sessions/:sessionId',
+          { params: { projectId: project.id, sessionId: triggerPrivateSessionId } },
+        );
+        triggerSession.status(200).body().has('$.session_id', triggerPrivateSessionId);
+
+        const humanSession = await ctx.client.as(manager).get(
+          '/v1/projects/:projectId/sessions/:sessionId',
+          { params: { projectId: project.id, sessionId: humanPrivateSessionId } },
+        );
+        humanSession.status(404);
+      },
+    );
+
+    await ctx.step('ordinary project member cannot open a private trigger session', async () => {
+      const r = await ctx.client.as(teammate).get(
+        '/v1/projects/:projectId/sessions/:sessionId',
+        { params: { projectId: project.id, sessionId: triggerPrivateSessionId } },
+      );
+      r.status(404);
+    });
+
+    await ctx.step('ordinary project member cannot discover a private trigger session', async () => {
+      const r = await ctx.client.as(teammate).get('/v1/projects/:projectId/sessions', {
+        params: { projectId: project.id },
+      });
+      r.status(200);
+      const sessions = r.json<Array<{ session_id: string }>>();
+      if (sessions.some((session) => session.session_id === triggerPrivateSessionId)) {
+        throw new Error('ordinary member discovered a private trigger session');
+      }
+    });
+
+    await ctx.step('manager inventory includes the trigger session and hides inaccessible sessions', async () => {
+      const r = await ctx.client.as(manager).get('/v1/projects/:projectId/sessions', {
+        params: { projectId: project.id },
+        query: { scope: 'project' },
+      });
+      r.status(200);
+      const sessions = r.json<Array<{ session_id: string; can_access: boolean }>>();
+      const byId = new Map(sessions.map((session) => [session.session_id, session.can_access]));
+      if (byId.get(triggerPrivateSessionId) !== true) {
+        throw new Error('manager inventory did not grant trigger-session content access');
+      }
+      if (byId.has(humanPrivateSessionId)) {
+        throw new Error('manager inventory exposed an inaccessible private session');
+      }
+    });
+
+    await ctx.step(
+      'policy-only PATCH persists selected access without committing kortix.yaml',
+      async () => {
+        const r = await owner.patch(
+          '/v1/projects/:projectId/triggers/:slug',
+          {
+            session_access: {
+              mode: 'members',
+              memberIds: [teammateUserId, teammateUserId],
+              groupIds: [groupId, groupId],
+            },
+          },
+          { params: { projectId: project.id, slug: 'access-policy-target' } },
+        );
+        r.status(200);
+        const access = r.json<{
+          triggers: Array<{
+            session_access: { mode: string; memberIds: string[]; groupIds: string[] };
+          }>;
+        }>().triggers[0]?.session_access;
+        if (
+          access?.mode !== 'members' ||
+          JSON.stringify(access.memberIds) !== JSON.stringify([teammateUserId]) ||
+          JSON.stringify(access.groupIds) !== JSON.stringify([groupId])
+        ) {
+          throw new Error(`selected session_access was not normalized: ${JSON.stringify(access)}`);
+        }
+        const history = await owner.get('/v1/projects/:projectId/files/history', {
+          params: { projectId: project.id },
+          query: { path: 'kortix.yaml' },
+        });
+        history.status(200);
+        const currentHashes = history
+          .json<{ commits: Array<{ hash: string }> }>()
+          .commits.map((commit) => commit.hash);
+        if (JSON.stringify(currentHashes) !== JSON.stringify(manifestCommitHashes)) {
+          throw new Error('policy-only PATCH created a kortix.yaml commit');
+        }
+      },
+    );
+
+    await ctx.step('explicit project access persists', async () => {
+      const r = await owner.patch(
+        '/v1/projects/:projectId/triggers/:slug',
+        { session_access: { mode: 'project', memberIds: [], groupIds: [] } },
+        { params: { projectId: project.id, slug: 'access-policy-target' } },
+      );
+      r.status(200).body().has('triggers[0].session_access.mode', 'project');
+    });
+
+    await ctx.step('empty selected access normalizes to private', async () => {
+      const r = await owner.patch(
+        '/v1/projects/:projectId/triggers/:slug',
+        { session_access: { mode: 'members', memberIds: [], groupIds: [] } },
+        { params: { projectId: project.id, slug: 'access-policy-target' } },
+      );
+      r.status(200).body().has('triggers[0].session_access.mode', 'private');
+    });
+
+    await ctx.step('unknown member is rejected', async () => {
+      const r = await owner.patch(
+        '/v1/projects/:projectId/triggers/:slug',
+        {
+          session_access: {
+            mode: 'members',
+            memberIds: ['00000000-0000-4000-8000-000000000001'],
+            groupIds: [],
+          },
+        },
+        { params: { projectId: project.id, slug: 'access-policy-target' } },
+      );
+      r.status(400);
+    });
+
+    await ctx.step('cross-account member is rejected', async () => {
+      if (!ctx.P.NONMEMBER.userId) throw new Error('NONMEMBER fixture has no user id');
+      const r = await owner.patch(
+        '/v1/projects/:projectId/triggers/:slug',
+        {
+          session_access: {
+            mode: 'members',
+            memberIds: [ctx.P.NONMEMBER.userId],
+            groupIds: [],
+          },
+        },
+        { params: { projectId: project.id, slug: 'access-policy-target' } },
+      );
+      r.status(400);
+    });
+
+    await ctx.step('unknown group is rejected', async () => {
+      const r = await owner.patch(
+        '/v1/projects/:projectId/triggers/:slug',
+        {
+          session_access: {
+            mode: 'members',
+            memberIds: [],
+            groupIds: ['00000000-0000-4000-8000-000000000002'],
+          },
+        },
+        { params: { projectId: project.id, slug: 'access-policy-target' } },
+      );
       r.status(400);
     });
   },

@@ -105,7 +105,7 @@ function SessionFilesExplorerInner({
   // consumed it; seed from the request's CURRENT nonce (read once, not via
   // the reactive selector, so this doesn't itself trigger a re-render) so a
   // leftover request isn't replayed into the explorer on open.
-  const lastNonce = useRef(
+  const [initialNonce] = useState(() =>
     initialExplorerNonce(
       ephemeral,
       chatSessionId
@@ -113,6 +113,7 @@ function SessionFilesExplorerInner({
         : undefined,
     ),
   );
+  const lastNonce = useRef(initialNonce);
   useEffect(() => {
     if (!fileOpenReq || fileOpenReq.nonce === lastNonce.current) return;
     lastNonce.current = fileOpenReq.nonce;

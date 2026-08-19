@@ -1,5 +1,5 @@
 /**
- * Minimal local-Docker probing for CLI commands that shell out to `docker`.
+ * Minimal Docker daemon probing for CLI commands that shell out to `docker`.
  *
  * Deliberately tiny and dependency-free: two questions, answered the same way
  * every time. (`self-host.ts` has its own inline `docker --version` probe from

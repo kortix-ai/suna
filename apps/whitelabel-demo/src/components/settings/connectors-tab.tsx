@@ -120,7 +120,7 @@ export function ConnectorsTab({ projectId }: { projectId: string }) {
               <Plug className="size-4 text-muted-foreground" /> Connectors
             </div>
             <p className="text-xs text-muted-foreground">
-              Tools and integrations the agent can call at runtime.
+              Tools and connectors the agent can call at runtime.
             </p>
           </div>
           <Button

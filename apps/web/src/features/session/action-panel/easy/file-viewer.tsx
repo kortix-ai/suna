@@ -19,7 +19,7 @@
  * side, so the actions never move.
  */
 
-import { HighlightedCode, PIERRE_THEME } from '@/components/markdown/code';
+import { HighlightedCode } from '@/components/markdown/code';
 import { CopyButton } from '@/components/markdown/copy-button';
 import { DocMarkdown } from '@/components/markdown/doc-markdown';
 import {
@@ -429,7 +429,7 @@ function FileBody({
     // an agent file looks like.
     const { frontmatter, body } = parseFrontmatter(content);
     return (
-      <div className="p-10">
+      <div className="p-6">
         {frontmatter && <MarkdownFrontmatterCard data={frontmatter} />}
         {/* `allowHtml={false}`: this is a file viewer — embedded markup shows as
             escaped text rather than becoming live DOM. */}
@@ -446,17 +446,17 @@ function FileBody({
   // filling the pane, is the whole job — which is exactly what HighlightedCode
   // renders, so none of the old override classes are needed to strip it.
   //
-  // `PIERRE_THEME` is load-bearing, not a preference: this pane sits beside the
-  // diff viewer and the CodeMirror editor, both of which render in Pierre (see
-  // lib/shiki-theme.ts). On the default markdown palette the file you are
-  // reading would not match the diff of it one pane over.
+  // No palette override: there is only one. This pane and the diff viewer beside
+  // it both render under min-dark / min-light (see @/lib/code-theme). The
+  // CodeMirror editor still carries its own Pierre-derived theme and does NOT
+  // match — a known, accepted gap, not an oversight.
   //
   // Only the horizontal padding is dropped, not the vertical: the pane's own
   // background should run edge to edge, so the code is inset from the bottom
   // but flush to the sides.
   return (
     <div className="pb-4 [&_code]:text-[13px]">
-      <HighlightedCode code={content} language={languageFor(fileName)} theme={PIERRE_THEME} />
+      <HighlightedCode code={content} language={languageFor(fileName)} />
     </div>
   );
 }

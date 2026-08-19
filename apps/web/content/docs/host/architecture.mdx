@@ -112,10 +112,7 @@ flowchart TB
 
 - **Agent sandboxes** — by default, Daytona. You can configure Platinum or
   E2B instead. `kortix-api` reaches the sandbox provider over egress;
-  sandbox compute never runs on the self-host box. One exception:
-  `local-docker` is an experimental provider that runs sandboxes on the same
-  Docker socket as the box. It does not scale beyond one machine. Kortix
-  does not recommend it for production.
+  sandbox compute never runs on the self-host box.
 - **The image registry** — `docker.io/kortix/*`. The updater and
   `kortix self-host start` pull from it. It needs no credentials.
 

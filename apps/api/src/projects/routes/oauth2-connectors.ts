@@ -4,20 +4,20 @@ import {
   OAuth2DeviceAuthorizationStartInputSchema,
   OAuth2DiscoveryInputSchema,
 } from '@kortix/api-contract';
-import { executorConnectionProfiles, executorConnectors } from '@kortix/db';
+import { connectorConnections, connectors } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { config } from '../../config';
-import { ensureDefaultProfile } from '../../executor/credentials';
+import { ensureDefaultConnection } from '../../connectors/credentials';
 import {
   createAuthorizationCodeSession,
   createDeviceAuthorizationSession,
   discoverConfiguredOAuth2Application,
   loadOAuth2Application,
-  oauth2ProfileStatus,
+  oauth2ConnectionStatus,
   pollDeviceAuthorizationSession,
   redactOAuth2Application,
   saveOAuth2Application,
-} from '../../executor/oauth2-store';
+} from '../../connectors/oauth2-store';
 import { PROJECT_ACTIONS } from '../../iam';
 import { db } from '../../shared/db';
 import { loadProjectForUser, projectCapabilityAllowed } from '../lib/access';
@@ -29,7 +29,7 @@ import {
 import { readBody } from '../lib/serializers';
 
 function callbackUrl(requestUrl: string): string {
-  return new URL('/v1/integrations/oauth2/callback', requestUrl).href;
+  return new URL('/v1/connectors/oauth2/callback', requestUrl).href;
 }
 
 function allowedRedirectUri(value: string | undefined, projectId: string): string | undefined {
@@ -55,71 +55,71 @@ function allowedRedirectUri(value: string | undefined, projectId: string): strin
   return uri.href;
 }
 
-async function loadMutableProfile(c: any, projectId: string, profileId: string) {
+async function loadMutableConnection(c: any, projectId: string, connectionId: string) {
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return null;
-  const [profile] = await db
+  const [connection] = await db
     .select({
-      accountId: executorConnectionProfiles.accountId,
-      projectId: executorConnectionProfiles.projectId,
-      connectorId: executorConnectionProfiles.connectorId,
-      profileId: executorConnectionProfiles.profileId,
-      ownerType: executorConnectionProfiles.ownerType,
-      ownerId: executorConnectionProfiles.ownerId,
-      metadata: executorConnectionProfiles.metadata,
-      authorizationStrategy: executorConnectors.authorizationStrategy,
-      providerType: executorConnectors.providerType,
-      connectorConfig: executorConnectors.config,
+      accountId: connectorConnections.accountId,
+      projectId: connectorConnections.projectId,
+      connectorId: connectorConnections.connectorId,
+      connectionId: connectorConnections.connectionId,
+      ownerType: connectorConnections.ownerType,
+      ownerId: connectorConnections.ownerId,
+      metadata: connectorConnections.metadata,
+      authorizationStrategy: connectors.authorizationStrategy,
+      providerType: connectors.providerType,
+      connectorConfig: connectors.config,
     })
-    .from(executorConnectionProfiles)
+    .from(connectorConnections)
     .innerJoin(
-      executorConnectors,
+      connectors,
       and(
-        eq(executorConnectors.connectorId, executorConnectionProfiles.connectorId),
-        eq(executorConnectors.accountId, executorConnectionProfiles.accountId),
-        eq(executorConnectors.projectId, executorConnectionProfiles.projectId),
+        eq(connectors.connectorId, connectorConnections.connectorId),
+        eq(connectors.accountId, connectorConnections.accountId),
+        eq(connectors.projectId, connectorConnections.projectId),
       ),
     )
     .where(
       and(
-        eq(executorConnectionProfiles.profileId, profileId),
-        eq(executorConnectionProfiles.projectId, projectId),
-        eq(executorConnectionProfiles.accountId, loaded.row.accountId),
+        eq(connectorConnections.connectionId, connectionId),
+        eq(connectorConnections.projectId, projectId),
+        eq(connectorConnections.accountId, loaded.row.accountId),
       ),
     )
     .limit(1);
-  if (!profile) return null;
+  if (!connection) return null;
   const serviceAccount = c.get('authType') === 'service_account';
   const mayManage = await projectCapabilityAllowed(
     c,
     loaded.userId,
     loaded.row.accountId,
     projectId,
-    PROJECT_ACTIONS.PROJECT_CONNECTOR_PROFILES_MANAGE,
+    PROJECT_ACTIONS.PROJECT_CONNECTOR_CONNECTIONS_MANAGE,
   );
   const strategyMatches = connectorAuthorizationMatchesStrategy({
-    strategy: profile.authorizationStrategy,
-    ownerType: profile.ownerType,
-    ownerId: profile.ownerId,
+    strategy: connection.authorizationStrategy,
+    ownerType: connection.ownerType,
+    ownerId: connection.ownerId,
     actingUserId: loaded.userId,
     actingPrincipalIsServiceAccount: serviceAccount,
     trustedManagedSystem: isTrustedManagedChannelAuthorization({
-      providerType: profile.providerType,
+      providerType: connection.providerType,
       platform:
-        typeof profile.connectorConfig.platform === 'string'
-          ? profile.connectorConfig.platform
+        typeof connection.connectorConfig.platform === 'string'
+          ? connection.connectorConfig.platform
           : null,
-      ownerType: profile.ownerType,
-      ownerId: profile.ownerId,
-      metadata: profile.metadata,
+      ownerType: connection.ownerType,
+      ownerId: connection.ownerId,
+      metadata: connection.metadata,
     }),
   });
   const allowed =
-    strategyMatches && (profile.authorizationStrategy === 'user' || mayManage);
-  return allowed ? { loaded, profile } : null;
+    strategyMatches && (connection.authorizationStrategy === 'user' || mayManage);
+  return allowed ? { loaded, connection } : null;
 }
 
-projectsApp.post('/:projectId/connectors/:slug/oauth2/profile', async (c: any) => {
+projectsApp.post('/:projectId/connectors/:slug/oauth2/connection', async (c: any) => {
   const projectId = c.req.param('projectId');
   const slug = c.req.param('slug');
   const loaded = await loadProjectForUser(c, projectId, 'read');
@@ -129,20 +129,20 @@ projectsApp.post('/:projectId/connectors/:slug/oauth2/profile', async (c: any) =
     loaded.userId,
     loaded.row.accountId,
     projectId,
-    PROJECT_ACTIONS.PROJECT_CONNECTOR_PROFILES_MANAGE,
+    PROJECT_ACTIONS.PROJECT_CONNECTOR_CONNECTIONS_MANAGE,
   );
   if (!mayManage) return c.json({ error: 'Forbidden' }, 403);
   const [connector] = await db
     .select({
-      connectorId: executorConnectors.connectorId,
-      authorizationStrategy: executorConnectors.authorizationStrategy,
+      connectorId: connectors.connectorId,
+      authorizationStrategy: connectors.authorizationStrategy,
     })
-    .from(executorConnectors)
+    .from(connectors)
     .where(
       and(
-        eq(executorConnectors.accountId, loaded.row.accountId),
-        eq(executorConnectors.projectId, projectId),
-        eq(executorConnectors.slug, slug),
+        eq(connectors.accountId, loaded.row.accountId),
+        eq(connectors.projectId, projectId),
+        eq(connectors.slug, slug),
       ),
     )
     .limit(1);
@@ -150,24 +150,24 @@ projectsApp.post('/:projectId/connectors/:slug/oauth2/profile', async (c: any) =
   if (connector.authorizationStrategy !== 'project') {
     return c.json(
       {
-        error: 'This connector uses member-owned authorizations',
+        error: 'This connector uses member-owned connections',
         code: 'CONNECTOR_AUTHORIZATION_STRATEGY_MISMATCH',
       },
       409,
     );
   }
-  const profileId = await ensureDefaultProfile({
+  const connectionId = await ensureDefaultConnection({
     projectId,
     connectorId: connector.connectorId,
     createdBy: loaded.userId,
   });
-  return c.json({ profile_id: profileId });
+  return c.json({ connection_id: connectionId });
 });
 
-projectsApp.put('/:projectId/connector-profiles/:profileId/oauth2/application', async (c: any) => {
+projectsApp.put('/:projectId/connections/:connectionId/oauth2/application', async (c: any) => {
   const projectId = c.req.param('projectId');
-  const profileId = c.req.param('profileId');
-  const mutable = await loadMutableProfile(c, projectId, profileId);
+  const connectionId = c.req.param('connectionId');
+  const mutable = await loadMutableConnection(c, projectId, connectionId);
   if (!mutable) return c.json({ error: 'Not found' }, 404);
   const parsed = OAuth2ApplicationInputSchema.safeParse(await readBody(c));
   if (!parsed.success) {
@@ -178,24 +178,24 @@ projectsApp.put('/:projectId/connector-profiles/:profileId/oauth2/application', 
       400,
     );
   }
-  await saveOAuth2Application(mutable.profile, parsed.data, mutable.loaded.userId);
+  await saveOAuth2Application(mutable.connection, parsed.data, mutable.loaded.userId);
   return c.json({ ok: true });
 });
 
-projectsApp.get('/:projectId/connector-profiles/:profileId/oauth2/application', async (c: any) => {
+projectsApp.get('/:projectId/connections/:connectionId/oauth2/application', async (c: any) => {
   const projectId = c.req.param('projectId');
-  const profileId = c.req.param('profileId');
-  const mutable = await loadMutableProfile(c, projectId, profileId);
+  const connectionId = c.req.param('connectionId');
+  const mutable = await loadMutableConnection(c, projectId, connectionId);
   if (!mutable) return c.json({ error: 'Not found' }, 404);
-  const loaded = await loadOAuth2Application(profileId);
+  const loaded = await loadOAuth2Application(connectionId);
   if (!loaded) return c.json({ error: 'OAuth2 application is not configured' }, 404);
   return c.json({ application: redactOAuth2Application(loaded.application) });
 });
 
-projectsApp.post('/:projectId/connector-profiles/:profileId/oauth2/discover', async (c: any) => {
+projectsApp.post('/:projectId/connections/:connectionId/oauth2/discover', async (c: any) => {
   const projectId = c.req.param('projectId');
-  const profileId = c.req.param('profileId');
-  if (!(await loadMutableProfile(c, projectId, profileId))) {
+  const connectionId = c.req.param('connectionId');
+  if (!(await loadMutableConnection(c, projectId, connectionId))) {
     return c.json({ error: 'Not found' }, 404);
   }
   const parsed = OAuth2DiscoveryInputSchema.safeParse(await readBody(c));
@@ -209,10 +209,10 @@ projectsApp.post('/:projectId/connector-profiles/:profileId/oauth2/discover', as
   }
 });
 
-projectsApp.post('/:projectId/connector-profiles/:profileId/oauth2/authorize', async (c: any) => {
+projectsApp.post('/:projectId/connections/:connectionId/oauth2/authorize', async (c: any) => {
   const projectId = c.req.param('projectId');
-  const profileId = c.req.param('profileId');
-  const mutable = await loadMutableProfile(c, projectId, profileId);
+  const connectionId = c.req.param('connectionId');
+  const mutable = await loadMutableConnection(c, projectId, connectionId);
   if (!mutable) return c.json({ error: 'Not found' }, 404);
   const parsed = OAuth2AuthorizationStartInputSchema.safeParse(await readBody(c));
   if (!parsed.success) return c.json({ error: 'invalid authorization input' }, 400);
@@ -220,7 +220,7 @@ projectsApp.post('/:projectId/connector-profiles/:profileId/oauth2/authorize', a
     const successRedirectUri = allowedRedirectUri(parsed.data.success_redirect_uri, projectId);
     const errorRedirectUri = allowedRedirectUri(parsed.data.error_redirect_uri, projectId);
     const started = await createAuthorizationCodeSession({
-      profileId,
+      connectionId,
       initiatedBy: mutable.loaded.userId,
       callbackUrl: callbackUrl(c.req.url),
       scopes: parsed.data.scopes,
@@ -236,16 +236,16 @@ projectsApp.post('/:projectId/connector-profiles/:profileId/oauth2/authorize', a
   }
 });
 
-projectsApp.post('/:projectId/connector-profiles/:profileId/oauth2/device', async (c: any) => {
+projectsApp.post('/:projectId/connections/:connectionId/oauth2/device', async (c: any) => {
   const projectId = c.req.param('projectId');
-  const profileId = c.req.param('profileId');
-  const mutable = await loadMutableProfile(c, projectId, profileId);
+  const connectionId = c.req.param('connectionId');
+  const mutable = await loadMutableConnection(c, projectId, connectionId);
   if (!mutable) return c.json({ error: 'Not found' }, 404);
   const parsed = OAuth2DeviceAuthorizationStartInputSchema.safeParse(await readBody(c));
   if (!parsed.success) return c.json({ error: 'invalid device authorization input' }, 400);
   try {
     const started = await createDeviceAuthorizationSession({
-      profileId,
+      connectionId,
       initiatedBy: mutable.loaded.userId,
       scopes: parsed.data.scopes,
     });
@@ -265,16 +265,16 @@ projectsApp.post('/:projectId/connector-profiles/:profileId/oauth2/device', asyn
 });
 
 projectsApp.post(
-  '/:projectId/connector-profiles/:profileId/oauth2/device/:sessionId',
+  '/:projectId/connections/:connectionId/oauth2/device/:sessionId',
   async (c: any) => {
     const projectId = c.req.param('projectId');
-    const profileId = c.req.param('profileId');
-    const mutable = await loadMutableProfile(c, projectId, profileId);
+    const connectionId = c.req.param('connectionId');
+    const mutable = await loadMutableConnection(c, projectId, connectionId);
     if (!mutable) return c.json({ error: 'Not found' }, 404);
     try {
       return c.json(
         await pollDeviceAuthorizationSession({
-          profileId,
+          connectionId,
           sessionId: c.req.param('sessionId'),
           initiatedBy: mutable.loaded.userId,
         }),
@@ -285,11 +285,11 @@ projectsApp.post(
   },
 );
 
-projectsApp.get('/:projectId/connector-profiles/:profileId/oauth2/status', async (c: any) => {
+projectsApp.get('/:projectId/connections/:connectionId/oauth2/status', async (c: any) => {
   const projectId = c.req.param('projectId');
-  const profileId = c.req.param('profileId');
-  if (!(await loadMutableProfile(c, projectId, profileId))) {
+  const connectionId = c.req.param('connectionId');
+  if (!(await loadMutableConnection(c, projectId, connectionId))) {
     return c.json({ error: 'Not found' }, 404);
   }
-  return c.json(await oauth2ProfileStatus(profileId));
+  return c.json(await oauth2ConnectionStatus(connectionId));
 });

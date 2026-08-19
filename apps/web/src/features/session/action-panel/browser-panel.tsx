@@ -20,6 +20,7 @@ import { useSessionPublicShares } from '@/hooks/use-session-public-shares';
 import { INTERACTIVE_PREVIEW_IFRAME_SANDBOX } from '@/lib/security/iframe-sandbox';
 import { cn } from '@/lib/utils';
 import { focusWithoutScroll } from '@/lib/utils/focus-without-scroll';
+import { isKortixAppUrl } from '@/features/session/kortix-app-url';
 import {
   buildWebProxyUrl,
   isExternalUrl,
@@ -143,7 +144,7 @@ export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabC
   );
 
   // Navigation history
-  const [history, setHistory] = useState<string[]>([proxiedPreviewUrl].filter(Boolean));
+  const [history, setHistory] = useState<string[]>(() => [proxiedPreviewUrl].filter(Boolean));
   const [historyIndex, setHistoryIndex] = useState(0);
 
   // Inject auth token for cloud preview proxy URLs.
@@ -210,7 +211,9 @@ export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabC
     (url: string) => {
       const externalUrl = normalizeExternalInput(url);
       if (externalUrl && isExternalUrl(externalUrl)) {
-        const newProxyUrl = buildWebProxyUrl(externalUrl, subdomainOpts);
+        const newProxyUrl = isKortixAppUrl(externalUrl)
+          ? externalUrl
+          : buildWebProxyUrl(externalUrl, subdomainOpts);
         if (!newProxyUrl) return;
 
         let displayHost: string;

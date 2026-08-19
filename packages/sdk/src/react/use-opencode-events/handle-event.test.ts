@@ -58,7 +58,20 @@ mock.module('../../platform/ui', () => ({
   },
 }));
 
+// `session.compacted` calls the REAL runtime-client singleton
+// (`core/runtime/client`'s `getClient()`) directly — not the `client` this
+// harness injects via `createEventHandler` (that one only backs the default
+// `reconcileSessionTail` closure). Mock the singleton so `getImpl` overrides
+// below can actually reach it, and so the unmocked default (a real sandbox
+// URL never being configured in this test process) doesn't throw
+// `RuntimeNotReadyError` before the code under test even runs.
+let singletonSessionGetImpl: () => Promise<{ data?: unknown }> = async () => ({ data: undefined });
+mock.module('../../core/runtime/client', () => ({
+  getClient: () => ({ session: { get: () => singletonSessionGetImpl() } }),
+}));
+
 const { createEventHandler } = await import('./handle-event');
+const { qk } = await import('../query-keys');
 const { useSyncStore } = await import('../../browser/stores/sync-store');
 const { useDiagnosticsStore } = await import('../../browser/stores/diagnostics-store');
 const { opencodeKeys } = await import('../use-opencode-sessions');
@@ -83,6 +96,8 @@ function buildHandler(
   overrides: {
     messagesImpl?: () => Promise<{ data?: unknown }>;
     getImpl?: () => Promise<{ data?: unknown }>;
+    projectId?: string;
+    reconcileSessionTail?: Parameters<typeof createEventHandler>[0]['reconcileSessionTail'];
   } = {},
 ) {
   const queryClient = new QueryClient();
@@ -103,6 +118,10 @@ function buildHandler(
   // the very same event (`applySyncEvent` runs BEFORE the switch statement).
   const applySyncEvent = makeCalls<[unknown]>();
 
+  // `session.compacted`'s targeted refetch reads the RUNTIME-CLIENT SINGLETON
+  // (mocked at module scope above), not this injected `client` — set both so
+  // a test only has to pass `getImpl` once.
+  singletonSessionGetImpl = overrides.getImpl ?? (async () => ({ data: undefined }));
   const client = {
     session: {
       messages: overrides.messagesImpl ?? (async () => ({ data: [] })),
@@ -122,6 +141,8 @@ function buildHandler(
     normalizeDiagnosticPaths: { current: (x) => x },
     markSessionAbortedLocally: { current: markSessionAbortedLocally.fn },
     fetchLspDiagnosticsDebounced: { current: fetchLspDiagnosticsDebounced.fn },
+    projectId: overrides.projectId,
+    reconcileSessionTail: overrides.reconcileSessionTail,
   });
 
   return {
@@ -184,6 +205,7 @@ beforeEach(() => {
   useDiagnosticsStore.getState().clearAll();
   toasts = [];
   notifications = [];
+  singletonSessionGetImpl = async () => ({ data: undefined });
 });
 
 afterEach(() => {
@@ -389,6 +411,276 @@ describe('session lifecycle cache mutations', () => {
 });
 
 // ============================================================================
+// session.compacted — the targeted refetch that is supposed to clear
+// `time.compacting` off `opencodeKeys.runtimeSession`. This ad hoc
+// `client.session.get()` call used to have NO retry and a `.catch(() => {})`
+// that swallowed any failure, leaving `time.compacting` stale forever
+// (`useOpenCodeSession` reads it with `staleTime: Infinity`, so nothing else
+// ever refetches it). On failure it must now route through
+// `queryClient.invalidateQueries` — the SAME query `useOpenCodeSession`
+// registers, with its own retry/backoff — instead of failing silently once.
+// ============================================================================
+
+describe('session.compacted', () => {
+  test('success: patches the runtime-session cache AND the session-list mirror directly', async () => {
+    const { handleEvent, queryClient, stopCompaction } = buildHandler({
+      getImpl: async () => ({ data: session('ses_a', { time: { created: 1, updated: 9 } }) }),
+    });
+    queryClient.setQueryData(opencodeKeys.sessions(), [session('ses_a', { title: 'Old' })]);
+    queryClient.setQueryData(
+      opencodeKeys.runtimeSession('ses_a'),
+      session('ses_a', { time: { created: 1, updated: 1, compacting: 5 } }),
+    );
+
+    handleEvent({
+      id: 'evt_1',
+      type: 'session.compacted',
+      properties: { sessionID: 'ses_a' },
+    });
+    expect(stopCompaction.calls.map((c) => c[0])).toEqual(['ses_a']);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(
+      queryClient.getQueryData<Session>(opencodeKeys.runtimeSession('ses_a'))?.time.compacting,
+    ).toBeUndefined();
+    expect(queryClient.getQueryData<Session[]>(opencodeKeys.sessions())?.[0].time.compacting).toBeUndefined();
+  });
+
+  test('failure: a rejected refetch invalidates the runtime-session query instead of leaving it stale forever', async () => {
+    const { handleEvent, queryClient } = buildHandler({
+      getImpl: async () => {
+        throw new Error('sandbox proxy 502');
+      },
+    });
+    // Seed a cache entry so `invalidateQueries` has something to mark.
+    queryClient.setQueryData(
+      opencodeKeys.runtimeSession('ses_a'),
+      session('ses_a', { time: { created: 1, updated: 1, compacting: 5 } }),
+    );
+    let invalidatedRuntimeSession = 0;
+    const orig = queryClient.invalidateQueries.bind(queryClient);
+    queryClient.invalidateQueries = ((opts: { queryKey: unknown[] }) => {
+      if (JSON.stringify(opts.queryKey) === JSON.stringify(opencodeKeys.runtimeSession('ses_a')))
+        invalidatedRuntimeSession++;
+      return orig(opts);
+    }) as typeof queryClient.invalidateQueries;
+
+    handleEvent({
+      id: 'evt_1',
+      type: 'session.compacted',
+      properties: { sessionID: 'ses_a' },
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(invalidatedRuntimeSession).toBe(1);
+  });
+
+  test('no data returned (not a throw either): still invalidates rather than leaving the row untouched', async () => {
+    const { handleEvent, queryClient } = buildHandler({
+      getImpl: async () => ({ data: undefined }),
+    });
+    queryClient.setQueryData(
+      opencodeKeys.runtimeSession('ses_a'),
+      session('ses_a', { time: { created: 1, updated: 1, compacting: 5 } }),
+    );
+    let invalidatedRuntimeSession = 0;
+    const orig = queryClient.invalidateQueries.bind(queryClient);
+    queryClient.invalidateQueries = ((opts: { queryKey: unknown[] }) => {
+      if (JSON.stringify(opts.queryKey) === JSON.stringify(opencodeKeys.runtimeSession('ses_a')))
+        invalidatedRuntimeSession++;
+      return orig(opts);
+    }) as typeof queryClient.invalidateQueries;
+
+    handleEvent({
+      id: 'evt_1',
+      type: 'session.compacted',
+      properties: { sessionID: 'ses_a' },
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(invalidatedRuntimeSession).toBe(1);
+  });
+});
+
+// ============================================================================
+// T22 — session.created / session.updated seed the sync store's revert
+// mirror off `Session.revert` (the reload/cross-tab recovery path — see
+// `sync-store.ts`'s `syncSessionRevertFromInfo` doc comment). `applySyncEvent`
+// is a spy in this harness (see the note above), so this reads the REAL
+// `useSyncStore` directly, exactly like the existing session.error tests do.
+// ============================================================================
+
+describe('session.created / session.updated — revert mirror (T22)', () => {
+  test('session.created with a revert field stages it, watermark off currently known messages', () => {
+    const { handleEvent } = buildHandler();
+    useSyncStore.getState().hydrate('ses_new', [
+      { info: userMessage('msg_1'), parts: [] },
+      { info: userMessage('msg_2'), parts: [] },
+    ]);
+
+    handleEvent({
+      id: 'evt_1',
+      type: 'session.created',
+      properties: {
+        sessionID: 'ses_new',
+        info: session('ses_new', { revert: { messageID: 'msg_2' } }),
+      },
+    });
+
+    expect(useSyncStore.getState().sessionRevert.ses_new).toEqual({
+      messageId: 'msg_2',
+      watermark: 'msg_2',
+      staged: true,
+    });
+  });
+
+  test('session.updated with a revert field seeds it too', () => {
+    const { handleEvent } = buildHandler();
+
+    handleEvent({
+      id: 'evt_1',
+      type: 'session.updated',
+      properties: {
+        sessionID: 'ses_a',
+        info: session('ses_a', { revert: { messageID: 'msg_1' } }),
+      },
+    });
+
+    expect(useSyncStore.getState().sessionRevert.ses_a).toEqual({
+      messageId: 'msg_1',
+      watermark: 'msg_1',
+      staged: true,
+    });
+  });
+
+  test('an ordinary update with no revert field never clears an already-tracked one', () => {
+    const { handleEvent } = buildHandler();
+    useSyncStore.getState().stageSessionRevert('ses_a', 'msg_1');
+
+    handleEvent({
+      id: 'evt_1',
+      type: 'session.updated',
+      properties: { sessionID: 'ses_a', info: session('ses_a') },
+    });
+
+    expect(useSyncStore.getState().sessionRevert.ses_a).not.toBeNull();
+  });
+
+  test('session.created / session.updated with no revert field never fabricates one', () => {
+    const { handleEvent } = buildHandler();
+
+    handleEvent({
+      id: 'evt_1',
+      type: 'session.created',
+      properties: { sessionID: 'ses_b', info: session('ses_b') },
+    });
+
+    expect(useSyncStore.getState().sessionRevert.ses_b).toBeUndefined();
+  });
+});
+
+// ============================================================================
+// Kortix session-title mirroring — a runtime title change lands in the cached
+// Kortix session reads immediately, without waiting for the server-side
+// opencode_sessions snapshot (~20s) to make the next refetch carry it.
+// ============================================================================
+
+describe('kortix session title mirroring', () => {
+  const PROJECT_ID = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+  const PROJECT_SESSION_ID = '11111111-2222-4333-8444-555555555555';
+
+  function kortixRow(overrides: Record<string, unknown> = {}) {
+    return {
+      session_id: PROJECT_SESSION_ID,
+      opencode_session_id: 'ses_a',
+      name: 'Generated Title',
+      custom_name: null,
+      ...overrides,
+    };
+  }
+
+  function titleEvent(title: string) {
+    return {
+      id: 'evt_1',
+      type: 'session.updated' as const,
+      properties: {
+        sessionID: 'ses_a',
+        info: session('ses_a', { title, time: { created: 1, updated: 9 } }),
+      },
+    };
+  }
+
+  test('session.updated with a new title patches every cached Kortix session read', () => {
+    const { handleEvent, queryClient } = buildHandler({ projectId: PROJECT_ID });
+    queryClient.setQueryData(qk.project.sessions(PROJECT_ID), [kortixRow()]);
+    queryClient.setQueryData(qk.project.sessions(PROJECT_ID, 'project'), [kortixRow()]);
+    queryClient.setQueryData(qk.project.session(PROJECT_ID, PROJECT_SESSION_ID), kortixRow());
+
+    handleEvent(titleEvent('Runtime Title'));
+
+    const visible = queryClient.getQueryData<Record<string, unknown>[]>(
+      qk.project.sessions(PROJECT_ID),
+    );
+    const project = queryClient.getQueryData<Record<string, unknown>[]>(
+      qk.project.sessions(PROJECT_ID, 'project'),
+    );
+    const detail = queryClient.getQueryData<Record<string, unknown>>(
+      qk.project.session(PROJECT_ID, PROJECT_SESSION_ID),
+    );
+    expect(visible?.[0]?.name).toBe('Runtime Title');
+    expect(project?.[0]?.name).toBe('Runtime Title');
+    expect(detail?.name).toBe('Runtime Title');
+  });
+
+  test('a user rename is never overwritten and other rows stay untouched', () => {
+    const { handleEvent, queryClient } = buildHandler({ projectId: PROJECT_ID });
+    const renamed = kortixRow({ custom_name: 'Mine', name: 'Mine' });
+    const other = kortixRow({
+      session_id: '99999999-8888-4777-8666-555555555555',
+      opencode_session_id: 'ses_other',
+      name: 'Other Session',
+    });
+    queryClient.setQueryData(qk.project.sessions(PROJECT_ID), [renamed, other]);
+
+    handleEvent(titleEvent('Runtime Title'));
+
+    const list = queryClient.getQueryData<Record<string, unknown>[]>(
+      qk.project.sessions(PROJECT_ID),
+    );
+    expect(list?.[0]?.name).toBe('Mine');
+    expect(list?.[1]?.name).toBe('Other Session');
+  });
+
+  test('placeholder runtime titles do not reach the Kortix caches', () => {
+    const { handleEvent, queryClient } = buildHandler({ projectId: PROJECT_ID });
+    queryClient.setQueryData(qk.project.sessions(PROJECT_ID), [kortixRow()]);
+
+    handleEvent(titleEvent('New session - 2026-08-09T10:00:00.000Z'));
+
+    const list = queryClient.getQueryData<Record<string, unknown>[]>(
+      qk.project.sessions(PROJECT_ID),
+    );
+    expect(list?.[0]?.name).toBe('Generated Title');
+  });
+
+  test('no projectId means no Kortix cache writes', () => {
+    const { handleEvent, queryClient } = buildHandler();
+    queryClient.setQueryData(qk.project.sessions(PROJECT_ID), [kortixRow()]);
+
+    handleEvent(titleEvent('Runtime Title'));
+
+    const list = queryClient.getQueryData<Record<string, unknown>[]>(
+      qk.project.sessions(PROJECT_ID),
+    );
+    expect(list?.[0]?.name).toBe('Generated Title');
+  });
+});
+
+// ============================================================================
 // session.status / session.idle — busy/retry → idle transition fires a
 // task-complete notification + invalidates the git/file-list caches.
 // ============================================================================
@@ -549,7 +841,7 @@ describe('session.error', () => {
     useSyncStore.getState().optimisticAdd('ses_1', userMessage('msg_optimistic'), []);
 
     // A real `session.error` event's `error.name` is restricted to the SDK's
-    // typed union — but `looksLikeAbortError` (see `helpers.ts`) exists
+    // typed union — but `isAbortError` (see `core/http/abort-error.ts`) exists
     // precisely because some servers emit a differently-shaped abort error.
     // Bypass the strict type here (as the real synthetic-abort call site in
     // `use-event-stream-refs.ts` also must) to exercise that defensive path.
@@ -826,5 +1118,43 @@ describe('remaining event kinds — smoke coverage', () => {
       properties: { serverID: 'srv_1', path: 'src/app.ts' },
     });
     expect(fetchLspDiagnosticsDebounced.calls.length).toBe(1);
+  });
+});
+
+describe('session.next.revert.committed → tail-reconcile wiring (F2 consumer)', () => {
+  // The store's applyEvent refuses to guess-delete when this tab never saw
+  // the staging and raises `sessionRevertNeedsTailReconcile` instead.
+  // handle-event is the one consumer: it must fetch the server's truncated
+  // tail and clear the flag. applySyncEvent is a spy in this harness, so the
+  // flag is seeded directly — exactly the state the store leaves behind.
+  test('consumes the needs-reconcile flag: fetches the tail, clears the flag', () => {
+    useSyncStore.getState().markSessionRevertNeedsTailReconcile('ses_rw');
+    const calls: Array<[string, string]> = [];
+    const { handleEvent } = buildHandler({
+      reconcileSessionTail: async (sessionID, reason) => {
+        calls.push([sessionID, reason]);
+      },
+    });
+    handleEvent({
+      type: 'session.next.revert.committed',
+      properties: { sessionID: 'ses_rw', messageID: 'msg_1' },
+    } as never);
+    expect(calls).toEqual([['ses_rw', 'manual']]);
+    expect(useSyncStore.getState().sessionRevertNeedsTailReconcile['ses_rw']).toBeUndefined();
+  });
+
+  test('no flag (tracked-revert tab) → no reconcile fetch', () => {
+    useSyncStore.getState().clearSessionRevertNeedsTailReconcile('ses_rw2');
+    const calls: Array<[string, string]> = [];
+    const { handleEvent } = buildHandler({
+      reconcileSessionTail: async (sessionID, reason) => {
+        calls.push([sessionID, reason]);
+      },
+    });
+    handleEvent({
+      type: 'session.next.revert.committed',
+      properties: { sessionID: 'ses_rw2', messageID: 'msg_1' },
+    } as never);
+    expect(calls).toEqual([]);
   });
 });

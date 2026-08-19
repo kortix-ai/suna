@@ -2,8 +2,6 @@
 
 import { useMemo } from 'react';
 
-import { CopyButton } from '@/components/markdown/copy-button';
-import { GridFileCard } from '@/features/session/grid-file-card';
 import {
   parseAgentMentionReferences,
   parseFileMentionReferences,
@@ -12,18 +10,26 @@ import {
   parseReplyContext,
   parseSessionReferences,
 } from '@/features/session/message-parsing';
+import { MentionChip } from '@/features/session/mention-chip';
+import { buildMentionSegments } from '@/features/session/mention-segments';
 import { SessionBusyIndicator } from '@/features/session/session-busy-indicator';
+import {
+  BUBBLE_SURFACE,
+  BUBBLE_TEXT,
+  MessageAttachments,
+  type NormalizedAttachment,
+  UserMessageActions,
+} from '@/features/session/turn/user-message';
 import { cn } from '@/lib/utils';
+import { getFilename } from '@/lib/utils/file-utils';
 import { openTabAndNavigate } from '@/stores/tab-store';
 
-/** Matches `BUBBLE_SURFACE` / `BUBBLE_TEXT` in `turn/user-message.tsx`. */
-const BUBBLE_SURFACE = cn(
-  'bg-sidebar dark:bg-sidebar-accent-foreground/9 text-foreground flex max-w-full flex-col rounded-lg px-3 py-2.5 select-none',
-);
-const BUBBLE_TEXT = cn(
-  'text-[0.9rem] leading-[22px] font-medium',
-  'break-words whitespace-pre-wrap select-text',
-);
+// `BUBBLE_SURFACE` / `BUBBLE_TEXT` are imported from `turn/user-message.tsx`,
+// not redeclared here. A local copy drifted twice already — first the dark
+// fill (`dark:bg-sidebar-accent-foreground/9` vs `dark:bg-muted`, fixed), then
+// the padding/radius (`px-3 py-2.5 rounded-lg` vs `px-4.5 py-3.5 rounded-xl`)
+// — each drift a visible bubble jump the instant the optimistic turn handed
+// over to the real server turn. One constant, imported, cannot drift.
 
 /**
  * The optimistic turn — the user's message plus the assistant's waiting row,
@@ -55,17 +61,18 @@ export function OptimisticTurn({
   /** Opens a file mention. Omitted before a runtime exists — mentions then
    *  render as static chips rather than dead buttons. */
   onFileClick,
-  /** Opens an attached file's preview. Omitted before a runtime exists. */
-  onFilePreview,
-  /** Skip thumbnail fetches while there is no sandbox to fetch them from. */
+  /** Paint every tile as still-uploading while there is no sandbox yet
+   *  (instant shell). Same `pending` flag MessageAttachments uses on send. */
   deferPreview,
+  /** Keys the busy indicator's dot-matrix glyph — see `SessionDotMatrix`. */
+  sessionId,
   className,
 }: {
   text: string;
   agentNames?: string[];
   onFileClick?: (path: string) => void;
-  onFilePreview?: (path: string) => void;
   deferPreview?: boolean;
+  sessionId?: string;
   className?: string;
 }) {
   return (
@@ -75,11 +82,10 @@ export function OptimisticTurn({
           text={text}
           agentNames={agentNames}
           onFileClick={onFileClick}
-          onFilePreview={onFilePreview}
           deferPreview={deferPreview}
         />
       </div>
-      <SessionBusyIndicator className="mt-6" />
+      <SessionBusyIndicator sessionId={sessionId} className="mt-6" />
     </div>
   );
 }
@@ -88,18 +94,16 @@ function OptimisticUserBubble({
   text,
   agentNames,
   onFileClick,
-  onFilePreview,
   deferPreview,
 }: {
   text: string;
   agentNames?: string[];
   onFileClick?: (path: string) => void;
-  onFilePreview?: (path: string) => void;
   deferPreview?: boolean;
 }) {
   // Strip every ref block the composer folded into the prompt, in the order it
   // folded them in, so the bubble shows the sentence the user typed and the
-  // attachments as cards — never raw XML.
+  // attachments as tiles — never raw XML.
   const { replyContext, files, cleanText } = useMemo(() => {
     const { cleanText: afterReply, replyContext } = parseReplyContext(text);
     const { cleanText: afterFiles, files } = parseFileReferences(afterReply);
@@ -110,27 +114,35 @@ function OptimisticUserBubble({
     return { replyContext, files, cleanText };
   }, [text]);
 
+  // Same shape MessageAttachments consumes on a real turn — one strip, one tile
+  // language, so the optimistic bubble and the server turn never disagree.
+  const attachments = useMemo(
+    (): NormalizedAttachment[] =>
+      files.map((f, i) => ({
+        // Position first: an in-flight ref has no path to key on, and two
+        // attachments with the same name would otherwise share a key.
+        key: `optimistic:${i}:${f.pending ?? f.path}`,
+        filename: getFilename(f.filename || f.path),
+        mime: f.mime,
+        // An upload that has not landed has no sandbox path to resolve. Passing
+        // the old PREDICTED path made the tile fetch a file that did not exist.
+        src: f.path || undefined,
+        path: f.path || undefined,
+        pending: deferPreview || Boolean(f.pending) || !f.path,
+      })),
+    [files, deferPreview],
+  );
+
   return (
     <div className="ml-auto flex w-full max-w-[80%] flex-col items-end gap-2 self-end">
-      {files.length > 0 && (
-        <div className="flex flex-wrap justify-end gap-2">
-          {files.map((f, i) => (
-            <div key={`${f.path}-${i}`} onClick={(e) => e.stopPropagation()}>
-              <GridFileCard
-                filePath={f.path}
-                fileName={f.path.split('/').pop() || f.path}
-                onClick={onFilePreview ? () => onFilePreview(f.path) : undefined}
-                deferPreview={deferPreview}
-              />
-            </div>
-          ))}
-        </div>
+      {attachments.length > 0 && (
+        <MessageAttachments attachments={attachments} pending={deferPreview} />
       )}
       {(cleanText || replyContext) && (
         <div className={cn(BUBBLE_SURFACE, 'w-fit overflow-hidden')}>
           {replyContext && (
             <blockquote className="border-border mb-2 border-l-2 pl-2.5">
-              <p className="text-muted-foreground line-clamp-2 text-xs leading-5">{replyContext}</p>
+              <p className="text-muted-foreground line-clamp-2 text-sm leading-5">{replyContext}</p>
             </blockquote>
           )}
           {cleanText && (
@@ -144,14 +156,33 @@ function OptimisticUserBubble({
           )}
         </div>
       )}
-      <div className="flex justify-end opacity-0 transition-opacity duration-150 group-hover/turn:opacity-100">
-        <CopyButton code={text} size="sm" />
-      </div>
+      {/* The same row the server turn renders, for the same reason the
+          attachments strip is shared: anything shaped differently on one side
+          shows up as a twitch at handover. Its height comes from the copy
+          button, so it matches the real turn's row exactly.
+
+          `timestamp` is deliberately `null`. This turn has no server message,
+          so the only stamp available is a local clock read — and this component
+          is mounted TWICE (boot shell, then chat) with a crossfade between. A
+          clock read at mount would differ between the two, which is the same
+          two-clocks bug that already made the elapsed timer run backwards here.
+          The row stays empty until `time.created` arrives with the real
+          message; the label then appears without moving anything. */}
+      <UserMessageActions timestamp={null} copyText={text} />
     </div>
   );
 }
 
-/** Highlight @mentions in plain text (for optimistic & user messages). */
+/**
+ * Highlight @mentions in plain text (for optimistic & user messages).
+ *
+ * Draws the SAME chip the composer draws (`../mention-chip`) over the SAME
+ * segmentation the sent message uses (`../mention-segments`). Both used to be
+ * local to this file — an underlined-text treatment and its own copy of the
+ * range walk — so a mention visibly changed shape twice on its way through the
+ * app: chip in the composer, underline in the optimistic bubble, underline
+ * again in the server turn.
+ */
 export function HighlightMentions({
   text,
   agentNames,
@@ -174,123 +205,65 @@ export function HighlightMentions({
     };
   }, [text]);
 
+  const sessionTitles = useMemo(() => sessions.map((s) => s.title), [sessions]);
+
   const segments = useMemo(() => {
-    type MentionType = 'file' | 'agent' | 'session';
-    if (!cleanText) return [{ text: cleanText, type: undefined as MentionType | undefined }];
+    const built = buildMentionSegments({ text: cleanText, sessionTitles, agentNames });
+    // Key each segment by its source offset in the text — content-derived and
+    // unique per segment, even when the same mention appears twice.
+    let offset = 0;
+    return built.map((seg) => {
+      const key = `${offset}:${seg.type ?? 'text'}`;
+      offset += seg.text.length;
+      return { ...seg, key };
+    });
+  }, [cleanText, sessionTitles, agentNames]);
 
-    // Detect session @mentions first (titles can contain spaces)
-    const sessionDetected: { start: number; end: number; type: MentionType }[] = [];
-    for (const s of sessions) {
-      const needle = `@${s.title}`;
-      const idx = cleanText.indexOf(needle);
-      if (idx !== -1) {
-        sessionDetected.push({
-          start: idx,
-          end: idx + needle.length,
-          type: 'session',
-        });
-      }
-    }
-
-    const agentSet = new Set(agentNames || []);
-    const mentionRegex = /@(\S+)/g;
-    const detected: { start: number; end: number; type: MentionType }[] = [...sessionDetected];
-    let match: RegExpExecArray | null;
-    while ((match = mentionRegex.exec(cleanText)) !== null) {
-      const mStart = match.index;
-      // Skip if overlaps with a session mention
-      if (sessionDetected.some((s) => mStart >= s.start && mStart < s.end)) continue;
-      const name = match[1];
-      // Treat @ses_<id> tokens as session mentions
-      const type: MentionType = name.startsWith('ses_')
-        ? 'session'
-        : agentSet.has(name)
-          ? 'agent'
-          : 'file';
-      detected.push({
-        start: mStart,
-        end: match.index + match[0].length,
-        type,
+  const openSessionMention = (raw: string) => {
+    // Direct session ID (ses_...) — navigate without title lookup
+    if (raw.startsWith('ses_')) {
+      openTabAndNavigate({
+        id: raw,
+        title: 'Session',
+        type: 'session',
+        href: `/sessions/${raw}`,
       });
+      return;
     }
-    if (detected.length === 0) return [{ text: cleanText, type: undefined }];
-
-    detected.sort((a, b) => a.start - b.start || b.end - a.end);
-    const result: { text: string; type?: MentionType }[] = [];
-    let lastIndex = 0;
-    for (const ref of detected) {
-      if (ref.start < lastIndex) continue;
-      if (ref.start > lastIndex) result.push({ text: cleanText.slice(lastIndex, ref.start) });
-      result.push({
-        text: cleanText.slice(ref.start, ref.end),
-        type: ref.type,
-      });
-      lastIndex = ref.end;
-    }
-    if (lastIndex < cleanText.length) result.push({ text: cleanText.slice(lastIndex) });
-    return result;
-  }, [cleanText, agentNames, sessions]);
-
-  // Uniform monochrome mention style — Kortix brand is strictly neutral, so
-  // every mention kind (file / agent / session) renders identically
-  // as an underlined foreground chip. Kind is distinguished by click target.
-  const mentionClass =
-    'font-medium text-foreground underline decoration-foreground/30 underline-offset-[3px] hover:decoration-foreground/70 cursor-pointer';
-  const mentionClassStatic = 'font-medium text-foreground';
+    const ref = sessions.find((s) => s.title === raw);
+    if (!ref) return;
+    openTabAndNavigate({
+      id: ref.id,
+      title: ref.title || 'Session',
+      type: 'session',
+      href: `/sessions/${ref.id}`,
+    });
+  };
 
   return (
     <>
-      {segments.map((seg, i) =>
-        seg.type === 'file' && onFileClick ? (
-          <button
-            key={i}
-            type="button"
-            className={cn(mentionClass, 'appearance-none bg-transparent p-0 text-left')}
-            onClick={(e) => {
-              e.stopPropagation();
-              onFileClick(seg.text.replace(/^@/, ''));
-            }}
-          >
-            {seg.text}
-          </button>
+      {segments.map((seg) =>
+        seg.type === 'file' ? (
+          // Static when there is no runtime to open the file in yet (the
+          // instant shell) — a chip that looks pressable and does nothing is
+          // worse than one that plainly does not.
+          <MentionChip
+            key={seg.key}
+            kind="file"
+            label={seg.text.replace(/^@/, '')}
+            onClick={onFileClick ? () => onFileClick(seg.text.replace(/^@/, '')) : undefined}
+          />
         ) : seg.type === 'session' ? (
-          <button
-            key={i}
-            type="button"
-            className={cn(mentionClass, 'appearance-none bg-transparent p-0 text-left')}
-            onClick={(e) => {
-              e.stopPropagation();
-              const raw = seg.text.replace(/^@/, '');
-              // Direct session ID (ses_...) — navigate without title lookup
-              if (raw.startsWith('ses_')) {
-                openTabAndNavigate({
-                  id: raw,
-                  title: 'Session',
-                  type: 'session',
-                  href: `/sessions/${raw}`,
-                });
-                return;
-              }
-              const ref = sessions.find((s) => s.title === raw);
-              if (ref) {
-                openTabAndNavigate({
-                  id: ref.id,
-                  title: ref.title || 'Session',
-                  type: 'session',
-                  href: `/sessions/${ref.id}`,
-                });
-              }
-            }}
-          >
-            {seg.text}
-          </button>
+          <MentionChip
+            key={seg.key}
+            kind="session"
+            label={seg.text.replace(/^@/, '')}
+            onClick={() => openSessionMention(seg.text.replace(/^@/, ''))}
+          />
+        ) : seg.type === 'agent' ? (
+          <MentionChip key={seg.key} kind="agent" label={seg.text.replace(/^@/, '')} />
         ) : (
-          <span
-            key={i}
-            className={cn((seg.type === 'file' || seg.type === 'agent') && mentionClassStatic)}
-          >
-            {seg.text}
-          </span>
+          <span key={seg.key}>{seg.text}</span>
         ),
       )}
     </>

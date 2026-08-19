@@ -1,13 +1,18 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
+import * as realPreviewOwnership from '../shared/preview-ownership';
 
 let mockSandboxAccountId: string | null = 'acct-owner';
 let mockResolvedAccountId = 'acct-owner';
 let mockSupabaseUser: { id: string; email?: string } | null = null;
 let mockAdminAccounts = new Set<string>();
 
+// Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
+// lists exports by hand deletes every export it omits — the failure surfaces in
+// whatever unrelated file imports the missing name next, attributed to no test.
 mock.module('../shared/preview-ownership', () => ({
+  ...realPreviewOwnership,
   canAccessPreviewSandbox: async ({ accountId, userId }: { accountId?: string; userId?: string }) => {
     if (!mockSandboxAccountId) return false;
     if (accountId && mockAdminAccounts.has(accountId)) return true;

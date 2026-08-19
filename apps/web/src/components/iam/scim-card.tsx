@@ -12,12 +12,10 @@ import { errorToast, successToast } from '@/components/ui/toast';
 import { getEnv } from '@/lib/env-config';
 import { buildScimBaseUrl, isAbsoluteHttpUrl } from '@/lib/scim-url';
 import { cn } from '@/lib/utils';
-import { copyToClipboard } from '@/lib/utils/clipboard';
 import { listAccountMembers } from '@kortix/sdk';
 import {
   CaretDownIcon as ChevronDown,
   CheckIcon as Check,
-  CopyIcon as Copy,
   KeyIcon as KeyRound,
   PlusIcon as Plus,
   ArrowClockwiseIcon as RefreshCw,
@@ -48,7 +46,9 @@ import {
   ModalTitle,
 } from '@/components/ui/modal';
 import { Skeleton } from '@/components/ui/skeleton';
+import { CopyRow, formatRelative } from '@/features/workspace/shared/access';
 import { EmptyState } from '@/features/layout/section/empty-state';
+import { ErrorState } from '@/features/layout/section/error-state';
 import {
   type CreatedScimToken,
   type ScimToken,
@@ -59,6 +59,9 @@ import {
   revokeScimToken,
 } from '@/lib/iam-client';
 import { SCIM_PROVIDER_GUIDES } from '@/features/sso-setup/guides';
+
+// Static registry — filter once at module load instead of on every render.
+const START_SYNC_GUIDES = SCIM_PROVIDER_GUIDES.filter((g) => g.config.startSyncHint);
 import { latestScimSyncAt, scimSyncFreshness } from '@/lib/scim-sync';
 
 interface ScimCardProps {
@@ -158,29 +161,6 @@ function ProvisioningHealthPanel({
       </div>
     </div>
   );
-}
-
-function formatRelative(iso: string | null): string {
-  if (!iso) return '—';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '—';
-  const diffMs = Date.now() - d.getTime();
-  const minutes = Math.floor(diffMs / 60_000);
-  if (minutes < 1) return 'just now';
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  if (days < 30) return `${days}d ago`;
-  return d.toLocaleDateString();
-}
-
-async function copyValue(value: string, successMsg = 'Copied to clipboard') {
-  if (await copyToClipboard(value)) {
-    successToast(successMsg);
-  } else {
-    errorToast('Copy failed — select and copy manually');
-  }
 }
 
 export function ScimCard({ accountId, canManage }: ScimCardProps) {
@@ -283,6 +263,17 @@ export function ScimCard({ accountId, canManage }: ScimCardProps) {
         <div className="px-4 py-4">
           {tokensQuery.isLoading ? (
             <Skeleton className="h-12 w-full rounded-md" />
+          ) : tokensQuery.isError ? (
+            <ErrorState
+              size="sm"
+              title="Couldn't load SCIM status"
+              description={tokensQuery.error instanceof Error ? tokensQuery.error.message : undefined}
+              action={
+                <Button variant="outline" size="sm" onClick={() => tokensQuery.refetch()}>
+                  Retry
+                </Button>
+              }
+            />
           ) : tokens.length > 0 ? (
             <ProvisioningHealthPanel accountId={accountId} lastSyncAt={lastSyncAt} />
           ) : (
@@ -300,7 +291,17 @@ export function ScimCard({ accountId, canManage }: ScimCardProps) {
             is exactly when the admin is pasting these values into the IdP. It
             tucks itself away automatically on the first successful sync. */}
         <div className="border-border border-t">
-          <Disclosure className="group" open={tokens.length > 0 && freshness === 'never'}>
+          {/* `defaultOpen` + `key`, not `open`: this wants a derived STARTING
+              value the admin can then override, which a controlled `open` with
+              no `onOpenChange` cannot express — it would now freeze the trigger.
+              The key re-seeds it when the prompt condition actually flips, so it
+              still opens on a fresh token and tucks away after the first sync,
+              while a manual collapse in between sticks. */}
+          <Disclosure
+            key={tokens.length > 0 && freshness === 'never' ? 'awaiting-first-sync' : 'synced'}
+            className="group"
+            defaultOpen={tokens.length > 0 && freshness === 'never'}
+          >
             <DisclosureTrigger>
               <div className="flex w-full cursor-pointer items-center justify-between gap-3 px-4 py-3">
                 <div className="min-w-0 flex-1">
@@ -317,20 +318,11 @@ export function ScimCard({ accountId, canManage }: ScimCardProps) {
               <div className="space-y-4 px-4 py-4">
                 {/* Endpoint URL */}
                 <div className="space-y-1.5">
-                  <Label className="text-xs">SCIM base URL</Label>
-                  <div className="flex items-center gap-2">
-                    <code className="bg-muted/30 min-w-0 flex-1 truncate rounded-md border px-3 py-2 font-mono text-xs">
-                      {scimBaseUrl}
-                    </code>
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      aria-label="Copy SCIM base URL"
-                      onClick={() => copyValue(scimBaseUrl, 'SCIM URL copied')}
-                    >
-                      <Copy className="size-3.5 shrink-0" />
-                    </Button>
-                  </div>
+                  <CopyRow
+                    label="SCIM base URL"
+                    value={scimBaseUrl}
+                    successMessage="SCIM URL copied"
+                  />
                   <p className="text-muted-foreground text-xs">
                     {scimBaseIsAbsolute ? (
                       <>
@@ -377,7 +369,7 @@ export function ScimCard({ accountId, canManage }: ScimCardProps) {
                   <p className="text-foreground text-xs font-medium">
                     Start automatic sync in your IdP
                   </p>
-                  {SCIM_PROVIDER_GUIDES.filter((g) => g.config.startSyncHint).map((g) => (
+                  {START_SYNC_GUIDES.map((g) => (
                     <div key={g.id} className="flex gap-2">
                       <span className="w-24 shrink-0">{g.name.split(' (')[0]}</span>
                       <span className="text-foreground min-w-0 flex-1">
@@ -412,7 +404,7 @@ export function ScimCard({ accountId, canManage }: ScimCardProps) {
                     )}
                   </p>
                   <p className="text-muted-foreground mt-0.5 text-xs">
-                    Each token authenticates a single IdP integration — rotate by minting a new one
+                    Each token authenticates a single IdP connection — rotate by minting a new one
                     and revoking the old.
                   </p>
                 </div>
@@ -441,7 +433,24 @@ export function ScimCard({ accountId, canManage }: ScimCardProps) {
                 </div>
               )}
 
-              {!tokensQuery.isLoading && tokens.length === 0 && (
+              {!tokensQuery.isLoading && tokensQuery.isError && (
+                <div className="px-4 py-4">
+                  <ErrorState
+                    size="sm"
+                    title="Couldn't load SCIM tokens"
+                    description={
+                      tokensQuery.error instanceof Error ? tokensQuery.error.message : undefined
+                    }
+                    action={
+                      <Button variant="outline" size="sm" onClick={() => tokensQuery.refetch()}>
+                        Retry
+                      </Button>
+                    }
+                  />
+                </div>
+              )}
+
+              {!tokensQuery.isLoading && !tokensQuery.isError && tokens.length === 0 && (
                 <div className="px-4 py-4">
                   <EmptyState
                     icon={KeyRound}
@@ -452,7 +461,7 @@ export function ScimCard({ accountId, canManage }: ScimCardProps) {
                 </div>
               )}
 
-              {!tokensQuery.isLoading && tokens.length > 0 && (
+              {!tokensQuery.isLoading && !tokensQuery.isError && tokens.length > 0 && (
                 <div className="divide-border divide-y">
                   {tokens.map((t) => (
                     <div key={t.token_id} className="flex items-center gap-3 px-4 py-3">
@@ -571,45 +580,15 @@ function CreateScimTokenDialog({
           <ModalDescription>
             {created
               ? 'Copy the token now — it will not be shown again. Then configure it in your IdP.'
-              : 'Mint a bearer token for an IdP integration. Each integration should get its own token so revocation is targeted.'}
+              : 'Mint a bearer token for an IdP connection. Each connection should get its own token so revocation is targeted.'}
           </ModalDescription>
         </ModalHeader>
 
         {created ? (
           <>
             <ModalBody className="min-w-0 space-y-4">
-              <div>
-                <Label className="text-xs">Token</Label>
-                <div className="mt-1 flex min-w-0 items-center gap-2">
-                  <code className="bg-muted/30 min-w-0 flex-1 truncate rounded-md border px-3 py-2 font-mono text-xs">
-                    {created.secret}
-                  </code>
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    aria-label="Copy token"
-                    onClick={() => copyValue(created.secret, 'Token copied')}
-                  >
-                    <Copy className="size-3.5 shrink-0" />
-                  </Button>
-                </div>
-              </div>
-              <div>
-                <Label className="text-xs">SCIM base URL</Label>
-                <div className="mt-1 flex min-w-0 items-center gap-2">
-                  <code className="bg-muted/30 min-w-0 flex-1 truncate rounded-md border px-3 py-2 font-mono text-xs">
-                    {scimBaseUrl}
-                  </code>
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    aria-label="Copy URL"
-                    onClick={() => copyValue(scimBaseUrl, 'URL copied')}
-                  >
-                    <Copy className="size-3.5 shrink-0" />
-                  </Button>
-                </div>
-              </div>
+              <CopyRow label="Token" value={created.secret} successMessage="Token copied" />
+              <CopyRow label="SCIM base URL" value={scimBaseUrl} successMessage="URL copied" />
             </ModalBody>
             <ModalFooter>
               <Button size="sm" onClick={() => handleClose(false)} className="gap-1.5">

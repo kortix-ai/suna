@@ -1,18 +1,30 @@
+import { normalizeProjectRole } from '../../iam/role-perms';
 import {
   isSessionTargetVisibleToCaller,
-  isSessionVisibleTo,
+  isProjectSessionVisibleTo,
+  isTriggerCreatedSessionMetadata,
   loadSessionGrants,
   resolveShareSubject,
   type SecretGrant,
   type ShareSubject,
-} from '../../executor/share';
+} from '../../connectors/share';
 import { authorize, assertAuthorized } from '../../iam';
 import { deriveRequestContext } from '../../iam/cache';
+// Straight from `iam/denial-message`, not the `iam` barrel or the dispatcher:
+// both of those are replaced wholesale by `mock.module` in several route tests,
+// so every name imported from them is a name those stubs must also declare.
+// These two are pure wording policy. Same reason `deriveRequestContext` above
+// comes from `iam/cache` directly.
+import { buildDenialError, denialReasonMessage } from '../../iam/denial-message';
 import { invalidateIamCacheForUser, registerPrincipalScopedMemo } from '../../iam/cache-invalidation';
 import { setContextField } from '../../lib/request-context';
 import { auth } from '../../openapi';
 import { recordAuditEvent } from '../../shared/audit';
 import { db } from '../../shared/db';
+import {
+  IMPERSONATION_INVALID_CODE,
+  impersonatedAccountFor,
+} from '../../shared/impersonation';
 import { isPlatformAdmin } from '../../shared/platform-roles';
 import { resolveAccountId } from '../../shared/resolve-account';
 import { getSupabase } from '../../shared/supabase';
@@ -26,6 +38,10 @@ import { FREE_TIER_PROJECT_LIMIT, maxProjectsForAccount } from '../../shared/acc
 import { getAccountMembership } from './git';
 import { ProjectRow, ProjectSessionRow, normalizeString } from './serializers';
 import { mergeSessionOwnerIdentities, type SessionOwnerIdentity } from './session-inventory';
+import {
+  isRepositoryProjectAction,
+  sessionWorkspaceAllowsRepositoryAccess,
+} from './session-workspace-access';
 
 // Enforce the per-account project cap (free → 1, paid → effectively uncapped).
 // Returns a 403 Response to send, or null when the account may create another
@@ -104,12 +120,31 @@ export async function loadVisibleSession(
   if (!row) return null;
   const subject = await resolveShareSubject(loaded.userId);
   const grants = (await loadSessionGrants([sessionId])).get(sessionId) ?? [];
+  const ownership = { origin: row.origin ?? null, sessionId, callerSessionId };
+  let canManageProject = roleAllows(loaded.effectiveRole, 'manage');
   if (
-    !isSessionVisibleTo(row.visibility as 'private' | 'project' | 'restricted', row.createdBy, grants, subject, {
-      origin: row.origin ?? null,
-      sessionId,
-      callerSessionId,
-    })
+    !canManageProject &&
+    isSessionTargetVisibleToCaller(ownership) &&
+    isTriggerCreatedSessionMetadata(row.metadata)
+  ) {
+    canManageProject = (
+      await authorize(
+        loaded.userId,
+        loaded.row.accountId,
+        'project.members.manage',
+        { type: 'project', id: loaded.row.projectId },
+      )
+    ).allowed;
+  }
+  if (
+    !isProjectSessionVisibleTo(
+      row.visibility as 'private' | 'project' | 'restricted',
+      row.createdBy,
+      grants,
+      subject,
+      ownership,
+      { metadata: row.metadata, canManageProject },
+    )
   ) {
     // A platform-admin bypass already verified for the parent project (see
     // loadProjectForUser) also covers a session that would otherwise be
@@ -126,7 +161,6 @@ export async function loadVisibleSession(
     });
   }
   const isOwner = row.createdBy === loaded.userId;
-  const canManageProject = roleAllows(loaded.effectiveRole, 'manage');
   return { row, subject, grants, isOwner, canManageProject, canManageSharing: isOwner || canManageProject };
 }
 
@@ -142,7 +176,7 @@ export async function loadVisibleSession(
  * is invisible to everyone but its creator under `isSessionVisibleTo`, so
  * the `canManageProject` half of `canManageSharing` could never be reached:
  * the route always 404'd on the visibility gate first, even for a real
- * project manager. A project member with no manage rights (e.g. an editor
+ * project manager. A project member with no manage rights (e.g. a plain member
  * who didn't create the session) still gets a truthful 403 (permission
  * denied) here, not a 404 (resource hidden) — they're a legitimate member of
  * the project the session lives in, not a stranger, so there's nothing to
@@ -200,7 +234,11 @@ const loadProjectMemberRole = ttlMemo({
       .from(projectMembers)
       .where(and(eq(projectMembers.projectId, projectId), eq(projectMembers.userId, userId)))
       .limit(1);
-    return (row?.projectRole as ProjectRole | undefined) ?? null;
+    // normalizeProjectRole, never a raw cast: the column can still hold a
+    // RETIRED value (`editor`, `user`, `viewer`) that no longer exists in the
+    // ProjectRole union. A cast would hand a rank-less string to
+    // PROJECT_ROLE_RANK / PROJECT_ROLE_PERMS and silently deny everything.
+    return normalizeProjectRole(row?.projectRole);
   },
   shouldCache: (role) => role !== null,
 });
@@ -379,7 +417,26 @@ export async function resolveProjectAccount(c: Context, body?: Record<string, un
     body?.account_id ??
     body?.accountId,
   );
-  const accountId = requested ?? await resolveAccountId(userId);
+  // ACT-AS: the grant, not the query string, decides the account. Defense in
+  // depth — under impersonation `/v1/accounts` returns only the target, so a
+  // correct client already sends the target id. A stale one that still holds
+  // the operator's OWN account id would otherwise resolve a real membership
+  // here and write to the operator's account while the banner named the
+  // customer's. Refuse instead.
+  const impersonated = impersonatedAccountFor(userId);
+  if (impersonated && requested && requested !== impersonated) {
+    throw new HTTPException(403, {
+      message: 'Impersonated requests cannot target another account',
+      res: new Response(
+        JSON.stringify({
+          error: 'Impersonated requests cannot target another account',
+          code: IMPERSONATION_INVALID_CODE,
+        }),
+        { status: 403, headers: { 'content-type': 'application/json' } },
+      ),
+    });
+  }
+  const accountId = impersonated ?? requested ?? await resolveAccountId(userId);
 
   const membership = await getAccountMembership(userId, accountId);
   if (!membership) {
@@ -415,7 +472,7 @@ export function iamActionForProjectAccess(action: ProjectAccessAction): string {
     case 'manage':
       // 'manage' historically meant "admin-tier write" — covers triggers,
       // secrets, snapshots, CLI tokens, etc. Map to project.write (which
-      // Project Editor has) so editors aren't accidentally locked out.
+      // a project manager has) so managers aren't accidentally locked out.
       // Routes that need the stricter `project.members.manage` gate add
       // an explicit assertProjectCapability() on top of loadProjectForUser.
       return 'project.write';
@@ -441,6 +498,9 @@ export async function assertProjectCapability(
   // resource-grants.ts). Used by the agent/skill launch gates.
   resource?: { type: 'agent' | 'skill'; id: string },
 ): Promise<void> {
+  if (isRepositoryProjectAction(action)) {
+    await assertAgentSessionWorkspaceAllowsRepository(c, accountId, projectId);
+  }
   const actingTokenId =
     ((c as unknown as { get(k: string): unknown }).get('iamTokenId') as string | undefined) ?? undefined;
   await assertAuthorized(
@@ -470,6 +530,12 @@ export async function projectCapabilityAllowed(
   projectId: string,
   action: string,
 ): Promise<boolean> {
+  if (
+    isRepositoryProjectAction(action) &&
+    !(await agentSessionWorkspaceAllowsRepository(c, accountId, projectId))
+  ) {
+    return false;
+  }
   const actingTokenId =
     ((c as unknown as { get(k: string): unknown }).get('iamTokenId') as string | undefined) ?? undefined;
   const verdict = await authorize(
@@ -481,6 +547,33 @@ export async function projectCapabilityAllowed(
     deriveRequestContext(c),
   );
   return verdict.allowed;
+}
+
+function agentSessionIdFromRequest(c: Context): string | null {
+  if (c.get('authType') !== 'pat') return null;
+  const sessionId = c.get('sessionId');
+  return typeof sessionId === 'string' && sessionId.length > 0 ? sessionId : null;
+}
+
+export async function agentSessionWorkspaceAllowsRepository(
+  c: Context,
+  accountId: string,
+  projectId: string,
+): Promise<boolean> {
+  const sessionId = agentSessionIdFromRequest(c);
+  if (!sessionId) return true;
+  return sessionWorkspaceAllowsRepositoryAccess({ sessionId, accountId, projectId });
+}
+
+export async function assertAgentSessionWorkspaceAllowsRepository(
+  c: Context,
+  accountId: string,
+  projectId: string,
+): Promise<void> {
+  if (await agentSessionWorkspaceAllowsRepository(c, accountId, projectId)) return;
+  throw new HTTPException(403, {
+    message: 'session workspace does not allow repository access',
+  });
 }
 
 // `projects.project_id` is a Postgres `uuid` column, so a malformed id
@@ -606,12 +699,27 @@ export async function loadProjectForUser(c: Context, projectId: string, action: 
 
   const accountRole = membership?.accountRole as AccountRole | undefined;
   if (!verdict.allowed && !adminBypass) {
-    // Distinguish "no access at all" from "has access but not for this
-    // action" so the UI can show a meaningful message. A Viewer can see
-    // the project but can't create a session — telling them "no access"
-    // is misleading and they spend time wondering why they can see the
-    // page at all. Only do the second probe when the failed action was
-    // NOT already 'read' — otherwise it's the same answer.
+    const iamAction = iamActionForProjectAccess(action);
+    // The engine already computed WHY. When the reason names a constraint other
+    // than the caller's project role — an agent-session grant, a service
+    // account's assigned role, MFA, token scope — report THAT.
+    //
+    // The role-probe below cannot: `project.read` is one of the two actions the
+    // agent-grant fold never gates (AGENT_GRANT_EXEMPT_ACTIONS in engine-v2),
+    // so for an agent-session token the probe passes no matter what actually
+    // denied the request. Every agent-scope and service-account-scope denial
+    // therefore rendered as "your role is too low" — advice that told an
+    // account owner running the meta coordinator to ask an account owner for a
+    // higher role.
+    if (denialReasonMessage(iamAction, verdict.reason) !== null) {
+      throw buildDenialError(iamAction, verdict.reason);
+    }
+    // Genuine role denial. Distinguish "no access at all" from "has access but
+    // not for this action" so the UI can show a meaningful message. A Viewer can
+    // see the project but can't create a session — telling them "no access" is
+    // misleading and they spend time wondering why they can see the page at
+    // all. Only do the second probe when the failed action was NOT already
+    // 'read' — otherwise it's the same answer.
     if (action !== 'read') {
       const readVerdict = await authorize(
         userId,

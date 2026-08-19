@@ -161,36 +161,20 @@ export function BillingTab({ returnUrl, isActive }: { returnUrl: string; isActiv
 
           {subscribedToTeam && <SeatManagementCard accountState={accountState} />}
 
+          {/* Add credits and Auto top-up share one card, matching the settings
+              pane. Both components carry their own heading and no chrome
+              (see `credit-topup-section.tsx` / `auto-topup-card.tsx`), so the
+              outer headings this section used to draw would now read twice. */}
           {canPurchaseCredits && (
-            <section className="space-y-4">
-              <div className="space-y-1">
-                <Label>Auto top-up</Label>
-                <p className="text-muted-foreground text-xs">
-                  {tI18nHardcoded.raw(
-                    'autoFeaturesAccountsSettingsBillingTabJsxTextNeverRunOut4fdb8c3d',
-                  )}
-                </p>
-              </div>
-              <div className="bg-popover rounded-md border px-4 py-5">
+            <div className="bg-popover rounded-md border">
+              <section className="space-y-3 px-4 py-4">
+                <h3 className="text-foreground text-sm font-medium">Add credits</h3>
+                <CreditTopupSection />
+              </section>
+              <div className="border-t px-4 py-4">
                 <AutoTopupCard fetchSettings showSaveButton />
               </div>
-            </section>
-          )}
-
-          {canPurchaseCredits && (
-            <section className="space-y-4">
-              <div className="space-y-1">
-                <Label>Buy credits</Label>
-                <p className="text-muted-foreground text-xs">
-                  {tI18nHardcoded.raw(
-                    'autoFeaturesAccountsSettingsBillingTabJsxTextOneTimeTop22a81cd3',
-                  )}
-                </p>
-              </div>
-              <div className="bg-popover rounded-md border px-4 py-5">
-                <CreditTopupSection />
-              </div>
-            </section>
+            </div>
           )}
 
           {/* The Stripe billing portal doesn't exist without billing enabled

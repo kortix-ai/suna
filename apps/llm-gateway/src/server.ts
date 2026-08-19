@@ -61,9 +61,9 @@ export function buildServer(): GatewayServer {
       retry: config.retry,
       breaker: config.breaker,
       captureBodies: config.captureBodies,
-      maxCapturedBodyBytes: config.maxCapturedBodyBytes,
-      maxRequestBytes: config.maxRequestBytes || undefined,
-      streamProbeTimeoutMs: config.streamProbeTimeoutMs,
+      maxRequestBytes: config.maxRequestBytes > 0 ? config.maxRequestBytes : undefined,
+      streamProbeTimeoutMs:
+        config.streamProbeTimeoutMs > 0 ? config.streamProbeTimeoutMs : undefined,
     },
     { logger },
   );

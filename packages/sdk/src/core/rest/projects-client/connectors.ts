@@ -1,11 +1,14 @@
-// Executor connectors — connector CRUD, credentials, Pipedream. Connectors are
+// Connectors — connector CRUD, credentials, Pipedream. Connectors are
 // project-wide visible; the only access gate is the agent's `connectors`
 // grant (kortix.yaml [[agents]].connectors), not anything configured here.
 
 import { backendApi } from '../../http/api-client';
+import { ApiError } from '../../http/api/errors';
+import { authenticatedFetch } from '../../http/auth';
+import { platformConfig } from '../../http/config';
 import { unwrap } from './shared';
 
-// ─── Executor connectors ──────────────────────────────────────────────────
+// ─── Connectors ────────────────────────────────────────────────────────────
 
 export interface ConnectorAction {
   path: string;
@@ -13,6 +16,201 @@ export interface ConnectorAction {
   description: string;
   risk: 'read' | 'write' | 'destructive';
   inputSchema: Record<string, unknown> | null;
+}
+
+/** One connector as exposed by the callable project catalog. */
+export interface ConnectorCatalogEntry {
+  slug: string;
+  name: string;
+  provider: string;
+  status: string;
+  actions: ConnectorAction[];
+}
+
+/** One callable connector action, identified by `<connector>.<action>`. */
+export interface ConnectorTool {
+  tool: string;
+  connector: string;
+  action: string;
+  risk: ConnectorAction['risk'];
+  description: string;
+  inputSchema: ConnectorAction['inputSchema'];
+}
+
+export interface ConnectorCallResult<T = unknown> {
+  ok: boolean;
+  data?: T;
+  risk?: ConnectorAction['risk'];
+  status?: string;
+  reason?: string;
+  execution_id?: string | null;
+  retryable?: boolean;
+  approval_url?: string | null;
+  approval_summary?: string | null;
+  approval_instructions?: string | null;
+}
+
+export interface ConnectorAttachmentUploadInput {
+  filename: string;
+  contentType: string;
+  contentDisposition?: 'attachment' | 'inline';
+  contentId?: string;
+}
+
+export interface ConnectorAttachmentUploadResult {
+  attachment_id: string;
+  filename: string;
+  content_type: string;
+  content_disposition: 'attachment' | 'inline';
+  content_id?: string;
+  size: number;
+  expires_at: string;
+}
+
+function connectorGatewayPath(projectId: string | undefined, suffix: string): string {
+  return projectId
+    ? `/connectors/projects/${encodeURIComponent(projectId)}/${suffix}`
+    : `/connectors/${suffix}`;
+}
+
+export async function getConnectorCatalog(projectId?: string): Promise<ConnectorCatalogEntry[]> {
+  const result = unwrap(
+    await backendApi.get<{ connectors?: ConnectorCatalogEntry[] }>(
+      connectorGatewayPath(projectId, 'catalog'),
+    ),
+  );
+  return result.connectors ?? [];
+}
+
+export async function listConnectorTools(projectId?: string): Promise<ConnectorTool[]> {
+  const tools: ConnectorTool[] = [];
+  for (const connector of await getConnectorCatalog(projectId)) {
+    for (const action of connector.actions) {
+      tools.push({
+        tool: `${connector.slug}.${action.path}`,
+        connector: connector.slug,
+        action: action.path,
+        risk: action.risk,
+        description: action.description || action.name,
+        inputSchema: action.inputSchema,
+      });
+    }
+  }
+  return tools;
+}
+
+export async function searchConnectorTools(
+  projectId: string | undefined,
+  query = '',
+  options: { limit?: number } = {},
+): Promise<ConnectorTool[]> {
+  const normalized = query.trim().toLowerCase();
+  const tokens = normalized.split(/\s+/).filter(Boolean);
+  const exact: ConnectorTool[] = [];
+  const tokenMatches: ConnectorTool[] = [];
+  for (const tool of await listConnectorTools(projectId)) {
+    const haystack = `${tool.tool} ${tool.description}`.toLowerCase();
+    if (!normalized || haystack.includes(normalized)) exact.push(tool);
+    else if (tokens.every((token) => haystack.includes(token))) tokenMatches.push(tool);
+  }
+  return [...exact, ...tokenMatches].slice(0, options.limit ?? 20);
+}
+
+export async function describeConnectorTool(
+  projectId: string | undefined,
+  tool: string,
+): Promise<ConnectorTool | null> {
+  return (await listConnectorTools(projectId)).find((candidate) => candidate.tool === tool) ?? null;
+}
+
+function parseConnectorTool(tool: string): { connector: string; action: string } {
+  const separator = tool.indexOf('.');
+  const connector = separator < 0 ? '' : tool.slice(0, separator).trim();
+  const action = separator < 0 ? '' : tool.slice(separator + 1).trim();
+  if (!connector || !action) {
+    throw new Error('tool must use the connector.action format');
+  }
+  return { connector, action };
+}
+
+export async function callConnector<T = unknown>(
+  projectId: string | undefined,
+  tool: string,
+  args: Record<string, unknown> = {},
+): Promise<ConnectorCallResult<T>> {
+  const { connector, action } = parseConnectorTool(tool);
+  return unwrap(
+    await backendApi.post<ConnectorCallResult<T>>(
+      connectorGatewayPath(projectId, 'call'),
+      { connector, action, args },
+    ),
+  );
+}
+
+function connectorResponseMessage(body: unknown, status: number): string {
+  if (body && typeof body === 'object') {
+    const value = body as Record<string, unknown>;
+    for (const key of ['reason', 'error', 'message', 'detail']) {
+      if (typeof value[key] === 'string' && value[key]) return value[key];
+    }
+  }
+  return `HTTP ${status}`;
+}
+
+function trimTrailingSlashes(value: string): string {
+  let end = value.length;
+  while (end > 0 && value.charCodeAt(end - 1) === 47) end -= 1;
+  return end === value.length ? value : value.slice(0, end);
+}
+
+export async function uploadConnectorAttachment(
+  projectId: string | undefined,
+  content: Uint8Array | ArrayBuffer | Blob,
+  input: ConnectorAttachmentUploadInput,
+): Promise<ConnectorAttachmentUploadResult> {
+  const filename = input.filename.trim();
+  const contentType = input.contentType.trim();
+  if (!filename) throw new Error('filename is required');
+  if (!contentType) throw new Error('contentType is required');
+
+  const headers: Record<string, string> = {
+    'Content-Type': contentType,
+    'X-Kortix-Attachment-Filename': encodeURIComponent(filename),
+    'X-Kortix-Attachment-Disposition': input.contentDisposition ?? 'attachment',
+  };
+  if (input.contentId?.trim()) {
+    headers['X-Kortix-Attachment-Content-Id'] = encodeURIComponent(input.contentId.trim());
+  }
+
+  const backendUrl = trimTrailingSlashes(platformConfig().backendUrl);
+  const endpoint = connectorGatewayPath(projectId, 'attachments');
+  const response = await authenticatedFetch(
+    `${backendUrl}${endpoint}`,
+    { method: 'POST', headers, body: content as BodyInit },
+    { timeoutMs: 60_000 },
+  );
+  const raw = await response.text();
+  let body: unknown = null;
+  if (raw) {
+    try {
+      body = JSON.parse(raw);
+    } catch {
+      body = raw;
+    }
+  }
+  if (!response.ok) {
+    throw new ApiError(connectorResponseMessage(body, response.status), {
+      status: response.status,
+      code:
+        body && typeof body === 'object'
+          ? String((body as Record<string, unknown>).code ?? response.status)
+          : String(response.status),
+      details: body,
+      response,
+      endpoint,
+    });
+  }
+  return body as ConnectorAttachmentUploadResult;
 }
 
 export type ConnectorAuthorizationStrategy = 'project' | 'user';
@@ -38,7 +236,7 @@ export interface AdminConnector {
    *  unification.md §2.5). A `shared` connector with no credential set
    *  (`secretSet: false`) needs reconnecting. */
   credentialMode: 'shared';
-  /** Exclusive owner model for authorizations under this connector profile. */
+  /** Exclusive owner model for connections under this connector. */
   authorizationStrategy: ConnectorAuthorizationStrategy;
   /** Authentication shape required when a member adds a private credential. */
   requestAuthType?: ConnectorRequestAuthType;
@@ -46,6 +244,10 @@ export interface AdminConnector {
   sensitive: boolean;
   actions: ConnectorAction[];
   authSecret: string | null;
+  /** Project secret identifier bound as this connector's credential source. */
+  secretIdentifier?: string | null;
+  /** Where the connector currently obtains its server-side credential. */
+  credentialSource?: 'none' | 'stored' | 'project_secret' | 'platform';
   secretSet: boolean;
 }
 
@@ -123,8 +325,7 @@ export interface ConnectorAuthDiscovery {
   title: string | null;
 }
 
-export interface ConnectorAuthorization {
-  profile_id: string;
+interface ConnectionFields {
   connector_alias: string;
   owner_type: 'project' | 'agent' | 'member' | 'subject' | 'external';
   owner_id: string | null;
@@ -134,10 +335,11 @@ export interface ConnectorAuthorization {
   metadata: Record<string, unknown>;
 }
 
-/** @deprecated Use `ConnectorAuthorization`. */
-export type ConnectionProfile = ConnectorAuthorization;
+export interface Connection extends ConnectionFields {
+  connection_id: string;
+}
 
-export interface ReconcileConnectorAuthorizationInput {
+export interface ReconcileConnectionInput {
   connector_alias: string;
   /** `project` = a TEAM-shared connection (several per connector, distinguished
    *  by `label`), which takes no `owner_id`. Every other owner type needs one. */
@@ -149,27 +351,18 @@ export interface ReconcileConnectorAuthorizationInput {
   metadata?: Record<string, unknown>;
 }
 
-/** @deprecated Use `ReconcileConnectorAuthorizationInput`. */
-export type ReconcileConnectionProfileInput = ReconcileConnectorAuthorizationInput;
-
-/** Create or update the calling user's member-owned authorization. Ownership is
+/** Create or update the calling user's member-owned connection. Ownership is
  * derived exclusively from the bearer token; callers cannot supply an owner. */
-export interface ReconcileMemberConnectorAuthorizationInput {
+export interface ReconcileMemberConnectionInput {
   connector_alias: string;
   label: string;
   metadata?: Record<string, unknown>;
 }
 
-/** @deprecated Use `ReconcileMemberConnectorAuthorizationInput`. */
-export type ReconcileMemberConnectionProfileInput = ReconcileMemberConnectorAuthorizationInput;
-
-export interface ConnectorAuthorizationConnectInput {
+export interface ConnectionConnectInput {
   success_redirect_uri?: string;
   error_redirect_uri?: string;
 }
-
-/** @deprecated Use `ConnectorAuthorizationConnectInput`. */
-export type ConnectionProfileConnectInput = ConnectorAuthorizationConnectInput;
 
 export interface OAuth2ClientCredentials {
   type: 'oauth2_client_credentials';
@@ -187,6 +380,8 @@ export interface OAuth2ClientCredentials {
   scopes?: string[];
   resource?: string;
   audience?: string;
+  /** Additional provider-required token form fields not owned by OAuth2 itself. */
+  token_params?: Record<string, string>;
 }
 
 export type OAuth2TokenEndpointAuthMethod =
@@ -250,214 +445,163 @@ export interface OAuth2ConnectionStatus {
   error_code?: string | null;
 }
 
-export type ConnectorAuthorizationCredentialInput =
+export type ConnectionCredentialInput =
   | { value: string; kind?: 'secret' | 'connection' }
   | { oauth2: OAuth2ClientCredentials };
 
-/** @deprecated Use `ConnectorAuthorizationCredentialInput`. */
-export type ConnectionProfileCredentialInput = ConnectorAuthorizationCredentialInput;
-
-export async function listConnectorAuthorizations(projectId: string) {
+export async function listConnections(projectId: string) {
   return unwrap(
-    await backendApi.get<{ profiles: ConnectorAuthorization[] }>(
-      `/projects/${projectId}/connector-profiles`,
-    ),
+    await backendApi.get<{ connections: Connection[] }>(`/projects/${projectId}/connections`),
   );
 }
 
-/** @deprecated Use `listConnectorAuthorizations`. */
-export const listConnectionProfiles = listConnectorAuthorizations;
-
 /**
  * One row of the owner/admin roster. Deliberately NARROWER than
- * `ConnectorAuthorization`: it carries identity + status only. `label` and `metadata`
+ * `Connection`: it carries identity and status only. `label` and `metadata`
  * are excluded because they are a member's own annotations on a PRIVATE
  * connection and can hold personal identifiers a peer manager needn't see.
  */
-export interface ConnectorAuthorizationRosterEntry {
-  profile_id: string;
+export interface ConnectionRoster {
+  connection_id: string;
   connector_alias: string;
   owner_type: 'project' | 'agent' | 'member' | 'subject' | 'external';
   owner_id: string | null;
   status: 'active' | 'revoked' | 'error';
 }
 
-/** @deprecated Use `ConnectorAuthorizationRosterEntry`. */
-export type ConnectionRosterEntry = ConnectorAuthorizationRosterEntry;
-
 /**
  * Owner/admin read-only roster: WHO has connected each connector in the project
  * and whether it still works — not just the caller's own connections. Requires
- * the connector-profiles manage capability. Never returns credentials, and never
- * a peer's private label/metadata (see ConnectorAuthorizationRosterEntry).
+ * the connections manage capability. Never returns credentials, and never
+ * a peer's private label or metadata (see `ConnectionRoster`).
  */
-export async function listAllConnectorAuthorizations(projectId: string) {
+export async function listAllConnections(projectId: string) {
   return unwrap(
-    await backendApi.get<{ profiles: ConnectorAuthorizationRosterEntry[] }>(
-      `/projects/${projectId}/connector-profiles/all`,
+    await backendApi.get<{ connections: ConnectionRoster[] }>(
+      `/projects/${projectId}/connections/all`,
     ),
   );
 }
 
-/** @deprecated Use `listAllConnectorAuthorizations`. */
-export const listAllConnectionProfiles = listAllConnectorAuthorizations;
-
-export async function reconcileConnectorAuthorization(
+export async function reconcileConnection(
   projectId: string,
-  input: ReconcileConnectorAuthorizationInput,
+  input: ReconcileConnectionInput,
+) {
+  return unwrap(await backendApi.post<Connection>(`/projects/${projectId}/connections`, input));
+}
+
+export async function reconcileMemberConnection(
+  projectId: string,
+  input: ReconcileMemberConnectionInput,
 ) {
   return unwrap(
-    await backendApi.post<ConnectorAuthorization>(
-      `/projects/${projectId}/connector-profiles`,
-      input,
-    ),
+    await backendApi.post<Connection>(`/projects/${projectId}/connections/me`, input),
   );
 }
 
-/** @deprecated Use `reconcileConnectorAuthorization`. */
-export const reconcileConnectionProfile = reconcileConnectorAuthorization;
-
-export async function reconcileMemberConnectorAuthorization(
+export async function updateConnectionCredential(
   projectId: string,
-  input: ReconcileMemberConnectorAuthorizationInput,
-) {
-  return unwrap(
-    await backendApi.post<ConnectorAuthorization>(
-      `/projects/${projectId}/connector-profiles/me`,
-      input,
-    ),
-  );
-}
-
-/** @deprecated Use `reconcileMemberConnectorAuthorization`. */
-export const reconcileMemberConnectionProfile = reconcileMemberConnectorAuthorization;
-
-export async function updateConnectorAuthorizationCredential(
-  projectId: string,
-  profileId: string,
-  input: ConnectorAuthorizationCredentialInput,
+  connectionId: string,
+  input: ConnectionCredentialInput,
 ) {
   return unwrap(
     await backendApi.put<{ ok: true }>(
-      `/projects/${projectId}/connector-profiles/${profileId}/credential`,
+      `/projects/${projectId}/connections/${connectionId}/credential`,
       input,
     ),
   );
 }
 
-/** @deprecated Use `updateConnectorAuthorizationCredential`. */
-export const updateConnectionProfileCredential = updateConnectorAuthorizationCredential;
-
-function authorizationOAuth2Path(
+function connectionOAuth2Path(
   projectId: string,
-  authorizationId: string,
+  connectionId: string,
   suffix: string,
 ): string {
-  return `/projects/${projectId}/connector-profiles/${authorizationId}/oauth2/${suffix}`;
+  return `/projects/${projectId}/connections/${connectionId}/oauth2/${suffix}`;
 }
 
-export async function ensureProjectConnectorAuthorization(projectId: string, slug: string) {
+export async function ensureProjectConnectorConnection(projectId: string, slug: string) {
   return unwrap(
-    await backendApi.post<{ profile_id: string }>(
-      `/projects/${projectId}/connectors/${encodeURIComponent(slug)}/oauth2/profile`,
+    await backendApi.post<{ connection_id: string }>(
+      `/projects/${projectId}/connectors/${encodeURIComponent(slug)}/oauth2/connection`,
       {},
     ),
   );
 }
 
-/** @deprecated Use `ensureProjectConnectorAuthorization`. */
-export const ensureProjectConnectorProfile = ensureProjectConnectorAuthorization;
-
-export async function putConnectorAuthorizationOAuth2Application(
+export async function putConnectionOAuth2Application(
   projectId: string,
-  authorizationId: string,
+  connectionId: string,
   input: OAuth2ApplicationInput,
 ) {
   return unwrap(
     await backendApi.put<{ ok: true }>(
-      authorizationOAuth2Path(projectId, authorizationId, 'application'),
+      connectionOAuth2Path(projectId, connectionId, 'application'),
       input,
     ),
   );
 }
 
-/** @deprecated Use `putConnectorAuthorizationOAuth2Application`. */
-export const putConnectionProfileOAuth2Application = putConnectorAuthorizationOAuth2Application;
-
-export async function getConnectorAuthorizationOAuth2Application(
+export async function getConnectionOAuth2Application(
   projectId: string,
-  authorizationId: string,
+  connectionId: string,
 ) {
   return unwrap(
     await backendApi.get<{ application: OAuth2ApplicationView }>(
-      authorizationOAuth2Path(projectId, authorizationId, 'application'),
+      connectionOAuth2Path(projectId, connectionId, 'application'),
     ),
   );
 }
 
-/** @deprecated Use `getConnectorAuthorizationOAuth2Application`. */
-export const getConnectionProfileOAuth2Application = getConnectorAuthorizationOAuth2Application;
-
-export async function discoverConnectorAuthorizationOAuth2(
+export async function discoverConnectionOAuth2(
   projectId: string,
-  authorizationId: string,
+  connectionId: string,
   input: { discovery_url: string },
 ) {
   return unwrap(
     await backendApi.post<{ metadata: Partial<OAuth2ApplicationView> }>(
-      authorizationOAuth2Path(projectId, authorizationId, 'discover'),
+      connectionOAuth2Path(projectId, connectionId, 'discover'),
       input,
     ),
   );
 }
 
-/** @deprecated Use `discoverConnectorAuthorizationOAuth2`. */
-export const discoverConnectionProfileOAuth2 = discoverConnectorAuthorizationOAuth2;
-
-export async function startConnectorAuthorizationOAuth2Authorization(
+export async function startConnectionOAuth2Authorization(
   projectId: string,
-  authorizationId: string,
+  connectionId: string,
   input: OAuth2AuthorizationStartInput,
 ) {
   return unwrap(
     await backendApi.post<OAuth2AuthorizationStartResult>(
-      authorizationOAuth2Path(projectId, authorizationId, 'authorize'),
+      connectionOAuth2Path(projectId, connectionId, 'authorize'),
       input,
     ),
   );
 }
 
-/** @deprecated Use `startConnectorAuthorizationOAuth2Authorization`. */
-export const startConnectionProfileOAuth2Authorization =
-  startConnectorAuthorizationOAuth2Authorization;
-
-export async function startConnectorAuthorizationOAuth2DeviceAuthorization(
+export async function startConnectionOAuth2DeviceAuthorization(
   projectId: string,
-  authorizationId: string,
+  connectionId: string,
   input: OAuth2DeviceAuthorizationStartInput,
 ) {
   return unwrap(
     await backendApi.post<OAuth2DeviceAuthorizationStartResult>(
-      authorizationOAuth2Path(projectId, authorizationId, 'device'),
+      connectionOAuth2Path(projectId, connectionId, 'device'),
       input,
     ),
   );
 }
 
-/** @deprecated Use `startConnectorAuthorizationOAuth2DeviceAuthorization`. */
-export const startConnectionProfileOAuth2DeviceAuthorization =
-  startConnectorAuthorizationOAuth2DeviceAuthorization;
-
-export async function pollConnectorAuthorizationOAuth2DeviceAuthorization(
+export async function pollConnectionOAuth2DeviceAuthorization(
   projectId: string,
-  authorizationId: string,
+  connectionId: string,
   sessionId: string,
 ) {
   return unwrap(
     await backendApi.post<OAuth2ConnectionStatus>(
-      authorizationOAuth2Path(
+      connectionOAuth2Path(
         projectId,
-        authorizationId,
+        connectionId,
         `device/${encodeURIComponent(sessionId)}`,
       ),
       {},
@@ -465,47 +609,34 @@ export async function pollConnectorAuthorizationOAuth2DeviceAuthorization(
   );
 }
 
-/** @deprecated Use `pollConnectorAuthorizationOAuth2DeviceAuthorization`. */
-export const pollConnectionProfileOAuth2DeviceAuthorization =
-  pollConnectorAuthorizationOAuth2DeviceAuthorization;
-
-export async function getConnectorAuthorizationOAuth2Status(
+export async function getConnectionOAuth2Status(
   projectId: string,
-  authorizationId: string,
+  connectionId: string,
 ) {
   return unwrap(
     await backendApi.get<OAuth2ConnectionStatus>(
-      authorizationOAuth2Path(projectId, authorizationId, 'status'),
+      connectionOAuth2Path(projectId, connectionId, 'status'),
     ),
   );
 }
 
-/** @deprecated Use `getConnectorAuthorizationOAuth2Status`. */
-export const getConnectionProfileOAuth2Status = getConnectorAuthorizationOAuth2Status;
-
-export async function revokeConnectorAuthorization(projectId: string, authorizationId: string) {
+export async function revokeConnection(projectId: string, connectionId: string) {
   return unwrap(
     await backendApi.put<{ ok: true }>(
-      `/projects/${projectId}/connector-profiles/${authorizationId}/revoke`,
+      `/projects/${projectId}/connections/${connectionId}/revoke`,
       {},
     ),
   );
 }
 
-/** @deprecated Use `revokeConnectorAuthorization`. */
-export const revokeConnectionProfile = revokeConnectorAuthorization;
-
-export async function activateConnectorAuthorization(projectId: string, authorizationId: string) {
+export async function activateConnection(projectId: string, connectionId: string) {
   return unwrap(
     await backendApi.put<{ ok: true }>(
-      `/projects/${projectId}/connector-profiles/${authorizationId}/activate`,
+      `/projects/${projectId}/connections/${connectionId}/activate`,
       {},
     ),
   );
 }
-
-/** @deprecated Use `activateConnectorAuthorization`. */
-export const activateConnectionProfile = activateConnectorAuthorization;
 
 /**
  * Make this the DEFAULT connection for its owner scope — the one a session uses
@@ -513,55 +644,46 @@ export const activateConnectionProfile = activateConnectorAuthorization;
  * the project (team-shared) and one per member, so this only displaces the
  * previous default within the same scope.
  */
-export async function setDefaultConnectorAuthorization(projectId: string, authorizationId: string) {
+export async function setDefaultConnection(projectId: string, connectionId: string) {
   return unwrap(
     await backendApi.put<{ ok: true }>(
-      `/projects/${projectId}/connector-profiles/${authorizationId}/default`,
+      `/projects/${projectId}/connections/${connectionId}/default`,
       {},
     ),
   );
 }
 
-/** @deprecated Use `setDefaultConnectorAuthorization`. */
-export const setDefaultConnectionProfile = setDefaultConnectorAuthorization;
-
-export async function pipedreamConnectConnectorAuthorization(
+export async function pipedreamConnectConnection(
   projectId: string,
-  authorizationId: string,
-  input: ConnectorAuthorizationConnectInput = {},
+  connectionId: string,
+  input: ConnectionConnectInput = {},
 ) {
   return unwrap(
     await backendApi.post<{
       token?: string;
       app?: string;
       connectUrl?: string;
-    }>(`/projects/${projectId}/connector-profiles/${authorizationId}/connect`, input),
+    }>(`/projects/${projectId}/connections/${connectionId}/connect`, input),
   );
 }
 
-/** @deprecated Use `pipedreamConnectConnectorAuthorization`. */
-export const pipedreamConnectConnectionProfile = pipedreamConnectConnectorAuthorization;
-
-export async function pipedreamFinalizeConnectorAuthorization(
+export async function pipedreamFinalizeConnection(
   projectId: string,
-  authorizationId: string,
+  connectionId: string,
 ) {
   return unwrap(
     await backendApi.post<{ connected: boolean; accountId?: string }>(
-      `/projects/${projectId}/connector-profiles/${authorizationId}/connect/finalize`,
+      `/projects/${projectId}/connections/${connectionId}/connect/finalize`,
       {},
     ),
   );
 }
 
-/** @deprecated Use `pipedreamFinalizeConnectorAuthorization`. */
-export const pipedreamFinalizeConnectionProfile = pipedreamFinalizeConnectorAuthorization;
-
 export async function listConnectors(projectId: string) {
   return unwrap(
     // Background read fired at workspace mount (project-home tiles, sidebar
     // setup checklist) — never global-toast; callers render their own state.
-    await backendApi.get<ConnectorsResponse>(`/executor/projects/${projectId}/connectors`, {
+    await backendApi.get<ConnectorsResponse>(`/connectors/projects/${projectId}/connectors`, {
       showErrors: false,
     }),
   );
@@ -570,7 +692,7 @@ export async function listConnectors(projectId: string) {
 export async function syncConnectors(projectId: string) {
   return unwrap(
     await backendApi.post<ConnectorSyncResult>(
-      `/executor/projects/${projectId}/connectors/sync`,
+      `/connectors/projects/${projectId}/connectors/sync`,
       {},
     ),
   );
@@ -581,7 +703,7 @@ export async function syncConnectors(projectId: string) {
 export async function setConnectorCredentialMode(projectId: string, slug: string, mode: 'shared') {
   return unwrap(
     await backendApi.put<{ ok: boolean; sync?: ConnectorSyncResult }>(
-      `/executor/projects/${projectId}/connectors/${encodeURIComponent(slug)}/credential-mode`,
+      `/connectors/projects/${projectId}/connectors/${encodeURIComponent(slug)}/credential-mode`,
       { mode },
     ),
   );
@@ -594,7 +716,7 @@ export async function setConnectorAuthorizationStrategy(
 ) {
   return unwrap(
     await backendApi.put<{ ok: boolean; sync?: ConnectorSyncResult }>(
-      `/executor/projects/${projectId}/connectors/${encodeURIComponent(slug)}/authorization-strategy`,
+      `/connectors/projects/${projectId}/connectors/${encodeURIComponent(slug)}/authorization-strategy`,
       { authorization_strategy: authorizationStrategy },
     ),
   );
@@ -605,7 +727,7 @@ export async function setConnectorAuthorizationStrategy(
 export async function setConnectorSensitive(projectId: string, slug: string, sensitive: boolean) {
   return unwrap(
     await backendApi.put<{ ok: boolean; sync?: ConnectorSyncResult }>(
-      `/executor/projects/${projectId}/connectors/${encodeURIComponent(slug)}/sensitive`,
+      `/connectors/projects/${projectId}/connectors/${encodeURIComponent(slug)}/sensitive`,
       { sensitive },
     ),
   );
@@ -641,7 +763,7 @@ export async function getConnectorPolicies(projectId: string, slug: string) {
       /** Project-scope rules, which are evaluated first and win. */
       project_policies?: ConnectorPolicyRule[];
       default_mode?: 'risk' | 'allow_all';
-    }>(`/executor/projects/${projectId}/connectors/${encodeURIComponent(slug)}/policies`),
+    }>(`/connectors/projects/${projectId}/connectors/${encodeURIComponent(slug)}/policies`),
   );
 }
 
@@ -652,36 +774,36 @@ export async function setConnectorPolicies(
 ) {
   return unwrap(
     await backendApi.put<{ ok: boolean; sync?: ConnectorSyncResult }>(
-      `/executor/projects/${projectId}/connectors/${encodeURIComponent(slug)}/policies`,
+      `/connectors/projects/${projectId}/connectors/${encodeURIComponent(slug)}/policies`,
       { policies },
     ),
   );
 }
 
 /**
- * @deprecated Policies apply to a connector profile, not one authorization.
+ * @deprecated Policies apply to a connector, not one connection.
  * Use `getConnectorPolicies(projectId, slug)`.
  */
 export async function getConnectionPolicies(
   _projectId: string,
-  _authorizationId: string,
+  _connectionId: string,
 ): Promise<{ policies: ConnectorPolicyRule[] }> {
   throw new Error(
-    'Authorization-specific policies were removed. Use getConnectorPolicies(projectId, slug).',
+    'Connection-specific policies were removed. Use getConnectorPolicies(projectId, slug).',
   );
 }
 
 /**
- * @deprecated Policies apply to a connector profile, not one authorization.
+ * @deprecated Policies apply to a connector, not one connection.
  * Use `setConnectorPolicies(projectId, slug, policies)`.
  */
 export async function setConnectionPolicies(
   _projectId: string,
-  _authorizationId: string,
+  _connectionId: string,
   _policies: ConnectorPolicyRule[],
 ): Promise<{ ok: boolean }> {
   throw new Error(
-    'Authorization-specific policies were removed. Use setConnectorPolicies(projectId, slug, policies).',
+    'Connection-specific policies were removed. Use setConnectorPolicies(projectId, slug, policies).',
   );
 }
 
@@ -700,6 +822,8 @@ export interface ConnectorConfig {
   endpoint: string | null;
   baseUrl: string | null;
   spec: string | null;
+  /** Machine ids assigned to a Computers connector profile. */
+  tunnelIds?: string[];
   auth: {
     type: ConnectorRequestAuthType;
     in: 'header' | 'query' | 'cookie';
@@ -717,7 +841,7 @@ export interface ConnectorConfig {
 export async function getConnectorConfig(projectId: string, slug: string) {
   return unwrap(
     await backendApi.get<ConnectorConfig>(
-      `/executor/projects/${projectId}/connectors/${encodeURIComponent(slug)}/config`,
+      `/connectors/projects/${projectId}/connectors/${encodeURIComponent(slug)}/config`,
     ),
   );
 }
@@ -725,7 +849,7 @@ export async function getConnectorConfig(projectId: string, slug: string) {
 export async function setConnectorName(projectId: string, slug: string, name: string) {
   return unwrap(
     await backendApi.put<{ ok: boolean; sync?: ConnectorSyncResult }>(
-      `/executor/projects/${projectId}/connectors/${encodeURIComponent(slug)}/name`,
+      `/connectors/projects/${projectId}/connectors/${encodeURIComponent(slug)}/name`,
       { name },
     ),
   );
@@ -737,7 +861,7 @@ export async function pipedreamConnect(projectId: string, slug: string) {
       token?: string;
       app?: string;
       connectUrl?: string;
-    }>(`/executor/projects/${projectId}/connectors/${encodeURIComponent(slug)}/connect`, {}),
+    }>(`/connectors/projects/${projectId}/connectors/${encodeURIComponent(slug)}/connect`, {}),
   );
 }
 
@@ -755,6 +879,8 @@ export interface ConnectorDraftInput {
   endpoint?: string;
   baseUrl?: string;
   spec?: string;
+  /** Account-owned machine ids assigned to a Computers connector profile. */
+  tunnel_ids?: string[];
   /** Credential storage mode. `shared` is the only mode (`per_user` was
    *  removed 2026-07-05). */
   credential?: 'shared';
@@ -779,14 +905,14 @@ export async function createConnector(projectId: string, draft: ConnectorDraftIn
       ok: boolean;
       sync?: ConnectorSyncResult;
       authDiscovery?: ConnectorAuthDiscovery;
-    }>(`/executor/projects/${projectId}/connectors`, draft),
+    }>(`/connectors/projects/${projectId}/connectors`, draft),
   );
 }
 
 export async function discoverConnectorAuth(projectId: string, draft: ConnectorDraftInput) {
   return unwrap(
     await backendApi.post<ConnectorAuthDiscovery>(
-      `/executor/projects/${projectId}/connectors/auth-discovery`,
+      `/connectors/projects/${projectId}/connectors/auth-discovery`,
       draft,
     ),
   );
@@ -795,7 +921,7 @@ export async function discoverConnectorAuth(projectId: string, draft: ConnectorD
 export async function deleteConnector(projectId: string, slug: string) {
   return unwrap(
     await backendApi.delete<{ ok: boolean }>(
-      `/executor/projects/${projectId}/connectors/${encodeURIComponent(slug)}`,
+      `/connectors/projects/${projectId}/connectors/${encodeURIComponent(slug)}`,
     ),
   );
 }
@@ -805,30 +931,136 @@ export interface PipedreamApp {
   name: string;
   description: string | null;
   imgSrc: string | null;
-  /** Pipedream is surfaced only as an explicit managed-OAuth alternative. */
-  authType: 'oauth';
+  /**
+   * Pipedream's own auth type — `'oauth'`, `'keys'`, `'none'`, or absent.
+   *
+   * Widened from the `'oauth'` literal. The narrow type described a filter the
+   * API used to apply, not the catalogue: only 659 of Pipedream's 3,238 apps
+   * are OAuth, and requiring it hid every key-based app (SAP, Oracle, Notion
+   * API Key, …) from search. Both kinds connect through the same hosted
+   * Connect Link, so this field is descriptive — nothing branches on it.
+   */
+  authType: string | null;
   categories: string[];
+  /** Whether the app publishes actions. Apps without them are excluded from
+   *  the catalogue: a connector with no actions exposes no agent tools. */
+  hasActions: boolean;
+  hasTriggers: boolean;
+  /** Pipedream's promotion weight. The catalogue's resting sort key. */
+  featuredWeight: number;
 }
 
-export async function listPipedreamApps(projectId: string, q?: string, cursor?: string) {
+/** A category facet: the key to filter by, and its true size in the catalogue. */
+export interface PipedreamCategory {
+  key: string;
+  label: string;
+  count: number;
+}
+
+export interface PipedreamCatalogQuery {
+  q?: string;
+  /**
+   * A `key` from the same response's `categories`.
+   *
+   * Served from the Kortix API's snapshot of the whole catalogue. Pipedream's
+   * own `/apps` endpoint accepts a category parameter and ignores it, so this
+   * filter does not exist upstream and cannot be reproduced client-side from
+   * loaded pages.
+   */
+  category?: string;
+  cursor?: string;
+  limit?: number;
+}
+
+export interface PipedreamCatalogPage {
+  apps: PipedreamApp[];
+  /** Every category with its true count. Empty while `indexReady` is false. */
+  categories: PipedreamCategory[];
+  /** The catalogue's size for this query and category, across every page. */
+  total?: number;
+  nextCursor?: string;
+  hasMore: boolean;
+  /** Whether the answer came from the complete catalogue index. `false` means
+   *  the index is still building, `categories` is empty, and `category` was
+   *  ignored for this page. Absent on API builds that predate the index. */
+  indexReady?: boolean;
+  /**
+   * Apps matching the query that publish no actions, and so are not offered.
+   *
+   * Lets an empty result say why instead of implying the app does not exist:
+   * `q=SAP` matches two real SAP records that expose zero actions. Absent on
+   * API builds that predate the index.
+   */
+  excludedNoActions?: number;
+}
+
+/**
+ * A page of the Pipedream catalogue.
+ *
+ * Accepts either the positional `(q, cursor)` form or an options object. The
+ * positional form is the published signature and keeps working unchanged;
+ * `category` and `limit` are reachable only through the options object.
+ */
+export async function listPipedreamApps(
+  projectId: string,
+  qOrQuery?: string | PipedreamCatalogQuery,
+  cursor?: string,
+) {
+  const query: PipedreamCatalogQuery =
+    typeof qOrQuery === 'string' || qOrQuery === undefined
+      ? { ...(qOrQuery ? { q: qOrQuery } : {}), ...(cursor ? { cursor } : {}) }
+      : qOrQuery;
   const params = new URLSearchParams();
-  if (q) params.set('q', q);
-  if (cursor) params.set('cursor', cursor);
+  if (query.q) params.set('q', query.q);
+  if (query.category) params.set('category', query.category);
+  if (query.cursor) params.set('cursor', query.cursor);
+  if (query.limit) params.set('limit', String(query.limit));
   const qs = params.toString();
   return unwrap(
-    await backendApi.get<{
-      apps: PipedreamApp[];
-      nextCursor?: string;
-      hasMore: boolean;
-    }>(`/executor/projects/${projectId}/pipedream/apps${qs ? `?${qs}` : ''}`),
+    await backendApi.get<PipedreamCatalogPage>(
+      `/connectors/projects/${projectId}/pipedream/apps${qs ? `?${qs}` : ''}`,
+    ),
   );
 }
 
-export type DiscoverIntegrationKind = 'openapi' | 'mcp' | 'graphql' | 'cli';
+export interface PipedreamSection {
+  key: string;
+  label: string;
+  /** The category's TRUE size — not `apps.length`. A heading states this. */
+  total: number;
+  apps: PipedreamApp[];
+}
 
-export interface DiscoverIntegration {
+/**
+ * The catalogue browse page: a fixed top slice of each of the largest
+ * categories, in one request.
+ *
+ * One request rather than one per category, and a fixed slice rather than a
+ * client-side bucketing of loaded pages — which is what made browse sections
+ * grow and reflow underneath the reader as pagination continued.
+ */
+export async function listPipedreamSections(
+  projectId: string,
+  opts?: { perCategory?: number; maxCategories?: number },
+) {
+  const params = new URLSearchParams();
+  if (opts?.perCategory) params.set('perCategory', String(opts.perCategory));
+  if (opts?.maxCategories) params.set('maxCategories', String(opts.maxCategories));
+  const qs = params.toString();
+  return unwrap(
+    await backendApi.get<{
+      sections: PipedreamSection[];
+      categories: PipedreamCategory[];
+      indexReady?: boolean;
+    }>(`/connectors/projects/${projectId}/pipedream/sections${qs ? `?${qs}` : ''}`),
+  );
+}
+
+export type DiscoverConnectorKind = 'openapi' | 'mcp' | 'graphql' | 'cli';
+
+export interface DiscoverConnector {
   id: string;
-  kind: DiscoverIntegrationKind;
+  kind: DiscoverConnectorKind;
   slug: string;
   name: string;
   description: string | null;
@@ -854,7 +1086,7 @@ export interface DiscoverConnectorTemplate {
   };
 }
 
-export interface DiscoverIntegrationVariant {
+export interface DiscoverConnectorVariant {
   id: string;
   kind: 'openapi' | 'postman' | 'mcp' | 'graphql' | 'http' | 'cli';
   name: string;
@@ -867,38 +1099,56 @@ export interface DiscoverIntegrationVariant {
   connector: DiscoverConnectorTemplate | null;
 }
 
-export interface DiscoverIntegrationsPage {
-  items: DiscoverIntegration[];
+export interface DiscoverConnectorsPage {
+  items: DiscoverConnector[];
   total: number;
   nextCursor?: string;
   hasMore: boolean;
 }
 
-export interface DiscoverIntegrationDetail {
-  item: DiscoverIntegration;
-  variants: DiscoverIntegrationVariant[];
+export interface DiscoverConnectorDetail {
+  item: DiscoverConnector;
+  variants: DiscoverConnectorVariant[];
 }
 
-export async function listDiscoverIntegrations(projectId: string, q?: string, cursor?: string) {
+/** @deprecated Use `DiscoverConnectorKind`. */
+export type DiscoverIntegrationKind = DiscoverConnectorKind;
+/** @deprecated Use `DiscoverConnector`. */
+export type DiscoverIntegration = DiscoverConnector;
+/** @deprecated Use `DiscoverConnectorTemplate`. */
+export type DiscoverIntegrationTemplate = DiscoverConnectorTemplate;
+/** @deprecated Use `DiscoverConnectorVariant`. */
+export type DiscoverIntegrationVariant = DiscoverConnectorVariant;
+/** @deprecated Use `DiscoverConnectorsPage`. */
+export type DiscoverIntegrationsPage = DiscoverConnectorsPage;
+/** @deprecated Use `DiscoverConnectorDetail`. */
+export type DiscoverIntegrationDetail = DiscoverConnectorDetail;
+
+export async function listDiscoverConnectors(projectId: string, q?: string, cursor?: string) {
   const params = new URLSearchParams();
   if (q) params.set('q', q);
   if (cursor) params.set('cursor', cursor);
   const qs = params.toString();
   return unwrap(
-    await backendApi.get<DiscoverIntegrationsPage>(
-      `/executor/projects/${projectId}/discover/integrations${qs ? `?${qs}` : ''}`,
+    await backendApi.get<DiscoverConnectorsPage>(
+      `/connectors/projects/${projectId}/discover/connectors${qs ? `?${qs}` : ''}`,
     ),
   );
 }
 
-export async function getDiscoverIntegration(projectId: string, id: string) {
+export async function getDiscoverConnector(projectId: string, id: string) {
   const params = new URLSearchParams({ id });
   return unwrap(
-    await backendApi.get<DiscoverIntegrationDetail>(
-      `/executor/projects/${projectId}/discover/integrations/detail?${params.toString()}`,
+    await backendApi.get<DiscoverConnectorDetail>(
+      `/connectors/projects/${projectId}/discover/connectors/detail?${params.toString()}`,
     ),
   );
 }
+
+/** @deprecated Use `listDiscoverConnectors`. */
+export const listDiscoverIntegrations = listDiscoverConnectors;
+/** @deprecated Use `getDiscoverConnector`. */
+export const getDiscoverIntegration = getDiscoverConnector;
 
 /**
  * Deployment-wide flag: is the easy-connect (Pipedream) provider configured?
@@ -908,7 +1158,7 @@ export async function getDiscoverIntegration(projectId: string, id: string) {
 export async function getConnectStatus() {
   return unwrap(
     await backendApi.get<{ configured: boolean; provider: string | null }>(
-      '/executor/connect-status',
+      '/connectors/connect-status',
     ),
   );
 }
@@ -916,13 +1166,26 @@ export async function getConnectStatus() {
 export async function setConnectorCredential(
   projectId: string,
   slug: string,
-  credential: string | ConnectorAuthorizationCredentialInput,
+  credential: string | ConnectionCredentialInput,
 ) {
   const input = typeof credential === 'string' ? { value: credential } : credential;
   return unwrap(
     await backendApi.put<{ ok: boolean }>(
-      `/executor/projects/${projectId}/connectors/${encodeURIComponent(slug)}/credential`,
+      `/connectors/projects/${projectId}/connectors/${encodeURIComponent(slug)}/credential`,
       input,
+    ),
+  );
+}
+
+export async function setConnectorSecretBinding(
+  projectId: string,
+  slug: string,
+  secretIdentifier: string | null,
+) {
+  return unwrap(
+    await backendApi.put<{ ok: boolean }>(
+      `/connectors/projects/${projectId}/connectors/${encodeURIComponent(slug)}/secret-binding`,
+      { secret_identifier: secretIdentifier },
     ),
   );
 }
@@ -930,7 +1193,7 @@ export async function setConnectorCredential(
 export async function pipedreamFinalize(projectId: string, slug: string) {
   return unwrap(
     await backendApi.post<{ connected: boolean; accountId?: string }>(
-      `/executor/projects/${projectId}/connectors/${encodeURIComponent(slug)}/connect/finalize`,
+      `/connectors/projects/${projectId}/connectors/${encodeURIComponent(slug)}/connect/finalize`,
       {},
     ),
   );

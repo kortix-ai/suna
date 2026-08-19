@@ -34,6 +34,7 @@ import {
 } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useCallback, useRef, useState, type ComponentType, type ReactNode } from 'react';
+import { rowDragIntent } from '../upload-batch';
 import { DriveFolderIcon } from './drive-folder-icon';
 import { getFileIcon } from './file-icon';
 import { FileThumbnail } from './file-thumbnail';
@@ -49,6 +50,8 @@ interface DriveGridItemProps {
   onCopy?: (node: FileNode) => void;
   onCut?: (node: FileNode) => void;
   onDropMove?: (sourcePath: string, targetDirPath: string) => void;
+  /** External files dropped onto THIS folder card. Absent = read-only source. */
+  onDropUpload?: (files: File[], targetDirPath: string) => void;
   isDownloadingItem?: boolean;
   gitStatus?: GitStatusType;
   isCut?: boolean;
@@ -243,6 +246,7 @@ function FolderCard({
   onCopy,
   onCut,
   onDropMove,
+  onDropUpload,
   isDownloadingItem,
   isCut,
 }: DriveGridItemProps) {
@@ -266,18 +270,37 @@ function FolderCard({
 
   const handleDragEnd = useCallback(() => setIsDragging(false), []);
 
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    if (!e.dataTransfer.types.includes(DRAG_MIME)) return;
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-  }, []);
+  /** `move` (internal drag), `upload` (external files), or null (ignore). */
+  const intentOf = useCallback(
+    (e: React.DragEvent) =>
+      rowDragIntent(Array.from(e.dataTransfer.types), {
+        isDirectory: true,
+        canMove: Boolean(onDropMove),
+        canUpload: Boolean(onDropUpload),
+        moveMime: DRAG_MIME,
+      }),
+    [onDropMove, onDropUpload],
+  );
 
-  const handleDragEnter = useCallback((e: React.DragEvent) => {
-    if (!e.dataTransfer.types.includes(DRAG_MIME)) return;
-    e.preventDefault();
-    dragCounterRef.current++;
-    setIsDragOver(true);
-  }, []);
+  const handleDragOver = useCallback(
+    (e: React.DragEvent) => {
+      const intent = intentOf(e);
+      if (!intent) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = intent === 'upload' ? 'copy' : 'move';
+    },
+    [intentOf],
+  );
+
+  const handleDragEnter = useCallback(
+    (e: React.DragEvent) => {
+      if (!intentOf(e)) return;
+      e.preventDefault();
+      dragCounterRef.current++;
+      setIsDragOver(true);
+    },
+    [intentOf],
+  );
 
   const handleDragLeave = useCallback(() => {
     dragCounterRef.current--;
@@ -289,15 +312,25 @@ function FolderCard({
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
+      const intent = intentOf(e);
+      if (!intent) return;
       e.preventDefault();
       e.stopPropagation();
       dragCounterRef.current = 0;
       setIsDragOver(false);
+
+      if (intent === 'upload') {
+        // Always notify, even for an empty transfer: this drop is stopped
+        // before the page handler, which owns the drop overlay's reset.
+        onDropUpload?.(Array.from(e.dataTransfer.files ?? []), node.path);
+        return;
+      }
+
       const sourcePath = e.dataTransfer.getData(DRAG_MIME);
       if (!sourcePath || sourcePath === node.path || node.path.startsWith(sourcePath + '/')) return;
       onDropMove?.(sourcePath, node.path);
     },
-    [node.path, onDropMove],
+    [intentOf, node.path, onDropMove, onDropUpload],
   );
 
   const startRenaming = useCallback(() => {
@@ -392,6 +425,7 @@ function FolderCard({
                 value={renameName}
                 onChange={(e) => setRenameName(e.target.value)}
                 onKeyDown={(e) => {
+                  if (e.nativeEvent.isComposing) return;
                   if (e.key === 'Enter') confirmRename();
                   if (e.key === 'Escape') setIsRenaming(false);
                 }}
@@ -539,6 +573,7 @@ function FileCard({
                 value={renameName}
                 onChange={(e) => setRenameName(e.target.value)}
                 onKeyDown={(e) => {
+                  if (e.nativeEvent.isComposing) return;
                   if (e.key === 'Enter') confirmRename();
                   if (e.key === 'Escape') setIsRenaming(false);
                 }}
@@ -592,6 +627,8 @@ interface DriveGridViewProps {
   onCopy: (node: FileNode) => void;
   onCut: (node: FileNode) => void;
   onDropMove: (sourcePath: string, targetDirPath: string) => void;
+  /** External files dropped onto a folder card upload into THAT folder. */
+  onDropUpload?: (files: File[], targetDirPath: string) => void;
   gitStatusMap: Map<string, GitStatusType>;
   clipboardPath?: string;
   clipboardOperation?: string;
@@ -615,6 +652,7 @@ export function DriveGridView({
   onCopy: rawOnCopy,
   onCut: rawOnCut,
   onDropMove: rawOnDropMove,
+  onDropUpload: rawOnDropUpload,
   gitStatusMap,
   clipboardPath,
   clipboardOperation,
@@ -627,6 +665,7 @@ export function DriveGridView({
   const onCopy = readOnly ? undefined : rawOnCopy;
   const onCut = readOnly ? undefined : rawOnCut;
   const onDropMove = readOnly ? undefined : rawOnDropMove;
+  const onDropUpload = readOnly ? undefined : rawOnDropUpload;
   return (
     <div className="space-y-7 p-5">
       {elevatedDirs.length > 0 && (
@@ -682,6 +721,7 @@ export function DriveGridView({
                 onCopy={onCopy}
                 onCut={onCut}
                 onDropMove={onDropMove}
+                onDropUpload={onDropUpload}
                 isCut={clipboardOperation === 'cut' && clipboardPath === node.path}
               />
             ))}

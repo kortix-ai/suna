@@ -14,7 +14,6 @@ services:
       KORTIX_PUBLIC_BACKEND_URL: ${API_PUBLIC_URL}/v1
       KORTIX_PUBLIC_BILLING_ENABLED: ${KORTIX_PUBLIC_BILLING_ENABLED}
       KORTIX_PUBLIC_CONNECTORS_ENABLED: ${KORTIX_PUBLIC_CONNECTORS_ENABLED}
-      KORTIX_PUBLIC_WARM_PROJECT_SESSIONS_ENABLED: ${KORTIX_PUBLIC_WARM_PROJECT_SESSIONS_ENABLED}
       KORTIX_PUBLIC_RESTRICT_ACCOUNT_CREATION: ${KORTIX_PUBLIC_RESTRICT_ACCOUNT_CREATION}
       KORTIX_PUBLIC_APP_URL: ${PUBLIC_URL}
       KORTIX_PUBLIC_AUTH_METHODS: ${KORTIX_PUBLIC_AUTH_METHODS}
@@ -218,7 +217,7 @@ services:
       KORTIX_MIN_FREE_DISK_MB: ${KORTIX_MIN_FREE_DISK_MB:-2048}
       # Optional push notification for every run's outcome (ok/degraded/
       # failed/skipped) — one generic env var, no vendor-specific
-      # integration. Unset by default (no-op). See notify_webhook() in
+      # connection. Unset by default (no-op). See notify_webhook() in
       # updater.sh.
       KORTIX_UPDATE_WEBHOOK_URL: ${KORTIX_UPDATE_WEBHOOK_URL:-}
     volumes:

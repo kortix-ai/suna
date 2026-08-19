@@ -5,9 +5,10 @@
 # dry-packs it, and publishes idempotently.
 #
 # Auth is Trusted Publishing (OIDC) when the job grants id-token, else the
-# NPM_TOKEN automation token (NODE_AUTH_TOKEN). With neither, it skips cleanly so
-# a release is never blocked. Re-running the same release is a no-op (it skips a
-# version already on npm rather than hard-failing on E409).
+# NPM_TOKEN automation token (NODE_AUTH_TOKEN). Production release jobs set
+# REQUIRE_NPM_AUTH=1 and fail closed when neither credential is available.
+# Local/manual runs keep the no-auth skip behavior. Re-running the same release
+# is a no-op (it skips a version already on npm rather than hard-failing on E409).
 #
 # Run from the package directory with VERSION (and optionally NODE_AUTH_TOKEN) in
 # the environment:
@@ -18,16 +19,21 @@ set -euo pipefail
 
 : "${VERSION:?VERSION env is required}"
 
-# Trusted Publishing (OIDC) requires npm >= 11.5.1; node 22 ships npm 10.
-npm install -g npm@latest
-echo "npm $(npm --version)"
-
 # Publish only if SOME auth path is available: OIDC (id-token granted →
 # ACTIONS_ID_TOKEN_REQUEST_URL set) or a fallback automation token.
 if [ -z "${NODE_AUTH_TOKEN:-}" ] && [ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]; then
+  if [ "${REQUIRE_NPM_AUTH:-0}" = "1" ]; then
+    echo "::error::No npm auth (no OIDC and no NPM_TOKEN); required publication cannot continue."
+    exit 1
+  fi
   echo "::warning::No npm auth (no OIDC, no NPM_TOKEN) — skipping publish."
   exit 0
 fi
+
+# Trusted Publishing (OIDC) requires npm >= 11.5.1; node 22 ships npm 10. Do
+# not mutate the runner's npm installation until the auth preflight passes.
+npm install -g npm@latest
+echo "npm $(npm --version)"
 
 name="$(node -p "require('./package.json').name")"
 

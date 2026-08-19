@@ -6,7 +6,10 @@
  * guided wizard. Non-interactive (CI/scripts):
  *
  *   pnpm worktree create --name <feat> [--branch b] [--from HEAD] [--db] [--no-start] [--yes]
- *   pnpm worktree start|stop|nuke|status <feat>
+ *   pnpm worktree start <feat> [--billing] [--stripe]
+ *   pnpm worktree stop|status <feat>
+ *   pnpm worktree nuke <feat> [feat2 …] [--force] [--yes]   (confirms each unless --yes)
+ *   pnpm worktree nuke            (TTY: pick from a list, then confirm each)
  *   pnpm worktree list · doctor
  *
  * One command from a fresh clone sets up EVERYTHING (deps, git worktree, unique
@@ -22,10 +25,13 @@ import {
   startSupabaseDb, startSupabaseFullStack, hasKortixSchema, ensureRuntimeArtifacts, dbModeOf,
   ensurePrimarySupabase, primaryCredsFromStatus, SHARED_SUPABASE_PORTS,
   killTree, stackRoots, stackPids, listenersOn, psTable, cwdTable,
+  listenPorts, buildRows, sortRows, filterRows, renderRail, renderDetail, toJsonRows,
+  parseDuration, selectForPrune, type PruneCandidate,
   type Registry, type SlotEntry, type Ports, type Tunnel, type StripeListen,
   type DbMode, type KillResult,
 } from './lib';
-import { existsSync, rmSync } from 'node:fs';
+import { existsSync, rmSync, readFileSync, statSync } from 'node:fs';
+import { isAbsolute, join as joinPath } from 'node:path';
 import * as clack from '@clack/prompts';
 import pc from 'picocolors';
 
@@ -39,13 +45,6 @@ const ok = (s: string) => console.log(`${pc.green('✓')} ${s}`);
 const warn = (s: string) => console.log(`${pc.yellow('!')} ${s}`);
 const die = (s: string): never => { console.error(`\n${pc.red('✗')} ${s}`); process.exit(1); };
 const url = (u: string) => pc.cyan(pc.underline(u));
-// OSC 8 hyperlink — makes `text` actually clickable in supporting terminals
-// (iTerm2, VS Code, modern macOS terminals). Terminals without OSC 8 support
-// just render `text` as-is, so styling is left to the caller for graceful
-// degradation. Wrap only the visible glyphs (no trailing padding) so the
-// clickable/underlined region matches the text exactly.
-const link = (href: string, text: string) =>
-  process.stdout.isTTY ? `\x1b]8;;${href}\x07${text}\x1b]8;;\x07` : text;
 
 // Free any stale process still holding this slot's ports — a previous `up` that
 // didn't shut down cleanly, or a gateway that crashed but left the port bound.
@@ -143,21 +142,21 @@ async function spin(label: string, cmd: string[]): Promise<void> {
   }
 }
 
-interface Args { cmd: string; name?: string; flags: Record<string, string | boolean>; }
+interface Args { cmd: string; name?: string; names: string[]; flags: Record<string, string | boolean>; }
 function parseArgs(argv: string[]): Args {
   const cmd = argv[0] ?? 'help';
   const flags: Record<string, string | boolean> = {};
-  let name: string | undefined;
+  const names: string[] = [];
   for (let i = 1; i < argv.length; i++) {
     const a = argv[i];
     if (a.startsWith('--')) {
       const key = a.slice(2);
       const next = argv[i + 1];
       if (next && !next.startsWith('--')) { flags[key] = next; i++; } else flags[key] = true;
-    } else if (!name) name = a;
+    } else names.push(a);
   }
-  if (typeof flags.name === 'string') name = flags.name;
-  return { cmd, name, flags };
+  if (typeof flags.name === 'string') names.unshift(flags.name);
+  return { cmd, name: names[0], names, flags };
 }
 
 function usage(): never {
@@ -166,9 +165,10 @@ ${pc.bgCyan(pc.black(' pnpm worktree '))}  ${pc.dim('isolated multi-instance dev
 
   ${pc.cyan('pnpm worktree')}                 ${pc.dim('interactive menu')}
   ${pc.cyan('pnpm worktree create')}          ${pc.dim('guided wizard (or --name <n> --from <branch> [--db] [--no-tunnel])')}
-  ${pc.cyan('start')} ${pc.dim('<n> [--stripe] [--no-tunnel]')}   ${pc.cyan('stop')} ${pc.dim('<n> | --all')}   ${pc.cyan('nuke')} ${pc.dim('<n> [--force]')}
+  ${pc.cyan('start')} ${pc.dim('<n> [--billing] [--stripe] [--no-tunnel]')}   ${pc.cyan('stop')} ${pc.dim('<n> | --all')}   ${pc.cyan('nuke')} ${pc.dim('<n> [n…] [--force] [--yes]')}
+  ${pc.cyan('nuke --all')} ${pc.dim('[--older-than 3d] [--idle 2d] [--include-dirty] [--dry-run] [--yes]')}   ${pc.dim('bulk: skips running stacks + dirty trees')}
   ${pc.cyan('pr')} ${pc.dim('<n> [--title … --base main --draft --web]')}
-  ${pc.cyan('list')}        ${pc.cyan('status')} ${pc.dim('[n]')}   ${pc.cyan('doctor')} ${pc.dim('[--yes]')}
+  ${pc.cyan('list')} ${pc.dim('[name] [--json]')}   ${pc.cyan('status')} ${pc.dim('[n]')}   ${pc.cyan('doctor')} ${pc.dim('[--yes]')}
 
 Each worktree gets a unique port block (base ${BASE.web}/${BASE.api}, +${STRIDE} per slot),
 shares the primary Supabase DB by default, and gets its own node_modules. Pass ${pc.cyan('--db')}
@@ -256,7 +256,8 @@ async function promptCreate(): Promise<Args | null> {
   const isolatedDb = await clack.confirm({ message: 'Create a separate Supabase database for this worktree?', initialValue: false });
   if (cancelled(isolatedDb)) return null;
   const stripe = start ? await confirmStripe() : false;
-  return { cmd: 'create', name: String(name), flags: { from: String(from), yes: true, ...(isolatedDb ? { db: true } : {}), ...(start ? {} : { 'no-start': true }), ...(stripe ? { stripe: true } : {}) } };
+  const n = String(name);
+  return { cmd: 'create', name: n, names: [n], flags: { from: String(from), yes: true, ...(isolatedDb ? { db: true } : {}), ...(start ? {} : { 'no-start': true }), ...(stripe ? { stripe: true } : {}) } };
 }
 
 async function pickWorktree(action: string): Promise<string | null> {
@@ -272,6 +273,22 @@ async function pickWorktree(action: string): Promise<string | null> {
   });
   if (cancelled(sel)) return null;
   return String(sel);
+}
+
+async function pickWorktrees(action: string): Promise<string[] | null> {
+  const reg = loadRegistry();
+  const names = Object.keys(reg.slots);
+  if (!names.length) { clack.cancel('No worktrees yet — create one first.'); return null; }
+  const sel = await clack.multiselect({
+    message: `Which worktrees to ${pc.bold(action)}? ${pc.dim('(space to select, enter to confirm)')}`,
+    options: names.sort((x, y) => reg.slots[x].slot - reg.slots[y].slot).map((n) => {
+      const e = reg.slots[n];
+      return { value: n, label: `${dot(e.status === 'running')} ${n}`, hint: `slot ${e.slot} · ${e.status} · web ${e.ports.web}` };
+    }),
+    required: true,
+  });
+  if (cancelled(sel)) return null;
+  return (sel as string[]).map(String);
 }
 
 async function menu(): Promise<Args | null> {
@@ -291,14 +308,19 @@ async function menu(): Promise<Args | null> {
   if (cancelled(action)) return null;
   const cmd = String(action);
   if (cmd === 'create') return promptCreate();
-  if (['start', 'stop', 'nuke', 'status', 'pr'].includes(cmd)) {
+  if (cmd === 'nuke') {
+    const names = await pickWorktrees(cmd);
+    if (!names || !names.length) return null;
+    return { cmd, name: names[0], names, flags: { force: true } };
+  }
+  if (['start', 'stop', 'status', 'pr'].includes(cmd)) {
     const name = await pickWorktree(cmd);
     if (!name) return null;
-    const flags: Record<string, string | boolean> = cmd === 'nuke' ? { force: true } : {};
+    const flags: Record<string, string | boolean> = {};
     if (cmd === 'start' && await confirmStripe()) flags.stripe = true;
-    return { cmd, name, flags };
+    return { cmd, name, names: [name], flags };
   }
-  return { cmd, name: undefined, flags: {} };
+  return { cmd, name: undefined, names: [], flags: {} };
 }
 
 async function cmdCreate(a: Args) {
@@ -422,7 +444,7 @@ async function cmdCreate(a: Args) {
     pc.green(`✓ worktree "${name}" ready`),
   );
   if (a.flags['no-start']) { ok(`start it:  ${pc.cyan('pnpm worktree start ' + name)}`); }
-  else { await cmdStart({ cmd: 'start', name, flags: { ...(a.flags['no-tunnel'] ? { 'no-tunnel': true } : {}), ...(a.flags.stripe ? { stripe: true } : {}) } }); }
+  else { await cmdStart({ cmd: 'start', name, names: [name], flags: { ...(a.flags['no-tunnel'] ? { 'no-tunnel': true } : {}), ...(a.flags.stripe ? { stripe: true } : {}) } }); }
 }
 
 async function cmdStart(a: Args) {
@@ -503,18 +525,23 @@ async function cmdStart(a: Args) {
     if (stripe) sub(`stripe listen → http://localhost:${e.ports.api}/v1/billing/webhooks/stripe  ${pc.dim('(whsec injected)')}`);
     else warn('stripe CLI missing or not logged in — billing NOT enabled. Install it and run `stripe login`, then restart with --stripe.');
   }
+  const billing = !!a.flags.billing || !!stripe;
 
   await freeSlotPorts(e.ports);
 
   console.log(`\n${pc.green('🚀')} ${pc.bold(name)}   web ${url('http://localhost:' + e.ports.web)}  ${pc.dim('·')}  api http://localhost:${e.ports.api}  ${pc.dim('·')}  ${dbMode === 'isolated' ? `studio http://localhost:${e.ports.sbStudio}` : `db ${pc.dim('shared primary Supabase')}`}`);
   console.log(`${pc.dim('   llm gateway')} http://localhost:${e.ports.gateway} ${pc.dim('(standalone · slot port · API proxies /v1/llm-gateway/*)')}`);
   if (tunnel) console.log(`${pc.dim('   sandbox callback')} ${url(tunnel.url)}`);
-  if (stripe) console.log(`${pc.dim('   billing')} ${pc.green('on')} ${pc.dim('· stripe webhooks → :' + e.ports.api)}`);
+  if (billing) {
+    console.log(
+      `${pc.dim('   billing')} ${pc.green('on')} ${stripe ? pc.dim('· stripe webhooks → :' + e.ports.api) : pc.dim('· local routes only')}`,
+    );
+  }
   console.log(pc.dim('   (Ctrl+C stops the dev servers cleanly)\n'));
 
-  const api = Bun.spawn(['pnpm', '--filter', API_FILTER, 'dev'], { cwd: e.path, env: { ...process.env, ...apiLaunchEnv(e.ports, creds, { kortixUrl: tunnel?.url, stripeWebhookSecret: stripe?.secret }) }, stdout: 'inherit', stderr: 'inherit' });
+  const api = Bun.spawn(['pnpm', '--filter', API_FILTER, 'dev'], { cwd: e.path, env: { ...process.env, ...apiLaunchEnv(e.ports, creds, { kortixUrl: tunnel?.url, stripeWebhookSecret: stripe?.secret, billing }) }, stdout: 'inherit', stderr: 'inherit' });
   const gateway = Bun.spawn(['pnpm', '--filter', GATEWAY_FILTER, 'dev'], { cwd: e.path, env: { ...process.env, ...gatewayLaunchEnv(e.ports) }, stdout: 'inherit', stderr: 'inherit' });
-  const web = Bun.spawn(['pnpm', '--filter', WEB_FILTER, 'dev'], { cwd: e.path, env: { ...process.env, ...webLaunchEnv(e.ports, creds, { billing: !!stripe }) }, stdout: 'inherit', stderr: 'inherit' });
+  const web = Bun.spawn(['pnpm', '--filter', WEB_FILTER, 'dev'], { cwd: e.path, env: { ...process.env, ...webLaunchEnv(e.ports, creds, { billing }) }, stdout: 'inherit', stderr: 'inherit' });
   void waitForGateway(e.ports.gateway, gateway);
   let stopping = false;
   const shutdown = async () => {
@@ -591,15 +618,15 @@ async function cmdStopAll() {
   sub('isolated-DB Supabase containers are left running — stop one with `pnpm worktree stop <n>`');
 }
 
-async function cmdNuke(a: Args) {
-  const name = need(a.name);
-  const reg = loadRegistry();
-  const e = reg.slots[name];
-  if (!e) die(`unknown worktree "${name}"`);
-  const pid = e!.projectId;
-  const dbMode = dbModeOf(e!);
+/**
+ * Tear down ONE worktree (stack, optional isolated Supabase, git worktree,
+ * branch, slot). The confirmation and multi-name loop live in `cmdNuke`.
+ */
+async function nukeOne(name: string, e: SlotEntry, flags: Record<string, string | boolean>): Promise<void> {
+  const pid = e.projectId;
+  const dbMode = dbModeOf(e);
   step(`Nuking "${name}" ${pc.dim(dbMode === 'isolated' ? '(project ' + pid + ')' : '(shared DB mode)')}`);
-  const stopped = await stopStack(e!);
+  const stopped = await stopStack(e);
   // A process whose cwd is still inside the checkout keeps the directory busy, so
   // an unverified kill here surfaces later as a confusing `git worktree remove` failure.
   if (stopped.survived.length) warn(`${plural(stopped.survived.length, 'process', 'processes')} survived (${stopped.survived.join(', ')}) — removal may fail`);
@@ -611,55 +638,148 @@ async function cmdNuke(a: Args) {
     sub('shared primary Supabase left untouched');
   }
   const root = repoRoot();
-  const force = a.flags.force ? ['--force'] : [];
-  if (existsSync(e!.path)) { sub('removing git worktree…'); sh(['git', '-C', root, 'worktree', 'remove', ...force, e!.path]); }
+  const force = flags.force ? ['--force'] : [];
+  if (existsSync(e.path)) { sub('removing git worktree…'); sh(['git', '-C', root, 'worktree', 'remove', ...force, e.path]); }
   sh(['git', '-C', root, 'worktree', 'prune']);
-  if (e!.branch) {
-    const del = sh(['git', '-C', root, 'branch', '-d', e!.branch]);
-    if (del.ok) sub(`deleted branch "${e!.branch}"`);
-    else if (a.flags.force) { sh(['git', '-C', root, 'branch', '-D', e!.branch]); sub(`force-deleted branch "${e!.branch}" (had unmerged commits)`); }
-    else sub(`kept branch "${e!.branch}" (unmerged commits) — \`git branch -D ${e!.branch}\` or \`nuke --force\` to drop it`);
+  if (e.branch) {
+    const del = sh(['git', '-C', root, 'branch', '-d', e.branch]);
+    if (del.ok) sub(`deleted branch "${e.branch}"`);
+    else if (flags.force) { sh(['git', '-C', root, 'branch', '-D', e.branch]); sub(`force-deleted branch "${e.branch}" (had unmerged commits)`); }
+    else sub(`kept branch "${e.branch}" (unmerged commits) — \`git branch -D ${e.branch}\` or \`nuke --force\` to drop it`);
   }
   try { rmSync(slotDir(name), { recursive: true, force: true }); } catch {}
   await withLock(() => { const r = loadRegistry(); delete r.slots[name]; saveRegistry(r); });
-  ok(`removed "${name}" — slot ${e!.slot} freed.`);
+  ok(`removed "${name}" — slot ${e.slot} freed.`);
 }
 
-function cmdList() {
+/**
+ * `nuke <n> [n…] [--force] [--yes]` — destructive, so every target is confirmed
+ * individually in a TTY (answer no to skip one, Ctrl+C/Esc to stop the rest).
+ * `--yes` or a non-TTY stdin keeps the old non-interactive behavior for scripts.
+ */
+/**
+ * Snapshot one registry slot for the bulk selector. Impure by design: probes
+ * live ports, `git status`, HEAD commit time and the worktree index mtime.
+ */
+function pruneCandidate(name: string, e: SlotEntry, live: Set<number> | null): PruneCandidate {
+  const isLive = live ? live.has(e.ports.web) || live.has(e.ports.api) : e.status === 'running';
+  const missing = !existsSync(e.path);
+  let dirty = false;
+  let lastActivity: number | null = null;
+  if (!missing) {
+    dirty = sh(['git', '-C', e.path, 'status', '--porcelain', '--untracked-files=no']).stdout.trim().length > 0;
+    const head = Number(sh(['git', '-C', e.path, 'log', '-1', '--format=%ct']).stdout.trim());
+    if (Number.isFinite(head) && head > 0) lastActivity = head * 1000;
+    try {
+      // `<path>/.git` is a file: "gitdir: <repo>/.git/worktrees/<id>" — its index mtime is the last checkout/stage.
+      const gitFile = joinPath(e.path, '.git');
+      const gitdir = readFileSync(gitFile, 'utf8').replace(/^gitdir:\s*/, '').trim();
+      const idx = joinPath(isAbsolute(gitdir) ? gitdir : joinPath(e.path, gitdir), 'index');
+      const m = statSync(idx).mtimeMs;
+      lastActivity = lastActivity === null ? m : Math.max(lastActivity, m);
+    } catch {}
+  }
+  return { name, live: isLive, dirty, missing, createdAt: e.createdAt, lastActivity };
+}
+
+/**
+ * `nuke --all [--older-than <dur>] [--idle <dur>] [--include-dirty] [--dry-run]`
+ * — bulk teardown. Running stacks are never touched; checkouts with
+ * uncommitted tracked changes are kept unless --include-dirty; slots whose
+ * directory is already gone are always freed. Local branches survive as usual
+ * (`git branch -d` only, unless --force).
+ */
+async function cmdNukeAll(a: Args) {
   const reg = loadRegistry();
   const names = Object.keys(reg.slots);
-  if (!names.length) { console.log(`\n  ${pc.dim('No worktrees.')} Create one: ${pc.cyan('pnpm worktree create')}`); return; }
-  const statusColor: Record<string, (s: string) => string> = { running: pc.green, stopped: pc.dim, created: pc.yellow };
-  // A cell carries its plain `text` (used for width math) separately from its
-  // `render` (with color/links). Widths derive from content + header so the
-  // header always lines up with the rows and nothing is truncated.
-  type Cell = { text: string; render: string };
-  const cell = (text: string, render = text): Cell => ({ text, render });
-  const portCell = (port: number): Cell => cell(String(port), link(`http://localhost:${port}`, pc.green(String(port))));
-  const headers = ['NAME', 'SLOT', 'STATUS', 'DB MODE', 'BRANCH', 'WEB', 'API', 'DB', 'STUDIO'];
-  const rows: Cell[][] = names.sort((x, y) => reg.slots[x].slot - reg.slots[y].slot).map((n) => {
+  if (!names.length) { ok('no worktrees registered — nothing to nuke'); return; }
+  const rule = {
+    olderThanMs: typeof a.flags['older-than'] === 'string' ? parseDuration(a.flags['older-than']) : undefined,
+    idleMs: typeof a.flags.idle === 'string' ? parseDuration(a.flags.idle) : undefined,
+    includeDirty: !!a.flags['include-dirty'],
+  };
+  step(`Scanning ${plural(names.length, 'worktree', 'worktrees')}`);
+  const live = listenPorts();
+  const candidates = names.map((n) => pruneCandidate(n, reg.slots[n], live));
+  const verdicts = selectForPrune(candidates, rule, Date.now());
+  const keep = verdicts.filter((v) => !v.nuke);
+  const nuke = verdicts.filter((v) => v.nuke);
+  for (const v of keep) sub(`${pc.dim('keep')} ${pc.bold(v.name)} ${pc.dim('— ' + v.why)}`);
+  for (const v of nuke) sub(`${pc.red('nuke')} ${pc.bold(v.name)} ${pc.dim('— ' + v.why)}`);
+  console.log();
+  if (!nuke.length) { ok(`nothing selected (${keep.length} kept)`); return; }
+  if (a.flags['dry-run']) { ok(`dry run: would nuke ${nuke.length}, keep ${keep.length}`); return; }
+  const confirm = !!process.stdin.isTTY && !!process.stdout.isTTY && !a.flags.yes;
+  if (confirm) {
+    const v = await clack.confirm({ message: `Nuke ${pc.bold(String(nuke.length))} worktrees and keep ${keep.length}?`, initialValue: false });
+    if (clack.isCancel(v) || !v) { clack.cancel('Cancelled — nothing was touched.'); return; }
+  }
+  let done = 0;
+  const failed: string[] = [];
+  for (const v of nuke) {
+    try { await nukeOne(v.name, reg.slots[v.name], a.flags); done++; }
+    catch (err: any) { failed.push(v.name); warn(`"${v.name}" failed: ${err?.message ?? err}`); }
+  }
+  ok(`nuked ${done}/${nuke.length} · kept ${keep.length}${failed.length ? ` · failed: ${failed.join(', ')}` : ''}`);
+  if (failed.length) process.exit(1);
+}
+
+async function cmdNuke(a: Args) {
+  if (a.flags.all) return cmdNukeAll(a);
+  const names = (a.names.length ? a.names : [need(a.name)]).map(sanitizeName);
+  const reg = loadRegistry();
+  const targets: { name: string; e: SlotEntry }[] = [];
+  let missed = false;
+  for (const n of names) {
     const e = reg.slots[n];
-    const col = statusColor[e.status] ?? ((s: string) => s);
-    const dbMode = dbModeOf(e);
-    return [
-      cell(n, pc.bold(n)),
-      cell(String(e.slot), pc.dim(String(e.slot))),
-      cell(e.status, col(e.status)),
-      cell(dbMode),
-      cell(e.branch),
-      portCell(e.ports.web),
-      portCell(e.ports.api),
-      portCell(dbMode === 'isolated' ? e.ports.sbDb : SHARED_SUPABASE_PORTS.sbDb),
-      portCell(dbMode === 'isolated' ? e.ports.sbStudio : SHARED_SUPABASE_PORTS.sbStudio),
-    ];
-  });
-  const widths = headers.map((h, i) => Math.max(h.length, ...rows.map((r) => r[i].text.length)));
-  const GAP = '  ';
-  // Pad after `render` using the plain-text length so zero-width escape codes
-  // don't throw off alignment. The last column gets no trailing padding.
-  const fmt = (c: Cell, i: number) => c.render + (i === widths.length - 1 ? '' : ' '.repeat(widths[i] - c.text.length));
-  console.log('\n  ' + pc.dim(headers.map((h, i) => (i === headers.length - 1 ? h : h.padEnd(widths[i]))).join(GAP)));
-  for (const r of rows) console.log('  ' + r.map(fmt).join(GAP));
+    if (!e) { warn(`unknown worktree "${n}" — skipped`); missed = true; continue; }
+    targets.push({ name: n, e });
+  }
+  if (!targets.length) die('nothing to nuke');
+  const confirm = !!process.stdin.isTTY && !!process.stdout.isTTY && !a.flags.yes;
+  if (confirm && targets.length > 1) {
+    sub(`${plural(targets.length, 'worktree', 'worktrees')} queued: ${targets.map((t) => t.name).join(', ')} — each one is confirmed before it is nuked.`);
+  }
+  for (const { name, e } of targets) {
+    if (confirm) {
+      const v = await clack.confirm({
+        message: `Nuke ${pc.bold(name)}? ${pc.dim(`slot ${e.slot} · ${dbLabel(dbModeOf(e))} · branch "${e.branch}" — stops its stack, removes ${e.path}`)}`,
+        initialValue: false,
+      });
+      if (clack.isCancel(v)) { clack.cancel('Cancelled — the remaining worktrees were left untouched.'); break; }
+      if (!v) { sub(`skipped "${name}"`); continue; }
+    }
+    await nukeOne(name, e, a.flags);
+  }
+  if (missed) process.exit(1);
+}
+
+/**
+ * `list [name] [--json]` — read-only. It never writes the registry, so a status
+ * that disagrees with the probe is reported, not repaired; `doctor` owns repair.
+ */
+function cmdList(a: Args) {
+  const reg = loadRegistry();
+  const total = Object.keys(reg.slots).length;
+  const live = listenPorts();
+  const probed = live !== null;
+  const all = sortRows(buildRows(reg, live));
+  const rows = a.name ? filterRows(all, a.name) : all;
+
+  if (a.flags.json) { console.log(JSON.stringify(toJsonRows(rows, { probed }), null, 2)); return; }
+  if (!total) { console.log(`\n  ${pc.dim('No worktrees.')} Create one: ${pc.cyan('pnpm worktree create')}`); return; }
+  if (!rows.length) {
+    console.log(`\n  ${pc.dim(`No worktree matches "${a.name}".`)} See all: ${pc.cyan('pnpm worktree list')}\n`);
+    return;
+  }
+
+  // One hit for an explicit query is a lookup, not a list — show the full URLs
+  // rather than making you widen the match to read them.
+  const lines = a.name && rows.length === 1
+    ? renderDetail(rows[0]!, { probed })
+    : renderRail(rows, { probed, columns: process.stdout.columns, totalCount: total });
+  console.log('');
+  for (const l of lines) console.log(l);
   console.log('');
 }
 
@@ -788,11 +908,18 @@ try {
     const r = await promptCreate();
     if (!r) process.exit(0);
     a = r;
-  } else if (tty && ['start', 'stop', 'nuke', 'rm', 'status', 'pr'].includes(a.cmd) && !a.name) {
+  } else if (tty && (a.cmd === 'nuke' || a.cmd === 'rm') && !a.names.length && !a.flags.all) {
+    clack.intro(pc.bgCyan(pc.black(` pnpm worktree · ${a.cmd} `)));
+    const names = await pickWorktrees(a.cmd);
+    if (!names || !names.length) process.exit(0);
+    a.names = names;
+    a.name = names[0];
+  } else if (tty && ['start', 'stop', 'status', 'pr'].includes(a.cmd) && !a.name) {
     clack.intro(pc.bgCyan(pc.black(` pnpm worktree · ${a.cmd} `)));
     const n = await pickWorktree(a.cmd);
     if (!n) process.exit(0);
     a.name = n;
+    a.names = [n];
     if (a.cmd === 'start' && !a.flags.stripe && await confirmStripe()) a.flags.stripe = true;
   }
 
@@ -801,7 +928,7 @@ try {
     case 'start': await cmdStart(a); break;
     case 'stop': await cmdStop(a); break;
     case 'nuke': case 'rm': await cmdNuke(a); break;
-    case 'list': case 'ls': cmdList(); break;
+    case 'list': case 'ls': cmdList(a); break;
     case 'status': cmdStatus(a); break;
     case 'pr': await cmdPr(a); break;
     case 'doctor': await cmdDoctor(a); break;

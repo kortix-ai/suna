@@ -33,6 +33,7 @@ import {
   type AccountState,
 } from '@kortix/sdk';
 import { dollarsToCredits } from '@kortix/shared';
+import { SEAT_GRANT_USD } from '@/features/billing/compute-pricing';
 
 export type { AccountState };
 
@@ -314,7 +315,7 @@ export function useCreatePerSeatCheckout() {
         useUpgradeDialogStore.getState().closeUpgradeDialog();
         await invalidateAccountState(queryClient, true, true, accountId);
         successToast('Subscription activated', {
-          description: `${data.seat_count} seat${data.seat_count === 1 ? '' : 's'} active · $${20 * data.seat_count} of usage credit deposited.`,
+          description: `${data.seat_count} seat${data.seat_count === 1 ? '' : 's'} active · $${SEAT_GRANT_USD * data.seat_count} of usage credit deposited.`,
         });
         return;
       }
@@ -566,15 +567,11 @@ export const accountStateSelectors = {
   tierDisplayName: (state: AccountState | undefined) =>
     state?.subscription?.tier_display_name ?? 'No Plan',
 
-  /** Get plan name for TierBadge (e.g., 'Plus', 'Pro', 'Ultra', 'Basic') */
-  planName: (state: AccountState | undefined) => {
-    if (!state?.subscription) return 'Basic';
-    const tierKey = state.subscription.tier_key || state.tier?.name;
-    if (!tierKey || tierKey === 'none' || tierKey === 'free') return 'Basic';
-
-    if (tierKey === 'pro') return 'Pro';
-    return 'Basic';
-  },
+  // REMOVED: `planName`. It was a third frontend tier catalog — a hand-written
+  // tier_key -> display-name map that only knew 'pro' and called every other
+  // paid plan 'Basic', so a per-seat Team account read as Basic. It had no
+  // callers. Use `resolvedPlan(state).label` (@kortix/sdk), which reads the
+  // server's plan block.
 
   /** Check if subscription is cancelled */
   isCancelled: (state: AccountState | undefined) => state?.subscription?.is_cancelled ?? false,

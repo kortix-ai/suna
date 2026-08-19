@@ -25,7 +25,6 @@ export interface BuiltinPreset {
 
 export const BUILTIN_PRESETS: readonly BuiltinPreset[] = [
   { key: 'manager', name: 'Manager', description: 'Full project control, including members and delete.', resourceType: 'project', actions: [...PROJECT_ROLE_PERMS.manager] },
-  { key: 'editor', name: 'Editor', description: 'Create and edit project content, run sessions.', resourceType: 'project', actions: [...PROJECT_ROLE_PERMS.editor] },
   { key: 'user', name: 'Member (read + run)', description: 'Read, run sessions, and fire triggers — no editing or config. The project floor role.', resourceType: 'project', actions: [...USER_PRESET_ACTIONS] },
   { key: 'owner', name: 'Owner', description: 'Full account control.', resourceType: 'account', actions: [...ACCOUNT_ROLE_PERMS.owner] },
   { key: 'admin', name: 'Admin', description: 'Manage members, groups, roles and tokens.', resourceType: 'account', actions: [...ACCOUNT_ROLE_PERMS.admin] },

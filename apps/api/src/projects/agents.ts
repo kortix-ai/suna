@@ -9,7 +9,7 @@ import { canonicalizeGrantConnectors } from '../iam/agent-scope';
  * governance policy keyed by agent name. Its grant fields cover the two things
  * the agent `.md` can't express:
  *
- *   1. `connectors` — which integration profiles (by `connectors[].slug`) the
+ *   1. `connectors` — which connectors (by `connectors[].slug`) the
  *      agent may call. Default: none.
  *   2. `kortix_cli` — what the agent may do to Kortix itself via the `kortix`
  *      CLI/API (project-scoped iam actions: deploy, open CRs, triggers, …).
@@ -24,7 +24,7 @@ import { canonicalizeGrantConnectors } from '../iam/agent-scope';
  *   agents:
  *     kortix: {}                          # default GP agent — connectors/kortix_cli = "all" (∩ user)
  *     release-bot:
- *       connectors: ["github"]            # which integration profiles
+ *       connectors: ["github"]            # which connectors
  *       kortix_cli: ["project.trigger.create", "project.cr.open"]   # Kortix CLI/API powers
  *
  * Parser mirrors `projects/connectors.ts`: never throws on a bad entry, collects
@@ -35,8 +35,16 @@ import type { ParsedManifest } from './triggers';
 import { PROJECT_ACTIONS, VALID_ACTIONS } from '../iam/actions';
 import type { GitBackedProject } from './git';
 import type { AgentGrant } from '@kortix/db';
-import { resolveGrantSet, SLUG_RE, type GrantSetV2 } from '@kortix/manifest-schema';
+import {
+  resolveGrantSet,
+  SLUG_RE,
+  WORKSPACE_MODES_V2,
+  type GrantSetV2,
+  type WorkspaceModeV2,
+} from '@kortix/manifest-schema';
 import { normalizeRequiredConnectorAliases } from './lib/agent-config-v2';
+import { isMetaAgentName } from '@kortix/shared';
+import { platformMetaAgentGrant } from './lib/platform-meta-agent';
 
 const MANIFEST_FILENAME = 'kortix.toml';
 
@@ -84,9 +92,9 @@ export interface AgentSpec {
   path: string;
   /** When false the overlay is skipped (the agent still runs from its `.md`, with default-deny scope). */
   enabled: boolean;
-  /** Which connector profiles (by slug) this agent may use. `[]` = none (default). */
+  /** Which connectors (by slug) this agent may use. `[]` = none (default). */
   connectors: GrantSet;
-  /** Connector profiles that must resolve before the session starts. */
+  /** Connectors that must resolve before the session starts. */
   connectorsRequired?: string[];
   /** Kortix CLI/API powers (project-scoped iam actions). `[]` = none (default). */
   kortixCli: GrantSet;
@@ -109,6 +117,8 @@ export interface AgentSpec {
   model: string | null;
   /** Default sandbox template slug for sessions started with this agent. */
   sandbox?: string | null;
+  /** Project file delivery mode for sessions started with this agent. */
+  workspace?: WorkspaceModeV2 | null;
 }
 
 export interface AgentParseError {
@@ -322,6 +332,17 @@ export async function resolveAgentGrant(
 
 /** Pure resolution rule (no I/O) — see `resolveAgentGrant`. Exported for tests. */
 export function grantFromLoadedAgents(agentName: string, loaded: LoadedAgents): AgentGrant | null {
+  // The reserved platform coordinator is injected by the platform and is NEVER
+  // declared in a project manifest, so manifest resolution cannot answer for it:
+  // a governed project falls through to the unlisted default-DENY below, and an
+  // ungoverned one returns the UNRESTRICTED null. Both are wrong, and the wrong
+  // answers were load-bearing — `remintGrantForAgentSwitch` re-resolves the
+  // running agent's grant on EVERY prompt and writes it onto the session's
+  // token, so the deny-all overwrote the coordinator's real grant on its first
+  // turn (every later `kortix` call then 403'd) and the null made the re-mint
+  // refuse the prompt outright. Its grant is platform-owned, at mint and here.
+  if (isMetaAgentName(agentName)) return platformMetaAgentGrant();
+
   // No [[agents]] section parsed and no errors → project hasn't adopted
   // per-agent governance → no restriction (today's behavior).
   if (loaded.specs.length === 0 && loaded.errors.length === 0) return null;
@@ -343,7 +364,7 @@ export function grantFromLoadedAgents(agentName: string, loaded: LoadedAgents): 
   // `default`, so a `default`-booted session is OpenCode's configured
   // `default_agent` (a general-purpose agent, conventionally `kortix`, granted
   // "all") — NOT an unlisted concrete agent. Default-denying it stripped EVERY
-  // connector from such sessions (the `kortix executor connectors` → [] bug,
+  // connector from such sessions (the `kortix connectors ls` → [] bug,
   // and synthetic channel/computer connectors never reaching the agent) even
   // though OpenCode runs them as the fully-privileged default agent. Resolve
   // it the way the proxy already does: non-binding → null (no restriction,
@@ -408,9 +429,21 @@ export function sandboxFromLoadedAgents(agentName: string, loaded: LoadedAgents)
   return loaded.specs.find((spec) => spec.name === concreteName && spec.enabled)?.sandbox ?? null;
 }
 
+/** Resolve the selected agent's project file delivery mode without repository I/O. */
+export function workspaceFromLoadedAgents(
+  agentName: string,
+  loaded: LoadedAgents,
+): WorkspaceModeV2 | null {
+  const concreteName =
+    agentName === DEFAULT_AGENT_SENTINEL && loaded.defaultAgent
+      ? loaded.defaultAgent
+      : agentName;
+  return loaded.specs.find((spec) => spec.name === concreteName && spec.enabled)?.workspace ?? null;
+}
+
 /**
- * Resolve the connector profiles that the selected agent requires at session
- * start. The connector profile controls which authorization owner is valid.
+ * Resolve the connectors that the selected agent requires at session start.
+ * Each connector controls which connection owner is valid.
  */
 export function requiredConnectorsForAgent(agentName: string, loaded: LoadedAgents): string[] {
   if (loaded.specs.length === 0 && loaded.errors.length === 0) return [];
@@ -590,6 +623,7 @@ export function manifestHashForAgent(spec: AgentSpec): string {
     kortixCli: spec.kortixCli,
     env: spec.env,
     file: spec.file,
+    workspace: spec.workspace,
   });
   return createHash('sha256').update(canonical).digest('hex');
 }
@@ -644,6 +678,7 @@ function parseAgentEntry(entry: unknown, index: number, filename: string = MANIF
       file,
       model,
       sandbox: null,
+      workspace: null,
     },
   };
 }
@@ -691,6 +726,15 @@ function parseAgentEntryV2(name: string, block: unknown, filename: string): Pars
     typeof normalizedRow.sandbox === 'string' && normalizedRow.sandbox.trim()
       ? normalizedRow.sandbox.trim()
       : null;
+  const workspaceRaw = normalizedRow.workspace;
+  if (
+    workspaceRaw !== undefined &&
+    (typeof workspaceRaw !== 'string' ||
+      !(WORKSPACE_MODES_V2 as readonly string[]).includes(workspaceRaw))
+  ) {
+    return err(name, `agents.${name}.workspace must be one of: ${WORKSPACE_MODES_V2.join(', ')}`);
+  }
+  const workspace = (workspaceRaw as WorkspaceModeV2 | undefined) ?? null;
 
   const connectorsResolved = resolveGrantSet(normalizedRow.connectors, 'none');
 
@@ -735,6 +779,7 @@ function parseAgentEntryV2(name: string, block: unknown, filename: string): Pars
       file,
       model,
       sandbox,
+      workspace,
     },
   };
 }

@@ -49,15 +49,42 @@ describe('audit HTTP route registry', () => {
     expect(describeAuditAction(`POST /v1/accounts/${UID}/audit/webhooks`).title).toBe(
       'Created audit webhook',
     );
+    expect(describeAuditAction(`POST /v1/accounts/${UID}/audit/reconcile`).title).toBe(
+      'Reconciled audit log',
+    );
+    expect(
+      describeAuditAction(`GET /v1/accounts/${UID}/audit/webhooks/${UID2}/deliveries`).title,
+    ).toBe('Listed audit webhook deliveries');
+    expect(
+      describeAuditAction(
+        `POST /v1/accounts/${UID}/audit/webhooks/${UID2}/deliveries/${UID}/replay`,
+      ).title,
+    ).toBe('Replayed audit webhook delivery');
     expect(describeAuditAction(`PATCH /v1/accounts/${UID}/audit/webhooks/${UID2}`).title).toBe(
       'Updated audit webhook',
+    );
+    expect(describeAuditAction(`GET /v1/projects/${UID}/audit`).title).toBe(
+      'Viewed project audit log',
     );
     expect(describeAuditAction(`GET /v1/projects/${UID}/sessions/${UID2}/audit`).title).toBe(
       'Viewed session audit log',
     );
+    expect(
+      describeAuditAction(`POST /v1/projects/${UID}/sessions/${UID2}/audit/events`).title,
+    ).toBe('Ingested session audit events');
+    expect(
+      describeAuditAction(`POST /v1/projects/${UID}/sessions/${UID2}/reload-stream`).title,
+    ).toBe('Reloaded session agent config');
     expect(describeAuditAction(`POST /v1/projects/${UID}/turn-stream`).title).toBe(
       'Streamed session turn',
     );
+    expect(
+      describeAuditAction(`PUT /v1/projects/${UID}/secrets/ANTHROPIC_API_KEY/strategy`).title,
+    ).toBe('Updated secret delivery strategy');
+    expect(
+      describeAuditAction(`PUT /v1/connectors/projects/${UID}/connectors/github/secret-binding`)
+        .title,
+    ).toBe('Updated connector secret binding');
   });
 
   test('preserves the compact raw route fallback for an unknown route', () => {
@@ -336,18 +363,23 @@ describe('humanizeAuditAction — fallbacks', () => {
       title: 'Started session',
       kind: 'create',
     });
-    expect(humanizeAuditAction('executor.gmail.send_email')).toEqual({
-      title: 'Ran connector action',
+    expect(humanizeAuditAction('connector.gmail.send_email')).toEqual({
+      title: 'Ran connector call',
       detail: 'gmail.send_email',
       kind: 'update',
     });
-    expect(humanizeAuditAction('executor.approval.denied')).toEqual({
+    expect(humanizeAuditAction('connector.approval.denied')).toEqual({
       title: 'Denied connector action',
       kind: 'revoke',
     });
     expect(humanizeAuditAction('computer.shell.exec')).toEqual({
       title: 'Ran computer operation',
       detail: 'shell.exec',
+      kind: 'update',
+    });
+    expect(humanizeAuditAction('connector.computer.shell.exec')).toEqual({
+      title: 'Ran connector call',
+      detail: 'computer.shell.exec',
       kind: 'update',
     });
   });

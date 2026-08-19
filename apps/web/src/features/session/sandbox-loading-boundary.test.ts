@@ -26,7 +26,7 @@ describe('session navigation loading boundaries', () => {
   test('the project shell cannot be replaced by a route-wide sandbox fallback', () => {
     expect(projectLayoutSource).not.toContain('SandboxLoadingBoundary');
     expect(projectLayoutSource).toContain('<ProjectAccessBoundary projectId={projectId}>');
-    expect(projectLayoutSource).toContain('<SessionCacheWarmer projectId={projectId} />');
+    expect(projectLayoutSource).not.toContain('SessionCacheWarmer');
     expect(projectLayoutSource).toContain('<ProjectShell projectId={projectId}>');
   });
 
@@ -58,9 +58,12 @@ describe('session navigation loading boundaries', () => {
     // constant's value and its use rather than one inlined literal.
     expect(projectAccessSource).toContain("const QUERY_KEY = 'project-access-boundary'");
     expect(projectAccessSource).toContain('queryKey: [QUERY_KEY, projectId]');
-    expect(projectAccessSource).not.toContain("queryKey: ['project-access', projectId]");
-    expect(projectHomeSource).not.toContain("queryKey: ['project-access', projectId]");
+    expect(projectAccessSource).not.toContain('queryKey: qk.project.access(projectId)');
+    expect(projectHomeSource).not.toContain('queryKey: qk.project.access(projectId)');
     expect(projectHomeSource).not.toContain('listProjectAccess(projectId');
-    expect(projectHomeSource).toContain('const PROJECT_SETUP_TILES');
+    // Project home renders its own static starter content
+    // (PROJECT_SETUP_TILES; #6467's StarterSuggestions was reverted), so a
+    // members query is never the thing that gates the first paint.
+    expect(projectHomeSource).toContain('PROJECT_SETUP_TILES');
   });
 });

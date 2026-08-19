@@ -13,6 +13,8 @@
 import { afterAll, afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mock } from 'bun:test';
 import * as realRequestContext from '../../lib/request-context';
+import * as realPreviewOwnership from '../../shared/preview-ownership';
+import * as realKortixUserContext from '../../shared/kortix-user-context';
 
 const ACTIVE_RECORD = {
   status: 'active',
@@ -25,15 +27,22 @@ const ACTIVE_RECORD = {
   provider: 'daytona',
 };
 
-mock.module('../../config', () => ({ config: { KORTIX_ENFORCE_SESSION_AGENT_LOCK: false } }));
+mock.module('../../config', () => ({ config: {} }));
 mock.module('../../lib/request-context', () => ({
   ...realRequestContext,
   getTraceHeaders: () => ({}),
 }));
+// Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
+// lists exports by hand silently deletes every other one — and the failure lands
+// in whatever unrelated file imports the missing name next, as
+// `SyntaxError: Export named '…' not found`, attributed to no test at all.
+// Overriding only what this file needs keeps new exports working by default.
 mock.module('../../shared/kortix-user-context', () => ({
+  ...realKortixUserContext,
   KORTIX_USER_CONTEXT_HEADER: 'x-kortix-user-context',
 }));
 mock.module('../../shared/preview-ownership', () => ({
+  ...realPreviewOwnership,
   canAccessPreviewSandbox: async () => true,
   canAccessSandboxSession: async () => true,
 }));
@@ -41,7 +50,7 @@ mock.module('../../shared/preview-ownership', () => ({
 // different concern, so keep it satisfied — unstubbed it reaches a real DB.
 mock.module('../../projects/lib/prompt-connector-preflight', () => ({
   PromptConnectorPreflightUnresolved: class PromptConnectorPreflightUnresolved extends Error {},
-  missingPromptConnectorAuthorizations: async () => ({ ok: true }),
+  missingPromptConnectorConnections: async () => ({ ok: true }),
 }));
 mock.module('../../projects/lib/sandbox-env-sync', () => ({
   syncSandboxEnvForPrompt: async () => {},
@@ -58,6 +67,13 @@ mock.module('../../projects/lib/session-token-grant', () => ({
 }));
 mock.module('../../projects/opencode-session-snapshot', () => ({
   scheduleOpencodeSnapshotSync: () => {},
+}));
+const realTurnLifecycle = await import('../../projects/sandbox-turn-lifecycle');
+mock.module('../../projects/sandbox-turn-lifecycle', () => ({
+  ...realTurnLifecycle,
+  beginSandboxTurn: async () => 'granted',
+  acceptSandboxTurn: async () => true,
+  abandonSandboxTurn: async () => true,
 }));
 mock.module('../../projects/routes/shared', () => ({
   resumeStoppedSandboxByExternalId: async () => true,

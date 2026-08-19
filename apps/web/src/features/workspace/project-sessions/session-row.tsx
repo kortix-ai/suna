@@ -1,6 +1,7 @@
 'use client';
 
 import { sessionSource, type SessionSourceKind } from '@/components/projects/session-label';
+import { SessionSharedIcon } from '@/components/projects/session-shared-icon';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
@@ -11,7 +12,9 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import Loading from '@/components/ui/loading';
-import { Icon } from '@/features/icon/icon';
+import { TypedTitle } from '@/components/ui/typed-title';
+import { Slack } from '@/features/icon/icons/slack';
+import { Telegram } from '@/features/icon/icons/telegram';
 import {
   getSessionDisplayTitle,
   shortRelative,
@@ -30,7 +33,7 @@ import {
   TrashIcon,
   WebhooksLogoIcon,
 } from '@phosphor-icons/react';
-import { useState, type ComponentType, type ReactNode } from 'react';
+import { memo, useState, type ComponentType, type ReactNode } from 'react';
 
 import { sessionAccessMeta } from './project-sessions-helpers';
 
@@ -41,8 +44,8 @@ const SESSION_RELATIVE_TIME_CLASS =
 
 const SOURCE_ICONS: Record<SessionSourceKind, ComponentType<{ className?: string }>> = {
   chat: ChatTeardropTextIcon,
-  slack: Icon.Slack,
-  telegram: Icon.Telegram,
+  slack: Slack,
+  telegram: Telegram,
   email: EnvelopeIcon,
   schedule: CalendarDotsIcon,
   webhook: WebhooksLogoIcon,
@@ -111,7 +114,10 @@ export interface SessionRowProps {
    *  every row shares one `date-fns` pass instead of one per row. */
   time: { relative: string; exact: string };
   open: boolean;
-  onOpenChange: (open: boolean) => void;
+  /** Takes the session id so the container can pass ONE stable callback to
+   *  every row. A per-row `(open) => setExpanded(...)` closure is a new
+   *  function on each parent render, which defeats the memo below. */
+  onToggleOpen: (sessionId: string, open: boolean) => void;
   selectMode: boolean;
   selected: boolean;
   onToggleSelect: (sessionId: string) => void;
@@ -122,11 +128,11 @@ export interface SessionRowProps {
   children: ReactNode;
 }
 
-export function SessionRow({
+function SessionRowImpl({
   session,
   time,
   open,
-  onOpenChange,
+  onToggleOpen,
   selectMode,
   selected,
   onToggleSelect,
@@ -167,11 +173,18 @@ export function SessionRow({
       >
         <SourceIcon className={cn('size-4', statusTile.icon)} />
       </span>
-      <span className="min-w-0 flex-1 truncate text-sm">
-        {title}
-        {source.triggerSlug ? (
-          <span className="text-muted-foreground"> · {source.triggerSlug}</span>
-        ) : null}
+      <span className="flex min-w-0 flex-1 items-center gap-2">
+        <span className="min-w-0 flex-1 truncate text-sm">
+          {/* Types itself in when the name changes — a session created moments
+              ago reads "New session" until the agent names it, and this is what
+              shows that the name was written rather than swapped. Plain text at
+              rest, so the row is unchanged (and still ellipsises) until then. */}
+          <TypedTitle text={title} />
+          {source.triggerSlug ? (
+            <span className="text-muted-foreground"> · {source.triggerSlug}</span>
+          ) : null}
+        </span>
+        <SessionSharedIcon session={session} />
       </span>
     </>
   );
@@ -214,7 +227,7 @@ export function SessionRow({
   return (
     <Disclosure
       open={open}
-      onOpenChange={onOpenChange}
+      onOpenChange={(next) => onToggleOpen(session.session_id, next)}
       variant="outline"
       className="group/session bg-popover overflow-hidden"
     >
@@ -360,3 +373,16 @@ export function SessionRow({
     </Disclosure>
   );
 }
+
+/**
+ * Memoised: a project inventory renders every session at once, and without this
+ * one keystroke in the toolbar's search re-rendered all of them — each row
+ * resolving its source, access meta and status tile again to produce identical
+ * output. Every prop the container passes is now referentially stable across
+ * renders (`time` is cached, the callbacks take the session id), so a row
+ * re-renders only when its own data or its own row state changes.
+ *
+ * `children` is deliberately part of that contract: the container passes `null`
+ * for a collapsed row, so it stays stable until the row is actually expanded.
+ */
+export const SessionRow = memo(SessionRowImpl);

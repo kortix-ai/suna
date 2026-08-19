@@ -1,8 +1,11 @@
+import { FEATURE_DISABLED_CODE } from '@kortix/sdk';
+
 import { loadAuth, loadAuthForHost, type Auth } from './api/auth.ts';
 import { activeHostName, hasEnvTokenHost, listHosts } from './api/config.ts';
 import { ApiError, clientFromAuth, type ApiClient } from './api/client.ts';
 import { loadLink, resolveProjectId } from './project-link.ts';
 import { ensureDefaultProjectBinding } from './project-bind.ts';
+import { recordPermissionDenial } from './token-denial.ts';
 import { C, status } from './style.ts';
 import type { MeResponse, ProjectSession, ProjectSummary } from './api/types.ts';
 
@@ -11,6 +14,16 @@ interface ProjectContextOpts {
   projectArg?: string;
   /** Override active host for this invocation via --host flag. */
   hostArg?: string;
+  /**
+   * Do not print "No project linked" when nothing resolves.
+   *
+   * Set by callers that have a fallback — `locateSessionAnywhere` goes on to
+   * scan the host's other accounts, and usually finds the session. Printing a
+   * red ✗ first announces a failure that has not happened yet: the command then
+   * succeeds, but anyone reading the output (or piping it through `head`)
+   * concludes it failed. The fallback prints its own error if it runs dry.
+   */
+  quietWhenUnresolved?: boolean;
 }
 
 /**
@@ -20,7 +33,7 @@ interface ProjectContextOpts {
  *
  * Host resolution order:
  *   1. --host flag (per-invocation override)
- *   2. KORTIX_CLI_TOKEN / KORTIX_EXECUTOR_TOKEN (platform-injected sandbox
+ *   2. KORTIX_CLI_TOKEN (platform-injected sandbox
  *      auth — resolved through `loadAuth()`; a committed link host has no
  *      credentials inside a sandbox, so the env token must win)
  *   3. .kortix/link.json's `host` field (per-repo binding)
@@ -65,14 +78,17 @@ export async function resolveProjectContext(
     // non-TTY it degrades to a hint and the error below.)
     const outcome = await ensureDefaultProjectBinding(auth, {
       promptTitle: 'No project bound — pick one for this command',
+      quiet: opts.quietWhenUnresolved,
     });
     projectId = outcome.project?.project_id ?? null;
   }
   if (!projectId) {
-    process.stderr.write(
-      `${status.err('No project linked.')} Run \`kortix projects use\`, ` +
-        `\`kortix projects link\`, or pass ${C.cyan}--project <id>${C.reset}.\n`,
-    );
+    if (!opts.quietWhenUnresolved) {
+      process.stderr.write(
+        `${status.err('No project linked.')} Run \`kortix projects use\`, ` +
+          `\`kortix projects link\`, or pass ${C.cyan}--project <id>${C.reset}.\n`,
+      );
+    }
     return null;
   }
   return { client: clientFromAuth(auth), projectId, auth };
@@ -135,8 +151,29 @@ export async function locateSessionAnywhere(
   // either — resolveProjectContext already explained that below.
   const hostPinnedButLoggedOut = Boolean(opts.hostArg) && !loadAuthForHost(opts.hostArg!)?.token;
 
-  const ctx = await resolveProjectContext(opts);
+  // Quiet: the cross-account scan below is the real answer for a user whose
+  // active account holds no projects, and it usually finds the session.
+  const ctx = await resolveProjectContext({ ...opts, quietWhenUnresolved: true });
   if (ctx) {
+    // Short-id ergonomics: `sessions ls`/`status` print 8-char ids, so accept
+    // any unambiguous prefix instead of failing with "Invalid session id". The
+    // list already carries the full row, so a prefix hit returns it directly and
+    // skips the per-session re-fetch below.
+    if (!SESSION_UUID_RE.test(sessionId)) {
+      const expanded = await expandSessionIdPrefix(ctx.client, ctx.projectId, sessionId);
+      if (expanded === 'ambiguous') {
+        process.stderr.write(
+          `${status.err(`Several sessions match "${sessionId}" — use more of the id.`)}\n`,
+        );
+        return null;
+      }
+      if (expanded) {
+        return {
+          located: { client: ctx.client, auth: ctx.auth, projectId: ctx.projectId, session: expanded },
+          switched: false,
+        };
+      }
+    }
     const probed = await probeSession(ctx.client, ctx.projectId, sessionId);
     if (probed !== false && !(probed instanceof ApiError)) {
       return {
@@ -258,6 +295,28 @@ function printHostRetryHints(retryCommand: (hostName: string) => string): void {
 }
 
 /** result = the fetched row, false = 404 (keep looking), ApiError = a real failure. */
+const SESSION_UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Expand a short session-id prefix against the project's session list,
+ *  returning the matched row (the list already carries it — no re-fetch). */
+async function expandSessionIdPrefix(
+  client: ApiClient,
+  projectId: string,
+  reference: string,
+): Promise<ProjectSession | 'ambiguous' | null> {
+  try {
+    const sessions = await client.get<ProjectSession[]>(`/projects/${projectId}/sessions`);
+    const matches = sessions.filter((s) => s.session_id.startsWith(reference));
+    if (matches.length === 1) return matches[0];
+    if (matches.length > 1) return 'ambiguous';
+    return null;
+  } catch {
+    // Listing failed — let the direct probe surface the real error.
+    return null;
+  }
+}
+
 async function probeSession(
   client: ApiClient,
   projectId: string,
@@ -353,9 +412,57 @@ async function probeConcurrently<Item, Result>(
   return found;
 }
 
+/**
+ * Pull the server's feature-flag gate message off an error, or null when the
+ * error is not that gate.
+ *
+ * The gate is one shape on the wire — 403 `{ error, code: 'feature_disabled',
+ * feature }` (apps/api/src/feature-flags/gate.ts) — but reaches the CLI as two
+ * error classes: the CLI's own `ApiError` keeps the parsed body in `.body`,
+ * while an SDK `ApiError` thrown by a `kortix.*` handle keeps it in
+ * `.details`/`.data` and lifts `code` onto the error. Both are read
+ * structurally here, and the status is deliberately NOT checked, so a future
+ * status carrying the same code still surfaces the same message.
+ */
+function featureDisabledMessage(err: unknown): string | null {
+  if (!err || typeof err !== 'object') return null;
+  const carrier = err as {
+    code?: unknown;
+    message?: unknown;
+    body?: unknown;
+    details?: unknown;
+    data?: unknown;
+  };
+  const body = [carrier.body, carrier.details, carrier.data].find(
+    (candidate): candidate is Record<string, unknown> =>
+      !!candidate && typeof candidate === 'object' && !Array.isArray(candidate),
+  );
+  const code = typeof carrier.code === 'string' ? carrier.code : body?.code;
+  if (code !== FEATURE_DISABLED_CODE) return null;
+  // The server's prose already names the feature and points at
+  // Settings → Feature flags — print it verbatim rather than paraphrasing.
+  const fromBody = body?.error;
+  if (typeof fromBody === 'string' && fromBody.length > 0) return fromBody;
+  return typeof carrier.message === 'string' && carrier.message.length > 0
+    ? carrier.message
+    : null;
+}
+
 /** Print an HTTP error in a consistent style + return exit code 1. */
 export function surfaceApiError(err: unknown): number {
+  // The feature-flag gate is actionable on its own — never let it fall through
+  // to the generic 403 "you may not have permission" prose, which sends the
+  // user hunting for a role problem that does not exist.
+  const featureDisabled = featureDisabledMessage(err);
+  if (featureDisabled) {
+    process.stderr.write(`${status.err(featureDisabled)}\n`);
+    return 1;
+  }
   if (err instanceof ApiError) {
+    // Both codes are identity verdicts. Note it so the CLI's tail can name the
+    // token that was refused (see token-denial.ts) — the message itself only
+    // ever names the action.
+    recordPermissionDenial(err.status);
     if (err.status === 401) {
       process.stderr.write(
         `${status.err('Token rejected. Run `kortix login` to re-authenticate.')}\n`,

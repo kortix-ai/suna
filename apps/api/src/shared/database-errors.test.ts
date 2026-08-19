@@ -39,6 +39,15 @@ describe('inspectDatabaseError', () => {
     });
   });
 
+  test('reads a unique_violation (23505) off the wrapped cause — the App-create 409 path', () => {
+    // Drizzle wraps postgres.js, so the SQLSTATE is on error.cause.code, never
+    // error.code. The old `(error as {code?}).code === '23505'` check was dead
+    // (undefined) and duplicate-slug App creates returned 500 instead of 409.
+    const error = wrappedDatabaseError('23505', 'duplicate key value violates unique constraint');
+    expect((error as { code?: string }).code).toBeUndefined(); // why the old check never fired
+    expect(inspectDatabaseError(error)?.pgCode).toBe('23505');
+  });
+
   test('rejects an application error with no database signal', () => {
     expect(inspectDatabaseError(new Error('invalid project state'))).toBeNull();
   });

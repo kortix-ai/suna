@@ -48,10 +48,10 @@ interface KortixComputerState {
   // Main view state
   activeView: ViewType;
 
-  // Panel state — per-session so switching tabs preserves each session's panel state
+  // Panel state. NOT per-session: every session change lands with both right
+  // surfaces closed — see `setActiveSession`.
   shouldOpenPanel: boolean;
   isSidePanelOpen: boolean;
-  _panelOpenBySession: Record<string, boolean>;
   /**
    * The FLOATING action panel — the Outputs/Context/Preview cards overlaying
    * the chat, anchored top right. Entirely separate from `isSidePanelOpen`,
@@ -70,8 +70,22 @@ interface KortixComputerState {
    * the split to be, and a fixed-width floating overlay has no split to size.
    */
   isActionPanelOpen: boolean;
-  _actionPanelOpenBySession: Record<string, boolean>;
   _activeSessionId: string | null;
+  /**
+   * Per session: does that session's detail panel still HOLD something to show
+   * (a file/app/step/audit detail, or the terminal layer)?
+   *
+   * Written by `SessionPanelProvider`, which owns that content in React state.
+   * Read by `toggleRightPanel` alone, to answer "what does reopening the right
+   * side bring back".
+   *
+   * It is NOT an open/closed flag. ⌘I closes the panel WITHOUT discarding the
+   * provider's content, so this stays true while the panel is down — which is
+   * exactly what lets the next press restore it. It goes false on the two
+   * events that really do destroy the content: the detail's own close button
+   * or Escape, and leaving the session.
+   */
+  _detailContentBySession: Record<string, boolean>;
   isExpanded: boolean;
   // Easy mode only — the side panel's requested share of the split, as a
   // percentage, when a layer wants more than the default 35/65 card column:
@@ -164,12 +178,41 @@ interface KortixComputerState {
   // Panel control
   clearShouldOpenPanel: () => void;
   setIsSidePanelOpen: (open: boolean) => void;
-  /** The floating action panel. Writes `isActionPanelOpen` and that session's
-   *  entry in `_actionPanelOpenBySession` — never any side-panel state. */
+  /** The floating action panel. Writes `isActionPanelOpen` and nothing else —
+   *  never any side-panel state. */
   setIsActionPanelOpen: (open: boolean) => void;
   toggleActionPanel: () => void;
-  /** Call when a session tab becomes active — restores that session's panel state */
+  /**
+   * ⌘I / Ctrl+I — the ONE toggle for the whole right side.
+   *
+   * The two surfaces stay independent in state (see `isActionPanelOpen`), but
+   * the user sees one thing: whatever is currently docked to the right of the
+   * chat. So this reads them together:
+   *
+   * - anything open (cards, a detail, or cards behind a detail) → close BOTH.
+   * - nothing open, this session still holds detail content → reopen that
+   *   detail. "Open and close generally whatever was last open."
+   * - nothing open, nothing held → open the action panel. It is the default
+   *   right-side surface, and the only one with an empty-open state a key
+   *   press can reach.
+   *
+   * The memory is SESSION-SCOPED and dies with the session, which is the whole
+   * reconciliation of the two rules this went through: within a session ⌘I is
+   * a minimise/restore pair, so closing a browser and pressing again brings the
+   * browser back; leave the session and come back and there is nothing to
+   * restore, so it opens the cards. A detail you last saw on another page is
+   * never what a key press resurrects.
+   *
+   * Deliberately NOT `toggleActionPanel` + a second binding: two hotkeys for
+   * one visual region is the bug this replaces.
+   */
+  toggleRightPanel: () => void;
+  /** Call when a session becomes visible. Both right surfaces close — panel
+   *  state never travels between sessions. */
   setActiveSession: (sessionId: string | null) => void;
+  /** `SessionPanelProvider` publishing whether `sessionId`'s detail panel holds
+   *  content. Pass `null` to forget the session (the provider unmounted). */
+  setDetailContent: (sessionId: string, has: boolean | null) => void;
   openSidePanel: () => void;
   closeSidePanel: () => void;
   /** `animate: false` snaps the panel to its new width with no transition —
@@ -222,10 +265,9 @@ const initialState = {
   activeView: 'tools' as ViewType,
   shouldOpenPanel: false,
   isSidePanelOpen: false,
-  _panelOpenBySession: {} as Record<string, boolean>,
   isActionPanelOpen: false,
-  _actionPanelOpenBySession: {} as Record<string, boolean>,
   _activeSessionId: null as string | null,
+  _detailContentBySession: {} as Record<string, boolean>,
   isExpanded: false,
   panelSplit: null as number | null,
   panelAspect: null as number | null,
@@ -298,12 +340,6 @@ export const useKortixComputerStore = create<KortixComputerState>()(
         // Only clear THIS session's own announcement — session B opening its
         // panel must not destroy session A's unseen ready chip.
         if (get().readyChip?.sessionId === sessionId) update.readyChip = null;
-        if (sessionId) {
-          update._panelOpenBySession = {
-            ...get()._panelOpenBySession,
-            [sessionId]: true,
-          };
-        }
         set(update);
       },
 
@@ -335,9 +371,6 @@ export const useKortixComputerStore = create<KortixComputerState>()(
           update.detailOpen = false;
           update.skipNextExpandAnimation = true;
         }
-        if (sessionId) {
-          update._panelOpenBySession = { ...get()._panelOpenBySession, [sessionId]: open };
-        }
         set(update);
       },
 
@@ -357,17 +390,46 @@ export const useKortixComputerStore = create<KortixComputerState>()(
         // detail panel's split, which this overlay is not part of. Clearing
         // them here would collapse an open detail's width from an unrelated
         // surface's toggle.
-        if (sessionId) {
-          update._actionPanelOpenBySession = {
-            ...get()._actionPanelOpenBySession,
-            [sessionId]: open,
-          };
-        }
         set(update);
       },
 
       toggleActionPanel: () => {
         get().setIsActionPanelOpen(!get().isActionPanelOpen);
+      },
+
+      toggleRightPanel: () => {
+        const { isSidePanelOpen, isActionPanelOpen, _activeSessionId } = get();
+
+        if (isSidePanelOpen || isActionPanelOpen) {
+          // Both down together — the user asked for the right side to go away,
+          // and leaving the cards behind a just-closed detail is the "it didn't
+          // close" bug. Widths reset the same way every other close path resets
+          // them, and snap rather than glide — the panel is leaving, so there
+          // is nothing to animate under.
+          //
+          // `detailOpen` and `_detailContentBySession` are deliberately NOT
+          // touched: this is a minimise, not a discard. The provider keeps the
+          // detail, and that is what the next press brings back.
+          set({
+            isSidePanelOpen: false,
+            isActionPanelOpen: false,
+            isExpanded: false,
+            panelSplit: null,
+            panelAspect: null,
+            skipNextExpandAnimation: true,
+          });
+          return;
+        }
+
+        // Reopen what this session was last showing. The map only ever holds
+        // the CURRENT session's live content (the provider clears it on the way
+        // out — see `SessionPanelProvider`), so this can never resurrect a
+        // detail from a page the user has since left.
+        const hasDetail = _activeSessionId
+          ? (get()._detailContentBySession[_activeSessionId] ?? false)
+          : false;
+        if (hasDetail) get().openSidePanel();
+        else get().setIsActionPanelOpen(true);
       },
 
       setActiveSession: (sessionId: string | null) => {
@@ -381,32 +443,103 @@ export const useKortixComputerStore = create<KortixComputerState>()(
         }
         const prev = get()._activeSessionId;
         if (prev === sessionId) return;
-        // Save current panel state for the previous session. Both surfaces are
-        // remembered independently — a user who left session A with the cards
-        // up and the detail panel closed must come back to exactly that, not
-        // to whichever state session B happened to leave behind.
-        const panelMap = { ...get()._panelOpenBySession };
-        const actionPanelMap = { ...get()._actionPanelOpenBySession };
-        if (prev) {
-          panelMap[prev] = get().isSidePanelOpen;
-          actionPanelMap[prev] = get().isActionPanelOpen;
-        }
-        // Restore panel state for the new session (default to false if unseen)
-        const restored = sessionId ? (panelMap[sessionId] ?? false) : false;
-        const restoredActionPanel = sessionId ? (actionPanelMap[sessionId] ?? false) : false;
+        // EVERY session change lands closed. Both surfaces, no exceptions, no
+        // per-session memory.
+        //
+        // This used to restore each session's remembered panel state, which is
+        // where the "new session opens on a loading panel" bug lived: panel
+        // state outlived the session it belonged to, so session B inherited
+        // session A's open detail panel and rendered it with nothing in it —
+        // B's provider has no detail of its own to show. Restoring correctly
+        // is not worth defending; a session you have just navigated to is a
+        // session you have not asked anything of yet, so the right side has
+        // nothing to say and should not be on screen.
+        //
+        // The detail CONTENT map survives on purpose: a tab kept mounted in
+        // the background still holds its detail, so returning to it and
+        // pressing ⌘I brings that back rather than the empty card home.
         set({
           _activeSessionId: sessionId,
-          _panelOpenBySession: panelMap,
-          isSidePanelOpen: restored,
-          _actionPanelOpenBySession: actionPanelMap,
-          isActionPanelOpen: restoredActionPanel,
-          // Reset expanded/split/detail state when switching sessions
+          isSidePanelOpen: false,
+          isActionPanelOpen: false,
           isExpanded: false,
           panelSplit: null,
           panelAspect: null,
           detailOpen: false,
+          // Snap. The outgoing session's width must not glide away under the
+          // incoming one's first paint.
+          skipNextExpandAnimation: true,
+          // The same rule applied to every OTHER request that can outlive the
+          // session that made it. Each of these is a global one-shot consumed
+          // by whichever layout/provider is mounted, so a request made in
+          // session A and not consumed before the user left would be picked up
+          // by session B — opening B's panel on a tool call B does not have, or
+          // on nothing at all. A pending intent belongs to the session that
+          // made it and dies with it. (`pendingQuickView` is handled above: it
+          // carries its own session id, so it survives a switch TO its own
+          // session and is dropped for any other. `readyChip` is deliberately
+          // untouched — announcing a finished deliverable across sessions is
+          // the entire point of it.)
+          shouldOpenPanel: false,
+          focusedToolCallId: null,
+          pendingToolNavIndex: null,
+          // A tool drawer belonging to the session the user just left.
+          mobileToolView: null,
+          // The ⌘I restore memory dies with the session. Within a session the
+          // key is a minimise/restore pair; across one it is not, and a detail
+          // last seen on a page the user has navigated away from must never be
+          // what a key press brings back.
+          //
+          // Cleared wholesale rather than per session id, and stated HERE
+          // rather than left to the providers: every mounted provider drops its
+          // own detail on this same change and republishes, so the two agree —
+          // but the rule holds even if a provider is slow, unmounted, or never
+          // mounted at all.
+          _detailContentBySession: {},
         });
       },
+
+      setDetailContent: (sessionId: string, has: boolean | null) => {
+        const map = get()._detailContentBySession;
+
+        // An open detail panel may never outlive the content that justified
+        // it. `setActiveSession` already lands every session change closed,
+        // but it returns early when the id is UNCHANGED — and unchanged is
+        // exactly the case that broke: leave a session for /connectors or
+        // /skills and come back, and it is the same session id, so none of
+        // that reset runs. What did run is this provider's unmount cleanup
+        // (`setDetailContent(sessionId, null)`), so the content went away
+        // while `detailOpen` stayed true. The panel came back open, over a
+        // provider with nothing in it, and rendered blank.
+        //
+        // Enforcing it HERE rather than at the navigation makes it an
+        // invariant instead of a patch: this is the single point where
+        // "does this session have detail content" changes, so there is no
+        // second route into the broken state to remember later.
+        const losingDetail = has === null || has === false;
+        const isActive = get()._activeSessionId === sessionId;
+        const closeDetail = losingDetail && isActive && get().detailOpen;
+
+        if (has === null) {
+          if (!(sessionId in map)) {
+            if (closeDetail) set({ detailOpen: false });
+            return;
+          }
+          const next = { ...map };
+          delete next[sessionId];
+          set({ _detailContentBySession: next, ...(closeDetail ? { detailOpen: false } : {}) });
+          return;
+        }
+        if (map[sessionId] === has) {
+          if (closeDetail) set({ detailOpen: false });
+          return;
+        }
+        set({
+          _detailContentBySession: { ...map, [sessionId]: has },
+          ...(closeDetail ? { detailOpen: false } : {}),
+        });
+      },
+
 
       openSidePanel: () => {
         const sessionId = get()._activeSessionId;
@@ -414,25 +547,17 @@ export const useKortixComputerStore = create<KortixComputerState>()(
         // Only clear THIS session's own announcement — session B opening its
         // panel must not destroy session A's unseen ready chip.
         if (get().readyChip?.sessionId === sessionId) update.readyChip = null;
-        if (sessionId) {
-          update._panelOpenBySession = { ...get()._panelOpenBySession, [sessionId]: true };
-        }
         set(update);
       },
 
       closeSidePanel: () => {
-        const sessionId = get()._activeSessionId;
-        const update: Partial<KortixComputerState> = {
+        set({
           isSidePanelOpen: false,
           isExpanded: false,
           panelSplit: null,
           panelAspect: null,
           detailOpen: false,
-        };
-        if (sessionId) {
-          update._panelOpenBySession = { ...get()._panelOpenBySession, [sessionId]: false };
-        }
-        set(update);
+        });
       },
 
       setIsExpanded: (expanded: boolean, opts?: { animate?: boolean }) => {
@@ -475,20 +600,17 @@ export const useKortixComputerStore = create<KortixComputerState>()(
       },
 
       requestQuickView: (view: QuickView, explicitSessionId?: string, target?: QuickViewTarget) => {
-        // `_activeSessionId` is only maintained for TAB-system sessions
-        // (session-layout gates `setActiveSession` on `isActiveTab`) — on the
-        // standalone /projects/:id/sessions/:id route it stays null, which
-        // silently dropped the pending view (panel opened, terminal never
-        // came). Callers that can resolve the active panel session (via
-        // session-browser-store's `getActivePanelSessionId`, which IS
-        // maintained on every route) pass it explicitly.
+        // `_activeSessionId` is maintained on every route now (session-layout
+        // calls `setActiveSession` whenever a layout is the visible one, not
+        // just for the active TAB). Callers that can resolve the panel session
+        // themselves — via session-browser-store's `getActivePanelSessionId` —
+        // still pass it explicitly, which stays the more direct answer.
         const sessionId = explicitSessionId ?? get()._activeSessionId;
         const update: Partial<KortixComputerState> = { isSidePanelOpen: true };
         // Only clear THIS session's own announcement — same rule every other
         // panel-opening action follows (see `focusToolCall`/`openSidePanel`).
         if (get().readyChip?.sessionId === sessionId) update.readyChip = null;
         if (sessionId) {
-          update._panelOpenBySession = { ...get()._panelOpenBySession, [sessionId]: true };
           update.pendingQuickView = { sessionId, view, requestedAt: Date.now(), target };
         }
         set(update);
@@ -517,6 +639,33 @@ export const useKortixComputerStore = create<KortixComputerState>()(
     }),
     {
       name: 'kortix-computer-store',
+      /**
+       * Persist the ONE durable preference and nothing else.
+       *
+       * There was no `partialize`, so zustand wrote the whole state to
+       * localStorage — including `detailOpen`, `isSidePanelOpen`,
+       * `_activeSessionId`, `_detailContentBySession`, `focusedToolCallId`
+       * and the one-shot flags. On the next load the panel reopened against a
+       * session whose provider had not mounted yet and had nothing to show:
+       * an open, blank panel, restored from disk.
+       *
+       * None of it deserved persisting. `setActiveSession` already resets
+       * `panelSplit`, `panelAspect`, `isExpanded` and `detailOpen` on every
+       * session change, so persisting them could only ever restore a value
+       * that the next session change throws away. The `_`-prefixed fields are
+       * internal bookkeeping about what is mounted RIGHT NOW, which is the
+       * one kind of state that must never survive the process that observed
+       * it. `pendingQuickView`, `readyChip`, `pendingToolNavIndex`,
+       * `focusedToolCallId` and `skipNextExpandAnimation` are one-shot
+       * intents; a stale one firing on load is a request the user made in
+       * another session, possibly days ago.
+       *
+       * `activeView` survives because it is a genuine preference — which tab
+       * of the panel you like — and it is content-independent: it decides
+       * what the panel shows once something opens it, never whether anything
+       * opens.
+       */
+      partialize: (state: KortixComputerState) => ({ activeView: state.activeView }),
     },
   ),
 );
@@ -555,6 +704,10 @@ export const useIsActionPanelOpen = () =>
 
 export const useToggleActionPanel = () =>
   useKortixComputerStore((state) => state.toggleActionPanel);
+
+/** ⌘I / Ctrl+I — the single right-side toggle. See `toggleRightPanel`. */
+export const useToggleRightPanel = () =>
+  useKortixComputerStore((state) => state.toggleRightPanel);
 
 export const useIsExpanded = () => useKortixComputerStore((state) => state.isExpanded);
 

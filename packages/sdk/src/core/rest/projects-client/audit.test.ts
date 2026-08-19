@@ -1,6 +1,6 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
-import { exportAccountAudit, listAccountAudit } from './audit';
+import { exportAccountAudit, listAccountAudit, listProjectAudit } from './audit';
 import { listAuditEvents } from './iam';
 
 let calls: Array<{ url: string; method: string }> = [];
@@ -25,7 +25,7 @@ test('listAccountAudit sends reconstruction filters', async () => {
     projectId: 'project-1',
     sessionId: 'session-1',
     actorType: 'agent',
-    source: 'executor',
+    source: 'connector',
     outcome: 'failure',
     requestId: 'request-1',
     correlationId: 'execution-1',
@@ -40,7 +40,7 @@ test('listAccountAudit sends reconstruction filters', async () => {
     project_id: 'project-1',
     session_id: 'session-1',
     actor_type: 'agent',
-    source: 'executor',
+    source: 'connector',
     outcome: 'failure',
     request_id: 'request-1',
     correlation_id: 'execution-1',
@@ -77,7 +77,7 @@ test('listAuditEvents sends project and session reconstruction filters', async (
     project_id: 'project-1',
     session_id: 'session-1',
     actor_type: 'agent',
-    source: 'executor',
+    source: 'connector',
     outcome: 'success',
   });
 
@@ -86,7 +86,47 @@ test('listAuditEvents sends project and session reconstruction filters', async (
     project_id: 'project-1',
     session_id: 'session-1',
     actor_type: 'agent',
-    source: 'executor',
+    source: 'connector',
     outcome: 'success',
   });
+});
+
+test('listProjectAudit uses the canonical project route and forwards phase/cursor filters', async () => {
+  await listProjectAudit('project-1', {
+    action: 'opencode.tool',
+    phase: 'completed',
+    cursor: 'cursor-1',
+    limit: 100,
+  });
+  const url = new URL(calls[0]!.url);
+  expect(url.pathname).toBe('/projects/project-1/audit');
+  expect(Object.fromEntries(url.searchParams)).toEqual({
+    action: 'opencode.tool',
+    phase: 'completed',
+    cursor: 'cursor-1',
+    limit: '100',
+  });
+});
+
+test('AuditEvent exposes the canonical reconstruction envelope', () => {
+  const event = {} as import('./audit').AuditEvent;
+  const fields: Array<unknown> = [
+    event.account_id,
+    event.opencode_session_id,
+    event.turn_id,
+    event.message_id,
+    event.tool_call_id,
+    event.execution_id,
+    event.session_sequence,
+    event.agent_id,
+    event.authoritative_source,
+    event.client_reported_source,
+    event.phase,
+    event.causation_id,
+    event.source_ledger,
+    event.input_summary,
+    event.input_sha256,
+    event.integrity_hash,
+  ];
+  expect(fields).toHaveLength(16);
 });

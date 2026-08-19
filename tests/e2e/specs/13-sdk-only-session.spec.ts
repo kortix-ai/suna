@@ -61,6 +61,22 @@ function fundAccount(accountId: string): void {
   );
 }
 
+function readSessionStatuses(sessionId: string): {
+  projectSession: string;
+  sandbox: string;
+} {
+  const [projectSession, sandbox] = executeSql(
+    `SELECT ps.status || '|' || ss.status
+       FROM kortix.project_sessions ps
+       JOIN kortix.session_sandboxes ss ON ss.session_id = ps.session_id
+      WHERE ps.session_id = '${sessionId}'`,
+  ).split('|');
+  if (!projectSession || !sandbox) {
+    throw new Error(`missing runtime status for session ${sessionId}`);
+  }
+  return { projectSession, sandbox };
+}
+
 interface AccountSummary {
   account_id: string;
   personal_account?: boolean;
@@ -72,6 +88,8 @@ interface ProjectSummary {
 
 interface ProjectSession {
   session_id: string;
+  opencode_session_id?: string | null;
+  sandbox_url?: string | null;
 }
 
 interface BillingState {
@@ -228,6 +246,100 @@ test.describe.serial('13 — SDK-only web session', () => {
     }
   });
 
+  test('project navigation never reads inactive transcripts or wakes a stopped sandbox', async ({
+    page,
+  }) => {
+    const transcriptReads: string[] = [];
+    const startRequests: string[] = [];
+    page.on('request', (request) => {
+      const url = new URL(request.url());
+      if (
+        request.method() === 'GET'
+        && /^\/v1\/p\/[^/]+\/(?:8000|4096)\/session\/[^/]+\/message$/.test(url.pathname)
+      ) {
+        transcriptReads.push(request.url());
+      }
+      if (
+        request.method() === 'POST'
+        && url.pathname.endsWith(`/projects/${projectId}/sessions/${sessionId}/start`)
+      ) {
+        startRequests.push(request.url());
+      }
+    });
+
+    await installBrowserSessionDirect(page, auth, `/projects/${projectId}`, authOptions);
+    await expect(page).toHaveURL(`/projects/${projectId}`);
+    await expect(page.getByRole('textbox', { name: 'Message input' })).toBeVisible({
+      timeout: 120_000,
+    });
+    await page.waitForTimeout(2_000);
+
+    expect(transcriptReads).toEqual([]);
+    expect(startRequests).toEqual([]);
+
+    const sessions = await api<ProjectSession[]>(
+      auth.access_token,
+      'GET',
+      `/projects/${projectId}/sessions`,
+    );
+    const session = sessions.find((item) => item.session_id === sessionId);
+    const runtimeUrl = session?.sandbox_url;
+    const openCodeSessionId = session?.opencode_session_id;
+    expect(runtimeUrl).toBeTruthy();
+    expect(openCodeSessionId).toBeTruthy();
+    if (!runtimeUrl || !openCodeSessionId) {
+      throw new Error(`session ${sessionId} is missing its runtime mapping`);
+    }
+
+    await api(
+      auth.access_token,
+      'POST',
+      `/projects/${projectId}/sessions/${sessionId}/stop`,
+      {},
+    );
+    await expect
+      .poll(() => readSessionStatuses(sessionId), { timeout: 60_000 })
+      .toEqual({ projectSession: 'stopped', sandbox: 'stopped' });
+
+    const passiveRead = await page.evaluate(
+      async ({ accessToken, openCodeSessionId, runtimeUrl }) => {
+        const response = await fetch(
+          `${runtimeUrl}/session/${encodeURIComponent(openCodeSessionId)}/message?directory=${encodeURIComponent('/workspace')}`,
+          { headers: { Authorization: `Bearer ${accessToken}` } },
+        );
+        return response.status;
+      },
+      {
+        accessToken: auth.access_token,
+        openCodeSessionId,
+        runtimeUrl,
+      },
+    );
+    expect(passiveRead).toBe(503);
+    expect(transcriptReads).toHaveLength(1);
+    expect(startRequests).toEqual([]);
+    expect(readSessionStatuses(sessionId)).toEqual({
+      projectSession: 'stopped',
+      sandbox: 'stopped',
+    });
+
+    const explicitStart = page.waitForRequest((request) => {
+      const url = new URL(request.url());
+      return (
+        request.method() === 'POST'
+        && url.pathname.endsWith(`/projects/${projectId}/sessions/${sessionId}/start`)
+      );
+    });
+    await page.goto(`/projects/${projectId}/sessions/${sessionId}`, {
+      waitUntil: 'domcontentloaded',
+    });
+    await explicitStart;
+    await expect(page.getByTestId('session-chat')).toBeVisible({ timeout: 120_000 });
+    await expect
+      .poll(() => readSessionStatuses(sessionId), { timeout: 120_000 })
+      .toEqual({ projectSession: 'running', sandbox: 'active' });
+  });
+
   test('streams a real prompt through the SDK and keeps the project UI functional', async ({
     page,
   }) => {
@@ -328,8 +440,8 @@ test.describe.serial('13 — SDK-only web session', () => {
     await expect(input).toBeVisible({ timeout: 120_000 });
     const agentPicker = page.getByRole('button', { name: 'Agent picker' });
     await agentPicker.click();
-    await page.getByText('memory-reflector', { exact: true }).click();
-    await expect(agentPicker).toContainText('memory-reflector');
+    await page.getByText('harness-reflector', { exact: true }).click();
+    await expect(agentPicker).toContainText('harness-reflector');
     await input.fill('Reply with exactly one word: PONG');
 
     const mismatchResponse = page.waitForResponse((response) => (

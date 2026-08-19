@@ -65,11 +65,10 @@ import type {
 import { haptics } from '@/lib/haptics';
 
 const MONO = 'Menlo';
-const ROLES: ProjectRole[] = ['member', 'editor', 'manager'];
+const ROLES: ProjectRole[] = ['member', 'manager'];
 
 const ROLE_DESC: Record<ProjectRole, { label: string; blurb: string }> = {
   member: { label: 'Member', blurb: 'Read, run sessions and chat, and fire the project’s triggers.' },
-  editor: { label: 'Editor', blurb: 'Everything a member does, plus edit the project and run sessions.' },
   manager: { label: 'Manager', blurb: 'Full control — edit the project, invite members, change settings.' },
 };
 
@@ -189,7 +188,7 @@ function InviteCard({ projectId, isDark }: { projectId: string; isDark: boolean 
   const theme = useThemeColors();
   const invite = useInviteProjectMember(projectId);
   const [email, setEmail] = useState('');
-  const [role, setRole] = useState<ProjectRole>('editor');
+  const [role, setRole] = useState<ProjectRole>('member');
 
   const canSubmit = email.trim().length > 0 && !invite.isPending;
   const submit = () => {
@@ -564,7 +563,7 @@ function MemberSheet({ projectId, accountId, member, onClose, isDark }: { projec
             <View>
               {ROLES.map((r, i) => (
                 <View key={r} style={{ borderTopWidth: i === 0 ? 0 : 1, borderTopColor: c.border }}>
-                  <RoleRadioRow role={r} selected={(member.project_role ?? 'editor') === r} onPress={() => changeRole(r)} isDark={isDark} />
+                  <RoleRadioRow role={r} selected={(member.project_role ?? 'member') === r} onPress={() => changeRole(r)} isDark={isDark} />
                 </View>
               ))}
             </View>
@@ -586,7 +585,7 @@ function AttachGroupSheet({ projectId, accountId, attachedIds, onClose, isDark }
   const groupsQuery = useAccountGroups(accountId, true);
   const attach = useAttachGroup(projectId);
   const [groupId, setGroupId] = useState<string | null>(null);
-  const [role, setRole] = useState<ProjectRole>('editor');
+  const [role, setRole] = useState<ProjectRole>('member');
 
   const available = (groupsQuery.data ?? []).filter((g) => !attachedIds.has(g.group_id));
   const canSubmit = !!groupId && !attach.isPending;

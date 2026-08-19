@@ -3,15 +3,17 @@ import { PROJECT_ACTIONS, authorize } from '../../iam';
 import { assertAgentScope } from '../../iam/agent-scope';
 import { invalidateIamCacheForUser } from '../../iam/cache-invalidation';
 import { deriveRequestContext } from '../../iam/cache';
-import { normalizeProjectRole } from '../../iam/role-perms';
+import { normalizeProjectRole, parseAssignableProjectRole, PROJECT_ROLE_INPUT_ERROR } from '../../iam/role-perms';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { lookupUserIdByEmail } from '../../shared/users';
 import { foldEffectiveProjectAccess, isAccountManager, roleAllows, type AccountRole, type ProjectRole } from '../access';
 import { createRoute, z } from '@hono/zod-openapi';
 import { accountGroupMembers, accountGroups, accountInvitations, accountMembers, accounts, projectAccessRequests, projectGroupGrants, projectMembers, projects } from '@kortix/db';
-import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { iamPolicies, iamRoles } from '@kortix/db';
+import { and, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import { ensureOrgMembership, grantProjectRole, loadProjectForUser, lookupEmailsByUserIds, resolveUserIdentities, parseExpiresAtBody, assertProjectCapability } from '../lib/access';
+import { listResourceGrants } from '../../iam/resource-grants';
 import { notifyProjectAccessRequestManagers } from '../lib/access-requests';
 import {
   AccessMemberSchema,
@@ -23,10 +25,8 @@ import {
 import { getAccountMembership } from '../lib/git';
 import { readBody, serializeProject } from '../lib/serializers';
 import { metadataClearSubtreeKey, metadataMerge, metadataMergeSubtree } from '../lib/metadata-merge';
-import { isExperimentalFeatureKey } from '../../experimental/features';
-import { reconcileChannelConnectors, reconcileComputerConnectors } from '../../executor/sync';
-import { propagateLlmGatewayModeToActiveSandboxes } from '../lib/sandbox-env-sync';
-import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
+import { isFeatureFlagKey } from '../../feature-flags/registry';
+import { runFeatureFlagToggleEffects } from '../../feature-flags/toggle-effects';
 import { deleteManagedProjectRepo } from '../lib/project-deletion';
 import {
   requestProviderTransition,
@@ -48,6 +48,46 @@ function serializeProjectAccessRequest(row: typeof projectAccessRequests.$inferS
     created_at: row.createdAt.toISOString(),
     updated_at: row.updatedAt.toISOString(),
   };
+}
+
+const ONBOARDING_USE_CASES = new Set([
+  'sales',
+  'support',
+  'marketing',
+  'engineering',
+  'finance_ops',
+  'hr_recruiting',
+  'other',
+]);
+const ONBOARDING_COMPANY_SIZES = new Set(['1-10', '11-50', '51-200', '201-1000', '1000+']);
+
+/**
+ * Allowlist the guided-onboarding profile. Returns `null` when there is nothing
+ * to write, so the caller can skip the UPDATE entirely rather than issue a
+ * no-op that still bumps `updated_at`.
+ *
+ * Unknown keys and out-of-range values are DROPPED, not rejected. This is
+ * best-effort survey capture fired as the user answers each question — a client
+ * that sends a field we retired must not break somebody's onboarding.
+ */
+function pickOnboardingProfile(input: unknown): Record<string, string> | null {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return null;
+  const raw = input as Record<string, unknown>;
+  const out: Record<string, string> = {};
+
+  if (typeof raw.use_case === 'string' && ONBOARDING_USE_CASES.has(raw.use_case)) {
+    out.use_case = raw.use_case;
+  }
+  if (typeof raw.company_size === 'string' && ONBOARDING_COMPANY_SIZES.has(raw.company_size)) {
+    out.company_size = raw.company_size;
+  }
+  if (typeof raw.company_domain === 'string') {
+    // 253 is the maximum length of a DNS name.
+    const domain = raw.company_domain.trim().toLowerCase().slice(0, 253);
+    if (domain) out.company_domain = domain;
+  }
+
+  return Object.keys(out).length > 0 ? out : null;
 }
 
 projectsApp.openapi(
@@ -72,12 +112,37 @@ projectsApp.openapi(
   const loaded = await loadProjectForUser(c, projectId, 'write');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
 
-  const completed = body.completed === true;
-  // FIX-J: SQL-side atomic merge of ONLY `onboarding_completed_at` (set / delete)
-  // so this write can't revert a routing pin written concurrently.
-  const metadataExpr = completed
-    ? metadataMerge({ onboarding_completed_at: new Date().toISOString() })
-    : metadataMerge({}, ['onboarding_completed_at']);
+  // Two independent writes share this route. `completed` is a TOP-LEVEL
+  // lifecycle flag; `profile` is a NESTED object written answer-by-answer as
+  // the user moves through the onboarding wizard. A request carries one or the
+  // other, never both.
+  const profile = pickOnboardingProfile(body.profile);
+
+  let metadataExpr;
+  if (profile) {
+    // Nested → metadataMergeSubtree, which re-reads `metadata->'onboarding'`
+    // inside the statement. A top-level `||` of the whole sub-object would let
+    // two concurrent writers into DIFFERENT sub-keys lose each other's update
+    // one level down.
+    metadataExpr = metadataMergeSubtree('onboarding', profile);
+  } else if ('completed' in body) {
+    // FIX-J: SQL-side atomic merge of ONLY `onboarding_completed_at` (set /
+    // delete) so this write can't revert a routing pin written concurrently.
+    metadataExpr =
+      body.completed === true
+        ? metadataMerge({ onboarding_completed_at: new Date().toISOString() })
+        : metadataMerge({}, ['onboarding_completed_at']);
+  } else {
+    // Nothing survived the allowlist and no completion flag was sent. Return
+    // the project unchanged rather than issue a no-op UPDATE that would still
+    // bump `updated_at` and reorder project lists for no reason.
+    return c.json(
+      serializeProject(loaded.row, {
+        projectRole: loaded.projectRole,
+        effectiveRole: loaded.effectiveRole,
+      }),
+    );
+  }
 
   const [row] = await db
     .update(projects)
@@ -115,9 +180,9 @@ projectsApp.openapi(
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
-  // Deletion is admin-only. Project Editor explicitly excludes
+  // Deletion is admin-only. The floor `member` role explicitly excludes
   // project.delete; loadProjectForUser('manage') would otherwise let
-  // editors through via project.write.
+  // members through via project.write.
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_DELETE);
 
   // Archiving is recoverable by default. Only an explicit purge permanently
@@ -170,54 +235,234 @@ projectsApp.openapi(
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_READ);
 
-  const [accountRows, grantRows, projectGroupRows] = await Promise.all([
-    db
-      .select({
-        userId: accountMembers.userId,
-        accountRole: accountMembers.accountRole,
-        joinedAt: accountMembers.joinedAt,
-      })
-      .from(accountMembers)
-      .where(eq(accountMembers.accountId, loaded.row.accountId)),
-    db
-      .select({
-        userId: projectMembers.userId,
-        projectRole: projectMembers.projectRole,
-        grantedBy: projectMembers.grantedBy,
-        createdAt: projectMembers.createdAt,
-        updatedAt: projectMembers.updatedAt,
-        expiresAt: projectMembers.expiresAt,
-      })
-      .from(projectMembers)
-      .where(eq(projectMembers.projectId, loaded.row.projectId)),
-    // V2 group grants attached to this project. Each row lifts everyone in
-    // the group to at least the grant's role on this project. Per-user
-    // membership lookup happens below; we fetch group → role mapping +
-    // name in one shot here so we can label sources on the response.
-    db
-      .select({
-        groupId: projectGroupGrants.groupId,
-        groupName: accountGroups.name,
-        role: projectGroupGrants.role,
-      })
-      .from(projectGroupGrants)
-      .innerJoin(accountGroups, eq(accountGroups.groupId, projectGroupGrants.groupId))
-      .where(eq(projectGroupGrants.projectId, loaded.row.projectId)),
-  ]);
+  const [accountRows, grantRows, projectGroupRows, customPolicyRows, resourceGrantRowsRaw, accountGroupRows] =
+    await Promise.all([
+      db
+        .select({
+          userId: accountMembers.userId,
+          accountRole: accountMembers.accountRole,
+          joinedAt: accountMembers.joinedAt,
+        })
+        .from(accountMembers)
+        .where(eq(accountMembers.accountId, loaded.row.accountId)),
+      db
+        .select({
+          userId: projectMembers.userId,
+          projectRole: projectMembers.projectRole,
+          grantedBy: projectMembers.grantedBy,
+          createdAt: projectMembers.createdAt,
+          updatedAt: projectMembers.updatedAt,
+          expiresAt: projectMembers.expiresAt,
+        })
+        .from(projectMembers)
+        .where(eq(projectMembers.projectId, loaded.row.projectId)),
+      // V2 group grants attached to this project. Each row lifts everyone in
+      // the group to at least the grant's role on this project. Per-user
+      // membership lookup happens below; we fetch group → role mapping +
+      // name in one shot here so we can label sources on the response.
+      db
+        .select({
+          groupId: projectGroupGrants.groupId,
+          groupName: accountGroups.name,
+          role: projectGroupGrants.role,
+        })
+        .from(projectGroupGrants)
+        .innerJoin(accountGroups, eq(accountGroups.groupId, projectGroupGrants.groupId))
+        .where(eq(projectGroupGrants.projectId, loaded.row.projectId)),
+      // IAM v1 custom-role policies bound to this project (scope_type='project',
+      // scope_id=this project) or account-wide (scope_type='account' — every
+      // project on this account, scope_id is NULL for that row shape; the
+      // account is already pinned by the accountId column, mirroring the
+      // engine-v2 actor-resolution query above). member/group principals only
+      // — a 'token' principal is a service account, not a human to fold onto
+      // the members list.
+      db
+        .select({
+          policyId: iamPolicies.policyId,
+          principalType: iamPolicies.principalType,
+          principalId: iamPolicies.principalId,
+          roleId: iamPolicies.roleId,
+          roleKey: iamRoles.key,
+          roleName: iamRoles.name,
+          scopeType: iamPolicies.scopeType,
+          expiresAt: iamPolicies.expiresAt,
+        })
+        .from(iamPolicies)
+        .innerJoin(iamRoles, eq(iamRoles.roleId, iamPolicies.roleId))
+        .where(
+          and(
+            eq(iamPolicies.accountId, loaded.row.accountId),
+            inArray(iamPolicies.principalType, ['member', 'group']),
+            or(
+              and(eq(iamPolicies.scopeType, 'project'), eq(iamPolicies.scopeId, loaded.row.projectId)),
+              eq(iamPolicies.scopeType, 'account'),
+            ),
+          ),
+        ),
+      // IAM v2 per-resource (agent/skill) grants for this project. Excludes
+      // 'secret' — secrets aren't a member/group-scoped resource surfaced on
+      // the access screen (see resource-grants.ts module doc).
+      listResourceGrants(loaded.row.projectId),
+      // All groups on this account, for name resolution below. Custom-role
+      // policies and resource grants can target a group that never got a
+      // project_group_grants row, so `projectGroupRows`'s name join above
+      // doesn't cover it — this is the superset lookup.
+      db
+        .select({ groupId: accountGroups.groupId, name: accountGroups.name })
+        .from(accountGroups)
+        .where(eq(accountGroups.accountId, loaded.row.accountId)),
+    ]);
 
-  // For every grant-bearing group, fetch its members so we can fold their
-  // inherited role into each user's effective access. One round-trip
-  // covering all groups at once.
+  const resourceGrantRows = resourceGrantRowsRaw.filter((r) => r.resourceType !== 'secret');
+  const groupNameById = new Map(accountGroupRows.map((g) => [g.groupId, g.name] as const));
+
+  // For every group referenced by ANY channel — project-role grant, custom
+  // policy, or resource grant — fetch its members so each can be folded onto
+  // the individual users below. One round-trip covering all groups at once.
   const grantGroupIds = projectGroupRows.map((g) => g.groupId);
-  const groupMemberRows = grantGroupIds.length
+  const policyGroupIds = customPolicyRows
+    .filter((r) => r.principalType === 'group')
+    .map((r) => r.principalId);
+  const resourceGrantGroupIds = resourceGrantRows
+    .filter((r) => r.principalType === 'group')
+    .map((r) => r.principalId);
+  const allGroupIds = Array.from(new Set([...grantGroupIds, ...policyGroupIds, ...resourceGrantGroupIds]));
+  const groupMemberRows = allGroupIds.length
     ? await db
         .select({
           groupId: accountGroupMembers.groupId,
           userId: accountGroupMembers.userId,
         })
         .from(accountGroupMembers)
-        .where(inArray(accountGroupMembers.groupId, grantGroupIds))
+        .where(inArray(accountGroupMembers.groupId, allGroupIds))
     : [];
+  const memberUserIdsByGroup = new Map<string, string[]>();
+  for (const m of groupMemberRows) {
+    const arr = memberUserIdsByGroup.get(m.groupId) ?? [];
+    arr.push(m.userId);
+    memberUserIdsByGroup.set(m.groupId, arr);
+  }
+
+  // Fold custom-role policies onto individual users (direct member principal,
+  // or every current member of a group principal) and, separately, keep the
+  // per-group view for `group_access` below.
+  type CustomRolePolicyEntry = {
+    policy_id: string;
+    role_id: string;
+    role_key: string;
+    role_name: string;
+    scope_type: 'project' | 'account';
+    source: 'direct' | 'group';
+    group_id: string | null;
+    group_name: string | null;
+    expires_at: string | null;
+  };
+  const customPoliciesByUser = new Map<string, CustomRolePolicyEntry[]>();
+  const customPoliciesByGroup = new Map<string, Omit<CustomRolePolicyEntry, 'source' | 'group_id' | 'group_name'>[]>();
+  for (const row of customPolicyRows) {
+    const base = {
+      policy_id: row.policyId,
+      role_id: row.roleId,
+      role_key: row.roleKey,
+      role_name: row.roleName,
+      scope_type: row.scopeType as 'project' | 'account',
+      expires_at: row.expiresAt?.toISOString() ?? null,
+    };
+    if (row.principalType === 'member') {
+      const arr = customPoliciesByUser.get(row.principalId) ?? [];
+      arr.push({ ...base, source: 'direct', group_id: null, group_name: null });
+      customPoliciesByUser.set(row.principalId, arr);
+    } else {
+      const groupId = row.principalId;
+      const groupName = groupNameById.get(groupId) ?? null;
+      const groupArr = customPoliciesByGroup.get(groupId) ?? [];
+      groupArr.push(base);
+      customPoliciesByGroup.set(groupId, groupArr);
+      for (const userId of memberUserIdsByGroup.get(groupId) ?? []) {
+        const arr = customPoliciesByUser.get(userId) ?? [];
+        arr.push({ ...base, source: 'group', group_id: groupId, group_name: groupName });
+        customPoliciesByUser.set(userId, arr);
+      }
+    }
+  }
+
+  // Fold resource grants (agent/skill) the same way.
+  type ResourceGrantEntry = {
+    grant_id: string;
+    resource_type: 'agent' | 'skill';
+    resource_id: string;
+    source: 'direct' | 'group';
+    group_id: string | null;
+    group_name: string | null;
+    expires_at: string | null;
+  };
+  const resourceGrantsByUser = new Map<string, ResourceGrantEntry[]>();
+  const resourceGrantsByGroup = new Map<string, Omit<ResourceGrantEntry, 'source' | 'group_id' | 'group_name'>[]>();
+  for (const row of resourceGrantRows) {
+    const base = {
+      grant_id: row.grantId,
+      resource_type: row.resourceType as 'agent' | 'skill',
+      resource_id: row.resourceId,
+      expires_at: row.expiresAt?.toISOString() ?? null,
+    };
+    if (row.principalType === 'member') {
+      const arr = resourceGrantsByUser.get(row.principalId) ?? [];
+      arr.push({ ...base, source: 'direct', group_id: null, group_name: null });
+      resourceGrantsByUser.set(row.principalId, arr);
+    } else {
+      const groupId = row.principalId;
+      const groupName = groupNameById.get(groupId) ?? null;
+      const groupArr = resourceGrantsByGroup.get(groupId) ?? [];
+      groupArr.push(base);
+      resourceGrantsByGroup.set(groupId, groupArr);
+      for (const userId of memberUserIdsByGroup.get(groupId) ?? []) {
+        const arr = resourceGrantsByUser.get(userId) ?? [];
+        arr.push({ ...base, source: 'group', group_id: groupId, group_name: groupName });
+        resourceGrantsByUser.set(userId, arr);
+      }
+    }
+  }
+
+  // Per-group directory: every group with a project-role grant, a custom-role
+  // policy, or a resource grant on this project. Built-in role comes from
+  // project_group_grants (V2 bulk-access channel); null when a group reaches
+  // this project only via a custom policy or resource grant.
+  const groupAccessById = new Map<
+    string,
+    {
+      group_id: string;
+      group_name: string | null;
+      built_in_role: string | null;
+      custom_role_policies: Omit<CustomRolePolicyEntry, 'source' | 'group_id' | 'group_name'>[];
+      resource_grants: Omit<ResourceGrantEntry, 'source' | 'group_id' | 'group_name'>[];
+    }
+  >();
+  const getGroupAccessEntry = (groupId: string, groupName: string | null) => {
+    let entry = groupAccessById.get(groupId);
+    if (!entry) {
+      entry = {
+        group_id: groupId,
+        group_name: groupName,
+        built_in_role: null,
+        custom_role_policies: [],
+        resource_grants: [],
+      };
+      groupAccessById.set(groupId, entry);
+    } else if (groupName && !entry.group_name) {
+      entry.group_name = groupName;
+    }
+    return entry;
+  };
+  for (const g of projectGroupRows) {
+    getGroupAccessEntry(g.groupId, g.groupName).built_in_role = g.role;
+  }
+  for (const [groupId, policies] of customPoliciesByGroup) {
+    getGroupAccessEntry(groupId, groupNameById.get(groupId) ?? null).custom_role_policies = policies;
+  }
+  for (const [groupId, grants] of resourceGrantsByGroup) {
+    getGroupAccessEntry(groupId, groupNameById.get(groupId) ?? null).resource_grants = grants;
+  }
+  const groupAccess = Array.from(groupAccessById.values());
 
   // Index: userId → list of { group_id, group_name, role } that contribute.
   type GroupSource = { group_id: string; group_name: string; role: ProjectRole };
@@ -232,7 +477,9 @@ projectsApp.openapi(
     arr.push({
       group_id: grant.groupId,
       group_name: grant.groupName,
-      role: grant.role as ProjectRole,
+      // Fold a retired stored value (`editor`/`user`/`viewer`) — the access
+      // list must never emit a role the API no longer accepts on write.
+      role: normalizeProjectRole(grant.role) ?? 'member',
     });
     groupSourcesByUser.set(m.userId, arr);
   }
@@ -250,7 +497,7 @@ projectsApp.openapi(
     .map((member) => {
       const accountRole = member.accountRole as AccountRole;
       const grant = grantsByUser.get(member.userId);
-      const projectRole = (grant?.projectRole as ProjectRole | undefined) ?? null;
+      const projectRole = normalizeProjectRole(grant?.projectRole);
       const groupSources = groupSourcesByUser.get(member.userId) ?? [];
 
       // Pure fold — see projects/access.ts for the precedence rules.
@@ -268,10 +515,10 @@ projectsApp.openapi(
         effective_project_role: fold.effective_project_role,
         has_implicit_access: isAccountManager(accountRole),
         /** What ultimately decided the effective role. UI labels with
-         *  it: "Manager (account admin)" vs "Editor (via Engineering)". */
+         *  it: "Manager (account admin)" vs "Member (via Engineering)". */
         effective_source: fold.effective_source,
         /** Every group attachment that includes this user. Lets the UI
-         *  list multi-source access ("Editor via Engineering + Viewer
+         *  list multi-source access ("Manager via Engineering + Member
          *  via Viewers") without further API calls. */
         group_sources: fold.group_sources,
         joined_at: member.joinedAt.toISOString(),
@@ -282,6 +529,13 @@ projectsApp.openapi(
          *  Group-derived expiries are surfaced per-source separately
          *  (not yet wired into group_sources — follow-up). */
         expires_at: grant?.expiresAt?.toISOString() ?? null,
+        /** Custom (IAM v1) role policies bound to this user, direct or via a
+         *  group they belong to — additive to `role`/`sources`, never folded
+         *  into `effective_project_role`. */
+        custom_role_policies: customPoliciesByUser.get(member.userId) ?? [],
+        /** IAM v2 per-resource (agent/skill) grants scoped to this user,
+         *  direct or via a group they belong to. */
+        resource_grants: resourceGrantsByUser.get(member.userId) ?? [],
       };
     })
     .sort((a, b) => {
@@ -296,6 +550,11 @@ projectsApp.openapi(
     can_manage: roleAllows(loaded.effectiveRole, 'manage'),
     viewer_user_id: loaded.userId,
     members,
+    /** Every group with SOME access to this project — a project-role grant,
+     *  a custom-role policy, or a per-resource grant — independent of the
+     *  per-user fold above. Lets the UI show group-level access directly
+     *  instead of only inferring it from members' `custom_role_policies`. */
+    group_access: groupAccess,
   });
 },
 );
@@ -419,7 +678,7 @@ projectsApp.openapi(
   const projectId = c.req.param('projectId');
   // Floor is 'read' (project membership); the real gate is the members.manage
   // leaf below, so a custom role granting ONLY members.manage (no project.write)
-  // works, and — matching the sibling approve/reject routes — a plain editor
+  // works, and — matching the sibling approve/reject routes — a plain member
   // (project.write but not members.manage) can't list pending access requests.
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -463,13 +722,13 @@ projectsApp.openapi(
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   // Approving an access request grants a project role to the requester —
   // membership management, NOT plain write. loadProjectForUser('manage') only
-  // maps to project.write (editor), so without this an editor could approve
+  // maps to project.write, so without this a non-manager could approve
   // requests and even hand out the 'manager' role. Gate on members.manage.
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
 
   const body = await readBody(c);
-  const role = body.role === undefined ? 'member' : normalizeProjectRole(body.role);
-  if (!role) return c.json({ error: 'role must be one of manager|editor|member' }, 400);
+  const role = body.role === undefined ? 'member' : parseAssignableProjectRole(body.role);
+  if (!role) return c.json({ error: PROJECT_ROLE_INPUT_ERROR }, 400);
 
   const [request] = await db
     .select()
@@ -609,9 +868,9 @@ projectsApp.openapi(
 
   const body = await readBody(c);
   const email = (typeof body.email === 'string' ? body.email : '').trim().toLowerCase();
-  const role = normalizeProjectRole(body.role);
+  const role = parseAssignableProjectRole(body.role);
   if (!email) return c.json({ error: 'email is required' }, 400);
-  if (!role) return c.json({ error: 'role must be one of manager|editor|member' }, 400);
+  if (!role) return c.json({ error: PROJECT_ROLE_INPUT_ERROR }, 400);
   const expires = parseExpiresAtBody(body.expires_at);
   if (!expires.ok) return c.json({ error: expires.error }, 400);
 
@@ -680,7 +939,7 @@ projectsApp.openapi(
     // Fire the invite email — same transport + template as account-level
     // invites, framed around this project. Fire-and-forget: the invitation row
     // already exists and we return the invite_url regardless, so we don't block
-    // the response on Mailtrap (its 10s timeout was stacking onto the request).
+    // the response on the email provider (its 10s timeout was stacking onto the request).
     // send() never throws (it returns a result object), but guard the promise
     // anyway so a transport-layer rejection can't surface as unhandled.
     const callerEmail = (c.get('userEmail') as string | undefined) ?? null;
@@ -713,7 +972,7 @@ projectsApp.openapi(
         // Optimistic: send is queued, not awaited. When delivery isn't wired up
         // we know synchronously it'll be skipped, so report that honestly.
         email_sent: emailConfigured,
-        email_skip_reason: emailConfigured ? null : 'missing_mailtrap_token',
+        email_skip_reason: emailConfigured ? null : 'email_not_configured',
         message: emailConfigured
           ? `No Kortix account for that email yet — an invitation email has been sent. They'll land on this project as ${role} when they sign up.`
           : `No Kortix account for that email yet — invitation created. Share the invite link with them; they'll land on this project as ${role} when they sign up.`,
@@ -827,6 +1086,7 @@ projectsApp.openapi(
       if (!grant || !('project_id' in grant)) return null;
       return {
         invite_id: r.inviteId,
+        email: r.email,
         // Normalize a legacy `viewer`/`user` grant to `member` so the API never
         // emits a retired role.
         project_role: normalizeProjectRole(grant.role) ?? 'member',
@@ -1025,13 +1285,13 @@ projectsApp.openapi(
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   // Member management is admin-only; loadProjectForUser('manage') now
-  // resolves to project.write (editor-tier), so we add an explicit
+  // resolves to project.write, so we add an explicit
   // stricter gate here.
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
 
   const body = await readBody(c);
-  const role = normalizeProjectRole(body.role);
-  if (!role) return c.json({ error: 'role must be one of manager|editor|member' }, 400);
+  const role = parseAssignableProjectRole(body.role);
+  if (!role) return c.json({ error: PROJECT_ROLE_INPUT_ERROR }, 400);
   const expires = parseExpiresAtBody(body.expires_at);
   if (!expires.ok) return c.json({ error: expires.error }, 400);
 
@@ -1131,73 +1391,95 @@ projectsApp.openapi(
 // role on that project. These routes work for both V1 and V2 accounts —
 // V1 just ignores the rows because V1's engine reads from iam_policies.
 
-// PATCH /:projectId/experimental — toggle a per-project experimental-feature
-// override (ported from main's unified feature-flag system). Auth-first (matches
-// the other project routes), then validate the body — so the body schema stays
-// permissive (AnyObject) and the handler returns the precise 400/403/404.
-projectsApp.openapi(
-  createRoute({
-    method: 'patch',
-    path: '/{projectId}/experimental',
-    tags: ['projects'],
-    summary: 'Set or clear a per-project experimental feature override',
-    ...auth,
-    request: {
-      params: z.object({ projectId: z.string() }),
-      body: { content: { 'application/json': { schema: AnyObject } } },
-    },
-    responses: {
-      200: json(AnyObject, 'Updated project (with experimental features)'),
-      ...errors(400, 401, 403, 404),
-    },
-  }),
-  async (c: any) => {
-    const projectId = c.req.param('projectId');
-    const body = await readBody(c);
-    const feature = body.feature;
-    const enabled = body.enabled;
-    // Floor 'read' (membership); project.customize.write is the human gate below
-    // (was 'manage' → project.write, so unchecking customize.write did nothing).
-    const loaded = await loadProjectForUser(c, projectId, 'read');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
-    // Per-agent gate: toggling experimental features is project config. A scoped
-    // agent token must hold project.customize.write (no-op for humans/PATs).
-    assertAgentScope(c, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
-    if (!isExperimentalFeatureKey(feature)) {
-      return c.json({ error: `Unknown experimental feature '${feature}'` }, 400);
-    }
-    if (enabled !== null && typeof enabled !== 'boolean') {
-      return c.json({ error: 'enabled must be a boolean or null' }, 400);
-    }
-    // FIX-J: `experimental` is a NESTED object, so a whole-object `||` merge of it
-    // would lose an update one level down when two features are toggled
-    // concurrently. Re-read + merge the CURRENT `experimental` sub-object in-SQL:
-    // set writes only `experimental.<feature>`; clear removes it (dropping the
-    // whole `experimental` key once the last override is gone, matching the old
-    // applyExperimentalOverride behavior). Every write preserves the routing pin.
-    const metadataExpr =
-      enabled === null
-        ? metadataClearSubtreeKey('experimental', feature)
-        : metadataMergeSubtree('experimental', { [feature]: enabled });
-    const [row] = await db
-      .update(projects)
-      .set({ metadata: metadataExpr, updatedAt: new Date() })
-      .where(eq(projects.projectId, projectId))
-      .returning();
-    if (!row || row.status === 'archived') return c.json({ error: 'Not found' }, 404);
-    if (feature === 'agent_tunnel') {
-      void reconcileComputerConnectors(row.accountId);
-    }
-    if (feature === 'voice') {
-      void reconcileChannelConnectors(projectId);
-    }
-    if (feature === 'llm_gateway') {
-      void propagateLlmGatewayModeToActiveSandboxes(projectId, projectLlmGatewayEnabled(row.metadata));
-    }
-    return c.json(serializeProject(row, { projectRole: loaded.projectRole, effectiveRole: loaded.effectiveRole }));
-  },
-);
+// PATCH /:projectId/features (canonical) and /:projectId/experimental
+// (compat alias — published SDKs call it) — set or clear a per-project
+// feature-flag override. Auth-first (matches the other project routes), then
+// validate the body — so the body schema stays permissive (AnyObject) and the
+// handler returns the precise 400/403/404.
+const patchFeatureFlagHandler = async (c: any) => {
+  const projectId = c.req.param('projectId');
+  // Strict body: malformed JSON is a client error, not an empty object —
+  // readBody() would swallow the parse failure and mis-report "unknown flag".
+  let body: Record<string, unknown>;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'Request body must be a JSON object' }, 400);
+  }
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return c.json({ error: 'Request body must be a JSON object' }, 400);
+  }
+  const feature = body.feature;
+  const enabled = body.enabled;
+  // Floor 'read' (membership); project.customize.write is the human gate below
+  // (was 'manage' → project.write, so unchecking customize.write did nothing).
+  const loaded = await loadProjectForUser(c, projectId, 'read');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
+  // Per-agent gate: toggling feature flags is project config. A scoped agent
+  // token must hold project.customize.write (no-op for humans/PATs).
+  assertAgentScope(c, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
+  if (!isFeatureFlagKey(feature)) {
+    return c.json({ error: `Unknown feature flag '${feature}'` }, 400);
+  }
+  if (enabled !== null && typeof enabled !== 'boolean') {
+    return c.json({ error: 'enabled must be a boolean or null' }, 400);
+  }
+  // Archived projects are read-only: reject BEFORE the write. The old order
+  // (update, then 404 on archived) committed the metadata mutation anyway.
+  if (loaded.row.status === 'archived') return c.json({ error: 'Not found' }, 404);
+  // FIX-J: `experimental` is a NESTED object, so a whole-object `||` merge of it
+  // would lose an update one level down when two flags are toggled
+  // concurrently. Re-read + merge the CURRENT `experimental` sub-object in-SQL:
+  // set writes only `experimental.<feature>`; clear removes it (dropping the
+  // whole `experimental` key once the last override is gone). The metadata key
+  // name `experimental` is a stable storage detail. Every write preserves the
+  // routing pin.
+  const metadataExpr =
+    enabled === null
+      ? metadataClearSubtreeKey('experimental', feature)
+      : metadataMergeSubtree('experimental', { [feature]: enabled });
+  const [row] = await db
+    .update(projects)
+    .set({ metadata: metadataExpr, updatedAt: new Date() })
+    .where(eq(projects.projectId, projectId))
+    .returning();
+  if (!row) return c.json({ error: 'Not found' }, 404);
+  // Convergence work (connector materialization, sandbox env fan-out) runs
+  // behind the response; runFeatureFlagToggleEffects retries once and logs
+  // failures at error level. See feature-flags/toggle-effects.ts.
+  void runFeatureFlagToggleEffects({
+    key: feature,
+    projectId,
+    accountId: row.accountId,
+    metadata: row.metadata,
+  });
+  return c.json(serializeProject(row, { projectRole: loaded.projectRole, effectiveRole: loaded.effectiveRole }));
+};
+
+for (const path of ['/{projectId}/features', '/{projectId}/experimental'] as const) {
+  projectsApp.openapi(
+    createRoute({
+      method: 'patch',
+      path,
+      tags: ['projects'],
+      summary:
+        path === '/{projectId}/features'
+          ? 'Set or clear a per-project feature-flag override'
+          : 'Set or clear a per-project feature-flag override (deprecated alias of /features)',
+      ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+        body: { content: { 'application/json': { schema: AnyObject } } },
+      },
+      responses: {
+        200: json(AnyObject, 'Updated project (with feature-flag state)'),
+        ...errors(400, 401, 403, 404),
+      },
+    }),
+    patchFeatureFlagHandler,
+  );
+}
 
 // PATCH /:projectId/sandbox-provider — set or clear the per-project sandbox-provider
 // pin (Customize → Settings). The value must be an ENABLED provider

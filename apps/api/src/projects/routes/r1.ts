@@ -1,3 +1,4 @@
+import { normalizeProjectRole } from '../../iam/role-perms';
 import { ACCOUNT_ACTIONS, PROJECT_ACTIONS, assertAuthorized, authorize, listAccessibleResources } from '../../iam';
 import { deriveRequestContext } from '../../iam/cache';
 import { setContextField } from '../../lib/request-context';
@@ -9,41 +10,25 @@ import { kickProjectTemplatePrebuilds } from '../../snapshots/builder';
 import { isAccountManager, type ProjectRole } from '../access';
 import { getBackend, hasBackend, managedGithubOwner, managedGithubToken, parseBasicAuthHeader, type GitScope } from '../git-backends';
 import {
-  ManagedRepoSeedError,
-  buildManagedRepoSeedState,
-  pushSeedFiles,
-  pushVerifiedSeed,
-} from '../managed-repo-seed';
-import {
   getGitHubAppInstallation,
   listLinkableGitHubAppInstallations,
   type GitHubAppInstallation,
   verifyGitHubAppInstallStatePayload,
   verifyGitHubInstallationAdmin,
 } from '../github';
-import { getProjectSecretValue } from '../secrets';
-import { normalizeStarterTemplateId } from '../starter';
-import {
-  buildProjectSeedFiles,
-  buildProjectSeedFilesFromItem,
-  defaultAgentFromSeedFiles,
-  normalizeMarketplaceItems,
-} from '../seed-files';
-import { getCatalogItemDetail } from '../../marketplace/catalog';
+import { getProjectSecretValueForConsumer } from '../secrets';
+import { buildProvisionContext, runProvision } from '../provision-core';
 import { loadProjectTriggers } from '../triggers';
-import { invalidateProjectMirror, remoteBranchExists } from '../git';
+import { invalidateProjectMirror } from '../git';
 import { createRoute, z } from '@hono/zod-openapi';
 import { accountGithubInstallations, projectMembers, projects } from '@kortix/db';
 import { and, desc, eq, inArray } from 'drizzle-orm';
-import { createHash, randomUUID } from 'node:crypto';
-import { enforceProjectQuota, grantProjectRole, loadProjectForUser, resolveProjectAccount, assertProjectCapability } from '../lib/access';
+import { createHash } from 'node:crypto';
+import { enforceProjectQuota, loadProjectForUser, resolveProjectAccount, assertProjectCapability } from '../lib/access';
 import { AnyObject, ProjectSchema, projectWebhooksApp, projectsApp } from '../lib/app';
-import { GitHubInstallationRequiredError, buildConnectionRef, consumeGitHubInstallationState, createGitHubInstallationInstallUrl, getAccountGitHubInstallation, getProjectGitConnection, getProjectGitRemote, listAccountGitHubInstallations, resolveGitHubImport, resolveProjectGitAuth, resolveProjectUpstream, upsertProjectGitConnection, withProjectGitAuth } from '../lib/git';
-import { metadataMerge } from '../lib/metadata-merge';
-import { normalizeProjectIcon } from '../lib/project-icon';
-import { normalizeProjectGlyph } from '../lib/project-glyph';
+import { GitHubInstallationRequiredError, buildConnectionRef, consumeGitHubInstallationState, createGitHubInstallationInstallUrl, getAccountGitHubInstallation, getProjectGitConnection, getProjectGitRemote, listAccountGitHubInstallations, resolveGitHubImport, resolveProjectGitAuth, resolveProjectUpstream, withProjectGitAuth } from '../lib/git';
 import { registerGitHubLinkedProject } from '../lib/project-registration';
-import { PROJECT_NAME_MAX_LENGTH, UUID_V4_REGEX, deriveProjectName, normalizeRepoUrl, normalizeString, readBody, requestAuditContext, serializeGitHubInstallation, serializeGitHubInstallations, serializeProject } from '../lib/serializers';
+import { UUID_V4_REGEX, deriveProjectName, normalizeRepoUrl, normalizeString, readBody, requestAuditContext, serializeGitHubInstallation, serializeGitHubInstallations, serializeProject } from '../lib/serializers';
 import { extractWebhookToken, fireGitTrigger, markGitTriggerFired, renderPromptTemplate, triggerFilterMatches, triggersPausedForProject, verifyWebhookSignature, verifyWebhookToken, webhookPayload } from '../lib/triggers';
 import {
   consumeProjectWebhookManifestRefreshBudget,
@@ -96,7 +81,12 @@ projectWebhooksApp.post('/projects/:projectId/:slug', async (c) => {
 
   const rawBody = await c.req.text();
   const secret = spec.secretEnv
-    ? await getProjectSecretValue(project.projectId, spec.secretEnv)
+    ? await getProjectSecretValueForConsumer({
+        projectId: project.projectId,
+        accountId: project.accountId,
+        name: spec.secretEnv,
+        consumer: 'connector',
+      })
     : null;
   if (!secret) {
     return c.json({ error: 'Webhook secret is not configured' }, 409);
@@ -236,7 +226,7 @@ projectsApp.openapi(
   // the UI to label effective_role. We still consult project_members
   // because the IAM engine bridges it into authorize() but doesn't
   // hand the per-row role back here — and the UI wants the original
-  // manager/editor/viewer label, not just "allowed".
+  // manager/member label, not just "allowed".
   const grants = await db
     .select({ projectId: projectMembers.projectId, projectRole: projectMembers.projectRole })
     .from(projectMembers)
@@ -245,7 +235,8 @@ projectsApp.openapi(
       eq(projectMembers.userId, scope.userId),
     ));
   const roleByProject = new Map(
-    grants.map((g) => [g.projectId, g.projectRole as ProjectRole]),
+    // Fold retired stored values rather than casting — see normalizeProjectRole.
+    grants.map((g) => [g.projectId, normalizeProjectRole(g.projectRole)]),
   );
 
   const baseWhere = and(
@@ -403,6 +394,12 @@ projectsApp.openapi(
 // registers the project.
 // Used by the web "Create project" button and `kortix ship` when a working tree
 // has no `origin` remote. BYO-repo projects go through POST / and /create-repo.
+//
+// The actual create logic lives in `../provision-core.ts`'s `runProvision`,
+// shared with the streaming variant of this route — see that file for the
+// idempotency lookup, the quota check, the unique-index-loser rollback, and
+// the seed rollback. This handler only resolves the request scope, gates it
+// on PROJECT_CREATE, and turns the result into a single JSON response.
 
 projectsApp.openapi(
   createRoute({
@@ -416,381 +413,125 @@ projectsApp.openapi(
       },
     responses: {
         201: json(z.any(), 'OK'),
-        ...errors(400, 403, 502, 503),
+        ...errors(400, 403, 409, 502, 503),
     },
   }),
   async (c: any) => {
-  const body = await readBody(c);
-  const scope = await resolveProjectAccount(c, body);
-  if (!(await authorize(scope.userId, scope.accountId, ACCOUNT_ACTIONS.PROJECT_CREATE)).allowed) {
+  const ctx = await buildProvisionContext(c);
+  if (!(await authorize(ctx.scope.userId, ctx.scope.accountId, ACCOUNT_ACTIONS.PROJECT_CREATE)).allowed) {
     return c.json({ error: 'Owner or admin role required' }, 403);
   }
 
-  // Managed-git provider, provider-agnostic via the backend registry. GitHub is
-  // the default + only active managed backend. Forgejo / Artifacts slot in here
-  // as drop-ins.
-  const provider =
-    normalizeString(body.provider) ??
-    (process.env.MANAGED_GIT_PROVIDER?.trim() || 'github');
-  if (!hasBackend(provider)) {
-    return c.json({ error: `Unsupported managed git provider "${provider}"` }, 400);
-  }
-  const backend = getBackend(provider);
-  if (!(await backend.isConfigured())) {
-    return c.json(
-      { error: `Managed git provider "${provider}" is not configured on this server` },
-      503,
-    );
-  }
-
-  const name = normalizeString(body.name) ?? normalizeString(body.project_name ?? body.projectName);
-  if (!name) return c.json({ error: 'name is required' }, 400);
-  if (!/^[a-zA-Z0-9._ -]+$/.test(name)) {
-    return c.json(
-      { error: 'name must contain only letters, numbers, spaces, hyphens, underscores or dots' },
-      400,
-    );
-  }
-  // The column is varchar(255); without this check an over-long name (users
-  // paste whole task prompts here) passes the charset regex, provisions the
-  // upstream repo, then dies on the DB insert — a 500 plus an orphaned managed
-  // repo per retry. Reject BEFORE anything is created upstream.
-  if (name.length > PROJECT_NAME_MAX_LENGTH) {
-    return c.json(
-      { error: `name must be ${PROJECT_NAME_MAX_LENGTH} characters or fewer` },
-      400,
-    );
-  }
-
-  // Optional per-project emoji from the create-project modal. Invalid values
-  // degrade to no icon rather than failing the create — the project matters,
-  // the decoration does not.
-  const icon = normalizeProjectIcon(body.icon);
-
-  // Same degrade-don't-fail rule as the icon above. If both arrive, the glyph
-  // wins and the emoji is dropped — a project shows one icon, and picking the
-  // winner here keeps the INSERT free of the delete-the-other logic that the
-  // PATCH path needs.
-  const iconGlyph = normalizeProjectGlyph(body.icon_glyph);
-
-  // "Clone project" — seed the new repo from a `registry:project` marketplace
-  // item instead of the blank starter. Resolved + type-checked BEFORE any
-  // upstream repo/DB row is created, same as the name checks above.
-  const sourceItemId = normalizeString(body.source_item_id ?? body.sourceItemId);
-  if (sourceItemId) {
-    const sourceItem = await getCatalogItemDetail(sourceItemId);
-    if (!sourceItem || sourceItem.type !== 'registry:project') {
-      return c.json({ error: `Unknown or non-cloneable project item "${sourceItemId}"` }, 400);
-    }
-  }
-  const starterTemplate = normalizeStarterTemplateId(
-    body.starter_template ?? body.starterTemplate,
-  );
-
-  // Managed repo name = a readable slug from the display name + the project's
-  // UUID, so managed repos under the shared org NEVER collide (two projects can
-  // share a name). We generate the project id up front to bake it into the repo
-  // name and reuse it as the project row id.
-  const projectId = randomUUID();
-  const baseSlug = (
-    name.trim().toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') ||
-    'kortix-project'
-  ).slice(0, 40);
-  const repoSlug = `${baseSlug}-${projectId}`;
-  const defaultBranch = normalizeString(body.default_branch ?? body.defaultBranch) ?? 'main';
-
-  // Provision always mints a brand-new managed repo, so the quota check is a
-  // straight count — no repoUrl to treat as an idempotent re-link. Runs after
-  // request validation but before we create anything upstream.
-  const provisionQuota = await enforceProjectQuota(c, scope.accountId);
-  if (provisionQuota) return provisionQuota;
-
-  let provisioned: Awaited<ReturnType<typeof backend.createRepo>>;
-  try {
-    provisioned = await backend.createRepo({
-      accountId: scope.accountId,
-      projectId,
-      slug: repoSlug,
-      defaultBranch,
-      isPrivate: true,
-    });
-  } catch (error) {
-    return c.json({ error: (error as Error).message || 'Failed to provision managed repo' }, 502);
-  }
-
-  const authMethod = provider === 'github' ? 'github_app' : 'managed';
-  const now = new Date();
-
-  // Seed the starter into the empty repo when the caller has no local working
-  // tree to push (web "Create project"). `kortix ship` leaves this false and
-  // pushes its own files instead (apps/cli/src/commands/ship.ts) — a plain,
-  // non-force push, so seeding that repo would reject it. Resolved BEFORE the
-  // insert so the row records the INTENT: a crash between the insert and a
-  // verified seed then leaves `{ expected: true, seeded: false }`, which
-  // `shouldSelfHealManagedRepoSeed` repairs on next access instead of leaving a
-  // permanently dead project that reports itself active.
-  const seedStarter = body.seed_starter === true || body.seedStarter === true || !!sourceItemId;
-  const marketplaceItems = normalizeMarketplaceItems(body.marketplace_items ?? body.marketplaceItems);
-  const initialSeedState = buildManagedRepoSeedState(
-    seedStarter
-      ? { seeded: false, expected: true, reason: 'pending', at: now.toISOString(), template: sourceItemId ?? starterTemplate }
-      : { seeded: false, expected: false, reason: 'caller_opted_out', at: now.toISOString() },
-  );
-
-  const [row] = await db
-    .insert(projects)
-    .values({
-      projectId,
-      accountId: scope.accountId,
-      name,
-      repoUrl: provisioned.upstreamUrl,
-      defaultBranch: provisioned.defaultBranch,
-      // The starter this route seeds (buildProjectSeedFiles, below) ships
-      // kortix.yaml (kortix_version 2) — record that as the canonical path so
-      // a project created here is never labeled with a stale v1 filename. A
-      // CLI `kortix ship` that pushes its own files instead of seeding still
-      // scaffolded via `kortix init` (same @kortix/starter, same kortix.yaml),
-      // so this holds for both the web and CLI creation paths.
-      manifestPath: 'kortix.yaml',
-      status: 'active',
-      metadata: {
-        git: {
-          url: provisioned.upstreamUrl,
-          upstream_url: provisioned.upstreamUrl,
-          default_branch: provisioned.defaultBranch,
-          provider,
-          managed: true,
-          auth: {
-            method: authMethod,
-            ref: provisioned.credentialRef,
-            installation_id: provisioned.installationId,
-          },
-          repo_id: provisioned.externalRepoId,
-          owner: provisioned.repoOwner,
-          name: provisioned.repoName,
-          // Scaffold-seed intent + outcome. Without this, an empty managed repo
-          // is indistinguishable from a seeded one and nothing can repair it —
-          // the defect behind "brand-new project has no files, no agents, no
-          // skills, and session start 500s on refs/heads/main".
-          seed: initialSeedState,
-        },
-        // MANDATORY DECLARED AGENTS (docs/specs/2026-07-05-agent-first-config-
-        // unification.md §2.1/§3 Phase 2): every project created through this
-        // route is "new" in the spec's sense — subject to declared-agent
-        // enforcement from birth, regardless of the platform-wide
-        // KORTIX_REQUIRE_DECLARED_AGENTS flag (see projectRequiresDeclaredAgents /
-        // createProjectSession). Pre-existing projects (this flag absent/false)
-        // keep the v1 adopt-to-govern behavior untouched.
-        require_declared_agents: true,
-        ...(iconGlyph ? { icon_glyph: iconGlyph } : icon ? { icon } : {}),
-      },
-      updatedAt: now,
-    })
-    .returning();
-  setContextField('projectId', row.projectId);
-
-  await grantProjectRole({
-    accountId: scope.accountId,
-    projectId: row.projectId,
-    userId: scope.userId,
-    role: 'manager',
-    grantedBy: scope.userId,
+  const result = await runProvision(ctx, () => {
+    // The JSON route reports one outcome, not progress. Phases are dropped
+    // here on purpose — /provision's response shape is depended on by the CLI
+    // (`kortix ship`) and the SDK and must not change.
   });
-  await upsertProjectGitConnection({
-    accountId: scope.accountId,
-    projectId: row.projectId,
-    provider,
-    repoUrl: provisioned.upstreamUrl,
-    upstreamUrl: provisioned.upstreamUrl,
-    managed: true,
-    repoOwner: provisioned.repoOwner,
-    repoName: provisioned.repoName,
-    externalRepoId: provisioned.externalRepoId,
-    defaultBranch: provisioned.defaultBranch,
-    authMethod,
-    installationId: provisioned.installationId,
-    credentialRef: provisioned.credentialRef,
-    visibility: 'private',
-    status: 'connected',
-    // `seeded: false` used to be hard-coded here and never updated, so the
-    // connection row claimed every project was unseeded — including seeded
-    // ones. Record the seed INTENT instead; the authoritative, updated state
-    // lives on `projects.metadata.git.seed` (see managed-repo-seed.ts).
-    metadata: { seed_expected: initialSeedState.expected },
-  });
-  const connRef = buildConnectionRef(
-    row,
-    getProjectGitRemote(row, await getProjectGitConnection(row.projectId)),
-  );
+  return c.json(result.body, result.status);
+},
+);
 
-  // Resolve a push credential for seeding / the CLI's first push. The managed
-  // GitHub backend mints an installation token.
-  let internalPushToken = provisioned.initialToken;
-  let exportablePushToken = provisioned.initialToken;
-  if (!internalPushToken) {
-    const resolved = await resolveProjectGitAuth(row);
-    internalPushToken = resolved.auth?.token ?? null;
-    exportablePushToken = resolved.authSource === 'pat'
-      ? null
-      : resolved.auth?.token ?? null;
-  }
-  const writeUpstream = internalPushToken
-    ? backend.buildUpstream(connRef, internalPushToken, 'write')
-    : null;
-  const exportableCredential = exportablePushToken
-    ? parseBasicAuthHeader(
-        backend.buildUpstream(connRef, exportablePushToken, 'write').headers.Authorization,
-      )
-    : null;
-
-  // If seeding fails we roll back the orphan repo + project so we never leave a
-  // half-created project behind — and, since #5871, "fails" includes "the
-  // backend accepted the push but the default branch is not there". A project
-  // whose repo has no default branch is structurally unusable (no files, no
-  // agents, no skills, manifest detection falls back to v1, session start dies
-  // on `couldn't find remote ref refs/heads/main`), so it must never be
-  // reported as `status: active`.
-  let seeded = false;
-  if (seedStarter) {
-    try {
-      if (!internalPushToken) throw new Error('no push credential resolved for seeding');
-      const seed = sourceItemId
-        ? await buildProjectSeedFilesFromItem({
-            id: sourceItemId,
-            projectName: name,
-            repoFullName: repoSlug,
-            extraMarketplaceItems: marketplaceItems,
-            now: now.toISOString(),
-          })
-        : await buildProjectSeedFiles({
-            projectName: name,
-            repoFullName: repoSlug,
-            template: starterTemplate,
-            marketplaceItems,
-            now: now.toISOString(),
-          });
-      // Seed the project tip == the deterministic scaffold root (the constant
-      // 'kortix-project' render), byte-identical to the image-baked scaffold
-      // (snapshots/build-context.ts). This lets a fresh session's fork REUSE
-      // the warm-seed's already-opencode-initialized /workspace with ZERO
-      // network (git.ts baked-checkout reuse fires when baseSha == scaffold
-      // root) — the single biggest spawn-latency win. The per-project name
-      // customization is applied in-sandbox at fork (not committed to the
-      // shared remote root) so the warm reuse is never broken by a divergent tip.
-      await pushVerifiedSeed({
-        projectId: row.projectId,
-        branch: provisioned.defaultBranch,
-        push: () =>
-          pushSeedFiles({
-            backend,
-            connRef,
-            token: internalPushToken as string,
-            branch: provisioned.defaultBranch,
-            files: seed.files,
-            baseFiles: seed.baseFiles,
-          }),
-        remoteHasBranch: () =>
-          remoteBranchExists(
-            {
-              projectId: row.projectId,
-              repoUrl: writeUpstream?.url ?? connRef.upstreamUrl,
-              defaultBranch: provisioned.defaultBranch,
-              manifestPath: row.manifestPath,
-              gitAuthToken: internalPushToken,
-              gitAuthHeaders: writeUpstream?.headers ?? {},
-            },
-            provisioned.defaultBranch,
-          ),
-      });
-      seeded = true;
-
-      // Mirror the seeded manifest's declared default agent into
-      // project.metadata (see defaultAgentFromSeedFiles in ../seed-files.ts)
-      // so session creation resolves it from birth instead of falling back
-      // to the non-binding 'default' sentinel — see
-      // llm-gateway/resolution/default-model.ts's cachedSessionAgent for the
-      // defense-in-depth fallback that also covers pre-existing/CLI-created
-      // projects where this mirror is still stale.
-      const seededDefaultAgent = defaultAgentFromSeedFiles(seed.files, row.manifestPath);
-      const verifiedSeedState = buildManagedRepoSeedState({
-        seeded: true,
-        expected: true,
-        reason: 'seeded',
-        at: new Date().toISOString(),
-        template: sourceItemId ?? starterTemplate,
-      });
-      row.metadata = {
-        ...((row.metadata as Record<string, unknown> | null) ?? {}),
-        ...(seededDefaultAgent ? { default_agent: seededDefaultAgent } : {}),
-        git: {
-          ...(((row.metadata as { git?: Record<string, unknown> } | null)?.git) ?? {}),
-          seed: verifiedSeedState,
-        },
-      };
-      // Persist ONLY the keys this step owns via a SQL-side atomic merge (never
-      // the whole object) so this creation-seed write can't revert a pin the
-      // prebuild kick may have activated concurrently. `row.metadata` above is
-      // the in-memory copy the creation response serializes.
-      await db
-        .update(projects)
-        .set({
-          metadata: metadataMerge({
-            ...(seededDefaultAgent ? { default_agent: seededDefaultAgent } : {}),
-            git: { seed: verifiedSeedState },
-          }),
-          updatedAt: new Date(),
-        })
-        .where(eq(projects.projectId, row.projectId))
-        .catch(() => {}); // best-effort — a mirror-write hiccup must not fail project creation
-    } catch (error) {
-      const stage = error instanceof ManagedRepoSeedError ? error.stage : 'push';
-      console.error(
-        `[projects] provision rolled back project=${row.projectId} account=${scope.accountId} ` +
-          `repo=${connRef.repoName ?? connRef.upstreamUrl} stage=${stage}:`,
-        error instanceof Error ? error.message : error,
-      );
-      try { await backend.deleteRepo(connRef); } catch { /* best effort */ }
-      await db.delete(projects).where(eq(projects.projectId, row.projectId)).catch(() => {});
-      return c.json(
-        {
-          error: (error as Error).message || 'Failed to seed project repo',
-          code: stage === 'verify' ? 'seed_verification_failed' : 'seed_push_failed',
-        },
-        502,
-      );
-    }
-  } else {
-    // Legal, but never silent: the caller owns this repo's first commit. Log it
-    // so an empty managed repo in production is always attributable.
-    console.warn(
-      `[projects] provisioned managed repo WITHOUT a scaffold seed project=${row.projectId} account=${scope.accountId} repo=${connRef.repoName ?? connRef.upstreamUrl} — the caller must push the first commit (kortix ship); the project has no default branch yet`,
-    );
-  }
-
-  if (seeded) {
-    kickProjectTemplatePrebuilds(
-      {
-        projectId: row.projectId,
-        repoUrl: writeUpstream?.url ?? row.repoUrl,
-        defaultBranch: row.defaultBranch,
-        manifestPath: row.manifestPath,
-        gitAuthToken: internalPushToken,
-        gitAuthHeaders: writeUpstream?.headers ?? {},
+// POST /v1/projects/provision-stream
+// Same create as POST /provision, but reports which phase it is in over
+// Server-Sent Events instead of returning a single response at the end.
+//
+// A SECOND ROUTE rather than a changed one: /provision's single-201 shape is
+// depended on by the CLI (`kortix ship`) and the SDK's provisionProject. Both
+// routes call the SAME `runProvision` — there is exactly one implementation
+// of "create a repo, insert a row, seed it, roll back on failure", and there
+// must stay exactly one. Two copies diverge, and the copy that diverges is
+// the one that leaves an orphaned managed repo behind.
+//
+// Framing is a raw Response + ReadableStream — this codebase's one SSE
+// pattern (see tunnel/routes/permission-requests.ts's GET /stream), not
+// `hono/streaming`'s `streamSSE`, which nothing else in apps/api uses.
+// Unlike that tunnel stream, frames here carry NO `event:` line — see the
+// `write` comment below for why.
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/provision-stream',
+    tags: ['projects'],
+    summary: 'POST /provision-stream',
+    ...auth,
+      request: {
+        body: { content: { 'application/json': { schema: AnyObject } } },
       },
-      { accountId: scope.accountId, source: 'project-create' },
-    );
-  }
-
-  return c.json(
-    {
-      ...serializeProject(row, { projectRole: 'manager', effectiveRole: 'manager' }),
-      push_token: exportablePushToken,
-      git_username: exportableCredential?.username ?? null,
-      repo_id: provisioned.externalRepoId,
-      seeded,
+    responses: {
+        200: {
+          description:
+            'A text/event-stream of provision phases, always ending in a terminal ' +
+            '`done` or `error` frame — never a bare close.',
+          content: { 'text/event-stream': { schema: z.any() } },
+        },
+        ...errors(403),
     },
-    201,
-  );
+  }),
+  async (c: any) => {
+  const ctx = await buildProvisionContext(c);
+  // Same gate as POST /provision, and it MUST run before the stream opens. An
+  // unauthorized caller gets a normal JSON 403 — never a 200 SSE stream that
+  // then carries an error frame; a 200 status has to mean "authorized", or
+  // clients learn to keep reading a 200 body to find out whether they were.
+  if (!(await authorize(ctx.scope.userId, ctx.scope.accountId, ACCOUNT_ACTIONS.PROJECT_CREATE)).allowed) {
+    return c.json({ error: 'Owner or admin role required' }, 403);
+  }
+
+  return new Response(
+    new ReadableStream({
+      async start(controller) {
+        const encoder = new TextEncoder();
+
+        // Data-only framing: `data: <json>\n\n`, no `event:` line. Every
+        // payload already carries a `type` field ('phase' | 'done' |
+        // 'error') — a discriminated union the SDK switches on. Adding an
+        // `event:` name would duplicate that discriminator in two places
+        // that can drift out of sync with each other. Do not "fix" this by
+        // adding one back.
+        const write = (data: unknown) => {
+          try {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+          } catch {
+            // The client disconnected. Provisioning has no AbortSignal (see
+            // ProvisionContext in ../provision-core.ts) and keeps running to
+            // completion regardless — cancelling between backend.createRepo
+            // and the DB insert is exactly how an upstream repo gets
+            // orphaned, so a lost reader must not cancel it.
+          }
+        };
+
+        try {
+          const result = await runProvision(ctx, (phase) => write({ type: 'phase', phase }));
+          if (result.status === 201) {
+            write({ type: 'done', project: result.body });
+          } else {
+            // `status` alongside the body's `error`/`code` — see
+            // `ProvisionStreamEvent`'s doc comment in the SDK
+            // (`packages/sdk/src/core/rest/projects-client/projects.ts`).
+            // Spread first, explicit field last: `result.body` never carries
+            // a `status` key today, but this ordering means it never could
+            // silently shadow the real one if that changed.
+            write({ type: 'error', ...(result.body as object), status: result.status });
+          }
+        } catch (error) {
+          // The stream must never end in a bare close — that would hand the
+          // client an undefined project id. This catch is what guarantees a
+          // terminal frame even when runProvision THROWS instead of
+          // returning an error result.
+          write({ type: 'error', error: (error as Error).message || 'Failed to provision project' });
+        } finally {
+          try { controller.close(); } catch {}
+        }
+      },
+    }),
+    {
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+      },
+    },
+  ) as any;
 },
 );
 
@@ -894,7 +635,7 @@ projectsApp.openapi(
   const loaded = await loadProjectForUser(c, projectId, 'write');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   // Inviting a git collaborator grants a human standing access to the repo —
-  // membership-tier, not plain write. Gate on members.manage so an editor (or a
+  // membership-tier, not plain write. Gate on members.manage so a member (or a
   // scoped agent via the fold) can't add external collaborators.
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
 

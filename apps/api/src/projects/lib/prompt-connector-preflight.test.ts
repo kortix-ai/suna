@@ -8,7 +8,7 @@ import { unionRequiredAliases } from './prompt-connector-preflight';
 describe('unionRequiredAliases', () => {
   test('a session-declared alias counts even with nothing connected to it', () => {
     // The case the whole column exists for. A binding row cannot express it
-    // (profile_id is NOT NULL), so if this source were dropped, selecting an
+    // (connection_id is NOT NULL), so if this source were dropped, selecting an
     // unconnected connector in the UI would record an intent nothing ever reads.
     expect(
       unionRequiredAliases({ sessionRequired: ['gmail'], manifestRequired: [], boundAliases: [] }),

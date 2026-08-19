@@ -10,7 +10,7 @@ import { accountTokens, accounts, projects } from '@kortix/db';
 import { db } from '../shared/db';
 import {
   revokeAllAccountTokensForUser,
-  revokeSessionExecutorTokens,
+  revokeSessionConnectorTokens,
 } from '../repositories/account-tokens';
 
 const ACCOUNT = crypto.randomUUID();
@@ -92,7 +92,7 @@ describe('revokeAllAccountTokensForUser', () => {
   });
 });
 
-describe('revokeSessionExecutorTokens', () => {
+describe('revokeSessionConnectorTokens', () => {
   test('revokes every live token for ONE session, leaving other sessions alone', async () => {
     // A session can hold several tokens — each re-provision mints another under
     // the same session_id — so revoking "the" token is not enough.
@@ -100,7 +100,7 @@ describe('revokeSessionExecutorTokens', () => {
     const afterRestart = await seedToken(USER, { projectId: PROJECT, sessionId: 'sess-gone' });
     const neighbour = await seedToken(USER, { projectId: PROJECT, sessionId: 'sess-alive' });
 
-    const revoked = await revokeSessionExecutorTokens('sess-gone', ACCOUNT);
+    const revoked = await revokeSessionConnectorTokens('sess-gone', ACCOUNT);
 
     expect(revoked).toBe(2);
     expect(await statusOf(first)).toBe('revoked');
@@ -110,13 +110,13 @@ describe('revokeSessionExecutorTokens', () => {
 
   test('will not reach across accounts on a session id', async () => {
     const mine = await seedToken(USER, { projectId: PROJECT, sessionId: 'sess-shared-id' });
-    expect(await revokeSessionExecutorTokens('sess-shared-id', OTHER_ACCOUNT)).toBe(0);
+    expect(await revokeSessionConnectorTokens('sess-shared-id', OTHER_ACCOUNT)).toBe(0);
     expect(await statusOf(mine)).toBe('active');
   });
 
   test('is idempotent — a second call revokes nothing further', async () => {
     await seedToken(USER, { projectId: PROJECT, sessionId: 'sess-twice' });
-    expect(await revokeSessionExecutorTokens('sess-twice', ACCOUNT)).toBe(1);
-    expect(await revokeSessionExecutorTokens('sess-twice', ACCOUNT)).toBe(0);
+    expect(await revokeSessionConnectorTokens('sess-twice', ACCOUNT)).toBe(1);
+    expect(await revokeSessionConnectorTokens('sess-twice', ACCOUNT)).toBe(0);
   });
 });

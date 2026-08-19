@@ -8,7 +8,7 @@ import { KortixAsterisk } from '@/components/ui/kortix-asterisk';
 import { Button } from '@/components/ui/marketing/button';
 import KortixGrid from '@/components/ui/marketing/gridder';
 import { KortixLetterField } from '@/components/ui/marketing/kortix-letter-field';
-import { Icon } from '@/features/icon/icon';
+import { Github } from '@/features/icon/icons/github';
 import { useCopy } from '@/hooks/use-copy';
 import { KORTIX_CLI_INSTALL_COMMAND } from '@/lib/kortix-cli';
 import { cn } from '@/lib/utils';
@@ -440,7 +440,7 @@ function ConnectorsRequestPath() {
           <Server className="text-foreground size-4 shrink-0" />
           <span className="font-medium">
             {tI18nHardcoded.raw(
-              'autoAppPublicMarketingDevelopersPageJsxTextKortixExecutor80880ab2',
+              'autoAppPublicMarketingDevelopersPageJsxTextKortixConnector80880ab2',
             )}
           </span>
           <span className="text-muted-foreground ml-auto text-[10px] sm:text-[11px]">
@@ -488,9 +488,9 @@ function HeroWorkspace() {
           {tI18nHardcoded.raw('autoAppPublicMarketingDevelopersPageJsxTextTheRepoIsf35cb375')}
         </div>
         <div className="text-foreground px-4 py-3 font-mono text-sm">
-          {REPO_TREE.map(([name, depth, kind], i) => (
+          {REPO_TREE.map(([name, depth, kind]) => (
             <div
-              key={i}
+              key={name}
               className="flex items-center gap-2 py-0.5"
               style={{ paddingLeft: `${depth * 14}px` }}
             >
@@ -1122,7 +1122,7 @@ export default function DevelopersPage() {
             },
             {
               icon: Plug,
-              title: 'Self-healing integrations',
+              title: 'Self-healing connections',
               body: 'When a token expires or a service blips, Kortix refreshes it or asks you to reconnect in plain language — never a cryptic error.',
             },
             {
@@ -1197,7 +1197,7 @@ export default function DevelopersPage() {
                       {tI18nHardcoded.raw(
                         'autoAppPublicMarketingDevelopersPageJsxTextStarOnGitHub32a38178',
                       )}
-                      <Icon.Github />
+                      <Github />
                     </Link>
                   </Button>
                 </div>

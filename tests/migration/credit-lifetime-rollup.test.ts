@@ -182,8 +182,10 @@ suite('credit_accounts lifetime_* rollup (throwaway Postgres)', () => {
     // does not, which is how the missing grants shipped. Recreate that
     // environment, then write the ledger as service_role through the trigger.
     const account = newAccount();
-    psql(`revoke execute on function kortix.credit_ledger_lifetime_deltas(numeric, text) from public`);
-    psql(`revoke execute on function kortix.apply_credit_ledger_lifetime_rollup() from public`);
+    psql(
+      'revoke execute on function kortix.credit_ledger_lifetime_deltas(numeric, text) from public',
+    );
+    psql('revoke execute on function kortix.apply_credit_ledger_lifetime_rollup() from public');
     psql(
       `set role service_role;
        insert into kortix.credit_ledger (account_id, amount_precise, type) values ('${account}', 25, 'tier_grant');
@@ -194,5 +196,6 @@ suite('credit_accounts lifetime_* rollup (throwaway Postgres)', () => {
 });
 
 if (!dockerOk) {
+  // biome-ignore lint/suspicious/noSkippedTests: This integration suite requires a running Docker daemon.
   test.skip('credit lifetime rollup (docker unavailable — skipped)', () => {});
 }

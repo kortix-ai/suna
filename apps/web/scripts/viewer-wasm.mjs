@@ -24,10 +24,6 @@ export const VIEWER_WASM_ASSETS = [
     from: '../node_modules/@extend-ai/react-xlsx/dist/duke_sheets_wasm_bg.wasm',
     to: '../public/react-xlsx/duke_sheets_wasm_bg.wasm',
   },
-  {
-    from: '../node_modules/@extend-ai/react-pptx/dist/pptx_wasm_bg.wasm',
-    to: '../public/react-pptx/pptx_wasm_bg.wasm',
-  },
 ];
 
 function resolve(relativePath) {

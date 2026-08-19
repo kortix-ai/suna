@@ -45,7 +45,7 @@ export function Panel({
         <div className="border-border flex items-center justify-between border-b px-4 py-2.5">
           <span className="text-foreground text-sm font-semibold">
             {title}
-            {count && <span className="text-muted-foreground ml-1.5 font-normal">{count}</span>}
+            {count ? <span className="text-muted-foreground ml-1.5 font-normal">{count}</span> : null}
           </span>
           {action}
         </div>
@@ -88,7 +88,7 @@ export function Row({
   );
 }
 
-/** Real brand logo (favicon) on a neutral tile — used for Integrations + Models. */
+/** Real brand logo (favicon) on a neutral tile — used for Connectors + Models. */
 export function BrandLogo({
   domain,
   alt,
@@ -136,6 +136,8 @@ export function StatusDot({ on, label }: { on: boolean; label?: [string, string]
   );
 }
 
+const knob = <span className="size-4 rounded-full bg-white shadow" />;
+
 export function Toggle({ on, onClick }: { on: boolean; onClick?: () => void }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const className = cn(
@@ -143,7 +145,6 @@ export function Toggle({ on, onClick }: { on: boolean; onClick?: () => void }) {
     on ? 'bg-kortix-green justify-end' : 'bg-muted-foreground/20 justify-start',
     onClick && 'cursor-pointer',
   );
-  const knob = <span className="size-4 rounded-full bg-white shadow" />;
   if (!onClick) return <span className={className}>{knob}</span>;
   return (
     <button

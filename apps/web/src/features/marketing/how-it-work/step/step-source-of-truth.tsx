@@ -27,17 +27,17 @@ import { WebPanelWrapper } from '../web-panel-wrapper';
  *     that it is hidden from the model.
  * Northwind is a placeholder, not a customer.
  */
-const MANIFEST: { line: string; tone?: 'muted' | 'accent' }[] = [
-  { line: 'kortix_version: 2' },
-  { line: 'default_agent: kortix' },
-  { line: 'agents:' },
-  { line: '  kortix:' },
-  { line: '    connectors: all' },
-  { line: '    secrets: all' },
-  { line: '    skills: all' },
-  { line: '  invoice-clerk:' },
-  { line: '    connectors: [gmail-read]', tone: 'accent' },
-  { line: '    skills: [reconcile-invoices]', tone: 'accent' },
+const MANIFEST: { id: string; line: string; tone?: 'muted' | 'accent' }[] = [
+  { id: 'version', line: 'kortix_version: 2' },
+  { id: 'default-agent', line: 'default_agent: kortix' },
+  { id: 'agents', line: 'agents:' },
+  { id: 'kortix-agent', line: '  kortix:' },
+  { id: 'kortix-connectors', line: '    connectors: all' },
+  { id: 'kortix-secrets', line: '    secrets: all' },
+  { id: 'kortix-skills', line: '    skills: all' },
+  { id: 'invoice-clerk-agent', line: '  invoice-clerk:' },
+  { id: 'invoice-clerk-connectors', line: '    connectors: [gmail-read]', tone: 'accent' },
+  { id: 'invoice-clerk-skills', line: '    skills: [reconcile-invoices]', tone: 'accent' },
 ];
 
 /**
@@ -87,13 +87,16 @@ export function StepSourceOfTruth(): ReactNode {
       <div className="grid gap-3 sm:grid-cols-2">
         <Panel title="kortix.yaml" count="omit a grant and it is none">
           <div className="bg-background px-4 py-3">
-            <pre className="overflow-x-auto font-mono text-[11.5px] leading-[1.75]">
+            <pre
+              // biome-ignore lint/a11y/noNoninteractiveTabindex: Keyboard users must be able to scroll this overflowing code region, as required by Axe.
+              tabIndex={0}
+              aria-label="Kortix project manifest"
+              className="overflow-x-auto font-mono text-[11.5px] leading-[1.75]"
+            >
               <code>
-                {MANIFEST.map((entry, index) => (
+                {MANIFEST.map((entry) => (
                   <div
-                    // Fixed, ordered snippet: the index is the identity of the
-                    // line, and the blank lines are not unique strings.
-                    key={`manifest-${index}`}
+                    key={entry.id}
                     className={
                       entry.tone === 'muted'
                         ? 'text-muted-foreground/55'

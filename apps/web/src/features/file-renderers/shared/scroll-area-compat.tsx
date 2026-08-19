@@ -29,7 +29,25 @@ type ScrollAreaCompatProps = Omit<
    */
   scrollbarGutter?: boolean;
   viewportClassName?: string;
-  viewportProps?: React.ComponentProps<typeof ScrollAreaPrimitive.Viewport>;
+  /**
+   * `ref` is typed by hand here (a plain `(instance) => void` callback plus
+   * `RefObject`) instead of via `React.ComponentProps<typeof
+   * ScrollAreaPrimitive.Viewport>`: Radix's ref type is baked into its own
+   * compiled `.d.ts`, independently instantiated from whatever callers pass
+   * (e.g. `@extend-ai/react-xlsx`'s `viewportProps.ref`), and `@types/react`
+   * 19.2's ref-cleanup-return branding makes those two independently
+   * instantiated `Ref<HTMLDivElement>` types structurally incompatible even
+   * though they're identical in shape (TS reports "two different types with
+   * this name exist, but they are unrelated"). A plain `=> void` callback
+   * sidesteps the branded cleanup-return type entirely — TS's "a function
+   * returning anything is assignable where `void` is expected" rule then
+   * accepts any caller's ref callback. `ref` is destructured out below and
+   * merged with `viewportRef` — see `mergeRefs` — so it never needs to
+   * satisfy Radix's own nominal type anyway.
+   */
+  viewportProps?: React.ComponentPropsWithoutRef<typeof ScrollAreaPrimitive.Viewport> & {
+    ref?: ((instance: HTMLDivElement | null) => void) | React.RefObject<HTMLDivElement | null> | null;
+  };
   viewportRef?: React.Ref<HTMLDivElement>;
 };
 
