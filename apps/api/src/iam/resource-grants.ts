@@ -400,6 +400,7 @@ export async function upsertResourceGrant(input: {
       object: { type: input.resourceType as ObjectGrantType, id: input.resourceId },
       expiresAt: input.expiresAt ?? null,
       source: 'manual',
+      grantedBy: input.grantedBy,
     });
     assignmentId = assignment.assignmentId;
   } catch (err) {

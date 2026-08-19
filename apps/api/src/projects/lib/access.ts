@@ -308,6 +308,9 @@ export async function grantProjectRole(input: {
       scope: { type: 'project', id: input.projectId },
       expiresAt: input.expiresAt ?? null,
       source: 'manual',
+      // The human who granted it. `SYSTEM_ACTOR` only says "this route already
+      // authorized the writer"; it does not mean nobody granted this.
+      grantedBy: input.grantedBy,
     });
   } catch (err) {
     console.warn('[projects] canonical project-role assignment failed', {

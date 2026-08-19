@@ -270,6 +270,9 @@ projectsApp.openapi(
       customRoleBindings({
         accountId: loaded.row.accountId,
         reachingProjectId: loaded.row.projectId,
+        // member/group only, as the legacy query said in so many words: a
+        // service account is a machine identity, not a row on a people list.
+        principalTypes: ['member', 'group'],
       }),
       // Per-object (agent/skill) grants for this project.
       objectGrantRows({ accountId: loaded.row.accountId, projectId: loaded.row.projectId }),

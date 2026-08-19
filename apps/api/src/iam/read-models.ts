@@ -384,6 +384,16 @@ export interface CustomRoleBinding {
 export async function customRoleBindings(filter: {
   accountId: string;
   principalType?: LegacyPrincipalType;
+  /**
+   * Restrict to these principal KINDS, any id.
+   *
+   * The project access screen wants `['member','group']`: a service account is
+   * not a human to fold onto a members list, and the legacy query it replaced
+   * said exactly that (`inArray(iam_policies.principal_type, ['member','group'])`).
+   * Without it a `token` binding falls through the reader's member/else branch
+   * and renders as a nameless "Group".
+   */
+  principalTypes?: LegacyPrincipalType[];
   principalId?: string;
   principals?: Array<{ type: LegacyPrincipalType; id: string }>;
   scopeType?: ScopeType;
@@ -404,6 +414,13 @@ export async function customRoleBindings(filter: {
     const canonical = legacyToCanonicalPrincipal(filter.principalType);
     if (!canonical) return [];
     clauses.push(eq(roleAssignments.principalType, canonical));
+  }
+  if (filter.principalTypes) {
+    const canonical = filter.principalTypes
+      .map(legacyToCanonicalPrincipal)
+      .filter((x): x is 'user' | 'group' | 'service_account' => x !== null);
+    if (canonical.length === 0) return [];
+    clauses.push(inArray(roleAssignments.principalType, canonical));
   }
   if (filter.principalId) clauses.push(eq(roleAssignments.principalId, filter.principalId));
   if (filter.principals) {

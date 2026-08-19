@@ -402,3 +402,28 @@ describe('kortix access revoke', () => {
     expect(stripAnsi(stdout)).toContain(`Revoked access for ${USER}`);
   });
 });
+
+// P7 live check, 2026-08-19. `grant --user <email>` resolves an email through
+// the member directory; `assignments --principal user:<email>` sent it straight
+// through as `principal_id` and the server answered
+// `HTTP 400: principal_id must be a UUID`. One identifier, two verbs, one
+// resolution — the email a person just granted to has to be listable.
+describe('kortix access assignments --principal', () => {
+  test('resolves an email to the user id before filtering', async () => {
+    const code = await runAccess(['assignments', '--account', '--principal', 'user:alice@corp.com']);
+    expect(code).toBe(0);
+    const listed = requests.find((r) => r.method === 'GET' && r.url.includes('/iam/assignments?'));
+    expect(listed).toBeDefined();
+    expect(listed!.url).toContain(`principal_id=${USER}`);
+    expect(listed!.url).toContain('principal_type=user');
+    expect(listed!.url).not.toContain('alice%40corp.com');
+  });
+
+  test('passes a uuid through without a directory lookup', async () => {
+    const code = await runAccess(['assignments', '--account', '--principal', `user:${USER}`]);
+    expect(code).toBe(0);
+    const listed = requests.find((r) => r.method === 'GET' && r.url.includes('/iam/assignments?'));
+    expect(listed!.url).toContain(`principal_id=${USER}`);
+    expect(listed!.url).toContain('principal_type=user');
+  });
+});

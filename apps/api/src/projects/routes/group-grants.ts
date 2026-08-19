@@ -231,7 +231,7 @@ projectsApp.openapi(
   // re-deriving a different action". Best-effort: the mirror trigger on
   // `project_group_grants` wrote the same canonical row inside the statement
   // above, so a failure costs the audit event, not the grant.
-  await mirrorGroupGrant(loaded.row.accountId, projectId, groupId, role, expires.value ?? null);
+  await mirrorGroupGrant(loaded.row.accountId, projectId, groupId, role, expires.value ?? null, loaded.userId);
   await invalidateIamCacheForGroup(groupId);
 
   return c.json({ project_id: projectId, group_id: groupId, role }, 201);
@@ -302,7 +302,7 @@ projectsApp.openapi(
     .returning({ groupId: projectGroupGrants.groupId });
 
   if (result.length === 0) return c.json({ error: 'grant not found' }, 404);
-  await mirrorGroupGrant(loaded.row.accountId, projectId, groupId, role, expires.value ?? null);
+  await mirrorGroupGrant(loaded.row.accountId, projectId, groupId, role, expires.value ?? null, loaded.userId);
   await invalidateIamCacheForGroup(groupId);
   return c.json({ project_id: projectId, group_id: groupId, role: body.role });
 },
@@ -323,6 +323,7 @@ async function mirrorGroupGrant(
   groupId: string,
   role: ProjectRole,
   expiresAt: Date | null,
+  grantedBy: string,
 ): Promise<void> {
   try {
     await assignRole(SYSTEM_ACTOR, accountId, {
@@ -331,6 +332,9 @@ async function mirrorGroupGrant(
       scope: { type: 'project', id: projectId },
       expiresAt,
       source: 'manual',
+      // `SYSTEM_ACTOR` is about writer AUTHORIZATION, not about provenance —
+      // the legacy row records the granter and the canonical one must too.
+      grantedBy,
     });
   } catch (err) {
     console.warn('[group-grants] canonical assignment failed', {

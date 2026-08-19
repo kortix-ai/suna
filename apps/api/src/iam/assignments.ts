@@ -51,6 +51,18 @@ export interface AssignRoleInput {
   object?: { type: ObjectType; id: string };
   expiresAt?: Date | null;
   source?: AssignmentSource;
+  /**
+   * WHO granted this, when that is not the writer.
+   *
+   * Default is `writerUserId(writer)`, which is NULL for `SYSTEM_ACTOR`. Six
+   * writers (project role, group grant, object grant, invite bootstrap, …) are
+   * authorized by their own route and pass `SYSTEM_ACTOR` for that reason
+   * alone — but they DO know the human who granted, and their legacy row has
+   * always recorded it. Without this the upsert overwrote the granter the
+   * mirror trigger had just copied across with NULL, and the column would have
+   * been permanently empty once the legacy tables are dropped at cutover.
+   */
+  grantedBy?: string | null;
 }
 
 export interface AssignmentRow {
@@ -188,7 +200,7 @@ export async function assignRole(writer: Writer, accountId: string, input: Assig
   // than inserting is what makes a re-grant idempotent instead of a duplicate —
   // the hole `iam_policies` has today with no unique constraint at all.
   const source = input.source ?? 'manual';
-  const grantedBy = writerUserId(writer);
+  const grantedBy = input.grantedBy !== undefined ? input.grantedBy : writerUserId(writer);
   // ISO string, not a Date: postgres.js binds template parameters positionally
   // and rejects a Date in a `::timestamptz` cast slot.
   const expiresAt = input.expiresAt ? input.expiresAt.toISOString() : null;
@@ -205,7 +217,11 @@ export async function assignRole(writer: Writer, accountId: string, input: Assig
                  coalesce(object_type, ''), coalesce(object_id, ''))
     do update set expires_at = excluded.expires_at,
                   source     = excluded.source,
-                  granted_by = excluded.granted_by,
+                  -- COALESCE, exactly as kortix.rbac_mirror_upsert does: a
+                  -- re-grant by a real writer records the new granter, but a
+                  -- system re-grant (SCIM, SSO JIT, self-join) has no granter
+                  -- to record and must not erase the one already there.
+                  granted_by = coalesce(excluded.granted_by, kortix.role_assignments.granted_by),
                   updated_at = now()
     returning assignment_id, account_id, principal_type, principal_id, role_id,
               scope_type, scope_id, object_type, object_id, expires_at,

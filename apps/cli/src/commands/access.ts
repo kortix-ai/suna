@@ -19,6 +19,7 @@ import {
   resolveUserId,
   roleRefBody,
   scopeLabel,
+  UUID_RE,
   type IamAssignment,
   type IamRole,
 } from '../iam.ts';
@@ -370,8 +371,19 @@ async function listAssignments(
       process.stderr.write(`${status.err(parsed.error)}\n`);
       return 2;
     }
+    // An email is what `kortix access grant --user` accepts, and it is what a
+    // person has in hand right after granting. Resolving it here too — the same
+    // `resolveUserId` grant uses — is the difference between `--principal
+    // user:someone@example.com` listing their rows and a bare
+    // `HTTP 400: principal_id must be a UUID` from the server's shape check.
+    let principalId = parsed.id;
+    if (parsed.type === 'user' && !UUID_RE.test(principalId)) {
+      const resolved = await resolveUserId(scope.client, scope.accountId, principalId);
+      if (!resolved) return 1;
+      principalId = resolved;
+    }
     query.set('principal_type', parsed.type);
-    query.set('principal_id', parsed.id);
+    query.set('principal_id', principalId);
   }
   const qs = query.toString();
   const { assignments } = await scope.client.get<{ assignments: IamAssignment[] }>(

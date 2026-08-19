@@ -175,7 +175,7 @@ async function canonicalProjectAccess(accountId: string, projectId: string): Pro
     accountRoleMap(accountId),
     projectRoleGrants({ accountId, projectId }),
     groupProjectGrants({ accountId, projectId }),
-    customRoleBindings({ accountId, reachingProjectId: projectId }),
+    customRoleBindings({ accountId, reachingProjectId: projectId, principalTypes: ['member', 'group'] }),
     objectGrantRows({ accountId, projectId }),
     rows<{ group_id: string; user_id: string }>(
       `select gm.group_id::text, gm.user_id::text

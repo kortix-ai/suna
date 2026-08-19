@@ -314,3 +314,112 @@ describe.if(hasDatabase)('assignRole / revokeAssignment', () => {
     ).toThrow();
   });
 });
+
+// ── Provenance: `granted_by` survives a SYSTEM_ACTOR write ──────────────────
+//
+// P7 live check, 2026-08-19. Six writers (project role, group grant, object
+// grant, invite bootstrap, …) pass `SYSTEM_ACTOR` because their ROUTE already
+// authorized the caller — but they do know the human who granted, and their
+// legacy row has always recorded it. `writerUserId(SYSTEM_ACTOR)` is null, and
+// the upsert's `granted_by = excluded.granted_by` overwrote the granter the
+// mirror trigger had just copied across. `GET /projects/:id/access` served
+// `granted_by: null` for every project role, and once the legacy tables are
+// dropped at cutover the column would have been unrecoverable.
+describe.if(hasDatabase)('assignRole — granted_by provenance', () => {
+  const provTarget = uid();
+  const provProject = crypto.randomUUID();
+
+  test('an explicit grantedBy wins over the writer, and a system re-grant never erases it', async () => {
+    await raw(
+      `insert into kortix.projects (project_id, account_id, name, repo_url)
+       values ('${provProject}','${ACCOUNT}','prov','https://example.invalid/prov.git')`,
+    );
+    await raw(
+      `insert into kortix.account_members (user_id, account_id, account_role, is_super_admin)
+       values ('${provTarget}','${ACCOUNT}','member', false)`,
+    );
+
+    // SYSTEM_ACTOR + an explicit granter: the granter is what lands.
+    const first = await assignRole(SYSTEM_ACTOR, ACCOUNT, {
+      principal: { type: 'user', id: provTarget },
+      roleKey: 'member',
+      scope: { type: 'project', id: provProject },
+      grantedBy: owner,
+      source: 'manual',
+    });
+    expect(first.grantedBy).toBe(owner);
+
+    // A later SYSTEM_ACTOR re-grant with no granter must not null it out.
+    const second = await assignRole(SYSTEM_ACTOR, ACCOUNT, {
+      principal: { type: 'user', id: provTarget },
+      roleKey: 'member',
+      scope: { type: 'project', id: provProject },
+      source: 'system',
+    });
+    expect(second.assignmentId).toBe(first.assignmentId);
+    const [row] = await db
+      .select({ grantedBy: roleAssignments.grantedBy })
+      .from(roleAssignments)
+      .where(eq(roleAssignments.assignmentId, first.assignmentId));
+    expect(row!.grantedBy).toBe(owner);
+
+    // A real writer re-granting DOES record themselves.
+    clearAuthorizeCaches();
+    const third = await assignRole(jwt(owner), ACCOUNT, {
+      principal: { type: 'user', id: provTarget },
+      roleKey: 'member',
+      scope: { type: 'project', id: provProject },
+      source: 'manual',
+    });
+    expect(third.grantedBy).toBe(owner);
+
+    await raw(`delete from kortix.projects where project_id = '${provProject}'`);
+  });
+});
+
+// ── The people list is people ───────────────────────────────────────────────
+//
+// P7 live check, 2026-08-19. `customRoleBindings` speaks the legacy principal
+// vocabulary, `token` included, and the project access reader branches
+// `member ? user : GROUP`. With no principal filter, an account-scope custom
+// role held by a SERVICE ACCOUNT fell into the group branch and
+// `GET /projects/:id/access` rendered it as a nameless "Group" with a raw uuid
+// and no role. The legacy query this replaced said `principal_type IN
+// ('member','group')` in so many words; `principalTypes` says it again.
+describe.if(hasDatabase)('customRoleBindings — principalTypes', () => {
+  test('a service-account binding is excluded when the caller asks for member/group only', async () => {
+    const { customRoleBindings } = await import('../iam/read-models');
+    const sa = uid();
+    await raw(
+      `insert into kortix.service_accounts (service_account_id, account_id, name, public_prefix, secret_hash)
+       values ('${sa}','${ACCOUNT}','p7-sa','p7pfx','x')`,
+    );
+    // A perfectly ordinary, delegable custom role — the point is the PRINCIPAL,
+    // not the permissions.
+    const readerRoleId = uid();
+    await raw(
+      `insert into kortix.iam_roles (role_id, account_id, key, name, scope_type)
+       values ('${readerRoleId}','${ACCOUNT}','p7-sa-reader','SA Reader','account')`,
+    );
+    await raw(
+      `insert into kortix.iam_role_actions (role_id, action) values ('${readerRoleId}','account.read')`,
+    );
+    await assignRole(SYSTEM_ACTOR, ACCOUNT, {
+      principal: { type: 'service_account', id: sa },
+      roleId: readerRoleId,
+      scope: { type: 'account' },
+      source: 'system',
+    });
+
+    const unfiltered = await customRoleBindings({ accountId: ACCOUNT, reachingProjectId: PROJECT });
+    expect(unfiltered.some((b) => b.principalId === sa && b.principalType === 'token')).toBe(true);
+
+    const peopleOnly = await customRoleBindings({
+      accountId: ACCOUNT,
+      reachingProjectId: PROJECT,
+      principalTypes: ['member', 'group'],
+    });
+    expect(peopleOnly.some((b) => b.principalId === sa)).toBe(false);
+    expect(peopleOnly.every((b) => b.principalType !== 'token')).toBe(true);
+  });
+});

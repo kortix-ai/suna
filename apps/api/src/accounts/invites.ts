@@ -190,6 +190,7 @@ async function applyBootstrapGrants(
         scope: { type: 'project', id: g.project_id },
         expiresAt: g.expires_at ? new Date(g.expires_at) : null,
         source: 'invite',
+        grantedBy: invite.invitedBy,
       });
       applied.push({ project_id: g.project_id, role: g.role });
     } catch (err) {
