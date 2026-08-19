@@ -169,22 +169,86 @@ function captureRawFetchCalls(response: () => Response) {
   return calls;
 }
 
-test('systemReload POSTs {url}/kortix/services/system/reload with the mode and returns the parsed result', async () => {
+const jsonResponse = (body: unknown, status = 200) =>
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  });
+
+test("dispose-only POSTs /global/dispose — the endpoint that exists", async () => {
+  // It used to POST /kortix/services/system/reload, which is not a route. That
+  // path hits opencode's SPA catch-all, so the call got 200 + HTML and died on
+  // response.json() — the command palette's "Restart: Config Only" never worked.
   setCurrentRuntime('http://sbx.test', 'active-sbx');
-  const calls = captureRawFetchCalls(
-    () =>
-      new Response(JSON.stringify({ success: true, mode: 'dispose-only', steps: ['a'], errors: [] }), {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      }),
-  );
+  const calls = captureRawFetchCalls(() => jsonResponse(true));
 
   const result = await systemReload('dispose-only');
 
-  expect(calls[0].url).toBe('http://sbx.test/kortix/services/system/reload');
+  expect(calls[0].url).toBe('http://sbx.test/global/dispose');
   expect(calls[0].method).toBe('POST');
-  expect(JSON.parse(calls[0].body!)).toEqual({ mode: 'dispose-only' });
-  expect(result).toEqual({ success: true, mode: 'dispose-only', steps: ['a'], errors: [] });
+  expect(result.success).toBe(true);
+  expect(result.mode).toBe('dispose-only');
+});
+
+test('full POSTs /kortix/refresh — the only client-reachable runtime restart', async () => {
+  setCurrentRuntime('http://sbx.test', 'active-sbx');
+  const calls = captureRawFetchCalls(() => jsonResponse({ ok: true }));
+
+  const result = await systemReload('full');
+
+  expect(calls[0].url).toBe('http://sbx.test/kortix/refresh');
+  expect(result.success).toBe(true);
+});
+
+test('a 200 with HTML is the SPA catch-all, NOT a reload', async () => {
+  // The whole bug in one assertion: this server answers 200 for every unknown
+  // path. Trusting the status alone is what made a dead endpoint look alive.
+  setCurrentRuntime('http://sbx.test', 'active-sbx');
+  captureRawFetchCalls(
+    () => new Response('<!doctype html><html></html>', {
+      status: 200,
+      headers: { 'content-type': 'text/html' },
+    }),
+  );
+
+  await expect(systemReload('dispose-only')).rejects.toThrow('unavailable on this sandbox');
+});
+
+test('an uppercase or vendor JSON content-type still counts', async () => {
+  // Header values are case-insensitive and `application/<vendor>+json` is JSON.
+  // A false negative here would report a working endpoint as missing.
+  setCurrentRuntime('http://sbx.test', 'active-sbx');
+  captureRawFetchCalls(
+    () => new Response('true', { status: 200, headers: { 'content-type': 'Application/JSON; charset=utf-8' } }),
+  );
+  expect((await systemReload('dispose-only')).success).toBe(true);
+
+  captureRawFetchCalls(
+    () => new Response('true', { status: 200, headers: { 'content-type': 'application/vnd.kortix+json' } }),
+  );
+  expect((await systemReload('dispose-only')).success).toBe(true);
+});
+
+test('a JSON content-type with an unparseable body throws, rather than reporting a decline', async () => {
+  // That is a protocol regression, not a reload that said no — flattening it
+  // into "did not confirm" would hide it and lose the parse detail.
+  setCurrentRuntime('http://sbx.test', 'active-sbx');
+  captureRawFetchCalls(
+    () => new Response('{not json', { status: 200, headers: { 'content-type': 'application/json' } }),
+  );
+
+  await expect(systemReload('dispose-only')).rejects.toThrow('malformed JSON');
+});
+
+test('a JSON body that does not confirm reports failure instead of success', async () => {
+  setCurrentRuntime('http://sbx.test', 'active-sbx');
+  captureRawFetchCalls(() => jsonResponse(false));
+
+  const result = await systemReload('dispose-only');
+
+  expect(result.success).toBe(false);
+  expect(result.errors).toHaveLength(1);
+  expect(result.steps).toEqual([]);
 });
 
 test('systemReload throws when the active runtime url is not ready', async () => {

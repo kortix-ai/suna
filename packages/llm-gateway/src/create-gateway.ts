@@ -50,7 +50,6 @@ export function createGateway(
 ) {
   const logger = deps.logger ?? console;
   const captureBodies = config.captureBodies ?? true;
-  const maxBodyBytes = config.maxCapturedBodyBytes ?? 256 * 1024;
   const breakers = new Map<string, CircuitBreaker>();
 
   const breakerFor = (provider: string): CircuitBreaker => {
@@ -61,17 +60,15 @@ export function createGateway(
     return created;
   };
 
+  // A request/response log exists to show exactly what was sent and received.
+  // No size cap here: a capped "preview" is a log that lies about what the
+  // gateway actually did. `JSON.stringify` still runs once to reject values
+  // that can't be persisted (cycles, BigInt) — the same failure mode as
+  // before, just without truncating anything that succeeds.
   const capture = (value: unknown): unknown => {
     if (!captureBodies) return undefined;
     try {
-      const serialized = JSON.stringify(value);
-      if (serialized.length > maxBodyBytes) {
-        return {
-          truncated: true,
-          bytes: serialized.length,
-          preview: serialized.slice(0, maxBodyBytes),
-        };
-      }
+      JSON.stringify(value);
       return value;
     } catch {
       return undefined;
@@ -86,7 +83,6 @@ export function createGateway(
     captureBodies,
     capture,
     breakerFor,
-    maxCapturedBodyBytes: maxBodyBytes,
   };
 
   const jsonResponse = (data: unknown, status = 200): Response =>

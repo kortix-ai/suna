@@ -176,6 +176,11 @@ import {
 import { CardSection } from './card-section';
 import { IconsSection } from './icons-section';
 
+// Filtered once at module load — the catalog is a static constant, so the
+// per-render filter().map() chain in the JSX collapses to a single map.
+const MARK_WALLPAPERS = WALLPAPER_DOWNLOADS.filter((w) => w.group === 'mark');
+const PRODUCT_WALLPAPERS = WALLPAPER_DOWNLOADS.filter((w) => w.group === 'product');
+
 const BRAND_COLORS = [
   { name: 'Black', hex: '#000000', oklch: 'oklch(0 0 0)', light: false },
   {
@@ -1303,17 +1308,16 @@ export default function BrandPage() {
    * to open one, so the caller knows to wait for the height animation before
    * scrolling. Safe to call for the always-open sections — it is a no-op.
    */
-  const revealSection = useCallback((id: string) => {
-    const owner = owningSection(id);
-    if (!owner) return false;
-    let opened = false;
-    setOpenSections((prev) => {
-      if (prev.includes(owner)) return prev;
-      opened = true;
-      return [...prev, owner];
-    });
-    return opened;
-  }, []);
+  const revealSection = useCallback(
+    (id: string) => {
+      const owner = owningSection(id);
+      if (!owner) return false;
+      if (openSections.includes(owner)) return false;
+      setOpenSections((prev) => (prev.includes(owner) ? prev : [...prev, owner]));
+      return true;
+    },
+    [openSections],
+  );
 
   // A deep link must open what it points at: /design-system#comp-button opens
   // Components and scrolls to the button demo, on load and on later hash changes.
@@ -1449,7 +1453,7 @@ export default function BrandPage() {
                   a retina display.
                 </p>
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
-                  {WALLPAPER_DOWNLOADS.filter((w) => w.group === 'mark').map((w) => (
+                  {MARK_WALLPAPERS.map((w) => (
                     <WallpaperCard key={`${w.id}-${w.theme}`} wallpaper={w} />
                   ))}
                 </div>
@@ -1466,7 +1470,7 @@ export default function BrandPage() {
                   phone file is its own portrait render, not a crop.
                 </p>
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
-                  {WALLPAPER_DOWNLOADS.filter((w) => w.group === 'product').map((w) => (
+                  {PRODUCT_WALLPAPERS.map((w) => (
                     <WallpaperCard key={`${w.id}-${w.theme}`} wallpaper={w} />
                   ))}
                 </div>
@@ -1981,6 +1985,15 @@ export default function BrandPage() {
                           <Badge variant="default" size="sm">
                             Small
                           </Badge>
+                          <Badge variant="default" size="xs">
+                            XSmall
+                          </Badge>
+                          <Badge variant="secondary" size="tabular">
+                            9
+                          </Badge>
+                          <Badge variant="secondary" size="tabular">
+                            12
+                          </Badge>
                           <Badge variant="success" size="sm">
                             Active
                           </Badge>
@@ -2319,6 +2332,35 @@ export default function BrandPage() {
                                 'appHomeDesignSystemPage.line1421JsxTextGeneralSettings',
                               )}
                             </p>
+                          </TabsContent>
+                        </Tabs>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground mb-3 text-xs">Outline</p>
+                        <Tabs defaultValue="outline-account">
+                          <TabsList animate="none">
+                            <TabsTrigger variant="outline" value="outline-account">
+                              Account
+                            </TabsTrigger>
+                            <TabsTrigger variant="outline" value="outline-password">
+                              Password
+                            </TabsTrigger>
+                            <TabsTrigger variant="outline" value="outline-settings">
+                              Settings
+                            </TabsTrigger>
+                          </TabsList>
+                          <TabsContent value="outline-account">
+                            <p className="text-muted-foreground mt-2 text-sm">
+                              Account settings and preferences.
+                            </p>
+                          </TabsContent>
+                          <TabsContent value="outline-password">
+                            <p className="text-muted-foreground mt-2 text-sm">
+                              Change your password.
+                            </p>
+                          </TabsContent>
+                          <TabsContent value="outline-settings">
+                            <p className="text-muted-foreground mt-2 text-sm">General settings.</p>
                           </TabsContent>
                         </Tabs>
                       </div>
@@ -3338,10 +3380,13 @@ export default function BrandPage() {
                           sub: 'every day at 03:00',
                         },
                         { icon: Plug, label: 'GitHub', sub: 'Connected' },
-                      ].map((item, i) => {
+                      ].map((item) => {
                         const I = item.icon;
                         return (
-                          <SpotlightCard key={i} className="bg-card border-border/50 border">
+                          <SpotlightCard
+                            key={item.label}
+                            className="bg-card border-border/50 border"
+                          >
                             <div className="flex cursor-pointer items-center gap-3 p-4">
                               <div className="bg-muted border-border/50 flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] border">
                                 <I className="text-foreground h-4 w-4" />

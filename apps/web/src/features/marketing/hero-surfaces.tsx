@@ -1,11 +1,12 @@
 'use client';
 
-import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { CopyButton } from '@/components/markdown/copy-button';
-import Hint from '@/components/ui/hint';
-import { SdkSurface, SurfaceLink } from '@/features/marketing/landing/code-panels';
+import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { Badge } from '@/components/ui/badge';
-import { Icon } from '@/features/icon/icon';
+import Hint from '@/components/ui/hint';
+import { MicrosoftTeams } from '@/features/icon/icons/microsoft-teams';
+import { Slack } from '@/features/icon/icons/slack';
+import { SdkSurface, SurfaceLink } from '@/features/marketing/landing/code-panels';
 import { KORTIX_CLI_INSTALL_COMMAND } from '@/lib/kortix-cli';
 import { cn } from '@/lib/utils';
 import {
@@ -13,11 +14,10 @@ import {
   EnvelopeSimpleIcon as EnvelopeIcon,
   MonitorIcon as Monitor,
   DeviceMobileIcon as Smartphone,
-  TerminalIcon as Terminal,
+  TerminalWindowIcon as Terminal,
 } from '@phosphor-icons/react';
 import { useTheme } from 'next-themes';
 import Image from 'next/image';
-import Link from 'next/link';
 import type { ComponentType, ReactNode } from 'react';
 import { useEffect, useState } from 'react';
 
@@ -34,8 +34,8 @@ type Surface = {
 const SURFACES: Surface[] = [
   { id: 'web', label: 'Web', icon: Monitor },
   { id: 'cli', label: 'CLI', icon: Terminal },
-  { id: 'slack', label: 'Slack', icon: Icon.Slack },
-  { id: 'teams', label: 'MS Teams', icon: Icon.MicrosoftTeams },
+  { id: 'slack', label: 'Slack', icon: Slack },
+  { id: 'teams', label: 'MS Teams', icon: MicrosoftTeams },
   { id: 'email', label: 'Email', icon: EnvelopeIcon },
   { id: 'mobile', label: 'Mobile', icon: Smartphone },
   { id: 'sdk', label: 'API / SDK', icon: Code2 },
@@ -96,7 +96,6 @@ function PersonAvatar({ initial }: { initial: string }) {
   );
 }
 
-
 /** Pick an ask and the thread answers — the surface is meant to be poked at,
  *  not read. Each reply is the kind of artifact the agent actually returns. */
 const CHAT_ASKS = [
@@ -150,7 +149,7 @@ const CHAT_ASKS = [
 ] as const;
 
 function ChatSurface({ brand }: { brand: 'slack' | 'teams' }) {
-  const BrandIcon = brand === 'slack' ? Icon.Slack : Icon.MicrosoftTeams;
+  const BrandIcon = brand === 'slack' ? Slack : MicrosoftTeams;
   const [askId, setAskId] = useState<(typeof CHAT_ASKS)[number]['id']>('brief');
   const active = CHAT_ASKS.find((a) => a.id === askId) ?? CHAT_ASKS[0];
 
@@ -233,7 +232,10 @@ function EmailSurface() {
       </div>
 
       <div
-        className={cn('flex flex-1 flex-col gap-3 overflow-y-auto p-4 sm:gap-4 sm:p-5', SCROLL_FADE)}
+        className={cn(
+          'flex flex-1 flex-col gap-3 overflow-y-auto p-4 sm:gap-4 sm:p-5',
+          SCROLL_FADE,
+        )}
       >
         <div className="border-border shrink-0 rounded-lg border p-3.5 sm:p-4">
           <div className="flex items-baseline justify-between gap-3">
@@ -257,8 +259,8 @@ function EmailSurface() {
             </div>
           </div>
           <p className="text-muted-foreground mt-3 text-sm leading-relaxed">
-            Pulled 12 months of usage from HubSpot and Stripe. Renewal drafted at $108,960 for
-            year one. Attached the proposal and the workbook — say the word and I&rsquo;ll send it.
+            Pulled 12 months of usage from HubSpot and Stripe. Renewal drafted at $108,960 for year
+            one. Attached the proposal and the workbook — say the word and I&rsquo;ll send it.
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
             {['proposal-northwind.pdf', 'usage-2026.xlsx'].map((f) => (
@@ -494,7 +496,7 @@ function CopyInstallCommand() {
 /** A real terminal recording, replayed from the captured pty output of the
  *  shipped CLI: `curl … | bash` installs it, `kortix projects use` picks the
  *  project, `kortix connectors ls` / `show` lists the connectors and the exact
- *  actions an agent calls through the executor, `kortix sessions new` boots a
+ *  actions an agent calls through the connector, `kortix sessions new` boots a
  *  cloud computer, `kortix sessions status` shows it working. Every character
  *  on screen is output the CLI produced against dev-api.kortix.com. The grid is
  *  112 columns by 18 rows so real output — the host line is 111 characters —

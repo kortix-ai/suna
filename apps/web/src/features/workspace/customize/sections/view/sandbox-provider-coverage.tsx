@@ -66,84 +66,69 @@ function providerCoverageVariant(
   return 'muted';
 }
 
-export function SandboxTemplateProviderCoverage({
-  providerMode,
-  coverage,
-  selectedProvider,
-  formatObservedAt,
-}: {
-  providerMode: SandboxProviderMode;
-  coverage: SandboxTemplate['provider_coverage'] | null | undefined;
-  selectedProvider: SandboxProvider | null;
-  formatObservedAt?: (observedAt: string) => string;
-}) {
-  const availableCoverage = availableProviderCoverage(coverage);
-  if (availableCoverage.length === 0) return null;
-
-  const observedAt = availableCoverage
-    .map((item) => item.observed_at)
-    .filter((value): value is string => !!value)
-    .sort()
-    .at(-1);
-
+/**
+ * The freshest observation across every routable provider, or `null` when
+ * nothing reported one. Pulled out of the old combined row so the caller can
+ * position the "Checked …" stamp itself — in the template card it is pushed to
+ * the far edge of the footer, which a pre-composed row could never allow.
+ */
+export function latestObservedAt(
+  coverage: SandboxTemplate['provider_coverage'] | null | undefined,
+): string | null {
   return (
-    <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-      <span className="text-muted-foreground text-xs">Session runtime</span>
-      {availableCoverage.map((item) => {
-        const state = describeProviderCoverage(item.status);
-        const provider = sandboxProviderLabel(item.provider);
-        const selected = providerMode === 'pinned' && item.provider === selectedProvider;
-
-        return (
-          <Badge
-            key={item.provider}
-            variant={providerCoverageVariant(state.tone)}
-            size="xs"
-            aria-label={`${provider}${selected ? ' selected' : ''}: ${state.label}`}
-          >
-            {provider}
-            {selected ? (
-              <>
-                <span className="opacity-50" aria-hidden="true">
-                  &bull;
-                </span>
-                Selected
-              </>
-            ) : null}
-            <span className="opacity-50" aria-hidden="true">
-              &bull;
-            </span>
-            {state.label}
-          </Badge>
-        );
-      })}
-      {observedAt ? (
-        <span className="text-muted-foreground text-xs tabular-nums">
-          Checked {formatObservedAt ? formatObservedAt(observedAt) : observedAt}
-        </span>
-      ) : null}
-    </div>
+    availableProviderCoverage(coverage)
+      .map((item) => item.observed_at)
+      .filter((value): value is string => !!value)
+      .sort()
+      .at(-1) ?? null
   );
 }
 
-export function SandboxTemplateProviderModeBadge({
-  providerMode,
-  coverage,
-  selectedProvider,
+/**
+ * One provider's launch readiness. **This is a single badge, not a row.**
+ *
+ * It replaces `SandboxTemplateProviderCoverage`, which baked its own
+ * "Session runtime" label, its badge list and its "Checked …" stamp into one
+ * `flex` block. That composite could only ever be dropped into a layout whole,
+ * so `sandbox-tab.tsx` ended up nesting a labelled row inside another labelled
+ * row — two labels and an un-positionable timestamp in a single wrapping
+ * footer. Owning just the badge lets the caller build the row.
+ *
+ * `SandboxTemplateProviderModeBadge` is gone with it: routing mode is static
+ * configuration, not live status, so the card states it as a labelled fact in
+ * the spec grid (`describeProviderMode` still supplies the words) rather than
+ * floating a bare badge in the runtime strip.
+ */
+export function SandboxProviderBadge({
+  item,
+  selected = false,
 }: {
-  providerMode: SandboxProviderMode;
-  coverage: SandboxTemplate['provider_coverage'] | null | undefined;
-  selectedProvider: SandboxProvider | null;
+  item: ProviderCoverageEntry;
+  /** Pinned mode only — marks the provider sessions actually route to. */
+  selected?: boolean;
 }) {
-  if (providerMode === 'automatic' || availableProviderCoverage(coverage).length === 0) {
-    const providerModeInfo = describeProviderMode(providerMode, selectedProvider);
+  const state = describeProviderCoverage(item.status);
+  const provider = sandboxProviderLabel(item.provider);
 
-    return (
-      <Badge variant="muted" size="sm">
-        {providerModeInfo.label}
-      </Badge>
-    );
-  }
-
-  return null;
+  return (
+    <Badge
+      variant={providerCoverageVariant(state.tone)}
+      size="xs"
+      aria-label={`${provider}${selected ? ' selected' : ''}: ${state.label}`}
+    >
+      {provider}
+      {selected ? (
+        <>
+          <span className="opacity-50" aria-hidden="true">
+            &bull;
+          </span>
+          Selected
+        </>
+      ) : null}
+      <span className="opacity-50" aria-hidden="true">
+        &bull;
+      </span>
+      {state.label}
+    </Badge>
+  );
 }

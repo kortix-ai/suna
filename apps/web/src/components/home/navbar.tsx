@@ -27,11 +27,17 @@ import {
   NavigationMenuTrigger,
 } from '@/components/ui/navigation-menu';
 import { useRequestDemo } from '@/features/contact/request-demo-provider';
-import { Icon } from '@/features/icon/icon';
+import { ChatGPT } from '@/features/icon/icons/chat-gpt';
+import { Claude } from '@/features/icon/icons/claude';
+import { Github } from '@/features/icon/icons/github';
+import { OpenClaw } from '@/features/icon/icons/open-claw';
+import { Viktor } from '@/features/icon/icons/viktor';
+import { Zapier } from '@/features/icon/icons/zapier';
 import { useAuth } from '@/features/providers/auth-provider';
 import { useIsMobile } from '@/hooks/utils';
 import { useGitHubStars } from '@/hooks/utils/use-github-stars';
 import { trackCtaSignup } from '@/lib/analytics/gtm';
+import { latestProjectPath } from '@/lib/onboarding/last-project-cookie';
 import { type NavLink, type NavSubLink, siteConfig } from '@/lib/site-config';
 import { cn } from '@/lib/utils';
 import {
@@ -41,7 +47,7 @@ import {
   TextTIcon as Type,
   XIcon as X,
 } from '@phosphor-icons/react';
-import { AnimatePresence, motion } from 'motion/react';
+import { AnimatePresence, m } from 'motion/react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
@@ -156,15 +162,15 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
   const compareIcon = (slug: string) => {
     switch (slug) {
       case 'zapier':
-        return <Icon.Zapier />;
+        return <Zapier />;
       case 'openclaw':
-        return <Icon.OpenClaw />;
+        return <OpenClaw />;
       case 'viktor':
-        return <Icon.Viktor />;
+        return <Viktor />;
       case 'chatgpt':
-        return <Icon.ChatGPT />;
+        return <ChatGPT />;
       case 'claude':
-        return <Icon.Claude />;
+        return <Claude />;
       default:
         return null;
     }
@@ -428,7 +434,7 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
                   target="_blank"
                   rel="noopener noreferrer"
                 >
-                  <Icon.Github className="size-3.5" />
+                  <Github className="size-3.5" />
                   <span className={cn('font-medium tabular-nums', starsLoading && 'opacity-50')}>
                     {formattedStars}
                   </span>
@@ -440,9 +446,7 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
               {tHardcodedUi.raw('componentsHomeNavbar.line301JsxTextRequestDemo')}
             </Button>
             {user ? (
-              <Button asChild>
-                <Link href="/projects">Projects</Link>
-              </Button>
+              <Button onClick={() => router.push(latestProjectPath(user.id))}>Projects</Button>
             ) : (
               <Button
                 onClick={() => {
@@ -468,7 +472,7 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
       </header>
       <AnimatePresence>
         {isDrawerOpen && isMobile && (
-          <motion.div
+          <m.div
             className="bg-background fixed inset-0 z-50 flex flex-col md:hidden"
             initial="hidden"
             animate="visible"
@@ -498,7 +502,7 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
               {/* A scroll region, not a growing column: with three menus open-
                   able the link list can exceed a phone screen, and the CTA below
                   must stay reachable. */}
-              <motion.nav
+              <m.nav
                 className="min-h-0 flex-1 space-y-6 overflow-y-auto p-2"
                 variants={drawerMenuContainerVariants}
               >
@@ -533,7 +537,7 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
 
                     if (staticHref) {
                       return (
-                        <motion.li key={item.id} variants={drawerMenuVariants}>
+                        <m.li key={item.id} variants={drawerMenuVariants}>
                           {/* A row that navigates carries no glyph. Only the
                               rows that expand get an affordance, so the caret
                               always means "opens here". */}
@@ -549,14 +553,14 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
                           >
                             {item.name}
                           </Link>
-                        </motion.li>
+                        </m.li>
                       );
                     }
 
                     const subLinks: NavSubLink[] = drawerSubLinks(item);
 
                     return (
-                      <motion.li key={item.id} variants={drawerMenuVariants}>
+                      <m.li key={item.id} variants={drawerMenuVariants}>
                         <Disclosure
                           className="group w-full"
                           open={openDrawerMenu === item.id}
@@ -601,23 +605,28 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
                             </DisclosureBody>
                           </DisclosureContent>
                         </Disclosure>
-                      </motion.li>
+                      </m.li>
                     );
                   })}
                 </ul>
-              </motion.nav>
+              </m.nav>
 
-              <motion.div
+              <m.div
                 className="mt-auto flex flex-col gap-4"
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.3, duration: 0.3 }}
               >
                 {user ? (
-                  <Button asChild size="xl" className="w-full text-lg">
-                    <Link href="/projects" onClick={() => setIsDrawerOpen(false)}>
-                      Projects
-                    </Link>
+                  <Button
+                    size="xl"
+                    className="w-full text-lg"
+                    onClick={() => {
+                      setIsDrawerOpen(false);
+                      router.push(latestProjectPath(user.id));
+                    }}
+                  >
+                    Projects
                   </Button>
                 ) : (
                   <Button asChild size="xl" className="w-full text-lg">
@@ -633,9 +642,9 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
                     </Link>
                   </Button>
                 )}
-              </motion.div>
+              </m.div>
             </div>
-          </motion.div>
+          </m.div>
         )}
       </AnimatePresence>
     </>

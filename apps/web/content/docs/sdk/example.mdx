@@ -62,7 +62,7 @@ async function main() {
   //    prompt only (ids come from projects.modelPicker() and
   //    projects.detail().config.agents).
   await session.send('What files are in this repo?', {
-    model: { providerID: 'kortix', modelID: 'claude-sonnet-4.6' },
+    model: { providerID: 'kortix', modelID: 'glm-5.2' },
   });
 
   // 7. Wait for the turn to finish — the session.idle event, not a sleep.
@@ -133,8 +133,22 @@ const project = kortix.project(projectId);
 const tree = await session.files.list('/workspace');
 const readme = await session.files.read('/workspace/README.md');
 
-// Project secrets — env vars every session's agent can read at runtime
-await project.secrets.upsert({ name: 'MY_API_KEY', value: 'sk-…' });
+// Runtime secrets are readable by selected sessions inside the sandbox.
+await project.secrets.upsert({
+  name: 'LOCAL_TOOL_TOKEN',
+  value: 'secret-value',
+  strategy: 'runtime',
+  consumer: 'sandbox',
+});
+
+// Managed provider credentials stay on the Kortix LLM gateway.
+await project.secrets.upsert({
+  identifier: 'anthropic-primary',
+  name: 'ANTHROPIC_API_KEY',
+  value: 'sk-ant-…',
+  strategy: 'broker',
+  consumer: 'llm_gateway',
+});
 
 // The project's agents and skills (config files in the repo)
 const { config } = await kortix.projects.detail(projectId);

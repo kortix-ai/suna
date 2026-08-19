@@ -11,7 +11,7 @@ import Loading from '@/components/ui/loading';
  *
  * Takes a normalized `ToolView` from `@kortix/sdk` (`classifyPart`'s
  * tool variant) instead of the raw wire tool part — status is already mapped
- * to 'pending'|'running'|'done'|'error' (including router/executor tools like
+ * to 'pending'|'running'|'done'|'error' (including router/connector tools like
  * `web_search` that report `state.status: "completed"` but wrap a failure in
  * their JSON output body — `ToolView` reclassifies those as `'error'` so they
  * never render as a quiet success), and the icon comes from `toolInfo`'s

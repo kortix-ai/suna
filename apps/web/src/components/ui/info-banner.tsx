@@ -15,35 +15,48 @@ import * as React from 'react';
 export type InfoBannerIcon =
   React.ComponentType<{ className?: string }> | React.ReactElement<{ className?: string }>;
 
-const infoBannerVariants = cva(
-  'text-foreground bg-popover flex flex-wrap items-center gap-4 px-4 py-3 text-sm',
-  {
-    variants: {
-      tone: {
-        neutral: 'border-border border ',
-        info: 'border-kortix-yellow/25 ',
-        success: 'border-kortix-green/25 ',
-        warning: 'border-kortix-orange/25 ',
-        destructive: 'border-border border',
-      },
-    },
-    defaultVariants: {
-      tone: 'neutral',
+const infoBannerVariants = cva('flex flex-wrap items-center gap-2 px-2.5 py-2 text-sm', {
+  variants: {
+    tone: {
+      neutral: 'border-border border',
+      info: 'bg-kortix-yellow/25',
+      success: 'bg-kortix-green/25',
+      warning: 'bg-kortix-orange/25',
+      destructive: 'bg-border border',
     },
   },
-);
+  defaultVariants: {
+    tone: 'neutral',
+  },
+});
+
+/** Solid tone colour for the title — matches the 25% fill, never the description. */
+const infoBannerTitleVariants = cva('w-full max-w-full', {
+  variants: {
+    tone: {
+      neutral: 'text-foreground',
+      info: 'text-kortix-yellow',
+      success: 'text-kortix-green',
+      warning: 'text-kortix-orange',
+      destructive: 'text-kortix-red',
+    },
+  },
+  defaultVariants: {
+    tone: 'neutral',
+  },
+});
 
 /** Status icon tile — mirrors the sandbox template state indicator. */
 const infoBannerMediaVariants = cva(
-  'inline-flex size-10 shrink-0 items-center justify-center self-start rounded-sm border [&_svg]:pointer-events-none [&_svg]:shrink-0',
+  'inline-flex size-7 shrink-0 items-center justify-center self-start [&_svg]:pointer-events-none [&_svg]:shrink-0',
   {
     variants: {
       tone: {
         neutral: 'text-muted-foreground border-border',
-        info: 'bg-kortix-yellow/10 text-kortix-yellow',
-        success: 'bg-kortix-green/10 text-kortix-green',
-        warning: 'bg-kortix-orange/10 text-kortix-orange',
-        destructive: 'bg-kortix-red/10 text-kortix-red',
+        info: 'text-kortix-yellow',
+        success: 'text-kortix-green',
+        warning: 'text-kortix-orange',
+        destructive: 'text-kortix-red',
       },
     },
     defaultVariants: {
@@ -94,10 +107,13 @@ export function InfoBanner({
           {renderBannerIcon(icon, infoBannerIconVariants())}
         </AlertMedia>
       )}
+
       {title != null && (
-        <AlertTitle className="text-foreground w-full max-w-full">{title}</AlertTitle>
+        <AlertTitle className={infoBannerTitleVariants({ tone: safeTone })}>{title}</AlertTitle>
       )}
-      {children != null && <AlertDescription>{children}</AlertDescription>}
+      {children != null && (
+        <AlertDescription className="text-muted-foreground">{children}</AlertDescription>
+      )}
       {action != null && <AlertActions>{action}</AlertActions>}
     </Alert>
   );

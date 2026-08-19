@@ -92,10 +92,19 @@ agents:
     skills: all
     # sandbox: python # Must name an available project template, or "default".
 
-  memory-reflector:
-    # Scoped specialist: only what its job needs (open — never merge — a
-    # memory CR). No connectors, no project secrets.
-    kortix_cli: [project.cr.open]
+  harness-reflector:
+    # Continual-harness reflector: refines the shared harness (prompts,
+    # sub-agents, skills/tools, memory — memory curation is its fourth
+    # pass) from session evidence. Fans out session-reviewer sub-agents,
+    # one per recent session, then opens — never merges — a harness CR.
+    # No connectors, no project secrets.
+    kortix_cli: [project.cr.open, project.session.read]
+
+  session-reviewer:
+    # Read-only sub-agent of the harness-reflector: deep-reviews ONE
+    # session's full history and reports failure-signature findings.
+    # Never edits, never opens CRs.
+    kortix_cli: [project.session.read]
 
 # ─── Triggers ────────────────────────────────────────────────────────────
 # Each entry spawns a fresh session that runs `prompt` as its initial
@@ -104,28 +113,31 @@ agents:
 # agent above (or be omitted to fall back to `default_agent`).
 
 triggers:
-  # Memory reflector — surveys recent project activity and curates
-  # `.kortix/memory/` (the project brain). Reads its rubric from the
-  # `kortix-memory` skill. Opens a `memory: …` change request at the end
-  # of each run; exits silently when nothing is worth changing.
-  #
-  # Disabled by default. Flip `enabled: true` once your project has
-  # enough activity for reflection to find signal — usually after the
-  # first week or two.
-  - slug: memory-reflector
-    name: Memory reflector
+  # Harness reflector — the continual-harness loop across sessions.
+  # Surveys what every recent session actually did, finds failure
+  # signatures (repeated tool failures, rediscovery loops, stalled
+  # objectives), and refines the shared harness — agent prompts,
+  # sub-agents, skills/tools, memory — via the four-pass protocol in
+  # the `kortix-harness-refinement` skill. Opens a `harness: …` change
+  # request; exits silently when nothing is worth changing — a quiet
+  # project costs one short no-op session per day. Flip `enabled: false`
+  # to opt out.
+  - slug: harness-reflector
+    name: Harness reflector
     type: cron
-    agent: memory-reflector
-    enabled: false
+    agent: harness-reflector
+    enabled: true
     cron: "0 0 3 * * *" # 03:00 daily
     timezone: UTC
     prompt: |
-      Load the `kortix-memory` skill, then reflect on the last 24h of
-      project activity: git log, merged CRs, and every session that ran
-      in the window (`kortix sessions digest --since 24h` — analyze what
-      each session actually did). Update `.kortix/memory/` per the rubric
-      and open a single CR titled `memory: …`. Exit silently if nothing is
-      worth changing.
+      Load the `kortix-cli` skill, then read the refinement protocol
+      with `kortix skills get kortix-harness-refinement` (served live by
+      the CLI; `kortix skills get kortix-memory` for the memory pass).
+      Run the four-pass refinement protocol over the last 24h of project
+      activity: `kortix sessions digest --since 24h`, git log, and
+      merged CRs. Identify failure signatures, refine only the
+      components with observed failures, and open a single CR titled
+      `harness: …`. Exit silently if nothing is worth changing.
 
   # Cron trigger — fires on a 6-field croner expression
   # (second minute hour day month weekday).
@@ -160,6 +172,6 @@ triggers:
 # ─── Channels ────────────────────────────────────────────────────────────
 # v2 removes `channels` from the manifest — channel↔agent routing (Slack
 # today; Teams/Discord/etc. later) is managed live in the dashboard
-# (Customize → Channels), not committed to git. The channel integration
+# (Customize → Channels), not committed to git. The channel connection
 # itself still shows up here as a `connectors` entry with
 # `provider: channel` once you connect one — that part is unchanged.

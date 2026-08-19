@@ -1,4 +1,4 @@
-import { eq, and, desc, inArray } from 'drizzle-orm';
+import { eq, and, desc, inArray, isNull } from 'drizzle-orm';
 import { accountTokens, accounts } from '@kortix/db';
 import { db } from '../shared/db';
 import {
@@ -20,7 +20,7 @@ export interface AccountTokenValidationResult {
   /** Non-null = this token is scoped to one project; the auth
    *  middleware enforces URL :projectId === this value. */
   projectId?: string | null;
-  /** Non-null = this token belongs to a specific session (sandbox executor
+  /** Non-null = this token belongs to a specific session (sandbox connector
    *  token, session_id = sandbox_id). Used to attribute LLM usage per-session. */
   sessionId?: string | null;
   /** Non-null = this is an agent-session token; the running agent's resolved
@@ -34,7 +34,7 @@ export interface CreateAccountTokenParams {
   accountId: string;
   userId: string;
   name: string;
-  /** Non-null = token is scoped to one project. Session executor tokens also
+  /** Non-null = token is scoped to one project. Session connector tokens also
    *  set sessionId + agentGrant. Null/undefined = user-scoped laptop CLI PAT. */
   projectId?: string;
   /** Set for sandbox session tokens (session_id = sandbox_id) so LLM usage
@@ -213,6 +213,55 @@ export async function listAccountTokens(
     .orderBy(desc(accountTokens.createdAt));
 }
 
+/**
+ * List the API keys ONE person minted by hand in an account.
+ *
+ * `listAccountTokens` above answers a different question — "every row this
+ * account owns" — and three kinds of row live in that table:
+ *
+ *   1. an API key a human minted for themselves (`user_id` = them, nothing
+ *      else set),
+ *   2. a session connector token the runtime mints per sandbox and injects as
+ *      `KORTIX_TOKEN` (`session_id` set, usually `agent_grant` too), and
+ *   3. a service account's bearer (`service_account_id` set) — an automation
+ *      identity, not a person's key.
+ *
+ * Only (1) belongs on a person's own settings page, so this filters to it by
+ * the three columns that DEFINE the other two rather than by a name heuristic:
+ * the browser used to guess with `name.startsWith('Connector Session ')`
+ * (`components/iam/api-key-rows.ts`) because the list payload carried no
+ * `session_id`. A person's key is theirs alone — the caller only ever gets
+ * their own rows back, never another member's.
+ */
+export async function listPersonalAccountTokens(
+  accountId: string,
+  userId: string,
+): Promise<AccountTokenListEntry[]> {
+  return db
+    .select({
+      tokenId: accountTokens.tokenId,
+      publicKey: accountTokens.publicKey,
+      name: accountTokens.name,
+      status: accountTokens.status,
+      projectId: accountTokens.projectId,
+      expiresAt: accountTokens.expiresAt,
+      lastUsedAt: accountTokens.lastUsedAt,
+      createdAt: accountTokens.createdAt,
+      revokedAt: accountTokens.revokedAt,
+    })
+    .from(accountTokens)
+    .where(
+      and(
+        eq(accountTokens.accountId, accountId),
+        eq(accountTokens.userId, userId),
+        isNull(accountTokens.sessionId),
+        isNull(accountTokens.serviceAccountId),
+        isNull(accountTokens.agentGrant),
+      ),
+    )
+    .orderBy(desc(accountTokens.createdAt));
+}
+
 /** Revoke a token (soft-delete — sets status='revoked' + revoked_at). */
 export async function revokeAccountToken(
   tokenId: string,
@@ -263,7 +312,7 @@ export async function revokeAllAccountTokensForUser(
 }
 
 /**
- * Revoke every live executor token minted for ONE session.
+ * Revoke every live connector token minted for ONE session.
  *
  * Session tokens are minted with no `expiresAt` and are deliberately exempt from
  * the PAT idle-revoke sweep ("lifetime tied to the sandbox" — see
@@ -281,7 +330,7 @@ export async function revokeAllAccountTokensForUser(
  * same `session_id`), so this revokes all of them. Scoped by account: a
  * session id must never reach across tenants.
  */
-export async function revokeSessionExecutorTokens(
+export async function revokeSessionConnectorTokens(
   sessionId: string,
   accountId: string,
 ): Promise<number> {

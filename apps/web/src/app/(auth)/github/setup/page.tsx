@@ -179,7 +179,7 @@ function GitHubSetup() {
         : 'GitHub connected. Redirecting you back now.',
     );
     redirectTimer.current = window.setTimeout(
-      () => router.replace(consumeGitHubSetupReturn() ?? '/projects?new=1'),
+      () => router.replace(consumeGitHubSetupReturn() ?? '/new'),
       900,
     );
   }

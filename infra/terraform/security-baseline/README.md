@@ -16,7 +16,7 @@ Account-global SOC 2 / Drata compliance controls as Terraform. Sibling to the
 - S3 account-level public access block (DCF-55/78/406 backstop)
 - AWS Backup vault + daily plan + selection + service role (DCF-99)
 - VPC Flow Logs delivery role + log group (DCF-406)
-- IAM groups, attachments, memberships + 2 customer-managed policies (DCF-776)
+- IAM groups, attachments, memberships + 4 customer-managed policies (DCF-776)
 - Weekly SSM security-patch installation and reboot-if-needed for every current
   and replacement dev/prod EKS worker, serialized one node at a time
   (DCF-152 / DCF-677)
@@ -60,6 +60,8 @@ terraform import 'aws_iam_group.this["bedrock-marketplace"]' bedrock-marketplace
 terraform import 'aws_iam_group.this["bedrock-full"]' bedrock-full
 terraform import 'aws_iam_group.this["bedrock-count-tokens"]' bedrock-count-tokens
 terraform import 'aws_iam_group.this["cloudwatch-logs-writers"]' cloudwatch-logs-writers
+terraform import 'aws_iam_group.this["mfa-self-manage"]' mfa-self-manage
+terraform import 'aws_iam_group.this["ses-senders"]' ses-senders
 # group memberships import as <group-name>/<membership-name> — see `terraform plan` output
 terraform plan            # iterate until the diff is empty
 terraform apply           # no-op once diff is clean; then delete imports.tf

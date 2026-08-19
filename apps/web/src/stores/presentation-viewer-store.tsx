@@ -47,33 +47,43 @@ export const usePresentationViewerStore = create<PresentationViewerState>()(
 
 // Backward compatibility hook
 export function usePresentationViewerContext() {
-  const store = usePresentationViewerStore();
+  const openPresentation = usePresentationViewerStore((s) => s.openPresentation);
+  const closePresentation = usePresentationViewerStore((s) => s.closePresentation);
 
   return {
-    openPresentation: store.openPresentation,
-    closePresentation: store.closePresentation,
+    openPresentation,
+    closePresentation,
   };
 }
 
 // Hook for backward compatibility with usePresentationViewer
 export function usePresentationViewer() {
-  const store = usePresentationViewerStore();
+  const isOpen = usePresentationViewerStore((s) => s.isOpen);
+  const presentationName = usePresentationViewerStore((s) => s.presentationName);
+  const sandboxUrl = usePresentationViewerStore((s) => s.sandboxUrl);
+  const initialSlide = usePresentationViewerStore((s) => s.initialSlide);
+  const openPresentation = usePresentationViewerStore((s) => s.openPresentation);
+  const closePresentation = usePresentationViewerStore((s) => s.closePresentation);
 
   return {
     viewerState: {
-      isOpen: store.isOpen,
-      presentationName: store.presentationName,
-      sandboxUrl: store.sandboxUrl,
-      initialSlide: store.initialSlide,
+      isOpen,
+      presentationName,
+      sandboxUrl,
+      initialSlide,
     },
-    openPresentation: store.openPresentation,
-    closePresentation: store.closePresentation,
+    openPresentation,
+    closePresentation,
   };
 }
 
 // Component wrapper to render the FullScreenPresentationViewer
 export function PresentationViewerWrapper() {
-  const { isOpen, presentationName, sandboxUrl, initialSlide, closePresentation } = usePresentationViewerStore();
+  const isOpen = usePresentationViewerStore((s) => s.isOpen);
+  const presentationName = usePresentationViewerStore((s) => s.presentationName);
+  const sandboxUrl = usePresentationViewerStore((s) => s.sandboxUrl);
+  const initialSlide = usePresentationViewerStore((s) => s.initialSlide);
+  const closePresentation = usePresentationViewerStore((s) => s.closePresentation);
 
   return (
     <FullScreenPresentationViewer

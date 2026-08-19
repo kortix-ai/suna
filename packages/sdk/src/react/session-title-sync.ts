@@ -1,6 +1,13 @@
 import type { QueryClient } from '@tanstack/react-query';
 
-type SessionTitleQueryClient = Pick<QueryClient, 'getQueryData' | 'refetchQueries'>;
+import { sessionStartKey } from '../core/rest/projects-client';
+import { qk } from './query-keys';
+
+type SessionTitleQueryClient = Pick<QueryClient, 'getQueryData' | 'refetchQueries'> & {
+  /** Optional so lean test fakes (and older callers) keep working; a real
+   *  QueryClient always has it. */
+  getQueryState?: QueryClient['getQueryState'];
+};
 
 interface SessionTitleRefreshOptions {
   delaysMs?: number[];
@@ -12,7 +19,7 @@ const DEFAULT_TITLE_REFRESH_DELAYS_MS = [0, 5_000, 5_000, 10_000, 10_000, 15_000
 
 function readRealTitle(value: unknown): string | null {
   const title = typeof value === 'string' ? value.trim() : '';
-  if (!title || /^new session\b/i.test(title)) return null;
+  if (!title || /^new (?:session|agent)\b/i.test(title)) return null;
   return title;
 }
 
@@ -21,8 +28,13 @@ function cachedSessionHasTitle(
   projectId: string,
   sessionId: string,
 ): boolean {
-  const list = queryClient.getQueryData<unknown>(['project-sessions', projectId]);
-  const detail = queryClient.getQueryData<unknown>(['project-session', projectId, sessionId]);
+  // Exact-match reads (`getQueryData`), so these have to be the REAL cache
+  // entries the list/detail queries populate, not the broad `sessionsScope`
+  // invalidation prefix used below — `getQueryData` never does prefix
+  // matching. Default scope ('visible') matches `listProjectSessions`' own
+  // default and what the sidebar/list surfaces actually read.
+  const list = queryClient.getQueryData<unknown>(qk.project.sessions(projectId));
+  const detail = queryClient.getQueryData<unknown>(qk.project.session(projectId, sessionId));
   const candidates = [...(Array.isArray(list) ? list : []), detail];
   return candidates.some((candidate) => {
     if (!candidate || typeof candidate !== 'object') return false;
@@ -39,17 +51,33 @@ function cachedSessionHasTitle(
 }
 
 function refetchSessionTitleQueries(
-  queryClient: Pick<QueryClient, 'refetchQueries'>,
+  queryClient: SessionTitleQueryClient,
   projectId: string,
   sessionId: string,
 ): Promise<unknown[]> {
+  // An adopted warm session is revealed by /start dropping `metadata.warm`.
+  // While THIS session's /start is still in flight, a sessions-list refetch
+  // can beat it, observe the row still hidden, and overwrite the adopting
+  // tab's optimistic seed (warm-session-seed.ts in apps/web) — so the list
+  // half waits for the next ladder pass. The detail refetch stays: the
+  // session route serves the owner regardless of the marker.
+  const startFetching =
+    queryClient.getQueryState?.(sessionStartKey(projectId, sessionId))?.fetchStatus === 'fetching';
   return Promise.all([
+    // The broad sessions-family prefix, not just the default-scope list: it
+    // reaches the list in EVERY scope plus every session/messages entry
+    // beneath it, so a manager-only 'project'-scope reader picks up the
+    // resolved title too, not only the default 'visible' one.
+    ...(startFetching
+      ? []
+      : [
+          queryClient.refetchQueries({
+            queryKey: qk.project.sessionsScope(projectId),
+            type: 'active',
+          }),
+        ]),
     queryClient.refetchQueries({
-      queryKey: ['project-sessions', projectId],
-      type: 'active',
-    }),
-    queryClient.refetchQueries({
-      queryKey: ['project-session', projectId, sessionId],
+      queryKey: qk.project.session(projectId, sessionId),
       type: 'active',
     }),
   ]);

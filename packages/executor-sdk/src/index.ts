@@ -1,5 +1,15 @@
+import {
+  ApiError,
+  configureKortix,
+  createKortix,
+  type ConnectorAttachmentUploadInput,
+  type ConnectorAttachmentUploadResult,
+} from '@kortix/sdk';
+
+/** @deprecated Use Connector terminology from `@kortix/sdk`. */
 export type ExecutorRisk = 'read' | 'write' | 'destructive' | string;
 
+/** @deprecated Use `ConnectorAction` from `@kortix/sdk`. */
 export interface ExecutorAction {
   path: string;
   name: string;
@@ -8,6 +18,7 @@ export interface ExecutorAction {
   inputSchema: unknown;
 }
 
+/** @deprecated Use `ConnectorCatalogEntry` from `@kortix/sdk`. */
 export interface ExecutorConnector {
   slug: string;
   name: string;
@@ -16,6 +27,7 @@ export interface ExecutorConnector {
   actions: ExecutorAction[];
 }
 
+/** @deprecated Use `ConnectorTool` from `@kortix/sdk`. */
 export interface ExecutorToolMatch {
   tool: string;
   connector: string;
@@ -25,36 +37,36 @@ export interface ExecutorToolMatch {
   inputSchema: unknown;
 }
 
+/** @deprecated Use `ConnectorCallResult` from `@kortix/sdk`. */
 export interface ExecutorCallResult<T = unknown> {
   ok: boolean;
   data?: T;
   risk?: ExecutorRisk;
   status?: string;
   reason?: string;
-  /** For a `pending_approval` result: the execution awaiting a human decision.
-   *  Re-issue `call()` with this id to keep waiting (indefinite pause). */
   execution_id?: string | null;
-  /** true = still unresolved after the server's hold; poll again to keep pausing. */
   retryable?: boolean;
+  approval_url?: string | null;
+  approval_summary?: string | null;
+  approval_instructions?: string | null;
 }
 
+/** @deprecated Use `ConnectorAttachmentUploadInput` from `@kortix/sdk`. */
+export interface ExecutorAttachmentUploadInput extends ConnectorAttachmentUploadInput {}
+
+/** @deprecated Use `ConnectorAttachmentUploadResult` from `@kortix/sdk`. */
+export interface ExecutorAttachmentUploadResult extends ConnectorAttachmentUploadResult {}
+
+/** @deprecated Use `createKortix` from `@kortix/sdk`. */
 export interface ExecutorClientOptions {
   apiUrl: string;
   token: string;
-  /**
-   * Project to operate against. When set, calls hit the project-explicit gateway
-   * routes (`/executor/projects/:projectId/{catalog,call}`), which accept ANY
-   * valid principal — a logged-in user token OR an in-sandbox session token.
-   * This is what makes the Executor usable identically on a laptop and inside a
-   * sandbox. When omitted, falls back to the legacy flat routes
-   * (`/executor/{connectors,call}`), which derive the project from a scoped
-   * session token (back-compat for already-baked sandboxes).
-   */
   projectId?: string;
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
 }
 
+/** @deprecated Catch `ApiError` from `@kortix/sdk`. */
 export class ExecutorError extends Error {
   constructor(
     message: string,
@@ -63,65 +75,96 @@ export class ExecutorError extends Error {
   ) {
     super(message);
     this.name = 'ExecutorError';
+    Object.setPrototypeOf(this, new.target.prototype);
   }
 }
 
+type SDK = ReturnType<typeof createKortix>;
+
+/**
+ * Final compatibility adapter for the retired Executor name.
+ *
+ * @deprecated Use `createKortix({ backendUrl, getToken })` and
+ * `kortix.project(projectId).connectors` from `@kortix/sdk`.
+ */
 export class ExecutorClient {
   private readonly apiUrl: string;
   private readonly token: string;
   private readonly projectId?: string;
   private readonly fetchImpl: typeof fetch;
   private readonly timeoutMs: number;
+  private readonly sdk: SDK;
+  private readonly sdkConfig: Parameters<typeof createKortix>[0];
 
   constructor(opts: ExecutorClientOptions) {
     if (!opts.apiUrl.trim()) throw new Error('apiUrl is required');
     if (!opts.token.trim()) throw new Error('token is required');
+
     this.apiUrl = normalizeApiUrl(opts.apiUrl);
     this.token = opts.token;
     this.projectId = opts.projectId?.trim() || undefined;
     this.fetchImpl = opts.fetchImpl ?? fetch;
     this.timeoutMs = opts.timeoutMs ?? 60_000;
+    this.sdkConfig = {
+      backendUrl: this.apiUrl,
+      getToken: async () => this.token,
+      fetch: this.fetchImpl,
+      clientSource: 'cli',
+    };
+    this.sdk = createKortix(this.sdkConfig);
   }
 
-  /** Catalog endpoint — project-explicit when a projectId is set, else legacy flat. */
-  private catalogPath(): string {
+  private connectorsApi() {
     return this.projectId
-      ? `/executor/projects/${encodeURIComponent(this.projectId)}/catalog`
-      : '/executor/connectors';
+      ? this.sdk.project(this.projectId).connectors
+      : this.sdk.connectors;
   }
 
-  /** Call endpoint — project-explicit when a projectId is set, else legacy flat. */
-  private callPath(): string {
-    return this.projectId
-      ? `/executor/projects/${encodeURIComponent(this.projectId)}/call`
-      : '/executor/call';
+  private async throughSdk<T>(operation: () => Promise<T>): Promise<T> {
+    // @kortix/sdk uses one configured client per host. Re-apply this deprecated
+    // adapter's configuration before each operation so sequential legacy clients
+    // retain their original token and URL behavior during migration.
+    configureKortix(this.sdkConfig);
+    try {
+      return await operation();
+    } catch (error) {
+      if (error instanceof ExecutorError) throw error;
+      if (error instanceof ApiError) {
+        throw new ExecutorError(
+          error.message,
+          error.status ?? 0,
+          error.details ?? error.data ?? error.detail ?? null,
+        );
+      }
+      throw error;
+    }
   }
 
   async connectors(): Promise<ExecutorConnector[]> {
-    const body = await this.request<{ connectors?: ExecutorConnector[] } | null>(
-      this.catalogPath(),
+    return this.throughSdk(async () =>
+      (await this.connectorsApi().catalog()) as ExecutorConnector[],
     );
-    return body?.connectors ?? [];
   }
 
   async tools(): Promise<ExecutorToolMatch[]> {
-    return flattenCatalog(await this.connectors());
+    return this.throughSdk(async () =>
+      (await this.connectorsApi().tools()) as ExecutorToolMatch[],
+    );
   }
 
-  async discover(query = '', opts: { limit?: number } = {}): Promise<ExecutorToolMatch[]> {
-    const q = query.toLowerCase();
-    const matches: ExecutorToolMatch[] = [];
-    for (const tool of await this.tools()) {
-      const haystack = `${tool.tool} ${tool.description}`.toLowerCase();
-      if (!q || haystack.includes(q)) {
-        matches.push(tool);
-      }
-    }
-    return matches.slice(0, opts.limit ?? 20);
+  async discover(
+    query = '',
+    opts: { limit?: number } = {},
+  ): Promise<ExecutorToolMatch[]> {
+    return this.throughSdk(async () =>
+      (await this.connectorsApi().search(query, opts)) as ExecutorToolMatch[],
+    );
   }
 
   async describe(tool: string): Promise<ExecutorToolMatch | null> {
-    return (await this.tools()).find((candidate) => candidate.tool === tool) ?? null;
+    return this.throughSdk(async () =>
+      (await this.connectorsApi().describe(tool)) as ExecutorToolMatch | null,
+    );
   }
 
   async call<T = unknown>(
@@ -130,73 +173,100 @@ export class ExecutorClient {
     args: Record<string, unknown> = {},
     opts: { approvalExecutionId?: string | null } = {},
   ): Promise<ExecutorCallResult<T>> {
-    return this.request<ExecutorCallResult<T>>(this.callPath(), {
-      method: 'POST',
-      body: {
-        connector,
-        action,
-        args,
-        // Present only on a poll-loop retry of a call awaiting approval.
-        ...(opts.approvalExecutionId ? { approval_execution_id: opts.approvalExecutionId } : {}),
-      },
-    });
+    if (opts.approvalExecutionId) {
+      const path = this.projectId
+        ? `/connectors/projects/${encodeURIComponent(this.projectId)}/call`
+        : '/connectors/call';
+      return this.request<ExecutorCallResult<T>>(path, {
+        method: 'POST',
+        body: {
+          connector,
+          action,
+          args,
+          approval_execution_id: opts.approvalExecutionId,
+        },
+      });
+    }
+    return this.throughSdk(async () =>
+      (await this.connectorsApi().call<T>(`${connector}.${action}`, args)) as ExecutorCallResult<T>,
+    );
   }
 
+  async uploadAttachment(
+    content: Uint8Array | ArrayBuffer | Blob,
+    input: ExecutorAttachmentUploadInput,
+  ): Promise<ExecutorAttachmentUploadResult> {
+    return this.throughSdk(() => this.connectorsApi().uploadAttachment(content, input));
+  }
+
+  /**
+   * Compatibility-only raw request escape hatch.
+   *
+   * @deprecated Replace raw Executor routes with the typed Connector methods on
+   * `kortix.project(projectId).connectors` from `@kortix/sdk`.
+   */
   async request<T>(path: string, init: { method?: string; body?: unknown } = {}): Promise<T> {
-    const res = await this.fetchImpl(buildUrl(this.apiUrl, path), {
-      method: init.method ?? 'GET',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.token}` },
-      body: init.body !== undefined ? JSON.stringify(init.body) : undefined,
+    const normalized = normalizeLegacyPath(path);
+    const method = (init.method ?? 'GET').toUpperCase();
+
+    if (method === 'GET' && normalized === '/connectors/catalog') {
+      return { connectors: await this.connectors() } as T;
+    }
+    if (method === 'POST' && normalized === '/connectors/call') {
+      const body = (init.body ?? {}) as {
+        connector?: string;
+        action?: string;
+        args?: Record<string, unknown>;
+        approval_execution_id?: string | null;
+      };
+      return this.call(
+        body.connector ?? '',
+        body.action ?? '',
+        body.args ?? {},
+        { approvalExecutionId: body.approval_execution_id },
+      ) as Promise<T>;
+    }
+
+    const response = await this.fetchImpl(`${this.apiUrl}${normalized}`, {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${this.token}`,
+      },
+      body: init.body === undefined ? undefined : JSON.stringify(init.body),
       signal: AbortSignal.timeout(this.timeoutMs),
     });
-    const text = await res.text();
-    const body = parseBody(text);
-    if (!res.ok) {
-      const message =
-        body && typeof body === 'object'
-          ? String(
-              (body as { reason?: unknown; error?: unknown; message?: unknown }).reason ??
-                (body as { error?: unknown }).error ??
-                (body as { message?: unknown }).message ??
-                `HTTP ${res.status}`,
-            )
-          : `HTTP ${res.status}`;
-      throw new ExecutorError(message, res.status, body);
+    const raw = await response.text();
+    const body = parseBody(raw);
+    if (!response.ok) {
+      throw new ExecutorError(responseMessage(body, response.status), response.status, body);
     }
     return body as T;
   }
 }
 
+/**
+ * @deprecated Use `createKortix` from `@kortix/sdk`.
+ */
 export function createExecutorClient(opts: ExecutorClientOptions): ExecutorClient {
   return new ExecutorClient(opts);
 }
 
-function flattenCatalog(connectors: ExecutorConnector[]): ExecutorToolMatch[] {
-  const tools: ExecutorToolMatch[] = [];
-  for (const connector of connectors) {
-    for (const action of connector.actions) {
-      tools.push({
-        tool: `${connector.slug}.${action.path}`,
-        connector: connector.slug,
-        action: action.path,
-        risk: action.risk,
-        description: action.description || action.name,
-        inputSchema: action.inputSchema,
-      });
-    }
-  }
-  return tools;
-}
-
 function normalizeApiUrl(input: string): string {
-  let trimmed = input.trim();
-  while (trimmed.endsWith('/')) trimmed = trimmed.slice(0, -1);
-  return trimmed.endsWith('/v1') ? trimmed : `${trimmed}/v1`;
+  let value = input.trim();
+  while (value.endsWith('/')) value = value.slice(0, -1);
+  return value.endsWith('/v1') ? value : `${value}/v1`;
 }
 
-function buildUrl(apiUrl: string, path: string): string {
-  const suffix = path.startsWith('/v1/') ? path.slice(3) : path.startsWith('/') ? path : `/${path}`;
-  return `${apiUrl}${suffix}`;
+function normalizeLegacyPath(path: string): string {
+  let value = path.trim();
+  if (value.startsWith('/v1/')) value = value.slice(3);
+  if (!value.startsWith('/')) value = `/${value}`;
+  if (value === '/executor/connectors' || value === '/executor/catalog') {
+    return '/connectors/catalog';
+  }
+  if (value.startsWith('/executor/')) return `/connectors/${value.slice('/executor/'.length)}`;
+  return value;
 }
 
 function parseBody(text: string): unknown {
@@ -206,4 +276,14 @@ function parseBody(text: string): unknown {
   } catch {
     return text;
   }
+}
+
+function responseMessage(body: unknown, status: number): string {
+  if (body && typeof body === 'object') {
+    const value = body as Record<string, unknown>;
+    for (const key of ['reason', 'error', 'message', 'detail']) {
+      if (typeof value[key] === 'string' && value[key]) return value[key];
+    }
+  }
+  return `HTTP ${status}`;
 }

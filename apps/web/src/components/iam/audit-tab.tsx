@@ -10,9 +10,9 @@ import {
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { type Dispatch, type ReactNode, type SetStateAction, useMemo, useState } from 'react';
 
+import { CopyOverlay, HighlightedCode } from '@/components/markdown/code';
 import { CopyButton } from '@/components/markdown/copy-button';
 import { Badge } from '@/components/ui/badge';
-import { BetterCodeBlock } from '@/components/ui/better-code-block';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -39,10 +39,19 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { FilterBar, FilterBarItem } from '@/components/ui/tabs';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
+import {
+  EMPTY_PRINCIPAL_SELECTION,
+  PROJECT_SELECT_ALL,
+  PrincipalPicker,
+  ProjectSelect,
+  formatRelative,
+  type PrincipalSelection,
+  singlePrincipal,
+} from '@/features/workspace/shared/access';
 import { getSupabaseAccessTokenWithRetry } from '@/lib/auth-token';
 import { getEnv } from '@/lib/env-config';
 import { type IamAuditEvent, listAuditEvents } from '@/lib/iam-client';
@@ -53,6 +62,7 @@ import {
   listProjectSessions,
   listProjectsForAccount,
 } from '@kortix/sdk';
+import { contract, qk } from '@kortix/sdk/react';
 import {
   type AuditActionDescription,
   type HumanizedAuditAction,
@@ -70,6 +80,7 @@ interface AuditFilterState {
   projectId: string;
   sessionId: string;
   source: string;
+  phase: string;
   outcome: Outcome | '';
   resourceType: string;
   q: string;
@@ -84,6 +95,7 @@ const EMPTY_FILTER: AuditFilterState = {
   projectId: '',
   sessionId: '',
   source: '',
+  phase: '',
   outcome: '',
   resourceType: '',
   q: '',
@@ -102,8 +114,7 @@ const QUICK_FILTERS: Array<{
   { label: 'People', actorType: 'human' },
   { label: 'Agents', actorType: 'agent' },
   { label: 'Sessions', resourceType: 'project_session' },
-  { label: 'Connectors', action: 'executor.' },
-  { label: 'Computer', action: 'computer.' },
+  { label: 'Connectors', action: 'connector.' },
   { label: 'Failures', outcome: 'failure' },
 ];
 
@@ -113,7 +124,7 @@ const RESOURCE_TYPES = [
   { label: 'Session', value: 'project_session' },
   { label: 'Connector action', value: 'connector_action' },
   { label: 'Connector approval', value: 'connector_approval' },
-  { label: 'Computer', value: 'computer_tunnel' },
+  { label: 'Computer connection', value: 'computer_tunnel' },
   { label: 'Secret', value: 'project_secret' },
   { label: 'Group', value: 'group' },
   { label: 'Account', value: 'account' },
@@ -123,19 +134,23 @@ const RESOURCE_TYPES = [
 
 const SOURCES = [
   { label: 'Any source', value: '' },
-  { label: 'Web', value: 'web' },
-  { label: 'CLI', value: 'cli' },
-  { label: 'SDK', value: 'sdk' },
+  { label: 'Human', value: 'human' },
+  { label: 'API key', value: 'api_key' },
   { label: 'Agent', value: 'agent' },
-  { label: 'Executor', value: 'executor' },
+  { label: 'OpenCode', value: 'opencode' },
+  { label: 'LLM gateway', value: 'llm_gateway' },
+  { label: 'Provider', value: 'provider' },
   { label: 'Automation', value: 'automation' },
-  { label: 'Slack', value: 'slack' },
-  { label: 'Teams', value: 'teams' },
-  { label: 'Email', value: 'email' },
-  { label: 'Computer', value: 'computer' },
+  { label: 'Connector', value: 'connector' },
+  { label: 'Voice', value: 'voice' },
+  { label: 'Tunnel', value: 'tunnel' },
   { label: 'API', value: 'api' },
-  { label: 'System', value: 'system' },
+  { label: 'CLI client', value: 'cli' },
+  { label: 'Web client', value: 'web' },
+  { label: 'Mobile client', value: 'mobile' },
 ];
+
+const PHASES = ['pending', 'queued', 'running', 'completed', 'succeeded', 'failed', 'denied'];
 
 const KIND_DOT_TOKEN: Record<HumanizedAuditAction['kind'], string> = {
   create: 'bg-kortix-green',
@@ -195,10 +210,12 @@ export function AuditTab({ accountId }: { accountId: string }) {
     queryFn: () => listAccountMembers(accountId),
     staleTime: 30_000,
   });
+  // Same key + fetcher `ProjectSelect` uses, so the filter control and the
+  // Scope column's name lookup share one round-trip instead of two.
   const projectsQuery = useQuery({
-    queryKey: ['audit-projects', accountId],
+    queryKey: qk.projects.list(accountId),
     queryFn: () => listProjectsForAccount(accountId),
-    staleTime: 30_000,
+    ...contract('inventory'),
   });
   const sessionsQuery = useQuery({
     queryKey: ['audit-project-sessions', filter.projectId],
@@ -207,15 +224,13 @@ export function AuditTab({ accountId }: { accountId: string }) {
     staleTime: 15_000,
   });
 
-  const emailByUserId = useMemo(
-    () =>
-      new Map(
-        (membersQuery.data ?? [])
-          .filter((member) => !!member.email)
-          .map((member) => [member.user_id, member.email as string]),
-      ),
-    [membersQuery.data],
-  );
+  const emailByUserId = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const member of membersQuery.data ?? []) {
+      if (member.email) map.set(member.user_id, member.email);
+    }
+    return map;
+  }, [membersQuery.data]);
   const projectNameById = useMemo(
     () => new Map((projectsQuery.data ?? []).map((project) => [project.project_id, project.name])),
     [projectsQuery.data],
@@ -227,6 +242,7 @@ export function AuditTab({ accountId }: { accountId: string }) {
     filter.projectId,
     filter.sessionId,
     filter.source,
+    filter.phase,
     filter.outcome,
     filter.resourceType,
     filter.q,
@@ -235,6 +251,8 @@ export function AuditTab({ accountId }: { accountId: string }) {
     filter.action,
   ].filter(Boolean).length;
   const hasFilter = filterCount > 0;
+  const activeQuickFilter = QUICK_FILTERS.find((preset) => isQuickFilterActive(filter, preset))
+    ?.label;
 
   const query = useInfiniteQuery({
     queryKey: ['audit', accountId, filter],
@@ -246,6 +264,7 @@ export function AuditTab({ accountId }: { accountId: string }) {
         project_id: filter.projectId || undefined,
         session_id: filter.sessionId || undefined,
         source: filter.source || undefined,
+        phase: filter.phase || undefined,
         outcome: filter.outcome || undefined,
         resource_type: filter.resourceType || undefined,
         q: filter.q || undefined,
@@ -271,41 +290,57 @@ export function AuditTab({ accountId }: { accountId: string }) {
         errorToast('Not signed in');
         return;
       }
-      const result = await downloadAccountAudit(
-        accountId,
-        {
-          format,
-          action: filter.action || undefined,
-          actor: filter.actor || undefined,
-          actor_type: filter.actorType || undefined,
-          project_id: filter.projectId || undefined,
-          session_id: filter.sessionId || undefined,
-          source: filter.source || undefined,
-          outcome: filter.outcome || undefined,
-          resource_type: filter.resourceType || undefined,
-          q: filter.q || undefined,
-          since: filter.since || undefined,
-          until: filter.until || undefined,
-        },
-        {
-          backendUrl: getEnv().BACKEND_URL ?? '',
-          accessToken: token,
-        },
-      );
+      const chunks: string[] = [];
+      let cursor: string | undefined;
+      let rowCount = 0;
+      let firstPage = true;
+      let filename: string | null = null;
+      for (;;) {
+        const result = await downloadAccountAudit(
+          accountId,
+          {
+            format,
+            action: filter.action || undefined,
+            actor: filter.actor || undefined,
+            actor_type: filter.actorType || undefined,
+            project_id: filter.projectId || undefined,
+            session_id: filter.sessionId || undefined,
+            source: filter.source || undefined,
+            phase: filter.phase || undefined,
+            outcome: filter.outcome || undefined,
+            resource_type: filter.resourceType || undefined,
+            q: filter.q || undefined,
+            since: filter.since || undefined,
+            until: filter.until || undefined,
+            cursor,
+          },
+          { backendUrl: getEnv().BACKEND_URL ?? '', accessToken: token },
+        );
+        filename ??= result.filename;
+        rowCount += Number(result.rowCount ?? 0);
+        let chunk = await result.blob.text();
+        if (format === 'csv' && !firstPage) chunk = chunk.replace(/^[^\r\n]*(?:\r?\n|$)/, '');
+        if (chunk) chunks.push(chunk.replace(/\s+$/, ''));
+        firstPage = false;
+        if (result.complete) break;
+        if (!result.nextCursor || result.nextCursor === cursor) {
+          throw new Error('Export returned an invalid continuation cursor');
+        }
+        cursor = result.nextCursor;
+      }
 
-      const downloadUrl = URL.createObjectURL(result.blob);
+      const blob = new Blob([chunks.join('\n')], {
+        type: format === 'csv' ? 'text/csv' : 'application/x-ndjson',
+      });
+      const downloadUrl = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = downloadUrl;
-      link.download = result.filename ?? `audit-${new Date().toISOString().slice(0, 10)}.${format}`;
+      link.download = filename ?? `audit-${new Date().toISOString().slice(0, 10)}.${format}`;
       document.body.appendChild(link);
       link.click();
       link.remove();
       URL.revokeObjectURL(downloadUrl);
-      successToast(
-        result.capped
-          ? `Exported ${result.rowCount ?? '?'} events. Add filters to export older events.`
-          : `Exported ${result.rowCount ?? '?'} events`,
-      );
+      successToast(`Exported ${rowCount} events`);
     } catch (error) {
       errorToast((error as Error).message || 'Export failed');
     } finally {
@@ -324,8 +359,7 @@ export function AuditTab({ accountId }: { accountId: string }) {
         <div className="space-y-1">
           <p className="text-foreground text-sm font-medium">Audit log</p>
           <p className="text-muted-foreground max-w-2xl text-xs leading-relaxed">
-            Reconstruct activity across people, agents, sessions, API requests, connectors, and
-            computers.
+            Reconstruct activity across people, agents, sessions, API requests, and connectors.
           </p>
         </div>
         <DropdownMenu>
@@ -344,17 +378,21 @@ export function AuditTab({ accountId }: { accountId: string }) {
         </DropdownMenu>
       </div>
 
-      <FilterBar className="h-auto flex-wrap justify-start">
-        {QUICK_FILTERS.map((preset) => (
-          <FilterBarItem
-            key={preset.label}
-            onClick={() => setFilter((current) => applyQuickFilter(current, preset))}
-            data-state={isQuickFilterActive(filter, preset) ? 'active' : 'inactive'}
-          >
-            {preset.label}
-          </FilterBarItem>
-        ))}
-      </FilterBar>
+      <Tabs
+        value={activeQuickFilter}
+        onValueChange={(value) => {
+          const preset = QUICK_FILTERS.find((item) => item.label === value);
+          if (preset) setFilter((current) => applyQuickFilter(current, preset));
+        }}
+      >
+        <TabsList type="underline" className="h-auto w-full flex-wrap justify-start">
+          {QUICK_FILTERS.map((preset) => (
+            <TabsTrigger key={preset.label} value={preset.label} className="w-fit flex-none pb-3">
+              {preset.label}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+      </Tabs>
 
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative min-w-[220px] flex-1">
@@ -363,6 +401,7 @@ export function AuditTab({ accountId }: { accountId: string }) {
             value={qInput}
             onChange={(event) => setQInput(event.target.value)}
             onKeyDown={(event) => {
+              if (event.nativeEvent.isComposing) return;
               if (event.key === 'Enter') {
                 setFilter((current) => ({ ...current, q: qInput.trim() }));
               }
@@ -374,28 +413,20 @@ export function AuditTab({ accountId }: { accountId: string }) {
           />
         </div>
 
-        <Select
-          value={filter.projectId || 'all'}
-          onValueChange={(value) =>
+        <ProjectSelect
+          accountId={accountId}
+          value={filter.projectId || PROJECT_SELECT_ALL}
+          allOptionLabel="All projects"
+          placeholder="Project"
+          className="h-9 w-[210px]"
+          onChange={(value) =>
             setFilter((current) => ({
               ...current,
-              projectId: value === 'all' ? '' : value,
+              projectId: value === PROJECT_SELECT_ALL ? '' : value,
               sessionId: '',
             }))
           }
-        >
-          <SelectTrigger size="sm" className="h-9 w-[210px]">
-            <SelectValue placeholder="Project" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All projects</SelectItem>
-            {(projectsQuery.data ?? []).map((project) => (
-              <SelectItem key={project.project_id} value={project.project_id}>
-                {project.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        />
 
         <Select
           value={filter.sessionId || 'all'}
@@ -425,8 +456,8 @@ export function AuditTab({ accountId }: { accountId: string }) {
         </Select>
 
         <AdvancedFilters
+          accountId={accountId}
           filter={filter}
-          members={membersQuery.data ?? []}
           onChange={setFilter}
           count={filterCount}
         />
@@ -518,16 +549,23 @@ export function AuditTab({ accountId }: { accountId: string }) {
 }
 
 function AdvancedFilters({
+  accountId,
   filter,
-  members,
   onChange,
   count,
 }: {
+  accountId: string;
   filter: AuditFilterState;
-  members: Array<{ user_id: string; email?: string | null }>;
   onChange: Dispatch<SetStateAction<AuditFilterState>>;
   count: number;
 }) {
+  // `filter.actor` is a user id on the wire; the picker speaks
+  // `PrincipalSelection`, so the field is derived from the filter rather than
+  // held twice — clearing the filter clears the picker with no extra wiring.
+  const actorSelection: PrincipalSelection = filter.actor
+    ? { ...EMPTY_PRINCIPAL_SELECTION, memberIds: [filter.actor] }
+    : EMPTY_PRINCIPAL_SELECTION;
+
   return (
     <Popover>
       <PopoverTrigger asChild>
@@ -548,6 +586,41 @@ function AdvancedFilters({
             Combine fields to reconstruct one actor, session, or request path.
           </p>
         </div>
+        {/* "Who" leads, full width: the picker is a searchable list, not a
+            one-line Select, so it would blow out a grid row's height. */}
+        <FilterField
+          label="Person"
+          plain
+          action={
+            filter.actor ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 px-2 text-xs"
+                onClick={() => onChange((current) => ({ ...current, actor: '' }))}
+              >
+                Everyone
+              </Button>
+            ) : null
+          }
+        >
+          <PrincipalPicker
+            scope={{ kind: 'account', accountId }}
+            selection="single"
+            kinds={['member']}
+            value={actorSelection}
+            autoFocus={false}
+            emptyLabel="No members in this account yet."
+            onChange={(next) => {
+              const picked = singlePrincipal(next);
+              onChange((current) => ({
+                ...current,
+                actor: picked?.kind === 'member' ? picked.id : '',
+              }));
+            }}
+          />
+        </FilterField>
+
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <FilterField label="Principal type">
             <Select
@@ -568,30 +641,6 @@ function AdvancedFilters({
                 <SelectItem value="agent">Agent</SelectItem>
                 <SelectItem value="service_account">Service account</SelectItem>
                 <SelectItem value="system">System</SelectItem>
-              </SelectContent>
-            </Select>
-          </FilterField>
-
-          <FilterField label="Person">
-            <Select
-              value={filter.actor || 'all'}
-              onValueChange={(value) =>
-                onChange((current) => ({
-                  ...current,
-                  actor: value === 'all' ? '' : value,
-                }))
-              }
-            >
-              <SelectTrigger size="sm" className="h-9 w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Everyone</SelectItem>
-                {members.map((member) => (
-                  <SelectItem key={member.user_id} value={member.user_id}>
-                    {member.email ?? member.user_id.slice(0, 8)}
-                  </SelectItem>
-                ))}
               </SelectContent>
             </Select>
           </FilterField>
@@ -638,6 +687,30 @@ function AdvancedFilters({
                 <SelectItem value="pending">Pending</SelectItem>
                 <SelectItem value="denied">Denied</SelectItem>
                 <SelectItem value="failure">Failure</SelectItem>
+              </SelectContent>
+            </Select>
+          </FilterField>
+
+          <FilterField label="Phase">
+            <Select
+              value={filter.phase || 'all'}
+              onValueChange={(value) =>
+                onChange((current) => ({
+                  ...current,
+                  phase: value === 'all' ? '' : value,
+                }))
+              }
+            >
+              <SelectTrigger size="sm" className="h-9 w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Any phase</SelectItem>
+                {PHASES.map((phase) => (
+                  <SelectItem key={phase} value={phase}>
+                    {phase.charAt(0).toUpperCase() + phase.slice(1)}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </FilterField>
@@ -698,12 +771,35 @@ function AdvancedFilters({
   );
 }
 
-function FilterField({ label, children }: { label: string; children: ReactNode }) {
+function FilterField({
+  label,
+  children,
+  action,
+  // A `<label>` may not wrap a composite widget with its own search input and
+  // row buttons — the Person picker renders in a plain `<div>` instead.
+  plain = false,
+  className,
+}: {
+  label: string;
+  children: ReactNode;
+  action?: ReactNode;
+  plain?: boolean;
+  className?: string;
+}) {
+  const Wrapper = plain ? 'div' : 'label';
   return (
-    <label className="space-y-1.5">
-      <span className="text-muted-foreground text-xs font-medium">{label}</span>
+    <Wrapper className={cn('block space-y-1.5', className)}>
+      <span
+        className={cn(
+          'text-muted-foreground block text-xs font-medium',
+          action && 'flex min-h-6 items-center justify-between gap-2',
+        )}
+      >
+        {label}
+        {action}
+      </span>
       {children}
-    </label>
+    </Wrapper>
   );
 }
 
@@ -791,9 +887,14 @@ function AuditRow({
                 {event.actor_type.replace('_', ' ')}
               </Badge>
             ) : null}
-            {event.source ? (
+            {event.authoritative_source || event.source ? (
               <Badge variant="outline" size="xs" className="capitalize">
-                {event.source.replace('_', ' ')}
+                {(event.authoritative_source ?? event.source ?? '').replace('_', ' ')}
+              </Badge>
+            ) : null}
+            {event.client_reported_source ? (
+              <Badge variant="muted" size="xs" className="capitalize">
+                client: {event.client_reported_source.replace('_', ' ')}
               </Badge>
             ) : null}
           </div>
@@ -837,11 +938,23 @@ function AuditRow({
 
               <div className="border-border bg-background grid overflow-hidden rounded-md border sm:grid-cols-2 lg:grid-cols-4">
                 <Detail label="Event ID" value={event.event_id} />
+                <Detail
+                  label="Session sequence"
+                  value={event.session_sequence != null ? String(event.session_sequence) : null}
+                />
+                <Detail label="Phase" value={event.phase ?? null} />
+                <Detail label="Source ledger" value={event.source_ledger ?? null} />
                 <Detail label="Request ID" value={event.request_id} />
                 <Detail label="Trace ID" value={event.trace_id} />
                 <Detail label="Correlation ID" value={event.correlation_id} />
+                <Detail label="Causation ID" value={event.causation_id ?? null} />
                 <Detail label="Project ID" value={event.project_id} />
                 <Detail label="Session ID" value={event.session_id} />
+                <Detail label="OpenCode session" value={event.opencode_session_id ?? null} />
+                <Detail label="Turn ID" value={event.turn_id ?? null} />
+                <Detail label="Message ID" value={event.message_id ?? null} />
+                <Detail label="Tool call ID" value={event.tool_call_id ?? null} />
+                <Detail label="Execution ID" value={event.execution_id ?? null} />
                 <Detail
                   label="Duration"
                   value={event.duration_ms != null ? `${event.duration_ms} ms` : null}
@@ -853,6 +966,19 @@ function AuditRow({
                 <div className="grid gap-3 sm:grid-cols-2">
                   <JsonPane label="Before" data={event.before} />
                   <JsonPane label="After" data={event.after} />
+                </div>
+              ) : null}
+              {event.input_summary || event.output_summary ? (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <JsonPane label="Redacted input summary" data={event.input_summary} />
+                  <JsonPane label="Redacted output summary" data={event.output_summary} />
+                </div>
+              ) : null}
+              {event.input_sha256 || event.output_sha256 || event.integrity_hash ? (
+                <div className="border-border bg-background grid overflow-hidden rounded-md border sm:grid-cols-3">
+                  <Detail label="Input SHA-256" value={event.input_sha256 ?? null} />
+                  <Detail label="Output SHA-256" value={event.output_sha256 ?? null} />
+                  <Detail label="Integrity hash" value={event.integrity_hash ?? null} />
                 </div>
               ) : null}
               {event.metadata && Object.keys(event.metadata).length > 0 ? (
@@ -1009,26 +1135,17 @@ function JsonPane({ label, data }: { label: string; data: unknown }) {
           JSON
         </Badge>
       </div>
-      <BetterCodeBlock
-        code={code}
-        language="json"
-        showBackgroundColors={false}
-        border={false}
-        padding="p-3 [&>pre]:p-3"
-        className="max-h-64 rounded-none font-mono text-xs leading-relaxed"
-      />
+      <CopyOverlay code={code}>
+        {/* The capped scroller sits inside the overlay so the copy button stays
+            pinned while the JSON scrolls. `HighlightedCode` hardcodes
+            `text-sm leading-[1.65]` on its own `<code>`; a `[&_code]:` selector
+            is one specificity step above that class, so this pane's smaller type
+            wins without `!important`. */}
+        <div className="max-h-64 overflow-auto p-3 [&_code]:text-xs [&_code]:leading-relaxed">
+          <HighlightedCode code={code} language="json" />
+        </div>
+      </CopyOverlay>
     </div>
   );
 }
 
-function formatRelative(date: Date): string {
-  const diffMs = Date.now() - date.getTime();
-  const minutes = Math.floor(diffMs / 60_000);
-  if (minutes < 1) return 'just now';
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  if (days < 30) return `${days}d ago`;
-  return date.toLocaleDateString();
-}

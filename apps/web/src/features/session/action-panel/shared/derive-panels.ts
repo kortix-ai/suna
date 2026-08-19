@@ -18,10 +18,21 @@ import { toWorkspaceRelative } from '@/features/files/api/runtime-files';
 import { parseImageOutput } from '../../image-output-path';
 import type { PatchFileLite } from '../../tool/shared/patch-helpers';
 import { parsePresentationOutput } from '../../tool/shared/presentation-helpers';
-import { looksLikeHtml, parseWebSearchOutput, wsDomain } from '../../tool/shared/web-helpers';
+import { humanizeSearchQuery } from '../../tool/shared/search-query';
+import {
+  looksLikeHtml,
+  parseWebSearchOutput,
+  wsDomain,
+  type WebSearchSource,
+} from '../../tool/shared/web-helpers';
 import { getToolPrimaryArg, normalizeName } from '../../tool/tool-meta';
 import { extractReadableHtml } from '../../tool/tool-renderers-sanitization';
-import { createArtifactKind, familyForTool, humanizeToolName } from './narration';
+import {
+  contextLabelForTool,
+  createArtifactKind,
+  familyForTool,
+  humanizeToolName,
+} from './narration';
 
 interface OutputItemBase {
   callID: string;
@@ -73,6 +84,10 @@ export interface ContextItem {
   /** The real URL a `web` item points at — never rendered as the label
    * itself, only as a title attribute / link target for the row. */
   url?: string;
+  /** The real on-disk path a `file` item points at — set only for
+   * `kind: 'file'`. It is what lets the Context card open the file in the
+   * viewer. */
+  path?: string;
   /** Every call behind a `tool` item, so the UI can show what the tool
    * actually did (its real tool views) when the user opens the chip. */
   parts?: ToolPart[];
@@ -465,13 +480,19 @@ function webSourcesOf(part: ToolPart): Array<{ url: string; label: string }> {
   const input = (part.state?.input ?? {}) as Record<string, unknown>;
 
   if (t === 'web_search' || t === 'websearch' || t === 'image_search') {
-    const results = parseWebSearchOutput(rawOutputOf(part))
-      .flatMap((r) => r.sources)
-      .filter((r) => !!r.url);
+    const results: WebSearchSource[] = [];
+    for (const parsed of parseWebSearchOutput(rawOutputOf(part))) {
+      for (const source of parsed.sources) {
+        if (source.url) results.push(source);
+      }
+    }
     if (results.length > 0) {
       return results.map((r) => ({ url: r.url, label: r.title || wsDomain(r.url) }));
     }
-    const query = typeof input.query === 'string' ? input.query : '';
+    // No results to name it with, so the query itself is the label — which
+    // means it has to be readable. Models write engine syntax (`site:x foo`);
+    // see `humanizeSearchQuery`.
+    const query = humanizeSearchQuery(typeof input.query === 'string' ? input.query : '');
     return query ? [{ url: '', label: query }] : [];
   }
 
@@ -510,7 +531,7 @@ export function deriveContext(parts: ToolPart[]): {
       const path = filePathOf(part) ?? getToolPrimaryArg(part);
       if (!path || seenFiles.has(path)) continue;
       seenFiles.add(path);
-      files.push({ callID: part.callID, label: getToolPrimaryArg(part) || path, kind: 'file' });
+      files.push({ callID: part.callID, label: getToolPrimaryArg(part) || path, kind: 'file', path });
       continue;
     }
 
@@ -543,7 +564,13 @@ export function deriveContext(parts: ToolPart[]): {
     // Everything else is recorded once, by name, as "a tool that was used".
     // Every call to that tool rides along on `parts` so the UI can show what
     // the tool actually did when the user asks — one chip, all its calls.
-    const label = humanizeToolName(part.tool);
+    //
+    // The name comes from `contextLabelForTool`, not `humanizeToolName`: a
+    // family whose tools have several spellings (memory / memory_search /
+    // get_mem / mem_search / ltm_search) must fold into ONE row, and the
+    // by-label `seenTools` map below is what folds it — so the fold is only
+    // as good as the label. `narration.ts` owns that mapping, keyed on family.
+    const label = contextLabelForTool(part.tool);
     const seen = seenTools.get(label);
     if (seen) {
       (seen.parts ??= []).push(part);

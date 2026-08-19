@@ -234,7 +234,7 @@ function downloadTextFile(text: string, fileName: string, type: string) {
   document.body.append(anchor);
   anchor.click();
   anchor.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 0);
+  setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
 function CsvFileActionsMenu({
@@ -573,11 +573,15 @@ export function CsvViewer({
   React.useEffect(() => {
     let mounted = true;
 
-    void import('@glideapps/glide-data-grid').then((module) => {
-      if (mounted) {
-        setGlide(module);
-      }
-    });
+    import('@glideapps/glide-data-grid')
+      .then((module) => {
+        if (mounted) {
+          setGlide(module);
+        }
+      })
+      .catch((error) => {
+        console.error('[CsvViewer] Failed to load data grid:', error);
+      });
 
     return () => {
       mounted = false;

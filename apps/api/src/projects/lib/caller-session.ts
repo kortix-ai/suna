@@ -6,7 +6,7 @@ import type { Context } from 'hono';
  * `c.get('sessionId')` is overloaded, and the two meanings are not
  * interchangeable:
  *
- *   - `authType: 'pat'`      → a Kortix PROJECT SESSION id (a sandbox executor
+ *   - `authType: 'pat'`      → a Kortix PROJECT SESSION id (a sandbox connector
  *                              token; `middleware/auth.ts` sets it from the
  *                              validated token row).
  *   - `authType: 'supabase'` → the SUPABASE AUTH SESSION id, i.e. "which browser
@@ -30,7 +30,7 @@ import type { Context } from 'hono';
  *
  * The codebase already knew about this collision — `db-deps.ts`'s
  * `projectSessionIdForProjectPrincipal` exists solely to keep the Supabase value
- * out of connector-profile resolution, with the same reasoning. This is that
+ * out of connector-connection resolution, with the same reasoning. This is that
  * guard, generalised, so the next caller cannot get it wrong by reaching for the
  * obvious context var.
  */

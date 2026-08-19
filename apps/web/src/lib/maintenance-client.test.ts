@@ -14,6 +14,9 @@ describe('maintenance client fallback', () => {
     expect(isMaintenanceProductRoute('/projects/project-id')).toBe(true);
     expect(isMaintenanceProductRoute('/accounts')).toBe(true);
     expect(isMaintenanceProductRoute('/invites/token')).toBe(true);
+    // The post-sign-in destination for an account with no app access.
+    expect(isMaintenanceProductRoute('/settings')).toBe(true);
+    expect(isMaintenanceProductRoute('/settings/billing')).toBe(true);
     expect(isMaintenanceProductRoute('/')).toBe(false);
     expect(isMaintenanceProductRoute('/pricing')).toBe(false);
     expect(isMaintenanceProductRoute('/admin/utils')).toBe(false);

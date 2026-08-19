@@ -1,21 +1,22 @@
 'use client';
 import { Button } from '@/components/ui/button';
 import { SubSessionModal } from '@/features/session/sub-session-modal';
-import { BasicTool, partInput, partStatus } from '@/features/session/tool/shared/infrastructure';
+import { partInput, partStatus } from '@/features/session/tool/shared/infrastructure';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import { SubAgentActivity, SubAgentStatusBanner } from '@/features/session/tool/shared/sub-agent';
 import type { ToolProps } from '@/features/session/tool/shared/types';
-import { useRuntimeMessages } from '@kortix/sdk/react';
 import { cn } from '@/lib/utils';
-import { usePathname, useRouter } from 'next/navigation';
 import {
   getChildSessionId,
   getChildSessionToolParts,
   getToolInfo,
   type MessageWithParts,
 } from '@/ui';
+import { useRuntimeMessages } from '@kortix/sdk/react';
+import { capitalizeWords } from '@kortix/shared';
 import { CpuIcon as Cpu, ArrowSquareOutIcon as ExternalLink } from '@phosphor-icons/react';
-import { useMemo, useState } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
+import { useCallback, useMemo, useState } from 'react';
 import { projectChildSessionHref } from './session-spawn-urls';
 
 export function SessionSpawnTool({ part, forceOpen }: ToolProps) {
@@ -24,7 +25,7 @@ export function SessionSpawnTool({ part, forceOpen }: ToolProps) {
   const pathname = usePathname();
   const router = useRouter();
 
-  const agentName = (input.agent as string) || 'kortix';
+  const agentName = capitalizeWords((input.agent as string) || 'kortix');
   const description = (input.description as string) || '';
   const projectName = (input.project as string) || '';
   const fullPrompt = (input.prompt as string) || '';
@@ -54,7 +55,13 @@ export function SessionSpawnTool({ part, forceOpen }: ToolProps) {
     return info.title + (info.subtitle ? ` · ${info.subtitle}` : '');
   }, [childToolParts]);
 
-  const label = description || projectName || fullPrompt.split('\n')[0]?.slice(0, 80) || '';
+  // The fallback splits the ENTIRE spawn prompt into lines just to read the
+  // first one. A spawn prompt is routinely kilobytes, and this sits in the
+  // component body, so it ran on every render of a worker row.
+  const label = useMemo(
+    () => description || projectName || fullPrompt.split('\n')[0]?.slice(0, 80) || '',
+    [description, projectName, fullPrompt],
+  );
 
   const subtitle = isRunning ? (lastActivity ?? label) : label || undefined;
   const hasPreview = Boolean(childSessionId);
@@ -63,18 +70,18 @@ export function SessionSpawnTool({ part, forceOpen }: ToolProps) {
     if (hasPreview) setModalOpen(true);
   };
 
-  const openFullSession = () => {
+  const openFullSession = useCallback(() => {
     if (!childHref) return;
     router.push(childHref);
-  };
+  }, [childHref, router]);
 
   return (
     <>
       <div
         data-component="tool-trigger"
         className={cn(
-          'group flex max-w-full items-center gap-1.5 py-0.5 text-xs text-muted-foreground/70 transition-colors select-none',
-          '[&>span:first-child>svg]:size-3.5 [&>span:first-child>svg]:text-muted-foreground/50',
+          'group text-muted-foreground/70 flex max-w-full items-center gap-1.5 py-0.5 text-xs transition-colors select-none',
+          '[&>span:first-child>svg]:text-muted-foreground/50 [&>span:first-child>svg]:size-3.5',
         )}
       >
         <span className="shrink-0">

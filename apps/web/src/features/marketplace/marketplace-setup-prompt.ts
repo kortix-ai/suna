@@ -9,12 +9,12 @@
 export function buildTemplateSetupPrompt(title: string): string {
   const name = title.replaceAll('-', ' ');
   return [
-    `You were just created from the "${name}" template. Everything it needs — its agent(s), skills, triggers, and the integrations it depends on — is already in this project's files.`,
+    `You were just created from the "${name}" template. Everything it needs — its agent(s), skills, triggers, and the connectors it depends on — is already in this project's files.`,
     '',
     'Set it up so it is ready to run:',
     '1. If the template includes an `install.md`, read it first and follow it as the template-specific setup guide.',
     '2. Read `kortix.yaml` and the files under `.kortix/` to understand what this project is and what it needs.',
-    '3. Connect the integrations it requires (connectors + secrets). Always mint a setup link with the `request_secret` / `connect` tools (or `kortix secrets request` / `kortix connectors link`) — never ask me to paste a raw key into chat.',
+    '3. Create the connections it requires (connectors + secrets). Always mint a setup link with the `request_secret` / `connect` tools (or `kortix secrets request` / `kortix connectors connect`) — never ask me to paste a raw key into chat.',
     '4. Leave any triggers that are off by default off, and ask before enabling anything that sends messages, spends money, or contacts people.',
     '5. When it is wired up, tell me in plain language what now works and what (if anything) you still need from me to go live.',
     '',

@@ -2,6 +2,8 @@
 // roles, super-admin promotion, and effective-permissions probe.
 
 import { backendApi } from '../../http/api-client';
+import type { AuditEvent } from './audit';
+import type { ResourceGrantType } from './access';
 
 export type ResourceType =
   | 'account'
@@ -169,7 +171,7 @@ export async function addGroupMembers(accountId: string, groupId: string, userId
 export interface GroupProjectGrant {
   project_id: string;
   project_name: string;
-  role: 'manager' | 'editor' | 'member';
+  role: 'manager' | 'member';
   granted_by: string | null;
   created_at: string;
   /** Auto-revoke timestamp (ISO). null = permanent. Surfaced from the
@@ -217,16 +219,85 @@ export async function listMemberGroups(accountId: string, userId: string) {
 export interface MemberProjectAccess {
   project_id: string;
   project_name: string;
-  role: 'manager' | 'editor' | 'member';
+  role: 'manager' | 'member';
   sources: Array<'implicit' | 'direct' | 'group'>;
+  /** Custom (non-built-in) roles this member holds on this project via a
+   *  direct or group-inherited policy, layered on top of `role`. Loosely
+   *  typed and optional to match this endpoint family's existing convention
+   *  (e.g. GroupProjectGrant.expires_at) rather than a new strict export. */
+  custom_role_policies?: Array<{
+    policy_id: string;
+    role_id: string;
+    role_key: string;
+    role_name: string;
+    source: 'direct' | 'group';
+    group_id: string | null;
+    group_name: string | null;
+    expires_at: string | null;
+  }>;
 }
 
 export async function listMemberProjectAccess(accountId: string, userId: string) {
+  const data = unwrap(
+    await iamGet<{
+      projects: MemberProjectAccess[];
+      /** scope_type='account' custom-role policies that apply to every
+       *  project — the UI shows these once instead of duplicating them per
+       *  row. Same shape as MemberProjectAccess['custom_role_policies']. */
+      account_wide_policies?: MemberProjectAccess['custom_role_policies'];
+    }>(`/accounts/${accountId}/iam/members/${userId}/project-access`),
+  );
+  return {
+    projects: data.projects,
+    account_wide_policies: data.account_wide_policies ?? [],
+  };
+}
+
+// ─── Resource grants (account-wide) ────────────────────────────────────────
+// The account-scoped counterpart of `listProjectResourceGrants` (./access.ts)
+// — same underlying rows (a resource grant is still a project-scoped record),
+// but this LISTS across every project in one call instead of one project at
+// a time, for the account-level "which agents can this member/group reach,
+// everywhere" surface. Mutating a grant still goes through the project-scoped
+// `createProjectResourceGrant` / `deleteProjectResourceGrant` — there is no
+// account-wide write, only an account-wide read.
+export interface AccountResourceGrant {
+  grant_id: string;
+  project_id: string;
+  project_name: string;
+  resource_type: ResourceGrantType;
+  resource_id: string;
+  principal_type: 'member' | 'group';
+  principal_id: string;
+  /** Resolved label — member email or group name. */
+  principal_label: string;
+  granted_by: string | null;
+  created_at: string;
+  expires_at: string | null;
+}
+
+export interface ListAccountResourceGrantsFilter {
+  resourceType?: ResourceGrantType;
+  principalType?: 'member' | 'group';
+  principalId?: string;
+  projectId?: string;
+}
+
+export async function listAccountResourceGrants(
+  accountId: string,
+  filter: ListAccountResourceGrantsFilter = {},
+) {
+  const params = new URLSearchParams();
+  if (filter.resourceType) params.set('resourceType', filter.resourceType);
+  if (filter.principalType) params.set('principalType', filter.principalType);
+  if (filter.principalId) params.set('principalId', filter.principalId);
+  if (filter.projectId) params.set('projectId', filter.projectId);
+  const qs = params.toString();
   return unwrap(
-    await iamGet<{ projects: MemberProjectAccess[] }>(
-      `/accounts/${accountId}/iam/members/${userId}/project-access`,
+    await iamGet<{ grants: AccountResourceGrant[] }>(
+      `/accounts/${accountId}/iam/resource-grants${qs ? `?${qs}` : ''}`,
     ),
-  ).projects;
+  ).grants;
 }
 
 // ─── Policies ──────────────────────────────────────────────────────────────
@@ -851,7 +922,7 @@ export async function deleteAuditWebhook(accountId: string, webhookId: string) {
 
 // ─── Audit log ─────────────────────────────────────────────────────────────
 
-export interface IamAuditEvent {
+export interface IamAuditEvent extends AuditEvent {
   event_id: string;
   occurred_at: string;
   project_id: string | null;
@@ -885,6 +956,7 @@ export interface ListAuditFilter {
   session_id?: string;
   actor_type?: 'human' | 'agent' | 'service_account' | 'system';
   source?: string;
+  phase?: string;
   outcome?: 'success' | 'failure' | 'denied' | 'pending';
   request_id?: string;
   correlation_id?: string;
@@ -910,6 +982,7 @@ export async function listAuditEvents(accountId: string, filter: ListAuditFilter
   if (filter.session_id) params.set('session_id', filter.session_id);
   if (filter.actor_type) params.set('actor_type', filter.actor_type);
   if (filter.source) params.set('source', filter.source);
+  if (filter.phase) params.set('phase', filter.phase);
   if (filter.outcome) params.set('outcome', filter.outcome);
   if (filter.request_id) params.set('request_id', filter.request_id);
   if (filter.correlation_id) params.set('correlation_id', filter.correlation_id);

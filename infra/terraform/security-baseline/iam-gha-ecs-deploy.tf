@@ -12,7 +12,8 @@
 # human). This file is the system-of-record for the CORRECTED policy:
 #   - ECS resources region-wildcarded (dev/staging = us-west-2, prod = eu-west-2)
 #   - PassRole for the task+exec roles of all production release services:
-#     kortix-{dev,staging,prod} (api) and kortix-{dev,staging,prod}-gateway
+#     kortix-{dev,staging,prod} (api), kortix-{dev,staging,prod}-gateway,
+#     and kortix-{dev,staging,prod}-web
 #     plus the pre-cutover US East 2 API and gateway shadow services
 #     (the ecs-api TF module names roles "<service>-exec"/"<service>-task")
 #   - Secrets Manager read of every kortix-<env>-env blob (the task-def renderer
@@ -129,14 +130,20 @@ resource "aws_iam_role_policy" "gha_ecs_deploy" {
           "arn:aws:iam::${local.account_id}:role/kortix-dev-exec",
           "arn:aws:iam::${local.account_id}:role/kortix-dev-gateway-task",
           "arn:aws:iam::${local.account_id}:role/kortix-dev-gateway-exec",
+          "arn:aws:iam::${local.account_id}:role/kortix-dev-web-task",
+          "arn:aws:iam::${local.account_id}:role/kortix-dev-web-exec",
           "arn:aws:iam::${local.account_id}:role/kortix-staging-task",
           "arn:aws:iam::${local.account_id}:role/kortix-staging-exec",
           "arn:aws:iam::${local.account_id}:role/kortix-staging-gateway-task",
           "arn:aws:iam::${local.account_id}:role/kortix-staging-gateway-exec",
+          "arn:aws:iam::${local.account_id}:role/kortix-staging-web-task",
+          "arn:aws:iam::${local.account_id}:role/kortix-staging-web-exec",
           "arn:aws:iam::${local.account_id}:role/kortix-prod-task",
           "arn:aws:iam::${local.account_id}:role/kortix-prod-exec",
           "arn:aws:iam::${local.account_id}:role/kortix-prod-gateway-task",
           "arn:aws:iam::${local.account_id}:role/kortix-prod-gateway-exec",
+          "arn:aws:iam::${local.account_id}:role/kortix-prod-web-task",
+          "arn:aws:iam::${local.account_id}:role/kortix-prod-web-exec",
           "arn:aws:iam::${local.account_id}:role/kortix-prod-use2-task",
           "arn:aws:iam::${local.account_id}:role/kortix-prod-use2-exec",
           "arn:aws:iam::${local.account_id}:role/kortix-prod-use2-gateway-task",
@@ -152,17 +159,40 @@ resource "aws_iam_role_policy" "gha_ecs_deploy_secrets" {
   role = aws_iam_role.gha_ecs_deploy.id
   # ecs-deploy.sh reads the per-env blob to render every key into the task-def
   # as a container secret. Region-wildcarded like the ECS statements; the `-*`
-  # tail matches Secrets Manager's random ARN suffix.
+  # tail matches Secrets Manager's random ARN suffix. The staging deployment
+  # also refreshes kortix-staging-env from GitHub's staging-only data-plane
+  # secrets. Keep that write grant limited to the staging blob.
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [{
-      Effect = "Allow"
-      Action = [
-        "secretsmanager:GetSecretValue",
-        "secretsmanager:DescribeSecret",
-      ]
-      Resource = "arn:aws:secretsmanager:*:${local.account_id}:secret:kortix-*-env-*"
-    }]
+    Statement = [
+      {
+        Sid    = "ReadKortixEnvironmentSecrets"
+        Effect = "Allow"
+        Action = [
+          "secretsmanager:GetSecretValue",
+          "secretsmanager:DescribeSecret",
+        ]
+        Resource = "arn:aws:secretsmanager:*:${local.account_id}:secret:kortix-*-env-*"
+      },
+      {
+        Sid    = "WriteStagingSecret"
+        Effect = "Allow"
+        Action = [
+          "secretsmanager:CreateSecret",
+          "secretsmanager:PutSecretValue",
+        ]
+        Resource = "arn:aws:secretsmanager:us-west-2:${local.account_id}:secret:kortix-staging-env-*"
+      },
+      {
+        Sid    = "WriteWebEnvironmentSecrets"
+        Effect = "Allow"
+        Action = [
+          "secretsmanager:CreateSecret",
+          "secretsmanager:PutSecretValue",
+        ]
+        Resource = "arn:aws:secretsmanager:*:${local.account_id}:secret:kortix-*-web-env-*"
+      },
+    ]
   })
 }
 

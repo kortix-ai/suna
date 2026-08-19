@@ -1,147 +1,302 @@
 'use client';
 
 /**
- * Inline "agent needs your approval" NOTICE, pinned above the composer.
+ * In-session "agent needs your approval" card, pinned above the composer.
  *
- * This is deliberately NOT a decision surface any more. It used to carry the
- * buttons itself, which was wrong twice over:
+ * It is a decision surface again — but only because it now shows what is being
+ * decided. Two rules constrain it, and both came from real failures:
  *
- *  1. It asked an unanswerable question. The card showed `Run gmail.send_email`
- *     and nothing else — no recipient, no subject — so "is this allowed?" could
- *     not actually be judged. Whether a call is safe depends on its ARGUMENTS.
- *  2. It offered one-click escape hatches — "Allow for session", "Allow
- *     everything", and a persistent "Always allow <tool>" that wrote a project
- *     policy. Each let the reflex click that clears today's prompt silently
- *     pre-authorise every later call, including ones with entirely different
- *     arguments. An approval that is waived in one click is not a control.
+ *  1. **Never ask an unanswerable question.** The card used to show
+ *     `Run gmail.send_email` and nothing else — no recipient, no subject — so
+ *     "is this allowed?" could not be judged. Whether a call is safe depends on
+ *     its ARGUMENTS. The fix was to move the decision to a standalone page that
+ *     listed them; the fix here is to expand the redacted parameters in place,
+ *     using the SAME `ApprovalParameters` component that page renders. The
+ *     question and the evidence now arrive together, without leaving the
+ *     session.
+ *  2. **One decision, one call.** The buttons are exactly Deny and Approve this
+ *     call (`ApprovalDecisionActions`). The old session-wide, blanket, and
+ *     per-tool waiver buttons are gone: a reflex click that clears today's
+ *     prompt must not pre-authorise every later call, including ones with
+ *     entirely different arguments. To let a tool run unattended, author an
+ *     `always_run` rule in the Policies panel, where the whole rule set is in
+ *     view.
  *
- * The decision moved to the standalone /approve/<token> page (minted per gated
- * call, mirroring how secret-entry links work): it shows the redacted arguments,
- * requires a signed-in account with authority on the project, and offers exactly
- * Approve / Deny for that one call. The same link works when relayed
- * out-of-band, so the human need not be watching the session.
+ * The standalone /approve/<token> page stays, reachable from the ↗ on every
+ * row. That link is what gets relayed out-of-band (chat, email), so the human
+ * need not be watching the session — and it is the same absolute URL the API
+ * mints, so there is one link shape.
  *
- * What remains here is a pointer to it — plus the one-line "what does this
- * touch?" summary, so the notice itself is already informative.
- *
- * To let a tool run unattended, author an `always_run` rule in the Policies
- * panel, where the whole rule set is in view. That is a deliberate act, not a
- * side effect of dismissing a prompt.
+ * Liveness is unchanged: rows come from the shared `useSessionAudit` query,
+ * which polls every 5s here. A decision taken anywhere else — the link, the
+ * Audit panel, another tab — drops the row on the next poll.
  */
 
+import {
+  ApprovalDecisionActions,
+  type ApprovalDecisionValue,
+  ApprovalIncompleteNotice,
+  ApprovalParameters,
+} from '@/components/approvals/approval-request';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
+import Hint from '@/components/ui/hint';
+import { errorToast, successToast } from '@/components/ui/toast';
 import {
-  isPendingAction,
+  approvalArgsSummary,
+  approvalNoticeHeadline,
+  type ApprovalNoticeRow,
+  approvalNoticeRows,
+  approvalRequestFromAction,
+  type DecidedApproval,
+  nextExpandedApproval,
+} from '@/features/session/session-approval-review';
+import {
   relativeTime,
   riskTone,
+  useResolveApproval,
   useSessionAudit,
 } from '@/features/session/session-audit-shared';
-import type { SessionAuditAction } from '@kortix/sdk';
+import { cn } from '@/lib/utils';
 import {
+  CaretDownIcon,
+  CheckCircleIcon,
   ArrowSquareOutIcon as ExternalLink,
   ShieldWarningIcon as ShieldAlert,
 } from '@phosphor-icons/react';
 import { useParams } from 'next/navigation';
+import { useEffect, useRef, useState } from 'react';
 
-/** Fields that answer "what does this touch?" — surfaced first, in this order. */
-const PRIORITY_ARGS = ['to', 'recipient', 'recipients', 'channel', 'url', 'subject'];
-
-/**
- * One-line summary from the redacted preview the gateway recorded on the pending
- * row. Null for a row written before arg previews existed — the card then simply
- * shows the tool name, exactly as it used to.
- */
-function argsSummary(action: SessionAuditAction): string | null {
-  const summary = action.result_summary;
-  if (!summary || typeof summary !== 'object') return null;
-  const preview = (summary as Record<string, unknown>).args_preview;
-  if (!preview || typeof preview !== 'object' || Array.isArray(preview)) return null;
-
-  const entries = Object.entries(preview as Record<string, unknown>).sort((a, b) => {
-    const rank = (key: string) => {
-      const i = PRIORITY_ARGS.indexOf(key.toLowerCase());
-      return i === -1 ? PRIORITY_ARGS.length : i;
-    };
-    return rank(a[0]) - rank(b[0]);
-  });
-
-  const parts: string[] = [];
-  for (const [key, value] of entries) {
-    // '[redacted]' is the server's marker for a credential-shaped field; showing
-    // it would add noise without adding information.
-    if (value === null || value === undefined || value === '[redacted]') continue;
-    const rendered = Array.isArray(value) ? value.join(', ') : String(value);
-    if (!rendered) continue;
-    parts.push(`${key}: ${rendered}`);
-    if (parts.length === 2) break;
-  }
-  return parts.length > 0 ? parts.join(' · ') : null;
-}
+/** How long a just-decided row stays on screen to confirm the outcome. */
+const DECIDED_LINGER_MS = 5_000;
 
 export function SessionApprovalPrompt() {
   const { id: projectId, sessionId: projectSessionId } = useParams<{
     id: string;
     sessionId: string;
   }>();
-  // Poll a touch faster than the panel/nudge — this is the blocking gate the
-  // user is actively waiting on.
+  // Poll faster while the callback decision is pending.
   const { data } = useSessionAudit(projectId, projectSessionId, { refetchInterval: 5_000 });
+  const resolve = useResolveApproval(projectId, projectSessionId);
 
-  const pending = (data?.actions ?? []).filter(isPendingAction);
-  if (pending.length === 0) return null;
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const [busy, setBusy] = useState<Record<string, ApprovalDecisionValue>>({});
+  const [decided, setDecided] = useState<Record<string, DecidedApproval>>({});
+
+  // Each lingering confirmation owns one timer; drop them all on unmount so a
+  // late setState never lands on a torn-down card.
+  const timers = useRef<number[]>([]);
+  useEffect(() => {
+    const pending = timers.current;
+    return () => {
+      for (const timer of pending) clearTimeout(timer);
+    };
+  }, []);
+
+  const rows = approvalNoticeRows(data?.actions ?? [], decided);
+
+  const decide = (executionId: string, decision: ApprovalDecisionValue) => {
+    const row = rows.find((candidate) => candidate.action.execution_id === executionId);
+    if (!row) return;
+    setBusy((current) => ({ ...current, [executionId]: decision }));
+    resolve.mutate(
+      { executionId, decision },
+      {
+        onSuccess: () => {
+          setDecided((current) => ({
+            ...current,
+            [executionId]: { action: row.action, decision },
+          }));
+          setExpanded((current) => (current === executionId ? null : current));
+          successToast(decision === 'approve' ? 'Action approved' : 'Action denied');
+          timers.current.push(
+            window.setTimeout(() => {
+              setDecided((current) => {
+                const next = { ...current };
+                delete next[executionId];
+                return next;
+              });
+            }, DECIDED_LINGER_MS),
+          );
+        },
+        onError: (cause: unknown) =>
+          errorToast(cause instanceof Error ? cause.message : 'Failed to resolve approval'),
+        onSettled: () =>
+          setBusy((current) => {
+            const next = { ...current };
+            delete next[executionId];
+            return next;
+          }),
+      },
+    );
+  };
 
   return (
-    <div className="mb-2 overflow-hidden rounded-xl border border-amber-500/40 bg-amber-50/60 dark:bg-amber-950/20">
-      <div className="flex items-center gap-2 border-b border-amber-500/20 px-3 py-1.5">
-        <ShieldAlert className="size-3.5 text-amber-600 dark:text-amber-400" />
-        <span className="text-foreground text-xs font-semibold tracking-tight">
-          {pending.length === 1
-            ? 'The agent needs your approval'
-            : `${pending.length} actions need your approval`}
-        </span>
-        <span className="text-muted-foreground text-[11px]">— it's paused until you decide</span>
+    <SessionApprovalNotice
+      rows={rows}
+      expanded={expanded}
+      busy={busy}
+      onToggle={(executionId) =>
+        setExpanded((current) => nextExpandedApproval(current, executionId))
+      }
+      onDecide={decide}
+    />
+  );
+}
+
+interface SessionApprovalNoticeProps {
+  rows: ApprovalNoticeRow[];
+  /** Execution id of the one open row, or null. */
+  expanded: string | null;
+  busy: Record<string, ApprovalDecisionValue>;
+  onToggle: (executionId: string) => void;
+  onDecide: (executionId: string, decision: ApprovalDecisionValue) => void;
+}
+
+/**
+ * The card itself — no data fetching, no mutation, so both the collapsed and
+ * the expanded rendering are directly testable.
+ */
+export function SessionApprovalNotice({
+  rows,
+  expanded,
+  busy,
+  onToggle,
+  onDecide,
+}: SessionApprovalNoticeProps) {
+  if (rows.length === 0) return null;
+
+  const pendingCount = rows.filter((row) => row.decision === null).length;
+  const headline = approvalNoticeHeadline(pendingCount);
+
+  return (
+    <div
+      className={cn(
+        'bg-popover mb-2 overflow-hidden rounded-md border',
+        pendingCount > 0 ? 'border-kortix-orange/25' : 'border-border',
+      )}
+    >
+      <div
+        className={cn(
+          'flex items-center gap-2 border-b px-3 py-2',
+          pendingCount > 0 ? 'border-kortix-orange/20' : 'border-border',
+        )}
+      >
+        {pendingCount > 0 ? (
+          <ShieldAlert className="text-kortix-orange size-4" />
+        ) : (
+          <CheckCircleIcon weight="fill" className="text-kortix-green size-4" />
+        )}
+        <span className="text-foreground text-xs font-medium">{headline.title}</span>
+        {headline.hint ? (
+          <span className="text-muted-foreground text-xs">— {headline.hint}</span>
+        ) : null}
       </div>
-      <ul className="divide-y divide-amber-500/15">
-        {pending.map((a) => {
-          const summary = argsSummary(a);
+      <ul className="divide-border divide-y">
+        {rows.map(({ action, decision }) => {
+          const executionId = action.execution_id;
+          const summary = approvalArgsSummary(action);
+          const request = approvalRequestFromAction(action, decision === null);
+          const open = expanded === executionId;
+          const reviewComplete = request.reviewComplete !== false;
+
           return (
-            <li key={a.execution_id} className="flex items-center gap-2 px-3 py-2">
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-muted-foreground text-xs">Run</span>
-                  <code className="text-foreground truncate font-mono text-xs font-medium">
-                    {a.action}
-                  </code>
-                  {a.risk ? (
-                    <Badge variant={riskTone(a.risk)} size="xs" className="shrink-0 capitalize">
-                      {a.risk}
-                    </Badge>
-                  ) : null}
-                </div>
-                {summary ? (
-                  <p className="text-foreground/80 mt-0.5 truncate font-mono text-[11px]">
-                    {summary}
-                  </p>
-                ) : null}
-                <p className="text-muted-foreground mt-0.5 text-[11px]">
-                  Requested {relativeTime(a.at)}
-                </p>
-              </div>
-              {a.approval_url ? (
-                <Button size="xs" variant="default" className="shrink-0" asChild>
-                  {/* Plain anchor, not next/link: the same absolute URL is what
-                      gets relayed out-of-band, so there is one link shape. */}
-                  <a href={a.approval_url}>
-                    Review
-                    <ExternalLink className="ml-1 size-3" />
-                  </a>
-                </Button>
-              ) : (
-                <span className="text-muted-foreground shrink-0 text-[11px]">
-                  Open the Audit panel to decide
-                </span>
-              )}
+            <li key={executionId}>
+              <Disclosure open={open} onOpenChange={() => onToggle(executionId)}>
+                <DisclosureTrigger>
+                  <div
+                    className={cn(
+                      'flex cursor-pointer items-center gap-2 px-3 py-2 transition-colors',
+                      'hover:bg-foreground/[0.03]',
+                    )}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-muted-foreground text-xs">Run</span>
+                        <code className="text-foreground truncate font-mono text-xs font-medium">
+                          {action.action}
+                        </code>
+                        {action.risk ? (
+                          <Badge
+                            variant={riskTone(action.risk)}
+                            size="xs"
+                            className="shrink-0 capitalize"
+                          >
+                            {action.risk}
+                          </Badge>
+                        ) : null}
+                      </div>
+                      {summary ? (
+                        <p className="text-foreground/80 mt-0.5 truncate font-mono text-xs">
+                          {summary}
+                        </p>
+                      ) : null}
+                      <p className="text-muted-foreground mt-0.5 text-xs">
+                        Requested {relativeTime(action.at)}
+                      </p>
+                    </div>
+                    {decision ? (
+                      <Badge
+                        variant={decision === 'approve' ? 'success' : 'destructive'}
+                        size="sm"
+                        className="shrink-0"
+                      >
+                        {decision === 'approve' ? 'Approved' : 'Denied'}
+                      </Badge>
+                    ) : (
+                      <span className="text-muted-foreground flex shrink-0 items-center gap-1 text-xs">
+                        Review
+                        <CaretDownIcon
+                          className={cn(
+                            'size-3 transition-transform duration-150',
+                            open && 'rotate-180',
+                          )}
+                        />
+                      </span>
+                    )}
+                    {action.approval_url ? (
+                      <Hint label="Open the full approval page" side="top">
+                        <Button
+                          size="icon-sm"
+                          variant="ghost"
+                          className="text-muted-foreground shrink-0"
+                          asChild
+                        >
+                          {/* Plain anchor, not next/link: the same absolute URL is what
+                              gets relayed out-of-band, so there is one link shape. */}
+                          <a
+                            href={action.approval_url}
+                            aria-label="Open the full approval page"
+                            onClick={(event) => event.stopPropagation()}
+                            onKeyDown={(event) => event.stopPropagation()}
+                          >
+                            <ExternalLink className="size-3.5" />
+                          </a>
+                        </Button>
+                      </Hint>
+                    ) : null}
+                  </div>
+                </DisclosureTrigger>
+                <DisclosureContent>
+                  <div className="space-y-2 px-3 pb-3">
+                    <ApprovalParameters
+                      dense
+                      argsPreview={request.argsPreview}
+                      reviewComplete={reviewComplete}
+                    />
+                    {!reviewComplete ? <ApprovalIncompleteNotice dense /> : null}
+                    {decision === null ? (
+                      <ApprovalDecisionActions
+                        dense
+                        onDecision={(next) => onDecide(executionId, next)}
+                        busyDecision={busy[executionId] ?? null}
+                        approveDisabled={!reviewComplete}
+                      />
+                    ) : null}
+                  </div>
+                </DisclosureContent>
+              </Disclosure>
             </li>
           );
         })}

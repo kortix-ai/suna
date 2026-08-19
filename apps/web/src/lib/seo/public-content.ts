@@ -49,6 +49,7 @@ function loadContentTimestamps(): Record<string, string> {
 
 export const STATIC_PUBLIC_ROUTES = [
   '/',
+  '/a1o',
   '/about',
   '/agent-computer',
   '/agents-and-skills',
@@ -61,8 +62,11 @@ export const STATIC_PUBLIC_ROUTES = [
   '/contact',
   '/developers',
   '/docs',
+  '/download',
   '/enterprise',
-  '/integrations',
+  '/help',
+  '/help/credits',
+  '/connectors',
   '/legal',
   '/marketplace',
   '/pricing',
@@ -117,9 +121,64 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
     kind: 'marketing',
     slug: 'developers',
     title: 'Kortix for developers',
-    description: siteMetadata.description,
+    description:
+      'Build with Kortix from the terminal: drive projects, sessions, and agents through the CLI and SDK, wire triggers and connectors, and land every change through a reviewed change request.',
     htmlPath: '/developers',
     markdownPath: '/markdown/developers.md',
+  },
+  {
+    kind: 'marketing',
+    slug: 'careers',
+    title: 'Careers at Kortix',
+    description:
+      'Open positions at Kortix — Marketing / Content, Sales, FDE / Services, Product / Eng, Product / R&D. Belgrade, Serbia and San Francisco. We hire for prolonged ownership.',
+    htmlPath: '/careers',
+  },
+  {
+    kind: 'marketing',
+    slug: 'changelog',
+    title: 'Kortix Changelog',
+    description:
+      'Every Kortix release, straight from the source. New features, fixes, and improvements — versioned and dated.',
+    htmlPath: '/changelog',
+  },
+  {
+    kind: 'marketing',
+    slug: 'blog',
+    title: 'Kortix Blog',
+    description:
+      'Field notes on building, running, and governing AI agents that do real work — from the team building the Kortix command center.',
+    htmlPath: '/blog',
+  },
+  {
+    kind: 'marketing',
+    slug: 'use-cases',
+    title: 'Kortix Use Cases',
+    description:
+      'How teams put a workforce of AI agents to work — the loops they engineer, the deliverables they ship, and the reviewed changes that make the company better every day.',
+    htmlPath: '/use-cases',
+  },
+  {
+    kind: 'marketing',
+    slug: 'download',
+    title: 'Download Kortix',
+    description: 'Get Kortix for macOS, Windows, Linux, iOS, and Android.',
+    htmlPath: '/download',
+  },
+  {
+    kind: 'marketing',
+    slug: 'help',
+    title: 'Kortix Help Center',
+    description: 'Guides for billing, credits, and everyday Kortix questions.',
+    htmlPath: '/help',
+  },
+  {
+    kind: 'marketing',
+    slug: 'help/credits',
+    title: 'Kortix credits explained',
+    description:
+      'What credits are, how Kortix sessions consume them, and how to manage your balance and subscription.',
+    htmlPath: '/help/credits',
   },
   {
     kind: 'marketing',
@@ -197,12 +256,12 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
   },
   {
     kind: 'marketing',
-    slug: 'integrations',
+    slug: 'connectors',
     title: 'Kortix connectors',
     description:
       'Connect 3,000+ apps, MCP servers, OpenAPI, GraphQL and raw HTTP once for the whole company. Agents reach them through one scoped token — credentials stay server-side, every action is allowed, gated, or blocked, and every call is logged.',
-    htmlPath: '/integrations',
-    markdownPath: '/markdown/integrations.md',
+    htmlPath: '/connectors',
+    markdownPath: '/markdown/connectors.md',
   },
   {
     kind: 'marketing',
@@ -514,8 +573,10 @@ function sourceDocuments(kind: 'docs' | 'use-case'): SourceDocument[] {
 }
 
 function blogRecords(): PublicContentRecord[] {
-  return BLOG_POSTS.filter((post) => process.env.NODE_ENV !== 'production' || !post.draft)
-    .map((post) => ({
+  const records: (PublicContentRecord & { lastModified: string })[] = [];
+  for (const post of BLOG_POSTS) {
+    if (process.env.NODE_ENV === 'production' && post.draft) continue;
+    records.push({
       kind: 'blog' as const,
       slug: post.slug,
       title: post.title,
@@ -523,8 +584,9 @@ function blogRecords(): PublicContentRecord[] {
       htmlPath: `/blog/${post.slug}`,
       markdownPath: `/markdown/blog/${post.slug}.md`,
       lastModified: `${post.date}T00:00:00.000Z`,
-    }))
-    .sort((a, b) => b.lastModified.localeCompare(a.lastModified));
+    });
+  }
+  return records.sort((a, b) => b.lastModified.localeCompare(a.lastModified));
 }
 
 export function areUseCasesPublic(): boolean {
@@ -604,14 +666,15 @@ function renderMarketingMarkdown(record: PublicContentRecord): string {
   ];
 
   if (record.slug === 'pricing' || record.slug === 'enterprise') {
-    const plans = PRICING_PLANS.filter(
-      (plan) => record.slug === 'pricing' || plan.id === 'enterprise',
-    ).map(
-      (plan) =>
+    const plans: string[] = [];
+    for (const plan of PRICING_PLANS) {
+      if (record.slug !== 'pricing' && plan.id !== 'enterprise') continue;
+      plans.push(
         `## ${plan.name}\n\n${plan.price}${plan.unit ? ` ${plan.unit}` : ''}\n\n${plan.note}\n\n${plan.features
           .map((feature) => `- ${feature}`)
           .join('\n')}`,
-    );
+      );
+    }
     return `${documentHeader(record)}\n\n${plans.join('\n\n')}`;
   }
 

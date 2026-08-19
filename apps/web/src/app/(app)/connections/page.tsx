@@ -1,0 +1,86 @@
+'use client';
+
+import {
+  WarningCircleIcon as AlertCircle,
+  CheckCircleIcon as CheckCircle2,
+  PlugIcon as Plug,
+} from '@phosphor-icons/react';
+import { useTranslations } from 'next-intl';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Suspense, useEffect } from 'react';
+
+import { Button } from '@/components/ui/button';
+import { isConnectorsEnabled } from '@/lib/config';
+import { useAppHome } from '@/lib/onboarding/use-app-home';
+
+/**
+ * `/connections` is the post-OAuth landing for Pipedream connector setup. The connect
+ * flow redirects here with `?connected=true` or `?error=true` once the user
+ * authorizes the app. The connection is already finalized server-side — this
+ * page just confirms it so the tab isn't a dead end.
+ *
+ * Self-host without Pipedream configured never initiates this OAuth flow, so
+ * this route should never legitimately be hit there — but guard it anyway
+ * (a stale bookmark/link) by bouncing to /projects instead of confirming a
+ * "connection" for a feature that isn't enabled.
+ */
+export default function ConnectionsPage() {
+  return (
+    <Suspense fallback={null}>
+      <ConnectionResult />
+    </Suspense>
+  );
+}
+
+function ConnectionResult() {
+  const appHome = useAppHome();
+  const tI18nHardcoded = useTranslations('hardcodedUi');
+  const router = useRouter();
+  const params = useSearchParams();
+  const connectorsEnabled = isConnectorsEnabled();
+
+  useEffect(() => {
+    if (!connectorsEnabled) router.replace(appHome);
+  }, [appHome, connectorsEnabled, router]);
+
+  const ok = params.get('connected') === 'true';
+  const failed = params.get('error') === 'true';
+  const state: 'connected' | 'error' = failed && !ok ? 'error' : 'connected';
+
+  if (!connectorsEnabled) return null;
+
+  const Icon = state === 'connected' ? CheckCircle2 : AlertCircle;
+
+  return (
+    <div className="bg-background fixed inset-0 flex items-center justify-center px-4">
+      <div className="w-full max-w-sm space-y-5 text-center">
+        <div className="border-border bg-muted/40 mx-auto flex h-14 w-14 items-center justify-center rounded-full border">
+          {state === 'connected' ? (
+            <Icon className="h-6 w-6 text-emerald-600" />
+          ) : (
+            <Icon className="text-destructive h-6 w-6" />
+          )}
+        </div>
+        <div className="space-y-2">
+          <h1 className="text-xl font-semibold tracking-tight">
+            {state === 'connected' ? 'Connector connected' : 'Connection failed'}
+          </h1>
+          <p className="text-muted-foreground text-sm">
+            {state === 'connected'
+              ? 'Authorized. You can close this tab and return to where you started. Your agent can use this connection now.'
+              : "The authorization didn't complete. Close this tab and start the connect again from your terminal or the dashboard."}
+          </p>
+        </div>
+        <div className="flex items-center justify-center gap-2">
+          <Button variant="outline" className="gap-1.5" onClick={() => window.close()}>
+            <Plug className="h-4 w-4" />
+            {tI18nHardcoded.raw('autoAppAppConnectorsPageJsxTextCloseWindowa183ed6a')}
+          </Button>
+          <Button variant="ghost" onClick={() => router.replace(appHome)}>
+            {tI18nHardcoded.raw('autoAppAppConnectorsPageJsxTextGoToProjectsfb39e5ad')}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}

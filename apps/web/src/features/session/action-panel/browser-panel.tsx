@@ -20,6 +20,7 @@ import { useSessionPublicShares } from '@/hooks/use-session-public-shares';
 import { INTERACTIVE_PREVIEW_IFRAME_SANDBOX } from '@/lib/security/iframe-sandbox';
 import { cn } from '@/lib/utils';
 import { focusWithoutScroll } from '@/lib/utils/focus-without-scroll';
+import { isKortixAppUrl } from '@/features/session/kortix-app-url';
 import {
   buildWebProxyUrl,
   isExternalUrl,
@@ -37,13 +38,13 @@ import {
   WarningIcon as AlertTriangle,
   ArrowLeftIcon as ArrowLeft,
   ArrowRightIcon as ArrowRight,
+  ArrowSquareOutIcon,
   GlobeIcon as Globe,
   ArrowClockwiseIcon as GrRefresh,
   LinkSimpleIcon as Link2,
   DotsThreeIcon as MoreHorizontal,
   ArrowClockwiseIcon as RefreshCw,
   GearSixIcon as Settings2,
-  ArrowSquareOutIcon as TbExternalLink,
 } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import type React from 'react';
@@ -143,7 +144,7 @@ export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabC
   );
 
   // Navigation history
-  const [history, setHistory] = useState<string[]>([proxiedPreviewUrl].filter(Boolean));
+  const [history, setHistory] = useState<string[]>(() => [proxiedPreviewUrl].filter(Boolean));
   const [historyIndex, setHistoryIndex] = useState(0);
 
   // Inject auth token for cloud preview proxy URLs.
@@ -210,7 +211,9 @@ export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabC
     (url: string) => {
       const externalUrl = normalizeExternalInput(url);
       if (externalUrl && isExternalUrl(externalUrl)) {
-        const newProxyUrl = buildWebProxyUrl(externalUrl, subdomainOpts);
+        const newProxyUrl = isKortixAppUrl(externalUrl)
+          ? externalUrl
+          : buildWebProxyUrl(externalUrl, subdomainOpts);
         if (!newProxyUrl) return;
 
         let displayHost: string;
@@ -576,7 +579,7 @@ export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabC
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="min-w-32">
             <DropdownMenuItem onClick={handleOpenExternal}>
-              <TbExternalLink />
+              <ArrowSquareOutIcon />
               {tHardcodedUi.raw(
                 'autoComponentsTabsPreviewTabContentJsxAttrTitleOpenPrivate087e249c',
               )}

@@ -144,7 +144,7 @@ export function GlyphPicker({
 
   return (
     <div className={cn('isolate flex h-[368px] w-full flex-col', className)}>
-      <div className="space-y-2 p-2">
+      <div className="space-y-2 p-1">
         <InputGroupSearch>
           <InputGroupSearchIcon>
             <MagnifyingGlassIcon />

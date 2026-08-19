@@ -40,7 +40,7 @@ Existing OpenAPI behavior and manifests remain backward compatible.
 
 ## Ingestion boundary
 
-Postman is a source provider, not an alternate executor. Source resolution
+Postman is a source provider, not an alternate connector. Source resolution
 returns one or more named documents:
 
 - `.postman/api` repositories: follow each `.postman/api_<id>` relation and
@@ -84,7 +84,7 @@ For every request item:
 
 Execution uses a dedicated `postman` action binding so request templates and
 static headers/query values survive normalization. It still calls the existing
-HTTP request executor, authentication attachment, audit, approval, and policy
+HTTP request connector, authentication attachment, audit, approval, and policy
 layers.
 
 ## Safety and limits

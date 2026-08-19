@@ -1,5 +1,83 @@
 name: Deploy Prod US East 2 Shadow
 
+# Rolls the DARK us-east-2 pre-cutover stack: shadow database schema, logical
+# replication refresh, avatar storage sync, ECS api + gateway, then smoke and
+# contract verification. It never changes production routing, DNS, desired
+# counts, or worker flags.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# STATUS: the release lane is OFF. deploy-prod.yml calls this workflow only
+# when the repository variable ENABLE_US_SHADOW_DEPLOY is `true`, which it is
+# not. `workflow_dispatch` still works, so an operator can drive every step by
+# hand. Three independent breakages, each proven in a release run:
+#
+#   1. Replication is gone. The source publication `kortix_us_east_2_20260725`
+#      and its replication slot were dropped from prod on 2026-08-08 with
+#      wal_status `lost`. Nothing can resume from a dropped slot; the target
+#      needs a rebuild plus a full resync.
+#   2. Source/target column drift. Prod still has
+#      `kortix.project_session_connector_bindings.profile_id`, which migration
+#      20260806150353417_connector_compat_removal.sql dropped and the shadow no
+#      longer has. `refresh-replication.sh` fails closed with "The target lacks
+#      selected source columns" — the sole failure of the v0.12.5 shadow lane
+#      (job 92927632339) and the v0.12.6 shadow lane (job 93130050196).
+#   3. Migration runtime. The shadow's pending `audit_events` work exceeds the
+#      Supabase statement timeout: v0.12.7 spent 24m20s on
+#      20260807221200000_centralized_audit_v2 and then failed
+#      20260807221205000 with 57014 "canceling statement due to statement
+#      timeout" (job 93576314456). The step now runs with
+#      `PGOPTIONS=-c statement_timeout=0` and a hard step timeout instead.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# REVIVAL CHECKLIST — turning the lane back on
+#
+# Every step needs an AWS session with MFA for `kortix-gha-prod-use2-terraform`
+# (or the equivalent break-glass role) plus psql against both databases. Full
+# detail, including the exact SQL and the verification queries, lives in
+# docs/runbooks/prod-us-east-2-supabase-migration.md, section "Reviving the
+# shadow deploy lane". Short form, in order:
+#
+#   1. Clear the source drift. Drop the leftover
+#      `kortix.project_session_connector_bindings.profile_id` column on prod so
+#      the source matches the migration ledger. Until this is true, step 5
+#      fails immediately.
+#   2. Clear invalid indexes on the shadow. A statement-timeout kill leaves an
+#      INVALID index behind, and `create index concurrently if not exists`
+#      silently accepts it on retry. Drop every `pg_index.indisvalid = false`
+#      entry in `kortix` on the target before re-running migrations.
+#   3. Bring the shadow schema current:
+#      `DATABASE_URL=<target> pnpm --filter @kortix/db migrate`, with
+#      `PGOPTIONS='-c statement_timeout=0'`. Expect tens of minutes.
+#   4. Rebuild replication from scratch — the slot is unrecoverable:
+#        a. `bash scripts/prod-us-east-2/db-sync.sh prepare-source`   (recreates
+#           the publication `kortix_us_east_2_20260725` on prod)
+#        b. drop the dead target subscription, then
+#           `bash scripts/prod-us-east-2/db-sync.sh start`            (creates
+#           the subscription + slot and starts `copy_data = true`)
+#        c. same pair for Auth via `scripts/prod-us-east-2/auth-sync.sh`
+#        d. `db-sync.sh status` / `auth-sync.sh status` until every relation
+#           reaches state `r` and both apply workers are live. A full initial
+#           copy of a ~286 GB source runs for hours.
+#   5. `bash scripts/prod-us-east-2/refresh-replication.sh` with
+#      ALLOW_REPLICATION_REFRESH=1 must exit 0.
+#   6. Run **Reconcile Prod US East 2 Shadow** (dispatch) to strip target-only
+#      shadow verification writes, then re-check `status`.
+#   7. Dispatch THIS workflow with `synchronize_database: true` and the current
+#      released version. It must go green end to end.
+#   8. Only then set the repository variable `ENABLE_US_SHADOW_DEPLOY=true`
+#      (`gh variable set ENABLE_US_SHADOW_DEPLOY --body true`).
+#
+# Cutover (a separate decision, not part of reviving the lane) runs in this
+# order once the lane is green and staying green:
+#   Finalize Prod US East 2 Database (`preflight-live`)
+#     → freeze the source
+#     → Finalize Prod US East 2 Database (`finalize-frozen`)
+#     → Activate Prod US East 2 Writers (`enable`)
+#     → Cutover Prod US East 2 (routing)
+#   Rollback path: Activate Prod US East 2 Writers (`disable`) then
+#   Finalize Prod US East 2 Database (`reenable-subscriptions`).
+# ─────────────────────────────────────────────────────────────────────────────
+
 on:
   workflow_call:
     inputs:
@@ -64,6 +142,9 @@ jobs:
   infrastructure:
     name: Apply US East 2 shadow Terraform
     runs-on: ubuntu-latest
+    # A healthy apply finishes in under a minute (v0.12.7: 40s, job
+    # 93576314738). Anything past 20 minutes is a stuck Terraform lock.
+    timeout-minutes: 20
     environment: prod-use2-shadow
     env:
       AWS_REGION: us-east-2
@@ -182,6 +263,11 @@ jobs:
     name: Deploy API and gateway to US shadow
     runs-on: ubuntu-latest
     needs: infrastructure
+    # Hard ceiling so a wedged shadow can never sit `in_progress` and block
+    # "re-run failed jobs" on the calling release run — the v0.12.7 failure
+    # mode, where the whole run had to be cancelled. Individual slow steps
+    # carry their own tighter timeouts below. A healthy run takes ~25 minutes.
+    timeout-minutes: 75
     env:
       AWS_REGION: us-east-2
       ROLE: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
@@ -307,8 +393,23 @@ jobs:
           printf 'SOURCE_DATABASE_URL=%s\n' "$source_database_url" >> "$GITHUB_ENV"
           printf 'TARGET_DATABASE_URL=%s\n' "$target_database_url" >> "$GITHUB_ENV"
 
+      # The shadow lags production by whole releases, so a catch-up run replays
+      # heavy migrations against a ~286 GB database. The Supabase role default
+      # `statement_timeout` of 120s killed `create index concurrently
+      # idx_audit_events_account_source_phase_time` on v0.12.7 (57014, job
+      # 93576314456), and the four indexes before it needed 1s, 99s, 39s, and
+      # 86s. Disable the per-statement cap here — the shadow serves no traffic —
+      # and bound the whole step with `timeout-minutes` instead. `pg` reads
+      # PGOPTIONS in ConnectionParameters when no explicit `options` is set.
+      #
+      # A killed `CREATE INDEX CONCURRENTLY` leaves an INVALID index that
+      # `if not exists` then accepts on retry. Drop invalid `kortix` indexes on
+      # the target before re-running this step. See the revival checklist above.
       - name: Apply migrations to the US shadow database
         if: inputs.synchronize_database
+        timeout-minutes: 40
+        env:
+          PGOPTIONS: -c statement_timeout=0
         run: |
           set -euo pipefail
           migration_database_url="$(
@@ -318,30 +419,38 @@ jobs:
           echo "::add-mask::$migration_database_url"
           DATABASE_URL="$migration_database_url" pnpm --filter @kortix/db migrate
 
+      # refresh-replication.sh self-caps its readiness poll at 20 minutes.
       - name: Refresh application replication
         if: inputs.synchronize_database
+        timeout-minutes: 25
         run: bash scripts/prod-us-east-2/refresh-replication.sh
         env:
           ALLOW_REPLICATION_REFRESH: "1"
 
       - name: Synchronize current avatar objects
         if: inputs.synchronize_database
+        timeout-minutes: 20
         run: TARGET_SECRET_ID="$TARGET_ENV_BLOB" bash scripts/prod-us-east-2/storage-sync.sh
 
       - name: Deploy released images
+        timeout-minutes: 20
         run: |
           set -euo pipefail
           bash infra/scripts/ecs-deploy.sh \
             prod-use2-shadow \
             "kortix/kortix-api:${IMAGE_TAG}" \
-            --version "$VERSION"
+            --version "$VERSION" \
+            --database-migrated
           bash infra/scripts/ecs-deploy.sh \
             prod-use2-shadow \
             "kortix/kortix-gateway:${IMAGE_TAG}" \
             --service gateway \
-            --version "$VERSION"
+            --version "$VERSION" \
+            --database-migrated
 
+      # The loop below self-caps at 60 attempts x 10s = 10 minutes per service.
       - name: Verify ECS capacity and task images
+        timeout-minutes: 25
         run: |
           set -euo pipefail
           verify_service() {
@@ -397,7 +506,9 @@ jobs:
               gateway \
               "kortix/kortix-gateway:${IMAGE_TAG}"
 
+      # The loop below self-caps at 40 attempts x 15s = 10 minutes.
       - name: Verify shadow endpoints
+        timeout-minutes: 12
         run: |
           set -euo pipefail
           for attempt in $(seq 1 40); do
@@ -431,6 +542,7 @@ jobs:
           exit 1
 
       - name: Verify target Auth, API, OAuth, MFA, and Storage
+        timeout-minutes: 15
         run: |
           set -euo pipefail
           TARGET_SECRET_ID="$TARGET_ENV_BLOB" \
@@ -443,6 +555,7 @@ jobs:
             bash scripts/prod-us-east-2/target-smoke.sh
 
       - name: Install frontend Auth smoke dependencies
+        timeout-minutes: 15
         run: |
           set -euo pipefail
           cd tests
@@ -450,6 +563,7 @@ jobs:
           bunx playwright install --with-deps chromium
 
       - name: Verify public API contracts
+        timeout-minutes: 20
         run: |
           set -euo pipefail
           cd tests
@@ -462,6 +576,7 @@ jobs:
               --workers 1
 
       - name: Verify frontend password login and authenticated shell
+        timeout-minutes: 15
         run: |
           set -euo pipefail
           TARGET_SECRET_ID="$TARGET_ENV_BLOB" \

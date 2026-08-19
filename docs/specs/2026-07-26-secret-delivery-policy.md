@@ -60,7 +60,7 @@ The mechanism is proven and in production.
 agent has to know to call `${KORTIX_API_URL}/v1/router/tavily` instead of
 `api.tavily.com`. That means:
 
-- Every integration needs Kortix-specific code. Ordinary SDKs, `curl`, and any
+- Every connector needs Kortix-specific code. Ordinary SDKs, `curl`, and any
   library that hardcodes its vendor base URL all bypass it.
 - It is a *convention*, not a *control*. An agent that ignores the convention and
   calls the vendor directly is not stopped — it just doesn't get a key from us.
@@ -152,20 +152,21 @@ time. A running box that already received a secret in `env` mode still holds it 
 same residue problem as agent-scope switching. Changing a secret's policy should
 be treated as requiring a new sandbox.
 
-## Executor token resolution
+## Connector token resolution
 
-Agent identity has two halves: secret delivery and the executor token grant.
+Agent identity has two halves: secret delivery and the connector token grant.
 
-`mintExecutorToken` (`apps/api/src/platform/services/session-sandbox.ts:129`) has
+`mintConnectorToken` (`apps/api/src/platform/services/session-sandbox.ts:129`) has
 exactly **one** call site — at sandbox provision. It stamps the token with
 `agentGrant` from the session's create-time agent. The proxy rewrites the
-persisted grant when a later prompt switches agents.
+persisted grant before every prompt. It compares the resolved grant, not only
+the agent name. A same-agent change to `connectors` or `kortix_cli` therefore
+takes effect in the existing session.
 
-Re-scoping *env* per prompt is not sufficient on its own. The proxy now also
-re-mints every active session token's `agent_grant` before it forwards a switched
-prompt. Connector and Kortix CLI authorization therefore follow the running
-agent. `KORTIX_ENFORCE_AGENT_SECRET_GRANT_LOCK` defaults off; operators can set
-it to true when they require immutable secret grants per sandbox.
+Re-scoping *env* per prompt is not sufficient on its own. The proxy also
+reconciles every active session token's `agent_grant` before it forwards each
+prompt. Connector and Kortix CLI authorization therefore follow the current
+manifest and running agent.
 
 There is also a live fail-open on that path: `session-sandbox.ts:143` does
 `resolveAgentGrant(...).catch(() => null)`, and `null` means unrestricted. It
@@ -174,8 +175,13 @@ failure synthesizes a manifest granting `connectors: 'all'` + `kortix_cli: 'all'
 This is the same bug class #5514 fixed for env, still open for the token — and
 the plumbing to fix it (`rethrowReadErrors`) is already on main.
 
-The implementation keeps the token value stable and rewrites its server-side
-grant row. The sandbox does not receive a replacement credential.
+The Connector gateway also reconciles the persisted grant before catalog and
+call authorization. This covers a manifest change followed by a Connector call
+inside one turn. These authorization reads bypass the process-local Git mirror
+TTL, so a different API replica cannot serve the prior grant for up to 60
+seconds. The implementation keeps the token value stable and rewrites
+its server-side grant row. The sandbox does not receive a replacement
+credential, restart, or new session.
 
 ## Delivery-policy sequencing
 

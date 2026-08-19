@@ -29,7 +29,7 @@ export function unwrapError(raw: unknown): string {
       }
       return extractErrorFromObject(parsed) || str;
     } catch {
-      // Not directly parseable as JSON — router/executor errors commonly wrap
+      // Not directly parseable as JSON — router/connector errors commonly wrap
       // a JSON body inside a plain-text prefix, e.g. router tool credit
       // failures: `Error: 402 Error: {"error":true,"message":"Insufficient
       // credits","status":402}`. Extract the outermost {...} substring (if
@@ -116,6 +116,60 @@ export interface GatewayErrorDetails {
   suggestion?: string;
   upstreamStatus?: number;
   requestId?: string;
+  attemptFailures?: GatewayAttemptFailure[];
+}
+
+export interface GatewayAttemptFailure {
+  attempt: number;
+  provider: string;
+  routeModel: string;
+  resolvedModel: string;
+  stage: string;
+  status?: number;
+  code: string | number;
+  message: string;
+}
+
+function attemptFailuresFrom(value: unknown): GatewayAttemptFailure[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const failures: GatewayAttemptFailure[] = [];
+  for (const item of value) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
+    const failure = item as Record<string, unknown>;
+    if (
+      !Number.isInteger(failure.attempt) ||
+      (failure.attempt as number) < 1 ||
+      typeof failure.provider !== 'string' ||
+      !failure.provider ||
+      typeof failure.route_model !== 'string' ||
+      !failure.route_model ||
+      typeof failure.resolved_model !== 'string' ||
+      !failure.resolved_model ||
+      typeof failure.stage !== 'string' ||
+      !failure.stage ||
+      (typeof failure.code !== 'string' &&
+        !(typeof failure.code === 'number' && Number.isFinite(failure.code))) ||
+      typeof failure.message !== 'string' ||
+      !failure.message ||
+      (failure.status !== undefined &&
+        (!Number.isInteger(failure.status) ||
+          (failure.status as number) < 100 ||
+          (failure.status as number) > 599))
+    ) {
+      continue;
+    }
+    failures.push({
+      attempt: failure.attempt as number,
+      provider: failure.provider,
+      routeModel: failure.route_model,
+      resolvedModel: failure.resolved_model,
+      stage: failure.stage,
+      ...(typeof failure.status === 'number' ? { status: failure.status } : {}),
+      code: failure.code,
+      message: failure.message,
+    });
+  }
+  return failures.length > 0 ? failures : undefined;
 }
 
 function tryParseJson(value: unknown): unknown {
@@ -136,12 +190,24 @@ function tryParseJson(value: unknown): unknown {
 function gatewayFieldsFrom(obj: Record<string, unknown>): GatewayErrorDetails | undefined {
   const provider = typeof obj.provider === 'string' && obj.provider ? obj.provider : undefined;
   const code = typeof obj.code === 'string' && obj.code ? obj.code : undefined;
-  const suggestion = typeof obj.suggestion === 'string' && obj.suggestion ? obj.suggestion : undefined;
+  const suggestion =
+    typeof obj.suggestion === 'string' && obj.suggestion ? obj.suggestion : undefined;
   const upstreamStatus = typeof obj.upstream_status === 'number' ? obj.upstream_status : undefined;
-  const requestId = typeof obj.request_id === 'string' && obj.request_id ? obj.request_id : undefined;
-  if (!provider && !code && !suggestion && upstreamStatus === undefined && !requestId) return undefined;
-  const message = (typeof obj.message === 'string' && obj.message) || extractErrorFromObject(obj) || '';
-  return { message, provider, code, suggestion, upstreamStatus, requestId };
+  const requestId =
+    typeof obj.request_id === 'string' && obj.request_id ? obj.request_id : undefined;
+  const attemptFailures = attemptFailuresFrom(obj.attempt_failures);
+  if (
+    !provider &&
+    !code &&
+    !suggestion &&
+    upstreamStatus === undefined &&
+    !requestId &&
+    !attemptFailures
+  )
+    return undefined;
+  const message =
+    (typeof obj.message === 'string' && obj.message) || extractErrorFromObject(obj) || '';
+  return { message, provider, code, suggestion, upstreamStatus, requestId, attemptFailures };
 }
 
 /**

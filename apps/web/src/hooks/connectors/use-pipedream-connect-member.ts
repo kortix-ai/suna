@@ -5,9 +5,9 @@ import { useMutation } from '@tanstack/react-query';
 
 import { errorToast, successToast } from '@/components/ui/toast';
 import {
-  pipedreamConnectConnectorAuthorization,
-  pipedreamFinalizeConnectorAuthorization,
-  reconcileMemberConnectorAuthorization,
+  pipedreamConnectConnection,
+  pipedreamFinalizeConnection,
+  reconcileMemberConnection,
 } from '@kortix/sdk';
 
 const PIPEDREAM_IFRAME_SELECTOR = 'iframe[id^="pipedream-connect-iframe-"]';
@@ -56,7 +56,7 @@ export function withPipedreamOverlayEscape(): () => void {
 
 /**
  * Connect the CURRENT USER's own private (member-owned) account for a Pipedream
- * connector: mint a member profile, run the Pipedream OAuth handshake, then
+ * connector: mint a member connection, run the Pipedream OAuth handshake, then
  * finalize. The result is usable ONLY in this user's own private sessions and is
  * never shared with the team. Shared by the connectors view and the
  * connect-to-start gate so both drive one implementation.
@@ -68,19 +68,19 @@ export function usePipedreamConnectMember(
 ) {
   return useMutation({
     mutationFn: async (input?: { label?: string }) => {
-      const profile = await reconcileMemberConnectorAuthorization(projectId, {
+      const connection = await reconcileMemberConnection(projectId, {
         connector_alias: slug,
         // The label distinguishes several personal connections on one connector
         // ("Work", "Personal") — reconciling the same label updates in place.
         label: input?.label?.trim() || 'Private connection',
       });
-      const { token, app } = await pipedreamConnectConnectorAuthorization(
+      const { token, app } = await pipedreamConnectConnection(
         projectId,
-        profile.profile_id,
+        connection.connection_id,
       );
       if (!token || !app) throw new Error('App connect is not configured');
       const pd = createFrontendClient({
-        externalUserId: `${projectId}:${slug}:${profile.profile_id}`,
+        externalUserId: `${projectId}:${slug}:${connection.connection_id}`,
         tokenCallback: async () => ({ token, connect_link_url: undefined, expires_at: '' }) as any,
       });
       const release = withPipedreamOverlayEscape();
@@ -100,7 +100,7 @@ export function usePipedreamConnectMember(
         release();
       }
       if (!connected) return { connected: false };
-      await pipedreamFinalizeConnectorAuthorization(projectId, profile.profile_id);
+      await pipedreamFinalizeConnection(projectId, connection.connection_id);
       return { connected: true };
     },
     onSuccess: (res) => {

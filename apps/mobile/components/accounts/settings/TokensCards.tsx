@@ -188,7 +188,7 @@ function ServiceAccountsCard({ accountId, canManage, isDark }: { accountId: stri
             <Bot size={16} color={c.muted} />
             <Text style={{ fontSize: 14.5, fontFamily: 'Roobert-Medium', color: c.fg }}>Service accounts</Text>
           </View>
-          <Text style={{ fontSize: 12, color: c.muted, marginTop: 3 }}>Machine identities for CI/CD and integrations.</Text>
+          <Text style={{ fontSize: 12, color: c.muted, marginTop: 3 }}>Machine identities for CI/CD and connections.</Text>
         </View>
         {canManage && (
           <TouchableOpacity onPress={() => open({ kind: 'create' })} activeOpacity={0.85} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingLeft: 11, paddingRight: 13, height: 34, borderRadius: 9999, backgroundColor: theme.primary }}>

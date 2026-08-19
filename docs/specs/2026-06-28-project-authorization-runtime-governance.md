@@ -13,12 +13,13 @@ secrets, config, and sandbox runtime construction.
 This exists because three product threads are now the same security problem:
 
 1. Users and groups need project-level roles and resource access.
-2. Agents need session-bound identity and immutable grants.
+2. Agents need session-bound identity and grants that follow the agent actually
+   running.
 3. Sandboxes must stop exposing the whole repo/runtime surface to every agent by
    default.
 
 The token/session/agent identity work is the prerequisite. It makes the runtime
-principal explicit: a sandbox session has a `KORTIX_EXECUTOR_TOKEN` bound to one
+principal explicit: a sandbox session has a `KORTIX_CLI_TOKEN` bound to one
 project, one session, and one boot agent grant. This document defines what that
 grant should eventually control.
 
@@ -26,6 +27,10 @@ grant should eventually control.
 
 These raw inputs are kept here deliberately so the working document preserves the
 original product/security framing, not only the cleaned-up model.
+
+They record the 2026-06-28 state. Superseded on one point: the 409
+`AGENT_SWITCH_REQUIRES_NEW_SESSION` is removed. A switch now re-scopes the
+secret env and re-mints the session token's `agent_grant` instead.
 
 ```text
 https://kortix.com/accounts/2e3ad9d3-6381-4a64-8d72-33b7c9a9d365 Okay, next problem. We have both an account like users basically get permissions from the from an account and then there's account level permissions and project level permissions essentially we only ever really care about the project level permissions if we're for real and the creation of groups we actually don't really care about on a account level, but we do care about on a project level and also the qu the whole question of roles right like there's some default roles we the question is what what models to adapt like what like how you can do this whole authorization but what we need at the end of the day is i mean we have a project right in that project people should have access to one different customize settings but also to different resources like you know whether they can like by default which groups or like which users can access which agents and skills you know like by default it's all always public actually this means changing the way the runtime model works because right now we just git clone everything into the sandbox and that eliminates that by default shares everything with everyone which is non-optimal perhaps we should switch to a true like single source of truth Kortix.toml model where the tummel where it basically will build the sandbox or the the full config and everything from whatever we get in the tumml and then in the tomal we can have a like a like git clone like config or like allow self-improvement or self-config or whatever where it's actually actively able to edit and change its own config and even has access to git like all of these policies and permissions like we have cli access like general Kortix cli blah blah like in Kortix.toml but it's all a bit ugly right and we have shit like this which we have to consider so we can we yeah on a project level right now everything is shared by everyone one we have to just make sure okay certain groups can't change anything in the customize they can't change you know they can't new add connectors they can't do this they can't do that like they don't have any git permission like all the permissions like policies that we have on like a per pro project level needs to be managed right we need to have roles for that which give you which give you the role and the pro like in a project right and then we can have groups for instance like if we want to say finance department that just by default and actually i don't know like this is the weird thing like does the group inherit the role no roles are always user based there's one minimal role but then there's so there's one permissions and then there was resource access management because in the second thing or like in the first thing i was saying it's like what access to which agents and skills does this user have right now everything is exposed to everyone so in the future we will need to change this or right now we will need to change this or think of a way how we can change it and that would maybe mean that Kortix.toml just becomes a single source of truth that we build from you know like we don't do the regular git clone anymore where we just git clone by default but that's just like if self-improvement is enabled so that the Kortix system can actually load and then we also the open code we construct a bit differently we will only like clone the or like take the things that are enabled for that given agent of a given session and then even that we could scope better because we could make sure that every session always explicitly has to be started with one agent and that you can't change the agent midway through and that way we would have maximum isolation and security on a per agent like yeah I don't you can challenge if I have any gaps in my mental understanding but this would at least make it significantly more secure of running the agents and even only certain agents are capable of self-improvement then and like even looking into their own config and we just basically always parse the single source of truth being the Kortix Automil and that depends then on like does it can it do it or can it not you know kortix.toml & .kortix perhaps.
@@ -35,54 +40,54 @@ https://kortix.com/accounts/2e3ad9d3-6381-4a64-8d72-33b7c9a9d365 Okay, next prob
 ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 • 1. What changed
-     Fixed and pushed c21209bf to origin/main and origin/executor-session-identity.
+     Fixed and pushed c21209bf to origin/main and origin/connector-session-identity.
 
      Root cause: restored warm-snapshot sessions minted project-scoped tokens without sessionId / agentGrant, while cold boots minted proper session
-     executor tokens. That made Executor connector lookup resolve as unassigned/empty.
+     connector tokens. That made connector lookup resolve as unassigned/empty.
 
      Main fixes:
-      - Restored warm-snapshot sessions now mint session-bound executor tokens with project, session, agent, connector, and kortix_cli grant context.
+      - Restored warm-snapshot sessions now mint session-bound connector tokens with project, session, agent, connector, and kortix_cli grant context.
       - Auth middleware now exposes sessionId for PAT/account-token auth.
-      - Executor principal resolution now uses token session context, not only X-Kortix-Session-Id.
+      - Connector principal resolution now uses token session context, not only X-Kortix-Session-Id.
       - /accounts/me and kortix whoami/token now show explicit token_context.
       - Added kortix token as a real alias instead of accidentally scaffolding token/.
-      - Blocked in-session prompt agent switches with 409 AGENT_SWITCH_REQUIRES_NEW_SESSION.
+      - Blocked in-session prompt agent switches with 409 AGENT_SWITCH_REQUIRES_NEW_SESSION. (superseded: the 409 was removed; switches re-mint the grant instead.)
       - Added the spec: docs/specs/2026-06-28-token-session-agent-identity.md.
 
   2. What was verified
      Local checks passed:
       - API preview proxy tests.
       - restored warm-snapshot / agent-grant / unit scope tests.
-      - executor SDK tests.
+      - connector SDK tests.
       - CLI host/auth tests.
       - API and CLI TypeScript checks.
       - git diff --check.
 
      Live local E2E passed:
       - Real API stack.
-      - Minted real session executor token for veyris.
+      - Minted real session connector token for veyris.
       - /v1/accounts/me.token_context returned correct project/session/agent grants.
-      - Executor catalog returned 200.
+      - Connector catalog returned 200.
       - kortix token --json and human output showed session token context.
       - Confirmed no accidental token/ scaffold directory.
 
      Remote verified:
-      - origin/main and origin/executor-session-identity both point to c21209bfdd02c78451f64145188d1dbae679e823.
+      - origin/main and origin/connector-session-identity both point to c21209bfdd02c78451f64145188d1dbae679e823.
       - CodeQL passed.
       - Deploy Dev initially hit Docker Hub timeout in Tag API dev-<sha8>, I reran failed jobs, and Deploy Dev is now green.
       - https://dev-api.kortix.com/v1/health reports version: 0.9.83-dev.c21209bf, commit c21209bfdd02c78451f64145188d1dbae679e823.
 
   3. What remains unverified or risky
      No known code-path gap remains from the original bug. The only caveat is product behavior: explicit agent switching inside an existing
-     sandbox now returns 409; that is intentional for security, but any UI that expected silent switching must start a new session instead.
+     sandbox is allowed; the proxy re-scopes the secret env and re-mints the session token's agent_grant before it forwards the prompt.
 
   4. What you should test next
      In dev, start a fresh Veyris session that has connectors = "all", then inside the sandbox run:
       - kortix token
       - kortix whoami --json
-      - the Executor connector/catalog call that previously returned empty or connector_not_assigned
+      - the connector/catalog call that previously returned empty or connector_not_assigned
 
-     Expected result: it should identify as a session token with the correct project/session/agent context, and Executor should see the
+     Expected result: it should identify as a session token with the correct project/session/agent context, and Connector should see the
      configured Veyris connector grants.
 
 ─ Worked for 36m 18s ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -91,11 +96,11 @@ https://kortix.com/accounts/2e3ad9d3-6381-4a64-8d72-33b7c9a9d365 Okay, next prob
 › Okay, so sh so now should ev everything should work, yeah?
 
 
-• Yes, for the bug we traced: fresh dev sessions should now get a session-scoped executor token, so Executor connector discovery should no
+• Yes, for the bug we traced: fresh dev sessions should now get a session-scoped connector token, so connector discovery should no
   longer be empty just because the sandbox came from a restored warm snapshot.
 
   The fix is live on dev: dev-api.kortix.com reports commit c21209bf. The thing to verify manually is the exact Veyris flow: start a new
-  session, run kortix token / kortix whoami --json, and then call the executor connector path. It should show session token context with
+  session, run kortix token / kortix whoami --json, and then call the connector path. It should show session token context with
   project/session/agent grants and find the configured tools.
 
   One intentional behavior change: switching agents inside the same existing sandbox should now fail with 409 and require a new session.
@@ -247,13 +252,13 @@ Default:
 - New restricted resources can opt into ACLs immediately.
 - A future project setting can switch the default to private-by-default.
 
-### 3. Sessions are agent-immutable
+### 3. Sessions have a boot agent, and agents are switchable
 
 A project session starts with exactly one boot agent.
 
 The selected boot agent determines:
 
-- session executor token `agent_grant`
+- session connector token `agent_grant`
 - visible agent persona
 - visible skill set
 - visible commands/tools
@@ -262,8 +267,11 @@ The selected boot agent determines:
 - git/config capabilities
 - allowed runtime files
 
-Changing agents mid-session requires a new session. The 409
-`AGENT_SWITCH_REQUIRES_NEW_SESSION` behavior is the correct secure default.
+Changing agents mid-session is allowed. Before each prompt runs, the proxy
+re-resolves the running agent's grant from `[[agents]]`, re-pushes its secret
+env, and re-mints the session token's `agent_grant`. `project.agent.read` on the
+target agent authorizes the switch; a caller without it gets `403
+AGENT_NOT_AUTHORIZED`.
 
 ### 4. Runtime is generated from policy
 
@@ -280,7 +288,7 @@ kortix.yaml
   + session token agentGrant
   + server-side connector/secret policy
   -> generated OpenCode config dir
-  -> scoped executor token
+  -> scoped connector token
   -> scoped runtime env
   -> scoped workspace
 ```
@@ -291,7 +299,7 @@ For compatibility, this generated config can still look like native OpenCode:
 - only allowed `skills/*`
 - only allowed commands/tools/plugins
 - generated `opencode.jsonc`
-- generated executor/gateway provider config
+- generated connector/gateway provider config
 
 The key change is ownership: OpenCode reads generated runtime material, while
 Kortix decides what may be generated.
@@ -403,17 +411,12 @@ admin flows without requiring a commit for every membership change.
 
 Done or in progress:
 
-- Session executor tokens include `project_id`, `session_id`, and `agent_grant`.
+- Session connector tokens include `project_id`, `session_id`, and `agent_grant`.
 - Warm-pool claim and cold boot mint the same token shape.
 - `/accounts/me` exposes `token_context`.
 - CLI identity probes show session token context.
-- Agent switching inside a running session returns 409.
-
-Required follow-up:
-
-- Make UI agent switching create a new session instead of trying to mutate the
-  current one.
-- Add explicit UX copy for "different agent = new isolated session".
+- Agent switching inside a running session re-mints the session token's
+  `agent_grant`.
 
 ### Phase 1 - Permission vocabulary
 
@@ -503,7 +506,7 @@ Output:
 
 - effective runtime manifest
 - generated OpenCode config files
-- executor connector allow-list
+- connector allow-list
 - secret/env allow-list
 - workspace mode
 - git credential mode
@@ -547,7 +550,7 @@ Add audit events for:
 
 - resource grant changes
 - session runtime bundle creation
-- denied agent switch
+- denied agent switch (unauthorized agent)
 - denied connector use
 - denied secret injection
 - change-request creation from an agent session
@@ -555,7 +558,8 @@ Add audit events for:
 ## Security Invariants
 
 1. A session token is bound to one session and one boot agent.
-2. A session cannot switch agents without a new token/runtime bundle.
+2. A session that switches agents re-mints its token grant before the prompt
+   runs.
 3. An agent cannot exceed the launching user's project role.
 4. An agent cannot use a connector unless both user and agent grants allow it.
 5. Secrets are injected only when user, agent, resource ACL, and credential
@@ -585,7 +589,7 @@ Add audit events for:
 9. What is the migration path for existing projects that rely on full repo
    access in every agent?
 10. Which permissions should be enforced by OpenCode config generation versus
-   by the Executor/API on every call?
+   by the Connector/API on every call?
 
 ## Verification Gates
 
@@ -593,22 +597,21 @@ Before this is considered implemented:
 
 1. User A in group `finance` can see and use `veyris`; User B cannot.
 2. User B cannot start `veyris` through web, API, CLI, Slack, or trigger paths.
-3. A `veyris` session sees only allowed connectors in Executor catalog.
+3. A `veyris` session sees only allowed connectors in Connector catalog.
 4. A `veyris` session cannot call a blocked connector even by raw API request.
 5. A `veyris` session cannot load a restricted skill file from the generated
    config dir.
 6. A normal business-agent session has no git push credential.
 7. A branch-authorized agent can edit config only on a session branch and open
    a CR.
-8. Trying to switch agents inside a running session returns 409 and does not
-   mutate token context.
+8. Switching agents inside a running session re-mints the token context to the
+   new agent's grant, and returns `403 AGENT_NOT_AUTHORIZED` without it.
 9. Revoking a group grant prevents new sessions and new connector calls.
 10. `/accounts/me`, `kortix token`, and sandbox health all report matching
    project/session/agent context.
 
 ## Near-Term Checklist
 
-- [ ] Land UI behavior for 409 agent switch: create a new session.
 - [ ] Add a project Customize permission matrix.
 - [ ] Decide DB versus TOML storage for resource ACLs.
 - [ ] Add resource grant schema and evaluator.
@@ -617,4 +620,4 @@ Before this is considered implemented:
 - [ ] Add generated OpenCode config smoke tests.
 - [ ] Add sandbox boot mode for generated runtime.
 - [ ] Migrate one real project/agent as the pilot.
-- [ ] Add black-box E2E across web, API, CLI, and sandbox Executor.
+- [ ] Add black-box E2E across web, API, CLI, and sandbox Connector.

@@ -101,6 +101,10 @@ describe('kortix self-host (generic Docker CLI)', () => {
     expect(env.KORTIX_UPDATE_TIME).toBe('02:00');
     expect(env.KORTIX_UPDATE_TZ).toBe('America/New_York');
     expect(env.KORTIX_ALLOW_DOWNTIME).toBe('0');
+    expect(env.CONNECTOR_AUTH_PROVIDER).toBe('pipedream');
+    expect(env.KORTIX_SELF_HOST_CONNECTIONS_REVIEWED).toBe('false');
+    expect(env.INTEGRATION_AUTH_PROVIDER).toBeUndefined();
+    expect(env.KORTIX_SELF_HOST_INTEGRATIONS_REVIEWED).toBeUndefined();
 
     // Laptop mode (no domain): single replica, no LB needed.
     expect(env.KORTIX_APP_REPLICAS).toBe('1');
@@ -283,7 +287,6 @@ describe('kortix self-host (generic Docker CLI)', () => {
       expect(env.ENTERPRISE_LICENSE_AVAILABLE).toBe('false');
       expect(env.KORTIX_BILLING_INTERNAL_ENABLED).toBe('false');
       expect(env.KORTIX_PUBLIC_BILLING_ENABLED).toBe('false');
-      expect(env.KORTIX_PUBLIC_WARM_PROJECT_SESSIONS_ENABLED).toBe('false');
     });
 
     // Account-creation restriction is the one feature flag that defaults ON
@@ -390,7 +393,6 @@ describe('kortix self-host (generic Docker CLI)', () => {
       expect(frontendEnv.KORTIX_PUBLIC_BILLING_ENABLED).toBe('${KORTIX_PUBLIC_BILLING_ENABLED}');
       expect(frontendEnv.KORTIX_PUBLIC_DISABLE_LANDING_PAGE).toBe('${KORTIX_PUBLIC_DISABLE_LANDING_PAGE}');
       expect(frontendEnv.KORTIX_PUBLIC_RESTRICT_ACCOUNT_CREATION).toBe('${KORTIX_PUBLIC_RESTRICT_ACCOUNT_CREATION}');
-      expect(frontendEnv.KORTIX_PUBLIC_WARM_PROJECT_SESSIONS_ENABLED).toBe('${KORTIX_PUBLIC_WARM_PROJECT_SESSIONS_ENABLED}');
 
       // kortix-api gets these via `env_file: .env` (loads every .env key) —
       // no explicit `environment:` entry, since one would win over env_file

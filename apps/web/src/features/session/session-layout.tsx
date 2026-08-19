@@ -3,19 +3,19 @@
 import { Button } from '@/components/ui/button';
 import { Drawer, DrawerContent } from '@/components/ui/drawer';
 import Hint from '@/components/ui/hint';
-import { Kbd, KbdGroup } from '@/components/ui/kbd';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ActionPanel } from '@/features/session/action-panel';
 import { BrowserPanel } from '@/features/session/action-panel/browser-panel';
+import { SessionDetailPanel } from '@/features/session/action-panel/session-detail-panel';
+import { SessionPanelProvider } from '@/features/session/action-panel/session-panel-provider';
 import {
   aspectChangedWidth,
   resolveSideSize,
 } from '@/features/session/action-panel/easy/easy-panel-logic';
 import { useDeliverableReadiness } from '@/features/session/action-panel/shared/use-deliverable-readiness';
+import { MobileToolDrawer } from '@/features/session/mobile-tool-drawer';
 import { SessionAuditPanel } from '@/features/session/session-audit-panel';
 import { isPendingAction, useSessionAudit } from '@/features/session/session-audit-shared';
-import { MobileToolDrawer } from '@/features/session/mobile-tool-drawer';
 import { SessionFilesExplorer } from '@/features/session/session-files-explorer';
 import { SessionStartingLoader } from '@/features/session/session-starting-loader';
 import { SessionTerminalPanel } from '@/features/session/session-terminal-panel';
@@ -32,7 +32,7 @@ import {
 import { useTabStore } from '@/stores/tab-store';
 import { useUserPreferencesStore } from '@/stores/user-preferences-store';
 import type { SessionStartStage } from '@kortix/sdk';
-import { useRuntimeMessages, useSessionStateStore } from '@kortix/sdk/react';
+import { useRuntimeMessages, useSessionStateStore, useSessionWorking } from '@kortix/sdk/react';
 import { SidebarSimpleIcon as PanelRight } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import type React from 'react';
@@ -80,22 +80,38 @@ export const SessionLayout = memo(function SessionLayout({
   // renderer that decoded it. Outranks `panelSplit`: a portrait PDF knows its
   // shape, and a file extension only ever guessed at it. See `resolveSideSize`.
   const panelAspect = useKortixComputerStore((s) => s.panelAspect);
-  // Easy mode only — whether a detail (or the terminal layer) is showing.
-  // Gates the resize grip: the card home is fixed-width. Published by EasyPanel.
-  const detailOpen = useKortixComputerStore((s) => s.detailOpen);
+  // `detailOpen` is no longer read here. It gated the resize grip while Easy
+  // mode's fixed-width card home lived in this panel; with the cards moved to
+  // the floating overlay an open panel is always showing a resizable detail.
+  // The store still publishes it (the provider writes it) — nothing in this
+  // layout needs to ask any more.
 
   const handleTogglePanel = useCallback(() => {
     setIsSidePanelOpen(!isSidePanelOpen);
   }, [isSidePanelOpen, setIsSidePanelOpen]);
 
   const isActiveTab = useTabStore((s) => s.activeTabId === sessionId);
+  const isInTabSystem = useTabStore((s) => !!s.tabs[sessionId]);
+  // "This layout is the one on screen." A session inside the tab system is
+  // visible when it is the active tab; a session on the standalone
+  // /projects/:id/sessions/:id route has no tab and is always the visible one.
+  const isVisibleLayout = isInTabSystem ? isActiveTab : true;
 
+  // Tell the store which session owns the right side, and close it.
+  //
+  // This used to be gated on `isActiveTab` alone and skipped for transient
+  // sessions, so on the standalone route — and in the window before
+  // `tab-store.activeTabId` catches up with a navigation — it never fired.
+  // The store kept the PREVIOUS session's `isSidePanelOpen`, so opening a
+  // second session rendered its panel already open with nothing to put in it:
+  // the empty loading panel. Firing on visibility covers every entry path
+  // (fresh navigation, tab switch, back/forward, transient → real handoff),
+  // and `setActiveSession` closes both surfaces, so a session you have just
+  // arrived at never inherits the last one's right side.
   useEffect(() => {
-    if (transient) return;
-    if (isActiveTab) {
-      setActiveSession(sessionId);
-    }
-  }, [transient, isActiveTab, sessionId, setActiveSession]);
+    if (!isVisibleLayout) return;
+    setActiveSession(sessionId);
+  }, [isVisibleLayout, sessionId, setActiveSession]);
 
   const storedPanelView = useSessionBrowserStore((s) => s.viewBySession[sessionId]);
   const panelView = normalizeSessionPanelLayoutView(storedPanelView);
@@ -107,14 +123,26 @@ export const SessionLayout = memo(function SessionLayout({
   const togglePanelMode = useUserPreferencesStore((s) => s.togglePanelMode);
   const isEasy = panelMode === 'easy';
 
-  // The session's own busy/retry status — the exact same signal
+  // The session's own working state — literally the same projection
   // `session-chat.tsx` reads (as `isServerBusy`) to drive its own working
-  // indicator, and the same store `tab-bar.tsx`/`session-list.tsx` read for
-  // their busy dots. EasyPanel ORs this with its part-derived running flag so
-  // an inter-tool-call gap (assistant text streaming, no tool part active)
-  // doesn't read as "finished" — see EasyPanel's `deriveIsRunning`.
+  // indicator, over one shared `GET .../turn` cache entry and one shared send
+  // receipt. It used to be the raw SSE status slot instead, and a dropped
+  // end-of-turn frame left THIS panel reporting "running" while the composer
+  // beside it correctly read idle — so `useDeliverableReadiness` never saw the
+  // running→settled transition and the W1 "ready" chip never fired for that run.
+  //
+  // A transient sub-session has no Kortix session row for `/turn` to answer
+  // about, so it keeps the stream slot — repaired on every stream (re)connect
+  // by the status-snapshot reconciler in `use-opencode-events`.
   const sessionStatus = useSessionStateStore((s) => s.sessionStatus[sessionId]);
-  const isSessionBusy = sessionStatus?.type === 'busy' || sessionStatus?.type === 'retry';
+  const working = useSessionWorking(projectId ?? '', projectSessionId ?? '', {
+    enabled: !!projectId && !!projectSessionId,
+    runtimeSessionId: sessionId,
+  });
+  const isSessionBusy =
+    projectId && projectSessionId
+      ? working.state === 'working'
+      : sessionStatus?.type === 'busy' || sessionStatus?.type === 'retry';
 
   // W1/W9 — announce finished deliverables and blocked-on-you states while the
   // panel is closed. Headless: writes the ready chip; the header renders it.
@@ -152,6 +180,21 @@ export const SessionLayout = memo(function SessionLayout({
     setIsSidePanelOpen(false);
   }, [setIsSidePanelOpen, isExpanded, toggleExpanded]);
 
+  // Mobile hosts BOTH surfaces in one drawer — there is no room beside the chat
+  // for a column, so the cards are the drawer's home view and a detail stacks
+  // as its own drawer on top (see `SessionDetailPanel`'s mobile branch). The
+  // two states stay independent everywhere else; here they simply share a
+  // container, so the drawer is up whenever either one is, and dismissing it
+  // has to put both down or the next open would replay a surface the user just
+  // swiped away.
+  const isActionPanelOpen = useKortixComputerStore((s) => s.isActionPanelOpen);
+  const setIsActionPanelOpen = useKortixComputerStore((s) => s.setIsActionPanelOpen);
+  const shouldShowMobilePanel = isSidePanelOpen || isActionPanelOpen;
+  const handleMobilePanelClose = useCallback(() => {
+    handleSidePanelClose();
+    setIsActionPanelOpen(false);
+  }, [handleSidePanelClose, setIsActionPanelOpen]);
+
   const mainPanelRef = useRef<ResizablePrimitive.ImperativePanelHandle>(null);
   const sidePanelRef = useRef<ResizablePrimitive.ImperativePanelHandle>(null);
   const panelGroupRef = useRef<HTMLDivElement>(null);
@@ -169,20 +212,16 @@ export const SessionLayout = memo(function SessionLayout({
 
   const shouldShowPanel = isSidePanelOpen;
 
-  // The resize handle, split into two states. FUNCTIONAL whenever there's a
-  // split to drag — panel open, not fullscreen — in both modes: even Easy
-  // mode's card home resizes by grabbing the (invisible) seam. VISIBLE is
-  // stricter: the grip pill only shows itself once a detail (or the terminal
-  // layer) is up in Easy mode — the card home stays chrome-free — while
-  // Advanced shows it whenever the panel is open. Hovering or dragging the
-  // invisible seam still reveals the pill (see the handle's className).
+  // The resize handle. FUNCTIONAL whenever there's a split to drag — panel
+  // open, not fullscreen.
+  //
+  // VISIBLE used to be stricter, hiding the grip while Easy mode showed its
+  // fixed-width card home. That home no longer lives here: with the cards moved
+  // to the floating overlay, an open panel is always showing a detail, which is
+  // always resizable. The two states collapse into one.
   const handleEnabled = shouldShowPanel && !isExpanded;
-  const handleVisible = handleEnabled && (!isEasy || detailOpen);
+  const handleVisible = handleEnabled;
 
-  const isInTabSystem = useTabStore((s) => !!s.tabs[sessionId]);
-  const shouldHandleHotkey = isInTabSystem ? isActiveTab : true;
-
-  const isVisibleLayout = isInTabSystem ? isActiveTab : true;
   useEffect(() => {
     if (transient) return;
     if (!isVisibleLayout) return;
@@ -193,18 +232,10 @@ export const SessionLayout = memo(function SessionLayout({
       }
     };
   }, [transient, isVisibleLayout, sessionId, setActivePanelSession]);
-  useEffect(() => {
-    if (!shouldHandleHotkey) return;
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && (e.key === 'i' || e.key === 'I')) {
-        e.preventDefault();
-        if (isSidePanelOpen) handleSidePanelClose();
-        else setIsSidePanelOpen(true);
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [shouldHandleHotkey, isSidePanelOpen, handleSidePanelClose, setIsSidePanelOpen]);
+  // ⌘I / Ctrl+I lives on `SessionActionPanelColumn` — it toggles the RIGHT SIDE
+  // as a whole (`toggleRightPanel`), so it closes this detail panel too. The
+  // detail panel is still content-driven: the key never opens it empty, only
+  // back onto content this session already has.
 
   const [isAnimating, setIsAnimating] = useState(false);
 
@@ -381,6 +412,10 @@ export const SessionLayout = memo(function SessionLayout({
     if (showBrowser) setBrowserActivated(true);
   }, [showBrowser]);
 
+  // Easy mode's body is the detail shell and nothing else — the cards moved to
+  // the floating overlay over the chat. The Advanced branches below are kept
+  // intact (Advanced is disabled, not deleted) and are unreachable while
+  // `isEasy` is forced true.
   const swappableBody = showAudit ? (
     <SessionAuditPanel projectId={projectId} projectSessionId={projectSessionId} />
   ) : showExplorer ? (
@@ -390,13 +425,7 @@ export const SessionLayout = memo(function SessionLayout({
       projectSessionId={projectSessionId}
     />
   ) : (
-    <ActionPanel
-      sessionId={sessionId}
-      messages={messages}
-      isSessionBusy={isSessionBusy}
-      projectId={projectId}
-      projectSessionId={projectSessionId}
-    />
+    <SessionDetailPanel />
   );
   const panelBody = (
     <div className="relative h-full w-full">
@@ -432,8 +461,11 @@ export const SessionLayout = memo(function SessionLayout({
   //
   // Easy mode has no header either: it is the three cards and nothing else. No
   // title, no view tabs, no mode button, no border. The mode is switched from
-  // Settings → Appearance and the command palette; the chat header's own panel
-  // toggle still closes the panel (as does ⌘I), so nothing here is a dead end.
+  // Settings → Appearance and the command palette. Nothing here is a dead end:
+  // the detail card carries its own close button and Escape, and ⌘I / Ctrl+I
+  // closes the right side from anywhere. The two differ on purpose: the card's
+  // own close DISCARDS the detail (it is done with), while ⌘I only puts it
+  // away — press it again and the same detail comes back.
   const effectivePanelHeader = booting || isEasy ? null : panelHeader;
   const effectivePanelBody = booting ? (
     <SessionStartingLoader
@@ -447,14 +479,30 @@ export const SessionLayout = memo(function SessionLayout({
     panelBody
   );
 
+  // The provider wraps BOTH panels. It has to: the floating overlay renders
+  // inside `children` (the chat, in the main resizable panel) and every detail
+  // renders in the side panel, and a card row clicked in one opens a detail in
+  // the other. See `session-panel-provider.tsx`.
+  const withPanelProvider = (node: React.ReactNode) => (
+    <SessionPanelProvider
+      sessionId={sessionId}
+      messages={messages}
+      isSessionBusy={isSessionBusy}
+      projectId={projectId}
+      projectSessionId={projectSessionId}
+    >
+      {node}
+    </SessionPanelProvider>
+  );
+
   if (isMobile) {
-    return (
+    return withPanelProvider(
       <div className="flex h-full w-full flex-col overflow-hidden">
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">{children}</div>
         <Drawer
-          open={shouldShowPanel}
+          open={shouldShowMobilePanel}
           onOpenChange={(open) => {
-            if (!open) handleSidePanelClose();
+            if (!open) handleMobilePanelClose();
           }}
         >
           {/* Easy mode's tool surfaces (Terminal, Browser, Files) render as
@@ -477,11 +525,11 @@ export const SessionLayout = memo(function SessionLayout({
           projectId={projectId}
           projectSessionId={projectSessionId}
         />
-      </div>
+      </div>,
     );
   }
 
-  return (
+  return withPanelProvider(
     <SessionWallpaperLayerContext.Provider value={wallpaperLayer}>
       {/* `overflow-clip` (not -hidden) on the layout wrappers below: hidden
           boxes still accept a programmatic scrollLeft — a focus() aimed at a
@@ -572,7 +620,7 @@ export const SessionLayout = memo(function SessionLayout({
           </ResizablePanelGroup>
         </div>
       </div>
-    </SessionWallpaperLayerContext.Provider>
+    </SessionWallpaperLayerContext.Provider>,
   );
 });
 
@@ -601,16 +649,9 @@ function PanelHeaderSwitcher({
       side="bottom"
       sideOffset={4}
       delayDuration={300}
-      label={
-        <span className="flex items-center gap-1.5">
-          {isSidePanelOpen ? 'Close' : 'Open'} panel
-          <KbdGroup>
-            <Kbd className="font-mono">
-              {tHardcodedUi.raw('componentsSessionSessionSiteHeader.line185JsxTextI')}
-            </Kbd>
-          </KbdGroup>
-        </span>
-      }
+      // No ⌘I hint here: that shortcut toggles the right side as a whole, and
+      // this Advanced-mode button is a narrower thing — the detail panel only.
+      label={<span className="flex items-center gap-1.5">{isSidePanelOpen ? 'Close' : 'Open'} panel</span>}
     >
       <Button
         variant="ghost"

@@ -19,7 +19,13 @@ function ResizablePanelGroup({
 }
 
 const ResizablePanel = React.forwardRef<
-  React.ElementRef<typeof ResizablePrimitive.Panel>,
+  // `React.ElementRef<typeof ResizablePrimitive.Panel>` resolves to `never`
+  // under @types/react 19.2: it infers the ref type via
+  // `ComponentPropsWithRef<T> extends RefAttributes<infer Method> ? Method :
+  // never`, and react-resizable-panels' own compiled `.d.ts` independently
+  // instantiates the ref-callback type, so the `extends` check fails. Use
+  // the library's own exported handle type directly instead.
+  ResizablePrimitive.ImperativePanelHandle,
   React.ComponentPropsWithoutRef<typeof ResizablePrimitive.Panel>
 >((props, ref) => {
   return <ResizablePrimitive.Panel ref={ref} data-slot="resizable-panel" {...props} />;

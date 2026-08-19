@@ -31,8 +31,9 @@ const TEST_AUTH_KEY = '__KORTIX_E2E_AUTH__';
 const BASE_STARTER_PATHS = [
   '.gitignore',
   '.kortix/memory/MEMORY.md',
+  '.kortix/opencode/agents/harness-reflector.md',
   '.kortix/opencode/agents/kortix.md',
-  '.kortix/opencode/agents/memory-reflector.md',
+  '.kortix/opencode/agents/session-reviewer.md',
   '.kortix/opencode/bun.lock',
   '.kortix/opencode/opencode.jsonc',
   '.kortix/opencode/package.json',
@@ -196,6 +197,13 @@ mock.module('../snapshots/builder', () => ({
     contentHash: 'a'.repeat(64),
     built: false,
     isDefault: true,
+  }),
+  ensureMetaSandboxImage: async () => ({
+    snapshotName: 'kortix-meta-test',
+    slug: 'meta',
+    contentHash: 'b'.repeat(64),
+    built: false,
+    isDefault: false,
   }),
   deleteSandboxImage: async () => ({
     deleted: false,

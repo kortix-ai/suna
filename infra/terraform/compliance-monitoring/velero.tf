@@ -1,19 +1,8 @@
-# Velero protects reconstructable in-cluster state in the production EKS
-# cluster. Customer application data remains outside the cluster.
-
-data "terraform_remote_state" "prod_eks_cluster" {
-  backend = "s3"
-  config = {
-    bucket         = "kortix-terraform-state"
-    key            = "prod-eks/cluster.tfstate"
-    region         = "us-west-2"
-    dynamodb_table = "kortix-terraform-locks"
-  }
-}
+# Velero backup bucket and KMS key. EKS was decommissioned 2026-08-02;
+# the velero IAM role that depended on the EKS OIDC provider has been removed.
 
 locals {
-  prod_eks_cluster = data.terraform_remote_state.prod_eks_cluster.outputs
-  velero_bucket    = "kortix-velero-backups"
+  velero_bucket = "kortix-velero-backups"
 }
 
 data "aws_iam_policy_document" "velero_kms" {
@@ -181,85 +170,4 @@ resource "aws_s3_bucket_policy" "velero" {
   policy   = data.aws_iam_policy_document.velero_bucket.json
 
   depends_on = [aws_s3_bucket_public_access_block.velero]
-}
-
-data "aws_iam_policy_document" "velero_assume_role" {
-  statement {
-    actions = ["sts:AssumeRoleWithWebIdentity"]
-    principals {
-      type        = "Federated"
-      identifiers = [local.prod_eks_cluster.oidc_provider_arn]
-    }
-    condition {
-      test     = "StringEquals"
-      variable = "${local.prod_eks_cluster.oidc_provider_url}:aud"
-      values   = ["sts.amazonaws.com"]
-    }
-    condition {
-      test     = "StringEquals"
-      variable = "${local.prod_eks_cluster.oidc_provider_url}:sub"
-      values   = ["system:serviceaccount:velero:velero-server"]
-    }
-  }
-}
-
-resource "aws_iam_role" "velero" {
-  name               = "kortix-velero"
-  assume_role_policy = data.aws_iam_policy_document.velero_assume_role.json
-  tags               = local.tags
-}
-
-data "aws_iam_policy_document" "velero" {
-  # checkov:skip=CKV_AWS_356:Velero's EC2 snapshot create and describe APIs do not support complete resource-level scoping.
-  # checkov:skip=CKV_AWS_111:Velero must create snapshots and volumes. AWS does not support complete resource constraints for these create APIs.
-  statement {
-    sid = "ManageVolumeSnapshots"
-    actions = [
-      "ec2:CreateSnapshot",
-      "ec2:CreateTags",
-      "ec2:CreateVolume",
-      "ec2:DeleteSnapshot",
-      "ec2:DescribeSnapshots",
-      "ec2:DescribeVolumes",
-    ]
-    resources = ["*"]
-  }
-
-  statement {
-    sid = "ManageBackupObjects"
-    actions = [
-      "s3:AbortMultipartUpload",
-      "s3:DeleteObject",
-      "s3:GetObject",
-      "s3:ListMultipartUploadParts",
-      "s3:PutObject",
-      "s3:PutObjectTagging",
-    ]
-    resources = ["${aws_s3_bucket.velero.arn}/*"]
-  }
-
-  statement {
-    sid       = "ListBackupBucket"
-    actions   = ["s3:GetBucketLocation", "s3:ListBucket"]
-    resources = [aws_s3_bucket.velero.arn]
-  }
-
-  statement {
-    sid = "UseBackupEncryptionKey"
-    actions = [
-      "kms:Decrypt",
-      "kms:DescribeKey",
-      "kms:Encrypt",
-      "kms:GenerateDataKey",
-      "kms:ReEncryptFrom",
-      "kms:ReEncryptTo",
-    ]
-    resources = [aws_kms_key.velero.arn]
-  }
-}
-
-resource "aws_iam_role_policy" "velero" {
-  name   = "ManageProductionClusterBackups"
-  role   = aws_iam_role.velero.id
-  policy = data.aws_iam_policy_document.velero.json
 }

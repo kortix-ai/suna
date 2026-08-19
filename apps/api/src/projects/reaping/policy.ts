@@ -18,10 +18,9 @@
  * lived forever — 187 genuinely running prod boxes, 156 of which had never
  * emitted a single LLM usage_event, the oldest 264 hours old.
  *
- * The replacement is one column, `session_sandboxes.deadline_at`, written only
- * by apps/api/src/projects/sandbox-deadline.ts and bounded by a DB CHECK. The
- * decision for a running box is now `deadline_at <= now()`. There is nothing
- * left here to reconstruct.
+ * The replacement is `session_sandboxes.deadline_at` plus exact active-turn
+ * authority. Only fresh control-plane observation renews an active turn. The
+ * decision for every other running box is `deadline_at <= now()`.
  */
 
 import type { SandboxStatus } from '../../platform/providers/status';

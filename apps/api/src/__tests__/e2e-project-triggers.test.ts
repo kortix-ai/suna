@@ -15,6 +15,7 @@ import {
 } from '@kortix/db';
 
 const USER_ID = '00000000-0000-4000-a000-000000000001';
+const SERVICE_ACCOUNT_ID = '00000000-0000-4000-a000-000000000002';
 const ACCOUNT_ID = '00000000-0000-4000-a000-000000000101';
 const PROJECT_ID = '00000000-0000-4000-a000-000000000201';
 const MANIFEST_PATH = 'kortix.yaml';
@@ -46,6 +47,7 @@ let provisioningSessionCount = 0;
 let secretRows: Array<typeof projectSecrets.$inferSelect>;
 let manifestReadCalls = 0;
 let mirrorInvalidationCalls = 0;
+let manifestCommitConflictsRemaining = 0;
 let modelDefaults: {
   account: string | null;
   agents: Record<string, string>;
@@ -69,6 +71,7 @@ const projectRow: typeof projects.$inferSelect = {
   repoUrl: 'https://github.com/kortix-ai/trigger-project.git',
   defaultBranch: 'main',
   manifestPath: 'kortix.yaml',
+  idempotencyKey: null,
   status: 'active',
   metadata: {},
   lastOpenedAt: null,
@@ -94,9 +97,11 @@ function resetState() {
   secretRows = [];
   manifestReadCalls = 0;
   mirrorInvalidationCalls = 0;
+  manifestCommitConflictsRemaining = 0;
   modelDefaults = { account: null, agents: {}, projects: {} };
   projectRow.metadata = {};
   secretValues.clear();
+  secretConsumerReads.length = 0;
 }
 
 function sign(rawBody: string, secret: string) {
@@ -106,6 +111,11 @@ function sign(rawBody: string, secret: string) {
 mockIamEngineAllowAll();
 
 mockIamMembershipSyncNoop();
+
+mock.module('../projects/session-lifecycle/actor', () => ({
+  resolveProjectAutomationActor: async () => USER_ID,
+  resolveAgentRunAttribution: async () => SERVICE_ACCOUNT_ID,
+}));
 
 const realAuthMiddleware = await import('../middleware/auth');
 mock.module('../middleware/auth', () => ({
@@ -143,7 +153,14 @@ mock.module('../projects/git', () => ({
     manifestReadCalls += 1;
     for (const path of candidatePaths) {
       const content = repoFiles.get(path);
-      if (content !== undefined) return { path, content };
+      if (content !== undefined) {
+        return {
+          path,
+          content,
+          sha: `sha-${path}`,
+          candidatePaths,
+        };
+      }
     }
     return null;
   },
@@ -164,6 +181,12 @@ mock.module('../projects/git', () => ({
   previewMerge: async () => ({ canMerge: true, conflicts: [] }),
   mergeBranches: async () => ({ mergedSha: 'a'.repeat(40) }),
   commitFileToBranch: async (_project: unknown, opts: { path: string; content: string; message: string }) => {
+    if (manifestCommitConflictsRemaining > 0) {
+      manifestCommitConflictsRemaining -= 1;
+      const error = new Error(`File "${opts.path}" changed since it was read`);
+      error.name = 'GitFileRevisionConflictError';
+      throw error;
+    }
     repoFiles.set(opts.path, opts.content);
     commitCalls.push({ path: opts.path, message: opts.message });
     return { commitSha: 'a'.repeat(40) };
@@ -179,6 +202,7 @@ mock.module('../projects/git', () => ({
 
 mock.module("../snapshots/builder", () => ({
   ensureSandboxImage: async () => ({ snapshotName: "kortix-default-test", slug: "default", contentHash: "a".repeat(64), built: false, isDefault: true }),
+  ensureMetaSandboxImage: async () => ({ snapshotName: "kortix-meta-test", slug: "meta", contentHash: "b".repeat(64), built: false, isDefault: false }),
   deleteSandboxImage: async () => ({ deleted: false, snapshotName: "kortix-default-test", slug: "default" }),
   listSnapshotBuilds: async () => [],
   listSandboxTemplates: async () => [],
@@ -286,10 +310,6 @@ mock.module('../platform/services/provider-balancer', () => ({
   selectProvider: async () => 'daytona',
 }));
 
-mock.module('../platform/providers', () => ({
-  getProvider: () => ({ requiresPublicCallback: false }),
-}));
-
 mock.module('../llm-gateway/enablement', () => ({
   projectLlmGatewayEnabled: (metadata: unknown) =>
     (metadata as { experimental?: { llm_gateway?: unknown } } | null)?.experimental
@@ -329,6 +349,7 @@ mock.module('../billing/repositories/credit-accounts', () => ({
 // Stub secrets so webhook tests can resolve the trigger's signing secret.
 // Tests can read/override `secretValues` to drive specific behaviors.
 const secretValues = new Map<string, string>();
+const secretConsumerReads: Array<Record<string, unknown>> = [];
 const realProjectSecrets = await import('../projects/secrets');
 mock.module('../projects/secrets', () => ({
   ...realProjectSecrets,
@@ -338,10 +359,13 @@ mock.module('../projects/secrets', () => ({
   listProjectSecrets: async () => ({}),
   listProjectSecretsForUser: async () => ({}),
   listProjectSecretsSnapshot: async () => ({ env: {}, names: [], revision: 'empty' }),
+  listProjectSecretNamesForConsumer: async () => [],
   listProjectSecretsSnapshotForUser: async () => ({ env: {}, names: [], revision: 'empty' }),
   projectSecretsRevision: async () => 'empty',
-  getProjectSecretValue: async (_projectId: string, name: string) =>
-    secretValues.get(name) ?? null,
+  getProjectSecretValueForConsumer: async (input: { name: string; consumer: string }) => {
+    secretConsumerReads.push(input);
+    return input.consumer === 'connector' ? (secretValues.get(input.name) ?? null) : null;
+  },
 }));
 
 const triggerDbMock: any = {
@@ -350,6 +374,7 @@ const triggerDbMock: any = {
       from: (table: unknown) => ({
         where: () => {
           const result: any[] & { orderBy?: () => any; limit?: () => Promise<any[]> } = [];
+          (result as any).for = () => result;
           result.orderBy = () => {
             const rows =
               table === sessionLifecycleCommands
@@ -387,6 +412,7 @@ const triggerDbMock: any = {
             }
             if (table === accountGithubInstallations) return [];
             if (table === projectMembers) return [];
+            if (table === projectSessions) return sessionRows.slice(0, 1);
             if (table === sessionLifecycleCommands) return lifecycleCommandRows.slice(0, 1);
             // `getGitTriggerRuntime` does a bare `.select().from(projectTriggerRuntime)
             // .where(...).limit(1)` (no `orderBy`, no field projection) — without this
@@ -554,6 +580,17 @@ const triggerDbMock: any = {
           then: (resolve: (rows: any[]) => unknown) => {
             if (table === sessionLifecycleCommands) {
               lifecycleCommandRows = lifecycleCommandRows.map((row) => ({ ...row, ...setValues }));
+            }
+            if (table === projectSessions) {
+              sessionRows = sessionRows.map((row) => ({
+                ...row,
+                ...(typeof setValues.createdBy === 'string'
+                  ? { createdBy: setValues.createdBy }
+                  : {}),
+                ...(typeof setValues.visibility === 'string'
+                  ? { visibility: setValues.visibility }
+                  : {}),
+              }));
             }
             return resolve([]);
           },
@@ -899,6 +936,29 @@ describe('git-backed triggers — CRUD', () => {
     expect(body.triggers[0].webhook_url).toContain(`/v1/webhooks/projects/${PROJECT_ID}/slack-hook`);
   });
 
+  test('POST /triggers reloads and retries one manifest revision conflict', async () => {
+    seedManifest();
+    manifestCommitConflictsRemaining = 1;
+
+    const app = createApp();
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/triggers`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: 'Daily Digest',
+        type: 'cron',
+        cron: '0 0 9 * * 1-5',
+        timezone: 'UTC',
+        prompt_template: 'Pull the deploy logs.',
+      }),
+    });
+
+    expect(res.status).toBe(201);
+    expect(manifestReadCalls).toBe(3);
+    expect(commitCalls).toHaveLength(1);
+    expect(repoFiles.get(MANIFEST_PATH)).toContain('slug: daily-digest');
+  });
+
   test('POST /triggers rejects duplicate slugs', async () => {
     seedManifest(cronEntry({
       slug: 'daily-digest',
@@ -1031,6 +1091,32 @@ describe('git-backed triggers — CRUD', () => {
     expect(updated).toContain('old prompt');
   });
 
+  test('PATCH /triggers/:slug reloads and retries one manifest revision conflict', async () => {
+    seedManifest(cronEntry({
+      slug: 'one',
+      name: 'Old name',
+      agent: 'default',
+      enabled: true,
+      cron: '0 */15 * * * *',
+      timezone: 'UTC',
+      prompt: 'old prompt',
+    }));
+    manifestCommitConflictsRemaining = 1;
+
+    const app = createApp();
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/triggers/one`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'New name', enabled: false }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(manifestReadCalls).toBe(3);
+    expect(commitCalls).toHaveLength(1);
+    expect(repoFiles.get(MANIFEST_PATH)).toContain('name: New name');
+    expect(repoFiles.get(MANIFEST_PATH)).toContain('enabled: false');
+  });
+
   test('POST /triggers accepts and returns a pinned model', async () => {
     const app = createApp();
     const res = await app.request(`/v1/projects/${PROJECT_ID}/triggers`, {
@@ -1116,6 +1202,25 @@ describe('git-backed triggers — CRUD', () => {
     expect(updated).toContain('slug: two');
   });
 
+  test('DELETE /triggers/:slug reloads and retries one manifest revision conflict', async () => {
+    seedManifest(
+      cronEntry({ slug: 'one', name: 'One', cron: '* * * * * *', prompt: 'body' }),
+      cronEntry({ slug: 'two', name: 'Two', cron: '* * * * * *', prompt: 'body' }),
+    );
+    manifestCommitConflictsRemaining = 1;
+
+    const app = createApp();
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/triggers/one`, {
+      method: 'DELETE',
+    });
+
+    expect(res.status).toBe(200);
+    expect(manifestReadCalls).toBe(2);
+    expect(commitCalls).toHaveLength(1);
+    expect(repoFiles.get(MANIFEST_PATH)).not.toContain('slug: one');
+    expect(repoFiles.get(MANIFEST_PATH)).toContain('slug: two');
+  });
+
   test('DELETE /triggers/:slug returns 404 when the entry is already gone', async () => {
     const app = createApp();
     const res = await app.request(`/v1/projects/${PROJECT_ID}/triggers/ghost`, {
@@ -1153,6 +1258,8 @@ describe('git-backed triggers — runtime fire paths', () => {
     await new Promise((r) => setTimeout(r, 0));
     expect(sandboxProvisionCalls).toBe(1);
     expect(lastProvisionEnv?.KORTIX_INITIAL_PROMPT).toMatch(/Run at \d{4}-\d{2}-\d{2}T/);
+    expect(sessionRows.at(-1)?.visibility).toBe('private');
+    expect(sessionRows.at(-1)?.createdBy).toBe(SERVICE_ACCOUNT_ID);
     // Runtime row was upserted with last_fired_at.
     expect(runtimeRows).toHaveLength(1);
     expect(runtimeRows[0]!.slug).toBe('daily');
@@ -1372,6 +1479,12 @@ describe('git-backed triggers — runtime fire paths', () => {
     expect(res.status).toBe(202);
     const body = await res.json();
     expect(body.status).toBe('fired');
+    expect(secretConsumerReads[0]).toMatchObject({
+      projectId: PROJECT_ID,
+      accountId: ACCOUNT_ID,
+      name: 'HOOK_SECRET',
+      consumer: 'connector',
+    });
     await new Promise((r) => setTimeout(r, 0));
     expect(sandboxProvisionCalls).toBe(1);
     expect(lastProvisionEnv?.KORTIX_INITIAL_PROMPT).toBe('New opened');

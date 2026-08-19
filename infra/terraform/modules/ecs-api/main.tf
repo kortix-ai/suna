@@ -113,13 +113,11 @@ resource "aws_iam_role_policy_attachment" "execution" {
 
 # Let the execution role pull the values behind any injected secrets.
 #
-# Prefer secrets_blob_arn. ecs-deploy.sh builds every task-def revision by
-# reading EVERY key out of the kortix-<env>-env blob, so the blob — not this
-# module — is the source of truth for which secrets exist. Enumerating them in
-# var.secrets as well means keeping a second copy by hand, and that copy is
-# already wrong: prod's blob holds 132 keys against 100 in tfvars, and staging
-# has 106 with no tfvars at all. Granting on the blob ARN covers every key
-# forever and deletes the drift rather than tracking it.
+# Prefer secrets_blob_arn. ECS injects the complete secret JSON through one
+# stable task-definition selector. The application expands it into process.env
+# at startup. Adding or removing an optional JSON key does not invalidate an
+# existing task definition. Granting on the blob ARN covers every key without a
+# second hand-maintained selector list.
 #
 # var.secrets remains only as the fallback for callers that have not been
 # given a blob yet; it resolves to the same base ARNs.
@@ -150,6 +148,35 @@ resource "aws_iam_role" "task" {
     Project     = lookup(var.tags, "Project", "kortix")
     Service     = lookup(var.tags, "Service", local.name)
   }
+}
+
+resource "aws_iam_role_policy" "ses_send" {
+  count = length(var.ses_send_identity_names) > 0 ? 1 : 0
+  name  = "${local.name}-ses-send"
+  role  = aws_iam_role.task.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid    = "SendEmail"
+      Effect = "Allow"
+      Action = ["ses:SendEmail"]
+      # SESv2 SendEmail authorizes against BOTH the sending identity AND the
+      # configuration set named in the request — omitting the config-set ARN
+      # 403s the whole send (found live on dev 2026-08-10: assumed-role send
+      # denied on configuration-set/kortix-transactional while the identity
+      # resources were correctly granted).
+      Resource = concat(
+        [
+          for identity in var.ses_send_identity_names :
+          "arn:${data.aws_partition.current.partition}:ses:${var.ses_send_region}:${data.aws_caller_identity.current.account_id}:identity/${identity}"
+        ],
+        [
+          for cs in var.ses_send_configuration_set_names :
+          "arn:${data.aws_partition.current.partition}:ses:${var.ses_send_region}:${data.aws_caller_identity.current.account_id}:configuration-set/${cs}"
+        ],
+      )
+    }]
+  })
 }
 
 # ── Security groups ───────────────────────────────────────────────────────────
@@ -194,12 +221,15 @@ resource "aws_security_group" "service" {
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
-  egress {
-    description = "PostgreSQL data plane"
-    from_port   = 5432
-    to_port     = 5432
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+  dynamic "egress" {
+    for_each = var.enable_postgres_egress ? [1] : []
+    content {
+      description = "PostgreSQL data plane"
+      from_port   = 5432
+      to_port     = 5432
+      protocol    = "tcp"
+      cidr_blocks = ["0.0.0.0/0"]
+    }
   }
   tags = {
     ManagedBy   = "terraform"
@@ -234,6 +264,13 @@ resource "aws_s3_bucket" "alb_logs" {
   tags          = var.tags
 }
 
+resource "aws_s3_bucket_versioning" "alb_logs" {
+  bucket = aws_s3_bucket.alb_logs.id
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
 resource "aws_s3_bucket_public_access_block" "alb_logs" {
   bucket                  = aws_s3_bucket.alb_logs.id
   block_public_acls       = true
@@ -256,13 +293,6 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "alb_logs" {
     apply_server_side_encryption_by_default {
       sse_algorithm = "AES256"
     }
-  }
-}
-
-resource "aws_s3_bucket_versioning" "alb_logs" {
-  bucket = aws_s3_bucket.alb_logs.id
-  versioning_configuration {
-    status = "Enabled"
   }
 }
 
@@ -319,7 +349,7 @@ resource "aws_s3_bucket_policy" "alb_logs" {
 
 #trivy:ignore:AVD-AWS-0053 This public API origin must accept Cloudflare traffic; the ALB security group restricts ingress to var.alb_ingress_cidrs.
 resource "aws_lb" "this" {
-  #checkov:skip=CKV2_AWS_28:The compliance-monitoring stack associates every account ALB with the regional kortix-alb-waf ACL.
+  #checkov:skip=CKV2_AWS_28:Environment roots associate this output ALB with a regional WAF; legacy API roots use the compliance-monitoring association.
   name               = "${local.name}-alb"
   load_balancer_type = "application"
   security_groups    = [aws_security_group.alb.id]
@@ -426,7 +456,9 @@ resource "aws_ecs_task_definition" "this" {
       protocol      = "tcp"
     }]
     environment = [for k, v in local.environment : { name = k, value = v }]
-    secrets     = [for k, v in var.secrets : { name = k, valueFrom = v }]
+    secrets = var.secrets_blob_arn != "" ? [
+      { name = "KORTIX_ENV_JSON", valueFrom = var.secrets_blob_arn }
+    ] : [for k, v in var.secrets : { name = k, valueFrom = v }]
     logConfiguration = {
       logDriver = "awslogs"
       options = {

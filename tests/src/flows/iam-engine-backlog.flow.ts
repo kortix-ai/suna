@@ -412,9 +412,9 @@ flow('IAM-12', { domain: 'iam', routes: [R_EFFECTIVE_BATCH, R_EFFECTIVE] }, asyn
   });
 
   await ctx.step(
-    'project_members row bridges to the project role: direct Editor → project.write allowed',
+    'project_members row bridges to the project role: direct Manager → project.write allowed',
     async () => {
-      await team.grantProjectRole(project.id, member.userId!, 'editor');
+      await team.grantProjectRole(project.id, member.userId!, 'manager');
       const r = await ctx.client.as(ctx.P.OWNER).get(EFFECTIVE, {
         params: { accountId: team.id, userId: member.userId! },
         query: { action: 'project.write', resourceType: 'project', resourceId: project.id },

@@ -1,7 +1,7 @@
 /**
  * End-to-end coverage for the in-sandbox `slack` CLI surface. The test runs the
  * real Bun entrypoint against a live fake Kortix API so command parsing,
- * project-explicit Executor routing, turn-stream relays, file upload/download,
+ * project-explicit Connector routing, turn-stream relays, file upload/download,
  * and manifest fetching are all exercised without touching real Slack.
  */
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
@@ -9,17 +9,18 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { SLACK_CHANNEL_CONNECTOR_SLUG } from '../executor/channels';
+import { SLACK_CHANNEL_CONNECTOR_SLUG } from '../connectors/channels';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..');
 const CLI_ENTRY = resolve(REPO_ROOT, 'apps/sandbox/slack-cli/channels/slack.ts');
+const CONNECTOR_CLI_ENTRY = resolve(REPO_ROOT, 'apps/cli/src/index.ts');
 
 const PROJECT = 'proj-slack-cli';
 const SESSION = 'sess-slack-cli';
 const TOKEN = 'kortix_test_slack_cli';
 
 interface World {
-  executor: Array<{ connector: string; action: string; args: Record<string, unknown> }>;
+  connector: Array<{ connector: string; action: string; args: Record<string, unknown> }>;
   turns: Array<Record<string, unknown>>;
   uploads: Array<Record<string, unknown>>;
   downloads: string[];
@@ -111,6 +112,7 @@ async function runSlack(args: string[], opts: { ok?: boolean } = {}): Promise<Cl
       KORTIX_CLI_TOKEN: TOKEN,
       KORTIX_PROJECT_ID: PROJECT,
       KORTIX_SESSION_ID: SESSION,
+      KORTIX_CLI_BIN: CONNECTOR_CLI_ENTRY,
     },
     stdout: 'pipe',
     stderr: 'pipe',
@@ -132,7 +134,7 @@ async function runSlack(args: string[], opts: { ok?: boolean } = {}): Promise<Cl
 beforeEach(() => {
   tempDir = mkdtempSync(join(tmpdir(), 'kortix-slack-cli-test-'));
   world = {
-    executor: [],
+    connector: [],
     turns: [],
     uploads: [],
     downloads: [],
@@ -153,14 +155,14 @@ beforeEach(() => {
         return json({ ok: true });
       }
 
-      if (url.pathname === `/v1/executor/projects/${PROJECT}/call`) {
+      if (url.pathname === `/v1/connectors/projects/${PROJECT}/call`) {
         const body = (await req.json()) as {
           connector: string;
           action: string;
           args?: Record<string, unknown>;
         };
         const call = { connector: body.connector, action: body.action, args: body.args ?? {} };
-        world.executor.push(call);
+        world.connector.push(call);
         if (body.connector === SLACK_CHANNEL_CONNECTOR_SLUG && world.reservedFailure) {
           if (world.reservedFailure === 'missing_auth_token') {
             return json({ error: true, message: 'Missing authentication token' }, 401);
@@ -273,26 +275,31 @@ describe('slack CLI', () => {
     ];
 
     for (const c of cases) {
-      world.executor = [];
+      world.connector = [];
       const out = asObject(await runSlack(c.args));
       expect(out.ok).toBe(true);
       if (c.expectOutput) expect(out).toMatchObject(c.expectOutput);
-      expect(world.executor).toHaveLength(1);
-      expect(world.executor[0]).toEqual({
+      expect(world.connector).toHaveLength(1);
+      expect(world.connector[0]).toEqual({
         connector: SLACK_CHANNEL_CONNECTOR_SLUG,
         action: c.action,
         args: c.expectedArgs,
       });
     }
-  });
+    // 10 cases, and `runSlack` spawns a real `bun` process for each one. That
+    // is ~1.7s on a developer laptop and comfortably past bun's default 5000ms
+    // on a CI runner executing 584 test files with --isolate: the timeout kills
+    // the child mid-flight and the failure surfaces as `exitCode 143` (SIGTERM)
+    // rather than as anything wrong with the CLI. Budget for the spawns.
+  }, 30_000);
 
-  test('covers non-Executor commands: help, typing, turn stream, file upload/download, manifest', async () => {
+  test('covers non-Connector commands: help, typing, turn stream, file upload/download, manifest', async () => {
     expect(String(await runSlack(['help']))).toContain('slack — Slack Web API adapter');
 
     const typing = asObject(await runSlack(['typing', '--channel', 'C1']));
     expect(typing.ok).toBe(true);
     expect(String(typing.note)).toContain('typing indicators');
-    expect(world.executor).toHaveLength(0);
+    expect(world.connector).toHaveLength(0);
 
     const step = asObject(
       await runSlack([
@@ -370,13 +377,24 @@ describe('slack CLI', () => {
       manifest: { display_information: { name: 'Test Slack App' } },
     });
     expect(world.manifests).toEqual(['Test Slack App']);
+    // Same reason as above: this one spawns the CLI seven times.
+  }, 30_000);
+
+  test('manifest reports one /v1 mount when KORTIX_API_URL already includes /v1', async () => {
+    const origin = apiUrl;
+    apiUrl = `${origin}/v1`;
+
+    const manifest = asObject(await runSlack(['manifest']));
+
+    expect(manifest.webhook_url).toBe(`${origin}/v1/webhooks/slack/${PROJECT}`);
+    expect(String(manifest.webhook_url)).not.toContain('/v1/v1/');
   });
 
   test('falls back to legacy slack only while the reserved channel connector rolls out', async () => {
     world.reservedFailure = 'action_not_found';
     const out = asObject(await runSlack(['thread', '--channel', 'C1', '--ts', '111.222']));
     expect(out.ok).toBe(true);
-    expect(world.executor.map((c) => `${c.connector}.${c.action}`)).toEqual([
+    expect(world.connector.map((c) => `${c.connector}.${c.action}`)).toEqual([
       `${SLACK_CHANNEL_CONNECTOR_SLUG}.get_thread`,
       'slack.get_thread',
     ]);
@@ -388,18 +406,18 @@ describe('slack CLI', () => {
       await runSlack(['thread', '--channel', 'C1', '--ts', '111.222'], { ok: false }),
     );
     expect(out).toMatchObject({ ok: false, error: 'needs_auth' });
-    expect(world.executor.map((c) => `${c.connector}.${c.action}`)).toEqual([
+    expect(world.connector.map((c) => `${c.connector}.${c.action}`)).toEqual([
       `${SLACK_CHANNEL_CONNECTOR_SLUG}.get_thread`,
     ]);
   });
 
-  test('surfaces structured Executor auth errors instead of the boolean error field', async () => {
+  test('surfaces structured Connector auth errors instead of the boolean error field', async () => {
     world.reservedFailure = 'missing_auth_token';
     const out = asObject(
       await runSlack(['thread', '--channel', 'C1', '--ts', '111.222'], { ok: false }),
     );
     expect(out).toMatchObject({ ok: false, error: 'Missing authentication token' });
-    expect(world.executor.map((c) => `${c.connector}.${c.action}`)).toEqual([
+    expect(world.connector.map((c) => `${c.connector}.${c.action}`)).toEqual([
       `${SLACK_CHANNEL_CONNECTOR_SLUG}.get_thread`,
     ]);
   });

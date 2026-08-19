@@ -51,6 +51,7 @@ aren't a schema-shape diff.
 
 - **Schema shape** is defined in `kortix.ts`. You edit the schema and *generate* the SQL — you don't hand-write schema DDL. (Data migrations, RLS, custom functions, and CONCURRENTLY operations are the exception — hand-written; see below.)
 - **Migration files** in `packages/db/migrations/` are **immutable, timestamp-named** `YYYYMMDDHHMMSSmmm_slug.sql` (17-digit UTC — node-pg-migrate's native format; collision-safe across parallel branches). The one exception is the `.concurrent.ts` escape hatch, same timestamp prefix, different suffix — see [Roll-forward safety](#roll-forward-safety-transactions-per-file-and-the-concurrently-escape-hatch).
+- A merged migration that fails its first hosted deployment remains immutable. A runtime correction must live in `scripts/migration-runtime-overrides.ts`, match the exact committed SHA-256, change the minimum required statement, fail closed on drift, and have an integration test. The migration runner prints each applied override.
 - **Applied state** lives in `kortix_migrations.pgmigrations` (node-pg-migrate's table; one row per migration, by name — **not** the `public` schema, and not the same table CI/local dev might assume by default).
 
 ### Tracking is by NAME, not checksum (known tradeoff)
@@ -126,7 +127,7 @@ Target a specific DB (secrets never go through the shell): the adapter reads `DA
 - Never edit a migration that has been applied anywhere. Not even a typo. Write a new one. (Tracking is by name — there's no checksum to catch you. Discipline matters. The `immutability` CI job enforces this at PR time.)
 - One logical change per migration.
 - Generated/hand-written SQL is reviewed by a human before it touches a database.
-- Every migration needs `lock_timeout`/`statement_timeout` set (squawk: `require-timeout-settings`) — the template pre-fills this.
+- Every migration needs `lock_timeout`/`statement_timeout` set (squawk: `require-timeout-settings`) — **both** `migrate:create` and `migrate:generate` pre-fill this. (`migrate:generate` did not until 2026-08-05; it renamed drizzle-kit's output through unchanged, so generated migrations were born failing the rule.)
 - Any migration that **drops or alters** a constraint, unique index, column, or enum value needs a `-- mixed-version-safe: <justification>` (or `-- enum-value-checked: <justification>` for `ADD VALUE`) comment, or CI fails it — see [Zero-downtime rules](#zero-downtime-rules-checklist). Same rule for `.concurrent.ts` (e.g. a `DROP INDEX CONCURRENTLY`) — use a `//` comment there instead of `--`.
 
 ---
@@ -201,6 +202,25 @@ ever added to it.
 See `packages/db/SQUAWK_BASELINE.md` for the one-time squawk retro-lint
 report over the pre-existing corpus (178 findings, none fixed, none blocking
 — informational only).
+
+### When a migration merges red: `squawk-waivers.json`
+
+The squawk check is **not** a required status check, so a PR can merge with it
+failing. That leaves a hole the grandfather list cannot cover: squawk lints file
+TEXT, merged migrations are immutable, and squawk's target set is *every*
+non-exempt file rather than the ones a PR adds. So one red merge fails the lint
+on every unrelated PR from then on, and there is no way to fix the file.
+
+`packages/db/squawk-waivers.json` is the escape hatch, deliberately **separate**
+from `grandfathered-migrations.json` — that file means "existed before
+2026-07-16" and must keep meaning only that. A waiver entry names the file,
+states every finding, why it cannot be fixed, and what root cause was fixed so
+it does not recur. `scripts/squawk-lint.ts` prints the whole waiver list on
+every run, so the debt stays visible.
+
+Adding a **new** migration to this list is almost always wrong: fix it in the PR
+that adds it, while the file is still mutable. Today it holds exactly one entry
+(`20260805030712000_enterprise_entitled_flag.sql`, merged in #6120).
 
 ---
 

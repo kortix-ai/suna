@@ -1,14 +1,19 @@
-import { describe, expect, test } from 'bun:test';
-import { renderToStaticMarkup } from 'react-dom/server';
 import { SidebarProvider } from '@/components/ui/sidebar';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
+import type { ToolPart } from '@/ui';
+import { describe, expect, test } from 'bun:test';
+import { type ReactElement, type ReactNode } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { ToolPartRenderer } from '../../tool/tool-renderers';
 import {
   CROSSFADE_TRANSITION,
   detailCardVariants,
   DetailLayer,
   DetailSidebarToggle,
+  type PersistentLayer,
   SLIDE_TRANSITION,
   terminalLayerMotion,
+  ToolParts,
 } from './detail-view';
 
 describe('DetailLayer a11y (W6)', () => {
@@ -31,9 +36,14 @@ describe('DetailLayer a11y (W6)', () => {
     expect(html).toContain('outline-none');
   });
 
-  test('home is inert while the terminal layer covers it, not only while a detail does', () => {
+  test('home is inert while the persistent layer covers it, not only while a detail does', () => {
     const covered = renderToStaticMarkup(
-      <DetailLayer detail={null} onBack={() => {}} isMobile={false} terminalOpen>
+      <DetailLayer
+        detail={null}
+        onBack={() => {}}
+        isMobile={false}
+        persistentLayer={terminalLayer({ open: true })}
+      >
         <div>home</div>
       </DetailLayer>,
     );
@@ -46,6 +56,82 @@ describe('DetailLayer a11y (W6)', () => {
       </DetailLayer>,
     );
     expect(idle).not.toContain('aria-hidden="true"');
+  });
+});
+
+/** A minimal `PersistentLayer` — the terminal is the only real one. */
+function terminalLayer(over: Partial<PersistentLayer> = {}): PersistentLayer {
+  return {
+    open: false,
+    swap: false,
+    title: 'Terminal',
+    onClose: () => {},
+    body: <div>pty-socket</div>,
+    ...over,
+  };
+}
+
+describe('persistent layer — the terminal lives inside this shell, not beside it', () => {
+  test('it renders inside the detail card frame, and there is only one such frame', () => {
+    const html = renderToStaticMarkup(
+      <DetailLayer
+        detail={null}
+        onBack={() => {}}
+        isMobile={false}
+        persistentLayer={terminalLayer({ open: true })}
+      >
+        <div>home</div>
+      </DetailLayer>,
+    );
+    expect(html).toContain('pty-socket');
+    expect(html).toContain('Terminal');
+    // The shared CARD_FRAME, worn by whichever layer is up. Exactly one card
+    // is on screen here — the duplicated standalone terminal frame this work
+    // deleted would have produced a second.
+    expect(html.match(/inset-y-3 right-3 left-3/g)).toHaveLength(1);
+  });
+
+  test('the body stays mounted once activated, so the PTY survives a close', () => {
+    // Server rendering cannot replay the mount latch across renders, so the
+    // contract is asserted where it actually lives: an activated-but-closed
+    // layer still renders its body, marked inert rather than removed. That is
+    // the whole difference from a `Detail`, whose body the keyed
+    // AnimatePresence tears down on close.
+    const open = renderToStaticMarkup(
+      <DetailLayer
+        detail={null}
+        onBack={() => {}}
+        isMobile={false}
+        persistentLayer={terminalLayer({ open: true })}
+      />,
+    );
+    expect(open).toContain('pty-socket');
+
+    // A detail opening over it must not evict it either — they crossfade.
+    const covered = renderToStaticMarkup(
+      <DetailLayer
+        detail={{ key: 'f', title: 'report.pdf', body: <div>file-body</div> }}
+        onBack={() => {}}
+        isMobile={false}
+        persistentLayer={terminalLayer({ open: true, swap: true })}
+      />,
+    );
+    expect(covered).toContain('pty-socket');
+    expect(covered).toContain('file-body');
+  });
+
+  test('mobile ignores it — there the terminal is its own drawer', () => {
+    const html = renderToStaticMarkup(
+      <DetailLayer
+        detail={null}
+        onBack={() => {}}
+        isMobile
+        persistentLayer={terminalLayer({ open: true })}
+      >
+        <div>home</div>
+      </DetailLayer>,
+    );
+    expect(html).not.toContain('pty-socket');
   });
 });
 
@@ -180,5 +266,123 @@ describe('DetailSidebarToggle (F3v2)', () => {
     } finally {
       useKortixComputerStore.setState({ isExpanded: false });
     }
+  });
+});
+
+function part(tool: string, status: 'completed' | 'error' = 'completed'): ToolPart {
+  return {
+    type: 'tool',
+    tool,
+    callID: `c-${tool}-${Math.random()}`,
+    state: { status },
+  } as unknown as ToolPart;
+}
+
+/**
+ * `ToolParts` holds no hooks — safe to call directly as a plain function, the
+ * same harness `context-card.test.tsx` uses for `ContextCard`. That sidesteps
+ * fully rendering `ToolPartRenderer` (it needs a `QueryClientProvider` +
+ * `NextIntlClientProvider` tree this test has no reason to stand up) while
+ * still proving the summary line's presence and its position relative to the
+ * failure banner and the raw tool views.
+ */
+function toolPartsChildren(props: {
+  parts: ToolPart[];
+  sessionId: string;
+  summary?: string;
+}): ReactElement[] {
+  const provider = ToolParts(props) as ReactElement<{
+    children: ReactElement<{ children?: ReactNode }>;
+  }>;
+  const raw = provider.props.children.props.children;
+  return (Array.isArray(raw) ? raw : [raw])
+    .flat()
+    .filter((c): c is ReactElement => !!c && typeof c === 'object' && 'type' in c);
+}
+
+describe('ToolParts summary line (W3, opt-in)', () => {
+  test('with `summary` set, a muted plain-language line renders above the failure banner and the tool views', () => {
+    const children = toolPartsChildren({
+      parts: [part('bash', 'error')],
+      sessionId: 's1',
+      summary: 'Ran a command',
+    });
+
+    const summaryIndex = children.findIndex((c) => c.type === 'p');
+    const bannerIndex = children.findIndex(
+      (c) =>
+        c.type === 'div' &&
+        (c.props as { children?: ReactNode }).children ===
+          'This step hit a problem — the details below show what happened.',
+    );
+    const toolIndex = children.findIndex((c) => c.type === ToolPartRenderer);
+
+    expect(summaryIndex).toBe(0);
+    const summaryEl = children[summaryIndex] as ReactElement<{
+      children: string;
+      className: string;
+    }>;
+    expect(summaryEl.props.children).toBe('Ran a command');
+    expect(summaryEl.props.className).toContain('text-muted-foreground');
+    expect(summaryEl.props.className).toContain('text-sm');
+    expect(summaryEl.props.className).toContain('text-pretty');
+    expect(bannerIndex).toBeGreaterThan(summaryIndex);
+    expect(toolIndex).toBeGreaterThan(summaryIndex);
+  });
+
+  test('without `summary` (the default StepDetailBody uses), no summary line renders', () => {
+    const children = toolPartsChildren({ parts: [part('bash')], sessionId: 's1' });
+    expect(children.some((c) => c.type === 'p')).toBe(false);
+  });
+});
+
+/**
+ * Task 16 (W11/D13, controller ruling R12). The panel surface is a disclosure
+ * row now, so `defaultOpen` finally means something here: it is the difference
+ * between a detail that opens as a readable list and one that dumps every
+ * payload on screen at once.
+ *
+ * Asserted on the `ToolPartRenderer` elements rather than on rendered markup
+ * because that IS the wiring — `ToolParts` is exercised as a plain function
+ * here (see `toolPartsChildren`), and fully rendering the renderer would need
+ * a query/intl provider tree this file has no other reason to stand up. The
+ * `aria-expanded="false"`/`"true"` those props produce is pinned directly on
+ * the row, in `tool/shared/infrastructure.test.tsx`.
+ */
+describe('ToolParts defaultOpen wiring (Task 16, W11/D13)', () => {
+  const openFlags = (parts: ToolPart[]) =>
+    toolPartsChildren({ parts, sessionId: 's1' })
+      .filter((c) => c.type === ToolPartRenderer)
+      .map((c) => (c.props as { defaultOpen?: boolean }).defaultOpen);
+
+  test('a single call opens — there is nothing to choose between', () => {
+    expect(openFlags([part('bash')])).toEqual([true]);
+  });
+
+  test('several calls all start closed — the detail is a list first', () => {
+    expect(openFlags([part('bash'), part('web_search'), part('edit')])).toEqual([
+      false,
+      false,
+      false,
+    ]);
+  });
+
+  test('counted on the rows actually drawn, not the parts handed in', () => {
+    // `collapseSnapshots` folds three `todo_write` calls into the one row that
+    // is really rendered, and a lone row is a single-call detail by every
+    // measure the reader has.
+    const snapshots = [part('todo_write'), part('todo_write'), part('todo_write')];
+    expect(openFlags(snapshots)).toEqual([true]);
+  });
+});
+
+describe('ToolParts wrapper — un-cap keeps height only (Task 17, W11/D14)', () => {
+  test('max-h-none stays; overflow-visible is gone so ToolCodeCard keeps its x-axis scrollbar', () => {
+    const provider = ToolParts({ parts: [part('bash')], sessionId: 's1' }) as ReactElement<{
+      children: ReactElement<{ className: string }>;
+    }>;
+    const wrapperClassName = provider.props.children.props.className;
+    expect(wrapperClassName).toContain('[&_[data-scrollable]]:max-h-none');
+    expect(wrapperClassName).not.toContain('overflow-visible');
   });
 });

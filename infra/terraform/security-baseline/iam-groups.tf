@@ -17,15 +17,135 @@ resource "aws_iam_policy" "bedrock_count_tokens" {
   tags   = local.tags
 }
 
+# Self-service MFA management — replaces the inline `EnforceMFA` policy that
+# used to hang directly off the `ino` user (Drata DCF-776 flags inline user
+# policies). This is the AWS-published self-service MFA + password pattern:
+# every action is scoped to the CALLING user via the ${aws:username} IAM policy
+# variable (escaped as $${aws:username} in Terraform so it is not treated as a
+# Terraform interpolation). The users are created out-of-band (per the file
+# convention above), so there is no aws_iam_user resource to reference; the
+# policy variable is what makes the same group policy safe for any member.
+resource "aws_iam_policy" "mfa_self_manage" {
+  name = "kortix-mfa-self-manage"
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Sid = "ManageOwnMFADevices", Effect = "Allow",
+        Action = [
+          "iam:CreateVirtualMFADevice", "iam:DeleteVirtualMFADevice",
+          "iam:EnableMFADevice", "iam:DeactivateMFADevice",
+          "iam:ResyncMFADevice", "iam:ListMFADevices",
+          "iam:ListVirtualMFADevices"
+        ],
+        Resource = [
+          "arn:aws:iam::${local.account_id}:mfa/$${aws:username}",
+          "arn:aws:iam::${local.account_id}:user/$${aws:username}"
+        ]
+      },
+      {
+        Sid      = "ManageOwnAccessKeys", Effect = "Allow",
+        Action   = ["iam:ListAccessKeys", "iam:GetAccessKeyLastUsed"],
+        Resource = "arn:aws:iam::${local.account_id}:user/$${aws:username}"
+      },
+      {
+        Sid = "ManageOwnLoginProfile", Effect = "Allow",
+        Action = [
+          "iam:ChangePassword", "iam:GetLoginProfile",
+          "iam:UpdateLoginProfile", "iam:CreateLoginProfile", "iam:DeleteLoginProfile"
+        ],
+        Resource = "arn:aws:iam::${local.account_id}:user/$${aws:username}"
+      }
+    ]
+  })
+  tags = local.tags
+}
+
+# MFA enforcement — the DENY side of the DCF-67 control. aws_iam_policy
+# .mfa_self_manage above lets a user ENROLL an MFA device; this policy DENIES
+# every action when the caller has NOT authenticated with MFA. Drata DCF-67
+# (testId 88 "MFA on Cloud Infrastructure") checks that MFA is actually
+# ENFORCED, not merely available — without a Deny, a user with no MFA device
+# (e.g. `ino` today) can still act on every permitted resource, which is what
+# the resource-level failure flagged.
+#
+# Standard AWS MFA-enforcement pattern: Effect = Deny, NotAction = the MFA +
+# password + GetSessionToken self-enrollment surface (so a user without MFA
+# can still enroll their first device and mint an MFA'd session), Condition
+# BoolIfExists { aws:MultiFactorAuthPresent = false }. BoolIfExists (not Bool)
+# is deliberate: an unauthenticated STS GetSessionToken call carries no MFA
+# context at all, and BoolIfExists treats a missing key the same as false, so
+# the deny fires for both "MFA present but false" and "MFA context absent".
+#
+# Resource MUST be "*" — this is a deny-all-except-enrollment, so it cannot be
+# scoped to a resource ARN. The Drata Compliance-as-Code scanner (testId 8025
+# "Access Policies Restrict Broad Access") only flags `Resource: "*"` on
+# `Effect: "Allow"` statements (a broad allow); this `Effect: "Deny"` is the
+# opposite and is NOT flagged — verified on PR #6289 (scan
+# 0c4a4878-9b23-4751-a7d0-84d68c6b0050: critical count unchanged from main).
+# The wildcard use is recorded in docs/compliance/IAC-SCANNER-EXCEPTIONS.md
+# under "Not-flagged wildcard policies" so a future scanner change is caught
+# against an explicit baseline. The checkov skip is defensive — checkov runs
+# soft_fail: true in CI so it does not gate, but the comment documents intent.
+resource "aws_iam_policy" "mfa_required" {
+  # checkov:skip=CKV_AWS_111: MFA enforcement requires a deny-all-except-
+  # enrollment statement; Resource must be "*" because the policy denies
+  # across every resource. See docs/compliance/IAC-SCANNER-EXCEPTIONS.md.
+  # checkov:skip=CKV_AWS_290: Deny-only policy; it grants no writes.
+  name = "kortix-mfa-required"
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "DenyAllWithoutMFA"
+        Effect = "Deny"
+        NotAction = [
+          "iam:CreateVirtualMFADevice",
+          "iam:DeleteVirtualMFADevice",
+          "iam:EnableMFADevice",
+          "iam:DeactivateMFADevice",
+          "iam:ResyncMFADevice",
+          "iam:ListMFADevices",
+          "iam:ListVirtualMFADevices",
+          "iam:ChangePassword",
+          "iam:GetLoginProfile",
+          "iam:UpdateLoginProfile",
+          "iam:CreateLoginProfile",
+          "iam:DeleteLoginProfile",
+          "sts:GetSessionToken"
+        ]
+        Resource = "*"
+        Condition = {
+          BoolIfExists = {
+            "aws:MultiFactorAuthPresent" = false
+          }
+        }
+      }
+    ]
+  })
+  tags = local.tags
+}
+
 locals {
   # group => { policies = [arns], members = [usernames] }
   groups = {
-    # Break-glass admins only (named individuals, MFA-enforced). kubet was scoped
-    # down to a live-managed `lightsail` group (lightsail:* — kept out of TF so the
-    # service wildcard isn't re-flagged by the IaC scanner).
+    # Break-glass admins only (named individuals, MFA-enforced). Person
+    # memberships are managed out-of-band (AWS console / aws iam
+    # add-user-to-group) — individual people must not live in version-controlled
+    # IaC (churn + audit noise on every join/leave). kubet was scoped down to a
+    # live-managed `lightsail` group (lightsail:* — kept out of TF so the service
+    # wildcard isn't re-flagged by the IaC scanner).
     administrators = {
-      policies = ["arn:aws:iam::aws:policy/AdministratorAccess", "arn:aws:iam::aws:policy/IAMUserChangePassword"]
-      members  = ["markokraemer", "saumya@kortix.com"]
+      # AdministratorAccess + IAMUserChangePassword for break-glass admins, plus
+      # mfa_required so every console action is denied unless the caller has
+      # authenticated with MFA (DCF-67). The AdministratorAccess Allow is still
+      # gated by the MFA Deny — IAM evaluates Deny before Allow, so an admin
+      # without MFA can do nothing except enroll an MFA device.
+      policies = concat([
+        "arn:aws:iam::aws:policy/AdministratorAccess",
+        "arn:aws:iam::aws:policy/IAMUserChangePassword",
+      ], var.enforce_mfa_for_iam_users ? [aws_iam_policy.mfa_required.arn] : [])
+      members = []
     }
     bedrock-limited = {
       policies = ["arn:aws:iam::aws:policy/AmazonBedrockLimitedAccess"]
@@ -49,10 +169,34 @@ locals {
       policies = [aws_iam_policy.cloudwatch_logs.arn]
       members  = ["kortix-cloudwatch-logs"]
     }
+    # Self-service MFA group (replaces the inline `EnforceMFA` policy that used
+    # to hang directly off one user — DCF-776 requires group-based permissions
+    # only). The policy is self-scoped via the ${aws:username} IAM variable, so
+    # it is safe for any member. Person memberships are managed OUT-OF-BAND
+    # (AWS console / `aws iam add-user-to-group --group-name mfa-self-manage`),
+    # NOT committed to this repo: individual people must not live in
+    # version-controlled IaC (churn + audit noise on every join/leave), and the
+    # self-scoped policy keeps DCF-776 satisfied with no member named in TF.
+    # See aws_iam_policy.mfa_self_manage above.
+    mfa-self-manage = {
+      # Self-service MFA enrollment (Allow side) + MFA enforcement (Deny side).
+      # mfa_self_manage lets a member enroll their own MFA device + manage their
+      # login profile; mfa_required DENIES every other action until they do
+      # (DCF-67). Together: a user with no MFA can do exactly one thing — enroll
+      # an MFA device — and once enrolled, the deny lifts for MFA'd sessions.
+      policies = concat([
+        aws_iam_policy.mfa_self_manage.arn,
+      ], var.enforce_mfa_for_iam_users ? [aws_iam_policy.mfa_required.arn] : [])
+      members = []
+    }
+    # ses-senders group RETIRED 2026-08-11: the kortix-ses-sender IAM user and
+    # its static key were deleted after DCF-71 moved email sending to the ECS
+    # task roles (ses_send policy in modules/ecs-api, role-based sends proven
+    # in all three environments).
   }
-  # Use the policy index in the instance key. Two customer-managed policy ARNs
-  # are created in this stack, so deriving a key from the ARN makes the
-  # for_each collection unknown during planning and prevents imports/plans.
+  # Use the policy index in the instance key. Customer-managed policy ARNs are
+  # created in this stack, so deriving a key from the ARN makes the for_each
+  # collection unknown during planning and prevents imports/plans.
   group_attachments = merge([for g, cfg in local.groups : { for index, policy in cfg.policies : "${g}|${index}" => { group = g, policy = policy } }]...)
   user_groups = {
     for user in distinct(flatten([for cfg in values(local.groups) : cfg.members])) :
@@ -75,4 +219,24 @@ resource "aws_iam_user_group_membership" "this" {
   for_each = local.user_groups
   user     = each.key
   groups   = each.value
+}
+
+# DCF-67 MFA enforcement is an explicit, coordinated flip — NOT an automatic
+# side effect of the apply pipeline. Attaching kortix-mfa-required to the
+# administrators group instantly DENIES every non-MFA API call for its members
+# (sofia, markokraemer, vkubet), which kills long-lived access-key CLI sessions
+# mid-flight. Flip to true only after every admin has switched to MFA-derived
+# sessions (aws sts get-session-token --serial-number <mfa-arn> --token-code,
+# or aws-vault). The policy resource itself is always created so the flip is
+# attach-only. 2026-08-10: the unattached policy was created during the
+# tf-apply-pipeline bootstrap; enforcement deliberately deferred.
+variable "enforce_mfa_for_iam_users" {
+  description = "Attach kortix-mfa-required (deny-all-without-MFA) to the administrators and mfa-self-manage groups (DCF-67)."
+  type        = bool
+  # ENABLED 2026-08-11 (Marko's call): long-lived access keys no longer work
+  # bare for administrators — mint MFA sessions instead:
+  #   aws sts get-session-token --serial-number arn:aws:iam::935064898258:mfa/<name> --token-code <6 digits>
+  # markokraemer + vkubet have devices enrolled; sofia must enroll on next use
+  # (console login -> IAM -> her user -> enroll MFA; the deny allows exactly that).
+  default = true
 }

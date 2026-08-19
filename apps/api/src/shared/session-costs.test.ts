@@ -2,9 +2,10 @@ import { describe, expect, test } from 'bun:test';
 import {
   InvalidSessionCostQueryError,
   assembleSessionCostSummary,
+  compareSessionCostRows,
   computeBilledSeconds,
   mergeLegacyGatewaySessionRows,
-  parseSessionCostListQuery,
+  sessionCostSortKey,
   sortLedgerEntriesNewestFirst,
 } from './session-costs';
 
@@ -17,36 +18,6 @@ const baseSession = {
   createdAt: new Date('2026-07-01T10:00:00.000Z'),
   updatedAt: new Date('2026-07-02T11:00:00.000Z'),
 };
-
-describe('parseSessionCostListQuery', () => {
-  test('applies the documented pagination defaults', () => {
-    expect(parseSessionCostListQuery({})).toEqual({ limit: 25, offset: 0 });
-  });
-
-  test('accepts the inclusive pagination bounds', () => {
-    expect(parseSessionCostListQuery({ limit: '1', offset: '0' })).toEqual({
-      limit: 1,
-      offset: 0,
-    });
-    expect(parseSessionCostListQuery({ limit: '100', offset: '200' })).toEqual({
-      limit: 100,
-      offset: 200,
-    });
-  });
-
-  test('rejects invalid pagination values', () => {
-    for (const input of [
-      { limit: '0' },
-      { limit: '101' },
-      { limit: '1.5' },
-      { limit: 'invalid' },
-      { offset: '-1' },
-      { offset: '1.5' },
-    ]) {
-      expect(() => parseSessionCostListQuery(input)).toThrow(InvalidSessionCostQueryError);
-    }
-  });
-});
 
 describe('assembleSessionCostSummary', () => {
   test('includes a zero-cost session with null activity and owner identity', () => {
@@ -63,6 +34,8 @@ describe('assembleSessionCostSummary', () => {
       updated_at: '2026-07-02T11:00:00.000Z',
       last_activity_at: null,
       llm_cost: 0,
+      llm_kortix_cost: 0,
+      llm_provider_cost: 0,
       compute_cost: 0,
       total_cost: 0,
       request_count: 0,
@@ -87,6 +60,8 @@ describe('assembleSessionCostSummary', () => {
       llm: {
         sessionId: 'session-zero',
         llmCost: '1.1250000000',
+        llmKortixCost: '0.1250000000',
+        llmProviderCost: '1.0000000000',
         requestCount: '3',
         errorCount: '1',
         inputTokens: '120',
@@ -108,6 +83,11 @@ describe('assembleSessionCostSummary', () => {
       owner_type: 'service_account',
       owner_name: 'automation-agent',
       llm_cost: 1.125,
+      // The split behind llm_cost: what Kortix billed vs what went straight to
+      // your own provider. Summing final_cost alone reported the provider side
+      // as $0.00 — see shared/llm-spend.ts.
+      llm_kortix_cost: 0.125,
+      llm_provider_cost: 1,
       compute_cost: 0.375,
       total_cost: 1.5,
       request_count: 3,
@@ -120,6 +100,69 @@ describe('assembleSessionCostSummary', () => {
       compute_seconds: 90,
       last_activity_at: '2026-07-03T12:01:00.000Z',
     });
+  });
+});
+
+describe('sessionCostSortKey', () => {
+  test('total_desc ranks the most expensive session first', () => {
+    const rows = [
+      { session_id: 'a', total_cost: 1.5, updated_at: '2026-07-01T00:00:00.000Z' },
+      { session_id: 'b', total_cost: 12.25, updated_at: '2026-06-01T00:00:00.000Z' },
+      { session_id: 'c', total_cost: 0, updated_at: '2026-08-01T00:00:00.000Z' },
+    ];
+    const sorted = [...rows].sort(compareSessionCostRows('total_desc'));
+    expect(sorted.map((row) => row.session_id)).toEqual(['b', 'a', 'c']);
+  });
+
+  test('total_asc ranks the cheapest session first', () => {
+    const rows = [
+      { session_id: 'a', total_cost: 1.5, updated_at: '2026-07-01T00:00:00.000Z' },
+      { session_id: 'b', total_cost: 12.25, updated_at: '2026-06-01T00:00:00.000Z' },
+      { session_id: 'c', total_cost: 0, updated_at: '2026-08-01T00:00:00.000Z' },
+    ];
+    const sorted = [...rows].sort(compareSessionCostRows('total_asc'));
+    expect(sorted.map((row) => row.session_id)).toEqual(['c', 'a', 'b']);
+  });
+
+  test('total_desc breaks ties on session id so paging is stable', () => {
+    const rows = [
+      { session_id: 'b', total_cost: 1, updated_at: '2026-07-01T00:00:00.000Z' },
+      { session_id: 'a', total_cost: 1, updated_at: '2026-07-01T00:00:00.000Z' },
+    ];
+    const sorted = [...rows].sort(compareSessionCostRows('total_desc'));
+    expect(sorted.map((row) => row.session_id)).toEqual(['a', 'b']);
+  });
+
+  test('recent ranks the most recently updated session first', () => {
+    const rows = [
+      { session_id: 'a', total_cost: 99, updated_at: '2026-06-01T00:00:00.000Z' },
+      { session_id: 'b', total_cost: 0, updated_at: '2026-08-01T00:00:00.000Z' },
+    ];
+    const sorted = [...rows].sort(compareSessionCostRows('recent'));
+    expect(sorted.map((row) => row.session_id)).toEqual(['b', 'a']);
+  });
+
+  test('recent breaks ties on session id so paging is stable', () => {
+    const rows = [
+      { session_id: 'b', total_cost: 2, updated_at: '2026-07-01T00:00:00.000Z' },
+      { session_id: 'a', total_cost: 1, updated_at: '2026-07-01T00:00:00.000Z' },
+    ];
+    const sorted = [...rows].sort(compareSessionCostRows('recent'));
+    expect(sorted.map((row) => row.session_id)).toEqual(['a', 'b']);
+  });
+
+  test('sortKey maps every sort to a stable column pair', () => {
+    expect(sessionCostSortKey('total_desc')).toEqual(['total_cost', 'desc']);
+    expect(sessionCostSortKey('total_asc')).toEqual(['total_cost', 'asc']);
+    expect(sessionCostSortKey('recent')).toEqual(['updated_at', 'desc']);
+  });
+
+  // CostSort is shared with the project rollup. A session page has no name to
+  // sort on, so name_asc must fail loudly rather than fall through to a
+  // different order than the caller asked for.
+  test('rejects a sort sessions cannot honor instead of substituting one', () => {
+    expect(() => sessionCostSortKey('name_asc')).toThrow(InvalidSessionCostQueryError);
+    expect(() => compareSessionCostRows('name_asc')).toThrow(InvalidSessionCostQueryError);
   });
 });
 

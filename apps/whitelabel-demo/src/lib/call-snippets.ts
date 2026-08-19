@@ -198,18 +198,18 @@ function connectionsList(ctx: SnippetContext): CallSnippet {
     title: 'List the connections a session may bind',
     summary:
       'What the picker is made of — and why some connectors have nothing to pick.',
-    sdk: 'await kortix.project(projectId).connectors.authorizations.list();',
+    sdk: 'await kortix.project(projectId).connectors.connections.list();',
     http: {
       kind: 'rest',
       method: 'GET',
-      path: `/v1/projects/${ctx.projectId ?? PLACEHOLDER.projectId}/connector-profiles`,
+      path: `/v1/projects/${ctx.projectId ?? PLACEHOLDER.projectId}/connections`,
     },
     serverInjected: [],
     notes: [
       'Runs SERVER-side (`src/app/api/connections/route.ts`), and the browser never gets the raw reply: `selectBindableConnections` narrows it first, so the picker cannot offer an option that would fail at create.',
       'Only project connections (`owner_type: "project"`, `status: "active"`) survive that filter. A wrapper acts under one credential for many end users and has no personal upstream identity, so a connection a member authorized for themselves is not its to spend — and a revoked one binds fine and then fails at the first tool call.',
       'An alias with nothing bindable is still returned, carrying its reason, so the picker can say "a teammate has to share this one" instead of pretending the connector does not exist. There is deliberately no "connect it yourself" button: the interactive flow that would is refused 403 REQUIRE_CONNECTORS_INTERACTIVE_ONLY for a wrapper credential.',
-      'The chosen `authorization_id` is sent in `connector_bindings`. The scope endpoint can replace it later.',
+      'The chosen `connection_id` is sent in `connector_bindings`. The scope endpoint can replace it later.',
     ],
   };
 }
@@ -277,7 +277,7 @@ function sessionPrompt(ctx: SnippetContext): CallSnippet {
     serverInjected: [],
     notes: [
       'The agent is per MESSAGE, not per session: `send(text, { agent })` overrides the sticky pick for that one turn.',
-      'A switch re-scopes secret delivery plus connector and Kortix CLI grants before the prompt runs. This only affects future access; it cannot erase a secret an earlier agent already read. Operators can opt into a strict immutable-grant mode that returns 409 AGENT_SWITCH_REQUIRES_NEW_SESSION.',
+      'A switch re-scopes secret delivery plus connector and Kortix CLI grants before the prompt runs. This only affects future access; it cannot erase a secret an earlier agent already read.',
     ],
   };
 }
@@ -304,7 +304,7 @@ function sessionRescope(ctx: SnippetContext): CallSnippet {
       path: `/v1/projects/${projectId}/sessions/${sessionId}/scope`,
       body: {
         secrets: ['TEST_KEY_2'],
-        connector_bindings: { gmail: { authorization_id: 'auth_123' } },
+        connector_bindings: { gmail: { connection_id: 'auth_123' } },
       },
     },
     serverInjected: [],
@@ -507,7 +507,7 @@ function connectorConnectLink(ctx: SnippetContext): CallSnippet {
     id: 'connector.connect-link',
     title: 'Mint a connect link for a required connector',
     summary:
-      'The remedy behind a 409 CONNECTOR_AUTHORIZATION_REQUIRED — for the shared connectors it can fix.',
+      'The remedy behind a 409 CONNECTOR_CONNECTION_REQUIRED — for the shared connectors it can fix.',
     sdk: `await kortix.project(projectId).setupLinks.requestConnector({ slug: '${slug}' });`,
     http: {
       kind: 'rest',
@@ -517,8 +517,8 @@ function connectorConnectLink(ctx: SnippetContext): CallSnippet {
     },
     serverInjected: [],
     notes: [
-      'Session create refuses BEFORE any sandbox boots when a connector the session declares has no usable connection: 409 CONNECTOR_AUTHORIZATION_REQUIRED (the connector exists, nothing is connected to it) or 409 REQUIRED_CONNECTOR_PROFILE_UNAVAILABLE (the alias is not a connector on this project at all). Classify both — the second is a manifest change, not something anyone can connect their way out of.',
-      'The refusal body carries `connector_profiles`, each with an `authorization_strategy`, and that field decides who can fix it. `project` means one shared connection serves everyone, which is what this call mints a link for. `user` means the connection must belong to the account the session runs as — a wrapper runs every end user under ONE credential, so no end user can satisfy it, and this call refuses a `user` connector outright with 409 CONNECTOR_AUTHORIZATION_STRATEGY_MISMATCH.',
+      'Session create refuses BEFORE any sandbox boots when a connector the session declares has no usable connection: 409 CONNECTOR_CONNECTION_REQUIRED (the connector exists, nothing is connected to it) or 409 REQUIRED_CONNECTOR_CONNECTION_UNAVAILABLE (the alias is not a connector on this project at all). Classify both — the second is a manifest change, not something anyone can connect their way out of.',
+      'The refusal body carries `connector_connections`, each with an `authorization_strategy`, and that field decides who can fix it. `project` means one shared connection serves everyone, which is what this call mints a link for. `user` means the connection must belong to the account the session runs as — a wrapper runs every end user under ONE credential, so no end user can satisfy it, and this call refuses a `user` connector outright with 409 CONNECTOR_AUTHORIZATION_STRATEGY_MISMATCH.',
       'The returned `url` is a Kortix-hosted page with a short-lived token. Whoever opens it connects the account, so it is shared with the person who should own that connection, not published — and it does the one thing a wrapper credential can never do on an end user’s behalf: sign in as somebody.',
       'Pipedream-backed connectors only. A deployment with no Pipedream answers 501, and a connector that is not connected through Pipedream answers 404 — both worth surfacing verbatim rather than retrying.',
     ],

@@ -3,14 +3,20 @@
 import { Button } from '@/components/ui/marketing/button';
 import { WallpaperBackground } from '@/components/ui/wallpaper-background';
 import { useRequestDemo } from '@/features/contact/request-demo-provider';
+import { Claude } from '@/features/icon/icons/claude';
+import { OpenAI } from '@/features/icon/icons/open-ai';
 import { HeroSurfaces } from '@/features/marketing/hero-surfaces';
-import { Icon } from '@/features/icon/icon';
 import { hero, heroEyebrow } from '@/features/marketing/landing/content';
 import { useAuth } from '@/features/providers/auth-provider';
 import { trackCtaSignup } from '@/lib/analytics/gtm';
 import { latestProjectPath } from '@/lib/onboarding/last-project-cookie';
 import { ArrowRightIcon } from '@phosphor-icons/react';
 import { type ReactNode, useCallback } from 'react';
+
+/** `heroEyebrow.rivals[].icon` selects a logo by name at runtime, so it can't be
+ *  statically resolved to a single import — this explicit map is the smallest set
+ *  that covers it, kept in sync by hand with `landing/content.ts`. */
+const RIVAL_ICONS = { Claude, OpenAI } as const;
 
 /** Anchors the product against the two things a reader already knows, with
  *  their marks, so "AI Management System" lands without a paragraph first. */
@@ -19,9 +25,7 @@ function RivalEyebrow() {
     <div className="text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-1.5 text-sm">
       <span>{heroEyebrow.lead}</span>
       {heroEyebrow.rivals.map((r, i) => {
-        const Glyph = Icon[r.icon as keyof typeof Icon] as
-          | ((p: { className?: string }) => ReactNode)
-          | undefined;
+        const Glyph = RIVAL_ICONS[r.icon] as ((p: { className?: string }) => ReactNode) | undefined;
         return (
           <span key={r.id} className="flex items-center gap-1.5">
             {i > 0 && <span className="text-muted-foreground/50 mr-1">and</span>}
@@ -29,7 +33,8 @@ function RivalEyebrow() {
             <span className="text-foreground font-medium">{r.label}</span>
           </span>
         );
-      })}    </div>
+      })}{' '}
+    </div>
   );
 }
 
@@ -103,11 +108,7 @@ const Hero = () => {
               >
                 {hero.ctaSecondary}
               </Button>
-              <Button
-                size="lg"
-                onClick={handleLaunch}
-                className="h-12 flex-1 sm:h-10 sm:flex-none"
-              >
+              <Button size="lg" onClick={handleLaunch} className="h-12 flex-1 sm:h-10 sm:flex-none">
                 {hero.ctaPrimary}
                 <ArrowRightIcon className="size-4" />
               </Button>
@@ -117,7 +118,7 @@ const Hero = () => {
 
         <div
           id="demo"
-          className="relative z-10 mx-auto mt-10 max-w-7xl px-6 scroll-mt-24 sm:mt-12 lg:mt-8"
+          className="relative z-10 mx-auto mt-10 max-w-7xl scroll-mt-24 px-6 sm:mt-12 lg:mt-8"
         >
           <HeroSurfaces />
         </div>

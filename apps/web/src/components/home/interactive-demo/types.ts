@@ -8,7 +8,7 @@ export type PageId =
   | 'chat'
   | 'agents'
   | 'skills'
-  | 'integrations'
+  | 'connectors'
   | 'models'
   | 'scheduling'
   | 'channels'

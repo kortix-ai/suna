@@ -26,7 +26,7 @@ question.
 Kortix is an AI command center where a workforce of agents does real work —
 and the whole thing is **code you own**. The unit of work is a **project**:
 a single git repository with a `kortix.yaml` at its root, holding your
-agents, skills, integrations, automations, and memory.
+agents, skills, connectors, automations, and memory.
 
 - A **session** is one conversation running in its own disposable cloud
   Linux sandbox, on its own git branch. The agent can install, run, and
@@ -53,7 +53,7 @@ schedule or trigger runs it end to end).
 | Documents | Produces finished PDF, DOCX, PPTX, XLSX — formatted deliverables, not text dumps |
 | Media | Generates images and video, narration/text-to-speech, and transcription |
 | Websites & apps | Builds sites and web apps in the repo and deploys them as live apps |
-| Integrations | 3,000+ connectors plus MCP, OpenAPI, GraphQL, and raw HTTP — brokered server-side |
+| Connectors | 3,000+ apps plus MCP, OpenAPI, GraphQL, and raw HTTP — brokered server-side |
 | Secrets | Encrypted, scoped credentials injected at runtime, scoped to this agent's grant |
 | Memory | A living, file-based company brain that compounds what it learns across sessions |
 | Scheduling | Cron and webhook triggers that spawn sessions automatically — see the `<scheduling>` section |
@@ -103,7 +103,7 @@ ownership and history. App deployment is governed by the project manifest
 — see the `kortix-yaml.md` reference's `apps:` section for the deploy
 surface.
 
-**Integrations and connectors.** Kortix reaches **3,000+ apps** through
+**Connectors and connections.** Kortix reaches **3,000+ apps** through
 managed connectors, plus MCP servers, OpenAPI, GraphQL, and raw HTTP — all
 brokered server-side through a single scoped token, so the agent acts in
 your tools (read *and* write) without ever holding raw credentials.

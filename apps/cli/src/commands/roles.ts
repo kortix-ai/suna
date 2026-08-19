@@ -45,7 +45,7 @@ const HELP = help`Usage: kortix roles <subcommand> [options]
 
 Manage account-level custom roles + their policy assignments — the CLI face
 of the dashboard's Roles tab and a project's "Custom roles" card. Built-in
-roles (owner/admin/member, manager/editor/user) are read-only references;
+roles (owner/admin/member, manager/member) are read-only references;
 custom roles are yours to create, edit, and bind.
 
 Roles:

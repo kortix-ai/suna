@@ -1,0 +1,69 @@
+name: ECS manual scale
+
+# Manual, reversible lever to change desired_count on a live ECS service
+# without going through Terraform (the ecs-api module deliberately has
+# `ignore_changes = [task_definition, desired_count]` on the service — see
+# infra/terraform/modules/ecs-api/main.tf — so ops-level scaling like this is
+# the intended mechanism, not a Terraform apply). Uses the same
+# `kortix-gha-ecs-deploy` OIDC role every deploy-*.yml already assumes, scoped
+# to ecs:UpdateService on kortix-*/kortix-* only.
+on:
+  workflow_dispatch:
+    inputs:
+      cluster:
+        description: "ECS cluster name, e.g. kortix-staging"
+        required: true
+        type: string
+      service:
+        description: "ECS service name, e.g. kortix-staging or kortix-staging-gateway"
+        required: true
+        type: string
+      desired_count:
+        description: "New desired task count"
+        required: true
+        type: number
+      region:
+        description: "AWS region"
+        required: false
+        type: string
+        default: "us-west-2"
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  scale:
+    name: scale ${{ inputs.service }} to ${{ inputs.desired_count }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Guard — only kortix-* clusters/services
+        run: |
+          set -euo pipefail
+          case "${{ inputs.cluster }}" in
+            kortix-*) ;;
+            *) echo "::error::refusing non-kortix cluster '${{ inputs.cluster }}'"; exit 1 ;;
+          esac
+          case "${{ inputs.service }}" in
+            kortix-*) ;;
+            *) echo "::error::refusing non-kortix service '${{ inputs.service }}'"; exit 1 ;;
+          esac
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
+          aws-region: ${{ inputs.region }}
+      - name: Update desired count
+        run: |
+          set -euo pipefail
+          aws ecs update-service --region "${{ inputs.region }}" \
+            --cluster "${{ inputs.cluster }}" --service "${{ inputs.service }}" \
+            --desired-count "${{ inputs.desired_count }}" >/dev/null
+          echo "✔ ${{ inputs.service }} desired-count set to ${{ inputs.desired_count }}"
+      - name: Wait for stability
+        run: |
+          set -euo pipefail
+          aws ecs wait services-stable --region "${{ inputs.region }}" \
+            --cluster "${{ inputs.cluster }}" --services "${{ inputs.service }}"
+          aws ecs describe-services --region "${{ inputs.region }}" \
+            --cluster "${{ inputs.cluster }}" --services "${{ inputs.service }}" \
+            --query 'services[0].{desired:desiredCount,running:runningCount,pending:pendingCount}'

@@ -336,9 +336,13 @@ async function connectManual(ctx: ProjectCtx, opts: ConnectOpts): Promise<number
   return 0;
 }
 
+function apiV1Base(url: string): string {
+  return `${url.trim().replace(/\/+$/, '').replace(/\/v1$/, '')}/v1`;
+}
+
 function printInstall(ctx: ProjectCtx, install: SlackInstallation, headline: string): void {
   const name = install.workspaceName ?? install.workspaceId;
-  const webhookUrl = `${ctx.client.apiBase.replace(/\/$/, '')}/v1/webhooks/slack/${ctx.projectId}`;
+  const webhookUrl = `${apiV1Base(ctx.client.apiBase)}/webhooks/slack/${ctx.projectId}`;
   process.stdout.write(
     `${headline}  ${C.bold}${name}${C.reset}\n` +
       `         team       ${C.dim}${install.workspaceId}${C.reset}\n` +
@@ -367,8 +371,7 @@ async function channelsManifest(
   const ctx = await resolveProjectContext(ctxOpts);
   if (!ctx) return 1;
 
-  const baseUrl = ctx.client.apiBase.replace(/\/$/, '');
-  const requestUrl = `${baseUrl}/v1/webhooks/slack/${ctx.projectId}`;
+  const requestUrl = `${apiV1Base(ctx.client.apiBase)}/webhooks/slack/${ctx.projectId}`;
 
   const manifest = {
     display_information: {
@@ -490,9 +493,12 @@ async function teamsConnect(
     const mode = await ctx.client.get<TeamsMode>(
       `/projects/${ctx.projectId}/channels/teams/mode`,
     );
+    // Client-side pre-check, worded exactly like the server's feature-flag gate
+    // (feature-flags/gate.ts). It is a failure, so it goes to stderr like every
+    // other CLI error — stdout stays reserved for the command's own output.
     if (!mode.enabled) {
-      process.stdout.write(
-        `${C.dim}Microsoft Teams is off for this project. Turn it on under Customize → Settings → Experimental, then retry.${C.reset}\n`,
+      process.stderr.write(
+        `${status.err('Microsoft Teams is not enabled for this project. Enable it in Settings → Feature flags.')}\n`,
       );
       return 1;
     }

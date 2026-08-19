@@ -1,7 +1,10 @@
 'use client';
 
 import type { SessionCostDetail, SessionCostLedgerEntry } from '@kortix/sdk';
-import { ArrowSquareOutIcon as ExternalLink, ReceiptIcon as ReceiptText } from '@phosphor-icons/react';
+import {
+  ArrowSquareOutIcon as ExternalLink,
+  ReceiptIcon as ReceiptText,
+} from '@phosphor-icons/react';
 import Link from 'next/link';
 
 import { Badge } from '@/components/ui/badge';
@@ -18,7 +21,11 @@ import {
 } from '@/components/ui/table';
 import { EmptyState } from '@/features/layout/section/empty-state';
 
-import { formatSessionCostDuration, formatSessionCostUsd } from './session-cost-format';
+import {
+  formatSessionCostDuration,
+  formatSessionCostExactUsd,
+  formatSessionCostUsd,
+} from './session-cost-format';
 
 interface SessionCostDetailContentProps {
   detail: SessionCostDetail | undefined;
@@ -26,14 +33,16 @@ interface SessionCostDetailContentProps {
   error: Error | null;
 }
 
+const timestampFormat = new Intl.DateTimeFormat('en-US', {
+  month: 'short',
+  day: 'numeric',
+  year: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+});
+
 function formatTimestamp(value: string): string {
-  return new Date(value).toLocaleString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  return timestampFormat.format(new Date(value));
 }
 
 function ledgerTimestamp(entry: SessionCostLedgerEntry): string {
@@ -117,7 +126,21 @@ export function SessionCostDetailContent({
         </Button>
       </div>
 
-      <div className="border-border grid grid-cols-2 divide-x divide-y overflow-hidden rounded-md border sm:grid-cols-3">
+      {/* Hairlines are the grid GAP over a `bg-border` surface, not
+          `divide-x divide-y`. Tailwind's divide utilities compile to
+          `> * + *` — DOM order, with no knowledge of rows or columns — so at
+          `sm:grid-cols-3` tiles 2 and 3 drew a stray horizontal rule inside
+          row 1 and tile 4 drew a dangling left border at the start of row 2.
+          A 1px gap follows the real grid geometry, so no edge dangles at
+          either column count. Same treatment as `CostSummaryTiles`; see its
+          `GRID_CLASS` comment for the constraint this introduces.
+
+          Six tiles is the one count that fills its rows at BOTH 2 and 3
+          columns (6 % 2 === 0, 6 % 3 === 0), so no empty track can show the
+          container's border colour and this grid needs no filler cells. The
+          array below is a fixed literal — do not add or remove a tile without
+          re-checking that against both column counts. */}
+      <div className="border-border bg-border grid grid-cols-2 gap-px overflow-hidden rounded-md border sm:grid-cols-3">
         {[
           ['Total', formatSessionCostUsd(detail.total_cost)],
           ['LLM', formatSessionCostUsd(detail.llm_cost)],
@@ -126,7 +149,7 @@ export function SessionCostDetailContent({
           ['Tokens', tokenTotal.toLocaleString('en-US')],
           ['Compute time', formatSessionCostDuration(detail.compute_seconds)],
         ].map(([label, value]) => (
-          <div key={label} className="px-3 py-2.5">
+          <div key={label} className="bg-popover px-3 py-2.5">
             <p className="text-muted-foreground text-xs">{label}</p>
             <p className="mt-0.5 font-mono text-sm font-medium tabular-nums">{value}</p>
           </div>
@@ -143,7 +166,7 @@ export function SessionCostDetailContent({
         {detail.model_usage.length === 0 ? (
           <p className="text-muted-foreground py-4 text-sm">No model usage.</p>
         ) : (
-          <div className="overflow-hidden rounded-md border">
+          <div className="overflow-hidden rounded-md">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -192,7 +215,7 @@ export function SessionCostDetailContent({
             description="This session has no finalized LLM or compute entries."
           />
         ) : (
-          <div className="overflow-hidden rounded-md border">
+          <div className="overflow-hidden rounded-md">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -220,7 +243,7 @@ export function SessionCostDetailContent({
                         : formatSessionCostDuration(entry.compute_seconds)}
                     </TableCell>
                     <TableCell className="text-right font-mono text-xs tabular-nums">
-                      {formatSessionCostUsd(entry.cost)}
+                      {formatSessionCostExactUsd(entry.cost)}
                     </TableCell>
                     <TableCell className="font-mono text-xs">
                       {formatTimestamp(ledgerTimestamp(entry))}

@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test';
-import { truncateString } from './string';
+import { capitalizeWords, truncateString } from './string';
 
 describe('truncateString', () => {
   test('returns empty string for undefined input', () => {
@@ -46,5 +46,32 @@ describe('truncateString', () => {
 
   test('preserves the leading slice content when truncating', () => {
     expect(truncateString('abcdefghij', 3)).toBe('abc...');
+  });
+});
+
+describe('capitalizeWords', () => {
+  test('returns empty string unchanged', () => {
+    expect(capitalizeWords('')).toBe('');
+  });
+
+  test('capitalizes a single lowercase word', () => {
+    expect(capitalizeWords('kortix')).toBe('Kortix');
+  });
+
+  test('capitalizes each hyphen-separated segment', () => {
+    expect(capitalizeWords('harness-reflector')).toBe('Harness-Reflector');
+    expect(capitalizeWords('session-reviewer')).toBe('Session-Reviewer');
+  });
+
+  test('capitalizes each space-separated word', () => {
+    expect(capitalizeWords('customer support agent')).toBe('Customer Support Agent');
+  });
+
+  test('leaves an already-capitalized name unchanged', () => {
+    expect(capitalizeWords('Kortix')).toBe('Kortix');
+  });
+
+  test('leaves digits and internal casing alone, only touches word starts', () => {
+    expect(capitalizeWords('gpt5-agent')).toBe('Gpt5-Agent');
   });
 });

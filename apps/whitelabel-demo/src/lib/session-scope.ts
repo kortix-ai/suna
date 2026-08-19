@@ -39,20 +39,20 @@ export interface SessionScopeRowsInput {
   agentName: string | null | undefined;
   /** `session.secrets_allowlist` — null/undefined = never narrowed. */
   secretsAllowlist: string[] | null | undefined;
-  /** Active connector bindings, alias -> authorization label or identifier. */
+  /** Active connector bindings, alias -> connection label or identifier. */
   boundConnections: Record<string, string>;
 }
 
 const ALL_SECRETS = 'Everything the agent is granted';
 
-/** Extract the canonical authorization identifiers from a scope response. */
+/** Extract the canonical connection identifiers from a scope response. */
 export function readScopeBindingIds(
   bindings: SessionConnectorBindings | null | undefined,
 ): Record<string, string> {
   return Object.fromEntries(
     Object.entries(bindings ?? {}).map(([alias, binding]) => [
       alias,
-      binding.authorization_id,
+      binding.connection_id,
     ]),
   );
 }
@@ -74,9 +74,9 @@ export function buildCompleteSessionScopeReplacement(
   return {
     secrets: secrets === null ? null : [...(secrets ?? [])],
     connector_bindings: Object.fromEntries(
-      Object.entries(bindings).map(([alias, authorizationId]) => [
+      Object.entries(bindings).map(([alias, connectionId]) => [
         alias,
-        { authorization_id: authorizationId },
+        { connection_id: connectionId },
       ]),
     ),
   };

@@ -9,6 +9,12 @@ The canonical, detailed runbook is `packages/db/MIGRATIONS.md`. This skill is a
 short safety wrapper; if anything here seems incomplete, trust that file and the
 current `package.json` scripts.
 
+> **Also load the `learnings` skill.** It carries the incident rules that apply
+> while WRITING a migration — above all: never backfill data inside a
+> single-transaction `.sql` migration (2026-08-10 v0.12.7 prod outage; enforced
+> by the `backfill-safe` lint guard, but the rule explains what to build
+> instead: a batched `.concurrent.ts` pass or an out-of-band runbook).
+
 ## Current model
 
 - **Engine:** node-pg-migrate, invoked by `packages/db/scripts/migrate.ts`.

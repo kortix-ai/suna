@@ -1,10 +1,12 @@
-import { config, type SandboxProviderName } from '../../config';
-import { getProvider } from '../../platform/providers';
-import { db } from '../../shared/db';
 import { sessionSandboxes } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
-import { isAlreadyNotRunning } from '../reaping/policy';
+import { type SandboxProviderName, config } from '../../config';
+import { getProvider } from '../../platform/providers';
+import { db } from '../../shared/db';
+import { isAlreadyNotRunning, isLifecycleTransitionInProgress } from '../reaping/policy';
 import { applyStoppedState } from '../reaping/sandbox-state-sync';
+import { abortLiveTurnBeforeStop } from '../reaping/stop-box';
+import { RUNTIME_WAKE_LATE_START_GUARD_MS, runtimeWakeInProgress } from './runtime-wake-fence';
 
 /**
  * Manual, user-triggered stop: pause the running sandbox in place (disk kept,
@@ -35,7 +37,10 @@ export async function stopSession(input: {
   if (!sandbox) {
     return { status: 404, body: { error: 'Session sandbox not found' } };
   }
-  if (sandbox.status !== 'active') {
+  const cancellingWake =
+    sandbox.status === 'stopped' &&
+    runtimeWakeInProgress((sandbox.metadata ?? {}) as Record<string, unknown>);
+  if (sandbox.status !== 'active' && !cancellingWake) {
     return {
       status: 409,
       body: { error: 'Session is not running', status: sandbox.status },
@@ -52,10 +57,41 @@ export async function stopSession(input: {
   }
 
   const provider = getProvider(sandbox.provider as SandboxProviderName);
+  const now = new Date();
+  if (cancellingWake) {
+    // Cancel the durable wake before the provider call. The in-flight wake task
+    // then loses its finalize CAS and stops any provider start that completes
+    // after this request. The cleanup guard covers a task or pod that never
+    // returns from provider.start().
+    await applyStoppedState({
+      sandboxId: sandbox.sandboxId,
+      sessionId,
+      externalId: sandbox.externalId,
+      stopReason: 'manual',
+      metadata: {
+        stoppedBy: userId,
+        runtimeWakeCleanupUntilAt: new Date(
+          now.getTime() + RUNTIME_WAKE_LATE_START_GUARD_MS,
+        ).toISOString(),
+      },
+      now,
+    });
+  }
+  // Close the live turn before powering the box off, but only when the box is
+  // actually running one: `cancellingWake` means the row is already stopped
+  // (a wake was mid-flight), so there is no live opencode process to abort.
+  if (!cancellingWake) {
+    await abortLiveTurnBeforeStop({
+      sandboxId: sandbox.sandboxId,
+      externalId: sandbox.externalId,
+      userId,
+    });
+  }
+
   try {
     await provider.stop(sandbox.externalId);
   } catch (err) {
-    if (!isAlreadyNotRunning(err)) {
+    if (!isAlreadyNotRunning(err) && !isLifecycleTransitionInProgress(err)) {
       return {
         status: 502,
         body: { error: err instanceof Error ? err.message : 'Failed to stop sandbox' },
@@ -73,14 +109,16 @@ export async function stopSession(input: {
   // do exactly that (projects/routes/shared.ts clears and sets the
   // `runtimeWakeId` wake fence), and the compute clamp's `lastAliveAt` stamp
   // lives one table over for the same reason. Merged, never assigned.
-  const now = new Date();
-  await applyStoppedState({
-    sandboxId: sandbox.sandboxId,
-    sessionId,
-    externalId: sandbox.externalId,
-    metadata: { stoppedAt: now.toISOString(), stoppedBy: userId, stopReason: 'manual' },
-    now,
-  });
+  if (!cancellingWake) {
+    await applyStoppedState({
+      sandboxId: sandbox.sandboxId,
+      sessionId,
+      externalId: sandbox.externalId,
+      stopReason: 'manual',
+      metadata: { stoppedBy: userId },
+      now,
+    });
+  }
 
   return { status: 200, body: { ok: true, session_id: sessionId, status: 'stopped' } };
 }

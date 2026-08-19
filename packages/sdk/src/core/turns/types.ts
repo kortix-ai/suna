@@ -9,6 +9,8 @@
  * caller's concrete types end to end.
  */
 
+import type { GatewayErrorDetails } from './errors';
+
 /** Minimal shape of any message part: a string discriminant. */
 export interface PartLike {
   type: string;
@@ -20,6 +22,9 @@ export interface MessageInfoLike {
   role: string;
   parentID?: string;
   error?: unknown;
+  /** When the runtime persisted the message. Optional so bare fixtures still
+   *  type-check; `groupMessagesIntoTurns` orders by it, id as the tiebreak. */
+  time?: { created?: number };
 }
 
 /** A message with its pre-resolved parts — the shape returned by `session.messages()`. */
@@ -125,6 +130,8 @@ export interface RetryInfo {
   message: string;
   /** When the retry will happen (unix ms) */
   next: number;
+  /** Structured LLM-gateway diagnostics, when the retry message carries them. */
+  details?: GatewayErrorDetails;
 }
 
 /** LSP diagnostic from tool metadata. */

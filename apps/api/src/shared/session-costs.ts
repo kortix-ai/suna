@@ -5,10 +5,29 @@ import {
   sandboxComputeSessions,
   sessionSandboxes,
 } from '@kortix/db';
-import { type SQL, and, count, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import {
+  type SQL,
+  type SQLWrapper,
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  gte,
+  isNull,
+  lt,
+  sql,
+} from 'drizzle-orm';
 import { resolveSessionOwnerIdentities } from '../projects/lib/access';
 import type { SessionOwnerIdentity } from '../projects/lib/session-inventory';
+import type { CostSort, CostWindow } from './cost-window';
 import { db } from './db';
+import {
+  kortixBilledSpendSql,
+  providerBilledSpendSql,
+  rowTotalSpendSql,
+  totalSpendSql,
+} from './llm-spend';
 
 type NumericValue = number | string | null | undefined;
 type TemporalValue = Date | string | null | undefined;
@@ -34,6 +53,10 @@ export interface SessionCostSummary {
   updated_at: string;
   last_activity_at: string | null;
   llm_cost: number;
+  /** The `llm_cost` slice debited from the Kortix wallet. */
+  llm_kortix_cost: number;
+  /** The `llm_cost` slice paid straight to your own provider on your own key. */
+  llm_provider_cost: number;
   compute_cost: number;
   total_cost: number;
   request_count: number;
@@ -127,8 +150,15 @@ interface SessionBaseRow {
 }
 
 interface LlmAggregateRow {
-  sessionId: string | null;
+  sessionId?: string | null;
   llmCost: NumericValue;
+  // REQUIRED, not optional. `listSessionCosts` hand-builds this literal from a
+  // subquery whose projected columns are enumerated one by one — an optional
+  // field there compiles fine with the projection missing and silently reports
+  // $0.00 for the split, which is the exact class of bug this module exists to
+  // fix. Required makes the compiler catch a forgotten projection.
+  llmKortixCost: NumericValue;
+  llmProviderCost: NumericValue;
   requestCount: NumericValue;
   errorCount: NumericValue;
   inputTokens: NumericValue;
@@ -140,7 +170,7 @@ interface LlmAggregateRow {
 }
 
 interface ComputeAggregateRow {
-  sessionId: string | null;
+  sessionId?: string | null;
   computeCost: NumericValue;
   computeSeconds: NumericValue;
   lastAt: TemporalValue;
@@ -176,7 +206,12 @@ export interface LegacyGatewaySessionRow {
   total_cost: number;
 }
 
-const billedComputeSecondsExpression = sql<number>`
+// Exported so cost-rollups.ts's getCostSummary reuses this one definition
+// instead of a second, independently-editable copy: /usage/session-costs and
+// /usage/cost-summary both report compute_seconds for the same session, and
+// two byte-identical-today copies would silently drift the moment either one
+// is edited (e.g. clamping on ended_at instead of last_billed_at).
+export const billedComputeSecondsExpression = sql<number>`
   greatest(
     extract(
       epoch from ${sandboxComputeSessions.lastBilledAt} - ${sandboxComputeSessions.startedAt}
@@ -213,40 +248,6 @@ function latestIsoValue(...values: TemporalValue[]): string | null {
   return latest;
 }
 
-function parseIntegerQuery(
-  value: string | number | undefined,
-  name: 'limit' | 'offset',
-): number | undefined {
-  if (value === undefined) return undefined;
-  if (
-    (typeof value === 'string' && !/^\d+$/.test(value)) ||
-    (typeof value === 'number' && !Number.isInteger(value))
-  ) {
-    throw new InvalidSessionCostQueryError(`${name} must be an integer`);
-  }
-  const parsed = Number(value);
-  if (!Number.isSafeInteger(parsed)) {
-    throw new InvalidSessionCostQueryError(`${name} must be a safe integer`);
-  }
-  return parsed;
-}
-
-export function parseSessionCostListQuery(input: {
-  limit?: string | number;
-  offset?: string | number;
-}): { limit: number; offset: number } {
-  const limit = parseIntegerQuery(input.limit, 'limit') ?? 25;
-  const offset = parseIntegerQuery(input.offset, 'offset') ?? 0;
-
-  if (limit < 1 || limit > 100) {
-    throw new InvalidSessionCostQueryError('limit must be an integer from 1 to 100');
-  }
-  if (offset < 0) {
-    throw new InvalidSessionCostQueryError('offset must be a non-negative integer');
-  }
-  return { limit, offset };
-}
-
 export function computeBilledSeconds(
   startedAt: TemporalValue,
   billedThroughAt: TemporalValue,
@@ -280,6 +281,8 @@ export function assembleSessionCostSummary(input: {
     updated_at: requiredIsoValue(input.session.updatedAt),
     last_activity_at: latestIsoValue(input.llm?.lastAt, input.compute?.lastAt),
     llm_cost: llmCost,
+    llm_kortix_cost: numberValue(input.llm?.llmKortixCost),
+    llm_provider_cost: numberValue(input.llm?.llmProviderCost),
     compute_cost: computeCost,
     total_cost: sumCosts(llmCost, computeCost),
     request_count: numberValue(input.llm?.requestCount),
@@ -355,93 +358,151 @@ export function mergeLegacyGatewaySessionRows(
     .slice(0, 50);
 }
 
-async function loadSessionAggregates(
-  accountId: string,
-  sessionIds: string[],
-): Promise<{
-  llmBySession: Map<string, LlmAggregateRow>;
-  computeBySession: Map<string, ComputeAggregateRow>;
-}> {
-  if (sessionIds.length === 0) {
-    return {
-      llmBySession: new Map(),
-      computeBySession: new Map(),
-    };
-  }
+// The LLM aggregate columns, shared by the windowed subquery that feeds the
+// session list and the all-time scalar query that feeds the session detail.
+const llmAggregateFields = {
+  llmCost: totalSpendSql,
+  llmKortixCost: kortixBilledSpendSql,
+  llmProviderCost: providerBilledSpendSql,
+  requestCount: sql<number>`count(*)::int`,
+  errorCount: sql<number>`count(*) filter (where not ${gatewayRequestLogs.ok})::int`,
+  inputTokens: sql<number>`coalesce(sum(${gatewayRequestLogs.inputTokens}), 0)::float8`,
+  outputTokens: sql<number>`coalesce(sum(${gatewayRequestLogs.outputTokens}), 0)::float8`,
+  cachedTokens: sql<number>`coalesce(sum(${gatewayRequestLogs.cachedTokens}), 0)::float8`,
+  cacheWriteTokens: sql<number>`coalesce(sum(${gatewayRequestLogs.cacheWriteTokens}), 0)::float8`,
+  modelCount: sql<number>`count(distinct (${gatewayRequestLogs.provider}, ${gatewayRequestLogs.resolvedModel}))::int`,
+  lastAt: sql<Date | null>`max(${gatewayRequestLogs.createdAt})`,
+};
 
+const computeAggregateFields = {
+  computeCost: sql<number>`coalesce(sum(${sandboxComputeSessions.costUsd}), 0)::float8`,
+  computeSeconds: sql<number>`coalesce(sum(${billedComputeSecondsExpression}), 0)::float8`,
+  lastAt: sql<string | null>`max(${sandboxComputeSessions.lastBilledAt})`,
+};
+
+// Windowed LLM aggregate, grouped per session so the caller can join it to a
+// page of sessions and let Postgres order by spend. Anchored on created_at,
+// which idx_gateway_logs_account_time covers. Money stays numeric through the
+// sum and is cast to float8 only for transport.
+function llmAggregateSubquery(accountId: string, window: CostWindow) {
+  return db
+    .select({
+      sessionId: gatewayRequestLogs.sessionId,
+      llmCost: llmAggregateFields.llmCost.as('llm_cost'),
+      llmKortixCost: llmAggregateFields.llmKortixCost.as('llm_kortix_cost'),
+      llmProviderCost: llmAggregateFields.llmProviderCost.as('llm_provider_cost'),
+      requestCount: llmAggregateFields.requestCount.as('request_count'),
+      errorCount: llmAggregateFields.errorCount.as('error_count'),
+      inputTokens: llmAggregateFields.inputTokens.as('input_tokens'),
+      outputTokens: llmAggregateFields.outputTokens.as('output_tokens'),
+      cachedTokens: llmAggregateFields.cachedTokens.as('cached_tokens'),
+      cacheWriteTokens: llmAggregateFields.cacheWriteTokens.as('cache_write_tokens'),
+      modelCount: llmAggregateFields.modelCount.as('model_count'),
+      // Prefixed, not `last_at`: Drizzle renders a SQL-aliased subquery field
+      // unqualified, so this name resolves against the outer query's FROM clause.
+      // Sharing `last_at` with the compute aggregate below made the joined select
+      // ambiguous and Postgres rejected it at parse time (42702).
+      lastAt: llmAggregateFields.lastAt.as('llm_last_at'),
+    })
+    .from(gatewayRequestLogs)
+    .where(
+      and(
+        eq(gatewayRequestLogs.accountId, accountId),
+        // createdAt is a Date-mode timestamp, so the bounds are Date objects.
+        gte(gatewayRequestLogs.createdAt, window.from),
+        lt(gatewayRequestLogs.createdAt, window.to),
+        sql`${gatewayRequestLogs.sessionId} is not null`,
+      ),
+    )
+    .groupBy(gatewayRequestLogs.sessionId)
+    .as('llm_agg');
+}
+
+// Windowed compute aggregate, anchored on started_at because that is the column
+// idx_sandbox_compute_sessions_account_time covers. last_billed_at's only index
+// is partial (WHERE state = 'active') and exists for the biller, not reporting.
+function computeAggregateSubquery(accountId: string, window: CostWindow) {
+  return db
+    .select({
+      sessionId: sandboxComputeSessions.sessionId,
+      computeCost: computeAggregateFields.computeCost.as('compute_cost'),
+      computeSeconds: computeAggregateFields.computeSeconds.as('compute_seconds'),
+      // Prefixed for the same reason as llm_last_at above.
+      lastAt: computeAggregateFields.lastAt.as('compute_last_at'),
+    })
+    .from(sandboxComputeSessions)
+    .where(
+      and(
+        eq(sandboxComputeSessions.accountId, accountId),
+        // startedAt is declared mode:'string', so the bounds are ISO strings.
+        gte(sandboxComputeSessions.startedAt, window.from.toISOString()),
+        lt(sandboxComputeSessions.startedAt, window.to.toISOString()),
+        sql`${sandboxComputeSessions.sessionId} is not null`,
+      ),
+    )
+    .groupBy(sandboxComputeSessions.sessionId)
+    .as('compute_agg');
+}
+
+// All-time totals for one session. The detail view is an audit surface: it must
+// reconcile against the ledger entries listed beside it, which are unwindowed.
+// No GROUP BY, so both queries always return exactly one row.
+async function loadSessionTotals(
+  accountId: string,
+  sessionId: string,
+): Promise<{ llm: LlmAggregateRow | undefined; compute: ComputeAggregateRow | undefined }> {
   const [llmRows, computeRows] = await Promise.all([
     db
-      .select({
-        sessionId: gatewayRequestLogs.sessionId,
-        llmCost: sql<number>`coalesce(sum(${gatewayRequestLogs.finalCost}), 0)::float8`,
-        requestCount: sql<number>`count(*)::int`,
-        errorCount: sql<number>`count(*) filter (where not ${gatewayRequestLogs.ok})::int`,
-        inputTokens: sql<number>`coalesce(sum(${gatewayRequestLogs.inputTokens}), 0)::float8`,
-        outputTokens: sql<number>`coalesce(sum(${gatewayRequestLogs.outputTokens}), 0)::float8`,
-        cachedTokens: sql<number>`coalesce(sum(${gatewayRequestLogs.cachedTokens}), 0)::float8`,
-        cacheWriteTokens: sql<number>`coalesce(sum(${gatewayRequestLogs.cacheWriteTokens}), 0)::float8`,
-        modelCount: sql<number>`count(distinct (${gatewayRequestLogs.provider}, ${gatewayRequestLogs.resolvedModel}))::int`,
-        lastAt: sql<Date | null>`max(${gatewayRequestLogs.createdAt})`,
-      })
+      .select(llmAggregateFields)
       .from(gatewayRequestLogs)
       .where(
         and(
           eq(gatewayRequestLogs.accountId, accountId),
-          inArray(gatewayRequestLogs.sessionId, sessionIds),
+          eq(gatewayRequestLogs.sessionId, sessionId),
         ),
-      )
-      .groupBy(gatewayRequestLogs.sessionId),
+      ),
     db
-      .select({
-        sessionId: sandboxComputeSessions.sessionId,
-        computeCost: sql<number>`coalesce(sum(${sandboxComputeSessions.costUsd}), 0)::float8`,
-        computeSeconds: sql<number>`coalesce(sum(${billedComputeSecondsExpression}), 0)::float8`,
-        lastAt: sql<string | null>`max(${sandboxComputeSessions.lastBilledAt})`,
-      })
+      .select(computeAggregateFields)
       .from(sandboxComputeSessions)
       .where(
         and(
           eq(sandboxComputeSessions.accountId, accountId),
-          inArray(sandboxComputeSessions.sessionId, sessionIds),
+          eq(sandboxComputeSessions.sessionId, sessionId),
         ),
-      )
-      .groupBy(sandboxComputeSessions.sessionId),
+      ),
   ]);
 
-  return {
-    llmBySession: new Map(
-      llmRows
-        .filter((row): row is typeof row & { sessionId: string } => Boolean(row.sessionId))
-        .map((row) => [row.sessionId, row]),
-    ),
-    computeBySession: new Map(
-      computeRows
-        .filter((row): row is typeof row & { sessionId: string } => Boolean(row.sessionId))
-        .map((row) => [row.sessionId, row]),
-    ),
-  };
+  return { llm: llmRows[0], compute: computeRows[0] };
 }
 
 async function loadReconciliation(
   accountId: string,
+  window: CostWindow,
   projectId?: string,
 ): Promise<SessionCostReconciliation> {
+  // The unassigned-cost figure has to describe the same period as the table it
+  // sits beside, so it carries the caller's window on the same columns the
+  // per-session aggregates use.
   const llmConditions: SQL[] = [
     eq(gatewayRequestLogs.accountId, accountId),
     isNull(projectSessions.sessionId),
+    gte(gatewayRequestLogs.createdAt, window.from),
+    lt(gatewayRequestLogs.createdAt, window.to),
   ];
   if (projectId) llmConditions.push(eq(gatewayRequestLogs.projectId, projectId));
 
   const computeConditions: SQL[] = [
     eq(sandboxComputeSessions.accountId, accountId),
     isNull(projectSessions.sessionId),
+    gte(sandboxComputeSessions.startedAt, window.from.toISOString()),
+    lt(sandboxComputeSessions.startedAt, window.to.toISOString()),
   ];
   if (projectId) computeConditions.push(eq(sessionSandboxes.projectId, projectId));
 
   const [llmResult, computeResult] = await Promise.all([
     db
       .select({
-        cost: sql<number>`coalesce(sum(${gatewayRequestLogs.finalCost}), 0)::float8`,
+        cost: totalSpendSql,
         requests: sql<number>`count(*)::int`,
       })
       .from(gatewayRequestLogs)
@@ -489,14 +550,89 @@ async function loadReconciliation(
   };
 }
 
+interface SortableCostRow {
+  session_id: string;
+  total_cost: number;
+  updated_at: string;
+}
+
+// The only columns a session cost page can be ordered by. Widening this union
+// forces a compile error at every exhaustive map below.
+type SessionCostSortColumn = 'total_cost' | 'updated_at';
+
+// Exhaustive on purpose. `CostSort` is shared with the project rollup, which
+// has a `name_asc` sessions cannot honor, and later work may add members. A
+// fall-through here would compile into silently wrong ordering.
+export function sessionCostSortKey(sort: CostSort): [SessionCostSortColumn, 'asc' | 'desc'] {
+  switch (sort) {
+    case 'recent':
+      return ['updated_at', 'desc'];
+    case 'total_asc':
+      return ['total_cost', 'asc'];
+    case 'total_desc':
+      return ['total_cost', 'desc'];
+    case 'name_asc':
+      throw new InvalidSessionCostQueryError('sessions cannot be sorted by name');
+    default: {
+      const unsupported: never = sort;
+      throw new InvalidSessionCostQueryError(`unsupported sort: ${String(unsupported)}`);
+    }
+  }
+}
+
+const compareByColumn: Record<
+  SessionCostSortColumn,
+  (left: SortableCostRow, right: SortableCostRow) => number
+> = {
+  total_cost: (left, right) => left.total_cost - right.total_cost,
+  updated_at: (left, right) => left.updated_at.localeCompare(right.updated_at),
+};
+
+// The JS mirror of the ORDER BY, derived from the same key so the two cannot
+// drift. Ties break on session_id so LIMIT/OFFSET paging is stable: without a
+// total order, a row can appear on two pages or on none.
+export function compareSessionCostRows(sort: CostSort) {
+  const [column, direction] = sessionCostSortKey(sort);
+  return (left: SortableCostRow, right: SortableCostRow): number => {
+    const delta = compareByColumn[column](left, right);
+    const ordered = direction === 'asc' ? delta : -delta;
+    return ordered || left.session_id.localeCompare(right.session_id);
+  };
+}
+
 export async function listSessionCosts(input: {
   accountId: string;
   projectId?: string;
+  ownerId?: string;
+  window: CostWindow;
+  sort: CostSort;
   limit: number;
   offset: number;
 }): Promise<SessionCostListResponse> {
+  // Required, not defaulted: GET /v1/usage/session-costs (the sole caller) always
+  // parses both from the request and passes them explicitly. A caller that omits
+  // either fails to compile, so a new caller cannot silently inherit a default it
+  // never chose.
+  const { window, sort } = input;
+
+  const llm = llmAggregateSubquery(input.accountId, window);
+  const compute = computeAggregateSubquery(input.accountId, window);
+
   const conditions: SQL[] = [eq(projectSessions.accountId, input.accountId)];
   if (input.projectId) conditions.push(eq(projectSessions.projectId, input.projectId));
+  if (input.ownerId) conditions.push(eq(projectSessions.createdBy, input.ownerId));
+
+  const totalCostExpression = sql<number>`(coalesce(${llm.llmCost}, 0) + coalesce(${compute.computeCost}, 0))`;
+  const sortTargets: Record<SessionCostSortColumn, SQLWrapper> = {
+    total_cost: totalCostExpression,
+    updated_at: projectSessions.updatedAt,
+  };
+  const [sortColumn, sortDirection] = sessionCostSortKey(sort);
+  const sortTarget = sortTargets[sortColumn];
+  const orderBy = [
+    sortDirection === 'asc' ? asc(sortTarget) : desc(sortTarget),
+    asc(projectSessions.sessionId),
+  ];
 
   const [sessionRows, totalRows, reconciliation] = await Promise.all([
     db
@@ -508,39 +644,73 @@ export async function listSessionCosts(input: {
         status: projectSessions.status,
         createdAt: projectSessions.createdAt,
         updatedAt: projectSessions.updatedAt,
+        llmCost: llm.llmCost,
+        llmKortixCost: llm.llmKortixCost,
+        llmProviderCost: llm.llmProviderCost,
+        requestCount: llm.requestCount,
+        errorCount: llm.errorCount,
+        inputTokens: llm.inputTokens,
+        outputTokens: llm.outputTokens,
+        cachedTokens: llm.cachedTokens,
+        cacheWriteTokens: llm.cacheWriteTokens,
+        modelCount: llm.modelCount,
+        llmLastAt: llm.lastAt,
+        computeCost: compute.computeCost,
+        computeSeconds: compute.computeSeconds,
+        computeLastAt: compute.lastAt,
       })
       .from(projectSessions)
       .innerJoin(projects, eq(projects.projectId, projectSessions.projectId))
+      .leftJoin(llm, eq(llm.sessionId, projectSessions.sessionId))
+      .leftJoin(compute, eq(compute.sessionId, projectSessions.sessionId))
       .where(and(...conditions))
-      .orderBy(desc(projectSessions.updatedAt), desc(projectSessions.sessionId))
+      .orderBy(...orderBy)
       .limit(input.limit)
       .offset(input.offset),
     db
       .select({ total: count() })
       .from(projectSessions)
       .where(and(...conditions)),
-    loadReconciliation(input.accountId, input.projectId),
+    loadReconciliation(input.accountId, window, input.projectId),
   ]);
 
-  const sessionIds = sessionRows.map((row) => row.sessionId);
   const ownerIds = sessionRows
     .map((row) => row.ownerId)
     .filter((ownerId): ownerId is string => Boolean(ownerId));
-  const [{ llmBySession, computeBySession }, ownerById] = await Promise.all([
-    loadSessionAggregates(input.accountId, sessionIds),
-    resolveSessionOwnerIdentities(ownerIds, input.accountId),
-  ]);
+  const ownerById = await resolveSessionOwnerIdentities(ownerIds, input.accountId);
 
   const total = numberValue(totalRows[0]?.total);
+  // Postgres is the sole authority on order. Re-sorting here would be a second,
+  // divergent statement of it: `updated_at` loses sub-millisecond precision
+  // through requiredIsoValue, and sumCosts rounds to 10 decimal places, so a
+  // JS pass can reorder rows the query deliberately separated.
+  const sessions = sessionRows.map((row) =>
+    assembleSessionCostSummary({
+      session: row,
+      owner: row.ownerId ? ownerById.get(row.ownerId) : undefined,
+      llm: {
+        llmCost: row.llmCost,
+        llmKortixCost: row.llmKortixCost,
+        llmProviderCost: row.llmProviderCost,
+        requestCount: row.requestCount,
+        errorCount: row.errorCount,
+        inputTokens: row.inputTokens,
+        outputTokens: row.outputTokens,
+        cachedTokens: row.cachedTokens,
+        cacheWriteTokens: row.cacheWriteTokens,
+        modelCount: row.modelCount,
+        lastAt: row.llmLastAt,
+      },
+      compute: {
+        computeCost: row.computeCost,
+        computeSeconds: row.computeSeconds,
+        lastAt: row.computeLastAt,
+      },
+    }),
+  );
+
   return {
-    sessions: sessionRows.map((session) =>
-      assembleSessionCostSummary({
-        session,
-        owner: session.ownerId ? ownerById.get(session.ownerId) : undefined,
-        llm: llmBySession.get(session.sessionId),
-        compute: computeBySession.get(session.sessionId),
-      }),
-    ),
+    sessions,
     total,
     limit: input.limit,
     offset: input.offset,
@@ -564,7 +734,7 @@ async function loadModelUsage(
       outputTokens: sql<number>`coalesce(sum(${gatewayRequestLogs.outputTokens}), 0)::float8`,
       cachedTokens: sql<number>`coalesce(sum(${gatewayRequestLogs.cachedTokens}), 0)::float8`,
       cacheWriteTokens: sql<number>`coalesce(sum(${gatewayRequestLogs.cacheWriteTokens}), 0)::float8`,
-      cost: sql<number>`coalesce(sum(${gatewayRequestLogs.finalCost}), 0)::float8`,
+      cost: totalSpendSql,
       lastAt: sql<Date>`max(${gatewayRequestLogs.createdAt})`,
     })
     .from(gatewayRequestLogs)
@@ -572,7 +742,7 @@ async function loadModelUsage(
       and(eq(gatewayRequestLogs.accountId, accountId), eq(gatewayRequestLogs.sessionId, sessionId)),
     )
     .groupBy(gatewayRequestLogs.provider, gatewayRequestLogs.resolvedModel)
-    .orderBy(desc(sql`sum(${gatewayRequestLogs.finalCost})`));
+    .orderBy(desc(totalSpendSql));
 
   return rows.map((row) => ({
     provider: row.provider,
@@ -597,7 +767,7 @@ async function loadLedgerEntries(
       .select({
         id: gatewayRequestLogs.logId,
         occurredAt: gatewayRequestLogs.createdAt,
-        cost: gatewayRequestLogs.finalCost,
+        cost: rowTotalSpendSql,
         provider: gatewayRequestLogs.provider,
         model: gatewayRequestLogs.resolvedModel,
         requestId: gatewayRequestLogs.requestId,
@@ -701,20 +871,19 @@ export async function getSessionCostRecord(input: {
   if (!session) return null;
 
   const ownerIds = session.ownerId ? [session.ownerId] : [];
-  const [{ llmBySession, computeBySession }, ownerById, modelUsage, ledgerEntries] =
-    await Promise.all([
-      loadSessionAggregates(input.accountId, [session.sessionId]),
-      resolveSessionOwnerIdentities(ownerIds, input.accountId),
-      loadModelUsage(input.accountId, session.sessionId),
-      loadLedgerEntries(input.accountId, session.sessionId),
-    ]);
+  const [totals, ownerById, modelUsage, ledgerEntries] = await Promise.all([
+    loadSessionTotals(input.accountId, session.sessionId),
+    resolveSessionOwnerIdentities(ownerIds, input.accountId),
+    loadModelUsage(input.accountId, session.sessionId),
+    loadLedgerEntries(input.accountId, session.sessionId),
+  ]);
 
   return {
     ...assembleSessionCostSummary({
       session,
       owner: session.ownerId ? ownerById.get(session.ownerId) : undefined,
-      llm: llmBySession.get(session.sessionId),
-      compute: computeBySession.get(session.sessionId),
+      llm: totals.llm,
+      compute: totals.compute,
     }),
     model_usage: modelUsage,
     ledger_entries: ledgerEntries,
@@ -732,7 +901,7 @@ export async function listProjectGatewaySessionSpend(input: {
         sessionId: gatewayRequestLogs.sessionId,
         requests: sql<number>`count(*)::int`,
         errors: sql<number>`count(*) filter (where not ${gatewayRequestLogs.ok})::int`,
-        cost: sql<number>`coalesce(sum(${gatewayRequestLogs.finalCost}), 0)::float8`,
+        cost: totalSpendSql,
         tokens: sql<number>`coalesce(sum(${gatewayRequestLogs.inputTokens} + ${gatewayRequestLogs.outputTokens}), 0)::float8`,
         models: sql<number>`count(distinct ${gatewayRequestLogs.requestedModel})::int`,
         lastAt: sql<Date | null>`max(${gatewayRequestLogs.createdAt})`,

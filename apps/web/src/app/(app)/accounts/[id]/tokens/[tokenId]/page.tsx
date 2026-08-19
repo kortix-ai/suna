@@ -18,11 +18,17 @@ import { useAuth } from '@/features/providers/auth-provider';
 import { usePermission } from '@/lib/use-permission';
 import { listAccountTokens } from '@kortix/sdk';
 
+const tokenDateFormat = new Intl.DateTimeFormat(undefined, {
+  month: 'short',
+  day: 'numeric',
+  year: 'numeric',
+});
+
 function formatDate(iso: string | null | undefined) {
   if (!iso) return '—';
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  return tokenDateFormat.format(d);
 }
 
 export default function TokenDetailPage() {

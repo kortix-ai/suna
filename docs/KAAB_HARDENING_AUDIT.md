@@ -90,15 +90,15 @@ Ranked by severity. Items tagged "(PR #N incomplete)" are surfaced by a PR whose
 
 ## 4. Verified-working (genuinely handled)
 
-**Origin gate / spoofing** — origin derived only from `authType/apiKeyType/inSession` + server-set metadata, never the body (`session-origin.ts:58-83`; body.metadata spread first, server param last); backend only for SA/PAT/`apiKey`+`apiKeyType==='user'` via positive test, sandbox/null key → `user` (`session-origin.ts:75-82`); in-sandbox executor + agent-scoped tokens never backend (enforced by session-binding — the executor token carries `sessionId=sandboxId`); `origin_ref` 403 `origin_override_forbidden` for non-backend with whitespace/oversize bypasses closed (`sessions.ts:540-571`); queued-create replays captured derivation signals faithfully; backend sessions default `visibility:'private'` and resume locks the profile set to the session's own bindings/owner, never the resumer.
+**Origin gate / spoofing** — origin derived only from `authType/apiKeyType/inSession` + server-set metadata, never the body (`session-origin.ts:58-83`; body.metadata spread first, server param last); backend only for SA/PAT/`apiKey`+`apiKeyType==='user'` via positive test, sandbox/null key → `user` (`session-origin.ts:75-82`); in-sandbox connector + agent-scoped tokens never backend (enforced by session-binding — the connector token carries `sessionId=sandboxId`); `origin_ref` 403 `origin_override_forbidden` for non-backend with whitespace/oversize bypasses closed (`sessions.ts:540-571`); queued-create replays captured derivation signals faithfully; backend sessions default `visibility:'private'` and resume locks the connection set to the session's own bindings/owner, never the resumer.
 
-**Connector bindings** — all-or-nothing base semantics (any binding → unbound aliases resolve null; default fallback only with zero durable bindings, `session-connector-bindings.ts:356-425`); cross-tenant profile rejection (account+project+slug scoped, member-owner-only, masked NOT_FOUND); agent-grant fold rejects ungranted connectors 403 for every origin incl. backend; revoked-mid-session fails closed (returns from bound branch before fallback; both consumers reject `status!=='active'`).
+**Connector bindings** — all-or-nothing base semantics (any binding → unbound aliases resolve null; default fallback only with zero durable bindings, `session-connector-bindings.ts:356-425`); cross-tenant connection rejection (account+project+slug scoped, member-owner-only, masked NOT_FOUND); agent-grant fold rejects ungranted connectors 403 for every origin incl. backend; revoked-mid-session fails closed (returns from bound branch before fallback; both consumers reject `status!=='active'`).
 
 **Secrets allowlist** — narrowing applied on both boot **and** all three hot-push fan-outs (`sessions.ts:298-309`, `sandbox-env-sync.ts:54,92`); `intersectSecretGrants` is a pure narrowing (null=passthrough, []=zero, never widens, unit-pinned); write-once immutable column, idempotent replay with differing allowlist → 409; connector-scope secrets never reach the sandbox (both resolvers see only `scope='runtime'` rows; allowlisting a connector secret → 404); backend-only gate + spoof resistance for `secrets`; session-bound enumeration narrowed so hidden identifiers don't leak.
 
 **runtime_context** — caps enforced at contract **and** DB (64 entries / 16 KB / lowercase keys / scalar-only); credential-like **keys** regex-rejected; validated before any DB insert/provisioning; stored in a dedicated immutable table (no update path); restored as a single server-owned `KORTIX_SESSION_CONTEXT` with a merge guard and fail-closed on malformed persisted context; survives the secret hot-push (daemon `/kortix/env` never touches it).
 
-**Idempotency / warm-pool / SDK** — same-account same-key replay returns the prior session without re-provisioning/re-billing; #5267 read-time guard closes the disclosure; #5271 release/retain logic sound for its covered exits; warm-pool/snapshot reuse carries no cross-session residual (cold boot from secret-free Dockerfile; daemon fully replaces env, emits `unset`; secret file is tmpfs + shredded); the core 4-step backend flow (PAT auth → per-user external profile → typed create overrides → live SSE) is first-class typed; #5273 token scoping for `session().runtime`; #5259 transient-null fix; documented contract/response-echo/error-table/CLI all match code.
+**Idempotency / warm-pool / SDK** — same-account same-key replay returns the prior session without re-provisioning/re-billing; #5267 read-time guard closes the disclosure; #5271 release/retain logic sound for its covered exits; warm-pool/snapshot reuse carries no cross-session residual (cold boot from secret-free Dockerfile; daemon fully replaces env, emits `unset`; secret file is tmpfs + shredded); the core 4-step backend flow (PAT auth → per-user external connection → typed create overrides → live SSE) is first-class typed; #5273 token scoping for `session().runtime`; #5259 transient-null fix; documented contract/response-echo/error-table/CLI all match code.
 
 ## 5. Documentation gaps
 
@@ -109,12 +109,12 @@ Ranked by severity. Items tagged "(PR #N incomplete)" are surfaced by a PR whose
 | **§4.6 secrets-principal wording** — plan says overrides "resolve as the session owner (origin_ref user)"; they actually key on Kortix `createdBy` (the wrapper's shared PAT owner) — **no per-end-user provider-login isolation**. | Medium | Correct plan/§4.6: principal is the session's `createdBy`; per-user overrides are NOT isolated per `origin_ref` end-user in v1. |
 | **README front door** — README's KaaB section covers only `createScopedKortix` concurrency; no `origin_ref`/`secrets` override table, no link to the guide or example 09. | Medium | Extend README KaaB section with the full override table + guide link + example 09 pointer; refresh the examples blurb. |
 | **KaaB discoverability** (GETTING-STARTED ends at 08, no examples index) | Medium | Covered by #5259 (merge it); additionally add a short "Kortix as a Backend" section to GETTING-STARTED. |
-| **Reconnect on revoked profile** not documented (broker fails closed to null, no default fallback; wrapper must prompt reconnect). | Medium | Add to guide §3/§5. |
-| **Browser streaming + visibility/resume** — guide only shows server-relay SSE; never states backend sessions are private-by-default or how (if) a browser streams directly. | Medium | Document server-relay as the supported path + private-by-default + profile-set-locked-at-start; or document the browser-token mint if §2 #11 ships. |
+| **Reconnect on revoked connection** not documented (broker fails closed to null, no default fallback; wrapper must prompt reconnect). | Medium | Add to guide §3/§5. |
+| **Browser streaming + visibility/resume** — guide only shows server-relay SSE; never states backend sessions are private-by-default or how (if) a browser streams directly. | Medium | Document server-relay as the supported path + private-by-default + connection-set-locked-at-start; or document the browser-token mint if §2 #11 ships. |
 | **Double-prompt** — guide §2 creates WITH `initial_prompt` (auto-replies) then §4 calls `s.send()` on the same session → two turns/charges. | Medium | Pick one pattern (match example 09: create without `initial_prompt`, then send); note `initial_prompt` auto-replies. |
 | **Model docs form/servability warning** (guide + SDK example) | Medium | Covered by #5259 partially; complete after §2 #3 lands. |
 | §4.6 `canOverride` prose — plan says "only backend may set connector refs"; `BACKEND_ONLY_FIELDS` is only `{origin_ref, secrets}` — connectors are gated by ownership+grant, not origin. | Low | Correct plan §3/§4.6 wording. |
-| §4.5 resolver returns a revoked profile **object** (status:`revoked`), not null; fail-closed depends on every caller checking `status!=='active'`. | Low | Correct plan/JSDoc; consider a `resolveActiveSessionConnectorProfile` wrapper. |
+| §4.5 resolver returns a revoked connection **object** (status:`revoked`), not null; fail-closed depends on every caller checking `status!=='active'`. | Low | Correct plan/JSDoc; consider a `resolveActiveSessionConnectorConnection` wrapper. |
 | §4.1 all-or-nothing binding footgun unguarded in SDK types (only in an example comment). | Low | Add the warning to `connector_bindings` JSDoc on `CreateProjectSessionInput`; expose the agent's connector set via a typed helper. |
 | Guide error table omits `INVALID_SESSION_RUNTIME_CONTEXT` + runtime_context caps; runtime_context **values** not secret-screened. | Low | Covered by #5259 for the error code; add caps + "values are not secret-screened" caveat. |
 | §4.8 plan gives no key-hazard guidance (global uniqueness, high-entropy requirement, failed-replay terminal). | Low | Document in the guide (pairs with the Idempotency-Key doc above). |
@@ -182,8 +182,7 @@ All 17 below were adversarially verified on `kaab-hardening-docs` (== origin/mai
 | 11 | Idempotent create after the stored session was **deleted** returns the tombstone as a 201 "success" | Low | Key K → session S; S later soft-deleted. Retry same K → existing `succeeded` command → re-reads `projectSessions` with **no deletedAt/status filter** → returns `201` with `status:'stopped', deleted_at:null` (no ctx). Every follow-up `continueSession` → `no-session`; key permanently poisoned. (metadata.deletedAt IS present in body, so detectable — corrected from claim.) | re-select no guard `engine.ts:124-133`; serialize no ctx `r7.ts:439-445`→`serializers.ts:119`; delete shape `actions.ts:43-61`; continue guard `engine.ts:260-261` | Treat a `deletedAt` row as gone on re-attach → 409/410 `IDEMPOTENCY_KEY_SESSION_DELETED`, or pass deletedAt ctx to the serializer. |
 | 12 | `create_session` dead-letter **does not park the session failed** (unlike continue_session) → lost initial prompt, silent running session | Low | Email inbound create with postCreate `[bind,deliver_prompt]`. Provision OK (`running`) but `deliver_prompt` fails all 5 attempts → dead-letters. Park block runs only for `commandType==='continue_session'`; create just logs. Session stays `running`, prompt never delivered, no self-heal (`reconcileUndeliveredPrompts` is queued-only), reply never comes. | park gate `store.ts:267`; create dead-letter `engine.ts:384-398,152-171`; postCreate `channels/email/session.ts:212`; reconciler queued-only `sandbox-reaper.ts:565` | On dead-lettered create carrying `session_id`, mark the session `failed`/emit delivery-failed, mirroring continue_session. |
 | 13 | `mergeSessionSandboxEnv` re-pins only `KORTIX_SESSION_CONTEXT` → `KORTIX_ORIGIN_REF`/`_SESSION_ID`/`_PROJECT_ID` **clobberable by `extraEnvVars`** | Low | Internal create caller passing `extraEnvVars` with `KORTIX_ORIGIN_REF` overrides the server-derived attribution value: merge does `{...base,...extra}` then restores only SESSION_CONTEXT. Not public-reachable today (extraEnvVars internal-only) → defense-in-depth gap; a future trigger/channel routing origin_ref through it would silently win. | restore-one `session-runtime-context.ts:81-93`; caller `sessions.ts:1063`; base carries the keys `session-runtime-env.ts:33`; secrets-only reserved drop `sessions.ts:348-349` | Re-pin the full server-owned reserved set after merge, or route `extraEnvVars` through `isReservedSandboxEnvName`. |
-| 14 | `connector_bindings` and `runtime_context` are **write-only** — accepted on create, absent from the response schema and every read route → no audit/read-back | Low | Create with `connector_bindings:{gmail:{profile A}}` + `runtime_context`. 201, GET single, GET list, PATCH all omit both (persisted to side tables). No endpoint answers "which profile is this session bound to?" → multi-tenant wrapper can't verify/detect drift. `secrets_allowlist` IS echoed (inconsistency). | input `api-contract/index.ts:338-339` vs response `370-412`; serializer omits `serializers.ts:88-124`; side tables `sessions.ts:911-938`; only create-input read `r7.ts:377` | Echo applied `alias→profile_id` + runtime_context on the session serialization (or add a read route), matching `secrets_allowlist`. |
-| 15 | SDK `ProjectSession` type has **drifted from the api-contract schema** — `sandbox_provider` missing `local-docker` & wrongly nullable; `sandbox_id` wrongly non-null; `agent_name` wrongly nullable | Low | Self-hosted (`local-docker`) emits `sandbox_provider:'local-docker'`, an impossible value in the SDK union → exhaustive switch loses a branch silently. `sandbox_id:string` vs contract-nullable = latent null-deref TS won't flag. Type-only, no runtime impact. | SDK `sdk/.../sessions.ts:28,29,43`; contract `api-contract/index.ts:376,377,384`; providers `88-93`; DB `kortix.ts:532-533,536` | Derive SDK `ProjectSession` from `z.infer<typeof ProjectSessionSchema>` (or snapshot-test it against the contract). |
+| 14 | `connector_bindings` and `runtime_context` are **write-only** — accepted on create, absent from the response schema and every read route → no audit/read-back | Low | Create with `connector_bindings:{gmail:{connection A}}` + `runtime_context`. 201, GET single, GET list, PATCH all omit both (persisted to side tables). No endpoint answers "which connection is this session bound to?" → multi-tenant wrapper can't verify/detect drift. `secrets_allowlist` IS echoed (inconsistency). | input `api-contract/index.ts:338-339` vs response `370-412`; serializer omits `serializers.ts:88-124`; side tables `sessions.ts:911-938`; only create-input read `r7.ts:377` | Echo applied `alias→connection_id` + runtime_context on the session serialization (or add a read route), matching `secrets_allowlist`. |
 | 16 | `owner_type` is `'unknown'` on create-201 & get-single but `'service_account'` on list for the same backend session | Low | SA create → `created_by` non-null. 201 and GET single call `serializeSession` without ownerType → default `(createdBy?'unknown':null)='unknown'`; list resolves identities → `'service_account'`. Wrapper keying on owner_type gets contradictory answers per endpoint. | default `serializers.ts:109`; 201 no ctx `r7.ts:439-445`; get-single `569-574`; list resolves `517,523-534`; resolver `access.ts:289-319` | Resolve owner identity on create-201 + get-single (or drop `owner_type` from those responses). |
 | 17 | Project-scoped PAT (project_id set, no session_id) resolves to `origin='backend'` and may set `origin_ref`+`secrets` | Info | Manager mints a project CI PAT (`/cli-token`, projectId set, sessionId/expiry/idle-revoke all null). `inSession=false` → `resolveSessionOrigin`→`backend` (authType==='pat') → `canOverride` true. Any non-expiring, never-idle-revoked project token can vouch for arbitrary end-users + inject secret allowlists. Cross-project use is separately 403'd. **Not a bug** — accepted capability; flagged for the threat model. | mint `r3.ts:135-169`; PAT expiry/idle exempt `account-tokens.ts:133,323`; inSession `r7.ts:419`; origin `session-origin.ts:76`; override gate `sessions.ts:550,582` | No code change if intended; else gate `origin_ref`/`secrets` on a narrower predicate than `authType==='pat'` (exclude project-scoped PATs / require an explicit backend-capability flag). |
 
@@ -217,3 +216,62 @@ All 17 below were adversarially verified on `kaab-hardening-docs` (== origin/mai
 
 **Doc line only (accepted capability / threat-model note — no code change unless policy changes):**
 - #17 record in the KaaB threat model that every project CI PAT is a `backend` vouching credential able to set `origin_ref`/`secrets`; decide whether to narrow the predicate.
+
+---
+
+## Addendum 2026-08-04 — "reported success it never verified" sweep
+
+A five-lens audit for one bug class: **an operation reporting success for
+something it never checked.** Eight confirmed (one a duplicate). Seven fixed and
+merged; one is left below because it is a genuine cost/design tradeoff, not an
+oversight.
+
+**Fixed:** #6083 (session reload changed the etag but not the agent opencode
+reads; repo-controlled git pathspec; `auth.json` stale after a dispose),
+#6086 (first secrets narrowing warned about nothing; transient git failure
+compiled an agent with no prompt; secret-identifier disclosure), #6089 (a failed
+spawn permanently killed the session), #6090 (`kortix access invite` claimed an
+email was sent when none was), #6091 (`PUT /scope` validated for the caller while
+delivery resolves for the session owner).
+
+### OPEN — a connector reads "Connected" before any credential exists
+
+**What a user sees.** Open the Pipedream connect dialog, close it without
+authorizing. The connection appears in the roster with a green **Connected** badge,
+and shows up as a selectable connection in the session-scope picker. Selecting it
+and saving is then refused with `CONNECTOR_CONNECTION_INACTIVE` — *"Connection
+for connector alias "x" is not connected"* — an error about a connection the
+UI listed as active one click earlier.
+
+**Cause.** `GET /projects/{id}/connections` (`r4.ts:347`) returns the row's
+`status` column, which is set to active when the connection row is *reconciled* —
+before any credential lands. The enforcement path does not trust that column: it
+calls `connectorConnectionIsConnected`
+(`lib/session-connector-bindings.ts:85`) in five places. So the gate is right and
+only the *display* is wrong. Row status is provenance, not connectivity.
+
+**Why it is not a one-liner.** The predicate does per-connection I/O —
+`profileCredentialExists`, plus `loadSlackInstall` / `loadTeamsInstall` /
+`loadAgentMailInstall` for channel connectors. The list route is currently a
+single joined query with no per-connection work, and the UI polls it. Calling the
+predicate per row turns one query into N+1.
+
+**Two options, and the choice is a real one:**
+
+1. **Compute `connected` in the list route.** Add it as a field beside `status`
+   and have the badge and the scope picker read it. Correct at the read side and
+   leaves stored state alone. Cost: N per-connection lookups on a polled route —
+   mitigable by resolving the per-project channel installs once per request and
+   batching the credential-existence check into a single `IN (…)` query, which
+   would keep it to ~2 extra queries rather than N.
+2. **Do not store a reconciled-but-unauthorized connection as active.** Insert it
+   with a pending status and let finalize flip it. Free at read time and correct
+   at the source, but it changes the meaning of a stored column that other
+   consumers already read — needs an audit of every `status` reader first.
+
+(1) is the smaller blast radius; (2) is the more honest data model. Either way
+the badge and the scope picker must stop reading `status` as connectivity.
+
+**Do not "fix" this by having the scope picker hide non-connected connections
+only.** The badge is the thing that tells a user their setup is done; leaving it
+green while quietly filtering the picker trades one confusing surface for two.

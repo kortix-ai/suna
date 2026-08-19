@@ -75,8 +75,8 @@ export function useSavePipedreamCredentials() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: pipedreamCredentialKeys.status });
-      qc.invalidateQueries({ queryKey: ['integration-apps'] });
-      qc.invalidateQueries({ queryKey: ['integration-connections'] });
+      qc.invalidateQueries({ queryKey: ['connector-apps'] });
+      qc.invalidateQueries({ queryKey: ['connector-connections'] });
     },
   });
 }
@@ -95,7 +95,7 @@ export function useDeletePipedreamCredentials() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: pipedreamCredentialKeys.status });
-      qc.invalidateQueries({ queryKey: ['integration-apps'] });
+      qc.invalidateQueries({ queryKey: ['connector-apps'] });
     },
   });
 }

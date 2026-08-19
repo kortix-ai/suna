@@ -5,6 +5,10 @@ import { HTTPException } from "hono/http-exception";
 import { bootstrapPersonalAccount } from "../accounts/core/bootstrap-personal-account";
 import { syncLegacyStripeSubscription } from "../billing/services/legacy-stripe-sync";
 import { db } from "./db";
+import {
+  IMPERSONATION_INVALID_CODE,
+  impersonatedAccountFor,
+} from "./impersonation";
 import { getSupabase } from "./supabase";
 import { ttlMemo } from "./ttl-memo";
 import { withTimeout } from "./with-timeout";
@@ -90,6 +94,27 @@ export async function resolveScopedAccountId(
     }
   }
 
+  // Acting as an account: the target IS the scope. An explicit `account_id`
+  // that disagrees is refused rather than honoured — a console still holding a
+  // stale account id must not be able to steer a write out of the account the
+  // banner says the operator is inside.
+  const impersonated = impersonatedAccountFor(userId);
+  if (impersonated) {
+    if (requested && requested !== impersonated) {
+      throw new HTTPException(403, {
+        message: "Impersonated requests cannot target another account",
+        res: new Response(
+          JSON.stringify({
+            error: "Impersonated requests cannot target another account",
+            code: IMPERSONATION_INVALID_CODE,
+          }),
+          { status: 403, headers: { "content-type": "application/json" } },
+        ),
+      });
+    }
+    return impersonated;
+  }
+
   if (!requested) {
     return resolveAccountId(userId);
   }
@@ -115,6 +140,17 @@ export async function resolveScopedAccountId(
 }
 
 export async function resolveAccountId(userId: string): Promise<string> {
+  // Impersonation is resolved BEFORE the membership lookup, not after: the
+  // operator has no `account_members` row in the target account, so falling
+  // through would return their OWN account and quietly mis-scope every write
+  // the console believes it is making on the customer's behalf.
+  //
+  // The legacy-Stripe recovery sync below is deliberately skipped for an
+  // impersonated read — it is a write side effect on the customer's billing
+  // state, and an operator opening an account to look at it must not mutate it.
+  const impersonated = impersonatedAccountFor(userId);
+  if (impersonated) return impersonated;
+
   // NOTE: a failing membership lookup must THROW, not fall through — silently
   // treating a DB error as "no membership" would mis-scope a multi-account
   // user to their personal account id below.

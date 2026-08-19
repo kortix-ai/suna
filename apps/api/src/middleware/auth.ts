@@ -11,6 +11,7 @@ import { setSentryUser } from '../lib/sentry';
 import { setContextField } from '../lib/request-context';
 import { syncSsoMembership } from '../iam/sso-sync';
 import { auditLoginFail, auditLoginSuccess } from '../shared/auth-audit';
+import { applyImpersonation } from './impersonation';
 
 const PREVIEW_SESSION_COOKIE = '__preview_session';
 
@@ -49,6 +50,15 @@ async function jitSyncSso(
 // routes (/v1/p/*) — browser WebSocket API can't set custom headers, so PTY
 // terminals pass the token as ?token=<jwt>. SSE clients use fetch() with
 // Authorization headers; preview iframes use cookies set via POST /v1/p/auth.
+//
+// IMPERSONATION: `supabaseAuth` and `combinedAuth` are thin wrappers that run
+// `applyImpersonation` (middleware/impersonation.ts) between "the real user is
+// resolved" and "the handler runs". It lives HERE, inside the wrapper, and not
+// as a global `app.use('*')`, because auth is mounted per sub-router — a global
+// middleware runs BEFORE those and would see no identity to validate a grant
+// against. Wrapping also means every success branch below (JWT local, JWT
+// network, PAT, service account, sandbox token) is covered by construction,
+// instead of six call sites that a new branch could silently miss.
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /**
@@ -85,7 +95,9 @@ export async function apiKeyAuth(c: Context, next: Next) {
   const result = await validateSecretKey(token);
 
   if (!result.isValid) {
-    console.warn(`[apiKeyAuth] Token validation failed: ${result.error} | tokenPrefix="${token.slice(0, 20)}..." | path=${c.req.path} | ip=${c.req.header('x-forwarded-for') || c.req.header('x-real-ip') || 'unknown'}`);
+    console.warn(
+      `[apiKeyAuth] Token validation failed: ${result.error} | tokenPrefix="${token.slice(0, 20)}..." | path=${c.req.path} | ip=${c.req.header('x-forwarded-for') || c.req.header('x-real-ip') || 'unknown'}`,
+    );
     auditLoginFail({
       c,
       reason: result.error ?? 'invalid_api_key',
@@ -127,6 +139,10 @@ export async function apiKeyAuth(c: Context, next: Next) {
  * not need a second project PAT or raw Git token in env.
  */
 export async function supabaseAuth(c: Context, next: Next) {
+  return resolveSupabaseAuth(c, () => applyImpersonation(c, next));
+}
+
+async function resolveSupabaseAuth(c: Context, next: Next) {
   const authHeader = c.req.header('Authorization');
 
   if (!authHeader?.startsWith('Bearer ')) {
@@ -222,7 +238,15 @@ export async function supabaseAuth(c: Context, next: Next) {
     // marks in provider_events instead of dying with the sandbox. Write-only
     // telemetry about the caller's OWN boot, and the handler re-checks that the
     // token's sandboxId matches the session it claims to be reporting for.
-    path.endsWith('/boot-timeline');
+    path.endsWith('/boot-timeline') ||
+    // The runtime relay sends redacted OpenCode lifecycle events for its own
+    // session. The handler re-checks sandbox, account, project, and session.
+    path.endsWith('/audit/events') ||
+    // The monitor runner POSTs its own box's stdout lines here. The handler
+    // re-checks the token against `project_monitor_boxes` (sandbox id ∧
+    // project ∧ account ∧ live status) — a monitor box has no
+    // `session_sandboxes` row, so it authenticates against that table only.
+    path.endsWith('/monitors/ingest');
   if (isKortixToken(token) && sandboxTokenPathAllowed) {
     const result = await validateSecretKey(token);
     if (!result.isValid) {
@@ -361,6 +385,10 @@ export async function supabaseAuth(c: Context, next: Next) {
  * For preview proxy routes, also sets/refreshes the session cookie.
  */
 export async function combinedAuth(c: Context, next: Next) {
+  return resolveCombinedAuth(c, () => applyImpersonation(c, next));
+}
+
+async function resolveCombinedAuth(c: Context, next: Next) {
   // Skip auth for CORS preflight — OPTIONS never carries auth tokens.
   if (c.req.method === 'OPTIONS') {
     await next();
@@ -477,7 +505,7 @@ export async function combinedAuth(c: Context, next: Next) {
     // Set the acting token id so engine gates on combinedAuth-mounted routes can
     // thread it and the agent-grant fold fires (mirrors supabaseAuth). Without
     // this, a capability check on a combinedAuth route silently no-ops the fold —
-    // a scoped agent PAT would pass gates it shouldn't (e.g. executor connector-admin).
+    // a scoped agent PAT would pass gates it should not (e.g. connector-admin).
     c.set('iamTokenId', patResult.tokenId);
     if (patResult.sessionId) c.set('sessionId', patResult.sessionId);
     c.set('agentGrant', patResult.agentGrant ?? null);
@@ -506,10 +534,13 @@ export async function combinedAuth(c: Context, next: Next) {
       });
       throw new HTTPException(401, { message: result.error || 'Invalid Kortix token' });
     }
-    if (previewSandboxId && !(await canAccessPreviewSandbox({
-      previewSandboxId,
-      accountId: result.accountId,
-    }))) {
+    if (
+      previewSandboxId &&
+      !(await canAccessPreviewSandbox({
+        previewSandboxId,
+        accountId: result.accountId,
+      }))
+    ) {
       auditLoginFail({
         c,
         reason: 'preview_sandbox_not_authorized',
@@ -543,10 +574,13 @@ export async function combinedAuth(c: Context, next: Next) {
   // 3. Try Supabase JWT — fast path: local verification (no network roundtrip)
   const local = await verifySupabaseJwt(token);
   if (local.ok) {
-    if (previewSandboxId && !(await canAccessPreviewSandbox({
-      previewSandboxId,
-      userId: local.userId,
-    }))) {
+    if (
+      previewSandboxId &&
+      !(await canAccessPreviewSandbox({
+        previewSandboxId,
+        userId: local.userId,
+      }))
+    ) {
       auditLoginFail({
         c,
         reason: 'preview_sandbox_not_authorized',
@@ -588,7 +622,10 @@ export async function combinedAuth(c: Context, next: Next) {
   // JWKS not yet loaded — fall back to network getUser() call
   try {
     const supabase = getSupabase();
-    const { data: { user }, error } = await supabase.auth.getUser(token);
+    const {
+      data: { user },
+      error,
+    } = await supabase.auth.getUser(token);
 
     if (error || !user) {
       auditLoginFail({
@@ -599,10 +636,13 @@ export async function combinedAuth(c: Context, next: Next) {
       throw new HTTPException(401, { message: 'Invalid or expired token' });
     }
 
-    if (previewSandboxId && !(await canAccessPreviewSandbox({
-      previewSandboxId,
-      userId: user.id,
-    }))) {
+    if (
+      previewSandboxId &&
+      !(await canAccessPreviewSandbox({
+        previewSandboxId,
+        userId: user.id,
+      }))
+    ) {
       auditLoginFail({
         c,
         reason: 'preview_sandbox_not_authorized',
@@ -704,6 +744,17 @@ async function enforceTokenProjectScope(c: Context, tokenProjectId: string): Pro
   // authorization.
   if (path === '/v1/skills' || path.startsWith('/v1/skills/')) return;
 
+  // `/v1/runtime-assets` — the CLI binary + managed-skill overlay this deploy
+  // bakes into sandboxes. Same situation and same reasoning as `/v1/skills`
+  // above, and for the same single caller: the in-sandbox daemon reconciles
+  // against these on every session start/restart/resume holding exactly a
+  // project+session-scoped `KORTIX_CLI_TOKEN`. A 403 here means a sandbox can
+  // never repair a stale CLI, which is the whole bug these routes exist to fix.
+  // Safe to allow — the payloads are the deploy's own build artifacts, identical
+  // for every caller, with no account or project data in them. Authentication,
+  // not authorization.
+  if (path.startsWith('/v1/runtime-assets/')) return;
+
   // Reject other account-level routes outright.
   if (path.startsWith('/v1/accounts/') || path === '/v1/accounts') {
     throw new HTTPException(403, {
@@ -711,14 +762,14 @@ async function enforceTokenProjectScope(c: Context, tokenProjectId: string): Pro
     });
   }
 
-  // `/v1/projects/:projectId/...` AND `/v1/executor/projects/:projectId/...` —
+  // `/v1/projects/:projectId/...` AND `/v1/connectors/projects/:projectId/...` —
   // both are project-scoped surfaces. Require the URL id to match the token's
-  // project. The executor branch intentionally includes both gateway and
-  // connector-management routes: the unified Executor MCP exposes add/remove
+  // project. The connector branch intentionally includes both gateway and
+  // connector-management routes: the unified Connector MCP exposes add/remove
   // connector tools from inside the sandbox, while individual routes still gate
   // mutations via project.write in resolveAdmin.
   const m =
-    path.match(/^\/v1\/projects\/([^/]+)/) ?? path.match(/^\/v1\/executor\/projects\/([^/]+)/);
+    path.match(/^\/v1\/projects\/([^/]+)/) ?? path.match(/^\/v1\/connectors\/projects\/([^/]+)/);
   if (m) {
     const urlProjectId = m[1];
     if (urlProjectId !== tokenProjectId) {

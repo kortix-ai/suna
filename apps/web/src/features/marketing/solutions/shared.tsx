@@ -14,7 +14,7 @@ import type { ReactNode } from 'react';
  */
 export const SOLUTIONS_MEASURE = 'mx-auto max-w-7xl px-6';
 
-/** Section shell. Same vertical rhythm as `/channels` and `/integrations`. */
+/** Section shell. Same vertical rhythm as `/channels` and `/connectors`. */
 export function Section({
   id,
   children,
@@ -109,7 +109,7 @@ export function SpecGrid({
   return (
     <dl className="border-border bg-card mt-14 grid overflow-hidden rounded-sm border sm:grid-cols-2 lg:grid-cols-4">
       {specs.map((spec, i) => (
-        <div key={`${i}-${spec.k}`} className={cn('border-border px-5 py-6 sm:px-6', GRID_4_RULES[i])}>
+        <div key={spec.k} className={cn('border-border px-5 py-6 sm:px-6', GRID_4_RULES[i])}>
           <dt className="text-muted-foreground font-mono text-[10px] tracking-widest uppercase">
             {spec.k}
           </dt>

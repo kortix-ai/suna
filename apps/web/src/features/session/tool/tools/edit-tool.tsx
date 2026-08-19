@@ -1,6 +1,5 @@
 'use client';
 
-import { BetterCodeBlock } from '@/components/ui/better-code-block';
 import { TextShimmer } from '@/components/ui/text-shimmer';
 import {
   BasicTool,
@@ -13,15 +12,20 @@ import {
   partOutput,
   partStatus,
   partStreamingInput,
+  ToolCodeCard,
   ToolOutputFallback,
   ToolRunningContext,
+  useToolIndent,
 } from '@/features/session/tool/shared/infrastructure';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
+import { ToolResultCard } from '@/features/session/tool/shared/result-card';
 import type { ToolProps } from '@/features/session/tool/shared/types';
+import { cn } from '@/lib/utils';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
-import { getDirectory, getFilename } from '@/ui';
+import { getFilename } from '@/ui';
+import { PencilSimpleIcon } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
-import { useContext } from 'react';
+import { useCallback, useContext, useMemo } from 'react';
 
 export function EditTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -36,10 +40,15 @@ export function EditTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
     (streamingInput.filePath as string) ||
     (streamingInput.target_filepath as string) ||
     undefined;
-  const filename = getFilename(filePath) || '';
-  const directory = filePath ? getDirectory(filePath) : undefined;
-  const ext = filename.split('.').pop() || '';
-  const diagnostics = getToolDiagnostics(part, filePath);
+  const { filename, ext } = useMemo(() => {
+    const name = getFilename(filePath) || '';
+    return { filename: name, ext: name.split('.').pop() || '' };
+  }, [filePath]);
+  // Unmemoised this ran on every frame of a COLLAPSED row: `partOutput` plus two
+  // full-string `includes`, and — when the output carries `<file_diagnostics>` —
+  // a global regex, a full split and a per-line regex on top.
+  const diagnostics = useMemo(() => getToolDiagnostics(part, filePath), [part, filePath]);
+  const indent = useToolIndent();
 
   const isStalePending = !running && !filename && (status === 'pending' || status === 'running');
 
@@ -59,18 +68,24 @@ export function EditTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const hasDiff = before !== '' || after !== '';
   const output = partOutput(part);
   const isError = status === 'completed' && isErrorOutput(output);
-  const { openPreview } = useFilePreviewStore();
+  // Selector, not the whole store: an unselected `useFilePreviewStore()` makes
+  // every edit row a subscriber of `isOpen` / `filePath` / `lineNumber`, so
+  // opening ONE preview re-rendered every edit row in the session.
+  const openPreview = useFilePreviewStore((s) => s.openPreview);
+  const handleSubtitleClick = useCallback(() => {
+    if (filePath) openPreview(filePath);
+  }, [filePath, openPreview]);
 
   return (
     <BasicTool
+      icon={<PencilSimpleIcon className="size-3.5 shrink-0" />}
       trigger={{
-        title: 'Edit',
+        title: 'Editing',
         subtitle: isStalePending
           ? undefined
           : filename || (isStalePending ? 'Working...' : undefined),
-        args: directory ? [directory] : undefined,
       }}
-      onSubtitleClick={filePath ? () => openPreview(filePath) : undefined}
+      onSubtitleClick={filePath ? handleSubtitleClick : undefined}
       defaultOpen={defaultOpen}
       forceOpen={forceOpen}
       locked={locked}
@@ -79,32 +94,37 @@ export function EditTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
       {isError ? (
         <ToolOutputFallback output={output} toolName="edit" />
       ) : hasDiff ? (
-        <div data-scrollable className="max-h-96 overflow-auto">
+        <ToolResultCard>
           <InlineDiffView oldValue={before} newValue={after} filename={filename} />
-        </div>
+        </ToolResultCard>
       ) : codeEdit ? (
-        <div className="bg-card">
+        <>
+          {/* Morph's instructions describe the edit the card below carries, so
+              they share its indent rather than sitting flush with the row. */}
           {morphInstructions && (
-            <div className="text-muted-foreground px-3 pt-2 text-xs italic">
+            // `mb-1.5` carries the gap to the card BELOW, which no longer draws
+            // a top margin on the panel. Inline the two collapse to the same
+            // 6px this line has always had under it.
+            <div
+              className={cn(
+                'text-muted-foreground mb-1.5 text-xs italic',
+                indent && 'mt-1.5',
+                indent,
+              )}
+            >
               {morphInstructions}
             </div>
           )}
-          <BetterCodeBlock
-            code={codeEdit}
-            language={ext}
-            showBackgroundColors={false}
-            border={false}
-            className="p-0"
-          />
-        </div>
+          <ToolCodeCard code={codeEdit} language={ext} />
+        </>
       ) : isStalePending ? (
-        <div className="p-4 pt-0">
+        <ToolResultCard bodyClassName="px-2 py-1.5">
           <TextShimmer>
             {tHardcodedUi.raw(
               'componentsSessionToolRenderers.line2853JsxTextWaitingForFileContent',
             )}
           </TextShimmer>
-        </div>
+        </ToolResultCard>
       ) : null}
       <DiagnosticsDisplay diagnostics={diagnostics} filePath={filePath} />
     </BasicTool>

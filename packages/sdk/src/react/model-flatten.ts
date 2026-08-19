@@ -123,6 +123,7 @@ type WithGatewayFields = {
   open_weights?: boolean;
   last_updated?: string;
   enabled?: boolean;
+  attachment?: boolean;
 };
 
 export function flattenModels(providers: ProviderListResponse | undefined): FlatModel[] {
@@ -152,7 +153,7 @@ export function flattenModels(providers: ProviderListResponse | undefined): Flat
       } else {
         capabilities = {
           reasoning: model.reasoning ?? false,
-          vision: model.modalities?.input?.includes('image') ?? false,
+          vision: model.modalities?.input?.includes('image') ?? (model as WithGatewayFields).attachment ?? false,
           toolcall: model.tool_call ?? false,
         };
       }

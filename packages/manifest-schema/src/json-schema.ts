@@ -54,6 +54,9 @@ import {
   LEGACY_TOLERATED_KORTIX_CLI_ACTIONS,
   PERMISSION_ACTION_ONLY_KEYS_V2,
   PERMISSION_ACTIONS_V2,
+  DURATION_RE,
+  MONITOR_MODES,
+  MONITOR_RUN_MAX_LENGTH,
   RESERVED_SANDBOX_SLUG,
   RESERVED_SLUG_PROVIDERS,
   SANDBOX_CPU_BOUNDS,
@@ -317,8 +320,9 @@ function sandboxSchema(): JsonSchemaFragment {
   };
 }
 
-/** One `[[triggers]]` entry — cron or webhook (`validateTriggers`). */
+/** One `[[triggers]]` entry — cron, webhook, or monitor (`validateTriggers`). */
 function triggerSchema(): JsonSchemaFragment {
+  const durationSchema: JsonSchemaFragment = { type: 'string', pattern: DURATION_RE.source };
   return {
     type: 'object',
     required: ['slug', 'type'],
@@ -347,6 +351,15 @@ function triggerSchema(): JsonSchemaFragment {
       timezone: { type: 'string' },
       secret_env: { type: 'string', pattern: ENV_NAME_PATTERN },
       secretEnv: { type: 'string', pattern: ENV_NAME_PATTERN },
+      // `type: monitor` only — the repo command the platform supervises 24/7,
+      // its shape, and the two duration bounds. The FLOORS (interval ≥ 30s,
+      // expect_event_within ≥ 5m) are value ranges over a formatted string,
+      // which JSON Schema can't express — the imperative validator owns them
+      // (see json-schema.conformance.test.ts's documented-divergence block).
+      run: { type: 'string', minLength: 1, maxLength: MONITOR_RUN_MAX_LENGTH },
+      mode: { type: 'string', enum: [...MONITOR_MODES] },
+      interval: durationSchema,
+      expect_event_within: durationSchema,
     },
     additionalProperties: true,
     allOf: [
@@ -367,6 +380,38 @@ function triggerSchema(): JsonSchemaFragment {
       {
         if: { properties: { type: { const: 'webhook' } } },
         then: { anyOf: [{ required: ['secret_env'] }, { required: ['secretEnv'] }] },
+      },
+      {
+        // A monitor names its command and its shape, and carries none of the
+        // cron/webhook wiring (`false` = the key may not appear at all).
+        if: { properties: { type: { const: 'monitor' } } },
+        then: {
+          required: ['run', 'mode'],
+          properties: {
+            cron: false,
+            schedule: false,
+            run_at: false,
+            runAt: false,
+            timezone: false,
+            secret_env: false,
+            secretEnv: false,
+          },
+        },
+      },
+      {
+        // `interval` is the poll period: required on poll, forbidden on stream.
+        if: {
+          properties: { type: { const: 'monitor' }, mode: { const: 'poll' } },
+          required: ['mode'],
+        },
+        then: { required: ['interval'] },
+      },
+      {
+        if: {
+          properties: { type: { const: 'monitor' }, mode: { const: 'stream' } },
+          required: ['mode'],
+        },
+        then: { properties: { interval: false } },
       },
     ],
   };
@@ -531,7 +576,7 @@ function agentBlockV2Schema(): JsonSchemaFragment {
       connectors_required: {
         type: 'array',
         items: NON_EMPTY_STRING,
-        description: 'Connector profile slugs that must resolve before the session starts.',
+        description: 'Connector slugs that must resolve before the session starts.',
       },
       connectors_personal: {
         type: 'array',
@@ -548,6 +593,66 @@ function agentBlockV2Schema(): JsonSchemaFragment {
   };
 }
 
+function appStringMapSchema(): JsonSchemaFragment {
+  return {
+    type: 'object',
+    propertyNames: { pattern: ENV_NAME_PATTERN },
+    additionalProperties: { type: 'string', minLength: 1 },
+  };
+}
+
+function appBlockV2Schema(): JsonSchemaFragment {
+  return {
+    type: 'object',
+    properties: {
+      path: relativePathSchema(),
+      type: { type: 'string', enum: ['static', 'bundle', 'dockerfile', 'oci_image'] },
+      image: { type: 'string', minLength: 1 },
+      dockerfile: relativePathSchema(),
+      command: { type: 'array', minItems: 1, items: NON_EMPTY_STRING },
+      port: { type: 'integer', minimum: 1, maximum: 65535, not: { enum: [7331, 8080] } },
+      root: relativePathSchema(),
+      output_dir: relativePathSchema(),
+      install_command: NON_EMPTY_STRING,
+      build_command: NON_EMPTY_STRING,
+      spa: { type: 'boolean' },
+      readiness_path: { type: 'string', pattern: '^/' },
+      idle_timeout_seconds: { type: 'integer', minimum: 120, maximum: 86400 },
+      monthly_budget_usd: { type: 'number', minimum: 0 },
+      resources: {
+        type: 'object',
+        properties: {
+          cpu: { type: 'integer', minimum: 1, maximum: 64 },
+          memory_gb: { type: 'integer', minimum: 1, maximum: 512 },
+          disk_gb: { type: 'integer', minimum: 1, maximum: 2048 },
+        },
+        additionalProperties: false,
+      },
+      env: appStringMapSchema(),
+      secrets: appStringMapSchema(),
+    },
+    additionalProperties: false,
+    allOf: [
+      {
+        if: { properties: { type: { enum: ['dockerfile', 'oci_image'] } }, required: ['type'] },
+        then: { required: ['command', 'port'] },
+      },
+      {
+        if: { properties: { type: { const: 'oci_image' } }, required: ['type'] },
+        then: { required: ['image'] },
+      },
+    ],
+  };
+}
+
+function appsV2Schema(): JsonSchemaFragment {
+  return {
+    type: 'object',
+    propertyNames: { pattern: SLUG_RE.source },
+    additionalProperties: appBlockV2Schema(),
+  };
+}
+
 /** Sections shared byte-for-byte between v1 and v2 (spec §2.7: "every v1
  *  top-level section keeps its v1 shape" except `agents`/`channels`). */
 function sharedSectionProperties(connectorVersion: 1 | 2): JsonSchemaFragment {
@@ -560,7 +665,7 @@ function sharedSectionProperties(connectorVersion: 1 | 2): JsonSchemaFragment {
     sandboxes: false,
     triggers: { type: 'array', items: triggerSchema() },
     connectors: { type: 'array', items: connectorSchema(connectorVersion) },
-    apps: false,
+    apps: connectorVersion === 2 ? appsV2Schema() : false,
   };
 }
 

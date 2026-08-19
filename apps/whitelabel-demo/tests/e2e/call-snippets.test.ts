@@ -120,13 +120,13 @@ describe('the create snippet is the request the dialog would send', () => {
       overrides: {
         agent: 'support',
         secrets: ['STRIPE_KEY'],
-        bindings: { slack: 'prof_9' },
+        bindings: { slack: 'connection_9' },
         runtimeContext: null,
       },
     });
     expect(snippet.sdk).toContain('"agent_name": "support"');
     expect(snippet.sdk).toContain('"secrets"');
-    expect(snippet.sdk).toContain('"authorization_id": "prof_9"');
+    expect(snippet.sdk).toContain('"connection_id": "connection_9"');
     // Binding one alias must not read as unplugging the others.
     expect(snippet.sdk).toContain('"inherit_unbound": true');
   });
@@ -221,7 +221,7 @@ describe('every snippet is complete', () => {
 });
 
 describe('the create snippet cannot drift from what the app sends', () => {
-  test('a bound connection prints its authorization id', () => {
+  test('a bound connection prints its connection id', () => {
     const snippet = callSnippet('session.create', {
       projectId: 'p1',
       overrides: {
@@ -231,7 +231,7 @@ describe('the create snippet cannot drift from what the app sends', () => {
       },
     });
     const printed = `${snippet.sdk}${renderHttp(snippet.http)}`;
-    expect(printed).toContain('"authorization_id": "auth_9"');
+    expect(printed).toContain('"connection_id": "auth_9"');
   });
 
   test('the same builder the submit path uses produces the body', () => {

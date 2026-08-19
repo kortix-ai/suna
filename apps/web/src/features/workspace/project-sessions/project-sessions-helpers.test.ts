@@ -2,11 +2,9 @@ import type { ProjectSession } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 
 import {
-  availableProjectSessionsFilters,
+  buildSessionSearchIndex,
   filterProjectSessions,
   mapWithConcurrency,
-  matchesProjectSessionsFilter,
-  projectSessionsFilterCounts,
   pruneSelection,
   sessionAccessMeta,
   sessionDetailFields,
@@ -41,84 +39,6 @@ function makeSession(overrides: Partial<ProjectSession> = {}): ProjectSession {
 
 const FORMATTED = { created: 'Jul 20, 2026, 10:00 AM', updated: 'Jul 21, 2026, 11:00 AM' };
 
-describe('matchesProjectSessionsFilter', () => {
-  test('groups every provisioning state with running sessions as active', () => {
-    for (const status of ['queued', 'branching', 'provisioning', 'running'] as const) {
-      expect(matchesProjectSessionsFilter(makeSession({ status }), 'active')).toBe(true);
-    }
-    expect(matchesProjectSessionsFilter(makeSession({ status: 'completed' }), 'active')).toBe(
-      false,
-    );
-  });
-
-  test('matches each source kind to its own filter', () => {
-    expect(
-      matchesProjectSessionsFilter(makeSession({ metadata: { source: 'slack' } }), 'slack'),
-    ).toBe(true);
-    expect(
-      matchesProjectSessionsFilter(
-        makeSession({ metadata: { trigger_source: 'cron', trigger_type: 'cron' } }),
-        'schedule',
-      ),
-    ).toBe(true);
-    expect(matchesProjectSessionsFilter(makeSession(), 'chat')).toBe(true);
-    expect(matchesProjectSessionsFilter(makeSession(), 'slack')).toBe(false);
-  });
-
-  test('separates deleted, shared and inaccessible sessions', () => {
-    expect(matchesProjectSessionsFilter(makeSession({ is_owner: false }), 'shared')).toBe(true);
-    expect(
-      matchesProjectSessionsFilter(
-        makeSession({ deleted_at: '2026-07-20T10:00:00.000Z' }),
-        'deleted',
-      ),
-    ).toBe(true);
-    expect(matchesProjectSessionsFilter(makeSession({ can_access: false }), 'inaccessible')).toBe(
-      true,
-    );
-  });
-});
-
-describe('availableProjectSessionsFilters', () => {
-  test('omits every zero-count option so the menu has no dead ends', () => {
-    const groups = availableProjectSessionsFilters([
-      makeSession({ status: 'running' }),
-      makeSession({ session_id: 'two', status: 'completed' }),
-    ]);
-
-    const values = groups.flatMap((group) => group.options.map((option) => option.value));
-    expect(values).toEqual(['active', 'completed', 'chat']);
-    expect(values).not.toContain('failed');
-    expect(values).not.toContain('deleted');
-  });
-
-  test('drops an axis entirely rather than rendering an empty section header', () => {
-    const groups = availableProjectSessionsFilters([makeSession({ status: 'running' })]);
-    expect(groups.map((group) => group.axis)).toEqual(['status', 'source']);
-  });
-
-  test('reports the count alongside each surviving option', () => {
-    const groups = availableProjectSessionsFilters([
-      makeSession({ metadata: { source: 'slack' } }),
-      makeSession({ session_id: 'two', metadata: { source: 'slack' } }),
-    ]);
-
-    const slack = groups
-      .flatMap((group) => group.options)
-      .find((option) => option.value === 'slack');
-    expect(slack).toMatchObject({ label: 'Slack', count: 2 });
-  });
-
-  test('keeps the active filter listed even after its last session disappears', () => {
-    const groups = availableProjectSessionsFilters([makeSession({ status: 'running' })], 'failed');
-    const failed = groups
-      .flatMap((group) => group.options)
-      .find((option) => option.value === 'failed');
-
-    expect(failed).toMatchObject({ count: 0 });
-  });
-});
-
 describe('session inventory identity and access labels', () => {
   test('labels human and agent owners without pretending an unknown owner is the viewer', () => {
     expect(
@@ -132,7 +52,9 @@ describe('session inventory identity and access labels', () => {
       ),
     ).toBe('backend-debugger');
     expect(
-      sessionOwnerLabel(makeSession({ is_owner: false, created_by: 'owner-id', owner_email: null })),
+      sessionOwnerLabel(
+        makeSession({ is_owner: false, created_by: 'owner-id', owner_email: null }),
+      ),
     ).toBe('Unknown owner');
   });
 
@@ -194,7 +116,11 @@ describe('sessionDetailFields', () => {
     });
     const cronFields = sessionDetailFields(cron, FORMATTED);
     expect(cronFields).toContainEqual({ label: 'Source', value: 'Scheduled', mono: undefined });
-    expect(cronFields).toContainEqual({ label: 'Trigger', value: 'nightly-audit', mono: undefined });
+    expect(cronFields).toContainEqual({
+      label: 'Trigger',
+      value: 'nightly-audit',
+      mono: undefined,
+    });
   });
 
   test('drops a chat session from 18 fields to a readable handful', () => {
@@ -344,12 +270,16 @@ describe('mapWithConcurrency', () => {
     let inFlight = 0;
     let peak = 0;
 
-    await mapWithConcurrency(Array.from({ length: 12 }, (_, i) => i), 3, async () => {
-      inFlight += 1;
-      peak = Math.max(peak, inFlight);
-      await new Promise((resolve) => setTimeout(resolve, 5));
-      inFlight -= 1;
-    });
+    await mapWithConcurrency(
+      Array.from({ length: 12 }, (_, i) => i),
+      3,
+      async () => {
+        inFlight += 1;
+        peak = Math.max(peak, inFlight);
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        inFlight -= 1;
+      },
+    );
 
     expect(peak).toBeLessThanOrEqual(3);
   });
@@ -371,12 +301,24 @@ describe('filterProjectSessions', () => {
       session_id: 'newer',
       name: 'Slack deploy',
       metadata: { source: 'slack' },
-      updated_at: '2026-07-21T10:00:00.000Z',
+      // Bookkeeping is older, but the conversation itself is newer.
+      updated_at: '2026-07-19T10:00:00.000Z',
+      opencode_sessions: [
+        {
+          id: 'oc-newer',
+          title: null,
+          parent_id: null,
+          project_id: null,
+          created_at: null,
+          updated_at: Date.parse('2026-07-21T10:00:00.000Z'),
+          archived_at: null,
+        },
+      ],
     });
     const unrelated = makeSession({ session_id: 'third', name: 'Email report' });
 
     expect(
-      filterProjectSessions([older, unrelated, newer], 'all', 'slack').map((s) => s.session_id),
+      filterProjectSessions([older, unrelated, newer], [], [], 'slack').map((s) => s.session_id),
     ).toEqual(['newer', 'older']);
   });
 
@@ -384,35 +326,55 @@ describe('filterProjectSessions', () => {
     const failedDeploy = makeSession({ name: 'Deploy API', status: 'failed' });
     const runningDeploy = makeSession({ name: 'Deploy web', status: 'running' });
 
-    expect(filterProjectSessions([failedDeploy, runningDeploy], 'failed', 'deploy')).toEqual([
+    expect(filterProjectSessions([failedDeploy, runningDeploy], ['failed'], [], 'deploy')).toEqual([
       failedDeploy,
     ]);
   });
+
+  // The view passes a memoised index so typing never rebuilds the haystacks.
+  // Both paths must agree, or search silently changes behaviour under load.
+  test('a prebuilt search index returns the same rows as computing inline', () => {
+    const sessions = [
+      makeSession({ session_id: 'a', name: 'Slack triage' }),
+      makeSession({ session_id: 'b', name: 'Deploy web' }),
+      makeSession({ session_id: 'c', name: 'Slack deploy' }),
+    ];
+    const index = buildSessionSearchIndex(sessions);
+
+    for (const query of ['slack', 'deploy', 'nothing', '']) {
+      expect(filterProjectSessions(sessions, [], [], query, index)).toEqual(
+        filterProjectSessions(sessions, [], [], query),
+      );
+    }
+  });
+
+  test('a session missing from the index is not silently dropped', () => {
+    const known = makeSession({ session_id: 'known', name: 'Slack triage' });
+    const late = makeSession({ session_id: 'late', name: 'Slack deploy' });
+
+    // An index built before `late` arrived: it must fall back to computing the
+    // haystack rather than treating the row as a non-match.
+    const staleIndex = buildSessionSearchIndex([known]);
+
+    expect(
+      filterProjectSessions([known, late], [], [], 'slack', staleIndex).map((s) => s.session_id),
+    ).toEqual(['known', 'late']);
+  });
 });
 
-describe('projectSessionsFilterCounts', () => {
-  test('reports counts for every filter', () => {
-    const counts = projectSessionsFilterCounts([
-      makeSession({ status: 'running' }),
-      makeSession({ session_id: 'two', status: 'failed', is_owner: false, can_access: false }),
-      makeSession({
-        session_id: 'three',
-        status: 'completed',
-        metadata: { trigger_source: 'cron', trigger_type: 'cron' },
-      }),
+describe('buildSessionSearchIndex', () => {
+  test('indexes one lowercased haystack per session id', () => {
+    const index = buildSessionSearchIndex([
+      makeSession({ session_id: 'a', name: 'Slack Triage' }),
+      makeSession({ session_id: 'b', name: 'Deploy Web' }),
     ]);
 
-    expect(counts).toMatchObject({
-      all: 3,
-      active: 1,
-      completed: 1,
-      stopped: 0,
-      failed: 1,
-      schedule: 1,
-      chat: 2,
-      shared: 1,
-      deleted: 0,
-      inaccessible: 1,
-    });
+    expect(index.size).toBe(2);
+    expect(index.get('a')).toContain('slack triage');
+    expect(index.get('b')).toContain('deploy web');
+  });
+
+  test('an empty list indexes nothing', () => {
+    expect(buildSessionSearchIndex([]).size).toBe(0);
   });
 });

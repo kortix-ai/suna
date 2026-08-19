@@ -1,7 +1,16 @@
 // Shared helpers + cross-cutting types used by multiple projects-client modules.
 
 export type AccountRole = 'owner' | 'admin' | 'member';
-export type ProjectRole = 'manager' | 'editor' | 'member';
+/**
+ * The two built-in project roles. `member` is read + run; `manager` is
+ * everything (including members, delete, and every Customize surface).
+ *
+ * BREAKING (2026-08-18): the third role `editor` is removed. It held exactly
+ * what `manager` holds minus member-management and delete, and the extra tier
+ * bought nothing — every `editor` assignment became `manager`. The API rejects
+ * `editor` on write with `400`; it is never returned on read.
+ */
+export type ProjectRole = 'manager' | 'member';
 
 export type ConnectorSharing =
   | { mode: 'project' }

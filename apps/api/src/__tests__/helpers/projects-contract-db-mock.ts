@@ -13,7 +13,7 @@ import {
 } from './drizzle-query-mock';
 
 export type AccountRole = 'owner' | 'admin' | 'member';
-export type ProjectRole = 'manager' | 'editor' | 'member';
+export type ProjectRole = 'manager' | 'member';
 
 export interface ProjectRow {
   projectId: string;

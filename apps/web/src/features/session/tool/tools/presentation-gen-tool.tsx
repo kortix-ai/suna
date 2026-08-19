@@ -24,6 +24,31 @@ import { useContext, useMemo } from 'react';
 
 import { parsePresentationOutput } from '@/features/session/tool/shared/presentation-helpers';
 
+const ACTION_LABELS: Record<string, string> = {
+  create_slide: 'Create Slide',
+  list_slides: 'List Slides',
+  delete_slide: 'Delete Slide',
+  list_presentations: 'List',
+  delete_presentation: 'Delete',
+  validate_slide: 'Validate',
+  export_pdf: 'Export PDF',
+  export_pptx: 'Export PPTX',
+  preview: 'Preview',
+  serve: 'Serve',
+};
+
+// The actions that draw their own success line below; everything else falls
+// through to the generic one. Module-level so the render path stops rebuilding
+// the array on every frame.
+const ACTIONS_WITH_OWN_SUCCESS_LINE = [
+  'create_slide',
+  'validate_slide',
+  'preview',
+  'serve',
+  'export_pdf',
+  'export_pptx',
+];
+
 export function PresentationGenTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const input = partInput(part);
@@ -58,25 +83,11 @@ export function PresentationGenTool({ part, defaultOpen, forceOpen, locked }: To
     return presentationName || action;
   }, [action, presentationName, slideTitle, slideNumber]);
 
-  const actionLabel = useMemo(() => {
-    const labels: Record<string, string> = {
-      create_slide: 'Create Slide',
-      list_slides: 'List Slides',
-      delete_slide: 'Delete Slide',
-      list_presentations: 'List',
-      delete_presentation: 'Delete',
-      validate_slide: 'Validate',
-      export_pdf: 'Export PDF',
-      export_pptx: 'Export PPTX',
-      preview: 'Preview',
-      serve: 'Serve',
-    };
-    return labels[action ?? ''] || action;
-  }, [action]);
+  const actionLabel = ACTION_LABELS[action ?? ''] || action;
 
   return (
     <BasicTool
-      icon={<Presentation className="size-3.5 flex-shrink-0" />}
+      icon={<Presentation className="size-3.5 shrink-0" />}
       trigger={
         <div className="flex min-w-0 flex-1 items-center gap-1.5">
           {actionLabel ? (
@@ -94,7 +105,7 @@ export function PresentationGenTool({ part, defaultOpen, forceOpen, locked }: To
             <span className="bg-muted-foreground/10 h-3 w-32 animate-pulse rounded" />
           ) : null}
           {parsed?.success && action === 'create_slide' && parsed.total_slides && (
-            <span className="text-muted-foreground/60 ml-auto flex-shrink-0 font-mono text-xs whitespace-nowrap">
+            <span className="text-muted-foreground/60 ml-auto shrink-0 font-mono text-xs whitespace-nowrap">
               {parsed.total_slides} {parsed.total_slides === 1 ? 'slide' : 'slides'}
             </span>
           )}
@@ -103,7 +114,7 @@ export function PresentationGenTool({ part, defaultOpen, forceOpen, locked }: To
               href={safeHttpUrl(viewerProxyUrl) ?? '#'}
               target="_blank"
               rel="noopener noreferrer"
-              className="ml-auto flex-shrink-0"
+              className="ml-auto shrink-0"
               onClick={(e) => e.stopPropagation()}
             >
               <ExternalLink className="text-muted-foreground/60 hover:text-foreground size-3 transition-colors" />
@@ -121,7 +132,7 @@ export function PresentationGenTool({ part, defaultOpen, forceOpen, locked }: To
         <div className="space-y-1.5 px-3 py-2.5">
           {action === 'create_slide' && (
             <div className="flex items-center gap-2 text-xs">
-              <Check className={cn('size-3 flex-shrink-0', STATUS_TEXT.success)} />
+              <Check className={cn('size-3 shrink-0', STATUS_TEXT.success)} />
               <span className="text-foreground/80">
                 {tHardcodedUi.raw('componentsSessionToolRenderers.line4612JsxTextCreatedSlide')}{' '}
                 {parsed.slide_number}
@@ -137,7 +148,7 @@ export function PresentationGenTool({ part, defaultOpen, forceOpen, locked }: To
 
           {action === 'validate_slide' && (
             <div className="flex items-center gap-2 text-xs">
-              <Check className={cn('size-3 flex-shrink-0', STATUS_TEXT.success)} />
+              <Check className={cn('size-3 shrink-0', STATUS_TEXT.success)} />
               <span className="text-foreground/80">
                 Slide {parsed.slide_number || slideNumber || '?'} validated
               </span>
@@ -156,7 +167,7 @@ export function PresentationGenTool({ part, defaultOpen, forceOpen, locked }: To
 
           {(action === 'export_pdf' || action === 'export_pptx') && (
             <div className="flex items-center gap-2 text-xs">
-              <Check className={cn('size-3 flex-shrink-0', STATUS_TEXT.success)} />
+              <Check className={cn('size-3 shrink-0', STATUS_TEXT.success)} />
               <span className="text-foreground/80">
                 Exported {parsed.presentation_name || presentationName} to{' '}
                 {action === 'export_pdf' ? 'PDF' : 'PPTX'}
@@ -164,16 +175,9 @@ export function PresentationGenTool({ part, defaultOpen, forceOpen, locked }: To
             </div>
           )}
 
-          {![
-            'create_slide',
-            'validate_slide',
-            'preview',
-            'serve',
-            'export_pdf',
-            'export_pptx',
-          ].includes(action as string) && (
+          {!ACTIONS_WITH_OWN_SUCCESS_LINE.includes(action as string) && (
             <div className="flex items-center gap-2 text-xs">
-              <Check className={cn('size-3 flex-shrink-0', STATUS_TEXT.success)} />
+              <Check className={cn('size-3 shrink-0', STATUS_TEXT.success)} />
               <span className="text-foreground/80">
                 {parsed.message || `${actionLabel} completed`}
               </span>
@@ -189,7 +193,7 @@ export function PresentationGenTool({ part, defaultOpen, forceOpen, locked }: To
       )}
 
       {!parsed && output && (
-        <div data-scrollable className="max-h-72 overflow-auto p-2">
+        <div data-scrollable className="max-h-96 overflow-auto p-2">
           <pre className="text-muted-foreground/60 font-mono text-xs whitespace-pre-wrap">
             {output}
           </pre>

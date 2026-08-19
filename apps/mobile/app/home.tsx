@@ -68,7 +68,7 @@ import { SSHPage } from '@/components/pages/SSHPage';
 import { RunningServicesPage } from '@/components/pages/RunningServicesPage';
 import { BrowserPage } from '@/components/pages/BrowserPage';
 import { FilesPage } from '@/components/pages/FilesPage';
-import { IntegrationsTabPage } from '@/components/pages/IntegrationsTabPage';
+import { ConnectionsTabPage } from '@/components/pages/ConnectionsTabPage';
 import { ScheduledTasksTabPage } from '@/components/pages/ScheduledTasksPage';
 import { ApiKeysTabPage } from '@/components/pages/ApiKeysPage';
 import { ChannelsTabPage } from '@/components/pages/ChannelsPage';
@@ -1733,9 +1733,9 @@ export default function HomeScreen() {
               isRightDrawerOpen={rightDrawerOpen}
             />
 
-          /* Active page tab — Integrations */
-          ) : activePageId === 'page:integrations' && PAGE_TABS[activePageId] && !showTabsOverview ? (
-            <IntegrationsTabPage
+          /* Active page tab — Connections */
+          ) : activePageId === 'page:connections' && PAGE_TABS[activePageId] && !showTabsOverview ? (
+            <ConnectionsTabPage
               page={PAGE_TABS[activePageId]}
               onBack={handleBack}
               onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}

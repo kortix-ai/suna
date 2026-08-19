@@ -44,8 +44,8 @@ all the kortix-*
   audit found whole zero-CLI clusters (billing, enterprise IAM, gateway,
   review center, tunnel, session sharing).
 - **The CLI already speaks MCP** — but only for connectors:
-  `kortix executor mcp` is a stdio compatibility face over the Executor
-  gateway (`apps/cli/src/executor/mcp.ts`). There is no MCP projection of
+  `kortix connectors mcp` is a stdio compatibility face over the Connector
+  gateway (`apps/cli/src/connectors/mcp.ts`). There is no MCP projection of
   the platform itself (no create-trigger, no read-memory, no start-session
   tool).
 - **@kortix/sdk is the single entry** for everything that talks to the
@@ -60,7 +60,7 @@ all the kortix-*
   (`apps/api/src/iam/actions.ts`) already names most resource·verb pairs.
 - **The `kortix-*` knowledge bundle** — `kortix-system` (+ its references:
   `kortix-cli.md`, `kortix-toml.md`, `change-requests.md`,
-  `marketplace.md`, `credentials-and-setup-links.md`), `kortix-executor`,
+  `marketplace.md`, `credentials-and-setup-links.md`), `kortix-connectors`,
   `kortix-memory`, `kortix-slack` — lives in `packages/starter` templates
   and is only present *inside sandboxes*. Nothing serves it to an external
   client that wants to understand how to operate Kortix.
@@ -106,7 +106,7 @@ Rules:
 | --- | --- | --- |
 | REST | `GET/POST/PATCH/DELETE /v1/projects/:id/{plural}[/:name]` + `POST …/:name/{verb}` | existing routes get *mapped* into the catalog first (no big-bang rewrite), new kinds are generated |
 | CLI | `kortix {plural} {verb} [name] [--flags from schema]` | hand-written commands retire kind-by-kind as the generated grammar covers them; bespoke UX (chat REPL, `ship`, `init`) stays hand-crafted on top |
-| MCP | one hosted server: tools `kortix_{kind}_{verb}` + resources `kortix://…` | replaces "executor-only" MCP; connector tools mount under the same server |
+| MCP | one hosted server: tools `kortix_{kind}_{verb}` + resources `kortix://…` | replaces "connector-only" MCP; connector tools mount under the same server |
 
 The MCP projection is what makes "use & configure your full Kortix from
 anywhere that's MCP compatible" literal: point Claude/Cursor/any client at
@@ -164,7 +164,7 @@ back through the same surface. That is "AGI as API" in one sentence.
 The system explains itself through the same surface it exposes:
 
 - The full `kortix-*` bundle — `kortix-system` + its references,
-  `kortix-executor`, `kortix-memory`, `kortix-slack` — is **served,
+  `kortix-connectors`, `kortix-memory`, `kortix-slack` — is **served,
   versioned with the platform**, not only baked into sandbox images:
   - MCP **resources**: `kortix://system/{doc}` (clients pull exactly the
     operating knowledge they need into context).
@@ -187,7 +187,7 @@ The system explains itself through the same surface it exposes:
   listing are all views of one decision: `authorize(principal, action,
   target)` from the existing IAM engine.
 - The one-token model (companion spec) supplies the principal: human PAT →
-  your role; session executor token → launching user ∩ agent grant; service
+  your role; session connector token → launching user ∩ agent grant; service
   account → its policies. **A scoped MCP profile is just a token** — no
   separate MCP permission system.
 - Token claims narrow the visible catalog: a project-scoped token sees one
@@ -201,7 +201,7 @@ The system explains itself through the same surface it exposes:
   but each gap should be closed *by adding the kind to the catalog*, not by
   hand-writing another command. The route-manifest CLI gate is the interim
   ratchet; catalog completeness is the end state.
-- **`kortix executor mcp`**: becomes the connector-tools subtree of the one
+- **`kortix connectors mcp`**: becomes the connector-tools subtree of the one
   hosted MCP server (kept as a stdio alias for compatibility).
 - **Session approvals** (PR #4299), **guided agent config**, **gateway
   keys**, **billing reads**: all become catalog kinds/verbs rather than

@@ -1,17 +1,15 @@
 'use client';
 import {
   BasicTool,
-  isErrorOutput,
   partOutput,
   ToolOutputFallback,
 } from '@/features/session/tool/shared/infrastructure';
-import { OutputBlock } from '@/features/session/tool/shared/output-block';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { ScissorsIcon as Scissors } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 
-export function ContextInfoTool({ part }: ToolProps) {
+export function ContextInfoTool({ part, defaultOpen, forceOpen }: ToolProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
 
   const output = partOutput(part);
@@ -19,7 +17,7 @@ export function ContextInfoTool({ part }: ToolProps) {
 
   return (
     <BasicTool
-      icon={<Scissors className="text-muted-foreground/50 size-3.5 flex-shrink-0" />}
+      icon={<Scissors className="text-muted-foreground/50 size-3.5 shrink-0" />}
       trigger={
         <div className="flex min-w-0 flex-1 items-center gap-1.5">
           <span className="text-muted-foreground/70 text-xs font-medium whitespace-nowrap">
@@ -30,14 +28,10 @@ export function ContextInfoTool({ part }: ToolProps) {
           </span>
         </div>
       }
+      defaultOpen={defaultOpen}
+      forceOpen={forceOpen}
     >
-      {isErrorOutput(output) ? (
-        <ToolOutputFallback output={output} toolName="context_info" />
-      ) : (
-        <div className="p-2">
-          <OutputBlock text={output} className="scrollbar-hide max-h-32" />
-        </div>
-      )}
+      <ToolOutputFallback output={output} toolName="context_info" />
     </BasicTool>
   );
 }

@@ -7,7 +7,6 @@ import {
 import type { ProjectSessionRow } from '../projects/lib/serializers';
 import {
   type GenerateSessionTitleOptions,
-  buildSessionTitleRequestBody,
   extractPromptInfo,
   generateSessionTitleFromFirstPrompt,
   sanitizeGeneratedTitle,
@@ -50,18 +49,7 @@ describe('sanitizeGeneratedTitle', () => {
     expect(sanitizeGeneratedTitle('   ')).toBeNull();
     expect(sanitizeGeneratedTitle(null)).toBeNull();
     expect(sanitizeGeneratedTitle('New session - 2026-07-28')).toBeNull();
-  });
-});
-
-describe('buildSessionTitleRequestBody', () => {
-  it('reserves enough output tokens for reasoning-capable fallback models', () => {
-    const body = buildSessionTitleRequestBody(
-      'glm-5.2',
-      'Please set up the MS Graph OAuth2 connector',
-    );
-
-    expect(body.max_tokens).toBeGreaterThanOrEqual(256);
-    expect(body.stream).toBe(false);
+    expect(sanitizeGeneratedTitle('New agent')).toBeNull();
   });
 });
 
@@ -147,6 +135,11 @@ describe('PLACEHOLDER_TITLE_SQL_PATTERN', () => {
       'New sessions of work',
       'Newsession',
       'New session planning doc',
+      'New agent',
+      'NEW AGENT',
+      'New agent - Aug 3',
+      'New agents at work',
+      'New agent planning doc',
       'Set Up MS Graph',
       '',
     ];
@@ -223,6 +216,67 @@ describe('generateSessionTitleFromFirstPrompt', () => {
     expect(h.models).toEqual(['glm-5.2']);
   });
 
+  it('retries once with the servable fallback when the session model is rejected', async () => {
+    const attempts: string[] = [];
+    const h = harness({
+      row: row({ opencode_model: 'anthropic/claude-opus-4-8' }),
+      fallbackModel: async () => 'glm-5.2',
+      generate: async (model) => {
+        attempts.push(model);
+        return model === 'glm-5.2' ? '"Fallback Title"' : null;
+      },
+    });
+
+    await generateSessionTitleFromFirstPrompt(input, h.options);
+
+    expect(attempts).toEqual(['anthropic/claude-opus-4-8', 'glm-5.2']);
+    expect(h.persisted).toEqual(['Fallback Title']);
+    expect(h.minted).toEqual(['k']);
+    expect(h.revoked).toEqual(['key-1']);
+  });
+
+  it('uses the first prompt as a deterministic title when both model attempts fail', async () => {
+    const h = harness({
+      row: row({ opencode_model: 'anthropic/claude-opus-4-8' }),
+      fallbackModel: async () => 'glm-5.2',
+      generate: async () => null,
+    });
+
+    await generateSessionTitleFromFirstPrompt(input, h.options);
+
+    expect(h.persisted).toEqual(['Please set up the MS Graph OAuth2 connector']);
+    expect(h.revoked).toEqual(['key-1']);
+  });
+
+  it('never turns a placeholder-shaped first prompt back into the placeholder', async () => {
+    const h = harness({ generate: async () => null });
+
+    await generateSessionTitleFromFirstPrompt(
+      { ...input, firstPromptText: 'New agent planning document' },
+      h.options,
+    );
+
+    expect(h.persisted).toEqual(['Topic: New agent planning document']);
+  });
+
+  it(
+    'bounds model attempts and uses the deterministic title when the gateway hangs',
+    async () => {
+      const h = harness({
+        row: row({ opencode_model: 'anthropic/claude-opus-4-8' }),
+        fallbackModel: async () => 'glm-5.2',
+        generate: async () => new Promise<string | null>(() => {}),
+      });
+      const options = { ...h.options, generationTimeoutMs: 5 } as GenerateSessionTitleOptions;
+
+      await generateSessionTitleFromFirstPrompt(input, options);
+
+      expect(h.persisted).toEqual(['Please set up the MS Graph OAuth2 connector']);
+      expect(h.revoked).toEqual(['key-1']);
+    },
+    200,
+  );
+
   it('generates, sanitizes, and persists a title; always revokes the key', async () => {
     const h = harness();
     await generateSessionTitleFromFirstPrompt(
@@ -242,7 +296,7 @@ describe('generateSessionTitleFromFirstPrompt', () => {
     expect(h.generateCalls()).toBe(0);
   });
 
-  it('skips a user-named session (custom_name) but re-titles a placeholder name', async () => {
+  it('skips a user-named session (custom_name) but re-titles placeholder names', async () => {
     const custom = harness({
       row: row({ custom_name: 'My Name', opencode_model: 'codex/gpt-5.6-sol' }),
     });
@@ -254,6 +308,12 @@ describe('generateSessionTitleFromFirstPrompt', () => {
     });
     await generateSessionTitleFromFirstPrompt(input, placeholder.options);
     expect(placeholder.persisted).toEqual(['Set Up MS Graph']);
+
+    const veyrisPlaceholder = harness({
+      row: row({ name: 'New agent', opencode_model: 'codex/gpt-5.6-sol' }),
+    });
+    await generateSessionTitleFromFirstPrompt(input, veyrisPlaceholder.options);
+    expect(veyrisPlaceholder.persisted).toEqual(['Set Up MS Graph']);
   });
 
   it('falls back to a resolved SERVABLE model when neither the turn nor the row names one', async () => {
@@ -268,13 +328,13 @@ describe('generateSessionTitleFromFirstPrompt', () => {
 
   it('spends NOTHING when no model is servable — free tier, or no managed provider', async () => {
     // The unconditional platform default is a managed id: on a free tier (or a
-    // deployment with no managed provider) the gateway refuses it, so minting a
-    // key and calling would be a doomed, billed, untitled loop on every prompt.
+    // deployment with no managed provider) the gateway refuses it. The prompt
+    // excerpt still titles the session without minting a key or calling a model.
     const h = harness({ row: row({}), fallbackModel: async () => null });
     await generateSessionTitleFromFirstPrompt(input, h.options);
     expect(h.models).toEqual([]);
     expect(h.minted).toEqual([]);
-    expect(h.persisted).toEqual([]);
+    expect(h.persisted).toEqual(['Please set up the MS Graph OAuth2 connector']);
   });
 
   it('precedence: modelHint beats opencode_model beats the resolved fallback', async () => {
@@ -374,7 +434,7 @@ describe('generateSessionTitleFromFirstPrompt', () => {
       },
     });
     await generateSessionTitleFromFirstPrompt(input, h.options);
-    expect(h.persisted).toEqual([]);
+    expect(h.persisted).toEqual(['Please set up the MS Graph OAuth2 connector']);
     expect(h.revoked).toEqual(['key-1']);
   });
 

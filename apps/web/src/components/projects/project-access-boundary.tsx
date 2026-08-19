@@ -1,139 +1,212 @@
 'use client';
 
-import {
-  WarningCircleIcon as AlertCircle,
-  ArrowLeftIcon as ArrowLeft,
-  CheckCircleIcon as CheckCircle2,
-  LockIcon as LockKeyhole,
-  ArrowClockwiseIcon as RefreshCw,
-  PaperPlaneTiltIcon as Send,
-  ShieldWarningIcon as ShieldAlert,
-  UserCircleIcon as UserRound,
-} from '@phosphor-icons/react';
+import { ShieldWarningIcon } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
 
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
-import { InfoBanner } from '@/components/ui/info-banner';
-import { KortixHyperLogo } from '@/components/ui/marketing/kortix-hyper-logo';
-import { Textarea } from '@/components/ui/textarea';
-import { WallpaperBackground } from '@/components/ui/wallpaper-background';
 import Loading from '@/components/ui/loading';
+import { Textarea } from '@/components/ui/textarea';
+import { AuthFrame } from '@/features/auth/auth-card-shell';
+import { AuthPendingScreen, DetailPanel, DetailRow } from '@/features/auth/auth-consent';
+import { ErrorStrip, Rise, StepHeader } from '@/features/auth/auth-primitives';
 import { useAuth } from '@/features/providers/auth-provider';
-import { clearLastProjectId, readLastProjectId } from '@/lib/onboarding/last-project-cookie';
 import { useAdminRole } from '@/hooks/admin/use-admin-role';
+import { clearLastProjectId, readLastProjectId } from '@/lib/onboarding/last-project-cookie';
+import { useAppHome } from '@/lib/onboarding/use-app-home';
+import { focusWithoutScroll } from '@/lib/utils/focus-without-scroll';
 import { getProject, requestProjectAccess, setAdminBypass } from '@kortix/sdk';
-import { cn } from '@/lib/utils';
 
-interface ProjectAccessBoundaryProps {
-  projectId: string;
-  children: ReactNode;
+const QUERY_KEY = 'project-access-boundary';
+
+/** How often the waiting screen re-checks whether a manager approved the request. */
+const APPROVAL_POLL_MS = 15_000;
+
+/** Matches the server's own ceiling (apps/api projects access-requests route). */
+const MESSAGE_MAX_LENGTH = 2_000;
+
+/** Derived from the SDK so a new result status becomes a type error here. */
+type RequestResultStatus = Awaited<ReturnType<typeof requestProjectAccess>>['status'];
+
+// ─── State machine (pure — see project-access-boundary.test.ts) ───────────────
+
+/**
+ * Every screen this boundary can show. Each state owns exactly one heading,
+ * which is what stops the three-headings-for-one-form problem.
+ */
+export type AccessGateState = 'request' | 'sent' | 'alreadyRequested' | 'notFound' | 'unavailable';
+
+/** The two states where the user has asked and is waiting on a human. */
+export type WaitingGateState = Extract<AccessGateState, 'sent' | 'alreadyRequested'>;
+
+/**
+ * Translation keys under `hardcodedUi.projectAccessBoundary`. The copy lives in
+ * translations/*.json; keeping the keys here lets the test resolve them against
+ * en.json and assert the real English reads correctly.
+ *
+ * There is no eyebrow/kicker: the auth dialect this screen belongs to is a
+ * mark, a heading and a description, and nothing else.
+ */
+export interface AccessGateCopyKeys {
+  heading: string;
+  body: string;
 }
 
-function errorStatus(error: unknown): number | undefined {
+const GATE_COPY_KEYS: Record<AccessGateState, AccessGateCopyKeys> = {
+  request: { heading: 'privateHeading', body: 'privateBody' },
+  sent: { heading: 'waitingHeading', body: 'sentBody' },
+  alreadyRequested: { heading: 'waitingHeading', body: 'alreadyBody' },
+  notFound: { heading: 'notFoundHeading', body: 'notFoundBody' },
+  unavailable: { heading: 'errorHeading', body: 'errorBody' },
+};
+
+export function gateCopyKeys(state: AccessGateState): AccessGateCopyKeys {
+  return GATE_COPY_KEYS[state];
+}
+
+/** Pulls the HTTP status off either error shape the SDK can surface. */
+export function errorStatus(error: unknown): number | undefined {
   return (
     (error as { status?: number; response?: { status?: number } } | null)?.status ??
     (error as { response?: { status?: number } } | null)?.response?.status
   );
 }
 
+/**
+ * Maps a failed `getProject` to the screen it should show. 403 is the only
+ * status that leads to the request form — every other failure is terminal, so
+ * an unknown status must never render a form whose request cannot succeed.
+ */
+export function gateStateForError(error: unknown): AccessGateState {
+  const status = errorStatus(error);
+  if (status === 403) return 'request';
+  if (status === 404) return 'notFound';
+  return 'unavailable';
+}
+
+/**
+ * Maps `requestProjectAccess`'s three-way result to the next screen.
+ * `already_has_access` returns null: the caller re-fetches instead, because the
+ * project is readable now and the right screen is the project itself.
+ */
+export function gateStateForRequestResult(status: RequestResultStatus): WaitingGateState | null {
+  switch (status) {
+    case 'created':
+      return 'sent';
+    case 'pending':
+      return 'alreadyRequested';
+    case 'already_has_access':
+      return null;
+  }
+}
+
+/** True while the screen should keep polling for an approval. */
+export function shouldPollForApproval(state: AccessGateState): boolean {
+  return state === 'sent' || state === 'alreadyRequested';
+}
+
+/**
+ * The three 403 faces. Only these know who the caller is and that the project
+ * exists, so only these show the account/project facts, the approval note, and
+ * the platform-admin escape hatch.
+ */
+export function isForbiddenState(state: AccessGateState): boolean {
+  return state === 'request' || shouldPollForApproval(state);
+}
+
+/** What the primary button on a given screen does. */
+export type GateAction = 'request' | 'recheck' | 'retry' | 'leave';
+
+/**
+ * `notFound` is the odd one out: it is terminal, so its primary action is the
+ * way out rather than a retry. Offering "Try again" on a deleted project just
+ * re-runs a request that can only 404 again.
+ */
+export function gateAction(state: AccessGateState): GateAction {
+  switch (state) {
+    case 'request':
+      return 'request';
+    case 'sent':
+    case 'alreadyRequested':
+      return 'recheck';
+    case 'unavailable':
+      return 'retry';
+    case 'notFound':
+      return 'leave';
+  }
+}
+
+/**
+ * Decides which screen wins when the user has a request in flight AND the
+ * project fetch is failing.
+ *
+ * A sent request has to survive a *transient* failure — an expired JWT, a 500,
+ * a tunnel drop — or an unattended waiting screen silently turns back into a
+ * blank request form for a request that was already sent. It must NOT survive a
+ * *terminal* one: if the project is deleted while the user waits, telling them
+ * to keep waiting means polling forever against something that no longer
+ * exists.
+ */
+export function resolveGateState(
+  waiting: WaitingGateState | null,
+  errorState: AccessGateState | null,
+): AccessGateState {
+  if (errorState === 'notFound') return 'notFound';
+  return waiting ?? errorState ?? 'unavailable';
+}
+
+// ─── Boundary ────────────────────────────────────────────────────────────────
+
+interface ProjectAccessBoundaryProps {
+  projectId: string;
+  children: ReactNode;
+}
+
 export function ProjectAccessBoundary({ projectId, children }: ProjectAccessBoundaryProps) {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
+  const { user } = useAuth();
+  // A submitted request is held HERE, above the error branch, so a transient
+  // 401/500/offline poll result cannot unmount the waiting screen and hand the
+  // user a fresh request form for a request they already sent.
+  const [waiting, setWaiting] = useState<WaitingGateState | null>(null);
+
   const query = useQuery({
-    queryKey: ['project-access-boundary', projectId],
+    queryKey: [QUERY_KEY, projectId],
     queryFn: () => getProject(projectId, { showErrors: false }),
     enabled: !!projectId,
     retry: false,
   });
 
-  if (query.isLoading) {
-    return <ProjectAccessLoading />;
-  }
+  const { refetch } = query;
+  // Background poll: silent, and must never touch the button's pending state.
+  const recheck = useCallback(() => void refetch(), [refetch]);
 
-  if (query.isError) {
-    const status = errorStatus(query.error);
-    if (status === 403) {
-      return <ForbiddenProjectState projectId={projectId} />;
-    }
+  // The user's own "Check now" press, tracked separately so the 15s background
+  // poll cannot disable the button under their cursor.
+  const [manualRecheck, setManualRecheck] = useState(false);
+  const recheckNow = useCallback(() => {
+    setManualRecheck(true);
+    void refetch().finally(() => setManualRecheck(false));
+  }, [refetch]);
 
-    if (status === 404) {
-      return (
-        <ProjectAccessStateFrame
-          icon={<AlertCircle className="size-5" />}
-          eyebrow={tI18nHardcoded.raw(
-            'autoComponentsProjectsProjectAccessBoundaryJsxAttrEyebrowProjectUnavailablea0231815',
-          )}
-          title={tI18nHardcoded.raw(
-            'autoComponentsProjectsProjectAccessBoundaryJsxAttrTitleProjectNotc66b9822',
-          )}
-          description={tI18nHardcoded.raw(
-            'autoComponentsProjectsProjectAccessBoundaryJsxAttrDescriptionThisProject92b78195',
-          )}
-        />
-      );
-    }
+  const errorState = query.isError ? gateStateForError(query.error) : null;
+  const state = resolveGateState(waiting, errorState);
+  // Stop the moment access lands, or the interval outlives the gate: this
+  // component wraps the shell for the whole session, so a poll that ignores
+  // success keeps calling getProject every 15s while the user works.
+  const polling = !query.isSuccess && shouldPollForApproval(state);
 
-    return (
-      <ProjectAccessStateFrame
-        icon={<AlertCircle className="size-5" />}
-        eyebrow={tI18nHardcoded.raw(
-          'autoComponentsProjectsProjectAccessBoundaryJsxAttrEyebrowProjectUnavailablea0231815',
-        )}
-        title={tI18nHardcoded.raw(
-          'autoComponentsProjectsProjectAccessBoundaryJsxAttrTitleCouldnT870a862d',
-        )}
-        description={tI18nHardcoded.raw(
-          'autoComponentsProjectsProjectAccessBoundaryJsxAttrDescriptionSomethingWent8997618a',
-        )}
-        footer={
-          <Button type="button" variant="outline" onClick={() => query.refetch()}>
-            <RefreshCw className="size-4" />
-            Retry
-          </Button>
-        }
-      />
-    );
-  }
+  // Poll while waiting so "this page opens on its own" is a fact, not a promise
+  // the user has to keep by reloading. `recheck` is stable, so the interval is
+  // a true 15s cadence rather than 15s-since-the-last-render.
+  useEffect(() => {
+    if (!polling) return;
+    const id = setInterval(recheck, APPROVAL_POLL_MS);
+    return () => clearInterval(id);
+  }, [polling, recheck]);
 
-  return <>{children}</>;
-}
-
-function ProjectAccessLoading() {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
-  return (
-    <div
-      className="bg-background flex min-h-screen items-center justify-center"
-      role="status"
-      aria-label={tI18nHardcoded.raw(
-        'autoComponentsProjectsProjectAccessBoundaryJsxAttrAriaLabelLoading21cf6b95',
-      )}
-    >
-      <KortixHyperLogo size={34} startOnView={false} animateOnHover={false} />
-    </div>
-  );
-}
-
-function ForbiddenProjectState({ projectId }: { projectId: string }) {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
-  const router = useRouter();
-  const queryClient = useQueryClient();
-  const { user } = useAuth();
-  const { data: adminRole } = useAdminRole();
-  const [message, setMessage] = useState('');
-  const [sent, setSent] = useState(false);
-  const [inlineError, setInlineError] = useState<string | null>(null);
-  const [bypassError, setBypassError] = useState<string | null>(null);
+  const forbidden = errorState === 'request';
 
   // Stop this screen from becoming the user's permanent landing page. If the
   // remembered project is one they cannot read, every `/` hit and every sign-in
@@ -141,276 +214,258 @@ function ForbiddenProjectState({ projectId }: { projectId: string }) {
   // this case: a private project is a legitimate 403 surface, not a failed
   // fetch. Forget it and let the landing door resolve a project they can open.
   useEffect(() => {
+    if (!forbidden) return;
     if (readLastProjectId(user?.id) !== projectId) return;
     clearLastProjectId();
-  }, [projectId, user?.id]);
+  }, [forbidden, projectId, user?.id]);
+
+  if (query.isSuccess) return <>{children}</>;
+
+  // The same quiet spinner every auth sub-surface shows while it resolves —
+  // minus the legal footer. This branch resolves into the project shell, which
+  // carries no footer, so keeping it would flash Terms/Privacy for the length
+  // of one fetch on every project open. The gate screens below still show it:
+  // they are terminal, and there they are the whole page.
+  if (query.isLoading) return <AuthPendingScreen footer={false} />;
+
+  return (
+    <AccessGateScreen
+      projectId={projectId}
+      state={state}
+      rechecking={manualRecheck}
+      onRecheck={recheckNow}
+      onWaiting={setWaiting}
+    />
+  );
+}
+
+// ─── Screen ──────────────────────────────────────────────────────────────────
+
+/**
+ * Composed from the auth consent vocabulary (AuthFrame / Rise / StepHeader /
+ * DetailPanel / ErrorStrip) so this reads as the same product as the CLI and
+ * OAuth consent screens. Flat on the background, left-aligned, 380px — no card,
+ * no wallpaper.
+ */
+function AccessGateScreen({
+  projectId,
+  state,
+  rechecking,
+  onRecheck,
+  onWaiting,
+}: {
+  projectId: string;
+  state: AccessGateState;
+  rechecking: boolean;
+  onRecheck: () => void;
+  onWaiting: (state: WaitingGateState) => void;
+}) {
+  const t = useTranslations('hardcodedUi');
+  const router = useRouter();
+  const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const appHome = useAppHome();
+  const { data: adminRole } = useAdminRole();
+  const noteId = useId();
+  const [message, setMessage] = useState('');
+  const [inlineError, setInlineError] = useState<string | null>(null);
+  const [bypassError, setBypassError] = useState<string | null>(null);
+
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const shownState = useRef(state);
+
+  // Submitting replaces the form, which would otherwise strand keyboard focus
+  // on <body> with nothing announced. Focusing the body block reads the new
+  // step aloud. preventScroll is mandatory — a bare focus() into this animated
+  // layer scrolls the overflow ancestor. Guarded so it never fires on mount.
+  useEffect(() => {
+    if (shownState.current === state) return;
+    shownState.current = state;
+    focusWithoutScroll(bodyRef.current);
+  }, [state]);
 
   const requestMutation = useMutation({
     mutationFn: () => requestProjectAccess(projectId, message),
     onMutate: () => setInlineError(null),
     onSuccess: (result) => {
-      if (result.status === 'already_has_access') {
-        void queryClient.invalidateQueries({
-          queryKey: ['project-access-boundary', projectId],
-        });
+      const next = gateStateForRequestResult(result.status);
+      if (next) {
+        onWaiting(next);
         return;
       }
-      setSent(true);
+      // already_has_access — the project is readable now, so show the project.
+      void queryClient.invalidateQueries({ queryKey: [QUERY_KEY, projectId] });
     },
-    onError: (error: Error) => {
-      setInlineError(error.message || 'Could not send access request.');
-    },
+    onError: (error: Error) =>
+      setInlineError(error.message || t.raw('projectAccessBoundary.requestFailed')),
   });
 
-  // Platform-admin escape hatch: flips the client-wide admin-bypass header
-  // on, then re-fetches this same ['project-access-boundary', projectId] query so the
-  // boundary above (which shares this query cache) picks up the result and
-  // renders the actual project. Read-only server-side (see
-  // apps/api/src/projects/lib/access.ts) and audit-logged against the
-  // project's own account on every use.
+  // Platform-admin escape hatch: flips the client-wide admin-bypass header on,
+  // then re-fetches the shared [QUERY_KEY, projectId] query so the boundary
+  // above renders the actual project. Read-only server-side (see
+  // apps/api/src/projects/lib/access.ts) and audit-logged against the project's
+  // own account on every use.
   const bypassMutation = useMutation({
     mutationFn: async () => {
       setAdminBypass(true);
       return queryClient.fetchQuery({
-        queryKey: ['project-access-boundary', projectId],
+        queryKey: [QUERY_KEY, projectId],
         queryFn: () => getProject(projectId, { showErrors: false }),
       });
     },
     onMutate: () => setBypassError(null),
     onError: (error: Error) => {
       setAdminBypass(false);
-      setBypassError(error.message || 'Admin bypass failed.');
+      setBypassError(error.message || t.raw('projectAccessBoundary.bypassFailed'));
     },
   });
 
+  const copy = gateCopyKeys(state);
+  const forbidden = isForbiddenState(state);
+  const action = gateAction(state);
+  // "Back to projects" leaves THIS project (access denied, or the user just
+  // left it) — not a browse-the-list escape, so it goes to the latest
+  // project this user has open, never the removed `/projects` list.
+  const goToProjects = () => router.push(appHome);
+  const showAdminBypass = forbidden && !!adminRole?.isAdmin;
+
   return (
-    <ProjectAccessStateFrame
-      icon={<LockKeyhole className="size-5" />}
-      cornerAction={
-        adminRole?.isAdmin ? (
-          <div className="flex flex-col items-end gap-1.5">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="border-amber-500/50 text-amber-700 hover:bg-amber-500/10 dark:text-amber-400"
-              onClick={() => bypassMutation.mutate()}
-              disabled={bypassMutation.isPending}
+    <AuthFrame>
+      {/*
+        Keyed on `state` so a step change replays the same two-part rise the
+        auth flow uses everywhere else: header first, body 60ms behind.
+      */}
+      <Rise key={`h-${state}`}>
+        <StepHeader
+          title={t.raw(`projectAccessBoundary.${copy.heading}`)}
+          description={t.raw(`projectAccessBoundary.${copy.body}`)}
+        />
+      </Rise>
+
+      <Rise key={`b-${state}`} delay={0.06}>
+        <div ref={bodyRef} tabIndex={-1} className="outline-none">
+          {inlineError ? <ErrorStrip message={inlineError} /> : null}
+          {bypassError ? <ErrorStrip message={bypassError} /> : null}
+
+          {forbidden ? (
+            <DetailPanel>
+              <DetailRow
+                label={t.raw('projectAccessBoundary.accountLabel')}
+                value={user?.email ?? t.raw('projectAccessBoundary.thisAccount')}
+              />
+              <DetailRow
+                label={t.raw('projectAccessBoundary.projectLabel')}
+                value={projectId}
+                mono
+              />
+            </DetailPanel>
+          ) : null}
+
+          {action === 'request' ? (
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                // The button is aria-disabled rather than disabled so it keeps
+                // focus in flight, which means it stays clickable and the guard
+                // has to live here.
+                if (requestMutation.isPending) return;
+                requestMutation.mutate();
+              }}
             >
-              {bypassMutation.isPending ? (
-                <Loading className="size-3.5" />
-              ) : (
-                <ShieldAlert className="size-3.5" />
-              )}
-              ADMIN BYPASS
-            </Button>
-            {bypassError ? <p className="text-destructive text-xs">{bypassError}</p> : null}
-          </div>
-        ) : null
-      }
-      eyebrow={tI18nHardcoded.raw(
-        'autoComponentsProjectsProjectAccessBoundaryJsxAttrEyebrowPrivateProjectd5b1951c',
-      )}
-      title={sent ? 'Request sent.' : 'Request access to this project.'}
-      description={
-        sent
-          ? 'A project manager can approve you from the Members screen. Keep this page open and check again once they approve the request.'
-          : 'This Kortix workspace is private. Send a short note and a project manager can add you as a viewer.'
-      }
-      panelTitle={sent ? 'Waiting for approval' : 'Access request'}
-      panelDescription={
-        sent
-          ? 'Managers have the request in Customize → Members.'
-          : 'A little context helps the manager approve the right account.'
-      }
-      content={
-        <div className="space-y-4">
-          {sent ? (
-            <InfoBanner
-              tone="success"
-              icon={CheckCircle2}
-              title={tI18nHardcoded.raw(
-                'autoComponentsProjectsProjectAccessBoundaryJsxAttrTitleRequestSent6567e02d',
-              )}
-            >
-              {tI18nHardcoded.raw(
-                'autoComponentsProjectsProjectAccessBoundaryJsxTextProjectManagersWill08e33ff7',
-              )}
-            </InfoBanner>
-          ) : (
-            <>
-              <InfoBanner
-                tone="neutral"
-                icon={UserRound}
-                title={tI18nHardcoded.raw(
-                  'autoComponentsProjectsProjectAccessBoundaryJsxAttrTitleSignedIna3165363',
-                )}
+              <label
+                htmlFor={noteId}
+                className="text-muted-foreground mt-5 mb-2 block text-sm font-medium"
               >
-                <span className="text-muted-foreground">
-                  {tI18nHardcoded.raw(
-                    'autoComponentsProjectsProjectAccessBoundaryJsxTextRequestingAccessAs09b70479',
-                  )}{' '}
-                  <span className="text-foreground font-medium">
-                    {user?.email ?? user?.id ?? 'this account'}
-                  </span>
-                  .
-                </span>
-              </InfoBanner>
-
-              <div className="space-y-2">
-                <label
-                  className="text-foreground text-sm font-medium"
-                  htmlFor="project-access-message"
-                >
-                  Message <span className="text-muted-foreground font-normal">optional</span>
-                </label>
-                <Textarea
-                  id="project-access-message"
-                  value={message}
-                  onChange={(event) => setMessage(event.target.value)}
-                  minHeight={96}
-                  maxHeight={160}
-                  placeholder={tI18nHardcoded.raw(
-                    'autoComponentsProjectsProjectAccessBoundaryJsxAttrPlaceholderTellThec2bb0f7d',
-                  )}
-                  disabled={requestMutation.isPending}
-                />
-                {inlineError ? <p className="text-destructive text-xs">{inlineError}</p> : null}
-              </div>
-            </>
-          )}
-        </div>
-      }
-      footer={
-        <div className="flex w-full flex-col-reverse gap-2 sm:flex-row sm:justify-between">
-          <Button type="button" variant="ghost" onClick={() => router.push('/projects')}>
-            <ArrowLeft className="size-4" />
-            {tI18nHardcoded.raw(
-              'autoComponentsProjectsProjectAccessBoundaryJsxTextBackToProjects9ad9ccd3',
-            )}
-          </Button>
-          {sent ? (
-            <Button type="button" variant="outline" onClick={() => window.location.reload()}>
-              <RefreshCw className="size-4" />
-              {tI18nHardcoded.raw(
-                'autoComponentsProjectsProjectAccessBoundaryJsxTextCheckAgain9f1e6458',
-              )}
+                {t.raw('projectAccessBoundary.noteLabel')}
+              </label>
+              <Textarea
+                id={noteId}
+                value={message}
+                onChange={(event) => setMessage(event.target.value)}
+                maxLength={MESSAGE_MAX_LENGTH}
+                minHeight={76}
+                maxHeight={140}
+                placeholder={t.raw('projectAccessBoundary.notePlaceholder')}
+                // Deliberately NOT disabled while pending: disabling a focused
+                // element drops keyboard focus to <body>. read-only:opacity-60
+                // supplies the state the `disabled:` styles would have.
+                readOnly={requestMutation.isPending}
+                className="read-only:cursor-default read-only:opacity-60"
+              />
+              <Button
+                type="submit"
+                size="lg"
+                className="mt-5 w-full aria-disabled:pointer-events-none aria-disabled:opacity-50"
+                aria-disabled={requestMutation.isPending}
+              >
+                {requestMutation.isPending ? <Loading className="size-4 shrink-0" /> : null}
+                {t.raw('projectAccessBoundary.requestAction')}
+              </Button>
+            </form>
+          ) : action === 'leave' ? (
+            // Terminal. The way out IS the primary action, so it is a button
+            // rather than the quiet link the other screens carry underneath.
+            <Button type="button" size="lg" className="mt-5 w-full" onClick={goToProjects}>
+              {t.raw('projectAccessBoundary.projectsAction')}
             </Button>
           ) : (
             <Button
               type="button"
-              onClick={() => requestMutation.mutate()}
-              disabled={requestMutation.isPending}
+              size="lg"
+              variant={action === 'recheck' ? 'secondary' : 'default'}
+              className="mt-5 w-full"
+              onClick={onRecheck}
+              disabled={rechecking}
             >
-              {requestMutation.isPending ? (
-                <Loading className="size-4" />
-              ) : (
-                <Send className="size-4" />
-              )}
-              {tI18nHardcoded.raw(
-                'autoComponentsProjectsProjectAccessBoundaryJsxTextRequestAccess870ec6e1',
-              )}
+              {rechecking ? <Loading className="size-4 shrink-0" /> : null}
+              {action === 'recheck'
+                ? t.raw('projectAccessBoundary.checkNowAction')
+                : t.raw('projectAccessBoundary.tryAgainAction')}
             </Button>
           )}
-        </div>
-      }
-    />
-  );
-}
 
-function ProjectAccessStateFrame({
-  icon,
-  eyebrow = 'Project access',
-  title,
-  description,
-  panelTitle,
-  panelDescription,
-  content,
-  footer,
-  cornerAction,
-}: {
-  icon: ReactNode;
-  eyebrow?: string;
-  title: string;
-  description: string;
-  panelTitle?: string;
-  panelDescription?: string;
-  content?: ReactNode;
-  footer?: ReactNode;
-  cornerAction?: ReactNode;
-}) {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
-  const router = useRouter();
-  const action = footer ?? (
-    <Button type="button" variant="outline" onClick={() => router.push('/projects')}>
-      <ArrowLeft className="size-4" />
-      {tI18nHardcoded.raw(
-        'autoComponentsProjectsProjectAccessBoundaryJsxTextBackToProjects9ad9ccd3',
-      )}
-    </Button>
-  );
-
-  return (
-    <div className="bg-background relative flex min-h-screen overflow-hidden px-4 py-10">
-      <div className="pointer-events-none absolute inset-0 opacity-60" aria-hidden="true">
-        <WallpaperBackground />
-      </div>
-      <div
-        className="bg-background/85 dark:bg-background/80 pointer-events-none absolute inset-0"
-        aria-hidden="true"
-      />
-
-      {cornerAction ? (
-        <div className="absolute top-4 right-4 z-20 sm:top-6 sm:right-6">{cornerAction}</div>
-      ) : null}
-
-      <main className="relative z-10 mx-auto flex w-full max-w-4xl items-center">
-        <div
-          className={cn(
-            'grid w-full gap-6',
-            content ? 'lg:grid-cols-2 lg:items-start' : 'max-w-2xl',
-          )}
-        >
-          <section className="space-y-5">
-            <div className="border-border/70 bg-card text-foreground flex size-11 items-center justify-center rounded-2xl border shadow-2xs">
-              {icon}
-            </div>
-
-            <div className="space-y-3">
-              <Badge variant="outline" size="sm" className="w-fit">
-                {eyebrow}
-              </Badge>
-              <div className="space-y-3">
-                <h1 className="text-foreground text-3xl font-semibold tracking-tight text-balance sm:text-4xl">
-                  {title}
-                </h1>
-                <p className="text-muted-foreground max-w-xl text-base leading-relaxed">
-                  {description}
-                </p>
+          {action !== 'leave' || showAdminBypass ? (
+            <div className="text-muted-foreground mt-8 space-y-2 text-sm">
+              {forbidden ? <p>{t.raw('projectAccessBoundary.approvalNote')}</p> : null}
+              <div className="flex items-center justify-between gap-3">
+                {action === 'leave' ? (
+                  <span />
+                ) : (
+                  <button
+                    type="button"
+                    onClick={goToProjects}
+                    className="hover:text-foreground -my-2 inline-block cursor-pointer py-2 underline-offset-4 transition-colors hover:underline"
+                  >
+                    {t.raw('projectAccessBoundary.projectsAction')}
+                  </button>
+                )}
+                {/*
+                  403 only. Admin bypass re-fetches with a bypass header, which
+                  cannot resurrect a deleted project or clear a 500 — offering
+                  it on those screens is a dead control.
+                */}
+                {showAdminBypass ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="text-kortix-orange hover:text-kortix-orange hover:bg-kortix-orange/10 -mr-2 h-7 shrink-0 px-2 text-xs"
+                    onClick={() => bypassMutation.mutate()}
+                    disabled={bypassMutation.isPending}
+                  >
+                    {bypassMutation.isPending ? (
+                      <Loading className="size-3.5 shrink-0" />
+                    ) : (
+                      <ShieldWarningIcon className="size-3.5 shrink-0" />
+                    )}
+                    {t.raw('projectAccessBoundary.openAsAdmin')}
+                  </Button>
+                ) : null}
               </div>
             </div>
-
-            {!content ? <div className="pt-1">{action}</div> : null}
-          </section>
-
-          {content ? (
-            <Card className="border-border/70 bg-card/90 gap-0 overflow-hidden rounded-2xl py-0 shadow-2xs backdrop-blur-sm">
-              <CardHeader className="border-border/60 border-b px-6 py-4">
-                <CardTitle className="text-base">{panelTitle ?? 'Request access'}</CardTitle>
-                {panelDescription ? (
-                  <CardDescription className="text-xs leading-relaxed">
-                    {panelDescription}
-                  </CardDescription>
-                ) : null}
-              </CardHeader>
-              <CardContent className="px-6 py-5">{content}</CardContent>
-              <CardFooter className="border-border/60 bg-muted/30 border-t px-6 py-3">
-                {action}
-              </CardFooter>
-            </Card>
           ) : null}
         </div>
-      </main>
-    </div>
+      </Rise>
+    </AuthFrame>
   );
 }

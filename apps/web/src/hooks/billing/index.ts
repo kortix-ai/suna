@@ -51,6 +51,9 @@ export {
   useSessionCosts,
 } from './use-session-costs';
 
+// Project -> sessions cost explorer (account-wide summary and rollup)
+export { COST_PAGE_SIZE, useCostByProject, useCostSummary } from './use-cost-explorer';
+
 // Download restriction for free tier
 export { useDownloadRestriction } from './use-download-restriction';
 
@@ -80,4 +83,13 @@ export {
 // TYPE EXPORTS
 // =============================================================================
 
-export type { AccountState } from '@kortix/sdk';
+export type { AccountState, PlanFamily, ResolvedPlanView } from '@kortix/sdk';
+
+/**
+ * The plan the account BEHAVES as. Prefer this over
+ * `accountStateSelectors.tierKey` for anything a person reads and for any
+ * "is this account on a paid plan?" branch — `tier_key` is the STORED plan and
+ * stays `free` for an admin trial and for a paying per-seat team with a stale
+ * row, so branching on it makes the UI contradict the server.
+ */
+export { resolvedPlan } from '@kortix/sdk';

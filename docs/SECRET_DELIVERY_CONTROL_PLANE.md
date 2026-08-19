@@ -1,0 +1,719 @@
+# Secret delivery control plane
+
+**Status:** Implemented for runtime, managed consumers, policy-bound HTTPS calls,
+and network-boundary delivery through both of its mechanisms — the Platinum
+provider edge, and the in-guest shim behind the `network_boundary_shim` flag
+
+## Problem and contract
+
+Encryption at rest does not protect a secret after Kortix places its plaintext
+value in a sandbox. Agent code can read, print, copy, or forward every runtime
+environment variable.
+
+Kortix therefore separates four decisions:
+
+1. **Identifier:** The stable handle used by grants and session allowlists.
+2. **Key:** The environment variable or provider key, such as
+   `ANTHROPIC_API_KEY`. Several identifiers can use the same key.
+3. **Consumer:** The only Kortix subsystem allowed to use the decrypted value.
+4. **Strategy:** The delivery method, or a decision to deliver nothing.
+
+The system contract is:
+
+> A secret reaches only its approved consumer through its approved strategy.
+> Each managed use writes a metadata-only audit event.
+
+The product term is **Secret**. An environment variable is one delivery form.
+
+## Strategies and consumers
+
+| Strategy | Consumer | Sandbox receives | Current behavior |
+| --- | --- | --- | --- |
+| `runtime` | `sandbox` | Plaintext value | Available for code that must read the value locally |
+| `broker` | `llm_gateway` | Nothing | Kortix authenticates provider requests server-side |
+| `broker` | `connector` | Nothing | Kortix resolves automation and channel credentials server-side |
+| `broker` | `http_broker` | Opaque session handle | Kortix makes one policy-bound HTTPS request |
+| `broker` | `git_proxy` | Nothing | Git uses its separate encrypted credential path |
+| `egress` | `network` | Nothing | Kortix injects one header for exact approved HTTPS hosts, outside the guest |
+| `denied` | none | Nothing | Stored but disabled |
+
+`runtime` is the only strategy that sends plaintext to a sandbox. No managed
+strategy silently falls back to `runtime`.
+
+Generic `git_proxy` policy updates remain unavailable. Git authorization uses a
+separate typed API and credential store. It applies the same server-only and
+audit requirements.
+
+Transparent `egress` is capability based, not provider-name based, and two
+mechanisms satisfy it. Platinum stores a write-only replica, attaches the exact
+authorized set to each sandbox, and injects one header for exact HTTPS hosts at
+its own egress edge. A provider with no credential edge — daytona, e2b — runs
+the in-guest shim instead, behind the `network_boundary_shim` project flag: the
+shim terminates the guest's TLS and relays to the broker route, which injects
+server-side. Without Platinum AND without the flag, the strategy is rejected
+with `409`. See [Network boundary](#network-boundary) for both paths and where
+they behave differently.
+
+The transparent path does not support wildcard hosts, method or path filters,
+query parameters, or body injection. These controls require the explicit HTTPS
+broker. Kortix rejects an unenforceable transparent policy with `400`.
+
+## Access flow
+
+```text
+project secret
+    |
+    v
+principal authorization
+    |
+    v
+agent grant AND session allowlist
+    |
+    v
+stored strategy AND configured consumer
+    |
+    +-- runtime/sandbox ------> plaintext environment variable
+    |
+    +-- broker/managed -------> server decrypts, uses, audits, discards
+    |
+    +-- broker/http_broker ---> session handle + outbound policy
+    |
+    +-- egress/network --------> provider-owned exact-host header transform
+    |
+    +-- denied/unsupported ---> no value and a failed or denied result
+```
+
+For session-bound access, an empty session allowlist grants zero project
+secrets. The API intersects the immutable agent grant with the current session
+allowlist before it materializes runtime values or HTTP broker handles.
+Reserved `KORTIX_*` names cannot come from project secret rows.
+
+The secret consumer resolver performs these steps:
+
+1. Load shared values and the active personal override, when one exists.
+2. Match the configured strategy and consumer.
+3. Decrypt only the selected value.
+4. Write `secret.consumer.used`, `denied`, `missing`, or `invalid`.
+5. Return the value only to the named server subsystem.
+
+The sandbox uses its session-scoped `KORTIX_TOKEN` to call Kortix. Provider,
+connector, Git, and automation credentials do not need to enter the sandbox.
+
+## Creation defaults and migration
+
+New generic secrets default to `runtime` with the `sandbox` consumer. This is an
+explicit compatibility choice for arbitrary local tools.
+
+When a caller supplies only `runtime` or `denied`, the API infers `sandbox` or
+no consumer. Broker creation always requires an explicit server consumer.
+
+Known LLM credential keys default to `broker` with the `llm_gateway` consumer
+when the client omits both fields. The provider settings UI also sends this
+policy explicitly. A caller can still request `runtime` and `sandbox` when a
+local process genuinely needs that provider key.
+
+Migration `20260805205105000_isolate_existing_llm_credentials.sql` moves the
+catalog's existing LLM credentials to `broker` and `llm_gateway`. It clears
+obsolete network policies and handles. It also marks the value as requiring
+rotation because an earlier sandbox can retain plaintext.
+
+A switch away from `runtime` updates active sandboxes immediately where the
+provider supports environment synchronization. Rotation is still required to
+invalidate copies that may already exist outside Kortix control.
+
+## Multiple credentials and provider fallback
+
+The database key is `(project_id, identifier)`, not `(project_id, key)`. Two
+identifiers can therefore store different values for one provider key:
+
+```text
+identifier: ANTHROPIC_API_KEY          key: ANTHROPIC_API_KEY
+identifier: anthropic-backup           key: ANTHROPIC_API_KEY
+```
+
+The LLM gateway tries credentials in this order:
+
+1. The canonical identifier that equals the key.
+2. Other identifiers by most recent update time, then identifier.
+3. The managed Kortix provider, when configured.
+
+An active personal override replaces its matching shared identifier. It does
+not remove other identifiers from the fallback list.
+
+The gateway advances to another credential for the same provider after a
+thrown `401`, a terminal authentication `400`, or a terminal authentication
+error in a stream. A single invalid credential preserves the upstream terminal
+error. Existing provider and model fallback rules still handle their defined
+`402`, `403`, and `429` cases.
+
+## HTTPS broker
+
+The HTTP broker is for credentials that Kortix can inject into one controlled
+HTTPS request. Its policy contains:
+
+- one or more exact approved hosts;
+- optional HTTP method and path restrictions;
+- one injection slot: header, query parameter, or JSON body field;
+- an optional handle prefix.
+
+Each session receives a revisioned opaque handle. A strategy change revokes its
+active handles. The broker checks the current agent grant, session allowlist,
+stored policy, and handle snapshot before decrypting the value.
+
+An agent grant of `env: all` is a ceiling. It does not materialize HTTP broker
+handles by itself. The session must also contain an explicit allowlist with the
+secret identifier. The broker route intersects both policies again on every
+call. This rule limits a leaked session token to the broker secrets selected for
+that session.
+
+The broker enforces HTTPS. It blocks private, loopback, link-local, metadata,
+and rebinding targets. It reevaluates redirects. It bounds request and response
+sizes. It strips sensitive response headers and never records request bodies,
+response bodies, query values, injected headers, handles, or secret values.
+
+The CLI configures the policy, then sends the request:
+
+```bash
+kortix secrets delivery API_KEY broker \
+  --consumer http-broker \
+  --allow-host api.example.com \
+  --allow-method POST \
+  --allow-path '/v1/*' \
+  --inject-header Authorization \
+  --template 'Bearer {{secret}}'
+
+kortix secrets call API_KEY https://api.example.com/v1/resource \
+  --method POST \
+  --data '{"input":"value"}'
+```
+
+## Network boundary
+
+Network-boundary delivery serves ordinary sandbox HTTP clients that cannot call
+the explicit broker API. Two mechanisms deliver it and a session uses exactly
+one, chosen by `networkBoundaryMode`
+(`apps/api/src/secrets/network-boundary-availability.ts`) — the only place in
+the whole path that reads a provider name:
+
+- **provider edge.** Kortix registers the value with Platinum, and Platinum
+  injects one header at its own egress edge. Nothing runs in the guest.
+- **in-guest shim.** On a provider with no credential edge — daytona, e2b — the
+  daemon's shim terminates the guest's TLS and relays to the broker route, which
+  injects server-side. Per-project, behind the `network_boundary_shim` flag.
+
+Either way it is narrower than the HTTPS broker:
+
+- the session runs on Platinum, OR the project carries `network_boundary_shim`;
+- the agent grant and session allowlist must name the secret explicitly;
+- every destination must be an exact HTTPS host;
+- one configured header is injected, always outside the guest;
+- the sandbox receives no value, alias, handle, or placeholder;
+- an upstream response that echoes the credential is BLOCKED at the provider
+  edge and REDACTED on the shim path — the same secret, two symptoms;
+- rotation needs no sandbox restart: the edge replica is updated in place, and
+  the shim path keeps no replica at all;
+- revocation detaches the binding before deleting the provider replica.
+
+Configuration fails closed. A session with an authorized network secret cannot
+start on a provider that has no credential edge unless the project carries the
+flag — the check runs twice, in `startNetworkBoundaryArm`
+(`apps/api/src/projects/lib/sandbox-env-sync.ts`) and in
+`platform/services/session-sandbox.ts`.
+
+```bash
+kortix secrets delivery ANTHROPIC_API_KEY egress \
+  --allow-host api.anthropic.com \
+  --inject-header x-api-key \
+  --template '{{secret}}'
+```
+
+### What the guest holds
+
+Nothing. The value, the rendered header, and the binding alias all stay outside
+the sandbox:
+
+- `resolveNetworkBoundaryBindings` (`apps/api/src/secrets/network-boundary.ts`)
+  renders the header value on the API and returns it to the provider adapter.
+- `syncPlatinumNetworkBoundary`
+  (`apps/api/src/secrets/platinum-network-boundary.ts`) writes the write-only
+  replica and attaches it to the sandbox by id. The `alias` field is provider
+  bookkeeping and is sent only to Platinum.
+- The env builder emits no name for an `egress` row, so
+  `KORTIX_PROJECT_SECRET_NAMES` never lists it.
+- On the shim path there is no replica and no adapter: the guest receives only
+  host->identifier rules, as the `delivery:'network'` entries of
+  `KORTIX_SECRET_CAPABILITIES`. The shim relays to the broker route and the
+  header is rendered there, so the value never crosses into the sandbox either.
+
+Verified on dev 2026-08-10. Inside a live Platinum session,
+`env | grep -c <IDENTIFIER>` returns `0` while injection works. A policy host
+presents the per-sandbox MITM certificate
+`issuer: O=Platinum; CN=Platinum egress proxy (sandbox sbx_...)`, which the box
+already trusts. A host outside the policy passes through untouched with its own
+origin certificate.
+
+### The three prerequisites
+
+All three must hold. Each one used to fail silently.
+
+| # | Requirement | Where it is set | Result when wrong |
+| --- | --- | --- | --- |
+| 1 | The session runs on Platinum, OR the project has the `network_boundary_shim` flag | Customize -> Feature flags (Sandbox provider, or Experimental -> "Network boundary in-guest shim") | No binding is attached. The request leaves without the header. |
+| 2 | An agent `secrets:` list NAMES the identifier | `kortix.yaml`, by hand or through the grant route below | `resolveSecretDelivery` withholds the row. No binding. |
+| 3 | The header value template renders what the API expects | Secret editor -> Header value template | The header carries the bare value with no scheme. Upstream returns `401`. |
+
+Requirement 1 is project scope, not deployment scope, and it is satisfied two
+independent ways. `networkBoundaryDeliveryAvailable(projectMetadata)` returns
+true when the DEPLOYMENT enables Platinum, or when the PROJECT has the
+`network_boundary_shim` experimental flag — the in-guest shim path, which needs
+no provider edge and so no particular provider. The web editor mirrors that in
+`networkBoundaryAvailability(project)`
+(`apps/web/src/features/workspace/customize/sections/view/secret-delivery.ts`):
+the flag short-circuits the provider question, and without it the old rule still
+applies (`default_sandbox_provider === 'platinum'`).
+
+This paragraph previously said the availability check "reports only that the
+deployment enables Platinum" and that the web editor "requires
+`default_sandbox_provider === 'platinum'`". Both were true before the flag
+existed. See docs/NETWORK_BOUNDARY_WITHOUT_PLATINUM.md §7.5.
+
+Requirement 2 is stricter than every other strategy. `resolveSecretDelivery`
+(`apps/api/src/secrets/strategy.ts`) delivers a non-`runtime` row only when
+`agentGrantEnv` is a `string[]` that contains the identifier:
+
+```ts
+const grant = input.agentGrantEnv ?? null;
+if (Array.isArray(grant)) {
+  if (!listAdmits(grant, input.identifier)) return withheld('agent_grant_excludes');
+} else if (strategy !== 'runtime') {
+  return withheld('agent_grant_unscoped');
+}
+```
+
+`secrets: all` resolves to the string `'all'`, not an array. It therefore fails
+exactly like an absent grant, with reason `agent_grant_unscoped`. A project with
+no `agents:` block resolves to a null grant and can never deliver an egress
+secret. Membership is by IDENTIFIER, case-insensitive. It is never by env-var
+key: one key can carry several identifiers.
+
+`SecretSchema.delivery_blocked_reason` reports only the certain case. It is
+`'no_agent_grant'` when the manifest loaded and no agent's explicit list names
+the identifier. It is `null` when the row is granted, when the strategy needs no
+grant, or when the manifest could not be read. A warning that fires on an
+unreadable manifest is worse than no warning, so uncertainty always renders as
+`null`.
+
+### Policy shape
+
+`networkBoundaryPolicyError` (`apps/api/src/secrets/network-boundary.ts`)
+accepts only the controls the boundary can enforce — the set Platinum's edge
+supports, re-checked on the shim path at relay time
+(`apps/api/src/projects/routes/secret-broker.ts`) rather than trusted from the
+stored row. A stored policy must never look narrower than the data path that
+applies it.
+
+| Rejected input | Message |
+| --- | --- |
+| A broker `backend` | `Network-boundary delivery does not accept a broker backend` |
+| `on_no_match` other than `deny` | `Network-boundary delivery must deny unmatched requests` |
+| `tls` other than `terminate` | `Network-boundary delivery requires TLS termination` |
+| A query or JSON-body injection | `Network-boundary delivery supports header injection only` |
+| A wildcard host such as `*.example.com` | `Network-boundary delivery requires exact hosts` |
+| Any `methods` entry | `Network-boundary delivery cannot enforce HTTP method restrictions` |
+| Any `path` | `Network-boundary delivery cannot enforce path restrictions` |
+| A per-rule header or template that differs from the policy default | `Every network-boundary rule must use the same header and template` |
+
+Host matching is exact. `api.example.com` never covers
+`uploads.api.example.com`. List every host explicitly. The API returns `400`
+with `code: 'secret_delivery_policy_invalid'`.
+
+### Destination uniqueness
+
+One `(host, header)` pair per project. `findBoundaryDestinationConflict`
+(`apps/api/src/secrets/network-boundary.ts`) compares a candidate against every
+other egress row. Host and header compare lowercased. The same identifier never
+conflicts with itself. A row with a null policy, or a non-header injection, is
+skipped.
+
+The check runs at save time on `POST /:projectId/secrets` and on
+`PUT /:projectId/secrets/:identifier/strategy`. A collision returns `409`:
+
+```json
+{
+  "error": "BOUNDARY_TEST already injects the \"authorization\" header for postman-echo.com. Two secrets cannot target the same host and header — give STRIPE_API_KEY a different header, or a different host.",
+  "code": "secret_boundary_destination_conflict",
+  "conflict": { "identifier": "BOUNDARY_TEST", "host": "postman-echo.com", "header": "authorization" }
+}
+```
+
+`conflict.identifier` is the secret that already holds the destination. The
+sentence names both: the incumbent first, then the secret being saved.
+
+Two secrets on the same host with DIFFERENT headers are legal. Both are
+injected. `resolveNetworkBoundaryBindings` keeps its start-time throw as the last
+line of defense. The save-time check exists so the failure reaches the person
+who caused it, not a session that starts hours later.
+
+### HTTPS only
+
+The proxy needs to terminate TLS to rewrite a header. Plain HTTP to a policy
+host is refused:
+
+```text
+egress to "<host>" is blocked: this sandbox's policy puts a secret in a request
+header for this host, and that requires HTTPS
+```
+
+A test that uses `http://` reads as a network fault. It is a policy refusal.
+
+### Echo blocking is the verification trap — at the provider edge
+
+Everything in this section is the PROVIDER EDGE. The shim path inverts it, so
+read the next section before running any of these probes.
+
+`onEcho` is hardcoded `'block'` in `NetworkBoundarySecretBinding`. When an
+upstream response would return the secret to the guest, the proxy kills the
+connection. The guest sees `curl: (52) Empty reply from server`.
+
+An echo service is therefore the worst possible test target. Success there is a
+dead connection, which is exactly what a broken boundary also produces. One
+probe cannot separate the two. Use two.
+
+| Probe | Target | Correct result | Meaning |
+| --- | --- | --- | --- |
+| Reachability | A policy host endpoint that does NOT echo request headers | `200` | The host is reachable and the proxy passes traffic. |
+| Injection | An endpoint on the same host that DOES echo request headers | `curl: (52) Empty reply from server` | The header was present and the echo guard killed the response. |
+
+A `200` with the secret visible in the body would mean the guard failed. A
+`curl: (52)` on the non-echoing probe means the policy host is unreachable, not
+that injection worked.
+
+### The shim path inverts every symptom above
+
+The broker redacts where the edge blocks (`redactSecretFromResponse`,
+`apps/api/src/secrets/http-broker.ts`), so a shim-backed session returns an
+ordinary `200` whose body carries `[REDACTED]` where the credential would have
+been. On that path an empty reply is a REAL failure, and an echo endpoint is the
+clearest probe there is rather than the worst one.
+
+Telling a shim user to expect the edge's symptom makes a working feature look
+broken, and the reverse reads a dead host as success. The catalog the agent
+reads already branches on this: `NETWORK_BOUNDARY_NOTES_BLOCK` versus
+`NETWORK_BOUNDARY_NOTES_REDACT` in `apps/api/src/projects/secret-capabilities.ts`,
+selected from `networkBoundaryMode`. Any surface that describes the symptom must
+branch the same way.
+
+| | provider edge | in-guest shim |
+| --- | --- | --- |
+| working request, upstream echoes the credential | connection cut, `curl: (52) Empty reply from server` | `200` with `[REDACTED]` in the body |
+| empty reply on a policy host | the boundary working | a genuine failure |
+| `401` on a policy host | the header did not arrive | the header did not arrive |
+
+### Save-time sync
+
+`POST /:projectId/secrets` and `PUT /:projectId/secrets/:identifier/strategy`
+push the binding to every active sandbox and report the outcome in
+`delivery_sync`:
+
+```ts
+delivery_sync: {
+  ok: boolean;
+  targeted: number;
+  synced: number;
+  failed: number;
+  failures: Array<{ session_id: string; sandbox_id: string | null; reason: string }>;
+} | null
+```
+
+`null` means no sync ran: the row is not an egress secret, or the project has no
+active session. A partial failure returns `ok: false` with one entry per session
+that did not take the binding. The save itself still succeeds; the stored policy
+is the source of truth and the next session start reapplies it.
+
+### File map
+
+| Concern | File |
+| --- | --- |
+| Delivery decision for one row | `apps/api/src/secrets/strategy.ts` |
+| Policy validation, bindings, destination conflicts | `apps/api/src/secrets/network-boundary.ts` |
+| Provider replica, attach, arm, erase | `apps/api/src/secrets/platinum-network-boundary.ts` |
+| Which mechanism, or none, serves a project | `apps/api/src/secrets/network-boundary-availability.ts` |
+| Shim relay (`egress`/`network` through the broker engine) | `apps/api/src/projects/routes/secret-broker.ts` |
+| In-guest shim | `apps/kortix-sandbox-agent-server/src/egress-shim/` |
+| Session grant + allowlist resolution | `apps/api/src/projects/lib/network-secret-boundary.ts` |
+| Agents-map merge and upsert behind the grant | `apps/api/src/projects/lib/agent-config-v2.ts` |
+| Default-deny for an agent the manifest omits | `apps/api/src/projects/agents.ts` |
+| Provider adapter and teardown | `apps/api/src/platform/providers/platinum.ts` |
+| Save routes | `apps/api/src/projects/routes/r3.ts` |
+| Web editor | `apps/web/src/features/workspace/customize/sections/view/secrets-view.tsx` |
+| CLI | `apps/cli/src/commands/secrets.ts` |
+
+## Repairing a missing agent grant
+
+Requirement 2 was the one prerequisite the Secrets page could not satisfy: it
+needs a manifest commit, not a secret write. `delivery_blocked_reason` named the
+problem and stopped there. The API now performs the edit as well, so a surface
+that renders the warning can also clear it.
+
+```http
+POST /v1/projects/{projectId}/secrets/{identifier}/grant
+{ "agent": "my-agent" }
+```
+
+```json
+{
+  "identifier": "STRIPE_API_KEY",
+  "agent": "my-agent",
+  "already_granted": false,
+  "adopted_governance": true
+}
+```
+
+| Outcome | Status | Code |
+| --- | --- | --- |
+| Granted, or already granted | `200` | — |
+| The manifest is `kortix.toml` | `400` | `manifest_v1_unsupported` |
+| Unknown project, secret, or manifest | `404` | — |
+| The secret's strategy is `denied` | `409` | `secret_not_grantable` |
+
+The route resolves the secret by identifier on the project, loads the manifest
+for edit, and calls `grantSecretToAgentV2`
+(`apps/api/src/projects/lib/agent-config-v2.ts`). The merge only ever widens:
+
+| The agent's current `secrets` | Result |
+| --- | --- |
+| Missing from the roster | Upserted with `secrets: [identifier]` |
+| An explicit list | The identifier is appended; every other field survives |
+| A list that already admits it | `already_granted: true`, no commit, no rewrite |
+| `all` | Expanded to today's project identifiers plus this one |
+
+The `all` expansion is not cosmetic. `resolveSecretDelivery` withholds an
+`egress` or `broker` row from an `'all'` grant, so the grant must become an
+explicit list for the secret to arrive. Writing only the new identifier would
+revoke every other project secret from that agent, so the route writes out the
+identifiers `'all'` resolves to today. Delivery is unchanged at that moment; a
+secret added later needs its own grant.
+
+The upsert is the one behavioral difference from
+`PUT /:projectId/agents/:agentName/scope`, which sets `notFound` and answers
+`404 agent_not_found` instead of creating (`applyAgentScopeV2` versus
+`applyAgentBlockV2`). Membership compares case-insensitively. A real edit
+commits `chore(agents): grant <IDENTIFIER> to <agent>`.
+
+### `adopted_governance` reports a project-wide rule change
+
+`adopted_governance` is `true` when the manifest declared NO agents before the
+edit, and also when the repository had no manifest file at all and
+`loadManifestForEdit` synthesized one. Both cases publish the project's first
+roster. That single commit changes the project's default: `agents.ts` returns a
+default-deny grant for any concrete agent the manifest does not list, so every
+agent outside the new block loses every project secret — including the `runtime`
+rows it received before the commit.
+
+The web client therefore confirms before it sends a request that can set the
+flag, and the confirmation tells the person to list every agent that needs
+secrets. An API caller gets the same information after the fact in the response.
+
+An `already_granted` response always reports `adopted_governance: false`. No
+commit ran, so nothing was adopted.
+
+A v1 manifest cannot express the agents map. `grantSecretToAgentV2` refuses
+before any edit and returns `unsupportedV1`, which the route maps to `400
+manifest_v1_unsupported`. The message asks for an upgrade to `kortix_version: 2`
+instead of rewriting the file format for the project.
+
+## Connector credentials
+
+A connector can use one project secret as its server-side credential. The
+secret must use `broker` strategy with the `connector` consumer. The connector
+must use project-owned authorization and must not already have a stored
+credential.
+
+Configure the policy, then bind the connector:
+
+```bash
+kortix secrets delivery API_KEY broker --consumer connector
+kortix connectors secret crm API_KEY
+```
+
+Use `kortix connectors secret crm --clear` before selecting a different secret
+or storing a connector credential. Synchronizing the connector catalog keeps
+the binding. Deleting the secret or changing its delivery policy returns `409`
+until every connector binding is removed.
+
+The web secret editor exposes the same binding as a connector checklist. It
+never reads or copies the secret value. Connector calls resolve the current
+value inside Kortix and send it only through the connector's declared
+authentication scheme.
+
+## Product surfaces
+
+The API, SDK, CLI, and web UI expose `strategy`, `consumer`,
+`delivery_status`, `delivery_blocked_reason`, and `requires_rotation`. Values
+remain write-only.
+
+`delivery_blocked_reason` is optional and nullable. Its only value today is
+`'no_agent_grant'`. Treat `null` as "granted, not applicable, or unknown", never
+as "blocked".
+
+A surface that renders that reason should also offer the repair. The web editor
+turns the warning into an agent choice and calls
+`POST /:projectId/secrets/:identifier/grant`. It confirms the governance change
+first, because a project's first `agents:` block default-denies every agent it
+omits.
+
+`POST /:projectId/secrets` and `PUT /:projectId/secrets/:identifier/strategy`
+additionally return `delivery_sync`. No other route returns it.
+
+The web editor provides these choices:
+
+- **Readable in sandbox** for `runtime` and `sandbox`;
+- **LLM gateway** for provider requests;
+- **Connector** for connector authorization;
+- **Automation** for Connector actions and channels;
+- **HTTPS broker** for a policy-bound request;
+- **Network boundary** for exact-host header injection outside the guest;
+- **Stored but disabled** for `denied`.
+
+The UI enables network delivery when the project is pinned to Platinum or
+carries the `network_boundary_shim` flag. `networkBoundaryAvailability`
+(`apps/web/src/features/workspace/customize/sections/view/secret-delivery.ts`)
+mirrors the API rule: the flag short-circuits the provider question, because the
+shim runs nowhere near a provider edge. Neither blocked state says the feature
+is unavailable in this deployment — both are one opt-in away, so both name the
+opt-in. The editor also labels the controls the boundary can enforce.
+
+The CLI supports the same available consumers through `kortix secrets
+delivery`. `kortix connectors secret` manages connector bindings. `kortix
+secrets ls --json` returns the stored delivery metadata.
+
+The SDK exposes:
+
+```ts
+await project.secrets.upsert({
+  identifier: "anthropic-primary",
+  name: "ANTHROPIC_API_KEY",
+  value,
+  strategy: "broker",
+  consumer: "llm_gateway",
+});
+
+await project.secrets.setStrategy("WEBHOOK_TOKEN", "broker", {
+  consumer: "http_broker",
+  egress_policy: {
+    backend: "kortix_fetch",
+    rules: [{ host: "api.example.com", methods: ["POST"], path: "/v1/" }],
+    inject: { kind: "header", name: "Authorization", template: "Bearer {{secret}}" },
+  },
+});
+```
+
+Session-scoped agents call the HTTP broker route directly with their
+`KORTIX_TOKEN`. Human project tokens can configure policy but cannot execute a
+session-bound broker request.
+
+## Audit and revocation
+
+Configuration changes write these semantic actions in the same database
+transaction as the mutation:
+
+- `secret.created`
+- `secret.updated`
+- `secret.deleted`
+- `secret.strategy.changed`
+
+Managed access writes:
+
+- `secret.consumer.used`
+- `secret.consumer.denied`
+- `secret.consumer.missing`
+- `secret.consumer.invalid`
+- `secret.consumer.refreshed`
+- `secret.consumer.refresh_failed`
+- `secret.handle.issued`
+- `secret.broker.requested`
+- `secret.broker.completed`
+- `secret.broker.failed`
+
+Events include account, project, session, actor, source, secret identifier,
+consumer, strategy, outcome, and safe upstream metadata when available. They
+exclude plaintext values, encrypted envelopes, provider tokens, opaque handles,
+authorization headers, query values, request bodies, and response bodies.
+
+Deleting a secret removes its usable value. Changing its strategy revokes
+active HTTP broker handles. Rotating a value changes subsequent server-side use
+without returning the new value to a client.
+
+## Failure and edge-case behavior
+
+- Missing policy data fails closed for managed delivery.
+- A consumer mismatch returns no value and writes a denial audit event.
+- `denied` blocks runtime and every managed consumer.
+- A reused identifier with a different key returns `409`.
+- A broker policy without a host or injection slot returns `400`.
+- A generic unsupported broker backend returns `409`.
+- Transparent `egress` returns `409` with
+  `code: 'secret_delivery_unavailable'` when the deployment has no Platinum and
+  the project has no `network_boundary_shim` flag.
+- An unenforceable transparent policy returns `400`.
+- Two egress secrets that claim one `(host, header)` pair return `409` with
+  `code: 'secret_boundary_destination_conflict'`.
+- Two egress secrets on one host with different headers are accepted. Both are
+  injected.
+- A granted transparent secret blocks session startup on a provider with no
+  credential edge, unless the project carries `network_boundary_shim`.
+- Plain HTTP to a policy host is refused by the proxy, not by Kortix.
+- A response that would echo an egress secret is killed by the provider edge,
+  and returned with `[REDACTED]` in its place on the shim path.
+- A failed push to a running sandbox returns `delivery_sync.ok === false`. The
+  save still succeeds.
+- A grant for an identifier the agent already admits returns `200` with
+  `already_granted: true` and makes no commit.
+- A grant that adds the project's first `agents:` block returns
+  `adopted_governance: true`. From that commit on, an unlisted agent receives no
+  project secret of any strategy.
+- A grant against a `kortix.toml` project returns `400` with
+  `code: 'manifest_v1_unsupported'`.
+- A grant for a `denied` secret returns `409` with
+  `code: 'secret_not_grantable'`.
+- A stale, expired, or revoked session handle returns `409`.
+- A host, method, or path mismatch returns `403`.
+- A connector binding blocks secret deletion and incompatible strategy changes
+  with `409`.
+- A connector cannot combine a bound project secret with a stored credential.
+- Invalid upstream DNS or a private target returns a broker error without a
+  request.
+- Personal overrides use the shared row's delivery policy.
+- Multiple values for one key keep identifier-based authorization and audit
+  attribution.
+
+## Verification requirements
+
+Every change to this control plane must prove these paths:
+
+1. `runtime` appears in the selected sandbox environment.
+2. Managed and denied values do not appear in the sandbox environment.
+3. Every server consumer resolves only its configured secrets.
+4. The HTTP broker accepts a matching policy and rejects mismatches.
+5. Multiple provider credentials use deterministic fallback.
+6. Rotation changes future use without exposing the value.
+7. Audit rows contain reconstruction metadata and no secret material.
+8. API, SDK, CLI, and web behavior agree on the stored policy.
+9. A grant writes the identifier into the named agent, clears
+   `delivery_blocked_reason`, and preserves that agent's other governance
+   fields. Repeating it commits nothing.
+
+Network substitution also requires a live test, once per mechanism, because the
+two paths share no code below the policy. Each must prove injection, sandbox
+non-disclosure, rotation, revocation, and echo handling. At the provider edge,
+prove injection with the two-probe recipe above: a single probe against an echo
+endpoint cannot distinguish a working boundary from a dead one. On the shim path
+one probe is enough and it is the echo endpoint — a `200` carrying `[REDACTED]`
+proves injection and echo scrubbing in the same response.
+
+## Related specifications
+
+- [`2026-07-26-agent-scoped-secret-injection.md`](./specs/2026-07-26-agent-scoped-secret-injection.md)
+- [`2026-07-26-secret-delivery-policy.md`](./specs/2026-07-26-secret-delivery-policy.md)
+- [`NETWORK_BOUNDARY_WITHOUT_PLATINUM.md`](./NETWORK_BOUNDARY_WITHOUT_PLATINUM.md) — why the
+  shim exists, and the live proof of the mechanism

@@ -307,10 +307,10 @@ const TURN_INSTRUCTIONS = [
   '  reference for posting in Slack — covers step/send semantics, link syntax,',
   '  Block Kit answers, sources, tone, and gotchas. Do not skip it.',
   '- The `slack` CLI needs **no token** in your sandbox — every command runs through the',
-  '  Kortix Executor (the Slack bot token is resolved server-side). The whole surface',
+  '  Kortix Connector (the Slack bot token is resolved server-side). The whole surface',
   '  works, **including `slack send --file` (file upload) and `slack download`**. Do NOT',
   '  conclude "file upload isn\'t supported", do NOT look for `$SLACK_BOT_TOKEN`, and do',
-  '  NOT build an upload workaround (executor/MCP, manual files.getUploadURLExternal, an',
+  '  NOT build an upload workaround (connector/MCP, manual files.getUploadURLExternal, an',
   '  HTTP link host) — `slack send --file <path> --channel ... --thread ...` just works.',
   '- As you go, post a short progress checkpoint before each major step:',
   '    slack step "Reading the incident logs"',
@@ -339,6 +339,25 @@ const TURN_INSTRUCTIONS = [
   '- One `slack send` per turn. It finalizes the live stream and can\'t be undone.',
 ].join('\n');
 
+function renderFileInfo(event: SlackEvent): string {
+  if (!event.files?.length) return '';
+  const lines: string[] = ['', 'The user also attached files:'];
+  for (const file of event.files) {
+    const name = file.name ?? file.title ?? file.id;
+    lines.push(`  • ${name} (${file.mimetype}, ${file.filetype}, ${formatFileSize(file.size)})`);
+    lines.push(`    Download: ${file.url_private_download}`);
+  }
+  lines.push('', 'Use `slack download --url "<url>" --out <path>` to download each file.');
+  lines.push('For audio files, process them as needed (e.g. transcribe with whisper or another ASR tool).');
+  return lines.join('\n');
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 export function renderFollowUpPrompt(envelope: SlackEnvelope, event: SlackEvent): string {
   const user = event.user ?? 'unknown';
   const text = event.text ?? '';
@@ -346,6 +365,7 @@ export function renderFollowUpPrompt(envelope: SlackEnvelope, event: SlackEvent)
     `New message from ${user} in the same Slack thread:`,
     '',
     text,
+    renderFileInfo(event),
     '',
     TURN_INSTRUCTIONS,
   ].join('\n');
@@ -378,6 +398,6 @@ function renderAgentPrompt(
     `User:       ${user}`,
   );
   if (threadTs) lines.push(`Thread ts:  ${threadTs}`);
-  lines.push('', 'Message:', text, '', TURN_INSTRUCTIONS);
+  lines.push('', 'Message:', text, renderFileInfo(event), '', TURN_INSTRUCTIONS);
   return lines.join('\n');
 }

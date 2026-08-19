@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import {
+  APP_SETUP_TIMEOUT_MS,
   type AppInstance,
   createTestKortix,
   loginUser,
@@ -33,7 +34,7 @@ describe('/api/session-costs', () => {
     resetUsersStore();
     mock = createMockUpstream(WRAPPER_KEY);
     app = await startApp(wrapperEnv({ KORTIX_UPSTREAM: `${mock.url}/v1` }));
-  }, 30_000);
+  }, APP_SETUP_TIMEOUT_MS);
 
   afterAll(async () => {
     await app?.stop();

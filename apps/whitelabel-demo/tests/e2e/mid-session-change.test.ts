@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
   MID_SESSION_CAPABILITIES,
-  agentSwitchRefusal,
   classifyAgentSwitch,
   classifyModelChange,
 } from '../../src/lib/mid-session-change';
@@ -28,25 +27,17 @@ describe('what can change mid-session', () => {
 });
 
 describe('classifyAgentSwitch', () => {
-  test('an operator-enforced strict switch lock needs a NEW SESSION, not a retry', () => {
-    // Retrying with the same agent fails while the operator's strict policy is
-    // enabled for this session.
-    const result = classifyAgentSwitch({
-      code: 'AGENT_SWITCH_REQUIRES_NEW_SESSION',
-      error: 'agent switch requires a new session',
-    });
-    expect(result.kind).toBe('needs_new_session');
-  });
-
   test('an unresolved grant IS worth retrying — the sandbox is fine', () => {
     const result = classifyAgentSwitch({ code: 'AGENT_SECRET_GRANT_UNRESOLVED', error: 'x' });
     expect(result.kind).toBe('grant_unresolved');
   });
 
-  test('the two are never conflated — one is terminal, the other transient', () => {
-    const terminal = classifyAgentSwitch({ code: 'AGENT_SWITCH_REQUIRES_NEW_SESSION' });
-    const transient = classifyAgentSwitch({ code: 'AGENT_SECRET_GRANT_UNRESOLVED' });
-    expect(terminal.kind).not.toBe(transient.kind);
+  test('AGENT_SWITCH_REQUIRES_NEW_SESSION is no longer special-cased', () => {
+    // In-session agent switching is unconditionally allowed, so the server has
+    // no path left that emits this code. A stale server still sending it during
+    // a rollout window must degrade to the generic error, never to a UI that
+    // tells the user to abandon the session.
+    expect(classifyAgentSwitch({ code: 'AGENT_SWITCH_REQUIRES_NEW_SESSION' }).kind).toBe('unknown');
   });
 
   test('no code means the prompt was not rejected for the agent', () => {
@@ -68,59 +59,6 @@ describe('classifyAgentSwitch', () => {
     if (result.kind !== 'ok') {
       expect(result.message).toBe('The agent could not be switched.');
     }
-  });
-});
-
-describe('agentSwitchRefusal', () => {
-  // The refusal is raised by the sandbox proxy on the prompt itself, so a host
-  // sees a generic runtime error whose message carries the 409 body.
-  const runtimeError = (body: Record<string, unknown>) => ({
-    kind: 'runtime-error' as const,
-    message: JSON.stringify(body),
-    cause: new Error(`Failed to perform action: ${JSON.stringify(body)}`),
-  });
-
-  const REFUSAL = {
-    error: 'agent switch requires a new session',
-    code: 'AGENT_SWITCH_REQUIRES_NEW_SESSION',
-    expected_agent: 'support',
-    requested_agent: 'finance',
-  };
-
-  test('a refused switch names both agents, so the UI can say which is which', () => {
-    const refusal = agentSwitchRefusal(runtimeError(REFUSAL))!;
-    expect(refusal.requestedAgent).toBe('finance');
-    expect(refusal.expectedAgent).toBe('support');
-  });
-
-  test('it is recognised from a STRUCTURED error body too', () => {
-    // Same refusal, different envelope depending on which layer rejected it.
-    const refusal = agentSwitchRefusal({
-      message: 'x',
-      cause: Object.assign(new Error('x'), { data: REFUSAL }),
-    })!;
-    expect(refusal.requestedAgent).toBe('finance');
-  });
-
-  test('an ordinary send failure is NOT offered a new session', () => {
-    // Offering "start a new session" for a transient failure would throw away
-    // the session over something a retry fixes.
-    expect(agentSwitchRefusal({ message: 'the model timed out', cause: new Error('boom') })).toBeNull();
-    expect(agentSwitchRefusal(null)).toBeNull();
-  });
-
-  test('the RETRYABLE grant failure is never mistaken for it', () => {
-    expect(
-      agentSwitchRefusal(runtimeError({ code: 'AGENT_SECRET_GRANT_UNRESOLVED', error: 'x' })),
-    ).toBeNull();
-  });
-
-  test('a refusal without agent names still surfaces, with a usable message', () => {
-    const refusal = agentSwitchRefusal(
-      runtimeError({ code: 'AGENT_SWITCH_REQUIRES_NEW_SESSION', error: 'nope' }),
-    )!;
-    expect(refusal.requestedAgent).toBeNull();
-    expect(refusal.message).toBe('nope');
   });
 });
 

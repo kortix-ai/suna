@@ -4,17 +4,16 @@ import { chmod, mkdir } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
-  buildCliExecutorSourceDigest,
+  buildCliConnectorSourceDigest,
   buildFileSha256,
 } from '@kortix/shared/sandbox-runtime-artifact';
 
 const fixtureRoot = mkdtempSync(join(tmpdir(), 'kortix-platinum-size-test-'));
 const agentPath = join(fixtureRoot, 'kortix-agent');
 const cliPath = join(fixtureRoot, 'kortix');
-const cliAttestationPath = join(fixtureRoot, 'kortix-executor-runtime.attestation.json');
+const cliAttestationPath = join(fixtureRoot, 'kortix-connectors-runtime.attestation.json');
 const entrypointPath = join(fixtureRoot, 'entrypoint.sh');
 const slackCliPath = join(fixtureRoot, 'slack-cli');
-const executorSdkPath = join(fixtureRoot, 'executor-sdk');
 const opencodeConfigPath = join(fixtureRoot, 'opencode-config');
 
 writeFileSync(agentPath, '#!/bin/sh\n');
@@ -24,7 +23,7 @@ writeFileSync(
   cliAttestationPath,
   `${JSON.stringify({
     schema_version: 1,
-    source_sha256: await buildCliExecutorSourceDigest(
+    source_sha256: await buildCliConnectorSourceDigest(
       resolve(import.meta.dir, '../../../cli'),
     ),
     binary_sha256: await buildFileSha256(cliPath),
@@ -35,7 +34,6 @@ await chmod(agentPath, 0o755);
 await chmod(cliPath, 0o755);
 await chmod(entrypointPath, 0o755);
 await mkdir(slackCliPath, { recursive: true });
-await mkdir(executorSdkPath, { recursive: true });
 await mkdir(opencodeConfigPath, { recursive: true });
 
 type FromBuildPayload = {
@@ -93,7 +91,6 @@ beforeEach(() => {
   process.env.KORTIX_SNAPSHOT_CLI_ATTESTATION_PATH = cliAttestationPath;
   process.env.KORTIX_SNAPSHOT_ENTRYPOINT_PATH = entrypointPath;
   process.env.KORTIX_SNAPSHOT_SLACK_CLI_PATH = slackCliPath;
-  process.env.KORTIX_SNAPSHOT_EXECUTOR_SDK_PATH = executorSdkPath;
   process.env.KORTIX_SNAPSHOT_OPENCODE_CONFIG_PATH = opencodeConfigPath;
 });
 

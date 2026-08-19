@@ -54,7 +54,7 @@ export interface AgentConfigBlock {
   enabled?: boolean;
   sandbox?: string;
   connectors?: AgentGrantSetV2;
-  /** Connector profiles that must resolve before the session starts. */
+  /** Connectors that must resolve before the session starts. */
   connectors_required?: string[];
   /** @deprecated Input alias for `connectors_required`. Responses use only
    *  `connectors_required`. */
@@ -141,6 +141,40 @@ function canonicalizeRequiredConnectors(block: AgentConfigBlock): AgentConfigBlo
     next.connectors_required = canonical ?? legacy;
   }
   return next;
+}
+
+export interface GrantSecretToAgentResponse {
+  identifier: string;
+  agent: string;
+  /** True when the agent's list already admitted the identifier, so no commit ran. */
+  already_granted: boolean;
+  /** True when this edit wrote the manifest's FIRST `agents:` block. From then
+   *  on an agent that is not listed receives no project secrets. */
+  adopted_governance: boolean;
+}
+
+/**
+ * Grant one project secret to one agent: merge the IDENTIFIER into that agent's
+ * `secrets:` list in kortix.yaml, upserting the agent entry when the manifest
+ * does not declare it yet.
+ *
+ * Broker and network-boundary delivery reach a session only through such an
+ * explicit list — `secrets: all` withholds both — so this is the one-click fix
+ * for the `no_agent_grant` verdict `ProjectSecret.delivery_blocked_reason`
+ * reports. Distinct from `setAgentScope` (agent-scope.ts), which REPLACES an
+ * already-declared agent's grant set.
+ */
+export async function grantSecretToAgent(
+  projectId: string,
+  identifier: string,
+  agentName: string,
+) {
+  return unwrap(
+    await backendApi.post<GrantSecretToAgentResponse>(
+      `/projects/${projectId}/secrets/${encodeURIComponent(identifier)}/grant`,
+      { agent: agentName },
+    ),
+  );
 }
 
 export interface UpdateProjectDefaultAgentResponse {

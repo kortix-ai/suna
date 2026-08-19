@@ -125,7 +125,7 @@ describe('session-title origins — create-time title source', () => {
   test('email: titles from the SUBJECT at create — it has no initial_prompt at all', () => {
     const body = {
       agent_name: 'default',
-      connector_bindings: { email: { profile_id: 'prof-1' } },
+      connector_bindings: { email: { connection_id: 'prof-1' } },
       title_source: 'Invoice discrepancy for March',
     };
     expect(body).not.toHaveProperty('initial_prompt');

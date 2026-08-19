@@ -206,7 +206,11 @@ export async function dbStep(ctx: SunaMigrationContext): Promise<void> {
         sessionId: crypto.randomUUID(), accountId: ctx.accountId, projectId,
         branchName: s.slug, baseRef: defaultBranch, sandboxProvider: 'daytona',
         sandboxId: null, sandboxUrl: null, opencodeSessionId: s.opencodeSessionId,
-        agentName: 'default', status: 'stopped', createdBy: ctx.accountId, visibility: 'project',
+        // 'completed', NOT 'stopped': the default session list
+        // (selectSessionRowsForViewer) hides stopped sessions that have no
+        // session_sandboxes row — which is every migrated session until its
+        // first open — so 'stopped' makes the whole migration invisible.
+        agentName: 'default', status: 'completed', createdBy: ctx.accountId, visibility: 'project',
         metadata: {
           // Carry the legacy thread's own title over; nothing ever re-titles a
           // migrated session (it serves no first prompt), so without this every

@@ -1,11 +1,19 @@
 import { spawn } from 'node:child_process';
 
-import { type RunningOpenCodeProxy, startOpenCodeProxy } from '../api/sdk.ts';
+import {
+  type RunningOpenCodeProxy,
+  startOpenCodeProxy,
+  unwrapRuntime,
+  withKortixScope,
+} from '../api/sdk.ts';
 import { takeFlagValue } from '../command-helpers.ts';
+import { ensureOpencodeBin, isValidOpencodeVersion } from '../opencode-bin.ts';
 import { C, help, status } from '../style.ts';
+import { pickConnectSessionId } from './home.ts';
 import {
   ensureOpencodeSession,
   loadSessionForChat,
+  type ResolvedSession,
   resolveRunningSessionId,
 } from './sessions-chat.ts';
 
@@ -16,6 +24,14 @@ const CONNECT_HELP = help`Usage: kortix sessions connect [<session-id>] [options
 Attach your local OpenCode TUI to the OpenCode server already running inside a
 Kortix session sandbox. The CLI opens a local loopback proxy, injects your
 Kortix auth token, then runs \`opencode attach\` against it.
+
+With no session id on an interactive terminal, opens a picker: running
+sessions attach immediately, stopped ones are restarted and awaited, and
+"+ New session" provisions a fresh sandbox first.
+
+The \`opencode\` binary is managed for you: the CLI downloads the exact version
+the session's server runs (cached under ~/.kortix/opencode/<version>/) so the
+TUI and server never skew. Set KORTIX_OPENCODE_BIN to force your own binary.
 
 Given a session id, resolves the right host/project on its own: tries the
 active/linked project first, then — unless you pin --host/--project — scans
@@ -64,11 +80,15 @@ export async function runSessionsConnect(argv: string[]): Promise<number> {
   if (proxyPort === null) return 2;
 
   const opts: CtxOpts = { projectArg, hostArg };
-  const sessionId = await resolveRunningSessionId(
-    positional[0],
-    opts,
-    'Pick a session to connect to',
-  );
+  // No id + a real terminal → the full picker (running, dormant-with-restart,
+  // or a fresh session). Non-TTY keeps the deterministic most-recent-running
+  // resolution so agents / pipes / CI never block on a prompt.
+  const tty = process.stdin.isTTY === true && process.stdout.isTTY === true;
+  const sessionId = positional[0]
+    ? positional[0]
+    : tty
+      ? await pickConnectSessionId(opts)
+      : await resolveRunningSessionId(undefined, opts, 'Pick a session to connect to');
   if (!sessionId) return 1;
 
   // A session id may belong to a different project (or host) than the one
@@ -78,6 +98,16 @@ export async function runSessionsConnect(argv: string[]): Promise<number> {
   if (!resolved) return 1;
   const ocSessionId = await ensureOpencodeSession(resolved);
   if (!ocSessionId) return 1;
+
+  // Resolve (and, first time, download) the version-matched binary BEFORE the
+  // proxy exists — a multi-minute download must not sit on an open proxy.
+  let bin: string;
+  try {
+    bin = (await ensureOpencodeBin({ version: await runtimeOpencodeVersion(resolved) })).bin;
+  } catch (err) {
+    process.stderr.write(`${status.err((err as Error).message)}\n`);
+    return 1;
+  }
 
   let proxy: RunningOpenCodeProxy;
   try {
@@ -99,9 +129,31 @@ export async function runSessionsConnect(argv: string[]): Promise<number> {
   );
 
   try {
-    return await spawnOpenCodeAttach(attachCommand);
+    return await spawnOpenCodeAttach(bin, attachCommand);
   } finally {
     proxy.close();
+  }
+}
+
+/**
+ * The version the session's OpenCode server actually runs, from its own
+ * `/global/health` — the sandbox image may be newer or older than this CLI's
+ * baked pin, and the TUI must match the server, not the pin. Falls back to
+ * undefined (→ the runtime-versions pin) when the probe fails.
+ *
+ * The value crosses a trust boundary: it comes from inside the sandbox and
+ * ends up in a download URL and an executable path, so anything that is not
+ * strictly `X.Y.Z(-tag)` is discarded, not truncated.
+ */
+async function runtimeOpencodeVersion(resolved: ResolvedSession): Promise<string | undefined> {
+  try {
+    const health = unwrapRuntime(
+      await withKortixScope(resolved.auth, () => resolved.runtime.global.health()),
+    );
+    const version = (health as { version?: unknown }).version;
+    return typeof version === 'string' && isValidOpencodeVersion(version) ? version : undefined;
+  } catch {
+    return undefined;
   }
 }
 
@@ -132,8 +184,7 @@ function buildAttachArgs(url: string, opencodeSessionId: string, extraArgs: stri
   ];
 }
 
-function spawnOpenCodeAttach(args: string[]): Promise<number> {
-  const bin = process.env.KORTIX_OPENCODE_BIN || 'opencode';
+function spawnOpenCodeAttach(bin: string, args: string[]): Promise<number> {
   const child = spawn(bin, args, { stdio: 'inherit' });
   return new Promise((resolve) => {
     child.on('error', (err) => {

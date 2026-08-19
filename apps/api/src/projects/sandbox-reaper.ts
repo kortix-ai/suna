@@ -33,6 +33,7 @@ export {
 export {
   type ReapResult,
   EMPTY_REAP_RESULT,
+  observeSandboxTurn,
   reapAndReconcileSandboxes,
 } from './reaping/box-reaper';
 

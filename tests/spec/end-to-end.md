@@ -18,7 +18,7 @@ Stack: TypeScript/Hono on Bun (`apps/api`), Drizzle→Postgres (`kortix` schema)
   - **APIKEY** — `kortix_` / `kortix_sb_` (`api_keys`). Account/sandbox identity; `accountId→userId` mapped. Used by sandbox→router (search/LLM/proxy).
   - **COOKIE** — `__preview_session`, scoped `/v1/p/`, 1h.
 - Auth middlewares: `supabaseAuth` (JWT or PAT) on `/v1/accounts/*`, `/v1/projects/*`, `/v1/platform/api-keys`. `combinedAuth` (JWT|token|PAT|cookie|`X-Kortix-Token`|`?token=`) on `/v1/p/*`, `/v1/servers/*`, `/v1/tunnel/*`. `apiKeyAuth` (kortix_ only) on `/v1/router/*`. `requireAdmin` (platform role) on `/v1/ops/*`. Webhooks = HMAC, no auth middleware.
-- Project authz gate `loadProjectForUser(c, id, level)`: `read`→`PROJECT_READ` (any project role), `write`→`PROJECT_WRITE` (editor/manager), `manage`→`PROJECT_DELETE` (manager only). Account owner/admin get implicit `manager` on every project.
+- Project authz gate `loadProjectForUser(c, id, level)`: `read`→`PROJECT_READ` (any project role), `write`→`PROJECT_WRITE` (manager), `manage`→`PROJECT_DELETE` (manager only). Account owner/admin get implicit `manager` on every project.
 
 ### Principals (fixtures every run must provision)
 
@@ -27,7 +27,7 @@ Stack: TypeScript/Hono on Bun (`apps/api`), Drizzle→Postgres (`kortix` schema)
 | `OWNER`                           | account owner (super-admin, bypasses policy)         | full access                                                                                                                                                                                                                                                                                    |
 | `ADMIN`                           | account `admin` (Administrator policy)               | all but account.delete / billing.write / owner-grant                                                                                                                                                                                                                                           |
 | `MEMBER`                          | account `member`, **no** project grant               | account-reads only; cannot see projects                                                                                                                                                                                                                                                        |
-| `M_VIEWER` `M_EDITOR` `M_MANAGER` | member + project_members row (viewer/editor/manager) | per-project (read + run-sessions) / +customize (write) / +manage. Viewer is the base _usable_ role: it can read AND start/run/stop sessions (use the agent chat) — it just can't customize the project. So POST `/projects/:id/sessions` is allowed for M_VIEWER; PATCH `/projects/:id` is not |
+| `M_VIEWER` `M_MANAGER` | member + project_members row (member/manager) | per-project (read + run-sessions) / +customize (write) +manage. `member` is the base _usable_ role: it can read AND start/run/stop sessions (use the agent chat) — it just can't customize the project. So POST `/projects/:id/sessions` is allowed for M_VIEWER; PATCH `/projects/:id` is not. The `editor` role was REMOVED 2026-08-18: it folds to `manager` on read and 400s on write |
 | `BILLING`                         | `billing_manager` policy                             | billing read+write only                                                                                                                                                                                                                                                                        |
 | `AUDITOR`                         | `auditor` policy                                     | reads + audit only                                                                                                                                                                                                                                                                             |
 | `RO_ADMIN`                        | `administrator_read_only`                            | read-only everywhere                                                                                                                                                                                                                                                                           |
@@ -46,7 +46,7 @@ Stack: TypeScript/Hono on Bun (`apps/api`), Drizzle→Postgres (`kortix` schema)
 `SYS-4` `GET /v1/router/health` → router health (no auth).
 `SYS-5` 404 shape — `GET /v1/nonexistent` → `{error:true,message:"Not found",status:404}`. Every state-changing `/v1/*` passes `auditStateChangingRequest`.
 `SYS-6` `GET /v1/system/maintenance` → public read of the maintenance config (banner + maintenance page); default `{level:"none",…}`. Write is admin-only (`ADM-6`).
-`SYS-7` `POST /v1/system/demo-request` → public lead capture for the marketing "book a demo" form; invalid email → 400; valid → 200 `{ok:true, emailed}` (emails `DEMO_LEAD_NOTIFY_EMAIL` via Mailtrap; `emailed:false` when Mailtrap unconfigured — graceful skip). IP rate-limited (`KORTIX_DEMO_REQUEST_REQS_PER_MIN`, 429 on flood).
+`SYS-7` `POST /v1/system/demo-request` → public lead capture for the marketing "book a demo" form; invalid email → 400; valid → 200 `{ok:true, emailed}` (emails `DEMO_LEAD_NOTIFY_EMAIL` via the transactional-email provider chain (SES → Resend → Mailtrap); `emailed:false` when no provider is configured — graceful skip). IP rate-limited (`KORTIX_DEMO_REQUEST_REQS_PER_MIN`, 429 on flood).
 `DOCS-1` `GET /v1/openapi.json` → public OpenAPI 3.1 spec (typed via `@hono/zod-openapi`). `GET /v1/docs` → public Scalar API reference (HTML).
 
 ### Kortix system skills (`/v1/skills`, `combinedAuth`)
@@ -56,6 +56,14 @@ The kortix-managed `kortix-*` skills — the markdown that tells an agent how Ko
 `SKILL-1` `GET /v1/skills` → auth → 200 `{skills:[{name,description,referenceCount,bytes}],count}`. Bodies are NOT included — the frontmatter `description` is parsed server-side so an agent can choose without downloading ~330 KB of markdown. `ANON` → 401.
 `SKILL-2` `GET /v1/skills/:name [?full=1]` → auth → 200 `{name,description,body,references:[{path,bytes,content?}]}`; `body` is the complete SKILL.md. `?full=1` inlines every reference file. Unknown/non-managed name → 404. `ANON` → 401.
 `SKILL-3` `GET /v1/skills/:name/file?path=` → auth → 200 `{name,path,content}` for one reference file. Missing `path` → 400; unknown path or traversal attempt → 404 (lookup is exact-match against the in-memory index, not a filesystem read). `ANON` → 401.
+
+### Sandbox runtime assets (`/v1/runtime-assets`, `combinedAuth`)
+
+The `kortix` CLI binary and the managed-skill overlay THIS deploy was built with. A sandbox bakes both at image-build time and then never re-runs that build — restart and resume wake the same VM, and a warm fork adopts a captured disk — so without these routes a box provisioned months ago keeps a months-old CLI forever and 404s the moment a route is renamed. The daemon reconciles against them at every session start, restart, resume, and `POST /kortix/refresh`. Same auth as `/v1/skills`, and for the same reason: the caller is the in-sandbox `KORTIX_CLI_TOKEN`.
+
+`RTA-1` `GET /v1/runtime-assets/manifest` → auth → 200 `{cli_version,cli_sha256,cli_size,managed_skills_hash,managed_skills_count}`. Digests only — a sandbox decides from this alone whether to download anything. The CLI fields are all-null together when the image carries no binary (a checkout that never built `apps/cli/dist/kortix`); the manifest must still serve the skill half. Stable within a deploy. `ANON` → 401.
+`RTA-2` `GET /v1/runtime-assets/managed-skills` → auth → 200 `{hash,files:[{path,content}]}`, `ETag` = the manifest's `managed_skills_hash`, every path inside the `kortix-*` family. `If-None-Match` with the current hash → 304 with no body; a stale hash → 200. `ANON` → 401.
+`RTA-3` `GET|HEAD /v1/runtime-assets/cli` → auth → 200 the Linux binary, `ETag` = the manifest's `cli_sha256`, `Content-Length` = `cli_size`, `X-Kortix-Cli-Sha256` naming the digest the caller must verify. `If-None-Match` with the current digest → 304 with no body — a converged sandbox transfers nothing. No binary in the image → 404. `ANON` → 401.
 
 ---
 
@@ -91,7 +99,12 @@ The single flow that, if green, proves the platform end-to-end. Each substep lin
 `LOGIN-4` already-logged-in host, no flags → no-op.
 `WHOAMI-1` `kortix whoami` → `GET /accounts/me` → prints email/user_id/active account/role. 401 → re-login prompt.
 `LOGOUT-1` `kortix logout` → removes host creds; if active, switches to next host or deletes config. No API.
-`HOSTS-1..6` `kortix hosts ls|use|add|rm|info|current` → config-only; `add --login` delegates to LOGIN; `rm` guards removing last active host.
+`HOSTS-1` `kortix hosts ls` → list the built-in and configured hosts without an API request.
+`HOSTS-2` `kortix hosts use <name>` → switch the active host; an unknown host exits 1.
+`HOSTS-3` `kortix hosts add <name> --url <url>` → add one custom host; a duplicate name exits 1.
+`HOSTS-4` `kortix hosts rm <name>` → remove one custom host; an unknown host exits 1.
+`HOSTS-5` `kortix hosts info [name]` → show the selected or active host.
+`HOSTS-6` `kortix hosts current` → print the active host name.
 
 ---
 
@@ -111,7 +124,6 @@ The single flow that, if green, proves the platform end-to-end. Each substep lin
 `ACCT-2` `POST /accounts {name}` → 201 team account, caller = `owner` (`account_members` row).
 `ACCT-3` `GET /accounts/:id` → member → 200; `NONMEMBER` → 403.
 `ACCT-4` `PATCH /accounts/:id {name}` → `ACCOUNT_WRITE` (OWNER/ADMIN) → 200; `MEMBER` → 403.
-`ACCT-5` `GET /accounts/:id/audit` → member → 200 audit log.
 
 ### Members
 
@@ -120,6 +132,8 @@ The single flow that, if green, proves the platform end-to-end. Each substep lin
 `MEM-3` `PATCH /accounts/:id/members/:userId {role}` → `MEMBER_UPDATE` → 200; same role → 200 `{unchanged:true}` (no-op); **promoting/demoting `owner` additionally requires `MEMBER_SUPER_ADMIN_GRANT`** (owner only) → ADMIN owner-grant → 403; **promotion to owner/admin deletes the member's `project_members` rows + project policies**.
 `MEM-4` `DELETE /accounts/:id/members/:userId` → `MEMBER_REMOVE`; ADMIN removing an OWNER → 403; removing the **last owner** → 409; also cascades the member's `project_members` rows + IAM policies.
 `MEM-5` `POST /accounts/:id/leave` → 200; **last owner** → 409; **personal account** → 409; **non-member → 404**.
+
+**Trial seat gate (`SEATS`).** While an admin-issued trial is active (`ADM-14`) on a **non-`per_seat`** account, admitting a member beyond the trial's `seats` → **403 `{code:"trial_seat_limit_reached", limit, members}`**. The gate fires on all three admission paths: `MEM-2` direct add (`POST /accounts/:id/members`), invite creation, and `INV-4` invite accept — the accept-side check is the authoritative one (it runs at the moment the membership row is written) and it never blocks an EXISTING member re-entering, so grant-healing still works. A `per_seat` account is exempt: Stripe seat quantity governs it, not the trial.
 
 ### Invites (accept side)
 
@@ -147,7 +161,7 @@ The single flow that, if green, proves the platform end-to-end. Each substep lin
 
 All under `/accounts/:id/iam/*`, each route gated by its named action. Run every one as the gating role (2xx) and as `MEMBER` (403).
 
-Group/role/policy-writing and SSO/SCIM-writing routes are ALSO gated behind `requireEntitlement` (`rbac`/`sso`/`scim` — see `IAM-32/33`): a fresh account with no billing row resolves to tier `none` (`NO_ENTERPRISE`), so `IAM-1/2/3/14/21/23/24/25/26` first `PUT …/iam/enterprise-demo {enabled:true}` on their `team()` fixture account to unlock the surface before exercising it — a real Enterprise tier would work identically, the demo toggle is just the self-serve stand-in used in-suite.
+Group/role/policy-writing and SSO/SCIM-writing routes are ALSO gated behind `requireEntitlement` (`rbac`/`sso`/`scim` — see `IAM-32/33`): a fresh account with no billing row resolves to tier `none` (`NO_ENTERPRISE`), so `IAM-1/2/3/14/21/23/24/25/26` first `PUT …/iam/enterprise-demo {enabled:true}` on their `team()` fixture account to unlock the surface before exercising it — a real Enterprise tier would work identically, the demo flag is just the operator-issued stand-in used in-suite. That PUT is **platform-admin-only** (`IAM-32`), so the unlock runs as the **run-scoped platform admin** the run provisions (`env.adminToken`, `fixtures/world.ts` + `fixtures/enterprise-demo.ts`), never as the fixture account's OWNER. A target with no platform admin cannot unlock the surface at all; those flows fail fast with that reason instead of asserting against a locked account.
 
 `IAM-1` `GET …/iam/groups` (`GROUP_READ`) · `POST` (`GROUP_CREATE`, `rbac`-gated) → 201.
 `IAM-2` `GET/PATCH/DELETE …/iam/groups/:gid` (`GROUP_READ`/`UPDATE`/`DELETE`).
@@ -173,12 +187,12 @@ Group/role/policy-writing and SSO/SCIM-writing routes are ALSO gated behind `req
 The human-in-the-loop surface an agent's write/destructive tool calls gate on, plus its adjacent per-agent scoping and the Enterprise preview/import surfaces. `GET /projects/:id/approvals[/needs-input]` and `POST /projects/:id/approvals/:id` gate on plain IAM capability (`project.members.manage`/`project.read`), never a billing tier — see PR #4117 (a prior 402 regression on the per-session audit poll); these must never start 402ing.
 
 `IAM-27` `POST /projects/:id/access-requests {message?}` (any signed-in caller; already-has-access short-circuits `{status:"already_has_access"}`) → 201 `{status:"created",request}`; re-request while pending → 200 `{status:"pending",request}`. `GET /projects/:id/access-requests` (`project.members.manage`) → 200 `{requests:[...]}` pending only; caller with no project grant → 403; unknown project → 404.
-`IAM-28` `POST /projects/:id/access-requests/:rid/approve {role?}` / `.../reject` (`project.members.manage` — stricter than plain `manage`/`project.write`, so an editor without members-manage → 403) → 200 grants the project role (`ensureOrgMembership` + `grantProjectRole`) and marks the request `approved`/`rejected`; invalid `role` → 400; already-reviewed → 409; unknown request id → 404.
-`IAM-29` `GET /projects/:id/approvals` (manager-only inbox of unresolved `pending_approval` executor actions) → 200 `{count,approvals}`; out-of-range `limit` → 400; non-manager with no grant → 403. `GET /projects/:id/approvals/needs-input` (`read` — any project member) → 200 `{total,sessions}`; a manager sees every session's pending count, a non-manager only their own launched sessions; non-member → 403.
-`IAM-30` `POST /projects/:id/approvals/:executionId {decision:"approve"|"deny",scope?}` (manager OR the session launcher) → resolves a pending executor action atomically (TOCTOU-safe); malformed execution id → 400; invalid `decision` → 400 (validated before the row lookup); unknown execution id → 404; non-project-member → 403; already-resolved → 409 (happy-path resolve of a REAL pending row needs a live governed connector call from an agent session — not black-box reproducible here, same constraint as `SESS-11`).
+`IAM-28` `POST /projects/:id/access-requests/:rid/approve {role?}` / `.../reject` (`project.members.manage` — stricter than plain `manage`/`project.write`, so a project member without members-manage → 403) → 200 grants the project role (`ensureOrgMembership` + `grantProjectRole`) and marks the request `approved`/`rejected`; invalid `role` → 400; already-reviewed → 409; unknown request id → 404.
+`IAM-29` `GET /projects/:id/approvals` (manager-only inbox of unresolved `pending_approval` connector actions) → 200 `{count,approvals}`; out-of-range `limit` → 400; non-manager with no grant → 403. `GET /projects/:id/approvals/needs-input` (`read` — any project member) → 200 `{total,sessions}`; a manager sees every session's pending count, a non-manager only their own launched sessions; non-member → 403.
+`IAM-30` `POST /projects/:id/approvals/:executionId {decision:"approve"|"deny",scope?}` (manager OR the session launcher) → resolves a pending connector action atomically (TOCTOU-safe); malformed execution id → 400; invalid `decision` → 400 (validated before the row lookup); unknown execution id → 404; non-project-member → 403; already-resolved → 409 (happy-path resolve of a REAL pending row needs a live governed connector call from an agent session — not black-box reproducible here, same constraint as `SESS-11`).
 `IAM-31` `PUT /projects/:id/agents/:agentName/scope {env?,connectors?}` (`manage`) — writes the `[[agents]].env`/`.connectors` allowlists into `kortix.yaml` (or legacy `kortix.toml`); empty body (`nothing_to_update`) → 400; malformed grant set → 400; unknown agent name → 404 (`agent_not_found`); caller with no project grant → 403.
-`IAM-32` `GET/PUT /accounts/:id/iam/enterprise-demo {enabled}` (`account.read`/`account.write`; deliberately NOT behind `requireEntitlement` — self-serve preview of the Enterprise surface, fail-closed/default-off) → 200 `{enabled}`; non-boolean → 400; NONMEMBER → 403.
-`IAM-33` `POST /accounts/:id/iam/sso/provider/from-metadata {metadata_xml|metadata_url,name,primary_domain,domains?}` (`account.write` + `sso` entitlement) — self-serve SAML IdP registration via the Supabase auth admin API; non-Enterprise account → 402 `{code:"entitlement_required",entitlement:"sso"}` (enabling `enterprise-demo` above unlocks it for the same account); missing name/invalid domain → 400; neither `metadata_xml` nor `metadata_url` → 400 (or 501 if the deployment has no `SUPABASE_SERVICE_ROLE_KEY`); existing provider → 409; NONMEMBER → 403.
+`IAM-32` `GET/PUT /accounts/:id/iam/enterprise-demo {enabled}` — the Enterprise-preview flag, fail-closed/default-off and deliberately NOT behind `requireEntitlement`. **The two verbs have different auth.** `GET` stays `account.read`, so the account page can render the state: OWNER → 200 `{enabled}`, plain `MEMBER` → 200 `{enabled}`, `NONMEMBER` → 403. `PUT` is **platform-admin-only** (`isPlatformAdmin`, no account-membership check — an operator is normally not a member of the account they enable): the account **OWNER**, despite holding `account.write`, → **403 `{code:"admin_required"}`** and the flag is unchanged; a **platform admin** → 200 `{enabled}`; non-boolean `enabled` → 400 (validated after the admin check, so a non-admin still gets 403 for a bad body). Enabling the preview used to be self-serve, which made an Enterprise entitlement something any account member could grant themselves; it is an operator decision now, normally taken from the admin console (`ADM-17`), which writes the same `credit_accounts.demo_enterprise` column this GET reads.
+`IAM-33` `POST /accounts/:id/iam/sso/provider/from-metadata {metadata_xml|metadata_url,name,primary_domain,domains?}` (`account.write` + `sso` entitlement) — self-serve SAML IdP registration via the Supabase auth admin API; non-Enterprise account → 402 `{code:"entitlement_required",entitlement:"sso"}` (the platform admin enabling `enterprise-demo` above unlocks it for the same account); missing name/invalid domain → 400; neither `metadata_xml` nor `metadata_url` → 400 (or 501 if the deployment has no `SUPABASE_SERVICE_ROLE_KEY`); existing provider → 409; NONMEMBER → 403.
 `IAM-34` `GET /approval-links/:token` requires a signed-in user before resolving the token. ANON → 401. An authenticated caller with an invalid token → 404 without exposing project or execution data.
 
 ---
@@ -191,6 +205,7 @@ DB `projects` (`status active|archived`, unique `(account_id, repo_url)`). Soft 
 `PROJ-2` `POST /projects {repo_url,name}` (BYO) → `PROJECT_CREATE` (OWNER/ADMIN) → 201, creator granted `manager`, snapshot build kicked. `MEMBER` → 403. Non-GitHub `repo_url` → 400.
 `PROJ-3` `POST /projects/provision {name,provider?:github}` (managed) → `PROJECT_CREATE` → 201 `{push_token,repo_id,repo_url}`. Unconfigured managed GitHub backend → 503.
 `PROJ-4` `POST /projects/create-repo {name,private?}` (new GitHub repo) → `PROJECT_CREATE` → 201; no account GitHub App install → 409 + `install_url`; auto-dedupes name collision.
+`PROJ-14` `POST /projects/provision-stream {name,provider?:github}` uses the same provision core as `PROJ-3`. An authorized request returns `200 text/event-stream` with data-only JSON frames. It emits ordered `phase` frames and exactly one terminal `done` or `error` frame. An unsupported provider emits `phase:validating`, then `error` with `status:400`, before any external call. ANON → 401 before the stream opens.
 `PROJ-5` `GET /projects/:id` → `read` → 200 (bumps `last_opened_at`); archived → 404; `NONMEMBER` → 403.
 `PROJ-6` `GET /projects/:id/detail` → `read` → 200 project + parsed `kortix.yaml` (agents/skills/env) + file list.
 `PROJ-7` `PATCH /projects/:id {name,default_branch,manifest_path}` → `manage` (M_MANAGER/OWNER/ADMIN) → 200; M_EDITOR/M_VIEWER → 403.
@@ -202,7 +217,7 @@ DB `projects` (`status active|archived`, unique `(account_id, repo_url)`). Soft 
 `PACC-2` `POST /projects/:id/access/invite {email,role}` → `manage`. **Existing Kortix user → 200** — `ensureOrgMembership` auto-adds them to the org as `member` then grants the project role (account-manager target → implicit access, `project_role:null`). **Email with no Kortix account yet → 201 `{status:"invited", invite_id, invite_url, project_role}`** — an account invitation with a `bootstrap_grant` is created/merged idempotently so they land on the project at signup. Missing email / bad role → 400; non-account-member caller → 403 (`loadProjectForUser` — 404 only when the project row is missing/archived).
 `PACC-3` `PUT /projects/:id/access/:userId {role}` → `manage`.
 `PACC-4` `DELETE /projects/:id/access/:userId` → `manage`.
-`PACC-7` `GET/POST/DELETE /projects/:id/resource-grants[/:grantId]` → manager-only per-resource scoping. **AGENT-ONLY (resource-model simplification): `agent` is the only member/department-scopable resource** — assigning an agent lets the assignee USE it and inherit its declared skills/connectors/secrets (to USE, not edit; editing needs the editor role). A POST with `resource_type=skill` or `secret` → **400** (agent-only; the guard runs before any config/DB load, so no existing resource is needed). Reading/listing/revoking pre-existing skill/secret grant rows still works (back-compat), but none can be CREATED. GET lists grantable resources (`$.resources.agents`) + existing grants. POST `resource_type=agent` with a real agent id + member/group principal → 201; unknown/invalid `resource_type` (e.g. `database`) → 400; invalid/foreign principal → 400/404; deleting unknown grant → 404.
+`PACC-7` `GET/POST/DELETE /projects/:id/resource-grants[/:grantId]` → manager-only per-resource scoping. **AGENT-ONLY (resource-model simplification): `agent` is the only member/department-scopable resource** — assigning an agent lets the assignee USE it and inherit its declared skills/connectors/secrets (to USE, not edit; editing needs the manager role). A POST with `resource_type=skill` or `secret` → **400** (agent-only; the guard runs before any config/DB load, so no existing resource is needed). Reading/listing/revoking pre-existing skill/secret grant rows still works (back-compat), but none can be CREATED. GET lists grantable resources (`$.resources.agents`) + existing grants. POST `resource_type=agent` with a real agent id + member/group principal → 201; unknown/invalid `resource_type` (e.g. `database`) → 400; invalid/foreign principal → 400/404; deleting unknown grant → 404.
 
 ---
 
@@ -219,13 +234,18 @@ DB `project_sessions` (`status queued|branching|provisioning|running|stopped|fai
 `SESS-7` `DELETE /projects/:id/sessions/:sid` → `session` (then **owner or project manager** only — a viewer can stop sessions they own) → 200 soft-delete status `stopped`; **remote branch preserved**.
 `SESS-8` `GET /projects/:id/sessions/:sid/sandbox` → `read` → `session_sandboxes` row; **404 while row not yet inserted** (frontend polls); then status `provisioning`→`active` with `base_url`/`external_id`.
 `SESS-9` `POST /projects/:id/sessions/:sid/restart` → `session` (then **owner or project manager** only) → **202**; tears down container, revokes sandbox keys, re-provisions with rotated git/LLM/CLI tokens (status→`provisioning`); branch preserved.
-`SESS-10` OpenCode title/tree mirror is server-owned: `GET /projects/:id/sessions` and `GET /projects/:id/sessions/:sid` read the sandbox's OpenCode sessions server-side and mirror `metadata.name`/`metadata.opencode_sessions`; there is no browser-write sync endpoint.
+`SESS-10` OpenCode title/tree mirror is server-owned. After a real prompt, the API snapshots the root OpenCode session and its child tree into `metadata.opencode_sessions`. `GET /projects/:id/sessions` and `GET /projects/:id/sessions/:sid` return the same root title and tree. No browser-write sync endpoint exists.
 `SESS-12` `POST /projects/:id/sessions/:sid/stop` → `session` (then **owner or project manager** only) → **200** status `stopped`, sandbox paused in place (disk kept, no re-provision — same contract as an idle auto-stop); resumable via `/start`/`SESS-9`. Sandbox not `active` → 409; unsupported provider → 400.
 `SESS-13` Public shares — `GET/POST /projects/:id/sessions/:sid/public-shares` and `DELETE …/public-shares/:shareId` → gated on `canManageSharing` (session owner or project manager; see `SESS-14`). POST body `{preview:{port,path?,label?},file?,mode?,expires_at?}` → 201 `{share:{share_id,session_id,project_id,resource_type,label,port,path,file_path,mode,allow_websocket,expires_at,revoked_at,created_at,updated_at,public_token,public_path,proxy_path}}` (`public_token` = `kps_<shareId no dashes>`); a blocked/out-of-range port or an invalid `expires_at` → 400. GET list → `{shares:[…]}`, **not filtered** — a revoked share stays in the list with `revoked_at` set (revoking never deletes the row). DELETE `:shareId` → 200 `{share:{…,revoked_at}}`; **no idempotency guard** — revoking an already-revoked share is 200 again, not 409; unknown `shareId` → 404; non-uuid `sid`/`shareId` → 400. The unauthenticated counterpart is `GET /p/public-share/:token` (§9, mounted public — no auth middleware at all): unknown token → 404 `Share link not found`; **revoked token → 410** `Share link revoked` (checked before the sandbox); a real token whose sandbox has no `external_id` yet → 503 `Sandbox is not ready` (`resolvePublicShare` LEFT JOINs `session_sandboxes` for exactly this case — a freshly-created, not-yet-provisioned session has no sandbox row at all; an INNER JOIN previously misread that as a 404 "not found" on a perfectly valid token); a resolvable `preview` share proxies to `GET {origin}/p/public-share/:token/:port/*` (redirect for the bare `:port` form), a `file` share to `.../file[/*]` (view-only — non-GET/HEAD/OPTIONS → 405).
-`SESS-14` Public-share access gate (`loadSessionForSharing().canManageSharing = isOwner || canManageProject` — projects/lib/access.ts; **not** `loadVisibleSession()`, which gates on session-content visibility and made a manager's `canManageProject` half unreachable on the default-`private` session, 404ing before the sharing check ever ran) — the session **creator** may manage its shares regardless of project role; a project **manager** (or owner/admin) may manage ANY session's shares even if they didn't create it; a project **editor/viewer who is not the creator** → 403 (`"Only the session owner or a project manager can …"`, a real permission denial — they're a legitimate project member, so there's nothing to 404-hide); NONMEMBER → 403 (account-membership gate, before the sharing check); ANON → 401.
+`SESS-14` Public-share access gate (`loadSessionForSharing().canManageSharing = isOwner || canManageProject` — projects/lib/access.ts; **not** `loadVisibleSession()`, which gates on session-content visibility and made a manager's `canManageProject` half unreachable on the default-`private` session, 404ing before the sharing check ever ran) — the session **creator** may manage its shares regardless of project role; a project **manager** (or owner/admin) may manage ANY session's shares even if they didn't create it; a project **member who is not the creator** → 403 (`"Only the session owner or a project manager can …"`, a real permission denial — they're a legitimate project member, so there's nothing to 404-hide); NONMEMBER → 403 (account-membership gate, before the sharing check); ANON → 401.
 `SESS-15` `GET /projects/:id/sessions/:sid/audit` → `read` + session-visible → 200 `{session_id,agent,audit_access,count,actions:[{execution_id,action,connector_id,status,risk,acted_by,acted_by_email,resolved_by,resolved_by_email,result_summary,at,resolved_at}]}` (most-recent-first, `?limit=` 1–1000, default 200; invalid `limit` → 400). This is the always-on approval control plane the launcher polls from every open session — non-Enterprise accounts (`auditAccess` entitlement off) degrade to **unresolved pending approvals only**, never a 402. Non-uuid `sid` → 400; NONMEMBER → 403; ANON → 401.
 `SESS-16` Anonymous session-share VIEWING — `GET /public/session-shares/:shareId` and `GET /public/session-shares/:shareId/messages` (mounted public, `apps/api/src/public-session-shares/`; rate-limited by share id via `createPublicSessionShareRateLimitMiddleware`). `:shareId` is the SESS-13 share's raw `share_id` (uuid), NOT the `kps_` token — the route derives the token server-side (`publicShareToken(shareId)`) and resolves through the same `resolvePublicShare()` (identical 404/410/503 semantics; ANY existing share resourceType, `preview` or `file`, unlocks the view). `GET /:shareId` → 200 `{share:{share_id,session_id,project_id,resource_type,label,sandbox_status,expires_at},session:{session_id,title,status,created_at,updated_at}}`; DB-only, no sandbox round-trip. `GET /:shareId/messages` → 200 `{available,reason,opencode_session_id,message_count,messages:[{role,created,completed,text,tools:[{tool,status}],files:[{filename,mime}],reasoning_omitted}]}` — a sanitized, text-only digest fetched server-to-sandbox (no client-side sandbox access); 503 `"Sandbox is not running"` when the session's sandbox row isn't `active`, otherwise degrades to `available:false` (still 200) for a transient not-ready OpenCode daemon rather than erroring. Non-uuid `shareId` → 400.
-`COV-10` Newly surfaced project-scoped mutations and reads return 404 for an authenticated caller when the project does not exist. This covers authoritative session-scope read and replacement, session model changes, and connector-authorization roster/default routes with valid request bodies.
+`SESS-21` `GET|PUT /projects/:id/sessions/:sid/scope` and `PUT /projects/:id/sessions/:sid/model` hide an unknown project with 404.
+`SESS-22` `GET|POST /projects/:id/sessions/:sid/question` hides an unknown project with 404.
+`SESS-23` Park → wake → send (T18, session-middle-stop). `POST /projects/:id/sessions/:sid/stop` now aborts the session's live turn BEFORE powering the sandbox off (`abortLiveTurnBeforeStop`, T11) — closing the turn cleanly instead of leaving it to power off mid-run. Waking the box back up via `/start` and sending a new prompt must deliver that new prompt **exactly once**: the original prompt is never redelivered as a new message (same user-message ids across the wake), and the abort-stamp count observed on the old turn right after the wake — before any new prompt is sent — equals the pre-stop baseline exactly; sending the new prompt must not add a further "Interrupted"/abort stamp on top of it (the repeated-Interrupted regression this branch fixes). Exercised at the OpenCode message level through the preview proxy (no Kortix-level session-scoped abort route exists — `/stop`'s abort is a server-to-daemon `POST {sandbox}/kortix/abort` call, never reachable from an external client).
+`SESS-24` Rapid API-level session switch (T18). Two sessions in one project, alternated: a `ready` session's second `/start` within 30s returns the same sandbox identity (`external_id`) as its first; alternating `/start` between two sessions never returns one session's sandbox identity for the other; each session's live `GET .../transcript` contains only its own reply, never the other session's (no cross-bleed). After `POST .../stop`, `GET /projects/:id/sessions/:sid` (the DB-backed detail read — the exact server-owned `opencode_sessions`/`name` mirror the web's "persisted-pin paint" instant-switch fix reads) keeps serving that session's own mirrored title/tree unchanged, proving the cached-paint read path works without a live runtime; `GET .../transcript` on the same now-stopped session instead degrades gracefully to 200 `{available:false}` (it is sandbox-backed, not DB-only, so it does NOT keep serving live content once stopped — this is the documented boundary, not a bug). A second, still-running session in the same project is unaffected by the first one's stop.
+
+`SESS-25` Server-side prompt inbox. `POST /projects/:id/sessions/:sid/prompts` with a client-minted OpenCode wire `message_id` → `202 {prompt_id, state:'queued', message_id, deduped:false}`; the prompt is a DURABLE row in `kortix.session_lifecycle_commands` from that instant, so it survives a closed tab, a second device, and a crash. A `message_id` OpenCode cannot order → `400` (a mis-ordered id reads as already answered and the turn silently never runs). Re-POSTing the SAME `client_message_id` → `200 {deduped:true}` naming the SAME `prompt_id`, enforced by the unique index on `idempotency_key`. `GET .../prompts` lists what the session still owes the user — `queued` / `waiting` (with `reason`: `older_prompt_pending` or `held`) / `delivering` (with `reason: 'forwarded'` once it is at OpenCode but no turn has consumed it yet) / `failed`; a CONSUMED prompt is omitted, because it is in the transcript, and a live turn no longer holds a prompt back at all — OpenCode persists a mid-turn prompt and runs it in arrival order, and an automation's own `continue_session` row (trigger, Slack, approval resume) is never listed, deletable, or retryable here. `POST .../prompts/:promptId/retry` is the ONE primitive behind retry and "send now": it re-queues a `queued`/`failed`/`dead_lettered` row — or a STOP-PAUSED one, which is the row the hold is rendered on — RE-MINTED above the transcript (a stale id reads as already answered), promotes it past the ordering gate, releases the session's hold, and `404`s a row already on the wire. A row that has already been POSTed goes out under a NEW idempotency key, so the proxy's 10-minute delivery claim cannot answer it `duplicate` and swallow it. `POST .../prompts/hold {held:boolean}` is what the Stop button writes — every queued prompt of the session reads `waiting`/`held` until an explicit send or send-now releases it; a non-boolean is `400`. `DELETE .../prompts/:promptId` removes a prompt that has not gone out (`204`), refuses one already on the wire (`409` — cancelling it would be a lie), and never addresses another session's row (`404`).
 
 ---
 
@@ -252,6 +272,7 @@ All under `/p/:sandboxId/:port/*` (`combinedAuth` + rate-limit). `:sandboxId` = 
 `RUN-6` `GET /p/<sbx>/8000/session/<ocId>/message` (+`/message/<mid>`) → list/get messages (results).
 `RUN-7` `GET /p/<sbx>/8000/session/<ocId>/diff` → working-tree diff; agent commits land on branch `<sessionId>`.
 `RUN-8` proxy authz — request without any valid token/cookie → 401; preview-token from a `share` → scoped 200.
+`RUN-9` Stop → immediate send (T18, session-middle-stop). Abort a running turn through OpenCode's OWN `/session/<ocId>/abort` (the client-invoked runtime abort route the web "Stop" button calls — the same call `RUN-5` exercises), then, with NO settling delay, send a second, distinct prompt on the same conversation. The second turn's reply must address ONLY the second prompt — no bled-in content from the aborted first turn (the duplicate-streaming class of bug the branch's delta event-id idempotency fix targets) — and the first turn's own last assistant message must be left properly finalized: an abort `error` present AND `time.completed` set, never a dangling, never-completed row (the historical cause of a phantom "Interrupted" marker, T11).
 
 ---
 
@@ -264,7 +285,7 @@ Repo files are read-only over the project API; live edits happen in the sandbox 
 `FILE-3` `GET /projects/:id/files/search?q=&content=1&ref=&limit=` → filename + grep.
 `FILE-4` `GET /projects/:id/files/history?path=` → commit history for path.
 `FILE-5` `GET /projects/:id/files/archive?path=&ref=` → zip stream.
-`FILE-6` `GET /projects/:id/branches` → branches.
+`FILE-6` `GET /projects/:id/branches` → authoritative remote branch refs without cloning repository history. A warm server mirror can add commit metadata and ahead/behind counts. Cold responses keep those optional display fields empty or `null`.
 `FILE-7` `GET /projects/:id/commits?ref=&path=` · `GET …/commits/:sha` · `GET …/commits/:sha/diff`.
 `FILE-8` `GET /projects/:id/version-diff?from=|head=&into=|base=` → diff between two refs (params are `from`/`head` and `into`/`base` — there is **no `to`**).
 `FILE-9` live file CRUD inside sandbox → through proxy to OpenCode file API on `:8000` (create/read/update/delete/list). Durable truth = git repo; sandbox tree is ephemeral.
@@ -293,18 +314,18 @@ DB `change_requests` (per-project `number`, `status open|merged|closed`).
 
 DB `review_items` (per-project; `kind change|approval|output|decision|batch`, `status needs_you|waiting|approved|changes_requested|rejected|done|dismissed`, polymorphic `detail` jsonb). This pass: native items only (`output|decision|batch` via submit); `change`/`approval` are folded in by adapters later.
 
-`RV-1` `GET /projects/:id/review/items?segment=needs_you|waiting|done&kind=…` → `read` → `{review_items:[…]}`. Invalid `segment` → 400; invalid `kind` → 400.
-`RV-2` `GET …/review/items/:reviewItemId` → `read` → `{review_item:{…}}`; unknown id → 404.
-`RV-3` `POST …/review/items {kind(output|decision|batch),title,summary?,risk?,detail?,agent?,session_id?}` → `read` + agent scope `project.review.submit` → 201. Missing `title` → 400; non-submittable `kind` (e.g. `change`) → 400; invalid `risk` → 400.
-`RV-4` `POST …/review/items/:reviewItemId/act {verdict(approve|reject|changes|answer|dismiss),feedback?}` → `write` + `project.review.act` → 200 updated item; invalid `verdict` → 400; unknown id → 404; adapted (`cr:…`) id → 409 (act from the source view). The list read-model also folds in Change Requests as `kind:change` items (id `cr:<crId>`).
-`RV-5` `POST …/review/bulk {ids:[…],verdict}` → `write` + `project.review.act` → 200 `{updated,review_items}`; empty/missing `ids` → 400.
+`RV-1` OWNER enables `review_center` through `PATCH /projects/:id/features`, then `GET /projects/:id/review/items?segment=needs_you|waiting|done&kind=…` → `read` → `{review_items:[…]}`. Invalid `segment` → 400; invalid `kind` → 400.
+`RV-2` OWNER enables `review_center`, then `GET …/review/items/:reviewItemId` → `read` → `{review_item:{…}}`; unknown id → 404.
+`RV-3` OWNER enables `review_center`, then `POST …/review/items {kind(output|decision|batch),title,summary?,risk?,detail?,agent?,session_id?}` → `read` + agent scope `project.review.submit` → 201. Missing `title` → 400; non-submittable `kind` (e.g. `change`) → 400; invalid `risk` → 400.
+`RV-4` OWNER enables `review_center`, then `POST …/review/items/:reviewItemId/act {verdict(approve|reject|changes|answer|dismiss),feedback?}` → `write` + `project.review.act` → 200 updated item; invalid `verdict` → 400; unknown id → 404; adapted (`cr:…`) id → 409 (act from the source view). The list read-model also folds in Change Requests as `kind:change` items (id `cr:<crId>`).
+`RV-5` OWNER enables `review_center`, then `POST …/review/bulk {ids:[…],verdict}` → `write` + `project.review.act` → 200 `{updated,review_items}`; empty/missing `ids` → 400.
 `RV-6` access: NONMEMBER list → 403/404; ANON list → 401.
 
 ---
 
 ## 12. Triggers (cron + webhook; source of truth = `kortix.yaml`)
 
-Specs in `[[triggers]]`; CRUD commits the manifest; runtime `last_fired_at` in `project_trigger_runtime`. Types: `cron`, `webhook` only.
+Specs in `[[triggers]]`; CRUD commits the manifest; runtime state and account-local session access live in `project_trigger_runtime`. Types: `cron`, `webhook`, and `monitor`.
 
 `TRG-1` `GET /projects/:id/triggers` → `read` + leaf `project.trigger.read` → specs + `last_fired_at` + parse `errors` + `webhook_url`; non-member 403/404; ANON 401.
 `TRG-2` `POST /projects/:id/triggers {name(required),slug?,type,agent?,enabled?,prompt_template,cron?,timezone?,secret_env?}` → `manage` → 201, manifest committed; `name` is required (slug derived from it when omitted); duplicate slug → 409. `webhook` requires `secret_env` (names a `project_secrets` key, regex `^[A-Z_][A-Z0-9_]*$`). `cron` requires 6-field croner expr + IANA `timezone` (default UTC).
@@ -313,12 +334,13 @@ Specs in `[[triggers]]`; CRUD commits the manifest; runtime `last_fired_at` in `
 `TRG-5` `POST /projects/:id/triggers/:slug/fire` → `manage` → manual fire → 202 `{status:fired,session_id}`; under backpressure → 202 `{status:queued,reason}`.
 `TRG-6` cron scheduler — global `setInterval` (default 60s), sweeps ≤200 active projects; due = `nextCronRun(cron,lastFired,tz) ≤ now`; **marks fired BEFORE firing** (no double-spawn per slot). Disabled via `KORTIX_TRIGGER_SCHEDULER_ENABLED=false`.
 `TRG-7` webhook fire — `POST /webhooks/projects/:id/:slug` (**public, HMAC**). Sig header `X-Kortix-Signature` or `X-Hub-Signature-256` (`sha256=` stripped), HMAC-SHA256 over raw body vs `project_secrets[secret_env]`, constant-time. Valid → 202 fired/queued; malformed UUID/slug → 400; unknown project → 404; bad sig → 401; missing secret → 409; unknown/disabled/non-webhook trigger → 404; fire failure → 500.
-`TRG-8` fire→run — `fireGitTrigger` → actor = account's first `owner` (no owner → silent fail), `createProjectSession(enforceAccountCap:false, visibility:'project', metadata.trigger_*)` — trigger sessions are project-visible (any project member sees them in `GET /sessions`), not private to the stand-in actor. Backpressure: provisioning sessions ≥3 OR account at tier cap → queued.
+`TRG-8` fire→run — `fireGitTrigger` → provisioning actor = account owner, initial `visibility:'private'`, then durable post-create action resolves the trigger agent service account and current account-local policy. The action sets `created_by`, visibility, and member/group grants. Queued creates resolve the policy when the worker runs. Backpressure: provisioning sessions ≥3 OR account at tier cap → queued.
 `TRG-9` **No inbound GitHub event webhook exists.** Simulate "GitHub Actions"-style automation as a generic `webhook` trigger; a GitHub repo webhook can drive it if its secret == `secret_env` (via `X-Hub-Signature-256`).
 `TRG-10` `GET /projects/:id/triggers` leaf gate — a member bound to a custom (Enterprise) project role granting `project.read` but NOT `project.trigger.read` loads the project yet is rejected 403 at `GET /triggers` (the `assertProjectCapability(project.trigger.read)` fires after the read passes); a floor `user` member (built-in role carries `project.trigger.read`) still gets 200. Scoped-agent-token variant proven at the API layer in `integration-project-read-leaf-gates-http.test.ts`.
 `TRG-11` Triggers CRUD authz boundaries — `ANON → 401` on POST/PATCH/DELETE/fire/activation; a project `member` (floor role) holds `trigger.read` + `trigger.fire` but NOT `project.write` (the `manage` floor) nor `trigger.create/update/delete` → `GET 200`, `POST/PATCH/DELETE/activation 403`, `fire` unknown-slug `404` (NOT 403 — the fire leaf passes; the 404 is the slug lookup).
 `TRG-12` `POST /projects/:id/triggers` input validation — missing `name`/`type`/`prompt_template` → `400`; bad `type` (not cron/webhook) → `400`; invalid `session_mode` → `400`; `pinned` without `session_id` → `400`; `pinned` with a `session_id` from another project → `400`; webhook without `secret_env` → `400`; webhook with bad `secret_env` (lowercase / leading digit, not `^[A-Z_][A-Z0-9_]*$`) → `400`; cron without `cron` AND without `run_at` → `400`; cron with non-ISO `run_at` → `400`; explicit invalid slug (uppercase / leading dash, not `^[a-z0-9][a-z0-9_-]{0,127}$`) → `400`.
 `TRG-13` `PATCH`/`DELETE`/`activation` edge cases — PATCH unknown slug → `404`; PATCH no-op body `{}` → `200` (no manifest keys, no git commit); DELETE unknown slug → `404`; DELETE invalid slug format (uppercase / leading dash) → `400` (regex gate before manifest lookup); activation pause→resume round-trip persisted on readback (`triggers_paused`); activation non-boolean / missing `paused` → `400`.
+`TRG-14` trigger-created session access — omitted `session_access` defaults to `{mode:'private',memberIds:[],groupIds:[]}`. The trigger agent service account owns created sessions. Project managers, account owners, and account admins can open and discover trigger-created sessions in every mode. An ordinary member cannot open or discover a private trigger session without an explicit member/group grant. A project manager cannot open or discover an ordinary private human session. No session inventory returns a row the caller cannot open. The sidebar, sessions page, and command palette render `Shared` on every accessible session whose `is_owner` value is false. They leave the viewer's own sessions unmarked. The ownership marker remains visible beside the session source. Session POST and PATCH reject client-supplied `source`, `trigger_kind`, and `trigger_slug` metadata, so a human session cannot forge trigger attribution. `PATCH {session_access}` accepts `private`, selected `members`, or `project`. Selected member/group ids must belong to the trigger account. Unknown or cross-account ids → `400`. Duplicate ids are removed. Empty selected access normalizes to private. Policy-only PATCH does not commit `kortix.yaml`. Saving a policy also updates prior sessions created by that trigger. Pinned sessions retain their own session sharing policy. Trigger deletion cascades its access grants.
 
 ---
 
@@ -336,50 +358,21 @@ Tokens stored as encrypted project secrets; webhooks public + signature-gated.
 `CHN-7` Slack OAuth — `GET /webhooks/slack/oauth/callback` (signed `state`, 10-min TTL) → exchange code → `saveSlackInstall`.
 `CHN-8` Telegram inbound — `POST /webhooks/telegram/:id`: verify `x-telegram-bot-api-secret-token` (missing→404, mismatch→401) → `message`/`edited_message` → spawn session (actor=owner, `visibility:'project'`).
 `CHN-9` bad sig on any channel webhook → 401. Not configured → **503 (Slack OAuth mode + OAuth callback)** but **404 (Slack BYO + Telegram)**.
-`CHN-13` `POST /projects/:id/channels/email/connect {connector_slug?}` → `manage` + project experimental `agentmail_email` enabled → creates or attaches an AgentMail inbox + `message.received`/`message.received.unauthenticated` webhook, stores inbox/webhook metadata as encrypted per-profile project secrets, and marks that Email connector profile connected. Disabled projects return 403 before AgentMail key validation. Omit `connector_slug` for legacy `kortix_email`; provide an Email connector slug for multiple inboxes.
-`CHN-14` `GET /projects/:id/channels/email/installation?connector_slug=...` → `read` → AgentMail inbox id/email/webhook id for that profile or null; disabled projects return null.
-`CHN-15` `DELETE /projects/:id/channels/email/installation?connector_slug=...` → `manage` → removes that profile's inbox binding.
+`CHN-13` `POST /projects/:id/channels/email/connect {connector_slug?}` → `manage` + project experimental `agentmail_email` enabled → creates or attaches an AgentMail inbox + `message.received`/`message.received.unauthenticated` webhook, stores inbox/webhook metadata as encrypted per-connection project secrets, and marks that Email connector connected. Disabled projects return 403 before AgentMail key validation. Omit `connector_slug` for legacy `kortix_email`; provide an Email connector slug for multiple inboxes.
+`CHN-14` `GET /projects/:id/channels/email/installation?connector_slug=...` → `read` → AgentMail inbox id/email/webhook id for that connection or null; disabled projects return null.
+`CHN-15` `DELETE /projects/:id/channels/email/installation?connector_slug=...` → `manage` → removes that connection's inbox binding.
 `CHN-16` AgentMail inbound — `POST /webhooks/email/agentmail`: Svix `svix-*` signature verified against the per-project webhook secret when configured; AgentMail's real unwrapped `message.received` or `message.received.unauthenticated` payload routes by `message.inbox_id` → project, maps `thread_id` 1:1 to a Kortix session, and follow-up emails continue that session.
 `CHN-17` `GET /projects/:id/channels/email/mode` → `read` → `{provider:"agentmail",enabled:boolean,managed_available:boolean}` so the UI can hide Email until `agentmail_email` is enabled and require a project AgentMail key when no managed server key exists.
 `CHN-18` `GET /projects/:id/channels/bindings` → `read` → `{projectDefaultAgent, bindings:[{bindingId,platform,workspaceId,channelId,channelName,channelType,agentName,opencodeModel,conversationPolicy,installedAt,effectiveAgent:{agent,source}}]}` — the web management surface for `chat_channel_bindings` (today populated only via Slack `/kortix agent|model|policy`); `effectiveAgent` resolves `agentName ?? project default ?? 'default'` the same way the Slack panel does.
 `CHN-19` `PATCH /projects/:id/channels/bindings/:bindingId {agentName?,opencodeModel?,conversationPolicy?}` → `project.connector.write` (no dedicated channel-binding leaf exists; reuses the same capability that gates connecting/disconnecting the channel itself) → updates via the same `setChannelAgent`/`setChannelModel`/`setChannelConversationPolicy` helpers the Slack commands call; `agentName` validated against the project's declared `[[agents]]` when adopted (any name accepted for a legacy/undeclared project), `null` resets to the project default, `"default"` is an alias for `null`; `opencodeModel` validated via `isModelServableForAccount` (409 `model_not_servable` when not servable) and normalized to the opencode `kortix/…` ref before storing; unknown `bindingId` → 404 before body validation; empty body on an existing binding → 400 `empty_patch`.
-`CHN-20` send-primitive IAM gate — `POST /projects/:id/channels/slack/file/upload` posts to a channel with the project's bot credentials and asserts leaf `project.connector.write` (IAM enforcement audit; previously gated by project-read only, so any read-capable caller could drive them). A floor `user` member (project.read, no connector.write) → 403 before any Slack call; an `editor` (holds connector.write) passes the gate (200/400/404/502/503, never 403); non-member 403/404; ANON 401. The `channel.*` catalog leaves were removed (never wired to a route). Scoped-agent-token variant proven at the API layer in `integration-project-read-leaf-gates-http.test.ts`. (The former `meet/speak` half of this gate went away with the notetaker — see §VOICE.)
-`TRG-11` Triggers CRUD authz boundaries — `ANON → 401` on POST/PATCH/DELETE/fire/activation; a project `member` (floor role) holds `trigger.read` + `trigger.fire` but NOT `project.write` (the `manage` floor) nor `trigger.create/update/delete` → `GET 200`, `POST/PATCH/DELETE/activation 403`, `fire` unknown-slug `404` (NOT 403 — the fire leaf passes; the 404 is the slug lookup).
-`TRG-12` `POST /projects/:id/triggers` input validation — missing `name`/`type`/`prompt_template` → `400`; bad `type` (not cron/webhook) → `400`; invalid `session_mode` → `400`; `pinned` without `session_id` → `400`; `pinned` with a `session_id` from another project → `400`; webhook without `secret_env` → `400`; webhook with bad `secret_env` (lowercase / leading digit, not `^[A-Z_][A-Z0-9_]*$`) → `400`; cron without `cron` AND without `run_at` → `400`; cron with non-ISO `run_at` → `400`; explicit invalid slug (uppercase / leading dash, not `^[a-z0-9][a-z0-9_-]{0,127}$`) → `400`.
-`TRG-13` `PATCH`/`DELETE`/`activation` edge cases — PATCH unknown slug → `404`; PATCH no-op body `{}` → `200` (no manifest keys, no git commit); DELETE unknown slug → `404`; DELETE invalid slug format (uppercase / leading dash) → `400` (regex gate before manifest lookup); activation pause→resume round-trip persisted on readback (`triggers_paused`); activation non-boolean / missing `paused` → `400`.
-
----
-
-## 13. Channels (Slack / Telegram / Email)
-
-Tokens stored as encrypted project secrets; webhooks public + signature-gated.
-
-`CHN-1` `kortix channels connect --bot-token xoxb-… --signing-secret …` (manual/BYO mode) → validates `xoxb-` via `auth.test` → `POST /projects/:id/channels/slack/connect` (`manage`) → 200, prints webhook `$API/webhooks/slack/:id`.
-`CHN-1b` `kortix channels connect` (no creds) → `GET /projects/:id/channels/slack/mode` (`read`) → `{oauth_available, install_url}`; when available the CLI prints the pre-signed one-click "Add to Slack" URL (signed `state`, 10-min TTL — same flow as CHN-7) instead of manual mode.
-`CHN-2` `GET /projects/:id/channels/slack/installation` → `read` → workspace/team/bot/url or "not connected".
-`CHN-3` `DELETE /projects/:id/channels/slack/installation` → `manage`.
-`CHN-4` Slack inbound (OAuth mode) — `POST /webhooks/slack` (shared `SLACK_SIGNING_SECRET`): `v0=HMAC(v0:{ts}:{body})`, ±5min replay window; `url_verification` → echo `challenge`; `event_callback` routed by `team_id`→binding→project.
-`CHN-5` Slack inbound (BYO mode) — `POST /webhooks/slack/:id` (unsigned `url_verification` bootstrap → 200 challenge before installation; real callbacks require the per-project signing secret).
-`CHN-6` Slack dispatch — `app_mention`/IM/threaded `message` → existing thread session → deliver to sandbox `/kortix/prompt` (`delivered|transient|stale`); else `createProjectSession` (actor=owner, agent `default`, `visibility:'project'` — channel sessions are team-visible) + record `chat_threads`.
-`CHN-7` Slack OAuth — `GET /webhooks/slack/oauth/callback` (signed `state`, 10-min TTL) → exchange code → `saveSlackInstall`.
-`CHN-8` Telegram inbound — `POST /webhooks/telegram/:id`: verify `x-telegram-bot-api-secret-token` (missing→404, mismatch→401) → `message`/`edited_message` → spawn session (actor=owner, `visibility:'project'`).
-`CHN-9` bad sig on any channel webhook → 401. Not configured → **503 (Slack OAuth mode + OAuth callback)** but **404 (Slack BYO + Telegram)**.
-`CHN-13` `POST /projects/:id/channels/email/connect {connector_slug?}` → `manage` + project experimental `agentmail_email` enabled → creates or attaches an AgentMail inbox + `message.received`/`message.received.unauthenticated` webhook, stores inbox/webhook metadata as encrypted per-profile project secrets, and marks that Email connector profile connected. Disabled projects return 403 before AgentMail key validation. Omit `connector_slug` for legacy `kortix_email`; provide an Email connector slug for multiple inboxes.
-`CHN-14` `GET /projects/:id/channels/email/installation?connector_slug=...` → `read` → AgentMail inbox id/email/webhook id for that profile or null; disabled projects return null.
-`CHN-15` `DELETE /projects/:id/channels/email/installation?connector_slug=...` → `manage` → removes that profile's inbox binding.
-`CHN-16` AgentMail inbound — `POST /webhooks/email/agentmail`: Svix `svix-*` signature verified against the per-project webhook secret when configured; AgentMail's real unwrapped `message.received` or `message.received.unauthenticated` payload routes by `message.inbox_id` → project, maps `thread_id` 1:1 to a Kortix session, and follow-up emails continue that session.
-`CHN-17` `GET /projects/:id/channels/email/mode` → `read` → `{provider:"agentmail",enabled:boolean,managed_available:boolean}` so the UI can hide Email until `agentmail_email` is enabled and require a project AgentMail key when no managed server key exists.
-`CHN-18` `GET /projects/:id/channels/bindings` → `read` → `{projectDefaultAgent, bindings:[{bindingId,platform,workspaceId,channelId,channelName,channelType,agentName,opencodeModel,conversationPolicy,installedAt,effectiveAgent:{agent,source}}]}` — the web management surface for `chat_channel_bindings` (today populated only via Slack `/kortix agent|model|policy`); `effectiveAgent` resolves `agentName ?? project default ?? 'default'` the same way the Slack panel does.
-`CHN-19` `PATCH /projects/:id/channels/bindings/:bindingId {agentName?,opencodeModel?,conversationPolicy?}` → `project.connector.write` (no dedicated channel-binding leaf exists; reuses the same capability that gates connecting/disconnecting the channel itself) → updates via the same `setChannelAgent`/`setChannelModel`/`setChannelConversationPolicy` helpers the Slack commands call; `agentName` validated against the project's declared `[[agents]]` when adopted (any name accepted for a legacy/undeclared project), `null` resets to the project default, `"default"` is an alias for `null`; `opencodeModel` validated via `isModelServableForAccount` (409 `model_not_servable` when not servable) and normalized to the opencode `kortix/…` ref before storing; unknown `bindingId` → 404 before body validation; empty body on an existing binding → 400 `empty_patch`.
-`CHN-20` send-primitive IAM gate — `POST /projects/:id/channels/slack/file/upload` posts to a channel with the project's bot credentials and asserts leaf `project.connector.write` (IAM enforcement audit; previously gated by project-read only, so any read-capable caller could drive them). A floor `user` member (project.read, no connector.write) → 403 before any Slack call; an `editor` (holds connector.write) passes the gate (200/400/404/502/503, never 403); non-member 403/404; ANON 401. The `channel.*` catalog leaves were removed (never wired to a route). Scoped-agent-token variant proven at the API layer in `integration-project-read-leaf-gates-http.test.ts`.
-
+`CHN-20` send-primitive IAM gate — `POST /projects/:id/channels/slack/file/upload` posts to a channel with the project's bot credentials and asserts leaf `project.connector.write` (IAM enforcement audit; previously gated by project-read only, so any read-capable caller could drive them). A floor `user` member (project.read, no connector.write) → 403 before any Slack call; a `manager` (holds connector.write) passes the gate (200/400/404/502/503, never 403); non-member 403/404; ANON 401. The `channel.*` catalog leaves were removed (never wired to a route). Scoped-agent-token variant proven at the API layer in `integration-project-read-leaf-gates-http.test.ts`. (The former `meet/speak` half of this gate went away with the notetaker — see §VOICE.)
 ### Voice (live calls) — §VOICE
 
 The agent starts a live voice call bound to its session and hands out a join link — it does not join a third-party meeting. Whoever opens the link lands on a plain LiveKit client page (`/voice/:token`, public); the realtime provider connection is held SERVER-side (apps/voice-agent), so no provider credential or session authority ever reaches that page. Per-project bot name lives in `projects.metadata.meet`.
 
 **Two surfaces exist and they point in opposite directions.** Keeping them straight is the whole of this section:
 
-- **The Kortix agent's side is the `kortix_voice` CONNECTOR** — `spawn_room`, `read_transcript`, `send_prompt`, `end_call`, plus `join_gmeet`/`join_zoom` which are declared for a stable surface but deliberately not implemented (calling either returns a clear `not_implemented` error, never a silent no-op). These are `{kind:'voice'}` bindings executed by the API's own server-side code (`executor/db-deps.ts`'s `executeVoiceCall`), routed through the executor gateway like every other connector, so policies, approvals and the audit trail apply. The connector is materialized per-project only when the `voice` experimental flag is on (`executor/channel-materialize.ts`). It has **no HTTP route of its own** — it is covered by the executor/connector flows, not by a voice flow. It used to be an MCP at `POST /projects/:id/mcp/voice`; **that route no longer exists.**
+- **The Kortix agent's side is the `kortix_voice` CONNECTOR** — `spawn_room`, `read_transcript`, `send_prompt`, `end_call`, plus `join_gmeet`/`join_zoom` which are declared for a stable surface but deliberately not implemented (calling either returns a clear `not_implemented` error, never a silent no-op). These are `{kind:'voice'}` bindings executed by the API's own server-side code (`connector/db-deps.ts`'s `executeVoiceCall`), routed through the connector gateway like every other connector, so policies, approvals and the audit trail apply. The connector is materialized per-project only when the `voice` experimental flag is on (`connector/channel-materialize.ts`). It has **no HTTP route of its own** — it is covered by the connector catalog flows, not by a voice flow. It used to be an MCP at `POST /projects/:id/mcp/voice`; **that route no longer exists.**
 - **The LiveKit worker's side is the voice MCP**, `POST /projects/:id/sessions/:sid/mcp/voice`, serving `ask_kortix` / `run_command` / `post_turn`. `ask_kortix` returns the instant the request is queued and refuses a second while one is unanswered; `run_command` is bounded by a short server-side timeout and reports `timed_out`; `post_turn` persists one transcript line. No follow/tail/stream tool exists, by design. Unknown JSON-RPC method → `-32601`; a tool that throws surfaces as a tool-error RESULT, not a protocol error, so the caller can read and react to it. That tool half is only reachable holding a per-call HMAC minted server-side, so it is proven in apps/api's own tests — the flow here asserts the boundary.
 
 `VOICE-1` `PUT /projects/:id/channels/meet/name {name}` → `manage` → sets the bot's display name in the call (default "Kortix"); NONMEMBER → 403/404; ANON → 401.
@@ -434,8 +427,10 @@ DB `project_secrets` (AES-256-GCM, key bound to `projectId`, unique `(project_id
 `SEC-1` `GET /projects/:id/secrets` → `manage` → names only + manifest required/optional keys + virtual git-auth row.
 `SEC-2` `POST /projects/:id/secrets {name,value}` → `manage` → upsert (encrypt); name upper-cased; invalid name format → 400; `KORTIX_*` reserved → 400. M_EDITOR/M_VIEWER → 403.
 `SEC-3` `DELETE /projects/:id/secrets/:name` → `manage`; invalid name → 400; system secret (git-auth) → 403.
-`SEC-4` injection — `buildSessionSandboxEnvVars` decrypts **all** project secrets into the session env (project-global, no per-member scoping) + minted `KORTIX_TOKEN`/`KORTIX_CLI_TOKEN`, `KORTIX_LLM_*`, `KORTIX_GIT_AUTH_TOKEN`, etc.
+`SEC-4` injection — `buildSessionSandboxEnvVars` decrypts only `runtime` + `sandbox` secrets authorized by the immutable agent grant and current session allowlist. Managed, network-boundary, denied, and reserved platform credentials do not enter the project-secret environment.
 `SEC-6` `POST /projects/:id/secrets {identifier,name,value}` → two identifiers may share one env-var `name` (e.g. `GMAPS-primary`/`GMAPS-backup` both `GOOGLE_MAPS_API_KEY`); re-submitting an existing `identifier` with a different `name` → 409.
+`SEC-8` `PUT /projects/:id/secrets/:identifier/strategy {strategy,consumer?,egress_policy?,handle_prefix?}` → manager-only control plane; `runtime|denied` → 200; `broker` accepts `llm_gateway|connector|http_broker`; only `http_broker` accepts and requires a validated `backend=kortix_fetch` policy. Generic `git_proxy` broker remains unavailable. Transparent `egress` accepts exact-host header policies when Platinum is enabled, rejects unenforceable controls with 400, and returns 409 when the deployment lacks the provider capability. Each change revokes active HTTP broker handles and writes `secret.strategy.changed`; agent principals → 403. `POST /projects/:id/secrets/sync` requires secret write and re-applies current policy to active sessions. Its response reports `active_sandboxes`, `targeted`, `synced`, `failed`, `exported`, and one result per sandbox with the applied `scope`, `revision`, export counts, and `agent_env_written` proof. A partial delivery returns `ok:false`. `POST /projects/:id/secrets/:identifier/broker` accepts only a session-scoped agent token, intersects the immutable agent grant with the current session allowlist, requires an active revisioned handle, applies the stored HTTPS host/method/path/injection policy, and writes pending plus terminal audit events without request bodies, headers, query values, handles, or secret values.
+`CONN-ATT-AUTH` `POST /connectors/[projects/:projectId/]attachments` → both attachment-upload forms require authentication before accepting multipart data; anonymous requests → 401.
 
 ---
 
@@ -450,7 +445,11 @@ DB `project_secrets` (AES-256-GCM, key bound to `projectId`, unique `(project_id
 `BILL-7` `POST /billing/deduct {prompt_tokens,completion_tokens,model}` · `POST /billing/deduct-usage {amount,description}` (agent runtime).
 `BILL-8` `POST /billing/webhooks/stripe` (also `/webhook/stripe`) — Stripe sig: missing sig → 400, misconfigured secret → 500. `POST /billing/webhooks/revenuecat` — **Bearer-token auth, bad → 401** (not an in-body sig). Both public, no auth middleware.
 `BILL-9` billing write ops (`create-checkout-session`/`create-per-seat-checkout`/`create-inline-checkout`/`confirm-inline-checkout`/`create-portal-session`/`claim-per-seat`/`cancel-subscription`/`reactivate-subscription`/`schedule-downgrade`/`cancel-scheduled-change`/`purchase-credits`/`auto-topup/configure`) — auth boundary: ANON → 401; non-account-member → 403; account `MEMBER` (`billing.read` only) → 403. They require `billing.write` (OWNER + the `billing_manager` BILLING policy only; ADMIN/AUDITOR/MEMBER denied), enforced by `billing/require-billing-write.ts` (`resolveScopedAccountId` membership check + `assertAuthorized(billing.write)`) — so a non-billing teammate can't subscribe / cancel / top-up on the account's behalf. Reconcile/read ops (`sync-subscription`, `sync-seat-quantity`, `proration-preview`, `checkout-session/:id`, `confirm-checkout-session`) stay member-accessible (membership only). **(finding 2026-06-04 RESOLVED 2026-06-11: the `billing.write` gate now exists in code; the earlier "any member passes" gap is closed.)**
+`BILL-13` The internal free-tier rotation cron runs through its authenticated route and returns processed, skipped, and error counts.
+`BILL-16` The yearly credit rotation cron rejects missing and invalid internal credentials without mutating account credits.
 `COST-1` `GET /usage/session-costs?account_id=&project_id=&limit=&offset=` → authenticated account member; project-derived account scope requires `project.gateway.spend.read`, otherwise → 403. Returns every matching session, including zero-cost sessions, as a paginated `{sessions,total,limit,offset,next_offset,reconciliation}` response. Each row combines finalized LLM cost, billed compute cost, owner, project, request, token, model, and compute-duration fields. `limit` defaults to 25 and accepts 1–100; invalid pagination → 400; ANON → 401. `GET /usage/session-costs/:sessionId?account_id=&project_id=` applies the same spend gate and returns the summary plus `model_usage` and discriminated `ledger_entries`; unknown, foreign, or project-mismatched session → 404. Sandbox tokens are rejected.
+
+`COST-2` `GET /usage/cost-by-project?account_id=&from=&to=&sort=&limit=&offset=` → the project spend rollup behind the explorer's first level: same account/spend gate as `COST-1`, paginated `{projects,total,limit,offset,next_offset}`, sorts `total_desc|total_asc|recent|name_asc`. `GET /usage/cost-summary?account_id=&project_id=&session_id=&from=&to=` returns `{totals,previous,series,models}` for whichever scope is supplied, so one route serves all three levels; `series` is gap-filled with one point per UTC day so an empty day reads as zero rather than being skipped, and `previous` covers the equally long window immediately before. Windows are half-open `[from,to)` and always UTC; an inverted or over-long window → 400; ANON → 401. Both routes accept `format=csv`, which runs the same filtered query rather than the visible page, caps at 10,000 rows (reported in `x-kortix-row-cap`) and neutralises a leading `=`/`+`/`-`/`@` so a spreadsheet cannot evaluate a project name as a formula.
 
 ---
 
@@ -460,12 +459,13 @@ DB `project_secrets` (AES-256-GCM, key bound to `projectId`, unique `(project_id
 `RTR-2` `POST /router/chat/completions {model,messages,stream}` (OpenAI-compat) · `GET /router/models` · `GET /router/models/:model`.
 `RTR-4` billed proxy passthrough `ALL /router/:service[/*]` for `tavily|serper|firecrawl|replicate|context7|anthropic|openai|xai|gemini|groq` — Kortix token → managed keys; user key + `X-Kortix-Token` → passthrough; disallowed service/route → 4xx.
 `GW-1` standalone gateway `GET /health` → 200 `{status:"healthy",service:"kortix-llm-gateway"}`.
-`GW-2` standalone gateway `GET /v1/llm/models` plus `/v1/models` and `/v1/openai/models` aliases — account PAT → 200 with a non-empty `{models:{...}}` catalog; ANON → 401/403 (`GW-2b`).
+`GW-2` standalone gateway `GET /v1/llm/models` plus `/v1/models` and `/v1/openai/models` aliases — account PAT → 200 with a non-empty `{models:{...}}` catalog.
+`GW-2b` An anonymous caller cannot list models through the standalone gateway.
 `GW-3` standalone OpenAI-compatible chat aliases reject ANON → 401/403.
 `GW-4` project LLM gateway routing policy — `GET /projects/:id/gateway/routing-policy` returns the persisted project document plus effective account/platform inheritance; `PUT` atomically saves project/vision defaults, a bounded ordered default chain, and exact-model overrides; `GET /projects/:id/model-picker` returns the compact connection-aware selector catalog while the full runtime catalog remains sandbox-only; `POST …/preview {requestedModel,imageInput}` resolves the finite route and model availability without consuming tokens; `DELETE` resets every project override. Duplicate/self-loop/`auto` fallback routes → 400 `invalid_routing_policy`; project nonmember → 403/404; ANON → 401.
 `GW-5` `GET /projects/:id/llm-catalog/providers` returns the LIVE provider-level catalog (id/name/env/doc/models per provider) from the same 24h-refreshed runtimeModelCatalog `/llm-catalog` and `/model-picker` read — the source the web connect modal now consumes instead of a baked snapshot. Unlike `/llm-catalog`/`/model-picker`, NOT gated by the project's `llm_gateway` flag (the BYOK connect modal applies to native-mode projects too) → 200 for both gateway and native projects; project nonmember → 403/404; ANON → 401.
 `GW-6` Anthropic-Messages-compatible ingress on the LLM gateway — `POST /v1/llm/messages` on the in-process mount (and the `/v1/...`-prefixed `POST /v1/llm/v1/messages` alias, mirroring `/v1/llm/chat/completions` vs `/v1/llm/v1/chat/completions`), plus `POST /v1/messages` / `POST /v1/llm/messages` / `POST /v1/openai/messages` on the standalone gateway pod (mirroring its `/v1/chat/completions` / `/v1/llm/chat/completions` / `/v1/openai/chat/completions` aliases) — accepts an Anthropic Messages-shaped body (`{model,system,messages,tools,max_tokens,stream}`) and routes it through the SAME `handleChatCompletions` pipeline as the OpenAI-compat surface — translation to/from Anthropic shape happens only at the edges, so auth/billing/routing/failover (and BYOK keys) are identical. Returns Anthropic-shaped JSON (non-streaming) or an Anthropic Messages SSE event stream (`message_start`/`content_block_start`/`content_block_delta`/`content_block_stop`/`message_delta`/`message_stop`) when `stream:true`, including `tool_use` content blocks for tool calls. ANON → 401/403. (The legacy `POST /router/messages` — a hardcoded-OpenRouter-key passthrough billed against the legacy LLM-credits ledger — has been removed; this gateway ingress is its replacement and the only `/messages`-shaped surface now.)
-`COV-9` OpenRouter-parity account reads (`combinedAuth`) — `GET /generation?id=<requestId>` looks up one `gateway_request_logs` row by `requestId` scoped to the caller's account and returns `{ data: {...} }`; missing `id` → 400, unknown/foreign id → 404. `GET /usage[?start&end&group_by]` aggregates `usage_events` for the account into `{ data: {totals}, breakdown?: [...] }`; `group_by` one of `model|provider|day`; invalid `group_by` or `start`>`end` → 400. ANON → 401 on both.
+`GW-11` OpenRouter-parity account reads (`combinedAuth`) — `GET /generation?id=<requestId>` looks up one `gateway_request_logs` row by `requestId` scoped to the caller's account and returns `{ data: {...} }`; missing `id` → 400, unknown/foreign id → 404. `GET /usage[?start&end&group_by]` aggregates `usage_events` for the account into `{ data: {totals}, breakdown?: [...] }`; `group_by` one of `model|provider|day`; invalid `group_by` or `start`>`end` → 400. ANON → 401 on both.
 
 ---
 
@@ -503,6 +503,34 @@ The `/v1/admin/api/*` surface backs `apps/web/src/app/admin/` — all guarded by
 `ADM-4` `POST /v1/admin/api/accounts/:id/credits {amount,description?,isExpiring?}` → grant credits → 200 `{ok:true,balance}`; non-positive amount → 400; non-admin → 403.
 `ADM-5` `POST /v1/admin/api/accounts/:id/credits/debit {amount,description?}` → debit credits → 200 `{ok:true,balance}`; non-positive amount → 400; non-admin → 403.
 `ADM-6` `PUT /v1/system/maintenance` (`supabaseAuth`, handler does admin check) → update maintenance config → 200; non-admin → 403; ANON → 401.
+`ADM-20` `GET /v1/admin/api/projects` → the fleet view: every project across every account, paged → 200 `{projects,total,page,limit}`. Query: `search` (project name / account name / any account member's email, ilike), `accountId`, `status` (csv of `project_status`), `sortBy` (`activity`|`created`|`sessions`), `sortDir`, `page`, `limit` (default 50, **capped at 100**). Each row carries `projectId`, `name`, `status`, `accountId`, `accountName`, `ownerEmail`, `createdAt`, `sessionCount`, `activeSessionCount` (status in `queued`/`branching`/`provisioning`/`running`), `lastSessionAt` (max session `created_at`, null when the project never ran one). Default sort is `activity` DESC **NULLS LAST**, so a never-run project sorts last in both directions. Two inputs are sanitized rather than passed to Postgres, which would answer 22P02: an unknown `status` value is dropped (filter degrades to "no status filter"), and a non-uuid `accountId` returns an **empty page** (`total:0`) rather than widening to every project. Non-admin → 403; ANON → 401.
+
+#### Trials + entitlement overrides
+
+An admin-issued **trial** makes an account BEHAVE as a paid tier — entitlements, project/session limits, managed-models — until it ends, **without writing `credit_accounts.tier`** (that column belongs to the Stripe webhook). Resolution is a lazy overlay, so a trial never masks a real subscription. Every write below is scoped to a fresh run-owned account, never a real customer.
+
+`ADM-14` `POST /v1/admin/api/accounts/:id/trial {tier_key,seats,duration_days,note?,credit_grant?}` → grant or **replace** a trial (re-granting overwrites the window — extend/adjust = re-grant) → 200 `{ok:true,trial:{status:"active",tier,seats,startedAt,endsAt,note},credit_granted}`. `credit_grant` (USD credits, default 0) funds sandbox compute in the same call. Rejected with 400: `tier_key` that is not an existing **paid** tier (`free`/`none`/unknown), `seats` outside `[1,100]`, `duration_days` outside `[1,365]`, `credit_grant` outside `[0,10000]`. Non-admin → 403; ANON → 401. After a grant the `ADM-1` list row for the account reports `trial.status:"active"` with the granted tier/seats.
+`ADM-15` `DELETE /v1/admin/api/accounts/:id/trial` → revoke immediately → 200 `{ok:true,trial:{status:"revoked",…}}`. Status-only: tier/seats/window stay on the row as the audit trail. No active trial (never granted, or already revoked/expired) → **400**. Non-admin → 403; ANON → 401.
+`ADM-16` `POST /v1/admin/api/accounts/:id/managed-models {override}` → tri-state managed-models entitlement override → 200 `{ok:true,override}`. `true` grants Kortix-credential models regardless of tier, `false` forces BYOK-only, `null` restores "the effective tier decides". Neither boolean nor null → 400; non-admin → 403; ANON → 401.
+`ADM-17` `POST /v1/admin/api/accounts/:id/enterprise-demo {enabled}` → the operator counterpart of `IAM-32`'s retired self-serve toggle → 200 `{ok:true,enabled}`; same `credit_accounts.demo_enterprise` storage and the same entitlement effect, so `IAM-32`'s GET reflects it immediately. Non-boolean → 400; non-admin → 403; ANON → 401.
+`ADM-18` `GET /v1/admin/api/accounts` rows carry the entitlement columns the console renders: `billingModel`, `seatCount`, `trial:{status,tier,seats,startedAt,endsAt,note}`, `managedModelsOverride`, `demoEnterprise`, `enterpriseEntitled`. A never-granted account reads `trial.status:"none"` with null tier/seats/window, `managedModelsOverride:null`, `demoEnterprise:false`, `enterpriseEntitled:false`. Non-admin → 403; ANON → 401.
+`ADM-23` `PUT /v1/admin/api/accounts/:id/overrides {<key>:{value,expires_at?}|null,…}` → merge-patch the account's entitlement overrides (`credit_accounts.entitlement_overrides`) → 200 `{ok:true,overrides}` echoing the STORED map. Keys: `enterpriseEntitled`, `demoEnterprise`, `managedModelsOverride`, `maxConcurrentSessions`, `computeRateMultiplier`, `sso`, `scim`, `rbac`, `auditAccess`, `managedModels`. RFC 7386 semantics: a key with an entry sets it, a key with `null` deletes it, an absent key is untouched. Every entry may carry an ISO-8601 `expires_at`, after which the resolver ignores it — the one thing the single-purpose column routes (`ADM-13`/`ADM-16`/`ADM-17`, `session-limit`) cannot express. Rejected with 400: an unknown key, a wrong-typed `value` (boolean keys vs the two numeric ones), `maxConcurrentSessions` outside `[1,100000]` or non-integer, `computeRateMultiplier` outside `[0,10]`, a non-ISO `expires_at`, a non-object body. A PERMANENT patch to one of the four legacy-column keys also writes that column (one-release compatibility); a TIMED one clears it instead, so the expiry cannot be defeated by the column fallback. Non-admin → 403; ANON → 401.
+#### Act-as impersonation
+
+A platform admin can open a customer's account to debug it. The capability is a ROW (`kortix.impersonation_grants`), never a token: the client holds only `grant_id`, and ownership, expiry (server-written, capped at **1 hour**), revocation and the caller's CURRENT platform role are re-read on EVERY request presenting it. So revocation takes effect on the next request, and demoting an operator kills their live sessions. The impersonated account then flows through the SAME membership resolution an ordinary request uses (`resolveAccountId`, `getAccountMembership`, the IAM engine), so every account access check sees the target without a per-check admin branch.
+
+`IMP-1` `POST /v1/admin/api/impersonate {account_id,reason?}` → mint a grant → 200 `{grant_id,account_id,account_name,expires_at}`; audited `admin.impersonate.start` against the TARGET account with the real admin as actor. Non-uuid `account_id` → 400; unknown account → 404; non-admin → 403; ANON → 401.
+`DELETE /v1/admin/api/impersonate/:grantId` → revoke → 200 `{ok:true,grant_id,revoked_at}`; audited `admin.impersonate.stop`. Scoped to the caller's OWN grants — another admin's id answers 404, exactly like a nonexistent one. `GET /v1/admin/api/impersonate/active` → `{grants:[{grant_id,account_id,account_name,expires_at}]}`, the caller's unrevoked, unexpired grants.
+Presenting `X-Kortix-Impersonate: <grant_id>` on any other route makes it act on the target account: `GET /v1/accounts` returns exactly that one account at role `owner`, and writes land on it. Every NON-GET impersonated request additionally writes `admin.impersonate.action` `{method,path,grant_id,impersonator_user_id,target_account_id}` against the target account BEFORE the handler runs. Denied with **403 `{code:"impersonation_invalid"}`**, never a silent fall-back to the operator's own account: an unknown/expired/revoked grant, a grant belonging to another user, a caller who is no longer a platform admin, a non-JWT credential (PAT/API key/service account), any `/v1/admin/*` route (no nested admin, no second grant, no platform-role change), any NON-GET request to a route that would create DURABLE access outliving the grant — credentials (`/v1/accounts/tokens`, SCIM tokens, service accounts, project CLI/git tokens, gateway keys), account membership and invites (`/v1/accounts/:id/members`, `/v1/accounts/:id/invites/*`), SSO provider config (`/v1/accounts/:id/iam/sso/*`), session public shares (whose `expires_at` is optional and whose consuming route is unauthenticated), and tunnel connections. READING those same surfaces stays allowed — a GET creates nothing, and the member list is the first thing a support question needs; only `/v1/admin/*` is refused for reads too — and an explicit `account_id` naming any account other than the target. Impersonation also CONFINES: while a grant is live the operator's OWN account and every third account are inaccessible, so a stale client cannot make a write land anywhere but the account the banner names.
+
+`ADM-19` `POST /v1/billing/cron/trial-expiry` — **internal-cron auth**, not `requireAdmin` (same `requireInternalCronAuth` gate as `BILL-13`/`BILL-16`: Bearer or `X-Kortix-Internal-Key` must timing-safe-equal `INTERNAL_SERVICE_KEY`) → flips `active` trials past `trial_ends_at` to `expired` → 200 `{expired:n}`; no/wrong credentials → 401; billing internals disabled → 200 `{skipped:true}`. Status hygiene only — the lazy overlay already stopped granting at the timestamp.
+
+#### Activity analytics
+
+`/v1/admin/analytics/*` is a sub-router mounted INSIDE `adminApp` after its global `supabaseAuth` + `requireAdmin` gate, so it declares no auth of its own and inherits it (`apps/api/src/admin/analytics.ts`). Note the path has no `api` segment, unlike the `/v1/admin/api/*` console routes above. Both routes take `?days=` (1-90, default 30); out-of-range values are clamped and non-numeric falls back to the default — neither is a 400. Buckets are UTC calendar days and the series is dense (zero-filled), so `days[]` always has exactly the clamped length.
+
+`ADM-21` `GET /v1/admin/analytics/activity?days=` → `{days:[{date,sessionsCreated,activeAccounts,activeUsers,newAccounts,activeProjects}],summary:{sessionsLast7d,sessionsPrev7d,dau,wau,mau,totalAccounts,totalProjects}}` → 200. `activeUsers`/`dau`/`wau`/`mau` count distinct `project_sessions.created_by`; `summary` uses fixed 1/7/30-day windows and does NOT vary with `days`. `days=0` → 1 entry; `days=9999` → 90 entries; `days=abc` → 30 entries. Non-admin → 403; ANON → 401.
+`ADM-22` `GET /v1/admin/analytics/usage?days=` → `{days:[{date,computeUsd,llmUsd,otherUsd,totalUsd,payingAccounts}],summary:{totalUsd,computeUsd,llmUsd,otherUsd,spendLast7d,spendPrev7d,payingAccountsLast7d}}` → 200. Debits only, as positive USD magnitudes, classified by `metadata->>'ledger_type'` falling back to `credit_ledger.type` (the same classifier the billing usage breakdown uses), so `totalUsd` is always exactly `computeUsd + llmUsd + otherUsd`. `payingAccountsLast7d` is a window-wide `COUNT(DISTINCT account_id)`, not a sum of the daily counts. Non-admin → 403; ANON → 401.
 
 ---
 
@@ -519,6 +547,7 @@ Run these against representative endpoints from each domain.
 `SEC-G` preview proxy without token/cookie → 401; cross-sandbox token reuse → 403.
 `SEC-H` audit — every state-changing `/v1/*` writes an audit row (`auditStateChangingRequest`); assert `GET /accounts/:id/audit` reflects a prior mutation.
 `SEC-I` rate limits — session create (429), invite-accept, preview proxy, tunnel WS each return their limiter response under load.
+`SEC-J` transport hardening — public health responses leak no secrets or framework headers; sensitive paths stay hidden; malicious origins receive no permissive CORS; adversarial bodies and content types produce no 5xx, reflection, or secret leakage; HTTP method fuzzing never bypasses auth; the router is not an anonymous upstream relay.
 
 ### Role × project-action grid (assert per row)
 
@@ -616,33 +645,33 @@ Scale: ~500 exported symbols / ~520 route handlers in `apps/api/src` — a tract
 
 ---
 
-## 24. Connectors (executor)
+## 24. Connector catalog and connections
 
-`CONN-1` `GET /executor/connectors` → executor-principal (sandbox KORTIX_TOKEN) route; user JWT + `ANON` → 401 (200 path exercised in-sandbox).
-`CONN-2` `GET /executor/projects/:id/connectors` → project admin → 200; `NONMEMBER` → 403.
-`CONN-3` `POST /executor/call {connector,action,args}` → executor-principal route; user JWT + `ANON` → 401.
-`CONN-4` `POST /executor/projects/:id/connectors/sync` → admin → 200 (re-materialize from kortix.yaml).
-`CONN-5` `GET /executor/projects/:id/policies` → admin → 200; `PUT …/policies {policies[]}` → admin → 200.
-`CONN-7` `PUT /executor/projects/:id/connectors/:slug/credential` → accepts a static value or native OAuth2 client-credentials configuration; missing value or a non-HTTPS OAuth2 token URL → 400.
-`CONN-8` `POST /executor/projects/:id/connectors` → admin; invalid JSON or non-boolean `create_only` → 400. A first `create_only:true` request creates the profile; a second request for the same slug → 409 and does not replace the existing manifest entry. `DELETE …/:slug` → admin → ok/404.
-`CONN-9` `GET /executor/projects/:id/pipedream/apps` → admin → 200 or 501 (pipedream not configured).
-`CONN-13` `PUT /executor/projects/:id/connectors/:slug/credential-mode|authorization-strategy|name|policies` → admin (`project.connector.write`); body validated before the connector lookup (bad mode, unsupported authorization strategy, empty name, or invalid policy action → 400 even against an unknown slug); well-formed body + unknown connector → 404; NONMEMBER → 403.
-`CONN-14` `POST /executor/projects/:id/connectors/auth-discovery {provider,spec|url|endpoint|baseUrl}` → admin (`project.connector.write`) loads the guarded direct source and returns normalized authentication candidates plus a supported recommendation; omitted auth on `POST …/connectors` applies that recommendation, while explicit `{auth:{type:"none"}}` skips discovery and remains a durable opt-out. Source credential literals are never returned.
-`CONN-15` `GET /executor/projects/:id/discover/integrations[?q&cursor]` → project admin browses the direct integrations.sh catalogue; `GET …/discover/integrations/detail?id=…` → resolves the trusted record's API/MCP/Postman/GraphQL/docs/CLI variants; upstream outage → 502; `NONMEMBER` → 403 before any upstream fetch.
-`CONN-OAUTH2` profile-scoped native OAuth2 routes → save and read a redacted provider-independent application; start Authorization Code with PKCE S256; read status; reject SSRF discovery, unavailable Device Authorization, unknown device sessions, and callback state replay. Profile creation follows the connector's authorization strategy: the default `project` strategy accepts only `owner_type: "project"`; any other owner_type → 409 `CONNECTOR_AUTHORIZATION_STRATEGY_MISMATCH`, and `/me` member profiles require the `user` strategy.
+`CONN-1` `GET /connectors/catalog` → connector-principal (sandbox KORTIX_TOKEN) route; user JWT + `ANON` → 401 (200 path exercised in-sandbox). The deprecated `GET /connectors/connectors` alias preserves the same auth contract for older clients.
+`CONN-2` `GET /connectors/projects/:id/connectors` → project admin → 200; `NONMEMBER` → 403.
+`CONN-3` `POST /connectors/call {connector,action,args}` → connector-principal route; user JWT + `ANON` → 401.
+`CONN-4` `POST /connectors/projects/:id/connectors/sync` → admin → 200 (re-materialize from kortix.yaml).
+`CONN-5` `GET /connectors/projects/:id/policies` → admin → 200; `PUT …/policies {policies[]}` → admin → 200.
+`CONN-7` `PUT /connectors/projects/:id/connectors/:slug/credential` → accepts a static value or native OAuth2 client-credentials configuration; missing value or a non-HTTPS OAuth2 token URL → 400.
+`CONN-8` `POST /connectors/projects/:id/connectors` → admin; invalid JSON or non-boolean `create_only` → 400. A first `create_only:true` request creates the connector; a second request for the same slug → 409 and does not replace the existing manifest entry. `DELETE …/:slug` → admin → ok/404.
+`CONN-9` `GET /connectors/projects/:id/pipedream/apps` and `/pipedream/sections` → admin → 200 or 501 (pipedream not configured); sections returns stable bounded category slices and rejects non-members.
+`CONN-13` `PUT /connectors/projects/:id/connectors/:slug/credential-mode|authorization-strategy|name|policies` → admin (`project.connector.write`); body validated before the connector lookup (bad mode, unsupported authorization strategy, empty name, or invalid policy action → 400 even against an unknown slug); well-formed body + unknown connector → 404; NONMEMBER → 403.
+`CONN-14` `POST /connectors/projects/:id/connectors/auth-discovery {provider,spec|url|endpoint|baseUrl}` → admin (`project.connector.write`) loads the guarded direct source and returns normalized authentication candidates plus a supported recommendation; omitted auth on `POST …/connectors` applies that recommendation, while explicit `{auth:{type:"none"}}` skips discovery and remains a durable opt-out. Source credential literals are never returned.
+`CONN-15` Project admin enables `connectors_api_discover` through `PATCH /projects/:id/features`; `GET /connectors/projects/:id/discover/connectors[?q&cursor]` → browses the direct integrations.sh catalogue; `GET …/discover/connectors/detail?id=…` → resolves the trusted record's API/MCP/Postman/GraphQL/docs/CLI variants; upstream outage → 502; `NONMEMBER` → 403 before any upstream fetch.
+`CONN-19` `PUT /connectors/projects/:id/connectors/:slug/secret-binding {secret_identifier}` → project admin binds an active `broker`/`connector` project secret or clears the binding with `null`; malformed identifiers → 400; unknown connector → 404; stored credentials, user-owned authorization, platform authentication, and incompatible secrets → 409; `NONMEMBER` → 403.
+`CONN-OAUTH2` connection-scoped native OAuth2 routes → save and read a redacted provider-independent application; start Authorization Code with PKCE S256; read status; reject SSRF discovery, unavailable Device Authorization, unknown device sessions, and callback state replay. Connection creation follows the connector's authorization strategy: the default `project` strategy accepts only `owner_type: "project"`; any other owner_type → 409 `CONNECTOR_AUTHORIZATION_STRATEGY_MISMATCH`, and `/me` member connections require the `user` strategy.
 
-**Connector authorization has three gates.** The agent's `connectors` grant
-selects connector-profile slugs. The connector profile's
-`authorization_strategy` selects `project` or the acting member's `user`
-authorizations. Connector-profile policies apply to every authorization under
-that profile. `connectors_required` is a subset of `connectors`; missing active
-strategy-compatible authorizations return `409
-CONNECTOR_AUTHORIZATION_REQUIRED` before sandbox startup. Session
-creation returns `409 REQUIRED_CONNECTOR_PROFILE_UNAVAILABLE` when a required
-slug has no configured connector profile. Session
-`connector_bindings` use connector-profile slug keys and `authorization_id`
+**Connector access has three gates.** The agent's `connectors` grant selects
+connector slugs. The connector's `authorization_strategy` selects `project` or
+the acting member's `user` connections. Connector policies apply to every
+connection under that connector. `connectors_required` is a subset of
+`connectors`; missing active strategy-compatible connections return `409
+CONNECTOR_CONNECTION_REQUIRED` before sandbox startup. Session
+creation returns `409 REQUIRED_CONNECTOR_CONNECTION_UNAVAILABLE` when a required
+slug has no configured connector. Session
+`connector_bindings` use connector slugs and `connection_id`
 values. `GET /projects/:id/sessions/:sessionId/scope` reads the effective
-secret allowlist and authorization map. `PUT` on the same path replaces each
+secret allowlist and connection map. `PUT` on the same path replaces each
 supplied scope field without restarting the session.
 
 ---
@@ -657,7 +686,6 @@ supplied scope field without restarting the session.
 `GH-14` `POST /projects/create-repo` → PROJECT_CREATE; missing name → 400; no install → 409/503.
 `GH-15` `POST /projects/link-repository` → PROJECT_CREATE; missing repo → 400; no install → 400/409/502; bad token → 400.
 `GH-16` `GET /projects/github/repository-branches` → PROJECT_CREATE; returns the repository default plus every existing branch; missing installation → 409; wrong installation owner → 400.
-`PLT-3` `GET /platform/sandbox/version` · `…/latest` · `…/all` · `…/changelog` → 200 (public).
 `IAM-14` `GET …/iam/groups/:gid/project-grants` → 200; unknown → 404; NONMEMBER → 403.
 `IAM-15` `POST …/iam/members/:userId/effective:batch` → 200; non-array → 400.
 `IAM-16` `GET …/iam/members/:userId/project-access` → 200; NONMEMBER → 403.
@@ -672,20 +700,12 @@ supplied scope field without restarting the session.
 `CHN-10` `GET /projects/:id/channels/slack/mode` → read → 200; non-member 403/404.
 `CHN-11` `POST /webhooks/slack/commands` → public, OAuth-gated → 503/401.
 `CHN-12` `POST /webhooks/slack/interactivity` → public, OAuth-gated → 503/401.
-`CHN-13` `POST /projects/:id/channels/email/connect` → manage; requires project experimental `agentmail_email`; optional `connector_slug` scopes the inbox to one Email connector profile; optional existing `inbox_id` + `email` attaches an already-created AgentMail inbox; disabled → 403, invalid AgentMail key → 502 or no configured key → 503; non-member 403/404.
-`CHN-14` `GET /projects/:id/channels/email/installation` → read → 200 null/summary for default or requested `connector_slug`; non-member 403/404.
-`CHN-15` `DELETE /projects/:id/channels/email/installation` → manage → 200 for default or requested `connector_slug`; non-member 403/404.
-`CHN-16` `POST /webhooks/email/agentmail` → public; accepts AgentMail's unwrapped message payload shape; unsigned local/unconfigured may 200, configured bad sig → 401, production without signing → 503.
-`CHN-17` `GET /projects/:id/channels/email/mode` → read → 200 mode with enabled flag; non-member 403/404.
-`CHN-18` `GET /projects/:id/channels/bindings` → read → 200 `{projectDefaultAgent,bindings[]}`; non-member 403/404; ANON 401.
-`CHN-19` `PATCH /projects/:id/channels/bindings/:bindingId` → `project.connector.write`; unknown bindingId → 404 before body validation; empty body on an existing binding → 400; non-member 403/404; ANON 401.
-`Q-5` `GET /queue/sessions/:sid` (unknown) → 200 empty; ANON → 401.
-`Q-6` enqueue → move-up/down + DELETE /messages/:mid → DELETE /sessions/:sid → 200.
-`AUD-1` `GET /accounts/:id/audit` → 200 `{events,next_cursor}`. Each event exposes the centralized envelope: `project_id`, `session_id`, `actor_type`, `source`, `outcome`, `http_status`, `duration_ms`, `request_id`, `trace_id`, and `correlation_id`. The route filters by project, session, actor, actor type, source, outcome, request, correlation, resource, action, time, or free-text search. Request-event `source` is derived from authenticated server context; `X-Kortix-Client` cannot override it. A correlated project request can be reconstructed through one exact filtered query. NONMEMBER → 403.
+`AUD-1` `GET /accounts/:id/audit` → 200 `{events,next_cursor}`. Each event exposes the centralized envelope: project/session/OpenCode/turn/message/tool/execution identifiers, monotonic `session_sequence`, actor/agent/initiator/delegation identity, authoritative and client-reported sources, action/phase/outcome, request/trace/correlation/causation identifiers, source-ledger identity, redacted summaries and SHA-256 digests, and integrity-chain fields. The route filters by project, session, actor, actor type, source, phase, outcome, request, correlation, resource, action, time, or free-text search. Authentication determines `authoritative_source`; validated `X-Kortix-Client` values populate only `client_reported_source`. A correlated project request can be reconstructed through one exact filtered query. NONMEMBER → 403.
 `AUD-2` `GET /accounts/:id/audit/export` → 200 (CSV/JSONL); bad format → 400; NONMEMBER → 403.
 `AUD-3` `GET /accounts/:id/audit/webhooks` → 200; NONMEMBER → 403.
 `AUD-4` `POST`/`PATCH`/`DELETE /accounts/:id/audit/webhooks[/:id]` → 201 secret-once; bad url → 400; unknown → 404; delete 200.
-`AUD-5` Audit edge cases: ANON → 401 on every audit route; MEMBER (in-team, no audit.read/account.write) → 403; limit clamp (0/neg→1, non-numeric→50, oversize→200, never 400); cursor pagination no overlap; export headers + uppercase format normalization; webhook create validation (missing name, >128 name, malformed url, SSRF 169.254.169.254 → 400); webhook secret-once invariant (no leak on GET list / PATCH); cross-account isolation (teamA hook via teamB path → 404).
+`AUD-5` Audit edge cases: ANON → 401 on every audit route; MEMBER (in-team, no audit.read/account.write) → 403; malformed/zero/negative/oversized limits, malformed timestamps, malformed UUID filters, and malformed cursors → 400; cursor pagination has no overlap, including PostgreSQL microsecond timestamps serialized through JavaScript milliseconds; export responses expose resumable row-count/complete/next-cursor headers; webhook create validation (missing name, >128 name, malformed URL, SSRF 169.254.169.254 → 400); webhook secret-once invariant (no leak on GET list / PATCH); cross-account isolation (teamA hook via teamB path → 404).
+`AUD-6` Canonical v2 operations: `GET /projects/:id/audit` → the project-bound canonical page; `POST /accounts/:id/audit/reconcile` → bounded idempotent reconciliation result; `GET /accounts/:id/audit/webhooks/:webhookId/deliveries` → durable delivery rows; `POST .../deliveries/:deliveryId/replay` → `{replayed:true}`; human auth on `POST /projects/:id/sessions/:sid/audit/events` → 403 because ingestion requires the session-bound sandbox token.
 `SCIM-1` `GET /scim/v2/accounts/:id/ServiceProviderConfig` → SCIM bearer 200; OWNER JWT/no bearer → 401.
 `SCIM-2` `GET/POST /scim/v2/accounts/:id/Users` · `GET/PATCH/DELETE …/:userId` → ListResponse; missing userName → 400; idempotent deletes 204; OWNER JWT → 401.
 `SCIM-3` `GET/POST /scim/v2/accounts/:id/Groups` · `GET/PATCH/DELETE …/:groupId` → list; missing displayName → 400; create 201.
@@ -708,10 +728,7 @@ supplied scope field without restarting the session.
 `PROJ-19` Full v2 agent-config editor (agent-first spec §2.2): `GET /projects/:id/agents/:agentName/config` (`read`) → 200 `{agent,schema_version,editable,default_agent,block}` — `editable:false` + `block:null` for a v1/empty manifest (the UI's degrade signal), the agent's full `AgentBlockV2` for a declared v2 agent; `PUT /projects/:id/agents/:agentName/config {…AgentBlockV2}` (`manage`, gated `project.customize.write`) validates the block through the manifest-schema validator (bad permission tree/enum/ungrantable `kortix_cli` → 400 `invalid_config`) then writes it into the `agents:` map in `kortix.yaml`; a v1 project is refused with a 400 upgrade pointer (v2-only); malformed body → 400 `invalid_body`; caller with no project grant → 403.
 `MKTP-1` `GET /marketplace/items {query?,type?}` → auth → 200 `{items:[{id,registry,name,type,title,description,categories,capabilities,dependencies,fileCount,managedBy?,updatePolicy?}]}` (catalog includes the minimal Kortix runtime skills, optional General Knowledge Worker skills such as `pdf`, and curated bundles; the default starter does not ship the GKW pack; `?query=`/`?type=` filter).
 `MKTP-2` `GET /marketplace/items/:id` → auth → 200 item detail (`files`, `readme`, `capabilities`, managed metadata when applicable); unknown id → 404.
-`MKTP-3` `POST /projects/:projectId/marketplace/install {id}` → `write` → 201 `{commit_sha,branch,file_count,installed[],capabilities}` (resolves the catalog item + transitive bundle deps, commits its files + `registry-lock.json` to the default branch). Missing/unknown id → 400; missing project / `NONMEMBER` → 404/403. Legacy alias: `/registry/install`.
-`MKTP-4` `GET /projects/:projectId/marketplace` → `read` → 200 `{installed:[{name,type,source,installed_at,file_count}]}` (from `registry-lock.json`; migrates legacy `skills-lock.json`); missing project → 404. Legacy alias: `/registry`.
-`MKTP-5` `DELETE /projects/:projectId/marketplace/:name` → `write` → 200 `{ok,removed,commit_sha,branch,file_count}` (removes the item's files + lock entry in one commit to the default branch); item not installed → 404; missing project / `NONMEMBER` → 404/403. Legacy alias: `/registry/:name`.
-`EXP-1` `PATCH /projects/:id/experimental {feature,enabled}` → 200 with `experimental`/`experimental_features` in body; unknown feature → 400; non-bool enabled → 400; `enabled:null` clears the override → 200.
+`EXP-1` `PATCH /projects/:id/features {feature,enabled}` (canonical) and `PATCH /projects/:id/experimental` (deprecated alias, same handler) → 200 with `experimental`/`experimental_features` in body; unknown flag → 400; non-bool enabled → 400; `enabled:null` clears the override → 200; archived project → 404 with metadata unchanged. Flag-gated routes reject with `403 {code:'feature_disabled', feature}` when their flag is off.
 `SNAP-3` `POST /projects/:id/snapshots/fix-with-agent` → no failed build → 409; else 201.
 `SBX-3` `GET /projects/:id/sandboxes` · `/sandbox-health` · `/sandbox-templates` → 200.
 `SBX-4` `POST /sandbox-templates` → 201; bad → 400; reserved/dup → 409; `PATCH/DELETE/build /:templateId`; unknown → 404.
@@ -725,9 +742,10 @@ supplied scope field without restarting the session.
 `DEL-2b` `/billing/account/*` deletion mirror — request → cancel lifecycle.
 `SESS-11` session sub-routes (commit-push/ensure-opencode/restart/wake) → unknown/non-uuid session → 4xx (happy paths need a funded session, run on dev-api).
 `SEC-5` `PUT/DELETE /projects/:id/secrets/:name/personal` → per-user secret override set/clear.
-`CONN-10` `POST /executor/projects/:id/connectors/:slug/connect[/finalize]` → pipedream; unknown connector → 404/501.
-`CONN-11` `POST /executor/webhook/pipedream` → public; bad/unsigned payload → rejected.
-`CONN-12` `GET /executor/projects/:id/connectors/:slug/config` → admin reads a connector's connection def for editing; unknown connector → 404/501; NONMEMBER → 403.
+`CONN-10` `POST /connectors/projects/:id/connectors/:slug/connect[/finalize]` → pipedream; unknown connector → 404/501.
+`CONN-11` `POST /connectors/webhook/pipedream` → public, HMAC-signed. Reads the external user id from `account.external_id` (the real Pipedream CONNECTION_SUCCESS shape) or top-level `external_user_id` (legacy); `event:"CONNECTION_ERROR"` → 200 `{ok,ignored}`; neither id present → 400; bad signature → 401; signed but Pipedream still reports no account → 503. AUXILIARY only — it never notifies a session.
+`CONN-22` public connector setup-link consume side: `GET /setup-links/connectors/:token` (what app does this link connect) · `POST /setup-links/connectors/:token/start` (mint a fresh Pipedream connect URL) · `POST /setup-links/connectors/:token/finalize` (the authoritative persist: 200 `{connected:true|false}`, notifies the requesting session exactly once on the first true). Bogus token → 404 on all three; wrong link kind → 400; expired → 410; non-project authorization strategy → 409.
+`CONN-12` `GET /connectors/projects/:id/connectors/:slug/config` → admin reads a connector's connection def for editing; unknown connector → 404/501; NONMEMBER → 403.
 `DEL-3` `DELETE /v1/account/delete-immediately` (+ /billing mirror) → ANON → 401 (auth boundary; destructive happy path not run).
 
 ---
@@ -748,3 +766,137 @@ metadata stays in the wrapper's data store. See
 `KAAB-5` backend `runtime_context` with a credential-like key → 400; over the 64-entry / 16 KiB caps → 400 (`INVALID_SESSION_RUNTIME_CONTEXT`).
 `KAAB-6` backend `Idempotency-Key` retry: same key + same body → the SAME `session_id` (no double-create / double-charge); same key + a different `secrets`/`connector_bindings` body → **409** (`IDEMPOTENCY_SECRETS_CONFLICT` / `IDEMPOTENCY_BINDING_CONFLICT`).
 `KAAB-7` backend idempotency context guard: same key + different `runtime_context` → **409 `IDEMPOTENCY_CONTEXT_CONFLICT`**; a replay whose stored session was soft-deleted → 409 `IDEMPOTENCY_KEY_SESSION_DELETED`; an oversized `Idempotency-Key` header (>255 chars) → **400 `INVALID_IDEMPOTENCY_KEY`**.
+
+---
+
+## 28. Kortix Apps
+
+Kortix Apps are project-owned serverless deployments. The API owns the stable
+hostname, immutable artifact and deployment records, provider-neutral machine
+specification, runtime lifecycle, billing attribution, and atomic active
+deployment pointer. The provider remains an implementation detail.
+
+`APP-1` App CRUD — `GET/POST /projects/:projectId/apps` and
+`GET/PATCH/DELETE /projects/:projectId/apps/:appId`. Apps is a per-project
+feature flag, off by default: a member of a flag-off project gets
+`403 {code:'feature_disabled', feature:'apps'}` on every apps route; the flow
+first clears any override left by a reused local fixture, then enables the flag
+via `PATCH /projects/:projectId/features` and proceeds. A
+project writer creates a unique lower-case slug and machine policy; list/get
+return the stable public URL and active deployment pointer; patch updates
+mutable policy; delete is soft and removes the App from subsequent reads.
+Invalid slugs → 400; `NONMEMBER` → 403.
+
+`APP-2` Artifact and deployment boundaries —
+`POST /projects/:projectId/apps/artifacts` registers an immutable archive upload
+or OCI reference; `POST …/artifacts/:artifactId/finalize` finalizes only an
+awaiting archive. The flow enables the `apps` feature flag first (off by
+default). Access policy — `GET/PATCH …/:appId/access` read and persist the
+mode; `restricted` without any member or group → 400; `project` persists and
+reads back; `POST …/:appId/access-session` returns a signed URL + expiry for a
+member. `POST …/:appId/deployments` requires a ready artifact and an
+exact source-kind match. Deployment list/detail/logs expose durable state.
+Unknown deployment detail and logs return 404.
+Rollback accepts only a ready deployment. Start and stop require an active
+deployment. Finalizing an OCI artifact, using a mismatched OCI image, rolling
+back an unknown deployment, or starting/stopping an undeployed App → 409/400 as
+specified by each route. `APP-2` exercises these boundaries through the real
+HTTP API, then deletes the test App.
+
+`APP-3` Machine limits — an App machine answers to the same ceiling a session
+sandbox does (`SANDBOX_SPEC_LIMITS`: 32 CPU, 128 GB memory, 500 GB disk). The
+create route refuses `cpu: 64`, `memory_gb: 512`, and `disk_gb: 2048`
+independently with **400**, accepts exactly 32/128/500, and applies the same
+bounds to `PATCH …/:appId` so resizing an existing App cannot escape them. A
+value below the floor (`cpu: 0`) is refused too. Apps reject rather than clamp:
+an App bills from the specification it recorded, so a silent downgrade would
+charge for compute the provider never allocated.
+
+`APP-4` Team scoping — an App's access policy governs who on the TEAM sees it,
+not only who reaches its hostname, using the model sessions use. A new App is
+`private`: a project manager who did not create it does not receive it in
+`GET …/apps`, and gets **404** (never 403 — the status must not disclose that a
+teammate's private App exists) from `GET` and `PATCH …/:appId`. Switching the
+policy to `project` puts the App in that teammate's list and makes it readable;
+`restricted` with their `member_ids` keeps them in; returning to `private` puts
+them back out. `password` is a PUBLIC-traffic control and stays team-visible.
+A `NONMEMBER` remains 403 on the whole surface.
+
+---
+
+## 29. Additional executable product contracts
+
+These contracts use product IDs. They replace the old route-coverage bucket IDs.
+
+`ADM-2b` An admin lists the projects for one account. Anonymous and non-admin callers are rejected.
+`ADM-7` An admin reads provider analytics. Anonymous and non-admin callers are rejected.
+`ADM-8` An admin reads and updates provider distribution. Invalid input and non-admin callers are rejected.
+`ADM-9` An admin reads and updates provider fallback configuration. Invalid input and non-admin callers are rejected.
+`ADM-10` An admin lists current sandboxes. Anonymous and non-admin callers are rejected.
+`ADM-11` An admin requests migration for one session sandbox. An unknown session and non-admin callers are rejected.
+`ADM-12` An admin changes an account tier. Unknown tiers and non-admin callers are rejected.
+`ADM-13` An admin changes the Enterprise entitlement. Non-boolean input and non-admin callers are rejected.
+`AUD-FILTER` One correlated project request is reconstructed through the account audit filters without returning unrelated events.
+`BILL-9b` Anonymous and non-member callers cannot cancel, reactivate, or schedule a subscription change.
+`BILL-12` A fresh personal account reads as the funded free tier with active billing state and lifetime rollups.
+`BILL-14` An owner reads credit breakdown, credit usage, tiers, transaction summary, and usage history. Anonymous callers are rejected.
+`CHN-21` A Slack identity login token resolves or returns the documented invalid-token boundary.
+`CHN-22` The public Slack manifest route returns the project manifest or the documented project/configuration boundary.
+`CHN-23` A project writer binds a Slack thread. Invalid input and unauthorized callers are rejected.
+`CHN-24` The project Slack command webhook verifies its request before it starts work.
+`CHN-25` The project Slack interactivity webhook verifies its request before it starts work.
+`CHN-26` A Slack file download without a file reference returns the documented validation or installation error.
+`CHN-27` An anonymous caller cannot update a project email installation.
+`CHN-28` An anonymous caller cannot bind a Slack identity.
+`CHN-T1` A project member reads the Microsoft Teams installation state.
+`CHN-T2` A project member reads the Microsoft Teams channel mode.
+`CHN-T3` A project manager starts Microsoft Teams connection. Invalid input and unauthorized callers are rejected.
+`CHN-T4` The Microsoft Teams messages webhook verifies its request before it starts work.
+`CONN-16` A project manager deletes a connector credential. Unknown connectors and unauthorized callers are rejected.
+`CONN-17` A project member reads connector policies. Unknown connectors and non-members are rejected.
+`CONN-18` A project manager creates a connector setup request. Missing or unconnected connector slugs are rejected.
+`CONN-20` Authentication protects connection status, connector catalog, and connector call routes. Invalid calls do not reach an upstream service.
+`CONN-21` A project creates, lists, activates, authenticates, credentials, and revokes project and member connections through their complete lifecycle.
+`CONN-23` Connection roster and default-connection mutations hide an unknown project with 404.
+`DEL-4` Immediate account deletion removes the owned account state and the deletion-status read confirms the result.
+`GHA-1` A platform admin configures, reads, and removes the GitHub App or PAT integration through the supported setup routes.
+`GHA-2` GitHub App manifest and installation callbacks reject invalid state and preserve the configured integration.
+`GHA-3` The GitHub App OAuth identity-proof callbacks reject an untrusted frontend origin and a forged state without minting a token.
+`GW-1b` The public LLM gateway health alias returns its health contract.
+`GW-2c` The OpenAI-compatible LLM models alias enforces authentication and returns the supported model envelope.
+`GW-3b` The OpenAI-compatible LLM chat alias enforces authentication before model execution.
+`GW-7` Anthropic-compatible message aliases enforce authentication and preserve the shared routing contract.
+`GW-8` Internal route resolution rejects missing internal credentials and validates a signed request.
+`GW-9` Project gateway analytics, logs, budgets, keys, playground, and provider verification enforce project permissions and payload validation.
+`GW-10` Every internal gateway control route rejects a request without internal credentials.
+`GW-12` Internal gateway authorization rejects a request without internal credentials.
+`GW-13` `GET /v1/usage` exhausts the `group_by` enum and its per-value response shape: `provider` rows carry `provider` only, `day` rows carry `day` only, `model` rows carry both `provider` and `model` — never a field from another grouping. A malformed `start` or `end` timestamp is a 400 boundary distinct from an inverted window, and a window containing no `usage_events` returns 200 with zeroed totals and an empty `breakdown`, never 404 or 500.
+`INV-6` A pending account invite admits the invited user and applies the project bootstrap grant.
+`INV-7` Invite accept and decline are email-bound, idempotent where documented, and cannot be used by another user.
+`MEM-6` Changing an account role reconciles project grants so account-wide permissions do not retain stale project rows.
+`MEM-7` `POST /accounts/:id/members {email,role,project_grants}` grants project access alongside the invite: applied immediately for an existing user, staged on the pending invite and applied on accept for a new one. A grant naming a project outside the caller's account is rejected. Grants are ignored for `admin`/`owner` invites (implicit access already covers every project).
+`MKTP-6` An authenticated user reads one catalog file. Unknown items and invalid paths are rejected.
+`MKTP-7` An authenticated user lists available marketplaces.
+`MKTP-8` An authenticated user reads the featured marketplace collection.
+`MKTP-9` An authenticated user lists configured marketplace sources.
+`MKTP-10` An authorized user adds and removes one marketplace source. Invalid and protected sources are rejected.
+`MKTP-11` A project writer starts an agent-driven marketplace installation session. Missing items, unknown items, and unauthorized callers are rejected.
+`PROJ-20` An authenticated user reads whether managed Git is configured.
+`PROJ-27` A project member reads model choices and a project manager sets, reads, and clears model defaults.
+`PROJ-28` The Suna migration eligibility, status, and start routes enforce authentication and current migration state.
+`PROJ-30` A project manager changes the default agent. Invalid agents and unauthorized callers are rejected.
+`PROJ-31` A project manager changes the sandbox provider. Invalid transitions and unauthorized callers are rejected.
+`PROJ-32` A project member reads the provider catalog. Unknown projects and non-members are rejected.
+`PROJ-33` A project member reads the current sandbox-provider transition state.
+`PROJ-35` A project manager changes model enablement and reads back the persisted result.
+`SBX-5` A project member reads the project sandbox inventory. Non-members are rejected.
+`SBX-6` Daytona and Platinum webhooks reject unsigned provider payloads.
+`SCIM-5` SCIM resource-type, schema, and user-replacement routes preserve tenant and bearer-token boundaries.
+`SEC-7` A project manager creates a secret setup request. The public link validates its token and writes the submitted value once.
+`SESS-17` A project member reads session previews. Unknown sessions and non-members are rejected.
+`SESS-18` Warming a project creates one ordinary session marked unused, and returns that same session until it is used. The unused session is hidden from the `visible` session list and present in the manager's `project` inventory. First use drops the marker and the session lists normally; a second use returns `409 WARM_SESSION_ALREADY_CLAIMED`. The next warm creates a replacement. Adoption via `POST /start` (the path the browser actually takes) drops the marker in the same statement it stamps `last_activity_at` and `updated_at`, so the adopted session lists immediately and sorts as the newest for both the web client's activity sort and the API's `updated_at` order. A warm ensure after adoption never returns the adopted session — handing a used session back is how a project-home send lands its prompt inside an existing conversation. A warm ensure carrying `exclude_session_id` creates a fresh session even while the excluded session's marker is still set.
+`SESS-19` Session configuration freshness, reload, and streamed reload routes reject anonymous callers and hide unknown projects.
+`SESS-20` The session transcript route returns 404 for an unknown session.
+`SYS-8` Live and ready health aliases return the same service-state contract.
+`SYS-9` Metrics requires internal authorization and router health returns its configured availability state.
+`TOK-5` Revoking a project CLI token immediately blocks its project, secret, and trigger mutations.

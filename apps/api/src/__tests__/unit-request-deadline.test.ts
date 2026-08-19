@@ -4,9 +4,12 @@ import { HTTPException } from 'hono/http-exception';
 // DEADLINE_MS is read from env at module load, and static imports are hoisted
 // above top-level code — so we must set the env var and then *dynamically*
 // import the middleware, otherwise it captures the default 28s budget.
-let requestDeadline: typeof import('../middleware/request-deadline').requestDeadline;
-let isRequestDeadlineHTTPException: typeof import('../middleware/request-deadline').isRequestDeadlineHTTPException;
-let RequestDeadlineHTTPException: typeof import('../middleware/request-deadline').RequestDeadlineHTTPException;
+type RequestDeadlineModule = typeof import('../middleware/request-deadline');
+
+let requestDeadline: RequestDeadlineModule['requestDeadline'];
+let isRequestDeadlineHTTPException: RequestDeadlineModule['isRequestDeadlineHTTPException'];
+let RequestDeadlineHTTPException: RequestDeadlineModule['RequestDeadlineHTTPException'];
+let REQUEST_DEADLINE_CODE: RequestDeadlineModule['REQUEST_DEADLINE_CODE'];
 
 beforeAll(async () => {
   process.env.REQUEST_DEADLINE_MS = '50';
@@ -14,13 +17,22 @@ beforeAll(async () => {
   requestDeadline = mod.requestDeadline;
   isRequestDeadlineHTTPException = mod.isRequestDeadlineHTTPException;
   RequestDeadlineHTTPException = mod.RequestDeadlineHTTPException;
+  REQUEST_DEADLINE_CODE = mod.REQUEST_DEADLINE_CODE;
 });
 
 function makeApp() {
   const app = new Hono();
   app.use('/v1/*', (c, next) => requestDeadline(c, next));
   app.onError((err, c) => {
-    if (err instanceof HTTPException) return c.json({ error: err.message }, err.status);
+    if (err instanceof HTTPException) {
+      return c.json(
+        {
+          error: err.message,
+          code: (err as HTTPException & { code?: string }).code,
+        },
+        err.status,
+      );
+    }
     return c.json({ error: String(err) }, 500);
   });
   const slow = async (c: any) => {
@@ -28,15 +40,16 @@ function makeApp() {
     return c.json({ ok: true });
   };
   app.get('/v1/projects/x/change-requests', slow); // bounded
-  app.get('/v1/p/sandbox/3000/index.html', slow);  // exempt prefix
-  app.get('/v1/projects/x/turn-stream', slow);      // JSON relay, bounded
-  app.get('/v1/router/chat/completions', slow);      // exempt prefix
-  app.get('/v1/llm/chat/completions', slow);          // exempt prefix (LLM streaming)
-  app.post('/v1/billing/webhooks/stripe', slow);      // exempt prefix (webhook)
-  app.post('/v1/projects/x/sessions/y/start', slow);  // exempt fragment (long sync op)
+  app.get('/v1/p/sandbox/3000/index.html', slow); // exempt prefix
+  app.get('/v1/projects/x/turn-stream', slow); // JSON relay, bounded
+  app.get('/v1/router/chat/completions', slow); // exempt prefix
+  app.get('/v1/llm/chat/completions', slow); // exempt prefix (LLM streaming)
+  app.post('/v1/connectors/projects/x/connectors', slow); // exempt prefix (git + provider sync)
+  app.post('/v1/billing/webhooks/stripe', slow); // exempt prefix (webhook)
+  app.post('/v1/projects/x/sessions/y/start', slow); // exempt fragment (long sync op)
   app.post('/v1/projects/x/oauth/openai/start', slow); // exempt fragment (OAuth device flow — start can be slow on a cold replica)
-  app.post('/v1/projects', slow);                      // exempt method+path (provision)
-  app.get('/v1/projects', slow);                       // bounded — only POST is exempt
+  app.post('/v1/projects', slow); // exempt method+path (provision)
+  app.get('/v1/projects', slow); // bounded — only POST is exempt
   app.get('/v1/projects/x/fast', (c) => c.json({ ok: true })); // bounded, fast
   return app;
 }
@@ -45,7 +58,10 @@ describe('requestDeadline', () => {
   it('returns 503 when a non-streaming request exceeds the deadline', async () => {
     const res = await makeApp().request('/v1/projects/x/change-requests');
     expect(res.status).toBe(503);
-    expect((await res.json()).error).toContain('deadline');
+    expect(await res.json()).toMatchObject({
+      error: expect.stringContaining('deadline'),
+      code: 'request_deadline',
+    });
   });
 
   it('lets a fast non-streaming request through', async () => {
@@ -80,18 +96,31 @@ describe('requestDeadline', () => {
     expect(res.status).toBe(200);
   });
 
+  it('exempts connector routes that can perform git and provider synchronization', async () => {
+    const res = await makeApp().request('/v1/connectors/projects/x/connectors', {
+      method: 'POST',
+    });
+    expect(res.status).toBe(200);
+  });
+
   it('exempts billing webhooks from the deadline', async () => {
-    const res = await makeApp().request('/v1/billing/webhooks/stripe', { method: 'POST' });
+    const res = await makeApp().request('/v1/billing/webhooks/stripe', {
+      method: 'POST',
+    });
     expect(res.status).toBe(200);
   });
 
   it('exempts long sync sandbox ops (start) via fragment', async () => {
-    const res = await makeApp().request('/v1/projects/x/sessions/y/start', { method: 'POST' });
+    const res = await makeApp().request('/v1/projects/x/sessions/y/start', {
+      method: 'POST',
+    });
     expect(res.status).toBe(200);
   });
 
   it('exempts the provider OAuth device flow start (can be slow on a cold replica)', async () => {
-    const res = await makeApp().request('/v1/projects/x/oauth/openai/start', { method: 'POST' });
+    const res = await makeApp().request('/v1/projects/x/oauth/openai/start', {
+      method: 'POST',
+    });
     expect(res.status).toBe(200);
   });
 
@@ -149,5 +178,7 @@ describe('requestDeadline Sentry classification', () => {
     // REQUEST_DEADLINE_MS=50 → Math.round(50/1000) = 0s; just assert shape + 503.
     expect(err.status).toBe(503);
     expect(err.message).toContain('server processing deadline');
+    expect((err as { code?: string }).code).toBe(REQUEST_DEADLINE_CODE);
+    expect(REQUEST_DEADLINE_CODE).toBe('request_deadline');
   });
 });

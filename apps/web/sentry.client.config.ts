@@ -71,7 +71,7 @@ if (SENTRY_DSN) {
       // reporting — these regexes are exact after optional canonical wrappers.
       /^(?:Unhandled promise rejection: )?(?:ApiError: )?Out of credits\. Top up to continue\.$/,
       /^(?:Unhandled promise rejection: )?(?:ApiError: )?No credit account found\. Complete account setup first\.$/,
-      /^(?:Unhandled promise rejection: )?(?:ApiError: )?Subscribe to activate your seat\. \$20\/teammate per month includes wallet credits for compute and LLM usage\.$/,
+      /^(?:Unhandled promise rejection: )?(?:ApiError: )?Subscribe to activate your seat\. \$40\/teammate per month includes wallet credits for compute and LLM usage\.$/,
       // Expected "no compaction model configured" configuration state. The
       // SDK's `useSummarizeOpenCodeSession` mutation throws a sentinel
       // `NoCompactionModelError` (`packages/sdk/src/react/use-opencode-sessions/no-compaction-model-error.ts`)

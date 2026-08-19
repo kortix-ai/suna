@@ -57,7 +57,13 @@
   - `api-use2-shadow.kortix.com`
   - `gateway-use2-shadow.kortix.com`
 - Target Auth email rate limit: 30,000 per hour, equal to the source.
-- Production release workflow: deploys and verifies the US shadow.
+- Production release workflow: does NOT deploy the US shadow. The lane is
+  gated behind the repository variable `ENABLE_US_SHADOW_DEPLOY`, which is
+  unset. See "Reviving the shadow deploy lane" below.
+- Application logical replication: BROKEN since 2026-08-08. The publication
+  `kortix_us_east_2_20260725` and its replication slot were dropped from the
+  source; `wal_status` was `lost`. The `101/101` figure above is the last
+  healthy reading, not the current state.
 - Runtime database endpoint: regional session pooler
   `aws-0-us-east-2.pooler.supabase.com:5432`.
 - Logical replication endpoint: direct target database host
@@ -81,6 +87,164 @@
   window until 2026-08-01.
 
 Do not print or copy secret values into this document, shell output, or Git.
+
+## Reviving the shadow deploy lane
+
+The release lane is OFF. `deploy-prod.yml` calls
+`deploy-prod-us-east-2-shadow.yml` only when the repository variable
+`ENABLE_US_SHADOW_DEPLOY` equals `true`. The variable is unset, so the job is
+skipped and the release run stays green.
+
+### Why it is off
+
+Three independent breakages, each proven by a release run:
+
+| # | Breakage | Evidence |
+| - | -------- | -------- |
+| 1 | Source publication `kortix_us_east_2_20260725` and its replication slot were dropped from prod on 2026-08-08 with `wal_status = lost`. A dropped slot cannot resume; the target needs a rebuild and a full resync. | `refresh-replication.sh` exits 1 with `The enabled target subscription is missing.` |
+| 2 | Prod still has `kortix.project_session_connector_bindings.profile_id`. Migration `20260806150353417_connector_compat_removal.sql:70` drops it, and the shadow no longer has it. `refresh-replication.sh` fails closed on any source column the target lacks. | v0.12.5 job `92927632339` and v0.12.6 job `93130050196`, both: `The target lacks selected source columns: kortix.project_session_connector_bindings profile_id` |
+| 3 | The shadow lags whole releases, so a catch-up run replays heavy `audit_events` migrations. `create index concurrently` exceeds the Supabase role default `statement_timeout` of 120s. | v0.12.7 job `93576314456`: `error: canceling statement due to statement timeout` (`57014`) on `idx_audit_events_account_source_phase_time`. The prior four indexes needed 1s, 99s, 39s, and 86s. Attempt 2 (job `93568793041`) spent 24m20s on `20260807221200000_centralized_audit_v2` before an operator cancelled it. |
+
+Breakage 3 is addressed in the workflow: the migration step now runs with
+`PGOPTIONS=-c statement_timeout=0` and a 40-minute step timeout. Breakages 1
+and 2 need the manual work below.
+
+### Cost of leaving it on
+
+Each release paid 25-30 minutes on a lane that can never pass, turned a green
+release red, and — because the job stayed `in_progress` — blocked "re-run
+failed jobs" for the whole release run. v0.12.7 had to be cancelled outright to
+re-run anything else.
+
+### Checklist
+
+Every step needs an AWS session with MFA plus `psql` against both databases.
+Do the steps in order. Do not set the variable before step 8 passes.
+
+1. **Clear the source drift.** On the source (prod, `eu-west-2`), drop the
+   leftover column so the source matches the migration ledger:
+
+   ```sql
+   ALTER TABLE kortix.project_session_connector_bindings
+     DROP COLUMN IF EXISTS profile_id;
+   ```
+
+   Confirm no running production build reads it first — the compat removal
+   migration's header records that contract. Until this is true, step 6 fails
+   in under two seconds.
+
+2. **Drop invalid indexes on the target.** A statement-timeout kill leaves an
+   `INVALID` index, and `create index concurrently if not exists` silently
+   accepts it on retry, recording the migration as applied with a permanently
+   unusable index. List and drop them on the target:
+
+   ```sql
+   SELECT indexrelid::regclass AS index_name
+   FROM pg_index
+   JOIN pg_class ON pg_class.oid = pg_index.indexrelid
+   JOIN pg_namespace ON pg_namespace.oid = pg_class.relnamespace
+   WHERE pg_namespace.nspname = 'kortix'
+     AND NOT pg_index.indisvalid;
+   -- then, per row:
+   DROP INDEX CONCURRENTLY kortix.<index_name>;
+   ```
+
+3. **Bring the shadow schema current.**
+
+   ```bash
+   PGOPTIONS='-c statement_timeout=0' \
+   DATABASE_URL='<target session-pooler URL>?uselibpqcompat=true' \
+     pnpm --filter @kortix/db migrate
+   ```
+
+   Expect tens of minutes. `20260807221200000_centralized_audit_v2` alone took
+   24m20s on this database.
+
+4. **Rebuild replication from scratch.** The slot is unrecoverable, so
+   `db-sync.sh start` alone is not enough — it only re-`ENABLE`s an existing
+   subscription. Drop the dead subscription first; detach its slot, because the
+   slot no longer exists on the source:
+
+   ```sql
+   -- on the target
+   ALTER SUBSCRIPTION kortix_us_east_2_20260725 DISABLE;
+   ALTER SUBSCRIPTION kortix_us_east_2_20260725 SET (slot_name = NONE);
+   DROP SUBSCRIPTION kortix_us_east_2_20260725;
+   ```
+
+   Then, in order:
+
+   ```bash
+   bash scripts/prod-us-east-2/db-sync.sh   prepare-source   # recreates the publication
+   bash scripts/prod-us-east-2/db-sync.sh   start            # creates subscription + slot, copy_data = true
+   bash scripts/prod-us-east-2/auth-sync.sh prepare-source
+   bash scripts/prod-us-east-2/auth-sync.sh start
+   ```
+
+   Repeat the same drop for the Auth subscription if it is also dead.
+   `prepare-source` is idempotent: it creates the publication only when it is
+   absent.
+
+5. **Wait for the initial copy.** Poll until every relation reaches
+   `srsubstate = 'r'` and both subscriptions have a live apply worker:
+
+   ```bash
+   bash scripts/prod-us-east-2/db-sync.sh   status
+   bash scripts/prod-us-east-2/auth-sync.sh status
+   ```
+
+   A full copy of a ~286 GB source runs for hours. Watch source WAL retention
+   (`max_slot_wal_keep_size` is 32 GB) for the whole copy.
+
+6. **Prove the refresh passes.**
+
+   ```bash
+   ALLOW_REPLICATION_REFRESH=1 bash scripts/prod-us-east-2/refresh-replication.sh
+   ```
+
+   It must exit 0. Application replication is `101/101` relations when healthy.
+
+7. **Reconcile shadow-only writes.** Dispatch **Reconcile Prod US East 2
+   Shadow** (`reconcile-prod-us-east-2-shadow.yml`), then re-run the two
+   `status` commands.
+
+8. **Dry-run the lane by hand.** Dispatch **Deploy Prod US East 2 Shadow**
+   (`deploy-prod-us-east-2-shadow.yml`) from `prod` with the current released
+   version and `synchronize_database: true`. It must go green end to end.
+
+9. **Turn the lane on.**
+
+   ```bash
+   gh variable set ENABLE_US_SHADOW_DEPLOY --body true
+   ```
+
+   Confirm the next `deploy-prod` run shows
+   `Deploy API + gateway to US East 2 shadow` as executed, not skipped.
+
+To turn it back off, delete the variable
+(`gh variable delete ENABLE_US_SHADOW_DEPLOY`) or set it to any value other
+than `true`.
+
+### Cutover dispatch order
+
+Cutover is a separate decision. Start it only when the lane is green and stays
+green.
+
+1. **Finalize Prod US East 2 Database** — `preflight-live`
+   (confirm: `preflight-live:prod-us-east-2`).
+2. Freeze the source and set the freeze marker
+   (`/kortix/prod-use2/source-freeze`).
+3. **Finalize Prod US East 2 Database** — `finalize-frozen`. This catches up
+   both subscriptions, reconciles counts, key hashes, critical hashes, and
+   sequences, syncs avatars, then disables the finalized subscriptions.
+4. **Activate Prod US East 2 Writers** — `enable`
+   (confirm: `enable:prod-us-east-2`).
+5. **Cutover Prod US East 2** — the guarded Cloudflare change.
+
+Rollback order:
+
+1. **Activate Prod US East 2 Writers** — `disable`.
+2. **Finalize Prod US East 2 Database** — `reenable-subscriptions`.
 
 ## Verified source inventory
 

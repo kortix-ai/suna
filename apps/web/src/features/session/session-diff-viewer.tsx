@@ -104,9 +104,9 @@ function FileDiffCard({
       >
         {hasDiffContent &&
           (expanded ? (
-            <ChevronDown className="text-muted-foreground/50 size-3 flex-shrink-0" />
+            <ChevronDown className="text-muted-foreground/50 size-3 shrink-0" />
           ) : (
-            <ChevronRight className="text-muted-foreground/50 size-3 flex-shrink-0" />
+            <ChevronRight className="text-muted-foreground/50 size-3 shrink-0" />
           ))}
         {!hasDiffContent && <span className="w-3" />}
 
@@ -128,7 +128,7 @@ function FileDiffCard({
         <DiffStat
           additions={diff.additions}
           deletions={diff.deletions}
-          className="flex-shrink-0 text-xs whitespace-nowrap"
+          className="shrink-0 text-xs whitespace-nowrap"
         />
       </button>
 
@@ -436,9 +436,9 @@ export function SessionDiffViewer({
       />
       <ScrollArea className="min-h-0 flex-1">
         <div className="space-y-2 p-3">
-          {diffs.map((diff, i) => (
+          {diffs.map((diff) => (
             <FileDiffCard
-              key={`${diff.file}-${i}`}
+              key={diff.file}
               diff={diff}
               viewMode={viewMode}
               isFullscreen={isFullscreen}

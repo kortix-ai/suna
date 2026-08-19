@@ -5,6 +5,8 @@
  * the same mock.module() registrations without conflicts.
  */
 import { mock } from 'bun:test';
+import * as realProviders from '../../platform/providers';
+import * as realSandboxReaper from '../../projects/sandbox-reaper';
 
 // ─── Global Mock Registry ─────────────────────────────────────────────────────
 
@@ -175,7 +177,11 @@ export function registerGlobalMocks() {
     hasDatabase: false,
   }));
 
+  // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
+  // lists exports by hand deletes every export it omits — the failure surfaces in
+  // whatever unrelated file imports the missing name next, attributed to no test.
   mock.module('../../platform/providers', () => ({
+    ...realProviders,
     getProvider: (_name: string) => ({
       stop: async (_externalId: string) => undefined,
     }),
@@ -183,7 +189,11 @@ export function registerGlobalMocks() {
     providerAutoStopBackstopMinutes: () => 60,
   }));
 
+  // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
+  // lists exports by hand deletes every export it omits — the failure surfaces in
+  // whatever unrelated file imports the missing name next, attributed to no test.
   mock.module('../../projects/sandbox-reaper', () => ({
+    ...realSandboxReaper,
     isAlreadyNotRunning: (_err: unknown) => false,
     reconcileSandboxStoppedByExternalId: async (_externalId: string) => true,
   }));
@@ -254,6 +264,11 @@ export function createMockCreditAccount(overrides: Record<string, any> = {}) {
     lastRenewalPeriodStart: null,
     paymentStatus: 'active',
     lastPaymentFailure: null,
+    // Enterprise entitlement overrides — default off so existing per-seat/legacy
+    // tests are unaffected; per-seat webhook tests can override to assert the
+    // no-clobber guard for enterprise-entitled accounts.
+    enterpriseEntitled: false,
+    demoEnterprise: false,
     revenuecatCustomerId: null,
     revenuecatSubscriptionId: null,
     revenuecatCancelledAt: null,
@@ -322,6 +337,12 @@ export function createMockStripeCheckoutSession(overrides: Record<string, any> =
   return {
     id: 'cs_test_123',
     mode: 'subscription',
+    // Real Stripe always sets these two on a completed session. `payment_status`
+    // is the fraud gate in handleSubscriptionCheckout: only 'paid' activates.
+    // Defaulting it to 'paid' keeps this factory a HAPPY-PATH factory; tests for
+    // the unpaid path override it explicitly.
+    status: 'complete',
+    payment_status: 'paid',
     subscription: 'sub_test_123',
     customer: 'cus_test_123',
     customer_email: 'test@example.com',

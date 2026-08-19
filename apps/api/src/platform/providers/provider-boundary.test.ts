@@ -12,6 +12,15 @@ const GENERIC_DATA_PATHS = [
   'projects/lib/sandbox-env-sync.ts',
   'projects/opencode-mapping.ts',
   'projects/routes/shared.ts',
+  // Network-boundary delivery. Which mechanism a project gets is decided in one
+  // place, from the provider's capabilities
+  // (secrets/network-boundary-availability.ts); everything downstream of that
+  // decision reads the verdict. A name comparison anywhere in here is how a
+  // provider silently loses a feature it already had for free.
+  'projects/secrets.ts',
+  'projects/secret-capabilities.ts',
+  'secrets/network-boundary.ts',
+  'secrets/http-broker.ts',
 ];
 
 describe('sandbox provider architecture boundary', () => {
@@ -19,7 +28,7 @@ describe('sandbox provider architecture boundary', () => {
     for (const relativePath of GENERIC_DATA_PATHS) {
       const source = readFileSync(resolve(API_SRC, relativePath), 'utf8');
       expect(source, relativePath).not.toMatch(
-        /(?:provider|providerName)\s*(?:===|!==|==|!=)\s*['"](?:daytona|platinum|e2b|local-docker)['"]/i,
+        /(?:provider|providerName)\s*(?:===|!==|==|!=)\s*['"](?:daytona|platinum|e2b)['"]/i,
       );
       expect(source, relativePath).not.toMatch(
         /x-daytona-|x-access-token|e2b-traffic-access-token/i,

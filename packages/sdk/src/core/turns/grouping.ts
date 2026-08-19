@@ -26,16 +26,45 @@ interface TextPartLike extends PartLike {
 // ============================================================================
 
 /**
+ * Display order: `time.created` first, wire id as the tiebreak.
+ *
+ * The sync store keeps messages sorted by ID (its binary-search invariant),
+ * and the id is CLIENT-minted for user messages — a wrong one used to teleport
+ * a bubble to the top of the thread. OpenCode stamps `time.created` at
+ * persistence, from the box's clock, so a message ordered by it lands where it
+ * happened whatever id it travelled under; a foreign or backdated id degrades
+ * to slightly-odd placement at worst. A message with no timestamp (an
+ * optimistic stub) sorts as newest — it is the latest thing the user did — and
+ * two untimed messages keep their INPUT order, so a host that feeds unstamped
+ * messages sees exactly the sequential behaviour it always had. Equal stamps
+ * keep id order. A weak order (stable sort), never a partial one.
+ */
+export function compareMessagesForDisplay(
+  a: { info: { id: string; time?: { created?: number } } },
+  b: { info: { id: string; time?: { created?: number } } },
+): number {
+  const at = typeof a.info.time?.created === 'number' ? a.info.time.created : null;
+  const bt = typeof b.info.time?.created === 'number' ? b.info.time.created : null;
+  if (at === null && bt === null) return 0;
+  if (at === null) return 1;
+  if (bt === null) return -1;
+  if (at !== bt) return at < bt ? -1 : 1;
+  return a.info.id < b.info.id ? -1 : a.info.id > b.info.id ? 1 : 0;
+}
+
+/**
  * Group messages into turns: each turn starts with a user message followed
  * by 0+ assistant messages.
  *
  * Uses parentID-based linking (matching SolidJS session-turn.tsx:272-292):
  * assistant messages are associated with their parent user message via
- * `parentID`. Falls back to sequential ordering when parentID is absent.
+ * `parentID`. Falls back to sequential ordering when parentID is absent —
+ * sequential in DISPLAY order (`compareMessagesForDisplay`), not input order.
  */
 export function groupMessagesIntoTurns<M extends MessageWithPartsLike>(
-  messages: readonly M[],
+  input: readonly M[],
 ): TurnLike<M>[] {
+  const messages = [...input].sort(compareMessagesForDisplay);
   const turns: TurnLike<M>[] = [];
   const turnsByUserMsgId = new Map<string, TurnLike<M>>();
 

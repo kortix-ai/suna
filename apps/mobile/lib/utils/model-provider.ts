@@ -30,8 +30,8 @@ export function isKortixMode(modelId: string): boolean {
   const id = modelId.startsWith('kortix/') ? modelId.slice('kortix/'.length) : modelId;
   return (
     id === 'auto' ||
-    id === 'claude-opus-4.8' ||
-    id === 'claude-sonnet-4.6' ||
+    // 2026-08-10 managed slim-down: claude-opus-4.8 / claude-sonnet-4.6 /
+    // kimi-k3 are deactivated in @kortix/llm-catalog MANAGED_MODELS.
     id === 'glm-5.2' ||
     id === 'qwen3.7-max' ||
     id === 'deepseek-v4-pro' ||

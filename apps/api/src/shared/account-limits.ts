@@ -1,6 +1,14 @@
 import { config } from '../config';
 import { getSubscriptionInfo } from '../billing/repositories/credit-accounts';
-import { accountIsFreeTierForModels, getTier, isPaidTier, isPerSeatAccount, MAX_PROJECTS_PER_ACCOUNT } from '../billing/services/tiers';
+import { invalidateAccountBilling, resolveAccountBilling } from '../billing/services/billing-cache';
+import {
+  activeTrialSeatLimit,
+  coercePerSeatTier,
+  type SubscriptionFields,
+} from '../billing/services/effective-tier';
+import { accountMayUseManagedModels } from '../billing/services/entitlements';
+import { getPlanRecord } from '../billing/services/plan-catalog';
+import { getTier, isPaidTier, MAX_PROJECTS_PER_ACCOUNT } from '../billing/services/tiers';
 import type { RateLimitPolicy } from './rate-limit';
 
 // Managed cloud is paid-only: new accounts resolve to tier 'none' and must
@@ -20,62 +28,43 @@ type AccountLimitInfo = {
   sessionOverride: number | null;
 };
 
-const accountLimitCache = new Map<string, AccountLimitInfo & { expiresAt: number }>();
-
 function positiveInt(value: unknown, fallback: number) {
   const n = typeof value === 'number' ? value : Number(value);
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
 }
 
-function tierMultiplier(tier: string | null | undefined) {
-  const name = tier ?? 'free';
-  const legacyMultipliers: Record<string, number> = {
-    tier_6_50: 2,
-    tier_12_100: 3,
-    tier_25_200: 4,
-    tier_50_400: 6,
-    tier_125_800: 8,
-    tier_200_1000: 10,
-    tier_150_1200: 12,
-  };
-  return legacyMultipliers[name] ?? (name !== 'free' && name !== 'none' ? 1 : 0);
-}
-
+/**
+ * The limit layer's view of an account, projected out of the ONE resolved
+ * billing answer (billing/services/billing-cache.ts → resolve-billing.ts).
+ *
+ * This used to be a second 60s cache over the same `credit_accounts` row that
+ * `entitlements.ts` was already caching for 30s — two expiry clocks over one
+ * row, so the limit layer and the entitlement layer could disagree about an
+ * account for up to 60s after an upgrade, downgrade, or trial change. There is
+ * now one cache and one invalidation point.
+ *
+ * The effective plan = active trial overlay > per-seat self-heal > stored tier.
+ * The self-heal keeps stale tier='free' per-seat rows from mis-gating paying
+ * teams; the trial overlay lets an admin-issued trial lift project/session/rate
+ * limits for exactly the trial window.
+ */
 async function resolveAccountLimitInfo(
   accountId: string,
   options: { useCache?: boolean } = {},
 ): Promise<AccountLimitInfo> {
-  if (options.useCache !== false) {
-    const cached = accountLimitCache.get(accountId);
-    if (cached && Date.now() < cached.expiresAt) return cached;
-  }
-
   try {
-    const subscription = await getSubscriptionInfo(accountId);
-    let tier = subscription?.tier ?? 'free';
-    // Per-seat teams are paid by virtue of an active seat subscription, but a
-    // number of rows still carry a stale tier='free' — the seat-billing
-    // migration set billing_model='per_seat' without backfilling tier. Deriving
-    // the paid tier from billing_model + an active subscription here means stale
-    // tier data can't mis-gate paying teams as free (e.g. the 1-project cap),
-    // and it self-heals every tier-based limit (projects, sessions, rate).
-    if (
-      !isPaidTier(tier) &&
-      isPerSeatAccount(subscription?.billingModel) &&
-      !!subscription?.stripeSubscriptionId &&
-      subscription.stripeSubscriptionStatus !== 'canceled' &&
-      subscription.stripeSubscriptionStatus !== 'unpaid'
-    ) {
-      tier = 'per_seat';
-    }
-    const rawOverride = subscription?.maxConcurrentSessions;
-    const sessionOverride =
-      typeof rawOverride === 'number' && Number.isFinite(rawOverride) && rawOverride > 0
-        ? Math.floor(rawOverride)
-        : null;
-    const info: AccountLimitInfo = { tier, sessionOverride };
-    accountLimitCache.set(accountId, { ...info, expiresAt: Date.now() + 60_000 });
-    return info;
+    const resolved = await resolveAccountBilling(accountId, { fresh: options.useCache === false });
+    return {
+      // No credit row at all reads as 'free' HERE (not 'none'): the limit layer
+      // has always treated an unprovisioned account as free rather than
+      // fail-closing it out of its one project. Entitlement gates fail closed
+      // to 'none' instead — a different question, deliberately.
+      tier: resolved.source === 'no_account' ? 'free' : resolved.plan.key,
+      sessionOverride:
+        resolved.limits.concurrentSessions.source === 'account_override'
+          ? resolved.limits.concurrentSessions.value
+          : null,
+    };
   } catch {
     return { tier: 'free', sessionOverride: null };
   }
@@ -106,14 +95,25 @@ export async function resolveAccountTier(accountId: string): Promise<string | nu
  */
 export async function accountEntitledToLlmGateway(accountId: string): Promise<boolean> {
   if (!config.KORTIX_BILLING_INTERNAL_ENABLED) return true;
-  const tier = await resolveAccountTier(accountId);
-  return !accountIsFreeTierForModels(tier ?? 'free');
+  // Single source of truth for "may this account use managed models" — trial
+  // overlay and the operator managed_models_override included (entitlements.ts).
+  return accountMayUseManagedModels(accountId);
 }
 
 export function sessionLlmPolicyForTier(tier: string | null | undefined): RateLimitPolicy {
   const freeLimit = positiveInt((config as any).KORTIX_LLM_ROUTER_REQS_PER_MIN_FREE, 60);
   const paidLimit = positiveInt((config as any).KORTIX_LLM_ROUTER_REQS_PER_MIN_PAID, 600);
-  const multiplier = tierMultiplier(tier);
+  // The multiplier is a property of the PLAN, so it comes off the plan record
+  // instead of a second hand-maintained table (the legacy map that used to live
+  // here is transcribed into PLAN_CATALOG.limits.llmRateMultiplier, and the
+  // parity test pins the two together). A multiplier of 0 selects the FREE
+  // budget rather than paid × 0 — free/none are 0 by design.
+  //
+  // A key that is not in the catalog keeps its historical answer of 1 (paid ×1)
+  // rather than falling to `none`: this function is exported and takes an
+  // arbitrary string, and silently demoting an unrecognized key to the free
+  // budget would be a rate-limit change, not a refactor.
+  const multiplier = getPlanRecord(tier ?? 'free')?.limits.llmRateMultiplier ?? 1;
   return {
     limit: multiplier > 0 ? paidLimit * multiplier : freeLimit,
     windowMs: 60_000,
@@ -146,9 +146,10 @@ export type AccountSessionLimit = {
  *      override, e.g. enterprise deals or our own dogfood account) → wins over
  *      the tier in both directions;
  *   3. the plan tier's TierConfig.concurrentSessionLimit.
- * This path bypasses the process-local tier cache. Session requests can reach
- * different API tasks, so local cache invalidation cannot make an operator
- * override consistent across the deployment.
+ * This path reads FRESH (`useCache: false`), deliberately bypassing the shared
+ * 30s billing cache. Session requests can reach different API tasks, so local
+ * cache invalidation cannot make an operator override consistent across the
+ * deployment.
  */
 export async function resolveAccountSessionLimit(accountId: string): Promise<AccountSessionLimit> {
   if (!(config as any).KORTIX_BILLING_INTERNAL_ENABLED) {
@@ -175,10 +176,54 @@ export async function maxProjectsForAccount(accountId: string): Promise<number> 
     return Number.MAX_SAFE_INTEGER;
   }
   const tier = (await resolveAccountTier(accountId)) ?? 'free';
+  // Exact plan-KEY equality, matching what this code did before the resolver
+  // landed. `PLAN_CATALOG.enterprise` is the only key in the `enterprise`
+  // family today, so key- and family-equality agree; widening this to
+  // `record.family === 'enterprise'` (or to an uncapped-projects entitlement)
+  // is a product decision for when a second enterprise-family plan exists, not
+  // a side effect of this refactor.
   if (tier === 'enterprise') return Number.MAX_SAFE_INTEGER;
   return isPaidTier(tier) ? MAX_PROJECTS_PER_ACCOUNT : FREE_TIER_PROJECT_LIMIT;
 }
 
+/**
+ * Historical name for "drop the cached billing view for every account". Kept
+ * because many call sites import it; it is a thin alias of
+ * `invalidateAccountBilling`, which is now the single invalidation point for
+ * the limit layer AND the entitlement layer (they share one cache).
+ */
 export function clearAccountLimitCache() {
-  accountLimitCache.clear();
+  invalidateAccountBilling();
+}
+
+/**
+ * The tier the LIMIT layer will actually use, given possibly-stale tier data.
+ *
+ * `resolveAccountSessionLimit` coerces a paying per-seat account whose stored
+ * `tier` is not a paid one to `per_seat`, so stale tier data cannot gate a
+ * paying team as free. Anything that DISPLAYS a tier-derived limit has to apply
+ * the same rule or it shows a different number than the server enforces —
+ * exported here so there is one derivation instead of two.
+ */
+export function effectiveTierForLimits(
+  tier: string | null | undefined,
+  subscription: SubscriptionFields | null | undefined,
+): string {
+  return coercePerSeatTier(tier ?? 'free', subscription);
+}
+
+/**
+ * Seat allowance for an account while an admin-issued trial is active.
+ * null = no active trial or the trial is uncapped — no trial seat gate.
+ * Reads uncached: member-add/invite is rare and must see a just-granted or
+ * just-revoked trial immediately across API tasks.
+ */
+export async function resolveTrialSeatLimit(accountId: string): Promise<number | null> {
+  if (!config.KORTIX_BILLING_INTERNAL_ENABLED) return null;
+  try {
+    const subscription = await getSubscriptionInfo(accountId);
+    return activeTrialSeatLimit(subscription);
+  } catch {
+    return null;
+  }
 }

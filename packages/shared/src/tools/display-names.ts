@@ -167,11 +167,11 @@ export const TOOL_DISPLAY_NAMES: ReadonlyMap<string, string> = new Map([
   ['discover-mcp-tools-for-agent', 'Discovering MCP Tools'],
 
   // Credential operations
-  ['create-credential-profile', 'Creating Profile'],
-  ['get-credential-profiles', 'Getting Profiles'],
+  ['create-credential-profile', 'Creating Connection'],
+  ['get-credential-profiles', 'Getting Connections'],
   ['configure-profile-for-agent', 'Adding Tools to Worker'],
-  ['create-credential-profile-for-agent', 'Creating Credential Profile'],
-  ['configure-agent-integration', 'Configuring Worker Integration'],
+  ['create-credential-profile-for-agent', 'Creating Connection'],
+  ['configure-agent-integration', 'Configuring Worker Connection'],
 
   // Trigger operations
   ['list-app-event-triggers', 'Finding Event Triggers'],

@@ -16,13 +16,14 @@ import { useTranslations } from 'next-intl';
  *      - Add row / delete row support
  *      - Save modified database back to file
  *      - Schema inspector (CREATE TABLE statements, column info)
- *      - Raw SQL query executor with results grid
+ *      - Raw SQL query connector with results grid
  *   5. Lazy-loaded — only pulled in when a .db file is opened
  */
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import Loading from '@/components/ui/loading';
+import { readRuntimeFileWithRetry } from '@/features/files/api/runtime-file-read';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import {
@@ -69,12 +70,14 @@ import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useStat
 ModuleRegistry.registerModules([AllCommunityModule]);
 
 // AG Grid theme
+// AG Grid theme params are fixed px and don't inherit the CSS root font-size
+// scale — bumped by the same 1.1x factor to match.
 const gridTheme = themeQuartz.withParams({
-  spacing: 6,
-  headerFontSize: 12,
-  fontSize: 12,
-  rowHeight: 36,
-  headerHeight: 38,
+  spacing: 6.6,
+  headerFontSize: 13,
+  fontSize: 13,
+  rowHeight: 40,
+  headerHeight: 42,
   wrapperBorderRadius: 0,
   borderRadius: 0,
   cellHorizontalPaddingScale: 1,
@@ -273,6 +276,7 @@ export function SqliteRenderer({
   // ── Initialize database ───────────────────────────────────────────────
   useEffect(() => {
     let cancelled = false;
+    const abortController = new AbortController();
 
     async function init() {
       setIsLoading(true);
@@ -280,7 +284,16 @@ export function SqliteRenderer({
 
       try {
         const { readFileAsBlob } = await import('@/features/files/api/runtime-files');
-        const blob = await readFileAsBlob(filePath);
+        const blob = await readRuntimeFileWithRetry(
+          filePath,
+          async () => {
+            const blob = await readFileAsBlob(filePath);
+            if (!blob.size) throw new Error('Empty database file');
+            return blob;
+          },
+          undefined,
+          abortController.signal,
+        );
         const arrayBuffer = await blob.arrayBuffer();
 
         if (cancelled) return;
@@ -349,11 +362,14 @@ export function SqliteRenderer({
         if (tableInfos.length > 0) {
           setSelectedTable(tableInfos[0].name);
         }
-        setIsLoading(false);
       } catch (e: unknown) {
+        if (abortController.signal.aborted) return;
         console.error('[SqliteRenderer] Error:', e);
         if (!cancelled) {
           setError((e as Error)?.message || 'Failed to load database');
+        }
+      } finally {
+        if (!cancelled && !abortController.signal.aborted) {
           setIsLoading(false);
         }
       }
@@ -363,6 +379,7 @@ export function SqliteRenderer({
 
     return () => {
       cancelled = true;
+      abortController.abort();
       if (dbRef.current) {
         try {
           dbRef.current.close();
@@ -413,9 +430,10 @@ export function SqliteRenderer({
   const isEditable = !readOnly && selectedTableInfo?.type === 'table';
   const columnDefs = useMemo((): ColDef[] => {
     if (!tableData.columns.length) return [];
-    const pkColumns = new Set(
-      selectedTableInfo?.columns.filter((c) => c.pk).map((c) => c.name) ?? [],
-    );
+    const pkColumns = new Set<string>();
+    for (const c of selectedTableInfo?.columns ?? []) {
+      if (c.pk) pkColumns.add(c.name);
+    }
 
     return tableData.columns.map((col) => ({
       field: col,
@@ -668,7 +686,11 @@ export function SqliteRenderer({
     (async () => {
       try {
         const { readFileAsBlob } = await import('@/features/files/api/runtime-files');
-        const blob = await readFileAsBlob(filePath);
+        const blob = await readRuntimeFileWithRetry(filePath, async () => {
+          const blob = await readFileAsBlob(filePath);
+          if (!blob.size) throw new Error('Empty database file');
+          return blob;
+        });
         const arrayBuffer = await blob.arrayBuffer();
         if (!arrayBuffer.byteLength) throw new Error('Empty file');
 
@@ -868,7 +890,7 @@ export function SqliteRenderer({
   return (
     <div className={cn('bg-background relative flex h-full w-full flex-col', className)}>
       {/* ── Top toolbar ──────────────────────────────────────────────── */}
-      <div className="flex h-10 flex-shrink-0 items-center gap-2 border-b px-3 py-1.5">
+      <div className="flex h-10 shrink-0 items-center gap-2 border-b px-3 py-1.5">
         {/* Left: summary (no filename — parent header already shows it) */}
         <span className="text-muted-foreground/60 text-xs tabular-nums">
           {tables.filter((t) => t.type === 'table').length} table
@@ -916,11 +938,7 @@ export function SqliteRenderer({
                   'componentsFileRenderersSqliteRenderer.line816JsxAttrTitleSaveToFileS',
                 )}
               >
-                {isSaving ? (
-                  <Loading className="h-3 w-3" />
-                ) : (
-                  <Save className="h-3 w-3" />
-                )}
+                {isSaving ? <Loading className="h-3 w-3" /> : <Save className="h-3 w-3" />}
                 Save
               </Button>
             </>
@@ -952,7 +970,7 @@ export function SqliteRenderer({
       {/* ── Content area ─────────────────────────────────────────────── */}
       <div className="flex flex-1 overflow-hidden">
         {/* ── Sidebar: table list ───────────────────────────────────── */}
-        <div className="bg-muted/10 flex w-56 flex-shrink-0 flex-col border-r">
+        <div className="bg-muted/10 flex w-56 shrink-0 flex-col border-r">
           {/* Table search */}
           <div className="border-b p-2">
             <div className="relative">
@@ -998,12 +1016,12 @@ export function SqliteRenderer({
                 )}
               >
                 {table.type === 'view' ? (
-                  <Eye className="h-3.5 w-3.5 flex-shrink-0 text-purple-500/70" />
+                  <Eye className="h-3.5 w-3.5 shrink-0 text-purple-500/70" />
                 ) : (
-                  <Table2 className="h-3.5 w-3.5 flex-shrink-0 text-blue-500/70" />
+                  <Table2 className="h-3.5 w-3.5 shrink-0 text-blue-500/70" />
                 )}
                 <span className="flex-1 truncate text-xs font-medium">{table.name}</span>
-                <span className="text-muted-foreground/50 flex-shrink-0 text-xs tabular-nums">
+                <span className="text-muted-foreground/50 shrink-0 text-xs tabular-nums">
                   {table.rowCount.toLocaleString()}
                 </span>
               </button>
@@ -1022,18 +1040,18 @@ export function SqliteRenderer({
           {viewMode === 'data' && selectedTableInfo && (
             <>
               {/* Data toolbar */}
-              <div className="flex h-9 flex-shrink-0 items-center gap-2 border-b px-3 py-1.5">
+              <div className="flex h-9 shrink-0 items-center gap-2 border-b px-3 py-1.5">
                 {/* Table name + stats */}
                 <div className="flex min-w-0 items-center gap-1.5">
                   {selectedTableInfo.type === 'view' ? (
-                    <Eye className="h-3.5 w-3.5 flex-shrink-0 text-purple-500/70" />
+                    <Eye className="h-3.5 w-3.5 shrink-0 text-purple-500/70" />
                   ) : (
-                    <Table2 className="h-3.5 w-3.5 flex-shrink-0 text-blue-500/70" />
+                    <Table2 className="h-3.5 w-3.5 shrink-0 text-blue-500/70" />
                   )}
                   <span className="text-foreground truncate text-xs font-medium">
                     {selectedTableInfo.name}
                   </span>
-                  <span className="text-muted-foreground/40 flex-shrink-0 text-xs tabular-nums">
+                  <span className="text-muted-foreground/40 shrink-0 text-xs tabular-nums">
                     {selectedTableInfo.rowCount.toLocaleString()} ×{' '}
                     {selectedTableInfo.columns.length}
                   </span>
@@ -1320,7 +1338,7 @@ export function SqliteRenderer({
           {viewMode === 'query' && (
             <div className="flex flex-1 flex-col overflow-hidden">
               {/* Query input */}
-              <div className="flex-shrink-0 space-y-2 border-b p-3">
+              <div className="shrink-0 space-y-2 border-b p-3">
                 <div className="flex items-center gap-2">
                   <span className="text-muted-foreground/50 text-xs">SQL</span>
                   <div className="ml-auto flex items-center gap-1.5">
@@ -1368,13 +1386,13 @@ export function SqliteRenderer({
               {/* Query results */}
               <div className="flex flex-1 flex-col overflow-hidden">
                 {queryResult?.error && (
-                  <div className="flex-shrink-0 border-b border-red-500/20 bg-red-500/5 px-4 py-2 font-mono text-xs text-red-500 select-text">
+                  <div className="shrink-0 border-b border-red-500/20 bg-red-500/5 px-4 py-2 font-mono text-xs text-red-500 select-text">
                     Error: {queryResult.error}
                   </div>
                 )}
 
                 {queryResult && !queryResult.error && (
-                  <div className="text-muted-foreground flex flex-shrink-0 items-center gap-2 border-b px-3 py-1.5 text-xs">
+                  <div className="text-muted-foreground flex shrink-0 items-center gap-2 border-b px-3 py-1.5 text-xs">
                     <span>
                       {queryResult.rowCount.toLocaleString()} row
                       {queryResult.rowCount !== 1 ? 's' : ''}
@@ -1470,6 +1488,7 @@ export function SqliteRenderer({
                     'placeholder:text-muted-foreground/20',
                   )}
                   placeholder="NULL"
+                  aria-label={`${expandedCell.column} value`}
                   spellCheck={false}
                   autoFocus
                 />

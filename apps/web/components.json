@@ -20,6 +20,8 @@
   },
   "registries": {
     "@magicui": "https://magicui.design/r/{name}",
-    "@extend": "https://www.extend.ai/ui/r/{name}.json"
+    "@extend": "https://www.extend.ai/ui/r/{name}.json",
+    "@ai-elements": "https://ai-sdk.dev/elements/api/registry/{name}.json",
+    "@dotmatrix": "https://dotmatrix.zzzzshawn.cloud/r/{name}.json"
   }
 }

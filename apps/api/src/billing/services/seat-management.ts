@@ -92,6 +92,26 @@ async function resolveSeatSubscriptionItemId(
  * Safe to call repeatedly: if Stripe already has the right quantity, the
  * update is a no-op.
  */
+/**
+ * Trial seat gate. Non-null when an admin-issued trial is active AND adding
+ * one more member would exceed its seat allowance. Per-seat billed accounts
+ * meter seats through Stripe instead and are never trial-gated (an active
+ * trial on a non-per_seat account is the only case resolveTrialSeatLimit
+ * returns a limit for). Checked at member add, invite create, and invite
+ * accept — accept is the authoritative gate; the earlier two are UX.
+ */
+export async function trialSeatLimitBlocksNewMember(
+  accountId: string,
+): Promise<{ limit: number; members: number } | null> {
+  const { resolveTrialSeatLimit } = await import('../../shared/account-limits');
+  const limit = await resolveTrialSeatLimit(accountId);
+  if (limit === null) return null;
+  const account = await getCreditAccount(accountId);
+  if (isPerSeatAccount(account?.billingModel)) return null;
+  const members = await countActiveMembers(accountId);
+  return members >= limit ? { limit, members } : null;
+}
+
 export async function syncSeatQuantity(accountId: string): Promise<{
   synced: boolean;
   seatCount: number;

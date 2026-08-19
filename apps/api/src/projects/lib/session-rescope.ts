@@ -35,7 +35,27 @@ import {
 } from '../../shared/connector-alias';
 
 export type RescopeSecretsResult =
-  | { ok: true; allowlist: string[] | null; dropped: string[]; added: string[] }
+  | {
+      ok: true;
+      allowlist: string[] | null;
+      dropped: string[];
+      added: string[];
+      /**
+       * Did the session's effective secret set SHRINK?
+       *
+       * Not derivable from `dropped.length`, and that is the whole point. A
+       * session's allowlist starts `null` — "everything the agent's grant
+       * allows" — so its first narrowing is a null → list transition, and the
+       * names lost are only enumerable when the grant itself is a list. With an
+       * `'all'` grant they are not, yet the narrowing is just as real.
+       *
+       * Keying the caller's "…rotate them if that matters" warning off
+       * `dropped.length` therefore suppressed it on the LARGEST narrowing there
+       * is: revoking every secret from a live session reported that nothing had
+       * been dropped. Branch on this instead.
+       */
+      narrowed: boolean;
+    }
   | { ok: false; code: 'NOT_IN_AGENT_GRANT'; message: string; offending: string[] };
 
 /**
@@ -73,19 +93,33 @@ export function rescopeSessionSecrets(input: {
   }
 
   const before = input.current === null ? null : normalize(input.current);
-  // A null allowlist is "everything the grant allows", so the set of names it
-  // covers is not enumerable here. Report movement only when both sides are
-  // explicit; the route reports the null transition itself.
+  // A null allowlist means "everything the grant allows". When the grant is a
+  // list, that set IS enumerable — so narrowing away from null can name exactly
+  // what it dropped, which is the case that previously reported nothing.
+  const grantList = Array.isArray(input.agentGrantEnv)
+    ? normalize(input.agentGrantEnv)
+    : null;
+  const effectiveBefore = before ?? grantList;
+
   const dropped =
-    before !== null && requested !== null
-      ? before.filter((id) => !requested.some((r) => r.toUpperCase() === id.toUpperCase()))
+    effectiveBefore !== null && requested !== null
+      ? effectiveBefore.filter(
+          (id) => !requested.some((r) => r.toUpperCase() === id.toUpperCase()),
+        )
       : [];
   const added =
     before !== null && requested !== null
       ? requested.filter((id) => !before.some((b) => b.toUpperCase() === id.toUpperCase()))
       : [];
 
-  return { ok: true, allowlist: requested, dropped, added };
+  // Narrowing with UNKNOWABLE names: an `'all'` (or absent) grant going from
+  // null to any explicit list. Nothing can be listed, but the warning must
+  // still fire — this is the revoke-everything case.
+  const narrowedBeyondNames =
+    before === null && requested !== null && grantList === null;
+  const narrowed = dropped.length > 0 || narrowedBeyondNames;
+
+  return { ok: true, allowlist: requested, dropped, added, narrowed };
 }
 
 /** Trim, drop blanks, de-duplicate case-insensitively, keep first spelling. */
@@ -124,14 +158,14 @@ export function rescopeSessionBindings(input: {
   grantedConnectors: string[] | 'all' | undefined;
 }): RescopeBindingsResult {
   const current: Record<string, string> = {};
-  for (const [alias, profileId] of Object.entries(input.current)) {
-    current[canonicalConnectorAlias(alias.trim())] = profileId;
+  for (const [alias, connectionId] of Object.entries(input.current)) {
+    current[canonicalConnectorAlias(alias.trim())] = connectionId;
   }
 
   const requested: Record<string, string> = {};
-  for (const [alias, profileId] of Object.entries(input.requested)) {
+  for (const [alias, connectionId] of Object.entries(input.requested)) {
     const key = canonicalConnectorAlias(alias.trim());
-    const value = typeof profileId === 'string' ? profileId.trim() : '';
+    const value = typeof connectionId === 'string' ? connectionId.trim() : '';
     if (!key || !value) continue;
     requested[key] = value;
   }

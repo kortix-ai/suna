@@ -1,4 +1,8 @@
 import { describe, expect, mock, test } from 'bun:test';
+import * as realComputeMetering from '../billing/services/compute-metering';
+import * as realSandboxReaper from './sandbox-reaper';
+import * as realAttachments from '../connectors/attachments';
+import { mockConfigModule } from './reaping/test-support/mock-config';
 
 // maintenance.ts pulls in the real config module (which validates the real,
 // dotenvx-encrypted process.env and calls process.exit on a bare `bun test`
@@ -6,8 +10,12 @@ import { describe, expect, mock, test } from 'bun:test';
 // wide fan of DB/provider modules. `shouldForceResetStaleLock` is a pure
 // function with none of that runtime surface, so everything below is purely
 // to let the module load in isolation.
-mock.module('../config', () => ({ config: {} }));
+mock.module('../config', () => mockConfigModule());
 mock.module('@kortix/db', () => ({ projectSessions: {}, projects: {} }));
+mock.module('../connectors/attachments', () => ({
+  ...realAttachments,
+  cleanupExpiredConnectorAttachments: async () => ({ deleted: 0, errors: 0 }),
+}));
 // sweepExpiredSessionBranches() (unlike the other maintenance subtasks) isn't
 // wrapped in its own .catch() and makes a real chained db.select(...) call —
 // give it an empty-result chain so runProjectMaintenance can complete.
@@ -24,12 +32,23 @@ mock.module('../shared/db', () => ({
             limit: async () => [],
           }),
         }),
+        // The monitor-event retention sweep selects straight off one table
+        // (no join) before deleting the batch it found.
+        where: () => ({
+          orderBy: () => ({ limit: async () => [] }),
+          limit: async () => [],
+        }),
       }),
     }),
+    selectDistinct: () => ({ from: () => ({ where: async () => [] }) }),
   },
 }));
 mock.module('./git', () => ({ deleteRemoteSessionBranch: async () => false }));
+// Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
+// lists exports by hand deletes every export it omits — the failure surfaces in
+// whatever unrelated file imports the missing name next, attributed to no test.
 mock.module('../billing/services/compute-metering', () => ({
+  ...realComputeMetering,
   reopenComputeForSandbox: async () => undefined,
   tickRunningComputeCharges: async () => ({ settled: 0, reconciled: 0 }),
 }));
@@ -65,7 +84,12 @@ mock.module('./session-lifecycle/undelivered-prompts', () => ({
   reconcileUndeliveredPrompts: async () => ({ claimed: 0, succeeded: 0, failed: 0, queued: 0 }),
 }));
 
+mock.module('./session-lifecycle/runtime-wake-maintenance', () => ({
+  reconcileRuntimeWakeFences: async () => ({ checked: 0, stopped: 0, removed: 0, errors: 0 }),
+}));
+
 mock.module('./sandbox-reaper', () => ({
+  ...realSandboxReaper,
   reapAndReconcileSandboxes: () => reapAndReconcileSandboxesImpl(),
   reconcileOrphanComputeSessions: async () => ({ checked: 0, closed: 0, errors: 0 }),
   reconcileStuckActiveSessions: async () => ({

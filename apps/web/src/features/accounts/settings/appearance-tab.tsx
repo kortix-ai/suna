@@ -1,20 +1,31 @@
 'use client';
 
-import { Badge } from '@/components/ui/badge';
-import { Field, FieldContent, FieldDescription, FieldTitle } from '@/components/ui/field';
-import { Switch } from '@/components/ui/switch';
-import { WallpaperBackground } from '@/components/ui/wallpaper-background';
-import { Icon } from '@/features/icon/icon';
-import { track } from '@/lib/track';
-import { cn } from '@/lib/utils';
-import { DEFAULT_WALLPAPER_ID, WALLPAPERS, type Wallpaper } from '@/lib/wallpapers';
-import { useUserPreferencesStore } from '@/stores/user-preferences-store';
-import { CheckCircleIcon as CheckCircleSolid } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
-import { useTheme } from 'next-themes';
-import * as React from 'react';
+/**
+ * `WallpaperCard` — the wallpaper-picker tile. This file used to also export
+ * a full `AppearanceTab` (theme switch + wallpaper grid + session-panel mode
+ * + layout toggle) that backed the legacy user-settings modal.
+ * Task 10 deleted that modal; `AppearanceTab` lost its only consumer and was
+ * removed with it. This file survives — unlike `security-tab.tsx`, which
+ * Task 10 also deleted — because `WallpaperCard` still has a real, live
+ * consumer: `features/workspace/settings/tabs/preferences-tab.tsx`. Moving
+ * it there instead was considered and rejected: nothing else needs this file
+ * to be gone, and `preferences-tab.tsx` already imports it from this exact
+ * path, so relocating it would be pure churn for this task. It's a natural
+ * candidate for Phase 3 ("deleting `/accounts/**`") to fold directly into
+ * `preferences-tab.tsx` when that phase removes this directory wholesale.
+ */
 
-function WallpaperCard({
+import { Badge } from '@/components/ui/badge';
+import { WallpaperBackground } from '@/components/ui/wallpaper-background';
+import { cn } from '@/lib/utils';
+import { DEFAULT_WALLPAPER_ID, type Wallpaper } from '@/lib/wallpapers';
+import { CheckCircleIcon as CheckCircleSolid } from '@phosphor-icons/react';
+
+/** Exported so `features/workspace/settings/tabs/preferences-tab.tsx` can reuse
+ *  this card instead of re-implementing the wallpaper picker — see that
+ *  file's header for why this tab still imports pieces of this one rather
+ *  than duplicating them. */
+export function WallpaperCard({
   wallpaper,
   thumbSrc,
   isActive,
@@ -80,165 +91,3 @@ function WallpaperCard({
   );
 }
 
-export function AppearanceTab() {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
-  const tHardcodedUi = useTranslations('hardcodedUi');
-  const { theme, setTheme, resolvedTheme } = useTheme();
-  const wallpaperId = useUserPreferencesStore(
-    (s) => s.preferences.wallpaperId ?? DEFAULT_WALLPAPER_ID,
-  );
-  const setWallpaperId = useUserPreferencesStore((s) => s.setWallpaperId);
-  const disableTabSelector = useUserPreferencesStore(
-    (s) => s.preferences.disableTabSelector ?? false,
-  );
-  const setDisableTabSelector = useUserPreferencesStore((s) => s.setDisableTabSelector);
-  const panelMode = useUserPreferencesStore((s) => s.preferences.panelMode ?? 'easy');
-  const setPanelMode = useUserPreferencesStore((s) => s.setPanelMode);
-  const [mounted, setMounted] = React.useState(false);
-  const isSessionTabsEnabled = !disableTabSelector;
-
-  React.useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  const isLight = mounted && resolvedTheme === 'light';
-
-  // Users may have a wallpaper persisted that no longer exists — reset it.
-  React.useEffect(() => {
-    if (!WALLPAPERS.some((w) => w.id === wallpaperId)) {
-      setWallpaperId(DEFAULT_WALLPAPER_ID);
-    }
-  }, [wallpaperId, setWallpaperId]);
-
-  return (
-    <div className="scrollbar-hide w-full max-w-full min-w-0 space-y-6 overflow-x-hidden px-6 py-5">
-      <div className="flex flex-col space-y-2">
-        <label className="text-muted-foreground text-sm font-medium">
-          {tHardcodedUi.raw('componentsSettingsAppearanceTab.line127JsxTextColorMode')}
-        </label>
-        <div className="bg-foreground/10 shadow-custom flex w-fit items-center gap-1 rounded-sm p-0.5">
-          <button
-            aria-label={tI18nHardcoded.raw(
-              'autoFeaturesAccountsSettingsAppearanceTabJsxAttrAriaLabelLightf3e8a707',
-            )}
-            className="[&amp;&gt;svg]:size-4 text-foreground inline-flex h-7 cursor-pointer items-center justify-center gap-1.5 rounded-sm px-2 transition-colors duration-150 ease-out"
-            style={{ backgroundColor: theme === 'light' ? 'var(--background)' : 'transparent' }}
-            type="button"
-            onClick={() => setTheme('light')}
-          >
-            <Icon.Sun />
-            <span className="text-sm font-medium">Light</span>
-          </button>
-          <button
-            aria-label={tI18nHardcoded.raw(
-              'autoFeaturesAccountsSettingsAppearanceTabJsxAttrAriaLabelDark294ccd51',
-            )}
-            className="[&amp;&gt;svg]:size-4 hover:text-foreground text-foreground inline-flex h-7 cursor-pointer items-center justify-center gap-1.5 rounded-sm px-2 transition-colors duration-150 ease-out"
-            type="button"
-            style={{ backgroundColor: theme === 'dark' ? 'var(--background)' : 'transparent' }}
-            onClick={() => setTheme('dark')}
-          >
-            <Icon.Moon />
-            <span className="text-sm font-medium">Dark</span>
-          </button>
-          <button
-            aria-label={tI18nHardcoded.raw(
-              'autoFeaturesAccountsSettingsAppearanceTabJsxAttrAriaLabelSystem89196afd',
-            )}
-            className="[&amp;&gt;svg]:size-4 hover:text-foreground text-foreground inline-flex h-7 cursor-pointer items-center justify-center gap-1.5 rounded-sm px-2 transition-colors duration-150 ease-out"
-            type="button"
-            style={{ backgroundColor: theme === 'system' ? 'var(--background)' : 'transparent' }}
-            onClick={() => setTheme('system')}
-          >
-            <Icon.Monitor />
-            <span className="text-sm font-medium">System</span>
-          </button>
-        </div>
-      </div>
-
-      <div className="flex flex-col space-y-2">
-        <label className="text-muted-foreground text-sm font-medium">Wallpaper</label>
-        <div className="grid w-full grid-cols-3 gap-2">
-          {WALLPAPERS.map((wp) => (
-            <WallpaperCard
-              key={wp.id}
-              wallpaper={wp}
-              thumbSrc={wp.thumbs ? (isLight ? wp.thumbs.light : wp.thumbs.dark) : undefined}
-              isActive={wallpaperId === wp.id}
-              onSelect={() => setWallpaperId(wp.id)}
-            />
-          ))}
-        </div>
-      </div>
-
-      <div className="flex flex-col space-y-2">
-        <label className="text-muted-foreground text-sm font-medium">Session panel</label>
-        <div
-          role="radiogroup"
-          aria-label="Session panel mode"
-          className="bg-foreground/10 shadow-custom flex w-fit items-center gap-1 rounded-sm p-0.5"
-        >
-          <button
-            type="button"
-            role="radio"
-            aria-checked={panelMode === 'easy'}
-            aria-label="Easy mode"
-            className="text-foreground inline-flex h-7 cursor-pointer items-center justify-center gap-1.5 rounded-sm px-3 transition-colors duration-150 ease-out"
-            style={{ backgroundColor: panelMode === 'easy' ? 'var(--background)' : 'transparent' }}
-            onClick={() => {
-              if (panelMode !== 'easy') track('panel_mode_switched', { to: 'easy' });
-              setPanelMode('easy');
-            }}
-          >
-            <span className="text-sm font-medium">Easy</span>
-          </button>
-          <button
-            type="button"
-            role="radio"
-            aria-checked={panelMode === 'advanced'}
-            aria-label="Advanced mode"
-            className="text-foreground inline-flex h-7 cursor-pointer items-center justify-center gap-1.5 rounded-sm px-3 transition-colors duration-150 ease-out"
-            style={{
-              backgroundColor: panelMode === 'advanced' ? 'var(--background)' : 'transparent',
-            }}
-            onClick={() => {
-              if (panelMode !== 'advanced') track('panel_mode_switched', { to: 'advanced' });
-              setPanelMode('advanced');
-            }}
-          >
-            <span className="text-sm font-medium">Advanced</span>
-          </button>
-        </div>
-        <p className="text-muted-foreground text-xs">
-          {panelMode === 'easy'
-            ? "Explains what's happening step by step, in plain language. Click any step for more detail."
-            : 'Shows every action the agent takes, with full detail and step-by-step navigation.'}
-        </p>
-      </div>
-
-      <div className="flex flex-col space-y-2">
-        <label className="text-muted-foreground text-sm font-medium">Layout</label>
-        <Field orientation="horizontal">
-          <FieldContent
-            className="cursor-pointer"
-            onClick={() => setDisableTabSelector(isSessionTabsEnabled)}
-          >
-            <FieldTitle id="session-tabs-title">
-              {tHardcodedUi.raw('componentsSettingsAppearanceTab.line180JsxTextSessionTabs')}
-            </FieldTitle>
-            <FieldDescription>
-              {tHardcodedUi.raw(
-                'componentsSettingsAppearanceTab.line182JsxTextShowATabBarAtTheTopOf',
-              )}
-            </FieldDescription>
-          </FieldContent>
-          <Switch
-            id="session-tabs-switch"
-            checked={isSessionTabsEnabled}
-            onCheckedChange={(v) => setDisableTabSelector(!v)}
-          />
-        </Field>
-      </div>
-    </div>
-  );
-}

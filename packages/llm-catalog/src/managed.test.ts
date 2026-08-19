@@ -10,12 +10,18 @@ import {
 } from './index';
 
 describe('managed catalog', () => {
+  // 2026-08-10: claude-opus-4.8 / claude-sonnet-4.6 / kimi-k3 deactivated
+  // (commented out in MANAGED_MODELS, reactivatable by diff); muse-spark-1.2,
+  // minimax-m3, and gpt-5.6-luna added the same day.
   test('exposes the managed lineup', () => {
     expect(DEFAULT_MANAGED_MODEL_IDS).toEqual([
-      'claude-opus-4.8',
-      'claude-sonnet-4.6',
+      'grok-4.6',
       'glm-5.2',
       'deepseek-v4-flash',
+      'deepseek-v4-pro-0813',
+      'muse-spark-1.2',
+      'minimax-m3',
+      'gpt-5.6-luna',
     ]);
   });
 
@@ -24,8 +30,8 @@ describe('managed catalog', () => {
     expect(DEFAULT_MANAGED_MODEL_IDS).not.toContain('kortix-basic');
   });
 
-  test('Opus is the single flagship', () => {
-    expect(MANAGED_FLAGSHIP_MODEL_ID).toBe('claude-opus-4.8');
+  test('Grok 4.6 is the single flagship', () => {
+    expect(MANAGED_FLAGSHIP_MODEL_ID).toBe('grok-4.6');
     expect(MANAGED_MODELS.filter((m) => m.tier === 'flagship')).toHaveLength(1);
   });
 
@@ -102,8 +108,10 @@ describe('managed catalog', () => {
         // OpenRouter slugs are provider/model.
         expect(m.upstreamModelId, `${m.id} OpenRouter slug`).toContain('/');
       } else {
+        // AsterLab accepts a bare, slash-free upstream model id on its
+        // OpenAI-compatible endpoint (e.g. `glm-5.2`, `kimi-k3`).
         expect(m.transport, `${m.id} transport`).toBe('aster');
-        expect(m.upstreamModelId, `${m.id} AsterLab model`).toBe('glm-5.2');
+        expect(m.upstreamModelId, `${m.id} AsterLab slug`).toMatch(/^[^/]+$/);
       }
     }
   });
@@ -118,8 +126,6 @@ describe('managed catalog', () => {
 
 describe('managed resolution + back-compat aliases', () => {
   test('resolves current ids', () => {
-    expect(getManagedModel('claude-opus-4.8')?.name).toBe('Claude Opus 4.8');
-    expect(getManagedModel('claude-opus-4.8')?.transport).toBe('bedrock');
     expect(getManagedModel('glm-5.2')?.name).toBe('GLM 5.2');
     expect(getManagedModel('glm-5.2')?.transport).toBe('aster');
     expect(getManagedModel('glm-5.2')?.upstreamModelId).toBe('glm-5.2');
@@ -136,6 +142,45 @@ describe('managed resolution + back-compat aliases', () => {
       cacheWritePerMillion: 0.0938,
       outputPerMillion: 0.1876,
     });
+    expect(getManagedModel('grok-4.6')).toMatchObject({
+      name: 'Grok 4.6',
+      upstreamModelId: 'x-ai/grok-4.6',
+      transport: 'openrouter',
+      pricingRef: 'openrouter/x-ai/grok-4.6',
+      tier: 'flagship',
+      vision: true,
+      limit: { context: 500_000, output: 500_000 },
+      openrouterProvider: { order: ['xai'], allow_fallbacks: true },
+    });
+    expect(getManagedModel('grok-4.6')?.pricing).toEqual({
+      inputPerMillion: 2,
+      cachedInputPerMillion: 0.5,
+      outputPerMillion: 6,
+      contextOver200k: {
+        inputPerMillion: 4,
+        cachedInputPerMillion: 1,
+        outputPerMillion: 12,
+        contextThreshold: 200_000,
+      },
+    });
+    expect(getManagedModel('deepseek-v4-pro-0813')).toMatchObject({
+      name: 'DeepSeek V4 Pro 0813',
+      upstreamModelId: 'deepseek/deepseek-v4-pro-0813',
+      transport: 'openrouter',
+      pricingRef: 'openrouter/deepseek/deepseek-v4-pro-0813',
+      pricing: {
+        inputPerMillion: 1.74,
+        cachedInputPerMillion: 0.145,
+        outputPerMillion: 3.48,
+      },
+      tier: 'balanced',
+      vision: false,
+      limit: { context: 1_048_575, output: 384_000 },
+      openrouterProvider: {
+        order: ['gmicloud'],
+        allow_fallbacks: true,
+      },
+    });
   });
 
   test('retired / superseded model ids no longer resolve (aliases removed)', () => {
@@ -148,6 +193,10 @@ describe('managed resolution + back-compat aliases', () => {
       'qwen3-max',
       'minimax-m2.5',
       'kimi-k2',
+      // 2026-08-10 slim-down (commented out, not aliased):
+      'claude-opus-4.8',
+      'claude-sonnet-4.6',
+      'kimi-k3',
     ]) {
       expect(getManagedModel(old), `${old} should be gone`).toBeUndefined();
       expect(isManagedModelId(old), `${old} should be gone`).toBe(false);

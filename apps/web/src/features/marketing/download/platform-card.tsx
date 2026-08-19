@@ -1,18 +1,38 @@
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/marketing/button';
 import Link from 'next/link';
 
 import type { Platform } from './detect-os';
 
-export type CardRow = {
+type CardRowBase = {
   id: Platform;
   label: string;
   /** Line under the label, e.g. "Universal · 195 MB". Empty renders nothing. */
   meta: string;
-  href: string;
-  /** Store links leave the site; the internal platform redirects do not. */
-  external?: boolean;
   Mark: React.ComponentType<{ className?: string }>;
 };
+
+/**
+ * A row either has a build to hand over or it does not, and the type says which.
+ *
+ * `href` and `status` are mutually exclusive on purpose. A row carrying a live
+ * store link AND a "Coming soon" chip is the one bug this page must never ship —
+ * it sends a visitor to a store listing they cannot install from. Making the
+ * pair unrepresentable beats catching it in review.
+ */
+export type CardRow =
+  | (CardRowBase & {
+      href: string;
+      /** Store links leave the site; the internal platform redirects do not. */
+      external?: boolean;
+      status?: undefined;
+    })
+  | (CardRowBase & {
+      /** Shown instead of the Download button, e.g. "Coming soon". */
+      status: string;
+      href?: undefined;
+      external?: undefined;
+    });
 
 /**
  * One product card: full-bleed image, header, then a divided list of platform
@@ -72,23 +92,39 @@ export function PlatformCard({
               ) : null}
             </div>
 
-            <Button
-              asChild
-              size="magic-sm"
-              variant={row.id === filled ? 'default' : 'outline'}
-              className="shrink-0 active:scale-[0.97]"
-            >
-              <Link
-                href={row.href}
-                // Five buttons all reading "Download" is useless to a screen
-                // reader. The visible label stays short; the accessible one says
-                // which platform it is.
-                aria-label={`Download Kortix for ${row.label}`}
-                {...(row.external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+            {/* `!== undefined`, not truthiness: `status: ''` is falsy, so a
+                truthiness check leaves TS unable to prove the other arm has an
+                `href` — and would silently render a Download button for a row
+                that meant to say it has no build. */}
+            {row.status !== undefined ? (
+              // Height-matched to the `magic-sm` button opposite it. Both cards
+              // share one grid row and `mt-auto` bottom-aligns their lists, so a
+              // shorter trailing slot here would knock every seam in this card
+              // out of line with the one beside it.
+              <span className="flex h-9 shrink-0 items-center sm:h-8">
+                <Badge variant="muted" size="sm">
+                  {row.status}
+                </Badge>
+              </span>
+            ) : (
+              <Button
+                asChild
+                size="magic-sm"
+                variant={row.id === filled ? 'default' : 'outline'}
+                className="shrink-0 active:scale-[0.97]"
               >
-                Download
-              </Link>
-            </Button>
+                <Link
+                  href={row.href}
+                  // Five buttons all reading "Download" is useless to a screen
+                  // reader. The visible label stays short; the accessible one says
+                  // which platform it is.
+                  aria-label={`Download Kortix for ${row.label}`}
+                  {...(row.external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+                >
+                  Download
+                </Link>
+              </Button>
+            )}
           </li>
         ))}
       </ul>

@@ -1,16 +1,12 @@
-// Account-scoped invite email. Self-contained Mailtrap transport — formerly
-// lived under teams/services/notifications.ts (which was sandbox-scoped).
+// Account-scoped invite email. Rendering lives here; delivery goes through the
+// shared provider-chain transport (lib/email/transport.ts).
 import { config } from '../config';
-
-const MAILTRAP_SEND_URL = 'https://send.api.mailtrap.io/api/send';
+import { isEmailConfigured, sendEmail, type EmailSendResult } from '../lib/email/transport';
 
 const BRAND_WORDMARK = 'Kortix';
 const BRAND_FOOTER = 'Kortix — The Autonomous Company Operating System';
 
-export type EmailDeliveryResult =
-  | { ok: true; provider: 'mailtrap'; status: number }
-  | { ok: false; skipped: true; reason: 'missing_mailtrap_token' }
-  | { ok: false; skipped?: false; provider: 'mailtrap'; status?: number; error: string };
+export type EmailDeliveryResult = EmailSendResult;
 
 const COLOR_BG = '#f6f7f9';
 const COLOR_CARD = '#ffffff';
@@ -78,57 +74,21 @@ function renderEmail(opts: { kicker?: string; title: string; body: string }): st
 </html>`.trim();
 }
 
-async function send(opts: {
+function send(opts: {
   to: string;
   subject: string;
   html: string;
   category: string;
 }): Promise<EmailDeliveryResult> {
-  if (!config.MAILTRAP_API_TOKEN) {
-    return { ok: false, skipped: true, reason: 'missing_mailtrap_token' };
-  }
-
-  try {
-    const res = await fetch(MAILTRAP_SEND_URL, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${config.MAILTRAP_API_TOKEN}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        from: { email: config.MAILTRAP_FROM_EMAIL, name: config.MAILTRAP_FROM_NAME },
-        to: [{ email: opts.to }],
-        subject: opts.subject,
-        html: opts.html,
-        category: opts.category,
-      }),
-      signal: AbortSignal.timeout(10_000),
-    });
-    if (!res.ok) {
-      const body = await res.text().catch(() => '');
-      console.warn(`[accounts/email] Mailtrap ${res.status}: ${body}`);
-      return {
-        ok: false,
-        provider: 'mailtrap',
-        status: res.status,
-        error: body || res.statusText || 'Mailtrap request failed',
-      };
-    }
-
-    return { ok: true, provider: 'mailtrap', status: res.status };
-  } catch (err) {
-    const message = (err as Error).message;
-    console.warn('[accounts/email] send failed:', message);
-    return { ok: false, provider: 'mailtrap', error: message };
-  }
+  return sendEmail({ to: [opts.to], subject: opts.subject, html: opts.html, category: opts.category });
 }
 
 // Whether invite-email delivery is wired up. Lets callers that fire the email
 // without awaiting it (fire-and-forget) still report an accurate email_sent /
-// skip_reason synchronously: if the token is missing, send() would skip with
-// missing_mailtrap_token regardless. Mirrors the guard at the top of send().
+// skip_reason synchronously: with no provider configured, sendEmail() would
+// skip with email_not_configured regardless.
 export function isInviteEmailConfigured(): boolean {
-  return !!config.MAILTRAP_API_TOKEN;
+  return isEmailConfigured();
 }
 
 // Public, share-anywhere invite URL. The same link is embedded in the invite
@@ -151,7 +111,7 @@ export async function sendAccountInviteEmail(opts: {
   inviterEmail: string | null;
   inviteId: string;
   // Display label for the role chip (account: admin|member, project:
-  // manager|editor|user). Rendered verbatim (uppercased).
+  // manager|member). Rendered verbatim (uppercased).
   role?: string;
   // When set, the invite is framed as joining this project rather than the
   // whole account/team (project-level /access/invite flow).

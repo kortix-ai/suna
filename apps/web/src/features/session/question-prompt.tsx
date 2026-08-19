@@ -12,10 +12,11 @@
 
 import { cn } from '@/lib/utils';
 import type { QuestionAnswer, QuestionInfo, QuestionRequest } from '@/ui';
-import { ChatCircleIcon as MessageCircle, XIcon as X } from '@phosphor-icons/react';
+import { ChatCircleIcon as MessageCircle } from '@phosphor-icons/react';
 import React, { useCallback, useEffect, useImperativeHandle, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { Close } from '../icon/icons/close';
 
 // ---------------------------------------------------------------------------
 // Lightweight markdown renderer for question text (no Shiki/KaTeX/Mermaid)
@@ -103,6 +104,7 @@ export const QuestionPrompt = React.forwardRef<QuestionPromptHandle, QuestionPro
     const isMulti = currentQuestion?.multiple ?? false;
     const options = currentQuestion?.options ?? [];
     const currentAnswers = answers[tab] ?? [];
+    const currentAnswerSet = new Set(currentAnswers);
     const showCustom = currentQuestion?.custom !== false;
 
     // -----------------------------------------------------------------------
@@ -281,10 +283,9 @@ export const QuestionPrompt = React.forwardRef<QuestionPromptHandle, QuestionPro
     // -----------------------------------------------------------------------
 
     return (
-      <div className="border-border/40 bg-muted/40 overflow-hidden rounded-2xl border">
-        {/* Header row */}
-        <div className="flex w-full items-center gap-2 px-3 py-1.5">
-          <MessageCircle className="text-muted-foreground size-3.5 flex-shrink-0" />
+      <div className="relative isolate z-10 w-full">
+        <div className="flex w-full items-center gap-2 p-2 py-1.5">
+          <MessageCircle className="text-muted-foreground size-3.5 shrink-0" />
           <span className="text-muted-foreground min-w-0 flex-1 truncate text-left text-xs">
             {isSingle ? '' : `${questions.length} questions \u00B7 `}
             <span className="text-foreground/80 truncate font-medium">{headerSummary}</span>
@@ -300,7 +301,7 @@ export const QuestionPrompt = React.forwardRef<QuestionPromptHandle, QuestionPro
             }}
             className="text-muted-foreground/40 hover:text-foreground hover:bg-muted inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors"
           >
-            <X className="size-3" />
+            <Close className="size-3" />
           </span>
         </div>
 
@@ -313,7 +314,7 @@ export const QuestionPrompt = React.forwardRef<QuestionPromptHandle, QuestionPro
                 const isAnswered = (answers[i]?.length ?? 0) > 0;
                 return (
                   <button
-                    key={i}
+                    key={q.question}
                     onClick={() => {
                       setTab(i);
                     }}
@@ -326,7 +327,7 @@ export const QuestionPrompt = React.forwardRef<QuestionPromptHandle, QuestionPro
                   >
                     <span
                       className={cn(
-                        'flex size-3 flex-shrink-0 items-center justify-center rounded-sm border',
+                        'flex size-3 shrink-0 items-center justify-center rounded-sm border',
                         isAnswered
                           ? 'border-border bg-muted'
                           : tab === i
@@ -337,7 +338,7 @@ export const QuestionPrompt = React.forwardRef<QuestionPromptHandle, QuestionPro
                       {isAnswered && (
                         <svg viewBox="0 0 12 12" fill="none" width="7" height="7">
                           <path
-                            d="M3 7.17905L5.02703 8.85135L9 3.5"
+                            d="M3 7.18L5.03 8.85L9 3.5"
                             stroke="currentColor"
                             strokeWidth="1.5"
                             strokeLinecap="square"
@@ -383,14 +384,14 @@ export const QuestionPrompt = React.forwardRef<QuestionPromptHandle, QuestionPro
                     >
                       <span
                         className={cn(
-                          'flex size-3 flex-shrink-0 items-center justify-center rounded-sm border',
+                          'flex size-3 shrink-0 items-center justify-center rounded-sm border',
                           done ? 'border-border bg-muted' : 'border-border',
                         )}
                       >
                         {done && (
                           <svg viewBox="0 0 12 12" fill="none" width="7" height="7">
                             <path
-                              d="M3 7.17905L5.02703 8.85135L9 3.5"
+                              d="M3 7.18L5.03 8.85L9 3.5"
                               stroke="currentColor"
                               strokeWidth="1.5"
                               strokeLinecap="square"
@@ -426,10 +427,10 @@ export const QuestionPrompt = React.forwardRef<QuestionPromptHandle, QuestionPro
                 {/* Options — compact rows */}
                 <div className="space-y-px">
                   {options.map((opt, i) => {
-                    const isPicked = currentAnswers.includes(opt.label);
+                    const isPicked = currentAnswerSet.has(opt.label);
                     return (
                       <button
-                        key={i}
+                        key={opt.label}
                         onClick={() => selectOption(i)}
                         className={cn(
                           'group flex w-full cursor-pointer items-center gap-2 rounded-2xl border px-2 py-1.5 text-left transition-colors duration-150 ease-out active:scale-[0.998]',
@@ -440,7 +441,7 @@ export const QuestionPrompt = React.forwardRef<QuestionPromptHandle, QuestionPro
                       >
                         <span
                           className={cn(
-                            'flex size-4 flex-shrink-0 items-center justify-center rounded-[4px] border transition-colors',
+                            'flex size-4 shrink-0 items-center justify-center rounded-[4px] border transition-colors',
                             isPicked
                               ? 'border-primary/50 bg-primary/10'
                               : 'border-border group-hover:border-foreground/30',
@@ -449,7 +450,7 @@ export const QuestionPrompt = React.forwardRef<QuestionPromptHandle, QuestionPro
                           {isPicked && (
                             <svg viewBox="0 0 12 12" fill="none" width="8" height="8">
                               <path
-                                d="M3 7.17905L5.02703 8.85135L9 3.5"
+                                d="M3 7.18L5.03 8.85L9 3.5"
                                 stroke="currentColor"
                                 strokeWidth="1.5"
                                 strokeLinecap="square"

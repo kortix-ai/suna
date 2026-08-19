@@ -19,6 +19,7 @@
  * side, so the actions never move.
  */
 
+import { HighlightedCode } from '@/components/markdown/code';
 import { CopyButton } from '@/components/markdown/copy-button';
 import { DocMarkdown } from '@/components/markdown/doc-markdown';
 import {
@@ -26,7 +27,6 @@ import {
   parseFrontmatter,
 } from '@/components/markdown/markdown-frontmatter';
 import { Button } from '@/components/ui/button';
-import { CodeBlockCode } from '@/components/ui/code-block';
 import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -429,7 +429,7 @@ function FileBody({
     // an agent file looks like.
     const { frontmatter, body } = parseFrontmatter(content);
     return (
-      <div className="p-10">
+      <div className="p-6">
         {frontmatter && <MarkdownFrontmatterCard data={frontmatter} />}
         {/* `allowHtml={false}`: this is a file viewer — embedded markup shows as
             escaped text rather than becoming live DOM. */}
@@ -438,21 +438,25 @@ function FileBody({
     );
   }
 
-  // `CodeBlockCode`, not `CodeHighlight`: the latter wraps the code in a
-  // document-style block — a tinted card, a language chip, and its own copy
+  // `HighlightedCode`, not `CodeHighlight`: the latter wraps the code in a
+  // document-style card — a tinted surface, a language chip, and its own copy
   // button. That chrome is right for a snippet embedded IN prose. Here the code
   // IS the document, so the chrome just boxes the file inside a second box and
   // puts a second copy button next to the toolbar's. Plain highlighted text,
-  // filling the pane, is the whole job.
+  // filling the pane, is the whole job — which is exactly what HighlightedCode
+  // renders, so none of the old override classes are needed to strip it.
   //
-  // The padding goes on the <pre> itself, not a wrapper: the tinted background
-  // should run the full width of the pane, with the code inset inside it — a
-  // padded wrapper would inset the tint too and leave a white margin around it.
+  // No palette override: there is only one. This pane and the diff viewer beside
+  // it both render under min-dark / min-light (see @/lib/code-theme). The
+  // CodeMirror editor still carries its own Pierre-derived theme and does NOT
+  // match — a known, accepted gap, not an oversight.
+  //
+  // Only the horizontal padding is dropped, not the vertical: the pane's own
+  // background should run edge to edge, so the code is inset from the bottom
+  // but flush to the sides.
   return (
-    <CodeBlockCode
-      code={content}
-      language={languageFor(fileName)}
-      className="[&_pre]:rounded-none [&_pre]:!bg-transparent [&_pre]:!px-0 [&_pre]:!pb-4 [&_pre]:!text-[13px]"
-    />
+    <div className="pb-4 [&_code]:text-[13px]">
+      <HighlightedCode code={content} language={languageFor(fileName)} />
+    </div>
   );
 }

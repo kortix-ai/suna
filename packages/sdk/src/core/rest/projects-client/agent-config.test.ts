@@ -4,6 +4,7 @@ import { configureKortix } from '../../http/config';
 import {
   type AgentConfigBlock,
   getAgentConfig,
+  grantSecretToAgent,
   updateAgentConfig,
 } from './agent-config';
 
@@ -96,6 +97,37 @@ describe('updateAgentConfig', () => {
     });
     expect(response.block?.connectors_required).toEqual(['gmail']);
     expect(response.block).not.toHaveProperty('connectors_personal');
+  });
+});
+
+describe('grantSecretToAgent', () => {
+  test('posts the agent to the secret grant route', async () => {
+    nextBody = {
+      identifier: 'BOUNDARY_TEST',
+      agent: 'support',
+      already_granted: false,
+      adopted_governance: true,
+    };
+    const response = await grantSecretToAgent('project-1', 'BOUNDARY_TEST', 'support');
+    expect(calls[0]?.url).toBe(
+      'http://test.local/projects/project-1/secrets/BOUNDARY_TEST/grant',
+    );
+    expect(calls[0]?.body).toEqual({ agent: 'support' });
+    expect(response.already_granted).toBe(false);
+    expect(response.adopted_governance).toBe(true);
+  });
+
+  test('escapes an identifier that carries URL-significant characters', async () => {
+    nextBody = {
+      identifier: 'GMAPS/primary key',
+      agent: 'support',
+      already_granted: true,
+      adopted_governance: false,
+    };
+    await grantSecretToAgent('project-1', 'GMAPS/primary key', 'support');
+    expect(calls[0]?.url).toBe(
+      'http://test.local/projects/project-1/secrets/GMAPS%2Fprimary%20key/grant',
+    );
   });
 });
 

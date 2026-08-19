@@ -29,7 +29,7 @@ const FOOTER_SECTIONS: FooterSection[] = [
     links: [
       { label: 'Agent Computer', href: '/agent-computer' },
       { label: 'Company as Code', href: '/company-as-code' },
-      { label: 'Integrations', href: '/integrations' },
+      { label: 'Connectors', href: '/connectors' },
       { label: 'Automations', href: '/automations' },
       { label: 'Channels', href: '/channels' },
       { label: 'Agents & Skills', href: '/agents-and-skills' },
@@ -87,7 +87,7 @@ const FOOTER_SECTIONS: FooterSection[] = [
       { label: 'Discord', href: 'https://discord.com/invite/RvFhXUdZ9H', external: true },
       { label: 'Status', href: 'https://status.kortix.com', external: true },
       { label: 'Support', href: '/support' },
-      { label: 'Terms', href: '/legal?tab=terms' },
+      { label: 'Terms', href: '/legal/terms' },
       { label: 'Privacy', href: '/legal?tab=privacy' },
     ],
   },
@@ -131,17 +131,14 @@ const Footer = () => {
               <div key={section.title}>
                 <h3 className="text-muted-foreground pb-2 text-sm">{section.title}</h3>
                 <ul className="space-y-0">
-                  {section.links
-                    .filter(
-                      (link) =>
-                        process.env.NEXT_PUBLIC_USE_CASES_ENABLED !== 'false' ||
-                        link.href !== '/use-cases',
-                    )
-                    .map((link) => (
-                    <li key={link.label}>
-                      <FooterLink {...link} />
-                    </li>
-                  ))}
+                  {section.links.map((link) =>
+                    process.env.NEXT_PUBLIC_USE_CASES_ENABLED === 'false' &&
+                    link.href === '/use-cases' ? null : (
+                      <li key={link.label}>
+                        <FooterLink {...link} />
+                      </li>
+                    ),
+                  )}
                 </ul>
               </div>
             ))}

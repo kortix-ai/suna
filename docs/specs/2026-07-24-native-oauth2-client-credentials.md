@@ -4,13 +4,13 @@ Date: 2026-07-24
 
 ## Scope
 
-This slice extends the existing Executor connection-profile credential.
+This slice extends the existing connection credential.
 
-It does not rename Executor or Connector. It does not add delegated user login.
+It does not rename Connector or Connector. It does not add delegated user login.
 
 ## Public contract
 
-The existing connector and profile credential routes accept one of these bodies:
+The existing connector and connection credential routes accept one of these bodies:
 
 ```json
 { "value": "static credential" }
@@ -41,11 +41,11 @@ The existing connector and profile credential routes accept one of these bodies:
 
 - Kortix requests the first access token before it saves the credential.
 - The encrypted credential contains the OAuth2 configuration and cached access token.
-- The Executor resolves the credential on every call.
+- The Connector resolves the credential on every call.
 - A token with 60 seconds or less remaining is expired.
 - PostgreSQL advisory locks serialize refreshes per credential row.
 - The refreshed encrypted value replaces the expired value in the same transaction.
-- The Executor injects only the resolved access token into the upstream request.
+- The Connector injects only the resolved access token into the upstream request.
 - Connector configuration, client secrets, private keys, and cached tokens never enter the sandbox.
 
 ## Failure and revocation
@@ -53,8 +53,8 @@ The existing connector and profile credential routes accept one of these bodies:
 - Token endpoints must use HTTPS.
 - The standard egress guard blocks private, reserved, and metadata-network destinations.
 - OAuth error descriptions are not returned because providers can echo secret input.
-- Token acquisition and refresh failures return a structured Executor error.
-- A revoked connection profile is absent from Executor resolution on the next call.
+- Token acquisition and refresh failures return a structured Connector error.
+- A revoked connection is absent from Connector resolution on the next call.
 
 ## Acceptance
 
@@ -63,4 +63,4 @@ The existing connector and profile credential routes accept one of these bodies:
 - Expired tokens refresh once under concurrent calls.
 - Microsoft Graph resolves a real SharePoint site.
 - Microsoft Graph lists the site's document libraries.
-- Revocation blocks the next Executor call.
+- Revocation blocks the next Connector call.

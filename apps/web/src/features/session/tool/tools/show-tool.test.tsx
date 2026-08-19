@@ -1,11 +1,19 @@
+import { TooltipProvider } from '@/components/ui/tooltip';
+import type { ToolPart } from '@/ui';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, mock, test } from 'bun:test';
 import { NextIntlClientProvider } from 'next-intl';
+import {
+  ArrowSquareOutIcon,
+  FileCsvIcon,
+  FilePdfIcon,
+} from '@phosphor-icons/react';
 import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import type { ToolPart } from '@/ui';
 
 import {
+  BoundActivateContext,
+  ToolNavigationContext,
   ToolRunningContext,
   ToolSurfaceContext,
 } from '@/features/session/tool/shared/infrastructure';
@@ -38,14 +46,16 @@ function withProviders(node: ReactNode) {
   const queryClient = new QueryClient();
   return (
     <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
-      <QueryClientProvider client={queryClient}>{node}</QueryClientProvider>
+      <QueryClientProvider client={queryClient}>
+        <TooltipProvider>{node}</TooltipProvider>
+      </QueryClientProvider>
     </NextIntlClientProvider>
   );
 }
 
-// Task 4: show/show-user joins the shared BasicTool shell on the INLINE
-// (chat) surface only. The PANEL surface keeps its bespoke fill-the-pane
-// rendering byte-for-byte — tool-part-renderer.tsx:122 special-cases
+// show/show-user drives its INLINE (chat) surface with a plain card: header
+// row (title + toolbar) and always-visible payload. The PANEL surface keeps
+// its bespoke fill-the-pane rendering — tool-part-renderer.tsx special-cases
 // show/show-user as `fillsPanel` because the preview IS the payload there.
 
 function makePart(input: Record<string, unknown>): ToolPart {
@@ -68,22 +78,68 @@ const PART = makePart({
   content: 'Hello from the payload.',
 });
 
-describe('ShowTool joins the shared shell inline; panel stays visually identical', () => {
-  test('inline surface renders the standard BasicTool row with the payload title as subtitle', () => {
+describe('ShowTool drives its inline surface with a plain card; panel stays visually identical', () => {
+  test('inline surface renders a plain card with the title and payload visible', () => {
     const html = renderToStaticMarkup(withProviders(<ShowTool part={PART} />));
 
-    // Grammar: the collapsible row is BasicTool's inline trigger row.
+    // Still tagged `tool-trigger` so activity-step.tsx's descendant size
+    // overrides keep applying.
     expect(html).toContain('data-component="tool-trigger"');
 
-    // The row's own title is always "Show" — never the payload title itself,
-    // which is reserved for the subtitle (mirrors `showLabel`-style
+    // Plain card chrome: one rounded secondary surface, no tab/scallop edges.
+    expect(html).toContain('bg-secondary');
+    expect(html).toContain('rounded-lg');
+    expect(html).not.toContain('rounded-t-lg');
+    expect(html).not.toContain('viewBox="0 0 38 64"');
+
+    // Header label is the payload's resolved title (mirrors `showLabel`-style
     // precedence: title > description > basename/domain, never a raw path/URL).
-    expect(html).toContain('Show');
     expect(html).toContain('Quarterly Report Draft');
 
-    // Expanded by default: the shown artifact is the payoff, so the body
-    // (the rich preview) renders immediately, not behind a collapsed row.
+    // Always open: the payload lives in the card body, not behind a disclosure.
     expect(html).toContain('Hello from the payload.');
+    expect(html).not.toContain('aria-expanded');
+  });
+
+  test('content-only inline show exposes Preview when the panel activation is available', () => {
+    const html = renderToStaticMarkup(
+      withProviders(
+        <BoundActivateContext.Provider value={() => {}}>
+          <ShowTool part={PART} />
+        </BoundActivateContext.Provider>,
+      ),
+    );
+
+    expect(html).toContain('Preview</button>');
+    expect(html).not.toContain('rounded-tr-lg');
+  });
+
+  test('content-only inline show omits Preview when panel navigation is unavailable', () => {
+    const html = renderToStaticMarkup(
+      withProviders(
+        <ToolNavigationContext.Provider value={false}>
+          <BoundActivateContext.Provider value={() => {}}>
+            <ShowTool part={PART} />
+          </BoundActivateContext.Provider>
+        </ToolNavigationContext.Provider>,
+      ),
+    );
+
+    expect(html).not.toContain('Preview</button>');
+  });
+
+  test('panel surface omits content Preview because the artifact is already open', () => {
+    const html = renderToStaticMarkup(
+      withProviders(
+        <ToolSurfaceContext.Provider value="panel">
+          <BoundActivateContext.Provider value={() => {}}>
+            <ShowTool part={PART} />
+          </BoundActivateContext.Provider>
+        </ToolSurfaceContext.Provider>,
+      ),
+    );
+
+    expect(html).not.toContain('Preview</button>');
   });
 
   test('panel surface fills the pane exactly as before — no shell wrapper', () => {
@@ -102,7 +158,7 @@ describe('ShowTool joins the shared shell inline; panel stays visually identical
     expect(html).toContain('flex min-h-0 flex-1 flex-col');
     expect(html).toContain('min-h-0 flex-1 overflow-hidden');
 
-    // No BasicTool shell on the panel surface — the preview still fills the
+    // No inline card shell on the panel surface — the preview still fills the
     // pane directly, unwrapped.
     expect(html).not.toContain('data-component="tool-trigger"');
 
@@ -138,7 +194,7 @@ describe('ShowTool joins the shared shell inline; panel stays visually identical
     expect(html).toContain('px-5 py-4');
   });
 
-  test('inline loading relies on the shell header chrome — no duplicate loading card', () => {
+  test('inline loading relies on the card header — no duplicate loading card', () => {
     const runningPart = {
       type: 'tool',
       tool: 'show',
@@ -154,14 +210,15 @@ describe('ShowTool joins the shared shell inline; panel stays visually identical
       ),
     );
 
-    // The BasicTool header already shows the standard running chrome, so the
-    // bespoke loading card must not render a second indicator inline.
+    // The header carries the running indicator itself, so the bespoke panel
+    // loading card must not render a second one inline.
     expect(html).toContain('data-component="tool-trigger"');
+    expect(html).toContain('animate-spinner-orbit');
     expect(html).not.toContain('bg-card');
-    expect(html).not.toContain('items-center justify-center');
+    expect(html).not.toContain('px-5 py-4');
   });
 
-  test('a title-less unsafe url never leaks into the row subtitle', () => {
+  test('a title-less unsafe url never leaks into the header label', () => {
     const part = makePart({
       type: 'url',
       url: '/internal/session/abc?token=secret123',
@@ -169,15 +226,15 @@ describe('ShowTool joins the shared shell inline; panel stays visually identical
 
     const html = renderToStaticMarkup(withProviders(<ShowTool part={part} />));
 
-    // The trigger row is everything before the expanded body wrapper
-    // (`mt-1 mb-1 overflow-hidden`, from CollapsibleToolRow).
-    const [rowHtml] = html.split('mt-1 mb-1');
-
     // showDomain() echoes unparseable input verbatim; the safeHttpUrl gate
-    // must degrade a relative/non-http(s) url to the literal 'Link' instead.
-    expect(rowHtml).toContain('title="Link"');
-    expect(rowHtml).not.toContain('token=secret123');
-    expect(rowHtml).not.toContain('/internal/session/abc');
+    // must degrade a relative/non-http(s) url to the literal 'Link' instead
+    // on the always-visible header — never the raw path or token.
+    expect(html).toContain('title="Link"');
+    expect(html).toMatch(/title="Link"[^>]*>Link</);
+    // The header's title attr is the safe label; a raw relative URL must not be
+    // the `title=` value (body content may still render the url string via
+    // ShowContentRenderer — that is a separate surface).
+    expect(html).not.toContain('title="/internal/session/abc?token=secret123"');
   });
 
   test('a show whose content failed to load still renders a fallback row (never disappears)', () => {
@@ -190,8 +247,91 @@ describe('ShowTool joins the shared shell inline; panel stays visually identical
       // Pre-Task-6 behavior returned null here (empty markup) — this is the
       // exact regression this task fixes: a completed `show` never vanishes.
       expect(html).not.toBe('');
+
+      // The card still holds the tool's place in the transcript with the title.
+      expect(html).toContain('data-component="tool-trigger"');
+      expect(html).toContain('Report');
     } finally {
       forceShowContentUnavailable = false;
     }
+  });
+
+  test('file-backed inline show places toolbar actions in the card header', () => {
+    const part = makePart({
+      type: 'file',
+      path: '/workspace/report.pdf',
+      title: 'Report',
+    });
+    const html = renderToStaticMarkup(withProviders(<ShowTool part={part} />));
+
+    // Header: title + file actions (Refresh / Full screen / Open).
+    expect(html).toContain('Report');
+    expect(html).toContain('aria-label="Refresh"');
+    expect(html).not.toContain('viewBox="0 0 38 64"');
+  });
+});
+
+// The header glyph is format-aware: a single item shows its file-type icon
+// (PDF, CSV, …), a multi-item carousel shows an AvatarGroup of per-item type
+// icons with a "+N" overflow. Icons are compared by their SVG path data —
+// the only stable fingerprint that distinguishes one Phosphor glyph from
+// another in static markup.
+function iconPathData(icon: ReactNode): string {
+  const match = renderToStaticMarkup(<>{icon}</>).match(/ d="([^"]+)"/);
+  if (!match) throw new Error('icon rendered no path data');
+  return match[1];
+}
+
+describe('ShowTool header shows format-specific icons and avatar groups', () => {
+  test('a single PDF shows the PDF glyph, not the generic redirect icon', () => {
+    const part = makePart({ type: 'file', path: '/workspace/report.pdf', title: 'Report' });
+    const html = renderToStaticMarkup(withProviders(<ShowTool part={part} />));
+
+    expect(html).toContain(iconPathData(<FilePdfIcon />));
+    expect(html).not.toContain(iconPathData(<ArrowSquareOutIcon />));
+    // Single item — no avatar group in the header.
+    expect(html).not.toContain('data-slot="avatar-group"');
+  });
+
+  test('a CSV path resolves the CSV glyph (used to fall through to ExternalLink)', () => {
+    const part = makePart({ type: 'file', path: '/workspace/data.csv', title: 'Data' });
+    const html = renderToStaticMarkup(withProviders(<ShowTool part={part} />));
+
+    expect(html).toContain(iconPathData(<FileCsvIcon />));
+    expect(html).not.toContain(iconPathData(<ArrowSquareOutIcon />));
+  });
+
+  test('a multi-item carousel renders an avatar group capped at 3 with a +N overflow', () => {
+    const part = makePart({
+      title: 'Deliverables',
+      items: [
+        { type: 'text', content: 'notes' },
+        { type: 'file', path: '/workspace/report.pdf' },
+        { type: 'file', path: '/workspace/data.csv' },
+        { type: 'audio', path: '/workspace/song.mp3' },
+        { type: 'file', path: '/workspace/deck.pptx' },
+      ],
+    });
+    const html = renderToStaticMarkup(withProviders(<ShowTool part={part} />));
+
+    expect(html).toContain('data-slot="avatar-group"');
+    // 3 visible avatars + "+2" for the two items past the cap.
+    expect(html.match(/data-slot="avatar"/g)?.length).toBe(3);
+    expect(html).toContain('+2');
+    // The second visible avatar carries the PDF glyph.
+    expect(html).toContain(iconPathData(<FilePdfIcon />));
+  });
+
+  test('a two-item carousel renders two avatars and no overflow count', () => {
+    const part = makePart({
+      items: [
+        { type: 'file', path: '/workspace/report.pdf' },
+        { type: 'file', path: '/workspace/data.csv' },
+      ],
+    });
+    const html = renderToStaticMarkup(withProviders(<ShowTool part={part} />));
+
+    expect(html.match(/data-slot="avatar"/g)?.length).toBe(2);
+    expect(html).not.toContain('data-slot="avatar-group-count"');
   });
 });

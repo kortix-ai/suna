@@ -30,12 +30,13 @@ export function ensureKortixConfigured(): void {
   configureKortix({
     backendUrl: getEnv().BACKEND_URL,
     getToken: () => getSupabaseAccessToken(),
+    clientSource: 'web',
     getUserId: async () => {
       try {
         const {
-          data: { user },
-        } = await createClient().auth.getUser();
-        return user?.id ?? null;
+          data: { session },
+        } = await createClient().auth.getSession();
+        return session?.user?.id ?? null;
       } catch {
         return null;
       }

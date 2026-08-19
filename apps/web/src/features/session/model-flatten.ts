@@ -130,9 +130,10 @@ export function flattenModels(providers: ProviderListResponse | undefined): Flat
   const normalized = normalizeProviderList(providers);
   const all = Array.isArray(normalized.all) ? normalized.all : [];
   const connected = Array.isArray(normalized.connected) ? normalized.connected : [];
+  const connectedSet = new Set(connected);
   const result: FlatModel[] = [];
   for (const p of all) {
-    if (!connected.includes(p.id)) continue;
+    if (!connectedSet.has(p.id)) continue;
     for (const [modelID, model] of Object.entries(p.models) as Array<[string, LooseModel]>) {
       const catalogModel = catalogModelFor(p.id, modelID);
       let capabilities: FlatModel['capabilities'];
@@ -146,7 +147,7 @@ export function flattenModels(providers: ProviderListResponse | undefined): Flat
       } else {
         capabilities = {
           reasoning: model.reasoning ?? false,
-          vision: model.modalities?.input?.includes('image') ?? false,
+          vision: model.modalities?.input?.includes('image') ?? model.attachment ?? false,
           toolcall: model.tool_call ?? false,
         };
       }

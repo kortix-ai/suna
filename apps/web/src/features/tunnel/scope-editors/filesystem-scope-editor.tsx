@@ -122,6 +122,7 @@ export function FilesystemScopeEditor({ scope, onChange }: FilesystemScopeEditor
             onChange={(e) => setPathInput(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addPath())}
             placeholder="/home/user/projects"
+            aria-label="Allowed path"
             className="bg-background placeholder:text-muted-foreground focus:ring-primary/20 flex-1 rounded-2xl border px-2.5 py-1.5 text-sm focus:ring-2 focus:outline-none"
           />
           <Button variant="outline" size="sm" onClick={addPath} disabled={!pathInput.trim()}>

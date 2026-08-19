@@ -1,0 +1,599 @@
+import { describe, expect, test } from 'bun:test';
+import type { SessionPrompt, SessionTurn } from '../rest/projects-client/sessions';
+import {
+  INBOX_OBSERVATION_MAX_MS,
+  OPTIMISTIC_ABORT_MAX_MS,
+  OPTIMISTIC_RECEIPT_MAX_MS,
+  SERVER_OBSERVATION_MAX_MS,
+  STREAM_OBSERVATION_MAX_MS,
+  countLiveInboxPrompts,
+  projectWorking,
+  workingExpiryAtMs,
+} from './working';
+
+const T0 = Date.parse('2026-08-18T10:00:00.000Z');
+
+function turn(overrides: Partial<SessionTurn> = {}): SessionTurn {
+  return {
+    turn_token: 'tt-1',
+    state: 'active',
+    message_id: 'msg_01',
+    opencode_session_id: 'ses_01',
+    started_at: new Date(T0).toISOString(),
+    accepted_at: null,
+    ...overrides,
+  };
+}
+
+/**
+ * One projection, one precedence table. Every case below used to be answered by
+ * a different machine — a stall timer here, a 30s safety timeout there, a busy
+ * latch in a third file — and they disagreed, which is how a session stayed
+ * "working" until the user reloaded the page.
+ */
+describe('projectWorking', () => {
+  test('a turn the server is holding open outranks every OLDER observation', () => {
+    const projection = projectWorking({
+      optimistic: { messageId: 'msg_99', atMs: T0 + 5_000 },
+      server: { turns: [turn()], atMs: T0 + 4_000 },
+      stream: { type: 'idle', atMs: T0 + 1_000 },
+      nowMs: T0 + 5_000,
+    });
+
+    expect(projection).toEqual({
+      state: 'working',
+      source: 'server',
+      turnId: 'msg_01',
+      since: T0,
+      serverOpenTurnToken: 'tt-1',
+    });
+  });
+
+  test('a turn delivered with no wire messageID is still an open turn', () => {
+    // `message_id` is the WIRE id of the prompt that opened the turn, and most
+    // producers send none: `postPrompt` omits `messageID` for triggers, Slack /
+    // Teams / Telegram, approval-resume and email, and `buildSessionCommandInput`
+    // omits it for EVERY `/` command including `/compact`. `GET .../turn` then
+    // answers `message_id: null` (`r8.ts` — the field is `z.string().nullable()`)
+    // for a turn that is very much running. Reporting the open turn off that
+    // field answered "the control plane holds nothing" for that whole class.
+    // `turn_token` is minted for every turn and is never null.
+    const projection = projectWorking({
+      optimistic: null,
+      server: { turns: [turn({ message_id: null })], atMs: T0 },
+      stream: null,
+      nowMs: T0 + 1_000,
+    });
+
+    expect(projection.state).toBe('working');
+    expect(projection.source).toBe('server');
+    // The wire id is honestly absent…
+    expect(projection.turnId).toBeNull();
+    // …and the authority is just as honestly present.
+    expect(projection.serverOpenTurnToken).toBe('tt-1');
+  });
+
+  test('a NEWER stream idle ends a turn the last poll still saw open', () => {
+    // The turn ended between polls: the daemon relayed `turn_end`, the control
+    // plane cleared the authority, and the `session.idle` frame landed — all
+    // while the cached `/turn` read still says "open". Letting the cached read
+    // win kept the composer on Stop for a whole poll interval, and made
+    // `rewind()` throw "Cannot rewind a busy session" right after the reply.
+    const projection = projectWorking({
+      optimistic: null,
+      server: { turns: [turn()], atMs: T0 },
+      stream: { type: 'idle', atMs: T0 + 4_900 },
+      nowMs: T0 + 4_900,
+    });
+
+    expect(projection.state).toBe('idle');
+    expect(projection.source).toBe('stream');
+    // The read the stream just overruled is still REPORTED, because a caller
+    // can need the raw fact ("the control plane is holding a turn open") even
+    // when a fresher frame decides the state — see `serverOpenTurnToken`.
+    expect(projection.serverOpenTurnToken).toBe('tt-1');
+  });
+
+  test('a server open turn nothing has refreshed for a minute stops deciding', () => {
+    // `GET .../turn` started failing (503 node drain, expired JWT, offline
+    // laptop) and react-query keeps handing back the last SUCCESSFUL read.
+    // Without a bound that read latches `working` for the lifetime of the tab —
+    // the exact "stuck working forever" symptom this projection exists to end.
+    const projection = projectWorking({
+      optimistic: null,
+      server: { turns: [turn()], atMs: T0 },
+      stream: null,
+      nowMs: T0 + SERVER_OBSERVATION_MAX_MS + 1,
+    });
+
+    expect(projection.state).toBe('idle');
+    expect(projection.turnId).toBeNull();
+    // A read too old to decide is too old to REPORT an open turn from either.
+    expect(projection.serverOpenTurnToken).toBeNull();
+  });
+
+  test('a stale server read cannot declare idle either — it decides nothing', () => {
+    const projection = projectWorking({
+      optimistic: null,
+      server: { turns: [], atMs: T0 },
+      stream: { type: 'busy', atMs: T0 + SERVER_OBSERVATION_MAX_MS },
+      nowMs: T0 + SERVER_OBSERVATION_MAX_MS + 1,
+    });
+
+    expect(projection.state).toBe('working');
+    expect(projection.source).toBe('stream');
+  });
+
+  test('a stream frame nothing has refreshed for its own bound stops deciding too', () => {
+    // The failure the server bound was written for does NOT produce
+    // `stream: null` — the SSE stream is proxied through the same API that
+    // serves `/turn`, so when the API drains BOTH stop refreshing and the last
+    // `busy` frame this tab ever saw stays in the store. Bounding only the
+    // server read left that frame deciding `working` for the lifetime of the
+    // tab: the same latch, one source over.
+    const projection = projectWorking({
+      optimistic: null,
+      server: { turns: [turn()], atMs: T0 },
+      stream: { type: 'busy', atMs: T0 },
+      nowMs: T0 + STREAM_OBSERVATION_MAX_MS + 1,
+    });
+
+    expect(projection.state).toBe('idle');
+    expect(projection.turnId).toBeNull();
+  });
+
+  test('a turn with no recorded start instant is still running', () => {
+    // Legacy authority record: a missing timestamp is not a reason to read a
+    // live turn as idle. The observation instant stands in for the start.
+    const projection = projectWorking({
+      optimistic: null,
+      server: { turns: [turn({ started_at: null })], atMs: T0 + 1_000 },
+      stream: null,
+      nowMs: T0 + 1_000,
+    });
+
+    expect(projection).toEqual({
+      state: 'working',
+      source: 'server',
+      turnId: 'msg_01',
+      since: T0 + 1_000,
+      serverOpenTurnToken: 'tt-1',
+    });
+  });
+
+  test('an empty server turn list is idle, dated by how the last turn ended', () => {
+    const projection = projectWorking({
+      optimistic: null,
+      server: {
+        turns: [],
+        lastEnded: {
+          turn_token: 'tt-0',
+          end_reason: 'completed',
+          ended_at: new Date(T0 - 2_000).toISOString(),
+        },
+        atMs: T0,
+      },
+      stream: null,
+      nowMs: T0,
+    });
+
+    expect(projection).toEqual({
+      state: 'idle',
+      source: 'server',
+      turnId: null,
+      since: T0 - 2_000,
+      serverOpenTurnToken: null,
+    });
+  });
+
+  test('a server idle NEWER than a stream busy wins', () => {
+    // The turn ended, the last SSE frame this tab saw is the busy one from
+    // inside it, and the frame that would have corrected it was dropped. The
+    // server read is newer, so it answers.
+    const projection = projectWorking({
+      optimistic: null,
+      server: { turns: [], atMs: T0 + 10_000 },
+      stream: { type: 'busy', atMs: T0 + 1_000 },
+      nowMs: T0 + 10_000,
+    });
+
+    expect(projection.state).toBe('idle');
+    expect(projection.source).toBe('server');
+    expect(projection.since).toBe(T0 + 10_000);
+  });
+
+  test('a stream busy NEWER than a server idle wins', () => {
+    const projection = projectWorking({
+      optimistic: null,
+      server: { turns: [], atMs: T0 },
+      stream: { type: 'busy', atMs: T0 + 500 },
+      nowMs: T0 + 600,
+    });
+
+    expect(projection).toEqual({
+      state: 'working',
+      source: 'stream',
+      turnId: null,
+      since: T0 + 500,
+      serverOpenTurnToken: null,
+    });
+  });
+
+  test('a stream retry is still working — the provider is backing off, not done', () => {
+    const projection = projectWorking({
+      optimistic: null,
+      server: null,
+      stream: { type: 'retry', atMs: T0 },
+      nowMs: T0 + 100,
+    });
+
+    expect(projection.state).toBe('working');
+    expect(projection.source).toBe('stream');
+  });
+
+  test('a stream idle with no server answer is idle', () => {
+    const projection = projectWorking({
+      optimistic: null,
+      server: null,
+      stream: { type: 'idle', atMs: T0 },
+      nowMs: T0 + 100,
+    });
+
+    expect(projection).toEqual({
+      state: 'idle',
+      source: 'stream',
+      turnId: null,
+      since: T0,
+      serverOpenTurnToken: null,
+    });
+  });
+
+  test('an unanswered optimistic receipt claims working, tagged as optimistic', () => {
+    const projection = projectWorking({
+      optimistic: { messageId: 'msg_42', atMs: T0 },
+      server: null,
+      stream: null,
+      nowMs: T0 + 1_000,
+    });
+
+    expect(projection).toEqual({
+      state: 'working',
+      source: 'optimistic',
+      turnId: 'msg_42',
+      since: T0,
+      serverOpenTurnToken: null,
+    });
+  });
+
+  test('an observation ISSUED BEFORE the receipt cannot answer for it', () => {
+    // The read went out before the user pressed send, so its "no turns" is
+    // honest and irrelevant. Deciding idle here is the flicker that made the
+    // composer usable again mid-send.
+    const projection = projectWorking({
+      optimistic: { messageId: 'msg_42', atMs: T0 + 1_000 },
+      server: { turns: [], atMs: T0 },
+      stream: { type: 'idle', atMs: T0 + 500 },
+      nowMs: T0 + 1_200,
+    });
+
+    expect(projection.state).toBe('working');
+    expect(projection.source).toBe('optimistic');
+  });
+
+  test('a server read cannot answer for a send the server has not accepted yet', () => {
+    // `POST .../prompts` is still on the wire. A `/turn` read issued in that
+    // window is stamped AFTER the receipt and honestly returns no turns —
+    // because there is nothing for it to see yet. Letting it answer swapped
+    // Stop back to Send in the middle of the send, and opened the queue drain.
+    const projection = projectWorking({
+      optimistic: { messageId: 'msg_42', atMs: T0, acceptedAtMs: null },
+      server: { turns: [], atMs: T0 + 1_000 },
+      stream: { type: 'idle', atMs: T0 - 500 },
+      nowMs: T0 + 1_100,
+    });
+
+    expect(projection.state).toBe('working');
+    expect(projection.source).toBe('optimistic');
+  });
+
+  test('a server read issued after the ACCEPTANCE answers it — idle wins immediately', () => {
+    const projection = projectWorking({
+      optimistic: { messageId: 'msg_42', atMs: T0, acceptedAtMs: T0 + 300 },
+      server: { turns: [], atMs: T0 + 1_000 },
+      stream: null,
+      nowMs: T0 + 1_100,
+    });
+
+    expect(projection.state).toBe('idle');
+    expect(projection.source).toBe('server');
+  });
+
+  test('a durable inbox prompt reads as working, with no turn and no receipt', () => {
+    // Between "the row is durable" and "the turn is open" the box may still be
+    // resuming — 18.9s on Daytona, 24.5s on Platinum, measured. `GET .../turn`
+    // truthfully answers "no turns" for all of it. The prompt is still the
+    // user's work in flight, so the composer must stay on Stop.
+    const projection = projectWorking({
+      optimistic: null,
+      inbox: { pending: 1, atMs: T0 + 1_000 },
+      server: { turns: [], atMs: T0 + 5_000 },
+      stream: { type: 'idle', atMs: T0 + 5_000 },
+      nowMs: T0 + 5_100,
+    });
+
+    expect(projection).toEqual({
+      state: 'working',
+      source: 'server',
+      turnId: null,
+      since: T0 + 1_000,
+      serverOpenTurnToken: null,
+    });
+  });
+
+  test('an inbox reading nobody has refreshed stops deciding on ITS own bound', () => {
+    // Three prompt-list cadences, not three `/turn` cadences. The list polls at
+    // 3s while rows exist, so a reading that has survived 10s is one the poll
+    // failed to refresh — and a delivered row that has since run reads as
+    // pending for as long as this stands. Holding it for the server bound (45s)
+    // left the composer on Stop with the reply already on screen, and
+    // `rewind()` throwing "Cannot rewind a busy session" on the Edit under it.
+    const stale = {
+      optimistic: null,
+      inbox: { pending: 1, atMs: T0 },
+      server: { turns: [], atMs: T0 + 2_100 },
+      stream: { type: 'idle' as const, atMs: T0 + 2_000 },
+    };
+
+    expect(projectWorking({ ...stale, nowMs: T0 + INBOX_OBSERVATION_MAX_MS }).state).toBe('working');
+    expect(projectWorking({ ...stale, nowMs: T0 + INBOX_OBSERVATION_MAX_MS + 1 }).state).toBe(
+      'idle',
+    );
+    expect(INBOX_OBSERVATION_MAX_MS).toBeLessThan(SERVER_OBSERVATION_MAX_MS);
+  });
+
+  test('a stop this tab issued bars an open-turn read that predates its settlement', () => {
+    // `handleStop` paints idle and issues the cancel; the daemon takes ~1.6s to
+    // act on it. Every `/turn` read in that window still shows the doomed turn
+    // — including the one the optimistic idle FRAME itself triggers — so the
+    // composer flipped Send back to Stop about 120ms after the click and stayed
+    // there for the whole abort round-trip.
+    const inFlight = projectWorking({
+      optimistic: null,
+      abort: { atMs: T0, settledAtMs: null },
+      server: { turns: [turn()], atMs: T0 + 2 },
+      stream: { type: 'idle', atMs: T0 },
+      nowMs: T0 + 120,
+    });
+
+    expect(inFlight.state).toBe('idle');
+    expect(inFlight.source).toBe('stream');
+  });
+
+  test('a settled stop stops barring reads issued after the settlement', () => {
+    // The abort failed, or a new turn started right after it: an open turn a
+    // read saw AFTER the cancel was acknowledged is a real turn again.
+    const projection = projectWorking({
+      optimistic: null,
+      abort: { atMs: T0, settledAtMs: T0 + 1_600 },
+      server: { turns: [turn()], atMs: T0 + 1_700 },
+      stream: { type: 'idle', atMs: T0 },
+      nowMs: T0 + 1_800,
+    });
+
+    expect(projection.state).toBe('working');
+    expect(projection.source).toBe('server');
+  });
+
+  test('a stop whose acknowledgement never arrives stops barring anything', () => {
+    // The bound is the same promise the send receipt makes in the other
+    // direction: an unanswered local action may not pin the UI, either way.
+    const projection = projectWorking({
+      optimistic: null,
+      abort: { atMs: T0, settledAtMs: null },
+      server: { turns: [turn()], atMs: T0 + OPTIMISTIC_ABORT_MAX_MS },
+      stream: null,
+      nowMs: T0 + OPTIMISTIC_ABORT_MAX_MS,
+    });
+
+    expect(projection.state).toBe('working');
+    expect(projection.source).toBe('server');
+  });
+
+  test('an empty inbox never claims working', () => {
+    const projection = projectWorking({
+      optimistic: null,
+      inbox: { pending: 0, atMs: T0 + 1_000 },
+      server: { turns: [], atMs: T0 + 1_000 },
+      stream: null,
+      nowMs: T0 + 1_100,
+    });
+
+    expect(projection.state).toBe('idle');
+  });
+
+  test('a NEW stream frame still answers an unaccepted receipt', () => {
+    // The stream is the runtime's own voice and the store stamps a frame when
+    // this tab OBSERVED it, which only moves when the frame itself changes — so
+    // a frame stamped after the send is a new transition, not a stale reading.
+    // Nothing ever "accepts" a slash command, so blocking the stream here left
+    // its receipt claiming `working` for a full minute after the turn ended.
+    const projection = projectWorking({
+      optimistic: { messageId: 'msg_42', atMs: T0, acceptedAtMs: null },
+      server: null,
+      stream: { type: 'idle', atMs: T0 + 8_000 },
+      nowMs: T0 + 8_100,
+    });
+
+    expect(projection.state).toBe('idle');
+    expect(projection.source).toBe('stream');
+  });
+
+  test('an optimistic receipt older than the cap never claims working', () => {
+    // The bound is the whole point: a send whose answer never arrives must not
+    // latch the UI. That latch is the failure this phase exists to end.
+    const projection = projectWorking({
+      optimistic: { messageId: 'msg_42', atMs: T0 },
+      server: null,
+      stream: null,
+      nowMs: T0 + OPTIMISTIC_RECEIPT_MAX_MS,
+    });
+
+    expect(projection.state).toBe('idle');
+    expect(projection.turnId).toBeNull();
+  });
+
+  test('an expired receipt stops shielding a stale server idle too', () => {
+    const projection = projectWorking({
+      optimistic: { messageId: 'msg_42', atMs: T0 + 1_000 },
+      server: { turns: [], atMs: T0 },
+      stream: null,
+      nowMs: T0 + 1_000 + OPTIMISTIC_RECEIPT_MAX_MS,
+    });
+
+    expect(projection.state).toBe('idle');
+    expect(projection.source).toBe('server');
+  });
+
+  test('no observation at all is idle, and never fabricates a turn', () => {
+    const projection = projectWorking({
+      optimistic: null,
+      server: null,
+      stream: null,
+      nowMs: T0,
+    });
+
+    expect(projection).toEqual({
+      state: 'idle',
+      source: 'server',
+      turnId: null,
+      since: T0,
+      serverOpenTurnToken: null,
+    });
+  });
+
+  test('the newest of several open turns is the one reported', () => {
+    const older = turn({ turn_token: 'tt-old', message_id: 'msg_00' });
+    const newer = turn({
+      turn_token: 'tt-new',
+      message_id: 'msg_02',
+      started_at: new Date(T0 + 3_000).toISOString(),
+    });
+
+    // The endpoint answers newest-start-first, so the head is the answer and
+    // this projection does not re-sort it.
+    const projection = projectWorking({
+      optimistic: null,
+      server: { turns: [newer, older], atMs: T0 + 4_000 },
+      stream: null,
+      nowMs: T0 + 4_000,
+    });
+
+    expect(projection.turnId).toBe('msg_02');
+    expect(projection.since).toBe(T0 + 3_000);
+  });
+});
+
+/**
+ * The projection is pure and moves with `nowMs` — so SOMETHING has to ask it
+ * again at the instant an input ages out. Nothing did: a hook that only
+ * re-rendered when react-query handed it new `data` never re-rendered at all
+ * while every read failed (the retained `data` is unchanged, so the observer
+ * does not notify), and `SERVER_OBSERVATION_MAX_MS` was therefore evaluated
+ * only on renders that happened for some unrelated reason. In the exact outage
+ * it was written for — one success, then a run of 503s — that is never.
+ */
+describe('workingExpiryAtMs', () => {
+  test('is the earliest instant at which an input stops deciding', () => {
+    const at = workingExpiryAtMs({
+      optimistic: { messageId: 'msg_1', atMs: T0, acceptedAtMs: T0 },
+      inbox: { pending: 1, atMs: T0 },
+      server: { turns: [turn()], atMs: T0 },
+      stream: { type: 'busy', atMs: T0 },
+      nowMs: T0 + 1,
+    });
+
+    // The inbox reading has the shortest life of the four.
+    expect(at).toBe(T0 + INBOX_OBSERVATION_MAX_MS);
+  });
+
+  test('skips deadlines already in the past', () => {
+    const at = workingExpiryAtMs({
+      optimistic: null,
+      inbox: { pending: 1, atMs: T0 },
+      server: { turns: [turn()], atMs: T0 },
+      stream: null,
+      nowMs: T0 + INBOX_OBSERVATION_MAX_MS + 1,
+    });
+
+    expect(at).toBe(T0 + SERVER_OBSERVATION_MAX_MS);
+  });
+
+  test('is null when nothing is left to expire', () => {
+    expect(workingExpiryAtMs({ optimistic: null, server: null, stream: null, nowMs: T0 })).toBeNull();
+  });
+
+  test('covers the send receipt and the stop receipt too', () => {
+    expect(
+      workingExpiryAtMs({
+        optimistic: { messageId: 'msg_1', atMs: T0 },
+        server: null,
+        stream: null,
+        nowMs: T0,
+      }),
+    ).toBe(T0 + OPTIMISTIC_RECEIPT_MAX_MS);
+
+    expect(
+      workingExpiryAtMs({
+        optimistic: null,
+        abort: { atMs: T0, settledAtMs: null },
+        server: null,
+        stream: null,
+        nowMs: T0,
+      }),
+    ).toBe(T0 + OPTIMISTIC_ABORT_MAX_MS);
+  });
+});
+
+function prompt(overrides: Partial<SessionPrompt> = {}): SessionPrompt {
+  return {
+    prompt_id: 'p1',
+    client_message_id: 'q_1',
+    message_id: 'msg_01',
+    state: 'queued',
+    reason: null,
+    text: 'hi',
+    attempts: 0,
+    last_error: null,
+    created_at: new Date(T0).toISOString(),
+    available_at: new Date(T0).toISOString(),
+    ...overrides,
+  };
+}
+
+describe('countLiveInboxPrompts', () => {
+  test('counts the rows the server is still going to run', () => {
+    expect(
+      countLiveInboxPrompts([
+        prompt({ prompt_id: 'a', state: 'queued' }),
+        prompt({ prompt_id: 'b', state: 'delivering' }),
+        prompt({ prompt_id: 'c', state: 'waiting', reason: 'turn_active' }),
+        prompt({ prompt_id: 'd', state: 'waiting', reason: 'older_prompt_pending' }),
+      ]),
+    ).toBe(4);
+  });
+
+  test('a HELD row is not work in flight — Stop must put the composer back', () => {
+    // `held` is the Stop button's own state: the row stays, deliberately not
+    // due, until the user sends something or presses "send now". Counting it
+    // would leave the composer on Stop with nothing running.
+    expect(countLiveInboxPrompts([prompt({ state: 'waiting', reason: 'held' })])).toBe(0);
+  });
+
+  test('a failed row is not work in flight either', () => {
+    expect(countLiveInboxPrompts([prompt({ state: 'failed' })])).toBe(0);
+  });
+
+  test('an empty inbox is zero', () => {
+    expect(countLiveInboxPrompts([])).toBe(0);
+  });
+});

@@ -45,9 +45,16 @@ import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { cva, type VariantProps } from 'class-variance-authority';
 import * as React from 'react';
 
-import { Icon } from '@/features/icon/icon';
+import { Close } from '@/features/icon/icons/close';
 import { cn } from '@/lib/utils';
-import { DialogDepthProvider, dialogContentZ, dialogOverlayZ, useDialogDepth } from '@/lib/z-stack';
+import {
+  DialogDepthProvider,
+  dialogContentZ,
+  dialogOverlayZ,
+  hasOpenFloatingLayer,
+  isFloatingLayerTarget,
+  useDialogDepth,
+} from '@/lib/z-stack';
 import { Suspense, useEffect, useState } from 'react';
 import { Button } from './button';
 import Loading from './loading';
@@ -186,11 +193,37 @@ interface ModalContentProps
   overlayClassName?: string;
 }
 
+/**
+ * Should an "outside" interaction actually dismiss the modal?
+ *
+ * Two cases both look like backdrop clicks to Radix and must NOT dismiss:
+ *
+ * 1. The click lands on a portaled Select / DropdownMenu / tooltip panel.
+ *    Those portal to `document.body`, outside the modal's DOM subtree, so
+ *    containment says "outside". `isFloatingLayerTarget` catches that.
+ *
+ * 2. A *modal* DropdownMenu is open and the click lands anywhere else —
+ *    including visually on the modal body, or on the dark overlay. While the
+ *    menu is open Radix sets `pointer-events: none` on everything under it, so
+ *    the event target is `body` / the overlay, not the menu. Checking the
+ *    target alone fails; Escape already uses `hasOpenFloatingLayer()` for the
+ *    same reason. The gesture owns the floating layer: dismiss that first, and
+ *    require a second click to close the modal.
+ */
+export function modalDismissesOnOutsideInteraction(
+  target: EventTarget | null,
+  closeOnOutsideClick: boolean,
+): boolean {
+  if (!closeOnOutsideClick) return false;
+  if (hasOpenFloatingLayer()) return false;
+  return !isFloatingLayerTarget(target);
+}
+
 const ModalContentInner = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
   ModalContentProps
 >(
-    (
+  (
     {
       side = 'bottom',
       animation = 'default',
@@ -210,6 +243,30 @@ const ModalContentInner = React.forwardRef<
   ) => {
     const depth = useDialogDepth();
 
+    const handleInteractOutside = (
+      event: Parameters<
+        NonNullable<React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>['onInteractOutside']>
+      >[0],
+    ) => {
+      if (!modalDismissesOnOutsideInteraction(event.detail.originalEvent.target, closeOnOutsideClick)) {
+        event.preventDefault();
+      }
+    };
+
+    // Same asymmetry for the keyboard: Escape aimed at an open select or menu must
+    // dismiss that panel, not the modal underneath it.
+    //
+    // Deliberately NOT guarded on `hasOpenNestedDialog()`. Radix runs this handler
+    // on the top-most layer only, so a nested modal would see its own parent in
+    // that count, prevent its own dismissal, and leave Escape dead. Callers that
+    // need the nested-dialog guard pass their own `onEscapeKeyDown` — it lands in
+    // `...props` below and replaces this one (see the legacy Customize panel).
+    const handleEscapeKeyDown = (event: KeyboardEvent) => {
+      if (hasOpenFloatingLayer()) {
+        event.preventDefault();
+      }
+    };
+
     return (
       <DialogPrimitive.Content
         ref={ref}
@@ -219,7 +276,8 @@ const ModalContentInner = React.forwardRef<
           'rounded-xl rounded-b-none lg:rounded-b-xl',
         )}
         style={{ zIndex: dialogContentZ(depth), ...style }}
-        onPointerDownOutside={closeOnOutsideClick ? undefined : (e) => e.preventDefault()}
+        onInteractOutside={handleInteractOutside}
+        onEscapeKeyDown={handleEscapeKeyDown}
         {...props}
       >
         {children}
@@ -235,7 +293,7 @@ const ModalContentInner = React.forwardRef<
                   closeClassName,
                 )}
               >
-                <Icon.Close className="text-primary size-4 stroke-1" />
+                <Close className="text-primary size-4 stroke-1" />
                 <span className="sr-only">Close</span>
               </Button>
             </ModalClose>

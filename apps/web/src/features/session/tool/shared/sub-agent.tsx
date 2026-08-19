@@ -1,9 +1,9 @@
 'use client';
 
+import { SessionRetryDisplay, TurnErrorDisplay } from '@/features/session/session-error-banner';
 import { ToolSurfaceContext } from '@/features/session/tool/shared/infrastructure';
 import { ToolPartRenderer } from '@/features/session/tool/tool-part-renderer';
 import type { MessageWithParts, ToolPart } from '@/ui';
-import { SessionRetryDisplay, TurnErrorDisplay } from '@/features/session/session-error-banner';
 import { getChildSessionError, getRetryInfo, getRetryMessage } from '@/ui';
 import { useSessionStateStore } from '@kortix/sdk/react';
 import { useEffect, useMemo, useState } from 'react';
@@ -65,6 +65,7 @@ export function SubAgentStatusBanner({
         message={retryMessage}
         attempt={retryInfo.attempt}
         secondsLeft={secondsLeft}
+        details={retryInfo.details}
         className="mt-2"
       />
     );

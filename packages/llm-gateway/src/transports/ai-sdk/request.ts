@@ -81,7 +81,7 @@ function textOf(content: unknown): string {
 // the provider also depends on).
 const EMPTY_CONTENT_PLACEHOLDER = '(no content)';
 
-type UserContentPart = { type: 'text'; text: string } | { type: 'image'; image: URL | string };
+type UserContentPart = { type: 'text'; text: string } | { type: 'image'; image: URL | Uint8Array };
 
 // A user message is "empty" for Bedrock unless it carries an image or at least
 // one non-whitespace text part.
@@ -92,6 +92,25 @@ function nonEmptyUserContent(content: string | UserContentPart[]): string | User
   return hasImage || hasText ? content : EMPTY_CONTENT_PLACEHOLDER;
 }
 
+// Decode a `data:` URL into raw bytes suitable for inline file data. The
+// AI SDK's `convertToLanguageModelV4FilePart` converts a plain string URL to
+// `{type:'url', url: URL}`, which `@ai-sdk/amazon-bedrock` rejects with
+// `UnsupportedFunctionalityError: File URL data` — Bedrock's Converse API
+// only accepts inline (base64) image data, not URL references. Converting
+// data URLs to `Uint8Array` makes them reach the SDK as inline data, which
+// Bedrock serializes correctly as `image: { format, source: { bytes } }`.
+function decodeDataUrl(url: string): Uint8Array | URL {
+  if (!url.startsWith('data:')) return new URL(url);
+  const comma = url.indexOf(',');
+  if (comma === -1) return new URL(url);
+  const raw = url.slice(comma + 1);
+  try {
+    return new Uint8Array(atob(raw).split('').map((c) => c.charCodeAt(0)));
+  } catch {
+    return new URL(url);
+  }
+}
+
 function translateUserContent(content: unknown): string | UserContentPart[] {
   if (typeof content === 'string') return content;
   if (!Array.isArray(content)) return textOf(content);
@@ -100,8 +119,7 @@ function translateUserContent(content: unknown): string | UserContentPart[] {
     const part = raw as { type?: string; text?: string; image_url?: { url?: string } };
     if (part?.type === 'text') parts.push({ type: 'text', text: String(part.text ?? '') });
     else if (part?.type === 'image_url' && part.image_url?.url) {
-      const url = part.image_url.url;
-      parts.push({ type: 'image', image: url });
+      parts.push({ type: 'image', image: decodeDataUrl(part.image_url.url) });
     }
   }
   return parts.length ? parts : textOf(content);
@@ -152,6 +170,26 @@ function repairToolPairing(messages: ModelMessage[]): ModelMessage[] {
     out.push(m);
   }
   return out;
+}
+
+// A conversation must end on a user/tool turn. A TRAILING ASSISTANT message (a
+// "prefill") wedges strict backends across the board — Bedrock/Anthropic
+// reasoning Claude 400s ("This model does not support assistant message prefill.
+// The conversation must end with a user message.") and the ChatGPT-Codex
+// Responses backend returns an empty 200 stream (surfacing as empty_completion).
+// It reaches the gateway when a turn is cancelled mid-generation and the client
+// replays the half-finished assistant turn in history — the same replayed-partial
+// failure mode `repairToolPairing` and the empty-content backfill already repair.
+// Drop the trailing assistant turn(s) so the request ends on a user/tool message.
+// Applied UNCONDITIONALLY in toModelMessages, like repairToolPairing: it only ever
+// makes a request MORE valid (no provider requires a trailing assistant, and agent
+// flows never intend one). Pure + non-mutating. Never strips to empty (an
+// all-assistant history is degenerate — leave it for the upstream to reject).
+function stripTrailingAssistantPrefill(messages: ModelMessage[]): ModelMessage[] {
+  let end = messages.length;
+  while (end > 0 && messages[end - 1].role === 'assistant') end--;
+  if (end === messages.length || end === 0) return messages;
+  return messages.slice(0, end);
 }
 
 // OpenAI chat.completions messages → AI SDK ModelMessage[]. System messages are
@@ -227,11 +265,11 @@ export function toModelMessages(rawMessages: unknown): {
 
   return {
     system: systemParts.filter(Boolean).join('\n\n') || undefined,
-    messages: repairToolPairing(out),
+    messages: stripTrailingAssistantPrefill(repairToolPairing(out)),
   };
 }
 
-// OpenAI `tools` → an AI SDK ToolSet with NO `execute`. Without an executor the
+// OpenAI `tools` → an AI SDK ToolSet with NO `execute`. Without an implementation the
 // SDK surfaces the model's tool call in the stream and stops the step (it never
 // tries to run the tool), which is exactly the relay-to-client behaviour the
 // gateway needs — opencode executes tools, not us.

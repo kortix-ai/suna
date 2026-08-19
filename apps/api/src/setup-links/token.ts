@@ -24,9 +24,14 @@ import { randomBytes } from 'node:crypto';
 import { decryptProjectSecret, encryptProjectSecret } from '../projects/secrets';
 
 const TOKEN_PREFIX = 'ksl_';
-const DEFAULT_TTL_MINUTES = 30;
+// Secret/connector links are relayed out-of-band (Slack, email) to a human who
+// may only act days later. A 24h default expired links before humans opened
+// them and forced agent loops to re-mint + re-post every run (the duplicate
+// "blocked" message stampede). 7 days matches the async human-in-the-loop
+// reality; safe because the token is value-only — it can never read a secret.
+const DEFAULT_TTL_MINUTES = 7 * 24 * 60;
 const MIN_TTL_MINUTES = 1;
-const MAX_TTL_MINUTES = 24 * 60;
+const MAX_TTL_MINUTES = 30 * 24 * 60;
 
 export interface SecretFieldSpec {
   name: string;
@@ -46,10 +51,13 @@ interface BasePayload {
 }
 
 export type SetupLinkPayload =
-  | (BasePayload & { kind: 'secret'; fields: SecretFieldSpec[]; scope: SecretScope })
-  | (BasePayload & { kind: 'connector'; slug: string; app: string | null })
+  | (BasePayload & { kind: 'secret'; fields: SecretFieldSpec[]; scope: SecretScope; sid: string | null })
+  /** `sid` is the session that asked for the connector, so the finalize route
+   *  can tell it the credential landed. Tokens minted before it existed decode
+   *  without the field — every read must tolerate `undefined`. */
+  | (BasePayload & { kind: 'connector'; slug: string; app: string | null; sid: string | null })
   /**
-   * A human-in-the-loop APPROVAL for one gated executor call.
+   * A human-in-the-loop APPROVAL for one gated connector call.
    *
    * Unlike the other two kinds, this token is NOT a bearer capability: the
    * endpoints behind it require a signed-in Kortix account that is authorised to
@@ -70,27 +78,34 @@ type SecretSpec = {
   fields: SecretFieldSpec[];
   scope?: SecretScope;
   uid?: string | null;
+  /** The session that requested this secret, so the intake form can
+   *  notify it when the value is submitted. */
+  sid?: string | null;
 };
 type ConnectorSpec = {
   kind: 'connector';
   slug: string;
   app?: string | null;
   uid?: string | null;
+  /** The session that requested this connector, so the finalize route can
+   *  notify it when the connection is persisted. */
+  sid?: string | null;
 };
 type ApprovalSpec = {
   kind: 'approval';
-  /** The `executor_executions.execution_id` awaiting a decision. */
+  /** The `connector_calls.execution_id` awaiting a decision. */
   executionId: string;
   sessionId?: string | null;
   uid?: string | null;
 };
 
 /**
- * Approvals default to a LONGER window than a setup link: the link is often
- * relayed out-of-band (chat, email) and a human may only see it hours later.
- * Safe to be generous because the token is not a capability — the decision is
- * still gated on a signed-in, authorised account — and because the pending row
- * itself remains the authority: once resolved, a live link can do nothing.
+ * Approvals keep a 24h window: an approval is a time-sensitive decision about
+ * one gated call, not an async credential hand-off, so a week-old approval
+ * link answering a stale question helps nobody. The token is not a capability
+ * — the decision is still gated on a signed-in, authorised account — and the
+ * pending row itself remains the authority: once resolved, a live link can do
+ * nothing.
  */
 const APPROVAL_TTL_MINUTES = 24 * 60;
 
@@ -106,10 +121,16 @@ export function mintSetupLink(
 
   const payload: SetupLinkPayload =
     spec.kind === 'secret'
-      ? { ...base, kind: 'secret', fields: spec.fields, scope: spec.scope ?? 'runtime' }
+      ? { ...base, kind: 'secret', fields: spec.fields, scope: spec.scope ?? 'runtime', sid: spec.sid ?? null }
       : spec.kind === 'approval'
         ? { ...base, kind: 'approval', eid: spec.executionId, sid: spec.sessionId ?? null }
-        : { ...base, kind: 'connector', slug: spec.slug, app: spec.app ?? null };
+        : {
+            ...base,
+            kind: 'connector',
+            slug: spec.slug,
+            app: spec.app ?? null,
+            sid: spec.sid ?? null,
+          };
 
   const envelope = encryptProjectSecret(projectId, JSON.stringify(payload));
   const token =
@@ -180,7 +201,11 @@ export function resolveSetupLink(token: string | undefined | null): ResolvedSetu
 
   if (payload.pid !== projectId)
     return { ok: false, status: 404, error: 'Invalid or unknown link' };
-  if (typeof payload.exp !== 'number' || Date.now() > payload.exp) {
+  // 60-second clock-skew buffer: in a load-balanced deployment the instance
+  // that MINTED the token and the instance that RESOLVES it may have slightly
+  // different system clocks. Without a buffer, a freshly-minted token can
+  // resolve as expired on an instance whose clock is a few seconds ahead.
+  if (typeof payload.exp !== 'number' || Date.now() > payload.exp + 60_000) {
     return {
       ok: false,
       status: 410,

@@ -34,12 +34,19 @@ import {
 } from '@phosphor-icons/react';
 import {
   AnimatePresence,
-  motion,
+  m,
   type TargetAndTransition,
   type Transition,
   useReducedMotion,
 } from 'motion/react';
-import { type ReactNode, type RefObject, useEffect, useRef, useSyncExternalStore } from 'react';
+import {
+  type ReactNode,
+  type RefObject,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react';
 import { normalizeName } from '../../tool/tool-meta';
 import { ToolPartRenderer, ToolSurfaceContext } from '../../tool/tool-renderers';
 
@@ -126,6 +133,47 @@ export function DetailSidebarToggle({ className }: { className?: string }) {
       </Button>
     </Hint>
   );
+}
+
+/**
+ * The card frame both layers wear — the detail card and the persistent layer.
+ * ONE constant, because they are two states of one shell: inset from the top,
+ * left and bottom so the card reads as sitting IN the panel rather than nailed
+ * over it, flush to the right edge so an arrival slides in from off-panel.
+ *
+ * This used to be copy-pasted into `easy-panel.tsx`'s standalone terminal
+ * `m.div`, which is exactly how the terminal drifted into looking like its
+ * own sidebar instead of a view inside this shell. Shared, the two cannot drift.
+ */
+const CARD_FRAME =
+  'bg-popover border-border absolute inset-y-3 right-3 left-3 flex min-w-0 flex-col overflow-hidden rounded-md border shadow';
+
+/**
+ * A layer that lives inside the detail card frame but must NEVER unmount.
+ *
+ * The terminal is the only one: `SessionTerminalPanel` owns a long-lived PTY
+ * WebSocket, and the keyed `AnimatePresence` below tears a `Detail`'s body down
+ * on every close — correct for a file preview, fatal for a live shell (the
+ * connection drops and scrollback replays on reopen). So this layer is mounted
+ * once, on first open, and thereafter animated between the same two resting
+ * states a detail moves between, staying mounted with `inert` + zero opacity
+ * while closed.
+ *
+ * It is mutually exclusive with `detail` — the owner closes one to open the
+ * other — and `swap` records which edge the current toggle crossed, since at
+ * render time an open layer with a null detail cannot tell "arrived from home"
+ * (slide) from "replaced a detail" (crossfade). See `terminalLayerMotion`.
+ *
+ * Desktop only. On mobile the panel is already a bottom drawer, so the terminal
+ * comes up as its own drawer instead and this prop is ignored.
+ */
+export interface PersistentLayer {
+  open: boolean;
+  swap: boolean;
+  title: string;
+  icon?: ReactNode;
+  onClose: () => void;
+  body: ReactNode;
 }
 
 /** What the panel is currently showing one level down. */
@@ -401,23 +449,25 @@ export function DetailLayer({
   detail,
   onBack,
   isMobile,
-  terminalOpen = false,
+  persistentLayer,
   children,
 }: {
   detail: Detail | null;
   onBack: () => void;
   isMobile: boolean;
-  /** The keep-alive terminal layer (a desktop sibling of this component in
-   *  `EasyPanel`) is showing. The home must slide/dim/inert for it exactly as
-   *  it does for a detail — it's the same "one level down" — and a detail
-   *  card exiting while this is true fades under the incoming terminal
-   *  instead of sliding home (see `detailCardVariants`). Mobile ignores it:
-   *  there the terminal is its own drawer. */
-  terminalOpen?: boolean;
-  /** The home view — the three cards. */
-  children: ReactNode;
+  /** The keep-alive layer (the terminal) this shell hosts alongside `detail`.
+   *  The home slides/dims/inerts for it exactly as it does for a detail — it's
+   *  the same "one level down" — and a detail card exiting while it is open
+   *  fades under it instead of sliding home (see `detailCardVariants`).
+   *  Desktop only; see {@link PersistentLayer}. */
+  persistentLayer?: PersistentLayer;
+  /** The home view. Empty on desktop since the cards moved to the floating
+   *  overlay; still the three cards on mobile, where panel and overlay are one
+   *  drawer. */
+  children?: ReactNode;
 }) {
   const reduce = useReducedMotion();
+  const persistentOpen = !!persistentLayer?.open;
   const transition = reduce ? { duration: 0 } : SLIDE_TRANSITION;
   const crossfadeTransition = reduce ? { duration: 0 } : CROSSFADE_TRANSITION;
   const cardVariants = detailCardVariants(!!reduce);
@@ -429,6 +479,21 @@ export function DetailLayer({
   // buttons (plus vaul's own Escape/swipe handling) carry it instead (see
   // `DetailNav`'s comment).
   useDetailKeyboard(detail, isMobile, onBack, detailRef);
+
+  // Once-true latch: the persistent layer costs nothing until it is first
+  // asked for (no PTY is opened for a user who never opens the terminal), and
+  // from then on it stays mounted forever. Deliberately never reset — that is
+  // the entire contract of a keep-alive layer.
+  //
+  // Adjusted DURING render, not in an effect. React's sanctioned
+  // "storing information from previous renders" pattern: it re-renders
+  // immediately with the new value before committing anything to the DOM, so
+  // the layer exists on the very first render where `open` is true and its
+  // arrival animation starts on that frame. The effect form this replaces
+  // (which `easy-panel.tsx` used) always landed one frame late, because the
+  // layer could not mount until after the effect had run.
+  const [persistentActivated, setPersistentActivated] = useState(false);
+  if (persistentOpen && !persistentActivated) setPersistentActivated(true);
 
   // Focus rides the layer: in on open (so Escape and the arrows work
   // immediately, and keyboard focus can never remain inside the aria-hidden
@@ -477,7 +542,7 @@ export function DetailLayer({
                 lets the fresh content take over the flow immediately instead
                 of stacking under the outgoing one mid-fade. */}
             <AnimatePresence mode="popLayout" initial={false}>
-              <motion.div
+              <m.div
                 key={detail?.key ?? 'empty'}
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
@@ -507,7 +572,7 @@ export function DetailLayer({
                 {/* Pinned below the drawer body — same row the desktop card
                     shows, so paging reads as one behavior wherever you are. */}
                 {detail?.nav && <DetailNav nav={detail.nav} />}
-              </motion.div>
+              </m.div>
             </AnimatePresence>
           </DrawerContent>
         </Drawer>
@@ -516,10 +581,15 @@ export function DetailLayer({
   }
 
   const open = detail !== null;
-  // The home is "one level up" from a detail AND from the terminal layer —
+  // The home is "one level up" from a detail AND from the persistent layer —
   // it hides for either, with the same motion, so the two layers read as
   // siblings in one place rather than two unrelated overlays.
-  const covered = open || terminalOpen;
+  const covered = open || persistentOpen;
+  const persistentMotion = terminalLayerMotion(
+    persistentOpen,
+    !!persistentLayer?.swap,
+    !!reduce,
+  );
 
   return (
     <div className="relative h-full w-full shrink-0">
@@ -529,7 +599,7 @@ export function DetailLayer({
           only hides it from assistive tech, and `pointer-events-none` only
           blocks the mouse; neither stops Shift+Tab walking backward into it
           from the freshly-focused detail. */}
-      <motion.div
+      <m.div
         animate={covered ? { x: '-12%', opacity: 0 } : { x: 0, opacity: 1 }}
         transition={transition}
         className={cn('h-full w-full', covered && 'pointer-events-none')}
@@ -537,11 +607,11 @@ export function DetailLayer({
         inert={covered || undefined}
       >
         {children}
-      </motion.div>
+      </m.div>
 
-      <AnimatePresence custom={terminalOpen}>
+      <AnimatePresence custom={persistentOpen}>
         {detail && (
-          <motion.div
+          <m.div
             // Constant key: this is the CARD, and paging between siblings
             // never rebuilds it — only opening (mount) and closing (unmount)
             // do, which is what earns the slide. A key on `detail.key` here
@@ -567,18 +637,15 @@ export function DetailLayer({
             initial="hidden"
             animate="visible"
             exit="hidden"
-            // Inset from the top, left and bottom — the detail is a card
-            // sitting IN the panel, not a sheet nailed over it, and the gap is
-            // what says so. It stays flush to the right edge (and rounds only
-            // its left corners) so the slide-in reads as arriving from off-panel
-            // rather than as a box that materializes in place.
+            // `CARD_FRAME` is shared with the persistent layer below, so the
+            // two states of this shell can never drift apart visually.
             // `outline-none`: this container is programmatically focused on
             // open (the a11y focus management above). A keyboard-initiated
             // open — the ⌘K "Open Browser"/"Open Terminal" commands — makes
             // that focus :focus-visible, which drew a focus ring around the
             // whole card. The container is a focus TARGET (tabIndex -1), not
             // a control; its frame is the border, never an outline.
-            className="bg-popover border-border absolute inset-y-3 right-3 left-3 flex min-w-0 flex-col overflow-hidden rounded-md border shadow outline-none"
+            className={cn(CARD_FRAME, 'outline-none')}
           >
             {/* The content layer: keyed on `detail.key`, so paging to a
                 sibling swaps THIS, not the card above. `popLayout` pulls the
@@ -589,7 +656,7 @@ export function DetailLayer({
                 card's own open — the slide above already carries that
                 arrival — and only animates key changes after that, i.e. nav. */}
             <AnimatePresence mode="popLayout" initial={false}>
-              <motion.div
+              <m.div
                 key={detail.key}
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
@@ -623,11 +690,43 @@ export function DetailLayer({
                   {detail.body}
                 </div>
                 {detail.nav && <DetailNav nav={detail.nav} />}
-              </motion.div>
+              </m.div>
             </AnimatePresence>
-          </motion.div>
+          </m.div>
         )}
       </AnimatePresence>
+
+      {/* The keep-alive layer. A LATER sibling of the detail's AnimatePresence
+          on purpose: with no explicit z-index, DOM order alone paints it above
+          the detail card, which is what lets it carry BOTH swap crossfades —
+          it fades in over an exiting detail and fades out over an arriving one
+          (see `terminalLayerMotion`/`detailCardVariants`; only one of two
+          opaque cards may fade, or the home bleeds through the midpoint).
+          Never unmounted once activated, so its PTY WebSocket survives every
+          close. `initial` is the closed resting state, so the first-ever
+          activation plays the same arrival every later open does. */}
+      {persistentActivated && persistentLayer && (
+        <m.div
+          initial={{ x: '100%', opacity: 0 }}
+          animate={persistentMotion.target}
+          transition={persistentMotion.transition}
+          aria-hidden={!persistentOpen}
+          inert={!persistentOpen || undefined}
+          className={cn(CARD_FRAME, !persistentOpen && 'pointer-events-none')}
+        >
+          <div className="flex shrink-0 items-center justify-between gap-2 px-3 py-2.5">
+            <span className="flex min-w-0 items-center gap-2">
+              <DetailSidebarToggle className="size-7" />
+              {persistentLayer.icon}
+              <span className="text-foreground truncate text-sm font-semibold">
+                {persistentLayer.title}
+              </span>
+            </span>
+            <CloseButton onClose={persistentLayer.onClose} />
+          </div>
+          <div className="min-h-0 flex-1 overflow-hidden">{persistentLayer.body}</div>
+        </m.div>
+      )}
     </div>
   );
 }
@@ -658,12 +757,28 @@ export function collapseSnapshots(parts: ToolPart[]): ToolPart[] {
 }
 
 /** The real tool views for a set of calls — the escape hatch's payload. */
-export function ToolParts({ parts, sessionId }: { parts: ToolPart[]; sessionId: string }) {
+export function ToolParts({
+  parts,
+  sessionId,
+  summary,
+}: {
+  parts: ToolPart[];
+  sessionId: string;
+  /**
+   * A plain-language sentence to show above the raw tool views (W3) — e.g.
+   * "Read 3 files". Opt-in: only the Context card's tool-group rows
+   * (`context-card.tsx`) pass one, built by reusing `narrateStep`/
+   * `narrateFailedStep` over the group's own `parts`. `StepDetailBody` leaves
+   * this unset — a Progress step's narration already sits in the detail's
+   * own header, and repeating it here would just say the same line twice.
+   */
+  summary?: string;
+}) {
   const visible = collapseSnapshots(parts);
   // A step's own icon already went red for this (StepIcon, ContextCard) — but
-  // that badge is one glance from the panel's home. Once the user has actually
-  // opened the failed step, the detail must say so too, not just show a tool
-  // view that looks the same as a success (W7).
+  // that glance lives on the panel's home, one screen back. Once the user has
+  // actually opened the failed step, the detail must say so too, not just show
+  // a tool view that looks the same as a success (failed-call aggregation).
   const failed = visible.some(
     (part) => (part.state as { status?: string } | undefined)?.status === 'error',
   );
@@ -678,16 +793,31 @@ export function ToolParts({ parts, sessionId }: { parts: ToolPart[]; sessionId: 
           // search that shows 5 of its 20 results behind an inner scrollbar is
           // hiding what the user opened it to see. The detail's own container
           // scrolls instead. Same un-cap the Advanced stepper applies.
-          '[&_[data-scrollable]]:max-h-none [&_[data-scrollable]]:overflow-visible',
+          // Height only, not overflow: overflow-visible kills the x-axis
+          // scrollbar ToolCodeCard needs for long mono lines, clipping
+          // memory/read/edit/write output at the card frame.
+          '[&_[data-scrollable]]:max-h-none',
         )}
       >
+        {summary && <p className="text-muted-foreground text-sm text-pretty">{summary}</p>}
         {failed && (
           <div className="border-kortix-red/30 bg-kortix-red/5 text-foreground rounded-md border px-3 py-2 text-sm">
             This step hit a problem — the details below show what happened.
           </div>
         )}
+        {/* One rendered call → open it; several → every row starts closed and
+            the detail reads as a list of what happened, which is the only way
+            a three-call step is skimmable at all. Counted on `visible`, not
+            `parts`: `collapseSnapshots` can fold three `todo_write` calls into
+            the single row that is actually drawn, and that lone row is a
+            single-part detail by every measure the reader has. */}
         {visible.map((part) => (
-          <ToolPartRenderer key={part.callID} part={part} sessionId={sessionId} defaultOpen />
+          <ToolPartRenderer
+            key={part.callID}
+            part={part}
+            sessionId={sessionId}
+            defaultOpen={visible.length === 1}
+          />
         ))}
       </div>
     </ToolSurfaceContext.Provider>

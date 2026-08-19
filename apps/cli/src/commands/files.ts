@@ -59,6 +59,9 @@ Browse the project's git repo — the same read-only view the dashboard shows
 (Files tab + version history). Operates on the default branch unless --ref
 selects another branch, tag, or commit sha.
 
+For LIVE files inside a session's sandbox (uncommitted work, build outputs),
+use \`kortix sessions cp <session-id>:<path> <dst>\` instead.
+
 Subcommands:
   ls [<path>]                       List files (recursive) under a path.
   cat <path>                        Print a file's contents.
@@ -69,7 +72,6 @@ Subcommands:
   commits [--path <p>]              List commits on --ref.
   show <sha>                        Show one commit + its changed files.
   diff <sha> [--path <p>]           Print a commit's unified patch.
-  compare <from> <into>             Summarize the diff between two refs.
 
 Options:
   --ref <ref>        Branch / tag / commit (default: the project's default branch).
@@ -287,30 +289,6 @@ export async function runFiles(argv: string[]): Promise<number> {
           return 0;
         }
         process.stdout.write(resp.patch.endsWith('\n') ? resp.patch : `${resp.patch}\n`);
-        return 0;
-      }
-      case 'compare': {
-        const from = positional[0];
-        const into = positional[1];
-        if (!from || !into) return missing('two refs: <from> <into>');
-        const resp = await ctx.client.get<{
-          from_sha: string | null;
-          into_sha: string | null;
-          files_changed: number;
-          additions: number;
-          deletions: number;
-          is_up_to_date: boolean;
-        }>(`${base}/version-diff?from=${encodeURIComponent(from)}&into=${encodeURIComponent(into)}`);
-        if (json) {
-          emitJson(resp);
-          return 0;
-        }
-        process.stdout.write('\n');
-        process.stdout.write(`  ${C.bold}${from}${C.reset} ${C.dim}→${C.reset} ${C.bold}${into}${C.reset}\n`);
-        process.stdout.write(
-          `  ${C.dim}${resp.files_changed} file${resp.files_changed === 1 ? '' : 's'} · ${C.green}+${resp.additions}${C.reset} ${C.red}-${resp.deletions}${C.reset}` +
-            `${resp.is_up_to_date ? `  ${C.faded}(up to date)${C.reset}` : ''}\n\n`,
-        );
         return 0;
       }
       default:

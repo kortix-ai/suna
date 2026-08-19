@@ -36,17 +36,11 @@ export function createPermissionsRouter() {
       const [tunnel] = await db
         .select()
         .from(tunnelConnections)
-        .where(
-          and(
-            eq(tunnelConnections.tunnelId, tunnelId),
-            ownerClause,
-          ),
-        );
+        .where(and(eq(tunnelConnections.tunnelId, tunnelId), ownerClause));
 
       if (!tunnel) {
         return c.json({ error: 'Tunnel connection not found' }, 404);
       }
-
       const permissions = await db
         .select()
         .from(tunnelPermissions)
@@ -80,20 +74,23 @@ export function createPermissionsRouter() {
       },
       responses: {
         201: json(PermissionSchema, 'The granted permission'),
-        ...errors(400, 401, 403, 404, 429),
+        ...errors(400, 401, 403, 404, 409, 429),
       },
     }),
     async (c: any) => {
-      const { accountId, ownerClause } = await getTunnelOwnerContext(c);
+      const { ownerClause } = await getTunnelOwnerContext(c);
       const tunnelId = c.req.param('tunnelId');
 
       const rateCheck = tunnelRateLimiter.check('permGrant', tunnelId);
       if (!rateCheck.allowed) {
-        return c.json({
-          error: 'Rate limit exceeded',
-          code: TunnelErrorCode.RATE_LIMITED,
-          retryAfterMs: rateCheck.retryAfterMs,
-        }, 429);
+        return c.json(
+          {
+            error: 'Rate limit exceeded',
+            code: TunnelErrorCode.RATE_LIMITED,
+            retryAfterMs: rateCheck.retryAfterMs,
+          },
+          429,
+        );
       }
 
       const body = await c.req.json();
@@ -108,35 +105,43 @@ export function createPermissionsRouter() {
       }
 
       const scopeToStore = scope || {};
+      let sanitizedScope: Record<string, unknown> = {};
       if (scope && Object.keys(scope).length > 0) {
         const scopeResult = validateScopeInput(capability, scope);
         if (!scopeResult.valid) {
           return c.json({ error: `Invalid scope: ${scopeResult.error}` }, 400);
+        }
+        sanitizedScope = scopeResult.sanitized ?? {};
+      }
+
+      let permissionExpiry: Date | null = null;
+      if (expiresAt !== undefined) {
+        permissionExpiry = new Date(expiresAt);
+        if (!Number.isFinite(permissionExpiry.getTime()) || permissionExpiry <= new Date()) {
+          return c.json({ error: 'expiresAt must be a valid future timestamp' }, 400);
         }
       }
 
       const [tunnel] = await db
         .select()
         .from(tunnelConnections)
-        .where(
-          and(
-            eq(tunnelConnections.tunnelId, tunnelId),
-            ownerClause,
-          ),
-        );
+        .where(and(eq(tunnelConnections.tunnelId, tunnelId), ownerClause));
 
       if (!tunnel) {
         return c.json({ error: 'Tunnel connection not found' }, 404);
+      }
+      if (!Array.isArray(tunnel.capabilities) || !tunnel.capabilities.includes(capability)) {
+        return c.json({ error: `Capability is not enabled: ${capability}` }, 409);
       }
 
       const [permission] = await db
         .insert(tunnelPermissions)
         .values({
           tunnelId,
-          accountId,
+          accountId: tunnel.accountId,
           capability: capability as TunnelCapability,
-          scope: scopeToStore,
-          expiresAt: expiresAt ? new Date(expiresAt) : null,
+          scope: scope && Object.keys(scope).length > 0 ? sanitizedScope : scopeToStore,
+          expiresAt: permissionExpiry,
         })
         .returning();
 

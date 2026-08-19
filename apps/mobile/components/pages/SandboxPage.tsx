@@ -502,7 +502,7 @@ export function SandboxPage({
   const insets = useSafeAreaInsets();
 
   const projectQuery = useProject(projectId);
-  const canManage = projectQuery.data?.effective_project_role === 'editor';
+  const canManage = projectQuery.data?.effective_project_role === 'manager';
   const { data, isLoading, isError, error, refetch } = useProjectSnapshots(projectId);
 
   const buildMut = useBuildSandboxTemplate(projectId);

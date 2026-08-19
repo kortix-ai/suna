@@ -73,8 +73,9 @@ load_local_env() {
   export BACKEND_URL="http://localhost:8008/v1"
 
   # Route sandbox model calls through the local standalone gateway. Proxy mode
-  # (empty BASE_URL): the API reverse-proxies /v1/llm-gateway/* to the gateway,
-  # and sandboxes reach it via the API's tunnel origin. Exported AFTER the .env
+  # (empty BASE_URL): the API reverse-proxies /v1/llm-gateway/* to the gateway.
+  # Sandbox OpenAI clients use /v1/llm-gateway/v1 as their base URL because the
+  # standalone gateway owns /v1/chat/completions. Exported AFTER the .env
   # decrypt so they override whatever the committed apps/api/.env carries.
   if [[ "${KORTIX_DEV_GATEWAY:-auto}" != "0" ]]; then
     export LLM_GATEWAY_ENABLED=true
@@ -93,6 +94,10 @@ load_local_env() {
       echo "[dev] personal overrides loaded from $_f"
     fi
   done
+
+  # Local REST-flow contracts use this deterministic, non-secret key. Keep the
+  # running dev API and `pnpm test` on the same auth boundary.
+  export INTERNAL_SERVICE_KEY="local-flow-runner-internal-service-key"
 }
 
 # Front the local API with a public Cloudflare quick tunnel so cloud Daytona
@@ -486,6 +491,9 @@ ALLOWED_SANDBOX_PROVIDERS=daytona
 DATABASE_URL=${SB_DB_URL}
 SUPABASE_URL=${SB_API_URL}
 SUPABASE_SERVICE_ROLE_KEY=${SB_SERVICE_ROLE_KEY}
+SUPABASE_JWT_SECRET=${SB_JWT_SECRET}
+INTERNAL_SERVICE_KEY=local-flow-runner-internal-service-key
+KORTIX_BILLING_INTERNAL_ENABLED=true
 DAYTONA_API_KEY=${DAYTONA_API_KEY:-}
 DAYTONA_SERVER_URL=${DAYTONA_SERVER_URL:-}
 DAYTONA_TARGET=${DAYTONA_TARGET:-us}
@@ -628,8 +636,25 @@ DB_IS_LOCAL=0
 if [[ "$SUPABASE_IS_LOCAL" == "1" || "$DB_IS_LOCAL" == "1" ]]; then
   echo "[dev] Ensuring local Supabase is running..."
   if ! (cd "$SUPABASE_DIR" && supabase status >/dev/null 2>&1); then
+    # `supabase start` checks whether the containers EXIST, not whether they are
+    # healthy. Docker Desktop quitting — or the Mac sleeping/restarting — SIGKILLs
+    # all 8 containers at once (exit 137) and leaves them in `exited`. Against
+    # that state `start` prints "supabase start is already running" and then dies
+    # with "supabase_db_<project> container is not running: exited", so every
+    # `pnpm dev` after a reboot failed until the stack was stopped by hand.
+    # Clearing the dead containers first lets `start` recreate them.
+    #
+    # NEVER add --no-backup here. It deletes the data volumes — i.e. the whole
+    # local Postgres. The sandbox path above passes it on purpose because that
+    # stack is throwaway; this one is the developer's real database.
+    echo "[dev] Local Supabase is down or half-up — clearing stale containers…"
+    (cd "$SUPABASE_DIR" && supabase stop >/dev/null 2>&1 || true)
     (cd "$SUPABASE_DIR" && supabase start)
   fi
+  # GitHub App manifest-state flows sign with the same JWT secret used by the
+  # local Supabase instance. Export it only for the local data plane.
+  eval "$(cd "$SUPABASE_DIR" && supabase status -o env 2>/dev/null | sed 's/^/export SB_/')"
+  export SUPABASE_JWT_SECRET="${SB_JWT_SECRET:-}"
 else
   echo "[dev] Using configured cloud Supabase: $SUPABASE_TARGET"
 fi

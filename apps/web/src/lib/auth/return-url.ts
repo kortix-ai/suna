@@ -160,10 +160,11 @@ export function isInviteReturnUrl(returnUrl: string | null | undefined): boolean
  * after they authenticate (observed live: SSO on a self-host landing on
  * `https://0.0.0.0:3000/projects?auth_event=signup&auth_method=sso:...`).
  *
- * A wildcard bind address (0.0.0.0 / [::]) is never a real client-facing
- * origin, so when we see one we fall back to the configured public APP_URL.
- * loopback (localhost / 127.0.0.1) is deliberately left as-is so the local-dev
- * behavior above is preserved.
+ * A wildcard bind address (0.0.0.0 / [::]) and an AWS private compute hostname
+ * are never client-facing origins. ECS can expose the latter as
+ * `ip-10-…us-west-2.compute.internal:3000` even when an ALB received the public
+ * request. In both cases, fall back to the configured public APP_URL. Loopback
+ * (localhost / 127.0.0.1) stays unchanged so local development remains local.
  */
 export function resolveAuthRedirectBaseUrl(
   requestOrigin: string | null | undefined,
@@ -172,7 +173,13 @@ export function resolveAuthRedirectBaseUrl(
   const origin = requestOrigin || '';
   const cleanAppUrl = appUrl ? appUrl.replace(/\/+$/, '') : '';
   const isWildcardBindOrigin = /^https?:\/\/(0\.0\.0\.0|\[::\])(:\d+)?$/i.test(origin);
-  if (isWildcardBindOrigin && cleanAppUrl) return cleanAppUrl;
+  let isPrivateComputeOrigin = false;
+  try {
+    isPrivateComputeOrigin = new URL(origin).hostname.toLowerCase().endsWith('.compute.internal');
+  } catch {
+    // The existing fallback below owns malformed or absent origins.
+  }
+  if ((isWildcardBindOrigin || isPrivateComputeOrigin) && cleanAppUrl) return cleanAppUrl;
   return origin || cleanAppUrl || 'http://localhost:3000';
 }
 

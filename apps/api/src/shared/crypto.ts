@@ -195,3 +195,25 @@ export function deriveSigningKey(token: string, secret: string): string {
     .update(token)
     .digest('hex');
 }
+
+/**
+ * Derive the device handoff credential without storing its plaintext in the
+ * device-auth row. The device secret hash is random per request and the row id
+ * provides domain separation. TUNNEL_SIGNING_SECRET is independent from the
+ * API-key lookup secret used to hash the resulting bearer credential.
+ */
+export function deriveDeviceSetupToken(deviceSecretHash: string, requestId: string): string {
+  const secret = config.TUNNEL_SIGNING_SECRET;
+  if (!secret) throw new Error('TUNNEL_SIGNING_SECRET not configured');
+  const body = createHmac('sha256', secret)
+    .update(`device-setup:v1:${requestId}:${deviceSecretHash}`)
+    .digest('base64url');
+  return `${KEY_PREFIX_TUNNEL}${body}`;
+}
+
+/** Bind a live relay session to the current stored machine credential version. */
+export function fingerprintTunnelCredentialHash(storedHash: string): string {
+  const secret = config.TUNNEL_SIGNING_SECRET;
+  if (!secret) throw new Error('TUNNEL_SIGNING_SECRET not configured');
+  return createHmac('sha256', secret).update(`tunnel-credential:v1:${storedHash}`).digest('hex');
+}

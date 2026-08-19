@@ -11,7 +11,7 @@ import { useTranslations } from 'next-intl';
  */
 
 import { CaretLeftIcon as ChevronLeft } from '@phosphor-icons/react';
-import { motion, useReducedMotion } from 'motion/react';
+import { m, useReducedMotion } from 'motion/react';
 import Link from 'next/link';
 
 import { KortixLogo } from '@/components/ui/kortix-logo';
@@ -20,19 +20,18 @@ import { openExternalRoute } from '@/lib/desktop';
 
 const EASE = [0.23, 1, 0.32, 1] as const;
 
+/** Which sentence the legal line uses. */
+export type AuthLegalFooterVariant = 'default' | 'signup' | 'continue';
+
 /** Tiny legal line pinned to the bottom of every auth surface. */
-export function AuthLegalFooter({
-  variant = 'default',
-}: {
-  variant?: 'default' | 'signup' | 'continue';
-}) {
+export function AuthLegalFooter({ variant = 'default' }: { variant?: AuthLegalFooterVariant }) {
   const onLegalClick = (event: React.MouseEvent<HTMLAnchorElement>, href: string) => {
     if (openExternalRoute(href)) event.preventDefault();
   };
   const terms = (
     <Link
-      href="/legal?tab=terms"
-      onClick={(event) => onLegalClick(event, '/legal?tab=terms')}
+      href="/legal/terms"
+      onClick={(event) => onLegalClick(event, '/legal/terms')}
       className="hover:text-muted-foreground underline-offset-4 transition-colors hover:underline"
     >
       Terms of Service
@@ -73,7 +72,12 @@ export function AuthFrame({
   footerVariant = 'default',
 }: {
   children: React.ReactNode;
-  footerVariant?: 'default' | 'signup' | 'continue';
+  /**
+   * `none` drops the legal line. Reserve it for frames whose resolved screen is
+   * not an auth surface — on a real auth flow the footer stays pinned so the
+   * page does not jump when the column above it swaps.
+   */
+  footerVariant?: AuthLegalFooterVariant | 'none';
 }) {
   return (
     <div className="bg-background relative flex min-h-svh flex-col">
@@ -81,7 +85,7 @@ export function AuthFrame({
       <main className="flex flex-1 flex-col items-center justify-center px-6 py-24">
         <div className="w-full max-w-[380px]">{children}</div>
       </main>
-      <AuthLegalFooter variant={footerVariant} />
+      {footerVariant === 'none' ? null : <AuthLegalFooter variant={footerVariant} />}
     </div>
   );
 }
@@ -107,7 +111,7 @@ export function AuthCardShell({
 
   return (
     <AuthFrame>
-      <motion.div {...rise(0)}>
+      <m.div {...rise(0)}>
         <div className="mb-10">
           <KortixLogo variant="icon" size={22} className="text-foreground hidden md:block" />
           <h1 className="text-foreground text-2xl font-medium tracking-tight text-balance md:mt-6">
@@ -115,12 +119,12 @@ export function AuthCardShell({
           </h1>
           <p className="text-muted-foreground mt-2 text-sm text-pretty">{description}</p>
         </div>
-      </motion.div>
+      </m.div>
 
-      <motion.div {...rise(0.06)}>
+      <m.div {...rise(0.06)}>
         {children}
         {footer ? <div className="mt-8">{footer}</div> : null}
-      </motion.div>
+      </m.div>
     </AuthFrame>
   );
 }

@@ -19,9 +19,21 @@
  */
 
 import { logger } from '../../lib/logger';
+import { DEDUPE_TTL_MS } from '../../sandbox-proxy/prompt-dedupe';
 import { drainSessionLifecycleQueue } from './engine';
 
-const UNDELIVERED_PROMPT_STARVATION_MS = 10 * 60_000;
+// F3: derived from `prompt-dedupe.ts`'s `DEDUPE_TTL_MS`, not independently
+// hardcoded. The no-blind-repost guarantee documented on
+// `executeQueuedContinue` (engine.ts) requires this starvation window to
+// never exceed the dedupe cache's TTL — a starved row swept and re-drained
+// AFTER its delivery claim already expired would re-POST blind, with no
+// cache entry left to catch the duplicate. Importing the same constant makes
+// that relation hold structurally instead of by two files' comments staying
+// in sync by hand.
+// Exported (constant only — see F3) so the relation to `DEDUPE_TTL_MS` can be
+// pinned directly in a test instead of only exercised indirectly through
+// `reconcileUndeliveredPrompts`'s computed sweep cutoff.
+export const UNDELIVERED_PROMPT_STARVATION_MS = DEDUPE_TTL_MS;
 const UNDELIVERED_PROMPT_BATCH = 25;
 
 export async function reconcileUndeliveredPrompts(

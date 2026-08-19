@@ -3,7 +3,6 @@
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
 import { Progress } from '@/components/ui/progress';
-import { ProgressRing } from '@/components/ui/progress-ring';
 import {
   Stepper,
   StepperIndicator,
@@ -14,18 +13,14 @@ import {
 import { TextShimmer } from '@/components/ui/text-shimmer';
 import { errorToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
-import {
-  restartProjectSession,
-  sessionStartKey,
-  type SessionStartStage,
-} from '@kortix/sdk';
-import { formatDuration } from '@kortix/sdk/turns';
+import { restartProjectSession, sessionStartKey, type SessionStartStage } from '@kortix/sdk';
+import { qk } from '@kortix/sdk/react';
 import {
   CheckCircleIcon as CheckCircleSolid,
   ArrowCounterClockwiseIcon as RotateCcw,
 } from '@phosphor-icons/react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
+import { AnimatePresence, m, useReducedMotion } from 'motion/react';
 import { useTranslations } from 'next-intl';
 import { useEffect, useRef, useState } from 'react';
 
@@ -64,7 +59,7 @@ const SLOW_AFTER_MS = 15_000;
  * a stop/start of the sandbox is the known fix, so surface it as a fallback
  * instead of leaving the user staring at "Connecting" indefinitely.
  */
-const STUCK_AFTER_MS = 45_000;
+export const STUCK_AFTER_MS = 45_000;
 
 /**
  * The blur-bridged crossfade used for every state swap in this loader (step
@@ -106,11 +101,13 @@ interface Step {
  * - `compact` — spinner + headline + description, and nothing else. One message
  *               at a time, swapped as the boot advances. For surfaces that want
  *               a plain status card rather than a checklist.
- * - `inline`  — a single line showing ONLY the current step, led by a
- *               determinate ring instead of a rail (there is no room for one in
- *               a chat thread). Used under the assistant logomark.
+ *
+ * There was a third, `inline`, which reported the boot inside the chat thread.
+ * It is gone on purpose: a user who has just sent a message is waiting on an
+ * answer, not on infrastructure, so the thread now shows the same "Thinking" row
+ * it shows for every other wait. Boot detail belongs here, in the panel.
  */
-type BootStepVariant = 'stepper' | 'compact' | 'inline';
+type BootStepVariant = 'stepper' | 'compact';
 
 /**
  * Copy is deliberately parallel — four gerund headlines, so the checklist reads
@@ -138,7 +135,7 @@ export function activeStep(stage: SessionStartStage, msInStage: number): number 
 }
 
 /**
- * Overall boot completion, as a percentage, for the rail and the inline ring.
+ * Overall boot completion, as a percentage, for the progress rail.
  * Deliberately sits at the MIDPOINT of the active step (12.5 / 37.5 / 62.5 /
  * 87.5 for four steps): we have no sub-step telemetry, so any other placement
  * would be a claim we can't back. The midpoint also means the bar is never at 0
@@ -152,9 +149,7 @@ export function bootProgressPct(active: number): number {
 /**
  * The shared boot clock: a 1s tick that resolves the CURRENT active step from
  * the backend stage plus time-in-stage (so the `starting` soft-advance fires),
- * and exposes `now` for any caller-side elapsed/slow/stuck math. Both the side
- * panel loader and the inline thread checklist consume this, so the two always
- * report the same step.
+ * and exposes `now` for any caller-side elapsed/slow/stuck math.
  */
 function useBootProgress(stage: SessionStartStage): { active: number; now: number } {
   const [now, setNow] = useState(() => Date.now());
@@ -165,14 +160,14 @@ function useBootProgress(stage: SessionStartStage): { active: number; now: numbe
 
   // Reset the per-stage clock whenever the backend stage changes, so the
   // soft-advance measures time spent in the CURRENT stage (not since mount).
-  const stageEnteredAt = useRef(now);
-  const prevStage = useRef(stage);
-  if (prevStage.current !== stage) {
-    prevStage.current = stage;
-    stageEnteredAt.current = now;
+  const [stageEnteredAt, setStageEnteredAt] = useState(now);
+  const [prevStage, setPrevStage] = useState(stage);
+  if (prevStage !== stage) {
+    setPrevStage(stage);
+    setStageEnteredAt(now);
   }
 
-  return { active: activeStep(stage, now - stageEnteredAt.current), now };
+  return { active: activeStep(stage, now - stageEnteredAt), now };
 }
 
 /**
@@ -236,37 +231,6 @@ function StepLabelShimmer({ label }: { label: string }) {
 }
 
 /**
- * A step label that swaps in place as the boot advances, blur-bridged so it
- * reads as one line ADVANCING rather than two lines trading places. `popLayout`
- * keeps the outgoing label out of layout flow so the row never reflows
- * mid-swap; `initial={false}` keeps the first paint static.
- */
-function AdvancingStepLabel({ label }: { label: string }) {
-  const reduce = useReducedMotion();
-  return (
-    // `layout` is load-bearing, not decoration: the labels differ in length by
-    // ~14 characters ("Provisioning your computer" → "Connecting"), and
-    // popLayout pulls the outgoing one out of flow — so without it the trailing
-    // elapsed timer would snap sideways the instant a step advances. Resizing
-    // the container in step with the crossfade keeps the whole row one object.
-    <motion.span layout transition={MORPH} className="relative flex h-4 items-center">
-      <AnimatePresence initial={false} mode="popLayout">
-        <motion.span
-          key={label}
-          initial={{ opacity: 0, y: reduce ? 0 : 6, filter: 'blur(4px)' }}
-          animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-          exit={{ opacity: 0, y: reduce ? 0 : -6, filter: 'blur(4px)' }}
-          transition={MORPH}
-          className="flex items-center whitespace-nowrap"
-        >
-          <StepLabelShimmer label={label} />
-        </motion.span>
-      </AnimatePresence>
-    </motion.span>
-  );
-}
-
-/**
  * A checklist row's status glyph: the pending/active ring morphing into a green
  * check on completion. This is the single most meaningful moment in the whole
  * loader — a step genuinely finishing — so it gets the design system's icon-swap
@@ -278,7 +242,7 @@ function StepGlyph({ done, current }: { done: boolean; current: boolean }) {
   return (
     <span className="relative flex size-3.5 items-center justify-center">
       <AnimatePresence initial={false} mode="popLayout">
-        <motion.span
+        <m.span
           key={done ? 'done' : 'pending'}
           initial={{ scale: 0.25, opacity: 0, filter: 'blur(4px)' }}
           animate={{ scale: 1, opacity: 1, filter: 'blur(0px)' }}
@@ -294,7 +258,7 @@ function StepGlyph({ done, current }: { done: boolean; current: boolean }) {
           ) : (
             <StepRing spinning={current} />
           )}
-        </motion.span>
+        </m.span>
       </AnimatePresence>
     </span>
   );
@@ -352,7 +316,7 @@ function BootCompactMessage({
             actually announced; on the message itself it unmounts before it can be. */}
         <div className="min-h-13" aria-live="polite">
           <AnimatePresence initial={false} mode="wait">
-            <motion.div
+            <m.div
               key={step.label}
               initial={{ opacity: 0, y: reduce ? 0 : 4 }}
               animate={{ opacity: 1, y: 0, transition: MESSAGE_IN }}
@@ -362,7 +326,7 @@ function BootCompactMessage({
                 {step.label}
               </h2>
               <p className="text-muted-foreground mt-1 text-sm text-pretty">{step.description}</p>
-            </motion.div>
+            </m.div>
           </AnimatePresence>
         </div>
         {footer}
@@ -372,33 +336,11 @@ function BootCompactMessage({
 }
 
 /**
- * The stepped checklist itself — one render, shared by the centered panel loader
- * and the inline thread checklist so they can never visually drift. Pure: the
- * caller owns the clock (see {@link useBootProgress}) and passes the active index.
- *
- * `variant` picks the layout (see {@link BootStepVariant}).
+ * The stepped checklist itself. Pure: the caller owns the clock (see
+ * {@link useBootProgress}) and passes the active index.
  */
-function BootStepList({ active, variant }: { active: number; variant: BootStepVariant }) {
+function BootStepList({ active }: { active: number }) {
   const reduce = useReducedMotion();
-
-  if (variant === 'inline') {
-    // Only ever the CURRENT step, led by a determinate ring: in a chat thread
-    // there's no room for a rail, but the user still deserves to know how far
-    // along the boot is. `active` never exceeds the last index (see activeStep),
-    // but clamp defensively so the row is always resolvable.
-    const step = STEPS[Math.min(active, STEPS.length - 1)];
-    return (
-      <div className="flex min-w-0 items-center gap-2">
-        <ProgressRing
-          className="size-3.5 shrink-0"
-          value={bootProgressPct(active)}
-          progressClassName="text-kortix-green transition-[stroke-dashoffset] duration-700 ease-in-out"
-          trackClassName="text-foreground/10"
-        />
-        <AdvancingStepLabel label={step.label} />
-      </div>
-    );
-  }
 
   return (
     <Stepper
@@ -412,7 +354,7 @@ function BootStepList({ active, variant }: { active: number; variant: BootStepVa
         const done = i < active;
         const current = i === active;
         return (
-          <motion.div
+          <m.div
             key={step.label}
             className="flex items-start gap-2.5"
             initial={{ opacity: 0, y: reduce ? 0 : 4 }}
@@ -448,7 +390,7 @@ function BootStepList({ active, variant }: { active: number; variant: BootStepVa
                 </StepperTitle>
               )}
             </div>
-          </motion.div>
+          </m.div>
         );
       })}
     </Stepper>
@@ -467,7 +409,7 @@ function BootHint({ slow }: { slow: boolean }) {
   return (
     <span className="relative flex min-h-4 items-center">
       <AnimatePresence initial={false} mode="popLayout">
-        <motion.span
+        <m.span
           key={copy}
           initial={{ opacity: 0, filter: 'blur(3px)' }}
           animate={{ opacity: 1, filter: 'blur(0px)' }}
@@ -476,7 +418,7 @@ function BootHint({ slow }: { slow: boolean }) {
           className="text-muted-foreground text-[11px] leading-relaxed"
         >
           {copy}
-        </motion.span>
+        </m.span>
       </AnimatePresence>
     </span>
   );
@@ -489,30 +431,43 @@ function BootHint({ slow }: { slow: boolean }) {
  * out short of a browser refresh. It stays invisible for the first 45 seconds,
  * so it costs the compact layout nothing visually.
  *
+ * Exported because the instant session shell needs the SAME offer inline in the
+ * thread (the panel that normally carries it is unreachable on desktop during a
+ * first boot — see `StalledBootOffer` in instant-session-shell.tsx). One
+ * component, so the copy and the treatment cannot drift between the two places
+ * a user can be told the boot has stalled.
+ *
  * Rises in rather than popping: it appears under a block that has been
  * perfectly still, and a snap there reads as a layout break rather than an offer.
  */
-function RestartFallback({
+export function RestartFallback({
   show,
   pending,
   onRestart,
+  className,
+  buttonClassName,
 }: {
   show: boolean;
   pending: boolean;
   onRestart: () => void;
+  /** Spacing/width override for the wrapper. */
+  className?: string;
+  /** Width override for the button — see the `w-full` note on it below. */
+  buttonClassName?: string;
 }) {
+  const reduce = useReducedMotion();
   return (
     <AnimatePresence>
       {show ? (
-        <motion.div
-          initial={{ opacity: 0, y: 6 }}
+        <m.div
+          initial={{ opacity: 0, y: reduce ? 0 : 6 }}
           animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: 4 }}
-          transition={{ duration: 0.25, ease: [0, 0, 0.2, 1] }}
+          exit={{ opacity: 0, y: reduce ? 0 : 4 }}
+          transition={{ duration: 0.25, ease: EASE_OUT }}
           // `mt-5` rides here rather than on a wrapper: this element only exists
           // once the boot has stalled, so the space it needs arrives with it
           // instead of holding open a gap for the first 45 seconds.
-          className="mt-5 w-full"
+          className={cn('mt-5 w-full', className)}
         >
           {/* The framing lives in copy, not in the button label. "Taking too
               long? Restart session" made the control read as a question rather
@@ -528,8 +483,11 @@ function RestartFallback({
             size="sm"
             // Full width is for the thumb, not for emphasis: this block is
             // capped at 320px, so a full-bleed target is comfortably tappable
-            // on a phone while staying visually quiet at `secondary`.
-            className="w-full active:scale-[0.98]"
+            // on a phone while staying visually quiet at `secondary`. A caller
+            // whose column is NOT capped (the 768px chat thread) passes
+            // `buttonClassName="w-auto"`, where full-bleed would read as a
+            // banner rather than an offer.
+            className={cn('w-full active:scale-[0.98]', buttonClassName)}
             disabled={pending}
             onClick={onRestart}
           >
@@ -540,7 +498,7 @@ function RestartFallback({
             )}
             {pending ? 'Restarting…' : 'Restart session'}
           </Button>
-        </motion.div>
+        </m.div>
       ) : null}
     </AnimatePresence>
   );
@@ -557,9 +515,8 @@ export function SessionStartingLoader({
    *  embeddings of this loader don't have a project session id in scope. */
   projectId,
   sessionId,
-  /** Layout. Defaults to the full stepper + progress rail; pass `compact` for
-   *  the spinner + headline + description card, or `inline` for the single
-   *  advancing line used inside a chat thread. */
+  /** Layout. Defaults to `compact` (spinner + headline + description card);
+   *  pass `stepper` for the full checklist + progress rail. */
   variant = 'compact',
 }: {
   stage?: SessionStartStage;
@@ -581,7 +538,7 @@ export function SessionStartingLoader({
   }, [delayMs]);
 
   // The shared boot clock owns the 1s tick + per-stage soft-advance; `now` also
-  // drives the footer copy below (and the inline checklist reuses the same hook).
+  // drives the footer copy below.
   const { active, now } = useBootProgress(stage);
   // A manual restart pushes the "stuck" clock back out so the button doesn't
   // reappear immediately while the fresh boot is still in progress.
@@ -596,7 +553,7 @@ export function SessionStartingLoader({
       clockStart.current = Date.now();
       queryClient.invalidateQueries({ queryKey: sessionStartKey(projectId!, sessionId!) });
       queryClient.invalidateQueries({
-        queryKey: ['project', 'session-sandbox', projectId, sessionId],
+        queryKey: qk.project.sessionSandbox(projectId ?? '', sessionId ?? ''),
       });
     },
     onError: (err) => {
@@ -673,7 +630,7 @@ export function SessionStartingLoader({
           />
         </div>
 
-        <BootStepList active={active} variant={variant} />
+        <BootStepList active={active} />
 
         <div className="flex w-full flex-col items-start gap-4">
           <BootHint slow={slow} />
@@ -684,38 +641,6 @@ export function SessionStartingLoader({
           />
         </div>
       </div>
-    </div>
-  );
-}
-
-/**
- * The boot checklist rendered INLINE in the thread (under the assistant
- * logomark) while a freshly-created session's Kortix Computer comes up — the
- * SAME stepped progress as the side panel's {@link SessionStartingLoader}, via
- * the shared {@link BootStepList} + {@link useBootProgress}, so a user who never
- * opens the computer panel still watches the real provisioning state advance
- * instead of one static "Provisioning…" line. Left-aligned to sit under the
- * Kortix logomark; carries its own elapsed timer to match the thread's regular
- * waiting indicator.
- */
-export function SessionBootChecklistInline({
-  stage = 'provisioning',
-  className,
-}: {
-  stage?: SessionStartStage;
-  className?: string;
-}) {
-  const { active, now } = useBootProgress(stage);
-  const startRef = useRef(now);
-  const elapsed = formatDuration(now - startRef.current);
-  return (
-    <div className={cn('flex items-center gap-2', className)}>
-      <div aria-label="Starting your Kortix Session">
-        <BootStepList active={active} variant="inline" />
-      </div>
-      {elapsed ? (
-        <span className="text-muted-foreground text-[13px] tabular-nums">· {elapsed}</span>
-      ) : null}
     </div>
   );
 }

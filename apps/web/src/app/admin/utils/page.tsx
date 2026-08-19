@@ -1,6 +1,5 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
 
 import { Badge } from '@/components/ui/badge';
 import { KortixHyperLogo } from '@/components/ui/marketing/kortix-hyper-logo';
@@ -14,8 +13,17 @@ import { ClockIcon as Clock, GearSixIcon as Settings } from '@phosphor-icons/rea
 import { useEffect, useState } from 'react';
 import { MAINTENANCE_LEVELS, MaintenanceConfigDialog, MaintenanceLevelCard } from './_components';
 
+// Same output as `toLocaleString()` with no options: date + time, numeric fields.
+const updatedAtFormatter = new Intl.DateTimeFormat(undefined, {
+  year: 'numeric',
+  month: 'numeric',
+  day: 'numeric',
+  hour: 'numeric',
+  minute: 'numeric',
+  second: 'numeric',
+});
+
 export default function AdminUtilsPage() {
-  const tHardcodedUi = useTranslations('hardcodedUi');
   const { data: config, isLoading } = useMaintenanceAdmin();
   const updateConfig = useUpdateMaintenanceConfig();
 
@@ -120,12 +128,10 @@ export default function AdminUtilsPage() {
             </div>
             <div className="flex-1">
               <h1 className="text-2xl font-semibold tracking-tight">
-                {tHardcodedUi.raw('appAdminUtilsPage.line126JsxTextMaintenanceNotifications')}
+                {'Maintenance Notifications'}
               </h1>
               <p className="text-muted-foreground text-sm">
-                {tHardcodedUi.raw(
-                  'appAdminUtilsPage.line129JsxTextControlSystemWideMaintenanceBannersAndAccessRestrictions',
-                )}
+                {'Control system-wide maintenance banners and access restrictions'}
               </p>
             </div>
             {currentLevel !== 'none' && currentLevelDef && (
@@ -148,7 +154,7 @@ export default function AdminUtilsPage() {
                 {currentLevelDef && (
                   <currentLevelDef.icon className={`h-4 w-4 ${currentLevelDef.color}`} />
                 )}
-                {tHardcodedUi.raw('appAdminUtilsPage.line152JsxTextCurrentlyActive')}
+                {'Currently active:'}
                 {currentLevelDef?.label}
               </div>
               {config.title && <p className="text-sm font-medium">{config.title}</p>}
@@ -170,9 +176,7 @@ export default function AdminUtilsPage() {
           {/* Level selection grid */}
           <div className="space-y-2">
             <p className="text-muted-foreground mb-3 text-sm font-medium">
-              {tHardcodedUi.raw(
-                'appAdminUtilsPage.line177JsxTextSelectANotificationLevelToConfigure',
-              )}
+              {'Select a notification level to configure'}
             </p>
             {MAINTENANCE_LEVELS.map((level) => (
               <MaintenanceLevelCard
@@ -187,8 +191,8 @@ export default function AdminUtilsPage() {
           {config?.updatedAt && (
             <p className="text-muted-foreground mt-6 flex items-center gap-1 text-xs">
               <Clock className="h-3 w-3" />
-              {tHardcodedUi.raw('appAdminUtilsPage.line192JsxTextLastUpdated')}
-              {new Date(config.updatedAt).toLocaleString()}
+              {'Last updated:'}
+              {updatedAtFormatter.format(new Date(config.updatedAt))}
             </p>
           )}
         </div>

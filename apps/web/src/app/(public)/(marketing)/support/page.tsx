@@ -101,7 +101,7 @@ function SupportPageContent() {
                   'appHomeSupportPage.line84JsxAttrQuestionCanKortixConnectToMyApps',
                 )}
                 answer={tHardcodedUi.raw(
-                  'appHomeSupportPage.line85JsxAttrAnswerYes3000IntegrationsViaOauthMcpServers',
+                  'appHomeSupportPage.line85JsxAttrAnswerYes3000ConnectorsViaOauthMcpServers',
                 )}
               />
               <FAQItem
@@ -180,7 +180,7 @@ function SupportPageContent() {
           <div className="mt-14">
             <h2 className="text-muted-foreground mb-5 text-xs tracking-widest uppercase">Legal</h2>
             <div className="flex flex-col gap-1.5">
-              <Link href="/legal?tab=terms" className={`text-base ${linkClass} w-fit`}>
+              <Link href="/legal/terms" className={`text-base ${linkClass} w-fit`}>
                 {tHardcodedUi.raw('appHomeSupportPage.line134JsxTextTermsOfService')}
               </Link>
               <Link href="/legal?tab=privacy" className={`text-base ${linkClass} w-fit`}>

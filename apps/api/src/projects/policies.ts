@@ -5,7 +5,7 @@
  *
  * Project policies span EVERY connector in the project — patterns are
  * fully-qualified (`<connector-slug>.<path>` or globs over that), and they're
- * evaluated before any connector-scoped rule (docs/specs/executor.md §8).
+ * evaluated before any connector-scoped rule (docs/specs/connector.md §8).
  * `policy.default_mode` controls the fallback when no rule matches:
  *   • `risk` — read = always_run, write/destructive = require_approval
  *   • `allow_all` — every tool runs (legacy default for back-compat)
@@ -19,7 +19,7 @@ import {
   type PolicyArgCondition,
   areValidConditions,
   normalizeConditions,
-} from '../executor/policy';
+} from '../connectors/policy';
 import { MANIFEST_FILENAME, type ParsedManifest } from './triggers';
 
 type ProjectPolicyAction = 'always_run' | 'require_approval' | 'block';
@@ -49,7 +49,7 @@ export interface ProjectPolicySpec {
    *       action: block
    *
    * Semantics (incl. how an unevaluable condition fails closed) live in
-   * executor/policy.ts.
+   * connector/policy.ts.
    */
   conditions?: PolicyArgCondition[] | null;
 }

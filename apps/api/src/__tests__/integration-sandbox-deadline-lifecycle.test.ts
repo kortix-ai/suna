@@ -7,13 +7,14 @@
  * SQL in sandbox-deadline.ts; the reaper that judges the row is the real
  * `reapAndReconcileSandboxes`; and the stop that closes it out is the real
  * `applyStoppedState`, which settles the compute meter against the still-active
- * row before flipping either status. Only `provider.stop()` is stubbed, because
- * the one thing this suite cannot own is somebody else's hypervisor.
+ * row before flipping either status. Only the provider lifecycle calls are
+ * stubbed, because this suite cannot own somebody else's hypervisor.
  */
 import { afterAll, beforeAll, describe, expect, mock, test } from 'bun:test';
 import { sql } from 'drizzle-orm';
 
 const stops: string[] = [];
+const renewals: string[] = [];
 // Spread the real module: only `getProvider` is stubbed, so every other export
 // (error classes the transitive importers need) stays exactly as shipped.
 const realProviders = await import('../platform/providers');
@@ -21,6 +22,9 @@ mock.module('../platform/providers', () => ({
   ...realProviders,
   getProvider: () => ({
     getStatus: async () => 'running',
+    renewLifecycle: async (externalId: string) => {
+      renewals.push(externalId);
+    },
     stop: async (externalId: string) => {
       stops.push(externalId);
     },
@@ -87,17 +91,21 @@ beforeAll(async () => {
 afterAll(async () => {
   // Hand the parked rows back to the reaper.
   await db
-    .execute(sql`
+    .execute(
+      sql`
       UPDATE kortix.session_sandboxes SET deadline_at = now()
-       WHERE status = 'active' AND sandbox_id <> ${SANDBOX_ID}::uuid`)
+       WHERE status = 'active' AND sandbox_id <> ${SANDBOX_ID}::uuid`,
+    )
     .catch(() => undefined);
   // The identity guard refuses to delete an established sandbox unless its
   // session is tombstoned, so tombstone it first.
   await db
-    .execute(sql`
+    .execute(
+      sql`
       UPDATE kortix.project_sessions
          SET metadata = coalesce(metadata, '{}'::jsonb) || '{"deletedAt":"now"}'::jsonb
-       WHERE session_id = ${SESSION_ID}`)
+       WHERE session_id = ${SESSION_ID}`,
+    )
     .catch(() => undefined);
   await db
     .execute(sql`DELETE FROM kortix.session_sandboxes WHERE sandbox_id = ${SANDBOX_ID}::uuid`)
@@ -114,8 +122,8 @@ afterAll(async () => {
 });
 
 describe('a sandbox lifetime, start to death', () => {
-  test('1. a fresh box gets the 20-minute boot floor from the trigger', async () => {
-    expect(await minutesLeft()).toBe(20);
+  test('1. a fresh box gets the 15-minute boot floor from the trigger', async () => {
+    expect(await minutesLeft()).toBe(15);
   });
 
   test('2. a control-plane-OBSERVED turn start buys the full 4h grant', async () => {
@@ -143,6 +151,7 @@ describe('a sandbox lifetime, start to death', () => {
     await reapAndReconcileSandboxes(new Date());
 
     expect(stops).toEqual([]);
+    expect(renewals).toContain(EXTERNAL_ID);
     expect((await statusOf()).sandbox).toBe('active');
   });
 
@@ -157,7 +166,10 @@ describe('a sandbox lifetime, start to death', () => {
     expect(stops).toEqual([EXTERNAL_ID]);
     // applyStoppedState flips BOTH in one transaction — no window where the box
     // is parked but the session still claims to be running.
-    expect(await statusOf()).toEqual({ sandbox: 'stopped', session: 'stopped' });
+    expect(await statusOf()).toEqual({
+      sandbox: 'stopped',
+      session: 'stopped',
+    });
   });
 
   // 264h -> at most 4h even in the worst case, and 15 min in the normal one.

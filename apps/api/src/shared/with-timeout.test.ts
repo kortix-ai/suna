@@ -33,16 +33,18 @@ describe('withTimeout', () => {
 
   test('abandons the WAIT but not the WORK — the losing promise still settles', async () => {
     let completed = false;
-    const work = new Promise<string>((r) =>
-      setTimeout(() => {
+    let completeWork!: () => void;
+    const work = new Promise<string>((resolve) => {
+      completeWork = () => {
         completed = true;
-        r('done');
-      }, 120),
-    );
+        resolve('done');
+      };
+    });
 
     await expect(withTimeout(work, 30)).rejects.toBeInstanceOf(TimeoutError);
     expect(completed).toBe(false);
 
+    completeWork();
     await work;
     expect(completed).toBe(true);
   });

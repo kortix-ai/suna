@@ -11,8 +11,23 @@ on:
     paths:
       - "infra/terraform/**"
       - ".github/workflows/terraform-ci.yml"
+      # The `preview runtime contract tests` step below asserts the security
+      # invariants of the pull request preview pipeline. Those invariants now
+      # live in the workflow and the sandbox preview runtime, not only in
+      # Terraform, so a change to either must run this gate.
+      - "infra/scripts/**"
+      - ".github/workflows/deploy-preview.yml"
+      - "tests/bin/sandbox-preview.ts"
+      - "tests/src/core/sandbox-preview*.ts"
+      - "tests/src/core/preview-stack.ts"
   schedule:
-    - cron: "0 7 * * *"
+    # 07:17, not 07:00: re-registered 2026-08-11 because GitHub's scheduler
+    # silently stopped firing this cron after 2026-08-04 (runs list shows zero
+    # schedule events for six days; workflow state was "active" and the file
+    # unchanged). Editing the expression forces re-registration, and an
+    # off-the-hour minute avoids GitHub's documented top-of-hour congestion
+    # drops. The apply-pipeline-health job fails loudly if this dies again.
+    - cron: "17 7 * * *"
   workflow_dispatch:
 
 concurrency:
@@ -23,7 +38,11 @@ permissions:
   contents: read
 
 env:
-  TF_VERSION: 1.9.8
+  # Must equal terraform-apply.yml's TF_VERSION. Terraform state is
+  # forward-incompatible: once terraform-apply.yml writes state with 1.15.x, a
+  # 1.9.x plan here fails with "state snapshot was created by a newer
+  # Terraform". Bump both files in the same commit or neither.
+  TF_VERSION: 1.15.8
 
 jobs:
   validate:
@@ -40,6 +59,12 @@ jobs:
         run: terraform fmt -check -recursive infra/terraform
       - name: nacl auditor unit tests
         run: python3 infra/terraform/scripts/test_audit_nacl_admin_ports.py
+      - name: web ALB WAF association tests
+        run: python3 infra/terraform/scripts/test_web_waf_associations.py
+      - name: ALB log bucket versioning regression test
+        run: python3 infra/terraform/scripts/test_alb_log_bucket_versioning.py
+      - name: preview runtime contract tests
+        run: python3 infra/scripts/test-ecs-preview-runtime.py
       - name: terraform validate (every root)
         run: |
           set -euo pipefail
@@ -93,7 +118,7 @@ jobs:
           output_file_path: checkov.sarif
           soft_fail: true
       - name: Upload SARIF
-        uses: github/codeql-action/upload-sarif@7188fc363630916deb702c7fdcf4e481b751f97a # v4.37.1
+        uses: github/codeql-action/upload-sarif@f205ea1c3313d32999d8d6a48b4f6530d4437b38 # v4.37.4
         with:
           sarif_file: checkov.sarif/results_sarif.sarif
           category: checkov-terraform
@@ -141,26 +166,35 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # The */platform roots are deliberately absent. They drive the helm and
-        # kubernetes providers, and Helm keeps release state in Kubernetes
-        # Secrets — so planning them from CI would mean granting this role
-        # secret-read inside the production cluster. That is a bigger grant
-        # than drift reporting justifies. Plan them from an operator session.
         root:
-          - infra/terraform/environments/prod-eks/cluster
-          - infra/terraform/environments/dev-eks/cluster
-          # The ECS envs became plannable from a clean checkout once their
-          # non-secret config moved out of gitignored tfvars into variable
-          # defaults (#5771, #5778). Before that a plan here proposed replacing
-          # the production certificate and live DNS, so covering them would
-          # have reported catastrophic false drift every night.
           - infra/terraform/environments/prod
           - infra/terraform/environments/staging
           - infra/terraform/environments/dev
-          # Not under environments/ — the stack lives at the terraform root.
+          - infra/terraform/environments/preview
+          # The *-web roots own the frontend ALBs, their WAF associations, and
+          # the web task roles. They were missing here, so #6344's WAF change
+          # could drift unseen.
+          - infra/terraform/environments/dev-web
+          - infra/terraform/environments/staging-web
+          - infra/terraform/environments/prod-web
+          # Not under environments/ — these stacks live at the terraform root.
           - infra/terraform/security-baseline
+          - infra/terraform/compliance-monitoring
+    env:
+      # Every environments/* root declares a `cloudflare` provider. Without a
+      # token the provider fails to authenticate and the plan errors out before
+      # it can report drift — which is how this job has been failing since
+      # 2026-08-03. The token is read-only for planning purposes: plan never
+      # writes a DNS record.
+      TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: require Cloudflare token
+        run: |
+          if [ -z "${TF_VAR_cloudflare_api_token:-}" ]; then
+            echo "::error::CLOUDFLARE_API_TOKEN is unset - every environments/* plan will fail to authenticate."
+            exit 1
+          fi
       - uses: aws-actions/configure-aws-credentials@254c19bd240aabef8777f48595e9d2d7b972184b # v6.2.1
         with:
           role-to-assume: ${{ vars.TF_PLAN_ROLE_ARN }}
@@ -169,13 +203,6 @@ jobs:
         with:
           terraform_version: ${{ env.TF_VERSION }}
       - name: plan -detailed-exitcode
-        # The EKS roots declare a Cloudflare provider and fall back to a dummy
-        # token when none is supplied, which fails the plan with Cloudflare's
-        # auth error 10000 before any drift is reported. Read-only here: plan
-        # never writes DNS.
-        env:
-          TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          TF_VAR_cloudflare_zone_id: ${{ vars.CLOUDFLARE_ZONE_ID }}
         run: |
           set -uo pipefail
           terraform -chdir="${{ matrix.root }}" init -input=false -no-color
@@ -184,4 +211,99 @@ jobs:
           if [ "$code" = "2" ]; then
             echo "::warning title=Drift detected::${{ matrix.root }} has drifted from its Terraform state"
           fi
-          exit $([ "$code" = "1" ] && echo 1 || echo 0)
+          if [ "$code" = "1" ]; then
+            exit 1
+          fi
+          exit 0
+
+  apply-pipeline-health:
+    name: apply pipeline health
+    # The alarm for the alarms. Two failure modes this repository has already
+    # hit, both of which render GREEN in the checks list:
+    #
+    #   1. A gated job whose gate is never satisfied. TF_PLAN_ROLE_ARN did not
+    #      exist for the entire life of the drift job, so `drift detection`
+    #      resolved to "skipped" and nobody noticed (see
+    #      security-baseline/iam-gha-tf-plan.tf). The apply jobs added in
+    #      deploy-{dev,staging,prod}.yml and terraform-apply-global.yml carry
+    #      the same `vars.* != ''` gate, so they can fail the same way.
+    #   2. A scheduled job that starts failing and stays failing. Drift
+    #      detection has been erroring on Cloudflare authentication since
+    #      2026-08-03; a stale-but-once-green control is indistinguishable from
+    #      a healthy one unless something measures its age.
+    #
+    # This job fails loudly on both. It runs on the same schedule as drift, one
+    # cycle behind it.
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: require every Terraform CI/CD role variable
+        env:
+          TF_PLAN_ROLE_ARN: ${{ vars.TF_PLAN_ROLE_ARN }}
+          TF_APPLY_ROLE_ARN_DEV: ${{ vars.TF_APPLY_ROLE_ARN_DEV }}
+          TF_APPLY_ROLE_ARN_STAGING: ${{ vars.TF_APPLY_ROLE_ARN_STAGING }}
+          TF_APPLY_ROLE_ARN_PROD: ${{ vars.TF_APPLY_ROLE_ARN_PROD }}
+          TF_APPLY_ROLE_ARN_GLOBAL: ${{ vars.TF_APPLY_ROLE_ARN_GLOBAL }}
+        run: |
+          set -uo pipefail
+          missing=0
+          for name in \
+            TF_PLAN_ROLE_ARN \
+            TF_APPLY_ROLE_ARN_DEV \
+            TF_APPLY_ROLE_ARN_STAGING \
+            TF_APPLY_ROLE_ARN_PROD \
+            TF_APPLY_ROLE_ARN_GLOBAL
+          do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::Repository variable ${name} is unset, so its Terraform job silently skips. Apply security-baseline once and set it to the matching output ARN."
+              missing=1
+            else
+              echo "ok: ${name}"
+            fi
+          done
+          exit "$missing"
+
+      - name: require a successful drift run in the last 48h
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MAX_AGE_HOURS: "48"
+        run: |
+          set -euo pipefail
+          newest=0
+          run_ids="$(
+            gh api -X GET \
+              "repos/${GITHUB_REPOSITORY}/actions/workflows/terraform-ci.yml/runs" \
+              -f branch=main -f per_page=15 \
+              --jq '.workflow_runs[] | select(.status == "completed") | .id'
+          )"
+          for id in $run_ids; do
+            completed_at="$(
+              gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${id}/jobs?per_page=100" \
+                --jq '[.jobs[]
+                       | select(.name | startswith("drift detection"))
+                       | select(.conclusion == "success")
+                       | .completed_at] | sort | last // empty'
+            )"
+            if [ -n "$completed_at" ]; then
+              newest="$(date -u -d "$completed_at" +%s)"
+              echo "Newest successful drift job: ${completed_at} (run ${id})."
+              break
+            fi
+          done
+
+          if [ "$newest" = "0" ]; then
+            echo "::error::No successful \`drift detection\` job in the last 15 terraform-ci runs on main. Drift detection is not running."
+            exit 1
+          fi
+
+          age_hours=$(( ( $(date -u +%s) - newest ) / 3600 ))
+          echo "Last successful drift run: ${age_hours}h ago (limit ${MAX_AGE_HOURS}h)."
+          if [ "$age_hours" -gt "$MAX_AGE_HOURS" ]; then
+            echo "::error::Drift detection last succeeded ${age_hours}h ago, over the ${MAX_AGE_HOURS}h limit."
+            exit 1
+          fi

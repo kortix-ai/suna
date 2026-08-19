@@ -10,7 +10,7 @@ import {
   GitBranchIcon as GitBranch,
   PlusIcon as Plus,
 } from '@phosphor-icons/react';
-import { AnimatePresence, motion } from 'motion/react';
+import { AnimatePresence, m } from 'motion/react';
 import { useTranslations } from 'next-intl';
 import { PageHead } from '../primitives';
 import type { ProjectCard } from '../types';
@@ -45,7 +45,7 @@ function ProjectRow({ project }: { project: ProjectCard }) {
   const { name, status, files, branch, repo, url } = project;
   const live = status === 'live';
   return (
-    <motion.div
+    <m.div
       layout
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
@@ -80,7 +80,7 @@ function ProjectRow({ project }: { project: ProjectCard }) {
           {live && url && <span className="text-cyan-600 dark:text-cyan-400">{url}</span>}
         </InlineMeta>
       </div>
-    </motion.div>
+    </m.div>
   );
 }
 

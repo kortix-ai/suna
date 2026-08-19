@@ -38,6 +38,7 @@ import {
   updateSandboxTemplate,
   type SandboxTemplate,
 } from '@kortix/sdk';
+import { qk } from '@kortix/sdk/react';
 
 type Mode = 'image' | 'dockerfile';
 
@@ -157,8 +158,8 @@ export function SandboxTemplateForm({
       }),
     onSuccess: () => {
       toast.success('Template created — build started');
-      queryClient.invalidateQueries({ queryKey: ['project-snapshots', projectId] });
-      queryClient.invalidateQueries({ queryKey: ['project-sandboxes', projectId] });
+      queryClient.invalidateQueries({ queryKey: qk.project.snapshots(projectId) });
+      queryClient.invalidateQueries({ queryKey: qk.project.sandboxes(projectId) });
       onOpenChange(false);
     },
     onError: (err: Error) => toast.error(err.message || 'Failed to create template'),
@@ -177,8 +178,8 @@ export function SandboxTemplateForm({
       }),
     onSuccess: () => {
       toast.success('Template updated — provider sync started');
-      queryClient.invalidateQueries({ queryKey: ['project-snapshots', projectId] });
-      queryClient.invalidateQueries({ queryKey: ['project-sandboxes', projectId] });
+      queryClient.invalidateQueries({ queryKey: qk.project.snapshots(projectId) });
+      queryClient.invalidateQueries({ queryKey: qk.project.sandboxes(projectId) });
       onOpenChange(false);
     },
     onError: (err: Error) => toast.error(err.message || 'Failed to update template'),

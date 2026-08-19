@@ -446,7 +446,15 @@ flow('LOGIN-2', { domain: 'cli', routes: ['GET /v1/accounts/me'] }, async (ctx) 
           true,
           r.stdout.includes('cli/authorize'),
         );
-        check('exit 0 after callback delivered', r.exitCode === 0, 0, r.exitCode);
+        check('callback accepts matching state and token', r.callback?.status === 200, 200, {
+          ...r.callback,
+          stderr: r.stderr.slice(0, 500),
+        });
+        check('exit 0 after callback delivered', r.exitCode === 0, 0, {
+          exitCode: r.exitCode,
+          callback: r.callback,
+          stderr: r.stderr.slice(0, 500),
+        });
         check('config now carries a token', sb.isLoggedIn(), true, sb.isLoggedIn());
       } finally {
         sb.dispose();
@@ -458,6 +466,7 @@ flow('LOGIN-2', { domain: 'cli', routes: ['GET /v1/accounts/me'] }, async (ctx) 
     ctx.track('cli-sandbox', sb.cwd);
     try {
       const r = await browserLogin(sb, pat, { badState: true });
+      check('state-mismatch callback returns 403', r.callback?.status === 403, 403, r.callback);
       check('non-zero exit (timeout / rejected)', r.exitCode !== 0, '!=0', r.exitCode);
       check('config NOT logged in', !sb.isLoggedIn(), true, sb.isLoggedIn());
     } finally {

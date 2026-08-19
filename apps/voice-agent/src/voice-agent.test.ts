@@ -94,7 +94,7 @@ describe('call-scoped API credentials stay in private worker metadata', () => {
  * and a `FunctionCall`), which cannot be constructed outside a running LiveKit
  * job. What matters here is not reachable by other means and is invisible until
  * production, so it is worth pinning at the source level — the same trick
- * apps/api uses for its one-line executor wirings.
+ * apps/api uses for its one-line connector wirings.
  */
 const TOOLS_SOURCE = await Bun.file(new URL('./tools.ts', import.meta.url).pathname).text();
 

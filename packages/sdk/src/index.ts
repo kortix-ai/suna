@@ -67,6 +67,7 @@ export {
   toSandboxAbsolutePath,
   toWorkspaceRelative,
   uploadFile,
+  writeFile,
 } from './core/files/client';
 export type * from './core/files/types';
 
@@ -138,8 +139,12 @@ export {
   parseBillingError,
   isBillingError,
   formatBillingErrorForUI,
+  FEATURE_DISABLED_CODE,
+  isFeatureDisabledError,
+  featureDisabledKey,
   type ApiErrorFields,
   type BillingErrorUI,
+  type FeatureDisabledError,
 } from './core/http/api/errors';
 
 /**
@@ -339,7 +344,7 @@ export { stripTrailingSlashes } from './platform/strings';
  * `ToolView`'s new `outputParsed`/`outputText` fields and its embedded-
  * failure detection (a `state.status: "completed"` tool part whose JSON
  * output body carries `success: false` or a top-level `error` — the shape
- * router/executor tools like `web_search` commonly return on failure — now
+ * router/connector tools like `web_search` commonly return on failure — now
  * classifies as `status: 'error'` instead of rendering as a success with raw
  * JSON inside). Also available from `@kortix/sdk/turns`.
  */
@@ -352,6 +357,7 @@ export {
   type TodoItem,
   type ToolViewModel,
   type WebSearchResultItem,
+  shellExitCode,
   toolViewModel,
 } from './core/turns/view-model';
 
@@ -373,11 +379,13 @@ export {
 } from './core/rest/projects-client/agent-config';
 
 export * from './core/client/kortix';
+export * from './core/http/abort-error';
 export * from './core/http/api-client';
 export * from './core/http/auth';
 export * from './core/http/config';
 export * from './core/http/feature-flags';
 export * from './core/http/fresh-sessions';
+export * from './core/http/impersonation';
 export * from './core/http/instance-routes';
 export * from './core/http/opencode-errors';
 export * from './core/rest/platform-client';

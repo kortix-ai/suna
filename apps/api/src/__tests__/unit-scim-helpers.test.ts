@@ -85,3 +85,56 @@ describe('buildInviteUser', () => {
     expect(u.externalId).toBeNull();
   });
 });
+
+/**
+ * Deprovisioning through SCIM must release the paid seat.
+ *
+ * Removing the member row is not the whole offboarding: on a per-seat account
+ * the Stripe subscription QUANTITY is what gets invoiced, and only
+ * `onMemberRemoved` lowers it. The UI removal path has always called it
+ * (accounts/core/members.ts:549, :704). SCIM never did — so an enterprise
+ * offboarding through its IdP, the automated channel we tell enterprises to
+ * use, kept paying for every departed employee indefinitely. Nothing reconciles
+ * seats periodically, so it never self-healed.
+ *
+ * Asserted against the source: `deprovisionMember` is module-private, its two
+ * collaborators are a DB delete and a Stripe round-trip, and the property that
+ * matters is simply that the call is on the path at all.
+ */
+import { readFileSync as readScimSource } from 'node:fs';
+import { join as joinScimPath } from 'node:path';
+
+const SCIM_USERS_SRC = readScimSource(
+  joinScimPath(import.meta.dir, '..', 'scim', 'users.ts'),
+  'utf8',
+);
+
+describe('SCIM deprovision releases the seat', () => {
+  function deprovisionBody(): string {
+    const body = SCIM_USERS_SRC.split('async function deprovisionMember(')[1]?.split('\n}\n')[0];
+    expect(body).toBeTruthy();
+    // Guard the extraction: if this stops covering the member delete, every
+    // assertion below passes vacuously.
+    expect(body).toContain('delete(accountMembers)');
+    return body as string;
+  }
+
+  test('onMemberRemoved is called on the deprovision path', () => {
+    expect(deprovisionBody()).toContain('onMemberRemoved(accountId, userId)');
+  });
+
+  test('it is awaited, so the seat release cannot race the SCIM reply', () => {
+    expect(deprovisionBody()).toContain('await onMemberRemoved(');
+  });
+
+  test('the seat release happens after the member row is gone', () => {
+    // Ordering matters: syncSeatQuantity counts remaining members, so releasing
+    // before the delete would recount the leaving member and change nothing.
+    const body = deprovisionBody();
+    expect(body.indexOf('delete(accountMembers)')).toBeLessThan(body.indexOf('onMemberRemoved('));
+  });
+
+  test('the module actually imports it', () => {
+    expect(SCIM_USERS_SRC).toContain("from '../billing/services/seat-management'");
+  });
+});

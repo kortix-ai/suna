@@ -1,3 +1,8 @@
+import { DEFAULT_MAX_REQUEST_BYTES } from '@kortix/llm-gateway';
+import { hydrateEnvironmentSecret } from '@kortix/shared';
+
+hydrateEnvironmentSecret();
+
 function required(name: string): string {
   const value = process.env[name];
   if (!value) throw new Error(`${name} is required`);
@@ -33,18 +38,21 @@ export const config = {
     baseUrl: process.env.LANGFUSE_HOST,
   },
   captureBodies: flag('GATEWAY_CAPTURE_BODIES', true),
-  maxCapturedBodyBytes: optionalInt('GATEWAY_MAX_CAPTURED_BODY_BYTES', 256 * 1024),
-  // 0 = disabled. Set to a byte ceiling (e.g. 1048576 for 1 MiB) to reject
-  // oversized requests with a 413 before they reach an upstream.
-  maxRequestBytes: optionalInt('GATEWAY_MAX_REQUEST_BYTES', 0),
-  // A provider can return HTTP 200 and then send zero stream bytes. Cancel that
-  // candidate before the caller's 125-second transport deadline expires.
-  streamProbeTimeoutMs: optionalInt('GATEWAY_STREAM_PROBE_TIMEOUT_MS', 30_000),
+  // Default: 8 MiB. This accepts the measured 2,023,225-byte Aster request and
+  // rejects accidental/untrusted oversized payloads before upstream dispatch.
+  maxRequestBytes: optionalInt('GATEWAY_MAX_REQUEST_BYTES', DEFAULT_MAX_REQUEST_BYTES),
+  // 0/unset uses the default first-byte COMMIT deadline (30s). Exceeding it no
+  // longer fails a request — it hands the stream to the relay, which heartbeats
+  // downstream while the model works. A positive value is an exact operator
+  // override. See PROBE_COMMIT_DEADLINE_MS in @kortix/llm-gateway.
+  streamProbeTimeoutMs: optionalInt('GATEWAY_STREAM_PROBE_TIMEOUT_MS', 0),
   retry: {
     maxAttempts: optionalInt('GATEWAY_RETRY_MAX_ATTEMPTS', 3),
     baseDelayMs: optionalInt('GATEWAY_RETRY_BASE_MS', 300),
     maxDelayMs: optionalInt('GATEWAY_RETRY_MAX_MS', 8_000),
-    timeoutMs: optionalInt('GATEWAY_UPSTREAM_TIMEOUT_MS', 120_000),
+    // 90 minutes. Bounds time-to-headers when streaming, and the full
+    // completion when not — see DEFAULTS in resilience/retry.ts.
+    timeoutMs: optionalInt('GATEWAY_UPSTREAM_TIMEOUT_MS', 90 * 60_000),
   },
   breaker: {
     failureThreshold: optionalInt('GATEWAY_BREAKER_THRESHOLD', 5),

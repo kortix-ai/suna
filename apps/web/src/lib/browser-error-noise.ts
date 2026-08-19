@@ -94,8 +94,34 @@ const KNOWN_TEST_NOISE_MESSAGES = [
 ] as const;
 
 const KNOWN_DOM_MUTATION_NOISE_MESSAGES = [
+  // V8/Chromium (Chrome/Edge) wording — the canonical DOM mutation error
+  // surfaced when React's reconciler or a portal tries to mutate a DOM node
+  // that has been moved/removed by an extension or the browser itself.
   "Failed to execute 'insertBefore' on 'Node': The node before which the new node is to be inserted is not a child of this node.",
   "Failed to execute 'removeChild' on 'Node': The node to be removed is not a child of this node.",
+  // Gecko/Firefox wording for the SAME DOM mutation class — a
+  // `HierarchyRequestError` surfaced when Next.js's live-feedback/HMR module
+  // (`_next-live/feedback/…`) manipulates a node whose ancestor changed
+  // (extension DOM rewrite, devtools overlay, or a React portal moved mid-
+  // commit). The `InvalidNodeTypeError` type + "The supplied node is
+  // incorrect or has an incorrect ancestor for this operation." message is
+  // Gecko's canonical DOM-API phrasing for the same `insertBefore`/
+  // `removeChild` race the V8 entries above cover. Better Stack pattern
+  // 9e6a70ffdb26ba2ab9f821fe8772f51b082d6a9b0e2c9f50b2130cde0c3e6438
+  // (Kortix Frontend prod, application_id 2346967): `InvalidNodeTypeError`,
+  // 2 occurrences / 0 identified users, last 2026-08-11 16:37:15 UTC,
+  // release `cd9dfccec1fb7e41a6726e9e45fd678cf428cc3a` (v0.12.8 prod), call
+  // site function `te` in chunk
+  // `app:///_next-live/feedback/913.f924585152f5e22503e7.js?dpl=dpl_…`
+  // (Next.js live feedback), request URL a co-worker session page, Firefox
+  // 153 on macOS, mechanism
+  // `auto.browser.global_handlers.onunhandledrejection` (UNCAUGHT,
+  // `handled:false`). The existing V8/JSC patterns (covering only the
+  // `insertBefore`/`removeChild` wording) did NOT match the Firefox wording,
+  // so this sibling leaked to Better Stack. Adding the Gecko string to the
+  // existing array (no matcher change — `containsKnownPattern` matches it the
+  // same way as the V8 entries) is the simplest, lowest-risk fix.
+  "The supplied node is incorrect or has an incorrect ancestor for this operation.",
 ] as const;
 
 const KNOWN_HYDRATION_NOISE_MESSAGES = [
@@ -143,7 +169,10 @@ const BILLING_GATE_EXPECTED_MESSAGES = [
   // `no_account` — no credit account found.
   'No credit account found. Complete account setup first.',
   // `subscription_required` — per-seat account with no active subscription.
-  'Subscribe to activate your seat. $20/teammate per month includes wallet credits for compute and LLM usage.',
+  // Must match apps/api/src/billing/services/billing-gate.ts VERBATIM. The seat
+  // price moved to $40 there and this copy was left at $20, so the filter
+  // stopped matching and an expected billing state has been paging as an error.
+  'Subscribe to activate your seat. $40/teammate per month includes wallet credits for compute and LLM usage.',
 ] as const;
 
 // Expected "no compaction model configured" configuration state. The SDK's
@@ -172,6 +201,92 @@ const BILLING_GATE_EXPECTED_MESSAGES = [
 const COMPACTION_NO_MODEL_EXPECTED_MESSAGES = [
   'No model available for compaction. Please configure a model in settings.',
 ] as const;
+
+// Expected "model not available for this account" UI validation state. The API
+// returns a TYPED 409 with `code: 'model_not_servable'`
+// (`apps/api/src/projects/routes/r4.ts:3045` and `channel-bindings.ts:288`, both
+// via `isModelServableForAccount`) when a user picks a model their account
+// can't use — a free-tier managed model, or a BYOK model whose provider isn't
+// connected. The SAME wording is also returned as a 400 with
+// `code: 'INVALID_SESSION_MODEL'` (`apps/api/src/projects/routes/r7.ts:2811`
+// and `apps/api/src/projects/lib/sessions.ts:741`) for an explicit session
+// model. Both are EXPECTED, user-facing validation states — the SDK's
+// `useModelDefaults` `setMutation` `onError` already branches on the typed
+// 409 code and surfaces a user-facing toast via `platformConfig().onToast`,
+// and `makeRequest` already classifies the typed 409 as SILENT to `onError`
+// (Sentry) — see `MODEL_NOT_SERVABLE_CODE` in
+// `packages/sdk/src/core/http/api-client.ts` (PR #6082).
+//
+// BUT every call site fire-and-forgets the returned promise —
+// `void setAccountDefault(...)` / `void setAgentDefault(...)` /
+// `void setProjectDefault(...)` in `session-chat.tsx:3416/3422/3426`,
+// `agents-view.tsx:297`, `gateway-view.tsx:137`, and `models-tab.tsx:156`.
+// The chain: `setModelDefault` → `unwrap(backendApi.put(...))` THROWS the
+// `ApiError` on `!res.success` → `mutateAsync` rejects → the `async` wrapper's
+// (`setAccountDefault`/…) promise rejects → `void` discards the rejected
+// promise with no `.catch()` → UNHANDLED rejection → Sentry's
+// `onunhandledrejection` global handler auto-captures it. The `setMutation`
+// `onError` SWALLOWS the rejection inside react-query (the toast fires), but
+// react-query v5's `onError` does NOT prevent `mutateAsync`'s returned
+// promise from rejecting, so the `void`-discarded promise still surfaces as
+// an uncaught global rejection. The SDK `makeRequest` gate silences the
+// `onError` (Sentry) callback, but the unhandled rejection happens at the
+// `.then()`/`void` level — AFTER `makeRequest` returned — so the gate never
+// sees it. This left the 7 occurrences STILL reaching Sentry as UNCAUGHT
+// `onunhandledrejection` (`handled:false`) post-#6082.
+//
+// Better Stack pattern
+// 9784f440a71c4430667ed3aca8b727c065f38c226ecad3f33f37c7a86476a576
+// (Kortix Frontend prod, application_id 2346967): `ApiError`, message
+// `Model "openai/gpt-5.4-mini" is not available for this account`, 7
+// occurrences / 0 identified users, first 2026-08-06 05:09 UTC (ALL
+// post-v0.12.4, release `160f0b286f0ad5c53debc343d5e055241694e24d`),
+// request URL `https://kortix.com/projects/377b3ef0-…/sessions/d3d542…`
+// (co-worker session page), browser Android Chrome mobile, mechanism
+// `auto.browser.global_handlers.onunhandledrejection` (UNCAUGHT,
+// `handled:false`).
+//
+// This is the leak-path backstop for the #6082 SDK gate, sibling to
+// `isExpectedBillingGateMessage` / `isExpectedCompactionNoModelMessage`
+// (also `ApiError`/Error throws that leak via `void` fire-and-forget →
+// `onunhandledrejection`). The model name varies (e.g.
+// `openai/gpt-5.4-mini`, `nvidia/minimaxai/minimax-m3`), so — unlike the
+// billing-gate / compaction exact-string matchers — this is a REGEX anchored
+// on the EXACT API wording `Model "…" is not available for this account`
+// (the `Model "` prefix and `is not available for this account` suffix are
+// the API's own canonical strings across all four emitting routes), with the
+// canonical `ApiError: ` / `Unhandled promise rejection: ` wrappers stripped
+// so all capture paths (window.onerror, onunhandledrejection, Sentry
+// exception) classify consistently. Deliberately message-only with NO
+// first-party frame negative guard — mirroring the billing-gate / compaction
+// matchers — because (a) the message is the API's own canonical wording
+// (never a coincidental app-logic phrase), (b) the SDK gate already handles
+// the `onError` path, and (c) the unhandled-rejection stack DOES carry
+// resolved first-party `apps/web/src/…` call-site frames (the `void`
+// call sites in `session-chat.tsx`/`agents-view.tsx`/`gateway-view.tsx`), so a
+// first-party negative guard would FAIL to suppress the actual prod noise.
+// A genuine first-party `throw new Error('Model "…" is not available for this
+// account')` regression is vanishingly unlikely (the wording is the API's,
+// not app logic) AND is already covered by the SDK's `onError` Sentry
+// capture for non-409 cases. NOT added to `sentry.client.config.ts`'s
+// `ignoreErrors` list as a bare regex — that gate has no frame context and
+// the message is specific enough that the `beforeSend` hook
+// (`shouldIgnoreSentryBrowserNoise`) is the safe gate; the anchored regex
+// below covers frameless `onunhandledrejection` captures too.
+const MODEL_NOT_SERVABLE_NOISE_PATTERNS: ReadonlyArray<RegExp> = [
+  // The bare API message (the SDK `ApiError.message`), with any non-empty
+  // model id between the quotes.
+  /^Model "[^"]+" is not available for this account$/,
+  // `ApiError: `-prefixed wrapper (e.g. a console/error-boundary re-throw, or
+  // Sentry's exception `value` formatting).
+  /^ApiError: Model "[^"]+" is not available for this account$/,
+  // An unhandled-rejection wrapper preserving the message (Sentry
+  // `onunhandledrejection` auto-capture, `handled:false`).
+  /^Unhandled promise rejection: Model "[^"]+" is not available for this account$/,
+  // An unhandled-rejection wrapper around an `ApiError:`-prefixed re-throw
+  // (the full wrapper stack).
+  /^Unhandled promise rejection: ApiError: Model "[^"]+" is not available for this account$/,
+];
 
 // Stale Next.js webpack runtime chunk after a deploy. A long-lived tab (or
 // cached HTML) holds app chunks from one Vercel deployment (`?dpl=dpl_…`) while
@@ -232,7 +347,8 @@ const OLD_WEBKIT_REGEX_NOISE_PATTERNS = [
 // first-party app code (only from Paper Shaders' library internals), so the
 // message wording alone is specific enough to safely classify as noise without
 // a chunk-frame anchor (unlike the generic old-browser SyntaxError class). The
-// matching covers all four JS engine wordings for the same null-context bug:
+// matching covers all five JS-engine / DOM-binding wordings for the same
+// null-context bug:
 //   - V8 (Chrome/Edge):          `Cannot read properties of null (reading '<m>')`
 //   - old JSC (old Safari/iOS):  `Cannot read property '<m>' of null`
 //   - SpiderMonkey (Firefox):    `can't access property "<m>"<…>` (the variable
@@ -251,6 +367,32 @@ const OLD_WEBKIT_REGEX_NOISE_PATTERNS = [
 //                                method so a generic JSC `null is not an object
 //                                (evaluating '<other expr>')` throw does NOT
 //                                match (pattern `a8754de5…`).
+//   - Gecko (Firefox) DOM-binding: `WebGL2RenderingContext.<m>: Argument 1 is
+//                                not an object.` — Firefox's DOM bindings throw
+//                                on the method call itself (a DIFFERENT code
+//                                path from SpiderMonkey's engine TypeError
+//                                above) when the `this` binding is not a valid
+//                                object (here the null WebGL2 context). Pattern
+//                                `fd773de2…` (Firefox 152 on Android 17,
+//                                `getAttribLocation`, marketing homepage).
+//   - Paper Shaders library's OWN internal guard: the bare `this.gl is null`
+//                                string. This is NOT a JS-engine TypeError and
+//                                NOT a Gecko DOM-binding message — it is the
+//                                library's OWN explicit `throw new Error(
+//                                'this.gl is null')` (or equivalent assertion
+//                                message) when its internal state check detects
+//                                that `this.gl` (the WebGL2 context it cached at
+//                                mount) is `null`. Whereas every other entry is
+//                                the JS engine / DOM binding wording the library
+//                                triggered by dereferencing the null context,
+//                                this is the library's OWN wording — it fires on
+//                                engines that DON'T surface a JS-engine
+//                                TypeError for the same deref (e.g. some Firefox
+//                                / SpiderMonkey builds where the method call is
+//                                short-circuited by the library's guard before
+//                                the engine ever throws). Pattern `f0c8c422…`
+//                                (Firefox 137.0 on Windows 10, Gecko engine,
+//                                `/projects/:id` project page, post-v0.12.7).
 // `TypeError: ` / `Error: ` / `Unhandled promise rejection: ` wrappers are
 // stripped before matching so all capture paths (window.onerror,
 // onunhandledrejection, Sentry exception) classify consistently.
@@ -288,6 +430,72 @@ const PAPER_SHADER_NULL_CONTEXT_NOISE_PATTERNS = [
   // class after V8 (#4544), old JSC, and SpiderMonkey (#5172).
   "null is not an object (evaluating 'this.gl.getSupportedExtensions')",
   "null is not an object (evaluating 'this.gl.getAttribLocation')",
+  // Gecko / Firefox DOM-binding wording. When the WebGL2 context is `null` /
+  // invalid (context loss, blacklisted GPU, stripped WebView), Firefox's DOM
+  // bindings throw on the method call itself with the canonical Gecko DOM-API
+  // shape `<Interface>.<method>: Argument 1 is not an object.` — the
+  // `Argument 1 is not an object.` is Gecko's standard message for a `this`
+  // binding that is not a valid object (here the null WebGL2 context). This is
+  // the SAME null-WebGL-context crash class as the V8/JSC/SpiderMonkey entries
+  // above, just with Firefox's DOM-API error wording instead of an engine
+  // TypeError. Better Stack pattern
+  // fd773de23b8dbee3551f1132df1dc048a80307133e1e513ca2422ca2bc4fd29a
+  // (Kortix Frontend prod, application_id 2346967): `TypeError`, message
+  // `WebGL2RenderingContext.getAttribLocation: Argument 1 is not an object.`,
+  // 1 occurrence / 0 identified users, first 2026-08-07 19:34:33 UTC
+  // (post-v0.12.5, release `e2540c341c6f43536a7cf0e0b51599e9928f055c`),
+  // call site `setupPositionAttribute` in chunk
+  // `app:///_next/static/immutable/chunks/24zv25pg_k-nz.js`, request URL
+  // `https://kortix.com/` (marketing homepage), browser Firefox 152.0 on
+  // Android 17 (Gecko engine), mechanism
+  // `auto.browser.global_handlers.onunhandledrejection` (UNCAUGHT,
+  // `handled:false`). The `getSupportedExtensions` sibling is added
+  // preemptively — same class, Firefox may emit it too. The
+  // `WebGL2RenderingContext.<method>:` prefix is the Gecko DOM-binding's own
+  // canonical marker (the interface + method name), never emitted by
+  // first-party app code, so the message wording alone is specific enough —
+  // same message-only contract as the other engine variants (no chunk-frame
+  // anchor, no first-party negative guard). Note: `stripErrorWrappers`'s
+  // `[A-Za-z]+Error:` regex does NOT strip the
+  // `WebGL2RenderingContext.<method>:` prefix (it contains a `.`), so the
+  // pattern is matched verbatim by `.includes()` after the `TypeError: ` /
+  // `Unhandled promise rejection: ` wrappers are stripped.
+  'WebGL2RenderingContext.getSupportedExtensions: Argument 1 is not an object.',
+  'WebGL2RenderingContext.getAttribLocation: Argument 1 is not an object.',
+  // Paper Shaders library's OWN internal guard wording — the SIXTH variant of
+  // this null-WebGL-context crash class, and the ONLY one that is the library's
+  // OWN throw rather than a JS-engine TypeError or a Gecko DOM-binding message.
+  // When the library's internal state check detects that `this.gl` (the WebGL2
+  // context it cached at mount) is `null` (after a context-loss / GPU-blacklist
+  // event, or a stripped WebView that returned `null` from `getContext('webgl2')`
+  // and bypassed the `supportsWebGL2()` probe), it throws its OWN message
+  // `this.gl is null` directly — NOT a JS-engine `TypeError` from dereferencing
+  // the null context, and NOT a Gecko DOM-binding message. This fires on engines
+  // that DON'T surface a JS-engine TypeError for the same deref (e.g. some
+  // Firefox / SpiderMonkey builds where the library's own guard short-circuits
+  // the method call before the engine ever throws). Better Stack pattern
+  // f0c8c42213b12122948f4c8307b1eedb6a51afe9072460604e3be14e0277d3f2
+  // (Kortix Frontend prod, application_id 2346967): `TypeError`, message
+  // `this.gl is null`, 1 occurrence / 0 identified users, first 2026-08-10
+  // 14:35:19 UTC (post-v0.12.7), request URL
+  // `https://kortix.com/projects/1d0153d2-…` (project page), browser Firefox
+  // 137.0 on Windows 10 (Gecko engine), mechanism
+  // `auto.browser.global_handlers.onunhandledrejection` (UNCAUGHT,
+  // `handled:false`), 3 frames in chunk
+  // `app:///_next/static/immutable/chunks/2_t47hwky1w2m.js` (Paper Shaders
+  // library). Message-only contract (no chunk-frame anchor, no first-party
+  // negative guard) — same as the other engine variants — because (a) `this.gl
+  // is null` is the library's OWN canonical wording, never a coincidental
+  // app-logic phrase (no first-party `apps/web/src/…` code holds a `this.gl`
+  // field — confirmed by `rg "this\.gl" apps/web/src`), and (b) the unhandled-
+  // rejection stack carries only minified `@paper-design/shaders` chunk frames,
+  // so a first-party negative guard would never fire for this class anyway. The
+  // substring match is specific enough that near-worded first-party null-derefs
+  // (`this.foo is null`, `this.context is null`, `this.canvas is null`, …) do NOT
+  // match — only the exact `this.gl is null` token does. `stripErrorWrappers`
+  // strips `TypeError: ` / `Unhandled promise rejection: ` prefixes, leaving the
+  // bare `this.gl is null` to match verbatim.
+  'this.gl is null',
 ] as const;
 
 // Paper Shaders (`@paper-design/shaders-react`) WebGL-unsupported deliberate
@@ -362,6 +570,72 @@ const PAPER_SHADER_NULL_CONTEXT_NOISE_PATTERNS = [
 const PAPER_SHADER_WEBGL_UNSUPPORTED_NOISE_MESSAGE =
   'Paper Shaders: WebGL is not supported in this browser';
 
+// Canvas `getImageData` out-of-memory noise — a third-party canvas library
+// (e.g. a decorative background / hyper-logo animation effect on the marketing
+// homepage) called `CanvasRenderingContext2D.getImageData()` and the browser ran
+// out of memory allocating the `ImageData` buffer, surfacing as
+//   `Failed to execute 'getImageData' on 'CanvasRenderingContext2D': Out of
+//    memory at ImageData creation`
+// (V8/Chrome wording — a `RangeError`, NOT a `TypeError`). This is TRANSIENT
+// browser resource exhaustion: the canvas was too large / the tab was under
+// memory pressure / the device is low-RAM, so the engine failed the buffer
+// allocation. It is NOT a deterministic code bug — the same canvas renders fine
+// on the next visit once memory frees up. The throw fires from a
+// third-party library's `addEventListener` callback (Sentry's `BrowserApiErrors`
+// integration auto-wraps `addEventListener` on `EventTarget` and captures the
+// throw as `handled:false`, UNCAUGHT — it never reached a React error
+// boundary), and the stack frames are all minified `_next/static/chunks/…`
+// library frames with NO resolved first-party `apps/web/src/…` source.
+//
+// Better Stack pattern
+// b4b4384734b09b411e476591e3f9ac3ad88f110e0be91aae390913038f6844f0
+// (Kortix Frontend prod, application_id 2346967): `RangeError`, message
+// `Failed to execute 'getImageData' on 'CanvasRenderingContext2D': Out of
+// memory at ImageData creation`, 1 occurrence / 0 identified users, last
+// 2026-08-07 10:09:13 UTC, release
+// `160f0b286f0ad5c53debc343d5e055241694e24d` (v0.12.4 prod), call site
+// function `Image.<anonymous>`, call site file
+// `app:///_next/static/chunks/0fl4m2af7bsiq.js` (minified), request URL
+// `https://kortix.com/` (marketing homepage), browser Chrome 130 on Linux,
+// mechanism `auto.browser.browserapierrors.addEventListener` (UNCAUGHT,
+// `handled:false`). Stack: 2 frames, both minified third-party canvas library
+// chunk frames — NO first-party `apps/web/src/…` frame.
+//
+// The message is the browser's OWN canonical out-of-memory wording for a
+// `CanvasRenderingContext2D.getImageData()` allocation failure (the
+// `Failed to execute 'getImageData' on 'CanvasRenderingContext2D':` prefix is
+// V8's DOM-bindings exception format; the `Out of memory at ImageData
+// creation` suffix is the specific allocation-failure reason). This exact
+// string is the browser's, never an app-logic phrase — a real first-party
+// `throw new RangeError('…Out of memory at ImageData creation…')` regression
+// is vanishingly unlikely AND would de-minify to `apps/web/src/…` frames.
+// BUT `getImageData` IS a Canvas 2D API method that first-party code CAN call
+// (e.g. an image-processing helper, a screenshot/export path, a pixel-reader),
+// so — mirroring `isSafariGenericSecurityErrorNoise` /
+// `isOldBrowserDomNullDerefNoise` — the matcher carries a NEGATIVE guard: if
+// ANY frame (or the window.onerror `filename`) resolves to a de-minified
+// first-party `apps/web/src/…` source path, the event KEEPS reporting (our
+// own code is the `getImageData` caller → a real first-party OOM regression
+// we want to fix). Only events with NO resolved first-party frame (the prod
+// noise shape: all minified third-party canvas library chunk frames, or
+// frameless) are dropped. A frameless capture with this exact message still
+// classifies as noise — the message alone is the browser's canonical OOM
+// wording and is specific enough (the `CanvasRenderingContext2D` +
+// `getImageData` + `ImageData creation` tokens together pin this single DOM
+// API call site). Deliberately NOT added to
+// `sentry.client.config.ts`'s `ignoreErrors` list — that gate has no frame
+// context, so a bare-string match there could swallow a real first-party
+// `getImageData` OOM regression the negative guard exists to preserve; the
+// frame-aware `beforeSend` hook (which calls `shouldIgnoreSentryBrowserNoise`)
+// is the only safe gate. The runtime `window.onerror` gate
+// (`shouldIgnoreBrowserRuntimeNoise`) is also wired so a runtime capture with
+// the exact message + no first-party `filename` drops.
+const CANVAS_GETIMAGE_DATA_OOM_NOISE_PATTERNS: ReadonlyArray<RegExp> = [
+  // The exact V8/Chrome message. Anchored as a full-match (the trailing
+  // `Out of memory at ImageData creation` is the specific OOM reason).
+  /^Failed to execute 'getImageData' on 'CanvasRenderingContext2D': Out of memory at ImageData creation$/,
+];
+
 // Old-browser / stripped-down-WebView minified-chunk parse failures. When a
 // browser that cannot parse modern minified JS (old Safari/iOS, legacy Android
 // WebView, in-app browsers, mail-client preview WebViews) tries to evaluate a
@@ -387,6 +661,78 @@ const OLD_BROWSER_SYNTAX_PARSE_NOISE_PATTERNS: ReadonlyArray<RegExp> = [
   /^Unexpected token\b/,
   /^Invalid or unexpected token$/,
   /^Cannot use import statement outside a module$/,
+];
+
+// Old-browser third-party-library DOM null-deref noise on the marketing
+// homepage. Two SIBLING patterns, both `TypeError: Cannot read properties of
+// null (reading '<X>')` (V8 wording; old JSC says `Cannot read property '<X>'
+// of null`) from minified third-party library internals running on VERY OLD
+// browsers hitting the marketing homepage (`https://kortix.com/`):
+//
+//   Pattern 1 (2 occurrences, last 2026-08-06 11:11:14 UTC):
+//     Better Stack pattern
+//     e02e022f7433a02c7acdc9ae33c3dd1bdec938eeb694f0bf83d290c1d696d853
+//     `Cannot read properties of null (reading 'scrollLeft')`, call site
+//     function `measureScroll` in chunk `0d5wqj98qv1e9.js` (minified). User
+//     agents: Windows 7 Chrome (very old) + Chrome 95 Linux (very old).
+//     Mechanism `auto.browser.global_handlers.onerror` (UNCAUGHT,
+//     `handled:false` — never reached a React error boundary).
+//
+//   Pattern 2 (2 occurrences — sibling, same timestamp):
+//     Better Stack pattern
+//     8ab4ae816505dc3a17c7b8258e6894b3964ab7d10056afc47477833824fa8648
+//     `Cannot read properties of null (reading 'appendChild')`, call site
+//     function `ft` in chunk `0foj1ouh5ijrj.js` (minified). Same old UAs, same
+//     UNCAUGHT global `onerror`, same marketing homepage.
+//
+// Classification: browser-compatibility noise. `measureScroll` and `ft` are
+// THIRD-PARTY library internals (a smooth-scroll / scroll-measurement library
+// and an animation/DOM-manipulation helper respectively), not first-party
+// Kortix code — the minified call-site function names (`measureScroll`, `ft`)
+// do not appear in `apps/web/src/…` source. The throws happen because very old
+// browsers (Win7 Chrome, Chrome 95) have quirkier DOM behavior: a scroll-
+// measurement helper reaches for a DOM element that resolved to `null` (the
+// element was not in the DOM yet, or the old browser returned `null` from a
+// `querySelector`/`getBoundingClientRect` path), then accesses `.scrollLeft` on
+// it → `TypeError`. Same for `appendChild`: an animation library calls
+// `parent.appendChild(child)` on a `parent` that resolved to `null` in the old
+// browser. These are 2 occurrences each, 0 identified users, marketing page
+// only — not a product flow, not a deterministic app regression.
+//
+// `scrollLeft` and `appendChild` are STANDARD DOM API method names that
+// first-party React code DOES call (e.g. `apps/web/src/hooks/use-proximity-
+// hover.ts` reads `container.scrollLeft`, `apps/web/src/features/workspace/
+// project-sidebar/session-title.tsx` sets `el.scrollLeft`, ref-callback
+// `appendChild` calls exist in portal/tooltip code), so matching on the bare
+// message would swallow a real first-party null-deref regression. The matcher
+// therefore requires BOTH the exact V8/old-JSC message AND a NEGATIVE guard:
+// if ANY frame (or the window.onerror `filename`) resolves to a de-minified
+// first-party `apps/web/src/…` source path, the event KEEPS reporting — that
+// means our own code is the null-deref culprit and is actionable to fix. The
+// prod events carry only minified `app:///_next/static/chunks/…` chunk frames
+// (the third-party library internals) + an `<anonymous>` frame, so the
+// negative guard does NOT fire for them. A frameless capture with one of these
+// exact messages still classifies as noise: `measureScroll` and the minified
+// `ft` are third-party library internals, and the messages are specific
+// enough (the DOM method names `scrollLeft`/`appendChild` paired with `null`
+// access) that a frameless capture is safe to drop — a real first-party
+// `el.scrollLeft` / `parent.appendChild` null-deref almost always has a
+// resolvable frame with a stack. Deliberately NOT added to
+// `sentry.client.config.ts`'s `ignoreErrors` list — that gate has no frame
+// context, so a bare-string match there would swallow a real first-party
+// null-deref regression the negative guard exists to preserve; the frame-aware
+// `beforeSend` hook (which calls `shouldIgnoreSentryBrowserNoise`) is the only
+// safe gate. The runtime `window.onerror` gate
+// (`shouldIgnoreBrowserRuntimeNoise`) is also wired so a frameless onerror
+// capture with the exact message + no first-party `filename` drops.
+const OLD_BROWSER_DOM_NULL_DEREF_NOISE_PATTERNS: ReadonlyArray<RegExp> = [
+  // V8 (Chrome/Edge/Opera): the observed production wording for both siblings.
+  /^Cannot read properties of null \(reading 'scrollLeft'\)$/,
+  /^Cannot read properties of null \(reading 'appendChild'\)$/,
+  // Old JSC (old Safari/iOS): `Cannot read property '<X>' of null` — different
+  // engine, same old-browser DOM null-deref class.
+  /^Cannot read property 'scrollLeft' of null$/,
+  /^Cannot read property 'appendChild' of null$/,
 ];
 
 // Android System WebView native-bridge instrumentation noise. The Android
@@ -705,6 +1051,18 @@ const INJECTED_APP_SOURCE_PATTERNS = [
   /^app:\/\/\/client_data\/[^/]+\/script\.js$/,
   /^app:\/\/\/embed\/embed\.js$/,
   /^app:\/\/\/injectedScript\.bundle\.js$/,
+  // CAPTCHA / anti-bot browser-extension (DataDome, Cloudflare, or similar
+  // bot-detection service) injected content script. The extension injects an
+  // interceptor script into every page as the synthetic source
+  // `app:///content/captcha/mt_captcha/interceptor.js` (the same `app:///`
+  // empty-host origin shape as the other injected/extension sources above —
+  // distinct from a first-party `app:///_next/…` bundle frame and a
+  // de-minified `apps/web/src/…` source path). Its internal `widgetId`
+  // configuration race (see `isCaptchaInterceptorNoise`) leaks to Better Stack
+  // as a `TypeError: Cannot read properties of undefined (reading 'widgetId')`
+  // from a minified extension function (`d`); the throw is in the extension's
+  // own injected code, never in first-party Kortix code.
+  /^app:\/\/\/content\/captcha\/mt_captcha\/interceptor\.js$/,
 ] as const;
 
 // Browser userscript-manager (Tampermonkey / Violentmonkey / Greasemonkey /
@@ -1190,6 +1548,130 @@ export function isUserscriptManagerNoise(input: {
   return sources.some(isUserscriptManagerInjectedSource);
 }
 
+// OneTrust cookie-consent SDK JSON-parse noise. OneTrust
+// (`https://onetrust.com`) is a third-party cookie-consent / IAB TCF banner
+// vendors inject into pages via a small bootstrap stub
+// (`otSDKStub.js?did=<domainId>`) that XHR-fetches the consent configuration
+// for the site's domain. When the SDK is misconfigured / the domain ID is
+// `undefined` / the consent endpoint returns an empty or truncated body
+// (a CORS preflight failure, a 5xx, a network abort, or the page is loaded
+// in a stripped-down browser — an old iOS Safari that cannot complete the
+// XHR), the stub's `XMLHttpRequest` `onload` handler calls `JSON.parse()` on
+// the empty/truncated response and throws the canonical V8/JSC
+// `SyntaxError: Unexpected end of JSON input`. The throw originates INSIDE
+// the OneTrust SDK's own `otSDKStub.js` script (function `r.onload`), never
+// in first-party Kortix code: the `did=undefined` query param is the SDK's
+// OWN misconfiguration signal (the domain ID never resolved), and the
+// `app:///scripttemplates/otSDKStub.js` source is OneTrust's synthetic
+// injected-script origin (the same `app:///` empty-host origin shape as the
+// other injected/extension sources — distinct from a first-party
+// `app:///_next/…` bundle frame and a de-minified `apps/web/src/…` source
+// path). Sentry's `BrowserApiErrors` integration auto-wraps
+// `XMLHttpRequest.onload` and captures the throw as `handled:false`
+// (UNCAUGHT — never reached a React error boundary), so it leaks to Better
+// Stack.
+//
+// Better Stack pattern
+// aa1efd3fb7a9f6840d4eb25b881d2b12ac2e6f3c8dfe3158fbd3e9fc753a0526
+// (Kortix Frontend prod, application_id 2346967): `SyntaxError`, message
+// `Unexpected end of JSON input`, 1 occurrence / 0 identified users, last
+// 2026-08-11 23:03:30 UTC, release
+// `cd9dfccec1fb7e41a6726e9e45fd678cf428cc3a` (v0.12.8 prod), request URL
+// `https://kortix.com/auth` (auth page — the consent banner loads there
+// before the user is signed in), browser Safari on iOS 13.2.3 (iPhone — a
+// very old iOS whose XHR/JSON paths are quirkier), mechanism
+// `auto.browser.browserapierrors.xhr.onload` (UNCAUGHT, `handled:false`).
+// Stack frames (3, all `in_app:true`):
+//   1. `app:///_next/static/immutable/chunks/1zqaq83quwhm5.js` fn
+//      `XMLHttpRequest.r` (the Next.js webpack runtime chunk that
+//      `XMLHttpRequest` was monkey-patched through — the SCHEDULING frame,
+//      NOT the throw site).
+//   2. `app:///scripttemplates/otSDKStub.js?did=undefined` fn `r.onload`
+//      (THROW SITE — the OneTrust SDK's `onload` handler where the
+//      `JSON.parse` runs; `did=undefined` is the SDK's own misconfiguration
+//      marker).
+//   3. `<anonymous>` fn `JSON.parse` (the actual `JSON.parse` call the
+//      OneTrust SDK makes on the empty body).
+// NO first-party `apps/web/src/…` frame — the throw is in the OneTrust SDK's
+// own injected script, never in our code.
+//
+// The `Unexpected end of JSON input` message is the GENERIC V8/JSC wording
+// for `JSON.parse('')` / `JSON.parse(<truncated>)` — a real first-party
+// `JSON.parse(truncatedApiResponse)` regression in our own code would throw
+// the SAME wording, so matching on the message alone would swallow real app
+// JSON-parsing bugs. Require BOTH the exact message AND a frame whose
+// filename is the OneTrust SDK's `otSDKStub.js` source (the `app:///scripttemplates/otSDKStub.js?did=…`
+// synthetic injected-script origin — the `otSDKStub.js` token is OneTrust's
+// canonical bootstrap filename, never a first-party source path), so a real
+// first-party `JSON.parse` SyntaxError keeps reporting. A NEGATIVE guard
+// preserves any event whose stack carries a resolved first-party
+// `apps/web/src/…` frame (our own code called `JSON.parse` on a bad body
+// while a OneTrust frame happened to be in the stack → actionable). Returns
+// false when there is no `otSDKStub.js` frame (can't confirm the OneTrust
+// origin — keep reporting rather than swallow a possible first-party
+// `JSON.parse` bug). Deliberately NOT added to
+// `sentry.client.config.ts`'s `ignoreErrors` list — that gate has no frame
+// context, so a bare-string match there would swallow a real first-party
+// `JSON.parse` SyntaxError the negative guard exists to preserve; the
+// frame-aware `beforeSend` hook (which calls `shouldIgnoreSentryBrowserNoise`)
+// is the only safe gate.
+const ONETRUST_SDK_FRAME_PATTERN = /otSDKStub\.js/;
+const ONETRUST_JSON_PARSE_NOISE_MESSAGE = /^Unexpected end of JSON input$/;
+
+function isOneTrustSdkFrame(filename: unknown): boolean {
+  return ONETRUST_SDK_FRAME_PATTERN.test(normalizeString(filename));
+}
+
+/**
+ * Whether a Sentry / window.onerror event is the OneTrust cookie-consent SDK
+ * JSON-parse noise class: OneTrust's `otSDKStub.js?did=<domainId>` bootstrap
+ * stub XHR-fetches the site's consent config, and when the domain ID is
+ * `undefined` / the endpoint returns an empty or truncated body (old iOS
+ * Safari, CORS preflight failure, 5xx, network abort), the stub's
+ * `XMLHttpRequest.onload` handler calls `JSON.parse()` on the bad body and
+ * throws the canonical `SyntaxError: Unexpected end of JSON input`. The
+ * throw is in the OneTrust SDK's own injected `otSDKStub.js` script, never
+ * first-party code (`did=undefined` is the SDK's own misconfiguration
+ * signal). Requires BOTH the EXACT `Unexpected end of JSON input` message
+ * AND a frame whose filename contains `otSDKStub.js` (the OneTrust SDK's
+ * canonical bootstrap filename — the `app:///scripttemplates/otSDKStub.js?did=…`
+ * synthetic injected-script origin), with a NEGATIVE guard: if any frame
+ * resolves to a de-minified first-party `apps/web/src/…` source path, the
+ * event keeps reporting (a real first-party `JSON.parse(truncatedApiResponse)`
+ * regression de-minifies to `apps/web/src/…` and must not be hidden).
+ * Returns false when there is no `otSDKStub.js` frame (can't confirm the
+ * OneTrust origin — keep reporting rather than swallow a possible first-
+ * party `JSON.parse` bug). See `ONETRUST_JSON_PARSE_NOISE_MESSAGE` for the
+ * full rationale and Better Stack pattern `aa1efd3fb…`.
+ */
+export function isOneTrustJsonParseNoise(input: {
+  message?: unknown;
+  filename?: unknown;
+  frames?: Array<{ filename?: unknown } | undefined>;
+}): boolean {
+  const stripped = stripErrorWrappers(normalizeString(input.message));
+  if (!ONETRUST_JSON_PARSE_NOISE_MESSAGE.test(stripped)) {
+    return false;
+  }
+  const sources = [
+    input.filename,
+    ...(input.frames ?? []).map((frame) => frame?.filename),
+  ];
+  // Negative guard: a resolved first-party `apps/web/src/…` frame means our
+  // own code called `JSON.parse` on a bad body while a OneTrust frame
+  // happened to be in the stack → actionable regression; keep reporting so
+  // the call site can be found + fixed. (Mirrors `isInpageJsNoErrorMessageNoise`
+  // / `isConnectionClosedNoise`'s negative guards.)
+  if (sources.some(isFirstPartyResolvedSource)) {
+    return false;
+  }
+  // Positive anchor: at least one frame (or the window.onerror `filename`)
+  // is the OneTrust SDK's `otSDKStub.js` source. Without an `otSDKStub.js`
+  // frame we cannot confirm the OneTrust origin — keep reporting rather
+  // than swallow a possible first-party `JSON.parse` bug.
+  return sources.some(isOneTrustSdkFrame);
+}
+
 /**
  * Whether a Sentry / window.onerror event is the TronLink browser-extension
  * injected-Proxy `set`-trap noise class: a `'set' on proxy: trap returned
@@ -1366,6 +1848,102 @@ export function isInjectedScriptSendMessageNoise(input: {
   return sources.some(isInjectedAppSource);
 }
 
+// CAPTCHA / anti-bot browser-extension interceptor noise. A bot-detection
+// service extension (DataDome, Cloudflare, or similar) injects a content
+// script into every page as the synthetic source
+// `app:///content/captcha/mt_captcha/interceptor.js` (the same `app:///`
+// empty-host origin shape as the other injected/extension sources). The
+// interceptor's own internal code races on widget initialization: a minified
+// function (`d`) reaches for a widget configuration object that has not been
+// initialized yet (it is still `undefined`) and reads its `widgetId` property
+// → `TypeError: Cannot read properties of undefined (reading 'widgetId')`.
+// The throw is in the extension's OWN injected interceptor, NEVER in
+// first-party Kortix code: `app:///content/captcha/mt_captcha/interceptor.js`
+// is a synthetic extension-injection source (NOT an `app:///_next/…` bundle
+// frame and NOT a de-minified `apps/web/src/…` source path), `widgetId` is the
+// extension's internal widget-configuration property (NOT a Kortix API), and
+// the call-site function `d` is a minified extension function (NOT a
+// de-minified `apps/web/src/…` frame).
+//
+// Better Stack patterns (Kortix Frontend prod, application_id 2346967) — TWO
+// sibling fingerprints from the SAME extension interceptor, SAME type
+// (`TypeError`), SAME message
+// (`Cannot read properties of undefined (reading 'widgetId')`), SAME call-site
+// function (`d`), SAME call-site file
+// (`app:///content/captcha/mt_captcha/interceptor.js`):
+//   - `cfd5f828fe374568ec3fb9163e035c73690fc8d768e75751df44badaea3a0283`
+//     first 2026-08-08 17:03:49 UTC
+//   - `4a01a1690345a3763a2865e134a42635215f76b8a71939275f1bf81b4edc3ef3`
+//     first 2026-08-08 16:44:10 UTC
+// Both are extension-injected content-script race noise, not first-party
+// defects.
+//
+// `widgetId` is the extension's INTERNAL widget-configuration property name
+// — it is specific enough to anchor on (it is never a Kortix API surface; our
+// code never reads a `widgetId` property), but it is a property NAME (not a
+// canonical library string like `Paper Shaders: …`), so — mirroring
+// `isInjectedScriptSendMessageNoise` (the `sendMessage` wallet-extension
+// matcher) — this matcher requires BOTH the `widgetId` message anchor AND a
+// frame from the injected `app:///content/captcha/mt_captcha/interceptor.js`
+// source (via `isInjectedAppSource`, after adding the pattern there), so a
+// real first-party `something.widgetId` null/undefined deref keeps reporting.
+// A NEGATIVE guard preserves any event whose stack carries a resolved
+// first-party `apps/web/src/…` frame (our own code deref'd a `widgetId`
+// property → actionable). Returns false when there is no source anchor
+// (can't confirm extension origin — keep reporting rather than swallow a
+// possible app `widgetId` bug). Deliberately NOT added to
+// `sentry.client.config.ts`'s `ignoreErrors` list — that gate has no frame
+// context, so a bare-string match there would swallow a real first-party
+// `widgetId` deref the negative guard exists to preserve; the frame-aware
+// `beforeSend` hook (which calls `shouldIgnoreSentryBrowserNoise`) is the
+// only safe gate.
+/**
+ * Whether a Sentry / window.onerror event is the CAPTCHA / anti-bot
+ * browser-extension interceptor noise class: the extension's injected
+ * `app:///content/captcha/mt_captcha/interceptor.js` content script races on
+ * widget initialization and a minified function reads `widgetId` on a widget
+ * configuration object that is still `undefined` →
+ * `TypeError: Cannot read properties of undefined (reading 'widgetId')`. The
+ * throw is in the extension's OWN injected interceptor, never first-party
+ * code. Requires BOTH the `widgetId` message anchor AND a frame from the
+ * injected `app:///content/captcha/mt_captcha/interceptor.js` source (via
+ * `isInjectedAppSource`), so a real first-party `widgetId` deref keeps
+ * reporting. A negative guard preserves any event whose stack carries a
+ * resolved first-party `apps/web/src/…` frame (our own code deref'd a
+ * `widgetId` property → actionable). Returns false when there is no source
+ * anchor (can't confirm extension origin — keep reporting). See the
+ * `isCaptchaInterceptorNoise` comment block above for the full rationale and
+ * the two Better Stack production patterns.
+ */
+export function isCaptchaInterceptorNoise(input: {
+  message?: unknown;
+  filename?: unknown;
+  frames?: Array<{ filename?: unknown } | undefined>;
+}): boolean {
+  const stripped = stripErrorWrappers(normalizeString(input.message));
+  if (!stripped.includes('widgetId')) {
+    return false;
+  }
+  const sources = [
+    input.filename,
+    ...(input.frames ?? []).map((frame) => frame?.filename),
+  ];
+  // Negative guard: a resolved first-party `apps/web/src/…` frame means our
+  // own code deref'd a `widgetId` property on an `undefined` value →
+  // actionable; keep reporting so the call site can be found + fixed. (Mirrors
+  // `isInjectedScriptSendMessageNoise`'s negative guard.)
+  if (sources.some(isFirstPartyResolvedSource)) {
+    return false;
+  }
+  // Positive anchor: at least one frame (or the window.onerror `filename`) is
+  // an injected-app source — the CAPTCHA interceptor's
+  // `app:///content/captcha/mt_captcha/interceptor.js` or any other
+  // `INJECTED_APP_SOURCE_PATTERNS` source. Without an injected-source anchor
+  // we cannot confirm the extension origin — keep reporting rather than
+  // swallow a possible first-party `widgetId` bug.
+  return sources.some(isInjectedAppSource);
+}
+
 export function isKnownTestNoiseMessage(message: unknown): boolean {
   const normalized = normalizeString(message);
   return containsKnownPattern(normalized, KNOWN_TEST_NOISE_MESSAGES);
@@ -1430,6 +2008,35 @@ export function isExpectedCompactionNoModelMessage(message: unknown): boolean {
       || normalized === `Unhandled promise rejection: ${expected}`
       || normalized === `Unhandled promise rejection: Error: ${expected}`,
   );
+}
+
+/**
+ * Whether a message is the EXPECTED "model not available for this account"
+ * UI validation state — the typed 409 `code: 'model_not_servable'` the API
+ * returns (`apps/api/src/projects/routes/r4.ts` + `channel-bindings.ts` via
+ * `isModelServableForAccount`, plus the 400 `INVALID_SESSION_MODEL` sibling in
+ * `r7.ts` + `sessions.ts`) when a user picks a model their account can't use.
+ * The SDK's `useModelDefaults` `setMutation` `onError` already surfaces a
+ * user-facing toast, and `makeRequest` already classifies the typed 409 as
+ * SILENT to `onError` (Sentry) — see `MODEL_NOT_SERVABLE_CODE` (PR #6082) —
+ * but every call site fire-and-forgets the returned promise
+ * (`void setAccountDefault(...)` / `void setAgentDefault(...)` /
+ * `void setProjectDefault(...)`), so the rejected `mutateAsync` becomes an
+ * UNHANDLED rejection → Sentry's `onunhandledrejection` (`handled:false`),
+ * which the #6082 SDK gate never sees (it's past the `makeRequest` return).
+ * This is the leak-path backstop. The model name varies, so the match is a
+ * REGEX anchored on the EXACT API wording `Model "…" is not available for
+ * this account`, with the canonical `ApiError: ` / `Unhandled promise
+ * rejection: ` wrappers, so a longer real error that merely mentions the
+ * phrase is never matched. Sibling to `isExpectedBillingGateMessage` /
+ * `isExpectedCompactionNoModelMessage` (also `ApiError`/Error throws that
+ * leak via `void` fire-and-forget); deliberately message-only with NO
+ * first-party frame negative guard — see `MODEL_NOT_SERVABLE_NOISE_PATTERNS`
+ * for the full rationale. See Better Stack pattern `9784f440…`.
+ */
+export function isModelNotServableNoise(message: unknown): boolean {
+  const normalized = normalizeString(message).trim();
+  return MODEL_NOT_SERVABLE_NOISE_PATTERNS.some((re) => re.test(normalized));
 }
 
 /**
@@ -1514,15 +2121,20 @@ export function isOldWebkitRegexNoiseMessage(message: unknown): boolean {
  * React error boundary, and reach Sentry/Better Stack as global errors. The
  * method names are WebGL2 API — never called from first-party app code — so the
  * message wording alone is specific enough; no chunk-frame anchor is needed.
- * Matches all four JS engine wordings: V8
- * (`Cannot read properties of null (reading '<m>')`), old JSC
+ * Matches all six wordings of this class: five JS-engine / DOM-binding variants
+ * — V8 (`Cannot read properties of null (reading '<m>')`), old JSC
  * (`Cannot read property '<m>' of null`), SpiderMonkey/Firefox
- * (`can't access property "<m>"<…>`), and modern JSC (Safari / Chrome-on-iOS
+ * (`can't access property "<m>"<…>`), modern JSC (Safari / Chrome-on-iOS
  * CriOS, which uses WebKit/JSC rather than V8:
- * `null is not an object (evaluating 'this.gl.<m>')`). Never page Better Stack
- * for this class. See `PAPER_SHADER_NULL_CONTEXT_NOISE_PATTERNS` for the full
- * rationale and the `supportsWebGL2()` probe in `shader-safe.tsx` for the
- * primary guard.
+ * `null is not an object (evaluating 'this.gl.<m>')`), and Gecko/Firefox
+ * DOM-binding (`WebGL2RenderingContext.<m>: Argument 1 is not an object.` —
+ * Firefox's DOM bindings throw on the method call itself when the `this`
+ * binding is the null WebGL2 context) — PLUS the library's OWN internal guard
+ * wording (`this.gl is null` — the library's own explicit throw when its state
+ * check detects the null context, distinct from any JS-engine TypeError).
+ * Never page Better Stack for this class. See
+ * `PAPER_SHADER_NULL_CONTEXT_NOISE_PATTERNS` for the full rationale and the
+ * `supportsWebGL2()` probe in `shader-safe.tsx` for the primary guard.
  */
 export function isPaperShaderNullContextNoise(message: unknown): boolean {
   const stripped = stripErrorWrappers(normalizeString(message));
@@ -1596,6 +2208,59 @@ export function isPaperShaderWebGLUnsupportedNoise(input: {
   return true;
 }
 
+/**
+ * Whether a Sentry / window.onerror event is the Canvas `getImageData`
+ * out-of-memory noise class: a `RangeError` from
+ * `CanvasRenderingContext2D.getImageData()` running out of memory allocating
+ * the `ImageData` buffer — the browser's canonical
+ * `Failed to execute 'getImageData' on 'CanvasRenderingContext2D': Out of
+ * memory at ImageData creation` message. This is TRANSIENT browser resource
+ * exhaustion (the canvas was too large / the tab was under memory pressure /
+ * the device is low-RAM), fired from a third-party canvas library's
+ * `addEventListener` callback (Sentry's `BrowserApiErrors` auto-wrapper captures
+ * it as UNCAUGHT, `handled:false` — never reached a React error boundary).
+ * NOT a deterministic code bug — the same canvas renders fine on the next
+ * visit once memory frees up. See `CANVAS_GETIMAGE_DATA_OOM_NOISE_PATTERNS`
+ * for the full rationale and Better Stack pattern `b4b43847…`.
+ *
+ * Requires the EXACT V8/Chrome message AND a NEGATIVE guard: if any frame (or
+ * the window.onerror `filename`) resolves to a de-minified first-party
+ * `apps/web/src/…` source path, the event keeps reporting — our own code is
+ * the `getImageData` caller and a real first-party OOM regression is
+ * actionable. Only events with NO resolved first-party frame (the prod noise
+ * shape: all minified third-party canvas library chunk frames, or frameless)
+ * are dropped. A frameless capture with this exact message still classifies
+ * as noise (the message alone is the browser's canonical OOM wording and is
+ * specific enough — the `CanvasRenderingContext2D` + `getImageData` +
+ * `ImageData creation` tokens together pin this single DOM API call site).
+ * `RangeError: ` / `Unhandled promise rejection: ` wrappers are stripped
+ * before matching so all capture paths (window.onerror, onunhandledrejection,
+ * Sentry exception) classify consistently.
+ */
+export function isCanvasImageDataOOMNoise(input: {
+  message?: unknown;
+  filename?: unknown;
+  frames?: Array<{ filename?: unknown } | undefined>;
+}): boolean {
+  const stripped = stripErrorWrappers(normalizeString(input.message));
+  if (!CANVAS_GETIMAGE_DATA_OOM_NOISE_PATTERNS.some((re) => re.test(stripped))) {
+    return false;
+  }
+  const sources = [
+    input.filename,
+    ...(input.frames ?? []).map((frame) => frame?.filename),
+  ];
+  // Negative guard: a resolved first-party `apps/web/src/…` frame (or
+  // window.onerror `filename`) means our own code is the `getImageData` caller
+  // → a real first-party OOM regression; keep reporting so the call site can
+  // be found + fixed. A real first-party `getImageData` OOM de-minifies to
+  // `apps/web/src/…` and is never hidden.
+  if (sources.some(isFirstPartyResolvedSource)) {
+    return false;
+  }
+  return true;
+}
+
 // Strip the canonical `SyntaxError: ` / `Error: ` / `Unhandled promise
 // rejection: ` (and stacked) wrappers a browser/Sentry prefixes a throw with,
 // so the underlying message can be matched by an anchored pattern regardless
@@ -1647,6 +2312,65 @@ export function isOldBrowserSyntaxParseError(input: {
     ...(input.frames ?? []).map((frame) => frame?.filename),
   ];
   return sources.some((filename) => isMinifiedChunkSource(filename));
+}
+
+/**
+ * Whether a Sentry / window.onerror event is the old-browser third-party-
+ * library DOM null-deref noise class: a `TypeError: Cannot read properties of
+ * null (reading 'scrollLeft')` / `… (reading 'appendChild')` (V8 wording; old
+ * JSC says `Cannot read property '<X>' of null`) thrown from minified
+ * THIRD-PARTY library internals (`measureScroll` in a scroll-measurement
+ * library, `ft` in an animation/DOM-manipulation helper) running on VERY OLD
+ * browsers (Windows 7 Chrome, Chrome 95 Linux) hitting the marketing
+ * homepage. The browser's quirkier DOM behavior returns `null` where modern
+ * browsers return an element, and the library accesses `.scrollLeft` /
+ * `.appendChild` on the `null` → `TypeError`. UNCAUGHT global `onerror`
+ * (`handled:false` — never reaches a React error boundary), 2 occurrences
+ * each, 0 identified users, marketing page only — browser-compatibility
+ * noise, not a product defect.
+ *
+ * `scrollLeft` and `appendChild` are STANDARD DOM API method names that
+ * first-party React code DOES call (e.g. `use-proximity-hover.ts` reads
+ * `container.scrollLeft`, `session-title.tsx` sets `el.scrollLeft`, portal/
+ * tooltip ref-callbacks call `appendChild`), so the matcher requires BOTH the
+ * exact V8/old-JSC message AND a NEGATIVE guard: if ANY frame (or the
+ * window.onerror `filename`) resolves to a de-minified first-party
+ * `apps/web/src/…` source path, the event KEEPS reporting — our own code is
+ * the null-deref culprit and is actionable to fix. The production noise
+ * events carry only minified `app:///_next/static/chunks/…` chunk frames
+ * (the third-party library internals) + an `<anonymous>` frame, so the
+ * negative guard does NOT fire for them. A frameless capture with one of
+ * these exact messages still classifies as noise — `measureScroll` and the
+ * minified `ft` are third-party library internals, and a real first-party
+ * `el.scrollLeft` / `parent.appendChild` null-deref almost always has a
+ * resolvable frame with a stack. See
+ * `OLD_BROWSER_DOM_NULL_DEREF_NOISE_PATTERNS` for the full rationale and the
+ * two production Better Stack patterns.
+ */
+export function isOldBrowserDomNullDerefNoise(input: {
+  message?: unknown;
+  filename?: unknown;
+  frames?: Array<{ filename?: unknown }>;
+}): boolean {
+  const message = normalizeString(input.message);
+  if (!message) return false;
+  const stripped = stripErrorWrappers(message);
+  if (!OLD_BROWSER_DOM_NULL_DEREF_NOISE_PATTERNS.some((re) => re.test(stripped))) {
+    return false;
+  }
+  const sources = [
+    input.filename,
+    ...(input.frames ?? []).map((frame) => frame?.filename),
+  ];
+  // Negative guard: a resolved first-party `apps/web/src/…` frame (or
+  // window.onerror `filename`) means our own code is the null-deref culprit →
+  // actionable; keep reporting so the call site can be found + fixed. A real
+  // first-party `el.scrollLeft` / `parent.appendChild` null-deref de-minifies to
+  // `apps/web/src/…` and is never hidden.
+  if (sources.some(isFirstPartyResolvedSource)) {
+    return false;
+  }
+  return true;
 }
 
 /**
@@ -2120,6 +2844,151 @@ export function isEmbedPdfTilingTileDestructureNoise(input: {
   return frames.some(frameMatchesEmbedPdfTilingViewportAdvance);
 }
 
+// Broader third-party-library React #185 "Maximum update depth exceeded"
+// fallback noise matcher. The `isEmbedPdfTilingReactUpdateDepthNoise`
+// matcher above anchors on the SPECIFIC `@embedpdf/plugin-tiling`
+// `onTileRendering` subscription callback frame; it does NOT catch #185
+// events thrown by OTHER third-party libs (no `onTileRendering` frame). The
+// editor re-render loop siblings fired by the document-state race (see
+// `isDocumentStateNotFoundNoise`) are such a class: a ProseMirror/TipTap-
+// based editor library's async interaction/selection handler re-enters the
+// React render loop after the editor's document-state map race, tripping
+// React's 50-nested-update guard (#185) WITHOUT an `onTileRendering` frame.
+//
+// Better Stack patterns (Kortix Frontend prod, application_id 2346967) — all
+// three from the SAME Safari 26.5 session
+// `be897489-001b-4ca4-b9ca-a1aa770c4082`, SAME release
+// `f2db5007f14e77e3b9456d2f83208e97bc2b2734`, SAME chunk
+// `0foj1ouh5ijrj.js`, same 2026-08-05 ~04:30–05:28 UTC window as the doc-state
+// race siblings, 1 occurrence each / 0 identified users, all UNCAUGHT
+// (`handled:false`, never reached a React error boundary):
+//   - `223d7d7e1000bc98be5969f2cddac143e03134cb39442f0b959cf1def53ccb8a`:
+//     mechanism `auto.browser.global_handlers.onerror`, frames
+//     `r @ 13jg6.ewllp.z.js | f_ @ 0foj1ouh5ijrj.js | fL | s4 | nM | ? | sZ |
+//     ? @ 00ym4.y9k1959.js | ov @ 0foj1ouh5ijrj.js | oy @ 0foj1ouh5ijrj.js`.
+//   - `51b14963e617b4cee9926db4a4d6a9d50d4bdfb3b71d5f32faf1c83d33066d12`:
+//     mechanism `auto.browser.browserapierrors.setInterval`, frames
+//     `r @ 13jg6.ewllp.z.js | ? @ 12r-_umoe~03c.js | ov @ 0foj1ouh5ijrj.js |
+//     oy @ 0foj1ouh5ijrj.js`.
+//   - `cd68e360db0f42e7dca4e9e922cfe80ed629e878dbb327f74ac889d194da0276`:
+//     call_site_function `oy`, call_site_file
+//     `app:///_next/static/chunks/0foj1ouh5ijrj.js`.
+// ALL three carry NO `onTileRendering` frame and NO first-party
+// `apps/web/src/…` frame — they are the editor library's own re-render loop,
+// not a first-party setState loop.
+//
+// React #185 is ALSO the exact message a REAL first-party infinite-setState
+// loop produces, so this BROADER fallback matcher is anchored on BOTH the
+// #185 message (`REACT_UPDATE_DEPTH_NOISE_PATTERN`, already defined above)
+// AND TWO negative guards:
+//   1. NO resolved first-party `apps/web/src/…` frame — a real first-party
+//      setState loop de-minifies to `apps/web/src/…` and is preserved (this
+//      is the load-bearing guard; it mirrors the tiling matcher).
+//   2. The event is UNCAUGHT — the exception's mechanism is one of the
+//      global auto-handlers (`onerror` / `onunhandledrejection`) OR a
+//      `BrowserApiErrors` auto-wrapper (`addEventListener` / `setTimeout` /
+//      `setInterval`/ …) with `handled:false`. A CAUGHT React #185 (one that
+//      reached a React error boundary, `handled:true`) may be actionable —
+//      the boundary exists precisely to surface first-party render loops the
+//      app chose to handle — so it keeps reporting. The production noise
+//      siblings are all `handled:false` global/BrowserApiErrors captures.
+//
+// IMPORTANT: this is a FALLBACK that runs AFTER `isEmbedPdfTilingReactUpdateDepthNoise`
+// (the tiling matcher is tried first in `shouldIgnoreSentryBrowserNoise`, so
+// its more specific `onTileRendering` anchor wins for the tiling class). It
+// does NOT replace or subsume the tiling matcher; a tiling #185 with an
+// `onTileRendering` frame is dropped by the tiling matcher before this
+// fallback is reached. This fallback only catches the non-tiling third-party
+// #185 class (the editor re-render loop siblings here). Deliberately NOT
+// added to `sentry.client.config.ts`'s `ignoreErrors` list — that gate has no
+// frame/mechanism context, so a bare `#185` match there would swallow a real
+// first-party setState loop; the frame+mechanism-aware `beforeSend` hook
+// (which calls `shouldIgnoreSentryBrowserNoise`) is the only safe gate.
+//
+// The Sentry `BrowserApiErrors` integration auto-wraps these EventTarget /
+// timer APIs and captures throws from inside their callbacks as
+// `handled:false` (`auto.browser.browserapierrors.<api>`); the global
+// `GlobalHandlers` integration captures `onerror`/`onunhandledrejection` as
+// `auto.browser.global_handlers.<handler>` (`handled:false`). All of these
+// are UNCAUGHT — they never reached a React error boundary. A CAUGHT #185
+// (mechanism absent, or `handled:true`, or a non-global/non-BrowserApiErrors
+// mechanism) keeps reporting.
+const REACT_UPDATE_DEPTH_UNCAUGHT_MECHANISMS = new Set([
+  'auto.browser.global_handlers.onerror',
+  'auto.browser.global_handlers.onunhandledrejection',
+  'auto.browser.browserapierrors.addEventListener',
+  'auto.browser.browserapierrors.setTimeout',
+  'auto.browser.browserapierrors.setInterval',
+  'auto.browser.browserapierrors.requestAnimationFrame',
+]);
+
+/**
+ * Whether a Sentry event is a third-party-library React #185 "Maximum update
+ * depth exceeded" render loop that is NOT the `@embedpdf/plugin-tiling`
+ * `onTileRendering` class (caught by `isEmbedPdfTilingReactUpdateDepthNoise`
+ * above). This is the BROADER FALLBACK for non-tiling third-party #185s —
+ * e.g. the ProseMirror/TipTap-based editor library's re-render loop fired by
+ * its document-state race (see `isDocumentStateNotFoundNoise`). Requires
+ * the `Minified React error #185` message AND TWO negative guards: (1) NO
+ * resolved first-party `apps/web/src/…` frame (a real first-party setState
+ * loop de-minifies to `apps/web/src/…` and is preserved), and (2) the event
+ * is UNCAUGHT — its mechanism is one of the global auto-handlers
+ * (`onerror`/`onunhandledrejection`) or a `BrowserApiErrors` auto-wrapper
+ * (`addEventListener`/`setTimeout`/`setInterval`/…) with `handled:false`. A
+ * CAUGHT React #185 (reached a React error boundary, `handled:true`) may be
+ * actionable and keeps reporting. This matcher runs AFTER
+ * `isEmbedPdfTilingReactUpdateDepthNoise` (the tiling matcher's more
+ * specific `onTileRendering` anchor is tried first), so it does NOT replace
+ * or subsume the tiling matcher. See
+ * `REACT_UPDATE_DEPTH_UNCAUGHT_MECHANISMS` for the full rationale and the
+ * three Better Stack patterns `223d7d7e…` / `51b14963…` / `cd68e360…`.
+ */
+export function isThirdPartyReactUpdateDepthNoise(input: {
+  message?: unknown;
+  mechanism?: unknown;
+  handled?: unknown;
+  frames?: Array<{ filename?: unknown; function?: unknown } | undefined>;
+}): boolean {
+  const message = stripErrorWrappers(normalizeString(input.message));
+  if (!REACT_UPDATE_DEPTH_NOISE_PATTERN.test(message)) {
+    return false;
+  }
+  const frames = input.frames ?? [];
+  // No frames at all → can't confirm the throw is third-party (no
+  // `apps/web/src/…` negative-guard evidence, no chunk anchor). Keep
+  // reporting rather than blanket-dropping frameless #185s of unknown
+  // origin. (Mirrors `isEmbedPdfTilingReactUpdateDepthNoise`.)
+  if (frames.length === 0) {
+    return false;
+  }
+  // Negative guard #1: a resolved first-party `apps/web/src/…` frame means
+  // our own component is the looping culprit → actionable; keep reporting so
+  // the call site can be found + fixed. (Mirrors the tiling matcher.)
+  if (frames.some((frame) => isFirstPartyResolvedSource(frame?.filename))) {
+    return false;
+  }
+  // Negative guard #2: the event must be UNCAUGHT. A CAUGHT React #185 (one
+  // that reached a React error boundary, `handled:true`, or whose mechanism
+  // is not a global/BrowserApiErrors auto-handler) may be actionable — the
+  // boundary exists to surface first-party render loops the app chose to
+  // handle — so it keeps reporting. The production noise siblings are all
+  // `handled:false` global/BrowserApiErrors captures.
+  const mechanism = normalizeString(input.mechanism);
+  if (!REACT_UPDATE_DEPTH_UNCAUGHT_MECHANISMS.has(mechanism)) {
+    return false;
+  }
+  // `handled` is optional in the Sentry payload; when present it is a boolean.
+  // Treat a missing `handled` as uncaught (the global/BrowserApiErrors
+  // mechanisms above are UNCAUGHT by definition — they auto-capture throws
+  // that never reached a React error boundary). When present and `true`, the
+  // event was caught by a boundary → keep reporting.
+  const handled = input.handled;
+  if (handled === true) {
+    return false;
+  }
+  return true;
+}
+
 // React #327 = `Should not already be working.` — the React production
 // reconciler's re-entrancy guard. It throws from
 // `packages/react-reconciler/src/ReactFiberWorkLoop.js`'s `performSyncWorkOnRoot`
@@ -2520,6 +3389,137 @@ export function isSupabaseTokenExpiredNoise(input: {
   return true;
 }
 
+// Supabase gotrue `Object Not Found Matching Id:…, MethodName:update,
+// ParamCount:…` OTP-expired-link rejection noise. When a user lands on an
+// expired/invalid OTP email link, the auth error page is served at
+// `/#error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid+or+has+expired`,
+// and the Supabase auth client tries to update the session from the expired
+// OTP token in the URL hash. gotrue rejects the update server-side with a
+// plain-string error `Object Not Found Matching Id:<n>, MethodName:update,
+// ParamCount:<n>` (the gotrue RPC "no row found" wording for the session-update
+// call — `<n>` varies per call). Because the rejected value is a bare STRING
+// (NOT an Error instance), Sentry 10.x's GlobalHandlers `onunhandledrejection`
+// integration cannot extract a `.message`/`.stack` from it: it synthesizes the
+// canonical
+//   "Non-Error promise rejection captured with value: Object Not Found
+//    Matching Id:2, MethodName:update, ParamCount:4"
+// (the rejection value inlined after `value: `) with NO stacktrace frames at
+// all — there is no Error object to de-minify. Better Stack pattern
+// e9a720020c921fbf82323125c20714fd7455e803295cf13aa624440de6d35e8e
+// (Kortix Frontend prod, application_id 2346967): `UnhandledRejection`,
+// 116 occurrences, 0 identified users (anonymous), first 2026-06-02 /
+// recurring, mechanism `auto.browser.global_handlers.onunhandledrejection`
+// (`handled:false` — UNCAUGHT, never reached a React error boundary),
+// `synthetic:true`, release
+// `160f0b286f0ad5c53debc343d5e055241694e24d` (v0.12.4 prod), request URL
+// `https://kortix.com/#error=access_denied&error_code=otp_expired&error_
+// description=Email+link+is+invalid+or+has+expired` (the auth error page —
+// the OTP-expired redirect). Browser Chrome 142 on Windows 10. Breadcrumbs:
+// `[runtime-env]` with `supabaseUrl: https://supa.kortix.com` (the Supabase
+// auth client initializing), then a navigation to the same
+// `#error=otp_expired` URL, then marketing-site fetches
+// (`/api/github-stars`, `/_vercel/insights/view`, `/api/maintenance`) — the
+// Supabase auth client's session-update rejecting on the expired-OTP error
+// page. Stack trace: NONE — the raw exception payload is
+// `{"values":[{"type":"UnhandledRejection","value":"Non-Error promise
+// rejection captured with value: Object Not Found Matching Id:2,
+// MethodName:update, ParamCount:4","mechanism":{"type":"auto.browser.
+// global_handlers.onunhandledrejection","handled":false}}]}` with NO
+// `stacktrace` key, NO frames, NO `call_site_file`/`call_site_function`,
+// NO `call_stack_hash`.
+//
+// The `Id:2, MethodName:update, ParamCount:4` suffix varies per gotrue call
+// (the `<n>` integers are the RPC's internal ids/counts), so the matcher
+// anchors on the STABLE prefix
+// `/^Non-Error promise rejection captured with value: Object Not Found
+// Matching/` and lets the variable suffix match — every OTP-expired
+// session-update rejection from gotrue shares this exact prefix.
+//
+// SIBLING of `isNonErrorUndefinedRejectionNoise` (PR #5200, pattern
+// `5cfc90e5…`) and `isSupabaseTokenExpiredNoise` (pattern `63b0cde7…`):
+// all three are frameless non-Error promise rejections from the Supabase
+// auth client / third-party scripts on the auth/marketing pages, captured by
+// Sentry's GlobalHandlers `onunhandledrejection` integration as a synthetic
+// "Non-Error promise rejection captured with value: <value>" /
+// "Object captured as promise rejection with keys: …" message with NO frames.
+// The `undefined` matcher (#5200) rejects with the primitive `undefined`;
+// the `TOKEN_EXPIRED` matcher rejects with a `{ code, message, status }`
+// object (Sentry emits "Object captured as promise rejection with keys: …");
+// THIS matcher rejects with a bare STRING (Sentry emits "Non-Error promise
+// rejection captured with value: <string>"). The three message prefixes are
+// disjoint, so the matchers do not shadow each other. Distinct from the EIP-1193
+// wallet-extension plain-object rejection class (`isExtensionRejectedObject
+// Noise`, PR #4720): that one rejects with `{ code, message, stack }` and
+// Sentry emits "Object captured as promise rejection with keys: code,
+// message, stack" (carrying the extension stack).
+//
+// The "Non-Error promise rejection captured with value: Object Not Found
+// Matching…" prefix is Sentry's generic signature for ANY non-Error promise
+// rejection whose value string starts with `Object Not Found Matching` — a
+// real first-party `Promise.reject('Object Not Found Matching Id:…')` (e.g.
+// a code path that rejects with a bare string on an error branch instead of
+// throwing an Error) would produce the SAME signature, so matching on the
+// message alone is too broad. Require BOTH the canonical prefix AND a
+// NEGATIVE guard: if the event has ANY resolved stack frame OR a resolved
+// first-party `apps/web/src/…` frame, keep reporting (a real first-party
+// bare-string rejection we can attribute should still surface). The
+// production noise pattern has NO frames at all; only the frameless capture
+// is dropped. Deliberately NOT added to `sentry.client.config.ts`'s
+// `ignoreErrors` list — that gate has no frame context, so a bare-string
+// match there would swallow a real first-party bare-string rejection the
+// negative guard exists to preserve; the frame-aware `beforeSend` hook
+// (which calls `shouldIgnoreSentryBrowserNoise`) is the only safe gate.
+const NON_ERROR_OBJECT_NOT_FOUND_REJECTION_PATTERN =
+  /^Non-Error promise rejection captured with value: Object Not Found Matching/;
+
+/**
+ * Whether a Sentry event is the Supabase gotrue OTP-expired-link
+ * `Object Not Found Matching Id:…, MethodName:update, ParamCount:…`
+ * non-Error promise rejection noise class: a user landed on an expired/invalid
+ * OTP email link (`/#error=access_denied&error_code=otp_expired`), and the
+ * Supabase auth client's session-update from the expired OTP token rejected
+ * with a bare string `Object Not Found Matching Id:<n>, MethodName:update,
+ * ParamCount:<n>` (gotrue's "no row found" wording for the session-update RPC;
+ * the `<n>` integers vary per call). Because the rejected value is a bare
+ * string (NOT an Error), Sentry 10.x's GlobalHandlers `onunhandledrejection`
+ * integration cannot extract a stack and synthesizes the canonical
+ * "Non-Error promise rejection captured with value: Object Not Found
+ * Matching Id:2, MethodName:update, ParamCount:4" message with NO stacktrace
+ * frames. Requires the canonical prefix (the `Id:…, MethodName:…,
+ * ParamCount:…` suffix varies per gotrue call) AND a NEGATIVE guard: if any
+ * frame resolves to a de-minified first-party `apps/web/src/…` source path OR
+ * any resolvable frame location at all, the event keeps reporting (a real
+ * first-party bare-string `Promise.reject('Object Not Found Matching…')` we
+ * can attribute should still surface). The production noise pattern has NO
+ * frames at all; only the frameless capture is dropped. Sibling of
+ * `isNonErrorUndefinedRejectionNoise` (PR #5200) and
+ * `isSupabaseTokenExpiredNoise`. See
+ * `NON_ERROR_OBJECT_NOT_FOUND_REJECTION_PATTERN` for the full rationale.
+ */
+export function isNonErrorObjectNotFoundRejectionNoise(input: {
+  message?: unknown;
+  frames?: Array<{ filename?: unknown } | undefined>;
+}): boolean {
+  const message = normalizeString(input.message);
+  if (!NON_ERROR_OBJECT_NOT_FOUND_REJECTION_PATTERN.test(message)) {
+    return false;
+  }
+  const frames = input.frames ?? [];
+  // Negative guard #1: a resolved first-party `apps/web/src/…` frame means our
+  // own code rejected a promise with the bare-string gotrue value → actionable;
+  // keep reporting so the call site can be found + fixed.
+  if (frames.some((frame) => isFirstPartyResolvedSource(frame?.filename))) {
+    return false;
+  }
+  // Negative guard #2: any resolvable source location (real chunk/URL/named
+  // file) → an attributable error with a real stack; keep reporting. Only the
+  // frameless capture (the production noise pattern) remains → drop it.
+  if (frames.some((frame) => isResolvableFrameSource(frame?.filename))) {
+    return false;
+  }
+  return true;
+}
+
 // Transient WebSocket / Server-Sent-Events (SSE) transport-close noise.
 // `Connection closed.` is the CANONICAL transport-close message a client-side
 // WebSocket/SSE library throws when the server closes the connection — a deploy
@@ -2713,6 +3713,251 @@ export function isConnectionClosedNoise(input: {
   return true;
 }
 
+// Transient WebSocket `postMessage` "Failed to send message" transport
+// noise — a SIBLING of `isConnectionClosedNoise` (the `Connection closed.`
+// transport-close class) but a DIFFERENT throw. The co-worker session page
+// (`/projects/:id/sessions/:sessionId`) holds a WebSocket connection to the
+// sandbox runtime; when the sandbox tears the connection down mid-flight
+// (a deploy / restart / idle-timeout recycle / sandbox park / network
+// blip / the user closing the tab), a fire-and-forget `ws.send(...)` on the
+// already-closed socket rejects with the canonical
+// `Failed to send message` (the WebSocket spec's `InvalidStateError`
+// message — `ReadyState is not OPEN`). The throw fires from a react-query
+// mutation's `mutationFn` (a minified `Object.x [as mutationFn]` in a
+// `_next/static/immutable/chunks/…` bundle), is caught by an error
+// boundary (`handled:true`, mechanism `generic` — NOT an UNCAUGHT global
+// rejection; the boundary showed the user an error state instead of a
+// blank page), and Sentry captures it as an exception with ONE minified
+// chunk frame — NO resolved first-party `apps/web/src/…` source.
+//
+// This is the same transient-transport class as
+// `isConnectionClosedNoise` (PR for BS `ecac86df…`) and the broader
+// `isFramelessNetworkErrorNoise` family — a WebSocket/SSE transport
+// teardown that is EXPECTED (the sandbox closing is not a product bug),
+// self-healing-on-reconnect, and surfaces only as a transient transport
+// error. The `handled:true` means the error boundary already showed the
+// user a controlled error state (not a blank page), so it is doubly not
+// actionable — the user saw a controlled state, and the connection
+// recovers on the next session switch.
+//
+// Better Stack pattern
+// 824577dd315c08f227a1f31c74e2eb90be209b1ffd129e18923907aa3068afd2
+// (Kortix Frontend prod, application_id 2346967): `Error`, message
+// `Failed to send message`, 1 occurrence / 0 identified users, last
+// 2026-08-11 14:47:00 UTC, release
+// `cd9dfccec1fb7e41a6726e9e45fd678cf428cc3a` (v0.12.8 prod), call site
+// function `Object.x [as mutationFn]`, call site file
+// `app:///_next/static/immutable/chunks/3n0z0jtixhg6r.js` (minified — NO
+// resolved first-party source), request URL a co-worker session page
+// (`https://kortix.com/projects/834686a1-…/sessions/54f7abe9-…`), browser
+// Chrome on macOS, mechanism `generic` with `handled:true` (CAUGHT by an
+// error boundary — NOT an uncaught global rejection). Stack frames (1,
+// `in_app:true`):
+//   1. `app:///_next/static/immutable/chunks/3n0z0jtixhg6r.js` fn
+//      `Object.x [as mutationFn]` (the react-query mutation that called
+//      `ws.send(...)` on the closed socket — a minified bundle chunk, NOT a
+//      resolved first-party source path).
+// NO first-party `apps/web/src/…` frame.
+//
+// The `Failed to send message` wording is the WebSocket spec's canonical
+// `InvalidStateError` message for `ws.send(...)` on a closed socket — it
+// is GENERIC enough that a real first-party sender regression (our own
+// `ws.send` on a closed socket, surfacing from a de-minified
+// `apps/web/src/…` call site) would throw the SAME wording. Because the
+// event is `handled:true` (caught by an error boundary — the user saw a
+// controlled error state, not a blank page), a first-party sender IS
+// actionable: if our own code is the sender, the boundary's error state
+// is showing the user a defect we should fix. So this matcher anchors on
+// BOTH the EXACT message AND a NEGATIVE guard: if ANY frame (or the
+// window.onerror `filename`) resolves to a de-minified first-party
+// `apps/web/src/…` source path, the event KEEPS reporting — our own code
+// is the `ws.send` caller and a real first-party transport regression is
+// actionable to fix. Only events with NO resolved first-party frame (the
+// production noise shape: a minified `_next/static/immutable/chunks/…`
+// frame, or frameless) are dropped. A frameless capture with this exact
+// message still classifies as noise — the message alone is the WebSocket
+// spec's canonical transport-failure wording and is specific enough
+// (the `Failed to send message` string paired with the
+// `ws.send`-on-closed-socket context pins this single transport class),
+// mirroring `isConnectionClosedNoise`'s frameless handling. Deliberately
+// NOT added to `sentry.client.config.ts`'s `ignoreErrors` list — that gate
+// has no frame context, so a bare-string match there would swallow a real
+// first-party `ws.send` regression the negative guard exists to preserve;
+// the frame-aware `beforeSend` hook (which calls
+// `shouldIgnoreSentryBrowserNoise`) is the only safe gate.
+const FAILED_TO_SEND_MESSAGE_NOISE_PATTERN = /^Failed to send message$/;
+
+/**
+ * Whether a Sentry / window.onerror event is the transient WebSocket
+ * `postMessage` "Failed to send message" transport-noise class: a co-worker
+ * session page's WebSocket `ws.send(...)` rejected with the canonical
+ * WebSocket `InvalidStateError` message (`Failed to send message` — the
+ * spec's wording for `ws.send` on a closed socket) when the sandbox tore
+ * the connection down mid-flight (deploy / restart / idle-timeout recycle /
+ * sandbox park / network blip / tab close). This is a SIBLING of
+ * `isConnectionClosedNoise` (the `Connection closed.` transport-close
+ * class) but a DIFFERENT throw — a `ws.send` rejection on an already-closed
+ * socket, NOT a library close event. The connection closing during a
+ * deploy/recycle is EXPECTED, not a product bug; the event is
+ * `handled:true` (caught by an error boundary — the user saw a controlled
+ * error state, not a blank page).
+ *
+ * Requires the EXACT message `Failed to send message` (case-sensitive, the
+ * WebSocket spec's canonical `InvalidStateError` wording) AND a NEGATIVE
+ * guard: if ANY frame (or the window.onerror `filename`) resolves to a
+ * de-minified first-party `apps/web/src/…` source path, the event KEEPS
+ * reporting — our own code is the `ws.send` caller and a real first-party
+ * transport regression is actionable (the boundary already showed the user
+ * a controlled error state, so we should fix the sender). Only events with
+ * NO resolved first-party frame (the production noise shape: a minified
+ * `_next/static/immutable/chunks/…` frame, or frameless) are dropped. A
+ * frameless capture with this exact message still classifies as noise.
+ * See `FAILED_TO_SEND_MESSAGE_NOISE_PATTERN` for the full rationale and
+ * Better Stack pattern `824577dd…`.
+ */
+export function isFailedToSendMessageNoise(input: {
+  message?: unknown;
+  filename?: unknown;
+  frames?: Array<{ filename?: unknown } | undefined>;
+}): boolean {
+  const stripped = stripErrorWrappers(normalizeString(input.message))
+    .replace(/^Error: /, '');
+  if (!FAILED_TO_SEND_MESSAGE_NOISE_PATTERN.test(stripped)) {
+    return false;
+  }
+  // Collect every source location — the window.onerror `filename` (runtime
+  // gate) and any stacktrace frames (Sentry gate) — for the first-party
+  // negative guard.
+  const sources = [
+    input.filename,
+    ...(input.frames ?? []).map((frame) => frame?.filename),
+  ];
+  // Negative guard: a resolved first-party `apps/web/src/…` frame means our
+  // own code is the `ws.send` caller on a closed socket → a real first-party
+  // transport regression (the boundary already showed the user an error
+  // state); keep reporting so the call site can be found + fixed. A real
+  // first-party `ws.send` regression de-minifies to `apps/web/src/…` and is
+  // never hidden.
+  if (sources.some(isFirstPartyResolvedSource)) {
+    return false;
+  }
+  return true;
+}
+
+// Third-party editor-library document-state race noise. A ProseMirror/TipTap-
+// based editor library (`@tiptap/*` deps in `apps/web/package.json`) holds an
+// internal document-state map keyed by document id. When the editor is
+// unmounted / the document is closed while an async interaction or selection
+// is still in flight (a race in the library's own async interaction handling,
+// fired by WebKit's async timing differing from Chrome's), the library
+// throws from its OWN internal state-lookup helpers:
+//   - `getDocumentStateOrThrow` → `Interaction state not found for document: <docId>`
+//   - `getDocumentState`        → `Selection state not found for document: <docId>`
+// Both are library-internal functions in a minified `_next/static/chunks/…`
+// bundle (e.g. `17631.2j-4o95.js`), NEVER in first-party `apps/web/src/…`
+// source (grep confirms no first-party `getDocumentStateOrThrow` /
+// `getDocumentState`). The throw is captured by Sentry's
+// `BrowserApiErrors.addEventListener` / `setInterval` / global
+// `onerror`/`onunhandledrejection` auto-wrappers as an UNCAUGHT event
+// (`handled:false`, never reaches a React error boundary) and leaks to Better
+// Stack.
+//
+// Better Stack patterns (Kortix Frontend prod, application_id 2346967):
+//   - `6d6fa794a67a293ce9fa5d093648a9d76a2dd243e04f4f9dd9fbbd67bfb0c9ef`:
+//     `Error`, message
+//     `Interaction state not found for document: doc-1785904808253-gbsixyvii`,
+//     call_site_function `getDocumentStateOrThrow`, call_site_file
+//     `app:///_next/static/chunks/17631.2j-4o95.js`, 28 occurrences / 0
+//     identified users, last 2026-08-05 04:40:45 UTC (POST-v0.12.3),
+//     mechanism `auto.browser.browserapierrors.addEventListener` (UNCAUGHT,
+//     `handled:false`), request URL
+//     `https://kortix.com/projects/e1d956a3-…/sessions/be897489-…` (session
+//     page), Safari 26.5 on macOS (WebKit). Frames: `r @ 13jg6.ewllp.z.js` →
+//     `v @ 17631.2j-4o95.js` → `getActiveMode @ 17631.2j-4o95.js` →
+//     `getDocumentStateOrThrow @ 17631.2j-4o95.js` — NO first-party
+//     `apps/web/src/…` frame.
+//   - `a954c7e7553065986e8177c68b82ccf3c3d83d6eabb413700974b2a11f841fb7`:
+//     `Error`, message
+//     `Selection state not found for document: doc-1785904808253-gbsixyvii`
+//     (SAME doc id as the interaction sibling), call_site_function
+//     `getDocumentState`, SAME call_site_file
+//     `app:///_next/static/chunks/17631.2j-4o95.js`, 2 occurrences, same
+//     timestamp as the interaction sibling.
+//
+// These are noise, not a product bug:
+//   1. UNCAUGHT (`handled:false`, `addEventListener`/`onunhandledrejection`)
+//      — never reached a React error boundary.
+//   2. Third-party library internal — `getDocumentStateOrThrow` /
+//      `getDocumentState` are library-internal helpers in a minified chunk,
+//      NOT first-party `apps/web/src/…` code.
+//   3. Safari-specific — WebKit's async timing differs from Chrome's,
+//      triggering the editor's internal state-map race.
+//   4. 28+2 occurrences from a SINGLE session (`be897489-…`) in a short window
+//      — a transient race, not a persistent bug.
+//
+// The `<Interaction|Selection> state not found for document:` prefix is the
+// library's OWN canonical wording for its internal state-lookup failure
+// (the `for document:` suffix names the library's document-state map), and
+// `getDocumentStateOrThrow` / `getDocumentState` are library-internal
+// function names never present in first-party code, so anchoring on the
+// message prefix is conservative. BUT a first-party `throw new Error(
+// 'Interaction state not found for document: …')` regression would surface
+// with a resolved `apps/web/src/…` frame, so a NEGATIVE guard MUST preserve
+// any event whose stack carries a resolved first-party frame. Only events
+// with NO resolved first-party frame (the production noise shape: all frames
+// in the minified `17631` / `13jg6` library chunks) are dropped. Deliberately
+// NOT added to `sentry.client.config.ts`'s `ignoreErrors` list — that gate
+// has no frame context, so a bare-string match there could swallow a real
+// first-party state-lookup regression the negative guard exists to preserve;
+// the frame-aware `beforeSend` hook (which calls `shouldIgnoreSentryBrowserNoise`)
+// is the only safe gate.
+const DOCUMENT_STATE_NOT_FOUND_NOISE_PATTERN =
+  /^(Interaction|Selection) state not found for document:/;
+
+/**
+ * Whether a Sentry / window.onerror event is the third-party editor-library
+ * (ProseMirror/TipTap-based) document-state race noise class: the library's
+ * own internal `getDocumentStateOrThrow` / `getDocumentState` helpers threw
+ * `<Interaction|Selection> state not found for document: <docId>` when the
+ * editor was unmounted / the document closed while an async interaction or
+ * selection was still in flight (a race in the library's async interaction
+ * handling, triggered by WebKit's async timing). The throw is in the
+ * library's minified chunk (`17631.2j-4o95.js`), never first-party. Requires
+ * the canonical message prefix AND a NEGATIVE guard: if any frame (or the
+ * window.onerror `filename`) resolves to a de-minified first-party
+ * `apps/web/src/…` source path, the event keeps reporting (a real first-party
+ * `throw new Error('Interaction state not found for document: …')`
+ * regression de-minifies to `apps/web/src/…` and must not be hidden). The
+ * production noise pattern carries only minified `17631`/`13jg6` library
+ * chunk frames, so the negative guard does not fire for it. A frameless
+ * capture with this exact message prefix still classifies as noise (the
+ * `for document:` suffix names the library's document-state map and the
+ * message wording is library-specific). See
+ * `DOCUMENT_STATE_NOT_FOUND_NOISE_PATTERN` for the full rationale and the
+ * two Better Stack patterns `6d6fa794…` / `a954c7e7…`.
+ */
+export function isDocumentStateNotFoundNoise(input: {
+  message?: unknown;
+  filename?: unknown;
+  frames?: Array<{ filename?: unknown } | undefined>;
+}): boolean {
+  const stripped = stripErrorWrappers(normalizeString(input.message));
+  if (!DOCUMENT_STATE_NOT_FOUND_NOISE_PATTERN.test(stripped)) {
+    return false;
+  }
+  const sources = [
+    input.filename,
+    ...(input.frames ?? []).map((frame) => frame?.filename),
+  ];
+  // Negative guard: a resolved first-party `apps/web/src/…` frame means our
+  // own code threw this state-lookup message → a real first-party regression;
+  // keep reporting so the call site can be found + fixed.
+  if (sources.some(isFirstPartyResolvedSource)) {
+    return false;
+  }
+  return true;
+}
+
 
 // Bare lowercase `network error` rejection noise — the canonical Axios /
 // `XMLHttpRequest` transport-abort message. Axios throws this (or the
@@ -2817,6 +4062,301 @@ export function isFramelessNetworkErrorNoise(input: {
   return true;
 }
 
+// Safari third-party-script "undefined variable" ReferenceError noise — the
+// `Can't find variable: <Name>` wording is Safari/JavaScriptCore's canonical
+// ReferenceError for a variable reference that resolved to an undeclared
+// binding (Chrome/V8 says `<Name> is not defined`). When a THIRD-PARTY script
+// loaded on the marketing homepage (a charting/finance library such as
+// TradingView / lightweight-charts, or any vendor script that defines a
+// top-level constant like `EmptyRanges`) fails to load or initialize on iOS
+// Safari — a network abort, a parse failure, a CSP block, a script-load race
+// — the referencing code dereferences the now-undefined global and Safari's
+// `window.onerror` captures a FRAMELESS `ReferenceError`: the engine could
+// not produce a stack because the throw originated in script text that never
+// evaluated, so `call_site_file` is the literal `"undefined"` placeholder and
+// there are NO stack frames. The variable name (`EmptyRanges`, …) belongs to
+// the third-party script, NEVER to first-party `apps/web/src/…` code (grep
+// confirms `EmptyRanges` is absent from the codebase).
+//
+// Better Stack pattern
+// 304f7345eea41d488225ebf2dd238fa05ca073187fd0e2ffc61071ac99f40408
+// (Kortix Frontend prod, application_id 2346967): `ReferenceError`, message
+// `Can't find variable: EmptyRanges`, 5 occurrences / 0 identified users,
+// first 2026-08-13 06:24:03 UTC, release
+// `1f8409e2bedf441343eb12086a2131ff69397c37` (v0.12.8 prod),
+// call_site_function `?`, call_site_file `undefined` (the literal
+// placeholder — NO resolvable source location), request URL
+// `https://kortix.com/` (marketing homepage), browser iPhone iOS 18.7 Safari
+// (Safari 26), mechanism `auto.browser.global_handlers.onerror` (UNCAUGHT
+// global `onerror`, `handled:false` — never reached a React error
+// boundary). Frames: `undefined` — no stack frames at all.
+//
+// Same family as the prior frameless Safari / browser-internal noise matchers
+// — `isUnresolvableStackOverflowNoise` (Safari frameless `onerror` stack
+// overflow), `isNonErrorUndefinedRejectionNoise` (PR #5200, pattern
+// `5cfc90e5…`), and `isOperationErrorPopErrorScopeNoise` (PR #5237, pattern
+// `5e1aca20…`) — a frameless global-handler capture dropped by a precise
+// message matcher with two negative guards preserving any first-party or
+// resolvable frame.
+//
+// `Can't find variable: <Name>` is Safari's GENERIC ReferenceError wording —
+// a REAL first-party `ReferenceError` (e.g. a typo referencing an undeclared
+// variable in our own code, `Can't find variable: myHelper`) would surface
+// with the SAME wording, so the matcher requires BOTH:
+//   1. The Safari ReferenceError PREFIX `/^Can't find variable: /`
+//      (case-sensitive). The variable name (`EmptyRanges`, `WebAssembly`, …)
+//      varies per third-party script, so a prefix (not exact) match is
+//      required. Chrome/V8's `<Name> is not defined` wording is a DIFFERENT
+//      surface and is deliberately NOT matched, so a Chromium first-party
+//      ReferenceError keeps reporting.
+//   2. The FRAMELESS shape as a positive guard: no resolvable frame location
+//      at all (every frame's `filename` is empty or the literal `"undefined"`
+//      placeholder, and the window.onerror `filename` is empty/`undefined`)
+//      — mirroring `isNonErrorUndefinedRejectionNoise` /
+//      `isOperationErrorPopErrorScopeNoise` / `isUnresolvableStackOverflowNoise`.
+// Plus two negative guards: (a) any resolved first-party `apps/web/src/…`
+// frame → keep reporting (our own ReferenceError with a stack is preserved —
+// a real first-party Safari `ReferenceError` de-minifies to `apps/web/src/…`);
+// (b) ANY resolvable frame location (real chunk/URL/named file) → keep
+// reporting (a reference error with a stack frame is from traceable code,
+// first-party OR a third-party script that DID load and threw a resolvable
+// ReferenceError). Only the frameless capture (the production noise pattern:
+// a third-party script that failed to load entirely, leaving no stack) is
+// dropped. Deliberately NOT added to `sentry.client.config.ts`'s
+// `ignoreErrors` list — that gate has no frame context, so a bare-prefix
+// match there would swallow a real first-party Safari ReferenceError the
+// negative guards exist to preserve; the frame-aware `beforeSend` hook
+// (which calls `shouldIgnoreSentryBrowserNoise`) is the only safe gate.
+const UNDEFINED_VARIABLE_NOISE_PATTERN = /^Can't find variable: /;
+
+/**
+ * Whether a Sentry / window.onerror event is the Safari third-party-script
+ * "undefined variable" ReferenceError noise class: a `Can't find variable:
+ * <Name>` `ReferenceError` (Safari/JavaScriptCore's canonical wording for an
+ * undeclared variable reference — Chrome/V8 says `<Name> is not defined`)
+ * captured by the global `onerror` handler with NO resolvable source
+ * location (the throw originated in a third-party script that failed to load,
+ * so the engine produced no stack and `call_site_file` is the literal
+ * `"undefined"` placeholder). The variable name belongs to the third-party
+ * script (e.g. `EmptyRanges` from a charting/finance library), never to
+ * first-party `apps/web/src/…` code. Requires BOTH the Safari ReferenceError
+ * prefix AND the frameless shape (positive guard), plus two negative guards:
+ * any resolved first-party `apps/web/src/…` frame → keep reporting (our own
+ * ReferenceError with a stack is preserved); any resolvable frame location →
+ * keep reporting (a reference error with a stack frame is from traceable
+ * code). Only the frameless capture is dropped. See
+ * `UNDEFINED_VARIABLE_NOISE_PATTERN` for the full rationale and Better Stack
+ * pattern `304f7345…`.
+ */
+export function isUndefinedVariableThirdPartyNoise(input: {
+  message?: unknown;
+  filename?: unknown;
+  frames?: Array<{ filename?: unknown } | undefined>;
+}): boolean {
+  if (!UNDEFINED_VARIABLE_NOISE_PATTERN.test(stripErrorWrappers(normalizeString(input.message)))) {
+    return false;
+  }
+  const sources = [
+    input.filename,
+    ...(input.frames ?? []).map((frame) => frame?.filename),
+  ];
+  // Negative guard #1: a resolved first-party `apps/web/src/…` frame means our
+  // own code referenced an undeclared variable → a real first-party
+  // ReferenceError with a stack; keep reporting so the call site can be found
+  // + fixed. A real first-party Safari `ReferenceError` de-minifies to
+  // `apps/web/src/…` and is never hidden.
+  if (sources.some(isFirstPartyResolvedSource)) {
+    return false;
+  }
+  // Negative guard #2: any resolvable source location (real chunk/URL/named
+  // file) → an attributable ReferenceError with a real stack (first-party OR a
+  // third-party script that DID load and threw a resolvable ReferenceError);
+  // keep reporting. Only the frameless capture (the production noise pattern:
+  // a third-party script that failed to load entirely, leaving no stack)
+  // remains → drop it.
+  if (sources.some(isResolvableFrameSource)) {
+    return false;
+  }
+  return true;
+}
+
+// Bot / automation-framework / scraper `Cannot redefine property: webdriver`
+// noise. A headless-browser or automation tool (Selenium, Puppeteer, Playwright,
+// or a scraper) injects a script that attempts
+// `Object.defineProperty(navigator, 'webdriver', { get: () => undefined })` to
+// hide its automation footprint from bot-detection on the page it is crawling.
+// In some Chrome builds `navigator.webdriver` is a NON-configurable property,
+// so the `defineProperty` trap throws `TypeError: Cannot redefine property:
+// webdriver`. The throw originates in the injected automation/anti-detection
+// script — NEVER in first-party Kortix code — and surfaces as an UNCAUGHT global
+// `onerror` (mechanism `auto.browser.global_handlers.onerror`, `handled:false`
+// — never reaches a React error boundary). Better Stack pattern
+// ee14e84d1a150ae094e20722e619083499d8b29206445a2ef349ff42db6d0f7f
+// (Kortix Frontend prod, application_id 2346967): `TypeError`, message
+// `Cannot redefine property: webdriver`, call site function
+// `Object.defineProperty`, call site file `<anonymous>`, 1 occurrence / 0
+// identified users, first 2026-08-12 07:49:16 UTC, request URL
+// `https://kortix.com/projects/61df2bc0-…` (project page), browser Chrome on
+// Windows 10. Stack: 3 frames, ALL `<anonymous>` (functions `?`, `?`,
+// `Object.defineProperty`) — NO resolved first-party `apps/web/src/…` frame
+// and NO chunk frame at all. This is bot/scanner noise, NOT a product bug: a
+// real first-party `Object.defineProperty` call that redefined a non-
+// configurable property would de-minify to `apps/web/src/…` frames (Sentry
+// uploads sourcemaps), and `navigator.webdriver` is never touched by
+// first-party app code.
+//
+// The EXACT message `Cannot redefine property: webdriver` is the V8/Chrome
+// canonical `TypeError` for a `defineProperty` on a non-configurable property
+// (the property name `webdriver` pins it to `navigator.webdriver` specifically,
+// never a coincidental app-logic `defineProperty` regression). BUT the matcher
+// carries a NEGATIVE guard: if ANY frame (or the window.onerror `filename`)
+// resolves to a de-minified first-party `apps/web/src/…` source path, the event
+// keeps reporting — a real first-party `defineProperty` regression
+// de-minifies to `apps/web/src/…` and must not be hidden. The production event
+// carries only `<anonymous>` frames, so the negative guard does NOT fire for
+// it. A frameless capture with this exact message still classifies as noise
+// — the `webdriver` property name is the specific anchor (it is never a
+// first-party Kortix API surface). Deliberately NOT added to
+// `sentry.client.config.ts`'s `ignoreErrors` list — that gate has no frame
+// context, so a bare-string match there could swallow a real first-party
+// `defineProperty` regression the negative guard exists to preserve; the
+// frame-aware `beforeSend` hook (which calls `shouldIgnoreSentryBrowserNoise`)
+// is the only safe gate.
+const REDEFINE_WEBDRIVER_NOISE_MESSAGE = /^Cannot redefine property: webdriver$/;
+
+/**
+ * Whether a Sentry / window.onerror event is the bot / automation-framework /
+ * scraper `Cannot redefine property: webdriver` noise class: an injected
+ * anti-detection script attempts
+ * `Object.defineProperty(navigator, 'webdriver', …)` to hide its automation
+ * footprint, and Chrome throws a `TypeError` because `navigator.webdriver` is
+ * non-configurable in that build. The throw originates in the injected
+ * automation script, never first-party Kortix code. Requires the EXACT message
+ * (case-sensitive; the `webdriver` property name pins it to
+ * `navigator.webdriver` specifically) AND a NEGATIVE guard: if any frame (or
+ * the window.onerror `filename`) resolves to a de-minified first-party
+ * `apps/web/src/…` source path, the event keeps reporting (a real first-party
+ * `defineProperty` regression de-minifies to `apps/web/src/…` and must not be
+ * hidden). The production event carries only `<anonymous>` frames, so the
+ * negative guard does NOT fire for it. A frameless capture with this exact
+ * message still classifies as noise — the `webdriver` property name is the
+ * specific anchor. See `REDEFINE_WEBDRIVER_NOISE_MESSAGE` for the full
+ * rationale and Better Stack pattern `ee14e84d…`.
+ */
+export function isRedefineWebdriverNoise(input: {
+  message?: unknown;
+  filename?: unknown;
+  frames?: Array<{ filename?: unknown } | undefined>;
+}): boolean {
+  const stripped = stripErrorWrappers(normalizeString(input.message));
+  if (!REDEFINE_WEBDRIVER_NOISE_MESSAGE.test(stripped)) {
+    return false;
+  }
+  const sources = [
+    input.filename,
+    ...(input.frames ?? []).map((frame) => frame?.filename),
+  ];
+  // Negative guard: a resolved first-party `apps/web/src/…` frame (or
+  // window.onerror `filename`) means our own code called `defineProperty` on a
+  // non-configurable property → a real first-party regression; keep reporting
+  // so the call site can be found + fixed. A real first-party `defineProperty`
+  // regression de-minifies to `apps/web/src/…` and is never hidden.
+  if (sources.some(isFirstPartyResolvedSource)) {
+    return false;
+  }
+  return true;
+}
+
+// Transient fetch-abort `signal timed out` noise — the Bun / native
+// `TimeoutError` raised by `AbortSignal.timeout()` when a client-side fetch
+// exceeds its 30s deadline. This is the SAME transient-timeout class as the
+// prior API pattern `c672fb5e…` which was fixed by PR #4709 (API-side
+// `SENTRY_IGNORE_ERRORS` filter for `'The operation timed out.'`). The existing
+// API-side filter covers `'The operation timed out.'` but NOT the frontend's
+// `'signal timed out'` wording. The SDK's `makeRequest` aborts on its 30s
+// deadline and the abort surfaces as `TimeoutError: signal timed out` in the
+// frontend's `onunhandledrejection` handler (the rejection reaches Sentry
+// through a fire-and-forget path that bypasses `handleApiError`'s timeout
+// guard). The SDK already has a bounded retry for transient gateway statuses
+// (#4609) and the API already filters its own timeout (#4709), but the
+// frontend rejection still reaches Sentry.
+//
+// Better Stack pattern
+// 73e683c3aad440ccf4cc817f0484366cc66ba26b9435517fc8c86d4f7d258d60
+// (Kortix Frontend prod, application_id 2346967): `TimeoutError`, message
+// `signal timed out`, 24 occurrences / 0 identified users, first 2026-05-16
+// (recurring), last 2026-08-12 04:08:45 UTC, mechanism
+// `auto.browser.global_handlers.onunhandledrejection` (UNCAUGHT,
+// `handled:false`), request URL
+// `https://kortix.com/projects/…/sessions/…` (session pages), browser Chrome
+// on macOS, tags `DOMException.code: 23` (InvalidStateError — the network
+// abort). Stack: NONE — the exception value has NO `stacktrace` key at all
+// (frameless capture). A transient network/timeout error, not a code bug.
+//
+// The EXACT message `signal timed out` is the canonical `TimeoutError` message
+// from `AbortSignal.timeout()` — it is specific enough to anchor on without a
+// frame guard (a real first-party `throw new Error('signal timed out')` would
+// be unusual). For conservativism, the matcher carries an OPTIONAL negative
+// guard: if ANY frame (or the window.onerror `filename`) resolves to a
+// de-minified first-party `apps/web/src/…` source path, the event keeps
+// reporting (a real first-party `signal timed out` throw de-minifies to
+// `apps/web/src/…` and must not be hidden). The production event has NO frames
+// at all, so the negative guard does NOT fire for it. A frameless capture
+// with this exact message classifies as noise — the message is the canonical
+// `AbortSignal.timeout()` wording. Sibling to `isClientRequestTimeoutMessage`
+// (the SDK's typed `Request timed out after <N>s:` wording, #4531) — this is
+// the NATIVE `TimeoutError` wording the bare `AbortSignal.timeout()` promise
+// rejection surfaces with, distinct from the SDK's wrapped `ApiError`
+// message. Deliberately NOT added to `sentry.client.config.ts`'s `ignoreErrors`
+// list — that gate has no frame context; the frame-aware `beforeSend` hook
+// (which calls `shouldIgnoreSentryBrowserNoise`) is the safe gate.
+const SIGNAL_TIMEOUT_NOISE_MESSAGE = /^signal timed out$/;
+
+/**
+ * Whether a Sentry / window.onerror event is the transient fetch-abort
+ * `signal timed out` noise class: the native `TimeoutError` raised by
+ * `AbortSignal.timeout()` when a client-side fetch exceeds its 30s deadline.
+ * The SDK's `makeRequest` aborts on its 30s deadline and the abort surfaces as
+ * `TimeoutError: signal timed out` in the frontend's `onunhandledrejection`
+ * handler; it reaches Sentry through a fire-and-forget path that bypasses
+ * `handleApiError`'s timeout guard. A transient network/timeout error, not a
+ * code bug. Requires the EXACT message (case-sensitive; the canonical
+ * `AbortSignal.timeout()` `TimeoutError` wording) AND a NEGATIVE guard: if
+ * any frame (or the window.onerror `filename`) resolves to a de-minified
+ * first-party `apps/web/src/…` source path, the event keeps reporting (a real
+ * first-party `signal timed out` throw de-minifies to `apps/web/src/…` and
+ * must not be hidden). The production event has NO frames at all, so the
+ * negative guard does NOT fire for it. A frameless capture with this exact
+ * message classifies as noise. Sibling of `isClientRequestTimeoutMessage` (the
+ * SDK's typed `Request timed out after <N>s:` wording). See
+ * `SIGNAL_TIMEOUT_NOISE_MESSAGE` for the full rationale and Better Stack
+ * pattern `73e683c3…`.
+ */
+export function isSignalTimeoutNoise(input: {
+  message?: unknown;
+  filename?: unknown;
+  frames?: Array<{ filename?: unknown } | undefined>;
+}): boolean {
+  const stripped = stripErrorWrappers(normalizeString(input.message));
+  if (!SIGNAL_TIMEOUT_NOISE_MESSAGE.test(stripped)) {
+    return false;
+  }
+  const sources = [
+    input.filename,
+    ...(input.frames ?? []).map((frame) => frame?.filename),
+  ];
+  // Negative guard: a resolved first-party `apps/web/src/…` frame (or
+  // window.onerror `filename`) means our own code threw `signal timed out` →
+  // a real first-party regression; keep reporting so the call site can be
+  // found + fixed. A real first-party `signal timed out` throw de-minifies to
+  // `apps/web/src/…` and is never hidden. The production event has NO frames,
+  // so this guard does NOT fire for it.
+  if (sources.some(isFirstPartyResolvedSource)) {
+    return false;
+  }
+  return true;
+}
+
 export function shouldIgnoreBrowserRuntimeNoise(input: {
   message?: unknown;
   filename?: unknown;
@@ -2861,20 +4401,48 @@ export function shouldIgnoreBrowserRuntimeNoise(input: {
   }
 
   // Transient WebSocket / SSE transport-close noise — a client-side
-  // websocket/SSE library threw the canonical `Connection closed.` message when
-  // the server closed a background realtime connection during a deploy / idle-
-  // timeout recycle / session end. The connection closing is EXPECTED, not a
-  // product bug. Requires the EXACT message (with trailing `.`) and a NEGATIVE
-  // guard so a real first-party `throw new Error('Connection closed.')`
-  // regression keeps reporting. See `isConnectionClosedNoise`.
-  if (isConnectionClosedNoise({ message, filename: input.filename })) {
-    return true;
-  }
+   // websocket/SSE library threw the canonical `Connection closed.` message when
+   // the server closed a background realtime connection during a deploy / idle-
+    // timeout recycle / session end. The connection closing is EXPECTED, not a
+    // product bug. Requires the EXACT message (with trailing `.`) and a NEGATIVE
+    // guard so a real first-party `throw new Error('Connection closed.')`
+    // regression keeps reporting. See `isConnectionClosedNoise`.
+    if (isConnectionClosedNoise({ message, filename: input.filename })) {
+      return true;
+    }
+
+   // Transient WebSocket `postMessage` `Failed to send message` transport
+   // noise — a co-worker session page's `ws.send(...)` rejected with the
+   // canonical WebSocket `InvalidStateError` message when the sandbox tore
+   // the connection down mid-flight (deploy / recycle / park / network
+   // blip). Sibling of `isConnectionClosedNoise` but a different throw (a
+   // `ws.send` rejection on a closed socket, not a library close event).
+   // The event is `handled:true` (caught by an error boundary), so a
+   // first-party sender IS actionable — the negative guard preserves any
+   // resolved first-party `apps/web/src/…` frame. See
+   // `isFailedToSendMessageNoise`.
+    if (isFailedToSendMessageNoise({ message, filename: input.filename })) {
+      return true;
+    }
+
+    // Third-party editor-library (ProseMirror/TipTap-based) document-state
+    // race noise — the library's own internal `getDocumentStateOrThrow` /
+    // `getDocumentState` helpers threw
+    // `<Interaction|Selection> state not found for document: <docId>` when the
+    // editor was unmounted / the document closed while an async interaction or
+    // selection was still in flight (a race in the library's async interaction
+    // handling, triggered by WebKit's async timing). Requires the canonical
+    // message prefix AND a NEGATIVE guard: any resolved first-party
+    // `apps/web/src/…` frame → keep reporting. See
+    // `isDocumentStateNotFoundNoise`.
+    if (isDocumentStateNotFoundNoise({ message, filename: input.filename })) {
+      return true;
+    }
 
 
-  // Browser-native <img> / next/image load failures can surface as this exact
-  // message through window.onerror. Keep this exact: pptx-react-viewer throws
-  // actionable errors such as "Failed to load image for colour change
+   // Browser-native <img> / next/image load failures can surface as this exact
+   // message through window.onerror. Keep this exact: the old pptx-react-viewer
+   // threw actionable errors such as "Failed to load image for colour change
   // processing", which must still reach error tracking.
   if (isBareImageLoadNoiseMessage(message)) {
     return true;
@@ -2925,6 +4493,21 @@ export function shouldIgnoreBrowserRuntimeNoise(input: {
     return true;
   }
 
+  // Expected "model not available for this account" UI validation state — the
+  // API returns a typed 409 `code: 'model_not_servable'` when a user picks a
+  // model their account can't use. The SDK's `useModelDefaults` `setMutation`
+  // `onError` already surfaces a user-facing toast, and `makeRequest` already
+  // classifies the typed 409 as SILENT to `onError` (Sentry) — but every call
+  // site fire-and-forgets the returned promise (`void setXxxDefault(...)`), so
+  // the rejected `mutateAsync` becomes an UNHANDLED rejection →
+  // `onunhandledrejection`, which the #6082 SDK gate never sees (it's past the
+  // `makeRequest` return). Drop it here so the expected validation state never
+  // pages Better Stack. See `isModelNotServableNoise` and Better Stack pattern
+  // `9784f440…`.
+  if (isModelNotServableNoise(message)) {
+    return true;
+  }
+
   // Old-WebKit (< 16.4) lookbehind parse failure from bundled third-party
   // deps — WebKit-specific wording, only old Safari/iOS visitors hit it.
   if (isOldWebkitRegexNoiseMessage(message)) {
@@ -2940,6 +4523,26 @@ export function shouldIgnoreBrowserRuntimeNoise(input: {
     return true;
   }
 
+  // Canvas `getImageData` out-of-memory noise — a third-party canvas library
+  // (e.g. a decorative background / hyper-logo animation on the marketing
+  // homepage) called `CanvasRenderingContext2D.getImageData()` and the browser
+  // ran out of memory allocating the `ImageData` buffer, surfacing as the
+  // canonical `Failed to execute 'getImageData' on 'CanvasRenderingContext2D':
+  // Out of memory at ImageData creation` `RangeError`. TRANSIENT browser
+  // resource exhaustion (canvas too large / tab under memory pressure / low-
+  // RAM device), not a deterministic code bug. The throw fires from a
+  // third-party library's `addEventListener` callback (Sentry's
+  // `BrowserApiErrors` auto-wrapper captures it as UNCAUGHT, `handled:false`
+  // — never reached a React error boundary). Requires the exact message AND a
+  // NEGATIVE guard: a resolved first-party `apps/web/src/…` filename means our
+  // own code is the `getImageData` caller → a real first-party OOM regression;
+  // keep reporting. A frameless window.onerror capture with the exact message
+  // + no first-party filename drops. See `isCanvasImageDataOOMNoise` and
+  // Better Stack pattern `b4b43847…`.
+  if (isCanvasImageDataOOMNoise({ message, filename: input.filename })) {
+    return true;
+  }
+
   // Old-browser / stripped-down-WebView minified-chunk parse failures
   // (`Unexpected token …`, `Invalid or unexpected token`, `Cannot use import
   // statement outside a module`) from `window.onerror`. The browser cannot
@@ -2947,6 +4550,19 @@ export function shouldIgnoreBrowserRuntimeNoise(input: {
   // Requires a `_next/static/chunks/` / `?dpl=dpl_…` filename so a real
   // first-party eval/`new Function` SyntaxError keeps reporting.
   if (isOldBrowserSyntaxParseError({ message, filename: input.filename })) {
+    return true;
+  }
+
+  // Old-browser third-party-library DOM null-deref noise on the marketing
+  // homepage — `Cannot read properties of null (reading 'scrollLeft')` /
+  // `… (reading 'appendChild')` (V8) / `Cannot read property '<X>' of null`
+  // (old JSC) from minified third-party library internals (`measureScroll`,
+  // `ft`) on very old browsers (Win7 Chrome, Chrome 95). Requires the exact
+  // message AND a NEGATIVE guard: a resolved first-party `apps/web/src/…`
+  // filename means our own code is the null-deref culprit → actionable; keep
+  // reporting. A frameless window.onerror capture with the exact message + no
+  // first-party filename drops. See `isOldBrowserDomNullDerefNoise`.
+  if (isOldBrowserDomNullDerefNoise({ message, filename: input.filename })) {
     return true;
   }
 
@@ -3016,6 +4632,19 @@ export function shouldIgnoreBrowserRuntimeNoise(input: {
     return true;
   }
 
+  // OneTrust cookie-consent SDK JSON-parse noise — the third-party
+  // `otSDKStub.js?did=undefined` bootstrap stub's `XMLHttpRequest.onload`
+  // handler calls `JSON.parse()` on an empty/truncated consent-config
+  // response (old iOS Safari, CORS preflight failure, 5xx, network abort)
+  // and throws the canonical `SyntaxError: Unexpected end of JSON input`.
+  // The throw is in the OneTrust SDK's own injected script, never first-
+  // party code. Requires BOTH the exact message AND an `otSDKStub.js`
+  // frame, with a negative guard preserving any resolved first-party
+  // `apps/web/src/…` frame. See `isOneTrustJsonParseNoise`.
+  if (isOneTrustJsonParseNoise({ message, filename: input.filename })) {
+    return true;
+  }
+
   // Browser-extension injectedScript.bundle.js `sendMessage` noise — a
   // browser extension injects `app:///injectedScript.bundle.js` that calls
   // `chrome.runtime.sendMessage` / `browser.runtime.sendMessage` on a
@@ -3024,6 +4653,17 @@ export function shouldIgnoreBrowserRuntimeNoise(input: {
   // injected-app source, with a negative guard preserving any resolved
   // first-party `apps/web/src/…` frame. See `isInjectedScriptSendMessageNoise`.
   if (isInjectedScriptSendMessageNoise({ message, filename: input.filename })) {
+    return true;
+  }
+
+  // CAPTCHA / anti-bot browser-extension interceptor noise — the extension's
+  // injected `app:///content/captcha/mt_captcha/interceptor.js` races on widget
+  // init and a minified function reads `widgetId` on an `undefined` widget
+  // config → `TypeError: Cannot read properties of undefined (reading
+  // 'widgetId')`. Requires BOTH the `widgetId` message anchor AND an
+  // injected-app source, with a negative guard preserving any resolved
+  // first-party `apps/web/src/…` frame. See `isCaptchaInterceptorNoise`.
+  if (isCaptchaInterceptorNoise({ message, filename: input.filename })) {
     return true;
   }
 
@@ -3073,6 +4713,63 @@ export function shouldIgnoreBrowserRuntimeNoise(input: {
     return true;
   }
 
+  // Safari third-party-script "undefined variable" ReferenceError noise —
+  // `Can't find variable: <Name>` (Safari/JavaScriptCore's ReferenceError
+  // wording for an undeclared variable; Chrome/V8 says `<Name> is not
+  // defined`) captured by the global `onerror` handler with NO resolvable
+  // source location. A third-party script (e.g. a charting/finance library
+  // defining a constant like `EmptyRanges`) failed to load on iOS Safari,
+  // leaving the referenced global undefined and the engine with no stack
+  // (`call_site_file` is the literal `"undefined"` placeholder). Requires
+  // BOTH the Safari ReferenceError prefix AND the frameless shape, plus two
+  // negative guards: any resolved first-party `apps/web/src/…` frame → keep
+  // reporting; any resolvable frame location → keep reporting. See
+  // `isUndefinedVariableThirdPartyNoise`.
+  if (
+    isUndefinedVariableThirdPartyNoise({
+      message,
+      filename: input.filename,
+    })
+  ) {
+    return true;
+  }
+
+  // Bot / automation-framework / scraper `Cannot redefine property: webdriver`
+  // noise — an injected anti-detection script attempts
+  // `Object.defineProperty(navigator, 'webdriver', …)` to hide its automation
+  // footprint, and Chrome throws a `TypeError` because `navigator.webdriver`
+  // is non-configurable in that build. The throw is in the injected
+  // automation script, never first-party code. Requires the EXACT message AND
+  // a NEGATIVE guard: a resolved first-party `apps/web/src/…` filename means
+  // our own code called `defineProperty` on a non-configurable property → a
+  // real first-party regression; keep reporting. The production event has
+  // only `<anonymous>` frames, so the negative guard does NOT fire for it. A
+  // frameless window.onerror capture with the exact message + no first-party
+  // filename drops. See `isRedefineWebdriverNoise` and Better Stack pattern
+  // `ee14e84d…`.
+  if (isRedefineWebdriverNoise({ message, filename: input.filename })) {
+    return true;
+  }
+
+  // Transient fetch-abort `signal timed out` noise — the native `TimeoutError`
+  // raised by `AbortSignal.timeout()` when a client-side fetch exceeds its 30s
+  // deadline. The SDK's `makeRequest` aborts on its 30s deadline and the abort
+  // surfaces as `TimeoutError: signal timed out` in the frontend's
+  // `onunhandledrejection`; it reaches the runtime gate through a fire-and-
+  // forget path. The API already filters its OWN timeout wording
+  // (`The operation timed out.`, #4709), but the frontend's `signal timed out`
+  // wording is NOT covered. A transient network/timeout error, not a code
+  // bug. Requires the EXACT message AND a NEGATIVE guard: a resolved
+  // first-party `apps/web/src/…` filename means our own code threw
+  // `signal timed out` → a real first-party regression; keep reporting. The
+  // production event has NO frames, so the negative guard does NOT fire for
+  // it. A frameless window.onerror capture with the exact message + no
+  // first-party filename drops. See `isSignalTimeoutNoise` and Better Stack
+  // pattern `73e683c3…`.
+  if (isSignalTimeoutNoise({ message, filename: input.filename })) {
+    return true;
+  }
+
   return isExtensionSource(input.filename) && normalizeString(message).includes('runtime.sendMessage');
 }
 
@@ -3083,6 +4780,7 @@ export function shouldIgnoreSentryBrowserNoise(event: {
   exception?: {
     values?: Array<{
       value?: unknown;
+      mechanism?: { type?: unknown; handled?: unknown };
       stacktrace?: { frames?: Array<{ filename?: unknown }> };
     }>;
   };
@@ -3090,6 +4788,8 @@ export function shouldIgnoreSentryBrowserNoise(event: {
   const primaryException = event.exception?.values?.find(Boolean);
   const message = primaryException?.value ?? event.message;
   const frames = primaryException?.stacktrace?.frames ?? [];
+  const mechanism = primaryException?.mechanism?.type;
+  const handled = primaryException?.mechanism?.handled;
   const requestUrl = normalizeString(event.request?.url);
   const environment = normalizeString((event as { environment?: unknown }).environment);
 
@@ -3193,6 +4893,26 @@ export function shouldIgnoreSentryBrowserNoise(event: {
     return true;
   }
 
+  // Expected "model not available for this account" UI validation state — the
+  // API returns a typed 409 `code: 'model_not_servable'` (and a 400
+  // `INVALID_SESSION_MODEL` sibling with the SAME message) when a user picks a
+  // model their account can't use. The SDK's `useModelDefaults` `setMutation`
+  // `onError` already surfaces a user-facing toast, and `makeRequest` already
+  // classifies the typed 409 as SILENT to `onError` (Sentry) (PR #6082), but
+  // every call site fire-and-forgets the returned promise
+  // (`void setXxxDefault(...)`), so the rejected `mutateAsync` becomes an
+  // UNHANDLED rejection → Sentry's `onunhandledrejection` (`handled:false`),
+  // which the #6082 SDK gate never sees (it's past the `makeRequest` return).
+  // It can also leak through `<ClientErrorBoundary>` / route / system-fault
+  // boundaries. Drop it here so the expected validation state never pages
+  // Better Stack. The match is a REGEX (model name varies) anchored on the
+  // exact API wording, with canonical wrappers; a longer real error that
+  // merely mentions the phrase keeps reporting. See `isModelNotServableNoise`
+  // and Better Stack pattern `9784f440…`.
+  if (isModelNotServableNoise(message)) {
+    return true;
+  }
+
   // Old-WebKit (< 16.4) lookbehind parse failure from bundled third-party
   // deps on the marketing site — WebKit-specific wording, only old Safari/iOS
   // visitors hit it. The de-minified frame points at our own chunk, so this
@@ -3227,6 +4947,28 @@ export function shouldIgnoreSentryBrowserNoise(event: {
     return true;
   }
 
+  // Canvas `getImageData` out-of-memory noise — a third-party canvas library
+  // (e.g. a decorative background / hyper-logo animation on the marketing
+  // homepage) called `CanvasRenderingContext2D.getImageData()` and the browser
+  // ran out of memory allocating the `ImageData` buffer, surfacing as the
+  // canonical `Failed to execute 'getImageData' on 'CanvasRenderingContext2D':
+  // Out of memory at ImageData creation` `RangeError`. This is TRANSIENT
+  // browser resource exhaustion (canvas too large / tab under memory pressure
+  // / low-RAM device), NOT a deterministic code bug — the same canvas renders
+  // fine on the next visit. The throw fires from a third-party library's
+  // `addEventListener` callback (Sentry's `BrowserApiErrors` auto-wrapper
+  // captures it as UNCAUGHT, `handled:false` — never reached a React error
+  // boundary). Requires the exact message AND a NEGATIVE guard: a resolved
+  // first-party `apps/web/src/…` frame means our own code is the
+  // `getImageData` caller → a real first-party OOM regression; keep reporting.
+  // The prod event carries only minified third-party canvas library chunk
+  // frames (no first-party source). NOT in `ignoreErrors` (no frame context
+  // there). See `isCanvasImageDataOOMNoise` and Better Stack pattern
+  // `b4b43847…`.
+  if (isCanvasImageDataOOMNoise({ message, frames })) {
+    return true;
+  }
+
   // Old-browser / stripped-down-WebView minified-chunk parse failures
   // (`Unexpected token …`, `Invalid or unexpected token`, `Cannot use import
   // statement outside a module`) thrown when an incompatible browser tries to
@@ -3238,6 +4980,26 @@ export function shouldIgnoreSentryBrowserNoise(event: {
   // SyntaxErrors. The `beforeSend` hook (which calls this helper) is the only
   // safe gate because it can anchor on the chunk frame.
   if (isOldBrowserSyntaxParseError({ message, frames })) {
+    return true;
+  }
+
+  // Old-browser third-party-library DOM null-deref noise on the marketing
+  // homepage — `Cannot read properties of null (reading 'scrollLeft')` /
+  // `… (reading 'appendChild')` (V8) / `Cannot read property '<X>' of null`
+  // (old JSC) from minified third-party library internals (`measureScroll`,
+  // `ft`) on very old browsers (Win7 Chrome, Chrome 95). Requires the exact
+  // message AND a NEGATIVE guard: a resolved first-party `apps/web/src/…`
+  // frame means our own code is the null-deref culprit → actionable; keep
+  // reporting. The prod events carry only minified `app:///_next/static/
+  // chunks/…` chunk frames + `<anonymous>`, so the negative guard does NOT
+  // fire for them. A frameless capture with one of these exact messages still
+  // classifies as noise. NOTE: deliberately NOT added to
+  // `sentry.client.config.ts`'s `ignoreErrors` list — that gate has no frame
+  // context, so a bare-string match there would swallow a real first-party
+  // `el.scrollLeft` / `parent.appendChild` null-deref the negative guard
+  // exists to preserve; the frame-aware `beforeSend` hook (which calls this
+  // helper) is the only safe gate. See `isOldBrowserDomNullDerefNoise`.
+  if (isOldBrowserDomNullDerefNoise({ message, frames })) {
     return true;
   }
 
@@ -3330,6 +5092,21 @@ export function shouldIgnoreSentryBrowserNoise(event: {
     return true;
   }
 
+  // OneTrust cookie-consent SDK JSON-parse noise — the third-party
+  // `otSDKStub.js?did=undefined` bootstrap stub's `XMLHttpRequest.onload`
+  // handler calls `JSON.parse()` on an empty/truncated consent-config
+  // response (old iOS Safari, CORS preflight failure, 5xx, network abort)
+  // and throws the canonical `SyntaxError: Unexpected end of JSON input`.
+  // The throw is in the OneTrust SDK's own injected script (frame
+  // `app:///scripttemplates/otSDKStub.js?did=undefined` function `r.onload`),
+  // never first-party code. Requires BOTH the exact message AND an
+  // `otSDKStub.js` frame, with a negative guard preserving any resolved
+  // first-party `apps/web/src/…` frame. See `isOneTrustJsonParseNoise` and
+  // the production pattern `aa1efd3fb…`.
+  if (isOneTrustJsonParseNoise({ message, frames })) {
+    return true;
+  }
+
   // Browser-extension injectedScript.bundle.js `sendMessage` noise — a
   // browser extension (wallet / adblocker / privacy) injects
   // `app:///injectedScript.bundle.js` that calls `chrome.runtime.sendMessage`
@@ -3340,6 +5117,20 @@ export function shouldIgnoreSentryBrowserNoise(event: {
   // `apps/web/src/…` frame. See `isInjectedScriptSendMessageNoise` and the
   // production pattern `95a70e66…`.
   if (isInjectedScriptSendMessageNoise({ message, frames })) {
+    return true;
+  }
+
+  // CAPTCHA / anti-bot browser-extension interceptor noise — a bot-detection
+  // service extension injects `app:///content/captcha/mt_captcha/interceptor.js`
+  // whose internal `widgetId` configuration race throws
+  // `TypeError: Cannot read properties of undefined (reading 'widgetId')` from
+  // a minified extension function (`d`). The throw is in the extension's OWN
+  // injected interceptor, never first-party code. Requires BOTH the `widgetId`
+  // message anchor AND an injected-app source frame, with a negative guard
+  // preserving any resolved first-party `apps/web/src/…` frame. See
+  // `isCaptchaInterceptorNoise` and the two production patterns
+  // `cfd5f828…` / `4a01a169…`.
+  if (isCaptchaInterceptorNoise({ message, frames })) {
     return true;
   }
 
@@ -3435,6 +5226,25 @@ export function shouldIgnoreSentryBrowserNoise(event: {
     return true;
   }
 
+  // Safari third-party-script "undefined variable" ReferenceError noise —
+  // `Can't find variable: <Name>` (Safari/JavaScriptCore's ReferenceError
+  // wording for an undeclared variable; Chrome/V8 says `<Name> is not
+  // defined`) captured by the global `onerror` handler with NO resolvable
+  // source location (`call_site_file` is the literal `"undefined"`
+  // placeholder, no stack frames). A third-party script (e.g. a
+  // charting/finance library defining a constant like `EmptyRanges`) failed
+  // to load on iOS Safari, leaving the referenced global undefined. Requires
+  // BOTH the Safari ReferenceError prefix AND the frameless shape (positive
+  // guard), plus two negative guards: any resolved first-party
+  // `apps/web/src/…` frame → keep reporting; any resolvable frame location →
+  // keep reporting. Only the frameless capture (the production noise pattern)
+  // is dropped. NOT in `ignoreErrors` (no frame context there). See
+  // `isUndefinedVariableThirdPartyNoise` and Better Stack pattern
+  // `304f7345…`.
+  if (isUndefinedVariableThirdPartyNoise({ message, frames })) {
+    return true;
+  }
+
   // @embedpdf/plugin-tiling `TilingLayer` React #185 "Maximum update depth
   // exceeded" render loop — the tiling plugin re-emits `onTileRendering`
   // synchronously during the React commit phase under a rapid zoom/scroll
@@ -3459,6 +5269,26 @@ export function shouldIgnoreSentryBrowserNoise(event: {
   // first-party negative guard, so a real first-party `{ tile } = arr.pop()`
   // regression keeps reporting. See `isEmbedPdfTilingTileDestructureNoise`.
   if (isEmbedPdfTilingTileDestructureNoise({ message, frames })) {
+    return true;
+  }
+
+  // Broader third-party-library React #185 "Maximum update depth exceeded"
+  // fallback — runs AFTER the @embedpdf tiling #185 matcher above (the
+  // tiling matcher's more specific `onTileRendering` anchor is tried first,
+  // so a tiling #185 is dropped before this fallback is reached). Catches
+  // non-tiling third-party #185s — e.g. the ProseMirror/TipTap-based editor
+  // library's re-render loop fired by its document-state race (see
+  // `isDocumentStateNotFoundNoise`): the three Better Stack patterns
+  // `223d7d7e…` / `51b14963…` / `cd68e360…`, all from the same Safari 26.5
+  // session as the doc-state race, NO `onTileRendering` frame, all UNCAUGHT.
+  // Requires the #185 message AND TWO negative guards: NO resolved
+  // first-party `apps/web/src/…` frame (a real first-party setState loop
+  // de-minifies to `apps/web/src/…` and is preserved), AND the event is
+  // UNCAUGHT (mechanism is a global/BrowserApiErrors auto-handler with
+  // `handled:false` — a CAUGHT #185 that reached a React error boundary may
+  // be actionable and keeps reporting). This matcher does NOT replace or
+  // subsume the tiling matcher. See `isThirdPartyReactUpdateDepthNoise`.
+  if (isThirdPartyReactUpdateDepthNoise({ message, mechanism, handled, frames })) {
     return true;
   }
 
@@ -3534,6 +5364,32 @@ export function shouldIgnoreSentryBrowserNoise(event: {
     return true;
   }
 
+  // Supabase gotrue OTP-expired-link `Object Not Found Matching Id:…,
+  // MethodName:update, ParamCount:…` non-Error promise rejection noise — a
+  // user landed on an expired/invalid OTP email link
+  // (`/#error=access_denied&error_code=otp_expired`), and the Supabase auth
+  // client's session-update from the expired OTP token rejected with a bare
+  // string `Object Not Found Matching Id:<n>, MethodName:update,
+  // ParamCount:<n>` (gotrue's "no row found" wording; the `<n>` integers
+  // vary per call). Because the rejected value is a bare string (NOT an
+  // Error), Sentry 10.x's GlobalHandlers `onunhandledrejection` integration
+  // cannot extract a stack and synthesizes the canonical "Non-Error promise
+  // rejection captured with value: Object Not Found Matching Id:2,
+  // MethodName:update, ParamCount:4" message with NO stacktrace frames.
+  // Requires the canonical prefix (the suffix varies per gotrue call) AND
+  // NEGATIVE guards: any resolved first-party `apps/web/src/…` frame OR any
+  // resolvable frame location → keep reporting (a real first-party
+  // bare-string `Promise.reject('Object Not Found Matching…')` we can
+  // attribute should still surface). The production noise pattern has NO
+  // frames at all; only the frameless capture is dropped. Sibling of
+  // `isNonErrorUndefinedRejectionNoise` (PR #5200) and
+  // `isSupabaseTokenExpiredNoise`. See
+  // `isNonErrorObjectNotFoundRejectionNoise`. NOT in `ignoreErrors` (no
+  // frame context there).
+  if (isNonErrorObjectNotFoundRejectionNoise({ message, frames })) {
+    return true;
+  }
+
   // Bare lowercase `network error` rejection noise — the canonical Axios / XHR
   // transport-abort message (lowercase; distinct from Axios's capitalized
   // `Network Error` wrapper, which is a different surface and is NOT matched),
@@ -3569,6 +5425,82 @@ export function shouldIgnoreSentryBrowserNoise(event: {
   // patterns into a real, tested matcher. NOT in `ignoreErrors` (no frame
   // context there). See `isConnectionClosedNoise`.
   if (isConnectionClosedNoise({ message, frames })) {
+    return true;
+  }
+
+  // Transient WebSocket `postMessage` `Failed to send message` transport
+  // noise — a co-worker session page's `ws.send(...)` rejected with the
+  // canonical WebSocket `InvalidStateError` message when the sandbox tore
+  // the connection down mid-flight (deploy / recycle / park / network
+  // blip). Sibling of `isConnectionClosedNoise` (the `Connection closed.`
+  // transport-close class) but a DIFFERENT throw (a `ws.send` rejection on
+  // an already-closed socket). The prod event is `handled:true`
+  // (mechanism `generic` — caught by an error boundary, NOT an uncaught
+  // global rejection), so a first-party sender IS actionable — the
+  // negative guard preserves any resolved first-party `apps/web/src/…`
+  // frame. The prod event carries only a minified `_next/static/immutable/
+  // chunks/…` frame, so the negative guard does not fire for it. NOT in
+  // `ignoreErrors` (no frame context there). See
+  // `isFailedToSendMessageNoise` and Better Stack pattern `824577dd…`.
+  if (isFailedToSendMessageNoise({ message, frames })) {
+    return true;
+  }
+
+  // Third-party editor-library (ProseMirror/TipTap-based) document-state
+  // race noise — the library's own internal `getDocumentStateOrThrow` /
+  // `getDocumentState` helpers threw
+  // `<Interaction|Selection> state not found for document: <docId>` when the
+  // editor was unmounted / the document closed while an async interaction or
+  // selection was still in flight (a race in the library's async interaction
+  // handling, triggered by WebKit's async timing). The throw is in the
+  // library's minified `17631`/`13jg6` chunks, never first-party. Requires the
+  // canonical message prefix AND a NEGATIVE guard: any resolved first-party
+  // `apps/web/src/…` frame → keep reporting (a real first-party state-lookup
+  // regression de-minifies to `apps/web/src/…` and must not be hidden). The
+  // prod events (Better Stack `6d6fa794…` 28 occ + `a954c7e7…` 2 occ, same
+  // Safari 26.5 session) carry only minified library chunk frames, so the
+  // negative guard does not fire for them. NOT in `ignoreErrors` (no frame
+  // context there). See `isDocumentStateNotFoundNoise`.
+  if (isDocumentStateNotFoundNoise({ message, frames })) {
+    return true;
+  }
+
+  // Bot / automation-framework / scraper `Cannot redefine property: webdriver`
+  // noise — an injected anti-detection script attempts
+  // `Object.defineProperty(navigator, 'webdriver', …)` to hide its automation
+  // footprint, and Chrome throws a `TypeError` because `navigator.webdriver`
+  // is non-configurable in that build. The throw is in the injected
+  // automation script, never first-party code. Requires the EXACT message AND
+  // a NEGATIVE guard: a resolved first-party `apps/web/src/…` frame means our
+  // own code called `defineProperty` on a non-configurable property → a real
+  // first-party regression; keep reporting. The production event carries only
+  // `<anonymous>` frames, so the negative guard does NOT fire for it. A
+  // frameless capture with this exact message still classifies as noise (the
+  // `webdriver` property name is the specific anchor). NOT in `ignoreErrors`
+  // (no frame context there). See `isRedefineWebdriverNoise` and Better Stack
+  // pattern `ee14e84d…`.
+  if (isRedefineWebdriverNoise({ message, frames })) {
+    return true;
+  }
+
+  // Transient fetch-abort `signal timed out` noise — the native `TimeoutError`
+  // raised by `AbortSignal.timeout()` when a client-side fetch exceeds its 30s
+  // deadline. The SDK's `makeRequest` aborts on its 30s deadline and the abort
+  // surfaces as `TimeoutError: signal timed out` in the frontend's
+  // `onunhandledrejection`; it reaches Sentry through a fire-and-forget path
+  // that bypasses `handleApiError`'s timeout guard. The API already filters
+  // its OWN timeout wording (`The operation timed out.`, #4709), but the
+  // frontend's `signal timed out` wording is NOT covered. A transient
+  // network/timeout error, not a code bug. Requires the EXACT message AND a
+  // NEGATIVE guard: a resolved first-party `apps/web/src/…` frame means our
+  // own code threw `signal timed out` → a real first-party regression; keep
+  // reporting. The production event has NO frames at all, so the negative
+  // guard does NOT fire for it. A frameless capture with this exact message
+  // classifies as noise. Sibling of `isClientRequestTimeoutMessage` (the SDK's
+  // typed `Request timed out after <N>s:` wording). NOT in `ignoreErrors` (no
+  // frame context there). See `isSignalTimeoutNoise` and Better Stack pattern
+  // `73e683c3…`.
+  if (isSignalTimeoutNoise({ message, frames })) {
     return true;
   }
 

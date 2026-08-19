@@ -1,6 +1,6 @@
-// Projects — project CRUD, detail, experimental features, warm pool, onboarding.
+// Projects — project CRUD, detail, feature flags, warm pool, onboarding.
 
-import { type ApiClientOptions, backendApi } from '../../http/api-client';
+import { ApiError, type ApiClientOptions, backendApi } from '../../http/api-client';
 import type { SandboxProviderName } from '../platform-client/types';
 import {
   type ProjectFileEntry,
@@ -12,8 +12,17 @@ import {
   unwrap,
 } from './shared';
 
-/** Stable ids for experimental features (mirrors apps/api experimental/features). */
-export type ExperimentalFeatureKey =
+/**
+ * Stable ids for the platform's per-project feature flags (mirrors
+ * `apps/api/src/feature-flags/registry.ts` and `FeatureFlagMapSchema` in
+ * `@kortix/api-contract`).
+ *
+ * The union is hand-written on purpose: this package is framework-free AND
+ * dependency-light, and importing `@kortix/api-contract` would drag zod into
+ * every consumer's bundle. {@link FEATURE_FLAG_KEYS} is the runtime witness of
+ * the same list, so other packages can assert the two have not drifted.
+ */
+export type FeatureFlagKey =
   | 'agent_tunnel'
   | 'marketplace'
   | 'connectors_api_discover'
@@ -21,14 +30,47 @@ export type ExperimentalFeatureKey =
   | 'teams'
   | 'voice'
   | 'llm_gateway'
-  | 'review_center';
+  | 'review_center'
+  | 'meta_agent'
+  | 'apps'
+  | 'monitors'
+  | 'network_boundary_shim'
+  | 'warm_sessions';
 
-/** One experimental feature as described by the API catalog. */
-export interface ExperimentalFeatureView {
-  key: ExperimentalFeatureKey;
+/**
+ * Every {@link FeatureFlagKey}, at runtime. Kept in the same order as the
+ * union above. Cross-package drift tests compare this against the API's
+ * `FEATURE_FLAG_KEYS`.
+ */
+export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
+  'agent_tunnel',
+  'marketplace',
+  'connectors_api_discover',
+  'agentmail_email',
+  'teams',
+  'voice',
+  'llm_gateway',
+  'review_center',
+  'meta_agent',
+  'apps',
+  'monitors',
+  'network_boundary_shim',
+  'warm_sessions',
+] as const;
+
+/**
+ * How mature a flag is. This is a per-flag BADGE, not the name of the system:
+ * the system is "Feature flags", and a flag can be `stable` and still ship
+ * behind a switch.
+ */
+export type FeatureFlagStability = 'experimental' | 'beta' | 'stable';
+
+/** One feature flag as described by the API catalog. */
+export interface FeatureFlagView {
+  key: FeatureFlagKey;
   name: string;
   description: string;
-  stability: 'experimental' | 'beta';
+  stability: FeatureFlagStability;
   /** Platform supports it (operator env). When false the UI hides the toggle. */
   available: boolean;
   /** Effective per-project state (the switch position). */
@@ -36,6 +78,12 @@ export interface ExperimentalFeatureView {
   /** True when this project set an explicit choice (vs inheriting the default). */
   overridden: boolean;
 }
+
+/** @deprecated Renamed to {@link FeatureFlagKey}. Removed in the next major. */
+export type ExperimentalFeatureKey = FeatureFlagKey;
+
+/** @deprecated Renamed to {@link FeatureFlagView}. Removed in the next major. */
+export type ExperimentalFeatureView = FeatureFlagView;
 
 /** A project's named-glyph icon. `name` is a Phosphor identifier from the
  *  server's fixed catalogue; `color` is one of eight palette names. */
@@ -58,11 +106,12 @@ export interface KortixProject {
   updated_at: string;
   project_role?: ProjectRole | null;
   effective_project_role?: ProjectRole | null;
-  /** Effective on/off for each experimental feature for THIS project. */
-  experimental?: Record<ExperimentalFeatureKey, boolean>;
-  /** Full experimental-feature catalog (drives Customize → Settings →
-   *  Experimental). Self-describing so the UI never hard-codes the list. */
-  experimental_features?: ExperimentalFeatureView[];
+  /** Effective on/off for each feature flag for THIS project. The field name is
+   *  a stable wire detail — the system is called "Feature flags". */
+  experimental?: Record<FeatureFlagKey, boolean>;
+  /** Full feature-flag catalog (drives Customize → Feature flags).
+   *  Self-describing so the UI never hard-codes the list. */
+  experimental_features?: FeatureFlagView[];
   /** Effective per-project warm sandbox pool config (Customize → Sandbox). */
   warm_pool?: { enabled: boolean; size: number };
   /** Whether the warm pool feature is enabled platform-wide (gates the UI). */
@@ -246,6 +295,9 @@ export interface ProvisionProjectInput {
   name: string;
   /** Seed the managed repo with the Kortix starter so sessions can boot. */
   seed_starter?: boolean;
+  /** Default branch for the newly-created managed repo. Omit to accept the
+   *  server's own default (`apps/api/src/projects/routes/r1.ts`). */
+  default_branch?: string;
   starter_template?: 'general-knowledge-worker' | 'minimal';
   marketplace_items?: string[];
   /** Clone a `registry:project` marketplace item instead of the blank
@@ -258,6 +310,30 @@ export interface ProvisionProjectInput {
   /** Optional glyph icon for the new project. Invalid values are dropped
    *  rather than failing the create. Wins over `icon` if both are given. */
   icon_glyph?: ProjectGlyph;
+  /**
+   * Caller-supplied dedupe token. Provision mints a brand-new managed repo on
+   * every call, so a retry after a lost response — a reload, a second tab, an
+   * aborted request — otherwise creates a real duplicate project with its own
+   * repo. Send the SAME key for every attempt at one logical create and the
+   * server returns the project the first attempt made (201, same
+   * `project_id`) instead of creating another.
+   *
+   * Scope is the account: the same key under a different account creates
+   * normally. The key identifies the ATTEMPT, not the payload — it is not a
+   * request fingerprint, so reusing one with a different `name` or
+   * `starter_template` returns the FIRST project and ignores the new values.
+   * Mint a fresh key per distinct create; creating a second project with the
+   * same NAME and no key still works.
+   *
+   * Retry on `409` with `code: 'provision_in_flight'`. It means an earlier call
+   * with this key is still running (or lost a write race) and its project is
+   * not safe to hand back yet. Keep the SAME key when you retry.
+   *
+   * Format: 1–200 characters of `A–Z a–z 0–9 . _ : -`. A UUID per create
+   * attempt is the intended shape. Omit it and the route behaves exactly as
+   * before.
+   */
+  idempotency_key?: string;
 }
 
 export interface RepoCollaboratorInvite {
@@ -460,6 +536,193 @@ export async function provisionProject(
   );
 }
 
+/**
+ * The phases `POST /projects/provision-stream` reports, in the order it
+ * reports them. Mirrors `PROVISION_PHASES` in
+ * `apps/api/src/projects/provision-core.ts` — a separate package, so a
+ * separate declaration, but the two must stay byte-identical. A drift here
+ * (a renamed or reordered phase on one side only) means the UI silently
+ * stops advancing on whichever phase name no longer matches, with no error —
+ * see the exhaustiveness test in `projects.test.ts` that pins this union
+ * against the literal phase list.
+ */
+export type ProvisionPhase = 'validating' | 'creating_repository' | 'registering' | 'seeding';
+
+/**
+ * One frame of `POST /projects/provision-stream`'s SSE body.
+ *
+ * The `error` frame's `status` mirrors the HTTP status the equivalent
+ * `/provision` response would have carried for the same failure — the route
+ * (`apps/api/src/projects/routes/r1.ts`) writes `result.status` from the
+ * shared `runProvision` core alongside `error`/`code`, exactly the fields
+ * `provisionProjectStream` (below) copies onto the error it throws. Without
+ * this, a host reading only `.status`/`.code` (as `apps/web`'s
+ * `messageFor`/`isRetryableError` do) cannot tell a 400 from a 409 on this
+ * transport, even though it can on the plain `provisionProject` path.
+ */
+export type ProvisionStreamEvent =
+  | { type: 'phase'; phase: ProvisionPhase }
+  | { type: 'done'; project: KortixProject }
+  | { type: 'error'; error: string; code?: string; status?: number };
+
+/**
+ * Parse ONE SSE frame — the text between two `\n\n` boundaries — into a
+ * `ProvisionStreamEvent`, or `null` if the frame carries no `data:` line.
+ *
+ * Line-by-line, not `frame.startsWith('data: ')` against the whole frame:
+ * SSE permits `: comment` lines and an `event:` line ahead of `data:`, and
+ * the wire contract here is data-only (no `event:` line) ONLY as an
+ * implementation choice the server documents, not a protocol guarantee a
+ * client should hard-fail without. A parser that rejects any frame that
+ * isn't EXACTLY `data: <json>` breaks the moment a spec-legal frame shows up
+ * that it wasn't exactly expecting. Per the SSE spec, multiple `data:` lines
+ * in one frame are joined with `\n` before parsing.
+ */
+/** How much of an unparseable frame's payload to surface in the thrown error.
+ *  Bounded hard: a frame can be arbitrarily large, and — in the wrong build,
+ *  on the wrong route — could in principle carry something sensitive (a push
+ *  token). Never include more than this, and never log the payload anywhere. */
+const FRAME_PARSE_ERROR_EXCERPT_LENGTH = 200;
+
+function parseProvisionStreamFrame(frame: string): ProvisionStreamEvent | null {
+  const dataLines = frame
+    .split('\n')
+    .filter((line) => line.startsWith('data:'))
+    .map((line) => line.slice(5).replace(/^ /, ''));
+  if (dataLines.length === 0) return null;
+
+  const payload = dataLines.join('\n');
+  try {
+    return JSON.parse(payload) as ProvisionStreamEvent;
+  } catch (cause) {
+    const excerpt =
+      payload.length > FRAME_PARSE_ERROR_EXCERPT_LENGTH
+        ? `${payload.slice(0, FRAME_PARSE_ERROR_EXCERPT_LENGTH)}…`
+        : payload;
+    // Named + attributed: a bare `SyntaxError: JSON Parse error: Expected
+    // '}'` gives someone debugging a proxy that mangled one frame in
+    // production nothing to go on — no mention of provisionProjectStream, no
+    // mention that this came from an SSE frame, no sight of what the frame
+    // actually contained.
+    throw new Error(
+      `provisionProjectStream: received an unparseable SSE frame (${excerpt})`,
+      { cause },
+    );
+  }
+}
+
+/**
+ * Create a managed-repo project, reporting which phase the server is in as
+ * it happens.
+ *
+ * Same create as {@link provisionProject} — the server runs ONE shared
+ * implementation (`runProvision` in `apps/api/src/projects/provision-core.ts`)
+ * behind both `/projects/provision` and `/projects/provision-stream`. Use
+ * this when a UI needs to show progress; use `provisionProject` for a plain
+ * request/response.
+ *
+ * The stream always ends in a terminal `done` or `error` frame — the server
+ * guarantees it (see the route's `finally`/catch in
+ * `apps/api/src/projects/routes/r1.ts`). A stream that closes with NEITHER is
+ * treated as a failure here too, never as an implicit success: resolving
+ * with no project would hand the caller an undefined project id and route a
+ * user to `/projects/undefined`.
+ *
+ * A pre-stream authorization denial (e.g. "Owner or admin role required")
+ * arrives as a plain non-2xx JSON response, never as a `200` that then opens
+ * an SSE body containing an `error` frame — this function rejects with that
+ * response's message the same way it rejects an in-stream `error` event.
+ * Both rejections are a real `ApiError` carrying `.status`/`.code`, not a
+ * bare `Error` — see the `ProvisionStreamEvent` doc comment above for why
+ * that match to `ApiError`'s shape matters.
+ *
+ * ## Streaming target matrix
+ *
+ * Requires `fetch` with a real `ReadableStream` response body:
+ *
+ * | Target                          | Streams? |
+ * |----------------------------------|----------|
+ * | Modern browsers (Safari 16.4+)   | yes |
+ * | Node >= 18                       | yes |
+ * | Bun                               | yes |
+ * | Cloudflare Workers                | yes |
+ * | **React Native / Expo**          | **NO** |
+ *
+ * **React Native is NOT supported.** RN's `fetch` has no `response.body` —
+ * there is no way to read a stream incrementally on that runtime, full stop.
+ * (This function decodes with plain `TextDecoder.decode()`, not
+ * `TextDecoderStream`, so Hermes's missing `TextDecoderStream` is not what
+ * blocks it here — the absent `response.body` alone is sufficient.) Callers
+ * on RN must use `provisionProject` instead (single request/response, no
+ * progress reporting).
+ */
+export async function provisionProjectStream(
+  input: ProvisionProjectInput,
+  onEvent: (event: ProvisionStreamEvent) => void,
+  options: ApiClientOptions = {},
+): Promise<KortixProject> {
+  const response = await backendApi.postStream(
+    '/projects/provision-stream',
+    { seed_starter: true, ...input },
+    options,
+  );
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => null) as { error?: string; code?: string } | null;
+    // A REAL `ApiError`, not a bare `Error` — see the `ProvisionStreamEvent`
+    // doc comment above. `apps/web`'s `messageFor`/`isRetryableError` read
+    // `.status`/`.code` off whatever `provisionProject`/`provisionProjectStream`
+    // throw; without this they saw `undefined` for both on this transport.
+    throw new ApiError(body?.error || `Provision failed: HTTP ${response.status}`, {
+      status: response.status,
+      code: body?.code,
+    });
+  }
+
+  const reader = response.body?.getReader();
+  if (!reader) {
+    throw new Error('Provision stream is unavailable on this runtime (no response body)');
+  }
+
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let settled: KortixProject | null = null;
+
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      let boundary = buffer.indexOf('\n\n');
+      while (boundary !== -1) {
+        const frame = buffer.slice(0, boundary);
+        buffer = buffer.slice(boundary + 2);
+        boundary = buffer.indexOf('\n\n');
+
+        const event = parseProvisionStreamFrame(frame);
+        if (!event) continue;
+        onEvent(event);
+        // Same `ApiError` shape as the pre-stream-denial branch above, so a
+        // host classifying create failures gets identical `.status`/`.code`
+        // whichever branch fired.
+        if (event.type === 'error') {
+          throw new ApiError(event.error, { status: event.status, code: event.code });
+        }
+        if (event.type === 'done') settled = event.project;
+      }
+    }
+  } finally {
+    reader.cancel().catch(() => {});
+  }
+
+  // A stream that closes without a terminal event is a failure, not a
+  // success. Resolving here would hand the caller an undefined project id
+  // and route a user to `/projects/undefined`.
+  if (!settled) throw new Error('Provision stream ended without a result');
+  return settled;
+}
+
 export interface ManagedGitStatus {
   configured: boolean;
   provider: string;
@@ -498,12 +761,35 @@ export async function updateProject(projectId: string, input: Partial<ProjectInp
   return unwrap(await backendApi.patch<KortixProject>(`/projects/${projectId}`, input));
 }
 
-/** Toggle an experimental feature for a project (Customize → Settings →
- *  Experimental). Pass `enabled: null` to clear the override and fall back to
- *  the operator default. */
+/**
+ * Toggle a feature flag for a project (Customize → Feature flags). Pass
+ * `enabled: null` to clear the override and fall back to the operator default.
+ *
+ * Hits the CANONICAL `PATCH /projects/:id/features` route.
+ */
+export async function updateFeatureFlag(
+  projectId: string,
+  feature: FeatureFlagKey,
+  enabled: boolean | null,
+) {
+  return unwrap(
+    await backendApi.patch<KortixProject>(`/projects/${projectId}/features`, {
+      feature,
+      enabled,
+    }),
+  );
+}
+
+/**
+ * @deprecated Renamed to {@link updateFeatureFlag}. Removed in the next major.
+ *
+ * Deliberately NOT re-pointed at the canonical `/features` route: this alias
+ * exists for consumers pinned to an older deployed API that only serves
+ * `/projects/:id/experimental`. Changing its wire path would break them.
+ */
 export async function updateExperimentalFeature(
   projectId: string,
-  feature: ExperimentalFeatureKey,
+  feature: FeatureFlagKey,
   enabled: boolean | null,
 ) {
   return unwrap(
@@ -633,6 +919,43 @@ export async function updateTemplateWarmPool(
 export async function setProjectOnboardingComplete(projectId: string, completed: boolean) {
   return unwrap(
     await backendApi.patch<KortixProject>(`/projects/${projectId}/onboarding`, { completed }),
+  );
+}
+
+/** Use case the account picked during guided project onboarding. */
+export type OnboardingUseCase =
+  | 'sales'
+  | 'support'
+  | 'marketing'
+  | 'engineering'
+  | 'finance_ops'
+  | 'hr_recruiting'
+  | 'other';
+
+/** Company size buckets. Mirrors the demo-qualifier scale so a user who both
+ *  onboards and books a demo is never offered two different scales. */
+export type OnboardingCompanySize = '1-10' | '11-50' | '51-200' | '201-1000' | '1000+';
+
+/** Every field optional — onboarding saves each answer as it is given, so a
+ *  partial profile is the normal case, not an error case. */
+export interface OnboardingProfile {
+  use_case?: OnboardingUseCase;
+  company_domain?: string;
+  company_size?: OnboardingCompanySize;
+}
+
+/**
+ * Persist guided-onboarding answers into `projects.metadata.onboarding`.
+ *
+ * Deliberately separate from {@link setProjectOnboardingComplete}: completion is
+ * a lifecycle flag at the top level of `metadata`, the profile is a nested
+ * object, and the two are written by different steps at different times. Sending
+ * `completed` from a survey save would end onboarding the moment the user
+ * answered the first question.
+ */
+export async function setProjectOnboardingProfile(projectId: string, profile: OnboardingProfile) {
+  return unwrap(
+    await backendApi.patch<KortixProject>(`/projects/${projectId}/onboarding`, { profile }),
   );
 }
 

@@ -15,17 +15,17 @@
 
 import { config } from '../config';
 import { SESSION_DATA_PORTS } from '../sandbox-proxy/session-data-ports';
+import { isOpencodePort } from '../shared/opencode-ports';
 import { positiveEnvInt } from './reaper-constants';
 
 /**
- * Absolute cap on ONE continuous running stretch, no matter how many turns it
- * contains and no matter what application bug exists. MIRRORS THE DB CHECK
- * (`session_sandboxes_deadline_within_cap`) — if you change this, change the
- * constraint in the same migration batch. At the cap the box is REFUSED new
- * work and parked; the next prompt wakes it into a fresh, freshly-anchored
- * stretch (see observeTurnStart).
+ * Application cap for observations that are not durable active-turn evidence.
+ * Preview traffic, gateway activity, and warm-pool grants cannot keep one
+ * provider run alive forever. sandbox-turn-lifecycle.ts intentionally does not
+ * use this cap: an exact OpenCode turn with fresh control-plane evidence renews
+ * until that evidence becomes terminal or unreadable past its deadline.
  */
-export const ABSOLUTE_RUN_CAP_MS = 24 * 3_600_000;
+export const NON_TURN_DEADLINE_CAP_MS = 24 * 3_600_000;
 
 /**
  * Granted on every OBSERVED turn start.
@@ -36,30 +36,71 @@ export const ABSOLUTE_RUN_CAP_MS = 24 * 3_600_000;
  * turn is ~8.4h and roughly 7-18 turns per 30 days exceed 4h — which is what
  * `llmActivityGrantMs` exists to cover: every gateway LLM call mid-turn
  * re-extends the box, so a genuinely long turn keeps its box for as long as it
- * keeps talking to a model, bounded only by ABSOLUTE_RUN_CAP_MS.
+ * keeps talking to a model. Durable active-turn observation is the authority
+ * for work that exceeds this grant.
  *
- * THE KNOWN GAP: a turn that makes NO gateway LLM call for four hours. That is
- * not a long turn — a long turn keeps talking to a model and keeps extending —
- * it is a BLOCKED one: the agent is waiting on a permission prompt or a
- * `question` the user has not answered. There is no observation for that today,
- * because the in-box relay that would report it (`relayQuestion` /
- * `relayTurnEndToApi` in kortix-sandbox-agent-server) returns early unless the
- * box has Slack context, so for a web session apps/api never learns a question is
- * pending. The browser's own traffic while the user reads the prompt lands on
- * port 8000/4096, which `isPreviewUseObservation` deliberately excludes. So a
- * prompt left unanswered for more than four hours loses its box, and with it the
- * in-flight turn (the box auto-resumes on the answer, but opencode restarts cold
- * and its pending question is gone). Ungating that relay — and giving the control
- * plane a real "a question is pending" observation — is the fix, and it is a
- * change to the sandbox agent, not to this file.
+ * This grant is not the active-turn authority. A confirmed prompt delivery
+ * creates a token-keyed `metadata.activeTurns` entry through
+ * sandbox-turn-lifecycle.ts. The reaper renews this grant only after it observes
+ * the exact OpenCode turn in flight.
+ * Therefore an LLM-silent tool call, retry backoff, or pending question can
+ * outlive one grant without losing its sandbox. Terminal evidence removes the
+ * record.
  *
- * KILL SWITCH: set KORTIX_SANDBOX_TURN_GRANT_MINUTES=100000 and every extend
- * out-runs the cap, so the LEAST clamps at active_since + 24h and the feature
- * is effectively neutralised without a rollback. That is also the mitigation for
- * the gap above if it turns out to bite real sessions before the relay lands.
  */
 export function turnGrantMs(): number {
   return positiveEnvInt('KORTIX_SANDBOX_TURN_GRANT_MINUTES', 240) * 60_000;
+}
+
+/**
+ * Granted before a prompt reaches OpenCode. This covers env synchronization,
+ * token reminting, and one upstream delivery attempt. It does not assert that
+ * an agent is running. A successful OpenCode response upgrades the deadline to
+ * {@link turnGrantMs}; a failed delivery expires on this short grace instead of
+ * retaining a four-hour active-turn window.
+ */
+export function turnDeliveryGraceMs(): number {
+  return positiveEnvInt('KORTIX_SANDBOX_TURN_DELIVERY_GRACE_MINUTES', 15) * 60_000;
+}
+
+/**
+ * Granted when a provider-RUNNING box holds a recent control-plane-minted turn
+ * record and its daemon ANSWERS the probe without saying anything about that
+ * turn.
+ *
+ * Incident 2026-08-17T20:40:03Z (session 0fc6897a, Daytona f468056d): the box's
+ * `deadlineGrant` never left `boot_floor`. The daemon on that warm snapshot
+ * answered the turn probe with neither `true` nor `false`, so
+ * `observeSandboxTurn` returned `unknown` on every pass,
+ * `renewActiveSandboxTurn` never ran, and the box reached its 15-minute resume
+ * floor WHILE ITS TURN WAS RUNNING.
+ *
+ * ONE liveness horizon, deliberately NOT {@link turnGrantMs}. This is a drip,
+ * not a grant: a box that cannot describe its own turn has not earned four
+ * hours. It buys the turn one more horizon at a time for as long as the record
+ * is still fresh FOR ITS STATE — {@link turnGrantMs} for an accepted record,
+ * {@link turnDeliveryGraceMs} for a `delivering` one nothing has confirmed
+ * reached OpenCode — so a runtime that stays silent stops receiving it within
+ * one horizon of that bound.
+ *
+ * The wall-clock anchor cap is NOT the bound here: `renewActiveSandboxTurn` is
+ * uncapped for the same reason, because a box holding turn authority is exactly
+ * the box whose deadline may legitimately outlive one 24h provider run. The
+ * bound is the record's freshness, which the box cannot author.
+ */
+export function turnUnconfirmedDripMs(): number {
+  return positiveEnvInt('KORTIX_SANDBOX_TURN_UNCONFIRMED_DRIP_MINUTES', 15) * 60_000;
+}
+
+/**
+ * Maximum time an idle-stop claim may block prompt delivery.
+ *
+ * Provider stop calls are bounded below this value. If an API process exits
+ * after claiming but before releasing or committing the stop, prompt delivery
+ * can take over after this lease instead of remaining blocked forever.
+ */
+export function sandboxStopClaimLeaseMs(): number {
+  return positiveEnvInt('KORTIX_SANDBOX_STOP_CLAIM_LEASE_MINUTES', 2) * 60_000;
 }
 
 /**
@@ -96,8 +137,7 @@ export function llmActivityGrantMs(): number {
  *
  * 30 minutes, not the 4-hour turn grant: a forgotten open tab that still polls
  * is the one plausible way to abuse this, and a shorter grant keeps the cost of
- * that bounded to ~30 minutes past the last real click. ABSOLUTE_RUN_CAP_MS
- * bounds it absolutely either way.
+ * that bounded to ~30 minutes past the last real click.
  */
 export function previewGrantMs(): number {
   return positiveEnvInt('KORTIX_SANDBOX_PREVIEW_GRANT_MINUTES', 30) * 60_000;
@@ -108,7 +148,7 @@ export function previewGrantMs(): number {
  *
  * A warm box is baked speculatively so that session start feels instant. Until
  * somebody claims it, it has no turns, no LLM calls and no human traffic — so it
- * can NEVER receive an extend, and under the plain 20-minute boot floor every
+ * can NEVER receive an extend, and under the plain 15-minute boot floor every
  * warm box was reaped before it could be handed out, which defeats the feature
  * outright. It therefore gets its lifetime up front instead of by observation.
  *
@@ -135,14 +175,26 @@ export function idleGraceMs(): number {
 }
 
 /**
+ * Tight idle tail for CHILD sessions — ones spawned by a coordinator
+ * (`metadata.spawned_by_session`). A worker exists for one bounded task; once
+ * its turn ends the coordinator collects outputs with `sessions cp` and the
+ * box has no reason to idle at full compute. Wake-on-demand (/start, proxy
+ * auto-wake, server-side prompt delivery) restores it when needed. The actual
+ * stop still waits for the ~5-minute maintenance reaper tick.
+ */
+export function childIdleGraceMs(): number {
+  return 2 * 60_000;
+}
+
+/**
  * Did the SANDBOX ITSELF author this request? Such a request may never extend
  * the box's deadline — that is the self-renewal this design deletes.
  *
  * Two credentials reach the control plane from inside a box, and BOTH must be
  * caught:
  *   - `kortix_sb_…`, the sandbox token, which sets apiKeyType 'sandbox';
- *   - a SESSION-SCOPED PAT (`kortix_pat_…`, injected as KORTIX_CLI_TOKEN /
- *     KORTIX_EXECUTOR_TOKEN and used by the in-box `kortix` CLI), whose auth
+ *   - a SESSION-SCOPED PAT (`kortix_pat_…`, injected as KORTIX_CLI_TOKEN
+ *     and used by the in-box `kortix` CLI), whose auth
  *     branch never sets apiKeyType at all.
  * Testing apiKeyType alone therefore lets the box renew itself forever with its
  * own CLI token. A non-null session binding is the reliable signal: every
@@ -158,8 +210,7 @@ export function isSandboxAuthored(
   return apiKeyType === 'sandbox' || (sessionId ?? null) !== null;
 }
 
-/** opencode's own port, and the in-box agent that reverse-proxies to it. */
-const OPENCODE_PORT = 4096;
+/** opencode's own ports, and the in-box agent that reverse-proxies to it. */
 const AGENT_PORT = 8000;
 
 /**
@@ -176,7 +227,11 @@ const TURN_START = /^\/session\/[^/]+\/(?:prompt_async|message|command|summarize
  *  beginning without trusting anything the sandbox says about itself. */
 export function isTurnStartRequest(port: number, method: string, path: string): boolean {
   if (method.toUpperCase() !== 'POST') return false;
-  if (port !== AGENT_PORT && port !== OPENCODE_PORT) return false;
+  // Either half of the opencode pair counts. A verified reload swaps which one
+  // is live, and letting the other through here would let the box's own agent
+  // traffic read as a human using a preview — extending the deadline, which is
+  // exactly the self-renewal bounded lifetimes exist to prevent.
+  if (port !== AGENT_PORT && !isOpencodePort(port)) return false;
   const p = path.replace(/^\/proxy\/\d+(?=\/)/, ''); // in-box dynamic-port nesting
   return TURN_START.test(p);
 }
@@ -202,7 +257,7 @@ export function isTurnStartRequest(port: number, method: string, path: string): 
  *
  * Residual, stated honestly: a browser tab left open on a dev server that polls
  * on a timer keeps its box alive. That is bounded by `previewGrantMs` past the
- * last request and absolutely by ABSOLUTE_RUN_CAP_MS, and it is the same trade
+ * last request and by NON_TURN_DEADLINE_CAP_MS, and it is the same trade
  * every hosted preview makes — killing a dev server under an active user is the
  * worse failure.
  */

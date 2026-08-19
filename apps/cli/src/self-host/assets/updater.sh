@@ -74,6 +74,13 @@ COMPOSE="docker compose --project-name $PROJECT_NAME --env-file $WORKDIR/.env -f
 ROLL_SERVICES="kortix-api llm-gateway frontend"
 MIGRATE_SERVICE="kortix-migrate"
 
+# The Supabase Postgres service + its superuser role, used by the migration
+# self-heal (heal_supabase_unlogged) to repair unlogged-table storage-fork
+# corruption an unclean DB stop can leave behind. Overridable for a stack that
+# names the service differently or fronts an external Postgres.
+SUPABASE_DB_SERVICE="${KORTIX_SUPABASE_DB_SERVICE:-supabase-db}"
+SUPABASE_SUPERUSER="${KORTIX_SUPABASE_SUPERUSER:-supabase_admin}"
+
 # Target replica count is decided once, at render time, by whether a domain
 # (and therefore Caddy) is configured — see applyReplicaTopology() in
 # compose-assets.ts. We just read it back so this script never has to
@@ -297,12 +304,103 @@ roll_or_recreate_with_retry() {
   roll_or_recreate "$svc"
 }
 
+# ---- migration self-heal: Supabase unlogged-table storage forks ----
+#
+# An unclean stop of the Supabase Postgres (docker kill / OOM / host reboot mid-
+# write / an operator `docker rm -f`) can leave an UNLOGGED table with a missing
+# storage fork — most often its visibility map. Postgres empties unlogged
+# relations from their init fork on crash recovery, but a kill in the wrong
+# instant can leave a fork absent; the next write/VACUUM/migration then dies with
+#   could not open file "base/<db>/<relfilenode>_vm": No such file or directory
+# (SQLSTATE 58P01), which aborts the whole update at run_migrate. Observed on a
+# customer box where Oban's `oban_peers` (in the `_supabase` analytics DB) lost
+# its VM fork after a container recreate, blocking every update.
+#
+# Unlogged tables carry NO durability guarantee — Postgres itself empties them on
+# any unclean restart — so resetting one to a fresh relfilenode is ALWAYS safe
+# and never touches application data (every Kortix/app table is LOGGED). This
+# resets only tables that actually fail a probe, and is best-effort: it never
+# fails the update itself, and only runs REACTIVELY when a migration already hit
+# the fork error (see run_migrate), so a healthy box never pays for it.
+heal_supabase_unlogged() {
+  db_cid=$($COMPOSE ps -q "$SUPABASE_DB_SERVICE" 2>/dev/null | head -n1)
+  if [ -z "$db_cid" ]; then
+    log "heal: no '$SUPABASE_DB_SERVICE' container in this stack; skipping unlogged-table heal"
+    return 0
+  fi
+
+  # Bounded wait for the DB to accept connections (it may have just restarted).
+  i=0
+  until docker exec "$db_cid" pg_isready -U "$SUPABASE_SUPERUSER" >/dev/null 2>&1; do
+    i=$((i + 1))
+    if [ "$i" -ge 30 ]; then
+      log "heal: '$SUPABASE_DB_SERVICE' not accepting connections after 30s; skipping heal"
+      return 0
+    fi
+    sleep 1
+  done
+
+  _heal_q() { docker exec "$db_cid" psql -U "$SUPABASE_SUPERUSER" -d "$1" -X -qtA -c "$2" 2>/dev/null; }
+  _heal_x() { docker exec "$db_cid" psql -U "$SUPABASE_SUPERUSER" -d "$1" -X -q -v ON_ERROR_STOP=1 -c "$2" >/dev/null 2>&1; }
+
+  healed=0
+  for db in $(_heal_q postgres "select datname from pg_database where datallowconn and datname not in ('template0','template1')"); do
+    [ -z "$db" ] && continue
+    for tbl in $(_heal_q "$db" "select quote_ident(n.nspname)||'.'||quote_ident(c.relname) from pg_class c join pg_namespace n on n.oid = c.relnamespace where c.relpersistence = 'u' and c.relkind = 'r'"); do
+      [ -z "$tbl" ] && continue
+      # A VACUUM touches every fork, so it surfaces a missing storage fork. We
+      # capture its error and reset ONLY when it is the storage-fork class
+      # (could not open file ..._vm/_fsm / 58P01) — never for a transient error
+      # like a concurrent DROP (Supabase services recreate these tables) or a
+      # lock, so a healthy table is never needlessly truncated.
+      if verr=$(docker exec "$db_cid" psql -U "$SUPABASE_SUPERUSER" -d "$db" -X -qtA -v ON_ERROR_STOP=1 -c "VACUUM $tbl" 2>&1); then
+        continue
+      fi
+      if printf '%s' "$verr" | grep -qE "could not open file|58P01"; then
+        log "heal: $db:$tbl (unlogged) has a missing storage fork — resetting it to a fresh relfilenode (safe: unlogged carries no durability guarantee)"
+        if _heal_x "$db" "TRUNCATE $tbl"; then
+          _heal_x "$db" "VACUUM $tbl" || true
+          healed=$((healed + 1))
+        else
+          log "heal: WARN could not reset $db:$tbl — the migration may still fail; investigate"
+        fi
+      else
+        log "heal: $db:$tbl VACUUM failed without a storage-fork error; leaving it untouched ($(printf '%s' "$verr" | tr '\n' ' ' | cut -c1-120))"
+      fi
+    done
+  done
+  if [ "$healed" -gt 0 ]; then
+    log "heal: reset $healed corrupt unlogged table(s)"
+  fi
+  return 0
+}
+
 run_migrate() {
   log "running database migrations ($MIGRATE_SERVICE, one-shot)"
-  if ! $COMPOSE run --rm --no-deps "$MIGRATE_SERVICE"; then
-    log "ERROR: migration failed; aborting — nothing was swapped"
-    return 1
+  mig_log="$STATE_DIR/last-migrate.log"
+  if $COMPOSE run --rm --no-deps "$MIGRATE_SERVICE" >"$mig_log" 2>&1; then
+    cat "$mig_log"
+    return 0
   fi
+  cat "$mig_log"
+  # Auto-heal + one retry for the unlogged-table storage-fork corruption class
+  # (SQLSTATE 58P01 "could not open file ..._vm/_fsm"): an unclean DB stop can
+  # leave a Supabase-internal unlogged table with a missing fork that only bites
+  # here. heal_supabase_unlogged resets just the broken (unlogged, disposable)
+  # table(s), then we retry once. A migration that fails for any OTHER reason
+  # falls straight through to the hard failure below, untouched.
+  if grep -qE "could not open file|58P01" "$mig_log" 2>/dev/null; then
+    log "migration hit an unlogged-table storage-fork error; running the Supabase self-heal and retrying once"
+    heal_supabase_unlogged
+    if $COMPOSE run --rm --no-deps "$MIGRATE_SERVICE" >"$mig_log" 2>&1; then
+      cat "$mig_log"
+      log "migration succeeded after self-heal"
+      return 0
+    fi
+    cat "$mig_log"
+  fi
+  log "ERROR: migration failed; aborting — nothing was swapped"
+  return 1
 }
 
 # Escape hatch for a release whose migration is NOT backward-compatible: the
@@ -547,7 +645,7 @@ write_status() {
   notify_webhook
 }
 
-# Optional, one env var, no vendor integration: if the operator sets
+# Optional, one env var, no vendor connector: if the operator sets
 # KORTIX_UPDATE_WEBHOOK_URL, POST this run's status JSON (the exact contents
 # of $STATUS_FILE) to it after every run — success, degraded, failed, or
 # skipped-by-lock alike — so an operator who wants a push notification can

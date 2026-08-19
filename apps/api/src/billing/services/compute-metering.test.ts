@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { appRuntimes } from '@kortix/db';
+import * as realProviders from '../../platform/providers';
 
 let billingEnabled = true;
 
@@ -87,7 +89,47 @@ mock.module('../repositories/compute-sessions', () => ({
     if (rows.length === 0) return null;
     return rows.reduce((a, b) => (a.createdAt > b.createdAt ? a : b));
   },
-  updateComputeSession: async () => {},
+  // The claim/release pair the real repository uses. Implemented FAITHFULLY
+  // rather than stubbed true: the compare-and-set IS the fix (one settler wins a
+  // window, the loser bills nothing), so a fake that always succeeded would let
+  // the double-billing regression back in with the suite still green.
+  claimComputeWindow: async (input: {
+    id: string;
+    expectedLastBilledAt: string;
+    nextLastBilledAt: string;
+    addCostUsd: number;
+    terminalState?: 'stopped' | 'finalized';
+  }) => {
+    const row = computeRows.find((r: any) => r.id === input.id);
+    if (!row) return false;
+    if (row.endedAt !== null && row.endedAt !== undefined) return false;
+    if (row.lastBilledAt !== input.expectedLastBilledAt) return false;
+    row.lastBilledAt = input.nextLastBilledAt;
+    row.costUsd = String(Number(row.costUsd ?? 0) + input.addCostUsd);
+    if (input.terminalState) {
+      row.state = input.terminalState;
+      row.endedAt = input.nextLastBilledAt;
+    }
+    return true;
+  },
+  releaseComputeWindow: async (input: {
+    id: string;
+    claimedLastBilledAt: string;
+    revertToLastBilledAt: string;
+    subCostUsd: number;
+    terminalState?: 'stopped' | 'finalized';
+  }) => {
+    const row = computeRows.find((r: any) => r.id === input.id);
+    if (!row) return false;
+    if (row.lastBilledAt !== input.claimedLastBilledAt) return false;
+    row.lastBilledAt = input.revertToLastBilledAt;
+    row.costUsd = String(Number(row.costUsd ?? 0) - input.subCostUsd);
+    if (input.terminalState) {
+      row.state = 'active';
+      row.endedAt = null;
+    }
+    return true;
+  },
   findStaleActiveSessions: async () => [],
 }));
 
@@ -101,9 +143,28 @@ interface FakeSandboxRow {
 }
 
 let sandboxRows: FakeSandboxRow[] = [];
+interface FakeAppRuntimeRow {
+  runtimeId: string;
+  accountId: string;
+  provider: string;
+  externalId: string;
+  status: string;
+  desiredState: string;
+  active: boolean;
+  cpuCores: number;
+  memoryGb: number;
+  diskGb: number;
+  appId: string;
+  deploymentId: string;
+}
+let appRuntimeRows: FakeAppRuntimeRow[] = [];
 let providerStatusById: Record<string, string> = {};
 
+// Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
+// lists exports by hand deletes every export it omits — the failure surfaces in
+// whatever unrelated file imports the missing name next, attributed to no test.
 mock.module('../../platform/providers', () => ({
+  ...realProviders,
   // 60 minutes — the provider's own idle auto-stop, which is also the ceiling on
   // how long a compute window may bill past its last liveness observation
   // (services/compute-liveness.ts).
@@ -130,30 +191,49 @@ const selectMissing = async (limit: number) =>
       externalId: r.externalId ?? `ext-${r.sandboxId}`,
     }));
 
+const selectMissingApps = async (limit: number) =>
+  appRuntimeRows
+    .filter(
+      (r) =>
+        r.status === 'running' &&
+        r.desiredState === 'running' &&
+        r.active &&
+        !openRowFor(r.runtimeId) &&
+        accountsById[r.accountId]?.billingModel === 'per_seat',
+    )
+    .slice(0, limit)
+    .map((r) => ({
+      sandboxId: r.runtimeId,
+      accountId: r.accountId,
+      provider: r.provider,
+      externalId: r.externalId,
+      cpuCores: r.cpuCores,
+      memoryGb: r.memoryGb,
+      diskGb: r.diskGb,
+      appId: r.appId,
+      deploymentId: r.deploymentId,
+    }));
+
 mock.module('../../shared/db', () => ({
   db: {
     select: () => ({
-      from: () => ({
-        // Mirrors the real query shape: inner join credit_accounts (per_seat only),
-        // left join open compute rows, filter to active. The predicate itself is
-        // asserted against rendered SQL in compute-metering-query.test.ts; this
-        // fake only needs to feed the loop realistic rows.
-        innerJoin: () => ({
-          leftJoin: () => ({
-            where: () => ({
-              // The sweep orders oldest-sandbox-first before limiting, so an
-              // unordered LIMIT can't crowd the same rows out of every batch.
-              orderBy: () => ({ limit: selectMissing }),
-              limit: selectMissing,
-            }),
+      from: (table: unknown) => {
+        const selectRows = table === appRuntimes ? selectMissingApps : selectMissing;
+        const chain: any = {
+          innerJoin: () => chain,
+          leftJoin: () => chain,
+          where: () => ({
+            orderBy: () => ({ limit: selectRows }),
+            limit: selectRows,
           }),
-        }),
-      }),
+        };
+        return chain;
+      },
     }),
   },
 }));
 
-const { reconcileMissingComputeSessions, tickRunningComputeCharges } = await import(
+const { reconcileMissingAppComputeSessions, reconcileMissingComputeSessions, tickRunningComputeCharges } = await import(
   './compute-metering'
 );
 
@@ -164,6 +244,7 @@ beforeEach(() => {
   computeRows = [];
   providerStatusById = {};
   sandboxRows = [];
+  appRuntimeRows = [];
   insertCalls = 0;
   nextId = 1;
 });
@@ -175,6 +256,24 @@ function sandbox(overrides: Partial<FakeSandboxRow> = {}): FakeSandboxRow {
     accountId: 'acct-1',
     provider: 'daytona',
     status: 'active',
+    ...overrides,
+  };
+}
+
+function appRuntime(overrides: Partial<FakeAppRuntimeRow> = {}): FakeAppRuntimeRow {
+  return {
+    runtimeId: 'app-runtime-1',
+    accountId: 'acct-1',
+    provider: 'daytona',
+    externalId: 'app-external-1',
+    status: 'running',
+    desiredState: 'running',
+    active: true,
+    cpuCores: 2,
+    memoryGb: 4,
+    diskGb: 20,
+    appId: 'app-1',
+    deploymentId: 'deployment-1',
     ...overrides,
   };
 }
@@ -309,5 +408,44 @@ describe('tickRunningComputeCharges', () => {
     const result = await tickRunningComputeCharges();
 
     expect(result).toEqual({ settled: 0, reconciled: 0 });
+  });
+});
+
+describe('reconcileMissingAppComputeSessions', () => {
+  test('opens an App compute window with the exact App machine and attribution', async () => {
+    accountsById['acct-app'] = { billingModel: 'per_seat' };
+    appRuntimeRows = [appRuntime({
+      runtimeId: 'app-runtime-metered',
+      accountId: 'acct-app',
+      cpuCores: 4,
+      memoryGb: 8,
+      diskGb: 40,
+    })];
+
+    const result = await reconcileMissingAppComputeSessions();
+
+    expect(result).toEqual({ checked: 1, reconciled: 1, errors: 0 });
+    const opened = openRowFor('app-runtime-metered') as FakeComputeRow & {
+      workloadType?: string;
+      appRuntimeId?: string;
+    };
+    expect(opened.workloadType).toBe('app');
+    expect(opened.appRuntimeId).toBe('app-runtime-metered');
+    expect([opened.cpuCores, opened.memoryGb, opened.diskGb]).toEqual([4, 8, 40]);
+  });
+
+  test('does not meter a stopped, inactive, or provider-stopped App runtime', async () => {
+    accountsById['acct-app'] = { billingModel: 'per_seat' };
+    appRuntimeRows = [
+      appRuntime({ runtimeId: 'runtime-db-stopped', accountId: 'acct-app', status: 'stopped' }),
+      appRuntime({ runtimeId: 'runtime-not-active', accountId: 'acct-app', active: false }),
+      appRuntime({ runtimeId: 'runtime-provider-stopped', accountId: 'acct-app', externalId: 'ext-stopped' }),
+    ];
+    providerStatusById['ext-stopped'] = 'stopped';
+
+    const result = await reconcileMissingAppComputeSessions();
+
+    expect(result).toEqual({ checked: 1, reconciled: 0, errors: 0 });
+    expect(computeRows).toHaveLength(0);
   });
 });

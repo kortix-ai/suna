@@ -15,6 +15,7 @@ import { afterAll, beforeAll, beforeEach, expect, mock, test } from 'bun:test';
 import { accountMembers, accounts, projectMembers, projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import * as realRequestContext from '../lib/request-context';
+import * as realConnectorPreflight from '../projects/lib/prompt-connector-preflight';
 import * as realEnvSync from '../projects/lib/sandbox-env-sync';
 import * as realGrant from '../projects/lib/session-token-grant';
 import * as realSnapshot from '../projects/opencode-session-snapshot';
@@ -37,6 +38,10 @@ let upstreamCalls = 0;
 mock.module('../lib/request-context', () => ({
   ...realRequestContext,
   getTraceHeaders: () => ({}),
+}));
+mock.module('../projects/lib/prompt-connector-preflight', () => ({
+  ...realConnectorPreflight,
+  missingPromptConnectorConnections: async () => ({ ok: true }),
 }));
 mock.module('../shared/preview-ownership', () => ({
   ...realOwnership,
@@ -117,7 +122,7 @@ function promptAs(userId: string, agent: string): Promise<Response> {
 
 async function seedMember(
   accountRole: 'owner' | 'member',
-  projectRole?: 'editor',
+  projectRole?: 'manager',
 ): Promise<string> {
   const userId = crypto.randomUUID();
   await db.insert(accountMembers).values({ userId, accountId: ACCOUNT, accountRole });
@@ -141,8 +146,8 @@ beforeAll(async () => {
     name: 'p',
     repoUrl: 'https://example.com/p.git',
   });
-  scopedIn = await seedMember('member', 'editor');
-  scopedOut = await seedMember('member', 'editor');
+  scopedIn = await seedMember('member', 'manager');
+  scopedOut = await seedMember('member', 'manager');
   owner = await seedMember('owner');
   // Scope the agent to ONE member. An unscoped agent stays project-wide, so this
   // grant row is what makes `scopedOut` a non-principal for it.

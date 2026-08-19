@@ -17,7 +17,7 @@ import { useCallback, useState } from 'react';
 
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { writeStartStash } from '@kortix/sdk/react';
-import { useCustomizeStore } from '@/stores/customize-store';
+import { useSettingsPanelStore } from '@/stores/settings-panel-store';
 
 export type ConfigureKind = 'agent' | 'skill' | 'command';
 
@@ -59,7 +59,7 @@ export interface ConfigureThread {
 }
 
 export function useConfigureThread(projectId: string): ConfigureThread {
-  const closeCustomize = useCustomizeStore((s) => s.close);
+  const closeCustomize = useSettingsPanelStore((s) => s.close);
   const [pending, setPending] = useState(false);
   const newSession = useNewProjectSession(projectId);
 
@@ -76,14 +76,12 @@ export function useConfigureThread(projectId: string): ConfigureThread {
       // Leave `pending` true: we're navigating away and the overlay is closing,
       // so flipping it back would only flash the idle button.
       newSession({
-        onNavigate: (sessionId) => {
-          // `sessionId` is the route/Kortix session id here, not the OpenCode
-          // pin the session page resolves later. Stash under the route id via
-          // the SDK's canonical `writeStartStash` — the session page's
-          // `migrateStash` hands this off onto the resolved pin once it
-          // exists. Same situation as the project-home composer's producer
-          // (see its onNavigate for the full trace).
-          writeStartStash(sessionId, { prompt, agent: null, model: null, variant: null });
+        // The prompt is a durable inbox row from the create itself — the API
+        // converts `pending_prompt` inside the session-create transaction, so
+        // a closed tab between here and the workbench cannot lose it. No
+        // start-stash: there are no picks to hand off.
+        create: { pending_prompt: { text: prompt, agent: null, model: null, variant: null } },
+        onNavigate: () => {
           closeCustomize();
         },
       });

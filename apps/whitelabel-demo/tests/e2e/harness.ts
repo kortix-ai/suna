@@ -13,6 +13,8 @@ import { randomUUID } from 'node:crypto';
 import { createScopedKortix } from '@kortix/sdk/server';
 
 export const APP_ROOT = join(import.meta.dir, '..', '..');
+/** Includes one cold production build before the first test app starts in CI. */
+export const APP_SETUP_TIMEOUT_MS = 120_000;
 const NEXT_BIN = join(APP_ROOT, 'node_modules', '.bin', 'next');
 
 /**

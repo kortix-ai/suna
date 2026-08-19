@@ -283,6 +283,41 @@ describe("gateway.chatCompletions", () => {
     expect(t.latencyMs).toBeGreaterThanOrEqual(0);
   });
 
+  // Regression coverage for the removed 256 KiB "preview" cap: a request or
+  // response log must show exactly what was sent/received, in full, no matter
+  // how large — never a `{truncated, bytes, preview}` stand-in for it.
+  test("200 success records the FULL request and response body, well past the old 256 KiB cap", async () => {
+    const bigContent = "x".repeat(400 * 1024); // 400 KiB — over the removed cap
+    const { hooks, traces } = makeHooks();
+    const fetchImpl = okFetch({
+      model: "kortix/x",
+      choices: [{ message: { content: bigContent } }],
+      usage: { prompt_tokens: 100, completion_tokens: 50, cost: 0.01 },
+    });
+    const rawBody = JSON.stringify({
+      model: "kortix/x",
+      messages: [{ role: "user", content: bigContent }],
+    });
+    const res = await createGateway(
+      hooks,
+      { retry: fastRetry },
+      { fetchImpl },
+    ).chatCompletions({ authorization: "Bearer good", rawBody });
+    expect(res.status).toBe(200);
+    await flush();
+
+    expect(traces).toHaveLength(1);
+    const t = traces[0];
+    const request = t.request as { messages: Array<{ content: string }> };
+    const response = t.response as { choices: Array<{ message: { content: string } }> };
+    // Not the old truncation wrapper.
+    expect(request).not.toHaveProperty("truncated");
+    expect(request).not.toHaveProperty("preview");
+    expect(request.messages[0].content).toBe(bigContent);
+    expect(request.messages[0].content.length).toBe(bigContent.length);
+    expect(response.choices[0].message.content).toBe(bigContent);
+  });
+
   test('BYOK billingMode "none" records zero final cost', async () => {
     const byok: UpstreamDescriptor = {
       ...managed,
@@ -398,6 +433,50 @@ describe("gateway.chatCompletions", () => {
     expect(bCalled).toBe(false);
   });
 
+  test("normalizes an OpenRouter numeric 400 context overflow for OpenCode compaction", async () => {
+    const message =
+      "This endpoint's maximum context length is 1050000 tokens. However, you requested about 1550000 tokens (1550000 of text input).";
+    const fetchImpl: FetchImpl = async () =>
+      new Response(JSON.stringify({ error: { message, code: 400 } }), {
+        status: 400,
+        headers: { "content-type": "application/json" },
+      });
+    const { hooks, traces } = makeHooks();
+    const res = await createGateway(hooks, { retry: fastRetry }, { fetchImpl }).chatCompletions({
+      authorization: "Bearer good",
+      rawBody: '{"model":"x","messages":[{"role":"user","content":"oversized"}]}',
+    });
+
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body).toMatchObject({
+      message,
+      code: "context_length_exceeded",
+      upstream_code: "context_length_exceeded",
+      upstream_status: 400,
+      error: {
+        message,
+        type: "context_length_exceeded",
+        code: "context_length_exceeded",
+      },
+      attempt_failures: [
+        expect.objectContaining({
+          status: 400,
+          code: "context_length_exceeded",
+          message,
+        }),
+      ],
+    });
+    await flush();
+    expect(traces[0]).toMatchObject({
+      status: 400,
+      errorCode: "context_length_exceeded",
+      attemptFailures: [
+        expect.objectContaining({ code: "context_length_exceeded", message }),
+      ],
+    });
+  });
+
   test("returns 502 when all candidates are down", async () => {
     const fetchImpl: FetchImpl = async () =>
       new Response("boom", { status: 500 });
@@ -411,8 +490,8 @@ describe("gateway.chatCompletions", () => {
       rawBody: '{"model":"x","messages":[{"role":"user","content":"hi"}]}',
     });
     expect(res.status).toBe(502);
-    expect(await res.json()).toMatchObject({
-      message: "boom",
+    const body = await res.json();
+    expect(body).toMatchObject({
       code: "upstream_unreachable",
       upstream_status: 500,
       provider: "openrouter",
@@ -420,6 +499,10 @@ describe("gateway.chatCompletions", () => {
       resolved_model: "x",
       suggestion: "Retry the request. If the error continues, switch to another model.",
     });
+    expect(body.message).toContain(body.request_id);
+    expect(body.message).toContain("openrouter/x");
+    expect(body.message).toContain("HTTP 500");
+    expect(body.message).toContain("boom");
   });
 
   test("reports the last attempted descriptor when every upstream fails", async () => {
@@ -828,7 +911,15 @@ describe("gateway.chatCompletions — combined authorize hook", () => {
     });
   });
 
-  test("streaming model fallback bypasses a primary that opens but produces no bytes", async () => {
+  // Reversed deliberately. This used to assert that a primary which stays
+  // silent past the probe deadline is bypassed in favour of the fallback. That
+  // is precisely the behaviour that killed healthy large-context turns: a model
+  // still prefilling a multi-megabyte prompt is indistinguishable from a stalled
+  // one, and cancelling it silently downgraded the user to a different model —
+  // or, with no fallback configured, failed the turn outright with
+  // `upstream stream probe timeout exceeded (90000ms with no bytes)`.
+  // A slow candidate is now COMMITTED and relayed, not replaced.
+  test("streaming commits a primary that is slow to first byte instead of failing over", async () => {
     const calls: string[] = [];
     const { hooks, traces } = makeHooks({
       resolveRoute: async (_principal, input) => ({
@@ -847,10 +938,26 @@ describe("gateway.chatCompletions — combined authorize hook", () => {
     const fetchImpl: FetchImpl = async (url) => {
       calls.push(String(url));
       if (String(url).includes("primary.test")) {
-        return new Response(new ReadableStream<Uint8Array>(), {
-          status: 200,
-          headers: { "content-type": "text/event-stream" },
-        });
+        // Silent well past the 20ms probe deadline, then real output — the
+        // shape of a long prefill / thinking phase.
+        return new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              setTimeout(() => {
+                const enc = new TextEncoder();
+                controller.enqueue(
+                  enc.encode('data: {"choices":[{"delta":{"content":"primary ok"}}]}\n\n'),
+                );
+                controller.enqueue(
+                  enc.encode('data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n'),
+                );
+                controller.enqueue(enc.encode("data: [DONE]\n\n"));
+                controller.close();
+              }, 120);
+            },
+          }),
+          { status: 200, headers: { "content-type": "text/event-stream" } },
+        );
       }
       return new Response(
         'data: {"choices":[{"delta":{"content":"fallback ok"}}]}\n\n' +
@@ -869,13 +976,18 @@ describe("gateway.chatCompletions — combined authorize hook", () => {
     });
 
     expect(res.status).toBe(200);
-    expect(await res.text()).toContain("fallback ok");
-    expect(calls).toHaveLength(2);
+    const body = await res.text();
+    // The slow primary's own output is delivered — including the chunk that
+    // arrived on the read left in flight when the deadline expired.
+    expect(body).toContain("primary ok");
+    expect(body).not.toContain("fallback ok");
+    // The fallback was never dialled at all.
+    expect(calls).toHaveLength(1);
     await flush();
     expect(traces.at(-1)?.metadata.gatewayRouting).toEqual({
       policy: "test-stalled-stream",
       models: ["primary", "fallback"],
-      selected: "fallback",
+      selected: "primary",
     });
   });
 
@@ -1279,7 +1391,29 @@ describe("gateway.chatCompletions — empty-completion failover", () => {
     // Candidate A's empty frame never reaches the client — only B's real content does.
     expect(sseText(text)).toEqual({ content: "real answer", finishReason: "stop" });
     await flush();
-    expect(traces.find((t) => t.ok)?.provider).toBe("b");
+    const recovered = traces.find((t) => t.ok);
+    expect(recovered?.provider).toBe('b');
+    expect(recovered?.attempts).toBe(4);
+    expect(recovered?.candidatesTried).toEqual(['a', 'a', 'a', 'b']);
+    expect(recovered?.attemptFailures).toHaveLength(3);
+    expect(recovered?.attemptFailures).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          attempt: 1,
+          provider: 'a',
+          code: 'empty_completion',
+          stage: 'completion_validation',
+        }),
+      ]),
+    );
+    expect(recovered?.metadata).toMatchObject({
+      gatewayFailure: {
+        attemptCount: 3,
+        fallbackRecovered: true,
+        codes: ['empty_completion', 'empty_completion', 'empty_completion'],
+        providers: ['a', 'a', 'a'],
+      },
+    });
   });
 
   test("streaming: every candidate's stream is empty → 502 empty_completion, not a fabricated SSE response", async () => {
@@ -1341,7 +1475,7 @@ describe("gateway.chatCompletions — empty-completion failover", () => {
     expect(res.status).toBe(429);
     expect(res.headers.get("content-type")).toContain("application/json");
     const body = await res.json();
-    expect(body.message).toBe(rampRateMessage);
+    expect(body.message).toContain(rampRateMessage);
     expect(body.upstream_code).toBe(429);
     expect(calls).toBe(3);
     await flush();
@@ -1349,7 +1483,7 @@ describe("gateway.chatCompletions — empty-completion failover", () => {
       ok: false,
       status: 429,
       errorCode: "upstream_error",
-      errorMessage: rampRateMessage,
+      errorMessage: expect.stringContaining(rampRateMessage),
     });
   });
 
@@ -1403,9 +1537,9 @@ describe("gateway.chatCompletions — empty-completion failover", () => {
     expect(res.status).toBe(502);
     const body = await res.json();
     expect(body.code).toBe("upstream_error");
-    expect(body.message).toBe("Overloaded");
+    expect(body.message).toContain("Overloaded");
     expect(body.error).toMatchObject({
-      message: "Overloaded",
+      message: expect.stringContaining("Overloaded"),
       type: "upstream_error",
       code: "overloaded_error",
       provider: "openrouter",
@@ -1456,13 +1590,144 @@ describe("gateway.chatCompletions — empty-completion failover", () => {
     expect(res.status).toBe(401);
     const body = await res.json();
     expect(body.code).toBe("upstream_error");
-    expect(body.message).toBe("Incorrect API key provided");
+    expect(body.message).toContain("Incorrect API key provided");
     expect(body.upstream_code).toBe("invalid_api_key");
     expect(calls).toBe(1); // no same-candidate retry storm on a dead key
     await flush();
     expect(traces[0].ok).toBe(false);
     expect(traces[0].status).toBe(401);
     expect(traces[0].errorCode).toBe("upstream_error");
+  });
+
+  test("streaming: a dead credential fails over to the next credential for the same provider", async () => {
+    const primary: UpstreamDescriptor = {
+      ...managed,
+      apiKey: "dead-key",
+      credentialRef: "primary",
+    };
+    const secondary: UpstreamDescriptor = {
+      ...managed,
+      apiKey: "healthy-key",
+      credentialRef: "secondary",
+    };
+    const { hooks } = makeHooks({ resolveUpstream: async () => [primary, secondary] });
+    const authorizationHeaders: string[] = [];
+    const fetchImpl: FetchImpl = async (_url, init) => {
+      const authorization = new Headers(init.headers).get("authorization") ?? "";
+      authorizationHeaders.push(authorization);
+      return sseResponse(authorization === "Bearer dead-key" ? authErrorSse : goodSse);
+    };
+
+    const res = await createGateway(hooks, { retry: fastRetry }, { fetchImpl }).chatCompletions({
+      authorization: "Bearer good",
+      rawBody: '{"model":"x","stream":true,"messages":[{"role":"user","content":"hi"}]}',
+    });
+
+    expect(res.status).toBe(200);
+    expect(sseText(await new Response(res.body).text())).toEqual({
+      content: "real answer",
+      finishReason: "stop",
+    });
+    expect(authorizationHeaders).toEqual(["Bearer dead-key", "Bearer healthy-key"]);
+  });
+
+  test("non-streaming: a dead credential fails over to the next credential for the same provider", async () => {
+    const primary: UpstreamDescriptor = {
+      ...managed,
+      apiKey: "dead-key",
+      credentialRef: "primary",
+    };
+    const secondary: UpstreamDescriptor = {
+      ...managed,
+      apiKey: "healthy-key",
+      credentialRef: "secondary",
+    };
+    const { hooks } = makeHooks({ resolveUpstream: async () => [primary, secondary] });
+    const authorizationHeaders: string[] = [];
+    const fetchImpl: FetchImpl = async (_url, init) => {
+      const authorization = new Headers(init.headers).get("authorization") ?? "";
+      authorizationHeaders.push(authorization);
+      if (authorization === "Bearer dead-key") {
+        return new Response(
+          JSON.stringify({ error: { message: "Incorrect API key provided", code: "invalid_api_key" } }),
+          { status: 401, headers: { "content-type": "application/json" } },
+        );
+      }
+      return new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    };
+
+    const res = await createGateway(hooks, { retry: fastRetry }, { fetchImpl }).chatCompletions({
+      authorization: "Bearer good",
+      rawBody: '{"model":"x","messages":[{"role":"user","content":"hi"}]}',
+    });
+
+    expect(res.status).toBe(200);
+    expect(authorizationHeaders).toEqual(["Bearer dead-key", "Bearer healthy-key"]);
+  });
+
+  test("non-streaming: a 400 invalid-key body fails over to the next credential", async () => {
+    const primary: UpstreamDescriptor = {
+      ...managed,
+      apiKey: "dead-key",
+      credentialRef: "primary",
+    };
+    const secondary: UpstreamDescriptor = {
+      ...managed,
+      apiKey: "healthy-key",
+      credentialRef: "secondary",
+    };
+    const { hooks } = makeHooks({ resolveUpstream: async () => [primary, secondary] });
+    const authorizationHeaders: string[] = [];
+    const fetchImpl: FetchImpl = async (_url, init) => {
+      const authorization = new Headers(init.headers).get("authorization") ?? "";
+      authorizationHeaders.push(authorization);
+      if (authorization === "Bearer dead-key") {
+        return new Response(
+          JSON.stringify({ error: { message: "invalid x-api-key", type: "authentication_error" } }),
+          { status: 400, headers: { "content-type": "application/json" } },
+        );
+      }
+      return new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    };
+
+    const res = await createGateway(hooks, { retry: fastRetry }, { fetchImpl }).chatCompletions({
+      authorization: "Bearer good",
+      rawBody: '{"model":"x","messages":[{"role":"user","content":"hi"}]}',
+    });
+
+    expect(res.status).toBe(200);
+    expect(authorizationHeaders).toEqual(["Bearer dead-key", "Bearer healthy-key"]);
+  });
+
+  test("non-streaming: a dead credential stays terminal without an alternate credential", async () => {
+    const only: UpstreamDescriptor = {
+      ...managed,
+      apiKey: "dead-key",
+      credentialRef: "only",
+    };
+    const { hooks } = makeHooks({ resolveUpstream: async () => [only] });
+    let calls = 0;
+    const fetchImpl: FetchImpl = async () => {
+      calls += 1;
+      return new Response(
+        JSON.stringify({ error: { message: "Incorrect API key provided", code: "invalid_api_key" } }),
+        { status: 401, headers: { "content-type": "application/json" } },
+      );
+    };
+
+    const res = await createGateway(hooks, { retry: fastRetry }, { fetchImpl }).chatCompletions({
+      authorization: "Bearer good",
+      rawBody: '{"model":"x","messages":[{"role":"user","content":"hi"}]}',
+    });
+
+    expect(res.status).toBe(401);
+    expect(calls).toBe(1);
   });
 
   // The ai-sdk transport (transports/ai-sdk/sse.ts) pre-classifies its own
@@ -1484,7 +1749,7 @@ describe("gateway.chatCompletions — empty-completion failover", () => {
 
     expect(res.status).toBe(429);
     const body = await res.json();
-    expect(body.message).toBe("Rate limit exceeded");
+    expect(body.message).toContain("Rate limit exceeded");
     expect(body.upstream_code).toBe(429);
     await flush();
     expect(traces[0].status).toBe(429);
@@ -1509,6 +1774,49 @@ describe("gateway.chatCompletions — empty-completion failover", () => {
     expect(res.status).toBe(502);
   });
 
+  // Defect (2026-08-01, live-reported in Slack): an upstream 400 "context
+  // length exceeded from messages" surfaced to the user as a generic "Bad
+  // Gateway" instead of the real error + real status. Root cause was in
+  // transports/ai-sdk/sse.ts: when the AI SDK wrapped a non-2xx upstream
+  // response in an APICallError whose `.message` was the generic HTTP status
+  // text (the upstream's body failed the provider's error-schema parse), the
+  // streaming adapter emitted that generic message as the client-facing
+  // `message` and carried the real message only in `detail` — and a numeric
+  // status code reached statusForErrorFrame as a STRING or undefined, so it
+  // fell through to a blanket 502. Fixed in sse.ts (mines the real message +
+  // numeric status from responseBody/data); this test pins the END-TO-END
+  // client-facing contract the fix produces: a numeric 4xx code on the error
+  // frame surfaces as that status with the real message, NOT a 502 "Bad
+  // Gateway". This is the post-fix shape the ai-sdk transport now emits.
+  const contextLengthSse =
+    'data: {"error":{"message":"context length exceeded from messages","code":400}}\n\n' +
+    "data: [DONE]\n\n";
+
+  test("streaming: a numeric 4xx error-frame code surfaces as that status with the real message — not a blanket 502 Bad Gateway", async () => {
+    const { hooks, traces } = makeHooks({ resolveUpstream: async () => [managed] });
+    const fetchImpl: FetchImpl = async () => sseResponse(contextLengthSse);
+
+    const res = await createGateway(hooks, { retry: fastRetry }, { fetchImpl }).chatCompletions({
+      authorization: "Bearer good",
+      rawBody: '{"model":"x","stream":true,"messages":[{"role":"user","content":"hi"}]}',
+    });
+
+    // 400, the upstream's real status — NOT a generic 502 "Bad Gateway".
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.code).toBe("context_length_exceeded");
+    // The REAL upstream message reaches the caller, not a generic "Bad Request".
+    expect(body.message).toContain("context length exceeded from messages");
+    expect(body.error.message).toContain("context length exceeded from messages");
+    expect(body.upstream_code).toBe("context_length_exceeded");
+    expect(body.suggestion).toContain("switch to another model");
+    await flush();
+    expect(traces[0].ok).toBe(false);
+    expect(traces[0].status).toBe(400);
+    expect(traces[0].errorCode).toBe("context_length_exceeded");
+    expect(traces[0].errorMessage).toContain("context length exceeded from messages");
+  });
+
   test("streaming: an error frame from candidate A still fails over to a healthy candidate B", async () => {
     const a: UpstreamDescriptor = { ...managed, provider: "a", baseUrl: "https://a.test/v1" };
     const b: UpstreamDescriptor = { ...managed, provider: "b", baseUrl: "https://b.test/v1" };
@@ -1527,7 +1835,170 @@ describe("gateway.chatCompletions — empty-completion failover", () => {
       finishReason: "stop",
     });
     await flush();
-    expect(traces.find((t) => t.ok)?.provider).toBe("b");
+    const recovered = traces.find((t) => t.ok);
+    expect(recovered?.provider).toBe('b');
+    expect(recovered?.attempts).toBe(2);
+    expect(recovered?.candidatesTried).toEqual(['a', 'b']);
+    expect(recovered?.attemptFailures).toEqual([
+      expect.objectContaining({
+        attempt: 1,
+        provider: 'a',
+        code: 'overloaded_error',
+        stage: 'stream_error',
+      }),
+    ]);
+    expect(recovered?.metadata).toMatchObject({
+      gatewayFailure: {
+        attemptCount: 1,
+        fallbackRecovered: true,
+        codes: ['overloaded_error'],
+        providers: ['a'],
+      },
+    });
+  });
+
+  // The fallback's failure mode here used to be a probe timeout. A probe
+  // timeout is no longer a failure at all (it commits the stream), so the
+  // second link in the chain is now the nearest still-terminal outcome: a
+  // stream that closes cleanly without producing anything.
+  test('streaming: preserves the Codex context rejection and fallback empty completion as one failure chain', async () => {
+    const codex: UpstreamDescriptor = {
+      ...managed,
+      provider: 'openai-codex',
+      // The handler test starts from the normalized OpenAI-compatible SSE
+      // frame emitted by the transport. Transport-specific Responses parsing
+      // has its own coverage in transports/ai-sdk/ai-sdk.test.ts.
+      kind: 'openai-compat',
+      baseUrl: 'https://chatgpt.test/backend-api/codex',
+      resolvedModel: 'gpt-5.6-sol',
+    };
+    const aster: UpstreamDescriptor = {
+      ...managed,
+      provider: 'aster',
+      baseUrl: 'https://aster.test/v1',
+      resolvedModel: 'glm-5.2',
+    };
+    const { hooks, traces } = makeHooks({
+      resolveRoute: async () => ({
+        policyId: 'platform-default-degrade',
+        primaryModel: 'codex/gpt-5.6-sol',
+        fallbackModels: ['glm-5.2'],
+        fallbackOn: 'any-error',
+      }),
+      resolveUpstream: async (_principal, model) =>
+        model === 'codex/gpt-5.6-sol' ? [codex] : [aster],
+    });
+    const fetchImpl: FetchImpl = async (url) => {
+      if (new URL(url).hostname === 'chatgpt.test') {
+        return new Response(
+          JSON.stringify({
+            error: {
+              message: 'Your input exceeds the context window of this model.',
+              type: 'invalid_request_error',
+              code: 'context_length_exceeded',
+              param: 'input',
+            },
+          }),
+          { status: 400, headers: { 'content-type': 'application/json' } },
+        );
+      }
+      return new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.close();
+          },
+        }),
+        { status: 200, headers: { 'content-type': 'text/event-stream' } },
+      );
+    };
+
+    const res = await createGateway(
+      hooks,
+      { retry: fastRetry, streamProbeTimeoutMs: 10 },
+      { fetchImpl },
+    ).chatCompletions({
+      authorization: 'Bearer good',
+      rawBody:
+        '{"model":"codex/gpt-5.6-sol","stream":true,"messages":[{"role":"user","content":"large prompt"}]}',
+    });
+
+    // 400, not 502: a cleanly-closed empty fallback stream contributes no error
+    // frame of its own, so the Codex context rejection remains the last frame
+    // seen and its status is the one surfaced. That is the more accurate answer
+    // for this chain — the request really was rejected for its size.
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    // OpenCode 1.17.11 parseAPICallError() recognizes this exact nested code
+    // and converts the failed turn into ContextOverflowError. The processor
+    // then requests automatic compaction instead of applying ordinary retry.
+    expect(body.code).toBe('context_length_exceeded');
+    expect(body.error).toMatchObject({
+      type: 'context_length_exceeded',
+      code: 'context_length_exceeded',
+    });
+    expect(body.upstream_code).toBe('context_length_exceeded');
+    expect(body.message).toContain('openai-codex');
+    expect(body.message).toContain(body.request_id);
+    expect(body.message).toContain('HTTP 400');
+    expect(body.message).toContain('context_length_exceeded');
+    expect(body.message).toContain('aster');
+    expect(body.message).toContain('empty_completion');
+    expect(body.attempt_failures[0]).toEqual({
+      attempt: 1,
+      provider: 'openai-codex',
+      route_model: 'codex/gpt-5.6-sol',
+      resolved_model: 'gpt-5.6-sol',
+      stage: 'stream_error',
+      status: 400,
+      code: 'context_length_exceeded',
+      message: 'Your input exceeds the context window of this model.',
+    });
+    // An empty completion is same-candidate retryable (unlike the terminal
+    // rejection above), so the fallback contributes one entry per retry. What
+    // matters for this test is that every one of them is the fallback's empty
+    // completion and that none of them displaces the code in `body.code`.
+    expect(body.attempt_failures.length).toBeGreaterThan(1);
+    for (const failure of body.attempt_failures.slice(1)) {
+      expect(failure).toMatchObject({
+        provider: 'aster',
+        route_model: 'glm-5.2',
+        resolved_model: 'glm-5.2',
+        stage: 'completion_validation',
+        code: 'empty_completion',
+        message: 'Upstream stream closed before producing usable content',
+      });
+    }
+    expect(body.error.attempt_failures).toEqual(body.attempt_failures);
+
+    await flush();
+    expect(traces).toHaveLength(1);
+    expect(traces[0]).toMatchObject({
+      ok: false,
+      status: 400,
+      provider: 'aster',
+      resolvedModel: 'glm-5.2',
+      errorCode: 'context_length_exceeded',
+    });
+    // Codex first, then the fallback — repeated once per same-candidate
+    // empty-completion retry.
+    expect(traces[0].candidatesTried?.[0]).toBe('openai-codex');
+    expect(new Set(traces[0].candidatesTried)).toEqual(new Set(['openai-codex', 'aster']));
+    expect(traces[0].attemptFailures?.[0]).toMatchObject({
+      provider: 'openai-codex',
+      code: 'context_length_exceeded',
+      status: 400,
+    });
+    // The overflow code must survive every later attempt in the trace too —
+    // that is what drives opencode's automatic compaction.
+    expect(traces[0].metadata).toMatchObject({
+      gatewayFailure: {
+        fallbackRecovered: false,
+        contextRejected: true,
+      },
+    });
+    expect((traces[0].metadata.gatewayFailure as { codes: string[] }).codes[0]).toBe(
+      'context_length_exceeded',
+    );
   });
 });
 
@@ -2046,7 +2517,7 @@ describe("gateway error envelope contract", () => {
     });
     expect(res.status).toBe(502);
     const body = await res.json();
-    expect(body.message).toBe("provider socket reset");
+    expect(body.message).toContain("provider socket reset");
     expectErrorContract(body, "upstream_error");
   });
 

@@ -62,8 +62,8 @@ export async function GET(req: NextRequest) {
   try {
     const result = await kortix
       .project(projectId)
-      .connectors.authorizations.list();
-    const connectors = selectConnectorBindingChoices(result?.profiles).filter(
+      .connectors.connections.list();
+    const connectors = selectConnectorBindingChoices(result.connections).filter(
       (choice) => !connector || choice.alias === connector,
     );
     return Response.json({ connectors });

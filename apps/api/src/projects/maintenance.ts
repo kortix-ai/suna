@@ -1,11 +1,17 @@
 import { projectSessions, projects } from '@kortix/db';
 import { and, asc, eq, inArray, lt, ne, sql } from 'drizzle-orm';
 import { tickRunningComputeCharges } from '../billing/services/compute-metering';
+import { cleanupExpiredConnectorAttachments } from '../connectors/attachments';
 import { db } from '../shared/db';
 import { reconcileStaleBuilds } from '../snapshots/builder';
 import { reconcileSnapshotQuota } from '../snapshots/quota-gc';
 import { type GitBackedProject, deleteRemoteSessionBranch } from './git';
+import { purgeExpiredMonitorEvents, reconcileMonitorBoxes } from './lib/monitor-box';
+import { emptyMonitorReconcileResult } from './lib/monitor-box-core';
+import { reconcileForwardedPrompts } from './session-lifecycle/consumption';
 import { reconcileUndeliveredPrompts } from './session-lifecycle/undelivered-prompts';
+import { verifyParkedRuntimes } from './reaping/parked-runtime-verification';
+import { reconcileRuntimeWakeFences } from './session-lifecycle/runtime-wake-maintenance';
 import {
   EMPTY_REAP_RESULT,
   countBillingInvariantViolations,
@@ -229,11 +235,17 @@ export async function runProjectMaintenance(): Promise<void> {
       orphanCompute,
       stuckSessions,
       undeliveredPrompts,
+      forwardedPrompts,
       orphanBoxes,
       branches,
       computeTick,
       staleBuilds,
       snapshotGc,
+      connectorAttachments,
+      runtimeWakes,
+      parkedRuntimes,
+      monitorBoxes,
+      monitorEventsPurged,
     ] = await Promise.all([
       // Provider-authoritative idle reaper + state/billing reconcile (the fix for
       // boxes that never auto-stopped and kept billing). Backstops the webhooks.
@@ -274,6 +286,16 @@ export async function runProjectMaintenance(): Promise<void> {
           err instanceof Error ? err.message : err,
         );
         return { claimed: 0, succeeded: 0, failed: 0, queued: 0 };
+      }),
+      // The other end of the same queue: FORWARDED prompts whose ledger
+      // confirmation never arrived. It only ever closes rows — a prompt that
+      // reads `delivering` for ever is a composer that never stops working.
+      reconcileForwardedPrompts().catch((err) => {
+        console.warn(
+          '[project-maintenance] forwarded-prompt reconcile failed:',
+          err instanceof Error ? err.message : err,
+        );
+        return { scanned: 0, confirmed: 0, forceClosed: 0 };
       }),
       // Provider-authoritative orphan-BOX reaper: stops boxes still running on
       // the provider (this env) with no live DB row — the leak the DB-driven
@@ -324,6 +346,58 @@ export async function runProjectMaintenance(): Promise<void> {
           dryRun: false,
         };
       }),
+      // Private Connector email attachments expire after 24 hours. Successful
+      // sends become non-replayable immediately, then this sweep deletes them
+      // after the signed-URL ingestion grace window.
+      cleanupExpiredConnectorAttachments().catch((err) => {
+        console.warn(
+          '[project-maintenance] connector-attachment cleanup failed:',
+          err instanceof Error ? err.message : err,
+        );
+        return { deleted: 0, errors: 1 };
+      }),
+      // A timed-out provider start can complete after its request owner exits.
+      // Stop that late VM while the durable row remains stopped and unbilled.
+      reconcileRuntimeWakeFences().catch((err) => {
+        console.warn(
+          '[project-maintenance] runtime-wake reconcile failed:',
+          err instanceof Error ? err.message : err,
+        );
+        return { checked: 0, stopped: 0, removed: 0, errors: 1 };
+      }),
+      // Nothing else ever re-checks a PARKED sandbox: the reaper's candidate
+      // predicate is `status = 'active'` and the wake fence only sees rows with
+      // a live wake. So a box the provider lost while it sat parked stayed
+      // advertised as resumable until a user tripped over it — 16,243 prod rows
+      // had never been re-verified, 16 of them already dead (2026-08-13).
+      // Rotating + bounded, and it also clears the flag when a runtime is back.
+      verifyParkedRuntimes().catch((err) => {
+        console.warn(
+          '[project-maintenance] parked-runtime verification failed:',
+          err instanceof Error ? err.message : err,
+        );
+        return { examined: 0, lost: 0, healed: 0, errors: 1 };
+      }),
+      // Monitors (docs/specs/2026-08-12-monitors.md D5). Converges the
+      // per-project monitor box: flag on + >=1 enabled monitor => a box exists
+      // running the current manifest revision; flag off, zero monitors, or an
+      // exceeded budget => no box. Also the ONLY place a persistent monitor box
+      // is observed alive, which is what keeps its billing window earning.
+      reconcileMonitorBoxes().catch((err) => {
+        console.warn(
+          '[project-maintenance] monitor-box reconcile failed:',
+          err instanceof Error ? err.message : err,
+        );
+        return { ...emptyMonitorReconcileResult(), errors: 1 };
+      }),
+      // 30-day retention on the append-only monitor event log.
+      purgeExpiredMonitorEvents().catch((err) => {
+        console.warn(
+          '[project-maintenance] monitor-event retention failed:',
+          err instanceof Error ? err.message : err,
+        );
+        return 0;
+      }),
     ]);
     const hadAction = Boolean(
       idle.stopped ||
@@ -334,6 +408,8 @@ export async function runProjectMaintenance(): Promise<void> {
         stuckSessions.reconciled ||
         stuckSessions.errors ||
         undeliveredPrompts.claimed ||
+        forwardedPrompts.confirmed ||
+        forwardedPrompts.forceClosed ||
         orphanBoxes.stopped ||
         orphanBoxes.errors ||
         branches.deleted ||
@@ -342,7 +418,22 @@ export async function runProjectMaintenance(): Promise<void> {
         computeTick.reconciled ||
         staleBuilds.closedReady ||
         staleBuilds.closedFailed ||
-        snapshotGc.deleted,
+        snapshotGc.deleted ||
+        connectorAttachments.deleted ||
+        connectorAttachments.errors ||
+        runtimeWakes.stopped ||
+        runtimeWakes.removed ||
+        runtimeWakes.errors ||
+        parkedRuntimes.lost ||
+        parkedRuntimes.healed ||
+        parkedRuntimes.errors ||
+        monitorBoxes.created ||
+        monitorBoxes.restarted ||
+        monitorBoxes.stopped ||
+        monitorBoxes.disabledOverCap ||
+        monitorBoxes.deferred ||
+        monitorBoxes.errors ||
+        monitorEventsPurged,
     );
     if (hadAction) {
       console.log('[project-maintenance] completed', {
@@ -350,11 +441,16 @@ export async function runProjectMaintenance(): Promise<void> {
         orphanCompute,
         stuckSessions,
         undeliveredPrompts,
+        forwardedPrompts,
         orphanBoxes,
         branches,
         computeTick,
         staleBuilds,
         snapshotGc,
+        connectorAttachments,
+        runtimeWakes,
+        monitorBoxes,
+        monitorEventsPurged,
       });
     }
     // Unconditional heartbeat — proof-of-life independent of whether any
@@ -378,7 +474,20 @@ export async function runProjectMaintenance(): Promise<void> {
       `idle_deferred=${idle.deferred}`,
       `idle_stopped=${idle.stopped}`,
       `idle_skipped=${idle.skipped}`,
+      `lifecycle_renewed=${idle.lifecycleRenewed}`,
       `compute_rows_closed=${orphanCompute.closed}`,
+      `late_wakes_stopped=${runtimeWakes.stopped}`,
+      `parked_runtimes_preserved=${runtimeWakes.removed}`,
+      `parked_verified=${parkedRuntimes.examined}`,
+      `parked_lost=${parkedRuntimes.lost}`,
+      `parked_healed=${parkedRuntimes.healed}`,
+      // A monitor box only stays billable while this sweep observes it, so
+      // `monitor_observed` going flat while boxes exist is the signal that
+      // monitor billing has silently stopped earning.
+      `monitor_projects=${monitorBoxes.projects}`,
+      `monitor_observed=${monitorBoxes.observed}`,
+      `monitor_created=${monitorBoxes.created}`,
+      `monitor_stopped=${monitorBoxes.stopped}`,
       `action=${hadAction}`,
     );
 

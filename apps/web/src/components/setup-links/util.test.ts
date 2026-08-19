@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 
-import { parseSetupLinkHref, setupLinkChipLabel } from './util';
+import { HostBoundaryError } from '@kortix/sdk';
+import {
+  classifySetupLinkError,
+  describeLinkExpiry,
+  parseSetupLinkHref,
+  setupLinkChipLabel,
+} from './util';
 
 const TOKEN = `ksl_${'A'.repeat(400)}`;
 
@@ -73,5 +79,51 @@ describe('setupLinkChipLabel', () => {
     expect(setupLinkChipLabel('Enter your Slack credentials', TOKEN, 'Enter credentials')).toBe(
       'Enter your Slack credentials',
     );
+  });
+});
+
+describe('classifySetupLinkError', () => {
+  test('410 means expired — the recoverable, expected state', () => {
+    expect(classifySetupLinkError(new HostBoundaryError('This link has expired', 410, null))).toBe(
+      'expired',
+    );
+  });
+
+  test('404 and 400 mean the link itself is bad (truncated copy, wrong type)', () => {
+    expect(
+      classifySetupLinkError(new HostBoundaryError('Invalid or unknown link', 404, null)),
+    ).toBe('invalid');
+    expect(classifySetupLinkError(new HostBoundaryError('Wrong link type', 400, null))).toBe(
+      'invalid',
+    );
+  });
+
+  test('status carried structurally (no instanceof) still classifies', () => {
+    expect(classifySetupLinkError({ status: 410 })).toBe('expired');
+    expect(classifySetupLinkError({ status: 404 })).toBe('invalid');
+  });
+
+  test('anything without a known status is a network problem', () => {
+    expect(classifySetupLinkError(new TypeError('fetch failed'))).toBe('network');
+    expect(classifySetupLinkError(new HostBoundaryError('rate limited', 429, null))).toBe(
+      'network',
+    );
+    expect(classifySetupLinkError(undefined)).toBe('network');
+  });
+});
+
+describe('describeLinkExpiry', () => {
+  const now = Date.parse('2026-08-07T12:00:00.000Z');
+
+  test('rounds to the largest sensible unit', () => {
+    expect(describeLinkExpiry('2026-08-14T12:00:00.000Z', now)).toBe('7 days');
+    expect(describeLinkExpiry('2026-08-07T17:00:00.000Z', now)).toBe('5 hours');
+    expect(describeLinkExpiry('2026-08-07T12:25:00.000Z', now)).toBe('25 minutes');
+    expect(describeLinkExpiry('2026-08-07T12:01:00.000Z', now)).toBe('less than 2 minutes');
+  });
+
+  test('past or unparseable expiry yields null', () => {
+    expect(describeLinkExpiry('2026-08-07T11:00:00.000Z', now)).toBeNull();
+    expect(describeLinkExpiry('not-a-date', now)).toBeNull();
   });
 });

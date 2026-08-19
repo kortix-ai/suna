@@ -15,11 +15,18 @@
  */
 
 // Page root: definite viewport height so the flex chain resolves to real pixels.
-export const SHARE_PAGE_ROOT_CLASS = 'bg-background text-foreground flex h-dvh flex-col';
+//
+// `bg-card` (surface-1), not `bg-background`: the root is the canvas the header
+// sits on, and the content pane below is a `bg-background` sheet with a rounded
+// top. A radius is only visible if something different shows through the corner
+// notch, so canvas and sheet must be different tones — same value on both and
+// the rounding silently does nothing.
+export const SHARE_PAGE_ROOT_CLASS = 'bg-card text-foreground flex h-dvh flex-col';
 
 // Live preview iframe: fills its flex-1 region edge to edge.
 export const SHARE_PREVIEW_IFRAME_CLASS = 'h-full w-full border-0';
 
-// HTML file iframe: sits below a fixed toolbar inside a flex-col, so it takes
-// the remaining height (flex-1) and spans the full width.
-export const SHARE_FILE_IFRAME_CLASS = 'min-h-0 w-full flex-1 border-0 bg-white';
+// HTML file iframe: the only child of the content region, so it claims the
+// full box exactly like the preview iframe. `bg-white` keeps a transparent
+// document from showing the app's dark surface through the page.
+export const SHARE_FILE_IFRAME_CLASS = 'h-full w-full border-0 bg-white';

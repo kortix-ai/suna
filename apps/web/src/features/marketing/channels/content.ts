@@ -101,7 +101,7 @@ export const surfaces = {
       icon: 'Gmail',
       name: 'Email',
       state: 'Experimental',
-      body: 'A project inbox, so a message to an address starts a session and a reply continues it. Opt in per project under Customize → Settings → Experimental. Real, and not finished.',
+      body: 'A project inbox, so a message to an address starts a session and a reply continues it. Opt in per project under Customize → Feature flags. Real, and not finished.',
     },
     {
       id: 'voice',

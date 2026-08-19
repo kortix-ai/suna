@@ -12,7 +12,6 @@
 
 import { ApprovalDecision } from '@/components/setup-links/approval-decision';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useParams } from 'next/navigation';
 
 export default function ApprovalPage() {
@@ -21,23 +20,20 @@ export default function ApprovalPage() {
 
   return (
     <div className="bg-background flex min-h-screen w-full items-center justify-center px-4 py-10">
-      <div className="w-full max-w-md">
-        <div className="mb-6 flex justify-center">
+      <main className="w-full max-w-lg space-y-6">
+        <div className="flex justify-center">
           <KortixLogo />
         </div>
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">An agent needs your approval</CardTitle>
-            <CardDescription>
-              Review exactly what it wants to do, then approve or deny. It stays paused until you
-              decide.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ApprovalDecision token={token} />
-          </CardContent>
-        </Card>
-      </div>
+        <header className="space-y-1 text-center">
+          <h1 className="text-foreground text-xl font-medium text-balance">
+            An agent needs your approval
+          </h1>
+          <p className="text-muted-foreground text-sm text-pretty">
+            Review the exact parameters. Your decision applies to this call only.
+          </p>
+        </header>
+        <ApprovalDecision token={token} />
+      </main>
     </div>
   );
 }
