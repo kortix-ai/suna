@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { extractGatewayErrorDetails, unwrapError } from './errors';
+import { extractGatewayErrorDetails, extractModelNotFoundDetails, unwrapError } from './errors';
 
 // The gateway's structured error envelope — mirrors gatewayErrorBody()
 // (packages/llm-gateway/src/pipeline/error-response.ts) exactly, both the
@@ -191,5 +191,63 @@ describe('extractGatewayErrorDetails — recovering the structured envelope', ()
       },
     };
     expect(extractGatewayErrorDetails(openCodeApiError)).toBeUndefined();
+  });
+});
+
+// ============================================================================
+// ModelNotFound — the runtime could not resolve the model the turn asked for.
+//
+// Payloads below are VERBATIM from a live sandbox (worktree stack, 2026-08-19):
+// one `POST .../prompts` with `model: kortix/does-not-exist-model` produced two
+// `session.error` frames off opencode's event stream, both named `UnknownError`
+// — the discriminator is only ever in the message text.
+// ============================================================================
+
+describe('extractModelNotFoundDetails', () => {
+  const plain =
+    'Model not found: kortix/does-not-exist-model. Did you mean: 302ai/gemini-2.5-flash-nothink, abliteration-ai/abliterated-model, abliteration-ai/abliterated-model-large?';
+  const withStack =
+    'ProviderModelNotFoundError: Model not found: kortix/does-not-exist-model. Did you mean: 302ai/gemini-2.5-flash-nothink, abliteration-ai/abliterated-model, abliteration-ai/abliterated-model-large?\n    at <anonymous> (/$bunfs/root/chunk-q0yj43s0.js:687:64965)\n    at SessionPrompt.getModel (/$bunfs/root/chunk-0tcwf9yr.js:1021:1895)';
+
+  test('reads the model off the wire frame opencode actually sends', () => {
+    expect(
+      extractModelNotFoundDetails({ name: 'UnknownError', data: { message: plain } }),
+    ).toEqual({ providerID: 'kortix', modelID: 'does-not-exist-model', managed: true });
+  });
+
+  test('reads it off the second frame too, prefix and stack trace and all', () => {
+    expect(
+      extractModelNotFoundDetails({ name: 'UnknownError', data: { message: withStack } }),
+    ).toEqual({ providerID: 'kortix', modelID: 'does-not-exist-model', managed: true });
+  });
+
+  test('accepts the `ModelNotFound:` spelling and a dotted model id', () => {
+    // The 2026-08-19 production report: `ModelNotFound: kortix/grok-4.6`.
+    expect(
+      extractModelNotFoundDetails('ModelNotFound: kortix/grok-4.6. Did you mean: kortix/grok-4?'),
+    ).toEqual({ providerID: 'kortix', modelID: 'grok-4.6', managed: true });
+  });
+
+  test('a plain string and a bare Error carry the same answer as the wire object', () => {
+    expect(extractModelNotFoundDetails(plain)?.modelID).toBe('does-not-exist-model');
+    expect(extractModelNotFoundDetails(new Error(plain))?.modelID).toBe('does-not-exist-model');
+  });
+
+  test('`managed` is false for a model this platform does not serve itself', () => {
+    expect(extractModelNotFoundDetails('Model not found: openai/gpt-9')).toEqual({
+      providerID: 'openai',
+      modelID: 'gpt-9',
+      managed: false,
+    });
+  });
+
+  test('any other failure is not a model-not-found', () => {
+    expect(extractModelNotFoundDetails('Insufficient credits. Balance: $-0.06')).toBeUndefined();
+    expect(extractModelNotFoundDetails({ name: 'AbortError', data: { message: 'Aborted' } })).toBeUndefined();
+    expect(extractModelNotFoundDetails(undefined)).toBeUndefined();
+    expect(extractModelNotFoundDetails(null)).toBeUndefined();
+    // Named right, but with no `provider/model` pair to report — the caller
+    // gets `undefined` and renders the message as-is rather than a half-answer.
+    expect(extractModelNotFoundDetails('ProviderModelNotFoundError')).toBeUndefined();
   });
 });

@@ -1036,6 +1036,13 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
        *  Server truth from the control plane's lifecycle authority, independent
        *  of the live stream. */
       turn: () => P.getSessionTurn(projectId, sessionId),
+      /** This session's retained turn HISTORY, newest first — one row per turn
+       *  the ledger settled, each carrying the error that ended it. `turn()`
+       *  above knows only the newest ending; this is how a client that never
+       *  saw the live failure (a reload, another browser) still learns which
+       *  prompt a turn failed on. */
+      turns: (options?: Parameters<typeof P.listSessionTurns>[2]) =>
+        P.listSessionTurns(projectId, sessionId, options),
       /** This session's SERVER-SIDE prompt inbox: the prompts it still owes the
        *  user. Durable, so it survives a closed tab and is the same list on
        *  every device. */

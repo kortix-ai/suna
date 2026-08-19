@@ -81,6 +81,7 @@ import { useRuntimePhase } from './use-runtime-phase';
 import { useSessionPicks } from './use-session-picks';
 import { derivePhase } from './use-session-phase';
 import { useSessionSync } from './use-session-sync';
+import { useDurableTurnErrors } from './use-durable-turn-errors';
 import { useSessionWorking } from './use-session-working';
 import { useVisibleAgents } from './use-visible-agents';
 
@@ -1022,6 +1023,16 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   // is off — `useSessionSync('')` fetches/polls nothing (its effects no-op on
   // a falsy/non-canonical session id) — and use a fixed, type-stable empty
   // result instead of whatever it happens to return for that starved call.
+  // The durable half of the error story. `useSessionSync` fetches the runtime's
+  // transcript, which holds NOTHING for a turn that failed before generation
+  // started; this reads the control plane's retained turn rows and puts those
+  // failures back under the prompts they belong to. One request per mount plus
+  // one per turn end — the falling edge of `working`, never a poll.
+  useDurableTurnErrors(projectId, sessionId, chatEngine ? ocSessionId : null, {
+    enabled: enabled && chatEngine,
+    working: working.state === 'working',
+  });
+
   const rawSync = useSessionSync(chatEngine ? ocSessionId : '', {
     kortixSessionScope: `${projectId}/${sessionId}`,
     networkEnabled: switched,

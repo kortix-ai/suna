@@ -555,6 +555,15 @@ export interface SessionTurnEnded {
   turn_token: string;
   end_reason: string | null;
   ended_at: string | null;
+  /** The OpenCode user message this turn answered, when the producer sent one.
+   *  OPTIONAL, not required: this object also appears in INPUT position
+   *  (`SessionTurnObservation` on `./react`), so an external caller that
+   *  constructs one must keep compiling — and a deployment older than the
+   *  field genuinely sends nothing. */
+  message_id?: string | null;
+  /** How it failed, when it did — see {@link SessionTurnError}. Optional for
+   *  the same two reasons as `message_id`. */
+  error?: SessionTurnError | null;
 }
 
 export interface SessionTurnStatus {
@@ -583,6 +592,117 @@ export async function getSessionTurn(
       `/projects/${projectId}/sessions/${sessionId}/turn`,
     ),
   );
+}
+
+// ── The durable turn history ────────────────────────────────────────────────
+//
+// `GET .../turn` above answers the LIVE question: what is running now, and how
+// did the most recent turn end. It cannot answer the question a client has
+// after a reload — the transcript holds N user messages, and which of them did
+// a turn fail on? Only the newest failure is on `last_ended`; every older one
+// is invisible there. The ledger retains one settled row per turn, and this is
+// the read of it.
+//
+// This matters because a failure that dies before generation starts (a
+// `ModelNotFound` ~2ms after the prompt) persists NOTHING in the runtime's own
+// transcript but the user message. The turn row is the only durable record
+// that the turn failed at all, which is why the transcript alone can never
+// show it after the tab that saw the live frame is gone.
+
+/**
+ * Why a turn ended.
+ *
+ * `completed` and `failed` are the runtime's own report. The other three are
+ * the control plane's, for turns that never got to report anything:
+ * `abandoned` (the runtime never accepted the prompt), `runtime_gone` (the box
+ * went away mid-turn), `unknown` (a settled row whose reason was never
+ * recorded). Every one of them EXCEPT `completed` carries an `error` — a real
+ * one from the runtime, or a synthesized sentence — because a turn that
+ * produced no answer and no explanation is indistinguishable from a silent
+ * no-op to the person who sent the prompt.
+ *
+ * Widened to `string` on the wire rather than a closed union: a server that
+ * learns a new reason must not fail a client's parse. Compare against the
+ * members, do not switch exhaustively.
+ */
+export type SessionTurnEndReason =
+  | 'completed'
+  | 'failed'
+  | 'abandoned'
+  | 'runtime_gone'
+  | 'unknown';
+
+/**
+ * The failure that ended a turn, as the control plane recorded it.
+ *
+ * Deliberately NOT `MessageError` (the opencode wire shape a transcript
+ * message carries): this is the platform's own record, snake_case like every
+ * other field on this surface, and it exists for turns opencode never wrote a
+ * message for at all.
+ */
+export interface SessionTurnError {
+  /** The runtime's error name (`UnknownError`, `ProviderModelNotFoundError`),
+   *  or a synthetic one for a turn that never ran — `TurnAbandoned`,
+   *  `RuntimeGone`, `TurnFailed`, `TurnEndedUnknown`. */
+  name: string;
+  /** The human-readable sentence to show. Always populated. */
+  message: string;
+  /** HTTP status, when the failure had one. */
+  status_code?: number;
+  /** Is sending the same prompt again worth trying? */
+  is_retryable?: boolean;
+  /** Which provider produced it, when known. */
+  provider_id?: string;
+  /** ISO instant the control plane recorded the failure. */
+  recorded_at: string;
+}
+
+/** `'ended'` in addition to the two live states: this is history, so most rows
+ *  are over. */
+export type SessionTurnHistoryState = SessionTurnState | 'ended';
+
+/** One retained turn. `message_id` is the OpenCode user message the turn
+ *  answered — the key a client uses to put the error back under the prompt
+ *  that caused it. Null for every producer that sends no wire id (triggers,
+ *  Slack/Teams/Telegram, approval-resume, email, `/` commands). */
+export interface SessionTurnHistoryEntry {
+  turn_token: string;
+  message_id: string | null;
+  opencode_session_id: string | null;
+  state: SessionTurnHistoryState;
+  end_reason: SessionTurnEndReason | string | null;
+  started_at: string | null;
+  ended_at: string | null;
+  error: SessionTurnError | null;
+}
+
+/** Default and ceiling mirror the server's own clamp (`r8.ts`). Passing a
+ *  bigger `limit` is not an error; the server bounds it. */
+const SESSION_TURN_HISTORY_MAX = 200;
+
+/**
+ * This session's retained turn history, newest first.
+ *
+ * A 404 answers `[]` rather than throwing: the only ways to get one are a
+ * deployment that predates this route and a session the caller cannot see, and
+ * neither is a reason to fail the transcript read this rides alongside. Every
+ * other failure throws, because a 500 means the history is unknown, not empty.
+ */
+export async function listSessionTurns(
+  projectId: string,
+  sessionId: string,
+  options: { limit?: number } = {},
+): Promise<SessionTurnHistoryEntry[]> {
+  const limit =
+    typeof options.limit === 'number' && Number.isFinite(options.limit)
+      ? Math.min(Math.max(Math.trunc(options.limit), 1), SESSION_TURN_HISTORY_MAX)
+      : undefined;
+  const query = limit === undefined ? '' : `?limit=${limit}`;
+  const response = await backendApi.get<{ turns: SessionTurnHistoryEntry[] }>(
+    `/projects/${projectId}/sessions/${sessionId}/turns${query}`,
+  );
+  if (!response.success && (response.error as ApiError | undefined)?.status === 404) return [];
+  return unwrap(response, 'Failed to read turn history').turns ?? [];
 }
 
 // ── The prompt inbox ────────────────────────────────────────────────────────

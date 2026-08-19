@@ -258,6 +258,27 @@ interface SyncState {
 	markOptimisticInboxBacked: (sessionID: string, messageID: string) => void;
 	clearOptimisticMessages: (sessionID: string) => void;
 	/**
+	 * Put the SERVER's record of failed turns back onto this transcript.
+	 *
+	 * The live `session.error` frame only ever reaches the tab that was open
+	 * when the turn died. Every other reader — a reload in another browser, a
+	 * second device, a colleague opening the shared session — fetches a
+	 * transcript in which that turn is a user message and nothing else, because
+	 * a turn that fails before generation starts leaves opencode nothing to
+	 * persist. `GET .../turns` retains one row per turn WITH its error, keyed by
+	 * the user message it answered; this applies those rows.
+	 *
+	 * Deliberately the SAME mechanism the live frame uses (`stubIdFor(userId)`),
+	 * so the two are idempotent by construction: whichever arrives first owns
+	 * the row and the other is a no-op. A turn whose reply really exists is left
+	 * alone — unless `patchEmptyReply`, for the reasons in its own doc.
+	 */
+	applyServerTurnErrors: (
+		sessionID: string,
+		turns: readonly ServerTurnErrorRow[],
+		options?: ApplyServerTurnErrorsOptions,
+	) => void;
+	/**
 	 * The runtime's id for an optimistic message that was superseded under a
 	 * DIFFERENT id (the control plane re-mints a wire id that would sort below
 	 * the transcript tip). Lets a host keep ONE identity for the prompt across
@@ -342,6 +363,34 @@ interface SyncState {
 	// ---- Compat selectors (for old store consumers) ----
 	// These mirror the old store shapes so external components can migrate gradually
 	statuses: Record<string, SessionStatus>;
+}
+
+/** One failed turn as the control plane recorded it, reduced to the two fields
+ *  this store needs: WHICH prompt failed, and WHAT to show. Structural on
+ *  purpose — the REST shape (`SessionTurnHistoryEntry`) lives in the isomorphic
+ *  core, and this browser-tier store must not import it to stay decoupled from
+ *  the transport that produced it. */
+export interface ServerTurnErrorRow {
+	/** The OpenCode user message id the turn answered. */
+	messageId: string;
+	/** The failure. `name` is the runtime's (`UnknownError`) or a synthetic one
+	 *  for a turn that never ran (`TurnAbandoned`, `RuntimeGone`, `TurnFailed`,
+	 *  `TurnEndedUnknown`); `message` is the sentence to render. */
+	error: { name: string; message: string };
+}
+
+export interface ApplyServerTurnErrorsOptions {
+	/**
+	 * Also patch a turn whose assistant reply EXISTS but carries no error.
+	 *
+	 * Off by default, because the common shape of a wrong answer is a reply
+	 * that arrived — stamping a stale ledger error onto it would contradict
+	 * what the user can read. It is turned on for the one caller that knows the
+	 * reply is not the whole story: a turn the server settled as `failed`
+	 * mid-stream, where opencode wrote a partial message and never got to
+	 * record the error on it.
+	 */
+	patchEmptyReply?: boolean;
 }
 
 // ============================================================================
@@ -1229,6 +1278,67 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 				messages: { ...s.messages, [sessionID]: nextMsgs },
 				parts: restParts,
 			};
+		});
+	},
+
+	applyServerTurnErrors: (sessionID, turns, options) => {
+		if (turns.length === 0) return;
+		set((s) => {
+			const msgs = s.messages[sessionID];
+			if (!msgs || msgs.length === 0) return s;
+			let next: Message[] | undefined;
+			const current = () => next ?? msgs;
+			for (const row of turns) {
+				const userId = row.messageId;
+				if (!userId || !row.error?.message) continue;
+				const list = current();
+				const userIdx = list.findIndex((m) => m.id === userId && m.role === "user");
+				// A row for a prompt this transcript does not hold is not ours to
+				// render: an older turn beyond the loaded page, or a sub-session.
+				if (userIdx === -1) continue;
+
+				// Does that turn already have an assistant message? `parentID` is
+				// the linkage the renderer groups by; the id comparison covers a
+				// wire message that carries none (ids ascend).
+				const replyIdx = list.findIndex(
+					(m, i) =>
+						i > userIdx &&
+						m.role === "assistant" &&
+						(m.parentID === userId || (!m.parentID && m.id > userId)),
+				);
+				if (replyIdx !== -1) {
+					const reply = list[replyIdx];
+					// The live frame (or an earlier pass) already said this. Whoever
+					// got here first owns the row — see the doc comment. (`reply` is
+					// narrowed to `assistant` by the predicate above, but the array's
+					// element type is the union, so read `error` structurally.)
+					if ((reply as { error?: unknown }).error) continue;
+					if (!options?.patchEmptyReply) continue;
+					next = [...list];
+					next[replyIdx] = {
+						...reply,
+						error: { name: row.error.name, data: { message: row.error.message } },
+					} as Message;
+					continue;
+				}
+
+				const stubId = stubIdFor(userId);
+				if (list.some((m) => m.id === stubId)) continue;
+				trackStub(sessionID, stubId, userId);
+				next = [...list];
+				next.splice(userIdx + 1, 0, {
+					id: stubId,
+					sessionID,
+					role: "assistant",
+					parentID: userId,
+					error: { name: row.error.name, data: { message: row.error.message } },
+				} as Message);
+			}
+			// Nothing to say. Returning the same state keeps every transcript
+			// consumer's `Object.is` check true, so a repeated read costs no
+			// render at all.
+			if (!next) return s;
+			return { messages: { ...s.messages, [sessionID]: next } };
 		});
 	},
 
