@@ -141,6 +141,13 @@ const ROUTE_LABEL_OVERRIDES: Record<string, string> = {
   'PUT /v1/projects/:projectId/connections/:connectionId/revoke': 'Revoked connector',
   'POST /v1/projects/:projectId/connections/me': 'Created personal connector',
   'POST /v1/projects/:projectId/gateway/playground': 'Ran gateway playground request',
+  // The generic fallback renders these as "Viewed/Updated/Deleted otel", which
+  // names an acronym, not an action. This is the project's OTLP trace-export
+  // destination (Models > Observability) — a write here changes where this
+  // project's gen_ai spans are sent, so the log line has to say that.
+  'GET /v1/projects/:projectId/gateway/otel': 'Viewed trace-export destination',
+  'PUT /v1/projects/:projectId/gateway/otel': 'Updated trace-export destination',
+  'DELETE /v1/projects/:projectId/gateway/otel': 'Removed trace-export destination',
   'POST /v1/projects/:projectId/gateway/routing-policy/preview': 'Previewed gateway routing policy',
   'POST /v1/projects/:projectId/git/collaborators': 'Added Git collaborator',
   'POST /v1/projects/:projectId/marketplace/install-session': 'Started marketplace install',
