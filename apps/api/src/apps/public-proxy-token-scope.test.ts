@@ -71,18 +71,38 @@ const authorizeCalls: {
   actingTokenId: string | undefined;
 }[] = [];
 
+// The credential is part of the Actor now (canonical engine): the acting token
+// id no longer travels as a trailing positional argument to `authorize`, it is
+// `actor.credential.tokenId`. `actorForToken` normally reads the token binding
+// from the DB; this suite has none, so it is stubbed from the same TOKENS table.
+mock.module('../iam/actor', () => ({
+  actorForUser: (userId: string, accountId: string) => ({
+    userId,
+    accountId,
+    credential: { kind: 'jwt' },
+    ctx: {},
+  }),
+  actorForToken: async (userId: string, accountId: string, tokenId?: string | null) => ({
+    userId,
+    accountId,
+    credential: tokenId
+      ? { kind: 'pat', tokenId, projectId: BINDING_BY_TOKEN_ID.get(tokenId) ?? null }
+      : { kind: 'jwt' },
+    ctx: {},
+  }),
+}));
+
 mock.module('../iam', () => ({
   PROJECT_ACTIONS: {
     PROJECT_READ: 'project.read',
     PROJECT_MEMBERS_MANAGE: 'project.members.manage',
   },
   authorize: async (
-    _userId: string,
-    _accountId: string,
+    actor: { credential: { kind: string; tokenId?: string } },
     action: string,
     target?: { type: string; id: string },
-    actingTokenId?: string,
   ) => {
+    const actingTokenId = actor.credential.kind === 'jwt' ? undefined : actor.credential.tokenId;
     authorizeCalls.push({
       action,
       targetProjectId: target?.id,

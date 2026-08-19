@@ -860,6 +860,7 @@
                           "project.review.read",
                           "project.review.submit",
                           "project.review.act",
+                          "project.credentials.issue",
                           "project.session.exec",
                           "project.gateway.routing.edit",
                           "project.schedule.read",
@@ -1117,6 +1118,7 @@
                           "project.review.read",
                           "project.review.submit",
                           "project.review.act",
+                          "project.credentials.issue",
                           "*"
                         ]
                       }
