@@ -70,20 +70,31 @@ const DESTINATIONS: {
   },
 ];
 
-/** The gen_ai.* semantic-convention + kortix.* custom attributes every span
- *  carries — kept in sync by hand with hooks.ts's emitGatewayGenAiSpan. */
-const SPAN_ATTRIBUTES = [
+/**
+ * The attributes every exported span carries. Each key here MUST exist in
+ * `apps/api/src/llm-gateway/hooks.ts`'s `emitGatewayGenAiSpan` — the colocated
+ * test greps that file for every one of them, so a renamed or dropped
+ * attribute fails a test instead of quietly lying on this screen. Not the FULL
+ * set (the span also carries the failure/fallback diagnostics); this is the
+ * part a user reads a dashboard by.
+ */
+export const SPAN_ATTRIBUTES = [
   { key: 'gen_ai.system', desc: 'the upstream provider (e.g. anthropic, openai, bedrock)' },
+  { key: 'gen_ai.operation.name', desc: 'always "chat" today' },
   { key: 'gen_ai.request.model', desc: 'the model you requested' },
   { key: 'gen_ai.response.model', desc: 'the model that actually served the call' },
   { key: 'gen_ai.usage.input_tokens', desc: 'prompt tokens' },
   { key: 'gen_ai.usage.output_tokens', desc: 'completion tokens' },
+  { key: 'kortix.cached_tokens', desc: 'prompt tokens served from cache' },
   { key: 'kortix.cost_usd', desc: 'what this call was billed' },
   { key: 'kortix.upstream_cost_usd', desc: 'what the upstream provider charged' },
-  { key: 'kortix.latency_ms', desc: 'span duration (start → end)' },
-  { key: 'kortix.request_id', desc: 'ties the span back to this project’s Logs tab' },
+  { key: 'kortix.billing_mode', desc: 'managed credits or your own key (BYOK)' },
+  { key: 'kortix.streaming', desc: 'whether the call was streamed' },
+  { key: 'kortix.attempts', desc: 'upstream attempts, including failover retries' },
+  { key: 'kortix.gateway_status', desc: 'the HTTP status the gateway returned' },
+  { key: 'kortix.ok', desc: 'whether the call succeeded' },
+  { key: 'kortix.request_id', desc: 'ties the span back to this project\u2019s Logs tab' },
 ];
-
 interface HeaderRow {
   id: string;
   name: string;
@@ -379,9 +390,12 @@ function ObservabilityFormModal({
   }) => void;
 }) {
   const [endpoint, setEndpoint] = useState(initialEndpoint);
-  const [rows, setRows] = useState<HeaderRow[]>([
-    { id: crypto.randomUUID(), name: 'Authorization', value: '' },
-  ]);
+  // The seed row is BLANK, not `{name:'Authorization', value:''}`. A prefilled
+  // name with an empty value is a half-filled row, so `headerRowsValid` was
+  // false the instant the modal opened and the form showed a red "fill in both
+  // fields" error before the user had typed a character. The `Authorization`
+  // placeholder does the same hinting without asserting the form is wrong.
+  const [rows, setRows] = useState<HeaderRow[]>([emptyHeaderRow()]);
 
   const trimmedEndpoint = endpoint.trim();
   const endpointValid = isValidOtelEndpoint(trimmedEndpoint);
