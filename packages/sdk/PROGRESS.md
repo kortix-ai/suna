@@ -12,6 +12,322 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-19 — session `member-model-picker` — the model picker is inert without an agent — DONE
+
+**Files:** `react/use-opencode-local.ts` (+ `use-opencode-local.test.ts`),
+`src/public-surface.snapshot.json` + `src/public-type-surface.snapshot.json`
+(+1 name each). The API half is a contract test only — no API change was needed.
+
+**The bug.** A project `member` opened the composer's model picker, saw every
+enabled model listed and selectable, clicked one — and nothing happened. The
+trigger snapped straight back to the server default. Reproduced end to end in
+Chromium against the local stack: `trigger BEFORE: DeepSeek V4 Flash` →
+`option count: 7` → `clicked: "Grok 4.6"` → `trigger AFTER: DeepSeek V4 Flash`.
+
+**Root cause.** `setModel` persisted the pick ONLY under
+`` `${providerMode}:${currentAgent.name}` ``, guarded by `if (currentAgent && next)`.
+Agents are deny-by-default for a member (`iam/resource-grants.ts`), so a member
+with no agent grant has an empty roster and `currentAgent === undefined`; the
+project-home composer carries no `sessionId`, so the per-session slot was absent
+too. BOTH writes were skipped and the pick was never stored. The READ side had
+already been made agent-independent — `currentModelKey`'s own comment says
+"Model selection must NOT depend on a loaded agent" — so this was a read/write
+asymmetry, not a policy.
+
+**Fix.** New exported `agentScopedModelSelectionKey(mode, agentName)` returns a
+stable agent-less slot (`` `${mode}:` ``) instead of nothing, and BOTH the read
+(`explicitModelKey`) and the write (`setModel`) now go through it. With an agent
+loaded the key is byte-identical to before, so nothing changes for anyone who
+already had one.
+
+**Not breaking.** One added export, additive. Snapshots regenerated with
+`UPDATE_SURFACE_SNAPSHOT=1` / `UPDATE_TYPE_SURFACE_SNAPSHOT=1`; that regeneration
+also absorbed the four `AccountResourceGrant*` / `ListAccountTokensOptions` names
+the two parallel sessions above had left un-snapshotted.
+
+TDD: test written and run RED first (`SyntaxError: Export named
+'agentScopedModelSelectionKey' not found`), then GREEN 16/16.
+
+**Gates.** SDK `tsc --noEmit` exit 0. SDK suite `bun test --isolate src`:
+2267 pass / 0 fail across 156 files. `smoke:install` passed. Browser re-run after
+the fix: `clicked: "Grok 4.6"` → `trigger AFTER: Grok 4.6`.
+
+**Shippable to production: YES.**
+
+---
+
+### 2026-08-18 — session `token-information-architecture` — `listAccountTokens` takes `{ mine: true }` — DONE
+
+**Files:** `core/rest/projects-client/tokens.ts` (+ new `tokens.test.ts`),
+`src/public-type-surface.snapshot.json` (+1 name, twice). The API half
+(`accounts/core/tokens.ts`, `repositories/account-tokens.ts`) and the web half
+(`/settings/tokens`) are outside this package.
+
+**What.** `listAccountTokens(accountId?)` gains an optional second argument,
+`{ mine?: boolean }`. With `mine`, the request carries `?mine=true` and the API
+answers with only the CALLER'S own hand-minted keys — not other members' keys,
+not the connector token the runtime mints per sandbox, not service-account
+bearers. Bare, it is the account-wide administrative list it has always been.
+
+**Why the SDK and not the caller.** The narrowing needs `user_id`, `session_id`
+and `service_account_id`; the list payload carries none of them, so it can only
+happen server-side. The browser previously guessed at the session tokens with
+`name.startsWith('Connector Session ')` and could not separate one member's
+keys from another's at all. The new personal API-keys page
+(`apps/web/.../settings/tabs/tokens-tab.tsx`) is the first caller.
+
+**Not breaking.** An added optional parameter and an added type name.
+`ListAccountTokensOptions` is new public API — recorded in the TYPE surface
+snapshot by hand (2 lines) rather than by regenerating, so the parallel
+`AccountResourceGrant*` session still owns re-snapshotting its own three names.
+
+TDD: test written and run RED first — 3 pass / 2 fail, both failures the exact
+URL assertion (`…?account_id=acc-1` where `…&mine=true` was expected) — then
+GREEN 5/5.
+
+**Gates.** `apps/web` `tsc --noEmit`: 15 lines, all the known `@types/bun`
+`test.each` noise in the 3 documented files. SDK suite: 2222 pass / 1 fail
+across 154 files — the one failure is `public-type-surface.test.ts` drifting on
+`AccountResourceGrant` / `ListAccountResourceGrantsFilter` /
+`listAccountResourceGrants`, exports added by a PARALLEL uncommitted session in
+`iam.ts` and documented as theirs in the entry below. `tokens.test.ts` 5 pass /
+0 fail.
+
+**Shippable to production: YES.**
+
+---
+
+### 2026-08-18 — session `project-role-editor-removed` — BREAKING: `ProjectRole` is now `'manager' | 'member'` — DONE
+
+**Files:** `core/rest/projects-client/shared.ts` (+ new `shared.test.ts`),
+`core/rest/projects-client/iam.ts` (`GroupProjectGrant.role`,
+`MemberProjectAccess.role`), `core/rest/projects-client/access.test.ts`,
+`core/client/kortix.test.ts`, comment-only in `files.ts` / `secrets.ts` and
+their tests (`editor-tier` → `manager-tier`). The API, DB, CLI, docs, mobile,
+whitelabel-demo and `@kortix/api-contract` halves are outside this package.
+
+**What.** Owner decision, 2026-08-18: the built-in project role `editor` is
+removed. Two project roles remain — `member` (read + run) and `manager`
+(everything). `editor` held exactly what `manager` holds minus
+`project.members.manage` and `project.delete`, so every stored assignment was
+folded UP to `manager` (`20260818120000000_project_role_editor_to_manager`
+rewrote 972 `project_members`, 4 `project_group_grants` and 204
+`account_invitations.bootstrap_grants` rows on the local data plane).
+
+**This is a BREAKING change to a published type.** `ProjectRole` narrows from
+`'manager' | 'editor' | 'member'` to `'manager' | 'member'`. Concretely:
+
+- An external consumer who writes `const r: ProjectRole = 'editor'` stops
+  compiling. That is the point — the API answers `400` for that value now, so
+  the old code was already broken at runtime; the narrowing moves the failure
+  from production to their build.
+- Consumers who only READ a `ProjectRole` off a response are unaffected: the
+  server never emits `editor` (it folds to `manager` on read), and a narrowed
+  union is assignable everywhere the wide one was in output position.
+- `role` in INPUT position (`updateProjectAccess`, `attachGroupGrant`,
+  `updateGroupGrant`, `approveProjectAccessRequest`, invite bodies) is where
+  the compile error lands, which is exactly the call the server would reject.
+
+No deprecation shim is offered. A `type ProjectRole = 'manager' | 'member' |
+('editor' & never)` style alias would keep the build green while the request
+still 400s — worse than a compile error, because it hides the only signal.
+
+**Both public-surface snapshots are unchanged by this**, and that is correct:
+they record exported NAMES, not shapes, and no name was added or removed here.
+
+**Gates.** `typecheck` clean. `smoke:install` passed. `test`: 2214 pass /
+2 skip / 2 fail across 153 files — both failures are
+`public-surface.test.ts` + `public-type-surface.test.ts` drifting on
+`listAccountResourceGrants` / `AccountResourceGrant` /
+`ListAccountResourceGrantsFilter`, exports added by a PARALLEL uncommitted
+session in `iam.ts`, not by this change (a union narrowing cannot move a name
+list). Whoever lands those exports owns re-snapshotting. The three files this
+change touches run 115 pass / 0 fail.
+
+**Shippable: YES** for this package's change, once the snapshot owner
+re-snapshots. The narrowing is intentional and documented above.
+
+||||||| df62a2beae
+
+---
+
+### 2026-08-18 — session `server-truth-m15` — sub-session addendum (G1–G3) — DONE
+
+Essentia incident 2026-08-18 (child session looping; steer rendered at top).
+**G3 (SDK).** `groupMessagesIntoTurns` orders by `time.created` (box clock,
+stamped at persistence) with wire id as the tiebreak; untimed messages keep
+input order (a weak order, stable sort) so unstamped hosts see the old
+sequential behaviour. NEW export `compareMessagesForDisplay`
+(`core/turns/grouping.ts`); `MessageInfoLike.time?` widened (additive). Both
+snapshots re-recorded (+1 name each). Server halves: G1 proxy-side wire-id
+placement (`apps/api/src/sandbox-proxy/prompt-wire-id-repair.ts`) and G2
+per-session runaway guard (`apps/kortix-sandbox-agent-server`).
+Gates: sdk 2264/0 + typecheck. Shippable: **YES**.
+
+---
+
+### 2026-08-18 — session `server-truth-m15` — steps C + D — DONE
+
+**Step C (SDK half).** `applyOptimisticAbort` (`react/use-session-send.ts`) and
+`useSession.cancel()` no longer write a fabricated `{type:'idle'}` frame — the
+`AbortReceipt` carries the intent with provenance and a bound; the transcript-
+side `AbortError` patch stays. NEW `startSessionWithPrompt`
+(`react/use-session-prompts.ts`, exported from `react/opencode.ts`; both
+surface snapshots re-recorded, additive): the first prompt of a new session
+as ONE durable `POST .../prompts`, receipts filed around the round-trip,
+`remintOnDelivery` (no transcript exists to place an id against), a `failed`
+verdict thrown as the refusal it is. `useSession`'s stash replay skips an
+empty prompt — apps/web producers now write picks-only stashes
+(`session-start-stash.ts` docs + round-trip test); apps/whitelabel-demo's full
+stash replays exactly as before and is the golden thin-host reference.
+`PendingSessionPrompt.parts` (data-URL first-prompt attachments; the API
+converts `create.pending_prompt` into an inbox row inside the create txn).
+`use-event-stream-refs.ts` raw-slot reader doc corrected (child-session
+surfaces only).
+
+**Step D (SDK half) — dead-code sweep.** D1: `hasOpenAssistantTurn` deleted
+(`core/turns/open-turn.ts` + test block; `hasRetryingAssistantTurn` /
+`isRetryableTurnError` stay); `browser/stores/tab-store.ts` deleted (zero
+importers, no subpath — tier-refactor residue, not M1's); `clearAbortReceipt`
+deleted from `session-working-store.ts` and `clearSession(sessionId)` added,
+called by `useSessionWorking` when its LAST observer unmounts (refcounted —
+several places mount it per session); `clear`/`clearCompaction` deleted from
+`opencode-compaction-store.ts`; the 30s `pending` timeout in `useSession`
+deleted (`pending` still returned; the echo-clear effect stays).
+D2 (**published `@internal` surface, `sandbox-connection-store`**): removed
+`markRecoveryRequested`, `markHostRestartRequested`, `markProvisioningVerified`,
+`setSandboxVersion`, type `SandboxRecoveryPhase`, fields `recoveryPhase`,
+`restartRequestedAt`, `lastConnectedAt`, `sandboxVersion`,
+`PROVISION_VERIFIED_KEY` and the `fromProvisioning` branch of
+`resetForServerSwitch`. `openCodeVersion` STAYS (real reader in apps/web).
+Both snapshots re-recorded; the diff is exactly those names.
+
+**Gates.** `bun run test` 2260 pass / 0 fail; typecheck clean; apps/web tsc
+clean (baseline only), whitelabel tsc clean. Shippable: **YES**.
+
+---
+
+### 2026-08-18 — session `server-truth-m15` — step B: SDK truth honesty — DONE
+
+**Files (SDK).** `react/use-session-send.ts` (+`.test.ts`), `react/use-session.ts`
+(+`.test.ts`), `browser/stores/sync-store.ts` (+`.test.ts`),
+`core/session-sync/session-sync-controller.ts` (+`.test.ts`),
+`browser/session-sync/session-sync-registry.ts`, `react/use-session-sync.ts`
+(+`.test.ts`), NEW `core/session/compaction.ts` (+`.test.ts`) + the
+`core/session` barrel, `browser/stores/opencode-compaction-store.ts`,
+`react/use-opencode-sessions/sessions.test.ts`,
+`react/use-opencode-events/use-event-stream-refs.ts` (+`.test.ts`),
+`react/use-runtime-boot-stalled.ts` (+ NEW `.test.ts`),
+`react/use-session-working.test.ts`, `react/index.ts`, both surface snapshots.
+The `apps/web` half is one comment at `session-chat.tsx:2507`.
+
+**B1 — the fabricated status writes with no remaining raw-slot reader are gone.**
+`beginOptimisticSend` and `beginOptimisticPlainTextSend` no longer write
+`{type:'busy'}` into `sessionStatus`; `abandonOptimisticSend` and
+`recoverFromSendFailure` no longer write `{type:'idle'}` and clear the NAMED
+`SendReceipt` instead. That slot is where the runtime's own SSE frames land, so
+a write there is indistinguishable from one the daemon sent and outranks a
+`GET .../turn` read stamped after it. `recoverFromSendFailure` was the worst of
+them: an HTTP send failure is not evidence the session is idle — a trigger, a
+second device, or a POST the control plane already accepted can all be running.
+`applyOptimisticAbort`'s write and `cancel()`'s (`use-session.ts:1324`) STAY —
+they are still load-bearing for the raw-slot readers step C removes.
+
+`useSessionSend` now files the receipts it never filed, through two new plain
+functions so the ORDER is a test rather than an inspection: `sendWithReceipt`
+(note → send → accept-or-clear) and `stopWithReceipt` (clear send receipt →
+note abort → optimistic patch → `abortInFlightDeliveries` → settle). Both take
+an optional `workingSessionId`: the hook's `sessionId` addresses the OpenCode
+runtime, while the receipt store is keyed by the Kortix session `/turn` answers
+about, and filing under the wrong one is filing under nothing.
+
+**B2 — `setStatus` no-ops on an unchanged value, and the liveness poll stops
+laundering itself as an SSE frame.** Both halves land together: the first alone
+is defeated because the poll re-parses a fresh object each tick.
+`sameSessionStatus` (new export, `sync-store.ts`) compares `type` plus exactly
+the fields `getRetryInfo`/`getRetryMessage` read (`attempt`, `message`, `next`)
+— not a deep equal, which would also compare `action`, which nothing reads.
+`SessionSyncController.reconcileStatus` is deleted along with its `checkLiveness`
+call and the registry's `loadStatus`/`setStatus` wiring; the transcript-tail
+half is untouched, because that is the repair for a dropped SSE stream.
+
+**Deviation (deliberate).** The spec says delete `loadStatus`/`setStatus` from
+`SessionSyncControllerOptions`. They are RETAINED as `@deprecated` no-ops,
+because `npm pack @kortix/sdk@0.12.8` shows both on the published input type of
+`createHttpSessionSyncController`
+(`dist/core/session-sync/session-sync-controller.d.ts:50,53,58`), and an
+external caller passing either in an object literal would stop compiling
+(TS2353). Nothing calls them; the controller's own tests assert the injected
+spies are never invoked. `apps/mobile/lib/opencode/session-sync.ts:26` passes
+`setStatus` today, which is exactly the compile break avoided — and the
+mobile-visible behaviour delta (its controller no longer reconciles status every
+10s; its own SSE stream still writes it) is named rather than fixed, since
+mobile is out of scope.
+
+**`loadSessionRuntimeStatus` STAYS** (registry:237). After this step it has no
+in-repo caller — `reconcileMissingBusySessions` is fed by
+`client.session.status()` in `use-opencode-events/index.ts`, not by it — but it
+is re-exported from `react/use-session-sync.ts:29` and is therefore published
+surface.
+
+**B3 — `useSessionSync.isBusy` is a projection-backed alias.** Both `status` and
+`isBusy` keep their published types. `isBusy` is now `sessionSyncBusy({working,
+streamBusy})` — the caller's projection when it passed one, the stream slot when
+it did not — which is the same rule `livenessBusy` already applied to the poll's
+switch, so the hook stops handing out the weaker of two answers it computes side
+by side. `status` keeps `?? IDLE_STATUS` with a doc line saying the default is a
+display convenience and deliberately NOT what the projection reads. Repo-wide,
+`apps/web` reads only `messages` from this hook (`session-chat.tsx:1871`,
+`export-transcript-modal.tsx:65`) — no web migration needed.
+
+**B4 — the compaction latch is bounded AND server-read.** New pure
+`core/session/compaction.ts`: `OPTIMISTIC_COMPACTION_MAX_MS = 60_000`,
+`projectCompacting`, `compactionExpiryAtMs`. `compactingBySession` becomes
+`Record<string, number>` (the ms epoch `startCompaction` stamps, kept at the
+FIRST stamp); every call site is unchanged in shape. `use-session.ts` reads
+`Session.time.compacting` off `opencodeKeys.runtimeSession` — the row
+`session.compacted`/`session.updated` already maintain, and which NOTHING in
+this repo read before — and arms an expiry timer exactly the way
+`useSessionWorking` does, because the cap must apply when nothing else
+re-renders. A lost `session.compacted` frame now stops pinning the composer at
+60s instead of for the lifetime of the tab.
+
+**B5 — `RUNTIME_BOOT_STALL_MS = START_INCONCLUSIVE_GIVE_UP_MS`**, derived rather
+than hand-copied and kept in sync by a comment. The mechanism is unchanged: it
+claims no turn or health truth, and it is the only bound on the wedged-503 shape
+where `classifyProbeResult` maps every 503 to `booting` and resets the failure
+count.
+
+**B6 — `markSessionAbortedLocally` asks instead of declaring.** It gains the
+`hasOptimisticMessages` guard its sibling `reconcileMissingBusySessions` has had
+since the "message sent from home vanishes" bug, so it cannot delete the
+un-echoed bubble of a prompt the inbox will redeliver; and its own
+`setStatus(idle)` is replaced by an invalidation of every `.../turn` and
+`.../prompts` cache entry (matched by shape off `qk`, because
+`server.instance.disposed` carries neither a project id nor a Kortix session
+id). NOTE: the synthesized `session.error` event it still emits — deliberately
+kept, it is the transcript's Interrupted echo — makes the sync store write idle
+through its own `session.error` rule. So the idle still lands; what changed is
+that there is ONE writer with a stated rule instead of two, and the server-truth
+reads are re-asked. The store's rule is step C's territory.
+
+**Gates.** `bun test --isolate src`: **2251 pass / 2 skip / 0 fail across 155
+files** (baseline measured on this branch before the change: 2220 pass / 2 skip
+/ 0 fail across 153 files). `tsc --noEmit` + examples clean.
+`smoke:install` passed. Snapshot diff is **9 additions, 0 removals**:
+`CompactionInputs`, `OPTIMISTIC_COMPACTION_MAX_MS`, `projectCompacting`,
+`compactionExpiryAtMs`, `sameSessionStatus`, `sessionSyncBusy`,
+`sendWithReceipt`, `stopWithReceipt`, `SendWithReceiptArgs`. `apps/web`
+`tsc --noEmit` clean apart from the 15 known `@types/bun` `test.each` errors in
+the 3 known files; `eslint session-chat.tsx` 0 errors / 34 pre-existing
+`react-hooks` warnings; `apps/web bun test src/features/session` 2324 pass / 0
+fail.
+
+**Process deviation.** One commit for claim + work + log, per the step's explicit
+"One commit" instruction — not the usual separate claim commit.
+
+---
+
 ### 2026-08-18 — session `server-truth-m1` — step 10: the proxy names the hop that failed — DONE
 
 **Files:** `core/session/health.ts` (+`core/session/session.test.ts`),

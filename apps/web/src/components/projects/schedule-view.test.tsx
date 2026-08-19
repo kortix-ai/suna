@@ -12,7 +12,7 @@ import { TriggerPauseSwitch } from './schedule-view';
  * `settings-view.tsx`, and named `TriggersActivationCard` while it was a
  * banner) must stay manager-only, the same gate the deleted
  * code used — NOT `ScheduleView`'s own `canWrite` (`project.trigger.create`,
- * an `EDITOR_EXTRAS`-tier leaf per `apps/api/src/iam/role-perms.ts`), which
+ * a `MANAGER_EXTRAS`-tier leaf per `apps/api/src/iam/role-perms.ts`), which
  * would let editors see and toggle it too. `TriggerPauseSwitch` is the pure
  * half of that gate — see its own header comment for why the split exists
  * (no DOM testing library in this repo, so a pure `canManage` prop is the

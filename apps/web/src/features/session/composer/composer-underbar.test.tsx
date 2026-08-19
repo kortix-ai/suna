@@ -5,6 +5,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 import { TooltipProvider } from '@/components/ui/tooltip';
+import type { Agent } from '@kortix/sdk/react';
 import { COMPOSER_SHELL_CLASS } from './composer';
 import { ComposerUnderbar } from './composer-underbar';
 
@@ -31,7 +32,7 @@ import { ComposerUnderbar } from './composer-underbar';
 
 const noop = () => {};
 
-function render(): string {
+function render(props?: { noAccessibleAgents?: boolean; agents?: Agent[] }): string {
   return renderToStaticMarkup(
     <NextIntlClientProvider locale="en" messages={{}} onError={noop}>
       {/* Both providers live higher up the tree in the app than this
@@ -44,9 +45,10 @@ function render(): string {
         <TooltipProvider>
           <ComposerUnderbar
             onAttachClick={noop}
-            agents={[]}
-            selectedAgent={null}
+            agents={props?.agents ?? []}
+            selectedAgent={props?.agents?.[0]?.name ?? null}
             agentSelectorLocked={false}
+            noAccessibleAgents={props?.noAccessibleAgents}
             messages={[]}
             models={[]}
             selectedModel={null}
@@ -132,6 +134,108 @@ describe('ComposerUnderbar — the attach control lives here, not in the card', 
   });
 });
 
+/**
+ * Deny-by-default project agents: the roster can be legitimately EMPTY for a
+ * `member` with no `iam_resource_grant`. Hiding the picker in that case (the
+ * old `agents.length > 0` gate) left the composer looking entirely normal up
+ * to the server's 403, so the empty roster now RENDERS — disabled, and saying
+ * both what is wrong and what the user can do about it.
+ */
+describe('ComposerUnderbar — the agent picker is unconditional', () => {
+  // The regression this replaces: the picker rendered only when the roster was
+  // non-empty AND the host accepted a change. A member with no agent grant got
+  // an empty roster, the control disappeared, and the composer looked entirely
+  // normal while the prompt ran under the server's manifest `default_agent`.
+  // Nothing may send until the agent that will run is on screen, so the control
+  // that shows it cannot be conditional.
+
+  function agentTrigger(html: string): string | undefined {
+    // The picker's trigger is the only <button> in this row carrying the
+    // rounded-lg pill chrome and no aria-label of its own (attach has one).
+    return /<button(?![^>]*aria-label="Attach files")[^>]*rounded-lg[^>]*>/.exec(html)?.[0];
+  }
+
+  test('renders with a populated roster', () => {
+    const html = render({ agents: [{ name: 'kortix', mode: 'primary' } as unknown as Agent] });
+    expect(agentTrigger(html)).toBeDefined();
+    expect(html).toContain('Kortix');
+  });
+
+  test('renders with an empty roster too', () => {
+    // No hint: an empty list with nothing to say is the roster still loading.
+    const html = render();
+    expect(agentTrigger(html)).toBeDefined();
+    expect(html).not.toContain('ask a manager for access');
+  });
+
+  test('renders with a DENIED roster', () => {
+    expect(agentTrigger(render({ noAccessibleAgents: true }))).toBeDefined();
+  });
+});
+
+/**
+ * Deny-by-default project agents: the roster can be legitimately EMPTY for a
+ * `member` with no `iam_resource_grant`. The state is carried by the control
+ * looking inert — not by a banner, a wide pill, or an icon of its own. It must
+ * be indistinguishable in SHAPE from the picker it replaces and from the model
+ * picker beside it; only the words in the tooltip differ.
+ */
+describe('ComposerUnderbar — the denied roster looks like an ordinary picker', () => {
+  function triggerClasses(html: string): string {
+    const button = /<button(?![^>]*aria-label="Attach files")[^>]*rounded-lg[^>]*>/.exec(html)?.[0];
+    return /class="([^"]*)"/.exec(button ?? '')?.[1] ?? '';
+  }
+
+  test('same chrome as the populated trigger, bar the muted text token', () => {
+    // Everything Button contributes (variant ghost, size sm, radius, hit area)
+    // must match; a bespoke shape here is the thing that read as "too much".
+    const populated = triggerClasses(
+      render({ agents: [{ name: 'kortix', mode: 'primary' } as unknown as Agent] }),
+    );
+    const denied = triggerClasses(render({ noAccessibleAgents: true }));
+
+    expect(populated).not.toBe('');
+    expect(denied.replace('text-muted-foreground', 'text-foreground/70')).toBe(populated);
+  });
+
+  test('keeps the caret, so it reads as a picker and not a notice', () => {
+    // Two <svg> in this row when denied: the paperclip and the caret. The
+    // populated state has the same two.
+    const denied = render({ noAccessibleAgents: true });
+    expect((denied.match(/<svg/g) ?? []).length).toBe(
+      (
+        render({ agents: [{ name: 'kortix', mode: 'primary' } as unknown as Agent] }).match(
+          /<svg/g,
+        ) ?? []
+      ).length,
+    );
+  });
+
+  test('says why in the tooltip, in one line', () => {
+    const html = render({ noAccessibleAgents: true });
+    expect(html).toContain('No agents available to you — ask a manager for access');
+  });
+
+  test('the trigger is actually disabled', () => {
+    const html = render({ noAccessibleAgents: true });
+    const button = /<button[^>]*aria-label="No agents available to you[^"]*"[^>]*>/.exec(html)?.[0];
+
+    expect(button).toBeDefined();
+    // The attribute, not the substring: every Button's class list carries
+    // `disabled:pointer-events-none` whether it is disabled or not.
+    expect(button).toMatch(/\sdisabled=""/);
+  });
+
+  test("the label is the picker's ordinary fallback, not a sentence", () => {
+    // "Agent" — the same word the trigger shows before a roster resolves. The
+    // rejected version put the whole refusal in the trigger, which spanned the
+    // rail and read as a banner.
+    const html = render({ noAccessibleAgents: true });
+    expect(html).toContain('>Agent</span>');
+    expect(html).not.toContain('>No agents available to you');
+  });
+});
+
 /*
  * There is deliberately NO test pinning this row's horizontal padding to a
  * value. It is an optical figure tuned against the card above it, and a test
@@ -174,7 +278,7 @@ describe('COMPOSER_SHELL_CLASS — no viewport width can zero the gutter', () =>
 
   test('the base gutter matches the transcript so the card aligns with the messages', () => {
     // `session-chat.tsx` renders the message column as
-    // `mx-auto w-full max-w-3xl min-w-0 px-4 py-6 pb-32`. Whenever the chat
+    // `mx-auto w-full max-w-3xl min-w-0 px-4 pt-6`. Whenever the chat
     // column is narrower than either max-width — every panel-open case — both
     // are column-width, so equal gutters put them on the same rails.
     expect(classes).toContain('px-4');
@@ -184,9 +288,7 @@ describe('COMPOSER_SHELL_CLASS — no viewport width can zero the gutter', () =>
     // The original bug, in every spelling it could come back as: `sm:px-0`,
     // `md:pl-0`, `max-sm:pe-0`, `lg:pr-0`. Each one lets the card touch the
     // panel divider at exactly the widths where a panel is open.
-    const zeroed = classes.filter((c) =>
-      /^(max-)?(sm|md|lg|xl|2xl):p([xlrse])?-0$/.test(c),
-    );
+    const zeroed = classes.filter((c) => /^(max-)?(sm|md|lg|xl|2xl):p([xlrse])?-0$/.test(c));
     expect(zeroed).toEqual([]);
   });
 

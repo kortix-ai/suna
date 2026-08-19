@@ -353,7 +353,11 @@ type AppAccessRow = {
   updatedAt: Date;
 };
 
-type AppUserAccessVerifier = (app: AppAccessRow, userId: string) => Promise<boolean>;
+type AppUserAccessVerifier = (
+  app: AppAccessRow,
+  userId: string,
+  actingTokenId?: string,
+) => Promise<boolean>;
 
 async function accessTokenAuthorizesRequest(
   token: ReturnType<typeof verifyAppAccessToken>,
@@ -425,7 +429,19 @@ function appAccessResponse(
  * `password` mode is deliberately excluded: there the secret IS the password,
  * and a Kortix credential is not it.
  */
-async function kortixCredentialUser(request: Request): Promise<string | null> {
+interface AppBearerPrincipal {
+  userId: string;
+  /**
+   * The token the caller presented. Carried through to `authorize` so the
+   * decision sees the credential's OWN limits — project binding, agent grant —
+   * and not just the identity behind it. Reducing a PAT to a bare user id here
+   * let a project-scoped token from project A open a non-public App in project
+   * B, because token-scope is only evaluated when this id is supplied.
+   */
+  actingTokenId: string;
+}
+
+async function kortixCredentialUser(request: Request): Promise<AppBearerPrincipal | null> {
   const header = request.headers.get('authorization') ?? '';
   if (!/^bearer /i.test(header)) return null;
   const token = header.slice(7).trim();
@@ -434,11 +450,17 @@ async function kortixCredentialUser(request: Request): Promise<string | null> {
   try {
     if (isServiceAccountToken(token)) {
       const account = await validateServiceAccountToken(token);
-      return account.isValid && account.serviceAccountId ? account.serviceAccountId : null;
+      // A direct service-account bearer has no `account_tokens` row; its own
+      // id is the acting id, and the engine scopes it by its policies.
+      return account.isValid && account.serviceAccountId
+        ? { userId: account.serviceAccountId, actingTokenId: account.serviceAccountId }
+        : null;
     }
     if (isAccountToken(token)) {
       const pat = await validateAccountToken(token);
-      return pat.isValid && pat.userId ? pat.userId : null;
+      return pat.isValid && pat.userId && pat.tokenId
+        ? { userId: pat.userId, actingTokenId: pat.tokenId }
+        : null;
     }
   } catch {
     // A malformed or revoked credential is "no identity", not a 500.
@@ -492,8 +514,10 @@ export async function authorizeAppRequest(
   // work, and before the challenge so an API client gets its answer instead of
   // an HTML login page it cannot read.
   if (app.accessMode !== 'password') {
-    const userId = await kortixCredentialUser(request);
-    if (userId && await verifyUserAccess(app, userId)) return null;
+    const principal = await kortixCredentialUser(request);
+    if (principal && await verifyUserAccess(app, principal.userId, principal.actingTokenId)) {
+      return null;
+    }
   }
 
   if (app.accessMode === 'password' && request.method === 'POST' && url.pathname === '/_kortix/access/password') {

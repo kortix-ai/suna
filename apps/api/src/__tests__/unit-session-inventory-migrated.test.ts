@@ -23,6 +23,7 @@ describe('selectSessionRowsForViewer — migrated sessions', () => {
       canManageProject: false,
       subject,
       callerSessionId: null,
+      boundCredentialSessionId: null,
       grantsBySession: new Map(),
       runtimeStatusBySession: new Map(),
     });
@@ -38,6 +39,7 @@ describe('selectSessionRowsForViewer — migrated sessions', () => {
       canManageProject: false,
       subject,
       callerSessionId: null,
+      boundCredentialSessionId: null,
       grantsBySession: new Map(),
       runtimeStatusBySession: new Map(),
     });

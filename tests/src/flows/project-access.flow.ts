@@ -12,8 +12,9 @@
  *  - Account invites the recipient acts on:
  *    GET/accept/decline /account-invites/:inviteId.
  *
- * Project roles are manager|editor|user; member-management routes gate on
- * PROJECT_MEMBERS_MANAGE (admin-tier) — a project user/editor without manage
+ * Project roles are manager|member (`user` is the legacy spelling of `member`;
+ * `editor` was removed on 2026-08-18 and now 400s on write). Member-management
+ * routes gate on PROJECT_MEMBERS_MANAGE (manager-only) — a project member
  * is denied. Source of truth: apps/api/src/projects/index.ts (access +
  * group-grants handlers) and apps/api/src/accounts/invites.ts.
  */
@@ -35,7 +36,20 @@ flow(
     const team = await ctx.fixtures.team();
     const p = await team.project();
     const member = await team.addMember('member');
-    await ctx.step('OWNER grants member editor on project → 200', async () => {
+    await ctx.step('OWNER grants member manager on project → 200', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .put(
+          '/v1/projects/:projectId/access/:userId',
+          { role: 'manager' },
+          { params: { projectId: p.id, userId: member.userId! } },
+        );
+      r.status(200)
+        .body()
+        .has('$.project_role', 'manager')
+        .has('$.effective_project_role', 'manager');
+    });
+    await ctx.step('the removed `editor` role is rejected on write → 400', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .put(
@@ -43,10 +57,7 @@ flow(
           { role: 'editor' },
           { params: { projectId: p.id, userId: member.userId! } },
         );
-      r.status(200)
-        .body()
-        .has('$.project_role', 'editor')
-        .has('$.effective_project_role', 'editor');
+      r.status(400);
     });
     await ctx.step('GET access lists the granted member → 200', async () => {
       const r = await ctx.client
@@ -78,15 +89,15 @@ flow(
   async (ctx) => {
     const team = await ctx.fixtures.team();
     const p = await team.project();
-    const editor = await team.addMember('member');
+    const plain = await team.addMember('member');
     const target = await team.addMember('member');
-    await ctx.step('OWNER grants the first member editor (write, not manage)', async () => {
-      await team.grantProjectRole(p.id, editor.userId!, 'editor');
+    await ctx.step('OWNER grants the first member the floor role (read + run)', async () => {
+      await team.grantProjectRole(p.id, plain.userId!, 'member');
     });
-    await ctx.step('project editor cannot manage members → 403', async () => {
-      // PROJECT_MEMBERS_MANAGE is admin-tier; editor has write but not manage.
+    await ctx.step('a floor project member cannot manage members → 403', async () => {
+      // PROJECT_MEMBERS_MANAGE is manager-only; `member` has neither it nor write.
       const r = await ctx.client
-        .as(editor)
+        .as(plain)
         .put(
           '/v1/projects/:projectId/access/:userId',
           { role: 'user' },
@@ -175,13 +186,13 @@ flow(
         .as(ctx.P.OWNER)
         .post(
           '/v1/projects/:projectId/access/invite',
-          { email: inviteEmail, role: 'editor' },
+          { email: inviteEmail, role: 'manager' },
           { params: { projectId: p.id } },
         );
       r.status(201)
         .body()
         .has('$.status', 'invited')
-        .has('$.project_role', 'editor')
+        .has('$.project_role', 'manager')
         .exists('$.invite_id');
       inviteId = r.json<any>().invite_id;
     });
@@ -190,7 +201,7 @@ flow(
         .as(ctx.P.OWNER)
         .post(
           '/v1/projects/:projectId/access/invite',
-          { role: 'editor' },
+          { role: 'manager' },
           { params: { projectId: p.id } },
         );
       r.status(400);
@@ -284,22 +295,22 @@ flow(
         .get('/v1/projects/:projectId/group-grants', { params: { projectId: p.id } });
       r.status(200).body().exists('$.grants');
     });
-    await ctx.step('attach group at editor → 201', async () => {
+    await ctx.step('attach group at manager → 201', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
           '/v1/projects/:projectId/group-grants',
-          { group_id: groupId, role: 'editor' },
+          { group_id: groupId, role: 'manager' },
           { params: { projectId: p.id } },
         );
-      r.status(201).body().has('$.group_id', groupId).has('$.role', 'editor');
+      r.status(201).body().has('$.group_id', groupId).has('$.role', 'manager');
     });
     await ctx.step('missing group_id → 400', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
           '/v1/projects/:projectId/group-grants',
-          { role: 'editor' },
+          { role: 'manager' },
           { params: { projectId: p.id } },
         );
       r.status(400);
@@ -809,13 +820,13 @@ flow(
         .as(ctx.P.OWNER)
         .post(
           '/v1/projects/:projectId/access/invite',
-          { email, role: 'editor' },
+          { email, role: 'manager' },
           { params: { projectId: p.id } },
         );
       r.status(201)
         .body()
         .has('$.status', 'invited')
-        .has('$.project_role', 'editor')
+        .has('$.project_role', 'manager')
         .exists('$.invite_id');
     });
     await ctx.step('missing email → 400', async () => {
@@ -823,7 +834,7 @@ flow(
         .as(ctx.P.OWNER)
         .post(
           '/v1/projects/:projectId/access/invite',
-          { role: 'editor' },
+          { role: 'manager' },
           { params: { projectId: p.id } },
         );
       r.status(400);

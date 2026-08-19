@@ -1,9 +1,13 @@
-// The IAM surfaces (Groups, Roles, Audit, SSO/SCIM) are enterprise-gated:
-// non-entitled accounts must see the upsell card — with the "Request a demo"
-// CTA — instead of the feature, on every one of the four surfaces. The CTA
-// opens the in-app demo-request modal (useRequestDemo) rather than navigating
-// out to the marketing page. Guards the page wiring so a refactor can't
-// silently un-gate a tab.
+// The IAM surfaces (Audit, SSO/SCIM) are enterprise-gated: non-entitled
+// accounts must see the upsell card — with the "Request a demo" CTA —
+// instead of the feature. The CTA opens the in-app demo-request modal
+// (useRequestDemo) rather than navigating out to the marketing page. Guards
+// the page wiring so a refactor can't silently un-gate a tab.
+//
+// Roles is deliberately NOT one of them (its `roles` copy variant was
+// deleted 2026-08-18 — written, never rendered), and neither is Groups: both
+// carry free content server-side, so they always mount and gate only their
+// own write controls on `rbacEnabled`.
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -19,10 +23,14 @@ describe('EnterpriseUpsell component', () => {
     expect(upsellSource).toContain('Request a demo');
   });
 
-  test('covers all four gated surfaces', () => {
-    for (const feature of ['groups:', 'roles:', 'audit:', 'identity:']) {
+  test('covers the gated surfaces, and no longer carries the dead roles variant', () => {
+    for (const feature of ['groups:', 'audit:', 'identity:']) {
       expect(upsellSource).toContain(feature);
     }
+    // Deleted 2026-08-18: `RolesTab` gates itself with an inline InfoBanner,
+    // so this copy variant was unreachable in every code path.
+    expect(upsellSource).not.toContain('Custom roles are an Enterprise feature');
+    expect(upsellSource).not.toMatch(/^\s{2}roles: \{/m);
   });
 });
 
@@ -34,14 +42,20 @@ describe('account page gates each IAM surface behind the entitlement', () => {
   // always render and gate only their own "Create"/"New role" controls on
   // `rbacEnabled` internally — see this file's other describe block, and
   // `page.tsx`'s comment above these two sections.
-  test('groups tab: always mounted, passed rbacEnabled to gate its own controls', () => {
-    expect(pageSource).toMatch(/activeSection === 'groups' \?[\s\S]*?<GroupsTab/);
+  // "No entitlement gate" — NOT "no gate". PERMISSION is a separate axis and
+  // both panes now carry it (`sectionVisible.groups` / `.roles`, from the
+  // `group.read` / `role.read` probes): a caller who cannot read the list must
+  // not get a rail item that opens onto "you don't have permission". What this
+  // pins is that neither pane is swapped for an EnterpriseUpsell card — see
+  // `accounts/[id]/account-hub-section-gating.test.ts` for the permission map.
+  test('groups tab: no entitlement gate, passed rbacEnabled to gate its own controls', () => {
+    expect(pageSource).toMatch(/activeSection === 'groups' && sectionVisible\.groups \?[\s\S]*?<GroupsTab/);
     expect(pageSource).toMatch(/<GroupsTab[\s\S]*?rbacEnabled=\{rbacEnabled\}/);
     expect(pageSource).not.toContain('<EnterpriseUpsell feature="groups" />');
   });
 
-  test('roles tab: always mounted, passed rbacEnabled to gate its own controls', () => {
-    expect(pageSource).toMatch(/activeSection === 'roles' \?[\s\S]*?<RolesTab/);
+  test('roles tab: no entitlement gate, passed rbacEnabled to gate its own controls', () => {
+    expect(pageSource).toMatch(/activeSection === 'roles' && sectionVisible\.roles \?[\s\S]*?<RolesTab/);
     expect(pageSource).toMatch(/<RolesTab[\s\S]*?rbacEnabled=\{rbacEnabled\}/);
     expect(pageSource).not.toContain('<EnterpriseUpsell feature="roles" />');
   });
@@ -65,34 +79,24 @@ describe('account page gates each IAM surface behind the entitlement', () => {
   });
 });
 
-describe('account page rail groups the enterprise surfaces', () => {
-  // Members / Groups / Roles are one "Access" cluster — three facets of the
-  // same access-control concern — instead of Members sitting alone at the
-  // top disconnected from Groups/Roles below (2026-08-18 centralized-IAM
-  // redesign). Identity/Audit stay under "Enterprise": unlike Members/
-  // Groups/Roles they have zero free-tier content.
-  test('the rail has a labeled Access group with members, groups, and roles', () => {
+describe('account page rail groups every access surface under Access', () => {
+  // 2026-08-18 centralized-IAM redesign: ONE "Access" cluster holds every
+  // facet of the same access-control concern. Identity and Audit moved into
+  // it and the "Enterprise" group was deleted — a heading naming a plan
+  // mislabels surfaces that all carry free content (the built-in roles, an
+  // account's real group list, the identity intro), and split the one
+  // question a visitor has ("who can do what here?") across two headings.
+  test('the rail has a labeled Access group with every access surface in it', () => {
     const accessGroup = pageSource.match(/label: 'Access',\s*items: \[([\s\S]*?)\],\s*\},/);
     const groupBody = accessGroup?.[1] ?? '';
     expect(groupBody).not.toBe('');
-    for (const id of ["'members'", "'groups'", "'roles'"]) {
+    for (const id of ["'members'", "'groups'", "'roles'", "'identity'", "'audit'"]) {
       expect(groupBody).toContain(`id: ${id}`);
     }
   });
 
-  test('the rail has a labeled Enterprise group with identity and audit', () => {
-    const enterpriseGroup = pageSource.match(/label: 'Enterprise',\s*items: \[([\s\S]*?)\]/);
-    const groupBody = enterpriseGroup?.[1] ?? '';
-    expect(groupBody).not.toBe('');
-    for (const id of ["'identity'", "'audit'"]) {
-      expect(groupBody).toContain(`id: ${id}`);
-    }
-    // Groups/Roles moved OUT of Enterprise into Access — they have free
-    // content (the built-in roles, an account's real group list), so a
-    // heading that reads as plan-gated would mislabel them.
-    for (const id of ["'groups'", "'roles'"]) {
-      expect(groupBody).not.toContain(`id: ${id}`);
-    }
+  test('the Enterprise nav group is gone', () => {
+    expect(pageSource).not.toContain("label: 'Enterprise'");
   });
 
   test('identity is its own section, not buried in Settings', () => {

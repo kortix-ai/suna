@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 584,
+  "count": 587,
   "routes": [
     {
       "method": "GET",
@@ -595,6 +595,10 @@
       "path": "/v1/approval-links/:token"
     },
     {
+      "method": "GET",
+      "path": "/v1/apps/edge/tls-check"
+    },
+    {
       "method": "POST",
       "path": "/v1/auth/logout"
     },
@@ -1077,6 +1081,14 @@
     {
       "method": "POST",
       "path": "/v1/platform/github-app/manifest-start"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/platform/github-app/oauth/authorize"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/platform/github-app/oauth/callback"
     },
     {
       "method": "POST",

@@ -144,7 +144,7 @@ export function TriggerPauseSwitch({
  * them.** `ScheduleView` below computes a `canWrite` from
  * `PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE` for its own create button — reusing
  * that here would be a real access-control WIDENING, not a refactor:
- * `PROJECT_TRIGGER_CREATE` sits in `EDITOR_EXTRAS`
+ * `PROJECT_TRIGGER_CREATE` sits in `MANAGER_EXTRAS`
  * (`apps/api/src/iam/role-perms.ts`), so an editor would gain visibility and
  * control of the project-wide kill switch, which the original code gated on
  * raw `effective_project_role === 'manager'` alone — manager-only, strictly

@@ -5,7 +5,6 @@ import { resolve } from 'node:path';
 import {
   pendingSessionPromptFromMetadata,
   provisioningFailurePresentation,
-  startStashFromPendingSessionPrompt,
 } from './provisioning-failure';
 
 describe('provisioningFailurePresentation', () => {
@@ -71,22 +70,16 @@ describe('project session provider-failure recovery', () => {
   });
 });
 
-describe('startStashFromPendingSessionPrompt', () => {
-  test('restores the durable prompt only through the explicit Retry path', () => {
-    expect(
-      startStashFromPendingSessionPrompt({
-        text: 'Map this parcel.',
-        agent: 'gis',
-        model: { providerID: 'kortix', modelID: 'claude-sonnet-4-5' },
-        variant: 'high',
-        attachment_names: ['parcel.geojson'],
-      }),
-    ).toEqual({
-      prompt: 'Map this parcel.',
-      agent: 'gis',
-      model: { providerID: 'kortix', modelID: 'claude-sonnet-4-5' },
-      variant: 'high',
-    });
+describe('the retry path queues the durable row itself', () => {
+  test('no stash builder survives — a legacy hand-off is POSTed, never re-stashed', () => {
+    // `startStashFromPendingSessionPrompt` re-created the browser hand-off on
+    // Retry, which kept the prompt losable for one more boot. The session page
+    // now POSTs a legacy `pending_prompt.text` straight to the inbox
+    // (`startSessionWithPrompt`) and strips the metadata copy; a session
+    // created by the current API never enters this path at all — its first
+    // prompt has been a durable row since the create transaction.
+    const source = readFileSync(resolve(import.meta.dir, './provisioning-failure.ts'), 'utf8');
+    expect(source).not.toContain('startStashFromPendingSessionPrompt');
   });
 });
 

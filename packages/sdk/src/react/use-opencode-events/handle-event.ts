@@ -34,6 +34,9 @@ import {
 } from './helpers';
 import type { NormalizeDiagnosticPaths, OpenCodeEvent } from './types';
 
+/** See `createEventHandler`'s `userPartsGraceMs`. */
+export const USER_PARTS_GRACE_MS = 1_500;
+
 /** Builds the SSE event handler; all closure dependencies are injected. */
 export function createEventHandler(deps: {
   queryClient: QueryClient;
@@ -48,6 +51,14 @@ export function createEventHandler(deps: {
   markSessionAbortedLocally: RefObject<(sessionID: string, message?: string) => void>;
   fetchLspDiagnosticsDebounced: RefObject<() => void>;
   reconcileSessionTail?: (sessionID: string, reason: SessionSyncReason) => Promise<void>;
+  /**
+   * How long a USER `message.updated` may sit with no parts before the tail is
+   * re-read. The runtime emits the info frame and the text part separately;
+   * lose the part (a stream reconnect during the boot hand-off) and the
+   * transcript shows an empty bubble until a reload. Injected so tests can
+   * make it immediate.
+   */
+  userPartsGraceMs?: number;
   /** The route-scoped project this SSE connection belongs to — see
    *  `refetchKortixSessionMirrors`'s doc comment for why this can't default
    *  to "every project". Optional only so existing test harnesses that don't
@@ -68,6 +79,7 @@ export function createEventHandler(deps: {
     markSessionAbortedLocally,
     fetchLspDiagnosticsDebounced,
     projectId = null,
+    userPartsGraceMs = USER_PARTS_GRACE_MS,
   } = deps;
   const reconcileTail =
     deps.reconcileSessionTail ??
@@ -103,7 +115,26 @@ export function createEventHandler(deps: {
 
     switch (event.type) {
       // ---- Message events — handled by sync store only ----
-      case 'message.updated':
+      case 'message.updated': {
+        // A user message is two frames — the info, then its text part. If the
+        // second never lands this tab renders an empty bubble for good; a
+        // tail re-read after a short grace repairs it from the server.
+        const info = (
+          event.properties as { info?: { id?: string; role?: string; sessionID?: string } }
+        ).info;
+        const sessionID = info?.sessionID ?? (event.properties as { sessionID?: string }).sessionID;
+        if (info?.role === 'user' && info.id && sessionID) {
+          const messageID = info.id;
+          setTimeout(() => {
+            const state = useSyncStore.getState();
+            const stillListed = state.messages[sessionID]?.some((m) => m.id === messageID);
+            if (stillListed && !(state.parts[messageID]?.length ?? 0)) {
+              void reconcileTail(sessionID, 'sse-gap');
+            }
+          }, userPartsGraceMs);
+        }
+        break;
+      }
       case 'message.removed':
         break;
 
@@ -232,7 +263,21 @@ export function createEventHandler(deps: {
           const client = getClient();
           void reconcileTail(sessionID, 'compaction');
           // Refetch the individual session to clear time.compacting
-          // (targeted refetch, not full session list invalidation)
+          // (targeted refetch, not full session list invalidation). This is
+          // the FAST path — it fires the instant the frame arrives, and on
+          // success also patches the session list mirror.
+          //
+          // It is not the ONLY path any more: a failure here (this fetch has
+          // no retry of its own) used to leave `time.compacting` stale in the
+          // `opencodeKeys.runtimeSession` cache FOREVER — `useOpenCodeSession`
+          // reads it with `staleTime: Infinity` and nothing else refetches it,
+          // so `projectCompacting`'s server-observed rule (`core/session/
+          // compaction.ts`) stayed pinned `true` for the rest of the tab's
+          // life. On failure, route the retry through the SAME query
+          // `useOpenCodeSession` registers (3 attempts, exponential backoff)
+          // instead of swallowing it silently. `use-session.ts` also arms a
+          // `serverCompactionRevalidateAtMs` timer as a second, frame-
+          // independent backstop — see that function's doc comment.
           client.session
             .get({ sessionID })
             .then((res) => {
@@ -248,9 +293,17 @@ export function createEventHandler(deps: {
                   next[idx] = session;
                   return next;
                 });
+              } else {
+                void queryClient.invalidateQueries({
+                  queryKey: opencodeKeys.runtimeSession(sessionID),
+                });
               }
             })
-            .catch(() => {});
+            .catch(() => {
+              void queryClient.invalidateQueries({
+                queryKey: opencodeKeys.runtimeSession(sessionID),
+              });
+            });
         }
         break;
       }

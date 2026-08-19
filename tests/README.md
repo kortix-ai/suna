@@ -27,7 +27,14 @@ pnpm test -- --packages-only   # Every app/package test and publish contract
 pnpm test -- --full            # Core, browser, and every app/package test
 pnpm test -- --target-smoke    # Deployed staging API SHA and browser smoke
 pnpm test -- --target-full     # Every deployed staging API flow and browser journey
+pnpm test -- --target-api-full --api-shard=1/4     # One deployed API shard
+pnpm test -- --target-browser-full --browser-shard=1/3 # One deployed browser shard
 ```
+
+`--target-full` runs both deployed lanes in one process. The two per-lane modes
+run one lane each, so the release gate can run them as parallel GitHub jobs.
+Both accept a shard, and both assert the deployed SHA exactly as `--target-full`
+does.
 
 Browser and full modes start local Supabase, apply migrations, and start the
 deterministic API, gateway, and web processes. The runner stops only processes
@@ -112,13 +119,53 @@ the sandbox. A new commit also removes the stale `preview` label. A scheduled
 reconciler deletes sandboxes whose pull request is closed, unlabeled, or at a
 different SHA.
 
-`tests-release.yml` runs `pnpm test -- --target-full` against deployed staging
-for pull requests into `prod`. It does not repeat the local-profile suite.
-This mode rejects development and production hosts. It requires the API and gateway
-health commits to equal `RELEASE_SOURCE_SHA`. It runs every selected REST and
-CLI flow with `--require-all`, then runs all configured Playwright journeys
-against `staging.kortix.com` with the Vercel bypass header. A missing external
+`tests-release.yml` runs the deployed staging suite for pull requests into
+`prod`. It does not repeat the local-profile suite. It rejects development and
+production hosts. It requires the API and gateway health commits to equal
+`RELEASE_SOURCE_SHA`. It runs every selected REST and CLI flow with
+`--require-all`, then runs all configured Playwright journeys against
+`staging.kortix.com` with the Vercel bypass header. A missing external
 capability fails the release gate instead of counting as a pass.
+
+#### Release gate shards
+
+The gate runs as parallel matrix jobs instead of one 90-minute job: four API
+shards (`--target-api-full --api-shard=N/4`) and three browser shards
+(`--target-browser-full --browser-shard=N/3`), with `fail-fast: false` so one
+red shard still reports the others. Wall clock becomes the slowest shard rather
+than a contended sum on one 2-vCPU runner.
+
+`src/core/shard.ts` computes the API partition from the live flow registry, so a
+newly added flow always lands in exactly one shard and can never fall out of the
+gate. Shard 1 owns every `serial` and every `global` flow — two jobs running the
+platform-mutating `global` flows at once would corrupt each other. The remaining
+flows are bin-packed longest-first using the declared `timeoutMs` as a static
+cost proxy. `unit/shard.test.ts` proves the partition is total and that the
+pinned flows never leave shard 1.
+
+A final job named `full suite + quality gates` aggregates the shards. That exact
+name is the required status check on `prod` branch protection; renaming it
+without updating the protection rule silently disables the gate.
+
+#### Test-account cleanup
+
+A cancelled GitHub job is killed before the runner's `finally` teardown, so every
+cancel used to leak its whole world. Three mechanisms reclaim it:
+
+- `sweep-before` runs `ke2e gc --older-than 2h` before the shards. The age window
+  cannot match an account the current run just created, so a concurrent release
+  gate is safe. It is `continue-on-error` — cleanup never blocks a release.
+- Each API shard runs `ke2e gc --run-id "$KE2E_RUN_ID"` with `if: always()`.
+  `KE2E_RUN_ID` is pinned per shard so the sweep reclaims only its own
+  principals. `sweep-after` repeats it for the whole run as a backstop.
+- `ke2e run` handles SIGINT/SIGTERM by reclaiming its own run id inside GitHub's
+  pre-SIGKILL window, bounded by `KE2E_CANCEL_RECLAIM_MS` (default 20s).
+
+`ke2e gc` sweeps the ke2e email domain plus the domains the Playwright specs mint
+under (`@example.test`, `@kortix.test`); override with `KE2E_GC_EMAIL_DOMAINS`.
+Only reserved TLDs are accepted. Browser-lane accounts carry no run-scoped
+prefix, so `--run-id` cannot reach them — the age sweep on the next run is what
+reclaims those.
 
 The strict browser lane also runs the Stripe-backed billing journey. It proves
 that the web app starts Team checkout, reads the activated subscription, starts
@@ -225,6 +272,77 @@ bun bin/ke2e.ts run --domain system,access
 Each flow run writes `results.json` and `report.html` under
 `tests/test-results/<runId>/`. Use `results.json` to prove fixture and request
 counts. Do not infer those counts from source files.
+
+## Runner scheduling, retries, and load knobs
+
+The runner splits selected flows into three lanes.
+
+- **Parallel lanes** — `meta.serial` and `meta.global` unset. Split again into an
+  API lane and a live-sandbox lane by `requires: ['daytona']`.
+- **Serial lane** — `meta.serial`. Never runs beside another serial flow. It
+  runs at concurrency 1 *inside the same `Promise.all` as the parallel lanes*,
+  so it overlaps them instead of appending a sequential tail.
+- **Global lane** — `meta.global`. Runs last, one at a time, with nothing else
+  in flight. The three global flows each mutate state no flow owns: `BILL-13`
+  and `ADM-19` write every account on the deployment, `CONN-5` mutates
+  `kortix.yaml` on the shared managed repository.
+
+Mark a flow `serial` when it must not run beside its peers. Mark it `global`
+only when it must be the only thing running on the deployment.
+
+### Retry budgets
+
+Retries are budgeted per error class. Assertion failures never retry.
+
+| Class | Default attempts | Env knob |
+| --- | --- | --- |
+| Flow-level timeout (`flow X exceeded Nms`) | 1 | `KE2E_TIMEOUT_ATTEMPTS` |
+| Session-runtime readiness timeout | 2 | `KE2E_SESSION_RUNTIME_ATTEMPTS` |
+| Marked infra error (network, laundered 503) | 3 | `KE2E_FLOW_ATTEMPTS` |
+| Assertion failure or unmarked error | 1 | — |
+
+A flow-level timeout is a hang, not a blip: retrying it spends the full declared
+timeout again on the most expensive flows in the suite. `meta.retry.attempts`
+still overrides every class for one flow. `KE2E_DEFAULT_FLOW_ATTEMPTS` is the
+legacy name and stays a ceiling over every class — the local profile and the
+preview stack pin it to `1`.
+
+### Load knobs
+
+| Variable | Default | Effect |
+| --- | --- | --- |
+| `KE2E_API_WORKERS` | 4 | API-lane concurrency. |
+| `KE2E_SANDBOX_WORKERS` | 4 | Live-sandbox-lane concurrency. |
+| `KE2E_PROVISION_CONCURRENCY` | 4 | Global cap on concurrent project provisions. Each provision creates a real managed GitHub repository, so this — not the worker counts — is the binding constraint on suite parallelism. |
+| `KE2E_PROVISION_RATE_LIMIT_BASE_DELAY_MS` | 15000 | First delay after a GitHub rate-limit response. Doubles per attempt with equal jitter. |
+| `KE2E_PROVISION_RATE_LIMIT_DELAY_MS` | 120000 | Ceiling for that backoff. |
+| `KE2E_TEARDOWN_WORKERS` | 8 | Concurrency for deleting synthesized users at teardown. |
+| `KE2E_GATEWAY_RETRIES` | 3 | In-request retries of a gateway-generated transient 502/503/504. |
+| `KE2E_RETRY_BASE_DELAY_MS` | 500 | Base for that retry's exponential backoff with full jitter. |
+| `KE2E_RETRY_MAX_DELAY_MS` | 8000 | Cap for that backoff. |
+| `KE2E_BREAKER_THRESHOLD` | 20 | Transient edge failures in the window that open the client circuit breaker. `0` disables it. |
+| `KE2E_BREAKER_WINDOW_MS` | 60000 | Rolling window for the breaker. |
+| `KE2E_FUNDING_OPTIONAL` | unset | `1` downgrades a fatal OWNER funding failure to a warning. |
+
+### Circuit breaker
+
+The HTTP client shares one process-wide breaker over laundered-503 and network
+failures. Once the deployment is observably overloaded, more retries are the
+problem: when the breaker is open the client stops retrying and stops marking
+the failure retryable, so the flow-level budget cannot re-amplify it either. The
+window is rolling, so the breaker closes on its own.
+
+Every transient response is logged with `describeEdgeResponse` — the
+`x-maintenance-mode` and `x-request-id` header pair that separates a Cloudflare
+worker laundering an origin failure (`edge-laundered`) from a genuine
+application 5xx (`origin`). Do not guess at which one a 503 was.
+
+### Failing fast on OWNER funding
+
+52 flows declare `requires: ['funded']`. When the target declares the `stripe`
+capability, a failed OWNER Stripe subscribe now throws during provisioning
+instead of degrading 52 flows to `skip` and reporting the red at the end of the
+run. Set `KE2E_FUNDING_OPTIONAL=1` to restore the warning-only behavior.
 
 ## Browser journeys
 

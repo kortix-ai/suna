@@ -910,16 +910,21 @@ export const menuRegistry: MenuItemDef[] = [
   },
   {
     id: 'account-tokens',
-    label: 'Account · API keys',
+    label: 'Account · Service account tokens',
     icon: KeyRound,
     group: 'account',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    // The account page calls this section `tokens`; it mounts the same
-    // `ApiKeysSection` + `KeyRulesCard` pair the retired settings tab did.
+    // The account page calls this section `tokens`, and since 2026-08-18 it
+    // holds ONE kind of credential: a service account's — an automation's own
+    // identity, which outlives whoever made it. A person's own API keys moved
+    // to their settings (`settings:tokens`, derived from the rail), so the
+    // words for those — `personal`, `pat`, `cli` — moved with them. Leaving
+    // them here would make this row the answer to a query it is the wrong
+    // answer to.
     href: '/accounts/{accountId}?tab=tokens',
     keywords:
-      'api keys tokens personal access pat cli command line authentication service account',
+      'service account tokens machine identity automation ci cd bot integration key rules expiry policy',
   },
 
   // ──────────────────────────────────────────────────────────────────────────

@@ -71,7 +71,7 @@ export function serializeSession(
     grants?: SecretGrant[];
     /** The viewing user, to compute is_owner / can_manage_sharing. */
     viewerId?: string;
-    /** Viewer can manage the project (account owner/admin, or a project editor). */
+    /** Viewer can manage the project (account owner/admin, or a project manager). */
     canManageProject?: boolean;
     /** Resolved email of the session owner, for "shared by X" display. */
     ownerEmail?: string | null;
@@ -163,7 +163,7 @@ export function serializeSession(
  * Load a session and enforce that the viewer can SEE it (owner, project-wide,
  * or in the allow-list). Returns null for both not-found and not-visible so we
  * never reveal the existence of a private session. Also reports whether the
- * viewer may manage its sharing (account owner/admin, or a project editor).
+ * viewer may manage its sharing (account owner/admin, or a project manager).
  */
 
 function dashboardBaseUrl(): string {
@@ -454,7 +454,7 @@ export function buildSecretView(input: {
       : null,
     // What actually gets injected into my sessions for this identifier.
     effective_source: effectiveSource,
-    // Members manage only their own override; editors also manage the shared row.
+    // Members manage only their own override; managers also manage the shared row.
     can_manage_shared: canManageShared && !system,
     strategy,
     consumer,
@@ -766,7 +766,7 @@ export function serializeTemplate(t: Awaited<ReturnType<typeof listSandboxTempla
   };
 }
 
-const PROJECT_ROLES = ['editor', 'member'] as const;
+const PROJECT_ROLES = ['manager', 'member'] as const;
 
 export type ProjectGroupGrantRole = (typeof PROJECT_ROLES)[number];
 

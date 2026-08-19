@@ -13,6 +13,35 @@ const ctx = (headers: Record<string, string>) =>
   ({ req: { header: (n: string) => headers[n.toLowerCase()] } }) as unknown as Context;
 
 describe('which address counts as the caller', () => {
+  test('cf-connecting-ip wins over a spoofed x-forwarded-for', () => {
+    // The edge OVERWRITES cf-connecting-ip; it only APPENDS to x-forwarded-for.
+    // A caller replaying an exfiltrated session token from outside the sandbox
+    // can therefore put the pinned address in x-forwarded-for. Reading the edge
+    // header first means the pin sees where the request really came from.
+    expect(
+      requestEgressIp(
+        ctx({
+          'x-forwarded-for': '67.213.121.131, 172.68.1.1',
+          'cf-connecting-ip': '203.0.113.9',
+        }),
+      ),
+    ).toBe('203.0.113.9');
+  });
+
+  test('cf-connecting-ip wins over a spoofed x-real-ip too', () => {
+    expect(
+      requestEgressIp(ctx({ 'x-real-ip': '67.213.121.131', 'cf-connecting-ip': '203.0.113.9' })),
+    ).toBe('203.0.113.9');
+  });
+
+  test('an empty cf-connecting-ip falls through instead of nulling the pin', () => {
+    // Deployments that do not sit behind Cloudflare send no edge header. They
+    // must keep the forwarded-for behaviour, not lose the address entirely.
+    expect(
+      requestEgressIp(ctx({ 'cf-connecting-ip': '  ', 'x-forwarded-for': '67.213.121.131' })),
+    ).toBe('67.213.121.131');
+  });
+
   test('the FIRST x-forwarded-for hop is the client, not the last', () => {
     // Cloudflare fronts this API and appends. Taking the last hop would pin
     // Cloudflare's own address — identical for every sandbox on earth, which

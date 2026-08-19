@@ -16,7 +16,7 @@ import { createAccountToken } from '../repositories/account-tokens';
 const ACCOUNT = crypto.randomUUID();
 const PROJECT = crypto.randomUUID();
 const ARCHIVED = crypto.randomUUID();
-const EDITOR = crypto.randomUUID();
+const MANAGER = crypto.randomUUID();
 
 const minted: string[] = [];
 let secret = '';
@@ -47,10 +47,10 @@ beforeAll(async () => {
   ]);
   await db
     .insert(accountMembers)
-    .values({ userId: EDITOR, accountId: ACCOUNT, accountRole: 'member', isSuperAdmin: false });
+    .values({ userId: MANAGER, accountId: ACCOUNT, accountRole: 'member', isSuperAdmin: false });
   await db.insert(projectMembers).values([
-    { accountId: ACCOUNT, projectId: PROJECT, userId: EDITOR, projectRole: 'editor' },
-    { accountId: ACCOUNT, projectId: ARCHIVED, userId: EDITOR, projectRole: 'editor' },
+    { accountId: ACCOUNT, projectId: PROJECT, userId: MANAGER, projectRole: 'manager' },
+    { accountId: ACCOUNT, projectId: ARCHIVED, userId: MANAGER, projectRole: 'manager' },
   ]);
 
   // Account-scoped (no projectId): a project-scoped token is rejected by the
@@ -58,7 +58,7 @@ beforeAll(async () => {
   // and this suite must reach the handler for BOTH projects.
   const token = await createAccountToken({
     accountId: ACCOUNT,
-    userId: EDITOR,
+    userId: MANAGER,
     name: 'feature-flag-toggle-test',
   });
   minted.push(token.tokenId);

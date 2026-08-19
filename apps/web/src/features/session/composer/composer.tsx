@@ -28,6 +28,7 @@ import {
 import { extractClipboardFiles } from '../clipboard-files';
 import { mergeFailedSubmissionFiles } from '../composer-draft-recovery';
 import { resolveComposerResetOnSend } from '../composer-reset';
+import { NO_AGENT_ACCESS_HINT, NO_AGENT_ACCESS_LABEL } from './composer-agent-access';
 import { commandBlocker, sendBlocker, sendBlockerMessage } from './send-blockers';
 import {
   isModelRequiredButUnavailable,
@@ -66,7 +67,6 @@ import type { ComposerEditorHandle } from './editor/composer-editor';
 import { useComposerFocus } from './hooks/use-composer-focus';
 import { useMenuRevalidation } from './hooks/use-file-search';
 import { controlToOpenFor, SLASH_ACTIONS, type SlashAction } from './menus/slash-actions';
-import { QueuedMessages, type QueuedMessageView } from './queued-messages';
 import { createSubmitLatch } from './submit-latch';
 import type { AttachedFile, TrackedMention } from './types';
 
@@ -102,34 +102,6 @@ export interface SessionChatInputProps {
    * value.
    */
   runtimeReady?: boolean;
-  queuedMessages?: QueuedMessageView[];
-  failedQueuedMessages?: QueuedMessageView[];
-  /** The queued messages currently on the wire. Cannot be edited, moved or
-   *  removed. Plural: the server can hold more than one row `delivering`. */
-  queueInFlightIds?: string[];
-  /**
-   * The queue is held by a stop. Dims the list — never silent.
-   *
-   * Ported from `session-chat-input.tsx` during the main merge: that file is
-   * now a re-export barrel, and its old implementation (which main had grown
-   * these two props on) is gone. `session-chat.tsx` still passes them, and
-   * `QueuedMessages` still reads them, so without this the paused state would
-   * have been dropped on the floor by the merge rather than by a decision.
-   */
-  queuePaused?: boolean;
-  /** The agent is mid-turn, so the per-row send must stop it first. */
-  queueIsRunning?: boolean;
-  onRemoveQueuedMessage?: (id: string) => void;
-  onEditQueuedMessage?: (id: string, text: string) => void;
-  /**
-   * Move a queued message to `toIndex` — a position in `queuedMessages`,
-   * in-flight rows included. Unwired since the server owns delivery order;
-   * kept because `QueuedMessages` still renders the affordance when a host
-   * supplies a handler.
-   */
-  onReorderQueuedMessage?: (id: string, toIndex: number) => void;
-  onSendQueuedMessageNow?: (id: string) => void;
-  onRetryQueuedMessage?: (id: string) => void;
   onStop?: () => void;
   stopDisabled?: boolean;
   isSending?: boolean;
@@ -144,6 +116,18 @@ export interface SessionChatInputProps {
   selectedAgent?: string | null;
   onAgentChange?: (agentName: string | null | undefined) => void;
   agentSelectorLocked?: boolean;
+  /**
+   * The agent roster loaded and it is EMPTY for this user — project agents are
+   * deny-by-default for a member without an explicit grant.
+   *
+   * Set it and the composer refuses the submission instead of POSTing a prompt
+   * the server answers with a 403 (or, worse, silently runs under the manifest
+   * `default_agent` nobody picked). The picker beside the send button renders
+   * the same refusal in words. Hosts that have no agent concept at all leave it
+   * `false` — an absent roster is not a denied one. See
+   * `composer-agent-access.ts`.
+   */
+  noAccessibleAgents?: boolean;
   commands?: Command[];
   /**
    * `split` is where the chip sat in `args` — display only. Without it every
@@ -288,7 +272,7 @@ export interface SessionChatInputProps {
  * the only thing keeping the card off the edge.
  *
  * 16px is not arbitrary — it is the transcript's own gutter (`session-chat.tsx`:
- * `mx-auto w-full max-w-3xl min-w-0 px-4 py-6 pb-32`). Whenever the column is
+ * `mx-auto w-full max-w-3xl min-w-0 px-4 pt-6`). Whenever the column is
  * narrower than either max-width — every panel-open case — the card's edges
  * land on exactly the same rails as the messages above it.
  *
@@ -314,9 +298,6 @@ export interface SessionChatInputProps {
  */
 export const COMPOSER_SHELL_CLASS = 'relative z-10 mx-auto w-full max-w-210 shrink-0 px-4 md:pr-1';
 
-const EMPTY_QUEUE: QueuedMessageView[] = [];
-/** Same, for the in-flight ids. */
-const EMPTY_QUEUE_IN_FLIGHT: string[] = [];
 
 /** Stable empty defaults so a fresh `[]` per render never breaks memoization. */
 const EMPTY_AGENTS: Agent[] = [];
@@ -357,16 +338,6 @@ function ComposerImpl({
   isBusy = false,
   sessionWorking,
   runtimeReady = true,
-  failedQueuedMessages,
-  queuedMessages,
-  queueInFlightIds = EMPTY_QUEUE_IN_FLIGHT,
-  queuePaused = false,
-  queueIsRunning = false,
-  onRemoveQueuedMessage,
-  onEditQueuedMessage,
-  onReorderQueuedMessage,
-  onSendQueuedMessageNow,
-  onRetryQueuedMessage,
   onStop,
   stopDisabled = false,
   isSending = false,
@@ -375,6 +346,7 @@ function ComposerImpl({
   selectedAgent = null,
   onAgentChange,
   agentSelectorLocked = false,
+  noAccessibleAgents = false,
   commands = EMPTY_COMMANDS,
   onCommand,
   models = EMPTY_MODELS,
@@ -747,7 +719,13 @@ function ComposerImpl({
     !entitlementsPending &&
     (!availableSelectedModel || !hasSelectableModels);
   const canSubmit = !isEmpty || attachedFiles.length > 0;
-  const submitDisabled = disabled || modelUnavailable || lockForApproval;
+  /**
+   * No agent may run this prompt. Refused here rather than at the server:
+   * `lockForQuestion` is exempt because answering an open question is not a new
+   * prompt and runs under the agent that asked it.
+   */
+  const agentUnavailable = noAccessibleAgents && !lockForQuestion;
+  const submitDisabled = disabled || modelUnavailable || agentUnavailable || lockForApproval;
   /**
    * A `/` command cannot carry the attached files, so this state refuses the
    * submit and says why — before anything is sent and before anything is
@@ -905,6 +883,12 @@ function ComposerImpl({
   );
 
   const dispatchSubmission = useCallback(async () => {
+    // Ahead of the model check: with no agent to run it, the model this prompt
+    // would have used is not the user's problem.
+    if (agentUnavailable) {
+      toast.error(NO_AGENT_ACCESS_LABEL, { description: NO_AGENT_ACCESS_HINT });
+      return;
+    }
     if (modelUnavailable) {
       toast.error(NO_MODEL_AVAILABLE_MESSAGE, {
         description: NO_MODEL_AVAILABLE_ACTION_MESSAGE,
@@ -1064,6 +1048,7 @@ function ComposerImpl({
   }, [
     submitDisabled,
     modelUnavailable,
+    agentUnavailable,
     clearOnSend,
     onSend,
     isBusy,
@@ -1130,11 +1115,11 @@ function ComposerImpl({
    * Whether the inset strip above the card has anything to show. Gated on
    * actual CONTENT, never on `sessionId`: that was truthy in every session, so
    * the strip's padded, bordered shell rendered as an empty rounded sliver
-   * floating above the notice bar whenever the queue was empty.
+   * floating above the notice bar whenever it was empty. The prompt queue no
+   * longer lives here — queued prompts are drawn in the transcript
+   * (`turn/queued-prompt-bubbles.tsx`).
    */
-  const queueHasRows =
-    (queuedMessages?.length ?? 0) > 0 || (failedQueuedMessages?.length ?? 0) > 0;
-  const showQueueStrip = Boolean(threadContext || inputSlot || queueHasRows);
+  const showQueueStrip = Boolean(threadContext || inputSlot);
 
   return (
     <div
@@ -1190,19 +1175,6 @@ function ComposerImpl({
           */}
           {showQueueStrip && (
             <div className="bg-sidebar border-border flex w-[96%] flex-col items-center gap-2 rounded-t-xl border border-b-0 p-[0.3rem]  empty:hidden">
-              <QueuedMessages
-                  messages={queuedMessages ?? EMPTY_QUEUE}
-                  failed={failedQueuedMessages}
-                  inFlightIds={queueInFlightIds}
-                  paused={queuePaused}
-                  isRunning={queueIsRunning}
-                  onRemove={onRemoveQueuedMessage}
-                  onEdit={onEditQueuedMessage}
-                  onReorder={onReorderQueuedMessage}
-                  onSendNow={onSendQueuedMessageNow}
-                  onRetry={onRetryQueuedMessage}
-                />
-
               {threadContext && (
                 <button
                   onClick={threadContext.onBackToParent}
@@ -1415,6 +1387,7 @@ function ComposerImpl({
                     selectedAgent={selectedAgent}
                     onAgentChange={onAgentChange}
                     agentSelectorLocked={agentSelectorLocked}
+                    noAccessibleAgents={noAccessibleAgents}
                     messages={messages}
                     models={models}
                     selectedModel={availableSelectedModel}
@@ -1458,6 +1431,7 @@ function ComposerImpl({
               submitDisabled={submitDisabled || commandAttachmentPlan.kind === 'refuse'}
               disabled={disabled}
               modelUnavailable={modelUnavailable}
+              agentUnavailable={agentUnavailable}
               onSubmit={handleSubmit}
             />
           </div>
@@ -1477,6 +1451,7 @@ function ComposerImpl({
           selectedAgent={selectedAgent}
           onAgentChange={onAgentChange}
           agentSelectorLocked={agentSelectorLocked}
+          noAccessibleAgents={noAccessibleAgents}
           messages={messages}
           models={models}
           selectedModel={availableSelectedModel}

@@ -38,7 +38,6 @@ export const config = {
     baseUrl: process.env.LANGFUSE_HOST,
   },
   captureBodies: flag('GATEWAY_CAPTURE_BODIES', true),
-  maxCapturedBodyBytes: optionalInt('GATEWAY_MAX_CAPTURED_BODY_BYTES', 256 * 1024),
   // Default: 8 MiB. This accepts the measured 2,023,225-byte Aster request and
   // rejects accidental/untrusted oversized payloads before upstream dispatch.
   maxRequestBytes: optionalInt('GATEWAY_MAX_REQUEST_BYTES', DEFAULT_MAX_REQUEST_BYTES),

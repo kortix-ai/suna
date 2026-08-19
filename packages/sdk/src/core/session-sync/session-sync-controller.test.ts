@@ -412,13 +412,17 @@ describe('SessionSyncController', () => {
     const clock = createScheduler();
     const requests: Array<{ limit: number; before?: string }> = [];
     const statuses: SessionStatus[] = [];
+    let statusReads = 0;
     const controller = new SessionSyncController({
       sessionId: 'session-1',
       loadPage: async (request) => {
         requests.push(request);
         return page([]);
       },
-      loadStatus: async () => ({ type: 'idle' }) as SessionStatus,
+      loadStatus: async () => {
+        statusReads += 1;
+        return { type: 'idle' } as SessionStatus;
+      },
       hydrate: () => {},
       markLoaded: () => {},
       setStatus: (status) => statuses.push(status),
@@ -437,7 +441,16 @@ describe('SessionSyncController', () => {
     clock.advance(10_000);
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(requests).toHaveLength(2);
-    expect(statuses).toEqual([{ type: 'idle' }]);
+    // The poll reconciles the TAIL and nothing else. Its status half read the
+    // runtime over REST and wrote the answer into the slot SSE frames land in,
+    // which made a REST poll indistinguishable from the runtime's own voice —
+    // and re-stamped the stream observation on every tick, so the bound that
+    // stops a dead stream from deciding was never reached. `GET .../turn` is
+    // the status authority now, and the controller's own `setBusy` is already
+    // driven FROM that projection, so a fourth stamped input could only
+    // confirm or latch, never correct.
+    expect(statuses).toEqual([]);
+    expect(statusReads).toBe(0);
   });
 
   test('the caller\'s working signal, and only it, starts transcript liveness reconciliation', async () => {
@@ -445,6 +458,7 @@ describe('SessionSyncController', () => {
     const requests: Array<{ limit: number; before?: string }> = [];
     const hydrated: string[][] = [];
     const statuses: SessionStatus[] = [];
+    let statusReads = 0;
     const controller = new SessionSyncController({
       sessionId: 'session-1',
       loadPage: async (request) => {
@@ -454,7 +468,10 @@ describe('SessionSyncController', () => {
           { id: 'assistant-new', role: 'assistant', parentID: 'user-new' },
         ]);
       },
-      loadStatus: async () => ({ type: 'idle' }) as SessionStatus,
+      loadStatus: async () => {
+        statusReads += 1;
+        return { type: 'idle' } as SessionStatus;
+      },
       hydrate: (messages) => hydrated.push(messages.map((message) => message.info.id)),
       markLoaded: () => {},
       setStatus: (status) => statuses.push(status),
@@ -475,7 +492,11 @@ describe('SessionSyncController', () => {
 
     expect(requests).toHaveLength(1);
     expect(hydrated).toEqual([['user-new', 'assistant-new']]);
-    expect(statuses).toEqual([{ type: 'idle' }]);
+    // The tail is repaired; no status is claimed or even read. `loadStatus` /
+    // `setStatus` remain on the options type only because 0.12.8 published
+    // them — see their `@deprecated` banners.
+    expect(statuses).toEqual([]);
+    expect(statusReads).toBe(0);
   });
 
   test('the snapshot holds transcript state only — never a busy opinion', async () => {

@@ -131,7 +131,7 @@ export async function listProjectSecrets(projectId: string) {
     await backendApi.get<ProjectSecretsResponse>(
       `/projects/${projectId}/secrets`,
       // Background read fired from member-visible surfaces (model picker, LLM
-      // providers, agent editor) — project.secret.read is editor-tier, so a
+      // providers, agent editor) — project.secret.read is manager-tier, so a
       // plain member legitimately 403s here. Callers render their own state.
       { showErrors: false },
     ),

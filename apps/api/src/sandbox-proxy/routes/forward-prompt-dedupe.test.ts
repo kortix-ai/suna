@@ -13,8 +13,8 @@
 import { afterAll, afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mock } from 'bun:test';
 import * as realRequestContext from '../../lib/request-context';
-import * as realPreviewOwnership from '../../shared/preview-ownership';
 import * as realKortixUserContext from '../../shared/kortix-user-context';
+import * as realPreviewOwnership from '../../shared/preview-ownership';
 
 const ACTIVE_RECORD = {
   status: 'active',
@@ -134,7 +134,13 @@ describe('forwardToSandbox — prompt delivery is never double-sent', () => {
     const res = await forwardToSandbox(
       'sb-1',
       8000,
-      { kind: 'principal', userId: 'u1', callerSessionId: null, sandboxAuthored: false },
+      {
+        kind: 'principal',
+        userId: 'u1',
+        callerSessionId: null,
+        boundCredentialSessionId: null,
+        sandboxAuthored: false,
+      },
       'POST',
       '/session/sess-1/message',
       '',
@@ -152,7 +158,13 @@ describe('forwardToSandbox — prompt delivery is never double-sent', () => {
     const res = await forwardToSandbox(
       'sb-1',
       8000,
-      { kind: 'principal', userId: 'u1', callerSessionId: null, sandboxAuthored: false },
+      {
+        kind: 'principal',
+        userId: 'u1',
+        callerSessionId: null,
+        boundCredentialSessionId: null,
+        sandboxAuthored: false,
+      },
       'POST',
       '/session/sess-1/message',
       '',
@@ -169,7 +181,13 @@ describe('forwardToSandbox — prompt delivery is never double-sent', () => {
     const args = [
       'sb-1',
       8000,
-      { kind: 'principal', userId: 'u1', callerSessionId: null, sandboxAuthored: false } as const,
+      {
+        kind: 'principal',
+        userId: 'u1',
+        callerSessionId: null,
+        boundCredentialSessionId: null,
+        sandboxAuthored: false,
+      } as const,
       'POST',
       '/session/sess-1/message',
       '',
@@ -193,7 +211,13 @@ describe('forwardToSandbox — idempotent GET retry is unchanged', () => {
     const res = await forwardToSandbox(
       'sb-1',
       8000,
-      { kind: 'principal', userId: 'u1', callerSessionId: null, sandboxAuthored: false },
+      {
+        kind: 'principal',
+        userId: 'u1',
+        callerSessionId: null,
+        boundCredentialSessionId: null,
+        sandboxAuthored: false,
+      },
       'GET',
       '/session',
       '',
@@ -223,7 +247,13 @@ describe('forwardToSandbox — a sandbox-down 400 on the LAST attempt releases t
     const args = [
       'sb-1',
       8000,
-      { kind: 'principal', userId: 'u1', callerSessionId: null, sandboxAuthored: false } as const,
+      {
+        kind: 'principal',
+        userId: 'u1',
+        callerSessionId: null,
+        boundCredentialSessionId: null,
+        sandboxAuthored: false,
+      } as const,
       'POST',
       '/session/sess-1/message',
       '',

@@ -183,7 +183,7 @@ describe('every section is reachable from its retired settings-tab URL', () => {
     );
   });
 
-  test('secrets, channels, models, and members redirect OFF this page, to their own top-level tab', () => {
+  test('secrets, channels, and models redirect OFF this page, to their own top-level tab', () => {
     expect(legacySectionRedirect('p1', 'secrets')).toBe('/projects/p1/secrets');
     // Channels came back down off its own tab and into the Connectors page.
     expect(legacySectionRedirect('p1', 'channels')).toBe(
@@ -191,7 +191,16 @@ describe('every section is reachable from its retired settings-tab URL', () => {
     );
     expect(legacySectionRedirect('p1', 'models')).toBe('/projects/p1/models');
     expect(legacySectionRedirect('p1', 'llm-providers')).toBe('/projects/p1/models');
-    expect(legacySectionRedirect('p1', 'members')).toBe('/projects/p1/members');
+  });
+
+  test('members redirects OFF the project entirely, to the account hub Access tab, scoped to the project', () => {
+    // Members graduated a second time (off this page) and then a third (off
+    // the project): it is account-scoped now, so it needs an account id —
+    // with none, the redirect returns null rather than guessing.
+    expect(legacySectionRedirect('p1', 'members')).toBeNull();
+    expect(legacySectionRedirect('p1', 'members', 'acc1')).toBe(
+      '/accounts/acc1?tab=access-projects&project=p1',
+    );
   });
 
   test('repositories and its pre-rename id git redirect to General, where the content lives now', () => {

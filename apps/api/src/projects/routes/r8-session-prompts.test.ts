@@ -154,6 +154,12 @@ function predicateOf(predicate: unknown): (r: CommandRow) => boolean {
   const statuses = [...rendered.matchAll(/"(queued|running|succeeded|failed|dead_lettered)"/g)].map(
     (m) => m[1],
   );
+  // The jsonb markers the inbox's own SQL tests for. They are string chunks
+  // rather than bound parameters, so they are matched on the rendered text.
+  const wantsForwarded = rendered.includes("->>'status' = 'forwarded'");
+  const excludesStopPaused = rendered.includes("->>'stop_paused', '') <> 'true'");
+  const wantsStopPaused = rendered.includes("->>'stop_paused', '') = 'true'");
+  const wantsHeld = rendered.includes("->>'held', '') = 'true'");
   return (r) => {
     if (ids.length > 0) {
       const wanted = new Set(ids);
@@ -165,12 +171,20 @@ function predicateOf(predicate: unknown): (r: CommandRow) => boolean {
         if (id !== r.commandId && id !== r.sessionId) return false;
       }
     }
+    if (wantsHeld && r.result?.held !== true) return false;
+    if (wantsStopPaused && r.result?.stop_paused !== true) return false;
+    if (excludesStopPaused && r.result?.stop_paused === true) return false;
+    const forwarded = r.result?.status === 'forwarded';
     if (statuses.length > 0) {
       const wanted = new Set(statuses);
-      if (rendered.includes('<>')) return !wanted.has(r.status);
-      return wanted.has(r.status);
+      // `listInboxPrompts`: NOT succeeded, OR forwarded. The forwarded arm is
+      // what keeps a prompt OpenCode already holds on the user's screen.
+      if (rendered.includes('<>')) {
+        return !wanted.has(r.status) || (wantsForwarded && forwarded);
+      }
+      return wanted.has(r.status) && (!wantsForwarded || forwarded);
     }
-    return true;
+    return !wantsForwarded || forwarded;
   };
 }
 
@@ -250,6 +264,32 @@ mock.module('../lib/access', () => ({
   loadVisibleSession: async () => visibleSession,
 }));
 
+// The prompt route re-authorizes the AGENT on every send (agents are
+// deny-by-default for a project member — see lib/agent-access.ts). That gate
+// reads the resource-grant map from Postgres, which this suite mocks away, so
+// stub it here exactly as the access layer above is stubbed. Without it the
+// handler throws before enqueueing and every assertion below sees an empty
+// queue. `agentCalls` keeps the gate observable: it must still RUN.
+const agentAccessCalls: Array<{ requested: unknown; sessionAgent: unknown }> = [];
+mock.module('../lib/agent-access', () => ({
+  resolveAndAuthorizeAgent: async (
+    _c: unknown,
+    _loaded: unknown,
+    _projectId: string,
+    requested?: unknown,
+    sessionAgent?: unknown,
+  ) => {
+    agentAccessCalls.push({ requested, sessionAgent });
+    return { agentName: 'kortix', accessible: ['kortix'], memberTier: false };
+  },
+  // Declared even though this suite never calls it: `warm-sessions.ts` imports
+  // it, and that module is pulled in with the rest of the app. A `mock.module`
+  // REPLACES the module, so any exported name an importer expects and the stub
+  // omits fails the whole isolate with
+  // `SyntaxError: Export named '…' not found`.
+  canUseAnyAgent: async () => true,
+}));
+
 const { projectsApp } = await import('../lib/app');
 await import('./r8');
 
@@ -290,6 +330,7 @@ beforeEach(() => {
   billingOk = true;
   loadProjectCalls = [];
   capabilityCalls = [];
+  agentAccessCalls.length = 0;
   loadedProject = { row: { accountId: ACCOUNT_ID, projectId: PROJECT_ID }, userId: USER_ID };
   visibleSession = { row: { sessionId: SESSION_ID, metadata: {} } };
 });
@@ -361,6 +402,21 @@ describe('POST .../prompts', () => {
   test('kicks a targeted drain for the row it just enqueued', async () => {
     await post(validBody);
     expect(drains).toEqual([{ idempotencyKey: `prompt:${SESSION_ID}:q_1` }]);
+  });
+
+  test('re-authorizes the agent on EVERY send, not just at session create', async () => {
+    // A prompt can switch agent mid-session via `overrides.agent`. Gating only
+    // at create would let a member send their first message as the agent they
+    // hold and every one after it as any other agent in the manifest.
+    visibleSession = { row: { sessionId: SESSION_ID, metadata: {}, agentName: 'kortix' } };
+    await post(validBody);
+    expect(agentAccessCalls).toEqual([{ requested: null, sessionAgent: 'kortix' }]);
+
+    agentAccessCalls.length = 0;
+    await post({ ...validBody, overrides: { agent: 'other-agent' } });
+    // The REQUESTED agent is what gets checked; the session's own agent is only
+    // the fallback for a send that names none.
+    expect(agentAccessCalls).toEqual([{ requested: 'other-agent', sessionAgent: 'kortix' }]);
   });
 
   test('rejects a message id OpenCode cannot order', async () => {
@@ -437,13 +493,13 @@ describe('GET .../prompts', () => {
       row({
         commandId: '77777777-7777-4777-8777-777777777777',
         status: 'queued',
-        result: { admission_reason: 'turn_active' },
+        result: { admission_reason: 'older_prompt_pending' },
       }),
     ];
     const body = await list();
     expect(body.prompts.map((p) => [p.state, p.reason])).toEqual([
       ['delivering', null],
-      ['waiting', 'turn_active'],
+      ['waiting', 'older_prompt_pending'],
     ]);
   });
 
@@ -452,6 +508,55 @@ describe('GET .../prompts', () => {
     const body = await list();
     expect(body.prompts[0].state).toBe('failed');
     expect(body.prompts[0].last_error).toBe('delivery outcome: failed');
+  });
+
+  test('a FORWARDED row is still listed, as `delivering`', async () => {
+    // `succeeded` normally means "gone from the inbox — it IS the transcript".
+    // A forwarded row is the exception: OpenCode has the message and has not
+    // run it yet, so dropping it here is what left the composer with nothing
+    // between the send and the turn.
+    commandTable = [
+      row({
+        status: 'succeeded',
+        result: { status: 'forwarded', forwarded_message_id: WIRE_ID },
+      }),
+    ];
+    const body = await list();
+    expect(body.prompts).toHaveLength(1);
+    expect([body.prompts[0].state, body.prompts[0].reason]).toEqual(['delivering', 'forwarded']);
+  });
+
+  test('a CONFIRMED row disappears — the ledger said a turn consumed it', async () => {
+    commandTable = [row({ status: 'succeeded', result: { status: 'delivered' } })];
+    expect((await list()).prompts).toEqual([]);
+  });
+
+  test('a STOP-PAUSED forwarded row reads `waiting`, held on the user', async () => {
+    // Stop paused it; only the user's next send or "send now" releases it.
+    commandTable = [
+      row({
+        status: 'succeeded',
+        result: { status: 'forwarded', stop_paused: true, held: true },
+      }),
+    ];
+    const body = await list();
+    expect([body.prompts[0].state, body.prompts[0].reason]).toEqual(['waiting', 'held']);
+  });
+
+  test('a row that was GIVEN UP ON reads `failed`, whatever markers it carries', async () => {
+    // `deadLetter` (redelivery.ts) gives up on a row that is still marked
+    // forwarded. Reading the marker first made that row read `delivering` for
+    // ever: filtered out of the strip, counted as live work, and outside the
+    // sweep's scan — no retry, no remove, nothing that could close it.
+    commandTable = [
+      row({
+        status: 'dead_lettered',
+        lastError: 'prompt redelivery exhausted after abandoned',
+        result: { status: 'forwarded', forwarded_message_id: WIRE_ID },
+      }),
+    ];
+    const body = await list();
+    expect(body.prompts[0].state).toBe('failed');
   });
 
   test('reads through the read tier and the session-read leaf', async () => {
@@ -510,6 +615,30 @@ describe('DELETE .../prompts/:promptId', () => {
     expect(commandTable).toHaveLength(1);
   });
 
+  test('refuses to remove a prompt OpenCode already has', async () => {
+    // A forwarded row is `succeeded`, so the delete's status filter never
+    // matches it — but "no row was removed" here is 409, not 404: OpenCode has
+    // persisted that user message and is going to answer it.
+    commandTable = [
+      row({ status: 'succeeded', result: { status: 'forwarded', forwarded_message_id: WIRE_ID } }),
+    ];
+    const response = await remove();
+    expect(response.status).toBe(409);
+    expect(commandTable).toHaveLength(1);
+  });
+
+  test('removes a STOP-PAUSED row — the user stopped it, so it is theirs to drop', async () => {
+    // It renders as a held queue row with a remove button. Answering 409 there
+    // is a control that cannot work: nothing is going to deliver the row, and
+    // removing it is the only way it leaves the screen.
+    commandTable = [
+      row({ status: 'succeeded', result: { status: 'forwarded', stop_paused: true, held: true } }),
+    ];
+    const response = await remove();
+    expect(response.status).toBe(200);
+    expect(commandTable).toHaveLength(0);
+  });
+
   test('404s a prompt id this session does not own', async () => {
     commandTable = [];
     expect((await remove()).status).toBe(404);
@@ -529,7 +658,7 @@ describe('POST .../prompts/:promptId/retry', () => {
         status: 'dead_lettered',
         attempts: 5,
         lastError: 'delivery outcome: failed',
-        result: { admission_reason: 'turn_active' },
+        result: { admission_reason: 'older_prompt_pending' },
       }),
     ];
     const response = await retry();
@@ -555,6 +684,31 @@ describe('POST .../prompts/:promptId/retry', () => {
     expect((await retry()).status).toBe(404);
   });
 
+  test('refuses a FORWARDED row — re-sending it would post the message twice', async () => {
+    // OpenCode already holds this user message. "Send now" on it would deliver
+    // a second copy under a re-minted id, not hurry the first one along.
+    commandTable = [
+      row({ status: 'succeeded', result: { status: 'forwarded', forwarded_message_id: WIRE_ID } }),
+    ];
+    expect((await retry()).status).toBe(404);
+    expect(commandTable[0].status).toBe('succeeded');
+  });
+
+  test('"send now" on a STOP-PAUSED row puts that row back on the queue', async () => {
+    // The hold's advertised way out, on the row it is rendered on. Refusing it
+    // left the user with a paper plane that 404s and a queue that stays held —
+    // `handleQueueSendNow` never reaches its release when the retry returns no
+    // row.
+    commandTable = [
+      row({ status: 'succeeded', result: { status: 'forwarded', stop_paused: true, held: true } }),
+    ];
+    const response = await retry();
+    expect(response.status).toBe(200);
+    expect(commandTable[0].status).toBe('queued');
+    expect(commandTable[0].result).toEqual({ promoted: true });
+    expect(commandTable[0].payload.remintOnDelivery).toBe(true);
+  });
+
   test('"send now" on a QUEUED row is the same route, and marks it promoted', async () => {
     // The button that jumps the queue has to address the SERVER row: with the
     // queue in Postgres there is no browser-local list to reorder, and the
@@ -562,7 +716,7 @@ describe('POST .../prompts/:promptId/retry', () => {
     // prompt after the user interrupted the turn for a different one.
     // (That the promotion actually passes the ordering gate is proven against
     // real Postgres in `integration-prompt-inbox.test.ts`.)
-    commandTable = [row({ status: 'queued', result: { admission_reason: 'turn_active' } })];
+    commandTable = [row({ status: 'queued', result: { admission_reason: 'older_prompt_pending' } })];
     const response = await retry();
     expect(response.status).toBe(200);
     const body = (await response.json()) as Record<string, unknown>;
@@ -599,5 +753,24 @@ describe('POST .../prompts/hold', () => {
     drains = [];
     await hold({ held: false });
     expect(drains).toHaveLength(1);
+  });
+
+  test('a FORWARDED row is stop-paused by the hold, and re-queued by the release', async () => {
+    // The Stop button's two halves for a prompt OpenCode already has: park it
+    // (it stays `succeeded`, so nothing re-delivers it while the user is
+    // stopped), then put it back on the queue when the user sends anything.
+    commandTable = [
+      row({ status: 'succeeded', result: { status: 'forwarded', forwarded_message_id: WIRE_ID } }),
+    ];
+    const heldResponse = await hold({ held: true });
+    expect(heldResponse.status).toBe(200);
+    expect(commandTable[0].status).toBe('succeeded');
+    expect(commandTable[0].result).toMatchObject({ stop_paused: true, held: true });
+    const heldBody = (await heldResponse.json()) as { prompts: Array<Record<string, unknown>> };
+    expect([heldBody.prompts[0].state, heldBody.prompts[0].reason]).toEqual(['waiting', 'held']);
+
+    await hold({ held: false });
+    expect(commandTable[0].status).toBe('queued');
+    expect(commandTable[0].result).toEqual({});
   });
 });

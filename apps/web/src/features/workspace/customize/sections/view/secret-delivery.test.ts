@@ -1,12 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
-  brokerConsumerForSecret,
   buildBrokerPolicy,
   buildNetworkBoundaryPolicy,
   canSaveSecretDelivery,
   connectorBindingChanges,
   connectorBindingOptions,
+  defaultSecretAccess,
   missingAgentGrantNotice,
   networkBoundaryAvailability,
   networkBoundaryBlockedReason,
@@ -14,23 +14,90 @@ import {
   networkBoundaryMode,
   parseBoundaryHosts,
   readSecretDeliverySync,
+  secretAccessChoice,
+  secretAccessIsSystemManaged,
+  secretAccessTarget,
   secretDeliveryBlockedReason,
+  secretDeliveryLegend,
+  secretDeliveryOptionGroups,
   secretDeliveryOptions,
   secretDeliveryPresentation,
   secretDeliverySyncWarning,
   shouldWarnMissingAgentGrant,
 } from './secret-delivery';
 
-describe('brokerConsumerForSecret', () => {
-  test('keeps canonical consumers unchanged', () => {
-    expect(brokerConsumerForSecret('llm_gateway')).toBe('llm_gateway');
-    expect(brokerConsumerForSecret('connector')).toBe('connector');
-    expect(brokerConsumerForSecret('http_broker')).toBe('http_broker');
+describe('secretAccessChoice / secretAccessTarget', () => {
+  test('round-trips every choice through its stored strategy+consumer pair', () => {
+    const choices = [
+      'sandbox',
+      'network_boundary',
+      'http_broker',
+      'llm_gateway',
+      'connector',
+      'disabled',
+    ] as const;
+    for (const choice of choices) {
+      const target = secretAccessTarget(choice);
+      expect(secretAccessChoice(target.strategy, target.consumer)).toBe(choice);
+    }
   });
 
-  test('defaults unsupported consumers to the HTTPS broker', () => {
-    expect(brokerConsumerForSecret(null)).toBe('http_broker');
-    expect(brokerConsumerForSecret('sandbox')).toBe('http_broker');
+  test('a git_proxy row resolves to http_broker as a fallback, never to a real choice', () => {
+    expect(secretAccessChoice('broker', 'git_proxy')).toBe('http_broker');
+  });
+});
+
+describe('secretAccessIsSystemManaged', () => {
+  test('is true only for a git-connection-assigned row', () => {
+    expect(secretAccessIsSystemManaged('git_proxy')).toBe(true);
+    expect(secretAccessIsSystemManaged('sandbox')).toBe(false);
+    expect(secretAccessIsSystemManaged(null)).toBe(false);
+    expect(secretAccessIsSystemManaged(undefined)).toBe(false);
+  });
+});
+
+describe('defaultSecretAccess', () => {
+  test('an existing row opens on the value it has, including one the picker does not offer', () => {
+    expect(defaultSecretAccess({ strategy: 'broker', consumer: 'git_proxy' }, 'available')).toBe(
+      'http_broker',
+    );
+    expect(defaultSecretAccess({ strategy: 'runtime', consumer: 'sandbox' }, 'unsupported')).toBe(
+      'sandbox',
+    );
+  });
+
+  test('a new secret defaults to Network boundary where the project can deliver it', () => {
+    expect(defaultSecretAccess(null, 'available')).toBe('network_boundary');
+  });
+
+  test('a new secret defaults to Sandbox everywhere else', () => {
+    expect(defaultSecretAccess(null, 'unsupported')).toBe('sandbox');
+    expect(defaultSecretAccess(null, 'project_not_pinned')).toBe('sandbox');
+    expect(defaultSecretAccess(undefined, 'unsupported')).toBe('sandbox');
+  });
+});
+
+describe('secretDeliveryLegend', () => {
+  test('lists exactly the five pickable values, in picker order', () => {
+    expect(secretDeliveryLegend().map((entry) => entry.choice)).toEqual([
+      'sandbox',
+      'network_boundary',
+      'http_broker',
+      'llm_gateway',
+      'connector',
+      'disabled',
+    ]);
+  });
+
+  test('the wording matches secretDeliveryPresentation exactly — one source of truth', () => {
+    for (const entry of secretDeliveryLegend()) {
+      const target = secretAccessTarget(entry.choice);
+      expect(secretDeliveryPresentation(target.strategy, target.consumer)).toEqual({
+        label: entry.label,
+        description: entry.description,
+        tone: entry.tone,
+      });
+    }
   });
 });
 
@@ -52,8 +119,10 @@ describe('secretDeliveryPresentation', () => {
   });
 
   test('describes broker and egress without claiming sandbox access', () => {
+    // A 'broker' strategy with no recognized consumer falls back to the
+    // HTTPS broker presentation — see secretAccessChoice's default case.
     expect(secretDeliveryPresentation('broker').description).toBe(
-      'Used by an approved Kortix service without entering the sandbox.',
+      'Added only to an approved HTTPS request outside the sandbox.',
     );
     expect(secretDeliveryPresentation('egress').description).toBe(
       'Added to approved outbound requests at the network boundary.',
@@ -263,37 +332,65 @@ describe('networkBoundaryBlockedReason', () => {
 });
 
 describe('secretDeliveryOptions', () => {
-  test('offers the HTTPS broker and enables network delivery when the project runs on Platinum', () => {
-    const options = secretDeliveryOptions('runtime', 'available', 'available');
-    expect(options.map(({ strategy, disabled }) => ({ strategy, disabled }))).toEqual([
-      { strategy: 'runtime', disabled: false },
-      { strategy: 'broker', disabled: false },
-      { strategy: 'egress', disabled: false },
-      { strategy: 'denied', disabled: false },
+  test('offers all five values, network boundary enabled when the project runs on Platinum', () => {
+    const options = secretDeliveryOptions('sandbox', 'available', 'available');
+    expect(options.map(({ choice, disabled }) => ({ choice, disabled }))).toEqual([
+      { choice: 'sandbox', disabled: false },
+      { choice: 'network_boundary', disabled: false },
+      { choice: 'http_broker', disabled: false },
+      { choice: 'llm_gateway', disabled: false },
+      { choice: 'connector', disabled: false },
+      { choice: 'disabled', disabled: false },
     ]);
-    expect(options[2]?.disabledReason).toBeNull();
+    expect(options[1]?.disabledReason).toBeNull();
   });
 
-  test('keeps network delivery disabled when Platinum is unavailable', () => {
-    expect(secretDeliveryOptions('broker', 'available', 'unsupported')[1]?.disabled).toBe(false);
-    expect(secretDeliveryOptions('egress', 'available', 'unsupported')[2]).toMatchObject({
+  test('keeps network boundary disabled when Platinum is unavailable', () => {
+    expect(secretDeliveryOptions('http_broker', 'available', 'unsupported')[2]?.disabled).toBe(
+      false,
+    );
+    expect(secretDeliveryOptions('sandbox', 'available', 'unsupported')[1]).toMatchObject({
       disabled: true,
       disabledReason: SHIM_FIX,
     });
   });
 
-  test('disables network delivery on an unpinned project and states the fix', () => {
-    expect(secretDeliveryOptions('runtime', 'available', 'project_not_pinned')[2]).toMatchObject({
+  test('disables network boundary on an unpinned project and states the fix', () => {
+    expect(secretDeliveryOptions('sandbox', 'available', 'project_not_pinned')[1]).toMatchObject({
       disabled: true,
       disabledReason: PIN_FIX,
     });
   });
 
-  test('disables a selected non-runtime policy when the server marks it unavailable', () => {
-    expect(secretDeliveryOptions('broker', 'unavailable', 'available')[1]).toMatchObject({
+  test('disables a selected broker value when the server marks it unavailable', () => {
+    expect(secretDeliveryOptions('http_broker', 'unavailable', 'available')[2]).toMatchObject({
       disabled: true,
       disabledReason: 'Not available in this deployment.',
     });
+  });
+
+  test('leaves an unselected broker value enabled even when the server marks it unavailable', () => {
+    // `status` describes the SELECTED strategy's own deployment; it must not
+    // leak into a sibling broker value the dialog is not currently showing.
+    expect(secretDeliveryOptions('llm_gateway', 'unavailable', 'available')[2]).toMatchObject({
+      disabled: false,
+      disabledReason: null,
+    });
+  });
+});
+
+describe('secretDeliveryOptionGroups', () => {
+  test('buckets the flat list into "for your agent" then "for a Kortix service", in order', () => {
+    const groups = secretDeliveryOptionGroups(secretDeliveryOptions('sandbox', 'available', 'available'));
+    expect(groups.map((g) => ({ group: g.group, label: g.label, choices: g.options.map((o) => o.choice) }))).toEqual([
+      {
+        group: 'agent',
+        label: "For your agent's own code",
+        choices: ['sandbox', 'network_boundary', 'http_broker'],
+      },
+      { group: 'service', label: 'For a Kortix service', choices: ['llm_gateway', 'connector'] },
+      { group: 'none', label: null, choices: ['disabled'] },
+    ]);
   });
 });
 

@@ -49,7 +49,7 @@ describe('SecretsView gates network-boundary delivery on the ACTIVE provider', (
   test('the dialog receives the availability and forwards it to the option builder', () => {
     expect(code).toContain('networkBoundary={networkBoundary}');
     expect(code).toContain('networkBoundary: NetworkBoundaryAvailability;');
-    expect(sliceBetween('secretDeliveryOptions(', ');')).toContain('networkBoundary,');
+    expect(sliceBetween('secretDeliveryOptions(', ');')).toContain('networkBoundary)');
   });
 
   test('the disabled option states its own reason instead of one fixed sentence', () => {
@@ -195,7 +195,10 @@ describe('SecretsView states the cost of an empty header template', () => {
  * the hosts the user typed and stops naming a host they can actually probe.
  */
 describe('SecretsView states the echo caveat in the boundary panel', () => {
-  const panel = sliceBetween("{strategy === 'egress' && (", "{strategy === 'broker' && (");
+  const panel = sliceBetween(
+    "{strategy === 'egress' && (",
+    "{strategy === 'broker' && access !== 'llm_gateway' && (",
+  );
 
   test('the scan found the network-boundary panel', () => {
     expect(panel.length).toBeGreaterThan(0);

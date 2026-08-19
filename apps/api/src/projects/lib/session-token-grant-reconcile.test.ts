@@ -18,6 +18,7 @@ const currentGrant: AgentGrant = {
 let selectCount = 0;
 let writtenGrant: AgentGrant | null | undefined;
 let resolvedAgent: string | undefined;
+let resolvedRequestedAgent: string | null | undefined;
 let forceRefresh: boolean | undefined;
 
 mock.module('../../shared/db', () => ({
@@ -54,8 +55,13 @@ mock.module('../../shared/db', () => ({
 
 mock.module('./secret-grant', () => ({
   ...realSecretGrant,
-  resolveSessionAgentGrant: async (input: { sessionAgent: string; forceRefresh?: boolean }) => {
+  resolveSessionAgentGrant: async (input: {
+    sessionAgent: string;
+    requestedAgent?: string | null;
+    forceRefresh?: boolean;
+  }) => {
     resolvedAgent = input.sessionAgent;
+    resolvedRequestedAgent = input.requestedAgent;
     forceRefresh = input.forceRefresh;
     return currentGrant;
   },
@@ -69,6 +75,7 @@ beforeEach(() => {
   selectCount = 0;
   writtenGrant = undefined;
   resolvedAgent = undefined;
+  resolvedRequestedAgent = undefined;
   forceRefresh = undefined;
 });
 
@@ -92,6 +99,21 @@ test('reconciles manifest grant changes on the next prompt without an agent swit
     requestedAgent: null,
   });
 
+  expect(resolvedAgent).toBe('kortix');
+  expect(forceRefresh).toBe(true);
+  expect(writtenGrant).toEqual(currentGrant);
+  expect(decision).toEqual({ action: 'write', grant: currentGrant });
+});
+
+test('same-agent reconcile is SYNCHRONOUS on the prompt path — a narrowed manifest is enforced from the first call of the next turn', async () => {
+  // It ran in the background for one release; the security review refused it:
+  // generic CLI/API authorization reads the token row without reconciling.
+  const decision = await remintGrantForAgentSwitch({
+    projectId: 'project-1',
+    sessionId: 'session-1',
+    sessionAgent: 'kortix',
+    requestedAgent: null,
+  });
   expect(resolvedAgent).toBe('kortix');
   expect(forceRefresh).toBe(true);
   expect(writtenGrant).toEqual(currentGrant);

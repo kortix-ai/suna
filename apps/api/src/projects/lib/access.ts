@@ -1,3 +1,4 @@
+import { normalizeProjectRole } from '../../iam/role-perms';
 import {
   isSessionTargetVisibleToCaller,
   isProjectSessionVisibleTo,
@@ -96,6 +97,28 @@ async function loadProjectSessionRow(
   return row ?? null;
 }
 
+/**
+ * Does this caller carry its user's project-management standing?
+ *
+ * A session-bound AGENT credential does not: it acts for one session, so it
+ * must not inherit the launching user's `manage` role and, through it, the
+ * trigger-session override that would expose sibling sessions.
+ *
+ * Keyed on the AGENT binding, never on `callerSessionId`. That field holds the
+ * SUPABASE LOGIN session id for every signed-in human (middleware/auth.ts:285,
+ * :341), so keying on it would strip managers of `canManageProject` — and with
+ * it `canManageSharing` — producing a 403 on stop, restart, delete,
+ * change-sharing and change-model for every manager who is not the owner.
+ *
+ * Pure and exported for unit tests, like shouldApplyAdminBypass above.
+ */
+export function callerHasManagerStanding(
+  effectiveRole: ProjectRole,
+  boundCredentialSessionId: string | null,
+): boolean {
+  return boundCredentialSessionId === null && roleAllows(effectiveRole, 'manage');
+}
+
 export async function loadVisibleSession(
   loaded: { row: ProjectRow; userId: string; effectiveRole: ProjectRole; adminBypass?: boolean },
   sessionId: string,
@@ -107,6 +130,16 @@ export async function loadVisibleSession(
    * alone cannot separate them. See isSessionVisibleTo.
    */
   callerSessionId: string | null,
+  /**
+   * The caller's AGENT/SANDBOX token binding — always `callerKortixSessionId(c)`.
+   *
+   * Separate from `callerSessionId` on purpose. 14 of this function's call sites
+   * pass the RAW `c.get('sessionId')` for that one, and `resolveSupabaseAuth`
+   * (middleware/auth.ts:285, :341) sets it to the SUPABASE LOGIN session id for
+   * every signed-in human — so it cannot be read as "an agent token".
+   * ONLY the trigger-session manager override reads this field.
+   */
+  boundCredentialSessionId: string | null,
 ): Promise<{
   row: ProjectSessionRow;
   subject: ShareSubject;
@@ -119,10 +152,16 @@ export async function loadVisibleSession(
   if (!row) return null;
   const subject = await resolveShareSubject(loaded.userId);
   const grants = (await loadSessionGrants([sessionId])).get(sessionId) ?? [];
-  const ownership = { origin: row.origin ?? null, sessionId, callerSessionId };
-  let canManageProject = roleAllows(loaded.effectiveRole, 'manage');
+  const ownership = {
+    origin: row.origin ?? null,
+    sessionId,
+    callerSessionId,
+    boundCredentialSessionId,
+  };
+  let canManageProject = callerHasManagerStanding(loaded.effectiveRole, boundCredentialSessionId);
   if (
     !canManageProject &&
+    boundCredentialSessionId === null &&
     isSessionTargetVisibleToCaller(ownership) &&
     isTriggerCreatedSessionMetadata(row.metadata)
   ) {
@@ -175,7 +214,7 @@ export async function loadVisibleSession(
  * is invisible to everyone but its creator under `isSessionVisibleTo`, so
  * the `canManageProject` half of `canManageSharing` could never be reached:
  * the route always 404'd on the visibility gate first, even for a real
- * project manager. A project member with no manage rights (e.g. an editor
+ * project manager. A project member with no manage rights (e.g. a plain member
  * who didn't create the session) still gets a truthful 403 (permission
  * denied) here, not a 404 (resource hidden) — they're a legitimate member of
  * the project the session lives in, not a stranger, so there's nothing to
@@ -233,7 +272,11 @@ const loadProjectMemberRole = ttlMemo({
       .from(projectMembers)
       .where(and(eq(projectMembers.projectId, projectId), eq(projectMembers.userId, userId)))
       .limit(1);
-    return (row?.projectRole as ProjectRole | undefined) ?? null;
+    // normalizeProjectRole, never a raw cast: the column can still hold a
+    // RETIRED value (`editor`, `user`, `viewer`) that no longer exists in the
+    // ProjectRole union. A cast would hand a rank-less string to
+    // PROJECT_ROLE_RANK / PROJECT_ROLE_PERMS and silently deny everything.
+    return normalizeProjectRole(row?.projectRole);
   },
   shouldCache: (role) => role !== null,
 });
@@ -467,7 +510,7 @@ export function iamActionForProjectAccess(action: ProjectAccessAction): string {
     case 'manage':
       // 'manage' historically meant "admin-tier write" — covers triggers,
       // secrets, snapshots, CLI tokens, etc. Map to project.write (which
-      // Project Editor has) so editors aren't accidentally locked out.
+      // a project manager has) so managers aren't accidentally locked out.
       // Routes that need the stricter `project.members.manage` gate add
       // an explicit assertProjectCapability() on top of loadProjectForUser.
       return 'project.write';

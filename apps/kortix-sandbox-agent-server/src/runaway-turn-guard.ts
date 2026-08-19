@@ -1,9 +1,9 @@
 import { logger } from './logger'
 
 // ─────────────────────────────────────────────────────────────────────────────
-// A ROOT turn that completes successfully (`session.idle`, no error) while
-// answering the SAME parent user message it already answered on the PREVIOUS
-// completion is a runaway: something re-triggered generation against a
+// A turn — in ANY session, root or spawned child — that completes successfully
+// (`session.idle`, no error) while answering the SAME parent user message it
+// already answered on the PREVIOUS completion is a runaway: something re-triggered generation against a
 // STANDING prompt instead of recognizing it as already answered — observed
 // live 2026-08-18 (session `749045da`) as OpenCode replying the same one-word
 // answer back-to-back, indefinitely, until manually aborted at 44 messages /
@@ -16,7 +16,10 @@ import { logger } from './logger'
 // direct API call), and each repeat is a full clean success — no error, no
 // timeout — so `turn-auto-resume.ts` (which watches `session.error`) does not
 // apply and nothing else stops it. Left unguarded this burns real tokens/cost
-// with no ceiling.
+// with no ceiling. Per opencode SESSION, children included: the 2026-08-18
+// Essentia incident (session `5d9e298a`) was a spawned child looping this way
+// while `relayTurnEndToApi` filtered non-root sessions out before this guard
+// ever saw a repeat — the abort must target the session that is looping.
 //
 // MAX_CONSECUTIVE_REPEATS=3 mirrors `turn-auto-resume.ts`'s
 // MAX_ATTEMPTS_PER_WINDOW: a small number of repeats could in principle be

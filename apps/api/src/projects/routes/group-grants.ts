@@ -5,7 +5,7 @@
 
 import { PROJECT_ACTIONS } from '../../iam';
 import { invalidateIamCacheForGroup } from '../../iam/cache-invalidation';
-import { normalizeProjectRole } from '../../iam/role-perms';
+import { parseAssignableProjectRole, PROJECT_ROLE_INPUT_ERROR } from '../../iam/role-perms';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { createRoute, z } from '@hono/zod-openapi';
@@ -158,12 +158,13 @@ projectsApp.openapi(
 
   const body = await readBody(c);
   const groupId = normalizeString(body.group_id ?? body.groupId);
-  // normalizeProjectRole folds the legacy `viewer`/`user` aliases into `member`,
-  // so a grant is never persisted with a retired role.
-  const role = normalizeProjectRole(body.role);
+  // parseAssignableProjectRole folds the legacy `viewer`/`user` aliases into
+  // `member` and REJECTS the removed `editor`, so a grant is never persisted
+  // with a retired role and nobody is silently promoted to manager.
+  const role = parseAssignableProjectRole(body.role);
   if (!groupId) return c.json({ error: 'group_id is required' }, 400);
   if (!role) {
-    return c.json({ error: 'role must be manager, editor, or member' }, 400);
+    return c.json({ error: PROJECT_ROLE_INPUT_ERROR }, 400);
   }
   const expires = parseExpiresAtBody(body.expires_at);
   if (!expires.ok) return c.json({ error: expires.error }, 400);
@@ -250,9 +251,9 @@ projectsApp.openapi(
   }
 
   const body = await readBody(c);
-  const role = normalizeProjectRole(body.role);
+  const role = parseAssignableProjectRole(body.role);
   if (!role) {
-    return c.json({ error: 'role must be manager, editor, or member' }, 400);
+    return c.json({ error: PROJECT_ROLE_INPUT_ERROR }, 400);
   }
   const expires = parseExpiresAtBody(body.expires_at);
   if (!expires.ok) return c.json({ error: expires.error }, 400);

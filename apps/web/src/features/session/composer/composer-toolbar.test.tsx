@@ -25,6 +25,7 @@ const noop = () => {};
 function render(
   toolbarSlot?: React.ReactNode,
   rewind?: { pending?: boolean; onRestore: () => void },
+  send?: { agentUnavailable?: boolean; canSubmit?: boolean; submitDisabled?: boolean },
 ): string {
   return renderToStaticMarkup(
     <NextIntlClientProvider locale="en" messages={{}} onError={noop}>
@@ -50,10 +51,11 @@ function render(
             lockForQuestion={false}
             questionCanAct={false}
             hasText={false}
-            canSubmit={false}
-            submitDisabled={false}
+            canSubmit={send?.canSubmit ?? false}
+            submitDisabled={send?.submitDisabled ?? false}
             disabled={false}
             modelUnavailable={false}
+            agentUnavailable={send?.agentUnavailable}
             onSubmit={noop}
           />
         </TooltipProvider>
@@ -96,5 +98,39 @@ describe('ComposerToolbar rewound-path control', () => {
   test('renders no Restore control on a normal path', () => {
     const html = render(undefined, undefined);
     expect(html).not.toContain('Restore');
+  });
+});
+
+/**
+ * The other half of the deny-by-default empty roster (see
+ * `composer-agent-access.ts`): with no agent to run it, the send button must
+ * refuse the prompt rather than POST one the server answers with a 403.
+ */
+describe('ComposerToolbar — send is refused with no accessible agent', () => {
+  test('a typed draft normally leaves the send button enabled', () => {
+    // Guard: without this the assertion below would pass on a button that was
+    // disabled for having no text.
+    const html = render(undefined, undefined, { canSubmit: true });
+    const button = /<button[^>]*aria-label="Send message"[^>]*>/.exec(html)?.[0];
+
+    expect(button).toBeDefined();
+    // The attribute, not the substring: the class list carries
+    // `disabled:pointer-events-none` on every Button.
+    expect(button).not.toMatch(/\sdisabled=""/);
+  });
+
+  test('the send button is disabled and names the reason', () => {
+    const html = render(undefined, undefined, {
+      canSubmit: true,
+      submitDisabled: true,
+      agentUnavailable: true,
+    });
+    const button = /<button[^>]*aria-label="No agents available to you[^"]*"[^>]*>/.exec(html)?.[0];
+
+    expect(button).toBeDefined();
+    expect(button).toMatch(/\sdisabled=""/);
+    // The exact line the agent picker's tooltip carries — one reason, one
+    // wording, on both controls.
+    expect(html).toContain('No agents available to you — ask a manager for access');
   });
 });

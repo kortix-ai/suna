@@ -21,6 +21,26 @@ linked, not inlined.
 
 ## Register
 
+### A request/response log must never cap what it captures (2026-08-18)
+
+**When:** persisting or rendering a captured request/response body (gateway
+traces, debug logs, any "what was actually sent/received" viewer). Do not add
+a byte/char cap that silently swaps in `{truncated, bytes, preview}` or a
+"...(truncated)" marker — a capped log lies about what happened and there is
+no way for the reader to know how much is missing. If two layers each cap
+independently (backend storage, then frontend syntax highlighting), the
+combination is even harder to notice.
+*Incident:* the gateway's `capture()` (256 KiB) and `relayStream`'s response
+preview (256 KiB) both truncated request/response bodies before storage, and
+the web Logs viewer then ran the residue through Shiki's highlighter, which
+separately clamps at 50,000 chars. A 1.66 MB request showed as a
+`{bytes, preview}` stub cut a second time. Fixed in #6523: full capture,
+uncapped; `HighlightedCode` takes an `unbounded` flag for viewers whose whole
+purpose is showing complete content, keeping the clamp elsewhere as a perf
+guard for live-streamed re-highlighting.
+*Enforcer:* `packages/llm-gateway` handler/streaming tests assert full-length
+capture; `shiki-highlighter.test.ts` pins `unbounded` bypassing the clamp.
+
 ### A shared connector catalog needs one canonical credential scope (2026-08-18)
 
 **When:** rematerializing a credential-dependent connector catalog. Only the
@@ -548,3 +568,220 @@ agent did not own, and both only surfaced in CI. Reproducing CI's own command
 locally (`pnpm --filter ./packages/** --filter ./apps/** … test`) found them in
 one pass instead of one CI round-trip each.
 *Incident:* PR #6511, caught in review before merge; two CI round-trips spent.
+
+### `tests-release`'s own load can knock staging over, then the edge worker hides it as "maintenance" (2026-08-18)
+
+**When:** running `pnpm test -- --target-full` (the `full suite + quality
+gates` release gate) shortly after a fresh `main` → `staging` promotion.
+
+Two consecutive attempts of the v0.13.0 release gate failed the same way, not
+with flaky test assertions but with real `MAINTENANCE_MODE` 503s: 36
+occurrences across a 40-minute window (15:11–15:51) in attempt 1, cascading
+into unrelated failures across accounts, billing, admin-console and
+sandbox-template journeys. `target-browser-full` finished in 2394.0s and
+failed; `target-api-full` (439 flows, 1681 cases) never finished at all before
+the 90-minute cap killed the job. `staging-api`'s own `/health` showed
+`started_at` 21 minutes after the instability began — i.e. the backend task
+itself went unhealthy and ECS replaced it mid-run.
+
+The `MAINTENANCE_MODE` response is not a real maintenance flag — it is
+`infra/cloudflare/workers/api-router/worker.mjs`'s `AUTOMATIC_MAINTENANCE`
+fallback (`worker.mjs:251-273`): on ANY single fetch failure or 502/503/504
+from the real origin, the edge worker rewrites that one response into a
+generic "Kortix is temporarily unavailable... maintenance" 503, per request.
+It is a reasonable UX choice for real end-user traffic, but it means a genuine
+backend capacity problem during a test run is invisible in the log as "backend
+overloaded" — it reads as "scheduled maintenance," which sent this
+investigation looking for a deploy or a flag before the real cause (a single
+staging ECS task under-provisioned for the full release suite's own real
+concurrent traffic) was found.
+
+**The rule: don't diagnose `MAINTENANCE_MODE` at face value.** Check whether
+`X-Maintenance-Mode: blocking` correlates with the backend's own health/restart
+timestamps before assuming an intentional maintenance window — it is far more
+likely the edge worker masking a real origin failure. And: running the full
+release suite immediately after redeploying the target it tests is a
+self-inflicted-outage risk on a single-task environment — the fresh task has no
+warm connection pools and no capacity headroom, and the suite's own real load
+is enough to tip it over. Give staging-api real headroom (task count/size) for
+release runs, or the gate keeps eating its own tail.
+*Incident:* v0.13.0 release (PR #6520). Correction 2026-08-19: this entry was
+written during attempt 5 of run 32151213430; **no attempt of that run has
+passed** (attempts 3–6 and 8–10 failed, 2 and 7 were cancelled). The
+maintenance-mode 503s were real but were not the dominant cause of the later
+attempts (4 occurrences in attempt 10 vs 36 in attempt 1) — see the next entry.
+Capacity fix not yet made — staging still runs this gate at capacity risk.
+
+**Addendum (2026-08-19) — what the capacity audit found, and the durable fix.**
+Three facts, none of them visible from the symptom:
+
+- **Staging was smaller than dev.** `environments/staging/main.tf:98-103` ran
+  the API at `512/1024`, `desired/min/max = 1/1/3`; dev runs `2/2/6` and carries
+  no load. The environment that absorbs the heaviest load in the company had the
+  smallest box, and its autoscaling ceiling was 3 × 0.5 vCPU = 1.5 vCPU total.
+- **The single task was Spot with `base = 0`** (`modules/ecs-api/main.tf:506`)
+  behind `deployment_minimum_healthy_percent = 100` (`:521`). One Spot reclaim
+  empties the service and ECS cannot place the replacement until Spot capacity
+  returns. Some of the "cascading failures" chased that night may have been
+  reclaims, not load — and the edge laundered both into the same 503. **Any Spot
+  service whose total unavailability is a real cost needs an on-demand base.**
+- **The database tier lives outside Terraform.** The staging DB is hosted
+  Supabase (`ujzsbwvurfyeuerxxeaz`), injected as `STAGING_DATABASE_URL`; a
+  repo-wide grep for RDS/ElastiCache returns zero hits. The `ci_micro` →
+  `ci_medium` resize therefore survives every apply AND is recorded by nothing.
+  **A resource no plan can show is a resource only a runbook can hold** —
+  `docs/runbooks/staging-sizing.md` now does.
+
+**The Terraform trap this exposed, which generalises past staging:** the ecs-api
+service carries `ignore_changes = [task_definition, desired_count]` and the
+task-def carries `ignore_changes = [container_definitions]`, by design so CI
+image rolls do not fight Terraform. `infra/scripts/ecs-deploy.sh` then renders
+each new revision from the service's CURRENT one. So **changing `task_cpu` /
+`task_memory` in Terraform registers a revision the service never adopts — the
+apply is green and the live task never resizes.** Writing a size into Terraform
+is not the same as a task running at that size; verify with
+`describe-task-definition` on the service's live revision, never from the plan.
+Fixed durably by having `ecs-deploy.sh` take ONLY `cpu`/`memory` from the
+family's latest ACTIVE revision (Terraform's, right after an apply; its own
+previous one otherwise) and everything else from the service's current revision
+— so a resize propagates on the next deploy and is a no-op on every other one.
+*Enforcer:* `worker.test.mjs` pins staging >= dev on cpu/memory/min_capacity,
+pins `fargate_base_on_demand = 1` on both staging services, and pins the new
+module variable's default at `0` so dev/prod strategies cannot move.
+
+### A frontend deploy job that `needs:` an unrelated edge job ships a half-deployed staging, and the release gate then blames the code (2026-08-19)
+
+**When:** `deploy-staging.yml` for `044d99480d` (v0.13.0 candidate),
+run 32149212400, 2026-08-18 14:34 UTC.
+
+The job `Wire Cloudflare staging DNS and Worker` failed at
+`Deploy staging API router Worker`: Cloudflare returned **403** on
+`PUT …/workers/scripts/staging-api-kortix-router` (credential rejected; the
+same step passed on 2026-08-12 run 31635834664). Because `deploy-web-vercel`,
+`verify` and `promote-staging-channel` all `needs:` that job, they were
+**skipped** — while `Apply DB migrations`, `Deploy API + gateway (ECS)` and
+`Deploy staging web to ECS` had already succeeded. Staging ended up with the
+new API and the OLD Vercel frontend, and nothing failed loudly: the workflow
+was red, but the API `/health` reported the right SHA and the release PR kept
+re-running `tests-release` against it. Every attempt then lost 15/21 browser
+journeys to "heading/control not found" (`Admin overview`, `Billing`,
+`Sandbox templates`, `Apps`, `Feature flags`, `Switch workspace`, …) — strings
+that all exist on `staging` — plus `LOGIN-2`, which drives `$WEB/cli/authorize`.
+Ten attempts and two learnings entries were spent reading those as
+capacity/flake before anyone opened the deploy-staging run.
+
+**The rule:** before re-running a release gate, open the *deploy* run for the
+`RELEASE_SOURCE_SHA` and confirm every job is green — an API `/health` SHA
+match proves the API only. When a gate fails with many "element not found"
+browser assertions at once and the API lane is mostly green, suspect a stale
+frontend deploy first. Structurally: the Vercel/frontend deploy must not
+`needs:` the Cloudflare DNS/Worker job (they are independent), and `verify`
+must fail loudly on a frontend/API SHA mismatch instead of being skipped along
+with its dependency. And rotate the Cloudflare credential used by
+`deploy-staging.yml`; it stopped working between 2026-08-12 and 2026-08-18.
+*Incident:* v0.13.0 release (PR #6520), run 32151213430 ×10; frontend deploy
+skipped since 2026-08-18 14:34 UTC.
+
+
+### One OAuth provider per concern; and shape-validating a redirect is not authorizing it (2026-08-18)
+
+**When:** wiring any OAuth/identity flow, reusing an existing provider for a
+second purpose, or writing any route that redirects somewhere a caller named.
+
+"Link a GitHub account" died on dev with Supabase's
+`{"code":400,"error_code":"validation_failed","msg":"Unsupported provider: provider is not enabled"}`.
+Nothing had changed in the code. Linking a GitHub **App installation** to a
+Kortix account was minting its identity proof through Supabase's
+general-purpose "Sign in with GitHub" **login** provider — so an account/org
+feature's uptime hung on a per-Supabase-project dashboard toggle that exists
+for unrelated product login and that no IaC in this repo manages. Supabase
+never authenticated anyone's org; it was an incidental token-minting detour.
+Meanwhile the GitHub App's OWN OAuth client — whose `client_id`/`client_secret`
+the manifest flow already captured and stored — sat unread in the codebase.
+
+The rule: **one integration per concern.** Before reusing an auth provider for
+a second purpose, ask what a failure of the first purpose does to the second.
+If the answer is "takes it down," they must not share. Prefer the credential
+the feature already owns over the one that happens to be nearby.
+
+**The expensive part was the replacement, not the diagnosis.** The new route
+took a `frontend_origin` query param, signed it into the OAuth state, and had
+the callback redirect the exchanged GitHub user token to it. Validation was
+`normalizeGitHubFrontendOrigin` — which checks the *shape* (https, or http on
+localhost) and NOT that the origin is ours. Every attacker HTTPS origin
+passed, so `?frontend_origin=https://attacker.example` exfiltrated a victim's
+user-to-server token, replayable against the installation-linking endpoints
+(CWE-601, HIGH — found by strix-security in review).
+
+**Shape validation is not authorization.** That sentence is the learning. A
+URL being well-formed, https, and parseable says nothing about whether you are
+allowed to send a credential to it. An allowlist — or better, no parameter at
+all — is the check.
+
+And the near-miss inside the near-miss: an earlier commit in the same PR
+"fixed the open redirect" by normalizing that param before an early
+`oauth_not_configured` return. That closed the *smaller* hole and left the
+primary exfiltration path fully open, while reading like a completed security
+fix in the diff and the commit message. **When you fix a redirect bug, enumerate
+every branch that emits a Location header and every value that can reach one**
+— fixing the branch you happened to be looking at is how a HIGH survives a
+"security fix" commit. The final fix deleted the parameter entirely: the state
+now carries only `{nonce, exp}` and both routes always land on `frontendUrl()`,
+so there is no caller-influenced redirect target left to re-trust later.
+
+Corollaries, all paid for in this same change:
+
+- **Config that lives only in a vendor dashboard will drift and nobody will
+  know.** Grep proved no Terraform anywhere manages Supabase Auth providers;
+  each environment is hand-toggled. A feature depending on such config has no
+  gate that can catch its absence — the first signal is a user hitting a 400.
+- **Assert the negative.** The ke2e flow that earned its keep asserts where the
+  redirect must NOT go ("never contains the attacker origin"), not which reason
+  code came back. A happy-path assertion passes an open redirect; only the
+  negative one fails it. It also has to cover every branch separately — the
+  unconfigured-OAuth branch needed its own case because which branch fires
+  depends on deployment state.
+- **A branch no test configuration reaches is untested, however green the run.**
+  The open-redirect branch only fires when OAuth is unconfigured; unit tests,
+  tsc, lint and hand-run curl (against a *configured* API) were all green on it.
+- An App's OAuth callback is `callback_urls` in the manifest, a different field
+  from `redirect_url` (post-creation only); and binding new state to
+  `SUPABASE_JWT_SECRET` broke instantly because hosted deployments set
+  `KORTIX_GITHUB_APP_STATE_SECRET` and no Supabase JWT secret. Reuse the
+  resolver the neighbouring feature already uses rather than a same-shaped one.
+*Incident:* dev "Link a GitHub account" down; fixed in PR #6526. Four defects
+were introduced and caught inside that one PR — an open redirect, a token
+exfiltration (CWE-601), a signing secret unset in this deployment, and a
+missing manifest field — none by a static gate.
+
+### A test lane that rewrites tracked files is a concurrent writer; never `git add -A` beside it (2026-08-18)
+
+**When:** committing while any background job runs — especially a publish,
+release, codegen, or packaging check.
+
+Every CI job on PR #6526 suddenly failed in setup: API typecheck in 11s,
+Frontend build in 20s, all three test workers under 70s, none of them running
+a single test. The error was `ERR_PNPM_OUTDATED_LOCKFILE — pnpm-lock.yaml is
+not up to date with packages/sdk/package.json`. Local runs stayed green
+throughout, because the local tree was fine.
+
+The cause: `pnpm test -- --packages-only` was running in the background while
+a commit was made with `git add -A`. That lane's publish check temporarily
+rewrites every publishable `package.json` — version to `0.0.0-local-test`,
+and it strips fields such as `keywords` — then restores them when it finishes.
+The blanket add captured that mutated state mid-run and committed four
+packages pinned to `0.0.0-local-test` with no matching lockfile.
+
+The rule: **stage explicit paths, never `git add -A`, when anything else could
+be writing the tree.** Treat a test lane that mutates tracked files as a
+concurrent writer with the same care as a parallel agent (see
+[[shared-worktree-parallel-agent-wipe]] and
+[[primary-checkout-may-be-parallel-work]]).
+
+Two diagnostics worth keeping: **a whole-matrix failure in well under the
+usual runtime is a setup failure, not a test failure** — read the install step,
+not the test output. And **reproduce the exact CI step** (`pnpm install
+--frozen-lockfile`) rather than the lane it belongs to; it fails in one second
+and names the file.
+*Incident:* PR #6526, one full CI cycle lost; caught by reading the install
+step after the failure pattern (fast + everything) ruled out the tests.

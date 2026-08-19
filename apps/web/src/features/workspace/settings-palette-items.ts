@@ -45,6 +45,7 @@ export const PALETTE_ACCOUNT_SCOPED_TABS: readonly SettingsTab[] = [
   'profile',
   'preferences',
   'connected',
+  'tokens',
 ];
 
 /**
@@ -96,6 +97,15 @@ const TAB_KEYWORDS: Record<SettingsTab, string> = {
   preferences:
     'preferences appearance theme color mode dark light wallpaper shader shaders background sounds audio volume notification sound effects mute shortcuts keyboard hotkeys keybindings',
   connected: 'connected accounts linked oauth google github identities social sign in providers',
+  // The words a person types when they want to sign the CLI in. `pat` and
+  // `personal access token` came off `nav:account-tokens` in
+  // `lib/menu-registry.ts` and landed here, because this is the pane that
+  // holds a personal key now — that row answers for service account tokens.
+  // The word "account" is deliberately absent: it belongs to the rows that
+  // configure one (`command-palette-search.test.ts` pins that every hit for
+  // "account" owns the word).
+  tokens:
+    'api keys key tokens token personal access pat cli command line terminal secret credential authentication ci',
   // Every other bag is gone with the tab it named. Thirteen project-
   // configuration tabs (General, Members, Secrets, Channels, Repositories,
   // Models, Sandbox templates, Snapshots, Marketplace, Review, Voice, Feature

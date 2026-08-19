@@ -202,7 +202,7 @@ projectsApp.openapi(
     const principalType = normalizeString(body.principal_type ?? body.principalType);
     const principalId = normalizeString(body.principal_id ?? body.principalId);
     // AGENT-ONLY resource model: agent is the only member/department-scoped
-    // resource. Skills and secrets are governed by the editor role (edit) +
+    // resource. Skills and secrets are governed by the manager role (edit) +
     // agent inheritance (use) — no NEW skill/secret grant may be created here.
     // Pre-existing skill/secret rows still read/list/revoke fine (see
     // resource-grants.ts's RESOURCE_GRANT_TYPES doc comment).

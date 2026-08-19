@@ -396,7 +396,7 @@ flow(
           {
             email: invitee.email,
             role: 'member',
-            project_grants: [{ project_id: p.id, role: 'editor' }],
+            project_grants: [{ project_id: p.id, role: 'manager' }],
           },
           { params: { accountId: team.id } },
         );
@@ -404,7 +404,7 @@ flow(
           .body()
           .has('$.status', 'added')
           .has('$.project_grants[0].project_id', p.id)
-          .has('$.project_grants[0].role', 'editor');
+          .has('$.project_grants[0].role', 'manager');
 
         const access = await ctx.client
           .as(ctx.P.OWNER)
@@ -414,8 +414,8 @@ flow(
           .json<{ members: any[] }>()
           .members.find((m) => m.user_id === invitee.userId);
         if (!row) throw new Error('invited user missing from project access list');
-        if (row.effective_project_role !== 'editor')
-          throw new Error(`expected editor, got ${row.effective_project_role}`);
+        if (row.effective_project_role !== 'manager')
+          throw new Error(`expected manager, got ${row.effective_project_role}`);
       },
     );
 

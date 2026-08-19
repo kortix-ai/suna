@@ -19,7 +19,7 @@
 // process-global in bun:test, so this file must run on its own (the repo's
 // `--isolate` test runner already guarantees that).
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import { projectSessions, projects } from '@kortix/db';
+import { projectSessions, projects, sessionLifecycleCommands, sessionSandboxes } from '@kortix/db';
 import type { SessionLifecycleCommandRow } from '../store';
 import { mintWireMessageId, wireIdTime } from '../../wire-message-id';
 
@@ -40,11 +40,27 @@ const SUBMITTED_WIRE_ID = mintWireMessageId({
 }).id;
 /** A message the running turn wrote AFTER that — the id the re-mint must beat. */
 const NEWER_TRANSCRIPT_ID = mintWireMessageId({ nowMs: NOW_MS - 60_000, random: () => 0.5 }).id;
+/**
+ * An id the way OPENCODE mints one: a raw `Date.now()` scaled into the id
+ * clock, with no backdate. That is what makes it younger than
+ * `WIRE_ID_BACKDATE_MS` and so the case where the mint is LIFTED above the
+ * transcript rather than merely clocked past it.
+ */
+const OPENCODE_MINTED_ID = `msg_${(((BigInt(NOW_MS - 40_000) * BigInt(0x1000)) & BigInt(0xffffffffffff)).toString(16).padStart(12, '0'))}AbCdEfGhIjKlMn`;
 
+let requeues: Array<{ commandId: string; reason: string; availableAt: Date }> = [];
 let sessionRow: Record<string, unknown> | null = null;
+/** The session's one box, as the turn-authority read sees it. Null = no box. */
+let boxRow: { status: string; metadata: Record<string, unknown> | null } | null = null;
+/** The newest id the inbox's OWN rows say this session has already delivered,
+ *  as `readDeliveredWireIdFloor` reads it back. Null = nothing delivered yet. */
+let deliveredFloor: bigint | null = null;
 let transcript: Array<Record<string, unknown>> = [];
 let capturedBodies: Array<Record<string, unknown>> = [];
 let succeededCalls: Array<{ commandId: string; result: unknown }> = [];
+// A delivered row that carries a wire id no longer closes — it stays OPEN as
+// `forwarded` until the session_turns ledger confirms a turn consumed that id.
+let forwardedCalls: Array<{ commandId: string; sessionId: string; wireMessageId: string }> = [];
 let failedCalls: Array<{ commandId: string; message: string }> = [];
 let payloadPatches: Array<Record<string, unknown>> = [];
 let claimed: SessionLifecycleCommandRow[] = [];
@@ -59,12 +75,21 @@ mock.module('../../../config', () => ({
 mock.module('../../../shared/db', () => ({
   hasDatabase: () => true,
   db: {
-    select: () => ({
+    select: (projection?: Record<string, unknown>) => ({
       from: (table: unknown) => ({
         where: () => ({
           limit: async () => {
             if (table === projectSessions) return sessionRow ? [sessionRow] : [];
             if (table === projects) return [{ projectId: PROJECT_ID, accountId: ACCOUNT_ID }];
+            if (table === sessionSandboxes) return boxRow ? [boxRow] : [];
+            // The aggregate `readDeliveredWireIdFloor` runs: always one row,
+            // with a null when the session has never delivered anything.
+            // Keyed on the PROJECTION, not the table: the admission gate reads
+            // the same table for a different question, and answering it with a
+            // floor row would make every send look like it lost the order race.
+            if (table === sessionLifecycleCommands && projection && 'newest' in projection) {
+              return [{ newest: deliveredFloor === null ? null : deliveredFloor.toString() }];
+            }
             return [];
           },
         }),
@@ -125,8 +150,9 @@ mock.module('../backpressure', () => ({
   sessionBackpressureState: async () => ({ shouldQueue: false, reason: null }),
 }));
 mock.module('../store', () => ({
-  requeueForAdmission: async () => {
-    throw new Error('not expected: this test never refuses admission');
+  promoteNextInboxRow: async () => null,
+  requeueForAdmission: async (commandId: string, reason: string, availableAt: Date) => {
+    requeues.push({ commandId, reason, availableAt });
   },
   claimCreateSessionCommand: async () => {
     throw new Error('not expected');
@@ -141,9 +167,16 @@ mock.module('../store', () => ({
   markCommandQueued: async () => {
     throw new Error('not expected');
   },
+  markCommandForwarded: async (commandId: string, sessionId: string, wireMessageId: string) => {
+    forwardedCalls.push({ commandId, sessionId, wireMessageId });
+  },
   markCommandSucceeded: async (commandId: string, result: unknown) => {
     succeededCalls.push({ commandId, result });
   },
+  // `inbox-rows.ts` imports this at module load, so the mock has to carry it or
+  // the engine import fails outright. Nothing in this file drives a row through
+  // it, so an identity pass-through is the whole of it.
+  withNextDeliveryAttempt: (payload: unknown) => payload,
   resultFromExistingCommand: () => {
     throw new Error('not expected');
   },
@@ -216,9 +249,12 @@ beforeEach(() => {
     opencodeSessionId: OC_SESSION_ID,
     sandboxUrl: `https://sandbox.test/p/${EXTERNAL_ID}/8000/`,
   };
+  boxRow = null;
+  deliveredFloor = null;
   transcript = [];
   capturedBodies = [];
   succeededCalls = [];
+  forwardedCalls = [];
   failedCalls = [];
   payloadPatches = [];
   claimed = [];
@@ -271,7 +307,7 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
     ];
 
     const outcome = await executeQueuedContinue(
-      baseRow({ result: { admission_reason: 'turn_active' } }),
+      baseRow({ result: { admission_reason: 'older_prompt_pending' } }),
     );
 
     expect(outcome).toBe('succeeded');
@@ -321,7 +357,7 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
     }) as typeof fetch;
 
     const outcome = await executeQueuedContinue(
-      baseRow({ result: { admission_reason: 'turn_active' } }),
+      baseRow({ result: { admission_reason: 'older_prompt_pending' } }),
     );
 
     expect(outcome).toBe('succeeded');
@@ -365,6 +401,85 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
 
   test('a prompt that never waited keeps the client-minted id verbatim', async () => {
     transcript = [];
+    const outcome = await executeQueuedContinue(baseRow());
+    expect(outcome).toBe('succeeded');
+    expect(capturedBodies[0].messageID).toBe(SUBMITTED_WIRE_ID);
+  });
+
+  test('a prompt delivered INTO A LIVE TURN is re-minted on its FIRST claim', async () => {
+    // The mid-turn path does not wait, so it is not re-minted by having waited
+    // — and the id it carries is the browser clock at Enter, with no lift. The
+    // turn in flight has been writing higher ids ever since it started, so a
+    // browser even slightly behind the sandbox delivers an id that sorts BELOW
+    // them, and OpenCode reads that as already answered. A live turn is exactly
+    // the condition to re-mint on.
+    boxRow = {
+      status: 'active',
+      metadata: {
+        activeTurns: {
+          't-1': {
+            token: 't-1',
+            state: 'active',
+            opencodeSessionId: OC_SESSION_ID,
+            messageId: 'msg_other',
+            startedAtMs: NOW_MS - 30_000,
+          },
+        },
+      },
+    };
+    transcript = [
+      { info: { id: NEWER_TRANSCRIPT_ID, role: 'assistant', parentID: 'msg_other' } },
+    ];
+
+    const outcome = await executeQueuedContinue(baseRow());
+
+    expect(outcome).toBe('succeeded');
+    const sent = capturedBodies[0].messageID as string;
+    expect(sent).not.toBe(SUBMITTED_WIRE_ID);
+    expect(wireIdTime(sent)!).toBeGreaterThan(wireIdTime(NEWER_TRANSCRIPT_ID)!);
+    expect(persistedWireIds()).toEqual([sent]);
+  });
+
+  test('a second prompt sent inside the persistence lag clears the FIRST one’s id', async () => {
+    // The transcript LAGS: OpenCode persists a mid-turn user message ~4s after
+    // the POST. Two prompts sent inside that window read the same `newest`, and
+    // because a live turn's newest id is younger than WIRE_ID_BACKDATE_MS the
+    // mint is LIFTED rather than clocked — so both land on `newest + 1`. The
+    // user's own two messages then sort by 14 random base62 characters: either
+    // they run in the wrong order, or the loser sorts under an assistant reply
+    // and OpenCode never runs it at all.
+    //
+    // The floor the inbox keeps itself is what separates them: the first
+    // prompt's delivered id is on its row before the second one mints.
+    const running = OPENCODE_MINTED_ID;
+    const firstDelivered = wireIdTime(running)! + BigInt(1);
+    deliveredFloor = firstDelivered;
+    transcript = [
+      // Still only what OpenCode had persisted before the first prompt landed.
+      { info: { id: running, role: 'assistant', parentID: 'msg_other' } },
+    ];
+
+    const outcome = await executeQueuedContinue(
+      baseRow({ result: { admission_reason: 'older_prompt_pending' } }),
+    );
+
+    expect(outcome).toBe('succeeded');
+    const sent = capturedBodies[0].messageID as string;
+    expect(wireIdTime(sent)!).toBeGreaterThan(firstDelivered);
+  });
+
+  test('a STOPPED box holds no turn, so an idle send still keeps its id', async () => {
+    // Authority dies with the runtime — the same predicate `GET .../turn`
+    // serves from. Re-minting here would spend a transcript read on every send
+    // to a parked session for nothing.
+    boxRow = {
+      status: 'stopped',
+      metadata: {
+        activeTurns: {
+          't-1': { token: 't-1', state: 'active', opencodeSessionId: OC_SESSION_ID },
+        },
+      },
+    };
     const outcome = await executeQueuedContinue(baseRow());
     expect(outcome).toBe('succeeded');
     expect(capturedBodies[0].messageID).toBe(SUBMITTED_WIRE_ID);

@@ -181,6 +181,11 @@ describe('search terms carried across from the removed registry entries', () => 
     ['mute', 'preferences'],
     ['oauth', 'connected'],
     ['avatar', 'profile'],
+    // API keys came back into the rail on 2026-08-18, so the two words that
+    // name a person's own key answer HERE again, not on `account-tokens` —
+    // that row is the service-account surface now.
+    ['pat', 'tokens'],
+    ['cli', 'tokens'],
     // Everything else that used to be listed here named a tab that has left
     // this rail. The thirteen project-configuration words (secrets, env, git,
     // github, members, collaborators, slack, agentmail, llm, openrouter,
@@ -209,8 +214,10 @@ describe('search terms carried across from the removed registry entries', () => 
       ['wallet', 'account-billing'],
       ['ledger', 'account-usage'],
       ['credits', 'account-usage'],
-      ['pat', 'account-tokens'],
-      ['cli', 'account-tokens'],
+      // `pat` / `cli` moved back to the settings `tokens` tab — see CARRIED
+      // above. What `account-tokens` answers now is the automation half.
+      ['service account', 'account-tokens'],
+      ['automation', 'account-tokens'],
       ['sso', 'account-identity'],
       ['saml', 'account-identity'],
       ['scim', 'account-identity'],

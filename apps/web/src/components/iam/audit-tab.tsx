@@ -39,10 +39,19 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { FilterBar, FilterBarItem } from '@/components/ui/tabs';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
+import {
+  EMPTY_PRINCIPAL_SELECTION,
+  PROJECT_SELECT_ALL,
+  PrincipalPicker,
+  ProjectSelect,
+  formatRelative,
+  type PrincipalSelection,
+  singlePrincipal,
+} from '@/features/workspace/shared/access';
 import { getSupabaseAccessTokenWithRetry } from '@/lib/auth-token';
 import { getEnv } from '@/lib/env-config';
 import { type IamAuditEvent, listAuditEvents } from '@/lib/iam-client';
@@ -53,6 +62,7 @@ import {
   listProjectSessions,
   listProjectsForAccount,
 } from '@kortix/sdk';
+import { contract, qk } from '@kortix/sdk/react';
 import {
   type AuditActionDescription,
   type HumanizedAuditAction,
@@ -200,10 +210,12 @@ export function AuditTab({ accountId }: { accountId: string }) {
     queryFn: () => listAccountMembers(accountId),
     staleTime: 30_000,
   });
+  // Same key + fetcher `ProjectSelect` uses, so the filter control and the
+  // Scope column's name lookup share one round-trip instead of two.
   const projectsQuery = useQuery({
-    queryKey: ['audit-projects', accountId],
+    queryKey: qk.projects.list(accountId),
     queryFn: () => listProjectsForAccount(accountId),
-    staleTime: 30_000,
+    ...contract('inventory'),
   });
   const sessionsQuery = useQuery({
     queryKey: ['audit-project-sessions', filter.projectId],
@@ -239,6 +251,8 @@ export function AuditTab({ accountId }: { accountId: string }) {
     filter.action,
   ].filter(Boolean).length;
   const hasFilter = filterCount > 0;
+  const activeQuickFilter = QUICK_FILTERS.find((preset) => isQuickFilterActive(filter, preset))
+    ?.label;
 
   const query = useInfiniteQuery({
     queryKey: ['audit', accountId, filter],
@@ -364,17 +378,21 @@ export function AuditTab({ accountId }: { accountId: string }) {
         </DropdownMenu>
       </div>
 
-      <FilterBar className="h-auto flex-wrap justify-start">
-        {QUICK_FILTERS.map((preset) => (
-          <FilterBarItem
-            key={preset.label}
-            onClick={() => setFilter((current) => applyQuickFilter(current, preset))}
-            data-state={isQuickFilterActive(filter, preset) ? 'active' : 'inactive'}
-          >
-            {preset.label}
-          </FilterBarItem>
-        ))}
-      </FilterBar>
+      <Tabs
+        value={activeQuickFilter}
+        onValueChange={(value) => {
+          const preset = QUICK_FILTERS.find((item) => item.label === value);
+          if (preset) setFilter((current) => applyQuickFilter(current, preset));
+        }}
+      >
+        <TabsList type="underline" className="h-auto w-full flex-wrap justify-start">
+          {QUICK_FILTERS.map((preset) => (
+            <TabsTrigger key={preset.label} value={preset.label} className="w-fit flex-none pb-3">
+              {preset.label}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+      </Tabs>
 
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative min-w-[220px] flex-1">
@@ -395,28 +413,20 @@ export function AuditTab({ accountId }: { accountId: string }) {
           />
         </div>
 
-        <Select
-          value={filter.projectId || 'all'}
-          onValueChange={(value) =>
+        <ProjectSelect
+          accountId={accountId}
+          value={filter.projectId || PROJECT_SELECT_ALL}
+          allOptionLabel="All projects"
+          placeholder="Project"
+          className="h-9 w-[210px]"
+          onChange={(value) =>
             setFilter((current) => ({
               ...current,
-              projectId: value === 'all' ? '' : value,
+              projectId: value === PROJECT_SELECT_ALL ? '' : value,
               sessionId: '',
             }))
           }
-        >
-          <SelectTrigger size="sm" className="h-9 w-[210px]">
-            <SelectValue placeholder="Project" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All projects</SelectItem>
-            {(projectsQuery.data ?? []).map((project) => (
-              <SelectItem key={project.project_id} value={project.project_id}>
-                {project.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        />
 
         <Select
           value={filter.sessionId || 'all'}
@@ -446,8 +456,8 @@ export function AuditTab({ accountId }: { accountId: string }) {
         </Select>
 
         <AdvancedFilters
+          accountId={accountId}
           filter={filter}
-          members={membersQuery.data ?? []}
           onChange={setFilter}
           count={filterCount}
         />
@@ -539,16 +549,23 @@ export function AuditTab({ accountId }: { accountId: string }) {
 }
 
 function AdvancedFilters({
+  accountId,
   filter,
-  members,
   onChange,
   count,
 }: {
+  accountId: string;
   filter: AuditFilterState;
-  members: Array<{ user_id: string; email?: string | null }>;
   onChange: Dispatch<SetStateAction<AuditFilterState>>;
   count: number;
 }) {
+  // `filter.actor` is a user id on the wire; the picker speaks
+  // `PrincipalSelection`, so the field is derived from the filter rather than
+  // held twice — clearing the filter clears the picker with no extra wiring.
+  const actorSelection: PrincipalSelection = filter.actor
+    ? { ...EMPTY_PRINCIPAL_SELECTION, memberIds: [filter.actor] }
+    : EMPTY_PRINCIPAL_SELECTION;
+
   return (
     <Popover>
       <PopoverTrigger asChild>
@@ -569,6 +586,41 @@ function AdvancedFilters({
             Combine fields to reconstruct one actor, session, or request path.
           </p>
         </div>
+        {/* "Who" leads, full width: the picker is a searchable list, not a
+            one-line Select, so it would blow out a grid row's height. */}
+        <FilterField
+          label="Person"
+          plain
+          action={
+            filter.actor ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 px-2 text-xs"
+                onClick={() => onChange((current) => ({ ...current, actor: '' }))}
+              >
+                Everyone
+              </Button>
+            ) : null
+          }
+        >
+          <PrincipalPicker
+            scope={{ kind: 'account', accountId }}
+            selection="single"
+            kinds={['member']}
+            value={actorSelection}
+            autoFocus={false}
+            emptyLabel="No members in this account yet."
+            onChange={(next) => {
+              const picked = singlePrincipal(next);
+              onChange((current) => ({
+                ...current,
+                actor: picked?.kind === 'member' ? picked.id : '',
+              }));
+            }}
+          />
+        </FilterField>
+
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <FilterField label="Principal type">
             <Select
@@ -589,30 +641,6 @@ function AdvancedFilters({
                 <SelectItem value="agent">Agent</SelectItem>
                 <SelectItem value="service_account">Service account</SelectItem>
                 <SelectItem value="system">System</SelectItem>
-              </SelectContent>
-            </Select>
-          </FilterField>
-
-          <FilterField label="Person">
-            <Select
-              value={filter.actor || 'all'}
-              onValueChange={(value) =>
-                onChange((current) => ({
-                  ...current,
-                  actor: value === 'all' ? '' : value,
-                }))
-              }
-            >
-              <SelectTrigger size="sm" className="h-9 w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Everyone</SelectItem>
-                {members.map((member) => (
-                  <SelectItem key={member.user_id} value={member.user_id}>
-                    {member.email ?? member.user_id.slice(0, 8)}
-                  </SelectItem>
-                ))}
               </SelectContent>
             </Select>
           </FilterField>
@@ -743,12 +771,35 @@ function AdvancedFilters({
   );
 }
 
-function FilterField({ label, children }: { label: string; children: ReactNode }) {
+function FilterField({
+  label,
+  children,
+  action,
+  // A `<label>` may not wrap a composite widget with its own search input and
+  // row buttons — the Person picker renders in a plain `<div>` instead.
+  plain = false,
+  className,
+}: {
+  label: string;
+  children: ReactNode;
+  action?: ReactNode;
+  plain?: boolean;
+  className?: string;
+}) {
+  const Wrapper = plain ? 'div' : 'label';
   return (
-    <label className="space-y-1.5">
-      <span className="text-muted-foreground text-xs font-medium">{label}</span>
+    <Wrapper className={cn('block space-y-1.5', className)}>
+      <span
+        className={cn(
+          'text-muted-foreground block text-xs font-medium',
+          action && 'flex min-h-6 items-center justify-between gap-2',
+        )}
+      >
+        {label}
+        {action}
+      </span>
       {children}
-    </label>
+    </Wrapper>
   );
 }
 
@@ -1098,16 +1149,3 @@ function JsonPane({ label, data }: { label: string; data: unknown }) {
   );
 }
 
-const relativeDateFormatter = new Intl.DateTimeFormat();
-
-function formatRelative(date: Date): string {
-  const diffMs = Date.now() - date.getTime();
-  const minutes = Math.floor(diffMs / 60_000);
-  if (minutes < 1) return 'just now';
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  if (days < 30) return `${days}d ago`;
-  return relativeDateFormatter.format(date);
-}

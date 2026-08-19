@@ -10,47 +10,94 @@ concurrency:
   group: tests-release-${{ github.ref }}
   cancel-in-progress: true
 
+# Shared by every job. Top-level env is the only way to avoid repeating this
+# block per matrix job — GitHub Actions has no YAML anchors.
+env:
+  KE2E_API_URL: ${{ vars.QA_API_BASE_URL || 'https://staging-api.kortix.com/v1' }}
+  E2E_BASE_URL: ${{ vars.QA_WEB_BASE_URL || 'https://staging.kortix.com' }}
+  KE2E_GATEWAY_URL: ${{ vars.QA_GATEWAY_URL || 'https://gateway-staging.kortix.com' }}
+  KE2E_TARGET: staging
+  KE2E_LIVE_CONFIRM: ci
+  KE2E_OWNER_EMAIL: ${{ secrets.KE2E_OWNER_EMAIL }}
+  KE2E_OWNER_PASSWORD: ${{ secrets.KE2E_OWNER_PASSWORD }}
+  KE2E_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+  KE2E_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+  KE2E_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
+  KE2E_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+  KE2E_INTERNAL_SERVICE_KEY: ${{ secrets.STAGING_INTERNAL_SERVICE_KEY }}
+  KE2E_STRIPE_SECRET_KEY: ${{ secrets.STAGING_STRIPE_SECRET_KEY }}
+  KE2E_STRIPE_WEBHOOK_SECRET: ${{ secrets.STAGING_STRIPE_WEBHOOK_SECRET }}
+  E2E_AGENTMAIL_API_KEY: ${{ secrets.E2E_AGENTMAIL_API_KEY }}
+  KE2E_CAP_MANAGED_GIT_PUSH: ${{ vars.KE2E_CAP_MANAGED_GIT_PUSH || '0' }}
+  WEB_PROTECTION_PASSWORD: ${{ secrets.WEB_PROTECTION_PASSWORD }}
+  # Staging is behind Vercel SSO deployment protection; the browser lane must
+  # send x-vercel-protection-bypass (playwright.config) or every authenticated
+  # page 302s to vercel.com/sso-api. This env was missing when tests-release
+  # replaced the old qa-release gate, so the browser lane could never reach
+  # the app.
+  VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+  # Lets the api-router edge Worker return the TRUE origin status/body to the
+  # gate instead of laundering every origin failure into MAINTENANCE_MODE
+  # (worker.mjs CI_PASSTHROUGH_SECRET binding). Diagnosability only; the
+  # Worker's public behavior is unchanged.
+  KE2E_CI_PASSTHROUGH_SECRET: ${{ secrets.CF_WORKER_CI_PASSTHROUGH_SECRET }}
+
 jobs:
-  deployed-staging:
-    name: full suite + quality gates
+  # Reclaim debris left by EARLIER runs before this one adds load. `--older-than
+  # 2h` cannot touch an account this run just created, so a concurrent release
+  # gate is safe. continue-on-error keeps a janitorial failure from blocking the
+  # release: the shards still run, and the next run sweeps again.
+  sweep-before:
+    name: sweep stale test accounts
     runs-on: ubuntu-latest
-    # `pnpm test -- --target-full` runs all 433 REST/CLI/browser flows against
-    # deployed staging serially. MEASURED on run 31535558700: setup + all 433
-    # flows finished at 44m36s (the tail browser journeys are far slower than
-    # the early REST flows), then the post-test secret-guard/upload steps push
-    # the job past 45m. The old 20-min cap killed it at ~316/433 EVERY release
-    # (v0.12.7 and v0.12.8 both cancelled, not failed) — the gate was
-    # structurally un-passable. Lanes run concurrently; every client retries the
-    # transient laundered-503 (session-create self-heals). Once the Vercel-SSO
-    # bypass let the browser lane actually run, the full suite is ~65-75m real
-    # (the flow lane alone is ~60m), so the cap is 90m. Staging's JWT lifetime
-    # was raised to 2h (was 1h) so a >60m run no longer expires its tokens.
-    # Follow-up: shard the runner (flow + browser as parallel jobs) to cut this.
-    timeout-minutes: 90
+    timeout-minutes: 15
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 8.11.0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install runner dependencies
+        run: pnpm install --frozen-lockfile --filter @kortix/tests...
+      - name: Reclaim test accounts older than 2h
+        run: bun tests/bin/ke2e.ts gc --older-than 2h
+
+  # The deployed API suite, sharded by tests/src/core/shard.ts. Shard 1 owns
+  # every serial + global flow (see that file); shards 2-4 split the parallel
+  # flows longest-first. The partition is computed from the live flow registry,
+  # so a newly added flow always lands in exactly one shard.
+  api:
+    name: deployed api shard
+    needs: sweep-before
+    runs-on: ubuntu-latest
+    # Shard 1 carries the strictly sequential serial+global tail (35 flows), so
+    # it is the critical path until the tail itself is cut. 40 minutes is a real
+    # cap that turns a hang into a readable failure; the old single job was 90.
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     env:
-      KE2E_API_URL: ${{ vars.QA_API_BASE_URL || 'https://staging-api.kortix.com/v1' }}
-      E2E_BASE_URL: ${{ vars.QA_WEB_BASE_URL || 'https://staging.kortix.com' }}
-      KE2E_GATEWAY_URL: ${{ vars.QA_GATEWAY_URL || 'https://gateway-staging.kortix.com' }}
-      KE2E_TARGET: staging
-      KE2E_LIVE_CONFIRM: ci
-      KE2E_OWNER_EMAIL: ${{ secrets.KE2E_OWNER_EMAIL }}
-      KE2E_OWNER_PASSWORD: ${{ secrets.KE2E_OWNER_PASSWORD }}
-      KE2E_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
-      KE2E_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
-      KE2E_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
-      KE2E_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
-      KE2E_INTERNAL_SERVICE_KEY: ${{ secrets.STAGING_INTERNAL_SERVICE_KEY }}
-      KE2E_STRIPE_SECRET_KEY: ${{ secrets.STAGING_STRIPE_SECRET_KEY }}
-      KE2E_STRIPE_WEBHOOK_SECRET: ${{ secrets.STAGING_STRIPE_WEBHOOK_SECRET }}
-      E2E_AGENTMAIL_API_KEY: ${{ secrets.E2E_AGENTMAIL_API_KEY }}
-      KE2E_CAP_MANAGED_GIT_PUSH: ${{ vars.KE2E_CAP_MANAGED_GIT_PUSH || '0' }}
-      WEB_PROTECTION_PASSWORD: ${{ secrets.WEB_PROTECTION_PASSWORD }}
-      # Staging is behind Vercel SSO deployment protection; the browser lane must
-      # send x-vercel-protection-bypass (playwright.config) or every authenticated
-      # page 302s to vercel.com/sso-api. This env was missing when tests-release
-      # replaced the old qa-release gate, so the browser lane could never reach
-      # the app.
-      VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+      # Pin the run id so the post-run sweep below can reclaim exactly THIS
+      # shard's principals (`principals.ts` names them `e2e-<runId>-…`).
+      KE2E_RUN_ID: ${{ github.run_id }}-api${{ matrix.shard }}
+      # Fleet arithmetic, not per-job tuning: 4 shards x 3 = 12 concurrent API
+      # workers and 4 x 2 = 8 concurrent sandbox boots against ONE staging
+      # environment, against 3 + 3 before sharding. Staging is a single 0.5 vCPU
+      # Spot task today, and the v0.13.0 gate already collapsed it at 3 + 3 (see
+      # the "tests-release's own load can knock staging over" learning). These
+      # two numbers are the first thing to lower if MAINTENANCE_MODE 503s
+      # reappear.
+      KE2E_API_WORKERS: '3'
+      KE2E_SANDBOX_WORKERS: '2'
     steps:
       - uses: actions/checkout@v7
       - name: Require the deployed staging source SHA
@@ -78,11 +125,17 @@ jobs:
           node-version: 22
           cache: pnpm
       - name: Install deployed-target dependencies
-        run: |
-          pnpm install --frozen-lockfile --filter @kortix/tests...
-          pnpm --dir tests exec playwright install --with-deps chromium
-      - name: Run every deployed staging flow and browser journey through the root runner
-        run: pnpm test -- --target-full
+        run: pnpm install --frozen-lockfile --filter @kortix/tests...
+      - name: Run this shard of the deployed staging API suite
+        run: pnpm test -- --target-api-full --api-shard=${{ matrix.shard }}/4
+      # A cancelled job is SIGKILLed before the runner's `finally` teardown, so
+      # every cancel used to leak its whole world. `always()` covers cancelled,
+      # failed and passed; --run-id scopes the sweep to this shard so it cannot
+      # delete a sibling shard's live accounts.
+      - name: Reclaim this shard's test accounts
+        if: always()
+        continue-on-error: true
+        run: bun tests/bin/ke2e.ts gc --run-id "$KE2E_RUN_ID"
       - name: Guard test artifacts against secrets
         if: always()
         run: |
@@ -95,7 +148,127 @@ jobs:
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: tests-release-deployed-staging
+          name: tests-release-api-shard-${{ matrix.shard }}
           path: tests/test-results/**
           if-no-files-found: warn
           retention-days: 90
+
+  # The deployed browser journeys, sharded with Playwright's own --shard.
+  browser:
+    name: deployed browser shard
+    needs: sweep-before
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    env:
+      # 3 shards x 2 = 6 concurrent browsers, against 2 before sharding.
+      E2E_BROWSER_WORKERS: '2'
+    steps:
+      - uses: actions/checkout@v7
+      - name: Require the deployed staging source SHA
+        run: |
+          set -euo pipefail
+          test -f RELEASE_SOURCE_SHA || {
+            echo "::error::Release PR has no RELEASE_SOURCE_SHA."
+            exit 1
+          }
+          source_sha="$(tr -d '[:space:]' < RELEASE_SOURCE_SHA)"
+          [[ "$source_sha" =~ ^[0-9a-f]{40}$ ]] || {
+            echo "::error::RELEASE_SOURCE_SHA must contain one 40-character Git SHA."
+            exit 1
+          }
+          echo "KE2E_EXPECT_SHA=$source_sha" >> "$GITHUB_ENV"
+          echo "Expected deployed staging SHA: $source_sha"
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 8.11.0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install deployed-target dependencies
+        run: |
+          pnpm install --frozen-lockfile --filter @kortix/tests...
+          pnpm --dir tests exec playwright install --with-deps chromium
+      - name: Run this shard of the deployed staging browser journeys
+        run: pnpm test -- --target-browser-full --browser-shard=${{ matrix.shard }}/3
+      # No --run-id sweep here: the Playwright specs mint their own Supabase
+      # users (@example.test / @kortix.test) with no run-scoped prefix, so there
+      # is nothing to scope to. sweep-before now covers those domains, which it
+      # did not before, so their debris is reclaimed on the next run.
+      - name: Guard test artifacts against secrets
+        if: always()
+        run: |
+          set -euo pipefail
+          if rg -l 'kortix_(pat|sa)_[A-Za-z0-9]{12,}|sk-[A-Za-z0-9]{20,}|eyJ[A-Za-z0-9_-]{30,}\.' tests/test-results 2>/dev/null; then
+            echo "::error::A test artifact contains a secret-shaped value."
+            exit 1
+          fi
+          echo "No secret-shaped values found."
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: tests-release-browser-shard-${{ matrix.shard }}
+          path: tests/test-results/**
+          if-no-files-found: warn
+          retention-days: 90
+
+  # Backstop for an API shard that was killed before its own post-run sweep ran.
+  # Every shard's run id starts with `<github.run_id>-`, so this one filter
+  # reclaims all of them, and it runs only after every shard has finished.
+  sweep-after:
+    name: sweep this run's test accounts
+    needs: [api, browser]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 8.11.0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install runner dependencies
+        run: pnpm install --frozen-lockfile --filter @kortix/tests...
+      - name: Reclaim this run's test accounts
+        run: bun tests/bin/ke2e.ts gc --run-id ${{ github.run_id }}
+
+  # The required status check on `prod` branch protection is this job's NAME.
+  # Sharding turned one job into seven, so this aggregator keeps the single
+  # context that branch protection already requires. Do not rename it without
+  # updating repos/kortix-ai/suna/branches/prod/protection in the same change.
+  release-gate:
+    name: full suite + quality gates
+    needs: [api, browser]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every deployed shard to pass
+        run: |
+          set -euo pipefail
+          api='${{ needs.api.result }}'
+          browser='${{ needs.browser.result }}'
+          echo "api shards: $api"
+          echo "browser shards: $browser"
+          failed=0
+          [ "$api" = "success" ] || failed=1
+          [ "$browser" = "success" ] || failed=1
+          if [ "$failed" -ne 0 ]; then
+            echo "::error::A deployed staging shard did not pass (api=$api browser=$browser)."
+            exit 1
+          fi
+          echo "Every deployed staging API shard and browser shard passed."

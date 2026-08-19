@@ -46,6 +46,16 @@ const MIXED_VERSION_ANNOTATION_RE = /(?:--|\/\/)\s*mixed-version-safe\s*:\s*\S/i
 const ENUM_ADD_VALUE_RE = /\balter\s+type\b[\s\S]*?\badd\s+value\b/i;
 const ENUM_ANNOTATION_RE = /(?:--|\/\/)\s*enum-value-checked\s*:\s*\S/i;
 
+// `pgm.noTransaction()` exists for TWO reasons, not one. The first is
+// CONCURRENTLY, which cannot run inside a transaction. The second is the
+// remedy MIGRATIONS.md prescribes for the 2026-08-10 centralized_audit_v2
+// outage: "write data moves as batched, incrementally-committed .concurrent.ts
+// passes" — a batch only commits, and only releases its row locks, because the
+// file opted out of the wrapping transaction. Such a file legitimately contains
+// no CONCURRENTLY statement, so it declares itself with
+// `// batched-dml: <what is batched, batch size, bound on row count>` instead.
+const BATCHED_DML_ANNOTATION_RE = /(?:--|\/\/)\s*batched-dml\s*:\s*\S/i;
+
 export interface LintResult {
   errors: string[];
   warnings: string[];
@@ -141,9 +151,9 @@ function lintConcurrentMigration(
       `${filename}: a .concurrent.ts migration must call \`pgm.noTransaction()\` — that's the entire reason this file isn't plain SQL. If this migration doesn't need CONCURRENTLY, write it as a normal .sql migration instead.`,
     );
   }
-  if (!/\bconcurrently\b/i.test(raw)) {
+  if (!/\bconcurrently\b/i.test(raw) && !BATCHED_DML_ANNOTATION_RE.test(raw)) {
     errors.push(
-      `${filename}: a .concurrent.ts migration should contain a CONCURRENTLY operation (CREATE/DROP INDEX CONCURRENTLY, REINDEX CONCURRENTLY, ALTER TABLE ... DETACH PARTITION CONCURRENTLY). Opting out of the wrapping transaction loses the all-or-nothing guarantee — don't use this escape hatch for anything else.`,
+      `${filename}: a .concurrent.ts migration must either contain a CONCURRENTLY operation (CREATE/DROP INDEX CONCURRENTLY, REINDEX CONCURRENTLY, ALTER TABLE ... DETACH PARTITION CONCURRENTLY) or declare a batched data pass with \`// batched-dml: <what is batched, batch size, bound on row count>\`. Opting out of the wrapping transaction loses the all-or-nothing guarantee — don't use this escape hatch for anything else.`,
     );
   }
   if (!/\bexport\s+const\s+up\b|\bexport\s+function\s+up\b/.test(raw)) {

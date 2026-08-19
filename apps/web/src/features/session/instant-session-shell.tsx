@@ -11,15 +11,27 @@ import type { AttachedFile } from '@/features/session/session-chat-input';
 import { SessionLayout } from '@/features/session/session-layout';
 import { useSessionWallpaperLayer } from '@/features/session/session-wallpaper-layer';
 import { SessionWelcome } from '@/features/session/session-welcome';
-import { buildOptimisticPromptTextWithUploads } from '@/features/session/uploaded-file-refs';
+import {
+  attachedFilesToDataUrlParts,
+  buildOptimisticPromptTextWithUploads,
+} from '@/features/session/uploaded-file-refs';
 import { ProjectHomeWelcomeBody } from '@/features/workspace/project-layout/project-home';
 import type { Command } from '@kortix/sdk/react';
-import { readStartStash, useRuntimeAgents, writeStartStash } from '@kortix/sdk/react';
-import { infoToast } from '@/components/ui/toast';
+import {
+  readStartStash,
+  startSessionWithPrompt,
+  useRuntimeAgents,
+  useSessionPrompts,
+  writeStartStash,
+} from '@kortix/sdk/react';
+import { errorToast } from '@/components/ui/toast';
 import { playSound } from '@/lib/sounds';
 import { cn } from '@/lib/utils';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
-import { useCarriedDraftStore, usePendingFilesStore } from '@/stores/session-composer-handoff-store';
+import {
+  useFirstPromptPreviewStore,
+  usePendingFilesStore,
+} from '@/stores/session-composer-handoff-store';
 import type { SessionStartStage } from '@kortix/sdk';
 
 const subscribeToNothing = () => () => {};
@@ -108,7 +120,26 @@ export function InstantSessionShell({
       files: usePendingFilesStore.getState().files,
     };
   }, [hydrated, sessionId]);
-  const effectiveSubmission = submission ?? stashedSubmission;
+  // The durable rows are the cross-navigation truth: a send made on the
+  // project home is an inbox row by the time this shell mounts, and reading it
+  // from the server is what keeps the bubble on screen after a reload — the
+  // stash only carries picks now. The local `submission` covers the same-page
+  // send instantly; the stash read stays as a legacy fallback for a hand-off
+  // written by a pre-deploy tab.
+  const promptInbox = useSessionPrompts(projectId, sessionId, { enabled: hydrated });
+  const pendingRowSubmission = useMemo(() => {
+    const row = promptInbox.prompts.find((p) => p.text.trim().length > 0);
+    if (!row) return null;
+    return { text: row.text, files: [] as AttachedFile[] };
+  }, [promptInbox.prompts]);
+  // The producer's own copy of the first prompt, drawn from the first frame —
+  // the row read above can miss it entirely when a warm box delivers between
+  // navigation and the fetch. See `useFirstPromptPreviewStore`.
+  const previewSubmission = useFirstPromptPreviewStore(
+    (s) => s.previewBySession[sessionId] ?? null,
+  );
+  const effectiveSubmission =
+    submission ?? previewSubmission ?? pendingRowSubmission ?? stashedSubmission;
   const submitted = effectiveSubmission?.text ?? null;
 
   // Starter-prompt → composer prefill, identical to the project-home composer.
@@ -118,62 +149,50 @@ export function InstantSessionShell({
   }, []);
 
   const handleSend = useCallback(
-    (text: string, files: AttachedFile[] | undefined, options: ComposerOptions) => {
+    async (text: string, files: AttachedFile[] | undefined, options: ComposerOptions) => {
       if (!text.trim() && !files?.length) return;
-      // A SECOND message, typed while the first one is still booting, is
-      // REFUSED — and refused by throwing, which is what keeps the draft.
-      //
-      // The three answers this has had, in order: `return` outright (the
-      // composer had already cleared the input, so the draft was simply gone);
-      // then a browser-local queue, because the FIRST message is still
-      // travelling through the start stash and is not an inbox row yet, so a
-      // row created now would be admitted — and answered — BEFORE it; and now
-      // this. The local queue is gone with the rest of the browser queue, and
-      // POSTing here would reintroduce exactly that ordering inversion.
-      //
-      // Throwing rather than returning is half of it: `dispatchSubmission`
-      // catches it and `planFailedSendRecovery` puts the text and the
-      // attachments back in the editor.
-      //
-      // The other half is `carryDraft`. That editor is THIS component's, and
-      // this component is unmounted by the crossfade the moment the sandbox is
-      // ready — so the recovered draft used to die with it, right after a toast
-      // that promised it was kept. The boot it dies at the end of is 19-25 s
-      // (measured), which is exactly when a follow-up gets typed. The draft is
-      // handed to the session instead, and `SessionChat` picks it up when it
-      // mounts. Nothing is SENT: the ordering rule above is untouched.
-      if (submitted) {
-        useCarriedDraftStore.getState().carryDraft(sessionId, text, files ?? []);
-        infoToast('Still starting this session', {
-          description: 'Your message is kept in the composer — send it again in a moment.',
-        });
-        throw new Error('The first message is still starting — send this one in a moment');
-      }
-      playSound('send');
-
-      // Hand the message to the real chat: it auto-sends from this stash once
-      // the runtime is healthy. `sessionId` here is the route/Kortix-session
-      // id, not the eventual OpenCode pin (`useCanonicalRuntimeSession`
-      // resolves those independently — see `ensureOpencodeSessionPin` in
-      // apps/api/src/projects/routes/shared.ts); the session page's
-      // `migrateStash` hands this canonical stash off onto the resolved pin
-      // once it exists.
+      // Hand the PICKS to the real chat through the stash (it seeds the
+      // per-session model/agent stores from them). The prompt itself does not
+      // travel this way any more — it becomes a durable inbox row below.
       writeStartStash(sessionId, {
-        prompt: text,
+        prompt: '',
         agent: options.agent ?? null,
         model: options.model ?? null,
         variant: options.variant ?? null,
       });
-      // File objects can't survive sessionStorage — stash them in the store the
-      // real chat consumes (same path the home composer uses).
-      if (files?.length) {
-        usePendingFilesStore.getState().setPendingFiles(files);
+      // The durable row, POSTed NOW. Attachments ride as data: URLs — there is
+      // no sandbox to upload into yet. A SECOND message typed while the first
+      // boots POSTs the same way: the admission gate orders rows by
+      // (available_at, created_at), so two rows created in order deliver in
+      // order — which is exactly what the refusal that used to live here was
+      // faking with a toast and a carried draft. AWAITED, and thrown on
+      // failure, so the composer's own recovery puts the text and attachments
+      // back in the editor instead of painting a bubble for a message the
+      // server never got.
+      try {
+        const parts = [
+          { type: 'text' as const, text },
+          ...(await attachedFilesToDataUrlParts(files)),
+        ];
+        await startSessionWithPrompt(projectId, sessionId, {
+          parts,
+          overrides: {
+            ...(options.agent ? { agent: options.agent } : {}),
+            ...(options.model ? { model: options.model } : {}),
+            ...(options.variant ? { variant: options.variant } : {}),
+          },
+        });
+      } catch (error) {
+        errorToast(error instanceof Error ? error.message : 'Could not queue your message');
+        throw error;
       }
-
-      setSubmission({ text, files: files ?? [] });
-      onSubmit?.();
+      playSound('send');
+      if (!submitted) {
+        setSubmission({ text, files: files ?? [] });
+        onSubmit?.();
+      }
     },
-    [sessionId, submitted, onSubmit],
+    [projectId, sessionId, submitted, onSubmit],
   );
 
   const handleCommand = useCallback(

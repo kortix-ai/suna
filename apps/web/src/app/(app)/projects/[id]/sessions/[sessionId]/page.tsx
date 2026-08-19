@@ -19,7 +19,6 @@ import { ProviderFailureRecovery } from '@/features/session/provider-failure-rec
 import {
   pendingSessionPromptForRecovery,
   provisioningFailurePresentation,
-  startStashFromPendingSessionPrompt,
 } from '@/features/session/provisioning-failure';
 import { SandboxLoadingBoundary } from '@/features/session/sandbox-loading-boundary';
 import { SessionChat } from '@/features/session/session-chat';
@@ -72,18 +71,20 @@ import {
   getProjectDetail,
   listProjectSessions,
   sessionStartKey,
+  updateProjectSession,
 } from '@kortix/sdk';
 import { clearSessionFresh, isSessionFresh } from '@kortix/sdk/fresh-sessions';
 import { setActiveInstanceCookie } from '@kortix/sdk/instance-routes';
 import {
   type UseSessionResult,
+  clearStartStash,
   contract,
   migrateStash,
   qk,
   readStartStash,
+  startSessionWithPrompt,
   useRuntimeConnectionStore,
   useSession,
-  writeStartStash,
 } from '@kortix/sdk/react';
 
 /**
@@ -236,8 +237,33 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     restart.restart();
   };
   const handleProvisioningRetry = () => {
+    // A LEGACY hand-off (metadata.pending_prompt.text from a pre-conversion
+    // API, or a full-prompt stash) becomes a durable inbox row here — POSTed,
+    // not re-stashed, so this retry is the last time it can be lost. A session
+    // created by the current API needs nothing: its first prompt has been a
+    // durable row since the create transaction, and the restart alone re-arms
+    // delivery.
     if (pendingPrompt) {
-      writeStartStash(sessionId, startStashFromPendingSessionPrompt(pendingPrompt));
+      void startSessionWithPrompt(projectId, sessionId, {
+        parts: [{ type: 'text' as const, text: pendingPrompt.text }],
+        overrides: {
+          ...(pendingPrompt.agent ? { agent: pendingPrompt.agent } : {}),
+          ...(pendingPrompt.model ? { model: pendingPrompt.model } : {}),
+          ...(pendingPrompt.variant ? { variant: pendingPrompt.variant } : {}),
+        },
+      })
+        .then(() => {
+          clearStartStash(sessionId);
+          // Strip the recovered text so a later mount cannot enqueue it twice.
+          return updateProjectSession(projectId, sessionId, {
+            metadata: { pending_prompt: null },
+          }).catch(() => undefined);
+        })
+        .catch((error) => {
+          errorToast(
+            error instanceof Error ? error.message : 'Could not queue the saved prompt',
+          );
+        });
     }
     handleRestart();
   };

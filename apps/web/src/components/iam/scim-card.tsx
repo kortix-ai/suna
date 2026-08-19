@@ -12,12 +12,10 @@ import { errorToast, successToast } from '@/components/ui/toast';
 import { getEnv } from '@/lib/env-config';
 import { buildScimBaseUrl, isAbsoluteHttpUrl } from '@/lib/scim-url';
 import { cn } from '@/lib/utils';
-import { copyToClipboard } from '@/lib/utils/clipboard';
 import { listAccountMembers } from '@kortix/sdk';
 import {
   CaretDownIcon as ChevronDown,
   CheckIcon as Check,
-  CopyIcon as Copy,
   KeyIcon as KeyRound,
   PlusIcon as Plus,
   ArrowClockwiseIcon as RefreshCw,
@@ -48,6 +46,7 @@ import {
   ModalTitle,
 } from '@/components/ui/modal';
 import { Skeleton } from '@/components/ui/skeleton';
+import { CopyRow, formatRelative } from '@/features/workspace/shared/access';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import {
@@ -162,31 +161,6 @@ function ProvisioningHealthPanel({
       </div>
     </div>
   );
-}
-
-const fallbackDateFormat = new Intl.DateTimeFormat();
-
-function formatRelative(iso: string | null): string {
-  if (!iso) return '—';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '—';
-  const diffMs = Date.now() - d.getTime();
-  const minutes = Math.floor(diffMs / 60_000);
-  if (minutes < 1) return 'just now';
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  if (days < 30) return `${days}d ago`;
-  return fallbackDateFormat.format(d);
-}
-
-async function copyValue(value: string, successMsg = 'Copied to clipboard') {
-  if (await copyToClipboard(value)) {
-    successToast(successMsg);
-  } else {
-    errorToast('Copy failed — select and copy manually');
-  }
 }
 
 export function ScimCard({ accountId, canManage }: ScimCardProps) {
@@ -344,20 +318,11 @@ export function ScimCard({ accountId, canManage }: ScimCardProps) {
               <div className="space-y-4 px-4 py-4">
                 {/* Endpoint URL */}
                 <div className="space-y-1.5">
-                  <Label className="text-xs">SCIM base URL</Label>
-                  <div className="flex items-center gap-2">
-                    <code className="bg-muted/30 min-w-0 flex-1 truncate rounded-md border px-3 py-2 font-mono text-xs">
-                      {scimBaseUrl}
-                    </code>
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      aria-label="Copy SCIM base URL"
-                      onClick={() => copyValue(scimBaseUrl, 'SCIM URL copied')}
-                    >
-                      <Copy className="size-3.5 shrink-0" />
-                    </Button>
-                  </div>
+                  <CopyRow
+                    label="SCIM base URL"
+                    value={scimBaseUrl}
+                    successMessage="SCIM URL copied"
+                  />
                   <p className="text-muted-foreground text-xs">
                     {scimBaseIsAbsolute ? (
                       <>
@@ -622,38 +587,8 @@ function CreateScimTokenDialog({
         {created ? (
           <>
             <ModalBody className="min-w-0 space-y-4">
-              <div>
-                <Label className="text-xs">Token</Label>
-                <div className="mt-1 flex min-w-0 items-center gap-2">
-                  <code className="bg-muted/30 min-w-0 flex-1 truncate rounded-md border px-3 py-2 font-mono text-xs">
-                    {created.secret}
-                  </code>
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    aria-label="Copy token"
-                    onClick={() => copyValue(created.secret, 'Token copied')}
-                  >
-                    <Copy className="size-3.5 shrink-0" />
-                  </Button>
-                </div>
-              </div>
-              <div>
-                <Label className="text-xs">SCIM base URL</Label>
-                <div className="mt-1 flex min-w-0 items-center gap-2">
-                  <code className="bg-muted/30 min-w-0 flex-1 truncate rounded-md border px-3 py-2 font-mono text-xs">
-                    {scimBaseUrl}
-                  </code>
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    aria-label="Copy URL"
-                    onClick={() => copyValue(scimBaseUrl, 'URL copied')}
-                  >
-                    <Copy className="size-3.5 shrink-0" />
-                  </Button>
-                </div>
-              </div>
+              <CopyRow label="Token" value={created.secret} successMessage="Token copied" />
+              <CopyRow label="SCIM base URL" value={scimBaseUrl} successMessage="URL copied" />
             </ModalBody>
             <ModalFooter>
               <Button size="sm" onClick={() => handleClose(false)} className="gap-1.5">

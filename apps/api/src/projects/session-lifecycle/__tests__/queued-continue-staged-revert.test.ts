@@ -35,6 +35,10 @@ const OC_SESSION_ID = 'oc-1';
 let sessionRow: Record<string, unknown> | null = null;
 let events: string[] = [];
 let succeededCalls: Array<{ commandId: string; result: unknown; sessionId?: string | null }> = [];
+// An INBOX row carries a wire id, so a successful delivery leaves it OPEN as
+// `forwarded` instead of closing it — see `markCommandForwarded`. The
+// automation rows in this file (`baseRow`) have no wire id and still close.
+let forwardedCalls: Array<{ commandId: string; sessionId: string; wireMessageId: string }> = [];
 let failedCalls: Array<{ commandId: string; message: string; opts: unknown }> = [];
 let endpointResult: { url: string; headers: Record<string, string> } | null = {
   url: 'https://sandbox.test',
@@ -101,6 +105,7 @@ mock.module('../backpressure', () => ({
   sessionBackpressureState: async () => ({ shouldQueue: false, reason: null }),
 }));
 mock.module('../store', () => ({
+  promoteNextInboxRow: async () => null,
   // The prompt inbox's admission refusal — `executeQueuedContinue` calls it
   // before anything else, so every store mock has to carry it or the engine
   // import fails outright.
@@ -122,6 +127,9 @@ mock.module('../store', () => ({
   markCommandQueued: async () => {
     throw new Error('not expected');
   },
+  markCommandForwarded: async (commandId: string, sessionId: string, wireMessageId: string) => {
+    forwardedCalls.push({ commandId, sessionId, wireMessageId });
+  },
   markCommandSucceeded: async (
     commandId: string,
     result: unknown,
@@ -129,6 +137,10 @@ mock.module('../store', () => ({
   ) => {
     succeededCalls.push({ commandId, result, sessionId });
   },
+  // `inbox-rows.ts` imports this at module load, so the mock has to carry it or
+  // the engine import fails outright. Nothing in this file drives a row through
+  // it, so an identity pass-through is the whole of it.
+  withNextDeliveryAttempt: (payload: unknown) => payload,
   resultFromExistingCommand: () => {
     throw new Error('not expected');
   },
@@ -188,6 +200,7 @@ beforeEach(() => {
   };
   events = [];
   succeededCalls = [];
+  forwardedCalls = [];
   failedCalls = [];
   endpointResult = { url: 'https://sandbox.test', headers: {} };
   sessionInfoBody = null;
@@ -318,9 +331,12 @@ describe('executeQueuedContinue — inbox prompts across a staged revert', () =>
     const outcome = await executeQueuedContinue(inboxRow());
 
     expect(outcome).toBe('succeeded');
-    expect(succeededCalls).toEqual([
-      { commandId: 'cmd-1', result: { status: 'delivered' }, sessionId: SESSION_ID },
+    // The row went out and stays OPEN: an inbox prompt carries a wire id, so it
+    // reads `delivering` until the ledger says a turn consumed it.
+    expect(forwardedCalls).toEqual([
+      { commandId: 'cmd-1', sessionId: SESSION_ID, wireMessageId: 'msg_0198f3a1b2c4AbCdEfGhIjKlMn' },
     ]);
+    expect(succeededCalls).toEqual([]);
     expect(failedCalls).toEqual([]);
     expect(events).toContain('prompt');
   });
@@ -371,7 +387,7 @@ describe('executeQueuedContinue — inbox prompts across a staged revert', () =>
     sessionInfoBody = { id: OC_SESSION_ID, revert: { messageID: 'msg-99' } };
 
     const outcome = await executeQueuedContinue(
-      inboxRow({ result: { admission_reason: 'turn_active' } as Record<string, unknown> }),
+      inboxRow({ result: { admission_reason: 'older_prompt_pending' } as Record<string, unknown> }),
     );
 
     expect(outcome).toBe('failed');
@@ -398,9 +414,11 @@ describe('executeQueuedContinue — inbox prompts across a staged revert', () =>
     );
 
     expect(outcome).toBe('succeeded');
-    expect(succeededCalls).toEqual([
-      { commandId: 'cmd-1', result: { status: 'delivered' }, sessionId: SESSION_ID },
-    ]);
+    // A re-minted delivery is still a delivery: the row stays open under the id
+    // it actually went out with, which is what the ledger will confirm.
+    expect(forwardedCalls).toHaveLength(1);
+    expect(forwardedCalls[0]!.commandId).toBe('cmd-1');
+    expect(succeededCalls).toEqual([]);
     expect(failedCalls).toEqual([]);
     expect(events).toContain('prompt');
   });

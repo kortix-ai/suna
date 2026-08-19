@@ -31,7 +31,20 @@ import { channelsHref } from '@/features/workspace/capabilities/shared/capabilit
 export type SettingsTab =
   | 'profile'
   | 'preferences'
-  | 'connected';
+  | 'connected'
+  // API keys came BACK, and only half of what left returned. The old
+  // `api-keys` tab listed three kinds of credential at once — a person's own
+  // keys, service-account bearers, and the connector tokens the runtime mints
+  // per sandbox — so it configured the account and it graduated to
+  // `/accounts/[id]` with the rest of the account surface. What is here now is
+  // the half that was never account configuration: the keys YOU minted, which
+  // act as you and die with your membership. The automation half stayed on the
+  // account page under the same `?tab=tokens` segment, which is why the word
+  // names two surfaces — this pane for a person's keys, that pane for an
+  // automation's. Marko, 2026-08-18:
+  // "the personal tokens should be in the personal settings and visible there.
+  // the automation tokens should be in the actual account settings."
+  | 'tokens';
 // Organization (General, Billing, Usage, Groups, Roles, Identity, Audit log)
 // and API keys are gone: every one of them configured the ACCOUNT, not the
 // project, and the account already owns a full page for them at
@@ -53,7 +66,12 @@ export type SettingsTab =
  */
 export const DEFAULT_SETTINGS_TAB: SettingsTab = 'profile';
 
-export const SETTINGS_TABS: readonly SettingsTab[] = ['profile', 'preferences', 'connected'];
+export const SETTINGS_TABS: readonly SettingsTab[] = [
+  'profile',
+  'preferences',
+  'connected',
+  'tokens',
+];
 
 export function parseSettingsTab(raw: string | null | undefined): SettingsTab | null {
   if (!raw) return null;
@@ -94,9 +112,11 @@ const GRADUATED: Record<string, (projectId: string) => string> = {
   // on one page (`capabilities/project-settings/project-settings-sections.ts`).
   // The section key equals the old tab id in every case but one:
   // `experimental` is `feature-flags`, the name the pane already carries
-  // everywhere else. Four sections graduated a SECOND time, off that page
-  // and onto their own top-level Customize tab — Secrets, Channels, Models,
-  // Members — and Marketplace was removed from the product outright.
+  // everywhere else. Three sections graduated a SECOND time, off that page
+  // and onto their own top-level Customize tab — Secrets, Channels, Models —
+  // Members graduated a second time the same way and then a THIRD, off the
+  // project entirely (see the note on `members` further down), and
+  // Marketplace was removed from the product outright.
   //
   // The URL segment is `config`, not `settings` — `/projects/<id>/settings`
   // is this overlay's own deep-link route and cannot be two routes at once.
@@ -109,11 +129,17 @@ const GRADUATED: Record<string, (projectId: string) => string> = {
   repositories: (p) => `/projects/${p}/config`,
   // `git` was the pre-rename id for Repositories.
   git: (p) => `/projects/${p}/config`,
-  // Secrets, Channels, Models, and Members graduated a SECOND time — off the
-  // Settings sub-nav entirely and onto their own top-level Customize tab.
-  // `models` and every `llm-*` sub-section (the old Models pane's own
-  // sub-tabs) all land on the one Models tab; which sub-tab a person sees
-  // inside it is that page's own state, not a route.
+  // Secrets, Channels, and Models graduated a SECOND time — off the Settings
+  // sub-nav entirely and onto their own top-level Customize tab. `models` and
+  // every `llm-*` sub-section (the old Models pane's own sub-tabs) all land
+  // on the one Models tab; which sub-tab a person sees inside it is that
+  // page's own state, not a route.
+  //
+  // Members is NOT here. It graduated a second time the same way, to its own
+  // top-level tab — then graduated a THIRD time, off the project entirely:
+  // membership configures the ACCOUNT, not the project, the same reasoning
+  // that moved Organization/Billing/Groups/Roles/Identity/Audit/API keys to
+  // `ACCOUNT_GRADUATED` below. `members` lives there now, not here.
   secrets: (p) => `/projects/${p}/secrets`,
   // Channels graduated a second time and then came back down: it is a scope of
   // the Connectors page now, not a tab of its own. `channelsHref` is that one
@@ -121,7 +147,6 @@ const GRADUATED: Record<string, (projectId: string) => string> = {
   // cannot disagree about the param.
   channels: (p) => channelsHref(p),
   models: (p) => `/projects/${p}/models`,
-  members: (p) => `/projects/${p}/members`,
   'llm-management': (p) => `/projects/${p}/models`,
   'llm-overview': (p) => `/projects/${p}/models`,
   'llm-providers': (p) => `/projects/${p}/models`,
@@ -164,13 +189,20 @@ const GRADUATED: Record<string, (projectId: string) => string> = {
  * account id, then passes it as `legacySectionRedirect`'s third argument. See
  * `use-account-section-redirect.ts` for the one hook every call site uses.
  *
- * Three ids are not 1:1 renames — the account page's own vocabulary differs:
+ * Two ids are not 1:1 renames — the account page's own vocabulary differs:
  * the overlay's `organization` (org name + sign-in rules) is that page's
- * `settings` tab, its `usage` is `transactions`, and its `api-keys` is
- * `tokens`. The legacy `transactions` / `tokens` ids are listed too: they used
- * to live in `RENAMED_TABS` (folded INTO the overlay), and now that the
- * overlay has no such tab they must resolve back to the account page instead
- * of falling through to the bare `/settings` overlay.
+ * `settings` tab, and its `usage` is `transactions`. The legacy
+ * `transactions` id is listed too: it used to live in `RENAMED_TABS` (folded
+ * INTO the overlay), and now that the overlay has no such tab it must resolve
+ * back to the account page instead of falling through to the bare `/settings`
+ * overlay.
+ *
+ * `members` is a third non-1:1 entry, and the only one that is not
+ * project-agnostic: it targets the account page's `access-projects` tab
+ * *scoped back down to the project it was a bookmark for* — see the
+ * `rawSection === 'members'` special case in `legacySectionRedirect` below,
+ * which appends `&project=<projectId>` that no other entry in this map
+ * needs.
  */
 export const ACCOUNT_GRADUATED: Record<string, string> = {
   organization: 'settings',
@@ -181,8 +213,33 @@ export const ACCOUNT_GRADUATED: Record<string, string> = {
   roles: 'roles',
   identity: 'identity',
   audit: 'audit',
+  // `api-keys` and `tokens` are NOT here any more. Both used to send a stale
+  // link to `/accounts/<id>?tab=tokens`, which was right while every
+  // credential lived on that one page. Since 2026-08-18 a person's own API
+  // keys are back in this overlay as the `tokens` tab and only the automation
+  // half stayed on the account page, so both ids resolve to the overlay
+  // instead: `tokens` through `parseSettingsTab` (it names a live tab now) and
+  // `api-keys` through `RENAMED` below. That is the better default for a stale
+  // link — someone who bookmarked "API keys" wanted a key they could use, and
+  // the pane they land on carries a one-line pointer to the account page for
+  // the other kind.
+  members: 'access-projects',
+};
+
+/**
+ * Legacy ids that came BACK into the overlay under a new name.
+ *
+ * One entry, and it is a rename rather than a graduation: `api-keys` was this
+ * overlay's tab for a person's own API keys before every credential surface
+ * moved to `/accounts/[id]`. The personal half has returned as `tokens`, so a
+ * stale `/settings/api-keys` or `/customize/api-keys` link lands on the pane
+ * that holds what it was a link to, not on the account page's automation tab.
+ *
+ * Checked BEFORE `ACCOUNT_GRADUATED` so the answer does not depend on whether
+ * the caller happened to have resolved an account id yet.
+ */
+const RENAMED: Record<string, SettingsTab> = {
   'api-keys': 'tokens',
-  tokens: 'tokens',
 };
 
 /**
@@ -222,6 +279,14 @@ export function legacySectionRedirect(
 ): string | null {
   if (!rawSection) return null;
 
+  // A renamed tab is still a tab in THIS overlay, so it resolves the same way
+  // a live tab id does — and before the account map, so the answer never
+  // depends on whether the caller has an account id in hand yet. `Object.hasOwn`
+  // for the same prototype-pollution reason as the two maps below.
+  if (Object.hasOwn(RENAMED, rawSection)) {
+    return `/projects/${projectId}/settings/${RENAMED[rawSection]}`;
+  }
+
   // `isAccountGraduatedSection`, not a bare `ACCOUNT_GRADUATED[rawSection]`:
   // a plain object literal inherits `Object.prototype`, so the bare lookup
   // answers truthy for `constructor`, `toString`, `valueOf` and friends. A
@@ -229,7 +294,15 @@ export function legacySectionRedirect(
   // `/accounts/<id>?tab=function Object() { [native code] }`. The helper uses
   // `Object.hasOwn`.
   if (accountId && isAccountGraduatedSection(rawSection)) {
-    return `/accounts/${accountId}?tab=${ACCOUNT_GRADUATED[rawSection]}`;
+    const base = `/accounts/${accountId}?tab=${ACCOUNT_GRADUATED[rawSection]}`;
+    // `members` is scoped, every other account-graduated id is not: a stale
+    // `/projects/<id>/members` bookmark should open the account's Access ›
+    // Projects tab pre-filtered to the project it was a bookmark for, not
+    // every project the account can see. No other legacy id carries a
+    // project-specific destination on the account page, so this stays a
+    // narrow special case rather than a second parameter every entry pays for.
+    if (rawSection === 'members') return `${base}&project=${projectId}`;
+    return base;
   }
 
   // Guarded for the same reason as the account map above — a plain object

@@ -79,26 +79,29 @@ describe('CapabilityTabs carries no capability-specific control', () => {
 });
 
 /**
- * Members and Settings read as "who's here / how it's configured" — a
- * different register from the seven build-the-agent tabs (Connectors through
- * Secrets) to their left. Jay's call (2026-08-17): push them to the far right
- * of the row, in one `TabsList` — not a second list — so the underline
- * indicator and keyboard roving stay unified.
+ * Settings reads as "how it's configured" — a different register from the
+ * build-the-agent tabs (Connectors through Secrets) to its left. Jay's call
+ * (2026-08-17): push it to the far right of the row, in one `TabsList` — not
+ * a second list — so the underline indicator and keyboard roving stay
+ * unified.
  */
-describe('CapabilityTabs right-aligns Members and Settings', () => {
-  test('the trailing group is exactly Members and Settings, in that order', () => {
+describe('CapabilityTabs right-aligns Settings', () => {
+  test('the trailing group is exactly Settings', () => {
     const body = code(source);
     const trailingStart = body.indexOf('TRAILING_TABS');
     expect(trailingStart).toBeGreaterThan(-1);
     const trailingDecl = body.slice(trailingStart, body.indexOf(';', trailingStart));
-    expect(trailingDecl).toContain("'members'");
     expect(trailingDecl).toContain("'config'");
-    expect(trailingDecl.indexOf("'members'")).toBeLessThan(trailingDecl.indexOf("'config'"));
+    expect(trailingDecl).not.toContain("'members'");
   });
 
-  test('ml-auto lands on the first trailing tab, inside the one shared TabsList', () => {
+  test('ml-auto lands on MembersLaunchLink, the first trailing element, inside the one shared TabsList', () => {
     const body = code(source);
-    expect(body).toContain("tab.key === TRAILING_TABS[0] && 'ml-auto'");
+    // Members isn't a CapabilityTab (it launches the account hub, not a
+    // capability page) so it can't carry `tab.key === TRAILING_TABS[0]` — the
+    // push instead lives on its own className.
+    expect(body).toContain('ml-auto');
+    expect(body).toContain('<MembersLaunchLink projectId={projectId} />');
     // One list, not two — this is a visual push, not a second `role="tablist"`.
     expect((body.match(/<TabsList\b/g) ?? []).length).toBe(1);
   });

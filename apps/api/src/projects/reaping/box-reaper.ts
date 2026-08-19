@@ -284,8 +284,24 @@ export async function reapAndReconcileSandboxes(
               // `deadlineGrant: boot_floor`, exactly the 2026-08-17 row — got no
               // drip at all. Probing costs one daemon round-trip; the answer is
               // what keeps the box alive.
+              //
+              // THE GRACE IS THE DELIVERY'S, NOT THE BOX'S. `row.deadlineAt` is
+              // box-scoped and a `delivering` record now coexists with an
+              // accepted turn's four-hour grant — a prompt forwarded into a
+              // live turn is exactly that shape. Reading the box deadline made
+              // such a record unreconcilable for those four hours: every pass
+              // skipped it, `claimExpiredSandboxStop` refuses a box that holds
+              // turn authority, and `GET .../turn` kept reporting an open turn
+              // after the user pressed Stop. `startedAtMs` is when the control
+              // plane minted THIS record, so the delivery grant it was written
+              // with is measured from there. A legacy `activeTurn` proves no age
+              // at all, so it keeps the box deadline as its only bound.
+              const deliveryGraceEndsAtMs =
+                turn.startedAtMs === null
+                  ? row.deadlineAt.getTime()
+                  : turn.startedAtMs + turnDeliveryGraceMs();
               const withinDeliveryGrace =
-                turn.state === 'delivering' && row.deadlineAt.getTime() > now.getTime();
+                turn.state === 'delivering' && deliveryGraceEndsAtMs > now.getTime();
               const { observation, endReason, daemonAnswered, orphanedPrompt } =
                 await dependencies.observeSandboxTurn(
                   provider,
@@ -363,7 +379,10 @@ export async function reapAndReconcileSandboxes(
                   await redeliverAbandonedPrompt(dependencies, row, turn, endReason ?? 'abandoned');
                 } else if (
                   reconciliation === 'deferred' &&
-                  row.deadlineAt.getTime() <= now.getTime()
+                  // The same delivery-scoped bound as the grace above, for the
+                  // same reason: a box deadline four hours out is not evidence
+                  // that THIS delivery is still young.
+                  deliveryGraceEndsAtMs <= now.getTime()
                 ) {
                   // Unknown OpenCode state cannot renew itself forever. The
                   // original delivery grace has expired, so remove only this

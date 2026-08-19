@@ -8,7 +8,7 @@ import type {
 	TextPart,
 	UserMessage,
 } from "@opencode-ai/sdk/v2/client";
-import { ascendingId, Binary, useSyncStore } from "./sync-store";
+import { ascendingId, Binary, sameSessionStatus, useSyncStore } from "./sync-store";
 
 // ============================================================================
 // Fixtures — minimal-but-valid Message/Part objects matching the real SDK
@@ -2406,5 +2406,293 @@ describe("useSyncStore — sessionRevert is released with the session (clearSess
 		store.reset();
 
 		expect(useSyncStore.getState().sessionRevert).toEqual({});
+	});
+});
+
+// ============================================================================
+// setStatus — an OBSERVATION, never a heartbeat
+// ============================================================================
+
+/**
+ * Object identity is what `useSessionWorking` stamps a stream observation
+ * FROM: its effect re-runs on `[status, streamKey]`, and re-stamping restarts
+ * `STREAM_OBSERVATION_MAX_MS` from zero. So a writer that re-parses an
+ * equal-valued status every tick keeps the newest-observation clock pinned at
+ * "just now" forever, and the bound that is supposed to stop a dead stream
+ * from deciding is never reached — the latch, wearing a fresh timestamp.
+ *
+ * A value that did not change is not news. The store now says so.
+ */
+describe("useSyncStore — setStatus writes an observation, never a heartbeat", () => {
+	test("an equal value keeps the SAME object identity", () => {
+		const store = useSyncStore.getState();
+		store.setStatus("ses_1", { type: "busy" });
+		const first = useSyncStore.getState().sessionStatus.ses_1;
+
+		store.setStatus("ses_1", { type: "busy" });
+
+		expect(useSyncStore.getState().sessionStatus.ses_1).toBe(first);
+	});
+
+	test("a changed type mints a new object", () => {
+		const store = useSyncStore.getState();
+		store.setStatus("ses_1", { type: "busy" });
+		const first = useSyncStore.getState().sessionStatus.ses_1;
+
+		store.setStatus("ses_1", { type: "idle" });
+
+		expect(useSyncStore.getState().sessionStatus.ses_1).not.toBe(first);
+		expect(useSyncStore.getState().sessionStatus.ses_1).toEqual({ type: "idle" });
+	});
+
+	test("a changed retry field mints a new object", () => {
+		// `getRetryInfo`/`getRetryMessage` read `attempt`, `message` and `next`.
+		// A second attempt of the same retry is genuinely new news — the banner
+		// counts it down — so identity has to move even though `type` did not.
+		const store = useSyncStore.getState();
+		const retry: SessionStatus = {
+			type: "retry",
+			attempt: 1,
+			message: "upstream 503",
+			next: 1000,
+		};
+		store.setStatus("ses_1", retry);
+		const first = useSyncStore.getState().sessionStatus.ses_1;
+
+		store.setStatus("ses_1", { ...retry, attempt: 2 });
+
+		expect(useSyncStore.getState().sessionStatus.ses_1).not.toBe(first);
+		expect(useSyncStore.getState().sessionStatus.ses_1).toMatchObject({ attempt: 2 });
+	});
+
+	test("an equal retry value is still not news", () => {
+		const store = useSyncStore.getState();
+		const retry: SessionStatus = {
+			type: "retry",
+			attempt: 1,
+			message: "upstream 503",
+			next: 1000,
+		};
+		store.setStatus("ses_1", retry);
+		const first = useSyncStore.getState().sessionStatus.ses_1;
+
+		store.setStatus("ses_1", { ...retry });
+
+		expect(useSyncStore.getState().sessionStatus.ses_1).toBe(first);
+	});
+
+	test("a first status for a session is always news", () => {
+		useSyncStore.getState().setStatus("ses_fresh", { type: "idle" });
+		expect(useSyncStore.getState().sessionStatus.ses_fresh).toEqual({ type: "idle" });
+	});
+
+	test("one session's rewrite never disturbs another's identity", () => {
+		const store = useSyncStore.getState();
+		store.setStatus("ses_1", { type: "busy" });
+		store.setStatus("ses_2", { type: "busy" });
+		const other = useSyncStore.getState().sessionStatus.ses_2;
+
+		store.setStatus("ses_1", { type: "idle" });
+
+		expect(useSyncStore.getState().sessionStatus.ses_2).toBe(other);
+	});
+});
+
+describe("sameSessionStatus", () => {
+	test("compares exactly the fields the retry readers read", () => {
+		expect(sameSessionStatus({ type: "busy" }, { type: "busy" })).toBe(true);
+		expect(sameSessionStatus({ type: "busy" }, { type: "idle" })).toBe(false);
+		expect(sameSessionStatus(undefined, { type: "idle" })).toBe(false);
+		expect(sameSessionStatus(undefined, undefined)).toBe(true);
+
+		const retry: SessionStatus = {
+			type: "retry",
+			attempt: 1,
+			message: "upstream 503",
+			next: 1000,
+		};
+		expect(sameSessionStatus(retry, { ...retry })).toBe(true);
+		expect(sameSessionStatus(retry, { ...retry, attempt: 2 })).toBe(false);
+		expect(sameSessionStatus(retry, { ...retry, message: "gateway 429" })).toBe(false);
+		expect(sameSessionStatus(retry, { ...retry, next: 2000 })).toBe(false);
+	});
+});
+
+// ============================================================================
+// ONE prompt = ONE id = ONE bubble. The optimistic message is minted with the
+// WIRE id the inbox row carries, so the server's echo either confirms it in
+// place (same id) or supersedes it under a re-minted id that the store
+// aliases back to the original. And a message the control plane already holds
+// (an inbox row landed) is never swept by a local idle.
+// ============================================================================
+
+describe("useSyncStore — an echo under the SAME id confirms the optimistic message in place", () => {
+	function userMessageUpdated(id: string, sessionID = "ses_1") {
+		return {
+			id: "evt_x",
+			type: "message.updated",
+			properties: { info: userMessage(id, sessionID) },
+		} as never;
+	}
+
+	test("message.updated with the optimistic id keeps ONE message, and the idle sweep no longer touches it", () => {
+		const store = useSyncStore.getState();
+		store.optimisticAdd("ses_1", userMessage("msg_wire"), [
+			textPart("prt_client", "msg_wire", "hello"),
+		]);
+		store.markOptimisticDispatched("ses_1", "msg_wire");
+
+		store.applyEvent(userMessageUpdated("msg_wire"));
+
+		const ids = useSyncStore.getState().messages["ses_1"]?.map((m) => m.id) ?? [];
+		expect(ids).toEqual(["msg_wire"]);
+		// The optimistic text stands in until the real part lands.
+		expect(useSyncStore.getState().parts["msg_wire"]?.[0]).toMatchObject({ text: "hello" });
+		expect(useSyncStore.getState().hasOptimisticMessages("ses_1")).toBe(false);
+
+		// Confirmed by the runtime: a sweep is not allowed to delete it.
+		store.clearOptimisticMessages("ses_1");
+		expect(useSyncStore.getState().messages["ses_1"]?.map((m) => m.id)).toEqual(["msg_wire"]);
+	});
+
+	test("the first REAL part replaces the optimistic part instead of sitting beside it", () => {
+		const store = useSyncStore.getState();
+		store.optimisticAdd("ses_1", userMessage("msg_wire"), [
+			textPart("prt_client", "msg_wire", "hello"),
+		]);
+		store.markOptimisticDispatched("ses_1", "msg_wire");
+		store.applyEvent(userMessageUpdated("msg_wire"));
+
+		store.upsertPart("msg_wire", textPart("prt_server", "msg_wire", "hello"), "ses_1");
+
+		const parts = useSyncStore.getState().parts["msg_wire"] ?? [];
+		expect(parts.map((p) => p.id)).toEqual(["prt_server"]);
+	});
+
+	test("hydrate with the optimistic id confirms it too, and real parts win", () => {
+		const store = useSyncStore.getState();
+		store.optimisticAdd("ses_1", userMessage("msg_wire"), [
+			textPart("prt_client", "msg_wire", "hello"),
+		]);
+		store.markOptimisticDispatched("ses_1", "msg_wire");
+
+		store.hydrate("ses_1", [
+			{ info: userMessage("msg_wire"), parts: [textPart("prt_server", "msg_wire", "hello")] },
+		] as never);
+
+		const s = useSyncStore.getState();
+		expect(s.messages["ses_1"]?.map((m) => m.id)).toEqual(["msg_wire"]);
+		expect(s.parts["msg_wire"]?.map((p) => p.id)).toEqual(["prt_server"]);
+		expect(s.hasOptimisticMessages("ses_1")).toBe(false);
+	});
+});
+
+describe("useSyncStore — an echo under a RE-MINTED id is aliased to the optimistic id", () => {
+	function userMessageUpdated(id: string, sessionID = "ses_1") {
+		return {
+			id: "evt_x",
+			type: "message.updated",
+			properties: { info: userMessage(id, sessionID) },
+		} as never;
+	}
+
+	test("SSE supersede records origin ↔ echo both ways", () => {
+		const store = useSyncStore.getState();
+		store.optimisticAdd("ses_1", userMessage("msg_wire"), [
+			textPart("prt_client", "msg_wire", "hello"),
+		]);
+		store.markOptimisticDispatched("ses_1", "msg_wire");
+
+		store.applyEvent(userMessageUpdated("msg_reminted"));
+
+		const s = useSyncStore.getState();
+		expect(s.messages["ses_1"]?.map((m) => m.id)).toEqual(["msg_reminted"]);
+		expect(s.optimisticEchoOf("ses_1", "msg_wire")).toBe("msg_reminted");
+		expect(s.optimisticOriginOf("ses_1", "msg_reminted")).toBe("msg_wire");
+		expect(s.optimisticOriginOf("ses_1", "msg_wire")).toBeUndefined();
+	});
+
+	test("hydrate supersede records the alias as well", () => {
+		const store = useSyncStore.getState();
+		store.optimisticAdd("ses_1", userMessage("msg_wire"), [
+			textPart("prt_client", "msg_wire", "hello"),
+		]);
+		store.markOptimisticDispatched("ses_1", "msg_wire");
+
+		store.hydrate("ses_1", [{ info: userMessage("msg_reminted"), parts: [] }] as never);
+
+		const s = useSyncStore.getState();
+		expect(s.messages["ses_1"]?.map((m) => m.id)).toEqual(["msg_reminted"]);
+		expect(s.optimisticEchoOf("ses_1", "msg_wire")).toBe("msg_reminted");
+		expect(s.optimisticOriginOf("ses_1", "msg_reminted")).toBe("msg_wire");
+	});
+
+	test("aliases leave with the session", () => {
+		const store = useSyncStore.getState();
+		store.optimisticAdd("ses_1", userMessage("msg_wire"), []);
+		store.markOptimisticDispatched("ses_1", "msg_wire");
+		store.applyEvent(userMessageUpdated("msg_reminted"));
+		store.clearSession("ses_1");
+		expect(useSyncStore.getState().optimisticEchoOf("ses_1", "msg_wire")).toBeUndefined();
+	});
+});
+
+describe("useSyncStore — optimisticRemove is a no-op for a message the runtime confirmed", () => {
+	test("after a same-id echo the message is the transcript's; removing the queue row leaves it", () => {
+		const store = useSyncStore.getState();
+		store.optimisticAdd("ses_1", userMessage("msg_wire"), []);
+		store.markOptimisticDispatched("ses_1", "msg_wire");
+		store.applyEvent({
+			id: "evt_x",
+			type: "message.updated",
+			properties: { info: userMessage("msg_wire") },
+		} as never);
+
+		store.optimisticRemove("ses_1", "msg_wire");
+
+		expect(useSyncStore.getState().messages["ses_1"]?.map((m) => m.id)).toEqual(["msg_wire"]);
+	});
+});
+
+describe("useSyncStore — an INBOX-BACKED optimistic message survives the idle sweep", () => {
+	test("markOptimisticInboxBacked keeps it through clearOptimisticMessages; optimisticRemove still removes it", () => {
+		const store = useSyncStore.getState();
+		store.optimisticAdd("ses_1", userMessage("msg_wire"), [
+			textPart("prt_client", "msg_wire", "queued while asleep"),
+		]);
+		store.markOptimisticDispatched("ses_1", "msg_wire");
+		store.markOptimisticInboxBacked("ses_1", "msg_wire");
+		// A second, NOT inbox-backed one — the sweep still takes it.
+		store.optimisticAdd("ses_1", userMessage("msg_never_landed"), []);
+
+		store.clearOptimisticMessages("ses_1");
+
+		expect(useSyncStore.getState().messages["ses_1"]?.map((m) => m.id)).toEqual(["msg_wire"]);
+		expect(useSyncStore.getState().parts["msg_wire"]?.[0]).toMatchObject({
+			text: "queued while asleep",
+		});
+
+		store.optimisticRemove("ses_1", "msg_wire");
+		expect(useSyncStore.getState().messages["ses_1"] ?? []).toEqual([]);
+	});
+
+	test("an inbox-backed message is still superseded by its echo (SSE) — the backing never blocks confirmation", () => {
+		const store = useSyncStore.getState();
+		store.optimisticAdd("ses_1", userMessage("msg_wire"), [
+			textPart("prt_client", "msg_wire", "hi"),
+		]);
+		store.markOptimisticDispatched("ses_1", "msg_wire");
+		store.markOptimisticInboxBacked("ses_1", "msg_wire");
+
+		store.applyEvent({
+			id: "evt_x",
+			type: "message.updated",
+			properties: { info: userMessage("msg_reminted") },
+		} as never);
+
+		expect(useSyncStore.getState().messages["ses_1"]?.map((m) => m.id)).toEqual(["msg_reminted"]);
+		// Once superseded there is nothing left to protect — a later sweep is a no-op.
+		store.clearOptimisticMessages("ses_1");
+		expect(useSyncStore.getState().messages["ses_1"]?.map((m) => m.id)).toEqual(["msg_reminted"]);
 	});
 });

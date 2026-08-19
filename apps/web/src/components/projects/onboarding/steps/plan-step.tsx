@@ -33,7 +33,7 @@ type PlanChoice = 'kortix' | 'byok' | 'later';
  * `modal` is `null` and `openConnectProvider` opens nothing while
  * `handleContinue` never reaches `onContinue()`. This step passes no `onSkip`
  * to `StepShell`, so its primary button is the only control: an inferred id
- * strands the user on step 5 of 6.
+ * strands the user on step 4 of 5.
  */
 export function PlanStep({
   projectId,

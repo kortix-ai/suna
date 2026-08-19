@@ -3,11 +3,15 @@ import type { AbortSettlement } from '@kortix/sdk/react';
 import { stopThenSendNow, type StopThenSendNowDeps } from './session-chat';
 
 // T10: "Stop & send" used to gate its send on `waitForSessionIdle`,
-// which polls the sync store `applyOptimisticAbort` flips to idle
-// SYNCHRONOUSLY — before the abort request round-trips to the server. That
-// let the send race the still-in-flight abort. `stopThenSendNow` is the
-// extracted, framework-free orchestration that fixes this: it awaits the
-// real `AbortSettlement` the stop produces instead.
+// which polled the sync-store status slot — the slot the abort's optimistic
+// idle frame flipped SYNCHRONOUSLY, before the abort request round-tripped to
+// the server. That let the send race the still-in-flight abort.
+// `stopThenSendNow` is the extracted, framework-free orchestration that fixes
+// this: it awaits the real `AbortSettlement` the stop produces instead. The
+// `waitIdle` fallback is gone with the fabricated frame (C4): with the frame
+// the poll resolved on its first check at every reachable call site, and
+// without it the predicate is constant the other way — so a `null` settlement
+// simply dispatches. There is nothing to wait for.
 //
 // It also dispatches WITHOUT touching the session's inbox hold. "Send now" is
 // `POST .../prompts/:id/retry`, which promotes the row the user pointed at and
@@ -38,23 +42,19 @@ function baseDeps(overrides: Partial<StopThenSendNowDeps> = {}): StopThenSendNow
     isRunning: () => false,
     pendingSettlement: () => undefined,
     stop: async () => null,
-    waitIdle: async () => {},
     dispatch: async () => {},
     ...overrides,
   };
 }
 
 describe('stopThenSendNow', () => {
-  test('a send with no preceding stop is not delayed: stop() and waitIdle() are never called', async () => {
+  test('a send with no preceding stop is not delayed: stop() is never called', async () => {
     const calls: string[] = [];
     const deps = baseDeps({
       isRunning: () => false,
       stop: async () => {
         calls.push('stop');
         return { status: 'aborted' };
-      },
-      waitIdle: async () => {
-        calls.push('waitIdle');
       },
       dispatch: async () => {
         calls.push('dispatch');
@@ -141,7 +141,7 @@ describe('stopThenSendNow', () => {
     expect(calls).toEqual(['dispatch']);
   });
 
-  test('a `null` settlement (no trackable AbortSettlement) falls back to waitIdle before dispatching', async () => {
+  test('a `null` settlement (no trackable AbortSettlement) dispatches at once — there is nothing to wait for', async () => {
     const calls: string[] = [];
 
     await stopThenSendNow(
@@ -151,21 +151,18 @@ describe('stopThenSendNow', () => {
           calls.push('stop');
           return null;
         },
-        waitIdle: async () => {
-          calls.push('waitIdle');
-        },
         dispatch: async () => {
           calls.push('dispatch');
         },
       }),
     );
 
-    expect(calls).toEqual(['stop', 'waitIdle', 'dispatch']);
+    expect(calls).toEqual(['stop', 'dispatch']);
   });
 
   test('stop already issued (settlement pending, store already idle): send-now awaits the pending settlement instead of trusting isRunning()', async () => {
-    // Reproduces the reported race: `handleStop` runs `applyOptimisticAbort`,
-    // which flips the sync store to idle SYNCHRONOUSLY, then stashes the real
+    // Reproduces the reported race: `handleStop` files an abort receipt, which
+    // makes the projection answer idle at once, then stashes the real
     // `AbortSettlement` in `pendingAbortSettlementRef`. If the user then clicks
     // "Send now" on a queued row, `isRunning()` reads idle (false) — but a
     // stop is still in flight. `stopThenSendNow` must consult the pending
@@ -196,25 +193,6 @@ describe('stopThenSendNow', () => {
 
     settlement.resolve({ status: 'aborted' });
     await runPromise;
-
-    expect(calls).toEqual(['dispatch']);
-  });
-
-  test('a real (non-null) settlement never falls back to waitIdle', async () => {
-    const calls: string[] = [];
-
-    await stopThenSendNow(
-      baseDeps({
-        isRunning: () => true,
-        stop: async () => ({ status: 'aborted' }),
-        waitIdle: async () => {
-          calls.push('waitIdle');
-        },
-        dispatch: async () => {
-          calls.push('dispatch');
-        },
-      }),
-    );
 
     expect(calls).toEqual(['dispatch']);
   });

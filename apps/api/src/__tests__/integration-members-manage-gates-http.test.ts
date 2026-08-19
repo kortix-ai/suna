@@ -25,12 +25,17 @@ import { db } from '../shared/db';
 // project.write) was wrongly denied at the floor before its members.manage
 // grant was ever consulted. The fix lowers the floor to 'read' so the
 // members.manage leaf is the sole capability gate. (GET /access-requests also
-// GAINED the leaf assert — it previously ran on the floor alone, so a plain
-// editor could list pending requests; now it's manager-only like its siblings.)
+// GAINED the leaf assert — it previously ran on the floor alone, so a
+// write-capable non-manager could list pending requests; now it's manager-only
+// like its siblings.)
 const ACCOUNT = crypto.randomUUID();
 const PROJECT = crypto.randomUUID();
 const MANAGER = crypto.randomUUID();
-const EDITOR = crypto.randomUUID();
+// project.write WITHOUT project.members.manage. Until 2026-08-18 the built-in
+// `editor` role was exactly this shape; the role is gone, so the case is now
+// carried by a custom role — the combination still has to 403 on these routes.
+const WRITER = crypto.randomUUID();
+const WRITER_ROLE = crypto.randomUUID();
 const MEMBER = crypto.randomUUID();
 // The custom-role principal: no built-in project role at all — access is purely
 // an iam_policies grant of [project.read, project.members.manage] at project
@@ -66,15 +71,35 @@ beforeAll(async () => {
   });
   await db.insert(accountMembers).values([
     { userId: MANAGER, accountId: ACCOUNT, accountRole: 'member', isSuperAdmin: false },
-    { userId: EDITOR, accountId: ACCOUNT, accountRole: 'member', isSuperAdmin: false },
+    { userId: WRITER, accountId: ACCOUNT, accountRole: 'member', isSuperAdmin: false },
     { userId: MEMBER, accountId: ACCOUNT, accountRole: 'member', isSuperAdmin: false },
     { userId: CUSTOM, accountId: ACCOUNT, accountRole: 'member', isSuperAdmin: false },
   ]);
   await db.insert(projectMembers).values([
     { accountId: ACCOUNT, projectId: PROJECT, userId: MANAGER, projectRole: 'manager' },
-    { accountId: ACCOUNT, projectId: PROJECT, userId: EDITOR, projectRole: 'editor' },
     { accountId: ACCOUNT, projectId: PROJECT, userId: MEMBER, projectRole: 'member' },
   ]);
+  // Custom "writer" role — project.write WITHOUT members.manage (the shape the
+  // removed built-in `editor` used to have).
+  await db.insert(iamRoles).values({
+    roleId: WRITER_ROLE,
+    accountId: ACCOUNT,
+    key: `w-${WRITER_ROLE.slice(0, 6)}`,
+    name: 'Writer',
+    scopeType: 'project',
+  });
+  await db.insert(iamRoleActions).values([
+    { roleId: WRITER_ROLE, action: PROJECT_ACTIONS.PROJECT_READ },
+    { roleId: WRITER_ROLE, action: PROJECT_ACTIONS.PROJECT_WRITE },
+  ]);
+  await db.insert(iamPolicies).values({
+    accountId: ACCOUNT,
+    principalType: 'member',
+    principalId: WRITER,
+    roleId: WRITER_ROLE,
+    scopeType: 'project',
+    scopeId: PROJECT,
+  });
   // Custom "member manager" role — members.manage WITHOUT project.write.
   await db.insert(iamRoles).values({
     roleId: CUSTOM_ROLE,
@@ -138,7 +163,7 @@ function req(method: string, path: string, secret: string, body?: unknown) {
 // "You don't have permission …" 403 (see humanizePermissionDenial in
 // iam/dispatcher.ts — members.manage renders the friendly verb, not the raw
 // leaf). Because the floor is now 'read' (which ALL four principals hold), the
-// only 403 an editor/member can hit on these routes is the members.manage
+// only 403 a writer/member can hit on these routes is the members.manage
 // assert, and none of these routes entitlement-403 the free test account — so a
 // "permission" 403 here is unambiguously the members.manage gate. 400/404 (bad
 // body / missing resource) come only AFTER the gate passes.
@@ -174,21 +199,36 @@ describe('HTTP enforcement — project members.manage gates (floor lowered read;
       'POST',
       `/v1/projects/${PROJECT}/group-grants`,
       secret,
-      { group_id: GROUP, role: 'editor' },
+      { group_id: GROUP, role: 'member' },
     );
 
     expect(res.status).toBe(201);
     expect(await res.json()).toMatchObject({
       project_id: PROJECT,
       group_id: GROUP,
-      role: 'editor',
+      role: 'member',
     });
+  });
+
+  // The removed `editor` role is rejected on the WRITE path — never folded up
+  // to manager behind the caller's back.
+  test('a group-grant body asking for the removed `editor` role → 400', async () => {
+    const secret = await mint(MANAGER);
+    const res = await req(
+      'POST',
+      `/v1/projects/${PROJECT}/group-grants`,
+      secret,
+      { group_id: GROUP, role: 'editor' },
+    );
+
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: string }).error).toContain('manager|member');
   });
 
   for (const ep of ENDPOINTS) {
     describe(ep.name, () => {
-      test('EDITOR (project.write but NOT members.manage) → 403 on the members.manage leaf', async () => {
-        const secret = await mint(EDITOR);
+      test('WRITER (project.write but NOT members.manage) → 403 on the members.manage leaf', async () => {
+        const secret = await mint(WRITER);
         const res = await req(ep.method, ep.path(), secret, ep.body);
         expect(await deniedByLeaf(res)).toBe(true);
       });

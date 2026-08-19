@@ -1,7 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 import { projectWorking, type SessionTurn } from '@kortix/sdk';
 
-import { serverHoldsOpenTurn, sessionComposerReadiness } from './session-composer-readiness';
+import {
+  resolveLastTurnWorking,
+  serverHoldsOpenTurn,
+  sessionComposerReadiness,
+} from './session-composer-readiness';
 
 describe('sessionComposerReadiness', () => {
   test('a ready runtime leaves the composer alone — no notice', () => {
@@ -253,5 +257,37 @@ describe('serverHoldsOpenTurn', () => {
     });
 
     expect(readiness.notice).toMatch(/lost contact/i);
+  });
+});
+
+describe('resolveLastTurnWorking', () => {
+  // The last turn's shimmer is the session's working state, and for a Kortix
+  // session that answer is the projection (`useSessionWorking` → GET .../turn),
+  // never the raw SSE slot this tab can miss frames from. This is the decision
+  // that removes the "last turn shimmers for ever" symptom: a dropped
+  // end-of-turn frame latches the raw slot busy, and before this the turn card
+  // read that slot directly and shimmered over a finished answer until reload.
+  test('a Kortix session answers from the projection — a latched-busy raw slot cannot shimmer a settled turn', () => {
+    expect(
+      resolveLastTurnWorking({ isChildSession: false, projectionBusy: false, rawSlotBusy: true }),
+    ).toBe(false);
+  });
+
+  test('the projection working shimmers the last turn, whatever the raw slot holds', () => {
+    expect(
+      resolveLastTurnWorking({ isChildSession: false, projectionBusy: true, rawSlotBusy: false }),
+    ).toBe(true);
+  });
+
+  test('a child session has no Kortix row for /turn to answer about, so it keeps the raw slot', () => {
+    // Same split `session-layout.tsx` makes for its busy indicator: a transient
+    // sub-session's projection is disabled (no projectSessionId), so its
+    // stream slot is the only witness it has.
+    expect(
+      resolveLastTurnWorking({ isChildSession: true, projectionBusy: false, rawSlotBusy: true }),
+    ).toBe(true);
+    expect(
+      resolveLastTurnWorking({ isChildSession: true, projectionBusy: true, rawSlotBusy: false }),
+    ).toBe(false);
   });
 });

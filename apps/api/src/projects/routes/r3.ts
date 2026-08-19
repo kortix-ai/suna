@@ -176,7 +176,7 @@ projectsApp.openapi(
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   // Capability gate: building a sandbox template provisions infra. Gated on
   // project.customize.write so a custom role can withhold it (humans) AND the
-  // agent-grant fold applies (agent sessions). Editors hold it by default.
+  // agent-grant fold applies (agent sessions). Managers hold it by default.
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
 
   const row = await getTemplateById(templateId);

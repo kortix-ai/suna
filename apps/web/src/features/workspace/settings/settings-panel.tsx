@@ -24,6 +24,7 @@ import { DEFAULT_SETTINGS_TAB, type SettingsTab } from './settings-tabs';
 import { ConnectedAccountsTab } from './tabs/connected-tab';
 import { PreferencesTab } from './tabs/preferences-tab';
 import { ProfileTab } from './tabs/profile-tab';
+import { TokensTab } from './tabs/tokens-tab';
 import type { RailGroup, RailItem } from './type';
 import { useSettingsAccountId } from './use-settings-account-id';
 
@@ -46,6 +47,10 @@ export const ACCOUNT_SCOPED_SETTINGS_TABS: readonly SettingsTab[] = [
   'profile',
   'preferences',
   'connected',
+  // Your own API keys are yours in ONE account (the read is account-scoped —
+  // see `tabs/tokens-tab.tsx`), but never in one project, so this renders with
+  // or without a project open like the three above it.
+  'tokens',
 ];
 
 export interface SettingsTabAllowedParams {
@@ -412,9 +417,12 @@ function SettingsTabPane({
   if (item.tab === 'connected') {
     return <ConnectedAccountsTab accountId={accountId} />;
   }
+  if (item.tab === 'tokens') {
+    return <TokensTab accountId={accountId} />;
+  }
 
-  // Unreachable while `SettingsTab` has exactly three members, and kept for
-  // the fourth: a tab added to the union with no branch above renders its own
+  // Unreachable while every `SettingsTab` member has a branch above, and kept
+  // for the next one: a tab added to the union with no branch renders its own
   // name rather than an empty pane.
   return (
     <div className="p-6">

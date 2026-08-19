@@ -52,7 +52,7 @@ const OVERFLOW_SLACK = 4;
  * out of the identical `setState`, and scrolling past a command output mutates
  * nothing at all.
  *
- * DOM-free on purpose, in the spirit of `turn-anchor.ts`: the caller is a
+ * DOM-free on purpose: the caller is a
  * `ResizeObserver`, and effects never commit under `renderToStaticMarkup` — the
  * only render this app can test. Keeping the decision here is what lets the
  * zero-height case have a test that can fail.

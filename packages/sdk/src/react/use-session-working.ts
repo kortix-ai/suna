@@ -103,6 +103,10 @@ export interface UseSessionWorkingOptions {
   runtimeSessionId?: string | null;
 }
 
+/** How many live `useSessionWorking` mounts observe each session — the guard
+ *  that makes the unmount pruning below safe under multiple observers. */
+const workingObserverCounts = new Map<string, number>();
+
 export function useSessionWorking(
   projectId: string,
   sessionId: string,
@@ -121,6 +125,24 @@ export function useSessionWorking(
   const optimistic = useSessionWorkingStore((state) => state.receipts[sessionId] ?? null);
   const abort = useSessionWorkingStore((state) => state.aborts[sessionId] ?? null);
   const inbox = useSessionWorkingStore((state) => state.inbox[sessionId]);
+
+  // Leak hygiene: drop the session's inputs when the LAST observer unmounts.
+  // Refcounted, because several places mount this hook for one session
+  // (`useSession`, the composer, the session panel) — a single unmount while
+  // the others are live must never delete the receipt a send is standing on.
+  useEffect(() => {
+    if (!sessionId) return;
+    workingObserverCounts.set(sessionId, (workingObserverCounts.get(sessionId) ?? 0) + 1);
+    return () => {
+      const next = (workingObserverCounts.get(sessionId) ?? 1) - 1;
+      if (next > 0) {
+        workingObserverCounts.set(sessionId, next);
+        return;
+      }
+      workingObserverCounts.delete(sessionId);
+      useSessionWorkingStore.getState().clearSession(sessionId);
+    };
+  }, [sessionId]);
 
   // Stamped when THIS tab observed the frame — the store keeps no arrival time,
   // and an unstamped frame cannot be ranked against a server read. Written in

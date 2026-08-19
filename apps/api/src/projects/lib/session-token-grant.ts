@@ -194,14 +194,16 @@ async function applyResolvedGrant(
  * rather than papered over; the single-prompt path (every ordinary session) is
  * correct.
  */
-export async function remintGrantForAgentSwitch(input: {
-  projectId: string;
-  sessionId: string;
-  /** `project_sessions.agent_name` — the agent the session was CREATED with. */
-  sessionAgent: string;
-  /** The agent this prompt asked to run, verbatim from the body. */
-  requestedAgent: string | null;
-}): Promise<RemintDecision> {
+export async function remintGrantForAgentSwitch(
+  input: {
+    projectId: string;
+    sessionId: string;
+    /** `project_sessions.agent_name` — the agent the session was CREATED with. */
+    sessionAgent: string;
+    /** The agent this prompt asked to run, verbatim from the body. */
+    requestedAgent: string | null;
+  },
+): Promise<RemintDecision> {
   const requested = input.requestedAgent?.trim();
   // The agent that will ACTUALLY run. `project_sessions.agent_name` is the
   // create-time agent and nothing ever updates it, so it is the fallback, not
@@ -210,6 +212,19 @@ export async function remintGrantForAgentSwitch(input: {
     requested && requested !== DEFAULT_AGENT_SENTINEL ? requested : input.sessionAgent;
 
   const stored = await loadStoredSessionGrant(input.sessionId);
+  const heldAgent = stored?.agent?.trim() || input.sessionAgent;
+  const isSwitch = heldAgent !== runningAgent;
+  // Synchronous for the same-agent case too — every ordinary turn. This ran in
+  // the background for one release (the manifest read is a git fetch of the
+  // project mirror, ~0.8s on the path of every prompt) and the security review
+  // was right to refuse it: generic Kortix CLI/API authorization reads
+  // `account_tokens.agent_grant` straight from the token row (`middleware/
+  // auth.ts` → `requireScope`), so a `kortix.yaml` that NARROWED the running
+  // agent's `kortixCli` in the previous turn was still enforced with the old,
+  // broader grant for the first calls of the next turn. Only the connector
+  // gateway reconciles at call time (`reconcileStoredSessionAgentGrant`).
+  // The prompt must not be forwarded before the row is rewritten.
+  void isSwitch;
   const running = await resolveCurrentGrant({
     ...input,
     runningAgent,

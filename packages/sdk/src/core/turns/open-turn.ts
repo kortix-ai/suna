@@ -63,28 +63,11 @@ export function isRetryableTurnError(error: unknown): boolean {
 }
 
 /**
- * Is the last assistant message still open?
- *
- * A turn ends two ways: it completes, or it is terminally interrupted. A
- * retryable error is NEITHER — the same message is still being written.
- */
-export function hasOpenAssistantTurn(
-  messages: readonly OpenTurnMessageLike[] | undefined,
-): boolean {
-  if (!messages?.length) return false;
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const info = messages[i].info;
-    if (info.role !== 'assistant') continue;
-    return !info.time?.completed && (!info.error || isRetryableTurnError(info.error));
-  }
-  return false;
-}
-
-/**
  * Is the last assistant turn open BECAUSE the provider is being retried?
  *
- * The narrow half of `hasOpenAssistantTurn`, and the only half that carries
- * proof. That predicate is true for two very different things:
+ * The narrow half of the old open-turn predicate, and the only half that
+ * carries proof. "Is the last assistant message merely unfinished?" is true
+ * for two very different things:
  *
  *  * a turn mid-retry — OpenCode stamped `data.isRetryable === true` and is
  *    still writing the same message. Evidence of a LIVE turn, whatever the

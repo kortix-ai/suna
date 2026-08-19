@@ -18,7 +18,7 @@ import { useSettingsPanelStore } from '@/stores/settings-panel-store';
  * The one project-configuration entry in the sidebar:
  * ProjectCustomizeNavItem, top of the panel under New session, navigating to
  * the capability pages (Models / Connectors / Agents / Skills / Triggers /
- * Secrets / Members / Settings). Gated, because those pages can 403.
+ * Secrets / Settings). Gated, because those pages can 403.
  *
  * The bottom-of-footer "Settings" row that used to sit beside it is gone
  * (Jay, 2026-08-17): it opened the same User Settings overlay a click on the
@@ -65,9 +65,6 @@ export const TAB_PREFERENCE: readonly { key: CapabilityTab['key']; action: strin
   // same leaf the Connectors row above already probes, so folding it in
   // removed a duplicate probe rather than a gate.
   { key: 'secrets', action: PROJECT_ACTIONS.PROJECT_SECRET_READ },
-  // Members graduated out of the Settings overlay the same way; its read leaf
-  // is unchanged from `CUSTOMIZE_SECTION_ACCESS.members.read`.
-  { key: 'members', action: PROJECT_ACTIONS.PROJECT_MEMBERS_READ },
   // Settings (`/projects/<id>/config`) holds the project configuration that
   // did not earn its own top-level tab. It reuses `project.customize.write`,
   // the SAME leaf the row itself gates on above, rather than inventing a
@@ -92,8 +89,7 @@ function useCapabilityTab(projectId: string | undefined): CapabilityTab['key'] |
   const canSkills = useProjectCan(projectId, TAB_PREFERENCE[3].action);
   const canTriggers = useProjectCan(projectId, TAB_PREFERENCE[4].action);
   const canSecrets = useProjectCan(projectId, TAB_PREFERENCE[5].action);
-  const canMembers = useProjectCan(projectId, TAB_PREFERENCE[6].action);
-  const canConfig = useProjectCan(projectId, TAB_PREFERENCE[7].action);
+  const canConfig = useProjectCan(projectId, TAB_PREFERENCE[6].action);
 
   const probes = [
     canModels,
@@ -102,7 +98,6 @@ function useCapabilityTab(projectId: string | undefined): CapabilityTab['key'] |
     canSkills,
     canTriggers,
     canSecrets,
-    canMembers,
     canConfig,
   ];
   const hit = probes.findIndex((p) => p.allowed || p.isLoading);
@@ -141,7 +136,7 @@ export function useSettingsKeyboardShortcut() {
  * Customize — the top-of-panel entry, mounted directly under New session. It
  * navigates to `/projects/<id>/customize`, the Customize INDEX — a card grid
  * over every top-level capability tab (Connectors / Agents / Skills /
- * Triggers / Models / Secrets / Members / Settings) — rather than
+ * Triggers / Models / Secrets / Settings) — rather than
  * jumping straight into whichever tab the caller happens to be able to read
  * first. The old jump-to-first-tab behavior meant most people never discovered
  * the other tabs unless they went looking; landing on the index instead
@@ -149,24 +144,25 @@ export function useSettingsKeyboardShortcut() {
  *
  * Gated TWICE, on two different questions:
  *
- *  1. Can this caller reach the Customize surface at all? `project.customize.read`
- *     — it sits in `PROJECT_MEMBER_BASELINE` (`apps/api/src/iam/role-perms.ts`),
- *     so every project role, plain Member included, sees this row. This was
- *     `.write` until an audit surfaced it as a live bug, not a design call
- *     that still held up: Member is NOT "look but never touch" here — the
- *     Member baseline already includes browsing the Connectors catalogue,
- *     seeing the Agent roster, and firing Triggers on demand
- *     (`PROJECT_MEMBER_EXTRAS`). A `.write`-gated row hid a surface the
- *     caller could already use once they got there, with no discovery path
- *     to it apart from a bookmarked URL — direct navigation to
- *     `/projects/<id>/customize` already worked and always had, the row was
- *     the only thing that didn't. `.write` still gates every individual
- *     mutation on every page beneath this row (each tab, and the
- *     Settings/config tab's own sections, already probe their own write
- *     leaf) — this fixes visibility of the entry point, not what a Member
- *     can change once inside it. Same pattern the Settings tab's own
- *     sub-nav already uses for the identical reason, see
- *     `CUSTOMIZE_SECTION_ACCESS` in `lib/project-actions.ts`.
+ *  1. Can this caller reach the Customize surface at all?
+ *     `project.customize.read` — the one leaf that answers "may this person
+ *     open Customize", and the surface gate every other Customize entry point
+ *     now shares: this row, the project-home setup tiles
+ *     (`project-layout/project-home.tsx`), and the capability tab bar itself
+ *     (`capabilities/shared/capability-tabs.tsx`).
+ *
+ *     It is `.read`, not `.write`: `.write` conflated "may see the surface"
+ *     with "may change things on it", so a role that can browse a tab was
+ *     denied the only discovery path to it. `.write` still gates every
+ *     individual mutation on every page beneath this row (each tab, and the
+ *     Settings/config tab's own sections, already probe their own write leaf).
+ *
+ *     It lives in `MANAGER_EXTRAS`, not `PROJECT_MEMBER_BASELINE`
+ *     (`apps/api/src/iam/role-perms.ts`, moved there by #6522 along with
+ *     connector/skill/file/secret read): a plain project `member` is a read +
+ *     RUN role and reaches NO part of Customize by default, so this row is
+ *     absent for them — which is the whole point, since every page under it
+ *     403s on load.
  *  2. Does at least one tab exist for them to land on once there?
  *     `useCapabilityTab()` still probes each tab's own read leaf — a caller
  *     denied every single one gets no row at all, rather than a link to an

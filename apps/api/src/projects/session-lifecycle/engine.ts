@@ -6,8 +6,10 @@ import {
   sessionLifecycleCommands,
   sessionSandboxes,
 } from '@kortix/db';
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { type SQL, and, desc, eq, gte, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
+import { ProvisionTimeline } from '../../platform/services/provision-timeline';
+import { WIRE_ID_PLACED_HEADER } from '../../sandbox-proxy/prompt-wire-id-repair';
 import { bindChatThread } from '../../channels/slack/binding';
 import { config } from '../../config';
 import { logger } from '../../lib/logger';
@@ -40,6 +42,8 @@ import {
   claimDueLifecycleCommands,
   enqueueContinueSessionCommand,
   markCommandFailed,
+  markCommandForwarded,
+  promoteNextInboxRow,
   markCommandQueued,
   markCommandSucceeded,
   requeueForAdmission,
@@ -50,8 +54,9 @@ import type {
   PromptPartWire,
   QueuedContinueSessionPayload,
 } from './store';
-import { admitInboxPrompt } from './inbox-admission';
+import { admitInboxPrompt, sessionHoldsLiveTurn } from './inbox-admission';
 import {
+  MAX_WIRE_ID_CLOCK_CORRECTION,
   WIRE_ID_TIME_MASK,
   WIRE_ID_TIME_SCALE,
   mintWireMessageId,
@@ -362,6 +367,7 @@ export async function continueSession(
   // loop), just not across separate invocations, which those callers never
   // rely on for dedupe.
   commandId?: string,
+  tl?: ProvisionTimeline,
 ): Promise<SessionDeliveryOutcome> {
   const { sessionId, text } = command;
   const idempotencyKey = commandId ?? randomUUID();
@@ -437,12 +443,49 @@ export async function continueSession(
     });
   };
 
+  tl?.mark('session-read');
+
+  // FAST PATH — the box is already awake. `openSession` is /start: a provider
+  // status call plus a daemon health probe, ~0.5–0.9s per delivery even when
+  // nothing needs waking, and it ran on EVERY queued message. When the session
+  // row is running, its sandbox row is active and the OpenCode pin exists, the
+  // delivery target is fully known from the DB; the POST goes through the
+  // proxy, whose own wake-and-retry loop and `deliverWithRetry.reopen` (the
+  // full open) cover a box that turns out to be asleep after all. A cold or
+  // stopping session takes the slow path below exactly as before.
+  const awake = await awakeDeliveryTarget(sessionId);
+  if (awake && !command.opencodeEnv) {
+    tl?.mark('open-ready-fast');
+    return deliverWithRetry({
+      sessionId,
+      opened: awake,
+      reopen: async () => {
+        const healed = await openOnce();
+        if (!healed) return null;
+        return {
+          stage: healed.stage,
+          externalId: sandboxExternalId(healed),
+          opencodeSessionId: healed.opencode_session_id,
+        };
+      },
+      send: (externalId, runtimeId) =>
+        postPrompt(externalId, runtimeId, text, userId, sessionId, idempotencyKey, {
+          parts: command.parts,
+          overrides: command.overrides,
+          wireMessageId: command.wireMessageId,
+        }),
+    });
+  }
+
   const deadline = Date.now() + READY_DEADLINE_MS;
   let opened: Awaited<ReturnType<typeof openOnce>>;
   for (;;) {
     opened = await openOnce();
     if (!opened) return 'no-session';
-    if (opened.stage === 'ready') break;
+    if (opened.stage === 'ready') {
+      tl?.mark('open-ready');
+      break;
+    }
     if (opened.stage === 'failed' || opened.stage === 'stopped') return 'failed';
     if (Date.now() >= deadline) {
       console.warn('[session-lifecycle] runtime not ready before delivery deadline', {
@@ -505,6 +548,7 @@ export async function continueSession(
     opencodeSessionId: o.opencode_session_id,
   });
 
+  tl?.mark('env-sync');
   return deliverWithRetry({
     sessionId,
     opened: toTarget(opened),
@@ -668,6 +712,27 @@ export async function drainSessionLifecycleQueue(
  * (the same bound
  * `UNDELIVERED_PROMPT_STARVATION_MS` in `undelivered-prompts.ts` treats as a
  * dead scheduler) can outrun this — an accepted risk, not a silent one.
+ *
+ * T13b — why a FORWARDED row (one that stays open after a successful delivery,
+ * see `markCommandForwarded`) still cannot be delivered twice. It needs no new
+ * mechanism, and this is the audit:
+ *
+ *  - Every inbox delivery carries `Idempotency-Key: <commandId>` (`:r<n>` on a
+ *    redelivery), which is `promptDeliveryKey`'s HIGHEST precedence — the
+ *    wire-id and content-hash tiers are never even reached for one. Two
+ *    forwards of one row therefore collide on that key and the second is
+ *    answered `200 {"deduplicated":true}` for `DEDUPE_TTL_MS`.
+ *  - A forwarded row is `succeeded`, and `claimDueLifecycleCommands` claims
+ *    only `queued` rows plus `running` ones whose lock died. No drain can
+ *    re-claim it, so there is no second forward to dedupe in the first place.
+ *  - `reconcileForwardedPrompts` only ever CLOSES rows. It has no delivery
+ *    path at all.
+ *
+ * The one shape that does re-POST is a redelivery, and it changes both halves
+ * on purpose — the key (`:r<n>`) and the wire id (`remintWireMessageId`) —
+ * because it is repairing a delivery the daemon proved never ran. That path is
+ * guarded by the transcript read below: an assistant reply parented on any id
+ * this prompt was delivered under drops the redelivery.
  */
 /**
  * T22 — staged-revert guard for the queued `continue_session` backstop.
@@ -756,15 +821,26 @@ interface InboxTranscriptState {
  * no new client. Fails OPEN (`read: false`) on every error: a transient read
  * failure must never block a prompt, and every caller has its own safe default.
  */
+/** Newest-N read for placement. Only the tip decides where a re-mint lands,
+ *  and a first delivery has no delivered id an `answered` check could match. */
+const INBOX_TRANSCRIPT_TIP_LIMIT = 8;
+
 async function readInboxTranscriptState(
   row: SessionLifecycleCommandRow,
   deliveredIds: string[],
+  opts: { full?: boolean } = {},
 ): Promise<InboxTranscriptState> {
   const empty: InboxTranscriptState = { newest: null, answered: false, read: false };
   try {
     const resolved = await queuedContinueOpencodeEndpoint(row);
     if (!resolved) return empty;
-    const url = `${resolved.endpoint.url}/session/${encodeURIComponent(resolved.opencodeSessionId)}/message?directory=${encodeURIComponent(WORKSPACE)}`;
+    // A FULL read only when this row has already been posted once (a
+    // redelivery / re-POST), where the `answered` guard needs the reply that
+    // may sit anywhere in the transcript. The ordinary case — a first delivery
+    // placing its id above a live turn — needs the tip only, and the full read
+    // of a long session was ~1s of dead air on every queued message.
+    const limit = opts.full ? '' : `&limit=${INBOX_TRANSCRIPT_TIP_LIMIT}`;
+    const url = `${resolved.endpoint.url}/session/${encodeURIComponent(resolved.opencodeSessionId)}/message?directory=${encodeURIComponent(WORKSPACE)}${limit}`;
     const res = await fetch(url, {
       method: 'GET',
       headers: sandboxRuntimeRequestHeaders(resolved.endpoint.headers),
@@ -795,6 +871,72 @@ async function readInboxTranscriptState(
       error: err instanceof Error ? err.message : String(err),
     });
     return empty;
+  }
+}
+
+/**
+ * How far back the inbox's own delivered ids are worth reading.
+ *
+ * DERIVED, not chosen: `MAX_WIRE_ID_CLOCK_CORRECTION` is the widest lift
+ * `mintWireMessageId` will accept, so an id older than that cannot move a mint
+ * at all. Bounding the scan to it keeps a long-lived session's row history out
+ * of every re-mint, and the two cannot drift apart.
+ */
+const DELIVERED_WIRE_ID_FLOOR_WINDOW_MS = Number(
+  MAX_WIRE_ID_CLOCK_CORRECTION / WIRE_ID_TIME_SCALE,
+);
+
+/**
+ * The newest wire id THIS SESSION has already put on the wire, read from our
+ * own rows rather than from OpenCode's transcript.
+ *
+ * The clock is decoded IN SQL rather than by sorting the ids as text: the id's
+ * 12-char prefix is hex, and text ordering under a non-C collation is not the
+ * ordering of the number it encodes.
+ *
+ * Fails OPEN (`null`), like every other read on this path: a floor that cannot
+ * be read must not block a prompt, and the transcript floor still applies.
+ */
+async function readDeliveredWireIdFloor(
+  row: SessionLifecycleCommandRow,
+): Promise<bigint | null> {
+  if (!row.sessionId) return null;
+  // `substr(id, 5, 12)` skips the `msg_` prefix. `lpad` to 16 hex chars makes
+  // the value a legal `bit(64)`, which is the only width with a bigint cast.
+  const clock = (source: SQL) => sql`CASE
+    WHEN ${source} ~ '^msg_[0-9a-f]{12}'
+    THEN ('x' || lpad(substr(${source}, 5, 12), 16, '0'))::bit(64)::bigint
+  END`;
+  try {
+    const [found] = await db
+      .select({
+        newest: sql<string | number | null>`GREATEST(
+          max(${clock(sql`${sessionLifecycleCommands.payload}->>'wireMessageId'`)}),
+          max(${clock(sql`${sessionLifecycleCommands.payload}->>'redeliveredMessageId'`)}),
+          max(${clock(sql`${sessionLifecycleCommands.result}->>'forwarded_message_id'`)}))`,
+      })
+      .from(sessionLifecycleCommands)
+      // Served by idx_session_lifecycle_commands_session.
+      .where(
+        and(
+          eq(sessionLifecycleCommands.sessionId, row.sessionId),
+          eq(sessionLifecycleCommands.commandType, 'continue_session'),
+          gte(
+            sessionLifecycleCommands.updatedAt,
+            new Date(Date.now() - DELIVERED_WIRE_ID_FLOOR_WINDOW_MS),
+          ),
+        ),
+      )
+      .limit(1);
+    if (found?.newest === null || found?.newest === undefined) return null;
+    return BigInt(found.newest);
+  } catch (err) {
+    console.warn('[session-lifecycle] delivered wire-id floor read failed — using the transcript', {
+      sessionId: row.sessionId,
+      commandId: row.commandId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return null;
   }
 }
 
@@ -837,7 +979,17 @@ async function remintWireMessageId(
     : // OpenCode's own minting rule, so an id it wrote a second ago is still
       // beaten: `Date.now()` scaled into the id clock, with no backdate.
       (BigInt(Date.now()) * WIRE_ID_TIME_SCALE) & WIRE_ID_TIME_MASK;
-  const newest = floor !== null && (submitted === null || floor > submitted) ? floor : submitted;
+  // THE TRANSCRIPT IS NOT THE ONLY FLOOR — it lags. OpenCode persists a
+  // mid-turn user message ~4s after the POST (measured against a real sandbox
+  // in `integration-inbox-midturn-forward.test.ts`), and two prompts sent
+  // inside that window read the SAME `newest` and mint the SAME clock. The
+  // user's own two messages then sort by 14 random base62 characters: either
+  // they run in the wrong order, or the loser sorts under an assistant reply
+  // and OpenCode reads it as already answered and never runs it. The inbox
+  // already knows every id it put on the wire; that is the missing floor.
+  const delivered = await readDeliveredWireIdFloor(row);
+  const known = delivered !== null && (floor === null || delivered > floor) ? delivered : floor;
+  const newest = known !== null && (submitted === null || known > submitted) ? known : submitted;
 
   const minted = mintWireMessageId({ nowMs: Date.now(), newestKnownTime: newest });
   if (newest !== null && minted.time <= newest) {
@@ -926,18 +1078,24 @@ export async function executeQueuedContinue(
     return 'failed';
   }
 
-  // ADMISSION FIRST, before any side effect. A prompt that arrives while the
-  // session holds live turn authority — or behind an older prompt of its own —
-  // waits instead of aborting the turn in progress. The refusal gives the
-  // claim's attempt increment back, so waiting can never dead-letter a prompt.
+  // ADMISSION FIRST, before any side effect. A prompt that arrives behind an
+  // older prompt of its own session — or beside a sibling already on the wire —
+  // waits, so the user's messages keep the order they were typed in. A live
+  // turn is NOT one of those reasons any more. The refusal gives the claim's
+  // attempt increment back, so waiting can never dead-letter a prompt.
   //
   // Wrapped: this row is CLAIMED (`running`), and a read that throws out of
   // here would strand it there — where nothing reclaims it until its lock
   // expires, while `older_prompt_pending` blocks every later prompt of the
   // session behind it. A failed read is a retryable failure, not a wedge.
+  // Delivery timeline: one structured line per row (`[provision-timeline]
+  // deliver <commandId>`), so "how long did a send take, and where" is a log
+  // read instead of a guess. Same shape as the provision timeline.
+  const tl = new ProvisionTimeline(row.commandId, 'deliver');
   let admission: Awaited<ReturnType<typeof admitInboxPrompt>>;
   try {
     admission = await admitInboxPrompt(row);
+    tl.mark('admission');
   } catch (err) {
     await markCommandFailed(
       row.commandId,
@@ -1026,7 +1184,14 @@ export async function executeQueuedContinue(
   // refused row could never be retried, because retrying re-stamps the very
   // marker the refusal reads.
   const mayCommitStagedRevert = !!payload.clientMessageId && (promoted || !waited);
-  if (!mayCommitStagedRevert && (await queuedContinueHasStagedRevert(row))) {
+  // Two independent reads of the same box — the staged-revert flag and the
+  // transcript tip (below) — used to run one after the other. Started here,
+  // awaited together: they cost one round-trip instead of two.
+  const stagedRevertPromise = mayCommitStagedRevert
+    ? Promise.resolve(false)
+    : queuedContinueHasStagedRevert(row);
+  /** The row is behind a staged revert: fail or skip it, per the producer. */
+  const settleStagedRevert = async (): Promise<'succeeded' | 'failed' | null> => {
     // A COMPOSER prompt is failed, never dropped. `listInboxPrompts` keeps
     // `failed`/`dead_lettered` rows, so the user's text stays on screen with
     // its reason and a retry button that promotes it past this guard. Silently
@@ -1050,31 +1215,72 @@ export async function executeQueuedContinue(
       row.sessionId,
     );
     return 'succeeded';
-  }
+  };
 
   // WHICH WIRE ID THIS ATTEMPT DELIVERS WITH.
   //
   // The client's id is used verbatim only when it is still correctly placed:
-  // this prompt went out on its first claim, without ever waiting. Two things
-  // invalidate it, and both are ordinary rather than exotic:
+  // this prompt goes out on its first claim, into a session that has written
+  // nothing since the user pressed Enter. Three things invalidate it, and all
+  // three are ordinary rather than exotic:
   //
+  //  - a TURN IS LIVE. The turn has been writing higher ids since it started,
+  //    and the client's id is its browser's clock with no lift against anything
+  //    (`ascendingId`), so a browser running behind the sandbox delivers an id
+  //    that sorts BELOW them — which OpenCode accepts and silently never runs.
+  //    This is the flagship "type while it works" path. It used to re-mint by
+  //    being REFUSED admission (`turn_active` stamped `remintOnDelivery`); with
+  //    the refusal gone it has to ask the question directly;
   //  - the prompt WAITED (`result.admission_reason` is stamped by every
-  //    admission refusal). It queued behind a live turn that has been writing
-  //    higher ids ever since, so the submitted id now sorts below them and
-  //    OpenCode would read it as already answered — the flagship "queue while
-  //    busy" path, on every send;
+  //    admission refusal), so something else held the wire while ids moved on;
   //  - the prompt is a REDELIVERY. The abandoned attempt may already have
   //    persisted its user message under that id.
   //
-  // Both re-mint against the root's current newest id, from ONE read that also
-  // answers "did this prompt already run?".
+  // All three re-mint against the root's current newest id, from ONE read that
+  // also answers "did this prompt already run?".
+  //
+  // The authority read is wrapped: it is one indexed row, and a read that
+  // throws must not strand a CLAIMED row. Unreadable means UNPROVEN, so it
+  // re-mints — one transcript read, against a placement bug that loses the
+  // user's message with nothing but a server-side log to show for it.
   const redeliveries = Number(payload.redeliveries ?? 0);
+  // How many times this row has already been POSTed. Every one of them is a
+  // reason to re-mint, for the same reason a redelivery is: OpenCode already
+  // holds a message under the previous id.
+  const deliveryAttempt = Number(payload.deliveryAttempt ?? 0);
+  // Asked only when nothing else has already decided to re-mint, and only for a
+  // row that HAS a client id to be wrong about: an automation prompt carries
+  // none, and every id-less producer would pay for this read for nothing.
+  const remintKnown = deliveryAttempt > 0 || redeliveries > 0 || waited;
+  let turnLive = false;
+  if (payload.wireMessageId && !remintKnown) {
+    try {
+      turnLive = await sessionHoldsLiveTurn(row.sessionId);
+    } catch (err) {
+      console.warn('[session-lifecycle] turn-authority read failed — re-minting the wire id', {
+        sessionId: row.sessionId,
+        commandId: row.commandId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      turnLive = true;
+    }
+  }
   let wireMessageId = payload.wireMessageId;
-  if (payload.wireMessageId && (redeliveries > 0 || waited)) {
+  if (payload.wireMessageId && (remintKnown || turnLive)) {
     const deliveredIds = [payload.wireMessageId, payload.redeliveredMessageId].filter(
       (id): id is string => typeof id === 'string' && id.length > 0,
     );
-    const transcript = await readInboxTranscriptState(row, deliveredIds);
+    const transcriptPromise = readInboxTranscriptState(row, deliveredIds, {
+      full: deliveryAttempt > 0 || redeliveries > 0,
+    });
+    // The staged-revert answer lands while the tip read is in flight.
+    const stagedRevertEarly = await stagedRevertPromise;
+    if (stagedRevertEarly) {
+      const settled = await settleStagedRevert();
+      if (settled) return settled;
+    }
+    const transcript = await transcriptPromise;
+    tl.mark('transcript-read');
     // The already-answered guard is not redelivery-only. Every re-mint path
     // re-reads the transcript, and an assistant reply parented on one of THIS
     // prompt's delivered ids proves the same thing on all of them: the turn
@@ -1097,6 +1303,16 @@ export async function executeQueuedContinue(
       return 'succeeded';
     }
     wireMessageId = await remintWireMessageId(row, payload, transcript);
+    tl.mark('remint');
+  }
+
+  {
+    const stagedRevertLate = await stagedRevertPromise;
+    tl.mark('staged-revert');
+    if (stagedRevertLate) {
+      const settled = await settleStagedRevert();
+      if (settled) return settled;
+    }
   }
 
   try {
@@ -1115,17 +1331,48 @@ export async function executeQueuedContinue(
       // `commandId`s) with identical text now deliver independently instead
       // of the second silently deduping against the first.
       //
-      // A REDELIVERY suffixes it: the abandoned attempt's 10-minute dedupe
-      // claim is still live in the proxy, and reusing the key would let that
-      // claim swallow the delivery meant to replace it — which is precisely
-      // the loss the redelivery exists to repair. Still stable across
-      // `deliverWithRetry`'s inner retries, which is what the claim is for.
-      redeliveries > 0 ? `${row.commandId}:r${redeliveries}` : row.commandId,
+      // A ROW THAT ALREADY WENT OUT suffixes it: the previous attempt's
+      // 10-minute dedupe claim is still live in the proxy, and reusing the key
+      // would let that claim swallow the delivery meant to replace it — a
+      // `200 {"deduplicated": true}` that `postPrompt` reads as delivered.
+      // Still stable across `deliverWithRetry`'s inner retries, which is what
+      // the claim is for.
+      //
+      // `deliveryAttempt`, not `redeliveries`: a released Stop and a "send now"
+      // on a stop-paused row are re-POSTs too, and neither is a reaper
+      // redelivery. See `withNextDeliveryAttempt`.
+      deliveryAttempt > 0 ? `${row.commandId}:r${deliveryAttempt}` : row.commandId,
+      tl,
     );
+    tl.mark('delivered');
     if (delivery === 'delivered') {
-      await markCommandSucceeded(row.commandId, { status: 'delivered' }, row.sessionId);
+      // DELIVERED IS NOT CONSUMED. OpenCode persists the prompt and queues it
+      // behind the turn in flight, so the row stays OPEN — see
+      // `markCommandForwarded` — until `session_turns` names this wire id.
+      //
+      // Only a row that HAS a wire id can be tracked that way. Every automation
+      // producer (triggers, Slack, approval-resume) leaves `messageID` off the
+      // body entirely (`postPrompt`), so the ledger has nothing to key its
+      // confirmation on and the row would hang for ever. Those close here, as
+      // they always did.
+      if (wireMessageId) {
+        await markCommandForwarded(row.commandId, row.sessionId, wireMessageId);
+      } else {
+        await markCommandSucceeded(row.commandId, { status: 'delivered' }, row.sessionId);
+      }
+      tl.mark('marked');
+      // CHAIN. This row is on the wire, so the session's next queued row is
+      // admissible NOW — do not leave it to the scheduler tick or to whatever
+      // `requeueForAdmission` backoff it accrued while waiting on this one.
+      // Fire-and-forget: the drain re-runs admission itself, so a kick that
+      // loses a race is a no-op, and a lost kick falls back to the tick.
+      void promoteNextInboxRow(row.sessionId)
+        .then((key) => (key ? drainSessionLifecycleQueue({ idempotencyKey: key }) : null))
+        .catch(() => undefined);
+      tl.log({ sessionId: row.sessionId, source: row.source, outcome: delivery });
       return 'succeeded';
     }
+    tl.log({ sessionId: row.sessionId, source: row.source, outcome: delivery });
     // 'pending' = runtime not ready in time — worth another pass. 'no-session'
     // and 'failed' are terminal for this command.
     const retryable = delivery === 'pending';
@@ -1326,6 +1573,34 @@ function isRetryableCreateError(status?: number): boolean {
   return status === 429 || status === 500 || status === 502 || status === 503 || status === 504;
 }
 
+/**
+ * The delivery target for a session whose box is ALREADY awake, from the DB
+ * alone — or null, which means "take the full open path". Cheap: two indexed
+ * reads, no provider or daemon round-trip.
+ */
+async function awakeDeliveryTarget(sessionId: string): Promise<DeliveryTarget | null> {
+  const [session] = await db
+    .select({
+      status: projectSessions.status,
+      opencodeSessionId: projectSessions.opencodeSessionId,
+    })
+    .from(projectSessions)
+    .where(eq(projectSessions.sessionId, sessionId))
+    .limit(1);
+  if (!session || session.status !== 'running' || !session.opencodeSessionId) return null;
+  const [box] = await db
+    .select({ status: sessionSandboxes.status, externalId: sessionSandboxes.externalId })
+    .from(sessionSandboxes)
+    .where(eq(sessionSandboxes.sessionId, sessionId))
+    .limit(1);
+  if (!box || box.status !== 'active' || !box.externalId) return null;
+  return {
+    stage: 'ready',
+    externalId: box.externalId,
+    opencodeSessionId: session.opencodeSessionId,
+  };
+}
+
 function sandboxExternalId(
   result: NonNullable<Awaited<ReturnType<typeof openSession>>>,
 ): string | null {
@@ -1396,13 +1671,29 @@ async function postPrompt(
     const res = await forwardToSandbox(
       externalId,
       DAEMON_PORT,
-      { kind: 'principal', userId, callerSessionId, sandboxAuthored: false },
+      {
+        kind: 'principal',
+        userId,
+        callerSessionId,
+        // A real Kortix session id (the session this prompt is FOR), so it is
+        // also the correct agent binding.
+        boundCredentialSessionId: callerSessionId,
+        sandboxAuthored: false,
+      },
       'POST',
       `/session/${encodeURIComponent(opencodeSessionId)}/prompt_async`,
       // The producer's own directory when it named one, so a project-scoped
       // agent resolves the same way it does on a direct browser send.
       `?directory=${encodeURIComponent(overrides?.directory || WORKSPACE)}`,
-      new Headers({ 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey }),
+      new Headers({
+        'Content-Type': 'application/json',
+        'Idempotency-Key': idempotencyKey,
+        // The inbox placed this wire id against the transcript itself (see
+        // `remintWireMessageId`), so the proxy's own placement read
+        // (`prompt-wire-id-repair.ts`) has nothing to add — one fewer sandbox
+        // round-trip per queued message. Direct clients never send this.
+        ...(prompt?.wireMessageId ? { [WIRE_ID_PLACED_HEADER]: '1' } : {}),
+      }),
       body.buffer as ArrayBuffer,
       config.KORTIX_URL ?? '',
     );

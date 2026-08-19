@@ -171,6 +171,8 @@ export function GitHubAppSetupCard({ canManage }: GitHubAppSetupCardProps) {
   const [appId, setAppId] = useState('');
   const [appPrivateKey, setAppPrivateKey] = useState('');
   const [appInstallationId, setAppInstallationId] = useState('');
+  const [appClientId, setAppClientId] = useState('');
+  const [appClientSecret, setAppClientSecret] = useState('');
 
   const [patToken, setPatToken] = useState('');
   const [patOwner, setPatOwner] = useState('');
@@ -227,11 +229,15 @@ export function GitHubAppSetupCard({ canManage }: GitHubAppSetupCardProps) {
         appId: appId.trim(),
         privateKey: appPrivateKey.trim(),
         installationId: appInstallationId.trim(),
+        clientId: appClientId.trim() || undefined,
+        clientSecret: appClientSecret.trim() || undefined,
       }),
     onSuccess: () => {
       setAppId('');
       setAppPrivateKey('');
       setAppInstallationId('');
+      setAppClientId('');
+      setAppClientSecret('');
       onSetupSuccess('GitHub App connected');
     },
     onError: (err: Error) => errorToast(err.message || 'Failed to connect the GitHub App'),
@@ -504,6 +510,42 @@ export function GitHubAppSetupCard({ canManage }: GitHubAppSetupCardProps) {
                           </span>
                         </p>
                       </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor={`${fieldId}-client-id`} className="text-xs">
+                          Client ID (optional)
+                        </Label>
+                        <Input
+                          id={`${fieldId}-client-id`}
+                          value={appClientId}
+                          onChange={(e) => setAppClientId(e.target.value)}
+                          placeholder="Iv1.xxxxxxxxxxxxxxxx"
+                          disabled={appMutation.isPending}
+                          autoComplete="off"
+                          spellCheck={false}
+                          variant="popover"
+                        />
+                        <p className="text-muted-foreground text-xs">
+                          From the App&apos;s GitHub settings page, under General →{' '}
+                          &quot;Client secrets&quot;. Without this, members can&apos;t link an
+                          account to this App from Kortix.
+                        </p>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor={`${fieldId}-client-secret`} className="text-xs">
+                          Client secret (optional)
+                        </Label>
+                        <Input
+                          id={`${fieldId}-client-secret`}
+                          type="password"
+                          value={appClientSecret}
+                          onChange={(e) => setAppClientSecret(e.target.value)}
+                          placeholder="Generate a new client secret on the same page"
+                          disabled={appMutation.isPending}
+                          autoComplete="off"
+                          spellCheck={false}
+                          variant="popover"
+                        />
+                      </div>
                       <Button
                         type="button"
                         size="sm"
@@ -682,6 +724,17 @@ export function GitHubAppSetupCard({ canManage }: GitHubAppSetupCardProps) {
                 <dt className="text-muted-foreground text-xs">Installation</dt>
                 <dd className="text-foreground mt-1 truncate font-mono text-xs tabular-nums">
                   {status.installation_id}
+                </dd>
+              </div>
+            ) : null}
+            {!status.oauth_configured ? (
+              <div className="min-w-0 sm:col-span-2">
+                <dt className="text-muted-foreground text-xs">Account linking</dt>
+                <dd className="text-muted-foreground mt-1 text-pretty text-xs leading-relaxed">
+                  No OAuth client configured for this App — members can&apos;t use &quot;Continue
+                  with GitHub&quot; to link an existing installation to their account. Add a Client
+                  ID and secret via Reconfigure, or set
+                  KORTIX_GITHUB_APP_CLIENT_ID/KORTIX_GITHUB_APP_CLIENT_SECRET.
                 </dd>
               </div>
             ) : null}

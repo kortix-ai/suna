@@ -51,7 +51,7 @@ test('listProjectSecrets throws when the response is unsuccessful', async () => 
 });
 
 test('listProjectSecrets is a silent background read — a 403 never hits the global error sink', async () => {
-  // project.secret.read is editor-tier: plain members legitimately 403 from
+  // project.secret.read is manager-tier: plain members legitimately 403 from
   // member-visible surfaces (model picker, LLM providers). No global toast.
   const onError = mock(() => {});
   configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok', onError });

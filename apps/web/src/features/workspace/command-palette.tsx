@@ -41,12 +41,12 @@ import {
   settingsPaletteGroups,
   settingsPaletteSearchText,
 } from '@/features/workspace/settings-palette-items';
-import { capabilityTabHref } from '@/features/workspace/capabilities/shared/capability-tab-routes';
 import {
   DEFAULT_SETTINGS_TAB,
   resolveSettingsOverlayHref,
   type SettingsTab,
 } from '@/features/workspace/settings/settings-tabs';
+import { useSettingsAccountId } from '@/features/workspace/settings/use-settings-account-id';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { type MenuItemDef, type SettingsTabId, getItemsForSurface } from '@/lib/menu-registry';
 import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
@@ -60,6 +60,7 @@ import {
   type KortixAccount,
   type KortixProject,
   type ProjectSession,
+  getProjectDetail,
   listAccounts,
   listProjectSessions,
   listProjectsForAccount,
@@ -518,6 +519,17 @@ export function CommandPalette() {
     enabled: open && !!projectId,
     ...contract('inventory'),
   });
+  // Same query key every other project surface fetches (page.tsx,
+  // project-shell.tsx) — dedupes against that cache entry. Resolves the
+  // account the "Invite members" command lands on, via the same fallback
+  // `project-shell.tsx` uses for its account-scoped tabs.
+  const { data: paletteProjectDetail } = useQuery({
+    queryKey: qk.project.detail(projectId ?? ''),
+    queryFn: () => getProjectDetail(projectId!),
+    enabled: open && !!projectId,
+    ...contract('config'),
+  });
+  const inviteMembersAccountId = useSettingsAccountId(paletteProjectDetail?.project?.account_id);
   const sendToSession = useChatSendStore((state) => state.sendToSession);
   const currentProjectSession = projectSessionsList?.find(
     (session) => session.session_id === currentSessionId,
@@ -1333,19 +1345,20 @@ export function CommandPalette() {
   }, [currentSessionId, close]);
 
   /**
-   * "Invite members" — Members is its own top-level Customize tab
-   * (`/projects/<id>/members`), so this routes there instead of opening the
-   * overlay. The `invite` intent still rides on the settings-panel store: it
-   * is one-shot state the Members pane consumes and clears on mount
-   * (`settings/tabs/members-tab-intent.ts`), and it must NOT be a query
-   * param, or a reload or a shared link would replay it.
+   * "Invite members" — the project Members capability tab is gone; access
+   * for a project is now granted from the account hub's Access tab, scoped to
+   * this project via `?project=`. There is no one-shot "open the grant
+   * dialog" intent to carry across (the old `membersTab: 'invite'` field
+   * belonged to the deleted page's sub-tab model, with no equivalent here) —
+   * landing pre-filtered on this project's row is enough. Nice-to-have: wire
+   * a real "open grant dialog" intent once `AccessProjectsTab` exposes a prop
+   * for it.
    */
   const handleInviteMembers = useCallback(() => {
-    if (!projectId) return;
-    useSettingsPanelStore.setState({ membersTab: 'invite' });
-    router.push(capabilityTabHref(projectId, 'members'));
+    if (!projectId || !inviteMembersAccountId) return;
+    router.push(`/accounts/${inviteMembersAccountId}?tab=access-projects&project=${projectId}`);
     close();
-  }, [close, projectId, router]);
+  }, [close, projectId, inviteMembersAccountId, router]);
 
   const handleOverlayClose = useCallback(
     (set: (open: boolean) => void) => (overlayOpen: boolean) => {

@@ -32,7 +32,7 @@ export const kortix = createKortix({
 
 `backendUrl` and `getToken` are the only required fields. The SDK calls `getToken` on every request and caches nothing — your host owns token storage and refresh.
 
-Create an API key at **User settings → API keys**. The key starts with `kortix_pat_` and shows only once. Store it as a secret and return it from `getToken`. See [Auth](/docs/sdk/auth) for token types and scopes.
+Create an API key in your own settings, at **Settings → API keys** (`/settings/tokens`). The key starts with `kortix_pat_` and shows only once. Store it as a secret and return it from `getToken`. See [Auth](/docs/sdk/auth) for token types and scopes.
 
 ## Call a Connector
 

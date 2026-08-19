@@ -1,8 +1,9 @@
+import { isOptimisticSessionPrompt } from '@kortix/sdk/react';
 import type { SessionPrompt } from '@kortix/sdk';
 
 /**
- * What the composer's queue strip renders, from the ONE thing that holds a
- * pending message.
+ * What the transcript's queued bubbles (`turn/queued-prompt-bubbles.tsx`)
+ * render, from the ONE thing that holds a pending message.
  *
  * The server inbox (`GET .../prompts`) is the queue: durable, shared across
  * tabs and devices, ordered and admitted by the control plane. Every prompt
@@ -24,17 +25,29 @@ export interface QueueRow {
 }
 
 export interface QueueProjection {
-  /** Pending rows, in delivery order. */
+  /** Every row still waiting to be answered, in delivery order — including the
+   *  ones already on the wire. */
   queued: QueueRow[];
   /** Rows that gave up and offer a retry. */
   failed: QueueRow[];
-  /** Rows already on the wire: not editable, not removable. */
+  /** Which of `queued` are on the wire: rendered, but not editable, not
+   *  removable, not reorderable. */
   inFlightIds: string[];
   /** The queue is held by a stop — see `holdSessionPrompts`. */
   held: boolean;
 }
 
-export function projectQueueRows(input: { prompts: SessionPrompt[] }): QueueProjection {
+export function projectQueueRows(input: {
+  prompts: SessionPrompt[];
+  /**
+   * Every message id the transcript is already showing — the optimistic bubble
+   * included. A row whose message is on screen as a message is not a queue row.
+   *
+   * Optional so a caller with no transcript (tests, the strip in isolation)
+   * gets the raw projection.
+   */
+  transcriptMessageIds?: ReadonlySet<string>;
+}): QueueProjection {
   const queued: QueueRow[] = [];
   const failed: QueueRow[] = [];
   const inFlightIds: string[] = [];
@@ -47,11 +60,35 @@ export function projectQueueRows(input: { prompts: SessionPrompt[] }): QueueProj
       ...(prompt.last_error ? { lastError: prompt.last_error } : {}),
     };
     if (prompt.reason === 'held') held = true;
-    if (prompt.state === 'failed') failed.push(row);
-    else if (prompt.state === 'delivering') inFlightIds.push(prompt.prompt_id);
+    if (prompt.state === 'failed') {
+      failed.push(row);
+      continue;
+    }
+    // ALREADY ON SCREEN AS A MESSAGE. Every prompt this tab sends is painted
+    // into the transcript on Enter under its wire id (and the store aliases a
+    // re-minted echo back to it), and a foreign row lands there when the
+    // runtime echoes it. The transcript wins; this list is for what is NOT in
+    // it yet. A HELD row in the transcript is no exception any more: its
+    // controls live in the bubble's own meta row (`QueuedPromptControls`).
+    if (prompt.message_id && input.transcriptMessageIds?.has(prompt.message_id)) {
+      continue;
+    }
+    // A DELIVERING row is a queue row too. The server forwards a prompt typed
+    // mid-turn within seconds, and it then reads `delivering` for the whole of
+    // the turn in front of it — minutes, and the p99 turn is over an hour.
+    // Nothing paints it into the transcript in the meantime
+    // (`willWaitInInbox`), so dropping it here is the user's message vanishing
+    // from the screen. It is listed as in-flight so the row renders INERT:
+    // every action the strip offers is refused by the server for a row it has
+    // already handed to OpenCode.
+    if (prompt.state === 'delivering') inFlightIds.push(prompt.prompt_id);
+    // This tab's own echo, painted on Enter before `POST .../prompts` returned:
+    // there is no server id to remove or promote yet, so it renders inert for
+    // the round-trip and becomes an ordinary row on the response.
+    if (isOptimisticSessionPrompt(prompt)) inFlightIds.push(prompt.prompt_id);
     // `waiting` is WHY a row has not gone out, not a lane of its own — it
     // renders beside `queued`, with the hold reported separately.
-    else queued.push(row);
+    queued.push(row);
   }
 
   return { queued, failed, inFlightIds, held };

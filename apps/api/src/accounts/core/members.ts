@@ -12,7 +12,7 @@ import { and, eq, gt, inArray, isNull, sql } from 'drizzle-orm';
 import { onMemberAdded, onMemberRemoved } from '../../billing/services/seat-management';
 import { ACCOUNT_ACTIONS, assertAuthorized, authorize } from '../../iam';
 import { invalidateIamCacheForUser } from '../../iam/cache-invalidation';
-import { normalizeProjectRole, type ProjectRole } from '../../iam/role-perms';
+import { parseAssignableProjectRole, PROJECT_ROLE_INPUT_ERROR, type ProjectRole } from '../../iam/role-perms';
 import { auth, errors, json } from '../../openapi';
 import { grantProjectRole } from '../../projects/lib/access';
 import { revokeAllAccountTokensForUser } from '../../repositories/account-tokens';
@@ -295,7 +295,12 @@ export function registerMemberRoutes(): void {
         for (const g of rawGrants) {
           const projectId = typeof g.project_id === 'string' ? g.project_id : null;
           if (!projectId || !ownedIds.has(projectId)) continue;
-          projectGrants.push({ project_id: projectId, role: normalizeProjectRole(g.role) ?? 'member' });
+          // An omitted role still defaults to the floor tier; a role that was
+          // SPELLED OUT and is not assignable (the removed `editor`, a typo) is
+          // a 400, never a silent downgrade to `member` or upgrade to `manager`.
+          const grantRole = g.role === undefined ? 'member' : parseAssignableProjectRole(g.role);
+          if (!grantRole) return c.json({ error: PROJECT_ROLE_INPUT_ERROR }, 400);
+          projectGrants.push({ project_id: projectId, role: grantRole });
         }
       }
 

@@ -104,7 +104,8 @@ import {
 } from '../../repositories/project-routing-policies';
 import { db } from '../../shared/db';
 import { isUniqueViolation } from '../../shared/postgres-errors';
-import { continueSession } from '../session-lifecycle';
+import { continueSession, drainSessionLifecycleQueue } from '../session-lifecycle';
+import { promoteNextInboxRow } from '../session-lifecycle/store';
 import {
   getOpenQuestion,
   recordPendingQuestion,
@@ -1979,7 +1980,7 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     // Floor 'read' (membership); the connector.write leaf below is the real gate,
     // so a custom role that unchecks connector.write is denied even if it holds
-    // project.write. Built-in editor/manager hold the leaf.
+    // project.write. The built-in manager role holds the leaf.
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     await assertProjectCapability(
@@ -2540,6 +2541,16 @@ projectsApp.openapi(
         errorInfo,
         childSession ? childIdleGraceMs() : undefined,
       );
+      // THE TURN ENDED — the session's next queued prompt is admissible NOW.
+      // Fire-and-forget: the drain re-runs admission itself, and a lost kick
+      // falls back to the scheduler tick (bounded by the admission backoff).
+      // This is what makes the queue "send between every turn" without a
+      // clock: the daemon's idle relay is the trigger.
+      if (!childSession) {
+        void promoteNextInboxRow(sessionId)
+          .then((key) => (key ? drainSessionLifecycleQueue({ idempotencyKey: key }) : null))
+          .catch(() => undefined);
+      }
       // Second-chance auto-title: create-time generation is a single in-memory
       // best-effort call, and a session whose only prompt was baked in-guest
       // (`KORTIX_INITIAL_PROMPT`) never crosses a titling hook again. Turn end
@@ -2831,7 +2842,7 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param('projectId');
     // Floor 'read'; project.customize.write is the real gate (setting the bot
-    // name is project customization). Built-in editor/manager hold the leaf.
+    // name is project customization). The built-in manager role holds the leaf.
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     await assertProjectCapability(
@@ -3558,7 +3569,7 @@ projectsApp.openapi(
       projectId,
       PROJECT_ACTIONS.PROJECT_SESSION_READ,
     );
-    const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null);
+    const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
     if (!visible) return c.json({ error: 'Not found' }, 404);
     return c.json({ question: await getOpenQuestion(sessionId) });
   },
@@ -3597,7 +3608,7 @@ projectsApp.openapi(
     // of the session — the same bar the question relay itself uses.
     const loaded = await loadProjectForUser(c, projectId, 'session');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null);
+    const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
     if (!visible) return c.json({ error: 'Not found' }, 404);
 
     const body = await readBody(c);
@@ -3657,7 +3668,7 @@ projectsApp.openapi(
     // Floor 'read' (membership); project.trigger.fire is the real gate. The floor
     // was 'manage' (= project.write) — which the floor `member` role LACKS even
     // though it HOLDS trigger.fire, so a plain member could never fire a trigger
-    // (its designed fire grant was dead behind the floor). Now member/editor/
+    // (its designed fire grant was dead behind the floor). Now member/
     // manager all fire (all hold the leaf); a custom role without it is denied.
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);

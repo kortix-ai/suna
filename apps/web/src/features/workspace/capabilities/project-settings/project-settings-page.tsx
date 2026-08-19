@@ -8,6 +8,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useMemo } from 'react';
 
 import { Badge } from '@/components/ui/badge';
+import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
@@ -72,12 +73,20 @@ import {
  * Marketplace, Review, and Voice were removed from the product outright.
  * Sandbox templates and Snapshots merged into one `sandbox` section.
  *
- * **The rail is one flat list.** Desktop and mobile both render every visible
- * section as a single `TabsList`, in the order `projectSettingsSections()`
- * returns them. The three rail headings that came along from the overlay
- * (`Workspace` / `Agent` / `Advanced`) are gone — see
- * `project-settings-sections.ts`'s "One flat list, no headings". Do not
- * reintroduce them, and do not fake them with an extra gap between rows.
+ * **The rail is one flat list of sections**, in the order
+ * `projectSettingsSections()` returns them — no group HEADINGS. The three
+ * rail headings that came along from the overlay (`Workspace` / `Agent` /
+ * `Advanced`) are gone; see `project-settings-sections.ts`'s "One flat list,
+ * no headings". Do not reintroduce those headings.
+ *
+ * **The desktop rail's SHELL matches the account settings page's**
+ * (`app/(app)/accounts/[id]/page.tsx`'s `<aside>`): an identity header
+ * (`EntityAvatar` + name + one-line summary) above the nav, and the nav
+ * itself rendered as one unlabeled group in that page's `NAV_GROUPS` dialect
+ * — same row classes, same icon size, same active/hover treatment. It is
+ * still ONE list under the hood (`sections.map`, a single `TabsList`); mobile
+ * keeps the separate horizontal tab strip, unchanged, since it has no rail to
+ * match shells with.
  *
  * **The section lives in the URL, not in a store.** `?section=<key>` is
  * shareable, survives a reload, and is what `settings-tabs.ts`'s `GRADUATED`
@@ -101,6 +110,21 @@ export function ProjectSettingsPage({ projectId }: { projectId: string }) {
     ...contract('config'),
   });
   const project = detail.data?.project;
+  const gitConnection = detail.data?.git_connection;
+  // The rail header's one-line summary, under the project name — the same
+  // slot the account rail fills with a member count (`accounts/[id]/page.tsx`'s
+  // `<aside>` header). A project has no member count of its own here (Members
+  // graduated to the account hub), so this reaches for the next most
+  // identifying fact: the repo it's connected to, or its archived status when
+  // there is no repo. Neither is shown while the project itself is still
+  // loading, matching the account rail's `!membersQuery.isLoading` guard.
+  const projectSummary = !detail.isLoading
+    ? gitConnection?.repo_owner && gitConnection?.repo_name
+      ? `${gitConnection.repo_owner}/${gitConnection.repo_name}`
+      : project?.status === 'archived'
+        ? 'Archived'
+        : undefined
+    : undefined;
 
   const caps = useProjectCans(projectId, CUSTOMIZE_SECTION_GATE_ACTIONS, {
     accountId: project?.account_id,
@@ -205,24 +229,55 @@ export function ProjectSettingsPage({ projectId }: { projectId: string }) {
           </nav>
         ) : (
           <section className="bg-background flex min-h-0 flex-col overflow-y-auto border-r py-4">
-            <nav aria-label="Project settings" className="min-h-0 flex-1 px-2.5">
-              {/* ONE flat list — no group headings, no extra gap standing in
-                  for one. See `project-settings-sections.ts`'s
-                  "One flat list, no headings". */}
-              <Tabs value={active} orientation="vertical">
-                <TabsList orientation="vertical" className="w-full">
-                  {sections.map((section) => (
-                    <SectionTrigger
-                      key={section.key}
-                      projectId={projectId}
-                      section={section}
-                      count={section.key === 'review' ? reviewNeedsYou : undefined}
-                      attention={section.key === 'upgrades' && upgradeAttention}
-                    />
-                  ))}
-                </TabsList>
-              </Tabs>
-            </nav>
+            <div className="min-h-0 flex-1 space-y-4 px-2.5">
+              {/* Identity header — same treatment as the account settings
+                  rail's avatar + name + one-line summary block
+                  (`accounts/[id]/page.tsx`'s `<aside>` header): `EntityAvatar`
+                  size `md`, `gap-2.5`, `text-sm font-medium` name over a
+                  `text-xs text-muted-foreground` summary line. */}
+              <div className="flex min-w-0 items-center gap-2.5 px-1">
+                <EntityAvatar
+                  label={project?.name || 'Project'}
+                  emoji={project?.icon}
+                  glyph={project?.icon_glyph}
+                  size="md"
+                />
+                <div className="min-w-0">
+                  <p className="text-foreground truncate text-sm font-medium">
+                    {project?.name || 'Project'}
+                  </p>
+                  {projectSummary ? (
+                    <p className="text-muted-foreground truncate text-xs">{projectSummary}</p>
+                  ) : null}
+                </div>
+              </div>
+
+              <nav aria-label="Project settings" className="space-y-0.5">
+                {/* ONE unlabeled nav group — the account rail's own
+                    precedent for a cluster with nothing to split into (its
+                    leading Settings/Git/Tokens group carries no label
+                    either; see `NAV_GROUPS` in `accounts/[id]/page.tsx`).
+                    Still no group HEADING over these four-to-six rows —
+                    Jay's 2026-08-17 call ("you don't need the categories")
+                    stands, this just renders that same choice through the
+                    account page's own group-wrapper shape instead of a bare
+                    list. See `project-settings-sections.ts`'s "One flat
+                    list, no headings". */}
+                <Tabs value={active} orientation="vertical">
+                  <TabsList orientation="vertical" className="w-full">
+                    {sections.map((section) => (
+                      <SectionTrigger
+                        key={section.key}
+                        projectId={projectId}
+                        section={section}
+                        count={section.key === 'review' ? reviewNeedsYou : undefined}
+                        attention={section.key === 'upgrades' && upgradeAttention}
+                      />
+                    ))}
+                  </TabsList>
+                </Tabs>
+              </nav>
+            </div>
           </section>
         )}
 
@@ -262,12 +317,19 @@ function SectionTrigger({
     <TabsTrigger
       value={section.key}
       asChild
-      className={cn(
-        'gap-2.5 py-0.75',
+      className={
         horizontal
-          ? 'w-auto shrink-0 px-3 whitespace-nowrap'
-          : 'hover:data-[state=inactive]:bg-secondary data-[state=active]:bg-secondary w-full justify-start',
-      )}
+          ? 'w-auto shrink-0 gap-2.5 px-3 py-0.75 whitespace-nowrap'
+          : cn(
+              // The account rail's exact nav-item dialect
+              // (`NAV_GROUPS.map` button classes in `accounts/[id]/page.tsx`):
+              // h-8 row, rounded-sm, `bg-primary/[0.06]` active fill, `hover:bg-accent`
+              // otherwise — not the Tabs primitive's default pill/pill-input classes.
+              'h-8 w-full justify-start gap-2.5 rounded-sm px-2.5 text-sm',
+              'data-[state=active]:bg-primary/[0.06] data-[state=active]:text-foreground data-[state=active]:font-medium',
+              'data-[state=inactive]:text-muted-foreground hover:data-[state=inactive]:bg-accent hover:data-[state=inactive]:text-foreground',
+            )
+      }
     >
       <Link href={projectSettingsSectionHref(projectId, section.key)} prefetch>
         <Icon className="size-4 shrink-0" />
@@ -348,12 +410,20 @@ export function projectSettingsNavTarget(tab: string): ProjectSettingsSectionKey
  * (the overlay's old vocabulary) needs to leave this page entirely, not push a
  * `?section=` this page no longer recognizes.
  */
-export function projectCapabilityNavTarget(tab: string): CapabilityTab['key'] | null {
+export function projectCapabilityNavTarget(tab: string): CapabilityTab['key'] | 'members' | null {
   if (tab.startsWith('llm-')) return 'models';
   // Channels is no longer a tab of its own — it is a scope of Connectors. The
   // PAGE is the target; `projectCapabilityNavHref` adds the scope.
   if (tab === 'channels') return 'connectors';
   if (tab === 'secrets') return 'secrets';
+  // `'members'` — not a `CapabilityTab['key']` any more: Members graduated a
+  // THIRD time, off the project entirely, onto the account hub's Access tab.
+  // Still named here (rather than left to the `isAccountGraduatedSection`
+  // fallback callers reach further down) so the result routes through
+  // `/projects/<id>/members` — the redirect route
+  // (`app/(app)/projects/[id]/(capabilities)/members/page.tsx`) that already
+  // knows how to resolve `account_id` and append the `&project=` scoping —
+  // instead of duplicating that resolution here.
   if (tab === 'members') return 'members';
   return null;
 }
@@ -370,9 +440,14 @@ export function projectCapabilityNavTarget(tab: string): CapabilityTab['key'] | 
 export function projectCapabilityNavHref(
   projectId: string,
   tab: string,
-  target: CapabilityTab['key'],
+  target: CapabilityTab['key'] | 'members',
 ): string {
-  return tab === 'channels' ? channelsHref(projectId) : capabilityTabHref(projectId, target);
+  if (tab === 'channels') return channelsHref(projectId);
+  // `'members'` is not a real `CapabilityTab['key']` — `capabilityTabHref`
+  // would reject it at the type level. The literal route it used to build is
+  // still the right destination: the redirect page at that path.
+  if (target === 'members') return `/projects/${projectId}/members`;
+  return capabilityTabHref(projectId, target);
 }
 
 /**

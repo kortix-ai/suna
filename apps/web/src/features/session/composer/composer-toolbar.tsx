@@ -115,6 +115,8 @@ export interface ComposerToolbarProps {
   submitDisabled: boolean;
   disabled: boolean;
   modelUnavailable: boolean;
+  /** No agent is available to this user — the send is refused. See composer.tsx. */
+  agentUnavailable?: boolean;
   onSubmit: () => void;
 }
 
@@ -152,6 +154,7 @@ export function ComposerToolbar({
   submitDisabled,
   disabled,
   modelUnavailable,
+  agentUnavailable = false,
   onSubmit,
 }: ComposerToolbarProps) {
   const showModel = (models.length > 0 || modelRequired) && !!onModelChange;
@@ -230,6 +233,7 @@ export function ComposerToolbar({
           submitDisabled={submitDisabled}
           disabled={disabled}
           modelUnavailable={modelUnavailable}
+          agentUnavailable={agentUnavailable}
           onSubmit={onSubmit}
         />
       </div>

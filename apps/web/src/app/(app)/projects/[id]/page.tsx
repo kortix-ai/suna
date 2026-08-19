@@ -1,6 +1,8 @@
 'use client';
 
 import type { AttachedFile } from '@/features/session/session-chat-input';
+import { attachedFilesToDataUrlParts } from '@/features/session/uploaded-file-refs';
+import { errorToast } from '@/components/ui/toast';
 
 import { buildNewSessionCreateInput } from '@/features/workspace/project-layout/new-session-create';
 import {
@@ -17,10 +19,10 @@ import {
 } from '@/lib/billing/billing-gate-state';
 import { isBillingEnabled } from '@/lib/config';
 import { useComposerPrefillStore } from '@/stores/composer-prefill-store';
-import { usePendingFilesStore } from '@/stores/session-composer-handoff-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import { getProjectDetail } from '@kortix/sdk';
 import { contract, qk, writeStartStash } from '@kortix/sdk/react';
+import { useFirstPromptPreviewStore } from '@/stores/session-composer-handoff-store';
 import { useQuery } from '@tanstack/react-query';
 import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -88,7 +90,7 @@ export default function ProjectIndexPage() {
   }, [searchParams, pathname, projectId, router]);
 
   const handleSend = useCallback(
-    (text: string, files: AttachedFile[] | undefined, options?: ProjectHomeSendOptions) => {
+    async (text: string, files: AttachedFile[] | undefined, options?: ProjectHomeSendOptions) => {
       if (!text.trim() && !files?.length) return;
 
       if (isBillingEnabled() && billingLoading) return;
@@ -113,6 +115,19 @@ export default function ProjectIndexPage() {
       // tokens for the first prompt (see buildNewSessionCreateInput). The proxy
       // no longer refuses a prompt whose agent differs — switching is allowed.
       setSending(true);
+      // Attachments ride the create itself as data: URLs — the session's
+      // sandbox does not exist yet, so there is nowhere to upload into. The
+      // API turns this whole pending_prompt into a durable inbox row in the
+      // same transaction as the session, so the message survives a closed tab
+      // from this moment on. Over the cap, the refusal names the way out.
+      let parts: Awaited<ReturnType<typeof attachedFilesToDataUrlParts>>;
+      try {
+        parts = await attachedFilesToDataUrlParts(files);
+      } catch (error) {
+        errorToast(error instanceof Error ? error.message : 'Attachments are too large');
+        setSending(false);
+        return;
+      }
       newSession({
         create: {
           ...buildNewSessionCreateInput(options),
@@ -123,6 +138,7 @@ export default function ProjectIndexPage() {
             variant: options?.variant ?? null,
             attachment_names:
               files?.map((file) => (file.kind === 'local' ? file.file.name : file.filename)) ?? [],
+            ...(parts.length > 0 ? { parts: [{ type: 'text' as const, text }, ...parts] } : {}),
           },
         },
         scope: options?.scope,
@@ -137,15 +153,19 @@ export default function ProjectIndexPage() {
           // page's `migrateStash` hands this off onto the resolved pin once it
           // exists, and `readStartStash` (instant shell, `useSession`) reads it
           // uniformly either side of that migration.
+          // PICKS only: the prompt (and its attachments) are already a
+          // durable inbox row via create.pending_prompt above — a prompt in
+          // the stash here would be a second delivery channel for the same
+          // message.
           writeStartStash(sessionId, {
-            prompt: text,
+            prompt: '',
             agent: options?.agent ?? null,
             model: options?.model ?? null,
             variant: options?.variant ?? null,
           });
-          if (files?.length) {
-            usePendingFilesStore.getState().setPendingFiles(files);
-          }
+          // RENDER-only copy for the boot shell, so the bubble is on screen
+          // from the session page's first frame — see `useFirstPromptPreviewStore`.
+          useFirstPromptPreviewStore.getState().setFirstPromptPreview(sessionId, text, files ?? []);
         },
       });
     },

@@ -55,8 +55,6 @@ interface SessionWorkingState {
   /** The server acknowledged the cancel. Stamped once — the first
    *  acknowledgement is the one a server read can be measured against. */
   settleAbortReceipt: (sessionId: string, atMs: number) => void;
-  /** The stop is over, or was never issued. */
-  clearAbortReceipt: (sessionId: string) => void;
   /** One reading of the durable prompt inbox, stamped at ISSUE time. */
   noteInboxPending: (sessionId: string, pending: number, atMs: number) => void;
   /** `POST .../prompts` returned: the row EXISTS, and the server said so. Raise
@@ -65,6 +63,11 @@ interface SessionWorkingState {
    *  answers "no turns" honestly and used to flip the composer back to Send with
    *  the user's prompt already queued. */
   notePromptAccepted: (sessionId: string, atMs: number) => void;
+  /** Drop every input this session holds. Called by `useSessionWorking` when
+   *  the LAST observer of the session unmounts — the maps otherwise accumulate
+   *  one entry per session visited for the tab's lifetime. Correctness never
+   *  depended on it (every field is bounded), this is leak hygiene. */
+  clearSession: (sessionId: string) => void;
   reset: () => void;
 }
 
@@ -121,13 +124,6 @@ export const useSessionWorkingStore = create<SessionWorkingState>()((set) => ({
       return { aborts: { ...state.aborts, [sessionId]: { ...current, settledAtMs: atMs } } };
     }),
 
-  clearAbortReceipt: (sessionId) =>
-    set((state) => {
-      if (!(sessionId in state.aborts)) return state;
-      const { [sessionId]: _dropped, ...rest } = state.aborts;
-      return { aborts: rest };
-    }),
-
   noteInboxPending: (sessionId, pending, atMs) =>
     set((state) => {
       if (!sessionId) return state;
@@ -147,6 +143,21 @@ export const useSessionWorkingStore = create<SessionWorkingState>()((set) => ({
       if (current && current.atMs > atMs) return state;
       const pending = Math.max(1, current?.pending ?? 0);
       return { inbox: { ...state.inbox, [sessionId]: { pending, atMs } } };
+    }),
+
+  clearSession: (sessionId) =>
+    set((state) => {
+      if (
+        !(sessionId in state.receipts) &&
+        !(sessionId in state.aborts) &&
+        !(sessionId in state.inbox)
+      ) {
+        return state;
+      }
+      const { [sessionId]: _r, ...receipts } = state.receipts;
+      const { [sessionId]: _a, ...aborts } = state.aborts;
+      const { [sessionId]: _i, ...inbox } = state.inbox;
+      return { receipts, aborts, inbox };
     }),
 
   reset: () => set({ receipts: {}, aborts: {}, inbox: {} }),

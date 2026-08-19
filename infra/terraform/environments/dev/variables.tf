@@ -123,6 +123,7 @@ variable "api_secrets" {
     DAYTONA_SERVER_URL              = "arn:aws:secretsmanager:us-west-2:935064898258:secret:kortix-dev-env-otSQdL:DAYTONA_SERVER_URL::"
     DAYTONA_TARGET                  = "arn:aws:secretsmanager:us-west-2:935064898258:secret:kortix-dev-env-otSQdL:DAYTONA_TARGET::"
     DAYTONA_WARM_TARGET             = "arn:aws:secretsmanager:us-west-2:935064898258:secret:kortix-dev-env-otSQdL:DAYTONA_WARM_TARGET::"
+    E2B_API_KEY                     = "arn:aws:secretsmanager:us-west-2:935064898258:secret:kortix-dev-env-otSQdL:E2B_API_KEY::"
     FIRECRAWL_API_KEY               = "arn:aws:secretsmanager:us-west-2:935064898258:secret:kortix-dev-env-otSQdL:FIRECRAWL_API_KEY::"
     FRONTEND_URL                    = "arn:aws:secretsmanager:us-west-2:935064898258:secret:kortix-dev-env-otSQdL:FRONTEND_URL::"
     INTEGRATION_AUTH_PROVIDER       = "arn:aws:secretsmanager:us-west-2:935064898258:secret:kortix-dev-env-otSQdL:INTEGRATION_AUTH_PROVIDER::"

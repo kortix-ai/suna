@@ -1,3 +1,4 @@
+import { ProvisionTimeline } from '../../platform/services/provision-timeline';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { PROJECT_ACTIONS, authorize } from '../../iam';
@@ -48,6 +49,16 @@ import {
   secretGrantErrorResponse,
   shouldSyncProjectEnvBeforeProxy,
 } from '../pre-prompt-env-sync';
+import {
+  EFFECTIVE_MESSAGE_ID_HEADER,
+  PROMPT_TRANSCRIPT_READ_LIMIT,
+  WIRE_ID_PLACED_HEADER,
+  isPromptWireIdRepairPath,
+  promptBodyMessageId,
+  promptTranscriptReadPath,
+  readNewestWireIdTime,
+  repairPromptWireId,
+} from '../prompt-wire-id-repair';
 import {
   PROXY_RETRY_BUDGET_MS,
   isLongTurnCompletionRequest,
@@ -100,6 +111,7 @@ const preview = new Hono<{
 // it for the same reason we strip `authorization` — a caller must not be able to
 // hand themselves platform authority by naming a header.
 export const STRIP_FORWARD_HEADERS = new Set([
+  'x-kortix-wire-id-placed',
   'host',
   'authorization',
   'cookie',
@@ -637,6 +649,11 @@ export type PreviewProxyAccess =
        *  this is what separates them. Null means a non-session-bound principal.
        *  REQUIRED so a new entry point cannot silently omit it and fail open. */
       callerSessionId: string | null;
+      /** The caller's AGENT/SANDBOX token binding — `callerKortixSessionId(c)`,
+       *  never the raw `c.get('sessionId')`. Only the trigger-session manager
+       *  override reads it (see connectors/share.ts). REQUIRED for the same
+       *  reason as the two fields around it. */
+      boundCredentialSessionId: string | null;
       /** True when the SANDBOX ITSELF authored this request (it holds a
        *  credential that produces a perfectly valid principal). Such a request
        *  may never extend the box's deadline — that is the self-renewal this
@@ -755,13 +772,17 @@ export async function forwardToSandbox(
   // 1. One row fetch — enforces the v1 session-sandbox contract, ownership, and
   // active state, and yields the service key for upstream auth. (Previously two
   // separate queries for the same row.)
+  const ptl = new ProvisionTimeline(sandboxId, 'proxy');
   let record = await loadSandbox(sandboxId);
+  ptl.mark('load-sandbox');
   if (!record) {
     return jsonProxyError({ error: 'sandbox not found' }, 404, origin);
   }
   bindSandboxRequestContext(record, sandboxId);
   const userId = principalUserId(access);
   const callerSessionId = access.kind === 'principal' ? access.callerSessionId : null;
+  const boundCredentialSessionId =
+    access.kind === 'principal' ? access.boundCredentialSessionId : null;
   if (
     access.kind === 'principal' &&
     !(await canAccessPreviewSandbox({ previewSandboxId: sandboxId, userId }))
@@ -813,6 +834,7 @@ export async function forwardToSandbox(
       accountId: record.accountId,
       userId,
       callerSessionId: callerSessionId ?? null,
+      boundCredentialSessionId,
     }))
   ) {
     throw new HTTPException(403, {
@@ -870,6 +892,7 @@ export async function forwardToSandbox(
     // and its refusal names the connectors that agent requires — not something a
     // caller who may not run it should be able to enumerate by asking.
     const unauthorized = await agentSwitchRefusal(record, promptAgent, userId, sandboxId, origin);
+    ptl.mark('agent-switch');
     if (unauthorized) return unauthorized;
     const refusal = await connectorGateRefusal(record, promptAgent, origin);
     if (refusal) return refusal;
@@ -957,6 +980,11 @@ export async function forwardToSandbox(
     !sandboxAuthored && isTurnStartRequest(upstreamPort, method, remainingPath)
       ? extractTurnIdentity(remainingPath, requestBody)
       : null;
+  // The wire id OpenCode will actually see, once the placement check below has
+  // run — the client's, or the proxy's re-mint. Echoed on the response so the
+  // sender can correlate, and written into `turnIdentity` so the ledger and the
+  // daemon's exact-message probe match the message that exists.
+  let effectiveMessageId: string | null = null;
   const turnToken = turnIdentity ? crypto.randomUUID() : null;
   let turnLifecycleBegun = false;
   let turnLifecycleAccepted = false;
@@ -1066,6 +1094,7 @@ export async function forwardToSandbox(
     try {
       lastAttemptHop = 'provider_ingress';
       const ingress = await resolveSandboxIngress(record, ingressRequest);
+      ptl.mark('ingress');
       lastAttemptHop = portFailureHop(upstreamPort);
       const previewUrl = ingress.url;
       const targetUrl = previewUrl.replace(/\/$/, '') + remainingPath + queryString;
@@ -1127,6 +1156,56 @@ export async function forwardToSandbox(
       // identity encoding, regenerate trace headers, then apply the sandbox
       // auth/identity headers (service key, preview token, signed user-context)
       // last so they always win.
+      ptl.mark('env-sync');
+      const authHeaders = await buildSandboxUpstreamHeaders({
+        sandboxId,
+        userId,
+        serviceKey,
+        providerHeaders: ingress.headers,
+      });
+
+      // PLACE THE WIRE ID against the target session's actual tip — for ANY
+      // target, child sessions included. See `prompt-wire-id-repair.ts` for the
+      // incident this closes. One bounded newest-N read; fail-open (a failed
+      // read keeps the client's id); runs after every refusal point and before
+      // the ledger begins, so the identity recorded is the one delivered. Once
+      // per request: a retry attempt keeps the placement the first computed.
+      if (
+        promptDelivery &&
+        !sandboxAuthored &&
+        effectiveMessageId === null &&
+        isPromptWireIdRepairPath(remainingPath) &&
+        // The inbox drain already placed it — one fewer round-trip.
+        incomingHeaders.get(WIRE_ID_PLACED_HEADER) !== '1' &&
+        // No client id, nothing to place — OpenCode mints, and the read is
+        // skipped entirely so a plain body pays nothing.
+        promptBodyMessageId(requestBody) !== null
+      ) {
+        const readUrl =
+          previewUrl.replace(/\/$/, '') +
+          promptTranscriptReadPath(remainingPath, PROMPT_TRANSCRIPT_READ_LIMIT);
+        const newestKnownTime = await readNewestWireIdTime({ url: readUrl, headers: authHeaders });
+        ptl.mark('wire-id-read');
+        const placed = repairPromptWireId({
+          body: requestBody,
+          newestKnownTime,
+          nowMs: Date.now(),
+        });
+        if (placed.outcome === 'reminted') {
+          console.warn('[prompt-wire-id] re-minted a stale or malformed client wire id', {
+            sandboxId,
+            sessionId: record.sessionId,
+            path: remainingPath,
+            effectiveMessageId: placed.effectiveMessageId,
+          });
+          requestBody = placed.body;
+        }
+        effectiveMessageId = placed.effectiveMessageId ?? '';
+        if (turnIdentity && placed.effectiveMessageId) {
+          turnIdentity.messageId = placed.effectiveMessageId;
+        }
+      }
+
       const headers = new Headers();
       for (const [key, value] of incomingHeaders.entries()) {
         if (STRIP_FORWARD_HEADERS.has(key.toLowerCase())) continue;
@@ -1136,12 +1215,6 @@ export async function forwardToSandbox(
       for (const [key, value] of Object.entries(getTraceHeaders())) {
         headers.set(key, value);
       }
-      const authHeaders = await buildSandboxUpstreamHeaders({
-        sandboxId,
-        userId,
-        serviceKey,
-        providerHeaders: ingress.headers,
-      });
       for (const [key, value] of Object.entries(authHeaders)) {
         headers.set(key, value);
       }
@@ -1220,6 +1293,7 @@ export async function forwardToSandbox(
         // the success path below promotes it with a token CAS and cannot revive
         // a turn that already ended.
         const turnLifecycleStart = await beginTurnLifecycle();
+        ptl.mark('turn-begin');
         if (turnLifecycleStart !== 'granted') {
           if (promptDedupeKey) releasePromptDelivery(promptDedupeKey);
           return jsonProxyError(
@@ -1248,6 +1322,7 @@ export async function forwardToSandbox(
       } finally {
         clearTimeout(connectTimer);
       }
+      ptl.mark('upstream');
 
       if (upstream.status >= 300 && upstream.status < 400) {
         await abandonTurnLifecycle();
@@ -1386,6 +1461,10 @@ export async function forwardToSandbox(
       } else {
         await abandonTurnLifecycle();
       }
+      if (promptDelivery) {
+        ptl.mark('turn-accept');
+        ptl.log({ path: remainingPath, status: upstream.status });
+      }
       // A HUMAN IS USING THIS BOX'S PREVIEW. The turn-start observation already
       // happened before the forward (see above); this is the other
       // control-plane-observed signal: an authenticated account member driving
@@ -1414,6 +1493,14 @@ export async function forwardToSandbox(
         );
       }
       const respHeaders = clientResponseHeaders(upstream.headers, origin);
+      if (effectiveMessageId) {
+        respHeaders.set(EFFECTIVE_MESSAGE_ID_HEADER, effectiveMessageId);
+        const exposed = respHeaders.get('Access-Control-Expose-Headers');
+        respHeaders.set(
+          'Access-Control-Expose-Headers',
+          exposed ? `${exposed}, ${EFFECTIVE_MESSAGE_ID_HEADER}` : EFFECTIVE_MESSAGE_ID_HEADER,
+        );
+      }
       return new Response(upstream.body, {
         status: upstream.status,
         statusText: upstream.statusText,
@@ -1525,12 +1612,16 @@ export async function resolvePreviewWsUpstream(opts: {
   /** The caller's own session when the credential is bound to one, or null for a
    *  principal that is not session-bound. REQUIRED — fail closed, never default. */
   callerSessionId: string | null;
+  /** The caller's AGENT/SANDBOX token binding. Only the trigger-session manager
+   *  override reads it (connectors/share.ts). REQUIRED, same reasoning. */
+  boundCredentialSessionId: string | null;
 }): Promise<
   | { ok: true; url: string; headers: Record<string, string> }
   | { ok: false; status: number; message: string }
 > {
   const { sandboxId, userId, remainingPath, queryString } = opts;
   const callerSessionId = opts.callerSessionId;
+  const boundCredentialSessionId = opts.boundCredentialSessionId;
 
   const record = await loadSandbox(sandboxId);
   if (!record) return { ok: false, status: 404, message: 'sandbox not found' };
@@ -1558,6 +1649,7 @@ export async function resolvePreviewWsUpstream(opts: {
       accountId: record.accountId,
       userId,
       callerSessionId: callerSessionId ?? null,
+      boundCredentialSessionId,
     }))
   ) {
     return {
@@ -1679,6 +1771,11 @@ preview.all('/:sandboxId/:port/*', async (c) => {
       kind: 'principal',
       userId,
       callerSessionId: c.get('sessionId') ?? null,
+      // The manager-override gate needs the AGENT binding, so it reads the
+      // helper — same reason `sandboxAuthored` below does. The raw context var
+      // is the SUPABASE login session id for a human on the network-fallback
+      // branch, which would strip managers of the override.
+      boundCredentialSessionId: callerKortixSessionId(c),
       // `callerKortixSessionId`, NEVER the raw context var. `combinedAuth`'s
       // local JWT fast path leaves `sessionId` unset for a browser, but its
       // NETWORK-FALLBACK branch (taken whenever JWKS has not warmed, and

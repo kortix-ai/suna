@@ -118,6 +118,7 @@ const ACCESS = {
   kind: 'principal' as const,
   userId: 'user-1',
   callerSessionId: null,
+  boundCredentialSessionId: null,
   sandboxAuthored: false,
 };
 

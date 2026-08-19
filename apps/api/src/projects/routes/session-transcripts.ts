@@ -9,6 +9,7 @@ import { auth, errors, json } from '../../openapi';
 import { createRoute, z } from '@hono/zod-openapi';
 import { and } from 'drizzle-orm';
 import { loadProjectForUser, loadVisibleSession, assertProjectCapability } from '../lib/access';
+import { callerKortixSessionId } from '../lib/caller-session';
 import { AnyObject, projectsApp } from '../lib/app';
 import { UUID_V4_REGEX,
   parseBoundedPositiveInt,
@@ -59,7 +60,7 @@ projectsApp.openapi(
       PROJECT_ACTIONS.PROJECT_SESSION_READ,
     );
 
-  const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null);
+  const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
   if (!visible) return c.json({ error: 'Not found' }, 404);
 
   const transcript = await buildSessionTranscriptDigest({
@@ -148,7 +149,7 @@ projectsApp.openapi(
       projectId,
       PROJECT_ACTIONS.PROJECT_SESSION_READ,
     );
-    const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null);
+    const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
     if (!visible) return c.json({ error: 'Not found' }, 404);
 
     const [page, live] = await Promise.all([

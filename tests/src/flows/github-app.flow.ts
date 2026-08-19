@@ -337,3 +337,127 @@ flow(
     );
   },
 );
+
+flow(
+  'GHA-3',
+  {
+    domain: 'platform',
+    routes: [
+      'GET /v1/platform/github-app/oauth/authorize',
+      'GET /v1/platform/github-app/oauth/callback',
+    ],
+  },
+  async (ctx) => {
+    // The App's OWN OAuth identity-proof flow — what account linking uses to
+    // prove a caller's GitHub identity/org role. It replaced a detour through
+    // Supabase's separate "Sign in with GitHub" login provider, which coupled
+    // this feature to unrelated login config and broke it in production when
+    // that provider was switched off.
+    //
+    // Both routes are PUBLIC browser redirects (the popup opens authorize
+    // directly; GitHub redirects back to callback), so — exactly like GHA-2's
+    // pair — they must NEVER 500 and NEVER honor a forged state. They always
+    // 302 somewhere safe.
+    //
+    // The load-bearing property here is that NEITHER route will send the
+    // exchanged GitHub token anywhere the caller picked. An earlier revision
+    // accepted a `frontend_origin` query param, signed it into the state, and
+    // had the callback redirect the token to it — validating only the scheme,
+    // so any attacker HTTPS origin received a victim's user-to-server token
+    // and could replay it against the installation-linking endpoints
+    // (CWE-601, HIGH). The param is gone; both routes always land on the
+    // environment's configured frontend.
+
+    const ATTACKER = 'https://attacker.example';
+
+    await ctx.step(
+      'authorize IGNORES a caller-supplied frontend_origin and never redirects to it',
+      async () => {
+        const r = await ctx.client
+          .as(ctx.P.ANON)
+          .get('/v1/platform/github-app/oauth/authorize', {
+            query: { frontend_origin: ATTACKER },
+          });
+        r.status(302).headerExists('location');
+        const loc = r.header('location') ?? '';
+        if (loc.includes('attacker.example')) {
+          throw new Error(`token-exfiltration redirect: authorize honored the caller origin: ${loc}`);
+        }
+      },
+    );
+
+    await ctx.step(
+      'authorize ignores frontend_origin even in its unconfigured-OAuth early return',
+      async () => {
+        // The early `oauth_not_configured` return is a separate branch and was
+        // itself once an open redirect — assert it independently, since which
+        // branch fires depends on whether OAuth creds are configured here.
+        const r = await ctx.client
+          .as(ctx.P.ANON)
+          .get('/v1/platform/github-app/oauth/authorize', {
+            query: { frontend_origin: `${ATTACKER}/evil` },
+          });
+        r.status(302);
+        const loc = r.header('location') ?? '';
+        if (loc.includes('attacker.example')) {
+          throw new Error(`open redirect on the unconfigured branch: ${loc}`);
+        }
+      },
+    );
+
+    await ctx.step('callback with no query at all → 302, never a 500', async () => {
+      // The bare-hit shape that 500'd on install-callback before GHA-2 pinned
+      // it — same class of bug, pinned here before it can happen.
+      const r = await ctx.client.as(ctx.P.ANON).get('/v1/platform/github-app/oauth/callback');
+      r.status(302).headerExists('location');
+      const loc = r.header('location') ?? '';
+      if (!loc.includes('invalid_state')) {
+        throw new Error(`expected an invalid_state reason, got: ${loc}`);
+      }
+    });
+
+    await ctx.step('callback with a forged state → 302 (invalid_state), token never minted', async () => {
+      // A forged state must be rejected BEFORE any GitHub token exchange —
+      // this is what stops an attacker minting a proof token for themselves.
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .get('/v1/platform/github-app/oauth/callback', {
+          query: { code: 'attacker-supplied-code', state: 'ZmFrZQ.forgedsignature' },
+        });
+      r.status(302);
+      const loc = r.header('location') ?? '';
+      if (!loc.includes('invalid_state')) {
+        throw new Error(`expected an invalid_state reason, got: ${loc}`);
+      }
+      if (loc.includes('access_token')) {
+        throw new Error(`callback leaked a token for a forged state: ${loc}`);
+      }
+    });
+
+    await ctx.step('callback never redirects to an origin named in its own query', async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .get('/v1/platform/github-app/oauth/callback', {
+          query: { code: 'x', state: 'y', frontend_origin: ATTACKER, redirect_uri: ATTACKER },
+        });
+      r.status(302);
+      const loc = r.header('location') ?? '';
+      if (loc.includes('attacker.example')) {
+        throw new Error(`callback honored a caller-supplied origin: ${loc}`);
+      }
+    });
+
+    await ctx.step('callback surfaces a GitHub-reported authorization error', async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .get('/v1/platform/github-app/oauth/callback', {
+          query: { error: 'access_denied', error_description: 'The user denied access' },
+        });
+      r.status(302);
+      const loc = r.header('location') ?? '';
+      if (!loc.includes('error=')) {
+        throw new Error(`expected the GitHub error to be surfaced, got: ${loc}`);
+      }
+    });
+  },
+);

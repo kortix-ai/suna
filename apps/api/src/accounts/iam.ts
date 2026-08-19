@@ -30,6 +30,7 @@
 
 import './iam/groups'; // groups, group members, group→project grants
 import './iam/members'; // super-admin, member groups / project-access / effective(+batch)
+import './iam/resource-grants'; // account-wide resource-grants rollup (agent/skill grants across every project)
 import './iam/mfa'; // account-wide MFA enforcement
 import './iam/scim-tokens'; // SCIM provisioning tokens
 import './iam/sso'; // SAML SSO provider + group mappings

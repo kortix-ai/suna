@@ -929,6 +929,79 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
     expect(r.stopped).toBe(0);
   });
 
+  test('the delivery grace is the DELIVERY’s, not the box’s four-hour turn grant', async () => {
+    // A prompt forwarded INTO a live turn writes a second, `delivering` record
+    // on a box whose deadline the accepted turn already pushed four hours out.
+    // Reading the BOX deadline as this record's grace made it unreconcilable
+    // for those four hours: every pass skipped it, `claimExpiredSandboxStop`
+    // refuses a box holding turn authority, and `GET .../turn` kept reporting
+    // an open turn after the user pressed Stop.
+    //
+    // The grace belongs to the delivery, so it is measured from the record's
+    // own `startedAtMs`.
+    candidates = [
+      candidate({
+        deadlineAt: new Date(NOW.getTime() + 4 * HOUR),
+        metadata: {
+          activeTurns: {
+            'delivery-token': {
+              token: 'delivery-token',
+              state: 'delivering',
+              opencodeSessionId: 'ses_root',
+              messageId: 'msg_turn_1',
+              startedAtMs: NOW.getTime() - 20 * 60_000,
+            },
+          },
+        },
+      }),
+    ];
+    statusByExternal['ext-1'] = 'running';
+    deliveringTurnObservationBySandbox['sb-1'] = 'terminal';
+
+    await reapAndReconcileSandboxes(NOW);
+
+    expect(deliveringTurnRecoveryCalls).toEqual([
+      { sandboxId: 'sb-1', token: 'delivery-token', observation: 'terminal' },
+    ]);
+    expect(promptRedeliveries).toEqual([
+      {
+        sessionId: 'sess-1',
+        wireMessageId: 'msg_turn_1',
+        turnToken: 'delivery-token',
+        endReason: 'abandoned',
+      },
+    ]);
+  });
+
+  test('a delivering record INSIDE its own grace is still left alone', async () => {
+    // The other half of the rule above: the grace has to keep suppressing a
+    // terminal read for a delivery OpenCode may simply not have persisted yet,
+    // even when the box's own deadline has already passed.
+    candidates = [
+      candidate({
+        deadlineAt: new Date(NOW.getTime() - 1),
+        metadata: {
+          activeTurns: {
+            'delivery-token': {
+              token: 'delivery-token',
+              state: 'delivering',
+              opencodeSessionId: 'ses_root',
+              messageId: 'msg_turn_1',
+              startedAtMs: NOW.getTime() - 5_000,
+            },
+          },
+        },
+      }),
+    ];
+    statusByExternal['ext-1'] = 'running';
+    deliveringTurnObservationBySandbox['sb-1'] = 'terminal';
+
+    await reapAndReconcileSandboxes(NOW);
+
+    expect(deliveringTurnRecoveryCalls).toEqual([]);
+    expect(promptRedeliveries).toEqual([]);
+  });
+
   test('repairs a lost terminal relay before the prior active grant expires', async () => {
     candidates = [
       candidate({

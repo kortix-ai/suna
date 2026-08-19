@@ -333,6 +333,24 @@ describe('rules are derived from what the guest already has', () => {
     ])
   })
 
+  test("a destination the provider's own edge owns is left alone", () => {
+    // on_echo is the only signal the guest gets for WHICH mechanism injects.
+    // 'block' means an edge outside the sandbox does it, so arming here would
+    // put a TLS-terminating proxy in a guest that is not supposed to have one
+    // and hand the agent the other mechanism's symptom. Measured on Platinum
+    // with the project flag off, where the shim armed and returned [REDACTED]
+    // to an agent that had been told to expect a cut connection.
+    expect(parseShimRules(caps({ on_echo: 'block' }))).toEqual([])
+  })
+
+  test('a destination the shim owns still arms', () => {
+    // The positive half — without it the assertion above passes for a parser
+    // that returns nothing at all.
+    expect(parseShimRules(caps({ on_echo: 'redact' }))).toEqual([
+      { hosts: ['api.example.com'], identifier: 'DEMO_TOKEN' },
+    ])
+  })
+
   test('non-network deliveries are ignored', () => {
     const raw = JSON.stringify({
       version: 1,

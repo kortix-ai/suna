@@ -19,7 +19,10 @@ describe('SETTINGS_TABS', () => {
   });
 
   test('carries exactly the person-scoped tabs the overlay still hosts', () => {
-    expect([...SETTINGS_TABS]).toEqual(['profile', 'preferences', 'connected']);
+    // `tokens` rejoined the list on 2026-08-18: a person's own API keys are
+    // person-scoped, not account configuration, so they came back from
+    // `/accounts/[id]` while the service-account half stayed there.
+    expect([...SETTINGS_TABS]).toEqual(['profile', 'preferences', 'connected', 'tokens']);
   });
 
   // Every project-configuration id left for `/projects/[id]/config`. Asserted
@@ -165,7 +168,7 @@ describe('legacySectionRedirect', () => {
     }
   });
 
-  test('secrets, channels, models, and members graduated a SECOND time — off /config, onto their own top-level tab', () => {
+  test('secrets, channels, and models graduated a SECOND time — off /config, onto their own top-level tab', () => {
     const routes: Record<string, string> = {
       secrets: '/projects/p1/secrets',
       channels: '/projects/p1/connectors?scope=channels',
@@ -177,7 +180,11 @@ describe('legacySectionRedirect', () => {
       'llm-budgets': '/projects/p1/models',
       'llm-keys': '/projects/p1/models',
       'llm-api': '/projects/p1/models',
-      members: '/projects/p1/members',
+      // `members` graduated a second time too, then a THIRD — off the project
+      // entirely, onto the account page's Access tab. It is account-scoped
+      // now (`ACCOUNT_GRADUATED`, with a `&project=` special case), covered
+      // in the "account-scoped sections redirect to /accounts/[id]" describe
+      // block below, not here.
     };
     for (const [legacyId, href] of Object.entries(routes)) {
       expect(legacySectionRedirect('p1', legacyId)).toBe(href);
@@ -250,8 +257,10 @@ describe('legacySectionRedirect', () => {
 describe('account-scoped sections redirect to /accounts/[id]', () => {
   // Legacy section id -> the `?tab=` segment `app/(app)/accounts/[id]/page.tsx`
   // reads. Hand-kept mirror of ACCOUNT_GRADUATED, so a rename there without a
-  // rename here fails immediately. Three are not 1:1 — the account page calls
-  // Organization `settings`, Usage `transactions`, and API keys `tokens`.
+  // rename here fails immediately. Two are not 1:1 — the account page calls
+  // Organization `settings` and Usage `transactions`. `api-keys` and `tokens`
+  // are deliberately absent: both resolve back INTO the overlay now that it
+  // hosts a `tokens` tab again (see the `api-keys` case below).
   const ACCOUNT_SECTIONS: Record<string, string> = {
     organization: 'settings',
     billing: 'billing',
@@ -261,8 +270,7 @@ describe('account-scoped sections redirect to /accounts/[id]', () => {
     roles: 'roles',
     identity: 'identity',
     audit: 'audit',
-    'api-keys': 'tokens',
-    tokens: 'tokens',
+    members: 'access-projects',
   };
 
   test('the mirror above is the whole map', () => {
@@ -272,7 +280,15 @@ describe('account-scoped sections redirect to /accounts/[id]', () => {
 
   test('every id resolves to its account-page tab when an account id is supplied', () => {
     for (const [legacyId, tab] of Object.entries(ACCOUNT_SECTIONS)) {
-      expect(legacySectionRedirect('p1', legacyId, 'acc1')).toBe(`/accounts/acc1?tab=${tab}`);
+      // `members` is the one non-generic id: it carries a `&project=`
+      // special case (see `legacySectionRedirect`) so a stale
+      // `/projects/<id>/members` bookmark lands pre-filtered to the project
+      // it came from, not every project the account can see.
+      const expected =
+        legacyId === 'members'
+          ? `/accounts/acc1?tab=${tab}&project=p1`
+          : `/accounts/acc1?tab=${tab}`;
+      expect(legacySectionRedirect('p1', legacyId, 'acc1')).toBe(expected);
     }
   });
 
@@ -295,6 +311,30 @@ describe('account-scoped sections redirect to /accounts/[id]', () => {
       expect(legacySectionRedirect('p1', legacyId)).toBeNull();
       expect(isAccountGraduatedSection(legacyId)).toBe(true);
     }
+  });
+
+  /**
+   * The credential split, 2026-08-18. `api-keys` and `tokens` both used to
+   * resolve to `/accounts/<id>?tab=tokens`, because every credential lived on
+   * that page. A person's own API keys are back in the overlay, so both ids
+   * resolve there instead — `tokens` because it names a live tab again, and
+   * `api-keys` because `RENAMED` carries the old name to the new one. Neither
+   * needs an account id any more, which is the observable difference.
+   */
+  test('api-keys and tokens resolve INTO the overlay, with or without an account id', () => {
+    for (const legacyId of ['api-keys', 'tokens']) {
+      expect(isAccountGraduatedSection(legacyId)).toBe(false);
+      expect(legacySectionRedirect('p1', legacyId)).toBe('/projects/p1/settings/tokens');
+      expect(legacySectionRedirect('p1', legacyId, 'acc1')).toBe('/projects/p1/settings/tokens');
+    }
+  });
+
+  test('`tokens` is a live settings tab; `api-keys` is only ever a redirect', () => {
+    expect(parseSettingsTab('tokens')).toBe('tokens');
+    // The rename is one-way: `api-keys` never becomes a tab id, so nothing
+    // renders a pane for it and no rail row can claim it.
+    expect(parseSettingsTab('api-keys')).toBeNull();
+    expect(SETTINGS_TABS).not.toContain('api-keys' as never);
   });
 
   test('an account id does not divert a project-scoped section', () => {

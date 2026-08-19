@@ -8,6 +8,7 @@ import { reconcileSnapshotQuota } from '../snapshots/quota-gc';
 import { type GitBackedProject, deleteRemoteSessionBranch } from './git';
 import { purgeExpiredMonitorEvents, reconcileMonitorBoxes } from './lib/monitor-box';
 import { emptyMonitorReconcileResult } from './lib/monitor-box-core';
+import { reconcileForwardedPrompts } from './session-lifecycle/consumption';
 import { reconcileUndeliveredPrompts } from './session-lifecycle/undelivered-prompts';
 import { verifyParkedRuntimes } from './reaping/parked-runtime-verification';
 import { reconcileRuntimeWakeFences } from './session-lifecycle/runtime-wake-maintenance';
@@ -234,6 +235,7 @@ export async function runProjectMaintenance(): Promise<void> {
       orphanCompute,
       stuckSessions,
       undeliveredPrompts,
+      forwardedPrompts,
       orphanBoxes,
       branches,
       computeTick,
@@ -284,6 +286,16 @@ export async function runProjectMaintenance(): Promise<void> {
           err instanceof Error ? err.message : err,
         );
         return { claimed: 0, succeeded: 0, failed: 0, queued: 0 };
+      }),
+      // The other end of the same queue: FORWARDED prompts whose ledger
+      // confirmation never arrived. It only ever closes rows — a prompt that
+      // reads `delivering` for ever is a composer that never stops working.
+      reconcileForwardedPrompts().catch((err) => {
+        console.warn(
+          '[project-maintenance] forwarded-prompt reconcile failed:',
+          err instanceof Error ? err.message : err,
+        );
+        return { scanned: 0, confirmed: 0, forceClosed: 0 };
       }),
       // Provider-authoritative orphan-BOX reaper: stops boxes still running on
       // the provider (this env) with no live DB row — the leak the DB-driven
@@ -396,6 +408,8 @@ export async function runProjectMaintenance(): Promise<void> {
         stuckSessions.reconciled ||
         stuckSessions.errors ||
         undeliveredPrompts.claimed ||
+        forwardedPrompts.confirmed ||
+        forwardedPrompts.forceClosed ||
         orphanBoxes.stopped ||
         orphanBoxes.errors ||
         branches.deleted ||
@@ -427,6 +441,7 @@ export async function runProjectMaintenance(): Promise<void> {
         orphanCompute,
         stuckSessions,
         undeliveredPrompts,
+        forwardedPrompts,
         orphanBoxes,
         branches,
         computeTick,

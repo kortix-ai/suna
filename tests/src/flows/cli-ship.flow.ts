@@ -173,6 +173,12 @@ flow(
   {
     domain: 'cli',
     requires: ['managedGitPush'],
+    // Each `ship` is allotted its own 120s CLI budget below, and a real ship
+    // provisions a GitHub repo, commits, and pushes through the git proxy to a
+    // DEPLOYED target. Without a flow-level budget the runner default is 120s
+    // (core/runner.ts), so SHIP-1 could never fit one ship plus init/login — a timeout is NOT
+    // retryable, so it fails the gate outright rather than flaking.
+    timeoutMs: 300_000,
     routes: [
       'GET /v1/accounts/me',
       'POST /v1/projects/provision',
@@ -341,6 +347,12 @@ flow(
   {
     domain: 'cli',
     requires: ['managedGitPush'],
+    // Each `ship` is allotted its own 120s CLI budget below, and a real ship
+    // provisions a GitHub repo, commits, and pushes through the git proxy to a
+    // DEPLOYED target. Without a flow-level budget the runner default is 120s
+    // (core/runner.ts), so SHIP-4 could never fit one ship plus init/login — a timeout is NOT
+    // retryable, so it fails the gate outright rather than flaking.
+    timeoutMs: 300_000,
     routes: [
       'GET /v1/accounts/me',
       'POST /v1/projects/provision',
@@ -450,6 +462,12 @@ flow(
   {
     domain: 'cli',
     requires: ['managedGitPush'],
+    // Each `ship` is allotted its own 120s CLI budget below, and a real ship
+    // provisions a GitHub repo, commits, and pushes through the git proxy to a
+    // DEPLOYED target. Without a flow-level budget the runner default is 120s
+    // (core/runner.ts), so SHIP-6 could never fit its two ships — a timeout is NOT
+    // retryable, so it fails the gate outright rather than flaking.
+    timeoutMs: 600_000,
     routes: [
       'GET /v1/accounts/me',
       'POST /v1/projects/provision',
@@ -512,6 +530,12 @@ flow(
   {
     domain: 'cli',
     requires: ['managedGitPush'],
+    // Each `ship` is allotted its own 120s CLI budget below, and a real ship
+    // provisions a GitHub repo, commits, and pushes through the git proxy to a
+    // DEPLOYED target. Without a flow-level budget the runner default is 120s
+    // (core/runner.ts), so SHIP-9 could never fit its three ships — a timeout is NOT
+    // retryable, so it fails the gate outright rather than flaking.
+    timeoutMs: 900_000,
     routes: [
       'GET /v1/accounts/me',
       'POST /v1/projects/provision',
@@ -584,7 +608,7 @@ flow(
   'CR-9',
   {
     domain: 'cli',
-    requires: ['funded'],
+    requires: ['funded', 'daytona'],
     serial: true,
     timeoutMs: 1_200_000,
     routes: [

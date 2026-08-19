@@ -24,7 +24,10 @@ describe('railGroups', () => {
   });
 
   test('holds exactly the person-scoped tabs, in order', () => {
-    expect(tabsOf()).toEqual(['profile', 'preferences', 'connected']);
+    // `tokens` (labelled "API keys") rejoined on 2026-08-18 — a person's own
+    // keys are person-scoped; only the service-account half is account
+    // configuration and it stayed on `/accounts/[id]`.
+    expect(tabsOf()).toEqual(['profile', 'preferences', 'connected', 'tokens']);
   });
 
   test('every rail tab is a live SettingsTab, and every live SettingsTab has a rail row', () => {

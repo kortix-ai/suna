@@ -6,6 +6,16 @@
  * that's how the chosen model/agent/variant apply to the opening turn. Owned by
  * the SDK so the producer (new-session screen) and consumer (`useSession`)
  * share one contract.
+ *
+ * ## Two producer styles
+ *
+ * A host with an inbox client (apps/web) writes a PICKS-ONLY stash
+ * (`prompt: ''`): the prompt itself becomes a durable server row at session
+ * create (or via `startSessionWithPrompt`), and only the model/agent/variant
+ * hand-off still travels here. An empty prompt therefore round-trips — see
+ * the picks-only test — and `useSession`'s replay sends nothing for it. A
+ * host without one (apps/whitelabel-demo, the golden thin-SDK reference)
+ * writes the full stash and the replay path delivers it exactly as always.
  */
 
 export interface StartStash {

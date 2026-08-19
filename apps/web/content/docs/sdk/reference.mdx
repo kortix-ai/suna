@@ -51,7 +51,7 @@ kortix.runtime(); // OpenCode REST compatibility client
 
 | method | what |
 | --- | --- |
-| `tokens.list(accountId?)` | list your API keys |
+| `tokens.list(accountId?, options?)` | list API keys — the whole account's, or only your own with `{ mine: true }` |
 | `tokens.create(input)` | mint one — `{ accountId?, name, expiresAt?, projectId? }` |
 | `tokens.revoke(tokenId, accountId?)` | revoke one |
 

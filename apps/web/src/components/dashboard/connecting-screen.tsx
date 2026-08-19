@@ -16,7 +16,7 @@ import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
 import { STAGE_LABELS, type ProvisioningStageInfo } from '@/lib/provisioning-stages';
-import { type SandboxRecoveryPhase, useRuntimeConnectionStore } from '@kortix/sdk/react';
+import { useRuntimeConnectionStore } from '@kortix/sdk/react';
 import { useAppHome } from '@/lib/onboarding/use-app-home';
 
 /**
@@ -57,8 +57,6 @@ export function ConnectingScreen({
   const initialCheckDone = useRuntimeConnectionStore((s) => s.initialCheckDone);
   const reconnectAttempts = useRuntimeConnectionStore((s) => s.reconnectAttempts);
   const disconnectedAt = useRuntimeConnectionStore((s) => s.disconnectedAt);
-  const recoveryPhase = useRuntimeConnectionStore((s) => s.recoveryPhase);
-  const restartRequestedAt = useRuntimeConnectionStore((s) => s.restartRequestedAt);
   const healthy = useRuntimeConnectionStore((s) => s.healthy);
 
   const router = useRouter();
@@ -153,8 +151,6 @@ export function ConnectingScreen({
             label={serverLabel}
             reconnectAttempts={reconnectAttempts}
             provider={effectiveProvider}
-            recoveryPhase={recoveryPhase}
-            restartRequestedAt={restartRequestedAt}
             degraded={false}
             onSwitch={handleSwitch}
             sandboxId={resolvedSandboxId}
@@ -486,8 +482,6 @@ function UnreachableView({
   label,
   reconnectAttempts,
   provider,
-  recoveryPhase,
-  restartRequestedAt,
   degraded,
   onSwitch,
   sandboxId,
@@ -495,18 +489,10 @@ function UnreachableView({
   label: string;
   reconnectAttempts: number;
   provider?: string;
-  recoveryPhase: SandboxRecoveryPhase;
-  restartRequestedAt: number | null;
   degraded?: boolean;
   onSwitch: () => void;
   sandboxId?: string;
 }) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
-  const isRestartRecovering = recoveryPhase !== 'idle';
-  const secondsSinceRestart = restartRequestedAt
-    ? Math.max(1, Math.floor((Date.now() - restartRequestedAt) / 1000))
-    : null;
-
   return (
     <>
       <div
@@ -518,52 +504,24 @@ function UnreachableView({
 
       <div className="flex flex-col items-center gap-1.5">
         <h1 className="text-foreground/90 text-sm font-medium">
-          {recoveryPhase === 'restarting_host'
-            ? 'Rebooting host'
-            : recoveryPhase === 'restarting_runtime'
-              ? 'Restarting runtime services'
-              : recoveryPhase === 'restarting_workload'
-                ? 'Restarting workload'
-                : degraded
-                  ? 'Workspace services unavailable'
-                  : 'Workspace offline'}
+          {degraded ? 'Workspace services unavailable' : 'Workspace offline'}
         </h1>
         <p className="text-muted-foreground/55 max-w-[300px] text-center text-xs leading-relaxed">
-          {recoveryPhase === 'restarting_host'
-            ? 'The host reboot was accepted. Waiting for the machine and services to come back online.'
-            : recoveryPhase === 'restarting_runtime'
-              ? 'The runtime restart was accepted. Waiting for core services to come back online.'
-              : recoveryPhase === 'restarting_workload'
-                ? 'The workload restart was accepted. Waiting for the container and core services to come back online.'
-                : degraded
-                  ? 'The host is reachable, but the core workspace runtime is failing requests. Restart the runtime or workload to recover services.'
-                  : 'This workspace is unreachable. Return to projects and open or create another session.'}
+          {degraded
+            ? 'The host is reachable, but the core workspace runtime is failing requests. Restart the runtime or workload to recover services.'
+            : 'This workspace is unreachable. Return to projects and open or create another session.'}
         </p>
         {sandboxId ? (
           <p className="text-muted-foreground/35 font-mono text-xs">
             Sandbox {sandboxId.slice(0, 8)}
           </p>
         ) : null}
-        {isRestartRecovering && secondsSinceRestart ? (
-          <p className="text-muted-foreground/35 font-mono text-xs">
-            {tHardcodedUi.raw('componentsDashboardConnectingScreen.line564JsxTextRecovering')}
-            {secondsSinceRestart}s
-          </p>
-        ) : null}
       </div>
 
       <div className="text-muted-foreground/45 inline-flex items-center gap-1.5 text-xs">
         <Loading className="h-3 w-3" />
-        <span>
-          {recoveryPhase === 'restarting_host'
-            ? 'Waiting for host and services'
-            : recoveryPhase === 'restarting_runtime'
-              ? 'Waiting for core runtime'
-              : recoveryPhase === 'restarting_workload'
-                ? 'Waiting for workload and services'
-                : 'Retrying automatically'}
-        </span>
-        {reconnectAttempts > 0 && !isRestartRecovering && (
+        <span>Retrying automatically</span>
+        {reconnectAttempts > 0 && (
           <span className="text-muted-foreground/35 font-mono tabular-nums">
             · {reconnectAttempts}
           </span>

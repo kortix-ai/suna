@@ -37,7 +37,7 @@ describe('a queue retry re-sends ONE delivery, not two', () => {
     // wire id server-side, so the key cannot be re-derived wrongly by a client.
     const retry = between(
       'const handleRetryQueuedMessage = useCallback(',
-      '// Stop the transcript polling fallback',
+      '// Associate stashed command info',
     );
 
     expect(retry).toContain('promptInbox.retry(id)');
@@ -61,10 +61,10 @@ describe('a queue retry re-sends ONE delivery, not two', () => {
     expect(send).toContain('promptInbox.enqueue({');
     expect(send).not.toContain('sessionState.sendParts(');
     expect(send).not.toContain('sendAndRecover({');
-    // The wire id is minted HERE, by the SDK, and carried with the submission —
-    // the control plane cannot place one, and `messageID` above is the
-    // optimistic-render id, which encodes the wrong bits for the wire.
-    expect(send).toContain('mintSessionWireMessageId(sessionId, clientMessageId)');
+    // The wire id is minted by the SDK (`mintSessionWireMessageId`, above the
+    // POST) and is ALSO the optimistic bubble's id — one id per prompt — so
+    // the row carries `messageID` itself.
+    expect(send).toContain('messageId: messageID,');
     // Recovery on a failed enqueue is unchanged.
     expect(send).toContain('recoverFromSendFailure(sessionId, messageID, cause');
   });
@@ -73,12 +73,8 @@ describe('a queue retry re-sends ONE delivery, not two', () => {
     // The opposite failure: keying every send off one value would resurrect the
     // silent-drop bug this branch exists to fix. Only the queue names a
     // submission, and each enqueue mints its own key.
-    const composer = between(
-      'const handleSendWithDraftClear = useCallback(',
-      '[handleSend, failedStartDraft, sessionId]',
-    );
+    const composer = between('await handleSend(text, files, mentions);', 'prefill={composerPrefill}');
 
-    expect(composer).toContain('handleSend(text, files, mentions)');
     expect(composer).not.toContain('clientMessageId');
   });
 });

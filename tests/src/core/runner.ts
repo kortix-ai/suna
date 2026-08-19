@@ -10,15 +10,18 @@ import { withRecorder, type StepRecorder } from "./context";
 import { AssertionError } from "./expect";
 import {
   allFlows,
+  attemptsFor,
+  classifyFlowError,
   clearRegistry,
-  DEFAULT_FLOW_ATTEMPTS,
+  KE2E_FLOW_TIMEOUT,
+  maxAttemptBound,
+  readAttemptPolicy,
   type RegisteredFlow,
 } from "./flow";
 import { loadEnv, type Env } from "./env";
 import { log } from "./log";
 import { formatFlowProgress, redactSensitiveLogText } from "./progress";
-import { partitionParallelFlows } from "./lanes";
-import { mapWithConcurrency } from "./concurrency";
+import { partitionParallelFlows, runScheduled, type ConcurrentLane } from "./lanes";
 import { planLocalFlows } from "./local-profile";
 import { ke2eRetryDelayMs } from "./client";
 import {
@@ -99,15 +102,15 @@ async function runOneFlow(
 ): Promise<FlowResult> {
   const steps: StepResult[] = [];
   const flowStart = performance.now();
-  // Every flow gets one clean retry for errors explicitly marked as
-  // infrastructure failures. Assertion failures never retry.
-  const configuredAttempts = Number(
-    process.env.KE2E_DEFAULT_FLOW_ATTEMPTS ?? DEFAULT_FLOW_ATTEMPTS,
-  );
-  const defaultAttempts = Number.isFinite(configuredAttempts)
-    ? Math.max(1, Math.trunc(configuredAttempts))
-    : DEFAULT_FLOW_ATTEMPTS;
-  const maxAttempts = f.meta.retry?.attempts ?? defaultAttempts;
+  // Retries are budgeted PER ERROR CLASS (see flow.ts):
+  //   assertion / unmarked   → 1 attempt, never retried
+  //   flow-level timeout     → KE2E_TIMEOUT_ATTEMPTS, default 1
+  //   session-runtime ready  → KE2E_SESSION_RUNTIME_ATTEMPTS, default 2
+  //   marked infra (network, laundered 503) → KE2E_FLOW_ATTEMPTS, default 3
+  // A per-flow `meta.retry.attempts` overrides every class explicitly.
+  const policy = readAttemptPolicy();
+  const declaredAttempts = f.meta.retry?.attempts;
+  const maxAttempts = declaredAttempts ?? maxAttemptBound(policy);
 
   // Capability gating → skip with reason.
   const missing = (f.meta.requires ?? []).filter((cap) => !env.capabilities[cap]);
@@ -167,11 +170,13 @@ async function runOneFlow(
         return mkResult(f, "skip", err.reason, steps, performance.now() - flowStart, attempt);
       }
       lastError = err;
-      // Never retry assertion failures — only infra signals.
-      const retryable = !(err instanceof AssertionError) && (err as any)?.ke2eRetryable === true;
-      if (!retryable || attempt >= maxAttempts) break;
+      // Never retry assertion failures — only infra signals, and each class
+      // gets its own budget so a timeout can never triple the serial tail.
+      const retryClass = classifyFlowError(err, err instanceof AssertionError);
+      const allowed = declaredAttempts ?? attemptsFor(retryClass, policy);
+      if (attempt >= allowed || attempt >= maxAttempts) break;
       log.warn(
-        `retry ${f.id} after attempt ${attempt}/${maxAttempts}: ` +
+        `retry ${f.id} (${retryClass}) after attempt ${attempt}/${allowed}: ` +
           `${redactSensitiveLogText((err as Error)?.message ?? String(err))}`,
       );
       await new Promise((resolve) => setTimeout(resolve, ke2eRetryDelayMs(err)));
@@ -221,8 +226,12 @@ function mkResult(
 function withTimeout<T>(p: Promise<T>, ms: number, id: string): Promise<T> {
   return new Promise<T>((res, rej) => {
     const t = setTimeout(() => {
+      // NOT ke2eRetryable. A flow that burned its whole declared timeout is
+      // hung, not blipping; retrying it spends the same timeout again on the
+      // most expensive flows in the suite. Tagged as its own class so
+      // KE2E_TIMEOUT_ATTEMPTS can re-enable retries deliberately.
       const e = new Error(`flow ${id} exceeded ${ms}ms`);
-      (e as any).ke2eRetryable = true;
+      (e as any)[KE2E_FLOW_TIMEOUT] = true;
       rej(e);
     }, ms);
     p.then(
@@ -299,14 +308,14 @@ export async function runSuite(opts: RunOptions): Promise<RunResult> {
         throw error;
       }
     };
+    let concurrent: ConcurrentLane[];
     if (opts.workers !== undefined) {
       const workers = positiveWorkerCount(opts.workers, 4);
-      log.info(`lanes: ${parallelLane.length} parallel flows · ${workers} explicit workers`);
-      out.push(
-        ...(await mapWithConcurrency(parallelLane, workers, (f) =>
-          runTrackedFlow(f),
-        )),
+      log.info(
+        `lanes: ${parallelLane.length} parallel flows × ${workers} explicit workers · ` +
+          `${serialLane.length} serial flows × 1 worker (overlapped)`,
       );
+      concurrent = [{ flows: parallelLane, workers }];
     } else {
       const { apiLane, sandboxLane } = partitionParallelFlows(parallelLane);
       const apiWorkers = positiveWorkerCount(
@@ -319,18 +328,21 @@ export async function runSuite(opts: RunOptions): Promise<RunResult> {
       );
       log.info(
         `lanes: ${apiLane.length} API flows × ${apiWorkers} workers · ` +
-          `${sandboxLane.length} sandbox flows × ${sandboxWorkers} workers`,
+          `${sandboxLane.length} sandbox flows × ${sandboxWorkers} workers · ` +
+          `${serialLane.length} serial flows × 1 worker (overlapped) · ` +
+          `${globalLane.length} global flows last`,
       );
-      const [apiResults, sandboxResults] = await Promise.all([
-        mapWithConcurrency(apiLane, apiWorkers, runTrackedFlow),
-        mapWithConcurrency(sandboxLane, sandboxWorkers, (f) =>
-          runTrackedFlow(f),
-        ),
-      ]);
-      out.push(...apiResults, ...sandboxResults);
+      concurrent = [
+        { flows: apiLane, workers: apiWorkers },
+        { flows: sandboxLane, workers: sandboxWorkers },
+      ];
     }
-    for (const f of serialLane) out.push(await runTrackedFlow(f));
-    for (const f of globalLane) out.push(await runTrackedFlow(f));
+    out.push(
+      ...(await runScheduled(
+        { concurrent, serial: serialLane, global: globalLane },
+        runTrackedFlow,
+      )),
+    );
 
     out.sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));
     const durationMs = performance.now() - start;

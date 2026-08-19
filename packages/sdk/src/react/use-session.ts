@@ -26,6 +26,11 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useOpenCodeCompactionStore } from '../browser/stores/opencode-compaction-store';
 import { useSessionWorkingStore } from '../browser/stores/session-working-store';
 import type { SendReceipt } from '../core/session/working';
+import {
+  compactionExpiryAtMs,
+  projectCompacting,
+  serverCompactionRevalidateAtMs,
+} from '../core/session/compaction';
 import { useOpenCodePendingStore } from '../browser/stores/opencode-pending-store';
 import {
   markRuntimeReadyVerified,
@@ -58,11 +63,13 @@ import {
   type PromptPart,
   abortInFlightDeliveries,
   awaitAbortSettlement,
+  opencodeKeys,
   rejectQuestion as rejectQuestionApi,
   replyToPermission,
   replyToQuestion,
   useAbortOpenCodeSession,
   useExecuteOpenCodeCommand,
+  useOpenCodeSession,
   useSendOpenCodeMessage,
 } from './use-opencode-sessions';
 import { unwrap } from './use-opencode-sessions/shared';
@@ -494,7 +501,10 @@ export function beginOptimisticPlainTextSend(
     time: { created: Date.now() },
   } as Message;
   useSyncStore.getState().optimisticAdd(sessionId, info, optimisticParts);
-  useSyncStore.getState().setStatus(sessionId, { type: 'busy' });
+  // No status write. `sessionStatus` is where the runtime's own SSE frames
+  // land, and a fabricated `busy` there outranked a real `GET .../turn` read
+  // stamped after it. `sendParts` files a `SendReceipt` instead — the claim
+  // this tab is actually entitled to make.
   return { messageId, parts: [{ type: 'text', text, id: partId }] };
 }
 
@@ -1060,9 +1070,65 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   // keyed by request id carrying sessionID). useSessionSync does NOT surface them.
   const questionMap = useOpenCodePendingStore((s) => s.questions);
   const permissionMap = useOpenCodePendingStore((s) => s.permissions);
-  const isCompacting = useOpenCodeCompactionStore(
-    (state) => switched && Boolean(state.compactingBySession[ocSessionId]),
+  // Is this session COMPACTING? Two inputs, one projection — see
+  // `core/session/compaction.ts`. It used to be the raw client-only flag,
+  // cleared ONLY by the `session.compacted` SSE frame, so a missed frame pinned
+  // the composer for the lifetime of the tab and a compaction started anywhere
+  // else was invisible.
+  const optimisticCompactionAtMs = useOpenCodeCompactionStore((state) =>
+    switched ? (state.compactingBySession[ocSessionId] ?? null) : null,
   );
+  // `Session.time.compacting` — the runtime's own record. This query is the
+  // same cache entry `session.compacted` and `session.updated` already write
+  // (`opencodeKeys.runtimeSession`), so reading it here costs no extra request
+  // in a host that mounts the session row anyway.
+  const runtimeSessionRow = useOpenCodeSession(switched ? ocSessionId : '');
+  const compactionInputs = {
+    optimisticAtMs: optimisticCompactionAtMs,
+    serverCompactingAtMs: runtimeSessionRow.data?.time?.compacting ?? null,
+    nowMs: Date.now(),
+  };
+  const isCompacting = projectCompacting(compactionInputs);
+  // The cap has to apply when NOTHING else re-renders — a lost
+  // `session.compacted` frame is exactly the case where no further event
+  // arrives — so the expiry instant is armed explicitly. Same mechanism, and
+  // the same reason, as `useSessionWorking`'s `workingExpiryAtMs` timer.
+  const [, setCompactionTick] = useState(0);
+  const compactionExpiry = compactionExpiryAtMs(compactionInputs);
+  useEffect(() => {
+    if (compactionExpiry === null) return;
+    const timer = setTimeout(
+      () => setCompactionTick((tick) => tick + 1),
+      Math.max(0, compactionExpiry - Date.now()) + 1,
+    );
+    return () => clearTimeout(timer);
+  }, [compactionExpiry]);
+  // The server-observed branch of `projectCompacting` (rule 1) is otherwise
+  // unbounded: it stays authoritative until `opencodeKeys.runtimeSession`'s
+  // cached row is refreshed, and the only event wired to refresh it
+  // (`session.compacted`, in `use-opencode-events/handle-event.ts`) is one
+  // SSE frame that can be lost — a backgrounded tab, a stream reconnect, or
+  // that handler's own refetch failing. Without this, a lost frame pins
+  // `isCompacting` — and therefore the composer and slash-commands
+  // (`session-chat.tsx`'s `effectiveBusy`) — for the rest of the tab's life.
+  // This forces a REAL, retry-backed re-check (through the same query
+  // `useOpenCodeSession` above already runs, so it inherits its 3-attempt
+  // exponential-backoff retry) once the observed flag has gone unconfirmed
+  // for `SERVER_COMPACTION_REVALIDATE_MS` — independent of whether
+  // `session.compacted` ever arrives. If the server still reports
+  // compacting, the fresh timestamp re-arms this same timer; once it does
+  // not, `serverCompactingAtMs` clears and the projection follows.
+  const serverCompactionRevalidateAt = serverCompactionRevalidateAtMs(compactionInputs);
+  useEffect(() => {
+    if (serverCompactionRevalidateAt === null || !switched || !ocSessionId) return;
+    const timer = setTimeout(
+      () => {
+        void queryClient.invalidateQueries({ queryKey: opencodeKeys.runtimeSession(ocSessionId) });
+      },
+      Math.max(0, serverCompactionRevalidateAt - Date.now()),
+    );
+    return () => clearTimeout(timer);
+  }, [serverCompactionRevalidateAt, switched, ocSessionId, queryClient]);
   const removeQuestion = useOpenCodePendingStore((s) => s.removeQuestion);
   const removePermission = useOpenCodePendingStore((s) => s.removePermission);
   const questions = useMemo(
@@ -1110,19 +1176,17 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   const [sendState, setSendState] = useState<SendState>(IDLE_SEND_STATE);
   const pending = sendState.pending;
   const pendingBaseCount = useRef(0);
+  // Cleared when the send's echo lands — a real observation. The 30s timeout
+  // that used to sit beside this is deleted: no in-repo consumer reads
+  // `pending`, and where it could fire it fired wrongly — 30s is shorter than
+  // a legitimate inbox path (18.9s Daytona / 24.5s Platinum boot plus the
+  // drain). The sync store's optimistic message and the `SendReceipt` carry
+  // the state it approximated, each with an honest bound.
   useEffect(() => {
     if (pending && userMsgCount > pendingBaseCount.current) {
       setSendState((s) => (s.pending ? { ...s, pending: null } : s));
     }
   }, [userMsgCount, pending]);
-  useEffect(() => {
-    if (!pending) return;
-    const t = setTimeout(
-      () => setSendState((s) => (s.pending ? { ...s, pending: null } : s)),
-      30_000,
-    );
-    return () => clearTimeout(t);
-  }, [pending]);
 
   const sendParts = async (
     parts: PromptPart[],
@@ -1283,10 +1347,10 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
       // Without this the composer flipped Send back to Stop ~120ms after the
       // click and stayed there for the whole abort. See `AbortReceipt`.
       noteAbortReceipt(sessionId, Date.now());
-      // Optimistic idle paint, the mirror of the send's optimistic busy one.
-      // Neither is a source of truth: any newer server or stream observation
-      // outranks both — see `projectWorking`.
-      useSyncStore.getState().setStatus(ocSessionId, { type: 'idle' });
+      // No fabricated idle frame here: the receipt above IS the optimistic
+      // idle, with provenance and a bound. A fabricated frame outranked the
+      // control plane's `/turn` answer in `projectWorking` for the whole
+      // abort round-trip — the laundering this migration removes.
       abortInFlightDeliveries(ocSessionId);
     }
     questions.forEach((q) => removeQuestion(q.id));
@@ -1330,6 +1394,12 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     if (sync.messages.length > 0) return;
     if (stash.model) picks.setModel(stash.model);
     if (stash.agent) picks.setAgent(stash.agent);
+    // A picks-only stash (`prompt: ''`) seeds the selections above and sends
+    // NOTHING: apps/web's producers now deliver the first prompt as a durable
+    // inbox row (server-side at create, or `startSessionWithPrompt`), and the
+    // stash carries only the model/agent hand-off. A full stash — the
+    // whitelabel-demo producer — still replays here exactly as before.
+    if (!stash.prompt.trim()) return;
     send(stash.prompt, {
       model: stash.model,
       agent: stash.agent,

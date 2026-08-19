@@ -5,8 +5,9 @@
  * Existing spec ids:
  *   SNAP-1  GET  /snapshots                (read)
  *   SNAP-2  POST /snapshots/rebuild        (manage + account write)
- *   SBX-1   sandbox create = implicit on session create (no endpoint)
- *   SBX-2   sandbox stop   = session DELETE (no endpoint)
+ * Sandbox create (implicit on session create) and sandbox stop (session DELETE)
+ * carry no endpoint of their own, so they carry no flow id — see the sandbox
+ * boundary note in spec/end-to-end.md section 8.
  *
  * New ids added here for the standalone read/CRUD/config endpoints:
  *   SNAP-3  POST /snapshots/fix-with-agent

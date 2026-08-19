@@ -59,7 +59,7 @@ export const RESOURCE_GRANT_TYPES = ['agent', 'skill', 'secret'] as const;
 export type ResourceType = (typeof RESOURCE_GRANT_TYPES)[number];
 
 /** The resource kinds a NEW member/department-scoped grant may be created
- *  for. Only `agent` — skills and secrets are governed by the editor role
+ *  for. Only `agent` — skills and secrets are governed by the manager role
  *  (edit) + agent inheritance (use), not a direct member-scoped grant. Existing
  *  skill/secret grant rows (created before this restriction) still read,
  *  list, and revoke normally; this only gates the CREATE path. */
@@ -140,9 +140,70 @@ export async function isProjectResourceExplicitlyGranted(
 }
 
 /**
+ * THE per-resource policy for a human caller — the one place that decides what
+ * "nobody scoped this" means. Both folds (authorizeV2's single-resource check
+ * and filterAccessibleProjectResources' batch filter) route through here, so
+ * "can this user use agent X" answers the same whether it is asked one resource
+ * at a time or for a whole list.
+ *
+ * Two independent questions, and only the FIRST one differs by tier:
+ *
+ *   1. UNSCOPED (no grant rows at all). For an `agent`, open to manager-tier
+ *      and CLOSED to member-tier. `skill`/`secret` stay open to everyone.
+ *   2. SCOPED (>=1 grant row). Usable only by the named members/groups —
+ *      IDENTICALLY for both tiers.
+ *
+ * Agents turned deny-by-default for members because an unscoped agent is the
+ * NORMAL state: projects ship with a `default_agent` and no grants at all.
+ * Under the old open rule every member could run every agent in every project
+ * they could see, and "grant this department one agent" added nothing, because
+ * they already had all of them. The open default made the grants UI decorative
+ * for the one case it exists to serve.
+ *
+ * `managerTier` deliberately moves ONLY the default. A manager is not exempt
+ * from an explicit grant: scoping an agent to the finance group still keeps
+ * every other manager out of it, which is what makes scoping meaningful at all.
+ * What the tier prevents is the opposite failure — a project manager who has
+ * created no grants yet being locked out of the agents they administer.
+ *
+ * Account owners/admins never reach here; they bypass the fold at the call
+ * sites, as do service accounts (governed by their own policies + agentGrant).
+ */
+/** Object types whose UNSCOPED default is closed for member-tier. Drives both
+ *  `isProjectResourceUsableByMember` and the memo's empty-map caching rule. */
+export const CLOSED_BY_DEFAULT_RESOURCE_TYPES: ReadonlySet<string> = new Set(['agent']);
+
+export function isProjectResourceUsableByMember(
+  resourceType: ResourceType,
+  grantsForResource: ResourceGrantPrincipal[] | undefined,
+  userId: string,
+  groupIds: readonly string[],
+  managerTier: boolean,
+): boolean {
+  if (!CLOSED_BY_DEFAULT_RESOURCE_TYPES.has(resourceType)) {
+    return isResourceAccessible(grantsForResource, userId, groupIds);
+  }
+  // Unscoped agent: the tier decides. Scoped agent: only the grantees, whatever
+  // the tier — `isResourceExplicitlyGranted` answers both because it returns
+  // false for the empty case, which the branch above has already handled.
+  if (!grantsForResource || grantsForResource.length === 0) return managerTier;
+  return isResourceExplicitlyGranted(grantsForResource, userId, groupIds);
+}
+
+/**
  * project+type keyed map: resourceId → granted principals (non-expired allows).
- * Memoized; the empty map is cached too (the common unscoped case) and busted on
- * mutation. Registered as a project-scoped memo so a grant change drops it.
+ * Memoized and busted on mutation; registered as a project-scoped memo so a
+ * grant change drops it — on THIS process. Invalidation does not cross API
+ * replicas, so a sibling replica can hold a stale entry for up to TTL_MS.
+ *
+ * The EMPTY map is cached only for object types whose unscoped default is
+ * OPEN (skills, secrets): a stale empty map there means "still open", which is
+ * the state the caller already had. Agents are deny-by-default for member-tier
+ * (2026-08-19), so a stale empty map would mean "still closed" — a member who
+ * was just granted an agent kept getting 403 for ~15s on replicas that had not
+ * seen the write (observed on dev: create 201, immediate prompt 403, then 202).
+ * One extra indexed query per uncached check is the price of grants taking
+ * effect immediately everywhere.
  */
 const loadProjectResourceGrants = ttlMemo({
   ttlMs: TTL_MS,
@@ -175,7 +236,8 @@ const loadProjectResourceGrants = ttlMemo({
     }
     return map;
   },
-  shouldCache: () => true,
+  shouldCache: (map, _projectId, resourceType) =>
+    map.size > 0 || !CLOSED_BY_DEFAULT_RESOURCE_TYPES.has(resourceType),
 });
 registerProjectScopedMemo(loadProjectResourceGrants);
 
@@ -232,9 +294,12 @@ export async function filterAccessibleResourceIds(
   resourceIds: readonly string[],
   userId: string,
   groupIds: readonly string[],
+  managerTier = false,
 ): Promise<string[]> {
   const map = await loadProjectResourceGrants(projectId, resourceType);
-  return resourceIds.filter((id) => isResourceAccessible(map.get(id), userId, groupIds));
+  return resourceIds.filter((id) =>
+    isProjectResourceUsableByMember(resourceType, map.get(id), userId, groupIds, managerTier),
+  );
 }
 
 // ─── Repository (CRUD) ──────────────────────────────────────────────────────

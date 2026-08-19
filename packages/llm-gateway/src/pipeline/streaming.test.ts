@@ -495,23 +495,24 @@ describe('relayStream client abort propagation', () => {
   });
 });
 
-// Regression coverage for the unbounded-buffer finding: the live preview
-// retained for the trace must stay bounded regardless of total stream size,
-// while usage/error extraction (which needs to see every chunk) stays correct.
-describe('relayStream bounded response buffer', () => {
-  test('caps the retained response preview independent of total stream size, while still relaying everything to the client', async () => {
+// Regression coverage for the unbounded-buffer finding: usage/error
+// extraction stays O(1) per chunk (the incremental scanner) regardless of
+// total stream size. The trace preview retained alongside it is a separate
+// concern and is captured in FULL, uncapped — a log must show exactly what
+// was relayed to the client, never a truncated stand-in for it.
+describe('relayStream response buffer', () => {
+  test('retains the full response preview for the trace, matching everything relayed to the client', async () => {
     const up = controllableUpstream();
     let settledPreview: unknown = 'unset';
     const out = relayStream({
       upstreamBody: up.stream,
       captureBodies: true,
-      requestId: 'r-bounded-1',
+      requestId: 'r-full-1',
       logger: noop,
       settle: async (_usage, response) => {
         settledPreview = response;
       },
       heartbeatMs: 10_000,
-      maxCapturedBodyBytes: 32,
     });
     const collected = drain(out);
     const big = 'x'.repeat(5_000);
@@ -519,27 +520,28 @@ describe('relayStream bounded response buffer', () => {
     up.push('data: [DONE]\n\n');
     up.close();
     const text = await collected;
-    // The full stream still reaches the client verbatim...
-    expect(text.length).toBeGreaterThan(5_000);
     await delay(10); // let the detached finally run settle()
-    // ...but the retained preview never grows past the configured cap.
+    // The retained trace preview is byte-for-byte what reached the client —
+    // no truncation, no gap between the two.
     expect(typeof settledPreview).toBe('string');
-    expect((settledPreview as string).length).toBe(32);
+    expect((settledPreview as string).length).toBe(text.length);
+    expect(settledPreview).toBe(text);
   });
 
-  test('extracts usage correctly from a long stream even though the retained preview is capped well below it', async () => {
+  test('extracts usage correctly from a long stream while retaining the full preview alongside it', async () => {
     const up = controllableUpstream();
     let settledUsage: unknown = 'unset';
+    let settledPreview: unknown = 'unset';
     const out = relayStream({
       upstreamBody: up.stream,
       captureBodies: true,
-      requestId: 'r-bounded-2',
+      requestId: 'r-full-2',
       logger: noop,
-      settle: async (usage) => {
+      settle: async (usage, response) => {
         settledUsage = usage;
+        settledPreview = response;
       },
       heartbeatMs: 10_000,
-      maxCapturedBodyBytes: 16,
     });
     const collected = drain(out);
     const big = 'y'.repeat(10_000);
@@ -549,9 +551,10 @@ describe('relayStream bounded response buffer', () => {
     );
     up.push('data: [DONE]\n\n');
     up.close();
-    await collected;
+    const text = await collected;
     await delay(10);
     expect(settledUsage).toMatchObject({ promptTokens: 11, completionTokens: 22 });
+    expect(settledPreview).toBe(text);
   });
 });
 

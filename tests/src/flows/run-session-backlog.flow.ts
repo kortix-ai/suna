@@ -80,7 +80,10 @@ flow(
     domain: 'sessions',
     requires: ['funded', 'daytona'],
     serial: true,
-    timeoutMs: 360_000,
+    // Raised from 360_000 because THIS change adds a real proxy turn (conversation
+    // list/boot + prompt + assistant output) ahead of the mirror wait. Sum of the
+    // bounded waits below now exceeds 360s. Forced arithmetic, not timeout tuning.
+    timeoutMs: 900_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
       'POST /v1/projects/:projectId/sessions/:sessionId/start',
@@ -94,8 +97,37 @@ flow(
       prompt: 'Summarize why deterministic end-to-end tests reduce release risk in one sentence.',
     });
 
+    let sandboxId = '';
     await ctx.step('the real sandbox reaches OpenCode readiness after the initial prompt', async () => {
-      await waitForSessionReady(ctx, project.id, session.id);
+      const started = await waitForSessionReady(ctx, project.id, session.id);
+      sandboxId = String(started?.sandbox?.external_id ?? started?.sandbox?.externalId ?? '');
+      if (!sandboxId) throw new Error(`session ${session.id} became ready without a sandbox id`);
+    });
+
+    // The mirror is populated by the PRE-PROMPT hooks on the preview proxy —
+    // `generateSessionTitleFromFirstPrompt` + `scheduleOpencodeSnapshotSync`
+    // (apps/api/src/sandbox-proxy/routes/preview.ts REAL_PRE_PROMPT_DEPS). A
+    // session whose ONLY prompt was baked into the guest as KORTIX_INITIAL_PROMPT
+    // never crosses that proxy, so it "never crosses a titling hook again" —
+    // apps/api/src/projects/routes/r4.ts says exactly that in its own comment.
+    // Waiting for the mirror straight after an initial_prompt boot is therefore
+    // unsatisfiable by construction. Drive ONE real turn through the proxy, the
+    // way every client does, and then assert the mirror the flow is about.
+    let ocSessionId = '';
+    await ctx.step('a real prompt through the preview proxy produces assistant output', async () => {
+      ocSessionId = await canonicalOcConversation(ctx, sandboxId);
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(ocPath(sandboxId, `/session/${ocSessionId}/prompt_async`), {
+          parts: [
+            {
+              type: 'text',
+              text: 'Summarize why deterministic end-to-end tests reduce release risk in one sentence.',
+            },
+          ],
+        });
+      r.status([200, 202, 204]);
+      await waitForAssistantOutput(ctx, sandboxId, ocSessionId);
     });
 
     let mirrored: any = null;
@@ -202,6 +234,44 @@ async function createOcConversation(ctx: FlowContext, sandboxId: string): Promis
   const id = ready!.json<any>()?.id;
   if (!id) throw new Error(`OpenCode session create returned no id: ${ready!.text()}`);
   return id;
+}
+
+/**
+ * The OpenCode conversation the server will treat as this session's canonical
+ * root. The snapshot pass scopes `metadata.opencode_sessions` to exactly that
+ * root (apps/api/src/projects/opencode-session-snapshot.ts), so a prompt sent to
+ * any OTHER root is filtered straight back out of the mirror. Mirror the
+ * server's own rule — most-recently-active parentless root, per
+ * `pickCanonicalRoot` in apps/api/src/projects/opencode-session-resolver.ts —
+ * and only create a conversation when the guest has none at all.
+ */
+async function canonicalOcConversation(ctx: FlowContext, sandboxId: string): Promise<string> {
+  const listed = await waitFor(
+    async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get(ocPath(sandboxId, '/session'));
+      if (r.statusCode === 502 || r.statusCode === 503 || r.statusCode === 504) return null;
+      return r.statusCode === 200 ? r.json<any[]>() : null;
+    },
+    {
+      until: (rows) => Array.isArray(rows),
+      timeoutMs: 120_000,
+      intervalMs: 3_000,
+      description: `OpenCode conversation list on sandbox ${sandboxId}`,
+    },
+  );
+
+  const roots = (listed ?? []).filter((s: any) => !(s?.parentID ?? s?.parent_id));
+  if (roots.length === 0) return createOcConversation(ctx, sandboxId);
+  const activity = (s: any) => s?.time?.updated ?? s?.time?.created ?? 0;
+  roots.sort(
+    (a: any, b: any) =>
+      activity(b) - activity(a) ||
+      (b?.time?.created ?? 0) - (a?.time?.created ?? 0) ||
+      String(a?.id).localeCompare(String(b?.id)),
+  );
+  const id = roots[0]?.id;
+  if (!id) throw new Error(`no canonical OpenCode root on sandbox ${sandboxId}`);
+  return String(id);
 }
 
 function hasAssistantOutput(messages: unknown): boolean {

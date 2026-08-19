@@ -8,6 +8,7 @@ import {
   PatPolicyError,
   createAccountToken,
   listAccountTokens,
+  listPersonalAccountTokens,
   revokeAccountToken,
 } from '../../repositories/account-tokens';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
@@ -24,6 +25,17 @@ import {
   resolveAccountDisplayNames,
   lookupEmailsByUserIds,
 } from './app';
+
+/**
+ * A query flag arrives as a string or not at all. `?mine`, `?mine=true` and
+ * `?mine=1` all mean yes; anything else — including `?mine=false` — means no,
+ * so a caller that spells the negative out gets the unnarrowed list rather
+ * than a surprising narrowing on the truthiness of the string "false".
+ */
+export function isTruthyFlag(raw: string | undefined): boolean {
+  if (raw === undefined) return false;
+  return raw === '' || raw === 'true' || raw === '1';
+}
 
 // Routes are registered via this function (called by the orchestrator AFTER
 // middleware + mounts) so the registration order stays byte-identical to the
@@ -118,7 +130,21 @@ accountsRouter.openapi(
     tags: ['accounts'],
     summary: 'List CLI PATs for the active account',
     ...auth,
-    request: { query: z.object({ account_id: z.string() }).partial() },
+    request: {
+      query: z
+        .object({
+          account_id: z.string(),
+          // `mine=true` narrows the list to the CALLER'S OWN hand-minted API
+          // keys — no other member's keys, no session connector tokens, no
+          // service-account bearers. That is what a person's own settings page
+          // shows (`/settings/tokens`); the account hub's Tokens tab is the
+          // automation surface and reads service accounts instead. Any other
+          // value is the unnarrowed account-wide list this route always
+          // returned, so no existing caller changes behaviour.
+          mine: z.string(),
+        })
+        .partial(),
+    },
     responses: {
       200: json(z.array(AccountTokenSchema), 'Personal access tokens'),
       ...errors(401, 403),
@@ -137,7 +163,10 @@ accountsRouter.openapi(
 
   await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.TOKEN_READ);
 
-  const tokens = await listAccountTokens(accountId);
+  const onlyMine = isTruthyFlag(c.req.query('mine'));
+  const tokens = onlyMine
+    ? await listPersonalAccountTokens(accountId, userId)
+    : await listAccountTokens(accountId);
   return c.json(
     tokens.map((t) => ({
       token_id: t.tokenId,

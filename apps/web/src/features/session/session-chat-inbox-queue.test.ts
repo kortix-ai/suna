@@ -37,8 +37,12 @@ describe('stop reaches the queue that actually holds the messages', () => {
     expect(stop).not.toContain('queueDrain');
   });
 
-  test('the strip is dimmed by the SERVER hold, which every tab can see', () => {
-    expect(chat).toContain('queuePaused={queueRows.held}');
+  test('the queued bubbles read the SERVER hold, which every tab can see', () => {
+    // The queue is drawn IN the transcript, not in a composer strip.
+    expect(chat).toContain('held={queueRows.held}');
+    expect(chat).toContain('<QueuedPromptBubbles');
+    expect(chat).not.toContain('queuePaused=');
+    expect(chat).not.toContain('queuedMessages={queuedMessages}');
   });
 
   test('a rewind removes the queued rows instead of holding them', () => {
@@ -112,28 +116,44 @@ describe('"send now" addresses the thing that actually holds the row', () => {
     const retry = between(
       chat,
       'const handleRetryQueuedMessage = useCallback(',
-      '// Stop the transcript polling fallback',
+      '// Associate stashed command info',
     );
     expect(retry).not.toContain('localIds');
     expect(retry).toContain('promptInbox.retry(id)');
   });
 });
 
-describe('a prompt that will WAIT is not painted into the transcript', () => {
-  test('the optimistic user message is only added when the prompt can run now', () => {
-    // Otherwise the same message is on screen twice — once as a transcript
-    // bubble under the still-streaming answer, once as a queue row — and the
-    // bubble then vanishes when the running turn ends and the optimistic sweep
-    // clears it, only to reappear when the drain finally delivers.
-    const send = between(chat, 'const willWaitInInbox =', 'anchorTurn(messageID);');
-    expect(send).toContain('beginOptimisticSend(');
-    expect(send).toContain('if (!willWaitInInbox)');
+describe('ONE prompt = ONE id = ONE bubble, from Enter', () => {
+  test('every send paints the transcript bubble under the WIRE id — no "will it wait?" branch', () => {
+    // The old rule painted nothing for a prompt that would wait, so the queue
+    // strip drew it instead, and the hand-off between the two surfaces was
+    // where it doubled, blinked and jumped. Now the bubble is in the
+    // transcript from the first frame under the id the inbox row carries;
+    // its turn renders dimmed until the agent reaches it (`pending`).
+    const send = between(chat, "playSound('send');", 'anchorTurn(messageID);');
+    expect(send).toContain('const messageID = mintSessionWireMessageId(sessionId, clientMessageId);');
+    expect(send).toContain('beginOptimisticSend(sessionId, messageID, optimisticText, [textPartId]);');
+    expect(send).not.toContain('willWaitInInbox');
+    expect(chat).not.toContain('willWaitInInbox');
   });
 
-  test('the failure path only rehydrates a message it actually painted', () => {
+  test('the row carries the SAME id, and the bubble is inbox-backed from dispatch (never swept)', () => {
     const send = between(chat, 'const result = await (async () => {', 'if (!result.ok) {');
-    expect(send).toContain('willWaitInInbox');
+    expect(send).toContain('messageId: messageID,');
     expect(send).toContain('recoverFromSendFailure(sessionId, messageID, cause');
+    // Marked in the SAME tick as the paint, before the first await: an idle
+    // frame from a short previous turn used to sweep the bubble mid-send.
+    const paint = between(chat, 'beginOptimisticSend(sessionId, messageID, optimisticText, [textPartId]);', 'const sendingIntoRunningTurn');
+    expect(paint).toContain('markOptimisticSendInboxBacked(sessionId, messageID);');
+  });
+
+  test('a row already on screen — by id or by re-mint alias — is never a queued bubble', () => {
+    expect(chat).toContain('store.optimisticOriginOf(sessionId, message.info.id)');
+    expect(chat).toContain('transcriptMessageIds: transcriptUserMessageIds');
+  });
+
+  test('the turn is keyed by the id the bubble was FIRST painted under', () => {
+    expect(chat).toContain('optimisticOriginOf(sessionId, turn.userMessage.info.id) ??');
   });
 });
 
@@ -177,72 +197,35 @@ describe('a `/` command is REFUSED mid-turn, not queued', () => {
 });
 
 describe('the boot shell never swallows what the user typed', () => {
-  test('a second message typed during boot is refused, and the draft survives', () => {
-    // Three answers, in order: `return` outright (the composer had already
-    // cleared the input, so the draft was gone); a browser-local queue, because
-    // the FIRST message is still in the start stash and is not an inbox row
-    // yet, so a row created now would be admitted BEFORE it; and now a throw.
-    // `dispatchSubmission` catches it and `planFailedSendRecovery` puts the
-    // text and attachments back — nothing is stored, so nothing can be lost.
+  test('every shell send — first or second — is a durable row, POSTed before the bubble', () => {
+    // Three answers preceded this, in order: `return` outright (the draft was
+    // simply gone); a browser-local queue (lost with the tab); then a refusal
+    // with a toast and a carried draft, because the FIRST message travelled
+    // through the start stash and a row POSTed during boot would have been
+    // admitted before it. The first message is an inbox row NOW, so ordering
+    // is the server's (available_at, created_at) and the refusal is gone: a
+    // second message simply POSTs. AWAITED and thrown on failure, so the
+    // composer's own recovery restores the draft for a message the server
+    // never got.
     const send = between(shell, 'const handleSend = useCallback(', "playSound('send');");
-    expect(send).toContain('if (submitted)');
-    expect(send).toContain('throw new Error(');
+    expect(send).toContain('await startSessionWithPrompt(projectId, sessionId');
+    expect(send).toContain('attachedFilesToDataUrlParts(files)');
+    expect(send).toContain('throw error;');
     expect(shell).not.toContain('useMessageQueueStore');
+    expect(shell).not.toContain('carryDraft(');
+    expect(shell).not.toContain('Still starting this session');
   });
 
-  test('the refused draft outlives the shell, which the crossfade unmounts', () => {
-    // The throw restores the text into THIS component's editor, and this
-    // component is destroyed the moment `chatReady` flips — after a 19-25 s
-    // boot, which is exactly when a follow-up gets typed. `carryDraft` hands it
-    // to the session so `SessionChat` can pick it up; nothing is SENT, so the
-    // ordering rule the refusal exists for is untouched.
+  test('the stash carries ONLY the picks — the prompt travels as the row', () => {
     const send = between(shell, 'const handleSend = useCallback(', "playSound('send');");
-    expect(send).toContain('carryDraft(sessionId, text, files ?? [])');
-    expect(chat).toContain("useCarriedDraft(projectSessionId ?? '')");
-    expect(chat).toContain('text: carriedDraft.text');
+    expect(send).toContain("prompt: ''");
+    // And the shell paints the durable rows, so the bubble survives a reload.
+    expect(shell).toContain('useSessionPrompts(projectId, sessionId');
   });
 
-  test('the carried draft is consumed ON APPLY, never on SessionChat mount', () => {
-    // The draft is written BEFORE SessionChat exists, so it is present on the
-    // FIRST commit — when the lazily-mounted composer editor is still null and
-    // `shouldApplyPrefill` refuses it. A clear in SessionChat's own mount effect
-    // therefore ran one commit too early and deleted the message the shell's
-    // toast promised to keep. The composer reports the id it applied instead.
-    const applied = between(
-      chat,
-      'const handlePrefillApplied = useCallback(',
-      '[composerPrefill, projectSessionId],',
-    );
-    expect(applied).toContain("composerPrefill?.source !== 'carried'");
-    expect(applied).toContain('composerPrefill.id !== appliedId');
-    expect(applied).toContain("clearCarriedDraft(projectSessionId ?? '')");
-    expect(chat).toContain('onPrefillApplied={handlePrefillApplied}');
-    // Nothing else may clear it: a second clear site is a clear on mount again.
-    expect(chat.match(/clearCarriedDraft\(/g) ?? []).toHaveLength(1);
-    // And the composer only reports it once the text is actually in the editor.
-    const prefillEffect = between(
-      composer,
-      '!shouldApplyPrefill({',
-      '[prefillId, prefillText, prefillFiles, prefillMode, editorElement]',
-    );
-    expect(prefillEffect.indexOf('onPrefillAppliedRef.current?.(')).toBeGreaterThan(
-      prefillEffect.indexOf('editorRef.current?.focus()'),
-    );
-  });
-
-  test('a `/` command is refused while the sandbox is still waking', () => {
-    // `runCommand` returns a RESOLVED promise until the runtime is switched: no
-    // request, no error, no row. Dispatching into it cleared the draft and left
-    // an optimistic command bubble waiting on a turn that never starts. The
-    // prompt path is deliberately NOT gated — it becomes an inbox row.
-    const commandBranch = between(composer, 'const blocker = commandBlocker({', 'if (blocker) {');
-    expect(commandBranch).toContain('runtimeReady,');
-    expect(chat).toContain('runtimeReady={runtimeReady}');
-    const shared = between(composer, 'const submissionBlocker = sendBlocker({', 'const draft =');
-    expect(shared).not.toContain('runtimeReady');
-  });
-
-  test('the shell reports itself as working, so a boot-time command is refused too', () => {
-    expect(shell).toContain('sessionWorking={!!submitted}');
+  test('SessionChat carries no shell hand-off machinery any more', () => {
+    // The carried-draft workaround existed only for the refusal above.
+    expect(chat).not.toContain('useCarriedDraft');
+    expect(chat).not.toContain('carriedDraft');
   });
 });
