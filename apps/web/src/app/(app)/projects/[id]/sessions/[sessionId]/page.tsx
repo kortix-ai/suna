@@ -67,14 +67,15 @@ import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import { projectSessionsRefetchInterval } from '@/features/workspace/project-sidebar/project-session-list-helpers';
 import {
   type ProjectSession,
+  clearSessionFresh,
   formatRuntimeError,
   getProjectDetail,
+  isSessionFresh,
   listProjectSessions,
   sessionStartKey,
+  setActiveInstanceCookie,
   updateProjectSession,
 } from '@kortix/sdk';
-import { clearSessionFresh, isSessionFresh } from '@kortix/sdk/fresh-sessions';
-import { setActiveInstanceCookie } from '@kortix/sdk/instance-routes';
 import {
   type UseSessionResult,
   clearStartStash,

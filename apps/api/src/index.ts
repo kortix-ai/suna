@@ -27,6 +27,7 @@ import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { mountOpenApiDocs, json, errors, auth } from './openapi';
 import { createDemoRequestRateLimitMiddleware } from './shared/rate-limit';
 import { sendDemoRequestNotification } from './lib/demo-request-email';
+import { recordDemoRequestSubmission } from './lib/demo-request-store';
 import { logger } from 'hono/logger';
 import { prettyJSON } from 'hono/pretty-json';
 import { HTTPException } from 'hono/http-exception';
@@ -698,12 +699,19 @@ app.openapi(
 
 // ─── Demo request (public lead capture) ─────────────────────────────────────
 // POST /v1/system/demo-request — public, unauthenticated. The marketing site's
-// "Book a demo" qualifier form POSTs the first-step details here (via the web
-// server); we email an internal notification to DEMO_LEAD_NOTIFY_EMAIL on every
-// submission, whether or not the lead goes on to book a Cal slot. The email uses
-// the API's email-provider credentials (AWS Secrets Manager), so the Vercel
-// frontend never needs the secret. IP rate-limited; no configured email
-// provider is a graceful skip, so lead capture never fails on account of email.
+// "Book a demo" qualifier and the /careers application form POST their details
+// here (via the web server). This endpoint owns BOTH side effects of a lead:
+//
+//   1. Persist the whole submission as one JSON blob in public.contact_forms
+//      (./lib/demo-request-store). Schema-agnostic — unknown keys ride along, so
+//      a form can change its fields without a DB migration.
+//   2. Email an internal notification to DEMO_LEAD_NOTIFY_EMAIL, whether or not
+//      the lead goes on to book a Cal slot.
+//
+// Both run API-side so the Vercel frontend needs neither database nor
+// email-provider credentials. Both are best-effort and independent: a failed
+// insert or a missing email provider is a graceful skip, never a failed lead.
+// IP rate-limited.
 const DemoRequestSchema = z
   .object({
     name: z.string().max(200).optional(),
@@ -713,6 +721,9 @@ const DemoRequestSchema = z
     goal: z.string().max(2000).optional(),
     qualified: z.boolean().optional(),
     source: z.string().max(100).optional(),
+    // Forwarded by the web server so the stored row records the BROWSER's agent
+    // rather than the Next.js server's. Falls back to this request's header.
+    user_agent: z.string().max(500).nullish(),
   })
   .openapi('DemoRequest');
 
@@ -728,7 +739,9 @@ app.openapi(
     },
     responses: {
       200: json(
-        z.object({ ok: z.boolean(), emailed: z.boolean() }).openapi('DemoRequestResult'),
+        z
+          .object({ ok: z.boolean(), emailed: z.boolean(), persisted: z.boolean() })
+          .openapi('DemoRequestResult'),
         'Accepted',
       ),
       ...errors(400, 429),
@@ -740,20 +753,38 @@ app.openapi(
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       return c.json({ error: 'Invalid email' }, 400);
     }
-    const result = await sendDemoRequestNotification({
-      name: typeof body.name === 'string' ? body.name : undefined,
-      email,
-      company_name: typeof body.company_name === 'string' ? body.company_name : undefined,
-      company_size: typeof body.company_size === 'string' ? body.company_size : undefined,
-      goal: typeof body.goal === 'string' ? body.goal : undefined,
-      qualified: typeof body.qualified === 'boolean' ? body.qualified : undefined,
-      source: typeof body.source === 'string' ? body.source : undefined,
-      user_agent: c.req.header('user-agent')?.slice(0, 500) ?? null,
-    });
+    const userAgent =
+      (typeof body.user_agent === 'string' ? body.user_agent.slice(0, 500) : null) ??
+      c.req.header('user-agent')?.slice(0, 500) ??
+      null;
+    const source = typeof body.source === 'string' ? body.source : undefined;
+
+    // Independent and best-effort — run them together so one never delays the
+    // other, and answer 200 regardless of what either reports.
+    const [result, persisted] = await Promise.all([
+      sendDemoRequestNotification({
+        name: typeof body.name === 'string' ? body.name : undefined,
+        email,
+        company_name: typeof body.company_name === 'string' ? body.company_name : undefined,
+        company_size: typeof body.company_size === 'string' ? body.company_size : undefined,
+        goal: typeof body.goal === 'string' ? body.goal : undefined,
+        qualified: typeof body.qualified === 'boolean' ? body.qualified : undefined,
+        source,
+        user_agent: userAgent,
+      }),
+      // The row stores the submission verbatim, so unknown keys a form adds
+      // (e.g. the careers form's `opening`/`owned`/`link`) are captured too.
+      recordDemoRequestSubmission({
+        ...body,
+        email,
+        form: source ?? 'contact',
+        user_agent: userAgent,
+      }),
+    ]);
     if (!result.ok && !('skipped' in result && result.skipped)) {
       console.error('[system/demo-request] notification not sent:', result);
     }
-    return c.json({ ok: true, emailed: result.ok });
+    return c.json({ ok: true, emailed: result.ok, persisted });
   },
 );
 

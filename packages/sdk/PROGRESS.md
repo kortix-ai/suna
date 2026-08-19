@@ -4643,7 +4643,7 @@ Single, self-contained changes. Anything multi-step earns a spec instead.
 | B48 | **Canonical feature-flag naming + one gating primitive.** The platform renamed the system to "Feature flags" (`FeatureFlag*` in `@kortix/api-contract`, `FeatureFlagStabilitySchema` = experimental\|beta\|stable, gated routes returning `403 {code:'feature_disabled', feature}`, canonical `PATCH /projects/:id/features`). The SDK still exposed only `Experimental*` names, had no runtime key list for cross-package drift tests, no typed narrowing for the 403, and no shared React gate hook — so every host hand-rolled `project?.experimental?.<key> === true`. | Additive only: `FeatureFlagKey`, `FeatureFlagView` (stability widened to `'experimental'\|'beta'\|'stable'`), `FEATURE_FLAG_KEYS`, `updateFeatureFlag` (canonical `/features` route), `isFeatureDisabledError`, `FeatureDisabledError`, `useFeatureFlag`, and `project(id).updateFeatureFlag` on the facade. Every `Experimental*` name kept as a `@deprecated` alias; `updateExperimentalFeature` keeps its `/experimental` wire path for older deployed APIs. | **DONE 2026-08-08** — session `feature-flags-web`; TDD RED first on all four (`Export named 'FEATURE_FLAG_KEYS' not found`, `Export named 'isFeatureDisabledError' not found`, `Cannot find module './use-feature-flag'`); GREEN at `1777 pass, 0 fail, 6965 expect()` across `139` files; `typecheck` exit 0 (package + examples); `smoke:install` packed + installed + imported OK. Both surface snapshots re-recorded and reviewed: **11 + 20 insertions, 0 removals — purely additive** |
 | B49 | **`applyOptimisticAbort` marks a turn errored but never ends it.** It sets `error: AbortError` and flips the session idle, but leaves `time.completed` unset — and an aborted turn may never receive a `message.updated` that sets it. Any host predicate written as `!lastAssistant.time?.completed` therefore stays true for the life of the tab after every stop. It wedged `apps/web`'s message-queue drain gate permanently: every message typed after an interrupt queued behind one that could never be released. | `src/react/use-session-send.ts:271-296` — sets `error`, no `time.completed`. Worked around host-side in `apps/web/src/features/session/assistant-turn-open.ts` (errored ⇒ ended), which is a patch on the symptom; the SDK should end the turn it aborts. | OPEN |
 | B50 | **`applyPostCreateActions`'s `deliver_prompt` action shares `postPrompt`/`continueSession` with `executeQueuedContinue` but has no equivalent no-blind-repost protection at the call-site level for its OWN retry path.** A `create_session` command whose post-create actions fail (`postCreate.ok === false`) is re-queued `retryable: true` (`engine.ts` `drainSessionLifecycleQueue`, the `create_session` branch); the NEXT drain sees `row.sessionId` already set, returns the existing session immediately, then re-runs `applyPostCreateActions` — including `deliver_prompt` — from scratch. The re-post is protected by the SAME prompt-dedupe TTL fix landed in T13 (identical `sessionId`+`text` on retry → identical content-hash key → collides), so it is NOT currently broken, but nothing documents or pins that shared guarantee at this second call site the way `executeQueuedContinue`'s doc comment now does. | `engine.ts` `drainSessionLifecycleQueue` create-session branch (~lines 513-535 pre-edit) → `applyPostCreateActions` → `continueSession` with `action.source`/`action.text`, same `postPrompt` as the continue_session path. Out of scope for T13 (task named `engine.ts`'s "delivery-retry region" as `executeQueuedContinue`/`postPrompt`, not the create-session post-actions branch). | OPEN — same fix already covers it in practice; needs its own doc comment + pinning test if this path is ever revisited. |
-| B51 | **`apps/web`'s presentation metadata cache-bust corrupts the path it is busting.** `FullScreenPresentationViewer.tsx:136` builds `${constructHtmlPreviewUrl('presentations/<name>/metadata.json', opts)}?t=${Date.now()}`. `constructHtmlPreviewUrl` is `buildStaticFilePreviewUrl`, which already emits a query (`/open?path=/workspace/…`), so the appended `?` is literal and lands INSIDE the `path` value. The static-file service reads `url.searchParams.get('path')` (`apps/kortix-sandbox-agent-server/src/static-web.ts:451`) and therefore asks for a file literally named `metadata.json?t=1700…`, which never exists. The viewer's retry loop is unbounded, so the symptom is a presentation that spins forever rather than an error. | `bun -e "console.log(new URL('https://h/v1/p/sb/3211/open?path=/workspace/presentations/deck/metadata.json?t=123').searchParams.get('path'))"` → `/workspace/presentations/deck/metadata.json?t=123`. | OPEN in `apps/web`. The SDK side is already fixed: `buildPresentationMetadataUrl` appends `&t=`, pinned by `presentation.test.ts` ('metadata URL points at the static-file service with a cache-busting token'). Adopting `fetchPresentationMetadata` in the viewer closes it. |
+| B51 | **`apps/web`'s presentation metadata cache-bust corrupts the path it is busting.** `FullScreenPresentationViewer.tsx:136` builds `${constructHtmlPreviewUrl('presentations/<name>/metadata.json', opts)}?t=${Date.now()}`. `constructHtmlPreviewUrl` is `buildStaticFilePreviewUrl`, which already emits a query (`/open?path=/workspace/…`), so the appended `?` is literal and lands INSIDE the `path` value. The static-file service reads `url.searchParams.get('path')` (`apps/kortix-sandbox-agent-server/src/static-web.ts:451`) and therefore asks for a file literally named `metadata.json?t=1700…`, which never exists. The viewer's retry loop is unbounded, so the symptom is a presentation that spins forever rather than an error. | `bun -e "console.log(new URL('https://h/v1/p/sb/3211/open?path=/workspace/presentations/deck/metadata.json?t=123').searchParams.get('path'))"` → `/workspace/presentations/deck/metadata.json?t=123`. | **DONE 2026-08-19** — session `sdk-central` (Task B2). `FullScreenPresentationViewer.tsx` no longer builds its own URL or fetches: `loadMetadata` calls `fetchPresentationMetadata<PresentationMetadata>(presentationName, subdomainOpts)` and retries on `status: 'not-ready'` with the same backoff cadence; the local `sanitizeFilename` helper is now the SDK's `sanitizePresentationName`. Proof: `buildPresentationMetadataUrl('My Deck!', {sandboxId:'sb-123',backendPort:8008,apiBaseUrl:'https://dev-api.kortix.com/v1'}, 1700000000000)` → `…/p/sb-123/3211/open?path=/workspace/presentations/mydeck/metadata.json&t=1700000000000`, whose `searchParams.get('path')` is `/workspace/presentations/mydeck/metadata.json` (old construction yielded `…/metadata.json?t=1700000000000`). `bun test src/core/session/presentation.test.ts` 11 pass / 0 fail; `apps/web` `tsc --noEmit` reports no error in this file; `apps/web/scripts/sdk-boundary.mjs` exit 0. |
 | B52 | **`apps/web` still imports ~90 flat SDK functions that now have a `kortix.*` equivalent.** The facade gap is closed in the SDK (session `claude/sdk-central`, 2026-08-19): `kortix.auth`, `kortix.admin`, `kortix.referrals`, `kortix.setupLinks`, `kortix.public`, `kortix.presentations`, `kortix.previews`, `kortix.tunnel`, plus the additions on `billing`/`projects`/`github`/`iam`/`accounts` and on `project(id)`/`session(pid,sid)`. Nothing in `apps/web` calls them yet, so the new surface ships as dead code until adoption lands. | `rg "from '@kortix/sdk'" apps/web/src -l` still resolves these as bare named imports. | OPEN — host-side follow-up, deliberately out of scope for a `packages/sdk` task. Adopt per host file; each swap is a one-line import change, and the routes are pinned by `kortix.test.ts`. |
 
 ## DISCOVERED THIS SESSION — append freely
@@ -11759,3 +11759,81 @@ assistant-turn-open 10 pass / 0 fail; `tsc --noEmit` 15 lines, all the known
 on both touched web files.
 
 **Shippable to production: YES.**
+
+---
+
+### 2026-08-19 — session `preview-port-probes-to-sdk` (host-driven, additive)
+
+Task B3 of the SDK-centralization sweep: `apps/web` still raw-`fetch`ed the
+preview proxy from two components.
+
+- `features/session/sandbox-url-detector.tsx` `usePortReachability` — a
+  `mode:'no-cors'` `HEAD` on a 10s interval. `no-cors` yields an opaque
+  response, so the only signal was "did fetch throw", which turned a CORS
+  refusal or an offline browser into a hard "unreachable" verdict.
+- `features/file-viewer/file-content-renderer.tsx` — a credentialed `GET` on
+  the static-file-server `/health` URL, 20 attempts × 1.5s, with the
+  subdomain-preview one-shot `?token` appended by hand.
+
+The first swapped straight onto the existing `probePreviewPort` (`timeoutMs:
+4000` to keep its old ceiling; `'unknown'` now leaves the previous verdict
+standing instead of declaring the port dead). The second had no SDK equivalent:
+`probePreviewPort` is a `HEAD` that reads `401/403` as `unknown`, and it cannot
+mint the subdomain token.
+
+Added to `src/core/session/preview-probe.ts` (already exported through
+`src/core/session/index.ts`, the root barrel, and `./session`):
+
+- `probePreviewReady(url, { signal, getToken })` — a credentialed `GET` that
+  resolves `true` only on `res.ok`. For the subdomain form
+  (`p{port}-{sandbox}.host`) it appends the one-shot `?token` via the existing
+  `isSubdomainPreviewUrl` + `appendPreviewToken`, because the host-only `/v1/p`
+  session cookie never reaches a preview subdomain — without it the probe
+  `401`s forever and the gated surface deadlocks on "Starting preview server…".
+  The token rides the query string, not an `Authorization` header, so the
+  request stays simple and costs no CORS preflight. Never throws; no timeout of
+  its own (the caller owns the deadline via its retry loop).
+
+`getToken` defaults to the SDK's `getAuthToken`. It is overridable on purpose:
+`mock.module('../http/auth')` is process-wide in `bun test` and a sibling suite
+already installs one, so an injectable seam is the only way to test the token
+branch without fighting another file's mock.
+
+RED:
+
+- `bun test src/core/session/preview-probe.test.ts`: `0 pass`, `1 fail` —
+  `SyntaxError: Export named 'probePreviewReady' not found in module
+  '…/preview-probe.ts'`.
+
+GREEN:
+
+- `bun test src/core/session/preview-probe.test.ts`: `30 pass`, `0 fail`
+  (21 pre-existing + 9 new).
+- `pnpm --filter @kortix/sdk typecheck`: exit `0`.
+- `pnpm --filter @kortix/sdk test`: `2346 pass`, `0 fail`, `8449 expect()`
+  across `158` files.
+- `pnpm --filter @kortix/sdk smoke:install`: exit `0`.
+
+Public surface: PURELY ADDITIVE — one name (`probePreviewReady`) on `.` and on
+`./session`. Both snapshots re-recorded and diffed: `+1` line each per subpath,
+zero removals, zero renames. `version` untouched.
+
+Host: `node apps/web/scripts/sdk-boundary.mjs` exit `0`. `apps/web`
+`tsc --noEmit` reports nothing for either touched file (only the known
+`@types/bun` `test.each` noise in the 3 documented files, plus the two
+pre-existing `@/.source` codegen errors). `npx eslint` on both files: `0
+errors`; the 10 warnings are the pre-existing `react-hooks/*` set in
+`file-content-renderer.tsx`, none on changed lines.
+
+Not verified: neither probe was run against a live sandbox proxy in this
+session (no stack booted). Behavior is preserved by construction — same
+methods, same retry counts, same intervals — except the deliberate `no-cors` →
+credentialed-`HEAD` upgrade, which is what makes a real verdict possible.
+
+Note for a follow-up owner: `usePortReachability` and `InlineIframePreview` in
+`sandbox-url-detector.tsx` have no callers left in the app. Left in place —
+deleting them is outside this task's scope.
+
+**Status:** COMPLETE.
+
+**SDK package shippable to production: YES.**

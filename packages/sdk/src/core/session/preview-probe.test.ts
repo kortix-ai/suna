@@ -3,6 +3,7 @@ import {
   PREVIEW_PROBE_TIMEOUT_MS,
   classifyPreviewProbeStatus,
   probePreviewPort,
+  probePreviewReady,
 } from './preview-probe';
 
 const originalFetch = globalThis.fetch;
@@ -127,5 +128,107 @@ describe('probePreviewPort', () => {
   // ONE stalled probe eat the caller's whole sampling budget.
   test('the default timeout is short enough to leave a caller room for several samples', () => {
     expect(PREVIEW_PROBE_TIMEOUT_MS).toBe(3_000);
+  });
+});
+
+describe('probePreviewReady', () => {
+  const PATH_URL = 'http://localhost:8008/v1/p/sbx1/8000/health';
+  const SUBDOMAIN_URL = 'https://p8000-sbx1.preview.localhost/health';
+
+  test('issues a credentialed GET and calls a 2xx ready', async () => {
+    stubFetch(() => new Response(null, { status: 200 }));
+
+    expect(await probePreviewReady(PATH_URL)).toBe(true);
+    expect(requests).toHaveLength(1);
+    expect(requests[0].url).toBe(PATH_URL);
+    expect(requests[0].init.method).toBe('GET');
+    // The `__preview_session` cookie is the path-based proxy's auth. Without it
+    // the probe 401s forever and the surface it gates never renders.
+    expect(requests[0].init.credentials).toBe('include');
+  });
+
+  // The static file server is still starting: the proxy answers, the server
+  // does not. That is "not ready yet", which the caller retries — never an
+  // exception it has to catch.
+  test('calls a non-2xx not ready', async () => {
+    stubFetch(() => new Response(null, { status: 502 }));
+    expect(await probePreviewReady(PATH_URL)).toBe(false);
+  });
+
+  test('calls a rejected fetch not ready rather than throwing', async () => {
+    stubFetch(() => {
+      throw new TypeError('Failed to fetch');
+    });
+    expect(await probePreviewReady(PATH_URL)).toBe(false);
+  });
+
+  // Subdomain previews (`p{port}-{sandbox}.host`, local dev) never receive the
+  // host-only `/v1/p` cookie, so they authenticate with a one-shot `?token` on
+  // the request itself. Without it this probe 401s forever and the preview
+  // deadlocks on "starting…".
+  test('appends a one-shot ?token for a subdomain preview URL', async () => {
+    stubFetch(() => new Response(null, { status: 200 }));
+
+    expect(
+      await probePreviewReady(SUBDOMAIN_URL, { getToken: async () => 'jwt-token' }),
+    ).toBe(true);
+    expect(requests[0].url).toBe(`${SUBDOMAIN_URL}?token=jwt-token`);
+  });
+
+  // A path-based preview URL is authenticated by the cookie. Appending a token
+  // there would put a JWT in a URL for no reason.
+  test('never asks for a token for a path-based preview URL', async () => {
+    stubFetch(() => new Response(null, { status: 200 }));
+    let asked = false;
+
+    await probePreviewReady(PATH_URL, {
+      getToken: async () => {
+        asked = true;
+        return 'jwt-token';
+      },
+    });
+
+    expect(asked).toBe(false);
+    expect(requests[0].url).toBe(PATH_URL);
+  });
+
+  // No token available is not a reason to skip the probe: the proxy may already
+  // trust this subdomain in memory from an earlier tokened request.
+  test('probes the bare subdomain URL when no token is available', async () => {
+    stubFetch(() => new Response(null, { status: 200 }));
+
+    expect(await probePreviewReady(SUBDOMAIN_URL, { getToken: async () => null })).toBe(true);
+    expect(requests[0].url).toBe(SUBDOMAIN_URL);
+  });
+
+  test('returns false without issuing a request when there is no url', async () => {
+    stubFetch(() => new Response(null, { status: 200 }));
+    expect(await probePreviewReady('')).toBe(false);
+    expect(requests).toHaveLength(0);
+  });
+
+  test('an already-aborted caller signal short-circuits to false', async () => {
+    stubFetch(() => new Response(null, { status: 200 }));
+    const controller = new AbortController();
+    controller.abort();
+
+    expect(await probePreviewReady(PATH_URL, { signal: controller.signal })).toBe(false);
+    expect(requests).toHaveLength(0);
+  });
+
+  // An unmounting caller aborts; the in-flight request must go with it instead
+  // of holding a socket for a surface nobody is watching.
+  test('passes the caller signal through to the request', async () => {
+    stubFetch(
+      (init) =>
+        new Promise<Response>((_resolve, reject) => {
+          init.signal?.addEventListener('abort', () => reject(new Error('aborted')));
+        }),
+    );
+    const controller = new AbortController();
+    const pending = probePreviewReady(PATH_URL, { signal: controller.signal });
+    controller.abort();
+
+    expect(await pending).toBe(false);
   });
 });

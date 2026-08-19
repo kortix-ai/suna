@@ -10,18 +10,13 @@ import { Button } from '@/components/ui/button';
 import { InfoBanner } from '@/components/ui/info-banner';
 import Loading from '@/components/ui/loading';
 import { errorToast, successToast } from '@/components/ui/toast';
-import {
-  appendPreviewToken,
-  isSubdomainPreviewUrl,
-  useAuthenticatedPreviewUrl,
-} from '@/hooks/use-authenticated-preview-url';
+import { useAuthenticatedPreviewUrl } from '@/hooks/use-authenticated-preview-url';
 import { useHeicBlob } from '@/hooks/use-heic-url';
-import { getAuthToken } from '@/lib/auth-token';
 import { getIframeSandbox } from '@/lib/security/iframe-sandbox';
 import { cn } from '@/lib/utils';
 import { isHeicFile } from '@/lib/utils/heic-convert';
 import { findDiagnosticsForFile, useDiagnosticsStore } from '@/stores/diagnostics-store';
-import { isSandboxNotReadyError, toSandboxAbsolutePath } from '@kortix/sdk';
+import { isSandboxNotReadyError, probePreviewReady, toSandboxAbsolutePath } from '@kortix/sdk';
 import { getActiveStaticFileHealthUrl, getActiveStaticFilePreviewUrl } from '@kortix/sdk/react';
 import {
   WarningIcon as AlertTriangle,
@@ -416,6 +411,7 @@ export function FileContentRenderer({
     if (!isHtmlFile || !isHtmlPreview || !htmlHealthUrl) return;
 
     let cancelled = false;
+    const controller = new AbortController();
     // Bound the retries so this surface can never spin "Starting preview
     // server…" forever — after ~30s of failures we surface a recoverable
     // 'unavailable' state instead of looping silently.
@@ -425,29 +421,17 @@ export function FileContentRenderer({
 
     async function check() {
       attempts += 1;
-      try {
-        // Subdomain previews (p{port}-{sandbox}.host, used in local dev) can't
-        // rely on the host-only /v1/p session cookie — it never reaches the
-        // preview subdomain. They authenticate via a one-shot ?token on the
-        // request itself, which the proxy then trusts in-memory for the whole
-        // subdomain. Without it this probe 401s forever and the iframe — gated
-        // on serverHealth==='ready' — never renders, so nothing ever carries a
-        // token and the "Starting preview server…" state deadlocks.
-        let url = htmlHealthUrl;
-        if (isSubdomainPreviewUrl(htmlHealthUrl)) {
-          const token = await getAuthToken();
-          if (cancelled) return;
-          if (token) url = appendPreviewToken(htmlHealthUrl, token);
-        }
-        const res = await fetch(url, { method: 'GET', credentials: 'include' });
-        if (cancelled) return;
-        if (res.ok) {
-          setServerHealth('ready');
-        } else {
-          retry();
-        }
-      } catch {
-        if (!cancelled) retry();
+      // probePreviewReady owns the transport: a credentialed GET, plus the
+      // one-shot ?token that subdomain previews (p{port}-{sandbox}.host, used
+      // in local dev) need because the host-only /v1/p session cookie never
+      // reaches the preview subdomain. It never throws — anything short of a
+      // 2xx is "not ready yet".
+      const ready = await probePreviewReady(htmlHealthUrl, { signal: controller.signal });
+      if (cancelled) return;
+      if (ready) {
+        setServerHealth('ready');
+      } else {
+        retry();
       }
     }
 
@@ -465,6 +449,7 @@ export function FileContentRenderer({
 
     return () => {
       cancelled = true;
+      controller.abort();
       if (healthRetryRef.current) clearTimeout(healthRetryRef.current);
     };
   }, [isHtmlFile, isHtmlPreview, htmlHealthUrl, healthRetryNonce]);

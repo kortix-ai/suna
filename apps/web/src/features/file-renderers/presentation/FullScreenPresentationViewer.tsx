@@ -11,6 +11,7 @@ import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { PRESENTATION_WITH_MODALS_IFRAME_SANDBOX } from '@/lib/security/iframe-sandbox';
 import { cn } from '@/lib/utils';
 import { constructHtmlPreviewUrl } from '@/lib/utils/url';
+import { fetchPresentationMetadata, sanitizePresentationName } from '@kortix/sdk';
 import {
   CaretLeftIcon as ChevronLeft,
   CaretRightIcon as ChevronRight,
@@ -100,11 +101,6 @@ export function FullScreenPresentationViewer({
 
   const totalSlides = slides.length;
 
-  // Helper function to sanitize filename (matching backend logic)
-  const sanitizeFilename = (name: string): string => {
-    return name.replace(/[^a-zA-Z0-9\-_]/g, '').toLowerCase();
-  };
-
   // Load metadata with retry logic
   const loadMetadata = useCallback(
     async (retryCount = 0, maxRetries = Infinity) => {
@@ -123,59 +119,47 @@ export function FullScreenPresentationViewer({
       setError(null);
       setRetryAttempt(retryCount);
 
-      try {
-        // Sanitize the presentation name to match backend directory creation
-        const sanitizedPresentationName = sanitizeFilename(presentationName);
+      // The SDK owns the URL (name sanitizing + a cache-buster appended with
+      // `&`, so it cannot land inside the static-file service's `path` value)
+      // and treats "not written yet" as a status, not a throw. The retry
+      // cadence stays here.
+      const result = await fetchPresentationMetadata<PresentationMetadata>(
+        presentationName,
+        subdomainOpts,
+      );
 
-        const metadataUrl = constructHtmlPreviewUrl(
-          `presentations/${sanitizedPresentationName}/metadata.json`,
-          subdomainOpts,
-        );
+      if (result.status === 'ready') {
+        setMetadata(result.metadata);
+        hasLoadedRef.current = true; // Mark as successfully loaded
+        setIsLoading(false);
 
-        const urlWithCacheBust = `${metadataUrl}?t=${Date.now()}`;
-        console.log(`Loading presentation metadata (attempt ${retryCount + 1}):`, urlWithCacheBust);
-
-        const response = await fetch(urlWithCacheBust, {
-          cache: 'no-cache',
-          headers: { 'Cache-Control': 'no-cache' },
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          setMetadata(data);
-          hasLoadedRef.current = true; // Mark as successfully loaded
-          console.log('Successfully loaded presentation metadata:', data);
-          setIsLoading(false);
-
-          // Clear any pending retry timeout on success
-          if (retryTimeoutRef.current) {
-            clearTimeout(retryTimeoutRef.current);
-            retryTimeoutRef.current = null;
-          }
-
-          return; // Success, exit early
-        } else {
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        // Clear any pending retry timeout on success
+        if (retryTimeoutRef.current) {
+          clearTimeout(retryTimeoutRef.current);
+          retryTimeoutRef.current = null;
         }
-      } catch (err) {
-        console.error(`Error loading metadata (attempt ${retryCount + 1}):`, err);
 
-        // Calculate delay with exponential backoff, capped at 10 seconds
-        // For early attempts, use shorter delays. After 5 attempts, use consistent 5 second intervals
-        const delay =
-          retryCount < 5
-            ? Math.min(1000 * Math.pow(2, retryCount), 10000) // Exponential backoff for first 5 attempts
-            : 5000; // Consistent 5 second intervals after that
-
-        console.log(`Retrying in ${delay}ms... (attempt ${retryCount + 1})`);
-
-        // Keep retrying indefinitely - don't set error state
-        retryTimeoutRef.current = setTimeout(() => {
-          loadMetadata(retryCount + 1, maxRetries);
-        }, delay);
-
-        return; // Keep loading state, don't set error
+        return; // Success, exit early
       }
+
+      console.warn(
+        `Presentation metadata not ready (attempt ${retryCount + 1}):`,
+        result.reason,
+      );
+
+      // Calculate delay with exponential backoff, capped at 10 seconds
+      // For early attempts, use shorter delays. After 5 attempts, use consistent 5 second intervals
+      const delay =
+        retryCount < 5
+          ? Math.min(1000 * Math.pow(2, retryCount), 10000) // Exponential backoff for first 5 attempts
+          : 5000; // Consistent 5 second intervals after that
+
+      // Keep retrying indefinitely - don't set error state
+      retryTimeoutRef.current = setTimeout(() => {
+        loadMetadata(retryCount + 1, maxRetries);
+      }, delay);
+
+      return; // Keep loading state, don't set error
     },
     [presentationName, sandboxUrl, subdomainOpts],
   );
@@ -325,7 +309,7 @@ export function FullScreenPresentationViewer({
     if (!sandboxUrl || !presentationName) return;
 
     // Use sanitized name for the path (matching backend directory structure)
-    const sanitizedName = sanitizeFilename(presentationName);
+    const sanitizedName = sanitizePresentationName(presentationName);
 
     const setDownloadState =
       format === DownloadFormat.PDF
