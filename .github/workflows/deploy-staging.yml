@@ -316,6 +316,14 @@ jobs:
   wire-cloudflare:
     name: Wire Cloudflare staging DNS and Worker
     runs-on: ubuntu-latest
+    # Non-blocking: deploy-web-vercel, verify, and promote-staging-channel
+    # `needs:` this job, and a Cloudflare auth failure (403 since 2026-08-18)
+    # silently skipped every staging web deploy for a week — the suite then
+    # drove a frozen Aug-12 frontend against the current API. The Worker/DNS
+    # config this job manages already exists and rarely changes; when it
+    # fails, the failed step stays visible here but must not freeze the
+    # frontend. verify still curls the live staging hosts independently.
+    continue-on-error: true
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_EMAIL: ${{ secrets.CLOUDFLARE_EMAIL }}
