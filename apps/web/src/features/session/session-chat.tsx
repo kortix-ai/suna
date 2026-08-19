@@ -6,6 +6,7 @@ import { SessionApprovalPrompt } from '@/features/session/session-approval-promp
 import { isPendingAction, useSessionAudit } from '@/features/session/session-audit-shared';
 import { SessionPermissionPrompt } from '@/features/session/session-permission-prompt';
 import { useSessionWallpaperLayer } from '@/features/session/session-wallpaper-layer';
+import { errorMessageOf, isDeliveredButDisconnected } from '@/lib/delivered-but-disconnected';
 import {
   WarningIcon as AlertTriangle,
   ArrowBendUpLeftIcon,
@@ -16,28 +17,37 @@ import {
   ArrowSquareOutIcon as ExternalLink,
   StackIcon as Layers,
   ArrowCounterClockwiseIcon as RotateCcw,
-  TerminalWindowIcon as Terminal,
 } from '@phosphor-icons/react';
 import { AnimatePresence, m } from 'motion/react';
 import { useTranslations } from 'next-intl';
 import { useParams, usePathname, useRouter } from 'next/navigation';
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { hasRetryingAssistantTurn } from '@kortix/sdk';
+import {
+  COMPOSER_EDITOR_SELECTOR,
+  SUGGESTION_MENU_SELECTOR,
+  shouldCountEscape,
+} from './esc-to-stop';
 import {
   SystemNotificationCard,
   parseSystemNotifications,
   stripSystemPtyText,
 } from './message-parsing';
-import { hasOpenAssistantTurn } from './assistant-turn-open';
-import { type QueueDrainGates, shouldQueueInsteadOfSend } from './message-queue-boundary';
+import { projectQueueRows } from './queue-projection';
+import { runLegacyQueueMigration } from './queue-migration-runner';
+import { createQueueUndoAction } from './queued-message-restore';
 import { ActivityBurst } from './turn/activity-burst';
+import { ExpandableOutput } from './turn/expandable-output';
 import { planAnchorMessageId } from './turn/plan-anchor';
 import { segmentTurn } from './turn/segment-turn';
 import { stabilizeTurns } from './turn/stable-turns';
 import { ThrottledMarkdown } from './turn/throttled-markdown';
+import { TurnViewport } from './turn/turn-viewport';
 import { UserMessage } from './turn/user-message';
-import { useMessageQueueDrain } from './use-message-queue-drain';
 
+import { resolveComposerAgent } from '@/features/session/composer/composer-agent-access';
+import { Composer as SessionChatInput } from '@/features/session/composer/composer';
 import { ConnectorRequiredNotice } from '@/features/session/connector-required-notice';
 import { SessionSiteHeader } from '@/features/session/header/session-site-header';
 import { NO_MODEL_AVAILABLE_MESSAGE } from '@/features/session/model-availability';
@@ -45,18 +55,14 @@ import {
   ConnectProviderDialog,
   type ModelDefaultControls,
 } from '@/features/session/model-selector';
+import { SessionOverridesComposer } from '@/features/session/overrides/session-overrides-composer';
 import {
   type QuestionAction,
   QuestionPrompt,
   type QuestionPromptHandle,
 } from '@/features/session/question-prompt';
-import { SessionOverridesComposer } from '@/features/session/overrides/session-overrides-composer';
 import { SessionActionPanelColumn } from '@/features/session/session-action-panel-column';
-import {
-  type AttachedFile,
-  SessionChatInput,
-  type TrackedMention,
-} from '@/features/session/session-chat-input';
+import type { AttachedFile, TrackedMention } from '@/features/session/session-chat-input';
 import { SessionContextModal } from '@/features/session/session-context-modal';
 import { SessionRetryDisplay, TurnErrorDisplay } from '@/features/session/session-error-banner';
 import { SessionWelcome } from '@/features/session/session-welcome';
@@ -72,10 +78,9 @@ import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import Loading from '@/components/ui/loading';
-import { errorToast, infoToast } from '@/components/ui/toast';
-import { searchWorkspaceFiles } from '@/features/files';
+import { dismissToast, errorToast, infoToast } from '@/components/ui/toast';
 import { uploadFile } from '@/features/files/api/runtime-files';
-import { OptimisticTurn } from '@/features/session/optimistic-turn';
+import { useUserPreferencesStore } from '@/stores/user-preferences-store';
 // billingApi / invalidateAccountState / useQueryClient removed — billing is handled server-side by the router
 import { ChatMinimap } from '@/features/session/chat-minimap';
 import { SessionStartingLoader } from '@/features/session/session-starting-loader';
@@ -106,15 +111,10 @@ import {
 import { useChatSendStore } from '@/stores/chat-send-store';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { useMessageJumpStore } from '@/stores/message-jump-store';
-import {
-  type WebQueuedMessage,
-  type WebSessionQueue,
-  useMessageQueueStore,
-} from '@/stores/message-queue-store';
 import { useOnboardingModeStore } from '@/stores/onboarding-mode-store';
 import { useSessionBrowserStore } from '@/stores/session-browser-store';
-import { usePendingFilesStore } from '@/stores/session-composer-handoff-store';
 import {
+  useAttachRequest,
   useSessionComposerPrefillStore,
   useSessionPrefill,
 } from '@/stores/session-composer-prefill-store';
@@ -150,28 +150,32 @@ import {
   isToolPart,
   shouldShowToolPart,
 } from '@/ui';
-import { updateProjectSession } from '@kortix/sdk';
+import { abortErrorReason, isAbortError, updateProjectSession } from '@kortix/sdk';
 import type { ProviderListResponse } from '@kortix/sdk/react';
 import {
+  type AbortSettlement,
   type KortixSendError,
   type ModelKey,
   type UseSessionResult,
   abandonOptimisticSend,
   applyOptimisticAbort,
   ascendingId,
+  awaitAbortSettlement,
   beginOptimisticSend,
   classifySendError,
   clearStartStash,
   formatModelString,
   formatPromptModel,
   markOptimisticSendDispatched,
+  mintSessionWireMessageId,
   parseModelKey,
   readStartStash,
   recoverFromSendFailure,
   rejectQuestion,
-  replayStartStash,
+  startSessionWithPrompt,
   replyToPermission,
   replyToQuestion,
+  requestRuntimeReconnect,
   sendAndRecover,
   useAbortRuntimeSession,
   useExecuteRuntimeCommand,
@@ -179,19 +183,29 @@ import {
   useProjectConfig,
   useQuestionSelfHeal,
   useRuntimeAgents,
+  useRuntimeBootStalled,
   useRuntimeCommands,
   useRuntimeConfig,
+  useRuntimeConnectionStore,
   useRuntimePendingStore,
+  useRuntimePhase,
   useRuntimeProviders,
+  useSessionPrompts,
   useRuntimeReady,
   useRuntimeSession,
   useRuntimeSessions,
   useSessionModelSelection,
   useSessionStateStore,
   useSessionSync,
+  useSessionWorking,
+  useSessionWorkingStore,
 } from '@kortix/sdk/react';
-import { SandboxUrlDetector } from './sandbox-url-detector';
-import { sessionComposerReadiness } from './session-composer-readiness';
+import { CodeBlockEndpoints, SandboxUrlDetector } from './sandbox-url-detector';
+import {
+  resolveLastTurnWorking,
+  serverHoldsOpenTurn,
+  sessionComposerReadiness,
+} from './session-composer-readiness';
 import { captureTurnScrollAnchor, restoreTurnScrollAnchor } from './session-history-scroll';
 import { resolveSessionContentState } from './session-load-state';
 import { shouldLoadOlderHistory } from './session-older-autoload';
@@ -373,7 +387,7 @@ function AnsweredQuestionCard({ part }: { part: ToolPart }) {
         <Button
           type="button"
           variant="popover"
-          className="bg-card flex h-auto w-full items-center justify-start gap-1.5 rounded-none px-4 py-2.5 text-left"
+          className="bg-card flex h-auto w-full items-center justify-start gap-1.5 rounded-none px-4 py-2 text-left"
         >
           <span className="text-foreground text-xs font-medium">Questions</span>
           <span className="text-muted-foreground text-xs tabular-nums">
@@ -388,12 +402,12 @@ function AnsweredQuestionCard({ part }: { part: ToolPart }) {
         </Button>
       </DisclosureTrigger>
       <DisclosureContent variant="outline" contentClassName="border-border border-t">
-        <div className="space-y-4 px-4 py-2.5">
+        <div className="space-y-2 px-3.5 py-2">
           {questions.map((q, i) => {
             const answer = answers[i] || [];
             const answerText = answer.join(', ') || 'No answer';
             return (
-              <div key={i} className="space-y-1">
+              <div key={q.question} className="space-y-0.5">
                 <div className="[&_*]:!text-muted-foreground [&_strong]:!text-muted-foreground [&_code]:!text-xs [&_li]:!my-0 [&_ol]:!my-0 [&_p]:!my-0 [&_p]:!text-xs [&_p]:!leading-relaxed [&_p]:!text-pretty [&_ul]:!my-0">
                   <UnifiedMarkdown content={q.question} />
                 </div>
@@ -411,48 +425,89 @@ function AnsweredQuestionCard({ part }: { part: ToolPart }) {
 // Message parsing exported to message-parsing.tsx
 // ============================================================================
 
-/** Stable empty queue, so a session with nothing queued does not hand the
- *  selector a fresh array on every render. */
-const EMPTY_SESSION_QUEUE: WebSessionQueue = Object.freeze({
-  pending: [],
-  failed: [],
-  inFlightId: null,
-});
+/** How long Stop will wait for the inbox hold before it issues the cancel
+ *  anyway. The hold going first is a preference — it saves a stopped prompt
+ *  from coming back a reaper pass later — while the abort is the thing the user
+ *  pressed the button for, and a stalled request must never hold it hostage
+ *  with the agent still running. One round-trip's worth, no more. */
+const STOP_HOLD_DEADLINE_MS = 1500;
 
-/** How long "Stop & send" will wait for the server to confirm the abort before
- *  sending anyway. Long enough for a normal round-trip, short enough that a
- *  wedged status never strands the user's click. */
-const ABORT_SETTLE_TIMEOUT_MS = 5000;
+/** Dependencies `stopThenSendNow` needs, injected so the ordering logic is
+ *  directly testable without React or a DOM. */
+export interface StopThenSendNowDeps {
+  /** True when a turn is currently running and must be stopped first. */
+  isRunning: () => boolean;
+  /** The still-pending `AbortSettlement` for a stop already issued by someone
+   *  else (e.g. a direct click on the Stop button), if one exists. Checked
+   *  BEFORE `isRunning()`: the abort receipt makes the projection `isRunning`
+   *  reads answer idle before that earlier stop's settlement arrives, so
+   *  `isRunning()` alone cannot see an in-flight stop issued outside this
+   *  call. Returns `undefined` when no stop is currently pending for this
+   *  session. */
+  pendingSettlement: () => Promise<AbortSettlement> | undefined;
+  /** Issue the stop and resolve with its `AbortSettlement`, or `null` if this
+   *  stop produced no trackable settlement. Called only when
+   *  `pendingSettlement()` is `undefined` and `isRunning()` is true. Never
+   *  expected to reject — `AbortSettlement`-producing paths
+   *  (`sessionState.cancel()`, `awaitAbortSettlement`) never do. A `null`
+   *  settlement means there is nothing to wait for, so the dispatch follows
+   *  at once. */
+  stop: () => Promise<AbortSettlement | null>;
+  /** The actual send-now dispatch: `POST .../prompts/:id/retry`, which
+   *  promotes the row the user pointed at and releases the session's inbox
+   *  hold ITSELF, in that order. Nothing here may release the hold first —
+   *  see `stopThenSendNow`'s doc. */
+  dispatch: () => Promise<void>;
+}
 
 /**
- * Resolve once the server stops reporting this session as running.
+ * Orchestrates "Stop & send": end the current turn (if one is running), wait
+ * for that to actually settle, then dispatch.
  *
- * "Stop & send" issues an abort and then a prompt. Sending on a fixed delay
- * races the abort — the prompt can arrive while the old turn is still winding
- * down. Subscribing to the status the server actually reports is the only
- * version of this that is not a guess.
+ * T10: waits for the SERVER-confirmed `AbortSettlement` `stop()`
+ * returns — never a raw status slot. (There used to be a `waitForSessionIdle`
+ * fallback that polled the sync-store slot; the abort's own optimistic idle
+ * frame flipped that slot synchronously, so the poll resolved on its first
+ * check at every reachable call site and its 5s timer was unreachable. C4
+ * deleted the frame, which made the predicate constant the other way. Gone.)
+ * `stop()`'s settlement is already bounded (~5s, see
+ * `awaitAbortSettlement`), never rejects, and a
+ * `{status:'failed'}` or `{status:'timed-out'}` result still lets `dispatch()`
+ * proceed once that bound elapses: whichever cancel path produced the
+ * settlement already cancelled any local in-flight delivery
+ * (`abortInFlightDeliveries`) before returning it, so there is nothing left on
+ * the client to race even without a server acknowledgement.
+ *
+ * When nothing is running and no stop is pending, `stop()` is never called
+ * and the send is not delayed at all.
+ *
+ * IT DOES NOT LIFT THE INBOX HOLD. Stop holds every queued row
+ * (`available_at = now + 24h`); "send now" is `POST .../prompts/:id/retry`,
+ * and `retryInboxPrompt` promotes THAT row and only then releases the hold.
+ * Lifting it here first made all held rows due at one instant and kicked a
+ * drain that claims by `available_at, created_at` — so the oldest prompt ran
+ * and the one the user clicked queued behind its turn. `dispatch()` owns the
+ * whole ordering.
+ *
+ * T10 (settlement race): a stop can already be in flight when this runs —
+ * e.g. the user clicked Stop directly, whose `noteAbortReceipt` makes the
+ * projection `isRunning()` reads answer idle well before that stop's
+ * `AbortSettlement` arrives from the server. Gating on `isRunning()` alone
+ * would then see "idle" and dispatch immediately, racing the still-in-flight
+ * abort. `pendingSettlement()` is consulted
+ * FIRST for exactly this reason: if a settlement is already pending for this
+ * session, it is awaited (and `stop()` is NOT called again — a stop was
+ * already issued) before resuming/dispatching, regardless of what
+ * `isRunning()` reports.
  */
-function waitForSessionIdle(sessionId: string): Promise<void> {
-  const isIdle = () => {
-    const status = useSessionStateStore.getState().sessionStatus[sessionId];
-    return !status || (status.type !== 'busy' && status.type !== 'retry');
-  };
-  if (isIdle()) return Promise.resolve();
-
-  return new Promise<void>((resolve) => {
-    let unsubscribe: (() => void) | undefined;
-    const finish = () => {
-      clearTimeout(timer);
-      unsubscribe?.();
-      resolve();
-    };
-    const timer = setTimeout(finish, ABORT_SETTLE_TIMEOUT_MS);
-    unsubscribe = useSessionStateStore.subscribe(() => {
-      if (isIdle()) finish();
-    });
-    // The status may have settled between the check above and the subscribe.
-    if (isIdle()) finish();
-  });
+export async function stopThenSendNow(deps: StopThenSendNowDeps): Promise<void> {
+  const pending = deps.pendingSettlement();
+  if (pending) {
+    await pending;
+  } else if (deps.isRunning()) {
+    await deps.stop();
+  }
+  await deps.dispatch();
 }
 
 // ============================================================================
@@ -480,10 +535,13 @@ function isNotificationOnlyMessage(parts: Part[]): boolean {
  *  inline with the conversation flow, styled like tool-call cards. */
 function NotificationTurn({ turn }: { turn: Turn }) {
   const rawText = useMemo(() => {
-    return turn.userMessage.parts
-      .filter((p) => isTextPart(p) && !(p as TextPart).synthetic && !(p as any).ignored)
-      .map((p) => (p as TextPart).text || '')
-      .join('\n');
+    const texts: string[] = [];
+    for (const p of turn.userMessage.parts) {
+      if (isTextPart(p) && !(p as TextPart).synthetic && !(p as any).ignored) {
+        texts.push((p as TextPart).text || '');
+      }
+    }
+    return texts.join('\n');
   }, [turn.userMessage.parts]);
 
   const { notifications } = useMemo(
@@ -495,8 +553,8 @@ function NotificationTurn({ turn }: { turn: Turn }) {
 
   return (
     <div className="flex w-full flex-col gap-1.5">
-      {notifications.map((n, i) => (
-        <SystemNotificationCard key={`${n.tag}-${i}`} notification={n} />
+      {notifications.map((n) => (
+        <SystemNotificationCard key={`${n.tag}-${n.body}`} notification={n} />
       ))}
     </div>
   );
@@ -505,6 +563,31 @@ function NotificationTurn({ turn }: { turn: Turn }) {
 // ============================================================================
 // Session Turn — core turn component
 // ============================================================================
+
+/**
+ * Pure derivation of "was this turn's error an abort, and why" from a turn's
+ * assistant messages — the exact logic `turnErrorIsAbort`/`turnErrorAbortReason`
+ * below run per render. Extracted (T17) so it can be exercised by real
+ * behavior tests (`interrupted-label.test.ts`) instead of a source-text
+ * pattern match. No behavior change: both `useMemo`s below now call this one
+ * function instead of duplicating its two loops.
+ *
+ * Scans for the FIRST assistant message carrying an object error (matching
+ * `getTurnError`'s own "first wins" rule) and classifies THAT message once —
+ * see the two `useMemo`s below for why identity/reason must come from the
+ * SDK's single `isAbortError`/`abortErrorReason` classifier.
+ */
+export function deriveTurnErrorAbortState(turn: {
+  assistantMessages: ReadonlyArray<{ info: unknown }>;
+}): { isAbort: boolean; abortReason: string | undefined } {
+  for (const msg of turn.assistantMessages) {
+    const err = (msg.info as { error?: unknown }).error;
+    if (!err || typeof err !== 'object') continue;
+    const isAbort = isAbortError(err);
+    return { isAbort, abortReason: isAbort ? abortErrorReason(err) : undefined };
+  }
+  return { isAbort: false, abortReason: undefined };
+}
 
 interface SessionTurnProps {
   turn: Turn;
@@ -527,8 +610,13 @@ interface SessionTurnProps {
   agentNames?: string[];
   /** Whether this is the first turn in the session */
   isFirstTurn: boolean;
-  /** Whether the session is busy */
-  isBusy: boolean;
+  /**
+   * The session's working state, resolved ONCE by the parent
+   * (`resolveLastTurnWorking`): the projection for a Kortix session, the raw
+   * SSE slot only for a child session that has no `/turn` row. Only the last
+   * turn ever renders it — a non-last turn is settled by definition.
+   */
+  lastTurnWorking: boolean;
   /** Whether this turn contains a compaction */
   isCompaction?: boolean;
   /** Providers data for the Connect Provider dialog */
@@ -619,7 +707,7 @@ function SessionTurnImpl({
   questions,
   agentNames,
   isFirstTurn,
-  isBusy,
+  lastTurnWorking,
   isCompaction,
   providers,
   commandMessages,
@@ -633,6 +721,11 @@ function SessionTurnImpl({
   const [copied, setCopied] = useState(false);
   const [connectProviderOpen, setConnectProviderOpen] = useState(false);
   const pricingLookup = useModelPricingLookup(providers);
+  // `?? 'normal'` — legacy persisted preferences predate this key (same rule
+  // as every `panelMode` read site).
+  const conversationDensity = useUserPreferencesStore(
+    (s) => s.preferences.conversationDensity ?? 'normal',
+  );
 
   // Derived state from shared helpers
   const allParts = useMemo(() => collectTurnParts(turn), [turn]);
@@ -655,15 +748,14 @@ function SessionTurnImpl({
     () => allParts.some(({ part }) => isReasoningPart(part) && !!part.text?.trim()),
     [allParts],
   );
-  // A turn is "working" when:
-  // 1. The session status says busy/retry (via getWorkingState), OR
-  // 2. This is the last turn AND the parent component says isBusy (e.g. we
-  //    just sent a message but sessionStatus hasn't updated to busy yet).
-  //    This covers the race between sending and the server acknowledging.
-  const working = useMemo(
-    () => getWorkingState(sessionStatus, isLast) || (isLast && isBusy),
-    [sessionStatus, isLast, isBusy],
-  );
+  // The LAST turn's working state is the session's, and the parent resolved
+  // that answer once (`resolveLastTurnWorking`): the projection
+  // (`useSessionWorking` → `GET .../turn`) for a Kortix session, the raw SSE
+  // slot only for a child session with no `/turn` row. A non-last turn is
+  // NEVER working — that is a fact about the transcript, not an observation,
+  // and it is what removes the "last turn shimmers for ever" symptom the raw
+  // slot's dropped end-of-turn frames caused here.
+  const working = isLast && lastTurnWorking;
   const activeAssistantMessage = useMemo(() => {
     if (turn.assistantMessages.length === 0) return undefined;
     for (let i = turn.assistantMessages.length - 1; i >= 0; i--) {
@@ -674,10 +766,11 @@ function SessionTurnImpl({
   }, [turn.assistantMessages]);
   const streamingResponseRaw = useMemo(() => {
     if (!activeAssistantMessage) return '';
-    return activeAssistantMessage.parts
-      .filter(isTextPart)
-      .map((p) => p.text ?? '')
-      .join('');
+    let text = '';
+    for (const p of activeAssistantMessage.parts) {
+      if (isTextPart(p)) text += p.text ?? '';
+    }
+    return text;
   }, [activeAssistantMessage]);
   const lastTextPart = useMemo(() => findLastTextPart(allParts), [allParts]);
   const responseRaw = lastTextPart?.text ?? '';
@@ -710,7 +803,11 @@ function SessionTurnImpl({
     : !hasSteps && completedTextParts.length > 0
       ? completedTextParts.join('\n\n')
       : responseRaw.trim() || abortedTextFallback;
-  // Retry info (only on last turn)
+  // Retry info (only on last turn). These KEEP reading the raw `sessionStatus`
+  // frame on purpose: they render the retry *reason* carried on the frame
+  // (attempt count, provider message, next-retry time), which the working
+  // projection does not carry. Do not "finish the job" by moving them to the
+  // projection — the shimmer decision above is the only thing that moved.
   const retryInfo = useMemo(
     () => (isLast ? getRetryInfo(sessionStatus) : undefined),
     [sessionStatus, isLast],
@@ -751,23 +848,26 @@ function SessionTurnImpl({
    * `getTurnError` flattens the structured error to a display string and drops
    * its `name`, so the banner was left substring-matching "abort" over arbitrary
    * prose — which renders a genuine failure as a muted "Interrupted" and hides
-   * what really went wrong. The identity is right here on the message; read it.
-   *
-   * Both real producers set `name: 'AbortError'`: opencode's own abort, and the
-   * optimistic patch applied when the user hits Stop.
+   * what really went wrong. The identity is right here on the message; read it
+   * through the SDK's single `isAbortError` classifier, which recognizes both
+   * real producers: the opencode wire's `MessageAbortedError` and the client's
+   * synthesized `AbortError` patch applied when the user hits Stop.
    */
-  const turnErrorIsAbort = useMemo(() => {
-    for (const msg of turn.assistantMessages) {
-      const err = (msg.info as { error?: unknown }).error;
-      if (!err || typeof err !== 'object') continue;
-      // Narrow to a string BEFORE comparing — `name` is `unknown` here, and
-      // comparing that to a literal is the inconvertible-types smell CodeQL
-      // flags (and would silently be false for a boxed String or a symbol).
-      const name = (err as { name?: unknown }).name;
-      return typeof name === 'string' && name === 'AbortError';
-    }
-    return false;
-  }, [turn]);
+  const turnErrorIsAbort = useMemo(() => deriveTurnErrorAbortState(turn).isAbort, [turn]);
+
+  /**
+   * The machine-readable WHY behind `turnErrorIsAbort`, when the abort was
+   * client-synthesized and tagged one (`data.reason` — see
+   * `core/http/abort-error.ts`'s `AbortReason` union).
+   *
+   * `undefined` covers two different cases the banner treats identically to
+   * `'user'`: no abort at all, and a genuine wire `MessageAbortedError`
+   * (opencode's own abort — never tagged, see the classifier's doc comment).
+   * Only a reason present AND not `'user'` (currently just
+   * `'runtime-disposed'`, from `markSessionAbortedLocally`) means "pure
+   * infrastructure, render nothing" — see `TurnErrorDisplay`.
+   */
+  const turnErrorAbortReason = useMemo(() => deriveTurnErrorAbortState(turn).abortReason, [turn]);
 
   // The gateway's structured fields (provider/suggestion/request_id) for
   // `turnError`, when recoverable — lets TurnErrorDisplay render WHICH
@@ -792,10 +892,9 @@ function SessionTurnImpl({
   // Only skip tool parts whose callID matches a currently-pending question.
   const answeredQuestionParts = useMemo(() => {
     const pendingCallIds = new Set(
-      questions
-        .filter((q) => q.sessionID === sessionId)
-        .map((q) => q.tool?.callID)
-        .filter(Boolean),
+      questions.flatMap((q) =>
+        q.sessionID === sessionId && q.tool?.callID ? [q.tool.callID] : [],
+      ),
     );
 
     // Collect ALL question tool parts first so we can determine which ones
@@ -1016,14 +1115,13 @@ function SessionTurnImpl({
 
   // User message text — for copy action
   const userMessageText = useMemo(() => {
-    const textParts = turn.userMessage.parts.filter(
-      (p) => isTextPart(p) && !(p as TextPart).synthetic && !(p as any).ignored,
-    ) as TextPart[];
-    return textParts
-      .map((p) => stripSystemPtyText(p.text))
-      .filter((t) => t.trim())
-      .join('\n')
-      .trim();
+    const texts: string[] = [];
+    for (const p of turn.userMessage.parts) {
+      if (!isTextPart(p) || (p as TextPart).synthetic || (p as any).ignored) continue;
+      const text = stripSystemPtyText((p as TextPart).text);
+      if (text.trim()) texts.push(text);
+    }
+    return texts.join('\n').trim();
   }, [turn.userMessage.parts]);
 
   const commandForTurn = useMemo(() => {
@@ -1034,7 +1132,8 @@ function SessionTurnImpl({
   }, [commandMessages, turn.userMessage.info.id, userMessageText, commands]);
 
   // ---- Status throttling (2.5s) ----
-  const lastStatusChangeRef = useRef(Date.now());
+  const [statusThrottleStart] = useState(() => Date.now());
+  const lastStatusChangeRef = useRef(statusThrottleStart);
   const statusTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const childMessages = undefined as MessageWithParts[] | undefined; // placeholder for child session delegation
   const rawStatus = useMemo(
@@ -1099,9 +1198,11 @@ function SessionTurnImpl({
     // When inline content is active, copy all text parts (not just the last one)
     const textToCopy = inlineContentParts
       ? inlineContentParts
-          .filter((item) => item.type === 'text')
-          .map((item) => (item.part as TextPart).text?.trim())
-          .filter(Boolean)
+          .flatMap((item) => {
+            if (item.type !== 'text') return [];
+            const text = (item.part as TextPart).text?.trim();
+            return text ? [text] : [];
+          })
           .join('\n\n')
       : response;
     if (!textToCopy) return;
@@ -1111,12 +1212,12 @@ function SessionTurnImpl({
   };
 
   // Parts with a pending permission need a visible, actionable surface — they
-  // must never fold into a collapsed burst. Answered questions get the same
-  // standalone treatment for a different reason: they record a decision the
-  // USER made, not agent activity, so the "collapse the agent's work into one
-  // row" goal doesn't apply to them (they render via AnsweredQuestionCard, not
-  // ToolPartRenderer — see the standalone branch below). Pending/dismissed
-  // questions are deliberately NOT standalone: the real, actionable prompt for
+  // must never fold into a collapsed burst. Answered questions are NOT
+  // standalone: they are a step of the turn (the agent asked, the user
+  // answered, the work continued), so they render inside the activity burst as
+  // their own chain row (`AnsweredQuestionStep` in turn/answered-question-step)
+  // instead of a card that force-splits the burst around it. Pending/dismissed
+  // questions are not standalone either: the real, actionable prompt for
   // a pending question lives in the composer (SessionChatInput's questionSlot),
   // which has the answer-reply plumbing this component doesn't; surfacing an
   // inert, answer-less card here would only be a confusing duplicate. Those
@@ -1131,11 +1232,8 @@ function SessionTurnImpl({
         ids.add(permission.tool.callID);
       }
     }
-    for (const { part } of answeredQuestionParts) {
-      ids.add(part.callID);
-    }
     return ids;
-  }, [permissions, answeredQuestionParts, sessionId]);
+  }, [permissions, sessionId]);
 
   /**
    * The turn's parts, cut into bursts / standalone tools / text.
@@ -1153,23 +1251,25 @@ function SessionTurnImpl({
    * Memoised, the arrays keep their identity until the parts actually change,
    * which is what makes the memo boundaries downstream able to bite.
    */
-  const segments = useMemo(
-    () =>
-      segmentTurn(
-        allParts
-          .map(({ part }) => part)
-          .filter((part) => {
-            if (isToolPart(part) && part.tool === 'todowrite') return false;
-            if (isToolPart(part) && part.tool === 'question') {
-              // Keep only answered questions, and only if not rendering inline
-              return answeredQuestionPartsById.has(part.id) && !shouldUseInlineContent;
-            }
-            return true;
-          }),
-        { standaloneCallIds },
-      ),
-    [allParts, answeredQuestionPartsById, shouldUseInlineContent, standaloneCallIds],
-  );
+  const segments = useMemo(() => {
+    const parts: (typeof allParts)[number]['part'][] = [];
+    for (const { part } of allParts) {
+      if (isToolPart(part) && part.tool === 'todowrite') continue;
+      if (isToolPart(part) && part.tool === 'question') {
+        // Keep only answered questions, and only if not rendering inline.
+        if (!answeredQuestionPartsById.has(part.id) || shouldUseInlineContent) continue;
+        // A kept question rides into its burst as the ANSWERED part — the
+        // one from answeredQuestionParts, possibly synthetic with
+        // optimistically-cached or output-parsed answers the raw store part
+        // does not carry yet. Without this substitution the burst row would
+        // show "0 answered" until the server confirms.
+        parts.push(answeredQuestionPartsById.get(part.id) ?? part);
+        continue;
+      }
+      parts.push(part);
+    }
+    return segmentTurn(parts, { standaloneCallIds });
+  }, [allParts, answeredQuestionPartsById, shouldUseInlineContent, standaloneCallIds]);
 
   // ============================================================================
   // Shell mode — short-circuit rendering
@@ -1191,6 +1291,7 @@ function SessionTurnImpl({
             errorText={turnError}
             errorDetails={turnErrorDetails}
             isAbort={turnErrorIsAbort}
+            abortReason={turnErrorAbortReason}
             className="mt-2"
           />
         )}
@@ -1295,36 +1396,31 @@ function SessionTurnImpl({
 			    - `todowrite` — the plan card beneath the user message is now
 			      the single canonical todo surface; showing the same checklist
 			      again inside a burst would just duplicate it.
-			    - `question`: only answered questions are kept. Pending and
-			      dismissed questions are dropped entirely. Additionally,
-			      answered questions are dropped when rendering inline content
-			      (below), since that mode shows them already, in natural order. */}
+			    - `question`: only answered questions are kept — they fold into
+			      their burst as a "Questions · N answered" chain row
+			      (turn/answered-question-step.tsx). Pending and dismissed
+			      questions are dropped entirely. Additionally, answered
+			      questions are dropped when rendering inline content (below),
+			      since that mode shows them already, in natural order. */}
       {(working || hasSteps || hasReasoning) && turn.assistantMessages.length > 0 && (
         <div className="space-y-3">
           {segments.map((segment, index) => {
             if (segment.kind === 'burst') {
               return (
                 <ActivityBurst
-                  key={`burst-${segment.parts[0]?.id ?? index}`}
+                  key={`burst-${segment.parts[0]?.id ?? 'empty'}`}
                   parts={segment.parts}
                   sessionId={sessionId}
                   working={working}
                   isTrailing={index === segments.length - 1}
                   disableNavigation={disableToolNavigation}
+                  density={conversationDensity}
                 />
               );
             }
 
             if (segment.kind === 'standalone') {
               if (!shouldShowToolPart(segment.part)) return null;
-              // Render answered questions via AnsweredQuestionCard instead of
-              // ToolPartRenderer to avoid the "Question(s)" label and badge
-              // from QuestionTool; answered cards show "Questions · N answered" instead.
-              // Use the part from the map (may contain optimistically-cached answers).
-              if (answeredQuestionPartsById.has(segment.part.id)) {
-                const part = answeredQuestionPartsById.get(segment.part.id)!;
-                return <AnsweredQuestionCard key={segment.part.id} part={part} />;
-              }
               return (
                 <ToolPartRenderer
                   key={segment.part.id}
@@ -1402,19 +1498,29 @@ function SessionTurnImpl({
             !hasSteps &&
             response &&
             (commandForTurn ? (
-              <div className="border-border/60 from-muted/15 to-background overflow-hidden rounded-2xl border bg-gradient-to-b">
-                <div className="border-border/50 bg-muted/25 flex items-center gap-2 border-b px-3 py-2">
-                  <Terminal className="text-muted-foreground size-3.5 shrink-0" />
-                  <span className="text-foreground font-mono text-xs">/{commandForTurn.name}</span>
-                  {commandForTurn.args && (
-                    <span className="text-muted-foreground truncate text-xs">
-                      {commandForTurn.args}
+              <div className="space-y-2">
+                <div className="bg-secondary flex w-full flex-col overflow-hidden rounded-lg">
+                  <div className="text-foreground flex min-w-0 items-center justify-between gap-2 p-3 pb-0 text-xs [&>svg]:size-4">
+                    <span
+                      className="bg-popover text-foreground/95 dark:bg-card min-w-0 truncate rounded-[calc(var(--radius-sm)-0.5px)] border px-1.5 py-[0.08rem] align-baseline font-mono text-[0.95em] font-medium wrap-anywhere whitespace-nowrap"
+                      title={`/${commandForTurn.name}`}
+                    >
+                      {commandForTurn.name}
                     </span>
-                  )}
+                  </div>
+                  {/* Command output clamps to a readable height and opens from a
+                      centred toggle on the fade. `from-secondary` matches the
+                      panel this sits on — the gradient has to dissolve into the
+                      surface, not paint a band over it. */}
+                  <ExpandableOutput
+                    className="min-h-0"
+                    fadeClassName="from-secondary"
+                    contentClassName="px-4 py-3 text-sm"
+                  >
+                    <SandboxUrlDetector content={response} isStreaming={false} />
+                  </ExpandableOutput>
                 </div>
-                <div className="px-3 py-2.5 text-sm">
-                  <SandboxUrlDetector content={response} isStreaming={false} />
-                </div>
+                <CodeBlockEndpoints content={response} />
               </div>
             ) : (
               <div className="text-sm">
@@ -1454,6 +1560,7 @@ function SessionTurnImpl({
             />
           )}
           <SessionBusyIndicator
+            sessionId={sessionId}
             statusText={throttledStatus || undefined}
             retryLabel={
               retryInfo
@@ -1472,6 +1579,7 @@ function SessionTurnImpl({
           errorText={turnError}
           errorDetails={turnErrorDetails}
           isAbort={turnErrorIsAbort}
+          abortReason={turnErrorAbortReason}
         />
       )}
 
@@ -1705,6 +1813,10 @@ export function SessionChat({
   // runtime is connected + healthy). We need it here too so the render logic
   // can tell "still booting" apart from "genuinely gone".
   const runtimeReady = useRuntimeReady();
+  // "The health poller GAVE UP", which `!runtimeReady` does not say — that is
+  // also every ordinary boot. Only the composer notice reads it, to tell a probe
+  // that has not answered yet from one that keeps failing.
+  const runtimeUnreachable = useRuntimeConnectionStore((s) => s.status === 'unreachable');
   const { data: session, isFetched: sessionFetched } = useRuntimeSession(sessionId);
   // useSessionSync is the SINGLE source of truth for messages (matches OpenCode SolidJS).
   // It fetches on first access, then SSE events keep it up to date.
@@ -1740,6 +1852,78 @@ export function SessionChat({
   const abortSession = useAbortRuntimeSession();
   const executeCommand = useExecuteRuntimeCommand();
 
+  // THE send path. Every prompt this composer accepts becomes a durable server
+  // row before anything else happens, so a closed tab, a second device, or a
+  // crash cannot lose it, and the server — not this component — decides whether
+  // it runs now or waits for the turn in flight.
+  const promptInbox = useSessionPrompts(projectId, projectSessionId);
+
+  // The one-time hand-off of whatever the deleted browser queue was still
+  // holding — see `queue-migration.ts`.
+  //
+  // Here rather than in a list route because THIS is the only component that
+  // knows both ids a legacy blob can be keyed by: the OpenCode chat id
+  // (`sessionId`, what `SessionChat` drained under) and the Kortix session id
+  // (`projectSessionId`, the only one the inbox takes). A list route knows
+  // neither mapping.
+  //
+  // Sessions are pre-mounted per tab, so several of these run at once; the pass
+  // is serialized by `runLegacyQueueMigration` and a skip-only pass gives its
+  // attempt back, so a session that can only see another session's rows does
+  // not spend the retry budget.
+  useEffect(() => {
+    if (!projectId || !projectSessionId) return;
+    void runLegacyQueueMigration({
+      legacyIds: [sessionId, projectSessionId],
+      projectId,
+      // The route takes the KORTIX id; the wire message id is minted against
+      // the OPENCODE transcript. Two ids, two parameters — see the runner.
+      sessionId: projectSessionId,
+      wireSessionId: sessionId,
+      enqueue: promptInbox.enqueue,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId, projectSessionId, sessionId]);
+
+  // T10: the most recently issued stop/cancel's `AbortSettlement`
+  // promise for this session, so `stopThenSendNow` (used by
+  // `handleQueueSendNow`) can await the SERVER-confirmed settlement instead
+  // of racing the optimistic idle flip `applyOptimisticAbort` makes
+  // synchronously. Keyed by sessionId even though this component instance is
+  // 1:1 with a session, matching the sessionId-keyed conventions used
+  // elsewhere in this file (e.g. the zustand stores) rather than assuming the
+  // prop never changes across this instance's lifetime.
+  const pendingAbortSettlementRef = useRef<Map<string, Promise<AbortSettlement>>>(new Map());
+
+  /**
+   * The one place that issues a stop/cancel for this session's run, whether
+   * through the mounted `sessionState` hook or the fallback raw mutation.
+   * Both branches resolve a real `AbortSettlement` (never throwing — see
+   * `awaitAbortSettlement`) and stash it in `pendingAbortSettlementRef` for
+   * `stopThenSendNow` to await. Cleared once it settles so a stale settlement
+   * never gates an unrelated future send.
+   */
+  const issueSessionCancel = useCallback((): Promise<AbortSettlement> => {
+    // The stop's own receipt, taken before the cancel goes out and settled
+    // when it is acknowledged. `applyOptimisticAbort` writes an idle status
+    // frame, which invalidates the `/turn` query — and the read that comes
+    // back still shows the turn, because the cancel needs ~1.6s to reach the
+    // daemon. Without this the composer flipped Send back to Stop ~120ms after
+    // the click and stayed there for the whole abort. See `AbortReceipt`.
+    useSessionWorkingStore.getState().noteAbortReceipt(projectSessionId ?? '', Date.now());
+    const settlement = sessionState
+      ? sessionState.cancel()
+      : awaitAbortSettlement(() => abortSession.mutateAsync(sessionId));
+    pendingAbortSettlementRef.current.set(sessionId, settlement);
+    void settlement.finally(() => {
+      useSessionWorkingStore.getState().settleAbortReceipt(projectSessionId ?? '', Date.now());
+      if (pendingAbortSettlementRef.current.get(sessionId) === settlement) {
+        pendingAbortSettlementRef.current.delete(sessionId);
+      }
+    });
+    return settlement;
+  }, [sessionId, projectSessionId, sessionState, abortSession]);
+
   // ---- Unified model/agent/variant state (1:1 port of SolidJS local.tsx) ----
   const local = useSessionModelSelection({
     agents,
@@ -1749,13 +1933,26 @@ export function SessionChat({
     boundAgentName,
     defaultAgentName: projectConfig?.open_code_default_agent,
   });
-  // Session agent-lock is DISABLED (mirrors the backend KORTIX_ENFORCE_SESSION_AGENT_LOCK,
-  // default off): the picker still defaults to the session's agent (seeded via
-  // useRuntimeLocal's boundAgentName) but stays switchable — sends use the current
-  // pick, not a forced lock. Flip to true to restore the hard lock once per-agent
-  // connector-token scoping lands (see docs/specs/2026-06-28-agent-defaults-todo.md).
-  const SESSION_AGENT_LOCK_ENABLED: boolean = false;
-  const lockedAgentName = SESSION_AGENT_LOCK_ENABLED ? boundAgentName?.trim() || null : null;
+  // The agent picker defaults to the session's agent (seeded via useRuntimeLocal's
+  // boundAgentName) but stays switchable: sends use the current pick. Switching
+  // mid-session is allowed everywhere — the grant re-mint re-resolves the
+  // connector tokens for the newly picked agent on every turn.
+  /**
+   * The agent this composer will ACTUALLY run — see `composer-agent-access.ts`.
+   *
+   * Project agents are deny-by-default for a member: `agents` can come back
+   * empty, and the project's `default_agent` may not be in it. `local.agent`
+   * resolves over the SDK's visible roster (subagents included) and yields
+   * `undefined` on an empty one, which rendered no agent in the picker while
+   * the send still went out under the server's manifest default.
+   */
+  const composerAgent = resolveComposerAgent({
+    agents,
+    defaultAgent: boundAgentName ?? projectConfig?.open_code_default_agent,
+    selectedAgent: local.agent.current?.name ?? null,
+  });
+  const composerAgentName = composerAgent.selected;
+  const noAccessibleAgents = composerAgent.disabled;
   const localAgentSet = local.agent.set;
   const localModelCurrentKey = local.model.currentKey;
   // Wire model to SEND: `auto` when on the default (gateway resolves it), else
@@ -1793,25 +1990,12 @@ export function SessionChat({
 
   const pendingPromptHandled = useRef(false);
 
-  // ---- Polling fallback & optimistic send ----
-  const [pollingActive, setPollingActive] = useState(false);
-  const [pendingUserMessage, setPendingUserMessage] = useState<string | null>(null);
-  const [pendingUserMessageId, setPendingUserMessageId] = useState<string | null>(null);
-  const [pendingCommand, setPendingCommand] = useState<{
-    name: string;
-    description?: string;
-  } | null>(null);
   const [commandError, setCommandError] = useState<KortixSendError | null>(null);
   // The last prompt handed to the runtime, verbatim. Only read by the
   // connector-refusal card, to re-send exactly what was refused.
   const lastSubmittedRef = useRef<{ parts: unknown[]; options: Record<string, unknown> } | null>(
     null,
   );
-  const [failedStartDraft, setFailedStartDraft] = useState<{
-    text: string;
-    files: AttachedFile[];
-    id: number;
-  } | null>(null);
   const [rewindTarget, setRewindTarget] = useState<{
     messageId: string;
     text: string;
@@ -1833,184 +2017,144 @@ export function SessionChat({
   useEffect(() => {
     if (sessionPrefill) useSessionComposerPrefillStore.getState().clearPrefill(sessionId);
   }, [sessionPrefill, sessionId]);
-  // Map of user message IDs → command info, so UserMessage can render
-  // a compact command pill instead of the raw expanded template text.
-  const commandMessagesRef = useRef<Map<string, { name: string; args?: string }>>(new Map());
-  // Stash the pending command info so we can associate it with the user message
-  // even if the busy signal arrives before the message list updates.
-  const pendingCommandStashRef = useRef<{ name: string; args?: string } | null>(null);
-  // Track whether a pending prompt send is in flight (dashboard→session flow).
-  // Keeps isBusy true until the server acknowledges with a busy status.
-  const [pendingSendInFlight, setPendingSendInFlight] = useState(false);
-  const [pendingSendMessageId, setPendingSendMessageId] = useState<string | null>(null);
-  // Grace period: don't stop polling immediately on idle after a recent send
-  const lastSendTimeRef = useRef<number>(0);
-  // ---- Optimistic prompt (from dashboard/project page) ----
-  // Backed by the SDK's start-stash (`readStartStash`/`clearStartStash`), which
-  // understands both the modern `kortix:start:<id>` shape and every legacy
-  // producer's bare `opencode_pending_prompt:<id>` + `opencode_pending_options:<id>`
-  // pair — so pushState navigation still works with no `?new=true` dependency,
-  // and no web code needs to know the storage key names directly.
-  const [optimisticPrompt, setOptimisticPrompt] = useState<string | null>(() => {
-    if (typeof window !== 'undefined') {
-      return readStartStash(sessionId)?.prompt ?? null;
+  // WHICH held draft the composer is handed right now, in priority order, in
+  // ONE place. The four sources mint their ids from four independent counters,
+  // so `prefill.id` alone cannot say which one the composer just applied — and
+  // the carried draft's handshake below has to know exactly that.
+  const composerPrefill = useMemo(() => {
+    if (rewindDraft) {
+      return {
+        source: 'rewind' as const,
+        text: rewindDraft.text,
+        id: rewindDraft.id,
+        mode: 'replace' as const,
+      };
+    }
+    if (sessionPrefill) {
+      return {
+        source: 'session' as const,
+        text: sessionPrefill.text,
+        id: sessionPrefill.id,
+        mode: 'merge' as const,
+      };
     }
     return null;
-  });
+  }, [rewindDraft, sessionPrefill]);
+  // "Add context" (Task 5) — the empty Context card's button asks the
+  // composer to open its attach flow. Same held/id-keyed handoff as the
+  // prefill above, cleared the same way once the composer's own id-keyed
+  // effect has acted on it.
+  const attachRequestId = useAttachRequest(sessionId);
+  useEffect(() => {
+    if (attachRequestId != null) {
+      useSessionComposerPrefillStore.getState().clearAttachRequest(sessionId);
+    }
+  }, [attachRequestId, sessionId]);
+  // Map of user message IDs → command info, so UserMessage can render
+  // a compact command pill instead of the raw expanded template text.
+  const commandMessagesRef = useRef<
+    Map<string, { name: string; args?: string; split?: { before: string; after: string } }>
+  >(new Map());
+  // Stash the pending command info so we can associate it with the user message
+  // even if the busy signal arrives before the message list updates.
+  const pendingCommandStashRef = useRef<{
+    name: string;
+    args?: string;
+    /** Where the chip sat in `args` — display only. See `handleCommand`. */
+    split?: { before: string; after: string };
+  } | null>(null);
+  /**
+   * This tab's record that a prompt went out, and when.
+   *
+   * It replaces `pendingSendInFlight` — a boolean set on send, cleared by an
+   * effect that watched for a busy status or a matching assistant reply, and
+   * backstopped by a 30s timer because both of those signals can be lost. The
+   * receipt is the same fact with a bound and a provenance tag: it claims
+   * `working` only until a server source that CAN know about the send answers,
+   * and `projectWorking` releases it either way — see `useSessionWorking`.
+   *
+   * It lives in the SDK's per-session store rather than in this component
+   * because `useSession` mounts a projection for the SAME session and both
+   * share one `GET .../turn` cache entry. With a receipt each, the observer
+   * that had none polled on its own timer, wrote an uninformed "no turns" read
+   * into that shared entry, and flipped this composer to idle mid-send.
+   *
+   * `note` is taken before the POST; `accept` is what lets a `/turn` read
+   * answer for the send at all, because until `POST .../prompts` returns there
+   * is no row for it to see. Only the paths that know nothing is coming clear
+   * it — a refused send, Stop, and leaving the session.
+   */
+  const receiptSessionId = projectSessionId ?? '';
+  const noteSendReceipt = useCallback(
+    (messageId: string) =>
+      useSessionWorkingStore
+        .getState()
+        .noteSendReceipt(receiptSessionId, { messageId, atMs: Date.now() }),
+    [receiptSessionId],
+  );
+  const acceptSendReceipt = useCallback(
+    (messageId: string) =>
+      useSessionWorkingStore.getState().acceptSendReceipt(receiptSessionId, messageId, Date.now()),
+    [receiptSessionId],
+  );
+  const clearSendReceipt = useCallback(
+    // The id is REQUIRED of every caller that has one: `clearSendReceipt` is
+    // keyed by session, so an unguarded clear from an older send's failure
+    // deleted a NEWER send's receipt while its POST was still on the wire, and
+    // an uninformed `/turn` read then flipped the composer back to Send
+    // mid-send. Omitted only where nothing is coming for ANY send.
+    (messageId?: string) =>
+      useSessionWorkingStore.getState().clearSendReceipt(receiptSessionId, messageId),
+    [receiptSessionId],
+  );
 
-  // Hydrate options from the SDK's start-stash and send the pending prompt for
-  // new sessions. The dashboard/project page (or the instant session shell)
-  // stashes the prompt and navigates here. We send the message from here (not
-  // the producer) so that SSE listeners and polling are already active when the
-  // response starts streaming back.
+  // ---- Start-stash PICKS seeding (model/agent/variant) ----
   //
-  // The write-race retry (stash read), readiness poll (agent/model), and
-  // failure-recovery (stash restore + classify + idle + rehydrate-or-remove)
-  // mechanics are all owned by the SDK's `replayStartStash` — this effect only
-  // supplies the web-specific pieces: resolving agent/model/variant readiness
-  // against this session's own local model/agent stores, building the
-  // optimistic text + outgoing parts (file uploads), and restoring pending
-  // files on failure.
+  // The stash no longer carries the first prompt for this host: the prompt is
+  // a durable inbox row before this component ever mounts (created server-side
+  // from `create.pending_prompt`, or POSTed by `startSessionWithPrompt`), and
+  // it renders in the queue strip like every other pending prompt. What still
+  // travels here are the producer's PICKS, seeded once into this session's
+  // local stores. The old replay effect — a 30s readiness poll, an optimistic
+  // bubble that its own timeout path never cleared, and per-send receipt
+  // bookkeeping — is gone with the hand-off it served.
+  //
+  // A NON-empty prompt in the stash is a legacy hand-off (a pre-deploy tab, or
+  // an unconverted producer): POST it to the inbox rather than dropping it.
   useEffect(() => {
     if (pendingPromptHandled.current) return;
-
-    // Set by `prepare` below (once, before any failure can occur) so
-    // `onFailure` can restore the same files it consumed.
-    let filesToRestoreOnFailure: AttachedFile[] = [];
-
-    const handle = replayStartStash<{ options: Record<string, unknown> }>({
-      sessionId,
-      classify: classifySessionError,
-      checkReadiness: (stash) => {
-        // Restore agent/model/variant selections from the producer.
-        const options: Record<string, unknown> = {};
-        let selectedModelForSend: ModelKey | undefined;
-        const isSelectableModel = (model: ModelKey): boolean =>
-          localModelList.some(
-            (m) => m.providerID === model.providerID && m.modelID === model.modelID,
-          ) && localModelVisible(model);
-        if (stash.agent) {
-          if (!lockedAgentName || stash.agent === lockedAgentName) {
-            options.agent = stash.agent;
-            localAgentSet(stash.agent);
-          }
-        }
-        if (stash.model && isSelectableModel(stash.model as ModelKey)) {
-          options.model = stash.model;
-          selectedModelForSend = stash.model as ModelKey;
-          localModelSet(stash.model as ModelKey);
-        }
-        if (stash.variant) {
-          options.variant = stash.variant;
-          localVariantSet(stash.variant);
-        }
-        if (lockedAgentName) {
-          options.agent = lockedAgentName;
-        }
-        if (!selectedModelForSend && localModelSendKey) {
-          options.model = localModelSendKey;
-          selectedModelForSend = localModelSendKey;
-        }
-        if (!selectedModelForSend) return null;
-        return { options };
-      },
-      onReadinessTimeout: () => {
-        setCommandError({
-          kind: 'runtime-error',
-          message: NO_MODEL_AVAILABLE_MESSAGE,
-          cause: null,
-        });
-      },
-      prepare: (stash, ready) => {
-        pendingPromptHandled.current = true;
-        setPollingActive(true);
-        setPendingSendInFlight(true);
-        clearStartStash(sessionId);
-
-        const sendOpts = ready.options as {
-          agent?: string;
-          model?: ModelKey;
-          variant?: string;
-        };
-        const messageID = ascendingId('msg');
-        const textPartId = ascendingId('prt');
-        // Consume pending files before rendering the optimistic message so
-        // uploaded file cards are visible while the sandbox is still starting.
-        const pendingFiles = usePendingFilesStore.getState().consumePendingFiles();
-        filesToRestoreOnFailure = pendingFiles;
-        const optimisticPendingPrompt = buildOptimisticPromptTextWithUploads(
-          stash.prompt,
-          pendingFiles,
-        );
-        setOptimisticPrompt(optimisticPendingPrompt);
-        setPendingSendMessageId(messageID);
-        lastSendTimeRef.current = Date.now();
-
-        return {
-          messageId: messageID,
-          optimisticText: optimisticPendingPrompt,
-          partIds: [textPartId],
-          sendOptions: {
-            ...(session?.directory ? { directory: session.directory } : {}),
-            ...(sendOpts?.agent && { agent: sendOpts.agent }),
-            ...(sendOpts?.model && { model: formatPromptModel(sendOpts.model) }),
-            ...(sendOpts?.variant && { variant: sendOpts.variant }),
-          },
-          // Upload local files and build the parts array (text + file refs).
-          buildParts: async () => {
-            const built = await buildPromptPartsWithUploads(stash.prompt, pendingFiles, uploadFile);
-            return [{ type: 'text' as const, text: built.text }, ...built.remoteParts];
-          },
-        };
-      },
-      onFailure: (stash, _err, classified) => {
-        setPendingSendInFlight(false);
-        setPendingSendMessageId(null);
-        setOptimisticPrompt(null);
-        setPollingActive(false);
-        setCommandError(classified);
-        usePendingFilesStore.getState().setPendingFiles(filesToRestoreOnFailure);
-        // replayStartStash restores durable sessionStorage itself. Rehydrate the
-        // visible composer too, so the user can retry immediately without a
-        // reload and without losing either the prompt or local File objects.
-        setFailedStartDraft({
-          text: stash.prompt,
-          files: filesToRestoreOnFailure,
-          id: Date.now(),
-        });
-      },
-      onSuccess: () => {
-        if (!projectId || !projectSessionId) return;
-        void updateProjectSession(projectId, projectSessionId, {
-          metadata: { pending_prompt: null },
-        }).catch((error) => {
-          console.warn('[session-chat] failed to clear the acknowledged pending prompt', error);
-        });
-      },
-    });
-
-    return () => handle.cancel();
-  }, [
-    sessionId,
-    localAgentSet,
-    localModelCurrentKey,
-    localModelSendKey,
-    localModelList,
-    localModelSet,
-    localModelVisible,
-    localVariantSet,
-    lockedAgentName,
-    projectId,
-    projectSessionId,
-    session?.directory,
-  ]);
-
-  // Clear optimistic prompt once real messages arrive
-  useEffect(() => {
-    if (optimisticPrompt && messages && messages.length > 0) {
-      setOptimisticPrompt(null);
+    const stash = readStartStash(sessionId);
+    if (!stash) return;
+    pendingPromptHandled.current = true;
+    clearStartStash(sessionId);
+    if (stash.agent) localAgentSet(stash.agent);
+    if (
+      stash.model &&
+      localModelList.some(
+        (m) => m.providerID === stash.model!.providerID && m.modelID === stash.model!.modelID,
+      ) &&
+      localModelVisible(stash.model as ModelKey)
+    ) {
+      localModelSet(stash.model as ModelKey, { autoSeed: true });
     }
-  }, [optimisticPrompt, messages]);
+    if (stash.variant) localVariantSet(stash.variant);
+    const legacyPrompt = stash.prompt.trim();
+    if (legacyPrompt && projectId && projectSessionId) {
+      void startSessionWithPrompt(projectId, projectSessionId, {
+        parts: [{ type: 'text', text: legacyPrompt }],
+        overrides: {
+          ...(stash.agent ? { agent: stash.agent } : {}),
+          ...(stash.model ? { model: stash.model } : {}),
+          ...(stash.variant ? { variant: stash.variant } : {}),
+        },
+      }).catch((error) => {
+        console.error('[session-chat] failed to queue the stashed legacy prompt', error);
+        setCommandError(classifySessionError(error));
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId, projectId, projectSessionId]);
+
 
   const agentNames = useMemo(() => local.agent.list.map((a) => a.name), [local.agent.list]);
 
@@ -2048,18 +2192,52 @@ export function SessionChat({
   const syncStatus = useSessionStateStore((s) => s.sessionStatus[sessionId]);
   const isOptimisticCompacting = sessionState?.isCompacting ?? false;
   const sessionStatus = sessionState?.status ?? syncStatus;
-  const isServerBusy = sessionStatus?.type === 'busy' || sessionStatus?.type === 'retry';
 
-  // Pending: last assistant message is neither completed nor errored.
-  // Used as a SECONDARY signal for busy — only contributes when the server
-  // also says busy. Prevents the event-ordering race where session.idle
-  // arrives before message.updated sets time.completed.
+  /**
+   * IS THIS SESSION WORKING — one answer, and it says where it came from.
+   *
+   * It used to be read straight off the SSE status slot, which is a stream
+   * this tab can miss frames from: a dropped end-of-turn frame left the
+   * composer on "stop" until a reload, and a dropped start-of-turn frame let
+   * the queue drain into a live turn. The projection reads the control plane's
+   * turn authority first (`GET .../turn`), the stream second, and this tab's
+   * own send receipt only until either of them answers.
+   */
+  // A child-session mount (`sub-session-modal.tsx` passes no project ids) has
+  // no Kortix session row for `/turn` to answer about, so the projection below
+  // is disabled and every working read falls back to the raw stream slot —
+  // the same split `session-layout.tsx` makes for its busy indicator.
+  const isChildSession = !projectId || !projectSessionId;
+  const working = useSessionWorking(projectId ?? '', projectSessionId ?? '', {
+    enabled: !isChildSession,
+    runtimeSessionId: sessionId,
+  });
+  const isServerBusy = working.state === 'working';
+
+  // The one transcript-derived gate that survives, and the only one that
+  // carries proof: during a provider 429 OpenCode stamps `info.error` with
+  // `data.isRetryable === true` and keeps writing the SAME assistant message,
+  // while the status frame this tab holds can read non-busy for all of it. The
+  // projection cannot substitute — a frame stamped after the last `/turn` read
+  // outranks that read by design — so without this a `/` command submitted
+  // now would go out into a turn that is still running.
   //
-  // It is ALSO a queue drain gate, which is why "errored counts as ended"
-  // matters: an aborted turn keeps `time.completed` unset, so reading only
-  // that field left this true forever after the stop button and closed the
-  // gate permanently. See `assistant-turn-open.ts`.
-  const hasIncompleteAssistant = useMemo(() => hasOpenAssistantTurn(messages), [messages]);
+  // Paired with the server's own authority so it can never wedge: an assistant
+  // message left open by a sandbox that died mid-turn (no error, no
+  // completion) is not a retry, AND a dead box's turn is husk-finalized, so
+  // `serverOpenTurnToken` goes null and the gate opens. That pair is what the
+  // old 10s husk clock and its confirmation round-trip existed to approximate.
+  //
+  // The TOKEN, not the message id: a `/` command's own turn carries no wire
+  // `messageID`, so keying this on the id left the gate open for exactly the
+  // producer it guards.
+  //
+  // It gates COMMANDS only now (`sessionWorking` on the composer). A prompt is
+  // an inbox row and the server's admission gate holds it.
+  const hasRetryingAssistant = useMemo(
+    () => hasRetryingAssistantTurn(messages) && working.serverOpenTurnToken !== null,
+    [messages, working.serverOpenTurnToken],
+  );
 
   const hasPendingUserReply = useMemo(() => {
     if (!messages || messages.length === 0) return false;
@@ -2077,11 +2255,17 @@ export function SessionChat({
     return true;
   }, [messages]);
 
-  // Matching the reference: session status is the PRIMARY source of truth.
-  // hasIncompleteAssistant only matters while the server also says busy
-  // (prevents the idle→incomplete race). pendingSendInFlight covers the
-  // gap between user send and server ack.
-  const effectiveBusy = isServerBusy || pendingSendInFlight || isOptimisticCompacting;
+  // The working projection, plus compaction — which `projectWorking`
+  // deliberately knows nothing about, because a compaction is not a turn and
+  // `GET .../turn` reports none for it.
+  //
+  // It is no longer a client-only latch either. `sessionState.isCompacting` is
+  // its own projection (`core/session/compaction.ts`) over the runtime's
+  // `Session.time.compacting` row plus this tab's own bounded `/compact` stamp,
+  // so a lost `session.compacted` frame stops pinning the composer at
+  // `OPTIMISTIC_COMPACTION_MAX_MS` instead of for the lifetime of the tab, and
+  // a compaction started by a second device is visible here at all.
+  const effectiveBusy = isServerBusy || isOptimisticCompacting;
 
   // Short visual fade (300ms) — matches the reference's 260ms delay-hide.
   // Goes true immediately, stays visible briefly after going idle so the
@@ -2098,11 +2282,32 @@ export function SessionChat({
     return () => clearTimeout(busyTimerRef.current);
   }, [effectiveBusy]);
 
-  const expectAssistantResponse =
-    isServerBusy ||
-    hasPendingUserReply ||
-    (isServerBusy && hasIncompleteAssistant) ||
-    pendingSendInFlight;
+  // The one working answer the LAST turn card renders (its shimmer). Resolved
+  // here, once, so the card never reads the raw slot for a Kortix session —
+  // see `resolveLastTurnWorking` for the split and the defect it removes.
+  const lastTurnWorking = resolveLastTurnWorking({
+    isChildSession,
+    // The delay-hidden projection, so the card and the composer settle on the
+    // same frame instead of the card flickering 300ms earlier.
+    projectionBusy: isBusy,
+    rawSlotBusy: getWorkingState(sessionStatus, true),
+  });
+
+  // Read by `handleSend` for its RENDERING decision only (see
+  // `willWaitInInbox`). Refs, not the values: `handleSend` is a stable callback
+  // that a dozen surfaces hold, and adding busy state to its deps would rebuild
+  // it on every turn transition. Written in an EFFECT, never during render — a
+  // render-phase ref write is what deadlocked the session shell once already.
+  const isBusyRef = useRef(false);
+  const queuedMessagesRef = useRef(0);
+  useEffect(() => {
+    isBusyRef.current = effectiveBusy;
+  }, [effectiveBusy]);
+
+  // Render-driven only: the session is working, or the transcript shows a user
+  // message nothing has answered yet. The transcript-inference terms are gone —
+  // "is a turn running" has one authority now.
+  const expectAssistantResponse = isServerBusy || hasPendingUserReply;
 
   const shouldRecoveryPoll = expectAssistantResponse;
 
@@ -2196,200 +2401,119 @@ export function SessionChat({
     } as any);
   }, [messages, sessionId, shouldRecoveryPoll, streamCacheKey, hasPendingUserReply]);
 
-  // Client-side message queue — mirrors Claude Code / Codex: a message typed
-  // while the agent is mid-turn is held instead of being sent straight through
-  // (the OpenCode server would accept it immediately, but interleaving it into
-  // a live turn is exactly the reported bug).
+  // WHAT THE COMPOSER RENDERS IS THE SERVER INBOX — see `projectQueueRows`.
   //
-  // The state lives in `useMessageQueueStore` — per session and persisted —
-  // not here. As component state it died silently on every session-tab switch,
-  // and the ref that mirrored it lagged by a commit, which is how the same
-  // message could be sent twice. Release timing is `useMessageQueueDrain`,
-  // mounted after `handleSend` below.
-  const sessionQueue = useMessageQueueStore((s) => s.queues[sessionId]) ?? EMPTY_SESSION_QUEUE;
-  const queuedMessages = sessionQueue.pending;
-  const failedQueuedMessages = sessionQueue.failed;
-
-  // Anything queued in the instant shell while the computer was still booting
-  // is already here — the shell writes into this same store under this same
-  // session id, so there is no handoff step to seed from and nothing to lose
-  // if this component mounts late.
-
-  const handleQueueMessage = useCallback(
-    (text: string, files?: AttachedFile[], mentions?: TrackedMention[]) => {
-      // Capture the agent, model and variant AS THEY ARE NOW. A message queued
-      // under one model must not send under whatever is selected minutes later
-      // when its turn comes up — `handleSend`'s `overrides` parameter has
-      // always documented this and never received a value.
-      useMessageQueueStore.getState().enqueue(sessionId, {
-        text,
-        files,
-        mentions,
-        // `undefined` where nothing is selected yet, never `null`: it means
-        // "resolve this when the message actually sends". A session queued
-        // during boot has no model resolved yet, and `null` would lock that
-        // in as "send no model at all".
-        agent: lockedAgentName ?? local.agent.current?.name ?? undefined,
-        model: local.model.sendKey ?? undefined,
-        variant: local.model.variant.current ?? undefined,
-      });
-    },
-    [sessionId, lockedAgentName, local.agent, local.model],
+  // `GET .../prompts` is the queue: durable, shared across tabs and devices,
+  // ordered and admitted by the control plane. There is no browser lane beside
+  // it any more, so there is no second list to keep in sync, no per-row origin
+  // to route actions by, and nothing left that a closed tab can lose.
+  //
+  // The transcript is passed in because a row whose message is ALREADY on
+  // screen is not a queue row: the optimistic bubble of an idle send is painted
+  // before the POST returns, and a mid-turn prompt's real user message arrives
+  // over SSE seconds later. Without this cross-check the same text renders
+  // twice — once as the answer being streamed, once as a pending row.
+  const transcriptUserMessageIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const message of messages ?? []) {
+      if (message.info.role === 'user') ids.add(message.info.id);
+    }
+    return ids;
+  }, [messages]);
+  const queueRows = useMemo(
+    () =>
+      projectQueueRows({
+        prompts: promptInbox.prompts,
+        transcriptMessageIds: transcriptUserMessageIds,
+      }),
+    [promptInbox.prompts, transcriptUserMessageIds],
   );
+  const queuedMessages = queueRows.queued;
+  const failedQueuedMessages = queueRows.failed;
+  useEffect(() => {
+    // `queued` already carries the rows on the wire — see `projectQueueRows` —
+    // so adding `inFlightIds` here would count each of them twice.
+    queuedMessagesRef.current = queueRows.queued.length;
+  }, [queueRows.queued.length]);
+  // A row the server has CLAIMED is on the wire; locking it against
+  // edit/remove/reorder is the same rule as before.
+  const queueInFlightIds = queueRows.inFlightIds;
 
+  // Removing used to be a local-store delete with an undo toast that restored
+  // the entry into that store. The row is durable now, so a removal is a real
+  // DELETE and the undo has to re-create it — which the inbox makes exact,
+  // because re-POSTing the SAME `clientMessageId` is idempotent by unique
+  // index rather than by a client-side latch.
   const handleRemoveQueuedMessage = useCallback(
-    (id: string) => {
-      const store = useMessageQueueStore.getState();
-      const queue = store.getSessionQueue(sessionId);
-      const index = queue.pending.findIndex((m) => m.id === id);
-      const removed = queue.pending[index] ?? queue.failed.find((m) => m.id === id);
-      store.remove(sessionId, id);
+    async (id: string) => {
+      // The DELETE hands back what it destroyed, and that is the only lossless
+      // undo: the row is hard-deleted, and the list view carries a 2000-char
+      // text preview with no parts at all. Restoring from the list dropped
+      // every attachment and the model/agent picks — silently, under a button
+      // that says "Undo".
+      let removed: Awaited<ReturnType<typeof promptInbox.remove>>;
+      try {
+        removed = await promptInbox.remove(id);
+      } catch (error) {
+        // A prompt already on the wire cannot be cancelled — the server
+        // answers 409 rather than lying about it.
+        errorToast(
+          error instanceof Error && /409/.test(error.message)
+            ? 'That prompt is already being delivered'
+            : 'Could not remove that prompt',
+        );
+        return;
+      }
       if (!removed) return;
 
       // Undo rather than a confirm dialog. A queue is something you curate —
       // gating every removal behind a modal would make it unusable, and the
       // thing being removed is a draft, not data. Reversible beats guarded.
+      const undoToastId = `queue-undo-${sessionId}-${removed.prompt_id}`;
       infoToast('Removed from queue', {
+        id: undoToastId,
         duration: 5000,
         button: (
           <Button
             size="sm"
             variant="outline"
-            onClick={() => {
-              const current = useMessageQueueStore.getState();
-              current.enqueue(sessionId, {
-                text: removed.text,
-                mentions: removed.mentions,
-                agent: removed.agent,
-                model: removed.model,
-                variant: removed.variant,
-              });
-              // Put it back where it was, not at the tail.
-              if (index >= 0) {
-                const restored = current.getSessionQueue(sessionId).pending;
-                const last = restored[restored.length - 1];
-                if (last) current.reorder(sessionId, last.id, index);
-              }
-            }}
+            // The SAME `clientMessageId`, so an undo re-creates ONE row and a
+            // double-click cannot create two. A FRESH wire id, because
+            // OpenCode orders by id and the original one was minted before the
+            // turn that has been writing higher ids since. The parts and
+            // overrides are the ORIGINALS, straight from the delete's own
+            // response — see `createQueueUndoAction`.
+            onClick={createQueueUndoAction({
+              removed,
+              mintMessageId: () => mintSessionWireMessageId(sessionId),
+              enqueue: promptInbox.enqueue,
+              dismiss: () => dismissToast(undoToastId),
+              onError: () => errorToast('Could not restore that prompt'),
+            })}
           >
             Undo
           </Button>
         ),
       });
     },
-    [sessionId],
-  );
-
-  const handleEditQueuedMessage = useCallback(
-    (id: string, text: string) => {
-      const store = useMessageQueueStore.getState();
-      if (text.trim()) store.edit(sessionId, id, text);
-      else store.remove(sessionId, id);
-    },
-    [sessionId],
-  );
-
-  const handleReorderQueuedMessage = useCallback(
-    (id: string, toIndex: number) => {
-      useMessageQueueStore.getState().reorder(sessionId, id, toIndex);
-    },
-    [sessionId],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [sessionId, promptInbox.remove, promptInbox.enqueue],
   );
 
   const handleRetryQueuedMessage = useCallback(
     (id: string) => {
-      useMessageQueueStore.getState().retry(sessionId, id);
+      // Re-queued UNDER ITS ORIGINAL WIRE ID, so a delivery that actually
+      // landed is still absorbed by the proxy instead of running twice.
+      void promptInbox.retry(id).catch(() => errorToast('Could not retry that prompt'));
     },
-    [sessionId],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [promptInbox.retry],
   );
 
-  // Stop polling when session goes idle (via SSE or polling fallback).
-  // Grace period: if we sent a message recently (within 5s), don't stop polling
-  // on the first idle status — the server may not have started processing yet.
-  useEffect(() => {
-    if (pollingActive && sessionStatus?.type === 'idle') {
-      const timeSinceSend = Date.now() - lastSendTimeRef.current;
-      if (timeSinceSend < 5000) {
-        // Still within grace period — check again shortly
-        const remaining = 5000 - timeSinceSend;
-        const timer = setTimeout(() => {
-          // Re-check: if still idle after grace period, stop polling
-          const currentStatus = useSessionStateStore.getState().sessionStatus[sessionId];
-          if (currentStatus?.type === 'idle') {
-            setPollingActive(false);
-          }
-        }, remaining);
-        return () => clearTimeout(timer);
-      }
-      setPollingActive(false);
-    }
-  }, [pollingActive, sessionStatus?.type, sessionId]);
-
-  // Clear pendingSendInFlight once the server acknowledges it's working,
-  // or when new messages arrive (fallback for command sends).
-  // This bridges the gap between the optimistic prompt clearing and the
-  // server status updating — keeps isBusy true so the turn shows a loader.
-  useEffect(() => {
-    if (!pendingSendInFlight) return;
-    if (isServerBusy) {
-      setPendingSendInFlight(false);
-      setPendingSendMessageId(null);
-      return;
-    }
-    // If we got an assistant reply for the pending user message, the server
-    // already accepted and processed this send even if status events were missed.
-    const hasAssistantReply = pendingSendMessageId
-      ? !!messages?.some(
-          (m) => m.info.role === 'assistant' && (m.info as any).parentID === pendingSendMessageId,
-        )
-      : false;
-    if (hasAssistantReply) {
-      setPendingSendInFlight(false);
-      setPendingSendMessageId(null);
-    }
-  }, [pendingSendInFlight, isServerBusy, messages, pendingSendMessageId]);
-
-  // Safety timeout: clear pendingSendInFlight after 30s even if the server
-  // never acknowledged. Prevents the UI from being stuck forever in "busy"
-  // when the send succeeded (HTTP 204) but the server never started processing.
-  useEffect(() => {
-    if (!pendingSendInFlight) return;
-    const timer = setTimeout(() => {
-      setPendingSendInFlight(false);
-      setPendingSendMessageId(null);
-    }, 30_000);
-    return () => clearTimeout(timer);
-  }, [pendingSendInFlight]);
-
-  // SSE + heartbeat timeout is the source of truth for streaming state.
-  // No watchdogs, no polling, no reconcilers — matching the reference.
-
-  // Clear pending user message when we can confirm the message is in cache
-  // (by ID), or when new messages arrive (fallback for command sends).
-  // When a command was pending, associate the newest user message with the
-  // command info so UserMessage can render a nice pill instead of raw template text.
+  // Associate stashed command info with the newest user message when messages
+  // arrive, so `UserMessage` renders the command pill instead of raw template
+  // text. `prevMsgLenRef` exists for this one observation.
   const prevMsgLenRef = useRef(messages?.length || 0);
-  useEffect(() => {
-    if (!pendingUserMessage) return;
-    const hasPendingMessage = pendingUserMessageId
-      ? !!messages?.some((m) => m.info.id === pendingUserMessageId)
-      : false;
-    if (hasPendingMessage) {
-      setPendingUserMessage(null);
-      setPendingUserMessageId(null);
-      setPendingCommand(null);
-      return;
-    }
-    const len = messages?.length || 0;
-    if (len > prevMsgLenRef.current) {
-      setPendingUserMessage(null);
-      setPendingUserMessageId(null);
-      setPendingCommand(null);
-    }
-  }, [messages, messages?.length, pendingUserMessage, pendingUserMessageId]);
-
-  // Associate stashed command info with the newest user message when messages arrive.
-  // Runs separately so it captures the mapping even if busy fires before messages update.
   useEffect(() => {
     const stash = pendingCommandStashRef.current;
     if (!stash || !messages) return;
@@ -2598,15 +2722,15 @@ export function SessionChat({
    * changed. `turn` is the dependency of ~28 memos inside `SessionTurn`, so that
    * one fact invalidated all of them, for every turn, every frame.
    *
-   * Writing the ref during render is deliberate and safe: `stabilizeTurns` is
-   * idempotent, so StrictMode's double invocation lands on the same objects.
+   * The previous stable array is carried in a ref written after commit, so
+   * render stays pure; `stabilizeTurns` is idempotent, so StrictMode's double
+   * invocation lands on the same objects.
    */
   const stableTurnsRef = useRef<Turn[]>([]);
-  const turns = useMemo(() => {
-    const stable = stabilizeTurns(rawTurns, stableTurnsRef.current);
-    stableTurnsRef.current = stable;
-    return stable;
-  }, [rawTurns]);
+  const turns = useMemo(() => stabilizeTurns(rawTurns, stableTurnsRef.current), [rawTurns]);
+  useEffect(() => {
+    stableTurnsRef.current = turns;
+  }, [turns]);
 
   /**
    * One scan of the transcript, not one per turn.
@@ -2629,7 +2753,9 @@ export function SessionChat({
     [],
   );
   const hasAnyMessages = turns.length > 0;
-  const hasChatContent = hasAnyMessages || (!!optimisticPrompt && !hasAnyMessages);
+  // A pending inbox row counts as content: the session HAS the user's message
+  // (durably), so the welcome overlay must not paint over the queue strip.
+  const hasChatContent = hasAnyMessages || promptInbox.prompts.length > 0;
   // Full-bleed wallpaper layer mounted by SessionLayout (null on mobile /
   // standalone). When present, the welcome wallpaper is portaled into it so it
   // spans the entire session width instead of shrinking with the chat panel.
@@ -2753,14 +2879,17 @@ export function SessionChat({
       } catch {
         // ignore — SSE "question.rejected" event will also remove it
       }
-      // Also abort the session so the "The operation was aborted." banner appears
+      // Also abort the session so the "The operation was aborted." banner
+      // appears. Routed through `issueSessionCancel` (T10) so this
+      // cancel's `AbortSettlement` is tracked the same as every other stop
+      // path, in case a queued "send now" follows a question rejection.
       if (sessionState) {
-        sessionState.cancel();
+        issueSessionCancel();
       } else if (!abortSession.isPending) {
-        abortSession.mutate(sessionId);
+        issueSessionCancel();
       }
     },
-    [sessionState, removeQuestion, abortSession, sessionId, suppressQuestionFor],
+    [sessionState, removeQuestion, abortSession, suppressQuestionFor, issueSessionCancel],
   );
   const hasCompactionTurn = useMemo(
     () =>
@@ -2796,16 +2925,10 @@ export function SessionChat({
 
   // Reset on session change
   useEffect(() => {
-    setPollingActive(false);
-    setPendingUserMessage(null);
-    setPendingUserMessageId(null);
-    setPendingCommand(null);
-    setPendingSendInFlight(false);
-    setPendingSendMessageId(null);
+    clearSendReceipt();
     setRewindTarget(null);
     setRewindDraft(null);
-    lastSendTimeRef.current = 0;
-  }, [sessionId]);
+  }, [sessionId, clearSendReceipt]);
 
   // ============================================================================
   // Billing: DISABLED — billing is handled server-side by the router
@@ -2819,6 +2942,38 @@ export function SessionChat({
     try {
       const { messageId, text } = rewindTarget;
       await sessionState.rewind(messageId);
+      // THE QUEUED ROWS GO, and this is not a preference.
+      //
+      // A rewind stages `session.revert`; the NEXT prompt delivered is what
+      // commits the truncation. The inbox admits by `created_at`, so a row
+      // queued before the rewind is admitted BEFORE the replacement prompt
+      // this flow prefills — it would commit the user's rewind and then run
+      // against the trajectory that rewind just deleted.
+      //
+      // Holding them instead does not hold: `POST .../prompts` releases the
+      // session's hold, and the send that releases it is precisely the one the
+      // rewind prefills. So the rows are removed, exactly as the browser
+      // queue's `clearSession` removed them — but visibly, and once, for every
+      // tab, rather than per tab.
+      const doomed = promptInbox.prompts.filter((prompt) => prompt.state !== 'delivering');
+      let removed = 0;
+      for (const prompt of doomed) {
+        // Sequential: a row that turns out to be on the wire answers 409, and
+        // that is not a reason to stop removing the rest.
+        const gone = await promptInbox.remove(prompt.prompt_id).catch((error) => {
+          console.warn('[session-chat] failed to remove a queued prompt on rewind', error);
+          return null;
+        });
+        if (gone) removed += 1;
+      }
+      if (removed > 0) {
+        infoToast(
+          removed === 1 ? 'Queued message removed' : `${removed} queued messages removed`,
+          {
+            description: 'They were written for the messages this rewind discards.',
+          },
+        );
+      }
       setRewindDraft({ text, id: ++rewindPrefillId.current });
       setRewindTarget(null);
     } catch (error) {
@@ -2826,7 +2981,8 @@ export function SessionChat({
         description: formatCommandError(error),
       });
     }
-  }, [rewindTarget, sessionState]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rewindTarget, sessionState, promptInbox.prompts, promptInbox.remove]);
 
   const handleRestoreRewind = useCallback(async () => {
     if (!sessionState?.rewindMessageId) return;
@@ -2859,6 +3015,14 @@ export function SessionChat({
         agent?: string | null;
         model?: { providerID: string; modelID: string } | null;
         variant?: string | null;
+        /**
+         * The queue entry's stable key, when this send is a queued entry being
+         * dispatched. Re-dispatching the SAME entry (a retry) re-sends one wire
+         * `messageID` so the sandbox proxy still recognises the delivery;
+         * a different entry, even with identical text, gets its own. Omitted
+         * for a direct composer send, which has no retry path.
+         */
+        clientMessageId?: string;
       },
     ) => {
       setCommandError(null);
@@ -2877,12 +3041,13 @@ export function SessionChat({
       // File and agent refs from tracked @ mentions. File uploads still use
       // the separate <file path="..." mime="..." ...>…</file> block below —
       // these are only for plain @ references to existing files/agents.
-      const fileMentionRefs: FileRefLike[] = (mentions ?? [])
-        .filter((m) => m.kind === 'file' && m.label)
-        .map((m) => ({ path: m.label, name: m.label }));
-      const agentMentionRefs: AgentRefLike[] = (mentions ?? [])
-        .filter((m) => m.kind === 'agent' && m.label)
-        .map((m) => ({ name: m.label }));
+      const fileMentionRefs: FileRefLike[] = [];
+      const agentMentionRefs: AgentRefLike[] = [];
+      for (const m of mentions ?? []) {
+        if (!m.label) continue;
+        if (m.kind === 'file') fileMentionRefs.push({ path: m.label, name: m.label });
+        else if (m.kind === 'agent') agentMentionRefs.push({ name: m.label });
+      }
 
       // Play send sound
       playSound('send');
@@ -2906,10 +3071,14 @@ export function SessionChat({
       const rawOptimisticSessionIds: typeof sessionMentionsForOptimistic = [];
       const rawOptimisticRegex = /@(ses_[A-Za-z0-9]+)/g;
       let rawOptimisticMatch: RegExpExecArray | null;
+      let optimisticSessionsById: Map<string, any> | null = null;
       while ((rawOptimisticMatch = rawOptimisticRegex.exec(text)) !== null) {
         const rawId = rawOptimisticMatch[1];
         if (sessionMentionsForOptimistic.some((m) => m.value === rawId)) continue;
-        const found = allSessions?.find((s: any) => s.id === rawId);
+        optimisticSessionsById ??= new Map(
+          (allSessions ?? []).map((s: any) => [s.id, s] as const),
+        );
+        const found = optimisticSessionsById.get(rawId);
         rawOptimisticSessionIds.push({
           kind: 'session',
           label: found?.title || rawId,
@@ -2938,9 +3107,26 @@ export function SessionChat({
         if (block) optimisticText = `${optimisticText}\n\n${block}`;
       }
 
+      // WILL THIS PROMPT RUN NOW, OR WAIT?
+      //
+      // The SERVER decides admission — that is the whole point of the inbox —
+      // but the rendering decision is local and has to be made here, before the
+      // POST. A prompt that will wait belongs in the queue strip and nowhere
+      // else: painting it into the transcript too puts the same message on
+      // screen twice, in an order that never happened (below a still-streaming
+      // answer), and the optimistic sweep at the end of the running turn then
+      // deletes the bubble and the drain re-adds it seconds later.
+      //
+      // Reading `isBusy` here is not a re-run of the old queue-vs-send
+      // decision: nothing about ORDERING depends on it. A wrong guess costs one
+      // frame of optimism, not a misordered or dropped message.
+      const willWaitInInbox = isBusyRef.current || queuedMessagesRef.current > 0;
+
       // Optimistic: show message immediately in sync store + set busy
       // Matches OpenCode: sync.set("session_status", session.id, { type: "busy" })
-      beginOptimisticSend(sessionId, messageID, optimisticText, [textPartId]);
+      if (!willWaitInInbox) {
+        beginOptimisticSend(sessionId, messageID, optimisticText, [textPartId]);
+      }
 
       // Anchor the new user message at the top of the viewport.
       //
@@ -2952,18 +3138,21 @@ export function SessionChat({
       // waits for THIS turn's element instead of guessing, gives up rather
       // than firing late, and abandons on any wheel/touch so it never yanks a
       // reader who has scrolled away. See `turn-anchor.ts`.
-      anchorTurn(messageID);
+      // Nothing to anchor when the prompt is going to wait: no bubble was
+      // painted, and anchoring would move the viewport off the running turn.
+      if (!willWaitInInbox) anchorTurn(messageID);
 
       const options: Record<string, unknown> = {};
       const overrideAgent = overrides?.agent;
       const overrideModel = overrides?.model;
       const overrideVariant = overrides?.variant;
-      if (lockedAgentName) {
-        options.agent = lockedAgentName;
-      } else if (overrideAgent !== undefined) {
+      if (overrideAgent !== undefined) {
         if (overrideAgent) options.agent = overrideAgent;
-      } else if (local.agent.current) {
-        options.agent = local.agent.current.name;
+      } else if (composerAgentName) {
+        // The name the picker is SHOWING, not `local.agent.current`: an
+        // inaccessible project default resolves to the first agent this user
+        // holds a grant on, and the send must carry that same one.
+        options.agent = composerAgentName;
       }
       if (overrideModel !== undefined) {
         if (overrideModel) options.model = overrideModel;
@@ -2987,8 +3176,9 @@ export function SessionChat({
         built = await buildPromptPartsWithUploads(textPrompt.text, attachedFiles, uploadFile);
       } catch (err) {
         // Never reached the network — nothing to rehydrate from the server,
-        // so just clear busy and drop the optimistic message outright.
-        abandonOptimisticSend(sessionId, messageID);
+        // so just clear busy and drop the optimistic message outright. (A
+        // waiting prompt painted nothing, so there is nothing to drop.)
+        if (!willWaitInInbox) abandonOptimisticSend(sessionId, messageID);
         const classified = classifySessionError(err);
         setCommandError(classified);
         throw err instanceof Error ? err : new Error(classified.message);
@@ -3004,12 +3194,14 @@ export function SessionChat({
       const rawSessionIdMentions: TrackedMention[] = [];
       const rawSessionIdRegex = /@(ses_[A-Za-z0-9]+)/g;
       let rawMatch: RegExpExecArray | null;
+      let sessionsById: Map<string, any> | null = null;
       while ((rawMatch = rawSessionIdRegex.exec(textPrompt.text)) !== null) {
         const rawId = rawMatch[1];
         // Skip if already covered by a tracked mention
         if (trackedSessionMentions.some((m) => m.value === rawId)) continue;
         // Look up session by ID
-        const found = allSessions?.find((s: any) => s.id === rawId);
+        sessionsById ??= new Map((allSessions ?? []).map((s: any) => [s.id, s] as const));
+        const found = sessionsById.get(rawId);
         if (found) {
           rawSessionIdMentions.push({
             kind: 'session',
@@ -3047,10 +3239,20 @@ export function SessionChat({
       // callers (queue drain, input box) can handle send failures, but the
       // actual response body still arrives via the sync store.
       //
-      // Don't send part IDs or messageID — let the server generate them with
-      // its own clock. Client-generated IDs can sort before server IDs due to
-      // clock skew (browser vs Docker container), causing the server's loop to
-      // exit immediately thinking the prompt was already answered.
+      // Don't send part IDs. `ascendingId` encodes the HIGH bits of the id
+      // clock where opencode encodes the LOW 48 (see the warning on it in the
+      // SDK), so a client id of that shape sorts before EVERY server id: the
+      // server's "has this prompt already been answered?" ordering check reads
+      // a stale assistant reply as the answer and the turn never runs.
+      //
+      // The `messageID` is a different matter and IS sent — by the SDK, not
+      // from here. `promptOpenCodeMessage` mints it in opencode's own wire
+      // format and places it above everything already in this session's
+      // transcript, which is what makes it safe; without one, two identical
+      // prompts inside 60s hash to a single proxy delivery and the second is
+      // silently dropped. Do not "restore" the old no-messageID behaviour on
+      // the strength of the part-id reasoning above — they are not the same
+      // hazard, and the mint is the guard against this one.
       const mappedParts = parts.map((p: any) => {
         if (p.type === 'file')
           return {
@@ -3079,45 +3281,43 @@ export function SessionChat({
       // early), so there is nothing for it to correlate on and the mark never
       // happened. The result was every message rendering twice for the whole
       // turn, until the session went idle and the optimistic sweep ran.
-      markOptimisticSendDispatched(sessionId, messageID);
+      if (!willWaitInInbox) markOptimisticSendDispatched(sessionId, messageID);
 
       const selectedAgent = typeof sendOpts?.agent === 'string' ? sendOpts.agent : null;
       const selectedVariant = typeof sendOpts?.variant === 'string' ? sendOpts.variant : null;
       const selectedModel = sendOpts?.model ? (sendOpts.model as ModelKey) : null;
 
-      // Sending to the sandbox's OpenCode server can transiently fail — the
-      // container may be waking from auto-stop, restarting, or the tunnel
-      // blips. `promptRuntimeMessage` (packages/sdk) owns retrying transient
-      // failures with backoff so a flaky send self-heals; only a real 4xx (bad
-      // request / auth / missing model key), or exhausting the retry window,
-      // surfaces here. The optimistic user message + busy status stay up the
-      // whole time, so the UI shows the send in progress throughout. On
-      // failure, `sendAndRecover` runs the shared recovery routine: clear
-      // busy, then either rehydrate real messages from the server (some error
-      // paths — e.g. missing API key — never emit a `session.error` SSE
-      // event) or drop the optimistic message if the server has no record.
-      const result = sessionState
-        ? await (async () => {
-            try {
-              await sessionState.sendParts(mappedParts, {
-                ...(session?.directory ? { directory: session.directory } : {}),
-                ...(selectedAgent ? { agent: selectedAgent } : {}),
-                ...(selectedModel ? { model: selectedModel } : {}),
-                ...(selectedVariant ? { variant: selectedVariant } : {}),
-              });
-              return { ok: true } as const;
-            } catch (cause) {
-              const error = recoverFromSendFailure(sessionId, messageID, cause, {
-                classify: classifySessionError,
-              });
-              return { ok: false, error, cause } as const;
-            }
-          })()
-        : await sendAndRecover({
-            sessionId,
-            messageId: messageID,
+      // THE ONE SEND PATH: the server-side prompt inbox.
+      //
+      // This used to POST straight into the sandbox's OpenCode server, and
+      // anything the user typed while the agent was busy went into a browser
+      // queue instead — which meant a closed tab, a second device, or a crash
+      // lost it silently, and two tabs on one session disagreed about what was
+      // pending. Now every prompt becomes a durable row first, and the SERVER
+      // decides whether it runs now or waits: the admission gate reads the same
+      // turn authority `GET .../turn` serves from, so the composer never has to
+      // guess whether a turn is in flight.
+      //
+      // The WIRE id is minted here, by the SDK, and never by the control plane:
+      // OpenCode resolves "has this prompt already been answered?" by id ORDER,
+      // and only this process holds the transcript to place one against. It is
+      // NOT `messageID` above — that is `ascendingId`, which encodes the wrong
+      // bits and is optimistic-render-only (see the SDK's warning on it).
+      const clientMessageId = overrides?.clientMessageId ?? messageID;
+      // The prompt is out of this tab's hands the moment the row lands, so the
+      // receipt is taken BEFORE the POST: it is what holds the composer on
+      // "working" until `GET .../turn` reports the turn the inbox admitted.
+      noteSendReceipt(clientMessageId);
+      const result = await (async () => {
+        try {
+          if (!projectId || !projectSessionId) {
+            throw new Error('This session has no project — cannot queue a prompt');
+          }
+          const created = await promptInbox.enqueue({
+            clientMessageId,
+            messageId: mintSessionWireMessageId(sessionId, clientMessageId),
             parts: mappedParts,
-            options: {
+            overrides: {
               // Pass the session's directory so opencode resolves project-scoped
               // agents (.opencode/agent/*.md under the project) and applies them
               // when the user picked a project agent from the picker.
@@ -3125,10 +3325,65 @@ export function SessionChat({
               ...(selectedAgent ? { agent: selectedAgent } : {}),
               ...(selectedModel ? { model: formatPromptModel(selectedModel) } : {}),
               ...(selectedVariant ? { variant: selectedVariant } : {}),
-            } as any,
-            classify: classifySessionError,
+            },
           });
+          // The server's admission verdict, not a guess. A `failed` row is a
+          // real refusal wearing a 200: a re-POST of a `clientMessageId` whose
+          // row already dead-lettered dedupes into that row, and discarding
+          // the result used to accept the receipt, clear the draft, and tell
+          // the user nothing. Thrown here so the ordinary failure path below
+          // clears the named receipt and surfaces the error.
+          if (created.state === 'failed') {
+            throw new Error(
+              'This prompt was refused — its earlier delivery already failed. Edit it and send again.',
+            );
+          }
+          // The server has the prompt. From here — and NOT before — a
+          // `GET .../turn` read is able to see it, so one is allowed to answer
+          // for it. `useSessionPrompts` raises the inbox floor at the same
+          // moment, which is what covers the window before the row is
+          // delivered and becomes a turn.
+          acceptSendReceipt(clientMessageId);
+          // Correct the rendering guess with the server's answer: the guess
+          // said "will wait" (so no optimistic bubble was painted), but the
+          // server admitted it to run now. Paint the bubble after the fact so
+          // the user's message is not stranded in the queue strip while the
+          // turn it started streams above an empty transcript slot. Under the
+          // in-turn forwarding gate this fires often: an awake session answers
+          // `queued`/`delivering` for a prompt the old gate made `waiting`.
+          // Only when nothing else is in line: a row behind other queued rows
+          // genuinely waits its turn even when admissible, and painting it now
+          // would fake an order the queue has not produced yet.
+          const correctedWillWait =
+            willWaitInInbox &&
+            queuedMessagesRef.current === 0 &&
+            (created.state === 'queued' || created.state === 'delivering');
+          if (correctedWillWait) {
+            beginOptimisticSend(sessionId, messageID, optimisticText, [textPartId]);
+            markOptimisticSendDispatched(sessionId, messageID);
+            anchorTurn(messageID);
+          }
+          return { ok: true } as const;
+        } catch (cause) {
+          // Unchanged recovery: clear busy, then either rehydrate the real
+          // messages or drop the optimistic one if the server has no record.
+          // A prompt that was going to WAIT painted no optimistic message and
+          // did not flip the session busy, so there is nothing to unwind —
+          // classifying the error is all that is left to do.
+          const error = willWaitInInbox
+            ? classifySessionError(cause)
+            : recoverFromSendFailure(sessionId, messageID, cause, {
+                classify: classifySessionError,
+              });
+          return { ok: false, error, cause } as const;
+        }
+      })();
       if (!result.ok) {
+        // Nothing durable was created, so nothing is coming — drop the receipt
+        // rather than let a refused send claim `working` for a minute. Named,
+        // so a slow refusal cannot drop the receipt of a send the user made
+        // after it.
+        clearSendReceipt(clientMessageId);
         setCommandError(result.error);
         throw result.cause instanceof Error ? result.cause : new Error(result.error.message);
       }
@@ -3138,8 +3393,13 @@ export function SessionChat({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [
       sessionId,
-      lockedAgentName,
-      local.agent.current,
+      projectId,
+      projectSessionId,
+      promptInbox.enqueue,
+      noteSendReceipt,
+      acceptSendReceipt,
+      clearSendReceipt,
+      composerAgentName,
       local.model.currentKey,
       local.model.sendKey,
       local.model.variant.current,
@@ -3161,102 +3421,26 @@ export function SessionChat({
     registerSender(
       sessionId,
       async (text: string) => {
-        const shouldQueue = shouldQueueInsteadOfSend({
-          isBusy:
-            isBusy || hasActiveQuestion || hasPendingApproval || pendingPermissions.length > 0,
-          pendingCount: sessionQueue.pending.length,
-          hasInFlight: !!sessionQueue.inFlightId,
-        });
-        if (shouldQueue) {
-          handleQueueMessage(text);
-          return 'queued';
-        }
+        // No local queue-vs-send decision any more: the send IS the queue. The
+        // inbox admits the prompt when the session can take it, so a caller
+        // that used to be told "queued" is simply told "sent" — the prompt is
+        // durable either way, which is the stronger promise.
         await handleSend(text);
         return 'sent';
       },
       projectSessionId ? [projectSessionId] : [],
     );
     return () => unregisterSender(sessionId);
-  }, [
-    sessionId,
-    projectSessionId,
-    isBusy,
-    hasActiveQuestion,
-    hasPendingApproval,
-    pendingPermissions.length,
-    sessionQueue.pending.length,
-    sessionQueue.inFlightId,
-    handleSend,
-    handleQueueMessage,
-    registerSender,
-    unregisterSender,
-  ]);
-
-  // Release queued messages, one per turn, only when the turn actually ended.
-  //
-  // What used to be here drained the WHOLE queue whenever any tool part flipped
-  // to 'completed' or 'error', or whenever the debounced `isBusy` fell. Both
-  // fire mid-turn: a tool finishing means the agent is still working, and
-  // `isBusy` is a 300ms fade timer for the busy indicator. It also watched
-  // `messages`, so scrolling up to load older history counted as boundaries
-  // too. The drain now reads the server's own session status plus the gates
-  // that mean a human is being waited on, and nothing else.
-  const queueGates = useMemo<QueueDrainGates>(
-    () => ({
-      isServerBusy,
-      pendingSendInFlight,
-      isOptimisticCompacting,
-      hasIncompleteAssistant,
-      hasActiveQuestion,
-      hasPendingApproval,
-      pendingPermissionCount: pendingPermissions.length,
-      isPaused: false,
-      readOnly: !!readOnly,
-    }),
-    [
-      isServerBusy,
-      pendingSendInFlight,
-      isOptimisticCompacting,
-      hasIncompleteAssistant,
-      hasActiveQuestion,
-      hasPendingApproval,
-      pendingPermissions.length,
-      readOnly,
-    ],
-  );
-
-  const sendQueuedMessage = useCallback(
-    async (message: WebQueuedMessage) => {
-      // ONE message. The queue is first-come-first-served: `queue[0]` goes out
-      // by itself, and the rest wait for the turn it starts to finish. Merging
-      // the queue into a single prompt would destroy that ordering and hand the
-      // agent several unrelated instructions at once.
-      //
-      // Files that did not survive being stored carry no data — send the text
-      // rather than a broken attachment. The composer shows the user that the
-      // attachments were dropped.
-      const files = message.files?.filter((f): f is AttachedFile => f.kind !== 'lost');
-      await handleSend(message.text, files?.length ? files : undefined, message.mentions, {
-        agent: message.agent,
-        model: message.model,
-        variant: message.variant,
-      });
-    },
-    [handleSend],
-  );
-
-  const queueDrain = useMessageQueueDrain({
-    sessionId,
-    gates: queueGates,
-    send: sendQueuedMessage,
-  });
+    // No local busy/queue gates in the deps any more: the sender does not read
+    // them, because the server decides admission.
+  }, [sessionId, projectSessionId, handleSend, registerSender, unregisterSender]);
 
   // NOTE: no client-side "auto-continue after approval" here — resuming the
   // agent when nobody was holding the gated call is the RESOLVE ENDPOINT's job
   // (server-side continueSession delivery in r7.ts), so it works with zero
   // browsers open. A web-side nudge would just double-send.
 
-  const handleStop = useCallback(() => {
+  const handleStop = useCallback(async () => {
     // Guard against rapid clicks — ignore if an abort is already in flight
     if (abortSession.isPending) {
       console.log(`[handleStop] Ignoring - abort already in flight for session ${sessionId}`);
@@ -3270,36 +3454,89 @@ export function SessionChat({
     applyOptimisticAbort(sessionId);
     clearTimeout(busyTimerRef.current);
     setIsBusy(false);
+    // Stop means the send this tab was still waiting on is over too.
+    clearSendReceipt();
 
     // Stopping means stop doing things, and that includes the queue. Without
     // this the interrupt is followed a beat later by exactly the message the
     // user was trying to get ahead of.
-    queueDrain.pause();
+    //
+    // ONE hold, on the server, because the queue is not in this tab any more.
+    // Pausing a browser drain left every OTHER tab's view of the queue running
+    // and never reached the server at all.
+    //
+    // AWAITED, and BEFORE the abort. A prompt is now forwarded to OpenCode the
+    // moment it is admitted, so at stop time the session's queue can hold rows
+    // that OpenCode already has. The abort drops OpenCode's in-memory queue,
+    // and the reaper then sees those messages unanswered and hands them back —
+    // due now — unless the hold has already marked them stop-paused. Ordering
+    // the two calls makes "the hold precedes the abort" a fact instead of an
+    // argument about reaper cadence. The user sees no delay: the optimistic
+    // paint above already ran, so only the network abort moves one hop later.
+    //
+    // BOUNDED, because the abort is now sequenced behind a network call and
+    // `holdSessionPrompts` carries no client timeout of its own. A stalled
+    // socket can hang for minutes, and every one of those is the agent still
+    // running, still calling tools and still spending tokens under a UI that
+    // says it stopped. Past the bound the abort goes out anyway and the hold
+    // finishes on its own — the ordering is a preference, the abort is not.
+    await Promise.race([
+      promptInbox.hold(true).catch((error) => {
+        // Caught, never rethrown: a failed hold must not also cost the user
+        // their abort. The cost of that path is the one this ordering removes —
+        // a stopped prompt can still come back a reaper pass later.
+        console.warn('[session-chat] failed to hold the prompt inbox on stop', error);
+      }),
+      new Promise((resolve) => setTimeout(resolve, STOP_HOLD_DEADLINE_MS)),
+    ]);
 
-    if (sessionState) sessionState.cancel();
-    else abortSession.mutate(sessionId);
-  }, [sessionId, sessionState, abortSession, queueDrain]);
+    // Routed through `issueSessionCancel` (T10) so this stop's
+    // `AbortSettlement` is tracked for `handleQueueSendNow`'s
+    // `stopThenSendNow` to await — see that function's doc for why.
+    issueSessionCancel();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId, abortSession, issueSessionCancel, promptInbox.hold]);
 
   /**
    * The per-row action: end the current turn if one is running, then send that
    * message. The only path that interrupts a running turn — automatic draining
    * never does — which is why it is a deliberate click and says what it does.
    *
-   * Waits for the server to actually report idle rather than guessing with a
-   * fixed delay, so the prompt cannot race the abort it just issued.
+   * T10: waits for the real `AbortSettlement` the stop it just issued
+   * produces (via `stopThenSendNow`), not a guess and not the optimistic
+   * idle flip `handleStop` makes synchronously — so the prompt cannot race
+   * the abort still in flight on the server.
    */
   const handleQueueSendNow = useCallback(
     async (id: string) => {
-      const status = useSessionStateStore.getState().sessionStatus[sessionId];
-      const running = status?.type === 'busy' || status?.type === 'retry';
-      if (running) {
-        handleStop();
-        await waitForSessionIdle(sessionId);
-      }
-      queueDrain.resume();
-      await queueDrain.dispatchNow(id);
+      await stopThenSendNow({
+        // The control plane's turn authority (`serverOpenTurnToken`), not the
+        // raw SSE slot. Both stale directions of the slot were real failures
+        // here: stale-idle dispatched into a live turn (OpenCode answers that
+        // by aborting it — the "Interrupted" symptom), and stale-busy issued a
+        // spurious Stop that held the whole inbox.
+        isRunning: () => serverHoldsOpenTurn(working),
+        pendingSettlement: () => pendingAbortSettlementRef.current.get(sessionId),
+        stop: async () => {
+          // AWAITED: `handleStop` holds the inbox before it issues the cancel,
+          // so the settlement this reads only exists once that has happened.
+          // Reading the ref synchronously would find nothing, and a null
+          // settlement dispatches at once — racing the abort still in flight.
+          await handleStop();
+          return pendingAbortSettlementRef.current.get(sessionId) ?? null;
+        },
+        // `retry` is the inbox's own "run this one next", and it is the WHOLE
+        // dispatch: it promotes the row past the ordering gate and only THEN
+        // releases the session's hold, so the prompt the user pointed at is
+        // the one that runs and the rest of the queue follows it. Releasing
+        // the hold separately first is what made the oldest row run instead.
+        dispatch: async () => {
+          await promptInbox.retry(id).catch(() => errorToast('Could not send that prompt'));
+        },
+      });
     },
-    [sessionId, handleStop, queueDrain],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [sessionId, handleStop, promptInbox.retry, working],
   );
 
   // ---- Triple-ESC to stop ----
@@ -3335,26 +3572,51 @@ export function SessionChat({
     // modal), which must not issue stop commands.
     if (!isActiveSessionTab || readOnly) return;
 
+    // Sampled in the CAPTURE phase — before ProseMirror/@tiptap/suggestion
+    // run — because an Escape that dismisses the `@`/`/` menu unmounts its
+    // listbox synchronously inside the editor's own keydown handling; by
+    // bubble time the menu this press was meant for is already gone. See
+    // `EscapePress` in esc-to-stop.ts.
+    let suggestionMenuWasOpen = false;
+    const onKeyDownCapture = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      suggestionMenuWasOpen = document.querySelector(SUGGESTION_MENU_SELECTOR) !== null;
+    };
+
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || !isBusy) return;
 
-      // ESC was already consumed by something else — e.g. the composer's own
-      // slash/mention popover (which calls preventDefault) or another focused
-      // control that handled it — so it must never advance the stop counter.
-      if (e.defaultPrevented) return;
-
       // ESC-to-stop is a page-wide shortcut: it must fire whether or not the
       // composer is focused, because users watch the agent run with focus
-      // elsewhere (chat body, a tool view, or nothing at all). The only presses
-      // we ignore are those meant for an open overlay the user is interacting
-      // with — when focus sits inside a dialog/menu/popover/select, that ESC is
-      // for dismissing it, not for stopping. (A hovered tooltip never takes
-      // focus, so the stop button's own tooltip can't suppress the shortcut.)
+      // elsewhere (chat body, a tool view, or nothing at all) AND with focus
+      // in the chat input itself. The presses that must not advance the
+      // counter: one meant for an open overlay the user is interacting with
+      // (focus in a dialog/menu/popover/select — that ESC dismisses it; a
+      // hovered tooltip never takes focus, so the stop button's own tooltip
+      // can't suppress the shortcut), and one another control already
+      // consumed. `defaultPrevented` decides "consumed" EXCEPT for presses
+      // inside the composer editor: ProseMirror's backdrop key mapping
+      // preventDefaults EVERY Escape in the contenteditable, so there the
+      // real consumed-signal is the `@`/`/` menu having been open at capture
+      // time. shouldCountEscape (esc-to-stop.ts) owns the decision.
       const active = document.activeElement;
-      const focusInOverlay = active?.closest(
-        '[role="dialog"],[role="alertdialog"],[role="menu"],[data-radix-popper-content-wrapper]',
-      );
-      if (focusInOverlay) return;
+      const focusInOverlay =
+        active?.closest(
+          '[role="dialog"],[role="alertdialog"],[role="menu"],[data-radix-popper-content-wrapper]',
+        ) != null;
+      const fromComposerEditor =
+        e.target instanceof Element && e.target.closest(COMPOSER_EDITOR_SELECTOR) !== null;
+      if (
+        !shouldCountEscape({
+          fromComposerEditor,
+          defaultPrevented: e.defaultPrevented,
+          suggestionMenuWasOpen,
+          focusInOverlay,
+          isComposing: e.isComposing,
+        })
+      ) {
+        return;
+      }
 
       e.preventDefault();
 
@@ -3364,9 +3626,10 @@ export function SessionChat({
       if (withinWindow) {
         const currentCount = escDeadlineRef.current ? Math.max(1, escCount) : 0;
         if (currentCount >= 2) {
-          // Third ESC → stop
+          // Third ESC → stop. Not awaited: the keyboard path has nothing to
+          // sequence after it, and `handleStop` never rejects.
           clearEscHint();
-          handleStop();
+          void handleStop();
         } else {
           // Second ESC → advance count, refresh cooloff
           setEscCount(2);
@@ -3389,8 +3652,12 @@ export function SessionChat({
       }
     };
 
+    window.addEventListener('keydown', onKeyDownCapture, true);
     window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('keydown', onKeyDownCapture, true);
+      window.removeEventListener('keydown', onKeyDown);
+    };
   }, [isActiveSessionTab, readOnly, isBusy, handleStop, clearEscHint, escCount]);
 
   // Reset when session goes idle
@@ -3398,40 +3665,79 @@ export function SessionChat({
     if (!isBusy) clearEscHint();
   }, [isBusy, clearEscHint]);
 
+  // Unmount-only: a fade timer armed by a keydown must not outlive the chat.
+  useEffect(() => {
+    return () => {
+      if (escFadeTimerRef.current) {
+        clearTimeout(escFadeTimerRef.current);
+      }
+    };
+  }, []);
+
   // Ref-based guard against rapid double-fire of commands (replaces
   // the old executeCommand.isPending check from the TQ mutation).
   const commandInFlightRef = useRef(false);
 
   const handleCommand = useCallback(
-    (cmd: Command, args?: string) => {
-      if (commandInFlightRef.current) return;
+    (cmd: Command, args?: string, split?: { before: string; after: string }): boolean => {
+      // Returns whether the command was DISPATCHED, not whether it succeeded.
+      // The composer needs that distinction: a swallowed dispatch that reports
+      // success clears the draft, so the command is lost with nothing on screen
+      // to say so.
+      if (commandInFlightRef.current) return false;
       setCommandError(null);
 
       playSound('send');
-      const label = args ? `/${cmd.name} ${args}` : `/${cmd.name}`;
+      // Rebuild the sentence the way it was WRITTEN, not command-first. This
+      // used to be `/${name} ${args}` unconditionally, which is why typing
+      // `explain /webapp to me` produced `/webapp explain to me` — the chip's
+      // position is not recoverable from `args`, so it has to be carried
+      // (`split`, from the editor's serializer) or it is lost here.
+      const label = split
+        ? [split.before, `/${cmd.name}`, split.after].filter(Boolean).join(' ')
+        : args
+          ? `/${cmd.name} ${args}`
+          : `/${cmd.name}`;
       const selectedModel = local.model.sendKey ?? undefined;
       const handleCommandError = (err?: unknown) => {
-        setPendingCommand(null);
-        setPendingUserMessage(null);
-        setPendingUserMessageId(null);
-        setPollingActive(false);
+        // A command that was DELIVERED and then lost its connection is not a
+        // failed command. `/command` blocks for the whole turn, so both proxy
+        // hops routinely stop waiting while opencode is still working — and the
+        // request was already on the wire when they did. Clearing the session
+        // to `idle` and painting an error here told the user their message had
+        // not sent while the agent was actively answering it, and invited the
+        // retry that aborts the live turn and stamps it "Interrupted".
+        // See `delivered-but-disconnected.ts`.
+        if (isDeliveredButDisconnected(errorMessageOf(err))) {
+          pendingCommandStashRef.current = null;
+          // The session status stays put on purpose: the turn is live and SSE
+          // owns it from here.
+          return;
+        }
+        // Release the receipt taken at dispatch — it is what held the composer
+        // on "working" for a command that has now failed. No fabricated idle
+        // frame beside it: dropping the receipt IS the honest signal, and a
+        // written frame outranked the control plane's `/turn` answer.
+        clearSendReceipt(label);
         pendingCommandStashRef.current = null;
-        useSessionStateStore.getState().setStatus(sessionId, { type: 'idle' });
         setCommandError(classifySessionError(err));
       };
 
-      setPendingCommand({
-        name: cmd.name,
-        description: args || cmd.description,
-      });
       pendingCommandStashRef.current = {
         name: cmd.name,
         args: args || cmd.description,
+        // Carried to `UserMessage` via `commandMessagesRef` so the sent bubble
+        // draws the chip where it was typed. Display only.
+        split,
       };
-      setPendingUserMessage(label);
-      setPendingUserMessageId(null);
-      setPollingActive(true);
-      lastSendTimeRef.current = Date.now();
+      // Closes the queue drain's working gate SYNCHRONOUSLY. Without it a
+      // command dispatched from the queue left every gate clear: the drain's
+      // 700ms settle window would elapse before the server reported busy, the
+      // next queued message would go out, and a new prompt mid-turn aborts the
+      // one running — the "Interrupted" symptom the queue exists to prevent.
+      // A command is not an inbox row, so this receipt is the only thing that
+      // covers it until the runtime reports the turn.
+      noteSendReceipt(label);
 
       // Match SolidJS reference (submit.ts:259-289): fire command
       // directly via SDK — no TanStack Query, no mutation retry, no
@@ -3439,7 +3745,7 @@ export function SessionChat({
       // SSE delivers it. Commands use the blocking /command endpoint
       // which can take minutes; using TQ would cause retry on timeout.
       commandInFlightRef.current = true;
-      const agent = lockedAgentName || local.agent.current?.name;
+      const agent = composerAgentName ?? undefined;
       const variant = local.model.variant.current;
       void (
         sessionState?.runCommand(cmd.name, args || '', {
@@ -3464,30 +3770,31 @@ export function SessionChat({
         .catch(handleCommandError)
         .finally(() => {
           commandInFlightRef.current = false;
+          // `/command` blocks for the whole turn, so this is the turn ending —
+          // and the instant from which a `/turn` read can speak for it. Nothing
+          // accepted a command's receipt before, and an unaccepted receipt puts
+          // the server floor at infinity: for a full 60s after every `/compact`
+          // the control plane's own "no turns" answer was discarded, and a
+          // dropped idle frame held the composer on Stop for twice the 30s
+          // backstop this replaced. A no-op when `handleCommandError` already
+          // dropped the receipt, or when a newer send replaced it.
+          acceptSendReceipt(label);
         });
       setTimeout(() => scrollToBottom(), 50);
+      return true;
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [
       sessionId,
       scrollToBottom,
-      lockedAgentName,
       sessionState,
       executeCommand,
-      local.agent.current,
+      composerAgentName,
       local.model.currentKey,
       local.model.sendKey,
       local.model.variant.current,
     ],
   );
-
-  const handleFileSearch = useCallback(async (query: string): Promise<string[]> => {
-    try {
-      return await searchWorkspaceFiles(query);
-    } catch {
-      return [];
-    }
-  }, []);
 
   const pathname = usePathname();
   const router = useRouter();
@@ -3522,30 +3829,6 @@ export function SessionChat({
   // prop below must keep referential identity across renders that don't
   // actually change it — otherwise the memo is defeated on every streaming
   // token). Bodies are verbatim copies of what used to be inlined in the JSX. ----
-  const handleSendWithDraftClear = useCallback(
-    async (text: string, files?: AttachedFile[], mentions?: TrackedMention[]) => {
-      await handleSend(text, files, mentions);
-      if (failedStartDraft) {
-        clearStartStash(sessionId);
-        usePendingFilesStore.getState().consumePendingFiles();
-        setFailedStartDraft(null);
-      }
-    },
-    [handleSend, failedStartDraft, sessionId],
-  );
-
-  const chatPrefill = useMemo(
-    () =>
-      failedStartDraft
-        ? {
-            text: failedStartDraft.text,
-            files: failedStartDraft.files,
-            id: failedStartDraft.id,
-            mode: 'merge' as const,
-          }
-        : null,
-    [failedStartDraft],
-  );
 
   const handleAgentChange = useCallback(
     (name: string | null | undefined) => local.agent.set(name ?? undefined),
@@ -3557,24 +3840,18 @@ export function SessionChat({
     [local.model],
   );
 
+  // Only the ACCOUNT default is settable from the picker now — it is the one
+  // scope with no screen of its own. The project default lives in the provider
+  // modal's Models tab and the agent default on the agent's detail page, both
+  // of which also SHOW and can CLEAR what is set. See ModelDefaultControls.
   const chatModelDefaultControls: ModelDefaultControls = useMemo(
     () => ({
-      agentName: lockedAgentName ?? local.agent.current?.name,
+      accountDefault: local.model.defaults.accountDefault ?? null,
       onSetAccountDefault: (m) => {
         void local.model.defaults.setAccountDefault(m);
       },
-      onSetAgentDefault:
-        lockedAgentName || local.agent.current
-          ? (m) => {
-              const name = lockedAgentName ?? local.agent.current?.name;
-              if (name) void local.model.defaults.setAgentDefault(name, m);
-            }
-          : undefined,
-      onSetProjectDefault: (m) => {
-        void local.model.defaults.setProjectDefault(m);
-      },
     }),
-    [lockedAgentName, local.agent, local.model.defaults],
+    [local.model.defaults],
   );
 
   const handleVariantChange = useCallback(
@@ -3593,7 +3870,7 @@ export function SessionChat({
   }, []);
 
   const chatCommands = useMemo(() => commands || [], [commands]);
-  const sessionScopeAgentName = lockedAgentName ?? local.agent.current?.name;
+  const sessionScopeAgentName = composerAgentName ?? undefined;
 
   const chatToolbarSlot = useMemo(
     () =>
@@ -3601,60 +3878,15 @@ export function SessionChat({
         <SessionOverridesComposer
           projectId={projectId}
           sessionId={projectSessionId}
-          agents={local.agent.list}
           selectedAgent={sessionScopeAgentName ?? null}
-          onAgentChange={lockedAgentName ? undefined : handleAgentChange}
-          agentLocked={!!lockedAgentName}
-          defaultAgentName={projectConfig?.open_code_default_agent}
-          models={local.model.list}
-          modelsLoading={providersLoading}
-          selectedModel={local.model.currentKey ?? null}
-          onModelChange={handleModelChange}
-          providers={providers}
-          defaultModel={local.model.defaults.resolveDefaultFor(sessionScopeAgentName)}
         />
       ) : undefined,
-    [
-      handleAgentChange,
-      handleModelChange,
-      local.agent.list,
-      local.model.currentKey,
-      local.model.defaults,
-      local.model.list,
-      lockedAgentName,
-      projectConfig?.open_code_default_agent,
-      projectId,
-      projectSessionId,
-      providers,
-      providersLoading,
-      sessionScopeAgentName,
-    ],
+    [projectId, projectSessionId, sessionScopeAgentName],
   );
 
   const chatInputSlot = useMemo(
     () => (
       <>
-        {sessionState?.rewindMessageId ? (
-          <div className="border-border/60 bg-muted/40 flex items-center gap-2 rounded-md border px-3 py-2">
-            <RotateCcw className="text-muted-foreground size-3.5 shrink-0" />
-            <div className="min-w-0 flex-1">
-              <p className="text-foreground text-xs font-medium">Session rewound</p>
-              <p className="text-muted-foreground text-xs">
-                Sending a new prompt commits this path. Restore keeps the removed messages and file
-                changes.
-              </p>
-            </div>
-            <Button
-              type="button"
-              variant="ghost"
-              size="xs"
-              disabled={sessionState.rewindPending}
-              onClick={() => void handleRestoreRewind()}
-            >
-              {sessionState.rewindPending ? <Loading /> : 'Restore'}
-            </Button>
-          </div>
-        ) : null}
         {/* Connector actions a policy gated for approval — pauses the run
             until the human decides. Self-hides when nothing's pending. */}
         <SessionApprovalPrompt />
@@ -3669,9 +3901,9 @@ export function SessionChat({
         {renderedQuestion ? (
           <div
             className={cn(
-              'overflow-hidden transition-[max-height,opacity,transform] ease-in-out',
+              'overflow-hidden w-full transition-[max-height,opacity,transform] ease-in-out',
               questionPromptVisible
-                ? 'max-h-[520px] translate-y-0 opacity-100 duration-300'
+                ? 'max-h-130 translate-y-0 opacity-100 duration-300'
                 : 'pointer-events-none max-h-0 -translate-y-1 opacity-0 duration-320',
             )}
           >
@@ -3689,9 +3921,6 @@ export function SessionChat({
     ),
     [
       sessionId,
-      sessionState?.rewindMessageId,
-      sessionState?.rewindPending,
-      handleRestoreRewind,
       pendingPermissions,
       handlePermissionReply,
       renderedQuestion,
@@ -3701,6 +3930,18 @@ export function SessionChat({
       handleQuestionActionChange,
     ],
   );
+
+  // The rewound-path notice lives on the composer toolbar, beside send/stop —
+  // send is what commits the path, so the control sits at the moment of
+  // commitment instead of in a banner above the card. No manual useMemo: the
+  // React Compiler memoizes this component, and a hand-written dependency list
+  // narrower than `sessionState` makes it skip the whole component.
+  const composerRewind = sessionState?.rewindMessageId
+    ? {
+        pending: sessionState.rewindPending,
+        onRestore: () => void handleRestoreRewind(),
+      }
+    : undefined;
 
   // ============================================================================
   // Loading / Not-found states
@@ -3725,18 +3966,42 @@ export function SessionChat({
   // therefore reports isLoading=false) or the lookup is in flight, we know
   // nothing yet — so we must show the loading state, not the error. This is what
   // stops the "This session is not accessible right now." flash on boot.
-  const composerReadiness = sessionComposerReadiness({ runtimeReady });
+  // `useRuntimePhase()` distinguishes a booting/reconnecting sandbox from one
+  // confirmed unreachable past the poll loop's failure threshold — plain
+  // `runtimeReady` collapses both into the same false. See `retryable` on
+  // `SessionComposerReadiness`.
+  const runtimePhase = useRuntimePhase();
+  // Covers the one gap `unreachable` can't: a sandbox proxy that keeps
+  // answering with a 503 (OpenCode wedged mid-boot) resets the probe's
+  // failure counter every tick, so `unreachable` never fires no matter how
+  // long it stays wedged. See `useRuntimeBootStalled`.
+  const runtimeStalled = useRuntimeBootStalled();
+  const composerReadiness = sessionComposerReadiness({
+    runtimeReady,
+    // Only an OPEN TURN the control plane is holding counts here. This tab's
+    // optimistic receipt and a stream frame both survive a box that died
+    // mid-turn, and a durable inbox row (which the projection also sources to
+    // `server`) exists precisely while nothing is running yet — see
+    // `serverHoldsOpenTurn`.
+    serverTurnLive: serverHoldsOpenTurn(working),
+    unreachable: runtimePhase === 'unreachable' || runtimeUnreachable,
+    stalled: runtimeStalled,
+  });
+  // #6509's `promptLikelyDropped` notice is deliberately NOT carried over: it
+  // instrumented the deleted prompt-observation stall machinery to warn about
+  // accepted-but-never-started prompts, and that state is structurally gone —
+  // a prompt is a durable inbox row before anything else happens, and an
+  // unconfirmed delivery is redelivered by the reaper (see step 7).
   const { isNotFound, isDataLoading } = resolveSessionContentState({
     runtimeReady,
     sessionFetched,
     hasRuntimeSession: Boolean(session),
     hasMessages,
-    hasOptimisticPrompt: Boolean(optimisticPrompt),
+    hasOptimisticPrompt: promptInbox.prompts.length > 0,
   });
   // Everything that isn't "we have content" and isn't the terminal not-found
   // state is loading — including the boot window where the query is still
   // disabled (isLoading=false) waiting on the runtime.
-  const showOptimistic = !!optimisticPrompt && !hasMessages;
   const isTransitioningFromWelcome = !prevHasChatContentRef.current && hasChatContent;
   // The welcome wallpaper is the EMPTY-STATE backdrop for a *resolved* session.
   // The loading/connecting phase never reaches here (it early-returns the loader
@@ -3848,7 +4113,16 @@ export function SessionChat({
               <div
                 ref={scrollContainerCallbackRef}
                 className={cn(
-                  'scrollbar-hide relative z-10 h-full flex-1 overflow-y-auto [scroll-behavior:auto]',
+                  // overflow-anchor:none — this scroll area does ALL of its own
+                  // anchoring (useAutoScroll's spacer + RAF follow, the send-path
+                  // turn anchor, and the history-prepend content-space restore in
+                  // session-history-scroll.ts). The browser's native scroll
+                  // anchoring (default `overflow-anchor: auto`) tries to
+                  // compensate for the SAME prepends independently, and the two
+                  // corrections stacking is the other half of the scroll-up
+                  // teleport: ours restores the reader's position, then the
+                  // native one nudges it again.
+                  'scrollbar-hide relative z-10 h-full flex-1 overflow-y-auto [scroll-behavior:auto] [overflow-anchor:none]',
                   shouldShowWelcomeOverlay ? 'bg-transparent' : 'bg-background',
                 )}
                 onMouseUp={handleChatMouseUp}
@@ -3858,20 +4132,9 @@ export function SessionChat({
                 <div
                   ref={contentRef}
                   role="log"
-                  className="mx-auto w-full max-w-3xl min-w-0 px-4 py-6 pb-32"
+                  className="mx-auto w-full max-w-3xl min-w-0 px-4 py-6 pb-32 md:pr-1"
                 >
                   <div className="flex min-w-0 flex-col">
-                    {/* Optimistic turn — the user's message plus the waiting row,
-                        shared verbatim with InstantSessionShell so the shell → chat
-                        crossfade has nothing to drift on (see OptimisticTurn). */}
-                    {showOptimistic && (
-                      <OptimisticTurn
-                        text={optimisticPrompt || ''}
-                        agentNames={agentNames}
-                        onFileClick={openFileInComputer}
-                      />
-                    )}
-
                     {isOptimisticCompacting && !hasCompactionTurn && (
                       <div className="mt-12 space-y-3">
                         <div className="my-3 flex items-center gap-3 py-4">
@@ -3944,13 +4207,10 @@ export function SessionChat({
                         // Fall through to the normal turn renderer instead.
 
                         return (
-                          <div
+                          <TurnViewport
                             key={turn.userMessage.info.id}
-                            data-turn-id={turn.userMessage.info.id}
-                            className={cn(
-                              '[contain-intrinsic-size:auto_600px] [content-visibility:auto]',
-                              turnIndex === 0 ? '' : 'mt-12',
-                            )}
+                            turnId={turn.userMessage.info.id}
+                            className={turnIndex === 0 ? '' : 'mt-12'}
                           >
                             {/* Compaction divider — shown before the first turn after compaction */}
                             {hasCompaction && (
@@ -3975,7 +4235,7 @@ export function SessionChat({
                               questions={pendingQuestions}
                               agentNames={agentNames}
                               isFirstTurn={turnIndex === 0}
-                              isBusy={isBusy}
+                              lastTurnWorking={lastTurnWorking}
                               isCompaction={hasCompaction}
                               providers={providers}
                               commandMessages={commandMessagesRef.current}
@@ -3987,13 +4247,19 @@ export function SessionChat({
                                 !!readOnly || !sessionState || isBusy || sessionState.rewindPending
                               }
                             />
-                          </div>
+                          </TurnViewport>
                         );
                       })}
                     </ToolActivateContext.Provider>
 
                     {/* Busy indicator when no turns yet but session is busy */}
-                    {commandError && <TurnErrorDisplay error={commandError} className="mt-2" />}
+                    {commandError && (
+                      <TurnErrorDisplay
+                        error={commandError}
+                        isAbort={isAbortError(commandError.cause)}
+                        className="mt-2"
+                      />
+                    )}
                     {/* A turn refused for a missing connector renders HERE — after
                     the last turn, directly under the message that triggered it —
                     rather than as a one-line pill. It is the one failure with a
@@ -4037,7 +4303,9 @@ export function SessionChat({
                     {/* Busy with no turn to attach it to yet — the same waiting row
                         the optimistic turn and every live turn use, so it never
                         changes shape as the first turn materialises. */}
-                    {!showOptimistic && isBusy && turns.length === 0 && <SessionBusyIndicator />}
+                    {isBusy && turns.length === 0 && (
+                      <SessionBusyIndicator sessionId={sessionId} />
+                    )}
                   </div>
                   {/* Spacer — ensures the last message can scroll to the top of
 						    the viewport (ChatGPT-style). Without this, scrollToBottom
@@ -4079,9 +4347,7 @@ export function SessionChat({
 
               <div
                 className={cn(
-                  'absolute bottom-4 left-1/2 z-20 -translate-x-1/2',
-                  'transition-[opacity,translate,scale] ease-[cubic-bezier(0.23,1,0.32,1)]',
-                  'motion-reduce:translate-y-0 motion-reduce:scale-100 motion-reduce:transition-[opacity]',
+                  'absolute bottom-4 left-1/2 z-20 -translate-x-1/2 transition-[opacity,translate,scale] ease-[cubic-bezier(0.23,1,0.32,1)] motion-reduce:translate-y-0 motion-reduce:scale-100 motion-reduce:transition-opacity',
                   showScrollButton
                     ? 'translate-y-0 scale-100 opacity-100 duration-150'
                     : 'pointer-events-none translate-y-1 scale-[0.97] opacity-0 duration-100',
@@ -4093,7 +4359,7 @@ export function SessionChat({
                   aria-hidden={!showScrollButton}
                   tabIndex={showScrollButton ? undefined : -1}
                   className={cn(
-                    'hit-area-2 shadow-xs',
+                    'hit-area-2 hover:bg-secondary border-border border shadow-xs',
                     'transition-[scale] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] active:scale-[0.96]',
                   )}
                   onClick={smoothScrollToAbsoluteBottom}
@@ -4110,48 +4376,38 @@ export function SessionChat({
               <SessionChatInput
                 onSend={async (text, files, mentions) => {
                   await handleSend(text, files, mentions);
-                  if (failedStartDraft) {
-                    clearStartStash(sessionId);
-                    usePendingFilesStore.getState().consumePendingFiles();
-                    setFailedStartDraft(null);
-                  }
                 }}
-                prefill={
-                  rewindDraft
-                    ? {
-                        text: rewindDraft.text,
-                        id: rewindDraft.id,
-                        mode: 'replace',
-                      }
-                    : failedStartDraft
-                      ? {
-                          text: failedStartDraft.text,
-                          files: failedStartDraft.files,
-                          id: failedStartDraft.id,
-                          mode: 'merge',
-                        }
-                      : sessionPrefill
-                        ? { text: sessionPrefill.text, id: sessionPrefill.id, mode: 'merge' }
-                        : null
-                }
+                prefill={composerPrefill}
+                attachRequestId={attachRequestId}
                 isBusy={isBusy}
+                // The ONE projection, not the 300 ms busy fade: it is what
+                // decides whether a `/` command may be dispatched, and a fade
+                // timer that has already lapsed would let one abort a live turn.
+                // `effectiveBusy` folds in optimistic compaction (not a turn, so
+                // not in `working`), and `hasRetryingAssistant` covers the
+                // window where a retryable provider error keeps the turn alive
+                // with no busy frame to show for it.
+                sessionWorking={effectiveBusy || hasRetryingAssistant}
+                // Gates `/` COMMANDS only. A prompt typed at a sleeping box is
+                // an inbox row and goes out when the box answers; a command has
+                // no row, and `runCommand` swallows it silently until the
+                // runtime is switched.
+                runtimeReady={runtimeReady}
+                rewind={composerRewind}
                 queuedMessages={queuedMessages}
                 failedQueuedMessages={failedQueuedMessages}
-                queueInFlightId={sessionQueue.inFlightId}
-                queuePaused={queueDrain.paused}
+                queueInFlightIds={queueInFlightIds}
+                queuePaused={queueRows.held}
                 queueIsRunning={isBusy}
                 onSendQueuedMessageNow={handleQueueSendNow}
-                onQueueMessage={handleQueueMessage}
                 onRemoveQueuedMessage={handleRemoveQueuedMessage}
-                onEditQueuedMessage={handleEditQueuedMessage}
-                onReorderQueuedMessage={handleReorderQueuedMessage}
                 onRetryQueuedMessage={handleRetryQueuedMessage}
                 onStop={handleStop}
                 escCount={escCount}
                 agents={local.agent.list}
-                selectedAgent={lockedAgentName ?? local.agent.current?.name ?? null}
-                onAgentChange={lockedAgentName ? undefined : handleAgentChange}
-                agentSelectorLocked={!!lockedAgentName}
+                selectedAgent={composerAgentName}
+                onAgentChange={handleAgentChange}
+                noAccessibleAgents={noAccessibleAgents}
                 commands={chatCommands}
                 onCommand={handleCommand}
                 models={local.model.list}
@@ -4164,7 +4420,6 @@ export function SessionChat({
                 messages={messages}
                 sessionId={sessionId}
                 projectId={projectId}
-                onFileSearch={handleFileSearch}
                 providers={providers}
                 modelRequired
                 modelsLoading={providersLoading}
@@ -4192,8 +4447,12 @@ export function SessionChat({
                 // The shell can now render on a cached transcript alone, i.e. before
                 // the sandbox answers — so sending has to be gated separately from
                 // reading. See sessionComposerReadiness.
-                disabled={composerReadiness.disabled}
-                placeholder={composerReadiness.placeholder}
+                notice={composerReadiness.notice}
+                onNoticeRetry={
+                  composerReadiness.notice && composerReadiness.retryable
+                    ? requestRuntimeReconnect
+                    : undefined
+                }
               />
               <ConfirmDialog
                 open={!!rewindTarget}

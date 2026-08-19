@@ -24,7 +24,6 @@ import { ProjectSandboxAlert } from '@/features/workspace/project-sidebar/footer
 import { ProjectSessionList } from '@/features/workspace/project-sidebar/project-session-list';
 import {
   ProjectCustomizeNavItem,
-  ProjectSettingsNavItem,
   useSettingsKeyboardShortcut,
 } from '@/features/workspace/project-sidebar/project-settings-nav';
 import { useIsCreatingProjectSession } from '@/hooks/projects/new-session-guard';
@@ -201,6 +200,10 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                 </SidebarMenuButton>
               </SidebarMenuItem>
               <ProjectCustomizeNavItem />
+              {/* Apps belongs with Customize, not down in the bottom group: it
+                  is a project surface you configure and operate, not a
+                  late-arriving alert. Self-hides until the `apps` flag is on. */}
+              <ProjectAppsNavItem />
             </SidebarMenu>
           </SidebarGroup>
 
@@ -231,10 +234,14 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                   gone (offcanvas + hover flyout) it needs a docked entry.
                   Connectors, Skills, Commands, and Customize used to follow it
                   here — one Settings entry, on the Customize row's old line,
-                  replaced all four. */}
+                  replaced all four. That entry is gone now too (Jay,
+                  2026-08-17): it opened the exact same User Settings overlay
+                  the workspace switcher's "User Settings" row already opens
+                  one click above, on the header identity control — a second
+                  row to the same destination earned no more than the keycap
+                  it carried, and Cmd+, still works with no visible row at all
+                  (`useSettingsKeyboardShortcut`). */}
               <ProjectFilesNavItem />
-              <ProjectAppsNavItem />
-              <ProjectSettingsNavItem />
               <ProjectChatGptConnectNavItem projectId={projectId} />
             </SidebarMenu>
           </SidebarGroup>

@@ -193,7 +193,6 @@ export const identity = {
     ],
     project: [
       { k: 'Manager', v: 'Full project control, including members and delete.' },
-      { k: 'Editor', v: 'Create and edit project content, run sessions.' },
       { k: 'Member', v: 'Read, run sessions and fire triggers. The project floor role.' },
     ],
   },

@@ -52,8 +52,10 @@ const IDLE_TIMEOUT: OpencodeTurnError = {
 interface Harness {
   resumer: ReturnType<typeof createTurnAutoResumer>;
   prompts: Array<{ url: string; body: unknown }>;
+  sessionReads: number;
   setLastMessage: (m: { role: string; error?: boolean; completed?: boolean } | null) => void;
   setIsRoot: (v: boolean) => void;
+  setRevertStaged: (v: boolean) => void;
   advance: (ms: number) => void;
 }
 
@@ -64,8 +66,10 @@ function makeHarness(): Harness {
     completed: true,
   };
   let isRoot = true;
+  let revertStaged = false;
   let clock = 1_000_000;
   const prompts: Array<{ url: string; body: unknown }> = [];
+  const state = { sessionReads: 0 };
 
   const fetchImpl = (async (input: string | URL | Request, init?: RequestInit) => {
     const url = String(input);
@@ -87,6 +91,14 @@ function makeHarness(): Harness {
         : [];
       return new Response(JSON.stringify(rows), { status: 200 });
     }
+    // Bare `GET /session/{id}` (no `/message` suffix) — the T22 revert read.
+    if (/\/session\/[^/]+\?/.test(url)) {
+      state.sessionReads += 1;
+      return new Response(
+        JSON.stringify(revertStaged ? { id: 'ses_root', revert: { messageID: 'msg_1' } } : { id: 'ses_root' }),
+        { status: 200 },
+      );
+    }
     return new Response('{}', { status: 200 });
   }) as typeof fetch;
 
@@ -102,11 +114,17 @@ function makeHarness(): Harness {
   return {
     resumer,
     prompts,
+    get sessionReads() {
+      return state.sessionReads;
+    },
     setLastMessage: (m) => {
       lastMessage = m;
     },
     setIsRoot: (v) => {
       isRoot = v;
+    },
+    setRevertStaged: (v) => {
+      revertStaged = v;
     },
     advance: (ms) => {
       clock += ms;
@@ -190,5 +208,71 @@ describe('createTurnAutoResumer', () => {
     } finally {
       delete process.env.KORTIX_TURN_AUTO_RESUME;
     }
+  });
+
+  // ── T22: a staged OpenCode revert stands auto-recovery down ───────────────
+  describe('staged revert (T22)', () => {
+    test('a revert already staged when the error arrives — no resume, no budget spent', async () => {
+      const h = makeHarness();
+      h.setRevertStaged(true);
+      expect(await h.resumer.maybeResume('ses_root', IDLE_TIMEOUT)).toBe(false);
+      expect(h.prompts.length).toBe(0);
+      // Budget untouched: 3 more attempts are still available even though this
+      // call happened first.
+      expect(await h.resumer.maybeResume('ses_root', IDLE_TIMEOUT)).toBe(false);
+      h.setRevertStaged(false);
+      expect(await h.resumer.maybeResume('ses_root', IDLE_TIMEOUT)).toBe(true);
+      expect(await h.resumer.maybeResume('ses_root', IDLE_TIMEOUT)).toBe(true);
+      expect(await h.resumer.maybeResume('ses_root', IDLE_TIMEOUT)).toBe(true);
+      expect(h.prompts.length).toBe(3);
+    });
+
+    test('no revert staged — resumes exactly as before (unchanged path)', async () => {
+      const h = makeHarness();
+      expect(await h.resumer.maybeResume('ses_root', IDLE_TIMEOUT)).toBe(true);
+      expect(h.prompts.length).toBe(1);
+      expect(h.sessionReads).toBeGreaterThan(0);
+    });
+
+    test('a revert staged DURING the backoff wait is caught at fire time', async () => {
+      const h = makeHarness();
+      let sleepCalls = 0;
+      const resumer = createTurnAutoResumer({
+        opencode: { getInternalUrl: () => 'http://127.0.0.1:4096' },
+        cfg: { workspace: '/workspace' },
+        isRoot: async () => true,
+        fetchImpl: (async (input: string | URL | Request, init?: RequestInit) => {
+          const url = String(input);
+          if (url.includes('/prompt_async')) {
+            h.prompts.push({ url, body: JSON.parse(String(init?.body)) });
+            return new Response('{}', { status: 200 });
+          }
+          if (url.includes('/message')) {
+            return new Response(
+              JSON.stringify([{ info: { role: 'assistant', error: { name: 'UnknownError' } } }]),
+              { status: 200 },
+            );
+          }
+          if (/\/session\/[^/]+\?/.test(url)) {
+            // Not staged on the pre-check (before "sleep"), staged by the
+            // fire-time re-check (after "sleep") — simulates the user staging
+            // the revert during the resumer's backoff window.
+            const staged = sleepCalls > 0;
+            return new Response(
+              JSON.stringify(staged ? { id: 'ses_root', revert: { messageID: 'msg_1' } } : { id: 'ses_root' }),
+              { status: 200 },
+            );
+          }
+          return new Response('{}', { status: 200 });
+        }) as typeof fetch,
+        sleep: async () => {
+          sleepCalls += 1;
+        },
+        now: () => 1_000_000,
+      });
+
+      expect(await resumer.maybeResume('ses_root', IDLE_TIMEOUT)).toBe(false);
+      expect(h.prompts.length).toBe(0);
+    });
   });
 });

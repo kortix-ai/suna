@@ -4,11 +4,8 @@ import { InfoBanner } from '@/components/ui/info-banner';
 import { errorToast, successToast } from '@/components/ui/toast';
 import {
   CpuIcon as Cpu,
-  BrainIcon as Brain,
   KeyIcon as KeyRound,
   PlugIcon as PlugZap,
-  RobotIcon as Robot,
-  SparkleIcon as Sparkle,
   WarningIcon as TriangleAlert,
 } from '@phosphor-icons/react';
 import type { SessionScope } from '@kortix/sdk';
@@ -62,11 +59,13 @@ export interface SessionOverrideSlot {
 export interface SessionOverridesToolbarProps {
   projectId: string;
   sessionId?: string;
+  /**
+   * Whose grant the scope is read against — secrets and connectors both
+   * default to what this agent's `kortix.yaml` allows. Not a rendered row:
+   * the agent is picked on the composer itself.
+   */
   agentName?: string;
   onCommittedDraft?: (commit: SessionScopeCommit | undefined) => void;
-  agent?: SessionOverrideSlot;
-  model?: SessionOverrideSlot;
-  reasoningEffort?: SessionOverrideSlot;
   /** Create-time only. Shown so the session's environment is not a mystery. */
   sandbox?: { slug: string | null; provider: string | null };
   /**
@@ -96,22 +95,26 @@ function hasAvailableScopeAxis(catalog: SessionScopeSelectionCatalog): boolean {
 }
 
 /**
- * Every per-session override, behind one composer control.
+ * The per-session overrides that have no control of their own, behind one
+ * composer control: secrets, connectors, and the sandbox.
  *
- * It owns the scope draft (secrets + connectors) and borrows the agent, model
- * and reasoning-effort controls the composer already renders, so each axis
- * keeps exactly one implementation. The sandbox row is read-only on purpose:
- * a session's environment is fixed at create, and a control that looked
- * editable would be a lie.
+ * It owns the scope draft (secrets + connectors). It deliberately does NOT
+ * render agent, model or reasoning effort — each of those is already a live
+ * control on the composer itself (agent in `composer-underbar.tsx`, model and
+ * effort in `composer-toolbar.tsx`), so a row here would be a second control
+ * for the same value one click away. They used to be optional slots; the
+ * branches went with the last caller that passed them. Re-adding one means
+ * adding a `SessionOverrideSlot` prop and a `rows` entry — see how `sandboxSlot`
+ * does it directly below.
+ *
+ * The sandbox row is read-only on purpose: a session's environment is fixed at
+ * create, and a control that looked editable would be a lie.
  */
 export function SessionOverridesToolbar({
   projectId,
   sessionId,
   agentName,
   onCommittedDraft,
-  agent,
-  model,
-  reasoningEffort,
   sandbox,
   sandboxSlot,
 }: SessionOverridesToolbarProps) {
@@ -121,7 +124,9 @@ export function SessionOverridesToolbar({
     agentName,
   });
   const committedDraftRef = useRef(onCommittedDraft);
-  committedDraftRef.current = onCommittedDraft;
+  useEffect(() => {
+    committedDraftRef.current = onCommittedDraft;
+  }, [onCommittedDraft]);
 
   const initializationKey = useMemo(() => {
     if (!catalog) return null;
@@ -200,54 +205,6 @@ export function SessionOverridesToolbar({
 
   const rows = useMemo(() => {
     const list: SessionOverrideRow[] = [];
-    if (agent) {
-      list.push({
-        id: 'agent',
-        name: 'Agent',
-        icon: Robot,
-        hint: 'Who answers',
-        summary: agent.summary,
-        overridden: agent.overridden,
-        description:
-          agent.description ??
-          'The agent that answers your next prompt. It also decides the ceiling for every other axis here — a session can never reach past what its agent is granted.',
-        editor: agent.control,
-        onReset: agent.onReset,
-        resetLabel: agent.resetLabel,
-      });
-    }
-    if (model) {
-      list.push({
-        id: 'model',
-        name: 'Model',
-        icon: Sparkle,
-        hint: 'Which model',
-        summary: model.summary,
-        overridden: model.overridden,
-        description:
-          model.description ??
-          'The model this session sends to. Unset, it follows the agent’s model, then the account default — set it here only when this one session needs something else.',
-        editor: model.control,
-        onReset: model.onReset,
-        resetLabel: model.resetLabel,
-      });
-    }
-    if (reasoningEffort) {
-      list.push({
-        id: 'reasoning-effort',
-        name: 'Reasoning effort',
-        icon: Brain,
-        hint: 'How hard it thinks',
-        summary: reasoningEffort.summary,
-        overridden: reasoningEffort.overridden,
-        description:
-          reasoningEffort.description ??
-          'How much the model reasons before it answers. This one is stored per project and per model, so every session in this project using this model follows it.',
-        editor: reasoningEffort.control,
-        onReset: reasoningEffort.onReset,
-        resetLabel: reasoningEffort.resetLabel,
-      });
-    }
     list.push({
       id: 'secrets',
       name: 'Secrets',
@@ -337,12 +294,9 @@ export function SessionOverridesToolbar({
     return list;
   }, [
     activeCatalog,
-    agent,
     controlsDisabled,
     draft,
-    model,
     onChange,
-    reasoningEffort,
     sandbox,
     sandboxSlot,
     saveScope.isPending,

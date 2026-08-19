@@ -1164,7 +1164,7 @@ function DocxViewerContent({
   // Imports mutate the shared editor instance; concurrent calls (effect
   // re-runs, StrictMode double-invoke) race inside the parser and surface as
   // bogus "Invalid DOCX ZIP" errors, so every import is chained through here.
-  const importQueueRef = React.useRef<Promise<void>>(Promise.resolve());
+  const importQueueRef = React.useRef<Promise<void> | null>(null);
 
   React.useEffect(() => {
     let isCurrent = true;
@@ -1183,26 +1183,34 @@ function DocxViewerContent({
       setLoadError(undefined);
       setReportedPageCount(0);
 
+      // Tracks the "no file to import" bail-out, which intentionally keeps the
+      // loading flag as-is — every other exit path resets it in `finally`.
+      let bailedWithoutResult = false;
       try {
         const docxFile =
           activeUploadedDocxFile?.file ?? (url ? await loadDocxFile(url, displayFileName) : null);
-        if (!docxFile) return;
+        if (!docxFile) {
+          bailedWithoutResult = true;
+          return;
+        }
         await importDocxFile(docxFile);
 
         if (isCurrent) {
-          setIsLoadingDocument(false);
           setActivePage(1);
           viewportRef.current?.scrollTo({ top: 0, left: 0 });
         }
       } catch (error) {
         if (isCurrent) {
           setLoadError(error instanceof Error ? error.message : 'Unknown DOCX load error');
+        }
+      } finally {
+        if (isCurrent && !bailedWithoutResult) {
           setIsLoadingDocument(false);
         }
       }
     }
 
-    importQueueRef.current = importQueueRef.current.then(load);
+    importQueueRef.current = (importQueueRef.current ?? Promise.resolve()).then(load);
 
     return () => {
       isCurrent = false;

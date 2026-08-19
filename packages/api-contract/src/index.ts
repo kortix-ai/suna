@@ -61,6 +61,8 @@ export const FeatureFlagMapSchema = z.object({
   meta_agent: z.boolean(),
   apps: z.boolean(),
   monitors: z.boolean(),
+  network_boundary_shim: z.boolean(),
+  warm_sessions: z.boolean(),
 });
 export type FeatureFlagMap = z.infer<typeof FeatureFlagMapSchema>;
 
@@ -112,8 +114,10 @@ export const ExperimentalFeatureViewSchema = FeatureFlagViewSchema;
 /** @deprecated Use {@link FeatureFlagView}. */
 export type ExperimentalFeatureView = FeatureFlagView;
 
-/** Assignable project roles (`user`/`viewer` are deprecated and no longer emitted). */
-export const PROJECT_ROLES = ['manager', 'editor', 'member'] as const;
+/** The two assignable project roles. `user`/`viewer` are deprecated aliases of
+ *  `member`; `editor` was REMOVED on 2026-08-18 (folded into `manager`). None
+ *  of the three is emitted, and only `manager`/`member` are accepted on write. */
+export const PROJECT_ROLES = ['manager', 'member'] as const;
 export const ProjectRoleSchema = z.enum(PROJECT_ROLES);
 export type ProjectRole = z.infer<typeof ProjectRoleSchema>;
 
@@ -486,6 +490,49 @@ export const ReconcileConnectionInputSchema = z
   .strict();
 export type ReconcileConnectionInput = z.infer<typeof ReconcileConnectionInputSchema>;
 
+const OAuth2TokenParameterNameSchema = z
+  .string()
+  .regex(
+    /^[A-Za-z][A-Za-z0-9_.~-]{0,127}$/,
+    'token parameter names must be 1-128 URL-form-safe characters and start with a letter',
+  );
+
+export const OAUTH2_RESERVED_TOKEN_PARAMETER_NAMES = [
+  'grant_type',
+  'client_id',
+  'client_secret',
+  'client_assertion',
+  'client_assertion_type',
+  'scope',
+  'resource',
+  'audience',
+] as const;
+const OAUTH2_RESERVED_TOKEN_PARAMETERS = new Set<string>(OAUTH2_RESERVED_TOKEN_PARAMETER_NAMES);
+
+const OAuth2AdditionalTokenParametersSchema = z
+  .record(OAuth2TokenParameterNameSchema, z.string().max(4096))
+  .superRefine((value, ctx) => {
+    const entries = Object.entries(value);
+    if (entries.length > 32) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.too_big,
+        type: 'array',
+        maximum: 32,
+        inclusive: true,
+        message: 'at most 32 additional token parameters are allowed',
+      });
+    }
+    for (const [key] of entries) {
+      if (OAUTH2_RESERVED_TOKEN_PARAMETERS.has(key)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [key],
+          message: `${key} is owned by the OAuth2 client-credentials protocol`,
+        });
+      }
+    }
+  });
+
 export const OAuth2ClientCredentialsSchema = z
   .object({
     type: z.literal('oauth2_client_credentials'),
@@ -507,6 +554,7 @@ export const OAuth2ClientCredentialsSchema = z
     scopes: z.array(z.string().trim().min(1).max(2048)).max(64).optional(),
     resource: z.string().trim().min(1).max(4096).optional(),
     audience: z.string().trim().min(1).max(4096).optional(),
+    token_params: OAuth2AdditionalTokenParametersSchema.optional(),
   })
   .strict()
   .superRefine((value, ctx) => {
@@ -696,6 +744,29 @@ export const PendingSessionPromptSchema = z
       .optional(),
     variant: z.string().min(1).nullable().optional(),
     attachment_names: z.array(z.string().min(1).max(512)).max(50).optional(),
+    /**
+     * Full prompt parts, in OpenCode's own wire shape. Lets the first prompt
+     * carry attachments as `data:` URLs — the session's sandbox does not exist
+     * yet, so there is nowhere to upload into. The API converts the whole
+     * pending prompt into a durable inbox row at create; the inbox's own
+     * sanitizer re-checks these and enforces the serialized byte cap.
+     */
+    parts: z
+      .array(
+        z
+          .object({
+            type: z.enum(['text', 'file', 'agent']),
+            text: z.string().optional(),
+            mime: z.string().max(255).optional(),
+            url: z.string().max(17_000_000).optional(),
+            filename: z.string().max(512).optional(),
+            name: z.string().max(512).optional(),
+            source: z.unknown().optional(),
+          })
+          .strict(),
+      )
+      .max(64)
+      .optional(),
   })
   .strict()
   .superRefine((value, context) => {
@@ -943,6 +1014,19 @@ export const SessionCreateAcceptedSchema = z.object({
 });
 export type SessionCreateAccepted = z.infer<typeof SessionCreateAcceptedSchema>;
 
+/**
+ * Account-local access policy for sessions created by a trigger. Project
+ * managers always retain access; `private` excludes ordinary project members.
+ */
+export const TriggerSessionAccessSchema = z
+  .object({
+    mode: z.enum(['private', 'project', 'members']),
+    memberIds: z.array(z.string()),
+    groupIds: z.array(z.string()),
+  })
+  .strict();
+export type TriggerSessionAccess = z.infer<typeof TriggerSessionAccessSchema>;
+
 /** One trigger entry as emitted by `loadTriggersForResponse`. */
 export const TriggerSchema = z.object({
   slug: z.string(),
@@ -976,6 +1060,8 @@ export const TriggerSchema = z.object({
   session_key: z.string().nullable(),
   /** Payload paths that must match for the trigger to fire. Null when unfiltered. */
   filter: z.record(z.string(), z.string()).nullable(),
+  /** Account-local policy for sessions this trigger creates. */
+  session_access: TriggerSessionAccessSchema,
   last_fired_at: z.string().nullable(),
   last_status: z.string().nullable(),
   last_error: z.string().nullable(),

@@ -6,13 +6,13 @@
 // be pasted into the receiver's signature-verification code.
 
 import { errorToast, successToast, warningToast } from '@/components/ui/toast';
-import { copyToClipboard } from '@/lib/utils/clipboard';
 import {
   WarningIcon as AlertTriangle,
   CheckIcon as Check,
-  CopyIcon as Copy,
   PlusIcon as Plus,
+  PowerIcon,
   TrashIcon as Trash2,
+  WebhooksLogoIcon,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, useState } from 'react';
@@ -20,6 +20,7 @@ import { type FormEvent, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -35,6 +36,15 @@ import {
 } from '@/components/ui/modal';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
+  AccessList,
+  AccessRow,
+  CopyRow,
+  formatRelative,
+  type KebabItem,
+} from '@/features/workspace/shared/access';
+import { EmptyState } from '@/features/layout/section/empty-state';
+import { ErrorState } from '@/features/layout/section/error-state';
+import {
   type IamAuditWebhook,
   type CreatedAuditWebhook,
   createAuditWebhook,
@@ -48,33 +58,13 @@ interface AuditWebhooksCardProps {
   canManage: boolean;
 }
 
-function relative(iso: string | null): string {
-  if (!iso) return '—';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '—';
-  const diffMs = Date.now() - d.getTime();
-  const minutes = Math.floor(diffMs / 60_000);
-  if (minutes < 1) return 'just now';
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  if (days < 30) return `${days}d ago`;
-  return d.toLocaleDateString();
-}
-
-async function copyValue(value: string, ok = 'Copied') {
-  if (await copyToClipboard(value)) {
-    successToast(ok);
-  } else {
-    warningToast('Copy failed — select and copy manually');
-  }
-}
-
 export function AuditWebhooksCard({ accountId, canManage }: AuditWebhooksCardProps) {
   const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<IamAuditWebhook | null>(null);
+  // Which row's enable/disable is in flight — the row swaps its kebab for a
+  // spinner, so a slow toggle can't be mistaken for a no-op.
+  const [togglingId, setTogglingId] = useState<string | null>(null);
 
   const hooksQuery = useQuery({
     queryKey: ['audit-webhooks', accountId],
@@ -89,6 +79,7 @@ export function AuditWebhooksCard({ accountId, canManage }: AuditWebhooksCardPro
       queryClient.invalidateQueries({ queryKey: ['audit-webhooks', accountId] });
     },
     onError: (err: Error) => errorToast(err.message || 'Failed to update webhook'),
+    onSettled: () => setTogglingId(null),
   });
 
   const deleteMutation = useMutation({
@@ -133,76 +124,108 @@ export function AuditWebhooksCard({ accountId, canManage }: AuditWebhooksCardPro
         </div>
       )}
 
-      {!hooksQuery.isLoading && hooks.length === 0 && (
-        <div className="border-border text-muted-foreground rounded-md border border-dashed px-4 py-8 text-center text-sm">
-          No webhooks configured.
-        </div>
+      {/* A failed list read used to render exactly like "no webhooks
+          configured" — the worst possible lie on the screen where an admin
+          checks whether their SIEM delivery still exists. */}
+      {!hooksQuery.isLoading && hooksQuery.isError && (
+        <ErrorState
+          size="sm"
+          title="Couldn't load audit webhooks"
+          description={hooksQuery.error instanceof Error ? hooksQuery.error.message : undefined}
+          action={
+            <Button variant="outline" size="sm" onClick={() => hooksQuery.refetch()}>
+              Retry
+            </Button>
+          }
+        />
       )}
 
-      {!hooksQuery.isLoading && hooks.length > 0 && (
-        <ul className="space-y-2">
-          {hooks.map((h) => (
-            <li
-              key={h.webhook_id}
-              className="bg-popover flex items-start gap-3 rounded-md border px-4 py-2.5"
-            >
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="truncate text-sm font-medium">{h.name}</span>
-                  <Badge variant={h.enabled ? 'success' : 'muted'} size="sm">
-                    {h.enabled ? 'enabled' : 'disabled'}
-                  </Badge>
-                  {h.action_prefix && (
-                    <Badge
-                      variant="outline"
-                      size="sm"
-                      className="font-mono"
-                      title={`Only events with action starting "${h.action_prefix}"`}
-                    >
-                      {h.action_prefix}
+      {!hooksQuery.isLoading && !hooksQuery.isError && hooks.length === 0 && (
+        <EmptyState
+          icon={WebhooksLogoIcon}
+          size="sm"
+          title="No webhooks configured"
+          description="Stream every audit event to your SIEM or any HTTPS endpoint."
+          action={
+            canManage ? (
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5"
+                onClick={() => setCreateOpen(true)}
+              >
+                <Plus className="size-3.5 shrink-0" />
+                New webhook
+              </Button>
+            ) : undefined
+          }
+        />
+      )}
+
+      {!hooksQuery.isLoading && !hooksQuery.isError && hooks.length > 0 && (
+        <AccessList>
+          {hooks.map((h) => {
+            const kebab: KebabItem[] = canManage
+              ? [
+                  {
+                    label: h.enabled ? 'Disable' : 'Enable',
+                    icon: <PowerIcon className="size-3.5 shrink-0" />,
+                    onSelect: () => {
+                      setTogglingId(h.webhook_id);
+                      toggleMutation.mutate({ id: h.webhook_id, enabled: !h.enabled });
+                    },
+                  },
+                  {
+                    label: 'Delete webhook',
+                    icon: <Trash2 className="size-3.5 shrink-0" />,
+                    variant: 'destructive',
+                    separated: true,
+                    onSelect: () => setDeleteTarget(h),
+                  },
+                ]
+              : [];
+            return (
+              <AccessRow
+                key={h.webhook_id}
+                leading={<EntityAvatar icon={WebhooksLogoIcon} label={h.name} size="sm" />}
+                title={h.name}
+                badges={
+                  <>
+                    <Badge variant={h.enabled ? 'success' : 'muted'} size="sm">
+                      {h.enabled ? 'enabled' : 'disabled'}
                     </Badge>
-                  )}
-                </div>
-                <div className="text-muted-foreground mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs">
-                  <code className="truncate font-mono">{h.url}</code>
-                  <span>·</span>
-                  <span>Last delivered {relative(h.last_delivered_at)}</span>
-                </div>
-                {h.last_error && (
-                  <p className="text-kortix-red mt-1 text-xs wrap-break-word">
-                    {relative(h.last_error_at)}: {h.last_error}
-                  </p>
-                )}
-              </div>
-              {canManage && (
-                <div className="flex items-center gap-1">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    disabled={toggleMutation.isPending}
-                    onClick={() =>
-                      toggleMutation.mutate({
-                        id: h.webhook_id,
-                        enabled: !h.enabled,
-                      })
-                    }
-                  >
-                    {h.enabled ? 'Disable' : 'Enable'}
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label={`Delete ${h.name}`}
-                    onClick={() => setDeleteTarget(h)}
-                    className="text-muted-foreground hover:text-destructive"
-                  >
-                    <Trash2 className="size-3.5 shrink-0" />
-                  </Button>
-                </div>
-              )}
-            </li>
-          ))}
-        </ul>
+                    {h.action_prefix ? (
+                      <Badge
+                        variant="outline"
+                        size="sm"
+                        className="font-mono"
+                        title={`Only events with action starting "${h.action_prefix}"`}
+                      >
+                        {h.action_prefix}
+                      </Badge>
+                    ) : null}
+                  </>
+                }
+                metaParts={[
+                  <code key="url" className="font-mono">
+                    {h.url}
+                  </code>,
+                  `Last delivered ${formatRelative(h.last_delivered_at)}`,
+                  ...(h.last_error
+                    ? [
+                        <span key="error" className="text-kortix-red">
+                          {formatRelative(h.last_error_at)}: {h.last_error}
+                        </span>,
+                      ]
+                    : []),
+                ]}
+                kebab={kebab}
+                kebabLabel={`Actions for ${h.name}`}
+                pending={togglingId === h.webhook_id}
+              />
+            );
+          })}
+        </AccessList>
       )}
 
       <CreateAuditWebhookDialog
@@ -223,6 +246,7 @@ export function AuditWebhooksCard({ accountId, canManage }: AuditWebhooksCardPro
             : ''
         }
         confirmLabel="Delete webhook"
+        confirmVariant="destructive"
         isPending={deleteMutation.isPending}
         onConfirm={() => {
           if (deleteTarget) deleteMutation.mutate(deleteTarget.webhook_id);
@@ -320,30 +344,12 @@ function CreateAuditWebhookDialog({
                     re-create.
                   </InfoBanner>
                 ))}
-              <div>
-                <Label className="text-xs">Signing secret</Label>
-                <div className="mt-1 flex items-center gap-2">
-                  <code className="bg-muted/30 min-w-0 flex-1 truncate rounded-md border px-3 py-2 font-mono text-xs">
-                    {created.secret}
-                  </code>
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    aria-label="Copy secret"
-                    onClick={() => copyValue(created.secret, 'Secret copied')}
-                  >
-                    <Copy className="size-3.5 shrink-0" />
-                  </Button>
-                </div>
-              </div>
-              <div>
-                <Label className="text-xs">Destination URL</Label>
-                <div className="mt-1 flex items-center gap-2">
-                  <code className="bg-muted/30 min-w-0 flex-1 truncate rounded-md border px-3 py-2 font-mono text-xs">
-                    {created.url}
-                  </code>
-                </div>
-              </div>
+              <CopyRow
+                label="Signing secret"
+                value={created.secret}
+                successMessage="Secret copied"
+              />
+              <CopyRow label="Destination URL" value={created.url} successMessage="URL copied" />
             </ModalBody>
             <ModalFooter>
               <Button size="sm" onClick={() => close(false)} className="gap-1.5">
@@ -412,9 +418,13 @@ function CreateAuditWebhookDialog({
                       key={preset.label}
                       type="button"
                       onClick={() => setActionPrefix(preset.prefix)}
+                      // `Badge` is pointer-events-none by design (a status
+                      // chip, not a control) and has no interactive variant,
+                      // so the chips stay buttons — but the selected fill is
+                      // the system's selected-row token, not a one-off.
                       className={`rounded-full border px-2 py-0.5 text-xs transition-colors ${
                         actionPrefix === preset.prefix
-                          ? 'border-primary bg-primary/10 text-foreground'
+                          ? 'border-primary bg-primary/[0.08] text-foreground'
                           : 'border-border/60 text-muted-foreground hover:bg-muted/40'
                       }`}
                       disabled={mutation.isPending}

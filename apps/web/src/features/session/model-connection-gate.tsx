@@ -5,7 +5,11 @@ import { AnimatePresence, m, useReducedMotion } from 'motion/react';
 
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/features/layout/section/empty-state';
+import type { FlatModel } from './session-chat-input';
 import { useModelConnectionGate } from './use-model-connection-gate';
+
+/** Stable empty list so the hook's `models = []` default isn't re-allocated per render. */
+const EMPTY_MODELS: FlatModel[] = [];
 
 /**
  * The single "no model connected" teaching moment — an icon, a plain-English
@@ -20,7 +24,8 @@ export function ModelConnectionGate({
   size?: 'sm' | 'default';
   className?: string;
 }) {
-  const { openConnectProvider, openUpgrade, modal, showUpgradeOption } = useModelConnectionGate();
+  const { openConnectProvider, openUpgrade, modal, showUpgradeOption } =
+    useModelConnectionGate(EMPTY_MODELS);
 
   return (
     <>
@@ -83,7 +88,8 @@ const BAR_EXIT = { type: 'spring', duration: 0.35, bounce: 0 } as const;
  * animation assumes it renders once with the final answer, not per-query.
  */
 export function ModelConnectionBar({ show }: { show: boolean }) {
-  const { openConnectProvider, openUpgrade, modal, showUpgradeOption } = useModelConnectionGate();
+  const { openConnectProvider, openUpgrade, modal, showUpgradeOption } =
+    useModelConnectionGate(EMPTY_MODELS);
   const reduceMotion = useReducedMotion();
 
   return (

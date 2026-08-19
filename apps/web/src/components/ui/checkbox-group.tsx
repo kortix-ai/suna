@@ -63,8 +63,13 @@ function CheckboxGroup({
     [isControlled, value, internalValue, onValueChange],
   );
 
+  const contextValue = React.useMemo(
+    () => ({ value: selected, toggle, disabled, name }),
+    [selected, toggle, disabled, name],
+  );
+
   return (
-    <CheckboxGroupContext.Provider value={{ value: selected, toggle, disabled, name }}>
+    <CheckboxGroupContext.Provider value={contextValue}>
       <div
         data-slot="checkbox-group"
         role="group"

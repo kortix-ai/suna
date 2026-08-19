@@ -361,7 +361,10 @@ export function emitGatewayGenAiSpan(trace: GatewayTrace): void {
         'kortix.failure_count': attemptFailures.length,
         'kortix.failure_codes': failureCodes.join(','),
         'kortix.context_rejected': failureCodes.includes('context_length_exceeded'),
-        'kortix.probe_timeout': failureCodes.includes('stream_probe_timeout'),
+        // `kortix.probe_timeout` removed: the gateway's first-byte deadline
+        // commits the stream instead of failing it, so `stream_probe_timeout`
+        // can no longer reach a failure chain and the attribute was pinned to
+        // false on every span.
         'kortix.fallback_recovered': trace.ok && attemptFailures.length > 0,
         ...(trace.errorCode ? { 'kortix.error_code': trace.errorCode } : {}),
       },

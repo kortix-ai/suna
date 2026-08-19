@@ -1,10 +1,17 @@
+import { CodeBlock } from '@/components/markdown/code/code-block';
 import { DocsMermaid } from '@/components/markdown/docs-mermaid';
 import { isInternalUrl } from '@/components/markdown/unified-markdown-utils';
 import { cn } from '@/lib/utils';
 import { Callout as FumadocsCallout } from 'fumadocs-ui/components/callout';
-import { CodeBlock, Pre } from 'fumadocs-ui/components/codeblock';
 import Link from 'next/link';
-import type { ComponentPropsWithoutRef } from 'react';
+import {
+  Children,
+  cloneElement,
+  isValidElement,
+  type ComponentPropsWithoutRef,
+  type ReactElement,
+  type ReactNode,
+} from 'react';
 
 // Visual parity with unified-markdown.tsx (the canonical markdown renderer)
 // — when that file's styles change, mirror them here. This map restyles
@@ -12,9 +19,10 @@ import type { ComponentPropsWithoutRef } from 'react';
 // markdown look: same heading scale, paragraph voice, list markers, kortix-blue
 // links, inline-code chips, tables, images, blockquote, hr and strong/em/del
 // — minus app-only interactivity (sandbox proxy, file-preview clicks, setup
-// links, KaTeX, Mermaid, streaming). Code blocks stay on fumadocs' native
-// CodeBlock (copy button, title bar) — the `pre` override below only flattens
-// its chrome to the app surface (rounded-md, no shadow).
+// links, KaTeX, Mermaid, streaming). Code blocks render through the app's own
+// CodeBlock shell (language header + copy button) — the `pre` override below
+// keeps rehype-code's server-rendered dual-theme shiki spans as the body, so
+// static HTML still carries syntax colors and dark mode stays pure CSS.
 
 const linkClass = cn(
   'font-medium text-kortix-blue',
@@ -29,6 +37,16 @@ const linkClass = cn(
 // viewport and scrolls the whole page sideways without it.
 const inlineCodeClass =
   'rounded-sm border border-border/40 bg-muted px-1.5 py-[0.1rem] font-mono text-[0.8rem] text-foreground/95 dark:bg-card [overflow-wrap:anywhere]';
+
+// By the time the `pre` override runs, rehype-code has replaced the fence's
+// text with token spans — walk them back down to the raw string so the app
+// CodeBlock's copy button has something to put on the clipboard.
+function flattenToText(node: ReactNode): string {
+  if (typeof node === 'string' || typeof node === 'number') return String(node);
+  if (Array.isArray(node)) return node.map(flattenToText).join('');
+  if (isValidElement(node)) return flattenToText((node.props as { children?: ReactNode }).children);
+  return '';
+}
 
 export const docsMdxComponents = {
   // ```mermaid fences arrive as <Mermaid chart="..."/> via remarkMdxMermaid
@@ -136,13 +154,27 @@ export const docsMdxComponents = {
     return <code {...props}>{children}</code>;
   },
 
-  // Fumadocs' native CodeBlock (copy button, fence titles), flattened to the
-  // app surface: its stock chrome is rounded-xl + shadow-sm.
-  pre: ({ className, children, ...props }: ComponentPropsWithoutRef<'pre'>) => (
-    <CodeBlock {...props} className={cn(className, 'rounded-md shadow-none')}>
-      <Pre>{children}</Pre>
-    </CodeBlock>
-  ),
+  // The app's CodeBlock shell (language header + copy button, popover surface)
+  // around rehype-code's pre-highlighted <code>. The original pre's className
+  // carries shiki's `.shiki` marker — merged onto the <code> so fumadocs'
+  // shiki.css keeps supplying the dual-theme token colors and `.line` padding,
+  // the same rules the client-highlighted app blocks already lean on.
+  pre: ({ className, children }: ComponentPropsWithoutRef<'pre'>) => {
+    const codeElement = Children.toArray(children).find(isValidElement) as
+      | ReactElement<ComponentPropsWithoutRef<'code'>>
+      | undefined;
+    const childClassName = codeElement?.props.className ?? '';
+    // `language-*` on the <code> comes from `addLanguageClass` in
+    // source.config.ts — rehype-code emits no language anywhere else.
+    const language = /language-([\w+#.-]+)/.exec(String(childClassName))?.[1] ?? 'text';
+    return (
+      <CodeBlock code={flattenToText(children)} language={language}>
+        {codeElement
+          ? cloneElement(codeElement, { className: cn(childClassName, className) })
+          : children}
+      </CodeBlock>
+    );
+  },
 
   blockquote: ({ children }: ComponentPropsWithoutRef<'blockquote'>) => (
     <blockquote className="border-border text-muted-foreground my-5 border-l-2 pl-6 italic [&>p]:my-2">
@@ -150,7 +182,7 @@ export const docsMdxComponents = {
     </blockquote>
   ),
 
-  hr: () => <hr className="border-border/60 my-6 h-px border-0 border-t" />,
+  hr: () => <hr className="border-border my-6 h-px border-0 border-t" />,
 
   // `not-prose` opts the whole table out of fumadocs' prose styles, which
   // give the <table> its own border + radius — doubled against this wrapper.

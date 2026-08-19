@@ -61,7 +61,12 @@ import { grantWarmPoolLifetime } from '../../projects/sandbox-deadline';
 import { withTimeout, configuredTimeoutMs } from '../../shared/with-timeout';
 import { classifySandboxProvisioningFailure } from './sandbox-provisioning-error';
 import { platformMetaAgentGrant } from '../../projects/lib/platform-meta-agent';
+import { projectFeatureFlagEnabled } from '../../feature-flags/for-project';
 import { resolveSessionNetworkBoundary } from '../../projects/lib/network-secret-boundary';
+import {
+  type PreparedInitialSandboxTurn,
+  initialSandboxTurnMetadata,
+} from '../../projects/sandbox-turn-lifecycle';
 
 /**
  * Bound for the pre-active hook. Generous, because the hook is a data restore and
@@ -252,6 +257,8 @@ export async function provisionSessionSandbox(opts: {
   serverType?: string;
   location?: string;
   metadata?: Record<string, unknown>;
+  /** Pre-created authority for a prompt the daemon delivers during boot. */
+  initialTurn?: PreparedInitialSandboxTurn | null;
   /** Project metadata, used for per-project experimental gates. */
   projectMetadata?: unknown;
   /**
@@ -356,6 +363,13 @@ export async function provisionSessionSandbox(opts: {
         config: {},
         metadata: {
           ...(opts.metadata ?? {}),
+          ...(opts.initialTurn
+            ? {
+                activeTurns: {
+                  [opts.initialTurn.token]: initialSandboxTurnMetadata(opts.initialTurn),
+                },
+              }
+            : {}),
           initStatus: 'pending',
           initAttempts: 0,
           initMaxAttempts: SANDBOX_INIT_MAX_ATTEMPTS,
@@ -534,7 +548,21 @@ export async function provisionSessionSandbox(opts: {
     try {
       const branch = opts.baseRef || opts.gitProject.defaultBranch;
       const networkBoundary = await resolveSessionNetworkBoundary(projectId, sandbox.sandboxId);
-      if (networkBoundary.length > 0 && !provider.syncNetworkBoundary) {
+      // A provider with no edge to arm is only a failure when nothing else can
+      // deliver the binding. With the in-guest shim the credential is injected
+      // by the broker route at request time, so there is nothing to register
+      // here — the binding reaches the guest as host->identifier rules in the
+      // sandbox env, carrying no value.
+      //
+      // This is the SECOND copy of this check; the other is in
+      // startNetworkBoundaryArm (projects/lib/sandbox-env-sync.ts). They share
+      // a message string and must not drift: relaxing only one still fails
+      // provisioning, just one frame later.
+      if (
+        networkBoundary.length > 0 &&
+        !provider.syncNetworkBoundary &&
+        !(await projectFeatureFlagEnabled(projectId, 'network_boundary_shim'))
+      ) {
         throw new Error(
           `Sandbox provider ${providerName} does not support network-boundary secret delivery`,
         );
@@ -648,9 +676,14 @@ export async function provisionSessionSandbox(opts: {
         throw createErr;
       }
       bgExternalId = result.externalId;
-      if (networkBoundary.length > 0) {
+      // `syncNetworkBoundary` is optional on the provider interface. The
+      // non-null assertion was safe only while the pre-check above guaranteed
+      // the method existed; now that a shim-backed provider gets past that
+      // check, calling it unguarded would be a TypeError at provision time
+      // rather than the clean skip this is.
+      if (networkBoundary.length > 0 && provider.syncNetworkBoundary) {
         try {
-          await provider.syncNetworkBoundary!(result.externalId, networkBoundary);
+          await provider.syncNetworkBoundary(result.externalId, networkBoundary);
           tl.mark(`network-secrets:${networkBoundary.length}`);
         } catch (error) {
           await provider.remove(result.externalId).catch(() => {});

@@ -1,0 +1,207 @@
+---
+title: Feature flags
+description: Turn a Kortix surface on for one project, and read what every flag gates.
+---
+
+import { Card, Cards } from 'fumadocs-ui/components/card';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+A feature flag turns one Kortix surface on for one project. Any surface can
+ship behind a flag — experimental, beta, or fully stable. "Experimental" is a
+stability badge on a flag, not the name of the system.
+
+Flags are per project. Turning a flag on in one project changes nothing in
+another project, and nothing for other accounts.
+
+<Cards>
+  <Card title="Apps" href="/docs/feature-flags/apps">Deploy static sites, bundles, Dockerfiles, and OCI images to stable URLs.</Card>
+</Cards>
+
+## Turn a flag on
+
+1. Open **Settings → Experimental**. The tab lists every flag the platform
+   supports.
+2. Read the row: the flag name, its stability badge, one sentence of
+   description, and its origin — `Default on`, `Default off`, or
+   `Overridden for this project`.
+3. Use the switch. The change applies to the current project immediately.
+
+You need the project's `project.customize.write` permission. The route answers
+`403` for any other caller.
+
+<Callout type="info" title="Flag state is not in your repo">
+Per-project flag state lives in the database, on the project row. It is never
+read from `kortix.yaml`. A flag you turn on does not travel with a repository
+clone or a fork.
+</Callout>
+
+## The two gates
+
+Each flag has two gates. They answer different questions.
+
+| Gate | Question | Effect when false |
+|---|---|---|
+| `available` | Does this deployment support the flag at all? | The toggle is hidden and the surface stays dark, whatever the project chose. |
+| `enabled` | Is the flag on for this project? | The surface stays dark for this project. |
+
+`enabled` is the project's explicit choice over the platform default, then
+AND-gated by `available`. `enabled` therefore always implies `available`.
+
+`available` is an operator decision, made by the environment the API runs in.
+Three flags read it from configuration; every other flag is always available:
+
+| Flag | Available when |
+|---|---|
+| `agent_tunnel` | `TUNNEL_ENABLED` is on |
+| `llm_gateway` | `LLM_GATEWAY_ENABLED` is on |
+| `monitors` | `PLATINUM_API_KEY` is set |
+
+## Stability badges
+
+The badge describes the contract, not the switch. A `stable` flag is still an
+opt-in: `apps` is stable and still off by default.
+
+| Badge | What it means |
+|---|---|
+| Experimental | The surface and its contract can still change. |
+| Beta | The surface works and the shape is settling. |
+| Stable | The contract holds. The flag stays an opt-in. |
+
+## How a flag is enforced
+
+Every flag declares one enforcement mode.
+
+| Mode | What the server does when the flag is off |
+|---|---|
+| `routes` | The HTTP surface rejects the request with `403`. |
+| `behavioral` | The behavior does not occur — no connector materializes, no env injects, no agent registers. |
+| `ui-only` | The server deliberately does not enforce. The flag hides client surface only. |
+
+A `routes` rejection is identical everywhere:
+
+```json
+{
+  "error": "Apps is not enabled for this project. Enable it in Settings → Feature flags.",
+  "code": "feature_disabled",
+  "feature": "apps"
+}
+```
+
+The `error` string names the flag list, not a specific tab. The list is the
+**Experimental** tab of Settings.
+
+Branch on `code`, never on the message text. The SDK exports
+`isFeatureDisabledError(error)` and `featureDisabledKey(error)` for exactly
+this.
+
+## Every flag
+
+Registry order — the same order **Settings → Experimental** shows.
+
+| Key | Name | Stability | Default | Enforcement |
+|---|---|---|---|---|
+| `marketplace` | Marketplace | Beta | On | `routes` |
+| `agent_tunnel` | Agent Computer Tunnel | Experimental | Off | `ui-only` |
+| `connectors_api_discover` | Connectors API Discover | Experimental | Off | `routes` |
+| `agentmail_email` | AgentMail Email | Experimental | Off | `routes` |
+| `teams` | Microsoft Teams | Experimental | Off | `routes` |
+| `voice` | Voice | Experimental | Off | `behavioral` |
+| `llm_gateway` | LLM Gateway | Experimental | Operator-set | `behavioral` |
+| `review_center` | Review Center | Experimental | Off | `routes` |
+| `meta_agent` | Meta Agent | Experimental | Off | `behavioral` |
+| `apps` | Apps | Stable | Off | `routes` |
+| `monitors` | Monitors | Experimental | Off | `routes` |
+| `network_boundary_shim` | Network boundary in-guest shim | Experimental | Off | `behavioral` |
+| `warm_sessions` | Warm Sessions | Beta | On | `routes` |
+
+`llm_gateway` reads its per-project default from
+`LLM_GATEWAY_DEFAULT_ENABLED`. An explicit project choice still wins.
+
+### What each flag gates
+
+- **`marketplace`** — browse and install skills from community and vendor
+  registries.
+- **`agent_tunnel`** — let agents reach a local machine over a permissioned
+  reverse tunnel. See [Computer Tunnel](/docs/connect/computers).
+- **`connectors_api_discover`** — browse direct API, MCP, GraphQL, CLI, and
+  Postman surfaces beside Pipedream OAuth apps. See
+  [Connectors](/docs/connect/connectors).
+- **`agentmail_email`** — assign AgentMail inbox connections so inbound email
+  starts and continues sessions.
+- **`teams`** — connect a Microsoft Teams bot so chats and channels start and
+  continue sessions. See [Slack & channels](/docs/connect/slack).
+- **`voice`** — give the agent a live voice call it can start and hold. See
+  [Slack & channels](/docs/connect/slack).
+- **`llm_gateway`** — route the project through the managed Kortix LLM
+  gateway. See [Models](/docs/project/models).
+- **`review_center`** — one inbox for change requests, approvals, and agent
+  output.
+- **`meta_agent`** — add a platform-owned coordinator agent that spawns and
+  manages specialized sessions.
+- **`apps`** — deploy static sites, bundles, Dockerfiles, and OCI images to
+  stable serverless URLs. See [Apps](/docs/feature-flags/apps).
+- **`monitors`** — run 24/7 watchers from your repo that fire trigger events
+  into sessions. See [Triggers](/docs/connect/triggers).
+- **`network_boundary_shim`** — use network-boundary secrets on a project that
+  does not run on Platinum. See [Secrets](/docs/project/secrets).
+- **`warm_sessions`** — keep one sandbox booted while a project is open, so a
+  new session starts without a cold boot.
+
+## Side effects of a toggle
+
+Some flags converge platform state after the write commits.
+
+| Flag | Effect after the toggle |
+|---|---|
+| `voice`, `teams`, `agentmail_email` | Kortix re-runs channel-connector materialization, so the connector appears or disappears with the flag. |
+| `agent_tunnel` | Kortix re-syncs the account's computer connectors. |
+| `llm_gateway` | Kortix propagates the new provider mode to active sandboxes. |
+
+Effects are convergence work, not part of the toggle's success. The API
+response does not wait for them. Each effect is retried once, and the
+reconcilers behind it are idempotent and re-run on their periodic sweeps.
+
+## Read and set a flag from code
+
+Read the effective per-project state through the project detail, or through the
+React hook:
+
+```tsx
+import { useFeatureFlag } from '@kortix/sdk/react';
+
+function AppsNavItem({ projectId }: { projectId: string }) {
+  const apps = useFeatureFlag(projectId, 'apps');
+  if (!apps.enabled) return null;
+  return <Link href={`/projects/${projectId}/apps`}>Apps</Link>;
+}
+```
+
+`enabled` is `true` only when the server said exactly `true`. A missing project
+id, an in-flight query, and an error all resolve to `false`. Gate fail-closed.
+
+Set the project override with the client:
+
+```ts
+const p = kortix.project(projectId);
+
+await p.updateFeatureFlag('apps', true);   // turn it on for this project
+await p.updateFeatureFlag('apps', null);   // clear the override, inherit the default
+```
+
+`updateFeatureFlag` calls `PATCH /v1/projects/:id/features`. `feature` is one
+of `FEATURE_FLAG_KEYS`, exported from `@kortix/sdk` and typed as
+`FeatureFlagKey`. See [SDK reference](/docs/sdk/reference).
+
+Handle a disabled feature by code, not by message:
+
+```ts
+import { featureDisabledKey, isFeatureDisabledError } from '@kortix/sdk';
+
+try {
+  await kortix.project(projectId).apps.list();
+} catch (error) {
+  if (isFeatureDisabledError(error)) {
+    console.log(`${featureDisabledKey(error)} is off for this project`);
+  }
+}
+```

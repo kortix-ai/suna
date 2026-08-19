@@ -46,11 +46,13 @@ export function toggleSessionSecret(
 
   if (draft.secrets === null) {
     if (allowed) return draft;
+    const secrets: string[] = [];
+    for (const secret of catalog.secrets.items) {
+      if (secret.identifier !== identifier) secrets.push(secret.identifier);
+    }
     return {
       ...draft,
-      secrets: catalog.secrets.items
-        .map((secret) => secret.identifier)
-        .filter((candidate) => candidate !== identifier),
+      secrets,
     };
   }
 
@@ -181,6 +183,8 @@ export function SessionSecretsEditor({
     );
   }
 
+  const selectedSecrets = new Set(draft.secrets ?? []);
+
   return (
     <div className="space-y-1">
       <Checkbox
@@ -193,8 +197,7 @@ export function SessionSecretsEditor({
       {catalog.secrets.items.length > 0 ? (
         <div className="border-border border-t pt-1">
           {catalog.secrets.items.map((secret) => {
-            const checked =
-              draft.secrets === null || draft.secrets?.includes(secret.identifier) === true;
+            const checked = draft.secrets === null || selectedSecrets.has(secret.identifier);
             return (
               <Checkbox
                 key={secret.identifier}
@@ -255,6 +258,8 @@ export function SessionConnectorsEditor({
     );
   }
 
+  const requiredConnectors = new Set(draft.require_connectors ?? []);
+
   return (
     <div className="space-y-1">
       <ul className="space-y-1">
@@ -266,8 +271,7 @@ export function SessionConnectorsEditor({
           const bound = currentConnection !== undefined;
           // Required but not connected: the session declares it and the
           // next turn will stop for a connect prompt.
-          const requiredUnconnected =
-            !bound && (draft.require_connectors?.includes(connector.slug) ?? false);
+          const requiredUnconnected = !bound && requiredConnectors.has(connector.slug);
           const selected = bound || requiredUnconnected;
           const hasConnection = connector.connections.length > 0;
 

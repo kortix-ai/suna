@@ -83,11 +83,13 @@ Non-identity credentials:
   (`KORTIX_CLI_TOKEN`; `KORTIX_SANDBOX_TOKEN`/
   `KORTIX_TOKEN`/`INTERNAL_SERVICE_KEY`/`TUNNEL_TOKEN` — the last three are
   one value, `apps/api/src/platform/services/sandbox-auth.ts:52-58`).
-- **Agent switching is not enforced.** `KORTIX_ENFORCE_SESSION_AGENT_LOCK`
-  defaults off (`apps/api/src/config.ts:146-153`); a switched agent inherits
-  the boot agent's grant. The in-repo TODO says the correct fix is per-agent
-  re-mint. The hot-swap mechanism to inject a re-minted token without an
-  opencode restart **already exists** (`setConnectorProxyToken`,
+- **Agent switching is allowed, and identity follows the agent.** The proxy
+  re-mints the session token's `agent_grant` before every prompt from the
+  running agent's `[[agents]]` block (`remintGrantForAgentSwitch`), so a
+  switched agent never inherits the boot agent's grant. `project.agent.read` on
+  the target agent authorizes the switch; without it the proxy returns `403
+  AGENT_NOT_AUTHORIZED`. The hot-swap mechanism to inject a re-minted token
+  without an opencode restart **already exists** (`setConnectorProxyToken`,
   `apps/kortix-sandbox-agent-server/src/llm-proxy.ts`) — built for warm-fork
   restore, reusable for switch.
 - **Acting identity is user∩grant, not the agent**, unless the agent's
@@ -189,16 +191,16 @@ Closes the agent-switch hole and turns switching into a feature:
 
 - [ ] Mint the connector token per (session, **agent**) instead of per
       session.
-- [ ] On a prompt requesting a different declared agent: instead of 409,
-      re-mint a token for that agent's grant and hot-swap it into the
-      in-sandbox credential proxy (`setConnectorProxyToken` /
-      `setLlmProxyToken` — mechanism exists) before the prompt reaches tool
-      execution. Persist `project_sessions.agent_name`.
+- [x] On a prompt requesting a different declared agent: re-mint the session
+      token's `agent_grant` for that agent before the prompt reaches tool
+      execution (`remintGrantForAgentSwitch`). The 409 is deleted.
+- [ ] Persist `project_sessions.agent_name` on a switch. Nothing writes that
+      column today, so it stays the create-time agent.
 - [ ] Undeclared agent in a governed project → reject (existing
       default-deny / `AGENT_NOT_DECLARED` paths).
 - [ ] Revoke the previous agent's token on switch (one live identity token
       per sandbox at any moment).
-- [ ] Delete `KORTIX_ENFORCE_SESSION_AGENT_LOCK` (the lock becomes
+- [x] Delete `KORTIX_ENFORCE_SESSION_AGENT_LOCK` (the lock becomes
       unnecessary: switching is safe because identity follows the agent).
 - [ ] Flip the default acting identity: session tokens authorize as the
       agent's standing SA ∩ launching-user cap (today SA identity is opt-in
@@ -331,8 +333,15 @@ a manifest annotation away.
 
 1. One live identity token per sandbox at any moment, bound to
    (project, session, agent).
-2. Agent switch = new token minted for the target agent's grant before any
-   tool executes under it; the old token is revoked.
+2. Agent switch = the target agent's grant is applied before any tool executes
+   under it. SHIPPED as a re-mint of `account_tokens.agent_grant` on the live
+   token, not as a new token: `remintGrantForAgentSwitch` rewrites the grant row
+   per prompt, and the connector and Kortix-CLI gates read that row at call
+   time. The token VALUE is unchanged, so nothing is revoked.
+   Known limit: two concurrent prompts naming different agents on one session
+   race, and the last writer wins (`session-token-grant.ts:200-206`). One row
+   serves one box, so this needs a per-turn credential to close — which is what
+   minting a fresh token per switch would buy.
 3. An agent can never exceed the launching user's role (unchanged).
 4. The sandbox machine token never carries user identity and is never
    accepted as one (unchanged, now explicit).

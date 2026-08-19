@@ -96,6 +96,7 @@ import {
   getTriggerSchedulerHealth,
 } from './projects';
 import { startProjectMaintenance, stopProjectMaintenance } from './projects/maintenance';
+import { startActiveTurnRenewal, stopActiveTurnRenewal } from './projects/active-turn-renewal';
 import { kickStartupPreBuild } from './snapshots/builder';
 import { registerSunaMigrationRoutes } from './projects/suna-migration/suna-migration-routes';
 import { handleAppPublicRequest, resolveAppRequest } from './apps/public-proxy';
@@ -813,6 +814,18 @@ app.route('/v1/usage', usageApp); // GET /v1/usage[?start&end&group_by] — acco
 
 app.route('/v1/billing', billingApp); // /v1/billing/account-state, /v1/billing/webhooks/*
 app.route('/v1/account', accountDeletionApp); // account deletion status/request/cancel/immediate
+// Auth for the ONE platform route that needs an identity. Scoped to this exact
+// path, not `/v1/platform/*`: the mount point, `/sandbox/version` and the
+// github-app setup callbacks are deliberately unauthenticated and would break.
+//
+// Without this the route was unreachable. `auth` from openapi/index.ts is
+// `{ security: [{ bearerAuth: [] }] }` — OpenAPI METADATA, not middleware — so
+// `authType` was never set and the handler's `authType !== 'apiKey'` guard
+// returned 403 for every relay. The daemon fire-and-forgets this call, so it
+// failed silently and no in-guest boot timeline was ever recorded.
+// supabaseAuth is the middleware carrying the sandbox-token path allowlist
+// (middleware/auth.ts), which already lists `/boot-timeline`.
+app.use('/v1/platform/boot-timeline', supabaseAuth);
 app.route('/v1/platform', platformApp); // /v1/platform, /v1/platform/sandbox/version
 registerSunaMigrationRoutes(projectsApp); // /v1/projects/suna-migration/* (OG Suna → opencode, user-triggered)
 // Voice routes are registered BEFORE projectsApp: Hono matches in registration
@@ -1349,6 +1362,7 @@ let singletonWorkersRunning = false;
 async function startSingletonWorkers() {
   if (singletonWorkersRunning) return;
   singletonWorkersRunning = true;
+  startActiveTurnRenewal();
   startProjectMaintenance();
   startProjectTriggerScheduler();
   // Mint the global platform-default sandbox image once per leadership term so
@@ -1373,6 +1387,7 @@ async function startSingletonWorkers() {
 async function stopSingletonWorkers() {
   if (!singletonWorkersRunning) return;
   singletonWorkersRunning = false;
+  stopActiveTurnRenewal();
   stopProjectTriggerScheduler();
   stopProjectMaintenance();
   stopSunaMigrationWorker();

@@ -111,9 +111,11 @@ describe('kortix enums', () => {
     expect(sessionLifecycleCommandStatusEnum.enumValues).toContain('dead_lettered');
   });
 
-  test('project_role enum carries manager, editor, member, and the deprecated viewer', () => {
-    // `viewer` is retired (folded into `member`) but remains in the enum because
-    // Postgres can't drop an enum member — nothing reads or writes it.
+  test('project_role enum keeps the retired `editor` and `viewer` values it cannot drop', () => {
+    // Only `manager` and `member` are assignable. `viewer` folds into `member`
+    // and `editor` folds into `manager` (removed 2026-08-18, rows rewritten by
+    // 20260818120000000_project_role_editor_to_manager). Both remain in the
+    // enum because Postgres can't drop an enum member — nothing writes either.
     expect(projectRoleEnum.enumValues).toEqual(['manager', 'editor', 'member', 'viewer']);
   });
 
@@ -349,19 +351,19 @@ describe('Kortix Apps schema', () => {
   });
 });
 
-describe('warm project session uniqueness', () => {
-  test('allows one available warm session per project and creator', () => {
+describe('warm project sessions', () => {
+  // `idx_project_sessions_one_available_warm` used to arbitrate a warm-session
+  // create race. A warm session is now an ordinary session and a duplicate costs
+  // one extra box, bounded by the reserved concurrent-session slot, so the index
+  // was dropped (migrations/20260813203000000_drop_one_available_warm_index).
+  // Re-declaring it would make `db:generate` emit a CREATE against a dropped
+  // index, so the schema must stay free of it.
+  test('declares no partial unique index on the warm marker', () => {
     const index = getTableConfig(projectSessions).indexes.find(
       (candidate) => candidate.config.name === 'idx_project_sessions_one_available_warm',
     );
 
-    expect(index).toBeDefined();
-    expect(index?.config.unique).toBe(true);
-    expect(index?.config.columns.map((column: any) => column.name)).toEqual([
-      'project_id',
-      'created_by',
-    ]);
-    expect(index?.config.where).toBeDefined();
+    expect(index).toBeUndefined();
   });
 });
 

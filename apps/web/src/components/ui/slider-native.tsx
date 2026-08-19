@@ -6,6 +6,13 @@ import * as React from 'react';
 import Hint from '@/components/ui/hint';
 import { cn } from '@/lib/utils';
 
+const thumb = (
+  <SliderPrimitive.Thumb
+    data-slot="slider-thumb"
+    className="border-ring ring-ring/50 hit-area-4 relative block size-3.5 shrink-0 rounded-full border bg-white transition-[color,box-shadow] select-none after:absolute after:-inset-2 hover:ring-3 focus-visible:ring-3 focus-visible:outline-hidden active:ring-3 disabled:pointer-events-none disabled:opacity-50"
+  />
+);
+
 function NativeSlider({
   className,
   defaultValue,
@@ -46,12 +53,6 @@ function NativeSlider({
         />
       </SliderPrimitive.Track>
       {Array.from({ length: _values.length }, (_, index) => {
-        const thumb = (
-          <SliderPrimitive.Thumb
-            data-slot="slider-thumb"
-            className="border-ring ring-ring/50 hit-area-4 relative block size-3.5 shrink-0 rounded-full border bg-white transition-[color,box-shadow] select-none after:absolute after:-inset-2 hover:ring-3 focus-visible:ring-3 focus-visible:outline-hidden active:ring-3 disabled:pointer-events-none disabled:opacity-50"
-          />
-        );
         if (tooltip == null) return <React.Fragment key={index}>{thumb}</React.Fragment>;
         return (
           <Hint key={index} side="top" label={tooltip}>

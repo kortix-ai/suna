@@ -1,5 +1,5 @@
-import { describe, expect, test } from 'bun:test';
 import type { FilePart } from '@/ui';
+import { describe, expect, test } from 'bun:test';
 
 import { normalizeAttachments } from './user-message';
 
@@ -17,7 +17,10 @@ const upload = (path: string, mime: string, filename: string) => ({ path, mime, 
 
 describe('normalizeAttachments', () => {
   test('an upload survives normalization — it used to be dropped entirely', () => {
-    const result = normalizeAttachments([], [upload('/workspace/data.csv', 'text/csv', 'data.csv')]);
+    const result = normalizeAttachments(
+      [],
+      [upload('/workspace/data.csv', 'text/csv', 'data.csv')],
+    );
 
     expect(result).toHaveLength(1);
     expect(result[0].filename).toBe('data.csv');
@@ -61,6 +64,45 @@ describe('normalizeAttachments', () => {
     );
 
     expect(new Set(result.map((f) => f.key)).size).toBe(2);
+  });
+
+  test('two uploads with the SAME path still get different keys', () => {
+    // Paste three screenshots and the clipboard names them all `image.png`
+    // (clipboard-files.ts). Keyed by path alone, that was three identical
+    // `upload:/workspace/uploads/image.png` keys and React kept one tile.
+    const result = normalizeAttachments(
+      [],
+      [
+        upload('/workspace/uploads/image.png', 'image/png', 'image.png'),
+        upload('/workspace/uploads/image.png', 'image/png', 'image.png'),
+        upload('/workspace/uploads/image.png', 'image/png', 'image.png'),
+      ],
+    );
+
+    expect(result).toHaveLength(3);
+    expect(new Set(result.map((f) => f.key)).size).toBe(3);
+  });
+
+  test('an in-flight upload is keyed by its id and renders as pending', () => {
+    // An optimistic ref has no path at all — the daemon has not answered yet —
+    // so the tile must not try to resolve one.
+    const result = normalizeAttachments(
+      [],
+      [
+        { path: '', mime: 'image/png', filename: 'image.png', pending: 'upl_0' },
+        { path: '', mime: 'image/png', filename: 'image.png', pending: 'upl_1' },
+      ],
+    );
+
+    expect(new Set(result.map((f) => f.key)).size).toBe(2);
+    expect(result.every((f) => f.pending)).toBe(true);
+    expect(result.every((f) => f.src === undefined && f.path === undefined)).toBe(true);
+    expect(result.map((f) => f.filename)).toEqual(['image.png', 'image.png']);
+  });
+
+  test('a landed upload is not pending', () => {
+    const [file] = normalizeAttachments([], [upload('/workspace/a.png', 'image/png', 'a.png')]);
+    expect(file.pending).toBe(false);
   });
 
   test('a nameless upload falls back to the basename of its path', () => {

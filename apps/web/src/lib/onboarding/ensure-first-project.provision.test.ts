@@ -178,9 +178,8 @@ describe('isProvisionInFlightError', () => {
  *
  * The persisted idempotency key lives in `localStorage`, which bun's test
  * runner does not provide by default. Each test installs an in-memory fake
- * directly on `globalThis` (same pattern as
- * src/stores/message-queue-store.test.ts) and removes it afterward so it
- * cannot leak into other test files in the same process.
+ * directly on `globalThis` and removes it afterward so it cannot leak into
+ * other test files in the same process.
  */
 describe('ensureFirstProject retry safety with an injected client (Task 6)', () => {
   const ACCOUNT = 'acct_retry';

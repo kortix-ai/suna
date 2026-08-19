@@ -4,6 +4,10 @@ import '@/lib/kortix-config'; // configure @kortix/sdk before any data-layer cal
 import { useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
+import {
+  errorMessageOf,
+  isDeliveredButDisconnected,
+} from '@/lib/delivered-but-disconnected';
 import { handleApiError } from '@/lib/error-handler';
 import { registerQueryClient } from '@/lib/query-client-singleton';
 
@@ -78,6 +82,21 @@ export function ReactQueryProvider({ children }: { children: React.ReactNode }) 
               // is just noise during the boot window. Suppress it.
               const msg = typeof error?.message === 'string' ? error.message : '';
               if (/opencode not ready/i.test(msg)) {
+                return;
+              }
+              // A prompt that REACHED the agent and then lost its connection is
+              // not a failed action, and this handler is the reason a caller
+              // cannot suppress it alone: `mutations.onError` fires for every
+              // mutation regardless of what the `mutateAsync` call site catches.
+              // `session-chat.tsx` already treats this case as "running, watch
+              // SSE" — without the same rule here the user still gets a toast
+              // saying the send failed while the answer streams in behind it.
+              //
+              // Measured: `POST /session/:id/command` answers 502
+              // `{"error":"upstream unreachable"}` at 10.2s (the sandbox
+              // daemon's header bound) while the turn itself completes normally
+              // ~6s later. See `delivered-but-disconnected.ts`.
+              if (isDeliveredButDisconnected(errorMessageOf(error))) {
                 return;
               }
               handleApiError(error, {

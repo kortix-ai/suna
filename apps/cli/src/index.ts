@@ -38,6 +38,7 @@ import { runValidate } from './commands/validate.ts';
 import { runWhoami } from './commands/whoami.ts';
 import { runDoctor } from './commands/doctor.ts';
 import { renderContext, renderHostNotice } from './host-notice.ts';
+import { printPermissionDenialIdentity } from './token-denial.ts';
 import { C, header, pad, rule, visibleWidth } from './style.ts';
 import { confirm } from './prompts.ts';
 import {
@@ -696,6 +697,12 @@ function finish(code: number): void {
 }
 
 main(process.argv.slice(2))
+  // A refused call names the action, never the identity. Answer that here —
+  // once, after the command's own output, and only when something was refused.
+  .then(async (code) => {
+    await printPermissionDenialIdentity();
+    return code;
+  })
   .then((code) => finish(code))
   .catch((err: unknown) => {
     const msg = err instanceof Error ? err.message : String(err);

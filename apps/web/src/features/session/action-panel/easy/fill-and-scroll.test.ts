@@ -79,7 +79,12 @@ describe('the column owns a real height to divide', () => {
   });
 
   test('the card column is a full-height flex column that may shrink', () => {
-    expect(easyPanel).toContain('flex h-full min-h-0 flex-col gap-3');
+    // The four classes this names are the whole contract: `flex h-full` takes
+    // the height, `min-h-0` is what lets it shrink at all, `flex-col` stacks
+    // the cards. The gap between them is spacing, not structure — pinning it
+    // here made #6475 red for tightening `gap-3` to `gap-2`, a change this
+    // test has no opinion about.
+    expect(easyPanel).toContain('flex h-full min-h-0 flex-col');
   });
 });
 

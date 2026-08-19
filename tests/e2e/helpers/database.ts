@@ -12,7 +12,7 @@ interface SeedProjectOptions {
   userId: string;
   name: string;
   repoUrl?: string;
-  projectRole?: "manager" | "editor" | "member";
+  projectRole?: "manager" | "member";
 }
 
 export async function runDatabaseSql(
@@ -45,7 +45,7 @@ export async function seedDatabaseProject({
   userId,
   name,
   repoUrl,
-  projectRole = "editor",
+  projectRole = "manager",
 }: SeedProjectOptions): Promise<string> {
   const projectId = randomUUID();
   const projectRepoUrl =

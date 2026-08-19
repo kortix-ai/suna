@@ -1,6 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 import { Hono } from 'hono';
 
+import {
+  PROXY_HOP_HEADER,
+  PROXY_UPSTREAM_STATUS_HEADER,
+} from '../sandbox-proxy/proxy-hop';
+import { portUnreachableResponse } from '../sandbox-proxy/routes/preview';
 import { createCorsMiddleware } from './cors';
 
 describe('createCorsMiddleware', () => {
@@ -57,6 +62,42 @@ describe('createCorsMiddleware', () => {
     const allowed = response.headers.get('access-control-allow-headers')?.toLowerCase() ?? '';
     expect(allowed).toContain('x-kortix-impersonate');
     expect(allowed).toContain('x-kortix-admin-bypass');
+  });
+
+  // The proxy attributes a failure with `X-Kortix-Proxy-Hop`, and the health
+  // probe that reads it is ALWAYS cross-origin (dev.kortix.com →
+  // dev-api.kortix.com). A response header the browser does not expose is
+  // invisible to JS, so the probe reads null and is back to guessing.
+  //
+  // `portUnreachableResponse` sets `Access-Control-Expose-Headers` itself, but
+  // this middleware is mounted on the SAME app (`index.ts` `app.use('*', …)`)
+  // and Hono's `Context.res` setter copies the middleware's headers onto the
+  // handler's response with `.set()` — the middleware value WINS. The only
+  // place that makes the header readable in the deployed app is this list, so
+  // the test drives the real middleware over the real handler.
+  test('the proxy-hop headers are exposed to a cross-origin probe through the mounted middleware', async () => {
+    const app = new Hono();
+    app.use('*', createCorsMiddleware({ internalEnvironment: 'dev', extraOrigins: [] }));
+    app.get('/v1/p/box/8000/kortix/health', () =>
+      portUnreachableResponse({
+        port: 8000,
+        status: 502,
+        origin: 'https://dev.kortix.com',
+        incomingHeaders: new Headers({ accept: 'application/json' }),
+        reason: 'sandbox upstream unreachable',
+        hop: 'daemon',
+        upstreamStatus: 502,
+      }),
+    );
+
+    const response = await app.request('/v1/p/box/8000/kortix/health', {
+      headers: { Origin: 'https://dev.kortix.com', accept: 'application/json' },
+    });
+
+    const exposed = response.headers.get('access-control-expose-headers')?.toLowerCase() ?? '';
+    expect(exposed).toContain(PROXY_HOP_HEADER.toLowerCase());
+    expect(exposed).toContain(PROXY_UPSTREAM_STATUS_HEADER.toLowerCase());
+    expect(response.headers.get(PROXY_HOP_HEADER)).toBe('daemon');
   });
 
   test('an unknown production origin receives no CORS authorization', async () => {

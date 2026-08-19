@@ -44,7 +44,7 @@ function row(
 const subject = { userId: VIEWER_ID, groupIds: [] };
 
 describe('selectSessionRowsForViewer', () => {
-  test('manager project scope includes inaccessible, unavailable, and soft-deleted rows', () => {
+  test('manager project scope hides inaccessible rows and keeps accessible unavailable and soft-deleted rows', () => {
     const privateOther = row('private-other', { createdBy: OTHER_ID });
     const stoppedWithoutRuntime = row('stopped-lost', { status: 'stopped' });
     const deleted = row('deleted', {
@@ -67,19 +67,14 @@ describe('selectSessionRowsForViewer', () => {
 
     expect(selected.authorized).toBe(true);
     expect(selected.items.map((item) => item.row.sessionId)).toEqual([
-      'private-other',
       'stopped-lost',
       'deleted',
     ]);
     expect(selected.items[0]).toMatchObject({
-      canAccess: false,
-      runtimeStatus: null,
-    });
-    expect(selected.items[1]).toMatchObject({
       canAccess: true,
       runtimeStatus: null,
     });
-    expect(selected.items[2]).toMatchObject({
+    expect(selected.items[1]).toMatchObject({
       canAccess: true,
       deletedAt: '2026-07-20T10:00:00.000Z',
       deletedBy: VIEWER_ID,
@@ -98,6 +93,53 @@ describe('selectSessionRowsForViewer', () => {
     });
 
     expect(selected).toEqual({ authorized: false, items: [] });
+  });
+
+  test('manager inventory includes trigger-created private rows and hides ordinary private rows', () => {
+    const selected = selectSessionRowsForViewer({
+      rows: [
+        row('trigger-private', {
+          createdBy: OTHER_ID,
+          metadata: {
+            source: 'trigger:scheduler',
+            trigger_kind: 'git',
+            trigger_slug: 'daily-review',
+          },
+        }),
+        row('human-private', { createdBy: OTHER_ID, metadata: {} }),
+      ],
+      scope: 'project',
+      canManageProject: true,
+      subject,
+      grantsBySession: new Map(),
+      callerSessionId: null,
+      runtimeStatusBySession: new Map(),
+    });
+
+    expect(selected.items.map(({ row: item, canAccess }) => [item.sessionId, canAccess])).toEqual([
+      ['trigger-private', true],
+    ]);
+  });
+
+  test('ordinary members still cannot access trigger-created private rows', () => {
+    const selected = selectSessionRowsForViewer({
+      rows: [row('trigger-private', {
+        createdBy: OTHER_ID,
+        metadata: {
+          source: 'trigger:scheduler',
+          trigger_kind: 'git',
+          trigger_slug: 'daily-review',
+        },
+      })],
+      scope: 'visible',
+      canManageProject: false,
+      subject,
+      grantsBySession: new Map(),
+      callerSessionId: null,
+      runtimeStatusBySession: new Map(),
+    });
+
+    expect(selected.items).toEqual([]);
   });
 
   test('visible scope preserves the existing visibility and resumability filters', () => {
@@ -123,6 +165,85 @@ describe('selectSessionRowsForViewer', () => {
     expect(selected.items.map((item) => item.row.sessionId)).toEqual([
       'own',
       'stopped-resumable',
+    ]);
+  });
+});
+
+/**
+ * The project shell pre-creates a warm session on mount so the sandbox is
+ * already up when the user finishes typing. Until its first prompt lands it
+ * holds no user work, so the sidebar must not show a session the user never
+ * started. ONE marker carries that — see projects/lib/warm-sessions.ts.
+ */
+describe('selectSessionRowsForViewer — warm sessions', () => {
+  function visible(rows: Array<typeof projectSessions.$inferSelect>) {
+    return selectSessionRowsForViewer({
+      rows,
+      scope: 'visible',
+      canManageProject: false,
+      subject,
+      grantsBySession: new Map(),
+      callerSessionId: null,
+      runtimeStatusBySession: new Map(),
+    }).items.map((item) => item.row.sessionId);
+  }
+
+  test('visible scope hides a warm session', () => {
+    expect(visible([row('own'), row('warm', { metadata: { warm: true } })])).toEqual(['own']);
+  });
+
+  test('a used session lists like any other — the first prompt drops the marker', () => {
+    expect(visible([row('used-warm', { metadata: {} })])).toEqual(['used-warm']);
+  });
+
+  // The reaper flips `project_sessions.status` to stopped and leaves the marker
+  // in place. That row must not surface through the resumable-stopped branch.
+  test('a reaped warm session stays hidden even though it looks resumable', () => {
+    const selected = selectSessionRowsForViewer({
+      rows: [row('reaped-warm', { status: 'stopped', metadata: { warm: true } })],
+      scope: 'visible',
+      canManageProject: false,
+      subject,
+      grantsBySession: new Map(),
+      callerSessionId: null,
+      runtimeStatusBySession: new Map([['reaped-warm', 'stopped']]),
+    });
+
+    expect(selected.items).toEqual([]);
+  });
+
+  // A manager auditing the project must see every session, warm ones included:
+  // they are real rows holding a real sandbox.
+  test('project scope keeps the warm session', () => {
+    const selected = selectSessionRowsForViewer({
+      rows: [row('own'), row('warm', { metadata: { warm: true } })],
+      scope: 'project',
+      canManageProject: true,
+      subject,
+      grantsBySession: new Map(),
+      callerSessionId: null,
+      runtimeStatusBySession: new Map(),
+    });
+
+    expect(selected.items.map((item) => item.row.sessionId)).toEqual(['own', 'warm']);
+  });
+
+  test('a malformed warm marker never hides a real session', () => {
+    const rows = [
+      row('no-metadata', { metadata: null }),
+      row('empty', { metadata: {} }),
+      row('string-marker', { metadata: { warm: 'true' } }),
+      row('array-marker', { metadata: { warm: [true] } }),
+      row('object-marker', { metadata: { warm: { state: 'available' } } }),
+      row('legacy-marker', { metadata: { warm_session: { state: 'available' } } }),
+    ];
+    expect(visible(rows)).toEqual([
+      'no-metadata',
+      'empty',
+      'string-marker',
+      'array-marker',
+      'object-marker',
+      'legacy-marker',
     ]);
   });
 });

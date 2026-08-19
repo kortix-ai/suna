@@ -102,7 +102,16 @@ export function EditTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
           {/* Morph's instructions describe the edit the card below carries, so
               they share its indent rather than sitting flush with the row. */}
           {morphInstructions && (
-            <div className={cn('text-muted-foreground mt-1.5 text-xs italic', indent)}>
+            // `mb-1.5` carries the gap to the card BELOW, which no longer draws
+            // a top margin on the panel. Inline the two collapse to the same
+            // 6px this line has always had under it.
+            <div
+              className={cn(
+                'text-muted-foreground mb-1.5 text-xs italic',
+                indent && 'mt-1.5',
+                indent,
+              )}
+            >
               {morphInstructions}
             </div>
           )}

@@ -42,7 +42,7 @@ import { agentMayPerform } from './agent-scope';
 import { registerPrincipalScopedMemo } from './cache-invalidation';
 import {
   filterAccessibleResourceIds,
-  isResourceAccessible,
+  isProjectResourceUsableByMember,
   loadProjectResourceGrants,
 } from './resource-grants';
 import type {
@@ -626,13 +626,21 @@ export async function authorizeV2(
     return { allowed: false, reason: 'project_role_insufficient' };
   }
 
-  // PER-RESOURCE SCOPING (human members only). When the action targets a
+  // PER-RESOURCE SCOPING (member-tier humans only). When the action targets a
   // SPECIFIC agent/skill (target.resource set), intersect the verdict with
-  // iam_resource_grants: if that resource is scoped (>=1 grant row), the member
-  // must be in the granted set (themselves or one of their groups). Unscoped
-  // resources stay project-wide — so this never locks anyone out of a resource
-  // nobody scoped. Owner/admins keep implicit Manager and bypass; service
-  // accounts are governed by their own policies + agentGrant, not this fold.
+  // iam_resource_grants. `isProjectResourceUsableByMember` owns the open-vs-
+  // closed policy per resource type: AGENTS are deny-by-default (an explicit
+  // grant is required), skills and secrets stay project-wide when unscoped.
+  //
+  // WHO BYPASSES ENTIRELY: only account owner/admins (implicit Manager) and
+  // service accounts. A project `manager` still goes THROUGH the fold — an
+  // explicit grant restricts them exactly as it restricts a member, which is
+  // what makes "scope this agent to the finance group" mean anything. What the
+  // manager tier buys is the UNSCOPED default: open for a manager, closed for a
+  // member. Without that distinction, turning agents deny-by-default would lock
+  // a project manager who has created no grants yet out of the agents they
+  // administer.
+  const managerTier = effective !== null && projectRoleAllows(effective, 'project.write');
   if (
     effectiveTarget.type === 'project' &&
     effectiveTarget.resource &&
@@ -640,7 +648,15 @@ export async function authorizeV2(
     !implicitProjectRoleForAccount(actor.accountRole ?? 'member')
   ) {
     const grants = await loadProjectResourceGrants(effectiveTarget.id, effectiveTarget.resource.type);
-    if (!isResourceAccessible(grants.get(effectiveTarget.resource.id), userId, actor.groupIds)) {
+    if (
+      !isProjectResourceUsableByMember(
+        effectiveTarget.resource.type,
+        grants.get(effectiveTarget.resource.id),
+        userId,
+        actor.groupIds,
+        managerTier,
+      )
+    ) {
       return { allowed: false, reason: 'resource_scope_insufficient' };
     }
   }
@@ -685,7 +701,20 @@ export async function filterAccessibleProjectResources(
   // owner/admins keep implicit Manager — both see the full list.
   if (actor.kind !== 'member') return resourceIds;
   if (implicitProjectRoleForAccount(actor.accountRole ?? 'member')) return resourceIds;
-  return filterAccessibleResourceIds(projectId, resourceType, resourceIds, userId, actor.groupIds);
+  // Same tier question authorizeV2's fold asks, resolved the same way: a
+  // project `manager` still has explicitly-scoped agents filtered OUT of their
+  // list, but keeps the unscoped ones — otherwise the Customize UI they own
+  // renders empty. One memoized role lookup.
+  const effective = await loadEffectiveProjectRole(actor, userId, projectId);
+  const managerTier = effective !== null && projectRoleAllows(effective, 'project.write');
+  return filterAccessibleResourceIds(
+    projectId,
+    resourceType,
+    resourceIds,
+    userId,
+    actor.groupIds,
+    managerTier,
+  );
 }
 
 // ─── List accessible resources ─────────────────────────────────────────────

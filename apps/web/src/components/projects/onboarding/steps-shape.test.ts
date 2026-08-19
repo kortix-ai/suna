@@ -17,20 +17,6 @@ const tools = step('tools-step.tsx');
 const plan = step('plan-step.tsx');
 const slack = step('slack-step.tsx');
 const company = step('company-step.tsx');
-const useCase = step('use-case-step.tsx');
-
-describe('use-case step', () => {
-  test('uses selection semantics for its single survey answer', () => {
-    expect(useCase).toContain('<SelectionRow');
-  });
-
-  // Icons make the seven options scannable; SelectionRow already owns the slot.
-  test('gives every use case a phosphor leading icon', () => {
-    expect(useCase).toContain('@phosphor-icons/react');
-    expect(useCase).toContain('USE_CASE_ICONS');
-    expect(useCase).toContain('leading=');
-  });
-});
 
 describe('tools step', () => {
   test('uses a vertical list, not a tile grid', () => {
@@ -133,12 +119,6 @@ describe('company step', () => {
     expect(company).toContain('GlobeIcon');
   });
 
-  // Two separate questions on one screen must read as two, not as a form.
-  test('separates the two questions properly', () => {
-    expect(company).toContain('space-y-8');
-    expect(company).not.toContain('space-y-10');
-  });
-
   // Invalid non-empty domain shakes the whole InputGroup, not just the input.
   test('wires domain validation into a group-level shake', () => {
     expect(company).toContain('isValidCompanyHttpLink');
@@ -159,7 +139,7 @@ describe('plan step', () => {
    * when nobody tells it which project to act on, and `/new` (`app/(app)/new`)
    * has no such segment — so an inferred project is `null`, `modal` is `null`,
    * and "Add a key" opens nothing while never calling `onContinue()`. This step
-   * is 5 of 6 and passes no `onSkip` to `StepShell`, so its primary button is
+   * is 4 of 5 and passes no `onSkip` to `StepShell`, so its primary button is
    * the only control: an inferred id strands the user mid-wizard.
    */
   test('tells the gate which project it is acting on instead of letting it infer the route', () => {

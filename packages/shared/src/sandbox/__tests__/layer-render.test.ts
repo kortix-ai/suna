@@ -331,7 +331,12 @@ describe('the entrypoint survives providers that discard image USER/ENV', () => 
     expect(entrypoint).toContain(`KORTIX_PATH="${KORTIX_USER_PATH_DIRS}"`);
     expect(entrypoint).toContain('export HOME=/home/kortix USER=kortix LOGNAME=kortix');
     expect(entrypoint).toContain('setpriv --reuid kortix --regid kortix --init-groups');
-    expect(entrypoint).toContain('sudo -u kortix --');
+    // -E, because sudo's default env_reset drops every KORTIX_* var and the
+    // daemon would come up with no session identity while still passing its
+    // health check. Verified against this image's own sudoers line
+    // ('kortix ALL=(ALL) NOPASSWD:ALL'): as root, -E is accepted without a
+    // SETENV tag, and without it the token arrives empty.
+    expect(entrypoint).toContain('sudo -E -u kortix --');
   });
 
   test('entrypoint PATH dirs cannot drift from the toolchain ENV PATH', () => {

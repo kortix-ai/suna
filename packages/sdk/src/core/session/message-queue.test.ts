@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
+import * as messageQueue from './message-queue';
 import {
   claimNext,
   completeInFlight,
@@ -10,6 +11,7 @@ import {
   removeQueued,
   reorderQueued,
   retryFailed,
+  type QueuedMessageInput,
   type SessionQueue,
 } from './message-queue';
 
@@ -27,18 +29,71 @@ function queueOf(...ids: string[]): SessionQueue {
   return ids.reduce((state, id) => enqueue(state, item(id)), createSessionQueue());
 }
 
+/** A queue built from full inputs, for the agent/model/variant cases. */
+function queueOfInputs(...inputs: QueuedMessageInput[]): SessionQueue {
+  return inputs.reduce((state, input) => enqueue(state, input), createSessionQueue());
+}
+
+/**
+ * THE contract of a deprecated published subpath: the names that shipped, and
+ * nothing else.
+ *
+ * `@kortix/sdk/message-queue` is on npm as of 0.12.8, so this module cannot be
+ * deleted with the browser queue it used to drive — an external consumer's
+ * import must keep resolving. What it CAN do is stop growing: `claimBatch` and
+ * `inFlightIdsOf` were added after 0.12.8, are absent from the published
+ * `.d.ts`, and belonged to the batch drain that Kortix no longer has.
+ */
+const PUBLISHED_0_12_8 = [
+  'claimNext',
+  'completeInFlight',
+  'createSessionQueue',
+  'editQueued',
+  'enqueue',
+  'failInFlight',
+  'removeQueued',
+  'reorderQueued',
+  'retryFailed',
+] as const;
+
+describe('the 0.12.8 deprecation shim', () => {
+  test('exports exactly what 0.12.8 published, and nothing added since', () => {
+    expect(Object.keys(messageQueue).sort()).toEqual([...PUBLISHED_0_12_8].sort());
+  });
+
+  test('says it is deprecated, in the banner every consumer reads first', async () => {
+    const source = Bun.file(new URL('./message-queue.ts', import.meta.url).pathname);
+    // The header only. A `@deprecated` note buried 300 lines down is not a
+    // banner, and slicing keeps a failure readable instead of dumping the file.
+    const header = (await source.text()).slice(0, 1200);
+
+    expect(header).toContain('@deprecated');
+    // The replacement has to be NAMED, or the banner is only an insult.
+    expect(header).toContain('/prompts');
+  });
+});
+
 describe('createSessionQueue', () => {
   test('starts empty with nothing in flight', () => {
-    expect(createSessionQueue()).toEqual({ pending: [], failed: [], inFlightId: null });
+    expect(createSessionQueue()).toEqual({
+      pending: [],
+      failed: [],
+      inFlightId: null,
+      inFlightIds: [],
+    });
   });
 });
 
 describe('enqueue', () => {
-  test('appends in order', () => {
-    expect(queueOf('a', 'b', 'c').pending.map((m) => m.id)).toEqual(['a', 'b', 'c']);
+  test('appends to the tail', () => {
+    const queue = queueOf('a', 'b');
+
+    expect(queue.pending.map((m) => m.id)).toEqual(['a', 'b']);
   });
 
-  test('appends to the tail while an item is in flight — never jumps the line', () => {
+  test('appends even while something is in flight', () => {
+    // Never at the head. Jumping the line is an explicit user action, not a
+    // side effect of timing.
     const claimed = claimNext(queueOf('a')).state;
     const next = enqueue(claimed, item('b'));
 
@@ -46,30 +101,29 @@ describe('enqueue', () => {
     expect(next.inFlightId).toBe('a');
   });
 
-  test('preserves agent, model and variant verbatim', () => {
-    const model = { providerID: 'anthropic', modelID: 'claude-opus-5' };
-    const next = enqueue(createSessionQueue(), {
-      ...item('a'),
-      agent: 'build',
-      model,
-      variant: 'thinking',
-    });
-
-    expect(next.pending[0].agent).toBe('build');
-    expect(next.pending[0].model).toEqual(model);
-    expect(next.pending[0].variant).toBe('thinking');
-  });
-
-  test('starts an item at zero attempts', () => {
+  test('starts at zero attempts', () => {
     expect(queueOf('a').pending[0].attempts).toBe(0);
   });
 
-  test('does not mutate the input state', () => {
-    const before = queueOf('a');
-    const snapshot = structuredClone(before);
-    enqueue(before, item('b'));
+  test('carries agent, model and variant verbatim', () => {
+    const input: QueuedMessageInput = {
+      ...item('a'),
+      agent: 'build',
+      model: { providerID: 'anthropic', modelID: 'claude' },
+      variant: 'thinking',
+    };
+    const queue = enqueue(createSessionQueue(), input);
 
-    expect(before).toEqual(snapshot);
+    expect(queue.pending[0].agent).toBe('build');
+    expect(queue.pending[0].model).toEqual({ providerID: 'anthropic', modelID: 'claude' });
+    expect(queue.pending[0].variant).toBe('thinking');
+  });
+
+  test('does not mutate the input state', () => {
+    const before = createSessionQueue();
+    enqueue(before, item('a'));
+
+    expect(before.pending).toEqual([]);
   });
 });
 
@@ -79,14 +133,14 @@ describe('claimNext', () => {
 
     expect(claimed?.id).toBe('a');
     expect(state.inFlightId).toBe('a');
+    expect(state.inFlightIds).toEqual(['a']);
     // The claimed item stays visible at the head until it completes or fails.
     expect(state.pending.map((m) => m.id)).toEqual(['a', 'b']);
   });
 
   test('a second claim on the returned state claims nothing', () => {
     // The whole point: two drains entering the same tick send one message,
-    // not two. The current inline queue guards with a ref written by a later
-    // effect, so it reads one commit stale and can double-send.
+    // not two.
     const first = claimNext(queueOf('a', 'b'));
     const second = claimNext(first.state);
 
@@ -105,6 +159,15 @@ describe('claimNext', () => {
     expect(claimNext(queueOf('a')).claimed?.attempts).toBe(1);
   });
 
+  test('honours a state that predates `inFlightIds`', () => {
+    // A consumer that persisted the older shape rehydrates without the field.
+    // Reading `?? []` instead would unlock a message that is on the wire.
+    const legacy: SessionQueue = { ...queueOf('a', 'b'), inFlightId: 'a', inFlightIds: undefined };
+
+    expect(claimNext(legacy).claimed).toBeUndefined();
+    expect(removeQueued(legacy, 'a')).toBe(legacy);
+  });
+
   test('does not mutate the input state', () => {
     const before = queueOf('a');
     const snapshot = structuredClone(before);
@@ -120,7 +183,15 @@ describe('completeInFlight', () => {
 
     expect(next.pending.map((m) => m.id)).toEqual(['b']);
     expect(next.inFlightId).toBeNull();
+    expect(next.inFlightIds).toEqual([]);
     expect(next.failed).toEqual([]);
+  });
+
+  test('leaves a message queued after the head was claimed', () => {
+    const claimed = claimNext(queueOf('a', 'b')).state;
+    const next = completeInFlight(enqueue(claimed, item('c')));
+
+    expect(next.pending.map((m) => m.id)).toEqual(['b', 'c']);
   });
 
   test('is a no-op when nothing is in flight', () => {
@@ -140,6 +211,7 @@ describe('failInFlight', () => {
     expect(failed.failed.map((m) => m.id)).toEqual(['a']);
     expect(failed.failed[0].lastError).toBe('network down');
     expect(failed.inFlightId).toBeNull();
+    expect(failed.inFlightIds).toEqual([]);
 
     const { claimed } = claimNext(failed);
     expect(claimed?.id).toBe('b');
@@ -257,5 +329,13 @@ describe('reorderQueued', () => {
     reorderQueued(before, 'c', 0);
 
     expect(before).toEqual(snapshot);
+  });
+});
+
+describe('queueOfInputs is exercised', () => {
+  test('a queue built from full inputs claims its head', () => {
+    const queue = queueOfInputs({ ...item('a') }, { ...item('b'), agent: 'plan' });
+
+    expect(claimNext(queue).claimed?.id).toBe('a');
   });
 });

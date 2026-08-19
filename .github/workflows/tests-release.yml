@@ -20,11 +20,13 @@ jobs:
     # the early REST flows), then the post-test secret-guard/upload steps push
     # the job past 45m. The old 20-min cap killed it at ~316/433 EVERY release
     # (v0.12.7 and v0.12.8 both cancelled, not failed) — the gate was
-    # structurally un-passable. Lanes run concurrently (~47m); every client now
-    # retries the transient laundered-503 so session-create contention self-heals
-    # rather than needing serialization. 65m gives headroom for retry overhead.
-    # Follow-up: shard the runner (matrix over flow domains + browser).
-    timeout-minutes: 65
+    # structurally un-passable. Lanes run concurrently; every client retries the
+    # transient laundered-503 (session-create self-heals). Once the Vercel-SSO
+    # bypass let the browser lane actually run, the full suite is ~65-75m real
+    # (the flow lane alone is ~60m), so the cap is 90m. Staging's JWT lifetime
+    # was raised to 2h (was 1h) so a >60m run no longer expires its tokens.
+    # Follow-up: shard the runner (flow + browser as parallel jobs) to cut this.
+    timeout-minutes: 90
     env:
       KE2E_API_URL: ${{ vars.QA_API_BASE_URL || 'https://staging-api.kortix.com/v1' }}
       E2E_BASE_URL: ${{ vars.QA_WEB_BASE_URL || 'https://staging.kortix.com' }}
@@ -43,6 +45,12 @@ jobs:
       E2E_AGENTMAIL_API_KEY: ${{ secrets.E2E_AGENTMAIL_API_KEY }}
       KE2E_CAP_MANAGED_GIT_PUSH: ${{ vars.KE2E_CAP_MANAGED_GIT_PUSH || '0' }}
       WEB_PROTECTION_PASSWORD: ${{ secrets.WEB_PROTECTION_PASSWORD }}
+      # Staging is behind Vercel SSO deployment protection; the browser lane must
+      # send x-vercel-protection-bypass (playwright.config) or every authenticated
+      # page 302s to vercel.com/sso-api. This env was missing when tests-release
+      # replaced the old qa-release gate, so the browser lane could never reach
+      # the app.
+      VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
     steps:
       - uses: actions/checkout@v7
       - name: Require the deployed staging source SHA

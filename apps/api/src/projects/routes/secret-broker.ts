@@ -11,11 +11,17 @@ import {
   executeSecretBrokerRequest,
   SecretBrokerError,
 } from '../../secrets/http-broker';
+import { networkBoundaryPolicyError } from '../../secrets/network-boundary';
 import { resolveSecretDelivery } from '../../secrets/strategy';
 import { recordAuditEvent } from '../../shared/audit';
 import { db } from '../../shared/db';
 import { decryptProjectSecret, intersectSecretGrants } from '../secrets';
+import { config } from '../../config';
 import { loadProjectForUser } from '../lib/access';
+import {
+  requestEgressIp,
+  verifySandboxEgressIp,
+} from '../../platform/services/sandbox-egress-pin';
 import { projectsApp } from '../lib/app';
 import { ACTIVE_SESSION_STATUSES } from '../lib/session-status';
 import { readBody } from '../lib/serializers';
@@ -56,6 +62,35 @@ projectsApp.openapi(
         {
           error: 'Secret broker requests require a session-scoped agent token',
           code: 'session_agent_token_required',
+        },
+        403,
+      );
+    }
+
+    // Is this request coming from the sandbox the session token was issued to?
+    //
+    // The token lives in the agent's own shell env (it needs it for the CLI and
+    // git), so the agent can copy it out. Everything else on this route checks
+    // what the token IS; this checks where it is being used FROM. Unpinned
+    // sessions pass — see sandbox-egress-pin.ts on why that direction is the
+    // safe one.
+    const pin = await verifySandboxEgressIp(sessionId, requestEgressIp(c));
+    if (!pin.ok) {
+      // Logged whether or not it blocks, so log-only mode still surfaces the
+      // event — a kill switch that also silences the evidence is useless.
+      console.warn('[secret-broker] refused an off-sandbox token use', {
+        sessionId,
+        projectId,
+        pinned: pin.pinned,
+        seen: pin.seen,
+        enforced: config.KORTIX_SANDBOX_EGRESS_PIN_ENFORCED,
+      });
+    }
+    if (!pin.ok && config.KORTIX_SANDBOX_EGRESS_PIN_ENFORCED) {
+      return c.json(
+        {
+          error: 'This session credential may only be used from its own sandbox',
+          code: 'sandbox_egress_mismatch',
         },
         403,
       );
@@ -122,7 +157,11 @@ projectsApp.openapi(
       resourceId: shared.secretId,
       metadata: {
         identifier,
-        consumer: 'http_broker',
+        // Derived, not hardcoded: this route now serves the network boundary as
+        // well as the HTTP broker, and an audit row that calls every boundary
+        // relay `http_broker` would misattribute the delivery mode in the one
+        // record anybody reviews after an incident.
+        consumer: shared.strategy === 'egress' ? 'network' : 'http_broker',
         strategy: shared.strategy,
         host: destination.hostname,
         method: parsed.data.method,
@@ -150,10 +189,29 @@ projectsApp.openapi(
           403,
         );
       }
-      if (
-        shared.strategy !== 'broker' ||
-        shared.egressPolicy?.backend !== 'kortix_fetch'
-      ) {
+      // Two delivery modes reach this engine, and they are the same engine on
+      // purpose:
+      //
+      //  - `broker`/`kortix_fetch` — the agent calls the route itself
+      //    (`kortix secrets call`, the `secret_call` MCP tool).
+      //  - `egress`/`network` — a network-boundary secret on a provider with no
+      //    credential edge of its own. The in-guest shim terminates the guest's
+      //    TLS and relays here, so the credential stays server-side exactly as
+      //    it does for the broker.
+      //
+      // A boundary policy is already a `SecretEgressPolicy` and
+      // `prepareSecretBrokerRequest` reads only `rules` and `inject` — never
+      // `backend` — so it executes unchanged. `networkBoundaryPolicyError` is
+      // re-checked here rather than trusted from save time: the row could have
+      // been written by an older build, and a policy that is not a valid
+      // boundary must not be executed as one.
+      const isBrokerSecret =
+        shared.strategy === 'broker' && shared.egressPolicy?.backend === 'kortix_fetch';
+      const isBoundarySecret =
+        shared.strategy === 'egress' &&
+        !!shared.egressPolicy &&
+        networkBoundaryPolicyError(shared.egressPolicy) === null;
+      if (!isBrokerSecret && !isBoundarySecret) {
         await recordAuditEvent({
           ...auditBase,
           action: 'secret.broker.failed',
@@ -186,10 +244,24 @@ projectsApp.openapi(
         )
         .orderBy(desc(projectSessionSecretHandles.revision))
         .limit(1);
+      // The snapshot must match the delivery mode this request is being served
+      // under. A broker secret's snapshot carries `kortix_fetch`; a boundary
+      // policy carries no backend at all — `networkBoundaryPolicyError` rejects
+      // one that does — so demanding `kortix_fetch` of both would make a
+      // boundary handle permanently invalid.
+      //
+      // Still checked, not skipped: the snapshot is what the request is
+      // executed against, so a row whose policy is neither shape must not be
+      // spent.
+      const handlePolicyValid = handle
+        ? isBoundarySecret
+          ? networkBoundaryPolicyError(handle.policySnapshot) === null
+          : handle.policySnapshot.backend === 'kortix_fetch'
+        : false;
       if (
         !handle ||
         (handle.expiresAt !== null && handle.expiresAt.getTime() <= Date.now()) ||
-        handle.policySnapshot.backend !== 'kortix_fetch'
+        !handlePolicyValid
       ) {
         await recordAuditEvent({
           ...auditBase,

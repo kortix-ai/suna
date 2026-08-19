@@ -40,6 +40,19 @@ export interface App {
   idle_timeout_seconds: number;
   monthly_budget_usd: number;
   last_request_at: string | null;
+  /**
+   * May the caller OPEN this App, as opposed to merely see it listed?
+   *
+   * These are different verdicts. A project manager is shown every App in the
+   * project so a private one stays manageable when its creator leaves, which
+   * says nothing about whether they may look at it. Check this before asking
+   * for an access session; asking anyway is how a grid of Apps turns into a
+   * console full of 403s.
+   *
+   * Optional for wire compatibility with a server that predates the field.
+   * Treat `undefined` as "unknown", not as "denied".
+   */
+  viewer_can_access?: boolean;
   created_at: string;
   updated_at: string;
 }

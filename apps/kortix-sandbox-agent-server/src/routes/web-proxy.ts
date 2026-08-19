@@ -540,7 +540,7 @@ async function handleWebProxy(c: Context, opts: WebProxyOptions): Promise<Respon
   // this proxy. Re-entering the daemon (:8000) or opencode (:4096) is not: those
   // are reached from outside through apps/api, which enforces a stack of
   // path-keyed controls on the way — the agent-authorization check, the
-  // connector gate, the 24h run cap, prompt idempotency, and the secret-grant
+  // connector gate, durable lifecycle authority, prompt idempotency, and the secret-grant
   // re-mint. A request tunnelled through here arrives on loopback with the path
   // buried in OUR url, so every one of those is skipped and the caller runs a
   // turn apps/api would have refused.

@@ -3,8 +3,9 @@
 /**
  * Per-model generation-parameter controls (reasoning effort, temperature,
  * top_p, max output tokens) — capability-gated off the live catalog, never
- * hardcoded per model. Shared by the routing section's project-default
- * config and the Playground's per-model tuning.
+ * hardcoded per model. Mounted by the routing section's project-default
+ * config. (It was shared with the Playground's per-model tuning until that
+ * tab was deleted; this file is unaffected.)
  *
  * *** CAPABILITY DATA SOURCE ***
  * `catalogModelForGateway` mirrors apps/api's `catalogModelForWireModel`

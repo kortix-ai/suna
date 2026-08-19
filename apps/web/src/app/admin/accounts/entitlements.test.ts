@@ -201,8 +201,14 @@ describe('EnterpriseDemoCard — the self-serve toggle is now admin-only', () =>
     expect(demoCardSource).toMatch(/isPlatformAdmin \? \(\s*<Switch/);
   });
 
+  // The card became a `SettingsRow` on 2026-08-12 (it used to draw its own
+  // bordered box; the settings panel mounts it inside a `SettingsRowGroup`
+  // now). The hint moved from a standalone `<p>` under the title into the row's
+  // `description`, so this reads the ternary that picks it rather than a JSX
+  // block. What is asserted is unchanged: a non-admin is told who can turn this
+  // on, and is given a state badge instead of a switch that would only 403.
   test('non-admins get read-only state plus a contact hint, not a switch that 403s', () => {
-    expect(demoCardSource).toMatch(/!isPlatformAdmin \? \([\s\S]*?Contact Kortix to enable/);
+    expect(demoCardSource).toMatch(/!isPlatformAdmin\s*\?\s*'[^']*Contact Kortix/);
     expect(demoCardSource).toMatch(/<Badge variant=\{enabled \? 'success' : 'muted'\}/);
   });
 });

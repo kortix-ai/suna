@@ -162,7 +162,7 @@ function AuthCardForm({
 
   useEffect(() => {
     if (step !== 'code' || resendIn <= 0) return;
-    const t = setTimeout(() => setResendIn(resendIn - 1), 1000);
+    const t = setTimeout(() => setResendIn((prev) => prev - 1), 1000);
     return () => clearTimeout(t);
   }, [step, resendIn]);
 

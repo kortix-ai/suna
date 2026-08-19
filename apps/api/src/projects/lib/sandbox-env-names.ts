@@ -1,7 +1,11 @@
-const RESERVED_SANDBOX_ENV_NAMES = new Set([
-  'PORT', 'PATH', 'HOME', 'PWD', 'USER', 'LOGNAME', 'SHELL', 'HOSTNAME',
-  'TERM', 'TMPDIR', 'NODE_ENV', 'NODE_OPTIONS', 'LD_PRELOAD', 'LD_LIBRARY_PATH',
-]);
+// Imported, not restated. `kortix validate` has to refuse exactly what deploy
+// refuses — when the two lists drifted, a manifest setting `KORTIX_API_KEY`
+// validated clean and then failed at deploy, and the App that shipped without
+// those variables did not error at all: the feature that needed them simply
+// rendered nothing. One list, in the contract package both sides depend on.
+import { RESERVED_ENV_NAMES } from '@kortix/manifest-schema';
+
+const RESERVED_SANDBOX_ENV_NAMES = RESERVED_ENV_NAMES;
 
 // Secrets the sandbox must NEVER see, even though the platform holds them.
 // Boot (buildSessionSandboxEnvVars) deletes SLACK_BOT_TOKEN explicitly to keep

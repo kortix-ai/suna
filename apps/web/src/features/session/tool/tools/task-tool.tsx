@@ -1,4 +1,5 @@
 'use client';
+import { Button } from '@/components/ui/button';
 import { SubSessionModal } from '@/features/session/sub-session-modal';
 import {
   BasicTool,
@@ -22,7 +23,22 @@ import {
 } from '@phosphor-icons/react';
 import { useCallback, useMemo, useState } from 'react';
 
-export function TaskTool({ part, forceOpen }: ToolProps) {
+/**
+ * A task call is a disclosure row: what the sub-agent is doing, in place.
+ *
+ * This row used to be a plain button that opened `SubSessionModal` on any
+ * click. That put the only view of a running sub-agent behind a modal — the
+ * reader had to leave the transcript to learn what the agent they just
+ * dispatched was up to, and had to close it again to get back — while the
+ * `SubAgentActivity` list this component already assembled was unreachable dead
+ * code on that path. The steps are the answer to the question the row raises,
+ * so they belong under the row, and the modal is now an explicit action inside
+ * the body rather than the row's whole behaviour.
+ *
+ * The trigger is unchanged: while the sub-agent runs its subtitle is that
+ * agent's LAST step, so a collapsed row still reports live progress.
+ */
+export function TaskTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const input = partInput(part);
   const status = partStatus(part);
 
@@ -70,14 +86,32 @@ export function TaskTool({ part, forceOpen }: ToolProps) {
           title: `Agent · ${subagentType}`,
           subtitle,
         }}
-        onClick={childSessionId ? openModal : undefined}
+        defaultOpen={defaultOpen}
+        forceOpen={forceOpen}
+        locked={locked}
         badge={
           isCompleted && childToolParts.length > 0 ? `${childToolParts.length} steps` : undefined
         }
-        rightAccessory={childSessionId ? <ExternalLink /> : undefined}
       >
-        {childToolParts.length > 0 ? (
-          <SubAgentActivity childSessionId={childSessionId} parts={childToolParts} />
+        {childSessionId ? (
+          <div className="flex flex-col gap-2">
+            <SubAgentActivity childSessionId={childSessionId} parts={childToolParts} />
+            {/* Rendered even before the first step arrives: a sub-agent that has
+                only just started has nothing to list, and the full view is then
+                the only way to watch it — the body must not be a dead end. */}
+            <div className="px-1">
+              <Button
+                type="button"
+                variant="ghost"
+                size="xs"
+                onClick={openModal}
+                className="text-muted-foreground hover:text-foreground -ml-1.5 h-6 gap-1.5 px-1.5 text-xs"
+              >
+                <ExternalLink className="size-3" />
+                Open full view
+              </Button>
+            </div>
+          </div>
         ) : undefined}
       </BasicTool>
       <SubAgentStatusBanner childSessionId={childSessionId} childMessages={childMessages} />

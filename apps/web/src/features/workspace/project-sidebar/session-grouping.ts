@@ -205,9 +205,13 @@ export function groupSessions(
     buckets.get(bucketId)?.push(session);
   }
 
-  const sections = declared
-    .filter((section) => !hidden.has(section.id) && (buckets.get(section.id)?.length ?? 0) > 0)
-    .map((section) => ({ ...section, sessions: buckets.get(section.id) ?? [] }));
+  const sections: SessionSection[] = [];
+  for (const section of declared) {
+    if (hidden.has(section.id)) continue;
+    const bucket = buckets.get(section.id) ?? [];
+    if (bucket.length === 0) continue;
+    sections.push({ ...section, sessions: bucket });
+  }
 
   return { sections, showHeaders: sections.length > 1 };
 }

@@ -1,3 +1,4 @@
+import { normalizeProjectRole } from '../../iam/role-perms';
 import { ACCOUNT_ACTIONS, PROJECT_ACTIONS, assertAuthorized, authorize, listAccessibleResources } from '../../iam';
 import { deriveRequestContext } from '../../iam/cache';
 import { setContextField } from '../../lib/request-context';
@@ -225,7 +226,7 @@ projectsApp.openapi(
   // the UI to label effective_role. We still consult project_members
   // because the IAM engine bridges it into authorize() but doesn't
   // hand the per-row role back here — and the UI wants the original
-  // manager/editor/viewer label, not just "allowed".
+  // manager/member label, not just "allowed".
   const grants = await db
     .select({ projectId: projectMembers.projectId, projectRole: projectMembers.projectRole })
     .from(projectMembers)
@@ -234,7 +235,8 @@ projectsApp.openapi(
       eq(projectMembers.userId, scope.userId),
     ));
   const roleByProject = new Map(
-    grants.map((g) => [g.projectId, g.projectRole as ProjectRole]),
+    // Fold retired stored values rather than casting — see normalizeProjectRole.
+    grants.map((g) => [g.projectId, normalizeProjectRole(g.projectRole)]),
   );
 
   const baseWhere = and(
@@ -633,7 +635,7 @@ projectsApp.openapi(
   const loaded = await loadProjectForUser(c, projectId, 'write');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   // Inviting a git collaborator grants a human standing access to the repo —
-  // membership-tier, not plain write. Gate on members.manage so an editor (or a
+  // membership-tier, not plain write. Gate on members.manage so a member (or a
   // scoped agent via the fold) can't add external collaborators.
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
 

@@ -18,6 +18,8 @@ export function formatInTimeZone(
   return new Intl.DateTimeFormat('en-US', { ...options, timeZone }).format(date);
 }
 
+const localFormatterCache = new Map<string, Intl.DateTimeFormat>();
+
 export interface LocalTimeProps {
   /** The instant to render — an ISO string, epoch ms, or Date. */
   value: string | number | Date;
@@ -60,7 +62,13 @@ export function LocalTime({ value, options, fallback, className }: LocalTimeProp
   useEffect(() => {
     if (!isValid) return;
     // After hydration, re-render in the viewer's own timezone/locale.
-    setText(new Intl.DateTimeFormat('en-US', fmtOptions).format(date));
+    const cacheKey = JSON.stringify(fmtOptions);
+    let formatter = localFormatterCache.get(cacheKey);
+    if (!formatter) {
+      formatter = new Intl.DateTimeFormat('en-US', fmtOptions);
+      localFormatterCache.set(cacheKey, formatter);
+    }
+    setText(formatter.format(date));
     // date / options are derived from props; stringify options for a stable dep.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [date.getTime(), JSON.stringify(fmtOptions), isValid]);

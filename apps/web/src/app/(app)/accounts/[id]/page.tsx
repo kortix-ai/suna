@@ -1,20 +1,19 @@
 'use client';
 
 import {
-  CaretDownIcon as ChevronDown,
-  ClockIcon as Clock,
   CoinsIcon as Coins,
   CreditCardIcon as CreditCard,
   ArrowSquareOutIcon as ExternalLink,
   FingerprintIcon as Fingerprint,
+  FolderOpenIcon as FolderOpen,
   GitBranchIcon as GitBranch,
   GithubLogoIcon as Github,
+  QuestionIcon as HelpCircle,
   InfoIcon as Info,
   KeyIcon as KeyRound,
   LinkIcon,
-  EnvelopeIcon as Mail,
-  DotsThreeIcon as MoreHorizontal,
   NetworkIcon as Network,
+  PencilSimpleIcon as PencilSimple,
   ArrowClockwiseIcon as RefreshCw,
   ScrollIcon as ScrollText,
   PlugsIcon as Unplug,
@@ -25,6 +24,9 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 
 import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
+import { AccessHelp } from '@/components/iam/access-help';
+import { AccessProjectsTab } from '@/components/iam/access-projects-tab';
+import { ApiKeysSection } from '@/components/iam/api-keys-card';
 import { AuditTab } from '@/components/iam/audit-tab';
 import { AuditWebhooksCard } from '@/components/iam/audit-webhooks-card';
 import { EnterpriseDemoCard } from '@/components/iam/enterprise-demo-card';
@@ -32,27 +34,16 @@ import { EnterpriseUpsell } from '@/components/iam/enterprise-upsell';
 import { GitHubAppSetupCard } from '@/components/iam/github-app-setup-card';
 import { GroupsTab } from '@/components/iam/groups-tab';
 import { IdentityIntro } from '@/components/iam/identity-intro';
+import { KeyRulesCard } from '@/components/iam/key-rules-card';
+import { MemberAccessPanel } from '@/components/iam/member-access-panel';
 import { MfaRequiredCard } from '@/components/iam/mfa-required-card';
-import { PatPolicyCard } from '@/components/iam/pat-policy-card';
-import { PermissionsHelpPopover } from '@/components/iam/permissions-help-popover';
-import { ACCOUNT_ROLE_DESCRIPTORS } from '@/components/iam/project-role-descriptors';
 import { RolesTab } from '@/components/iam/roles-tab';
 import { ScimCard } from '@/components/iam/scim-card';
-import { ServiceAccountsCard } from '@/components/iam/service-accounts-card';
-import { SessionControlsCard } from '@/components/iam/session-controls-card';
+import { AccountSessionsPanel, SessionControlsCard } from '@/components/iam/session-controls-card';
 import { SsoCard } from '@/components/iam/sso-card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
 import Hint from '@/components/ui/hint';
 import { InfoBanner } from '@/components/ui/info-banner';
@@ -66,22 +57,8 @@ import {
 } from '@/components/ui/input-group';
 import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
-import {
-  Modal,
-  ModalBody,
-  ModalContent,
-  ModalDescription,
-  ModalFooter,
-  ModalHeader,
-  ModalTitle,
-} from '@/components/ui/modal';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { SettingsRowGroup } from '@/components/ui/settings-row';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, infoToast, successToast, warningToast } from '@/components/ui/toast';
 import { UserAvatar } from '@/components/ui/user-avatar';
@@ -93,10 +70,25 @@ import { Plus } from '@/features/icon/icons/plus';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { useAuth } from '@/features/providers/auth-provider';
+import {
+  ACCESS_ROW_CLASS,
+  AccessDialog,
+  AccessList,
+  AccessRow,
+  builtinRole,
+  builtinRoleLabel,
+  customRole,
+  formatDate,
+  type AccessDialogPrincipal,
+  type KebabItem,
+  type RoleValue,
+  principalLabel,
+  roleValueLabel,
+  useAccountRoles,
+} from '@/features/workspace/shared/access';
 import { useAccountState } from '@/hooks/billing';
 import { isBillingEnabled } from '@/lib/config';
 import { isGitHubAppInstallationId } from '@/lib/github-installations';
-import { addGroupMembers, listGroups } from '@/lib/iam-client';
 import { usePermissions } from '@/lib/use-permission';
 import { cn } from '@/lib/utils';
 import { BillingAccountProvider } from '@/stores/billing-account-context';
@@ -104,15 +96,17 @@ import {
   type AccountDetail,
   type AccountInvitation,
   type AccountMember,
+  type AccountMemberProject,
   type AccountRole,
+  type IamPolicy,
   cancelAccountInvite,
   deleteGitHubInstallation,
   getAccount,
-  inviteAccountMember,
   leaveAccount,
   listAccountInvites,
   listAccountMembers,
   listGitHubInstallations,
+  listPolicies,
   removeAccountMember,
   resendAccountInvite,
   updateAccountMemberRole,
@@ -132,25 +126,30 @@ import {
 // Stable (module-level) probe list for the account-capabilities batch. Order
 // must match the destructure at the call site. Declared outside the component
 // so its identity is constant across renders and React Query doesn't refetch.
+//
+// READ leaves lead, because they decide whether a rail item exists at all:
+// every Access pane fetches a list on mount, and the pane's list route asserts
+// its own read leaf server-side (`apps/api/src/accounts/iam/*.ts`). Probing the
+// same leaf here is what keeps "visible" and "openable" the same set — a rail
+// item whose read probe says no would render straight into
+// "Failed to load … you don't have permission". The WRITE leaves that follow
+// decide what a visible pane offers, never whether it is reachable.
 const ACCOUNT_PERMISSION_PROBES = [
+  // Reads → rail visibility.
+  { action: 'member.read' }, // GET .../iam/members        → Members
+  { action: 'group.read' }, // GET .../iam/groups          → Groups
+  { action: 'role.read' }, // GET .../iam/roles            → Roles
+  { action: 'audit.read' }, // GET .../audit               → Audit log
+  // Writes → controls inside a visible pane.
   { action: 'account.write' },
   { action: 'account.delete' },
   { action: 'member.invite' },
   { action: 'member.remove' },
   { action: 'member.update' },
   { action: 'group.create' },
-  { action: 'audit.read' },
+  { action: 'group.members.manage' },
   { action: 'role.create' },
 ];
-
-const ROLE_LABEL: Record<AccountRole, string> = {
-  owner: 'Owner',
-  admin: 'Admin',
-  member: 'Member',
-};
-
-// Entity row dialect shared with the customize section views (members-view).
-const MEMBER_ROW = 'bg-popover flex items-center gap-3 rounded-md border px-4 py-2.5';
 
 // ── Section nav (left rail) ───────────────────────────────────────────────
 
@@ -162,26 +161,51 @@ const VALID_TABS = [
   'billing',
   'transactions',
   'groups',
+  'access-projects',
   'roles',
   'identity',
   'audit',
+  'help',
 ] as const;
 type AccountSection = (typeof VALID_TABS)[number];
 
-// Three labeled groups: day-to-day account plumbing, money, and the
-// enterprise IAM surface (Groups / Roles / Identity / Audit all share the
-// same entitlement story, so they live together under one "Enterprise"
-// heading instead of being scattered across the rail and the Settings tab).
+// Three labeled groups. The unlabeled plumbing group (Settings/Git/Tokens —
+// name, security, repo, machine tokens) leads: "who am I and how is this
+// account configured" comes before "who else is in it" (Marko's call,
+// 2026-08-18 — was Access-first; moved Settings ahead of it). Everything
+// access-control-shaped lives in one "Access" cluster right after — Members /
+// Groups / Projects / Roles / Identity / Audit log / Help are all
+// facets of the same concern (who's in the account, what pools they're in,
+// what those pools can do, where they can do it, how they signed in, and what
+// happened) — deliberately not split into a separate "Enterprise" heading
+// (Marko's call, 2026-08-18: Identity/Audit are access control too, plan-gating
+// doesn't change what category they're in). Billing is unchanged.
+//
+// There is no "Agents" item: an agent is a project RESOURCE, not a principal,
+// so agent access is the Agents field on a project grant (`AccessDialog`), not
+// a tab of its own. Help closes the group — it is the old
+// `PermissionsHelpPopover`, promoted to a linkable pane.
 const NAV_GROUPS: Array<{
   label?: string;
   items: Array<{ id: AccountSection; label: string; icon: LucideIcon | IconMynauiType | IconType }>;
 }> = [
   {
     items: [
-      { id: 'members', label: 'Members', icon: Users },
+      { id: 'settings', label: 'Settings', icon: CogOne },
       { id: 'git', label: 'Git', icon: GitBranch },
       { id: 'tokens', label: 'Tokens', icon: KeyRound },
-      { id: 'settings', label: 'Settings', icon: CogOne },
+    ],
+  },
+  {
+    label: 'Access',
+    items: [
+      { id: 'members', label: 'Members', icon: Users },
+      { id: 'groups', label: 'Groups', icon: Network },
+      { id: 'access-projects', label: 'Projects', icon: FolderOpen },
+      { id: 'roles', label: 'Roles', icon: Shield },
+      { id: 'identity', label: 'Identity', icon: Fingerprint },
+      { id: 'audit', label: 'Audit log', icon: ScrollText },
+      { id: 'help', label: 'Help', icon: HelpCircle },
     ],
   },
   {
@@ -189,15 +213,6 @@ const NAV_GROUPS: Array<{
     items: [
       { id: 'billing', label: 'Plan', icon: CreditCard },
       { id: 'transactions', label: 'Usage', icon: Coins },
-    ],
-  },
-  {
-    label: 'Enterprise',
-    items: [
-      { id: 'groups', label: 'Groups', icon: Network },
-      { id: 'roles', label: 'Roles', icon: Shield },
-      { id: 'identity', label: 'Identity', icon: Fingerprint },
-      { id: 'audit', label: 'Audit log', icon: ScrollText },
     ],
   },
 ];
@@ -212,11 +227,21 @@ const PANE_META: Partial<Record<AccountSection, { title: string; description: st
   },
   tokens: {
     title: 'Tokens',
-    description: 'Token policy and machine identities for CI and automations.',
+    // Machine identities only. A person's own API keys moved to their own
+    // settings on 2026-08-18 (`/settings/tokens`) — see the section below.
+    description: 'Service account tokens for CI and automations, and the rules they follow.',
   },
   identity: {
     title: 'Identity',
     description: 'Bring members in from your identity provider.',
+  },
+  roles: {
+    title: 'Roles',
+    description: 'Built-in and custom roles. Assign them from Members and Projects.',
+  },
+  help: {
+    title: 'Help',
+    description: 'How access works in this account.',
   },
   settings: { title: 'Settings', description: 'Name and security for this account.' },
 };
@@ -228,20 +253,9 @@ const PANE_META: Partial<Record<AccountSection, { title: string; description: st
 // 402 for non-entitled accounts — so the UI never offers a control that the
 // backend would reject. See `entitlements` on the account-state `tier` block.
 
-function formatDate(input: string | null | undefined) {
-  if (!input) return '—';
-  const d = new Date(input);
-  if (Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleDateString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  });
-}
-
-function memberLabel(member: Pick<AccountMember, 'email' | 'user_id'>) {
-  return member.email || member.user_id;
-}
+// `formatDate` and `principalLabel` come from
+// `features/workspace/shared/access` — this file used to carry its own copy of
+// both, byte-identical to the ones the project/group/audit surfaces carried.
 
 /** Copy an invite URL to the clipboard with a friendly toast either way. */
 async function copyInviteLink(url: string) {
@@ -278,6 +292,34 @@ export default function AccountSettingsPage() {
     if (!authLoading && !user) router.replace('/auth');
   }, [authLoading, user, router]);
 
+  // Granular capabilities sourced from the IAM engine. MUST be called
+  // before any conditional return — moving these below the auth-loading
+  // guard would change the hook count between renders.
+  // usePermission internally short-circuits when accountId is falsy, so
+  // it's safe to call before the account query resolves.
+  // One batched probe instead of 12 separate /effective?action=… GETs. Each
+  // singular probe was its own DB round-trip, so a single load of this page
+  // fanned out 12 concurrent queries — a meaningful contributor to DB
+  // connection-pool pressure. The :batch endpoint answers all of them in one
+  // request. Results come back in the same order as ACCOUNT_PERMISSION_PROBES.
+  //
+  // Declared ABOVE the data queries, not below them, because the read probes
+  // now gate whether those queries fire at all.
+  const [
+    { allowed: canReadMembers },
+    { allowed: canReadGroups },
+    { allowed: canReadRoles },
+    { allowed: canReadAudit },
+    { allowed: canWriteAccount },
+    { allowed: canDeleteAccount },
+    { allowed: canInviteMember },
+    { allowed: canRemoveMember },
+    { allowed: canUpdateMember },
+    { allowed: canCreateGroup },
+    { allowed: canManageGroupMembers },
+    { allowed: canManageRoles },
+  ] = usePermissions(accountId, ACCOUNT_PERMISSION_PROBES);
+
   const accountQuery = useQuery({
     queryKey: ['account', accountId],
     queryFn: () => getAccount(accountId!),
@@ -285,10 +327,14 @@ export default function AccountSettingsPage() {
     staleTime: 30_000,
   });
 
+  // `GET .../iam/members` asserts `member.read`, so hold the request until the
+  // probe stops saying no. `!== false` (not `=== true`) keeps it optimistic:
+  // the list still starts loading the moment the probe answers, and an
+  // in-flight probe never delays it for someone who does have the leaf.
   const membersQuery = useQuery({
     queryKey: ['account-members', accountId],
     queryFn: () => listAccountMembers(accountId!),
-    enabled: !!user && !!accountId,
+    enabled: !!user && !!accountId && canReadMembers !== false,
     staleTime: 20_000,
   });
 
@@ -298,37 +344,27 @@ export default function AccountSettingsPage() {
   const accountStateQuery = useAccountState({ accountId, enabled: !!user && !!accountId });
   const entitlements = accountStateQuery.data?.tier?.entitlements;
   const enterpriseIdentityEnabled = !!(entitlements?.sso || entitlements?.scim);
-  // The IAM surfaces (Groups, Roles, Audit, SSO/SCIM) are enterprise-gated.
-  // Tabs/sections stay VISIBLE for discoverability, but a non-entitled
-  // account sees the EnterpriseUpsell card in place of the feature — mirrors
-  // the server's 402 (requireEntitlement) so an admin never touches a control
-  // the backend will reject. While the account state is still loading we
-  // render nothing gated (skeleton) to avoid flashing the upsell at
-  // enterprise accounts.
+  // Audit and SSO/SCIM have no free-tier content — the server has nothing to
+  // list until the account is entitled, so the EnterpriseUpsell card stands
+  // in for the whole feature. Groups and Roles are different: `GET
+  // .../groups` and `GET .../roles` carry NO entitlement check
+  // (`apps/api/src/accounts/iam/groups.ts` / `custom-roles.ts` — only the
+  // mutating routes call `requireEntitlement(..., 'rbac')`), because the six
+  // built-in roles and an account's real (if empty) group list are product,
+  // not upsell. `GroupsTab`/`RolesTab` already render that list unconditionally
+  // and gate only "Create a group" / "New role" behind `rbacEnabled` — a
+  // disabled control with an inline "Enterprise feature" tooltip/banner,
+  // mirroring the server's 403 so an admin never submits a mutation the
+  // backend will reject. Blocking the whole tab behind `rbacEnabled` here (as
+  // this used to) hid that free content behind an upsell card for no reason;
+  // see `enterprise-upsell.tsx`'s own header comment, which already said the
+  // intent was to "keep the tab/section visible for discoverability" — the
+  // page-level gate below just never let that happen. Audit/Identity keep the
+  // outer gate; Groups/Roles no longer do. While the account state is still
+  // loading we render nothing gated (skeleton) to avoid flashing.
   const rbacEnabled = !!entitlements?.rbac;
   const auditEnabled = !!entitlements?.auditAccess;
   const entitlementsLoading = !entitlements && accountStateQuery.isLoading;
-
-  // Granular capabilities sourced from the IAM engine. MUST be called
-  // before any conditional return — moving these below the auth-loading
-  // guard would change the hook count between renders.
-  // usePermission internally short-circuits when accountId is falsy, so
-  // it's safe to call before the account query resolves.
-  // One batched probe instead of 7 separate /effective?action=… GETs. Each
-  // singular probe was its own DB round-trip, so a single load of this page
-  // fanned out 7 concurrent queries — a meaningful contributor to DB
-  // connection-pool pressure. The :batch endpoint answers all of them in one
-  // request. Results come back in the same order as ACCOUNT_PERMISSION_PROBES.
-  const [
-    { allowed: canWriteAccount },
-    { allowed: canDeleteAccount },
-    { allowed: canInviteMember },
-    { allowed: canRemoveMember },
-    { allowed: canUpdateMember },
-    { allowed: canCreateGroup },
-    { allowed: canReadAudit },
-    { allowed: canManageRoles },
-  ] = usePermissions(accountId, ACCOUNT_PERMISSION_PROBES);
 
   const prefersReducedMotion = useReducedMotion();
 
@@ -351,22 +387,82 @@ export default function AccountSettingsPage() {
   // Which rail items this caller can see. Mirrors the per-section gates the
   // content rendering applies below, so a deep link to a section the caller
   // can't use falls back to Members instead of an empty pane.
+  // Which rail items this caller can see. ONE rule, no exceptions: a section
+  // is visible when the probe for the leaf its own list route asserts came
+  // back `true`. "Discoverability" is not a reason to show a rail item — a
+  // pane that renders "Failed to load roles · You don't have permission
+  // (role.read)" teaches nothing and reads as a broken product, which is
+  // exactly what a plain account member used to get on Roles.
+  //
+  // Entitlement (`rbacEnabled`) is a DIFFERENT axis and stays where it is:
+  // `GroupsTab`/`RolesTab` render the free built-in content and disable only
+  // "Create a group" / "New role" with an inline upsell. Permission decides
+  // whether the pane exists; entitlement decides what it offers.
   const sectionVisible: Record<AccountSection, boolean> = {
-    members: true,
-    groups: true,
-    roles: canManageRoles === true,
+    // GET .../iam/members — `MEMBER_READ` (accounts/iam/members.ts:150).
+    members: canReadMembers === true,
+    // GET .../iam/groups — `GROUP_READ` (accounts/iam/groups.ts:81).
+    groups: canReadGroups === true,
+    // No account-level leaf of its own: the pane lists projects through
+    // `GET /projects?account_id=` (already scoped to what the caller can
+    // read) and opens each one's access through
+    // `GET /projects/:id/access` — `project.members.read`, a PROJECT leaf
+    // that `AccessProjectsTab` probes per project. An account member with no
+    // projects simply gets an empty list, never a 403.
+    'access-projects': true,
+    // GET .../iam/roles — `ROLE_READ` (accounts/iam/custom-roles.ts:104),
+    // which lives in ADMIN_EXTRAS. This was hard-coded `true`, so every plain
+    // member saw a Roles item that could only ever fail to load.
+    roles: canReadRoles === true,
     identity: canWriteAccount === true,
     billing: canWriteAccount === true && billingActive,
     transactions: canWriteAccount === true,
     git: canWriteAccount === true,
     tokens: canWriteAccount === true,
+    // GET .../audit — `AUDIT_READ`, also ADMIN_EXTRAS.
     audit: canReadAudit === true,
     settings: canWriteAccount === true,
+    // Reference copy — no data, no mutations, nothing to gate.
+    help: true,
   };
-  const activeSection: AccountSection = sectionVisible[requestedTab] ? requestedTab : 'members';
-  const paneMeta = PANE_META[activeSection];
-  const navigate = (section: AccountSection) =>
-    router.replace(`/accounts/${accountId}?tab=${section}`, { scroll: false });
+  // Members is no longer unconditionally visible, so it cannot be the blanket
+  // fallback: a caller denied `member.read` would land on a section the rail
+  // does not even list and stare at an empty pane. Fall through to the first
+  // section this caller CAN see, in rail order; `help` closes it out and is
+  // visible to everyone, so this always resolves.
+  const firstVisibleSection: AccountSection =
+    NAV_GROUPS.flatMap((group) => group.items).find((item) => sectionVisible[item.id])?.id ?? 'help';
+  const activeSection: AccountSection = sectionVisible[requestedTab]
+    ? requestedTab
+    : firstVisibleSection;
+  // The three drill-down params. Each names the entity whose detail panel
+  // replaces its tab's list, in the tab's own pane — `AccessProjectsTab`,
+  // `GroupsTab` and `MemberAccessPanel` all read their selection from here so
+  // a detail view is a URL, not a route change, and the left rail never
+  // disappears underneath it.
+  const selectedAccessProjectId = searchParams.get('project');
+  const selectedAccessGroupId = searchParams.get('group');
+  const selectedAccessMemberId = searchParams.get('member');
+  // The Members list has a pane header; its member panel carries its own, so
+  // suppress the outer one while a member is open (Groups and Projects have
+  // no `PANE_META` entry at all, for the same reason).
+  const paneMeta =
+    activeSection === 'members' && selectedAccessMemberId ? undefined : PANE_META[activeSection];
+  // `project` / `group` / `member` carry the open detail entity onto the URL
+  // (`?tab=groups&group=<id>`) — omit one (or pass null) to drop the param,
+  // e.g. switching tabs or backing out to the list. Every other tab switch
+  // keeps calling `navigate(section)` as before, which drops all three
+  // implicitly.
+  const navigate = (
+    section: AccountSection,
+    opts?: { project?: string | null; group?: string | null; member?: string | null },
+  ) => {
+    const query = new URLSearchParams({ tab: section });
+    if (opts?.project) query.set('project', opts.project);
+    if (opts?.group) query.set('group', opts.group);
+    if (opts?.member) query.set('member', opts.member);
+    router.replace(`/accounts/${accountId}?${query.toString()}`, { scroll: false });
+  };
 
   return (
     <div className="mx-auto w-full max-w-6xl pb-10">
@@ -411,7 +507,10 @@ export default function AccountSettingsPage() {
               <EntityAvatar label={account.name || 'Account'} size="md" />
               <div className="min-w-0">
                 <p className="text-foreground truncate text-sm font-medium">{account.name}</p>
-                {!membersQuery.isLoading ? (
+                {/* `members` is `[]` for a caller without `member.read` — the
+                    query never runs — and "0 members" on an account they are
+                    demonstrably a member of is a lie, not a placeholder. */}
+                {sectionVisible.members && !membersQuery.isLoading ? (
                   <p className="text-muted-foreground text-xs">
                     {members.length} member{members.length === 1 ? '' : 's'}
                   </p>
@@ -461,10 +560,6 @@ export default function AccountSettingsPage() {
                 );
               })}
             </nav>
-
-            <div className="hidden px-1 lg:block">
-              <PermissionsHelpPopover />
-            </div>
           </aside>
 
           {/* ── Content pane. Keyed remount + a 200ms rise on section switch;
@@ -514,47 +609,77 @@ export default function AccountSettingsPage() {
               </BillingAccountProvider>
             ) : null}
 
-            {activeSection === 'members' ? (
-              <MembersCard
-                account={account}
-                members={members}
-                isLoading={membersQuery.isLoading}
-                isError={membersQuery.isError}
-                error={membersQuery.error as Error | null}
-                onRetry={() => membersQuery.refetch()}
-                queryClient={queryClient}
-                currentUserId={user.id}
-                canInvite={canInviteMember}
-                canRemove={canRemoveMember}
-                canUpdateRole={canUpdateMember}
-              />
+            {activeSection === 'members' && sectionVisible.members ? (
+              selectedAccessMemberId ? (
+                <MemberAccessPanel
+                  key={selectedAccessMemberId}
+                  accountId={account.account_id}
+                  accountName={account.name}
+                  memberUserId={selectedAccessMemberId}
+                  currentUserId={user.id}
+                  canUpdateRole={canUpdateMember}
+                  canRemove={canRemoveMember}
+                  rbacEnabled={rbacEnabled}
+                  canManageRoles={canManageRoles}
+                  onBack={() => navigate('members')}
+                  onOpenGroup={(groupId) => navigate('groups', { group: groupId })}
+                />
+              ) : (
+                <MembersCard
+                  account={account}
+                  members={members}
+                  isLoading={membersQuery.isLoading}
+                  isError={membersQuery.isError}
+                  error={membersQuery.error as Error | null}
+                  onRetry={() => membersQuery.refetch()}
+                  queryClient={queryClient}
+                  currentUserId={user.id}
+                  canInvite={canInviteMember}
+                  canRemove={canRemoveMember}
+                  canUpdateRole={canUpdateMember}
+                  canAddToGroup={canManageGroupMembers}
+                  rbacEnabled={rbacEnabled}
+                  canManageRoles={canManageRoles}
+                  onSelectMember={(id) => navigate('members', { member: id })}
+                />
+              )
             ) : null}
 
-            {activeSection === 'groups' ? (
+            {activeSection === 'groups' && sectionVisible.groups ? (
               entitlementsLoading ? (
                 <Skeleton className="h-64 w-full rounded-md" />
-              ) : rbacEnabled ? (
+              ) : (
                 <GroupsTab
                   accountId={account.account_id}
                   canCreate={canCreateGroup}
                   rbacEnabled={rbacEnabled}
+                  selectedGroupId={selectedAccessGroupId}
+                  onSelectGroup={(id) => navigate('groups', { group: id })}
                 />
-              ) : (
-                <EnterpriseUpsell feature="groups" />
               )
             ) : null}
 
-            {activeSection === 'roles' && canManageRoles ? (
+            {activeSection === 'access-projects' ? (
+              <AccessProjectsTab
+                accountId={account.account_id}
+                selectedProjectId={selectedAccessProjectId}
+                onSelectProject={(id) => navigate('access-projects', { project: id })}
+                rbacEnabled={rbacEnabled}
+                canManageRoles={canManageRoles}
+              />
+            ) : null}
+
+            {activeSection === 'help' ? <AccessHelp accountId={account.account_id} /> : null}
+
+            {activeSection === 'roles' && sectionVisible.roles ? (
               entitlementsLoading ? (
                 <Skeleton className="h-64 w-full rounded-md" />
-              ) : rbacEnabled ? (
+              ) : (
                 <RolesTab
                   accountId={account.account_id}
                   canManage={canManageRoles}
                   rbacEnabled={rbacEnabled}
                 />
-              ) : (
-                <EnterpriseUpsell feature="roles" />
               )
             ) : null}
 
@@ -583,13 +708,18 @@ export default function AccountSettingsPage() {
               </div>
             ) : null}
 
-            {/* Tokens — the machine-access surface: PAT lifecycle policy +
-                service accounts. Both cards carry their own title/description
-                headers, so the pane header above is the only chrome. */}
+            {/* Tokens — the machine-access surface, and ONLY that since
+                2026-08-18: service account tokens first, the rules that govern
+                them second. A person's own API keys are not account
+                configuration and left for `/settings/tokens`
+                (`features/workspace/settings/tabs/tokens-tab.tsx`);
+                `ApiKeysSection` carries the one line that points there. Both
+                components carry their own section headers, so the pane header
+                above is the only other chrome. */}
             {activeSection === 'tokens' && canWriteAccount ? (
               <div className="space-y-10">
-                <PatPolicyCard accountId={account.account_id} canManage={canWriteAccount} />
-                <ServiceAccountsCard accountId={account.account_id} canManage={canWriteAccount} />
+                <ApiKeysSection accountId={account.account_id} canManage={canWriteAccount} />
+                <KeyRulesCard accountId={account.account_id} canManage={canWriteAccount} />
               </div>
             ) : null}
 
@@ -628,34 +758,24 @@ export default function AccountSettingsPage() {
                   />
                 </SettingsGroup>
 
-                {/* MFA is the only security control 95% of accounts ever touch —
-                  keep it primary. Session lifetime + idle timeout tuning
-                  matters for compliance shops but is noise for everyone else,
-                  so it hides under an "Advanced" disclosure (closed by
-                  default). */}
+                {/* MFA and the session policy are one decision — how hard it
+                    is to hold a session here — so they share one bordered
+                    group. The "Advanced" disclosure that used to hide session
+                    lifetime + idle timeout is gone: as full cards they were
+                    genuinely too much, as two rows they cost two lines. See
+                    `components/iam/session-controls-card.tsx`. */}
                 <SettingsGroup title="Security" description="Account-wide sign-in requirements.">
-                  <MfaRequiredCard accountId={account.account_id} canManage={canWriteAccount} />
-                  <Disclosure variant="outline" className="group bg-popover overflow-hidden">
-                    <DisclosureTrigger className="px-4 py-3">
-                      <div className="flex w-full cursor-pointer items-center justify-between gap-3">
-                        <div className="min-w-0 flex-1">
-                          <p className="text-foreground text-sm font-medium">Advanced</p>
-                          <p className="text-muted-foreground mt-0.5 text-xs">
-                            Session lifetime and idle timeout.
-                          </p>
-                        </div>
-                        <ChevronDown className="text-muted-foreground size-4 shrink-0 transition-transform group-data-[state=open]:rotate-180" />
-                      </div>
-                    </DisclosureTrigger>
-                    <DisclosureContent contentClassName="border-border border-t">
-                      <div className="px-4 py-5">
-                        <SessionControlsCard
-                          accountId={account.account_id}
-                          canManage={canWriteAccount}
-                        />
-                      </div>
-                    </DisclosureContent>
-                  </Disclosure>
+                  <SettingsRowGroup>
+                    <MfaRequiredCard accountId={account.account_id} canManage={canWriteAccount} />
+                    <SessionControlsCard
+                      accountId={account.account_id}
+                      canManage={canWriteAccount}
+                    />
+                  </SettingsRowGroup>
+                  <AccountSessionsPanel
+                    accountId={account.account_id}
+                    canManage={canWriteAccount}
+                  />
                 </SettingsGroup>
 
                 {/* Tucked away, not headline: this reports whether the
@@ -671,10 +791,12 @@ export default function AccountSettingsPage() {
                     title="Enterprise features"
                     description="Preview SSO, SCIM, advanced RBAC, and audit logs before upgrading."
                   >
-                    <EnterpriseDemoCard
-                      accountId={account.account_id}
-                      canManage={canWriteAccount}
-                    />
+                    <SettingsRowGroup>
+                      <EnterpriseDemoCard
+                        accountId={account.account_id}
+                        canManage={canWriteAccount}
+                      />
+                    </SettingsRowGroup>
                   </SettingsGroup>
                 ) : null}
 
@@ -806,7 +928,7 @@ function GitHubConnectionCard({
             return (
               <li
                 key={installationId || installation.owner_login || 'github'}
-                className={MEMBER_ROW}
+                className={ACCESS_ROW_CLASS}
               >
                 <EntityAvatar icon={Github} size="md" />
                 <div className="min-w-0 flex-1">
@@ -1001,6 +1123,12 @@ function DangerZoneCard() {
 }
 
 // ============================== MEMBERS ==============================
+//
+// One list dialect (`AccessList` + `AccessRow`) and ONE modal (`AccessDialog`)
+// for every "give / edit access" interaction on this tab. What used to live
+// here and is now gone: `InviteMemberModal` (457 lines), `BulkAddToGroupDialog`,
+// `BulkSetRoleDialog`, `RoleBadge`, the `DropdownMenuRadioGroup` role changer
+// and its "Change role" confirm, and the `MEMBER_ROW` class copy.
 
 function MembersCard({
   account,
@@ -1014,6 +1142,10 @@ function MembersCard({
   canInvite,
   canRemove,
   canUpdateRole,
+  canAddToGroup,
+  rbacEnabled,
+  canManageRoles,
+  onSelectMember,
 }: {
   account: AccountDetail;
   members: AccountMember[];
@@ -1026,9 +1158,18 @@ function MembersCard({
   canInvite: boolean;
   canRemove: boolean;
   canUpdateRole: boolean;
+  /** `group.members.manage` — gates the bulk "Add to group" action. */
+  canAddToGroup: boolean;
+  /** Tier carries the `rbac` entitlement — gates the custom-role group. */
+  rbacEnabled: boolean;
+  canManageRoles: boolean;
+  /** Opens one member's `MemberAccessPanel` in this same pane
+   *  (`?tab=members&member=<id>`) — no route change, the rail stays. */
+  onSelectMember: (userId: string) => void;
 }) {
   const router = useRouter();
-  const [inviteOpen, setInviteOpen] = useState(false);
+  const [grantOpen, setGrantOpen] = useState(false);
+  const [editTarget, setEditTarget] = useState<AccountMember | null>(null);
   // Set rather than scalar so multiple per-row mutations (remove + role
   // change on different rows) can fly in parallel without their spinners
   // hopping between rows. Helpers below add/remove on mutate/settle.
@@ -1042,12 +1183,6 @@ function MembersCard({
     });
   const [removeTarget, setRemoveTarget] = useState<AccountMember | null>(null);
   const [leaveConfirmOpen, setLeaveConfirmOpen] = useState(false);
-  // Staged like removeTarget/leaveConfirmOpen above — role changes (including
-  // the hard-to-undo promote-to-Owner) go through a confirmation instead of
-  // firing on click. See roleMutation below for the actual mutate call.
-  const [pendingRole, setPendingRole] = useState<{ userId: string; role: AccountRole } | null>(
-    null,
-  );
   // Free-text search over email + user_id. Lives in component state so
   // it doesn't survive tab switches — admins almost never want to jump
   // back to the same search after navigating away.
@@ -1055,11 +1190,36 @@ function MembersCard({
   // Bulk-select state. Users can't bulk-modify themselves (would let an
   // admin lock themselves out by demoting their own row in a sweep).
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [bulkDialog, setBulkDialog] = useState<'add_to_group' | 'set_role' | 'remove' | null>(null);
+  const [bulkDialog, setBulkDialog] = useState<'set_role' | 'add_to_group' | 'remove' | null>(null);
   const [bulkBusy, setBulkBusy] = useState(false);
 
-  // canInvite/canRemove/canUpdateRole come in as props (driven by usePermission
-  // at the page level). The row-level kebab respects each granularly.
+  // A member's role is ONE value — a built-in account role, or a custom role
+  // that rides on the `member` baseline plus one account-scoped
+  // `iam_policies` row. The row and the dialog read it through the same
+  // `RoleValue`, so neither has to know which of the two it is.
+  // Both reads are gated on the entitlement: without `rbac` there are no
+  // custom roles and no policies to resolve, so every row's role is the
+  // built-in one and these two requests would only 402/403 for nothing.
+  const rolesQuery = useAccountRoles(account.account_id, rbacEnabled);
+  const policiesQuery = useQuery({
+    queryKey: ['iam-policies', account.account_id],
+    queryFn: () => listPolicies(account.account_id),
+    enabled: rbacEnabled,
+    staleTime: 30_000,
+  });
+  const accountPolicyByUser = useMemo(() => {
+    const map = new Map<string, IamPolicy>();
+    for (const policy of policiesQuery.data ?? []) {
+      if (policy.principal_type === 'member' && policy.scope_type === 'account') {
+        map.set(policy.principal_id, policy);
+      }
+    }
+    return map;
+  }, [policiesQuery.data]);
+  const roleValueFor = (member: AccountMember): RoleValue => {
+    const policy = accountPolicyByUser.get(member.user_id);
+    return policy ? customRole(policy.role_id) : builtinRole(member.account_role);
+  };
 
   const sorted = useMemo(() => {
     const rank: Record<AccountRole, number> = { owner: 0, admin: 1, member: 2 };
@@ -1075,7 +1235,7 @@ function MembersCard({
     return [...filtered].sort((a, b) => {
       const r = rank[a.account_role] - rank[b.account_role];
       if (r !== 0) return r;
-      return memberLabel(a).localeCompare(memberLabel(b));
+      return principalLabel(a).localeCompare(principalLabel(b));
     });
   }, [members, search]);
 
@@ -1103,18 +1263,6 @@ function MembersCard({
     onError: (err: Error) => errorToast(err.message || 'Failed to remove member'),
   });
 
-  const roleMutation = useMutation({
-    mutationFn: ({ userId, role }: { userId: string; role: AccountRole }) =>
-      updateAccountMemberRole(account.account_id, userId, role),
-    onMutate: ({ userId }) => markPending(userId),
-    onSettled: (_data, _error, vars) => clearPending(vars.userId),
-    onSuccess: () => {
-      successToast('Role updated');
-      invalidateMembers();
-    },
-    onError: (err: Error) => errorToast(err.message || 'Failed to update role'),
-  });
-
   const leaveMutation = useMutation({
     mutationFn: () => leaveAccount(account.account_id),
     onMutate: () => markPending(currentUserId),
@@ -1128,10 +1276,8 @@ function MembersCard({
   });
 
   // Bulk surface only shows when the caller can actually do something
-  // useful (add to group OR change role OR remove). canInvite is the
-  // closest proxy for "can manage account membership" without adding
-  // another permission probe.
-  const canBulk = canInvite || canUpdateRole || canRemove;
+  // useful (change role, add to a group, OR remove).
+  const canBulk = canUpdateRole || canRemove || canAddToGroup;
   // Eligible for bulk = visible after filter, excluding the current user
   // and any pending row.
   const bulkEligible = useMemo(
@@ -1172,15 +1318,25 @@ function MembersCard({
     setSelectedIds(new Set());
   }
 
-  // Bulk handlers — all use the existing per-user endpoints fanned out
-  // with Promise.allSettled so a single failure doesn't block the
-  // others. On any failure we:
+  // The principals the bulk-role dialog acts on, in list order.
+  const bulkPrincipals: AccessDialogPrincipal[] = useMemo(
+    () =>
+      bulkEligible
+        .filter((m) => effectiveSelectedIds.has(m.user_id))
+        .map((m) => ({ type: 'member' as const, id: m.user_id, label: principalLabel(m) })),
+    [bulkEligible, effectiveSelectedIds],
+  );
+
+  // Bulk remove — the existing per-user endpoint fanned out with
+  // Promise.allSettled so a single failure doesn't block the others. On any
+  // failure we:
   //   1. console.error a full table (email + userId + reason) — admins
   //      doing bulk ops are likely to have devtools open.
   //   2. surface the FIRST failure reason inline in the toast so the
   //      user sees at least one actionable hint without expanding it.
-  //   3. preserve the selection so they can retry only the failing rows
-  //      after fixing whatever was wrong (e.g. a missing permission).
+  //   3. preserve the failed selection so they can retry only those rows.
+  // `AccessDialog`'s bulk-role mode applies the same rule through
+  // `onDone.failedPrincipalIds`.
   async function bulkRun(
     label: string,
     runOne: (userId: string) => Promise<unknown>,
@@ -1191,8 +1347,12 @@ function MembersCard({
     // filtered out of view shouldn't be silently included in the bulk
     // action just because it was clicked before the filter applied.
     const ids = Array.from(effectiveSelectedIds);
-    const results = await Promise.allSettled(ids.map(runOne));
-    setBulkBusy(false);
+    let results: PromiseSettledResult<unknown>[];
+    try {
+      results = await Promise.allSettled(ids.map(runOne));
+    } finally {
+      setBulkBusy(false);
+    }
     invalidateMembers();
 
     const failures: { userId: string; email: string; reason: string }[] = [];
@@ -1216,7 +1376,7 @@ function MembersCard({
       return;
     }
 
-    // Devtools-friendly dump. console.table renders one row per failure
+    // Devtools-friendly dump. console.error renders one row per failure
     // so an admin can copy/paste or grep through them.
     console.error(`[bulk:${label}] ${failures.length} failed`, failures);
 
@@ -1233,33 +1393,8 @@ function MembersCard({
     const failedIds = new Set(failures.map((f) => f.userId));
     setSelectedIds(failedIds);
   }
-  async function bulkAddToGroup(groupId: string) {
-    // addGroupMembers takes an array natively — single round-trip.
-    // Use the eligible intersection (see effectiveSelectedIds) so a
-    // hidden-by-filter row doesn't get silently added.
-    setBulkBusy(true);
-    try {
-      const ids = Array.from(effectiveSelectedIds);
-      const res = await addGroupMembers(account.account_id, groupId, ids);
-      invalidateMembers();
-      successToast(`Added ${res.added} member${res.added === 1 ? '' : 's'} to group`);
-      clearSelection();
-      setBulkDialog(null);
-    } catch (err) {
-      errorToast((err as Error).message || 'Failed to add to group');
-    } finally {
-      setBulkBusy(false);
-    }
-  }
 
-  // Looked up from the full roster (not the filtered `sorted` list) so the
-  // pending-role dialog's copy stays correct even if the search box changes
-  // while it's open.
-  const pendingRoleMember = pendingRole
-    ? members.find((m) => m.user_id === pendingRole.userId)
-    : undefined;
-  const pendingRoleLabel = pendingRole ? ROLE_LABEL[pendingRole.role] : '';
-  const pendingRoleBlurb = pendingRole ? ACCOUNT_ROLE_DESCRIPTORS[pendingRole.role].blurb : '';
+  const editRoleValue = editTarget ? roleValueFor(editTarget) : null;
 
   return (
     <div className="space-y-4">
@@ -1306,7 +1441,7 @@ function MembersCard({
               <Button
                 variant="secondary"
                 className="shrink-0 gap-1.5"
-                onClick={() => setInviteOpen(true)}
+                onClick={() => setGrantOpen(true)}
               >
                 <Plus className="size-4" />
                 Invite
@@ -1314,48 +1449,64 @@ function MembersCard({
             ) : null}
           </div>
 
+          {/* Bulk bar. It is the ONLY place a select-all control lives — the
+              list header used to carry a permanently visible "Select all
+              visible" checkbox, which put a bulk affordance on screen before
+              anyone had asked for one (Marko, 2026-08-18). Row checkboxes stay
+              in `AccessRow`; everything else appears once a row is ticked. */}
           {selectedCount > 0 && canBulk ? (
             <div className="bg-popover flex flex-wrap items-center gap-2 rounded-md border px-4 py-2 text-sm">
               <span className="text-foreground text-xs font-medium">{selectedCount} selected</span>
-              {canInvite ? (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setBulkDialog('add_to_group')}
-                  disabled={bulkBusy}
-                >
-                  Add to group
-                </Button>
-              ) : null}
-              {canUpdateRole ? (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setBulkDialog('set_role')}
-                  disabled={bulkBusy}
-                >
-                  Change role
-                </Button>
-              ) : null}
-              {canRemove ? (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setBulkDialog('remove')}
-                  disabled={bulkBusy}
-                >
-                  Remove
-                </Button>
-              ) : null}
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={toggleAllEligible}
+                disabled={bulkBusy}
+                className="text-muted-foreground"
+              >
+                {allEligibleSelected ? 'Deselect all' : 'Select all'}
+              </Button>
               <Button
                 size="sm"
                 variant="ghost"
                 onClick={clearSelection}
                 disabled={bulkBusy}
-                className="text-muted-foreground ml-auto"
+                className="text-muted-foreground"
               >
                 Clear
               </Button>
+              <div className="ml-auto flex flex-wrap items-center gap-2">
+                {canUpdateRole ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setBulkDialog('set_role')}
+                    disabled={bulkBusy}
+                  >
+                    Change role
+                  </Button>
+                ) : null}
+                {canAddToGroup ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setBulkDialog('add_to_group')}
+                    disabled={bulkBusy}
+                  >
+                    Add to group
+                  </Button>
+                ) : null}
+                {canRemove ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setBulkDialog('remove')}
+                    disabled={bulkBusy}
+                  >
+                    Remove
+                  </Button>
+                ) : null}
+              </div>
             </div>
           ) : null}
 
@@ -1372,219 +1523,128 @@ function MembersCard({
           ) : null}
 
           {sorted.length > 0 ? (
-            <div className="space-y-2">
-              <div className="flex items-center justify-between px-1">
-                {/* Count what THIS caller can actually see, not the raw
-                    total. The roster is visibility-filtered server-side for
-                    plain members (owners/admins + self), while
-                    account.member_count is the unfiltered COUNT(*) — using it
-                    would leak the roster size and mismatch the list below. */}
-                <span className="text-muted-foreground text-xs font-medium">
-                  Members · {sorted.length}
-                </span>
-                {canBulk && bulkEligible.length > 0 ? (
-                  <label className="text-muted-foreground flex cursor-pointer items-center gap-2 text-xs">
-                    <input
-                      type="checkbox"
-                      checked={allEligibleSelected}
-                      onChange={toggleAllEligible}
-                      className="border-border accent-primary size-3.5 cursor-pointer rounded"
-                    />
-                    {allEligibleSelected ? 'Deselect all' : 'Select all'}{' '}
-                    {bulkEligible.length !== sorted.length ? <span>(visible)</span> : null}
-                  </label>
-                ) : null}
-              </div>
-              <ul className="space-y-2">
-                {sorted.map((member) => {
-                  const isSelf = member.user_id === currentUserId;
-                  const isLastOwner =
-                    member.account_role === 'owner' &&
-                    sorted.filter((m) => m.account_role === 'owner').length === 1;
-                  const pending = pendingUserIds.has(member.user_id);
-                  // Kebab is always available — "View & edit permissions" is
-                  // open to anyone who can view the member; backend gates writes.
-                  const showKebab = !pending;
-                  // Self rows can't be bulk-acted on — would let an admin
-                  // demote / remove themselves in a sweep.
-                  const bulkEnabled = canBulk && !isSelf;
-                  const isSelected = selectedIds.has(member.user_id);
+            <AccessList
+              // Count what THIS caller can actually see, not the raw total.
+              // The roster is visibility-filtered server-side for plain
+              // members (owners/admins + self), while account.member_count is
+              // the unfiltered COUNT(*) — using it would leak the roster size
+              // and mismatch the list below.
+              // No `selectable` on the LIST: the header's select-all control
+              // is gone. Selection starts on a row checkbox, and only then
+              // does the bulk bar above offer "Select all" / "Deselect all".
+              header={{ title: 'Members', count: sorted.length }}
+            >
+              {sorted.map((member) => {
+                const isSelf = member.user_id === currentUserId;
+                const isLastOwner =
+                  member.account_role === 'owner' &&
+                  sorted.filter((m) => m.account_role === 'owner').length === 1;
+                const pending = pendingUserIds.has(member.user_id);
+                const label = principalLabel(member);
+                const roleValue = roleValueFor(member);
 
-                  const metaParts: string[] = [`Joined ${formatDate(member.joined_at)}`];
-                  if (
-                    member.account_role === 'member' &&
-                    typeof member.explicit_project_count === 'number' &&
-                    member.explicit_project_count > 0
-                  ) {
-                    metaParts.push(
-                      `${member.explicit_project_count} project${member.explicit_project_count === 1 ? '' : 's'}`,
-                    );
-                  }
-                  if (member.groups && member.groups.length > 0) {
-                    metaParts.push(
-                      `${member.groups.length} group${member.groups.length === 1 ? '' : 's'}`,
-                    );
-                  }
-                  if (typeof member.active_pat_count === 'number' && member.active_pat_count > 0) {
-                    metaParts.push(
-                      `${member.active_pat_count} token${member.active_pat_count === 1 ? '' : 's'}`,
-                    );
-                  }
+                const kebab: KebabItem[] = [];
+                if (canUpdateRole && !isSelf) {
+                  kebab.push({
+                    label: 'Edit access',
+                    icon: <PencilSimple className="size-3.5" />,
+                    onSelect: () => setEditTarget(member),
+                  });
+                }
+                kebab.push({
+                  label: 'View access',
+                  icon: <KeyRound className="size-3.5" />,
+                  onSelect: () => onSelectMember(member.user_id),
+                });
+                if (canRemove && !isSelf) {
+                  kebab.push({
+                    label: 'Remove from account',
+                    icon: <TrashIcon className="size-3.5" />,
+                    variant: 'destructive',
+                    separated: true,
+                    disabled: isLastOwner,
+                    onSelect: () => setRemoveTarget(member),
+                  });
+                }
+                if (isSelf) {
+                  kebab.push({
+                    label: 'Leave account',
+                    icon: <TrashIcon className="size-3.5" />,
+                    variant: 'destructive',
+                    separated: true,
+                    disabled: isLastOwner,
+                    onSelect: () => setLeaveConfirmOpen(true),
+                  });
+                }
 
-                  return (
-                    <li key={member.user_id} className={MEMBER_ROW}>
-                      {
-                        bulkEnabled ? (
-                          <input
-                            type="checkbox"
-                            checked={isSelected}
-                            onChange={() => toggleOne(member.user_id)}
-                            onClick={(e) => e.stopPropagation()}
-                            aria-label={`Select ${memberLabel(member)}`}
-                            className="border-border accent-primary size-3.5 shrink-0 cursor-pointer rounded"
-                          />
-                        ) : canBulk ? null : null // Spacer so avatars align across selectable + self rows.
-                      }
+                return (
+                  <AccessRow
+                    key={member.user_id}
+                    leading={
                       <UserAvatar
                         email={member.email ?? member.user_id}
                         name={member.email ?? undefined}
                         size="md"
                       />
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="text-foreground truncate text-sm font-medium">
-                            {memberLabel(member)}
-                          </span>
-                          {isSelf ? (
-                            <Badge variant="secondary" size="sm">
-                              You
-                            </Badge>
-                          ) : null}
-                          {member.is_super_admin ? (
-                            <Badge
-                              size="sm"
-                              className="bg-kortix-orange/15 text-kortix-orange border-transparent"
-                              title="Super admin — bypasses every IAM check"
-                            >
-                              Super
-                            </Badge>
-                          ) : null}
-                          {member.has_verified_mfa ? (
-                            <Badge variant="success" size="sm" title="MFA enrolled">
-                              2FA
-                            </Badge>
-                          ) : account.mfa_required && !member.is_super_admin ? (
-                            // Account requires MFA and this member has no verified
-                            // factor — they're blocked from gated actions until they
-                            // enrol. Super-admins are exempt, so they're not flagged.
-                            <Badge
-                              variant="destructive"
-                              size="sm"
-                              title="MFA required but not enrolled — this member is blocked from gated actions"
-                            >
-                              No 2FA
-                            </Badge>
-                          ) : null}
-                        </div>
-                        <span className="text-muted-foreground text-xs">
-                          <InlineMeta>
-                            {metaParts.map((part) => (
-                              <span key={part}>{part}</span>
-                            ))}
-                          </InlineMeta>
-                        </span>
-                      </div>
-                      <div className="flex shrink-0 items-center gap-1.5">
-                        <RoleBadge role={member.account_role} />
-                        <div className="w-7 shrink-0">
-                          {pending ? (
-                            <Loading className="text-muted-foreground size-4 shrink-0" />
-                          ) : showKebab ? (
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="text-muted-foreground hover:text-foreground size-7"
-                                  aria-label={`Actions for ${memberLabel(member)}`}
-                                >
-                                  <MoreHorizontal className="size-3.5" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end" className="w-56">
-                                <DropdownMenuItem
-                                  onSelect={() =>
-                                    router.push(
-                                      `/accounts/${account.account_id}/members/${member.user_id}`,
-                                    )
-                                  }
-                                  className="gap-2"
-                                >
-                                  <KeyRound className="size-3.5" />
-                                  View & edit permissions
-                                </DropdownMenuItem>
-                                {canUpdateRole && !isSelf ? (
-                                  <>
-                                    <DropdownMenuSeparator />
-                                    <DropdownMenuLabel className="text-muted-foreground text-xs font-medium">
-                                      Change role
-                                    </DropdownMenuLabel>
-                                    {(['owner', 'admin', 'member'] as AccountRole[]).map((role) => (
-                                      <DropdownMenuItem
-                                        key={role}
-                                        disabled={role === member.account_role}
-                                        onSelect={() =>
-                                          setPendingRole({ userId: member.user_id, role })
-                                        }
-                                        className="gap-2"
-                                      >
-                                        <Shield className="size-3.5" />
-                                        {ROLE_LABEL[role]}
-                                        {role === member.account_role ? (
-                                          <span className="text-muted-foreground ml-auto text-xs">
-                                            Current
-                                          </span>
-                                        ) : null}
-                                      </DropdownMenuItem>
-                                    ))}
-                                  </>
-                                ) : null}
-                                {canRemove && !isSelf ? (
-                                  <>
-                                    <DropdownMenuSeparator />
-                                    <DropdownMenuItem
-                                      onSelect={() => setRemoveTarget(member)}
-                                      disabled={isLastOwner}
-                                      className="gap-2"
-                                    >
-                                      <TrashIcon className="size-3.5" />
-                                      Remove from team
-                                    </DropdownMenuItem>
-                                  </>
-                                ) : null}
-                                {isSelf ? (
-                                  <>
-                                    <DropdownMenuSeparator />
-                                    <DropdownMenuItem
-                                      onSelect={() => setLeaveConfirmOpen(true)}
-                                      disabled={isLastOwner}
-                                      className="gap-2"
-                                    >
-                                      <TrashIcon className="size-3.5" />
-                                      Leave team
-                                    </DropdownMenuItem>
-                                  </>
-                                ) : null}
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          ) : null}
-                        </div>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
+                    }
+                    title={label}
+                    badges={
+                      <>
+                        {isSelf ? (
+                          <Badge variant="secondary" size="sm">
+                            You
+                          </Badge>
+                        ) : null}
+                        {member.is_super_admin ? (
+                          <Badge
+                            size="sm"
+                            className="bg-kortix-orange/15 text-kortix-orange border-transparent"
+                            title="Super admin — bypasses every IAM check"
+                          >
+                            Super
+                          </Badge>
+                        ) : null}
+                        {member.has_verified_mfa ? (
+                          <Badge variant="success" size="sm" title="MFA enrolled">
+                            2FA
+                          </Badge>
+                        ) : account.mfa_required && !member.is_super_admin ? (
+                          // Account requires MFA and this member has no verified
+                          // factor — they're blocked from gated actions until they
+                          // enrol. Super-admins are exempt, so they're not flagged.
+                          <Badge
+                            variant="destructive"
+                            size="sm"
+                            title="MFA required but not enrolled — this member is blocked from gated actions"
+                          >
+                            No 2FA
+                          </Badge>
+                        ) : null}
+                      </>
+                    }
+                    meta={<MemberMeta member={member} />}
+                    trailing={roleValueLabel('account', roleValue, rolesQuery.data)}
+                    selectable={
+                      canBulk
+                        ? {
+                            // Self rows can't be bulk-acted on — would let an
+                            // admin demote / remove themselves in a sweep — but
+                            // they still reserve the checkbox column so every
+                            // avatar lines up.
+                            reserveSpace: isSelf,
+                            checked: selectedIds.has(member.user_id),
+                            onCheckedChange: () => toggleOne(member.user_id),
+                            label: `Select ${label}`,
+                          }
+                        : undefined
+                    }
+                    pending={pending}
+                    kebab={kebab}
+                    kebabLabel={`Actions for ${label}`}
+                  />
+                );
+              })}
+            </AccessList>
           ) : null}
 
           {members.length === 0 ? (
@@ -1599,7 +1659,7 @@ function MembersCard({
                     variant="outline"
                     size="sm"
                     className="gap-1.5"
-                    onClick={() => setInviteOpen(true)}
+                    onClick={() => setGrantOpen(true)}
                   >
                     <UserPlus className="size-3.5" />
                     Invite
@@ -1611,35 +1671,82 @@ function MembersCard({
         </>
       ) : null}
 
-      <InviteMemberModal
-        open={inviteOpen}
-        onOpenChange={setInviteOpen}
+      {/* ── The one modal. Grant / edit / bulk-role are three modes of it. ── */}
+      <AccessDialog
+        open={grantOpen}
+        onOpenChange={setGrantOpen}
         accountId={account.account_id}
-        onInvited={invalidateMembers}
+        accountName={account.name}
+        scope={{ kind: 'account' }}
+        mode={{ kind: 'grant' }}
+        rbacEnabled={rbacEnabled}
+        canManageRoles={canManageRoles}
+        onDone={invalidateMembers}
       />
 
-      <ConfirmDialog
-        open={!!pendingRole}
-        onOpenChange={(o) => {
-          if (!o) setPendingRole(null);
+      {editTarget && editRoleValue ? (
+        <AccessDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setEditTarget(null);
+          }}
+          accountId={account.account_id}
+          accountName={account.name}
+          scope={{ kind: 'account' }}
+          mode={{
+            kind: 'edit',
+            principal: {
+              type: 'member',
+              id: editTarget.user_id,
+              label: principalLabel(editTarget),
+            },
+            current: {
+              role: editRoleValue,
+              policyId: accountPolicyByUser.get(editTarget.user_id)?.policy_id,
+            },
+          }}
+          rbacEnabled={rbacEnabled}
+          canManageRoles={canManageRoles}
+          onDone={invalidateMembers}
+        />
+      ) : null}
+
+      <AccessDialog
+        open={bulkDialog === 'set_role'}
+        onOpenChange={(open) => {
+          if (!open) setBulkDialog(null);
         }}
-        title="Change role"
-        description={
-          <span>
-            Change{' '}
-            <span className="text-foreground font-medium">
-              {pendingRoleMember ? memberLabel(pendingRoleMember) : ''}
-            </span>{' '}
-            to <span className="text-foreground font-medium">{pendingRoleLabel}</span>.{' '}
-            {pendingRoleBlurb}
-          </span>
-        }
-        confirmLabel="Change role"
-        onConfirm={() => {
-          if (pendingRole) roleMutation.mutate(pendingRole);
-          setPendingRole(null);
+        accountId={account.account_id}
+        accountName={account.name}
+        scope={{ kind: 'account' }}
+        mode={{ kind: 'bulk-role', principals: bulkPrincipals }}
+        rbacEnabled={rbacEnabled}
+        canManageRoles={canManageRoles}
+        onDone={({ failedPrincipalIds }) => {
+          invalidateMembers();
+          // Partial failure keeps exactly the failed rows selected so a
+          // retry re-runs only those.
+          setSelectedIds(new Set(failedPrincipalIds));
+          if (failedPrincipalIds.length === 0) setBulkDialog(null);
         }}
-        isPending={roleMutation.isPending}
+      />
+
+      {/* Bulk "Add to group" — one `addGroupMembers` call for every selected
+          row, through the same modal chrome as every other access dialog. */}
+      <AccessDialog
+        open={bulkDialog === 'add_to_group'}
+        onOpenChange={(open) => {
+          if (!open) setBulkDialog(null);
+        }}
+        accountId={account.account_id}
+        accountName={account.name}
+        scope={{ kind: 'account' }}
+        mode={{ kind: 'bulk-group', principals: bulkPrincipals }}
+        onDone={({ failedPrincipalIds }) => {
+          invalidateMembers();
+          setSelectedIds(new Set(failedPrincipalIds));
+          if (failedPrincipalIds.length === 0) setBulkDialog(null);
+        }}
       />
 
       <ConfirmDialog
@@ -1647,18 +1754,14 @@ function MembersCard({
         onOpenChange={(o) => {
           if (!o) setRemoveTarget(null);
         }}
-        title="Remove member"
+        title="Remove access?"
         description={
-          <span>
-            Remove{' '}
-            <span className="text-foreground font-medium">
-              {removeTarget ? memberLabel(removeTarget) : ''}
-            </span>{' '}
-            from <span className="text-foreground font-medium">{account.name}</span>? They will lose
-            access immediately.
-          </span>
+          removeTarget
+            ? `${principalLabel(removeTarget)} loses access to ${account.name}.`
+            : ''
         }
         confirmLabel="Remove"
+        confirmVariant="destructive"
         onConfirm={() => removeTarget && removeMutation.mutate(removeTarget.user_id)}
         isPending={removeMutation.isPending}
       />
@@ -1666,7 +1769,7 @@ function MembersCard({
       <ConfirmDialog
         open={leaveConfirmOpen}
         onOpenChange={setLeaveConfirmOpen}
-        title="Leave team"
+        title="Leave account"
         description={
           <span>
             You&apos;ll lose access to{' '}
@@ -1674,44 +1777,18 @@ function MembersCard({
           </span>
         }
         confirmLabel="Leave"
+        confirmVariant="destructive"
         onConfirm={() => leaveMutation.mutate()}
         isPending={leaveMutation.isPending}
-      />
-
-      <BulkAddToGroupDialog
-        open={bulkDialog === 'add_to_group'}
-        onOpenChange={(o) => !o && setBulkDialog(null)}
-        accountId={account.account_id}
-        selectedCount={selectedCount}
-        busy={bulkBusy}
-        onConfirm={bulkAddToGroup}
-      />
-
-      <BulkSetRoleDialog
-        open={bulkDialog === 'set_role'}
-        onOpenChange={(o) => !o && setBulkDialog(null)}
-        selectedCount={selectedCount}
-        busy={bulkBusy}
-        onConfirm={(role) =>
-          bulkRun('Role changed', (uid) => updateAccountMemberRole(account.account_id, uid, role))
-        }
       />
 
       <ConfirmDialog
         open={bulkDialog === 'remove'}
         onOpenChange={(o) => !o && setBulkDialog(null)}
-        title="Remove members"
-        description={
-          <span>
-            Remove{' '}
-            <span className="text-foreground font-medium">
-              {selectedCount} member{selectedCount === 1 ? '' : 's'}
-            </span>{' '}
-            from <span className="text-foreground font-medium">{account.name}</span>? They lose
-            access immediately.
-          </span>
-        }
+        title="Remove access?"
+        description={`${selectedCount} member${selectedCount === 1 ? '' : 's'} lose access to ${account.name}.`}
         confirmLabel={`Remove ${selectedCount}`}
+        confirmVariant="destructive"
         isPending={bulkBusy}
         onConfirm={() => bulkRun('Removed', (uid) => removeAccountMember(account.account_id, uid))}
       />
@@ -1719,336 +1796,75 @@ function MembersCard({
   );
 }
 
-function RoleBadge({ role }: { role: AccountRole }) {
+/**
+ * "Joined … · N projects · N groups · N tokens". The projects count is the
+ * affordance: `AccountMember.projects` already ships the names and roles
+ * (that is what the SDK field was added for), so the count opens them in a
+ * `Popover` instead of making an admin leave the list to find out which ones.
+ */
+function MemberMeta({ member }: { member: AccountMember }) {
+  const projects = member.projects ?? [];
+  const projectCount =
+    typeof member.explicit_project_count === 'number'
+      ? member.explicit_project_count
+      : projects.length;
+  const showProjects = member.account_role === 'member' && projectCount > 0;
+
   return (
-    <Badge
-      variant="outline"
-      size="sm"
-      className={cn(role === 'owner' && 'border-foreground/30 text-foreground')}
-    >
-      {ROLE_LABEL[role]}
-    </Badge>
+    <span className="text-muted-foreground text-xs">
+      <InlineMeta>
+        <span>Joined {formatDate(member.joined_at)}</span>
+        {showProjects ? (
+          <MemberProjectsChip count={projectCount} projects={projects} />
+        ) : null}
+        {member.groups && member.groups.length > 0 ? (
+          <span>
+            {member.groups.length} group{member.groups.length === 1 ? '' : 's'}
+          </span>
+        ) : null}
+        {typeof member.active_pat_count === 'number' && member.active_pat_count > 0 ? (
+          <span>
+            {member.active_pat_count} token{member.active_pat_count === 1 ? '' : 's'}
+          </span>
+        ) : null}
+      </InlineMeta>
+    </span>
   );
 }
 
-// ============================== INVITE MODAL ==============================
-
-function InviteMemberModal({
-  open,
-  onOpenChange,
-  accountId,
-  onInvited,
+function MemberProjectsChip({
+  count,
+  projects,
 }: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  accountId: string;
-  onInvited: () => void;
+  count: number;
+  projects: AccountMemberProject[];
 }) {
-  const [emails, setEmails] = useState<string[]>([]);
-  const [inputValue, setInputValue] = useState('');
-  const [role, setRole] = useState<AccountRole>('member');
-  const [inlineError, setInlineError] = useState<string | null>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-  const mutation = useMutation({
-    mutationFn: async (list: string[]) =>
-      Promise.all(
-        list.map(async (addr) => {
-          try {
-            const res = await inviteAccountMember(accountId, {
-              email: addr,
-              role,
-            });
-            return { email: addr, ok: true as const, res };
-          } catch (err) {
-            return {
-              email: addr,
-              ok: false as const,
-              status: (err as { status?: number }).status,
-              message: (err as Error).message,
-            };
-          }
-        }),
-      ),
-    onSuccess: (results) => {
-      type Ok = Extract<(typeof results)[number], { ok: true }>;
-      type Failed = Extract<(typeof results)[number], { ok: false }>;
-      const succeeded = results.filter((r): r is Ok => r.ok);
-      const failed = results.filter((r): r is Failed => !r.ok);
-      const alreadyMembers = failed.filter((r) => r.status === 409);
-      const otherFailures = failed.filter((r) => r.status !== 409);
-
-      if (succeeded.length === 1) {
-        const r = succeeded[0];
-        if (r.res.status === 'pending' && !r.res.email_sent) {
-          // Email delivery was skipped (e.g. Mailtrap not configured locally).
-          // Surface the link so the admin can share it manually.
-          const inviteUrl = r.res.invite_url;
-          warningToast('Invite created — email skipped. Share the link manually.', {
-            duration: 10_000,
-            button: (
-              <Button size="sm" onClick={() => copyInviteLink(inviteUrl)}>
-                Copy link
-              </Button>
-            ),
-          });
-        } else if (r.res.status === 'pending') {
-          successToast(`Invite sent to ${r.res.email} — they'll see it when they sign up`);
-        } else {
-          successToast(`Added ${r.res.email}`);
-        }
-      } else if (succeeded.length > 1) {
-        successToast(`Invited ${succeeded.length} people`);
-        const skipped = succeeded.filter(
-          (r) => r.res.status === 'pending' && !r.res.email_sent,
-        ).length;
-        if (skipped > 0) {
-          warningToast(
-            `${skipped} ${skipped === 1 ? 'email was' : 'emails were'} skipped — share their links manually.`,
-          );
-        }
-      }
-
-      if (alreadyMembers.length > 0) {
-        warningToast(
-          alreadyMembers.length === 1
-            ? `${alreadyMembers[0].email} is already a member.`
-            : `${alreadyMembers.length} were already members.`,
-        );
-      }
-
-      if (succeeded.length > 0 || alreadyMembers.length > 0) {
-        onInvited();
-      }
-
-      // Keep only the genuinely-failed emails so the admin can retry them.
-      const failedEmails = otherFailures.map((r) => r.email);
-      if (failedEmails.length > 0) {
-        setEmails(failedEmails);
-        setInputValue('');
-        setInlineError(
-          otherFailures.length === 1
-            ? otherFailures[0].message || 'Failed to invite member'
-            : `Failed to invite ${otherFailures.length} of these — try again.`,
-        );
-      } else {
-        reset();
-        onOpenChange(false);
-      }
-    },
-  });
-
-  function reset() {
-    setEmails([]);
-    setInputValue('');
-    setRole('member');
-    setInlineError(null);
-  }
-
-  /**
-   * Parse free text (typed or pasted) into email chips. Splits on commas,
-   * semicolons, and whitespace. Returns true if everything parsed cleanly;
-   * leaves any invalid tokens in the input and surfaces an error otherwise.
-   */
-  function commitInput(raw: string): boolean {
-    const tokens = raw
-      .split(/[\s,;]+/)
-      .map((t) => t.trim())
-      .filter(Boolean);
-    if (tokens.length === 0) {
-      setInputValue('');
-      return true;
-    }
-    const valid: string[] = [];
-    const invalid: string[] = [];
-    for (const t of tokens) {
-      if (!EMAIL_RE.test(t)) invalid.push(t);
-      else valid.push(t);
-    }
-    if (valid.length > 0) {
-      setEmails((prev) => [...prev, ...valid.filter((v) => !prev.includes(v))]);
-    }
-    if (invalid.length > 0) {
-      setInputValue(invalid.join(', '));
-      setInlineError(
-        `${invalid.length === 1 ? 'Not a valid email' : 'Not valid emails'}: ${invalid.join(', ')}`,
-      );
-      return false;
-    }
-    setInputValue('');
-    setInlineError(null);
-    return true;
-  }
-
-  function removeEmail(addr: string) {
-    setEmails((prev) => prev.filter((e) => e !== addr));
-  }
-
-  function handleInputKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
-    if (
-      event.key === 'Enter' ||
-      event.key === ',' ||
-      event.key === ';' ||
-      (event.key === ' ' && inputValue.trim() !== '')
-    ) {
-      event.preventDefault();
-      commitInput(inputValue);
-    } else if (event.key === 'Backspace' && inputValue === '' && emails.length > 0) {
-      setEmails((prev) => prev.slice(0, -1));
-    }
-  }
-
-  function handlePaste(event: React.ClipboardEvent<HTMLInputElement>) {
-    const text = event.clipboardData.getData('text');
-    // Only intercept multi-email pastes; let a single address paste normally
-    // so the admin can still edit it before committing.
-    if (/[\s,;]/.test(text.trim())) {
-      event.preventDefault();
-      commitInput(`${inputValue} ${text}`);
-    }
-  }
-
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setInlineError(null);
-    const tokens = inputValue
-      .split(/[\s,;]+/)
-      .map((t) => t.trim())
-      .filter(Boolean);
-    const invalid = tokens.filter((t) => !EMAIL_RE.test(t));
-    if (invalid.length > 0) {
-      setInlineError(
-        `${invalid.length === 1 ? 'Not a valid email' : 'Not valid emails'}: ${invalid.join(', ')}`,
-      );
-      return;
-    }
-    const all = Array.from(new Set([...emails, ...tokens]));
-    if (all.length === 0) {
-      setInlineError('Add at least one email');
-      return;
-    }
-    setEmails(all);
-    setInputValue('');
-    mutation.mutate(all);
-  }
-
-  const pendingCount = emails.length + (inputValue.trim() ? 1 : 0);
-
+  const label = `${count} project${count === 1 ? '' : 's'}`;
+  if (projects.length === 0) return <span>{label}</span>;
   return (
-    <Modal
-      open={open}
-      onOpenChange={(o) => {
-        if (!o) reset();
-        onOpenChange(o);
-      }}
-    >
-      <ModalContent className="lg:max-w-lg">
-        <ModalHeader>
-          <ModalTitle>Invite members</ModalTitle>
-          <ModalDescription>
-            Invite by email. If they don&apos;t have an account yet, the invite waits for them.
-          </ModalDescription>
-        </ModalHeader>
-        <form onSubmit={handleSubmit}>
-          <ModalBody className="space-y-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="invite-email">Emails</Label>
-              <div
-                className="bg-popover focus-within:border-ring flex min-h-10 w-full flex-wrap items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm transition-colors"
-                onClick={() => inputRef.current?.focus()}
-              >
-                <Mail className="text-muted-foreground pointer-events-none size-4 shrink-0" />
-                {emails.map((addr) => (
-                  <Badge key={addr} variant="secondary" className="gap-1 pr-1">
-                    {addr}
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        removeEmail(addr);
-                      }}
-                      className="text-muted-foreground hover:text-foreground transition-colors"
-                      aria-label={`Remove ${addr}`}
-                      disabled={mutation.isPending}
-                    >
-                      <Close className="size-3" />
-                    </button>
-                  </Badge>
-                ))}
-                <input
-                  ref={inputRef}
-                  id="invite-email"
-                  type="text"
-                  value={inputValue}
-                  onChange={(e) => {
-                    setInputValue(e.target.value);
-                    if (inlineError) setInlineError(null);
-                  }}
-                  onKeyDown={handleInputKeyDown}
-                  onPaste={handlePaste}
-                  placeholder={emails.length === 0 ? 'teammate@company.com' : 'Add another…'}
-                  autoFocus
-                  className="placeholder:text-muted-foreground min-w-[8rem] flex-1 bg-transparent font-medium outline-none disabled:cursor-not-allowed disabled:opacity-50"
-                  disabled={mutation.isPending}
-                />
-              </div>
-              <p className="text-muted-foreground text-xs">
-                Add several at once — separate with commas or spaces.
-              </p>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="invite-role">Role</Label>
-              <Select
-                value={role}
-                onValueChange={(v) => setRole(v as AccountRole)}
-                disabled={mutation.isPending}
-              >
-                <SelectTrigger id="invite-role">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="member">
-                    {ACCOUNT_ROLE_DESCRIPTORS.member.label} —{' '}
-                    {ACCOUNT_ROLE_DESCRIPTORS.member.blurb}
-                  </SelectItem>
-                  <SelectItem value="admin">
-                    {ACCOUNT_ROLE_DESCRIPTORS.admin.label} — {ACCOUNT_ROLE_DESCRIPTORS.admin.blurb}
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {inlineError ? <InfoBanner tone="destructive">{inlineError}</InfoBanner> : null}
-          </ModalBody>
-
-          <ModalFooter className="sm:justify-between">
-            <Button
-              type="button"
-              variant="outline-ghost"
-              onClick={() => onOpenChange(false)}
-              disabled={mutation.isPending}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              className="gap-1.5"
-              disabled={mutation.isPending || pendingCount === 0}
-            >
-              {mutation.isPending ? (
-                <Loading className="size-4 shrink-0" />
-              ) : (
-                <UserPlus className="size-4" />
-              )}
-              {pendingCount > 1 ? `Invite ${pendingCount}` : 'Invite'}
-            </Button>
-          </ModalFooter>
-        </form>
-      </ModalContent>
-    </Modal>
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="hover:text-foreground cursor-pointer underline decoration-dotted underline-offset-2 transition-colors"
+        >
+          {label}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-64 space-y-0.5 p-2">
+        {projects.map((project) => (
+          <div
+            key={project.project_id}
+            className="flex items-center justify-between gap-3 rounded-sm px-2 py-1.5 text-xs"
+          >
+            <span className="text-foreground min-w-0 truncate">{project.name}</span>
+            <span className="text-muted-foreground shrink-0">
+              {builtinRoleLabel('project', project.role)}
+            </span>
+          </div>
+        ))}
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -2136,78 +1952,50 @@ function PendingInvitesSection({
   if (!invites.length) return null;
 
   return (
-    <div className="space-y-2">
-      <p className="text-muted-foreground px-1 text-xs font-medium">Invited · {invites.length}</p>
-      <ul className="space-y-2">
-        {invites.map((invite) => {
-          const busy = pendingIds.has(invite.invite_id);
-          return (
-            <li key={invite.invite_id} className={cn(MEMBER_ROW, 'border-dashed')}>
-              <UserAvatar email={invite.email} size="md" />
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <span className="text-foreground truncate text-sm font-medium">
-                    {invite.email}
-                  </span>
-                </div>
-                <span className="text-muted-foreground text-xs">
-                  <InlineMeta>
-                    <span className="flex items-center gap-1">
-                      <Clock className="size-3" />
-                      Invite expires {formatDate(invite.expires_at)}
-                    </span>
-                  </InlineMeta>
-                </span>
-              </div>
-              <div className="flex shrink-0 items-center gap-1.5">
-                <RoleBadge role={invite.initial_role} />
-                <div className="w-7 shrink-0">
-                  {busy ? (
-                    <Loading className="text-muted-foreground size-4 shrink-0" />
-                  ) : canManage ? (
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="text-muted-foreground hover:text-foreground size-7"
-                          aria-label={`Actions for ${invite.email}`}
-                        >
-                          <MoreHorizontal className="size-3.5" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="w-52">
-                        <DropdownMenuItem
-                          onSelect={() => resendMutation.mutate(invite.invite_id)}
-                          className="gap-2"
-                        >
-                          <RefreshCw className="size-3.5" />
-                          Resend invite
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onSelect={() => copyInviteLink(invite.invite_url)}
-                          className="gap-2"
-                        >
-                          <LinkIcon className="size-3.5" />
-                          Copy invite link
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem
-                          onSelect={() => setCancelTarget(invite)}
-                          className="gap-2"
-                        >
-                          <Close className="size-3.5" />
-                          Cancel invite
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  ) : null}
-                </div>
-              </div>
-            </li>
-          );
-        })}
-      </ul>
+    <>
+      <AccessList header={{ title: 'Invited', count: invites.length }}>
+        {invites.map((invite) => (
+          <AccessRow
+            key={invite.invite_id}
+            dashed
+            leading={<UserAvatar email={invite.email} size="md" />}
+            title={invite.email}
+            meta={
+              <span className="text-muted-foreground text-xs">
+                <InlineMeta>
+                  <span>Invite expires {formatDate(invite.expires_at)}</span>
+                </InlineMeta>
+              </span>
+            }
+            trailing={builtinRoleLabel('account', invite.initial_role)}
+            pending={pendingIds.has(invite.invite_id)}
+            kebabLabel={`Actions for ${invite.email}`}
+            kebab={
+              canManage
+                ? [
+                    {
+                      label: 'Resend invite',
+                      icon: <RefreshCw className="size-3.5" />,
+                      onSelect: () => resendMutation.mutate(invite.invite_id),
+                    },
+                    {
+                      label: 'Copy invite link',
+                      icon: <LinkIcon className="size-3.5" />,
+                      onSelect: () => void copyInviteLink(invite.invite_url),
+                    },
+                    {
+                      label: 'Cancel invite',
+                      icon: <Close className="size-3.5" />,
+                      variant: 'destructive',
+                      separated: true,
+                      onSelect: () => setCancelTarget(invite),
+                    },
+                  ]
+                : undefined
+            }
+          />
+        ))}
+      </AccessList>
 
       <ConfirmDialog
         open={!!cancelTarget}
@@ -2221,6 +2009,7 @@ function PendingInvitesSection({
             : ''
         }
         confirmLabel="Cancel invite"
+        confirmVariant="destructive"
         isPending={cancelMutation.isPending}
         onConfirm={() => {
           if (!cancelTarget) return;
@@ -2228,151 +2017,6 @@ function PendingInvitesSection({
           setCancelTarget(null);
         }}
       />
-    </div>
-  );
-}
-
-// ─── Bulk dialogs ─────────────────────────────────────────────────────────
-
-function BulkAddToGroupDialog({
-  open,
-  onOpenChange,
-  accountId,
-  selectedCount,
-  busy,
-  onConfirm,
-}: {
-  open: boolean;
-  onOpenChange: (v: boolean) => void;
-  accountId: string;
-  selectedCount: number;
-  busy: boolean;
-  onConfirm: (groupId: string) => void;
-}) {
-  const [groupId, setGroupId] = useState<string | undefined>(undefined);
-  const groupsQuery = useQuery({
-    queryKey: ['account-groups', accountId],
-    queryFn: () => listGroups(accountId),
-    enabled: open,
-    staleTime: 30_000,
-  });
-  // Reset selection every reopen so a stale id from last time doesn't
-  // pre-fill an unrelated group.
-  function handleOpenChange(v: boolean) {
-    if (v) setGroupId(undefined);
-    onOpenChange(v);
-  }
-  const groups = groupsQuery.data ?? [];
-  return (
-    <Modal open={open} onOpenChange={handleOpenChange}>
-      <ModalContent className="lg:max-w-md">
-        <ModalHeader>
-          <ModalTitle>
-            Add {selectedCount} member{selectedCount === 1 ? '' : 's'} to a group
-          </ModalTitle>
-          <ModalDescription>Pick the group they should join.</ModalDescription>
-        </ModalHeader>
-        <ModalBody>
-          <div className="space-y-1.5">
-            <Label htmlFor="bulk-group">Group</Label>
-            {groupsQuery.isLoading ? (
-              <Skeleton className="h-9 w-full rounded-lg" />
-            ) : groups.length === 0 ? (
-              <p className="bg-popover text-muted-foreground rounded-md border px-3 py-2.5 text-xs">
-                No groups exist yet. Create one in the Groups tab first.
-              </p>
-            ) : (
-              <Select value={groupId ?? ''} onValueChange={(v) => setGroupId(v || undefined)}>
-                <SelectTrigger id="bulk-group">
-                  <SelectValue placeholder="Choose a group" />
-                </SelectTrigger>
-                <SelectContent>
-                  {groups.map((g) => (
-                    <SelectItem key={g.group_id} value={g.group_id}>
-                      {g.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-          </div>
-        </ModalBody>
-        <ModalFooter className="sm:justify-between">
-          <Button variant="outline-ghost" onClick={() => handleOpenChange(false)} disabled={busy}>
-            Cancel
-          </Button>
-          <Button
-            disabled={!groupId || busy || groups.length === 0}
-            onClick={() => groupId && onConfirm(groupId)}
-            className="gap-1.5"
-          >
-            {busy ? <Loading className="size-4 shrink-0" /> : null}
-            Add to group
-          </Button>
-        </ModalFooter>
-      </ModalContent>
-    </Modal>
-  );
-}
-
-function BulkSetRoleDialog({
-  open,
-  onOpenChange,
-  selectedCount,
-  busy,
-  onConfirm,
-}: {
-  open: boolean;
-  onOpenChange: (v: boolean) => void;
-  selectedCount: number;
-  busy: boolean;
-  onConfirm: (role: AccountRole) => void;
-}) {
-  const [role, setRole] = useState<AccountRole>('member');
-  function handleOpenChange(v: boolean) {
-    if (v) setRole('member');
-    onOpenChange(v);
-  }
-  return (
-    <Modal open={open} onOpenChange={handleOpenChange}>
-      <ModalContent className="lg:max-w-md">
-        <ModalHeader>
-          <ModalTitle>
-            Change role for {selectedCount} member{selectedCount === 1 ? '' : 's'}
-          </ModalTitle>
-          <ModalDescription>Owners and admins can manage the whole account.</ModalDescription>
-        </ModalHeader>
-        <ModalBody>
-          <div className="space-y-1.5">
-            <Label htmlFor="bulk-role">New role</Label>
-            <Select value={role} onValueChange={(v) => setRole(v as AccountRole)}>
-              <SelectTrigger id="bulk-role">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="owner">
-                  {ACCOUNT_ROLE_DESCRIPTORS.owner.label} — {ACCOUNT_ROLE_DESCRIPTORS.owner.blurb}
-                </SelectItem>
-                <SelectItem value="admin">
-                  {ACCOUNT_ROLE_DESCRIPTORS.admin.label} — {ACCOUNT_ROLE_DESCRIPTORS.admin.blurb}
-                </SelectItem>
-                <SelectItem value="member">
-                  {ACCOUNT_ROLE_DESCRIPTORS.member.label} — {ACCOUNT_ROLE_DESCRIPTORS.member.blurb}
-                </SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </ModalBody>
-        <ModalFooter className="sm:justify-between">
-          <Button variant="outline-ghost" onClick={() => handleOpenChange(false)} disabled={busy}>
-            Cancel
-          </Button>
-          <Button onClick={() => onConfirm(role)} disabled={busy} className="gap-1.5">
-            {busy ? <Loading className="size-4 shrink-0" /> : null}
-            Apply
-          </Button>
-        </ModalFooter>
-      </ModalContent>
-    </Modal>
+    </>
   );
 }

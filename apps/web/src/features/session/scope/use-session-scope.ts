@@ -15,6 +15,9 @@ import { qk, useProjectConfig } from '@kortix/sdk/react';
 import { useIsFetching, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo } from 'react';
 
+import { PROJECT_ACTIONS } from '@/lib/project-actions';
+import { useProjectCans } from '@/lib/use-project-can';
+
 import {
   buildSessionScopeSelectionCatalog,
   type SessionScopeCatalogState,
@@ -45,6 +48,40 @@ export interface UseSessionScopeInput {
   agentName?: string | null;
 }
 
+/**
+ * Which catalog axes the CALLER is allowed to read. Secrets and connectors are
+ * manager-tier leaves (`project.secret.read`, `project.connector.read`), so for
+ * a project `member` both requests are a guaranteed 403.
+ *
+ * `Promise.allSettled` already degraded those to `status: 'unavailable'`, so the
+ * UI was correct — but it was correct by way of two failed HTTP requests on
+ * every project-home load, which is noise in the network panel, noise in the
+ * API's error logs, and a permission check performed by asking the server to
+ * refuse. Ask the permission probe instead and never send the request.
+ *
+ * `connections` is deliberately absent: `project.connector.connections` is in
+ * the member baseline and that call returns 200 for a member.
+ */
+export interface SessionScopeCatalogPermits {
+  secrets: boolean;
+  connectors: boolean;
+}
+
+const ALL_CATALOG_PERMITS: SessionScopeCatalogPermits = { secrets: true, connectors: true };
+
+/** Module-level so the identity is stable across renders — `useProjectCans`
+ *  keys its query on this array. */
+const SCOPE_CATALOG_ACTIONS = [
+  PROJECT_ACTIONS.PROJECT_SECRET_READ,
+  PROJECT_ACTIONS.PROJECT_CONNECTOR_READ,
+] as const;
+
+/** A request that was never made. Distinct from a request that FAILED: it
+ *  yields the same 'unavailable' state but carries no error, so
+ *  `firstCatalogError` stays quiet and nothing surfaces a phantom failure. */
+const SKIPPED = Symbol('skipped-catalog-axis');
+type MaybeSkipped<T> = readonly T[] | typeof SKIPPED;
+
 const sdkCatalogSources: SessionScopeCatalogSources = {
   listSecrets: async (projectId) => (await listProjectSecrets(projectId)).items,
   listConnectors: async (projectId) => (await listConnectors(projectId)).connectors,
@@ -58,9 +95,12 @@ function rejectedCatalogError(axis: string, reason: unknown): Error {
 
 function settledCatalogState<T>(
   axis: string,
-  result: PromiseSettledResult<readonly T[]>,
+  result: PromiseSettledResult<MaybeSkipped<T>>,
 ): { state: SessionScopeCatalogState<T>; error: Error | null } {
   if (result.status === 'fulfilled') {
+    // Not permitted → never requested. Same state the 403 used to produce, with
+    // no error attached, because nothing went wrong.
+    if (result.value === SKIPPED) return { state: { status: 'unavailable' }, error: null };
     return {
       state: { status: 'ready', items: result.value },
       error: null,
@@ -79,17 +119,28 @@ export function sessionScopeQueryKey(
   return ['project-session-scope', projectId, sessionId] as const;
 }
 
-export function sessionScopeCatalogQueryKey(projectId: string | null | undefined) {
-  return ['session-scope-catalog', projectId] as const;
+/** The permits are PART OF THE KEY. They change the result, so a cache slot
+ *  that ignored them would keep serving "unavailable" to a user who was just
+ *  granted the leaf, until the entry went stale on its own. */
+export function sessionScopeCatalogQueryKey(
+  projectId: string | null | undefined,
+  permits: SessionScopeCatalogPermits = ALL_CATALOG_PERMITS,
+) {
+  return ['session-scope-catalog', projectId, permits.secrets, permits.connectors] as const;
 }
 
 export async function loadSessionScopeCatalog(
   projectId: string,
   sources: SessionScopeCatalogSources = sdkCatalogSources,
+  permits: SessionScopeCatalogPermits = ALL_CATALOG_PERMITS,
 ): Promise<LoadedSessionScopeCatalog> {
   const [secretsResult, connectorsResult, connectionsResult] = await Promise.allSettled([
-    sources.listSecrets(projectId),
-    sources.listConnectors(projectId),
+    permits.secrets
+      ? sources.listSecrets(projectId)
+      : Promise.resolve(SKIPPED as MaybeSkipped<ProjectSecret>),
+    permits.connectors
+      ? sources.listConnectors(projectId)
+      : Promise.resolve(SKIPPED as MaybeSkipped<AdminConnector>),
     sources.listConnections(projectId),
   ]);
   const secrets = settledCatalogState('secret', secretsResult);
@@ -156,10 +207,24 @@ export function useSessionScope({ projectId, sessionId, agentName }: UseSessionS
     retry: false,
     staleTime: 0,
   });
+  // Ask ONCE for both leaves (useProjectCans batches into a single probe), then
+  // only request the axes this user may actually read.
+  const catalogCaps = useProjectCans(projectId ?? undefined, SCOPE_CATALOG_ACTIONS);
+  const secretsCap = catalogCaps[PROJECT_ACTIONS.PROJECT_SECRET_READ];
+  const connectorsCap = catalogCaps[PROJECT_ACTIONS.PROJECT_CONNECTOR_READ];
+  const catalogPermits = useMemo<SessionScopeCatalogPermits>(
+    () => ({ secrets: secretsCap?.allowed === true, connectors: connectorsCap?.allowed === true }),
+    [secretsCap?.allowed, connectorsCap?.allowed],
+  );
+  // Hold the query until the probe answers. Running it early would fetch with
+  // `{secrets:false, connectors:false}` (the hook's loading default), cache that
+  // under its own key, and then refetch — turning one request into two.
+  const catalogPermitsResolved = !secretsCap?.isLoading && !connectorsCap?.isLoading;
+
   const catalogQuery = useQuery({
-    queryKey: sessionScopeCatalogQueryKey(projectId),
-    queryFn: () => loadSessionScopeCatalog(projectId as string),
-    enabled: Boolean(projectId),
+    queryKey: sessionScopeCatalogQueryKey(projectId, catalogPermits),
+    queryFn: () => loadSessionScopeCatalog(projectId as string, sdkCatalogSources, catalogPermits),
+    enabled: Boolean(projectId) && catalogPermitsResolved,
     retry: false,
     staleTime: 30_000,
   });

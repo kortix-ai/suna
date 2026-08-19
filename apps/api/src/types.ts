@@ -131,7 +131,7 @@ export interface TierEntitlements {
   /**
    * Custom RBAC: user-defined roles, fine-grained policy bindings, and groups
    * (IAM v1 — custom-roles.ts + groups.ts). Built-in preset roles (owner/admin/
-   * member/manager/editor/user) stay free on every tier — this only gates the
+   * member/manager/user) stay free on every tier — this only gates the
    * ability to define custom roles/policies/groups beyond those presets.
    */
   rbac: boolean;

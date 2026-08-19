@@ -12,10 +12,16 @@ interface ParsedFileRef {
   path: string;
   mime: string;
   filename: string;
+  /** Present only on an optimistic ref, whose bytes have not landed yet: a
+   *  stable per-attachment id standing in for the absent server path. See
+   *  `uploaded-file-refs.ts`. */
+  pending?: string;
 }
 
-const FILE_TAG_REGEX =
-  /<file\s+path="([^"]*?)"\s+mime="([^"]*?)"\s+filename="([^"]*?)">\s*[\s\S]*?<\/file>/g;
+// Attributes are read by NAME, not by position, so an optional `pending` can be
+// appended without the tag becoming unparseable. A value can never contain a
+// raw `>` — `xmlAttr` escapes it — so `[^>]*` cannot run past the tag.
+const FILE_TAG_REGEX = /<file\s+([^>]*?)>\s*[\s\S]*?<\/file>/g;
 
 export function parseFileReferences(text: string): {
   cleanText: string;
@@ -23,8 +29,27 @@ export function parseFileReferences(text: string): {
 } {
   const files: ParsedFileRef[] = [];
   const cleanText = text
-    .replace(FILE_TAG_REGEX, (_, path, mime, filename) => {
-      files.push({ path, mime, filename });
+    .replace(FILE_TAG_REGEX, (whole, attrs: string) => {
+      const pick = (key: string): string | undefined => {
+        const m = attrs.match(new RegExp(`\\b${key}="([^"]*?)"`));
+        // Every attribute is unescaped on the way out. `xmlAttr` escapes `&`,
+        // `"`, `<` and `>` on the way in, and this side used to push the RAW
+        // attribute back — so `R&D report.pdf` reached the transcript, and the
+        // model, as the literal `R&amp;D report.pdf`.
+        return m ? unescapeAttr(m[1]) : undefined;
+      };
+      const path = pick('path');
+      const filename = pick('filename');
+      // A tag carrying neither is not a file reference; leave it in the text
+      // rather than silently swallowing it.
+      if (path === undefined && filename === undefined) return whole;
+      const pending = pick('pending');
+      files.push({
+        path: path ?? '',
+        mime: pick('mime') ?? '',
+        filename: filename ?? '',
+        ...(pending ? { pending } : {}),
+      });
       return '';
     })
     .trim();
@@ -73,8 +98,18 @@ export interface ParsedProjectRef {
   description?: string;
 }
 
+/**
+ * The exact inverse of `xmlAttr` in `uploaded-file-refs.ts`.
+ *
+ * `&amp;` is undone LAST, so an escaped `&lt;` (written `&amp;lt;`) comes back
+ * as the literal `&lt;` rather than being unescaped twice into `<`.
+ */
 function unescapeAttr(v: string): string {
-  return v.replace(/&quot;/g, '"').replace(/&amp;/g, '&');
+  return v
+    .replace(/&quot;/g, '"')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&');
 }
 
 export function parseProjectReferences(text: string): {
@@ -268,10 +303,12 @@ export function SystemNotificationCard({ notification }: { notification: SystemN
   // "1.2s", "us-east-1") have no spaces, so the longest value that does is the
   // closest thing to a sentence the tag gave us. Overflow is a truncated line,
   // never a second row.
-  const detail = notification.fields
-    .map(([, value]) => value)
-    .filter((value) => value.includes(' '))
-    .sort((a, b) => b.length - a.length)[0];
+  let detail: string | undefined;
+  for (const [, value] of notification.fields) {
+    if (value.includes(' ') && (!detail || value.length > detail.length)) {
+      detail = value;
+    }
+  }
 
   return (
     <Disclosure variant="outline" className="bg-secondary">
@@ -287,8 +324,8 @@ export function SystemNotificationCard({ notification }: { notification: SystemN
         <div className="space-y-1 px-3 pb-2 text-xs">
           {notification.fields.length > 0 && (
             <div className="space-y-0.5">
-              {notification.fields.map(([key, value], i) => (
-                <div key={i} className="flex min-w-0 gap-2">
+              {notification.fields.map(([key, value]) => (
+                <div key={`${key}:${value}`} className="flex min-w-0 gap-2">
                   <span className="text-muted-foreground shrink-0">{key}:</span>
                   <span className="text-foreground font-mono text-xs break-all">{value}</span>
                 </div>

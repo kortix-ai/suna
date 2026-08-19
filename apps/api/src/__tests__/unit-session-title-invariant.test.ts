@@ -61,11 +61,22 @@ describe('session-title invariant', () => {
   test('B — the title generator has exactly four entry points', () => {
     // Adding a prompt transport and titling it its own way is the failure this
     // catches; the hook set is documented here, in one enforced place.
+    //
+    // FOUR hooks, FIVE files: the proxy's pre-prompt hook is split across
+    // `sandbox-proxy/routes/preview.ts` and `sandbox-proxy/pre-prompt-env-sync.ts`
+    // (see the header on the latter — the route cannot be imported by a unit
+    // test without caching its collaborators past every sibling's `mock.module`).
+    // The two are one entry point and must be counted as one.
     expect(
       offenders(/from '[^']*session-title-generate'/, [
         'projects/lib/sessions.ts',
         'projects/session-lifecycle/engine.ts',
         'sandbox-proxy/routes/preview.ts',
+        // Hook 3, extracted. `runPrePromptEnvSync` is the block that used to sit
+        // inline in preview.ts; it calls the generator through an injected
+        // `deps.generateTitle`, so the route still owns the only real binding.
+        // Not a new title author — the same one, moved for testability.
+        'sandbox-proxy/pre-prompt-env-sync.ts',
         // Turn-end second-chance retry: a session whose only prompt was baked
         // in-guest (KORTIX_INITIAL_PROMPT) never crosses another titling hook.
         // The generator stays the single writer (needsTitle + CAS), so this is
@@ -130,15 +141,16 @@ describe('session-title invariant', () => {
   });
 
   test('E — the warm create that bypasses executeCreateSession stays prompt-free', () => {
-    // r7's warm coordinator calls createProjectSession directly. It carries no
-    // prompt today, so Hook 1 no-ops there — but it must never quietly acquire
-    // one without the titling question being asked.
-    const src = readFileSync(join(SRC, 'projects/routes/r7.ts'), 'utf8');
-    const at = src.indexOf('create: async (metadata) => {');
+    // POST /sessions/warm calls createProjectSession directly. It passes an
+    // EMPTY body on purpose — the project's own defaults, no prompt — so Hook 1
+    // no-ops there. It must never quietly acquire one without the titling
+    // question being asked.
+    const src = readFileSync(join(SRC, 'projects/routes/warm-sessions.ts'), 'utf8');
+    const at = src.indexOf('const result = await createProjectSession({');
     expect(at).toBeGreaterThan(-1);
     const open = src.indexOf('body: {', at);
     const close = src.indexOf('},', open);
     expect(open).toBeGreaterThan(-1);
-    expect(src.slice(open, close)).not.toContain('prompt');
+    expect(src.slice(open, close).replace(/\s/g, '')).toBe('body:{');
   });
 });

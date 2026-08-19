@@ -23,14 +23,12 @@ import {
   AUTO_TOPUP_DEFAULT_AMOUNT,
   AUTO_TOPUP_DEFAULT_THRESHOLD,
   AUTO_TOPUP_MIN_AMOUNT,
+  AUTO_TOPUP_MIN_BUFFER,
   AUTO_TOPUP_MIN_THRESHOLD,
 } from '@kortix/shared';
 
 /** Minimum 60 seconds between successful auto-topup charges. */
 const CHARGE_COOLDOWN_MS = 60_000;
-
-/** Buffer above threshold the topup amount must add. Prevents config that loops forever. */
-const AUTO_TOPUP_MIN_BUFFER = 1;
 
 /** After this many consecutive failures the auto-topup is disabled; user must re-enable. */
 const AUTO_TOPUP_MAX_CONSECUTIVE_FAILURES = 3;

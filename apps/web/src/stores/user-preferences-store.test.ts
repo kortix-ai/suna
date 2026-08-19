@@ -50,3 +50,30 @@ describe('panelMode', () => {
     expect(useUserPreferencesStore.getState().preferences.panelMode).toBe('easy');
   });
 });
+
+describe('conversationDensity', () => {
+  beforeEach(() => {
+    useUserPreferencesStore.getState().resetPreferences();
+  });
+
+  it('defaults to normal', () => {
+    expect(useUserPreferencesStore.getState().preferences.conversationDensity).toBe('normal');
+  });
+
+  it('setConversationDensity switches to minimal', () => {
+    useUserPreferencesStore.getState().setConversationDensity('minimal');
+    expect(useUserPreferencesStore.getState().preferences.conversationDensity).toBe('minimal');
+  });
+
+  it('setConversationDensity leaves every other preference untouched', () => {
+    useUserPreferencesStore.getState().setPanelMode('advanced');
+    useUserPreferencesStore.getState().setConversationDensity('minimal');
+    expect(useUserPreferencesStore.getState().preferences.panelMode).toBe('advanced');
+  });
+
+  it('resetPreferences restores normal', () => {
+    useUserPreferencesStore.getState().setConversationDensity('minimal');
+    useUserPreferencesStore.getState().resetPreferences();
+    expect(useUserPreferencesStore.getState().preferences.conversationDensity).toBe('normal');
+  });
+});

@@ -65,8 +65,7 @@ import { useEffect } from 'react';
  *  than reflowing from squashed to correct on every frame. */
 const PANEL_WIDTH = 380;
 
-const isMac =
-  typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform);
+const isMac = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform);
 const modSymbol = isMac ? '⌘' : 'Ctrl';
 
 /**
@@ -104,8 +103,7 @@ export function SessionActionPanelColumn() {
   const isActiveTab = useTabStore((s) => (sessionId ? s.activeTabId === sessionId : false));
   // Inactive session tabs stay mounted. Only the visible tab may own ⌘I, or
   // every background layout would flip the shared `isActionPanelOpen` flag.
-  const shouldHandleHotkey =
-    !!panel && !isMobile && (isInTabSystem ? isActiveTab : true);
+  const shouldHandleHotkey = !!panel && !isMobile && (isInTabSystem ? isActiveTab : true);
 
   useEffect(() => {
     if (!shouldHandleHotkey) return;
@@ -161,7 +159,7 @@ export function SessionActionPanelColumn() {
         label={
           <span className="flex items-center gap-1.5">
             {label}
-            <KbdGroup>
+            <KbdGroup className='bg-transparent'>
               <Kbd className="font-mono">{modSymbol}</Kbd>
               <Kbd className="font-mono">I</Kbd>
             </KbdGroup>

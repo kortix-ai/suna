@@ -16,9 +16,7 @@ describe('Slack channel connector catalogue', () => {
 
   test('keeps Slack out of the Pipedream OAuth Discover catalogue', () => {
     expect(source).toContain("new Set(['slack', 'slack_v2'])");
-    expect(source).toContain(
-      "(app) => app.authType === 'oauth' && !BUILT_IN_CHANNEL_APP_SLUGS.has(app.slug)",
-    );
+    expect(source).toContain('apps.filter((app) => !BUILT_IN_CHANNEL_APP_SLUGS.has(app.slug))');
     expect(source).toContain('const discoverCards = [...connectorCards, ...pipedreamOAuthCards]');
   });
 

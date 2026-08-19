@@ -315,3 +315,75 @@ describe('buildSecretCapabilities describes the network boundary', () => {
     expect(parsed.notes.network).toEqual([...NETWORK_BOUNDARY_NOTES]);
   });
 });
+
+/**
+ * The echo wording is mode-specific because the two mechanisms produce
+ * OPPOSITE symptoms for the same working request.
+ *
+ * Platinum's edge CUTS an echoing response, so `curl` reports an empty reply
+ * and that means success. The in-guest shim relays through the broker, which
+ * REDACTS instead, so success is a 200 containing `[REDACTED]` and an empty
+ * reply is a genuine failure. Telling a shim-backed agent the edge's story
+ * makes it read a dead host as a working boundary — which is why the catalog
+ * cannot keep hardcoding one of them.
+ */
+describe('network-boundary echo guidance follows the mechanism', () => {
+  const boundaryRow = {
+    secretId: '00000000-0000-4000-8000-0000000000ff',
+    identifier: 'BOUNDARY_ONE',
+    key: 'BOUNDARY_ONE',
+    value: 'sk_never_in_the_catalog',
+    strategy: 'egress' as const,
+    consumer: 'network' as const,
+    egressPolicy: {
+      rules: [{ host: 'api.example.com' }],
+      inject: { kind: 'header' as const, name: 'x-demo', template: 'Bearer {{secret}}' },
+      on_no_match: 'deny' as const,
+      tls: 'terminate' as const,
+    },
+  };
+  const build = (boundaryMode: 'provider-edge' | 'in-guest-shim' | null) =>
+    buildSecretCapabilities([boundaryRow], {
+      grantEnv: ['BOUNDARY_ONE'],
+      // Network delivery is handle-based, so it is withheld entirely without a
+      // session — without this the catalog is empty and every assertion below
+      // would vacuously pass on `undefined`.
+      sessionId: 'session-1',
+      boundaryMode,
+    });
+
+  test('the provider edge says an empty reply is success', () => {
+    const catalog = build('provider-edge');
+    expect(catalog.capabilities[0]).toMatchObject({ delivery: 'network', on_echo: 'block' });
+    const notes = (catalog.notes?.network ?? []).join(' ');
+    expect(notes).toContain('cut mid-flight');
+    expect(notes).toContain('Empty reply from server');
+    expect(notes).not.toContain('[REDACTED]');
+  });
+
+  test('the in-guest shim says [REDACTED] is success and an empty reply is NOT', () => {
+    const catalog = build('in-guest-shim');
+    expect(catalog.capabilities[0]).toMatchObject({ delivery: 'network', on_echo: 'redact' });
+    const notes = (catalog.notes?.network ?? []).join(' ');
+    expect(notes).toContain('[REDACTED]');
+    // The exact inversion that would mislead an agent.
+    expect(notes).toContain('is a REAL failure here');
+    expect(notes).not.toContain('Empty reply from server');
+  });
+
+  test('both modes still forbid inventing a credential', () => {
+    for (const mode of ['provider-edge', 'in-guest-shim'] as const) {
+      const notes = (build(mode).notes?.network ?? []).join(' ');
+      expect(notes).toContain('do not invent a credential');
+      expect(notes).toContain('The value is not in this sandbox');
+    }
+  });
+
+  test('an unknown mechanism keeps the pre-shim wording rather than guessing', () => {
+    // Conservative: `block` is what every deployment did before the shim, so a
+    // caller that cannot name the mechanism gets the historical answer instead
+    // of a claim about a mechanism it never chose.
+    const catalog = build(null);
+    expect(catalog.capabilities[0]).toMatchObject({ on_echo: 'block' });
+  });
+});

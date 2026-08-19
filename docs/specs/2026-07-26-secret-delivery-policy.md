@@ -166,9 +166,7 @@ takes effect in the existing session.
 Re-scoping *env* per prompt is not sufficient on its own. The proxy also
 reconciles every active session token's `agent_grant` before it forwards each
 prompt. Connector and Kortix CLI authorization therefore follow the current
-manifest and running agent. `KORTIX_ENFORCE_AGENT_SECRET_GRANT_LOCK` defaults
-off; operators can set it to true when they require immutable secret grants per
-sandbox.
+manifest and running agent.
 
 There is also a live fail-open on that path: `session-sandbox.ts:143` does
 `resolveAgentGrant(...).catch(() => null)`, and `null` means unrestricted. It

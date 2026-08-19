@@ -48,6 +48,11 @@ export default defineConfig({
       // duplicate literal that used to sit here drifted to a different theme and
       // its "keep in sync" comment named the wrong file.
       themes: { light: SHIKI_THEME_LIGHT, dark: SHIKI_THEME_DARK },
+      // Emit `language-*` on the <code> element. The docs `pre` override
+      // (docs-mdx-components.tsx) renders the app CodeBlock shell, whose header
+      // shows the language — without this class rehype-code keeps the language
+      // to itself and the label has nothing to read.
+      addLanguageClass: true,
     },
   },
 });

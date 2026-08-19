@@ -10,7 +10,7 @@ import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { ChatCircleIcon as MessageCircle } from '@phosphor-icons/react';
 
-export function SessionMessageTool({ part }: ToolProps) {
+export function SessionMessageTool({ part, forceOpen }: ToolProps) {
   const input = partInput(part);
   const output = partOutput(part);
   const status = partStatus(part);
@@ -28,6 +28,7 @@ export function SessionMessageTool({ part }: ToolProps) {
         args: isOk ? ['sent'] : status === 'error' ? ['failed'] : [],
       }}
       defaultOpen={false}
+      forceOpen={forceOpen}
     >
       {message && (
         <div className="px-3 py-2">

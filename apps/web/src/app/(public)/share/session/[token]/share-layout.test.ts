@@ -21,11 +21,11 @@ describe('public session share layout sizing', () => {
     expect(SHARE_PREVIEW_IFRAME_CLASS).toContain('w-full');
   });
 
-  test('html file iframe takes the remaining height and full width', () => {
-    // Sits below a fixed toolbar inside a flex column, so it grows via flex-1
-    // (with min-h-0 so it can shrink) and spans the full width.
-    expect(SHARE_FILE_IFRAME_CLASS).toContain('flex-1');
-    expect(SHARE_FILE_IFRAME_CLASS).toContain('min-h-0');
+  test('html file iframe fills the region full width and full height', () => {
+    // The share view no longer stacks a toolbar above the document, so this
+    // iframe is the only child of the content region and claims the whole box
+    // exactly like the preview iframe.
+    expect(SHARE_FILE_IFRAME_CLASS).toContain('h-full');
     expect(SHARE_FILE_IFRAME_CLASS).toContain('w-full');
   });
 

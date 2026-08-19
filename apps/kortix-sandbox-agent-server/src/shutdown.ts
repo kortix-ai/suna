@@ -1,4 +1,5 @@
 import { shredAgentEnvFile } from './agent-env-file'
+import { stopEgressShim } from './egress-shim'
 import { logger } from './logger'
 import type { Opencode } from './opencode'
 import type { ProxyServer } from './proxy'
@@ -16,6 +17,10 @@ export function installShutdownHandlers(
     shuttingDown = true
     logger.info('[shutdown] signal received', { signal })
     shredAgentEnvFile()
+    // Stops the listener and drops the CA private key, which lives only in
+    // memory and is never written to disk. A hibernated or archived disk must
+    // not be able to yield a CA that can still impersonate a policy host.
+    stopEgressShim()
 
     void (async () => {
       try {

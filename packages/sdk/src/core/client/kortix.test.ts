@@ -424,7 +424,7 @@ test('project(id).access covers group-grant attach/update/detach', async () => {
   expect(last().url).toContain('/projects/PID123/group-grants');
   expect(last().method).toBe('POST');
 
-  await kortix.project('PID123').access.updateGroupGrant('GRP1', 'editor');
+  await kortix.project('PID123').access.updateGroupGrant('GRP1', 'manager');
   expect(last().url).toContain('/projects/PID123/group-grants/GRP1');
   expect(last().method).toBe('PATCH');
 

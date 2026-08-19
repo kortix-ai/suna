@@ -260,7 +260,7 @@ const ModalContentInner = React.forwardRef<
     // on the top-most layer only, so a nested modal would see its own parent in
     // that count, prevent its own dismissal, and leave Escape dead. Callers that
     // need the nested-dialog guard pass their own `onEscapeKeyDown` — it lands in
-    // `...props` below and replaces this one (see `customize-panel.tsx`).
+    // `...props` below and replaces this one (see the legacy Customize panel).
     const handleEscapeKeyDown = (event: KeyboardEvent) => {
       if (hasOpenFloatingLayer()) {
         event.preventDefault();

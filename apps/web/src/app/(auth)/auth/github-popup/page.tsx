@@ -28,6 +28,7 @@ export default function GitHubOAuthPopup() {
     let authSubscription: { unsubscribe: () => void } | null = null;
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
     let closeTimerId: ReturnType<typeof setTimeout> | null = null;
+    let sessionDelayId: ReturnType<typeof setTimeout> | null = null;
     let cancelled = false;
 
     // Get return URL from sessionStorage (set by parent component)
@@ -89,7 +90,9 @@ export default function GitHubOAuthPopup() {
 
           try {
             // Wait a moment for Supabase to process the session
-            await new Promise((resolve) => setTimeout(resolve, 1000));
+            await new Promise((resolve) => {
+              sessionDelayId = setTimeout(resolve, 1000);
+            });
             if (cancelled) return;
 
             const {
@@ -171,6 +174,7 @@ export default function GitHubOAuthPopup() {
       authSubscription?.unsubscribe();
       if (timeoutId) clearTimeout(timeoutId);
       if (closeTimerId) clearTimeout(closeTimerId);
+      if (sessionDelayId) clearTimeout(sessionDelayId);
     };
   }, []);
 

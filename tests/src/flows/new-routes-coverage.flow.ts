@@ -186,7 +186,10 @@ flow(
   'SESS-20',
   {
     domain: 'sessions',
-    routes: ['GET /v1/projects/:projectId/sessions/:sessionId/transcript'],
+    routes: [
+      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
+      'GET /v1/projects/:projectId/sessions/:sessionId/turn',
+    ],
   },
   async (ctx) => {
     const project = await ctx.fixtures.project();
@@ -197,6 +200,47 @@ flow(
           params: { projectId: project.id, sessionId: ZERO_UUID },
         });
       response.status(404);
+    });
+
+    await ctx.step('Session turn read reports a fresh session as idle', async () => {
+      // The only committed black-box 200 on this route. A session that has
+      // never run a turn answers with an EMPTY `turns` list and NO `last_ended`
+      // — the absence is what separates "never ran" from "the last one ended",
+      // so a `last_ended: null` here would be a contract break, not a detail.
+      const session = await ctx.fixtures.session(project);
+      const response = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/projects/:projectId/sessions/:sessionId/turn', {
+          params: { projectId: project.id, sessionId: session.id },
+        });
+      response.status(200);
+      const body = response.json<{ turns: unknown[]; last_ended?: unknown }>();
+      if (!Array.isArray(body.turns) || body.turns.length !== 0) {
+        throw new Error(`expected an empty turns list, got ${JSON.stringify(body.turns)}`);
+      }
+      if ('last_ended' in body) {
+        throw new Error(`expected last_ended to be absent, got ${JSON.stringify(body.last_ended)}`);
+      }
+    });
+
+    await ctx.step('Session turn read returns 404 for an unknown session', async () => {
+      const response = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/projects/:projectId/sessions/:sessionId/turn', {
+          params: { projectId: project.id, sessionId: ZERO_UUID },
+        });
+      response.status(404);
+    });
+
+    await ctx.step('Session turn read refuses an anonymous caller', async () => {
+      // The turn ledger carries the OpenCode session id and the client-minted
+      // message id — session CONTENT, never public.
+      const response = await ctx.client
+        .as(ctx.P.ANON)
+        .get('/v1/projects/:projectId/sessions/:sessionId/turn', {
+          params: { projectId: project.id, sessionId: ZERO_UUID },
+        });
+      response.status([401, 403, 404]);
     });
   },
 );

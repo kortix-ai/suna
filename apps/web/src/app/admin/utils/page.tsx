@@ -13,6 +13,16 @@ import { ClockIcon as Clock, GearSixIcon as Settings } from '@phosphor-icons/rea
 import { useEffect, useState } from 'react';
 import { MAINTENANCE_LEVELS, MaintenanceConfigDialog, MaintenanceLevelCard } from './_components';
 
+// Same output as `toLocaleString()` with no options: date + time, numeric fields.
+const updatedAtFormatter = new Intl.DateTimeFormat(undefined, {
+  year: 'numeric',
+  month: 'numeric',
+  day: 'numeric',
+  hour: 'numeric',
+  minute: 'numeric',
+  second: 'numeric',
+});
+
 export default function AdminUtilsPage() {
   const { data: config, isLoading } = useMaintenanceAdmin();
   const updateConfig = useUpdateMaintenanceConfig();
@@ -182,7 +192,7 @@ export default function AdminUtilsPage() {
             <p className="text-muted-foreground mt-6 flex items-center gap-1 text-xs">
               <Clock className="h-3 w-3" />
               {'Last updated:'}
-              {new Date(config.updatedAt).toLocaleString()}
+              {updatedAtFormatter.format(new Date(config.updatedAt))}
             </p>
           )}
         </div>

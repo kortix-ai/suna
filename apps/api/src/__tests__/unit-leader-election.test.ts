@@ -45,13 +45,14 @@ describe('runsSingletonWorkers (dead-weight-leader guard)', () => {
     expect(runsSingletonWorkers({ KORTIX_WORKERS_ENABLED: 'false' })).toBe(false);
   });
 
-  test('API-only profile (ALL four worker flags "false") → NOT an owner', () => {
+  test('API-only profile (ALL five worker flags "false") → NOT an owner', () => {
     // This is the helm workers.enabled=false profile. Such a pod must never join
     // the election — otherwise it can win the lease and dead-weight-starve crons.
     expect(
       runsSingletonWorkers({
         KORTIX_TRIGGER_SCHEDULER_ENABLED: 'false',
         KORTIX_PROJECT_MAINTENANCE_ENABLED: 'false',
+        KORTIX_ACTIVE_TURN_RENEWAL_ENABLED: 'false',
         KORTIX_LEGACY_MIGRATION_WORKER_ENABLED: 'false',
         KORTIX_SUNA_MIGRATION_WORKER_ENABLED: 'false',
       }),
@@ -74,6 +75,19 @@ describe('runsSingletonWorkers (dead-weight-leader guard)', () => {
       runsSingletonWorkers({
         KORTIX_TRIGGER_SCHEDULER_ENABLED: 'true',
         KORTIX_PROJECT_MAINTENANCE_ENABLED: 'false',
+        KORTIX_ACTIVE_TURN_RENEWAL_ENABLED: 'false',
+        KORTIX_LEGACY_MIGRATION_WORKER_ENABLED: 'false',
+        KORTIX_SUNA_MIGRATION_WORKER_ENABLED: 'false',
+      }),
+    ).toBe(true);
+  });
+
+  test('only active-turn renewal enabled → owner', () => {
+    expect(
+      runsSingletonWorkers({
+        KORTIX_TRIGGER_SCHEDULER_ENABLED: 'false',
+        KORTIX_PROJECT_MAINTENANCE_ENABLED: 'false',
+        KORTIX_ACTIVE_TURN_RENEWAL_ENABLED: 'true',
         KORTIX_LEGACY_MIGRATION_WORKER_ENABLED: 'false',
         KORTIX_SUNA_MIGRATION_WORKER_ENABLED: 'false',
       }),

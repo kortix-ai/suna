@@ -41,7 +41,7 @@ function fromRow(row: typeof projectLlmRoutingPolicies.$inferSelect): StoredProj
  * Persist ONLY the project's model overrides, preserving any routing policy.
  * Upserts the policy row (other fields keep their column defaults on insert and
  * are untouched on conflict), so model enablement is independent of the routing
- * editor. An empty object clears every exception, restoring the catalog default.
+ * routing editor. An empty object clears every exception, restoring the catalog default.
  */
 export async function setProjectModelOverrides(params: {
   projectId: string;

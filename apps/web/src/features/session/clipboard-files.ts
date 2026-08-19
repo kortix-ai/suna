@@ -19,8 +19,11 @@ export function extractClipboardFiles(data: ClipboardPayload | null | undefined)
   if (!data) return [];
   const fromFiles = Array.from(data.files);
   if (fromFiles.length > 0) return fromFiles;
-  return Array.from(data.items)
-    .filter((item) => item.kind === 'file')
-    .map((item) => item.getAsFile())
-    .filter((file): file is File => file !== null);
+  const fromItems: File[] = [];
+  for (const item of Array.from(data.items)) {
+    if (item.kind !== 'file') continue;
+    const file = item.getAsFile();
+    if (file !== null) fromItems.push(file);
+  }
+  return fromItems;
 }

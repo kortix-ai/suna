@@ -3,6 +3,7 @@
 import { AnimatePresence, m, useReducedMotion } from 'motion/react';
 import { useEffect, useRef, useState } from 'react';
 
+import { SessionDotMatrix } from '@/components/ui/dot-matrix/session-dot-matrix';
 import { TextShimmer } from '@/components/ui/text-shimmer';
 import { cn } from '@/lib/utils';
 
@@ -41,11 +42,18 @@ export function SessionBusyIndicator({
   statusText,
   retryLabel,
   ambient = false,
+  sessionId,
   className,
 }: {
   statusText?: string;
   retryLabel?: string;
   ambient?: boolean;
+  /**
+   * Keys the dot-matrix glyph: each session hashes to its own variant
+   * (`SessionDotMatrix`), stable for that session's whole life. Session-less
+   * surfaces (home demo, debug harness) omit it and keep the default glyph.
+   */
+  sessionId?: string;
   className?: string;
 }): React.ReactElement {
   const reduceMotion = useReducedMotion() ?? false;
@@ -87,6 +95,7 @@ export function SessionBusyIndicator({
         className,
       )}
     >
+      <SessionDotMatrix sessionId={sessionId} size={14} className="shrink-0" />
       <span className="relative min-w-0 flex-1" aria-hidden>
         {isRetrying ? (
           <span className="text-muted-foreground/70 block truncate text-sm leading-5">{label}</span>
@@ -99,9 +108,11 @@ export function SessionBusyIndicator({
                 animate={swap.animate}
                 exit={swap.exit}
                 transition={swap.transition}
-                className="block min-w-0 whitespace-nowrap will-change-transform"
+                className="block min-w-0 whitespace-nowrap"
               >
-                <TextShimmer className="truncate text-sm leading-5">{label}</TextShimmer>
+                <TextShimmer className="truncate text-center align-middle text-sm leading-5">
+                  {label}
+                </TextShimmer>
               </m.span>
             </AnimatePresence>
           </span>

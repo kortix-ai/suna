@@ -3,6 +3,20 @@ import { defineConfig, devices } from '@playwright/test';
 const baseURL = process.env.E2E_BASE_URL || 'http://localhost:3000';
 const apiURL = process.env.E2E_API_URL || 'http://localhost:8008/v1';
 const environmentProtectionPassword = process.env.WEB_PROTECTION_PASSWORD;
+// Staging/preview is behind Vercel SSO deployment protection (ssoProtection,
+// passwordProtection is null). Basic-auth httpCredentials does NOT satisfy it —
+// every navigation 302s to vercel.com/sso-api. The automation bypass is the
+// `x-vercel-protection-bypass` header; `x-vercel-set-bypass-cookie` makes Vercel
+// set a cookie so the bypass persists across the app's client-side navigations
+// and fetches. Verified against staging: without the header /auth 302s to SSO,
+// with it returns 200. Empty locally (no protection there) — headers are no-ops.
+const vercelBypass = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
+const vercelBypassHeaders: Record<string, string> = vercelBypass
+  ? {
+      'x-vercel-protection-bypass': vercelBypass,
+      'x-vercel-set-bypass-cookie': 'samesitenone',
+    }
+  : {};
 export function resolveBrowserWorkers(value: string | undefined, ci: boolean): number {
   const configuredWorkers = Number.parseInt(value ?? '', 10);
   if (Number.isFinite(configuredWorkers) && configuredWorkers > 0) return configuredWorkers;
@@ -43,6 +57,7 @@ export default defineConfig({
     httpCredentials: environmentProtectionPassword
       ? { username: 'kortix', password: environmentProtectionPassword }
       : undefined,
+    extraHTTPHeaders: vercelBypassHeaders,
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',

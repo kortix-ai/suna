@@ -68,7 +68,7 @@ describe('mayChangeSessionModel — visibility is not mutability', () => {
   test('a project member who can merely SEE a shared session may not', () => {
     // visibility === 'project' makes a session readable by every member, but
     // changing its model restarts opencode and kills the owner's in-flight
-    // turn. Sharing routes at r7.ts:1508 / :1689 gate on exactly this.
+    // turn. The sharing route in routes/project-sessions.ts gate on exactly this.
     expect(mayChangeSessionModel({ canManageSharing: false })).toBe(false);
   });
 });

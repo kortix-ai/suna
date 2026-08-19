@@ -6,6 +6,7 @@ import {
   hasEnvTokenHost,
   type Host,
 } from './api/config.ts';
+import { cachedTokenIdentity } from './api/token-identity.ts';
 import { loadLink } from './project-link.ts';
 import { C, pad, visibleWidth } from './style.ts';
 
@@ -13,6 +14,8 @@ export interface HostNotice {
   name: string;
   url: string;
   authState: string;
+  /** Agent the acting token was minted for, when already known locally. */
+  agent?: string;
 }
 
 function hostAuthState(host: Host, mode: 'env' | 'stored'): string {
@@ -24,6 +27,17 @@ function hostAuthState(host: Host, mode: 'env' | 'stored'): string {
   }
   if (host.user_email || host.user_id) return `${host.user_email || host.user_id} (user)`;
   return 'authenticated';
+}
+
+/**
+ * The agent a token was minted for, from cache only — the host line is a
+ * zero-network render and stays one. The cache is filled by any `/accounts/me`
+ * the CLI already makes (see api/client.ts), and by the denial footer.
+ * Undefined simply means "not known yet", never "no agent".
+ */
+function tokenAgent(host: Host): string | undefined {
+  if (!host.token) return undefined;
+  return cachedTokenIdentity(host.token)?.agent ?? undefined;
 }
 
 export function findHostArg(argv: readonly string[]): string | undefined {
@@ -42,6 +56,7 @@ export function resolveHostNotice(hostArg?: string): HostNotice {
       name: hostArg,
       url: host?.url ?? 'unconfigured',
       authState: host ? hostAuthState(host, 'stored') : 'not logged in',
+      ...(host ? { agent: tokenAgent(host) } : {}),
     };
   }
 
@@ -50,6 +65,7 @@ export function resolveHostNotice(hostArg?: string): HostNotice {
     name,
     url: host.url,
     authState: hostAuthState(host, hasEnvTokenHost() ? 'env' : 'stored'),
+    ...(tokenAgent(host) ? { agent: tokenAgent(host) } : {}),
   };
 }
 
@@ -59,8 +75,19 @@ export function renderHostNotice(commandArgv: readonly string[]): string | null 
   const hostArg = findHostArg(commandArgv.slice(1));
   const directoryLink = loadLink();
   const linkedHost = !hostArg ? directoryLink?.host : undefined;
-  const notice = resolveHostNotice(hostArg ?? linkedHost);
+  // Host resolution mirrors resolveProjectContext: --host wins, then the
+  // platform-injected sandbox token, then the cwd link. Reading the LINK host
+  // while a KORTIX_CLI_TOKEN is present resolves a named host that carries no
+  // stored credentials inside a sandbox — which reported a fully-authenticated
+  // agent CLI as "not logged in" on every command (the exact trap called out in
+  // api/config.ts). The link still supplies the account/project below; only the
+  // auth state comes from the env host.
+  const notice = resolveHostNotice(hasEnvTokenHost() ? hostArg : (hostArg ?? linkedHost));
   let line = `${C.dim}host ${C.reset}${C.bold}${notice.name}${C.reset}${C.dim} (${notice.url}, ${notice.authState})${C.reset}`;
+  // The token's own identity: WHICH agent this session's minted token belongs
+  // to. Printed next to the host because it is a property of the credential,
+  // not of the account/project it happens to address.
+  if (notice.agent) line += `${C.dim} · agent ${C.reset}${notice.agent}`;
   // Append account + project for the active host only. With an explicit
   // `--host`, the active-config account/project may belong to a different
   // host, so we don't claim them.
@@ -133,12 +160,16 @@ export function renderContext(): string {
   // A cwd directory link (`loadLink`) can pin the host — and, with it, the
   // account — for this directory, overriding the globally-active host.
   const directoryLink = loadLink();
-  const linkedHost = directoryLink?.host ? getHost(directoryLink.host) : null;
+  // Same precedence as renderHostNotice: a platform-injected sandbox token
+  // outranks the cwd link, whose named host has no credentials in a sandbox.
+  const linkedHost =
+    !hasEnvTokenHost() && directoryLink?.host ? getHost(directoryLink.host) : null;
   const active = activeHostEntry();
   const name = linkedHost ? directoryLink!.host! : active.name;
   const host = linkedHost ?? active.host;
   const signedIn = Boolean(host.token);
   const authState = hostAuthState(host, hasEnvTokenHost() ? 'env' : 'stored');
+  const agent = tokenAgent(host);
   const labelW = 7; // "account".length / "project".length / "session".length
 
   const rows: ContextRow[] = [];
@@ -150,6 +181,17 @@ export function renderContext(): string {
     value: `${C.bold}${name}${C.reset}  ${C.faded}(${host.url}, ${authState})${C.reset}`,
     hint: signedIn ? navHint('kortix hosts use') : gapHint('kortix hosts login'),
   });
+
+  // 1b. Agent — WHO the acting token is, when it was minted for one. Rendered
+  // only for an agent token, so a human login keeps the four-level hierarchy.
+  if (signedIn && agent) {
+    rows.push({
+      glyph: ' ',
+      label: 'agent',
+      value: `${C.bold}${agent}${C.reset}  ${C.faded}(token)${C.reset}`,
+      hint: `${C.faded}grants: ${C.reset}${C.cyan}kortix whoami --token-only${C.reset}`,
+    });
+  }
 
   // You can't have an account/project/session without a signed-in host.
   if (!signedIn) return renderRows(rows, labelW);
@@ -168,7 +210,10 @@ export function renderContext(): string {
             : `${C.bold}${acct.slug}${C.reset}`,
           hint: navHint('kortix accounts use'),
         }
-      : linkedHost && directoryLink?.account_id
+      : // No globally-active account: fall back to the one the cwd link pins.
+        // This is the ONLY account a sandbox has — its env host carries none —
+        // so without it a linked session renders "account — none".
+        directoryLink?.account_id
         ? {
             glyph: ' ',
             label: 'account',

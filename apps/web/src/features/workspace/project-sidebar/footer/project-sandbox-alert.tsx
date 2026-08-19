@@ -4,6 +4,8 @@ import { ArrowClockwiseIcon as RefreshCw } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
+
+import { projectSettingsSectionHref } from '@/features/workspace/capabilities/project-settings/project-settings-sections';
 import { useCallback, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
@@ -22,9 +24,10 @@ import {
   selectCurrentSandboxFailure,
   selectSandboxStatus,
 } from '@/features/workspace/project-sidebar/footer/sandbox-alert-state';
+import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { relativeTime } from '@/lib/relative-time';
+import { useProjectCans } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
-import { useCustomizeStore } from '@/stores/customize-store';
 import {
   type ProjectSandboxHealth,
   type SandboxRuntimeStatus,
@@ -143,6 +146,12 @@ export function useSandboxRecovery(projectId: string) {
   return { retry, fixWithAgent };
 }
 
+/** The two leaves the alert's controls assert, batched into one probe. */
+const SANDBOX_ALERT_GATE_ACTIONS: readonly string[] = [
+  PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ,
+  PROJECT_ACTIONS.PROJECT_WRITE,
+];
+
 function SandboxAlertContent({
   projectId,
   health,
@@ -153,8 +162,24 @@ function SandboxAlertContent({
   severity: SandboxAlertSeverity;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
-  const openCustomize = useCustomizeStore((s) => s.openCustomize);
+  const router = useRouter();
+  // Sandbox templates is a section of the Customize bar's Settings tab now, so
+  // "Details" is a route, not an overlay open.
+  const openSandboxSection = useCallback(
+    () => router.push(projectSettingsSectionHref(projectId, 'sandbox')),
+    [router, projectId],
+  );
   const { retry, fixWithAgent } = useSandboxRecovery(projectId);
+  // The alert TEXT is information a plain member needs — "new sessions can't
+  // start until this image builds" explains why the composer is refusing them.
+  // Its CONTROLS are not: "Details" routes into Customize → Settings → Sandbox
+  // (project.customize.read) and both recovery actions rebuild the project's
+  // image (project.write). Neither leaf is in the member floor role (#6522), so
+  // for a member every one of those buttons was a "forbidden" waiting to
+  // happen. Hidden on a RECEIVED denial only, one batched probe for both.
+  const caps = useProjectCans(projectId, SANDBOX_ALERT_GATE_ACTIONS);
+  const canOpenDetails = caps[PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ]?.allowed !== false;
+  const canRecover = caps[PROJECT_ACTIONS.PROJECT_WRITE]?.allowed !== false;
   const status = selectSandboxStatus(health);
   const failure = selectCurrentSandboxFailure(health);
   const failedAt = failure ? relativeTime(failure.finished_at ?? failure.started_at) : '';
@@ -170,12 +195,12 @@ function SandboxAlertContent({
         <p className="text-muted-foreground text-xs text-balance">
           {describeSandboxSeverity(severity, status)}
         </p>
-        {!failure && severity !== 'building' && (
+        {!failure && severity !== 'building' && canOpenDetails && (
           <Button
             variant="transparent"
             size="sm"
             className="text-foreground/70 m-0 inline-flex h-fit w-fit p-0 align-baseline text-xs"
-            onClick={() => openCustomize('sandbox')}
+            onClick={openSandboxSection}
           >
             Details
           </Button>
@@ -194,14 +219,16 @@ function SandboxAlertContent({
                 {failedAt}
               </span>
             ) : null}
-            <Button
-              variant="link"
-              size="sm"
-              className="text-foreground/70 m-0 ml-auto inline-flex h-fit w-fit p-0 text-xs hover:no-underline"
-              onClick={() => openCustomize('sandbox')}
-            >
-              Details
-            </Button>
+            {canOpenDetails ? (
+              <Button
+                variant="link"
+                size="sm"
+                className="text-foreground/70 m-0 ml-auto inline-flex h-fit w-fit p-0 text-xs hover:no-underline"
+                onClick={openSandboxSection}
+              >
+                Details
+              </Button>
+            ) : null}
           </div>
           {failure.error && (
             <pre className="bg-muted text-muted-foreground max-h-32 overflow-auto rounded-lg p-2 text-xs wrap-break-word whitespace-pre-wrap">
@@ -211,19 +238,24 @@ function SandboxAlertContent({
         </div>
       )}
 
+      {/* Nothing left to offer once both gates close — drop the divider too, so
+          a member sees a clean informational card instead of an empty tray. */}
+      {!canOpenDetails && !canRecover ? null : (
       <div className="border-border flex flex-col gap-2 border-t p-3">
         {severity === 'building' ? (
-          <Button
-            size="sm"
-            variant="secondary"
-            className="w-full border"
-            onClick={() => openCustomize('sandbox')}
-          >
-            Details
-          </Button>
+          canOpenDetails ? (
+            <Button
+              size="sm"
+              variant="secondary"
+              className="w-full border"
+              onClick={openSandboxSection}
+            >
+              Details
+            </Button>
+          ) : null
         ) : (
           <>
-            {canFixWithAgent && (
+            {canFixWithAgent && canRecover && (
               <Button
                 size="sm"
                 className="w-full"
@@ -240,6 +272,7 @@ function SandboxAlertContent({
                 )}
               </Button>
             )}
+            {canRecover ? (
             <Button
               size="sm"
               variant="secondary"
@@ -256,9 +289,11 @@ function SandboxAlertContent({
                 'autoFeaturesCoWorkerProjectSidebarFooterProjectSandboxAlertJsx8794c0a3',
               )}
             </Button>
+            ) : null}
           </>
         )}
       </div>
+      )}
     </div>
   );
 }

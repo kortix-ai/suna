@@ -1,14 +1,14 @@
 'use client';
-import { TextShimmer } from '@/components/ui/text-shimmer';
 import {
   BasicTool,
   isErrorOutput,
   partInput,
   partOutput,
+  ToolEmptyState,
   ToolOutputFallback,
 } from '@/features/session/tool/shared/infrastructure';
-import { OutputBlock } from '@/features/session/tool/shared/output-block';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
+import { ToolResultCard } from '@/features/session/tool/shared/result-card';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { PlugIcon as Plug } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
@@ -26,6 +26,17 @@ export function ConnectorSetupTool({ part, defaultOpen, forceOpen }: ToolProps) 
   // the body.
   const isError = useMemo(() => isErrorOutput(output), [output]);
 
+  // Connector names are the row identity — disambiguate a repeated name with
+  // an occurrence counter instead of the iteration index.
+  const keyedConnectors = useMemo(() => {
+    const seen = new Map<string, number>();
+    return (data?.connectors ?? []).map((conn) => {
+      const n = seen.get(conn) ?? 0;
+      seen.set(conn, n + 1);
+      return { conn, key: n === 0 ? conn : `${conn}#${n}` };
+    });
+  }, [data]);
+
   return (
     <BasicTool
       icon={<Plug className="text-muted-foreground size-3.5" />}
@@ -41,29 +52,28 @@ export function ConnectorSetupTool({ part, defaultOpen, forceOpen }: ToolProps) 
       defaultOpen={defaultOpen}
       forceOpen={forceOpen}
     >
-      <div className="p-2">
-        {isError ? (
-          <ToolOutputFallback output={output} toolName="connector_setup" />
-        ) : output ? (
-          <div className="space-y-1">
-            {data?.connectors.map((conn, i) => (
-              <div key={i} className="flex items-center gap-2 py-1 text-xs">
-                <Plug className="text-muted-foreground size-3.5 shrink-0" />
-                <span className="font-medium">{conn}</span>
-              </div>
-            ))}
-            {!data && <OutputBlock text={output} />}
-          </div>
-        ) : (
-          <div className="p-3">
-            <TextShimmer>
-              {tHardcodedUi.raw(
-                'componentsSessionToolRenderers.line7398JsxTextSettingUpConnectors',
-              )}
-            </TextShimmer>
-          </div>
-        )}
-      </div>
+      {isError ? (
+        <ToolOutputFallback output={output} toolName="connector_setup" />
+      ) : data && data.connectors.length > 0 ? (
+        <ToolResultCard bodyClassName="space-y-0.5">
+          {keyedConnectors.map(({ conn, key }) => (
+            <div key={key} className="flex items-center gap-2 px-2 py-1 text-xs">
+              <Plug className="text-muted-foreground size-3.5 shrink-0" />
+              <span className="font-medium">{conn}</span>
+            </div>
+          ))}
+        </ToolResultCard>
+      ) : output ? (
+        <ToolOutputFallback output={output} toolName="connector_setup" />
+      ) : (
+        <ToolResultCard>
+          <ToolEmptyState
+            message={tHardcodedUi.raw(
+              'componentsSessionToolRenderers.line7398JsxTextSettingUpConnectors',
+            )}
+          />
+        </ToolResultCard>
+      )}
     </BasicTool>
   );
 }

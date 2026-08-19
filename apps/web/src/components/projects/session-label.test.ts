@@ -7,6 +7,7 @@ import {
   matchesStatusFilters,
   SESSION_DISPLAY_STATUS_LABELS,
   sessionDisplayStatus,
+  sessionIsShared,
   type SessionDisplayStatus,
 } from './session-label';
 
@@ -161,6 +162,20 @@ describe('matchesSourceFilters', () => {
     expect(matchesSourceFilters(makeSession({ is_owner: true }), ['mine'])).toBe(true);
     expect(matchesSourceFilters(makeSession({ is_owner: false }), ['mine'])).toBe(false);
     expect(matchesSourceFilters(makeSession({ is_owner: false }), ['shared'])).toBe(true);
+  });
+
+  test('shared ownership is independent of the session source', () => {
+    const scheduled = makeSession({
+      is_owner: false,
+      metadata: { trigger_source: 'cron', trigger_type: 'cron' },
+    });
+    expect(sessionIsShared(scheduled)).toBe(true);
+    expect(matchesSourceFilters(scheduled, ['shared'])).toBe(true);
+  });
+
+  test('own and legacy sessions use the unmarked default state', () => {
+    expect(sessionIsShared(makeSession({ is_owner: true }))).toBe(false);
+    expect(sessionIsShared(makeSession())).toBe(false);
   });
 
   test('unknown ownership counts as mine so nothing is silently hidden', () => {

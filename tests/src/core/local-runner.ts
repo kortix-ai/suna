@@ -133,11 +133,10 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
   const targetApiFull: LocalTestLane = {
     name: 'target-api-full',
     command: ['bun', 'tests/bin/ke2e.ts', 'run', '--require-all'],
-    // This lane runs CONCURRENTLY with target-browser-full against the same
-    // staging origin. At the default 4 API + 4 sandbox workers the combined
-    // load pushes staging origin into 5xx, which the edge launders into
-    // MAINTENANCE_MODE. Dial the REST concurrency down (3+3) to cut that load;
-    // the per-request transient retry (runner.ts) absorbs what's left. Override
+    // Runs as its OWN stage (serialized before the browser lane — see below),
+    // so it has the staging Daytona provider to itself. 3 concurrent sandbox
+    // boots is proven to reach runtime-ready fine on its own; the API
+    // (non-sandbox) workers stay at 3 too since those flows are fast. Override
     // via KE2E_API_WORKERS / KE2E_SANDBOX_WORKERS.
     env: {
       KE2E_API_WORKERS: process.env.KE2E_API_WORKERS ?? '3',
@@ -172,12 +171,16 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
     return { mode: 'target', lanes, stages: [lanes] };
   }
   if (targetFull) {
-    // Lanes run CONCURRENTLY (one stage). An earlier serialize experiment did
-    // NOT fix the session-create MAINTENANCE_MODE (the real cause was fixture
-    // clients not retrying the laundered 503 — fixed in client.ts) and it
-    // doubled wall-clock past the JWT lifetime, adding a 401 tail. With every
-    // client now retrying transient gateway errors, concurrent contention
-    // self-heals and the run fits the 60m budget.
+    // Lanes run CONCURRENTLY (one stage). A serialize experiment was tried to
+    // fix RUN-*/SESS-* "session runtime ready" timeouts, but that was a
+    // MISDIAGNOSIS: the flow lane ALONE (serialized, browser idle) still timed
+    // out, and a live probe showed staging session-provisioning was in a
+    // transient ~2h outage during that window (sessions stuck 'provisioning',
+    // never reaching a sandbox). When staging is healthy a fresh session reaches
+    // 'running' in ~21s, so both lanes provision fine concurrently (as they did
+    // before the outage). Concurrent keeps the run ~75m within the 90m cap and
+    // the 2h token lifetime. If staging provisioning is genuinely down, the gate
+    // SHOULD fail — that's a real staging outage, not a test defect.
     const lanes = [targetApiFull, targetBrowserFull];
     return { mode: 'target-full', lanes, stages: [lanes] };
   }

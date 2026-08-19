@@ -8,7 +8,7 @@ import type {
 	TextPart,
 	UserMessage,
 } from "@opencode-ai/sdk/v2/client";
-import { ascendingId, Binary, useSyncStore } from "./sync-store";
+import { ascendingId, Binary, sameSessionStatus, useSyncStore } from "./sync-store";
 
 // ============================================================================
 // Fixtures — minimal-but-valid Message/Part objects matching the real SDK
@@ -268,6 +268,109 @@ describe("useSyncStore — applyEvent(session.error) patches the last assistant 
 		const assistant = useSyncStore.getState().messages.ses_1[0] as AssistantMessage;
 		expect((assistant.error as { data: { message: string } }).data.message).toBe("first");
 	});
+
+	// T2: `data.reason` (the machine-readable abort WHY stamped by
+	// `applyOptimisticAbort`/`markSessionAbortedLocally`, see
+	// `core/http/abort-error.ts`) rides through `applyEvent` untouched — the
+	// handler copies the whole `error` object it is given, it never
+	// constructs one field-by-field, so any reason a producer sets survives.
+	test("passes an abort error's data.reason through untouched", () => {
+		const store = useSyncStore.getState();
+		store.upsertMessage("ses_3", assistantMessage("msg_c"));
+
+		store.applyEvent({
+			id: "evt_1",
+			type: "session.error",
+			properties: {
+				sessionID: "ses_3",
+				error: {
+					name: "AbortError",
+					data: { message: "The operation was aborted because the runtime shut down.", reason: "runtime-disposed" },
+				},
+			},
+		} as never);
+
+		const assistant = useSyncStore.getState().messages.ses_3[0] as AssistantMessage;
+		expect((assistant.error as { data: { reason?: string } }).data.reason).toBe("runtime-disposed");
+	});
+
+	test("passes an untagged (wire) abort error through with no reason", () => {
+		const store = useSyncStore.getState();
+		store.upsertMessage("ses_4", assistantMessage("msg_d"));
+
+		store.applyEvent({
+			id: "evt_1",
+			type: "session.error",
+			properties: {
+				sessionID: "ses_4",
+				error: { name: "MessageAbortedError", data: { message: "The operation was aborted." } },
+			},
+		} as never);
+
+		const assistant = useSyncStore.getState().messages.ses_4[0] as AssistantMessage;
+		expect((assistant.error as { data: { reason?: string } }).data.reason).toBeUndefined();
+	});
+});
+
+// T16 — the `session.error` stub's own creation comment claims
+// "hydrate can replace it"; nothing previously did. `ascendingId('msg')`
+// sorts BELOW every server id, so a stub left in place after a real
+// assistant message lands sits at the wrong position beside it forever.
+describe("useSyncStore — session.error stub reconciliation on hydrate", () => {
+	test("hydrate drops the stub once the server transcript contains a real assistant message", () => {
+		const store = useSyncStore.getState();
+		store.applyEvent({
+			id: "evt_1",
+			type: "session.error",
+			properties: { sessionID: "ses_1", error: { name: "UnknownError", data: { message: "boom" } } },
+		} as never);
+
+		const stubId = useSyncStore.getState().messages.ses_1[0].id;
+		expect(useSyncStore.getState().messages.ses_1).toHaveLength(1);
+
+		// The server's own transcript now contains a real assistant message.
+		store.hydrate("ses_1", [
+			{ info: userMessage("msg_user"), parts: [] },
+			{ info: assistantMessage("msg_real_asst"), parts: [] },
+		]);
+
+		const ids = useSyncStore.getState().messages.ses_1.map((m) => m.id);
+		expect(ids).not.toContain(stubId);
+		expect(ids).toContain("msg_real_asst");
+	});
+
+	test("a hydrate snapshot with no assistant message yet leaves the stub untouched", () => {
+		const store = useSyncStore.getState();
+		store.applyEvent({
+			id: "evt_1",
+			type: "session.error",
+			properties: { sessionID: "ses_1", error: { name: "UnknownError", data: { message: "boom" } } },
+		} as never);
+		const stubId = useSyncStore.getState().messages.ses_1[0].id;
+
+		// Nothing has arrived yet to reconcile against.
+		store.hydrate("ses_1", [{ info: userMessage("msg_user"), parts: [] }]);
+
+		const ids = useSyncStore.getState().messages.ses_1.map((m) => m.id);
+		expect(ids).toContain(stubId);
+	});
+
+	test("a stub in an UNRELATED session is untouched by another session's hydrate", () => {
+		const store = useSyncStore.getState();
+		store.applyEvent({
+			id: "evt_1",
+			type: "session.error",
+			properties: { sessionID: "ses_1", error: { name: "UnknownError", data: { message: "boom" } } },
+		} as never);
+		const stubId = useSyncStore.getState().messages.ses_1[0].id;
+
+		store.hydrate("ses_2", [
+			{ info: userMessage("msg_user", "ses_2"), parts: [] },
+			{ info: assistantMessage("msg_real_asst", "ses_2"), parts: [] },
+		]);
+
+		expect(useSyncStore.getState().messages.ses_1.map((m) => m.id)).toContain(stubId);
+	});
 });
 
 describe("useSyncStore — applyEvent(message.part.delta) creates a stub part + message", () => {
@@ -310,6 +413,128 @@ describe("useSyncStore — applyEvent(message.part.delta) creates a stub part + 
 		// The part is still tracked as an orphan, ready to be picked up once
 		// hydrate()/message.part.updated creates the real message.
 		expect((useSyncStore.getState().parts.msg_asst[0] as TextPart).text).toBe("Hello");
+	});
+});
+
+// T14 — `applyPartDelta` used to be `existing + delta` with no
+// identity consulted anywhere in the pipeline, so a duplicate delivery of
+// the SAME `message.part.delta` doubled the streamed text. `eventID` is the
+// wire's own `EventMessagePartDelta.id` (a top-level field, not inside
+// `properties`), threaded through from `applyEvent`.
+describe("useSyncStore — applyPartDelta idempotency (part-delta duplicate delivery)", () => {
+	test("a duplicate single delta (same eventID) is a no-op", () => {
+		const store = useSyncStore.getState();
+		store.upsertPart("msg_1", textPart("prt_1", "msg_1", "Hel"));
+		store.applyPartDelta("ses_1", "msg_1", "prt_1", "text", "lo", "evt_1");
+		store.applyPartDelta("ses_1", "msg_1", "prt_1", "text", "lo", "evt_1"); // duplicate
+
+		expect((useSyncStore.getState().parts.msg_1[0] as TextPart).text).toBe("Hello");
+	});
+
+	test("replaying an identical delta STREAM twice (a stacked second SSE connection) produces byte-identical text", () => {
+		const store = useSyncStore.getState();
+		store.upsertPart("msg_1", textPart("prt_1", "msg_1", ""));
+		const deltas: Array<[string, string]> = [
+			["evt_1", "Hel"],
+			["evt_2", "lo "],
+			["evt_3", "world"],
+		];
+		for (const [id, d] of deltas) {
+			store.applyPartDelta("ses_1", "msg_1", "prt_1", "text", d, id);
+		}
+		// A stacked second connection redelivers the exact same sequence.
+		for (const [id, d] of deltas) {
+			store.applyPartDelta("ses_1", "msg_1", "prt_1", "text", d, id);
+		}
+
+		expect((useSyncStore.getState().parts.msg_1[0] as TextPart).text).toBe("Hello world");
+	});
+
+	test("an interleaved two-part stream is unaffected — dedupe is per (message, part, field)", () => {
+		const store = useSyncStore.getState();
+		store.upsertPart("msg_1", textPart("prt_a", "msg_1", ""));
+		store.upsertPart("msg_1", textPart("prt_b", "msg_1", ""));
+
+		store.applyPartDelta("ses_1", "msg_1", "prt_a", "text", "Hi ", "evt_a1");
+		store.applyPartDelta("ses_1", "msg_1", "prt_b", "text", "Bye ", "evt_b1");
+		store.applyPartDelta("ses_1", "msg_1", "prt_a", "text", "there", "evt_a2");
+		store.applyPartDelta("ses_1", "msg_1", "prt_b", "text", "now", "evt_b2");
+
+		const parts = useSyncStore.getState().parts.msg_1;
+		expect((parts.find((p) => p.id === "prt_a") as TextPart).text).toBe("Hi there");
+		expect((parts.find((p) => p.id === "prt_b") as TextPart).text).toBe("Bye now");
+	});
+
+	test("two GENUINELY distinct deltas with identical content both apply (no content-based false positive)", () => {
+		// Guards the design choice documented on `deltaEventTails`: dedupe is by
+		// EVENT IDENTITY, not delta content — streaming "..." one identical
+		// character at a time must not be mistaken for a duplicate delivery.
+		const store = useSyncStore.getState();
+		store.upsertPart("msg_1", textPart("prt_1", "msg_1", ""));
+		store.applyPartDelta("ses_1", "msg_1", "prt_1", "text", ".", "evt_1");
+		store.applyPartDelta("ses_1", "msg_1", "prt_1", "text", ".", "evt_2");
+		store.applyPartDelta("ses_1", "msg_1", "prt_1", "text", ".", "evt_3");
+
+		expect((useSyncStore.getState().parts.msg_1[0] as TextPart).text).toBe("...");
+	});
+
+	test("applyEvent(message.part.delta) threads the wire event's own id through, deduping a duplicate SSE delivery", () => {
+		const store = useSyncStore.getState();
+		store.upsertMessage("ses_1", userMessage("msg_user"));
+		const deltaEvent = {
+			id: "evt_dup",
+			type: "message.part.delta",
+			properties: {
+				messageID: "msg_asst",
+				partID: "prt_1",
+				sessionID: "ses_1",
+				field: "text",
+				delta: "Hello",
+			},
+		} as never;
+
+		store.applyEvent(deltaEvent);
+		store.applyEvent(deltaEvent); // e.g. a stacked SSE connection redelivering it
+
+		expect((useSyncStore.getState().parts.msg_asst[0] as TextPart).text).toBe("Hello");
+	});
+
+	// F1 review finding: the event-id was recorded as "applied" BEFORE the
+	// `set()` callback even checked whether the target part existed — so a
+	// delta that hit the not-found path (e.g. the extra was dropped by the
+	// hydrate extras-filter, or simply arrived before the part was created)
+	// still poisoned `deltaEventTails` for that event id. A later, LEGITIMATE
+	// redelivery of the identical event (a stacked reconnect resuming the
+	// stream) then hit the duplicate-no-op branch and was silently dropped —
+	// even though nothing had ever actually been applied.
+	test("a delta that finds no target part does not consume the event id — a later redelivery once the part exists still applies", () => {
+		const store = useSyncStore.getState();
+		// The part does not exist yet under msg_1 — this delta's target is
+		// not found, so `set()` bails via its `!result.found` branch.
+		store.applyPartDelta("ses_1", "msg_1", "prt_1", "text", "Hello", "evt_1");
+		expect(useSyncStore.getState().parts.msg_1).toBeUndefined();
+
+		// The part is created afterward (e.g. a repair/upsert).
+		store.upsertPart("msg_1", textPart("prt_1", "msg_1", ""));
+
+		// The SAME event id is redelivered (a stacked reconnect resuming the
+		// stream) — it must actually apply now, not no-op against a tail
+		// entry recorded when nothing was ever applied.
+		store.applyPartDelta("ses_1", "msg_1", "prt_1", "text", "Hello", "evt_1");
+
+		expect((useSyncStore.getState().parts.msg_1[0] as TextPart).text).toBe("Hello");
+	});
+
+	test("clearSession releases a session's delta-tail tracking — a reused (message,part,eventID) after a fresh lifetime applies normally", () => {
+		const store = useSyncStore.getState();
+		store.upsertPart("msg_1", textPart("prt_1", "msg_1", ""));
+		store.applyPartDelta("ses_1", "msg_1", "prt_1", "text", "Hi", "evt_1");
+		store.clearSession("ses_1");
+
+		store.upsertPart("msg_1", textPart("prt_1", "msg_1", ""));
+		store.applyPartDelta("ses_1", "msg_1", "prt_1", "text", "Hi", "evt_1");
+
+		expect((useSyncStore.getState().parts.msg_1[0] as TextPart).text).toBe("Hi");
 	});
 });
 
@@ -669,6 +894,112 @@ describe("useSyncStore — hydrate vs. an un-acked optimistic send", () => {
 	});
 });
 
+// T16 — extras merge dedupe. `hydrate` used to keep every existing
+// part absent from the incoming snapshot verbatim ("extras"), on the theory
+// that the server simply hasn't persisted it yet. That's right for a part
+// still in flight, but wrong when the server RE-ISSUED the same content
+// under a NEW part id: the old SSE-accumulated twin stayed resident forever,
+// duplicating the text inside one message.
+describe("useSyncStore — hydrate extras dedupe by content identity", () => {
+	test("a re-issued text part under a NEW id retires the old SSE-accumulated twin", () => {
+		const store = useSyncStore.getState();
+		// SSE accumulated partial text under prt_old.
+		store.upsertMessage("ses_1", assistantMessage("msg_a"));
+		store.upsertPart("msg_a", textPart("prt_old", "msg_a", "Hello wor"));
+
+		// The server re-issues the SAME content, complete, under a NEW id.
+		store.hydrate("ses_1", [
+			{ info: assistantMessage("msg_a"), parts: [textPart("prt_new", "msg_a", "Hello world")] },
+		]);
+
+		const ids = useSyncStore.getState().parts.msg_a?.map((p) => p.id) ?? [];
+		expect(ids).toEqual(["prt_new"]);
+	});
+
+	test("an existing extra with UNRELATED content is kept — not mistaken for a re-issue", () => {
+		const store = useSyncStore.getState();
+		store.upsertMessage("ses_1", assistantMessage("msg_a"));
+		store.upsertPart("msg_a", textPart("prt_old", "msg_a", "totally unrelated text"));
+
+		store.hydrate("ses_1", [
+			{ info: assistantMessage("msg_a"), parts: [textPart("prt_new", "msg_a", "Hello world")] },
+		]);
+
+		const ids = useSyncStore.getState().parts.msg_a?.map((p) => p.id) ?? [];
+		expect(ids).toContain("prt_old");
+		expect(ids).toContain("prt_new");
+	});
+
+	test("negative: distinct non-text (tool-like) parts are never dropped by content matching", () => {
+		const store = useSyncStore.getState();
+		store.upsertMessage("ses_1", assistantMessage("msg_a"));
+		store.upsertPart("msg_a", {
+			id: "prt_tool_old",
+			sessionID: "ses_1",
+			messageID: "msg_a",
+			type: "step-start",
+		} as Part);
+
+		// The server's snapshot carries a DIFFERENT non-text part — not a
+		// re-issue of the old one, and non-text parts are never compared by
+		// content in the first place.
+		store.hydrate("ses_1", [
+			{
+				info: assistantMessage("msg_a"),
+				parts: [{ id: "prt_tool_new", sessionID: "ses_1", messageID: "msg_a", type: "step-start" } as Part],
+			},
+		]);
+
+		const ids = useSyncStore.getState().parts.msg_a?.map((p) => p.id) ?? [];
+		expect(ids).toContain("prt_tool_old");
+		expect(ids).toContain("prt_tool_new");
+	});
+
+	test("an empty-text extra is never dropped by the containment check (nothing meaningful to correlate)", () => {
+		const store = useSyncStore.getState();
+		store.upsertMessage("ses_1", assistantMessage("msg_a"));
+		store.upsertPart("msg_a", textPart("prt_empty", "msg_a", ""));
+
+		store.hydrate("ses_1", [
+			{ info: assistantMessage("msg_a"), parts: [textPart("prt_new", "msg_a", "Hello world")] },
+		]);
+
+		const ids = useSyncStore.getState().parts.msg_a?.map((p) => p.id) ?? [];
+		expect(ids).toContain("prt_empty");
+		expect(ids).toContain("prt_new");
+	});
+
+	// F1 review finding: the prefix-containment heuristic assumes an "extra"
+	// whose text is a prefix of an incoming sibling is always the ABANDONED
+	// SSE-accumulated twin of a server re-issue. That is false for a part
+	// that is still ACTIVELY streaming (tracked in `deltaActiveParts`) — a
+	// live delta target is never a stale twin, no matter what it coincidentally
+	// prefixes. Dropping it here doesn't just lose the row: `applyPartDelta`'s
+	// not-found path (see the F1 test below) then permanently swallows every
+	// later delta for it too, because the wire event ids were already
+	// recorded as applied.
+	test("an actively-streaming extra survives even when its text happens to prefix a completed sibling part", () => {
+		const store = useSyncStore.getState();
+		store.upsertMessage("ses_1", assistantMessage("msg_a"));
+		// A COMPLETED part with the full text.
+		store.upsertPart("msg_a", textPart("prt_a", "msg_a", "Let me check the file."));
+		// A DIFFERENT part in the SAME message, still receiving live deltas.
+		// Its accumulated text is coincidentally a PREFIX of prt_a's — NOT
+		// because the server re-issued prt_a's content under this new id.
+		store.upsertPart("msg_a", textPart("prt_b", "msg_a", "Let me c"));
+		store.applyPartDelta("ses_1", "msg_a", "prt_b", "text", "heck", "evt_1");
+
+		// A hydrate snapshot arrives carrying only the completed part — prt_b
+		// hasn't persisted server-side yet, it's still in flight.
+		store.hydrate("ses_1", [
+			{ info: assistantMessage("msg_a"), parts: [textPart("prt_a", "msg_a", "Let me check the file.")] },
+		]);
+
+		const ids = useSyncStore.getState().parts.msg_a?.map((p) => p.id) ?? [];
+		expect(ids).toContain("prt_b");
+	});
+});
+
 // ============================================================================
 // The SAME existential bug, on the OTHER path.
 //
@@ -984,6 +1315,63 @@ describe("useSyncStore — bridgedPartIds tracking is session-scoped", () => {
 		const ids = useSyncStore.getState().parts["msg_reused"]?.map((p) => p.id) ?? [];
 		expect(ids).toContain("prt_step");
 		expect(ids).toContain("prt_text");
+	});
+});
+
+// T16 — bridge retirement used to fire ONLY when the first real part
+// was NON-EMPTY text. A message whose first real part was a tool call (or an
+// empty-text snapshot before content streamed in) kept the optimistic bridge
+// beside the real parts — duplicating the user's text bubble.
+describe("useSyncStore — bridge retirement on the first real part", () => {
+	test("retires the bridge when the first real part is non-text (tool/step), not just non-empty text", () => {
+		const store = useSyncStore.getState();
+		store.optimisticAdd("ses_1", userMessage("msg_client"), [
+			textPart("prt_bridge", "msg_client", "hello", "ses_1"),
+		]);
+		store.markOptimisticDispatched("ses_1", "msg_client");
+		store.hydrate("ses_1", [{ info: userMessage("msg_reused"), parts: [] }]);
+		expect(useSyncStore.getState().parts["msg_reused"]?.[0]).toMatchObject({ text: "hello" });
+
+		// The server's FIRST real part for this message is a non-text step-start
+		// part, not the echoed user text.
+		store.upsertPart("msg_reused", {
+			id: "prt_step",
+			sessionID: "ses_1",
+			messageID: "msg_reused",
+			type: "step-start",
+		} as Part);
+
+		const parts = useSyncStore.getState().parts["msg_reused"] ?? [];
+		expect(parts.map((p) => p.id)).toEqual(["prt_step"]);
+	});
+
+	test("retires the bridge on an empty-text first real part, not just non-empty text", () => {
+		const store = useSyncStore.getState();
+		store.optimisticAdd("ses_1", userMessage("msg_client"), [
+			textPart("prt_bridge", "msg_client", "hello", "ses_1"),
+		]);
+		store.markOptimisticDispatched("ses_1", "msg_client");
+		store.hydrate("ses_1", [{ info: userMessage("msg_reused"), parts: [] }]);
+
+		store.upsertPart("msg_reused", textPart("prt_real", "msg_reused", "", "ses_1"));
+
+		const parts = useSyncStore.getState().parts["msg_reused"] ?? [];
+		expect(parts.map((p) => p.id)).toEqual(["prt_real"]);
+	});
+
+	test("still retires (and applies) on a non-empty real text part — the pre-existing case keeps working", () => {
+		const store = useSyncStore.getState();
+		store.optimisticAdd("ses_1", userMessage("msg_client"), [
+			textPart("prt_bridge", "msg_client", "hello", "ses_1"),
+		]);
+		store.markOptimisticDispatched("ses_1", "msg_client");
+		store.hydrate("ses_1", [{ info: userMessage("msg_reused"), parts: [] }]);
+
+		store.upsertPart("msg_reused", textPart("prt_real", "msg_reused", "hello", "ses_1"));
+
+		const parts = useSyncStore.getState().parts["msg_reused"] ?? [];
+		expect(parts.map((p) => p.id)).toEqual(["prt_real"]);
+		expect((parts[0] as TextPart).text).toBe("hello");
 	});
 });
 
@@ -1579,5 +1967,553 @@ describe("useSyncStore — buildSessionMessages (the one shared join)", () => {
 		store.clearSession("ses_1");
 
 		expect(held.rebuild()).not.toBe(held.rows);
+	});
+});
+
+// ============================================================================
+// T22 — session rewind/revert state mirrored from the server.
+//
+// `session.revert` is a STAGED pointer server-side: nothing is deleted until
+// the replacement prompt COMMITS it. These tests cover the store's mirror of
+// that lifecycle — `stageSessionRevert`/`commitSessionRevert`/
+// `clearSessionRevert`/`applyCommittedRevert`, the three wire events that
+// drive them through `applyEvent`, and `syncSessionRevertFromInfo` (the
+// reload/cross-tab recovery path off a `Session.revert` field).
+// ============================================================================
+
+describe("useSyncStore — stageSessionRevert", () => {
+	test("captures the watermark from the CURRENTLY KNOWN message list", () => {
+		const store = useSyncStore.getState();
+		store.hydrate("ses_1", [
+			{ info: userMessage("msg_1"), parts: [] },
+			{ info: userMessage("msg_2"), parts: [] },
+			{ info: assistantMessage("msg_3"), parts: [] },
+		]);
+
+		store.stageSessionRevert("ses_1", "msg_2");
+
+		expect(useSyncStore.getState().sessionRevert.ses_1).toEqual({
+			messageId: "msg_2",
+			watermark: "msg_3",
+			staged: true,
+		});
+	});
+
+	test("re-staging the SAME boundary is a no-op — the original watermark is never widened", () => {
+		const store = useSyncStore.getState();
+		store.hydrate("ses_1", [
+			{ info: userMessage("msg_1"), parts: [] },
+			{ info: userMessage("msg_2"), parts: [] },
+		]);
+		store.stageSessionRevert("ses_1", "msg_2");
+		expect(useSyncStore.getState().sessionRevert.ses_1?.watermark).toBe("msg_2");
+
+		// More messages arrive locally (e.g. a stray echo) BEFORE the second
+		// caller (the SSE confirmation of the same stage) runs.
+		store.hydrate("ses_1", [
+			{ info: userMessage("msg_1"), parts: [] },
+			{ info: userMessage("msg_2"), parts: [] },
+			{ info: assistantMessage("msg_3"), parts: [] },
+		]);
+		store.stageSessionRevert("ses_1", "msg_2");
+
+		expect(useSyncStore.getState().sessionRevert.ses_1).toEqual({
+			messageId: "msg_2",
+			watermark: "msg_2",
+			staged: true,
+		});
+	});
+
+	test("a DIFFERENT boundary replaces the tracked record with a fresh watermark", () => {
+		const store = useSyncStore.getState();
+		store.hydrate("ses_1", [{ info: userMessage("msg_1"), parts: [] }]);
+		store.stageSessionRevert("ses_1", "msg_1");
+
+		store.hydrate("ses_1", [
+			{ info: userMessage("msg_1"), parts: [] },
+			{ info: userMessage("msg_2"), parts: [] },
+		]);
+		store.stageSessionRevert("ses_1", "msg_2");
+
+		expect(useSyncStore.getState().sessionRevert.ses_1).toEqual({
+			messageId: "msg_2",
+			watermark: "msg_2",
+			staged: true,
+		});
+	});
+
+	test("sessions are isolated", () => {
+		const store = useSyncStore.getState();
+		store.stageSessionRevert("ses_1", "msg_1");
+		expect(useSyncStore.getState().sessionRevert.ses_2).toBeUndefined();
+	});
+});
+
+describe("useSyncStore — commitSessionRevert / clearSessionRevert", () => {
+	test("commit flips staged false and keeps the hide window", () => {
+		const store = useSyncStore.getState();
+		store.stageSessionRevert("ses_1", "msg_1");
+
+		store.commitSessionRevert("ses_1");
+
+		expect(useSyncStore.getState().sessionRevert.ses_1).toEqual({
+			messageId: "msg_1",
+			watermark: "msg_1",
+			staged: false,
+		});
+	});
+
+	test("commit on a session with no staged revert is a no-op", () => {
+		const store = useSyncStore.getState();
+		store.commitSessionRevert("ses_never_staged");
+		expect(useSyncStore.getState().sessionRevert.ses_never_staged).toBeUndefined();
+	});
+
+	test("clear drops the record entirely (unrevert / .cleared)", () => {
+		const store = useSyncStore.getState();
+		store.stageSessionRevert("ses_1", "msg_1");
+
+		store.clearSessionRevert("ses_1");
+
+		expect(useSyncStore.getState().sessionRevert.ses_1).toBeNull();
+	});
+});
+
+describe("useSyncStore — applyCommittedRevert (the explicit deletion)", () => {
+	test("deletes every message AND its parts inside [boundary, watermark], keeps the rest", () => {
+		const store = useSyncStore.getState();
+		store.hydrate("ses_1", [
+			{ info: userMessage("msg_1"), parts: [] },
+			{ info: userMessage("msg_2"), parts: [textPart("prt_2", "msg_2", "edited away")] },
+			{ info: assistantMessage("msg_3"), parts: [textPart("prt_3", "msg_3", "old answer")] },
+			{ info: userMessage("msg_4"), parts: [textPart("prt_4", "msg_4", "replacement")] },
+		]);
+
+		store.applyCommittedRevert("ses_1", "msg_2", "msg_3");
+
+		const state = useSyncStore.getState();
+		expect(state.messages.ses_1?.map((m) => m.id)).toEqual(["msg_1", "msg_4"]);
+		expect(state.parts.msg_2).toBeUndefined();
+		expect(state.parts.msg_3).toBeUndefined();
+		expect(state.parts.msg_4).toBeDefined();
+	});
+
+	test("clears the local revert record once the rows are actually gone", () => {
+		const store = useSyncStore.getState();
+		store.hydrate("ses_1", [
+			{ info: userMessage("msg_1"), parts: [] },
+			{ info: userMessage("msg_2"), parts: [] },
+		]);
+		store.stageSessionRevert("ses_1", "msg_2");
+		expect(useSyncStore.getState().sessionRevert.ses_1).not.toBeNull();
+
+		store.applyCommittedRevert("ses_1", "msg_2", "msg_2");
+
+		expect(useSyncStore.getState().sessionRevert.ses_1).toBeNull();
+	});
+
+	test("a session with no local messages yet just clears the record, without error", () => {
+		const store = useSyncStore.getState();
+		expect(() => store.applyCommittedRevert("ses_never_synced", "msg_1", "msg_1")).not.toThrow();
+		expect(useSyncStore.getState().sessionRevert.ses_never_synced).toBeNull();
+	});
+});
+
+describe("useSyncStore — applyEvent(session.next.revert.staged/.cleared/.committed)", () => {
+	test(".staged stages the boundary and freezes the watermark at the current tip", () => {
+		const store = useSyncStore.getState();
+		store.hydrate("ses_1", [
+			{ info: userMessage("msg_1"), parts: [] },
+			{ info: userMessage("msg_2"), parts: [] },
+		]);
+
+		store.applyEvent({
+			id: "evt_1",
+			type: "session.next.revert.staged",
+			properties: {
+				timestamp: 1,
+				sessionID: "ses_1",
+				revert: { messageID: "msg_2" },
+			},
+		} as never);
+
+		expect(useSyncStore.getState().sessionRevert.ses_1).toEqual({
+			messageId: "msg_2",
+			watermark: "msg_2",
+			staged: true,
+		});
+	});
+
+	test(".cleared drops the record (unrevert observed over the wire)", () => {
+		const store = useSyncStore.getState();
+		store.stageSessionRevert("ses_1", "msg_1");
+
+		store.applyEvent({
+			id: "evt_2",
+			type: "session.next.revert.cleared",
+			properties: { timestamp: 1, sessionID: "ses_1" },
+		} as never);
+
+		expect(useSyncStore.getState().sessionRevert.ses_1).toBeNull();
+	});
+
+	test(".committed deletes [boundary, tracked watermark] and clears the record", () => {
+		const store = useSyncStore.getState();
+		store.hydrate("ses_1", [
+			{ info: userMessage("msg_1"), parts: [] },
+			{ info: userMessage("msg_2"), parts: [] },
+			{ info: assistantMessage("msg_3"), parts: [] },
+		]);
+		store.stageSessionRevert("ses_1", "msg_2");
+
+		store.applyEvent({
+			id: "evt_3",
+			type: "session.next.revert.committed",
+			properties: { timestamp: 1, sessionID: "ses_1", messageID: "msg_2" },
+		} as never);
+
+		const state = useSyncStore.getState();
+		expect(state.messages.ses_1?.map((m) => m.id)).toEqual(["msg_1"]);
+		expect(state.sessionRevert.ses_1).toBeNull();
+	});
+
+	// F2 review finding: this fallback used to guess a watermark off
+	// `newestMessageId(local messages)` when nothing was tracked locally —
+	// dangerous, because "the newest local message" can be the user's own
+	// REPLACEMENT prompt (and its answer) if its `message.updated` raced
+	// ahead of this `.committed` event. That guess then deleted the very
+	// message the user just typed. Fixed: with no tracked local record, do
+	// NOT guess-and-delete. Leave messages alone and flag the session for a
+	// tail reconcile instead — see the two tests below.
+	test(".committed with NO locally tracked record does NOT delete anything — it flags a tail reconcile instead", () => {
+		const store = useSyncStore.getState();
+		store.hydrate("ses_1", [
+			{ info: userMessage("msg_1"), parts: [] },
+			{ info: userMessage("msg_2"), parts: [] },
+			{ info: assistantMessage("msg_3"), parts: [] },
+		]);
+		// No prior stageSessionRevert — simulates a client that missed .staged
+		// (reconnect gap, fresh mount, or a second tab) and only observes
+		// .committed.
+
+		store.applyEvent({
+			id: "evt_4",
+			type: "session.next.revert.committed",
+			properties: { timestamp: 1, sessionID: "ses_1", messageID: "msg_2" },
+		} as never);
+
+		const state = useSyncStore.getState();
+		expect(state.messages.ses_1?.map((m) => m.id)).toEqual(["msg_1", "msg_2", "msg_3"]);
+		expect(state.sessionRevertNeedsTailReconcile.ses_1).toBe(true);
+	});
+
+	test(".committed with NO locally tracked record does not delete a replacement prompt that raced ahead of it", () => {
+		// The exact danger scenario: the user edits an earlier message, the
+		// server stages then commits the rewind, and the replacement
+		// prompt's `message.updated` (msg_4) lands in THIS tab BEFORE the
+		// `.committed` event — e.g. a fresh mount / second tab that never
+		// observed `.staged` at all. The removed newest-message-id fallback
+		// would have computed a watermark of `msg_4` and deleted it (and
+		// everything from `msg_2` onward) as if it were part of the
+		// abandoned trajectory.
+		const store = useSyncStore.getState();
+		store.hydrate("ses_1", [
+			{ info: userMessage("msg_1"), parts: [] },
+			{ info: userMessage("msg_2"), parts: [] },
+			{ info: assistantMessage("msg_3"), parts: [] },
+		]);
+		store.upsertMessage("ses_1", userMessage("msg_4")); // the replacement prompt, already visible
+
+		store.applyEvent({
+			id: "evt_5",
+			type: "session.next.revert.committed",
+			properties: { timestamp: 1, sessionID: "ses_1", messageID: "msg_2" },
+		} as never);
+
+		expect(useSyncStore.getState().messages.ses_1?.map((m) => m.id)).toEqual([
+			"msg_1",
+			"msg_2",
+			"msg_3",
+			"msg_4",
+		]);
+	});
+
+	test(".committed WITH a tracked local record still deletes using its watermark, unaffected by F2", () => {
+		const store = useSyncStore.getState();
+		store.hydrate("ses_1", [
+			{ info: userMessage("msg_1"), parts: [] },
+			{ info: userMessage("msg_2"), parts: [] },
+			{ info: assistantMessage("msg_3"), parts: [] },
+		]);
+		store.stageSessionRevert("ses_1", "msg_2"); // watermark frozen at msg_3
+
+		store.applyEvent({
+			id: "evt_6",
+			type: "session.next.revert.committed",
+			properties: { timestamp: 1, sessionID: "ses_1", messageID: "msg_2" },
+		} as never);
+
+		const state = useSyncStore.getState();
+		expect(state.messages.ses_1?.map((m) => m.id)).toEqual(["msg_1"]);
+		expect(state.sessionRevertNeedsTailReconcile.ses_1).toBeUndefined();
+	});
+});
+
+describe("useSyncStore — sessionRevertNeedsTailReconcile (F2 consumer signal)", () => {
+	test("markSessionRevertNeedsTailReconcile is idempotent and clearSessionRevertNeedsTailReconcile removes it", () => {
+		const store = useSyncStore.getState();
+		store.markSessionRevertNeedsTailReconcile("ses_1");
+		store.markSessionRevertNeedsTailReconcile("ses_1");
+		expect(useSyncStore.getState().sessionRevertNeedsTailReconcile.ses_1).toBe(true);
+
+		store.clearSessionRevertNeedsTailReconcile("ses_1");
+		expect(useSyncStore.getState().sessionRevertNeedsTailReconcile.ses_1).toBeUndefined();
+	});
+
+	test("clearing an unset session is a safe no-op", () => {
+		const store = useSyncStore.getState();
+		expect(() => store.clearSessionRevertNeedsTailReconcile("ses_never_flagged")).not.toThrow();
+	});
+
+	test("clearSession drops a pending reconcile flag for that session", () => {
+		const store = useSyncStore.getState();
+		store.markSessionRevertNeedsTailReconcile("ses_1");
+
+		store.clearSession("ses_1");
+
+		expect(useSyncStore.getState().sessionRevertNeedsTailReconcile.ses_1).toBeUndefined();
+	});
+
+	test("reset clears every session's reconcile flag", () => {
+		const store = useSyncStore.getState();
+		store.markSessionRevertNeedsTailReconcile("ses_1");
+
+		store.reset();
+
+		expect(useSyncStore.getState().sessionRevertNeedsTailReconcile).toEqual({});
+	});
+});
+
+describe("useSyncStore — syncSessionRevertFromInfo (reload / cross-tab recovery)", () => {
+	test("a present revert field seeds a fresh local record, watermark off currently known messages", () => {
+		const store = useSyncStore.getState();
+		store.hydrate("ses_1", [
+			{ info: userMessage("msg_1"), parts: [] },
+			{ info: userMessage("msg_2"), parts: [] },
+		]);
+
+		store.syncSessionRevertFromInfo("ses_1", { messageID: "msg_2" });
+
+		expect(useSyncStore.getState().sessionRevert.ses_1).toEqual({
+			messageId: "msg_2",
+			watermark: "msg_2",
+			staged: true,
+		});
+	});
+
+	test("an ALREADY-tracked boundary is left untouched (does not re-widen the watermark)", () => {
+		const store = useSyncStore.getState();
+		store.hydrate("ses_1", [{ info: userMessage("msg_1"), parts: [] }]);
+		store.stageSessionRevert("ses_1", "msg_1");
+		store.hydrate("ses_1", [
+			{ info: userMessage("msg_1"), parts: [] },
+			{ info: userMessage("msg_2"), parts: [] },
+		]);
+
+		store.syncSessionRevertFromInfo("ses_1", { messageID: "msg_1" });
+
+		expect(useSyncStore.getState().sessionRevert.ses_1?.watermark).toBe("msg_1");
+	});
+
+	test("absence never clears an existing record — explicit events own clearing, not this", () => {
+		const store = useSyncStore.getState();
+		store.stageSessionRevert("ses_1", "msg_1");
+
+		store.syncSessionRevertFromInfo("ses_1", null);
+		store.syncSessionRevertFromInfo("ses_1", undefined);
+
+		expect(useSyncStore.getState().sessionRevert.ses_1).not.toBeNull();
+	});
+
+	// F3 review finding: `syncSessionRevertFromInfo` ignored the store's OWN
+	// null tombstone. `null` means "committed or cleared, deliberately" (set
+	// by `applyCommittedRevert`/`clearSessionRevert`) — not "nothing tracked
+	// yet" (which is `undefined`, the record simply absent). A stale
+	// `session.updated` that raced the commit and still carries the OLD
+	// `info.revert` pointer used to re-stage it with a FRESH watermark,
+	// hiding every post-rewind message behind a phantom Restore offer.
+	test("a stale session.updated does not re-stage an already-committed revert (tombstone wins)", () => {
+		const store = useSyncStore.getState();
+		store.hydrate("ses_1", [
+			{ info: userMessage("msg_1"), parts: [] },
+			{ info: userMessage("msg_2"), parts: [] },
+		]);
+		store.stageSessionRevert("ses_1", "msg_2");
+		store.applyCommittedRevert("ses_1", "msg_2", "msg_2");
+		expect(useSyncStore.getState().sessionRevert.ses_1).toBeNull();
+
+		// A stale `session.updated` — read off a request that raced the
+		// commit — still carries the OLD (now-committed) revert pointer.
+		store.syncSessionRevertFromInfo("ses_1", { messageID: "msg_2" });
+
+		expect(useSyncStore.getState().sessionRevert.ses_1).toBeNull();
+	});
+
+	test("a stale session.updated does not re-stage a CLEARED (unrevert) revert either", () => {
+		const store = useSyncStore.getState();
+		store.stageSessionRevert("ses_1", "msg_1");
+		store.clearSessionRevert("ses_1");
+		expect(useSyncStore.getState().sessionRevert.ses_1).toBeNull();
+
+		store.syncSessionRevertFromInfo("ses_1", { messageID: "msg_1" });
+
+		expect(useSyncStore.getState().sessionRevert.ses_1).toBeNull();
+	});
+
+	// The escape hatch the tombstone must still allow: a genuinely NEW revert
+	// arrives through the real `.staged` wire event (`stageSessionRevert`
+	// directly, not through this info-snapshot recovery path), which
+	// overwrites unconditionally and so clears any prior tombstone normally.
+	test("a fresh .staged event (stageSessionRevert) still clears a prior tombstone normally", () => {
+		const store = useSyncStore.getState();
+		store.stageSessionRevert("ses_1", "msg_1");
+		store.clearSessionRevert("ses_1");
+		expect(useSyncStore.getState().sessionRevert.ses_1).toBeNull();
+
+		store.stageSessionRevert("ses_1", "msg_2");
+
+		expect(useSyncStore.getState().sessionRevert.ses_1).toMatchObject({
+			messageId: "msg_2",
+			staged: true,
+		});
+	});
+});
+
+describe("useSyncStore — sessionRevert is released with the session (clearSession / reset)", () => {
+	test("clearSession drops the tracked revert too", () => {
+		const store = useSyncStore.getState();
+		store.stageSessionRevert("ses_1", "msg_1");
+
+		store.clearSession("ses_1");
+
+		expect(useSyncStore.getState().sessionRevert.ses_1).toBeNull();
+	});
+
+	test("reset clears every session's revert state", () => {
+		const store = useSyncStore.getState();
+		store.stageSessionRevert("ses_1", "msg_1");
+
+		store.reset();
+
+		expect(useSyncStore.getState().sessionRevert).toEqual({});
+	});
+});
+
+// ============================================================================
+// setStatus — an OBSERVATION, never a heartbeat
+// ============================================================================
+
+/**
+ * Object identity is what `useSessionWorking` stamps a stream observation
+ * FROM: its effect re-runs on `[status, streamKey]`, and re-stamping restarts
+ * `STREAM_OBSERVATION_MAX_MS` from zero. So a writer that re-parses an
+ * equal-valued status every tick keeps the newest-observation clock pinned at
+ * "just now" forever, and the bound that is supposed to stop a dead stream
+ * from deciding is never reached — the latch, wearing a fresh timestamp.
+ *
+ * A value that did not change is not news. The store now says so.
+ */
+describe("useSyncStore — setStatus writes an observation, never a heartbeat", () => {
+	test("an equal value keeps the SAME object identity", () => {
+		const store = useSyncStore.getState();
+		store.setStatus("ses_1", { type: "busy" });
+		const first = useSyncStore.getState().sessionStatus.ses_1;
+
+		store.setStatus("ses_1", { type: "busy" });
+
+		expect(useSyncStore.getState().sessionStatus.ses_1).toBe(first);
+	});
+
+	test("a changed type mints a new object", () => {
+		const store = useSyncStore.getState();
+		store.setStatus("ses_1", { type: "busy" });
+		const first = useSyncStore.getState().sessionStatus.ses_1;
+
+		store.setStatus("ses_1", { type: "idle" });
+
+		expect(useSyncStore.getState().sessionStatus.ses_1).not.toBe(first);
+		expect(useSyncStore.getState().sessionStatus.ses_1).toEqual({ type: "idle" });
+	});
+
+	test("a changed retry field mints a new object", () => {
+		// `getRetryInfo`/`getRetryMessage` read `attempt`, `message` and `next`.
+		// A second attempt of the same retry is genuinely new news — the banner
+		// counts it down — so identity has to move even though `type` did not.
+		const store = useSyncStore.getState();
+		const retry: SessionStatus = {
+			type: "retry",
+			attempt: 1,
+			message: "upstream 503",
+			next: 1000,
+		};
+		store.setStatus("ses_1", retry);
+		const first = useSyncStore.getState().sessionStatus.ses_1;
+
+		store.setStatus("ses_1", { ...retry, attempt: 2 });
+
+		expect(useSyncStore.getState().sessionStatus.ses_1).not.toBe(first);
+		expect(useSyncStore.getState().sessionStatus.ses_1).toMatchObject({ attempt: 2 });
+	});
+
+	test("an equal retry value is still not news", () => {
+		const store = useSyncStore.getState();
+		const retry: SessionStatus = {
+			type: "retry",
+			attempt: 1,
+			message: "upstream 503",
+			next: 1000,
+		};
+		store.setStatus("ses_1", retry);
+		const first = useSyncStore.getState().sessionStatus.ses_1;
+
+		store.setStatus("ses_1", { ...retry });
+
+		expect(useSyncStore.getState().sessionStatus.ses_1).toBe(first);
+	});
+
+	test("a first status for a session is always news", () => {
+		useSyncStore.getState().setStatus("ses_fresh", { type: "idle" });
+		expect(useSyncStore.getState().sessionStatus.ses_fresh).toEqual({ type: "idle" });
+	});
+
+	test("one session's rewrite never disturbs another's identity", () => {
+		const store = useSyncStore.getState();
+		store.setStatus("ses_1", { type: "busy" });
+		store.setStatus("ses_2", { type: "busy" });
+		const other = useSyncStore.getState().sessionStatus.ses_2;
+
+		store.setStatus("ses_1", { type: "idle" });
+
+		expect(useSyncStore.getState().sessionStatus.ses_2).toBe(other);
+	});
+});
+
+describe("sameSessionStatus", () => {
+	test("compares exactly the fields the retry readers read", () => {
+		expect(sameSessionStatus({ type: "busy" }, { type: "busy" })).toBe(true);
+		expect(sameSessionStatus({ type: "busy" }, { type: "idle" })).toBe(false);
+		expect(sameSessionStatus(undefined, { type: "idle" })).toBe(false);
+		expect(sameSessionStatus(undefined, undefined)).toBe(true);
+
+		const retry: SessionStatus = {
+			type: "retry",
+			attempt: 1,
+			message: "upstream 503",
+			next: 1000,
+		};
+		expect(sameSessionStatus(retry, { ...retry })).toBe(true);
+		expect(sameSessionStatus(retry, { ...retry, attempt: 2 })).toBe(false);
+		expect(sameSessionStatus(retry, { ...retry, message: "gateway 429" })).toBe(false);
+		expect(sameSessionStatus(retry, { ...retry, next: 2000 })).toBe(false);
 	});
 });

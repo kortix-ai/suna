@@ -18,12 +18,18 @@ describe('GitHub installation setup', () => {
     expect(source).toContain("searchParams.get('account_id')");
   });
 
-  test('keeps the GitHub OAuth session separate from the Kortix session', () => {
+  test('proves GitHub identity via the App-native OAuth flow, never the Kortix Supabase session', () => {
     const popupSource = readFileSync(
       new URL('../../auth/github-connect/page.tsx', import.meta.url),
       'utf8',
     );
-    expect(popupSource).toContain('createEphemeralOAuthClient');
-    expect(popupSource).toContain("scopes: 'read:user read:org'");
+    // This popup must never touch Supabase — it used to route the identity
+    // proof through Supabase's separate, dual-purpose GitHub login provider,
+    // which coupled account-linking uptime to unrelated login config (broke
+    // in production when that provider's dashboard toggle was off). It now
+    // gets the proof from the GitHub App's own OAuth client instead.
+    expect(popupSource.toLowerCase()).not.toContain('supabase');
+    expect(popupSource).toContain('platform/github-app/oauth/authorize');
+    expect(popupSource).toContain('access_token');
   });
 });

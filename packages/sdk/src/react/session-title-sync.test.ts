@@ -89,3 +89,58 @@ describe('reconcileHydratedSessionTitle', () => {
     expect(titled.refetched).toEqual([]);
   });
 });
+
+describe('the sessions-list refetch defers to an in-flight /start', () => {
+  // Regression: an adopted warm session is revealed by /start dropping its
+  // `metadata.warm` marker. The ladder's t=0 pass fired a sessions-list
+  // refetch that could beat that /start to the server, observe the row still
+  // hidden, and overwrite the adopting tab's optimistic seed — the newest
+  // session vanished from the sidebar until the next poll. While the start
+  // query is fetching, only the detail refetch may run (the detail route
+  // serves the owner regardless of the marker).
+  function gatedClient(fetchStatus: 'fetching' | 'idle' | undefined) {
+    const refetched: unknown[] = [];
+    return {
+      client: {
+        getQueryData: () => undefined,
+        getQueryState:
+          fetchStatus === undefined
+            ? undefined
+            : () => ({ fetchStatus }),
+        refetchQueries: async (input: unknown) => {
+          refetched.push(input);
+        },
+      } as never,
+      refetched,
+    };
+  }
+
+  test('start query fetching: the list refetch is skipped, the detail refetch still runs', async () => {
+    const { client, refetched } = gatedClient('fetching');
+
+    await reconcileHydratedSessionTitle(client, 'project-1', 'session-1', 1, { delaysMs: [0] });
+
+    expect(refetched).toEqual([
+      { queryKey: qk.project.session('project-1', 'session-1'), type: 'active' },
+    ]);
+  });
+
+  test('start query settled: both refetches run', async () => {
+    const { client, refetched } = gatedClient('idle');
+
+    await reconcileHydratedSessionTitle(client, 'project-1', 'session-1', 1, { delaysMs: [0] });
+
+    expect(refetched).toEqual([
+      { queryKey: qk.project.sessionsScope('project-1'), type: 'active' },
+      { queryKey: qk.project.session('project-1', 'session-1'), type: 'active' },
+    ]);
+  });
+
+  test('a client without getQueryState keeps the old behavior', async () => {
+    const { client, refetched } = gatedClient(undefined);
+
+    await reconcileHydratedSessionTitle(client, 'project-1', 'session-1', 1, { delaysMs: [0] });
+
+    expect(refetched).toHaveLength(2);
+  });
+});

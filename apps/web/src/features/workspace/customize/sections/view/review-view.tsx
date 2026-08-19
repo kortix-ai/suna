@@ -9,11 +9,11 @@ import { useProjectName } from '@kortix/sdk/react';
 /**
  * Review Center customize section — the per-project human-in-the-loop inbox wired
  * to live data. Gated behind the `review_center` experimental flag (see
- * customize-panel.tsx + project-actions.ts). Mirrors changes-view.tsx.
+ * the legacy panel + project-actions.ts). Mirrors changes-view.tsx.
  */
 export function ReviewView({ projectId }: { projectId: string }) {
   // One source for the project name — see `useProjectName`'s doc comment.
-  // Reads the SAME qk.project.detail(projectId) entry customize-panel.tsx
+  // Reads the SAME qk.project.detail(projectId) entry the legacy panel
   // already mounts whenever the panel is open (this view only renders while
   // that panel is open), so this is a cache hit, not a second `getProject`
   // request for data the parent already holds.

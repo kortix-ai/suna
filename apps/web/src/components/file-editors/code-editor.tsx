@@ -339,6 +339,7 @@ interface CodeEditorProps {
   diagnostics?: LspDiagnostic[];
   /** 1-indexed line number to scroll to after mount (used for click-to-navigate from diagnostics panel) */
   targetLine?: number | null;
+  editorClassName?: string;
 }
 
 export function CodeEditor({
@@ -358,6 +359,7 @@ export function CodeEditor({
   fontSize,
   diagnostics,
   targetLine,
+  editorClassName,
 }: CodeEditorProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const { resolvedTheme } = useTheme();
@@ -376,7 +378,9 @@ export function CodeEditor({
 
   // Store callback in ref to avoid it being a dependency
   const onUnsavedChangeRef = useRef(onUnsavedChange);
-  onUnsavedChangeRef.current = onUnsavedChange;
+  useEffect(() => {
+    onUnsavedChangeRef.current = onUnsavedChange;
+  }, [onUnsavedChange]);
 
   // After a save, briefly ignore external content prop changes so a stale
   // refetch doesn't flash the old content back into the editor.
@@ -752,6 +756,7 @@ export function CodeEditor({
         ref={editorContainerRef}
         className={cn(
           'w-full max-w-full bg-white dark:bg-zinc-900',
+          editorClassName,
           readOnly
             ? 'min-h-full flex-1 overflow-visible' // Stretch to fill parent so short files still fill the viewport
             : 'max-h-full min-h-0 flex-1 overflow-hidden',

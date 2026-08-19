@@ -31,7 +31,7 @@ export function parseToolName(tool: string): {
   return { server, display: humanizeToolName(tool) };
 }
 
-export function GenericTool({ part }: ToolProps) {
+export function GenericTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const output = partOutput(part);
   const input = partInput(part);
   const { server, display } = useMemo(() => parseToolName(part.tool), [part.tool]);
@@ -67,14 +67,15 @@ export function GenericTool({ part }: ToolProps) {
       'name',
       'prompt',
     ]);
-    return Object.entries(input)
-      .filter(([k]) => !skip.has(k))
-      .flatMap(([k, v]) => {
-        if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean')
-          return [`${k}=${v}`];
-        return [];
-      })
-      .slice(0, 3);
+    const out: string[] = [];
+    for (const [k, v] of Object.entries(input)) {
+      if (skip.has(k)) continue;
+      if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') {
+        out.push(`${k}=${v}`);
+        if (out.length === 3) break;
+      }
+    }
+    return out;
   }, [input]);
 
   return (
@@ -85,6 +86,9 @@ export function GenericTool({ part }: ToolProps) {
         subtitle,
         args: server ? [server, ...args] : args.length > 0 ? args : undefined,
       }}
+      defaultOpen={defaultOpen}
+      forceOpen={forceOpen}
+      locked={locked}
     >
       {output ? <ToolOutputFallback output={output} toolName={part.tool} /> : null}
     </BasicTool>
