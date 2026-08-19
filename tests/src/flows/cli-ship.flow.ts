@@ -608,7 +608,7 @@ flow(
   'CR-9',
   {
     domain: 'cli',
-    requires: ['funded'],
+    requires: ['funded', 'daytona'],
     serial: true,
     timeoutMs: 1_200_000,
     routes: [

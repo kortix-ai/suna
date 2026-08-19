@@ -612,6 +612,43 @@ maintenance-mode 503s were real but were not the dominant cause of the later
 attempts (4 occurrences in attempt 10 vs 36 in attempt 1) — see the next entry.
 Capacity fix not yet made — staging still runs this gate at capacity risk.
 
+**Addendum (2026-08-19) — what the capacity audit found, and the durable fix.**
+Three facts, none of them visible from the symptom:
+
+- **Staging was smaller than dev.** `environments/staging/main.tf:98-103` ran
+  the API at `512/1024`, `desired/min/max = 1/1/3`; dev runs `2/2/6` and carries
+  no load. The environment that absorbs the heaviest load in the company had the
+  smallest box, and its autoscaling ceiling was 3 × 0.5 vCPU = 1.5 vCPU total.
+- **The single task was Spot with `base = 0`** (`modules/ecs-api/main.tf:506`)
+  behind `deployment_minimum_healthy_percent = 100` (`:521`). One Spot reclaim
+  empties the service and ECS cannot place the replacement until Spot capacity
+  returns. Some of the "cascading failures" chased that night may have been
+  reclaims, not load — and the edge laundered both into the same 503. **Any Spot
+  service whose total unavailability is a real cost needs an on-demand base.**
+- **The database tier lives outside Terraform.** The staging DB is hosted
+  Supabase (`ujzsbwvurfyeuerxxeaz`), injected as `STAGING_DATABASE_URL`; a
+  repo-wide grep for RDS/ElastiCache returns zero hits. The `ci_micro` →
+  `ci_medium` resize therefore survives every apply AND is recorded by nothing.
+  **A resource no plan can show is a resource only a runbook can hold** —
+  `docs/runbooks/staging-sizing.md` now does.
+
+**The Terraform trap this exposed, which generalises past staging:** the ecs-api
+service carries `ignore_changes = [task_definition, desired_count]` and the
+task-def carries `ignore_changes = [container_definitions]`, by design so CI
+image rolls do not fight Terraform. `infra/scripts/ecs-deploy.sh` then renders
+each new revision from the service's CURRENT one. So **changing `task_cpu` /
+`task_memory` in Terraform registers a revision the service never adopts — the
+apply is green and the live task never resizes.** Writing a size into Terraform
+is not the same as a task running at that size; verify with
+`describe-task-definition` on the service's live revision, never from the plan.
+Fixed durably by having `ecs-deploy.sh` take ONLY `cpu`/`memory` from the
+family's latest ACTIVE revision (Terraform's, right after an apply; its own
+previous one otherwise) and everything else from the service's current revision
+— so a resize propagates on the next deploy and is a no-op on every other one.
+*Enforcer:* `worker.test.mjs` pins staging >= dev on cpu/memory/min_capacity,
+pins `fargate_base_on_demand = 1` on both staging services, and pins the new
+module variable's default at `0` so dev/prod strategies cannot move.
+
 ### A frontend deploy job that `needs:` an unrelated edge job ships a half-deployed staging, and the release gate then blames the code (2026-08-19)
 
 **When:** `deploy-staging.yml` for `044d99480d` (v0.13.0 candidate),

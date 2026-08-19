@@ -151,6 +151,38 @@ export interface SessionOwnershipContext {
    *  REQUIRED — never optional. An omitted binding would default to the
    *  permissive value and silently reopen the hole on any edge that forgets it. */
   callerSessionId: string | null;
+  /**
+   * The caller's AGENT/SANDBOX token binding — `callerKortixSessionId(c)`, i.e.
+   * `sessionId` for every credential kind EXCEPT a Supabase browser JWT, which
+   * is always null.
+   *
+   * Deliberately separate from `callerSessionId`. That field is fed the RAW
+   * `c.get('sessionId')` at 14 of its call sites, and `resolveSupabaseAuth`
+   * (middleware/auth.ts:285, :341) sets that to the SUPABASE LOGIN SESSION id
+   * for every signed-in human. So `callerSessionId != null` does NOT mean "an
+   * agent token" — it is true for ordinary dashboard users too, and using it to
+   * gate manager standing 403s them (see the trigger-override gate below).
+   *
+   * Only the trigger-session manager override reads this field. The
+   * sibling-session narrowing in `isSessionTargetVisibleToCaller` keeps using
+   * `callerSessionId`, unchanged.
+   *
+   * REQUIRED — never optional, for the same reason as `callerSessionId`.
+   */
+  boundCredentialSessionId: string | null;
+}
+
+/**
+ * What the sibling-session narrowing needs. `boundCredentialSessionId` is
+ * OPTIONAL here — only the trigger-session manager override reads it, so a
+ * caller doing narrowing alone is not forced to source it, while a full
+ * `SessionOwnershipContext` still passes unchanged.
+ */
+export interface SessionNarrowingContext {
+  origin: string | null;
+  sessionId: string;
+  callerSessionId: string | null;
+  boundCredentialSessionId?: string | null;
 }
 
 /**
@@ -159,7 +191,11 @@ export interface SessionOwnershipContext {
  * Human credentials and wrapper backend credentials have no session binding.
  * Interactive sessions keep their human ownership semantics.
  */
-export function isSessionTargetVisibleToCaller(ownership: SessionOwnershipContext): boolean {
+export function isSessionTargetVisibleToCaller(
+  /** Narrowing needs only the binding — not the override field, so callers that
+   *  do sibling-isolation alone stay unchanged. */
+  ownership: SessionNarrowingContext,
+): boolean {
   return !(
     ownership.origin === 'backend' &&
     ownership.callerSessionId != null &&
@@ -173,7 +209,7 @@ export function isSessionVisibleTo(
   ownerId: string | null,
   grants: SecretGrant[],
   subject: ShareSubject,
-  ownership: SessionOwnershipContext,
+  ownership: SessionNarrowingContext,
 ): boolean {
   // A sandbox token acts for ONE end-user. It must not reach a sibling backend
   // session just because the wrapper credential created them both. Interactive
@@ -222,7 +258,21 @@ export function isProjectSessionVisibleTo(
   context: { metadata: unknown; canManageProject: boolean },
 ): boolean {
   if (!isSessionTargetVisibleToCaller(ownership)) return false;
-  if (context.canManageProject && isTriggerCreatedSessionMetadata(context.metadata)) return true;
+  // The manager override is for callers that are NOT a session-bound agent
+  // credential. A sandbox/agent token whose launching user happens to hold
+  // `manage` would otherwise read every OTHER trigger-created private session
+  // in the project — the sibling reach the ownership gate exists to deny.
+  //
+  // Gated on `boundCredentialSessionId`, NOT `callerSessionId`: the latter is
+  // the Supabase login session id for ordinary humans, so gating on it would
+  // strip managers of the override in the dashboard. See the field docs above.
+  if (
+    ownership.boundCredentialSessionId === null &&
+    context.canManageProject &&
+    isTriggerCreatedSessionMetadata(context.metadata)
+  ) {
+    return true;
+  }
   return isSessionVisibleTo(visibility, ownerId, grants, subject, ownership);
 }
 

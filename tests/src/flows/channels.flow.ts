@@ -957,6 +957,7 @@ flow(
   "CHN-23",
   {
     domain: "channels",
+    requires: ["daytona"],
     routes: ["POST /v1/projects/:projectId/channels/slack/bind-thread"],
   },
   async (ctx) => {

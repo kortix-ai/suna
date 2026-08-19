@@ -289,6 +289,7 @@ projectsApp.openapi(
     grantsBySession,
     runtimeStatusBySession,
     callerSessionId: callerKortixSessionId(c),
+    boundCredentialSessionId: callerKortixSessionId(c),
   });
   if (!selected.authorized) {
     return c.json({ error: 'Project manager access is required to list every session' }, 403);
@@ -344,7 +345,7 @@ projectsApp.openapi(
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_READ);
 
-  const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null);
+  const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
   if (!visible) return c.json({ error: 'Not found' }, 404);
   // A soft-deleted session is gone for a read-by-id, exactly as it is for the
   // default list. `deleteSession` only stamps `metadata.deletedAt`
@@ -393,7 +394,7 @@ projectsApp.openapi(
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
 
-  const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null);
+  const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
   if (!visible) return c.json({ error: 'Not found' }, 404);
   if (!visible.canManageSharing) {
       return c.json(
@@ -425,7 +426,7 @@ projectsApp.openapi(
 
   await setSessionSharing(sessionId, intent);
 
-  const fresh = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null);
+  const fresh = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
     return c.json(
       fresh
         ? serializeSession(fresh.row, {
@@ -517,7 +518,7 @@ projectsApp.openapi(
       ? (body.metadata as Record<string, unknown>)
       : null;
 
-  const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null);
+  const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
   if (!visible) return c.json({ error: 'Not found' }, 404);
   const existing = visible.row;
 
@@ -597,7 +598,7 @@ projectsApp.openapi(
   assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_STOP);
 
   // Stopping a session is reserved for its owner or a project manager.
-  const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null);
+  const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
   if (!visible) return c.json({ error: 'Not found' }, 404);
   if (!visible.canManageSharing) {
       return c.json(

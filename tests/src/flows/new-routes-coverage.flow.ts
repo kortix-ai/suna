@@ -186,6 +186,7 @@ flow(
   'SESS-20',
   {
     domain: 'sessions',
+    requires: ['daytona'],
     routes: [
       'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
       'GET /v1/projects/:projectId/sessions/:sessionId/turn',

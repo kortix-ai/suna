@@ -1671,7 +1671,15 @@ async function postPrompt(
     const res = await forwardToSandbox(
       externalId,
       DAEMON_PORT,
-      { kind: 'principal', userId, callerSessionId, sandboxAuthored: false },
+      {
+        kind: 'principal',
+        userId,
+        callerSessionId,
+        // A real Kortix session id (the session this prompt is FOR), so it is
+        // also the correct agent binding.
+        boundCredentialSessionId: callerSessionId,
+        sandboxAuthored: false,
+      },
       'POST',
       `/session/${encodeURIComponent(opencodeSessionId)}/prompt_async`,
       // The producer's own directory when it named one, so a project-scoped

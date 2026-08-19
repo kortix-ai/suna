@@ -111,7 +111,11 @@ async function listTestUsersViaDb(env: Env, domains: string[]): Promise<SupaUser
   const { Client } = await import("pg");
   const client = new Client({
     connectionString: conn,
-    ssl: local ? false : true,
+    // Same policy as database-project.ts / platform-admin.ts: Supabase's direct
+    // Postgres endpoint presents a chain Node's default trust store rejects
+    // ("self signed certificate in certificate chain"), which is what killed
+    // both gc sweeps on the first sharded release-gate run (32222342409).
+    ssl: local ? false : { rejectUnauthorized: false },
   });
   await client.connect();
   try {

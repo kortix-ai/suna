@@ -8,6 +8,7 @@ import {
 } from '../../shared/session-public-shares';
 import { loadProjectForUser, loadSessionForSharing, loadVisibleSession } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
+import { callerKortixSessionId } from '../lib/caller-session';
 import { UUID_V4_REGEX, readBody } from '../lib/serializers';
 import { sessionHasMemberConnectorBinding } from '../lib/session-connector-bindings';
 
@@ -37,7 +38,12 @@ projectsApp.openapi(
 
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null);
+    const visible = await loadVisibleSession(
+      loaded,
+      sessionId,
+      c.get('sessionId') ?? null,
+      callerKortixSessionId(c),
+    );
     if (!visible) return c.json({ error: 'Not found' }, 404);
 
     return c.json({

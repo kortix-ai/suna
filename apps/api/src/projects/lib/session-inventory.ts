@@ -81,6 +81,9 @@ export function selectSessionRowsForViewer(input: {
    *  token). Stops a sandbox listing SIBLING backend sessions, which all share
    *  one `created_by`. */
   callerSessionId: string | null;
+  /** The caller's AGENT/SANDBOX token binding (`callerKortixSessionId(c)`).
+   *  Only the trigger-session manager override reads it — see share.ts. */
+  boundCredentialSessionId: string | null;
   grantsBySession: Map<string, SecretGrant[]>;
   runtimeStatusBySession: Map<string, RuntimeStatus>;
 }): { authorized: boolean; items: SessionInventoryItem[] } {
@@ -105,6 +108,7 @@ export function selectSessionRowsForViewer(input: {
         origin: row.origin ?? null,
         sessionId: row.sessionId,
         callerSessionId: input.callerSessionId,
+        boundCredentialSessionId: input.boundCredentialSessionId,
       },
       { metadata: row.metadata, canManageProject: input.canManageProject },
     );

@@ -232,6 +232,13 @@ export async function appAccessibleToUser(
     createdBy: string | null;
   },
   userId: string,
+  /**
+   * The bearer token the caller presented, when there is one. Supplying it is
+   * what makes `authorize` apply the credential's own limits — project binding
+   * and agent grant — on top of the user's permissions. Omitted for browser
+   * cookie/JWT callers, which carry no token scope.
+   */
+  actingTokenId?: string,
 ): Promise<boolean> {
   // No request credential reaches this helper (it is also called from the
   // unauthenticated public-app proxy with a resolved viewer id), so the verdict
@@ -241,6 +248,7 @@ export async function appAccessibleToUser(
     actorForUser(userId, app.accountId),
     PROJECT_ACTIONS.PROJECT_READ,
     { type: 'project', id: app.projectId },
+    actingTokenId,
   );
   if (!projectAccess.allowed) return false;
   const subject = await resolveShareSubject(userId);
@@ -271,7 +279,7 @@ export async function appAccessibleToUser(
    * so those Apps were listed to managers and openable by NOBODY, forever,
    * answering 403 to the only people who could have fixed them.
    */
-  return projectManager(app.accountId, app.projectId, userId);
+  return projectManager(app.accountId, app.projectId, userId, actingTokenId);
 }
 
 /* ─── Team scoping — who on the team sees this App ────────────────────────────
@@ -355,11 +363,17 @@ interface TeamScopedApp {
   createdBy: string | null;
 }
 
-async function projectManager(accountId: string, projectId: string, userId: string): Promise<boolean> {
+async function projectManager(
+  accountId: string,
+  projectId: string,
+  userId: string,
+  actingTokenId?: string,
+): Promise<boolean> {
   const verdict = await authorize(
     actorForUser(userId, accountId),
     PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE,
     { type: 'project', id: projectId },
+    actingTokenId,
   );
   return verdict.allowed;
 }

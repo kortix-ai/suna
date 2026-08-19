@@ -101,6 +101,28 @@ async function loadProjectSessionRow(
   return row ?? null;
 }
 
+/**
+ * Does this caller carry its user's project-management standing?
+ *
+ * A session-bound AGENT credential does not: it acts for one session, so it
+ * must not inherit the launching user's `manage` role and, through it, the
+ * trigger-session override that would expose sibling sessions.
+ *
+ * Keyed on the AGENT binding, never on `callerSessionId`. That field holds the
+ * SUPABASE LOGIN session id for every signed-in human (middleware/auth.ts:285,
+ * :341), so keying on it would strip managers of `canManageProject` — and with
+ * it `canManageSharing` — producing a 403 on stop, restart, delete,
+ * change-sharing and change-model for every manager who is not the owner.
+ *
+ * Pure and exported for unit tests, like shouldApplyAdminBypass above.
+ */
+export function callerHasManagerStanding(
+  effectiveRole: ProjectRole,
+  boundCredentialSessionId: string | null,
+): boolean {
+  return boundCredentialSessionId === null && roleAllows(effectiveRole, 'manage');
+}
+
 export async function loadVisibleSession(
   loaded: {
     row: ProjectRow;
@@ -121,6 +143,16 @@ export async function loadVisibleSession(
    * alone cannot separate them. See isSessionVisibleTo.
    */
   callerSessionId: string | null,
+  /**
+   * The caller's AGENT/SANDBOX token binding — always `callerKortixSessionId(c)`.
+   *
+   * Separate from `callerSessionId` on purpose. 14 of this function's call sites
+   * pass the RAW `c.get('sessionId')` for that one, and `resolveSupabaseAuth`
+   * (middleware/auth.ts:285, :341) sets it to the SUPABASE LOGIN session id for
+   * every signed-in human — so it cannot be read as "an agent token".
+   * ONLY the trigger-session manager override reads this field.
+   */
+  boundCredentialSessionId: string | null,
 ): Promise<{
   row: ProjectSessionRow;
   subject: ShareSubject;
@@ -133,10 +165,16 @@ export async function loadVisibleSession(
   if (!row) return null;
   const subject = await resolveShareSubject(loaded.userId);
   const grants = (await loadSessionGrants([sessionId])).get(sessionId) ?? [];
-  const ownership = { origin: row.origin ?? null, sessionId, callerSessionId };
-  let canManageProject = roleAllows(loaded.effectiveRole, 'manage');
+  const ownership = {
+    origin: row.origin ?? null,
+    sessionId,
+    callerSessionId,
+    boundCredentialSessionId,
+  };
+  let canManageProject = callerHasManagerStanding(loaded.effectiveRole, boundCredentialSessionId);
   if (
     !canManageProject &&
+    boundCredentialSessionId === null &&
     isSessionTargetVisibleToCaller(ownership) &&
     isTriggerCreatedSessionMetadata(row.metadata)
   ) {

@@ -36,6 +36,11 @@ env:
   # replaced the old qa-release gate, so the browser lane could never reach
   # the app.
   VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+  # Lets the api-router edge Worker return the TRUE origin status/body to the
+  # gate instead of laundering every origin failure into MAINTENANCE_MODE
+  # (worker.mjs CI_PASSTHROUGH_SECRET binding). Diagnosability only; the
+  # Worker's public behavior is unchanged.
+  KE2E_CI_PASSTHROUGH_SECRET: ${{ secrets.CF_WORKER_CI_PASSTHROUGH_SECRET }}
 
 jobs:
   # Reclaim debris left by EARLIER runs before this one adds load. `--older-than

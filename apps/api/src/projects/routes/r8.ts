@@ -96,7 +96,7 @@ projectsApp.openapi(
     // Per-agent gate: resuming a session provisions compute. A scoped agent
     // token must hold project.session.start (no-op for human/PAT tokens).
     assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
-    const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null);
+    const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
     if (!visible) return c.json({ error: 'Not found' }, 404);
     // The agent this session will actually run has to still be one the caller
     // may run — grants change after a session is created, and `/start` is what
@@ -191,7 +191,7 @@ projectsApp.openapi(
     assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
 
     // Restart is reserved for the session owner or an account owner/admin.
-    const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null);
+    const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
     if (!visible) return c.json({ error: 'Not found' }, 404);
     if (!visible.canManageSharing) {
       return c.json(
@@ -253,7 +253,7 @@ projectsApp.openapi(
 
     // Stop is reserved for the session owner or an account owner/admin, same policy
     // as restart.
-    const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null);
+    const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
     if (!visible) return c.json({ error: 'Not found' }, 404);
     if (!visible.canManageSharing) {
       return c.json(
@@ -361,7 +361,7 @@ projectsApp.openapi(
     // one end-user, narrow it". Passing it raw 404s a signed-in human on any
     // sibling `origin='backend'` session — one the same user's GET /sessions
     // list returns, because project-sessions.ts goes through the helper.
-    const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c));
+    const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c), callerKortixSessionId(c));
     if (!visible) return c.json({ error: 'Not found' }, 404);
 
     // `session_sandboxes.session_id` is UNIQUE, so this is the session's one
@@ -677,7 +677,7 @@ projectsApp.openapi(
       PROJECT_ACTIONS.PROJECT_SESSION_START,
     );
 
-    const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c));
+    const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c), callerKortixSessionId(c));
     if (!visible) return c.json({ error: 'Not found' }, 404);
     // `deleteSession()` stamps metadata.deletedAt and leaves the row 'stopped'.
     // Accepting a prompt for it would revive a session the user removed.
@@ -822,7 +822,7 @@ projectsApp.openapi(
       projectId,
       PROJECT_ACTIONS.PROJECT_SESSION_READ,
     );
-    const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c));
+    const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c), callerKortixSessionId(c));
     if (!visible) return c.json({ error: 'Not found' }, 404);
 
     // Scoped to INBOX rows — see `listInboxPrompts`. `continue_session` is also
@@ -872,7 +872,7 @@ projectsApp.openapi(
       projectId,
       PROJECT_ACTIONS.PROJECT_SESSION_START,
     );
-    const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c));
+    const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c), callerKortixSessionId(c));
     if (!visible) return c.json({ error: 'Not found' }, 404);
 
     // The session AND inbox scopes are in the DELETE's own predicate, so
@@ -932,7 +932,7 @@ projectsApp.openapi(
       projectId,
       PROJECT_ACTIONS.PROJECT_SESSION_START,
     );
-    const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c));
+    const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c), callerKortixSessionId(c));
     if (!visible) return c.json({ error: 'Not found' }, 404);
 
     // ONE primitive for "retry" and for "send now": both are the user pointing
@@ -990,7 +990,7 @@ projectsApp.openapi(
       projectId,
       PROJECT_ACTIONS.PROJECT_SESSION_START,
     );
-    const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c));
+    const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c), callerKortixSessionId(c));
     if (!visible) return c.json({ error: 'Not found' }, 404);
 
     const body = await readBody(c);

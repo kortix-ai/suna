@@ -111,7 +111,13 @@ function installFetch(transcript: unknown | 'unreachable') {
 const NOW = Date.now();
 const headers = () => new Headers({ 'content-type': 'application/json' });
 const bodyOf = (obj: unknown) => new TextEncoder().encode(JSON.stringify(obj)).buffer as ArrayBuffer;
-const principal = { kind: 'principal' as const, userId: 'u1', callerSessionId: null, sandboxAuthored: false };
+const principal = {
+  kind: 'principal' as const,
+  userId: 'u1',
+  callerSessionId: null,
+  boundCredentialSessionId: null,
+  sandboxAuthored: false,
+};
 
 beforeEach(() => {
   __resetPromptDedupe();

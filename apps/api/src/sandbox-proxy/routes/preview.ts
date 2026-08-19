@@ -658,6 +658,11 @@ export type PreviewProxyAccess =
        *  this is what separates them. Null means a non-session-bound principal.
        *  REQUIRED so a new entry point cannot silently omit it and fail open. */
       callerSessionId: string | null;
+      /** The caller's AGENT/SANDBOX token binding — `callerKortixSessionId(c)`,
+       *  never the raw `c.get('sessionId')`. Only the trigger-session manager
+       *  override reads it (see connectors/share.ts). REQUIRED for the same
+       *  reason as the two fields around it. */
+      boundCredentialSessionId: string | null;
       /** True when the SANDBOX ITSELF authored this request (it holds a
        *  credential that produces a perfectly valid principal). Such a request
        *  may never extend the box's deadline — that is the self-renewal this
@@ -785,6 +790,8 @@ export async function forwardToSandbox(
   bindSandboxRequestContext(record, sandboxId);
   const userId = principalUserId(access);
   const callerSessionId = access.kind === 'principal' ? access.callerSessionId : null;
+  const boundCredentialSessionId =
+    access.kind === 'principal' ? access.boundCredentialSessionId : null;
   if (
     access.kind === 'principal' &&
     !(await canAccessPreviewSandbox({ previewSandboxId: sandboxId, userId }))
@@ -836,6 +843,7 @@ export async function forwardToSandbox(
       accountId: record.accountId,
       userId,
       callerSessionId: callerSessionId ?? null,
+      boundCredentialSessionId,
     }))
   ) {
     throw new HTTPException(403, {
@@ -1613,12 +1621,16 @@ export async function resolvePreviewWsUpstream(opts: {
   /** The caller's own session when the credential is bound to one, or null for a
    *  principal that is not session-bound. REQUIRED — fail closed, never default. */
   callerSessionId: string | null;
+  /** The caller's AGENT/SANDBOX token binding. Only the trigger-session manager
+   *  override reads it (connectors/share.ts). REQUIRED, same reasoning. */
+  boundCredentialSessionId: string | null;
 }): Promise<
   | { ok: true; url: string; headers: Record<string, string> }
   | { ok: false; status: number; message: string }
 > {
   const { sandboxId, userId, remainingPath, queryString } = opts;
   const callerSessionId = opts.callerSessionId;
+  const boundCredentialSessionId = opts.boundCredentialSessionId;
 
   const record = await loadSandbox(sandboxId);
   if (!record) return { ok: false, status: 404, message: 'sandbox not found' };
@@ -1646,6 +1658,7 @@ export async function resolvePreviewWsUpstream(opts: {
       accountId: record.accountId,
       userId,
       callerSessionId: callerSessionId ?? null,
+      boundCredentialSessionId,
     }))
   ) {
     return {
@@ -1767,6 +1780,11 @@ preview.all('/:sandboxId/:port/*', async (c) => {
       kind: 'principal',
       userId,
       callerSessionId: c.get('sessionId') ?? null,
+      // The manager-override gate needs the AGENT binding, so it reads the
+      // helper — same reason `sandboxAuthored` below does. The raw context var
+      // is the SUPABASE login session id for a human on the network-fallback
+      // branch, which would strip managers of the override.
+      boundCredentialSessionId: callerKortixSessionId(c),
       // `callerKortixSessionId`, NEVER the raw context var. `combinedAuth`'s
       // local JWT fast path leaves `sessionId` unset for a browser, but its
       // NETWORK-FALLBACK branch (taken whenever JWKS has not warmed, and

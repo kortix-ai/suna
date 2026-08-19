@@ -474,6 +474,7 @@ export class Client {
     }
     for (const [k, v] of Object.entries(opts?.headers ?? {})) headers.set(k, v);
     this.applyAuth(headers, url);
+    applyCiPassthrough(headers);
 
     const routeTemplate = `${method} ${template}`;
     const timeoutMs = opts?.timeoutMs ?? this.defaultTimeoutMs;
@@ -577,6 +578,24 @@ export class Client {
 
     throw new Error(`request attempt loop exhausted for ${method} ${url}`);
   }
+}
+
+/**
+ * The api-router edge Worker launders any origin 5xx / fetch failure into a
+ * synthetic MAINTENANCE_MODE 503 (worker.mjs, AUTOMATIC_MAINTENANCE). When the
+ * request carries `X-Kortix-CI-Passthrough` matching the Worker's
+ * CI_PASSTHROUGH_SECRET binding, the Worker returns the TRUE origin response
+ * instead, so a release-gate failure is diagnosable. Opt-in via env so local
+ * and unprivileged runs are unchanged. Exported for tests.
+ */
+export const CI_PASSTHROUGH_HEADER = 'x-kortix-ci-passthrough';
+export function applyCiPassthrough(
+  headers: Headers,
+  secret: string | undefined = process.env.KE2E_CI_PASSTHROUGH_SECRET,
+): void {
+  const value = secret?.trim();
+  if (!value) return;
+  if (!headers.has(CI_PASSTHROUGH_HEADER)) headers.set(CI_PASSTHROUGH_HEADER, value);
 }
 
 function record(c: Captured): void {

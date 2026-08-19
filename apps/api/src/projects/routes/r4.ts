@@ -3569,7 +3569,7 @@ projectsApp.openapi(
       projectId,
       PROJECT_ACTIONS.PROJECT_SESSION_READ,
     );
-    const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null);
+    const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
     if (!visible) return c.json({ error: 'Not found' }, 404);
     return c.json({ question: await getOpenQuestion(sessionId) });
   },
@@ -3608,7 +3608,7 @@ projectsApp.openapi(
     // of the session — the same bar the question relay itself uses.
     const loaded = await loadProjectForUser(c, projectId, 'session');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null);
+    const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
     if (!visible) return c.json({ error: 'Not found' }, 404);
 
     const body = await readBody(c);

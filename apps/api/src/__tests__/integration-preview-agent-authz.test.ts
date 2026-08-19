@@ -110,7 +110,13 @@ function promptAs(userId: string, agent: string): Promise<Response> {
   return forwardToSandbox(
     'sbx-1',
     8000,
-    { kind: 'principal', userId, callerSessionId: null, sandboxAuthored: false },
+    {
+      kind: 'principal',
+      userId,
+      callerSessionId: null,
+      boundCredentialSessionId: null,
+      sandboxAuthored: false,
+    },
     'POST',
     '/session/ses_1/prompt_async',
     '',

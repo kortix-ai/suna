@@ -314,7 +314,7 @@ projectsApp.openapi(
       projectId,
       PROJECT_ACTIONS.PROJECT_SESSION_READ,
     );
-    const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c));
+    const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c), callerKortixSessionId(c));
     if (!visible) return c.json({ error: 'Not found' }, 404);
     // The historical trail is Enterprise (`auditAccess`), but this endpoint is
     // also the approval CONTROL PLANE: write/destructive connector actions
