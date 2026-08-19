@@ -139,6 +139,7 @@ mock.module('../channels/slack-api', () => ({
   deleteMessage: async () => {},
   getChannelName: async () => 'general',
   isBotUser: async () => true,
+  findBotUserIdByName: async () => null,
   joinChannel: async () => true,
   openDmChannel: async () => 'D1',
   postBlocks: async () => 'ts',

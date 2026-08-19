@@ -16,7 +16,7 @@ import { listPickerModels, labelForModelRef } from '../../llm-gateway/models/pic
 import { isModelServableForAccount, resolveEffectiveModel } from '../../llm-gateway/resolution/default-model';
 import { chooseEffectiveAgent, toOpencodeModelRef, toWireModel } from '../../llm-gateway/resolution/effective';
 import { buildSlackLoginUrl } from './login';
-import { isBotUser } from '../slack-api';
+import { findBotUserIdByName, isBotUser } from '../slack-api';
 import { loadSlackTokenForProject } from '../install-store';
 import { linkSlackIdentity, lookupSlackIdentity, revokeSlackIdentity } from './identity';
 import { conversationPolicyLabel, normalizeConversationPolicy } from './participants';
@@ -697,14 +697,34 @@ async function slashLinkBot(ctx: SlashCtx, arg: string): Promise<SlashResponse> 
   if (!selection?.projectId) {
     return { response_type: 'ephemeral', text: `No project bound to this channel. Run \`${ctx.command} switch\` first.` };
   }
-  // Accept a raw id or a pasted <@U…> mention — Slack expands the latter as you type.
-  const botUserId = arg.trim().replace(/^<@|[|>].*$/g, '').toUpperCase();
-  if (!/^[UWB][A-Z0-9]{6,}$/.test(botUserId)) {
-    return { response_type: 'ephemeral', text: `Usage: \`${ctx.command} link-bot @TheBot\` — the bot whose @-mentions of Kortix should run.` };
-  }
   const me = await lookupSlackIdentity(ctx.teamId, ctx.slackUserId);
   if (!me) {
     return { response_type: 'ephemeral', text: `Connect your own Kortix account first: \`${ctx.command} login\`.` };
+  }
+  const token = await loadSlackTokenForProject(selection.projectId);
+  if (!token) {
+    return { response_type: 'ephemeral', text: 'Slack is not fully connected for this project yet.' };
+  }
+  // THREE INPUT FORMS, because only one of them is what an operator will type.
+  // The slash command is registered should_escape:false, so Slack sends
+  // "@Incident reporter" LITERALLY — it is never expanded to <@U…>. The first
+  // version of this accepted only an id and its usage text said `link-bot
+  // @TheBot`, i.e. it documented the one form that cannot work. Reported from
+  // the channel: "Usage: ..." came back for exactly that.
+  const raw = arg.trim();
+  let botUserId = raw.replace(/^<@|[|>].*$/g, '').toUpperCase();
+  if (!/^[UWB][A-Z0-9]{6,}$/.test(botUserId)) {
+    const byName = await findBotUserIdByName(token, raw);
+    if (!byName) {
+      return {
+        response_type: 'ephemeral',
+        text: `Couldn't find a bot called \`${raw || '…'}\`.\n`
+          + `Try the member ID instead: open the bot's profile → **⋮** → *Copy member ID*, then `
+          + `\`${ctx.command} link-bot U01234ABCDE\`.\n`
+          + `_(Typing @Name works only if the name matches exactly — Slack sends it to this command as plain text, not a mention.)_`,
+      };
+    }
+    botUserId = byName;
   }
   if (!(await canManageSlackPolicy(ctx, selection.projectId))) {
     return { response_type: 'ephemeral', text: 'Only a linked Kortix account owner or admin for this project can link a bot.' };
@@ -719,8 +739,7 @@ async function slashLinkBot(ctx: SlashCtx, arg: string): Promise<SlashResponse> 
   if (existing && existing.userId !== me.userId) {
     return { response_type: 'ephemeral', text: `<@${botUserId}> is already linked to a different Kortix account. Have them disconnect first.` };
   }
-  const token = await loadSlackTokenForProject(selection.projectId);
-  const bot = token ? await isBotUser(token, botUserId) : null;
+  const bot = await isBotUser(token, botUserId);
   if (bot !== true) {
     // null = we could not tell (missing scope, transport error, unknown user).
     // Refuse either way: guessing is the impersonation.

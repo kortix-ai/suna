@@ -69,6 +69,7 @@ mock.module('../channels/slack-api', () => ({
   deleteMessage: async () => {},
   getChannelName: async () => 'general',
   isBotUser: async () => true,
+  findBotUserIdByName: async () => null,
   joinChannel: async () => true,
   openDmChannel: async () => 'D1',
   postEphemeral: async () => true,
@@ -83,6 +84,20 @@ mock.module('../channels/slack-api', () => ({
 }));
 
 const { classifyEvent, isOwnBotEvent } = await import('../channels/slack/dispatch');
+
+// Extract a whole top-level function body. Fixed-length slices (…, i + 2600)
+// silently stop reaching their assertions the moment the function grows, which
+// is exactly what happened when link-bot learned to resolve names: three tests
+// went red without the behaviour changing at all.
+function fnBody(src: string, name: string): string {
+  const i = src.indexOf(`async function ${name}`);
+  if (i < 0) return '';
+  const nextFn = src.indexOf('\nasync function ', i + 1);
+  const nextTop = src.indexOf('\nfunction ', i + 1);
+  const ends = [nextFn, nextTop, src.length].filter((n) => n > 0);
+  return src.slice(i, Math.min(...ends));
+}
+
 
 const BOT = 'B1';
 const ev = (e: Record<string, unknown>) => ({ type: 'message', ...e }) as any;
@@ -218,8 +233,8 @@ describe('a bot sender is never sent an identity prompt', () => {
     expect(cmds, 'the only way to make a bot resolvable is gone').toContain("case 'link-bot':");
     expect(cmds, 'link-bot must write the same chat_user_identities row /login does')
       .toContain('await linkSlackIdentity({ teamId: ctx.teamId, slackUserId: botUserId, userId: me.userId });');
-    const h = cmds.slice(cmds.indexOf('async function slashLinkBot'));
-    expect(h.slice(0, 1600), 'linking a bot must stay owner/admin gated — any app in the channel is a non-member')
+    const h = fnBody(cmds, 'slashLinkBot');
+    expect(h, 'linking a bot must stay owner/admin gated — any app in the channel is a non-member')
       .toContain('canManageSlackPolicy');
   });
 });
@@ -235,7 +250,7 @@ describe('a bot sender is never sent an identity prompt', () => {
 
 describe('link-bot refuses anything that is not a verified bot', () => {
   const cmds = readFileSync(join(import.meta.dir, '..', 'channels', 'slack', 'commands.ts'), 'utf8');
-  const handler = cmds.slice(cmds.indexOf('async function slashLinkBot'), cmds.indexOf('async function slashLinkBot') + 2600);
+  const handler = fnBody(cmds, 'slashLinkBot');
 
   test('Slack is asked whether the target is a bot, BEFORE the link is written', () => {
     const askedAt = handler.indexOf('isBotUser(');
@@ -269,5 +284,36 @@ describe('link-bot refuses anything that is not a verified bot', () => {
     expect(branch, 'a failed users.info must be null (unknown) — false would read as "a human", and refuse every bot')
       .toContain('return null;');
     expect(branch, 'never answer false/true from a failed lookup').not.toMatch(/return (false|true);/);
+  });
+});
+
+// ── the usage that could not work ───────────────────────────────────────────
+//
+// The slash command is registered should_escape:false, so Slack sends
+// "@Incident reporter" LITERALLY — never <@U…>. v1 accepted only an id and its
+// usage text said `link-bot @TheBot`: it documented the single form that cannot
+// work, and that is exactly what came back in the channel.
+
+describe('link-bot accepts what an operator will actually type', () => {
+  const cmds = readFileSync(join(import.meta.dir, '..', 'channels', 'slack', 'commands.ts'), 'utf8');
+  const h = fnBody(cmds, 'slashLinkBot');
+
+  test('a plain name is resolved, not rejected', () => {
+    expect(h, 'a bare name must be looked up — Slack never expands it to <@U…>')
+      .toContain('findBotUserIdByName(token, raw)');
+  });
+
+  test('the failure message tells you where to get a member ID', () => {
+    expect(h, 'usage must not point at a form that cannot work').not.toContain('link-bot @TheBot');
+    expect(h, 'give the operator the copy-member-ID path').toContain('Copy member ID');
+  });
+
+  test('name resolution still goes through the is-a-bot check', () => {
+    // Resolving by name must not become a second, unguarded way in.
+    const byName = h.indexOf('findBotUserIdByName');
+    const verify = h.indexOf('isBotUser(');
+    const write  = h.indexOf('await linkSlackIdentity(');
+    expect(byName).toBeLessThan(verify);
+    expect(verify).toBeLessThan(write);
   });
 });

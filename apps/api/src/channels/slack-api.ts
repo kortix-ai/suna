@@ -448,6 +448,47 @@ export async function publishHomeView(
   }
 }
 
+// Resolve a bot by the name a human would type, e.g. "Incident reporter".
+//
+// The slash command is registered with should_escape:false, so Slack sends the
+// LITERAL text "@Incident reporter" — never <@U…>. Telling an operator to type
+// the thing Slack will not encode is how `link-bot @TheBot` shipped as usage
+// that could not work.
+//
+// Bots only: this feeds link-bot, and returning a human here would hand that
+// person's identity to whoever ran the command. An ambiguous match returns null
+// rather than guessing — two apps with the same display name is a bad reason to
+// bind the wrong one.
+//
+// One page of 1000 covers any workspace this is plausible in; beyond that the
+// operator can paste the member ID, which always works.
+export async function findBotUserIdByName(token: string, name: string): Promise<string | null> {
+  const want = name.trim().replace(/^@/, '').toLowerCase();
+  if (!want) return null;
+  try {
+    const r = await slackApiCall(token, 'users.list', { limit: 1000 });
+    if (!r.ok) {
+      console.warn('[slack-api] users.list failed', { error: r.error });
+      return null;
+    }
+    const members = (r.members ?? []) as Array<{
+      id?: string; name?: string; deleted?: boolean;
+      is_bot?: boolean; is_app_user?: boolean;
+      profile?: { display_name?: string; real_name?: string };
+    }>;
+    const hits = members.filter((m) => {
+      if (m.deleted || !m.id) return false;
+      if (!m.is_bot && !m.is_app_user) return false;
+      return [m.name, m.profile?.display_name, m.profile?.real_name]
+        .some((n) => (n ?? '').trim().toLowerCase() === want);
+    });
+    return hits.length === 1 ? hits[0]!.id! : null;
+  } catch (err) {
+    console.warn('[slack-api] users.list error', err);
+    return null;
+  }
+}
+
 // Is this Slack principal an app/bot rather than a person?
 //
 // `link-bot` writes the (workspace, slack_user) -> kortix_user row that
