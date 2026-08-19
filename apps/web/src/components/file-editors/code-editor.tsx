@@ -2,26 +2,26 @@
 
 import { useTranslations } from 'next-intl';
 
-import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
-import CodeMirror, { type ReactCodeMirrorRef } from '@uiw/react-codemirror';
-import { pierreDarkCm, pierreLightCm } from '@/lib/codemirror-pierre-theme';
-import { langs } from '@uiw/codemirror-extensions-langs';
-import { EditorView, keymap } from '@codemirror/view';
-import { indentWithTab } from '@codemirror/commands';
-import { lintGutter } from '@codemirror/lint';
-import { cn } from '@/lib/utils';
-import { useTheme } from 'next-themes';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Check, AlertCircle, Save, RotateCcw } from 'lucide-react';
 import { KortixLoader } from '@/components/ui/kortix-loader';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { pierreDarkCm, pierreLightCm } from '@/lib/codemirror-pierre-theme';
+import { cn } from '@/lib/utils';
 import type { LspDiagnostic } from '@/stores/diagnostics-store';
+import { indentWithTab } from '@codemirror/commands';
+import { lintGutter } from '@codemirror/lint';
+import { EditorView, keymap } from '@codemirror/view';
+import {
+  WarningCircleIcon as AlertCircle,
+  CheckIcon as Check,
+  ArrowCounterClockwiseIcon as RotateCcw,
+  FloppyDiskIcon as Save,
+} from '@phosphor-icons/react';
+import { langs } from '@uiw/codemirror-extensions-langs';
+import CodeMirror, { type ReactCodeMirrorRef } from '@uiw/react-codemirror';
+import { useTheme } from 'next-themes';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { diagnosticsExtension, injectDiagnosticStyles } from './codemirror-diagnostics';
 
 // Map of language aliases to CodeMirror language support
@@ -48,7 +48,9 @@ const getLangExtension = (langKey: string): any => {
       }
       // Extension function exists but returned null/undefined
       if (process.env.NODE_ENV === 'development') {
-        console.warn(`[CodeEditor] Language extension "${langKey}" function returned null/undefined`);
+        console.warn(
+          `[CodeEditor] Language extension "${langKey}" function returned null/undefined`,
+        );
       }
       return null;
     }
@@ -56,14 +58,16 @@ const getLangExtension = (langKey: string): any => {
     // Language not found in langs object
     if (process.env.NODE_ENV === 'development') {
       const availableLangs = Object.keys(langsTyped)
-        .filter(k => typeof langsTyped[k] === 'function')
+        .filter((k) => typeof langsTyped[k] === 'function')
         .sort();
       console.warn(
         `[CodeEditor] Language "${langKey}" not found.`,
-        `Looking for similar: ${availableLangs.filter(l =>
-          l.includes(langKey.toLowerCase()) || langKey.toLowerCase().includes(l)
-        ).join(', ') || 'none'}`,
-        `Total available: ${availableLangs.length} languages`
+        `Looking for similar: ${
+          availableLangs
+            .filter((l) => l.includes(langKey.toLowerCase()) || langKey.toLowerCase().includes(l))
+            .join(', ') || 'none'
+        }`,
+        `Total available: ${availableLangs.length} languages`,
       );
     }
     return null;
@@ -188,12 +192,14 @@ export function getLanguageFromExtension(fileName: string): string {
   if (fileNameLower.includes('.env') || fileNameLower.startsWith('.env')) {
     return 'properties';
   }
-  if (fileNameLower.includes('gitignore') ||
-      fileNameLower.includes('editorconfig') ||
-      fileNameLower.includes('dockerignore') ||
-      fileNameLower.includes('npmignore') ||
-      fileNameLower.includes('prettierignore') ||
-      fileNameLower.includes('eslintignore')) {
+  if (
+    fileNameLower.includes('gitignore') ||
+    fileNameLower.includes('editorconfig') ||
+    fileNameLower.includes('dockerignore') ||
+    fileNameLower.includes('npmignore') ||
+    fileNameLower.includes('prettierignore') ||
+    fileNameLower.includes('eslintignore')
+  ) {
     return 'text';
   }
   // Filename-based detection (no extension)
@@ -333,6 +339,7 @@ interface CodeEditorProps {
   diagnostics?: LspDiagnostic[];
   /** 1-indexed line number to scroll to after mount (used for click-to-navigate from diagnostics panel) */
   targetLine?: number | null;
+  editorClassName?: string;
 }
 
 export function CodeEditor({
@@ -352,6 +359,7 @@ export function CodeEditor({
   fontSize,
   diagnostics,
   targetLine,
+  editorClassName,
 }: CodeEditorProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const { resolvedTheme } = useTheme();
@@ -370,7 +378,9 @@ export function CodeEditor({
 
   // Store callback in ref to avoid it being a dependency
   const onUnsavedChangeRef = useRef(onUnsavedChange);
-  onUnsavedChangeRef.current = onUnsavedChange;
+  useEffect(() => {
+    onUnsavedChangeRef.current = onUnsavedChange;
+  }, [onUnsavedChange]);
 
   // After a save, briefly ignore external content prop changes so a stale
   // refetch doesn't flash the old content back into the editor.
@@ -538,7 +548,7 @@ export function CodeEditor({
         onChange(value);
       }
     },
-    [onChange]
+    [onChange],
   );
 
   // Update local content when external content changes (but not if we have unsaved local changes)
@@ -576,7 +586,7 @@ export function CodeEditor({
         }
       }
     },
-    [readOnly, handleSave]
+    [readOnly, handleSave],
   );
 
   useEffect(() => {
@@ -599,17 +609,14 @@ export function CodeEditor({
 
     // Add language extension if available (filter out null/undefined)
     if (langExtension && langExtension.length > 0) {
-      const validLangExts = langExtension.filter(ext => ext != null);
+      const validLangExts = langExtension.filter((ext) => ext != null);
       if (validLangExts.length > 0) {
         exts.push(...validLangExts);
       }
     }
 
     // Always add these core extensions
-    exts.push(
-      EditorView.lineWrapping,
-      keymap.of([indentWithTab])
-    );
+    exts.push(EditorView.lineWrapping, keymap.of([indentWithTab]));
 
     // Add lint gutter + diagnostic decorations when diagnostics are present
     if (diagExt) {
@@ -626,12 +633,7 @@ export function CodeEditor({
     switch (saveState) {
       case 'saving':
         return (
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled
-            className="gap-1.5 h-7 px-2 text-xs"
-          >
+          <Button variant="ghost" size="sm" disabled className="h-7 gap-1.5 px-2 text-xs">
             <KortixLoader size="small" />
             <span className="hidden sm:inline">Saving</span>
           </Button>
@@ -642,7 +644,7 @@ export function CodeEditor({
             variant="ghost"
             size="sm"
             disabled
-            className="gap-1.5 h-7 px-2 text-xs text-emerald-600"
+            className="h-7 gap-1.5 px-2 text-xs text-emerald-600"
           >
             <Check className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">Saved</span>
@@ -654,7 +656,7 @@ export function CodeEditor({
             variant="ghost"
             size="sm"
             onClick={handleSave}
-            className="gap-1.5 h-7 px-2 text-xs text-red-500 hover:bg-red-50 hover:text-red-600"
+            className="h-7 gap-1.5 px-2 text-xs text-red-500 hover:bg-red-50 hover:text-red-600"
           >
             <AlertCircle className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">Retry</span>
@@ -665,20 +667,25 @@ export function CodeEditor({
           <TooltipProvider delayDuration={300}>
             <Tooltip>
               <TooltipTrigger asChild>
-          <Button
+                <Button
                   variant="ghost"
-            size="sm"
-            onClick={handleSave}
+                  size="sm"
+                  onClick={handleSave}
                   disabled={!hasChanges}
-                  className="gap-1.5 h-7 px-2 text-xs"
-          >
-            <Save className="h-3.5 w-3.5" />
+                  className="h-7 gap-1.5 px-2 text-xs"
+                >
+                  <Save className="h-3.5 w-3.5" />
                   <span className="hidden sm:inline">Save</span>
-          </Button>
+                </Button>
               </TooltipTrigger>
               <TooltipContent side="bottom">
                 {hasChanges ? (
-                  <>{tHardcodedUi.raw('componentsFileEditorsCodeEditor.line677JsxTextSaveChanges')}<kbd className="ml-1.5 px-1 py-0.5 text-xs bg-muted rounded font-mono">{tHardcodedUi.raw('componentsFileEditorsCodeEditor.line677JsxTextS')}</kbd></>
+                  <>
+                    {tHardcodedUi.raw('componentsFileEditorsCodeEditor.line677JsxTextSaveChanges')}
+                    <kbd className="bg-muted ml-1.5 rounded px-1 py-0.5 font-mono text-xs">
+                      {tHardcodedUi.raw('componentsFileEditorsCodeEditor.line677JsxTextS')}
+                    </kbd>
+                  </>
                 ) : (
                   'No changes to save'
                 )}
@@ -692,19 +699,19 @@ export function CodeEditor({
   return (
     <div
       className={cn(
-        'flex flex-col max-w-full',
+        'flex max-w-full flex-col',
         readOnly
           ? 'min-h-full' // For read-only, fill at least one viewport so the editor background doesn't end at the last line
           : 'h-full max-h-full overflow-hidden',
-        className
+        className,
       )}
       style={readOnly ? undefined : { contain: 'strict' }}
     >
       {/* Header with save controls and language */}
       {!readOnly && showHeader && (
-        <div className="flex items-center justify-between px-3 py-1.5 border-b bg-muted/30 flex-shrink-0 max-w-full min-w-0">
+        <div className="bg-muted/30 flex max-w-full min-w-0 shrink-0 items-center justify-between border-b px-3 py-1.5">
           {/* Left: Save/Discard/Unsaved */}
-          <div className="flex items-center gap-1 min-w-0">
+          <div className="flex min-w-0 items-center gap-1">
             <SaveButton />
             {hasChanges && (
               <TooltipProvider delayDuration={300}>
@@ -714,27 +721,31 @@ export function CodeEditor({
                       variant="ghost"
                       size="sm"
                       onClick={handleDiscard}
-                      className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                      className="text-muted-foreground hover:text-destructive h-7 w-7 p-0"
                     >
                       <RotateCcw className="h-3.5 w-3.5" />
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent side="bottom">{tHardcodedUi.raw('componentsFileEditorsCodeEditor.line719JsxTextDiscardChanges')}</TooltipContent>
+                  <TooltipContent side="bottom">
+                    {tHardcodedUi.raw(
+                      'componentsFileEditorsCodeEditor.line719JsxTextDiscardChanges',
+                    )}
+                  </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
             )}
             {hasChanges && (
-              <div className="flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-500 px-2 py-1 bg-amber-50 dark:bg-amber-900/20 rounded-md">
+              <div className="flex items-center gap-1.5 rounded-md bg-amber-50 px-2 py-1 text-xs text-amber-600 dark:bg-amber-900/20 dark:text-amber-500">
                 <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75"></span>
+                  <span className="relative inline-flex h-2 w-2 rounded-full bg-amber-500"></span>
                 </span>
                 <span className="font-semibold">Unsaved</span>
               </div>
             )}
           </div>
           {/* Right: Language badge */}
-          <Badge variant="outline" className="text-xs font-mono">
+          <Badge variant="outline" className="font-mono text-xs">
             {language}
           </Badge>
         </div>
@@ -744,10 +755,11 @@ export function CodeEditor({
       <div
         ref={editorContainerRef}
         className={cn(
-          "w-full max-w-full bg-white dark:bg-zinc-900",
+          'w-full max-w-full bg-white dark:bg-zinc-900',
+          editorClassName,
           readOnly
-            ? "flex-1 min-h-full overflow-visible" // Stretch to fill parent so short files still fill the viewport
-            : "flex-1 overflow-hidden min-h-0 max-h-full"
+            ? 'min-h-full flex-1 overflow-visible' // Stretch to fill parent so short files still fill the viewport
+            : 'max-h-full min-h-0 flex-1 overflow-hidden',
         )}
         style={readOnly ? undefined : { contain: 'strict' }}
       >
@@ -777,11 +789,11 @@ export function CodeEditor({
             }}
             editable={!readOnly}
             className={cn(
-              "w-full max-w-full",
-              fontSize || "text-sm",
+              'w-full max-w-full',
+              fontSize || 'text-sm',
               readOnly
-                ? "[&_.cm-scroller]:!overflow-visible [&_.cm-editor]:!min-h-full [&_.cm-gutters]:!min-h-full" // No scroll in read-only; gutter + editor stretch to fill viewport
-                : "[&_.cm-editor]:max-h-full [&_.cm-scroller]:overflow-auto"
+                ? '[&_.cm-editor]:!min-h-full [&_.cm-gutters]:!min-h-full [&_.cm-scroller]:!overflow-visible' // No scroll in read-only; gutter + editor stretch to fill viewport
+                : '[&_.cm-editor]:max-h-full [&_.cm-scroller]:overflow-auto',
             )}
             height={editorHeight}
             minHeight={readOnly ? '100%' : undefined}

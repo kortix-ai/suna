@@ -101,6 +101,30 @@ export function filterToGatewayProviders(providers: ProviderListResponse): Provi
   };
 }
 
+export function mergeProviderLists(
+  primary: ProviderListResponse,
+  secondary: ProviderListResponse,
+): ProviderListResponse {
+  const first = normalizeProviderList(primary);
+  const second = normalizeProviderList(secondary);
+  const all = new Map<string, NonNullable<ProviderListResponse['all']>[number]>();
+  for (const provider of Array.isArray(first.all) ? first.all : []) {
+    all.set(provider.id, provider);
+  }
+  for (const provider of Array.isArray(second.all) ? second.all : []) {
+    all.set(provider.id, provider);
+  }
+  const connected = new Set<string>();
+  for (const id of Array.isArray(first.connected) ? first.connected : []) connected.add(id);
+  for (const id of Array.isArray(second.connected) ? second.connected : []) connected.add(id);
+  return {
+    ...first,
+    all: [...all.values()],
+    connected: [...connected],
+    default: { ...(first.default ?? {}), ...(second.default ?? {}) },
+  };
+}
+
 export function filterToNativeProviders(providers: ProviderListResponse): ProviderListResponse {
   const normalized = normalizeProviderList(providers);
   const all = Array.isArray(normalized.all) ? normalized.all : [];
@@ -154,12 +178,46 @@ export function connectedGatewayProviderIdsFromSecretNames(secretNames: Set<stri
   return ids;
 }
 
+/**
+ * Restamp `enabled` on a gateway ProviderListResponse from an overrides map
+ * (`wireModelId -> enabled`), touching only the models the map names. Pure —
+ * returns a new list. Used to optimistically update the cached
+ * `['project-providers', :id, 'gateway']` query when "Manage models" writes an
+ * override, so the session picker (which renders from THAT cache, staleTime
+ * Infinity) reflects the toggle without waiting for the refetch.
+ */
+export function applyEnablementToProviderList(
+  providers: ProviderListResponse,
+  overrides: Record<string, boolean>,
+): ProviderListResponse {
+  const all = Array.isArray(providers.all) ? providers.all : [];
+  return {
+    ...providers,
+    all: all.map((provider) => ({
+      ...provider,
+      models: Object.fromEntries(
+        Object.entries(provider.models ?? {}).map(([id, model]) => [
+          id,
+          overrides[id] === undefined
+            ? model
+            : { ...(model as Record<string, unknown>), enabled: overrides[id] },
+        ]),
+      ),
+    })),
+  } as unknown as ProviderListResponse;
+}
+
 export function projectLlmCatalogToProviderList(
   catalog: ProjectLlmCatalogResponse,
 ): ProviderListResponse {
-  const models = catalog.models ?? {};
+  const models = Object.fromEntries(
+    Object.entries(catalog.models ?? {}).filter(
+      ([modelId]) => modelId !== 'auto' && modelId !== 'kortix/auto',
+    ),
+  );
+  const firstModelId = Object.keys(models)[0];
   return {
-    default: { kortix: models.auto ? 'auto' : (Object.keys(models)[0] ?? 'auto') },
+    default: firstModelId ? { kortix: firstModelId } : {},
     connected: ['kortix'],
     all: [
       {

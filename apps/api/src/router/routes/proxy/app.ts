@@ -10,16 +10,6 @@ const proxy = makeOpenApiApp();
 
 const services = getProxyServices();
 
-interface LlmCreditReservation {
-  accountId: string;
-  modelId: string;
-  promptTokens: number;
-  completionTokens: number;
-  cost: number;
-  actor?: ActorContext | null;
-  actorReservedCents?: number;
-}
-
 interface ToolCreditReservation {
   accountId: string;
   billingToolName: string;
@@ -36,4 +26,4 @@ interface AuthResult {
 }
 
 export { proxy, services };
-export type { LlmCreditReservation, ToolCreditReservation, AuthResult };
+export type { ToolCreditReservation, AuthResult };

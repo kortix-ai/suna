@@ -1,15 +1,9 @@
 'use client';
+import { BasicTool, partInput } from '@/features/session/tool/shared/infrastructure';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
-import {
-  BasicTool,
-  partInput,
-} from '@/features/session/tool/shared/infrastructure';
-import {
-  Trash2,
-} from 'lucide-react';
+import { TrashIcon as Trash2 } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
-
 
 export function ProjectDeleteTool({ part }: ToolProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -17,7 +11,7 @@ export function ProjectDeleteTool({ part }: ToolProps) {
   const project = (input.project as string) || '';
   return (
     <BasicTool
-      icon={<Trash2 className="text-muted-foreground/40 size-3.5 flex-shrink-0" />}
+      icon={<Trash2 className="text-muted-foreground/40 size-3.5 shrink-0" />}
       trigger={{
         title: 'Workspace',
         subtitle: tHardcodedUi.raw(
@@ -74,4 +68,3 @@ function extractWorkerPreview(cleaned: string): string | null {
   if (!first) return null;
   return first.length > 120 ? first.slice(0, 120).trim() + '…' : first;
 }
-

@@ -3,14 +3,16 @@
   "pages": [
     "index",
     "quickstart",
-    "---Learn---",
-    "concepts",
-    "guides",
-    "---Reference---",
-    "reference",
-    "---SDK---",
+    "accounts",
+    "project",
+    "work",
+    "connect",
+    "feature-flags",
+    "host",
+    "---Develop---",
+    "cli",
     "sdk",
-    "---Contribute---",
-    "development"
+    "backend",
+    "[API reference](https://api.kortix.com/v1/docs)"
   ]
 }

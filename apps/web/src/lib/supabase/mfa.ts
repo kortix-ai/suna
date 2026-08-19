@@ -1,16 +1,72 @@
 import { createClient } from './client';
-import type {
-  FactorInfo,
-  PhoneVerificationEnroll,
-  PhoneVerificationChallenge,
-  PhoneVerificationVerify,
-  PhoneVerificationChallengeAndVerify,
-  PhoneVerificationResponse,
-  EnrollFactorResponse,
-  ChallengeResponse,
-  ListFactorsResponse,
-  AALResponse,
-} from '@/lib/api/phone-verification';
+
+export interface FactorInfo {
+  id: string;
+  friendly_name?: string;
+  factor_type?: string;
+  status?: string;
+  phone?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface PhoneVerificationEnroll {
+  friendly_name: string;
+  phone_number: string;
+}
+
+export interface PhoneVerificationChallenge {
+  factor_id: string;
+}
+
+export interface PhoneVerificationVerify {
+  factor_id: string;
+  challenge_id: string;
+  code: string;
+}
+
+export interface PhoneVerificationChallengeAndVerify {
+  factor_id: string;
+  code: string;
+}
+
+export interface PhoneVerificationResponse {
+  success: boolean;
+  message?: string;
+  id?: string;
+  expires_at?: string;
+}
+
+export interface EnrollFactorResponse {
+  id: string;
+  friendly_name: string;
+  phone_number: string;
+  qr_code?: string;
+  secret?: string;
+}
+
+export interface ChallengeResponse {
+  id: string;
+  expires_at?: string;
+}
+
+export interface ListFactorsResponse {
+  factors: FactorInfo[];
+}
+
+export interface AALResponse {
+  current_level?: string;
+  next_level?: string;
+  current_authentication_methods?: string[];
+  action_required?: string;
+  message?: string;
+  phone_verification_required?: boolean;
+  user_created_at?: string;
+  cutoff_date?: string;
+  verification_required?: boolean;
+  is_verified?: boolean;
+  factors?: FactorInfo[];
+}
 
 /**
  * Extract a human-readable message from an unknown thrown value. Preserves the

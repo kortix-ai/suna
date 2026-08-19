@@ -8,7 +8,7 @@
 
 export type UsageGroupBy = 'model' | 'provider' | 'day';
 
-const USAGE_GROUP_BY_VALUES: readonly UsageGroupBy[] = ['model', 'provider', 'day'];
+export const USAGE_GROUP_BY_VALUES: readonly UsageGroupBy[] = ['model', 'provider', 'day'];
 
 export interface UsageQueryParams {
   start?: Date;
@@ -62,6 +62,7 @@ export interface UsageTotalsRow {
   totalInputTokens: number | string | null;
   totalOutputTokens: number | string | null;
   totalCachedTokens: number | string | null;
+  totalCacheWriteTokens: number | string | null;
   totalCost: number | string | null;
   count: number | string | null;
 }
@@ -72,6 +73,7 @@ export function mapUsageTotals(row: UsageTotalsRow | undefined) {
     total_input_tokens: Number(row?.totalInputTokens ?? 0),
     total_output_tokens: Number(row?.totalOutputTokens ?? 0),
     total_cached_tokens: Number(row?.totalCachedTokens ?? 0),
+    total_cache_write_tokens: Number(row?.totalCacheWriteTokens ?? 0),
     total_cost: Number(row?.totalCost ?? 0),
     count: Number(row?.count ?? 0),
   };
@@ -84,6 +86,7 @@ export interface UsageBreakdownRow {
   inputTokens: number | string | null;
   outputTokens: number | string | null;
   cachedTokens: number | string | null;
+  cacheWriteTokens: number | string | null;
   cost: number | string | null;
   count: number | string | null;
 }
@@ -97,6 +100,7 @@ export function mapUsageBreakdownRow(row: UsageBreakdownRow) {
     input_tokens: Number(row.inputTokens ?? 0),
     output_tokens: Number(row.outputTokens ?? 0),
     cached_tokens: Number(row.cachedTokens ?? 0),
+    cache_write_tokens: Number(row.cacheWriteTokens ?? 0),
     cost: Number(row.cost ?? 0),
     count: Number(row.count ?? 0),
   };

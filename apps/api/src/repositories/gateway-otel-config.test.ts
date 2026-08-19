@@ -6,10 +6,29 @@ let insertValues: any = null;
 let onConflictSet: any = null;
 let deleteWhereCalls = 0;
 
+// When set, the next SELECT does not settle until the returned release fn is
+// called — lets a test hold a background cache refresh "in flight" across an
+// invalidating write.
+let selectGate: Promise<void> | null = null;
+
+function holdNextSelect(): () => void {
+  let release!: () => void;
+  selectGate = new Promise<void>((r) => {
+    release = r;
+  });
+  return release;
+}
+
 function selectChain(): any {
   const chain: any = {};
   for (const method of ['from', 'where', 'limit']) chain[method] = () => chain;
-  chain.then = (resolve: (rows: any[]) => unknown) => Promise.resolve(resolve(selectRows));
+  // The gate is one-shot: it holds only the SELECT that claims it, so a write
+  // issued while a refresh is parked still runs to completion.
+  const gate = selectGate;
+  selectGate = null;
+  const rowsAtCall = selectRows;
+  chain.then = (resolve: (rows: any[]) => unknown) =>
+    gate ? gate.then(() => resolve(rowsAtCall)) : Promise.resolve(resolve(selectRows));
   return chain;
 }
 
@@ -60,6 +79,7 @@ beforeEach(() => {
   insertValues = null;
   onConflictSet = null;
   deleteWhereCalls = 0;
+  selectGate = null;
 });
 
 describe('getProjectOtelConfigSummary', () => {
@@ -200,5 +220,65 @@ describe('peekCachedProjectOtelExporter', () => {
       endpoint: 'https://otel.example.com/v1/traces',
       headers: { Authorization: 'Bearer tok-123', 'X-Extra': 'v' },
     });
+  });
+});
+
+describe('peekCachedProjectOtelExporter — stale in-flight refresh (Strix MEDIUM, #4987)', () => {
+  const settle = async () => {
+    for (let i = 0; i < 6; i += 1) await Promise.resolve();
+  };
+
+  test('a refresh started BEFORE a disabling write never republishes the pre-write row', async () => {
+    const projectId = 'proj-stale';
+    invalidateProjectOtelExporterCache(projectId);
+
+    // A gateway call peeks on a cold project: the background refresh reads the
+    // row as it stands right now (export ENABLED) but does not settle yet.
+    selectRows = [{ enabled: true, endpoint: 'https://old.example.com', headersEnc: null }];
+    const release = holdNextSelect();
+    expect(peekCachedProjectOtelExporter(projectId)).toBeUndefined();
+
+    // Meanwhile the owner disables export. The write invalidates the cache
+    // while the read above is still in flight.
+    selectRows = [{ enabled: false, endpoint: null, headersEnc: null }];
+    await setProjectOtelConfig({
+      projectId,
+      updatedBy: 'user-1',
+      enabled: false,
+      endpoint: null,
+      headers: {},
+    });
+
+    // The stale read now settles. It must be DISCARDED, not published.
+    release();
+    await settle();
+    expect(peekCachedProjectOtelExporter(projectId)).toBeUndefined();
+
+    // The next refresh (kicked by that peek) reads post-write state.
+    await settle();
+    expect(peekCachedProjectOtelExporter(projectId)).toEqual({
+      enabled: false,
+      endpoint: null,
+      headers: {},
+    });
+  });
+
+  test('a refresh started BEFORE a delete never republishes the deleted config', async () => {
+    const projectId = 'proj-stale-del';
+    invalidateProjectOtelExporterCache(projectId);
+
+    selectRows = [{ enabled: true, endpoint: 'https://old.example.com', headersEnc: null }];
+    const release = holdNextSelect();
+    peekCachedProjectOtelExporter(projectId);
+
+    selectRows = [];
+    await deleteProjectOtelConfig(projectId);
+
+    release();
+    await settle();
+    expect(peekCachedProjectOtelExporter(projectId)).toBeUndefined();
+
+    await settle();
+    expect(peekCachedProjectOtelExporter(projectId)).toBeNull();
   });
 });

@@ -8,3 +8,10 @@ export {
   managedGithubToken,
 } from './github';
 export { seedRepoViaGitPush } from './seed';
+export {
+  codeStorageBackend,
+  codeStorageGitAuthHeader,
+  mintCodeStorageJwt,
+  type CodeStorageJwtOptions,
+  type CodeStorageScope,
+} from './code-storage';

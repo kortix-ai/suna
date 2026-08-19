@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'bun:test';
+import type { CatalogModel } from '@kortix/llm-catalog';
 import { generateText, jsonSchema, streamText, tool } from 'ai';
 import { MockLanguageModelV4, simulateReadableStream } from 'ai/test';
 import type { UpstreamDescriptor } from '../../domain';
@@ -51,7 +52,7 @@ const usage = (over: Record<string, unknown> = {}) => ({
   inputTokens: 100,
   outputTokens: 50,
   totalTokens: 150,
-  inputTokenDetails: { cacheReadTokens: 20 },
+  inputTokenDetails: { cacheReadTokens: 20, cacheWriteTokens: 10 },
   outputTokenDetails: { reasoningTokens: 10 },
   ...over,
 });
@@ -59,6 +60,14 @@ const usage = (over: Record<string, unknown> = {}) => ({
 const CTX = { model: 'openai/gpt-5.6', provider: 'openai' };
 
 describe('ai-sdk SSE adapter — /v1/llm contract fidelity', () => {
+  it('maps cache-write usage when the provider reports no cache reads', () => {
+    const mapped = mapUsage(
+      usage({ inputTokenDetails: { cacheReadTokens: 0, cacheWriteTokens: 10 } }) as any,
+    );
+
+    expect(mapped.prompt_tokens_details).toEqual({ cache_write_tokens: 10 });
+  });
+
   it('streams text as OpenAI chat.completion.chunk deltas + usage + [DONE]', async () => {
     const sse = await readAll(
       openAiSseFromFullStream(
@@ -88,6 +97,8 @@ describe('ai-sdk SSE adapter — /v1/llm contract fidelity', () => {
     expect((usageChunk as any).usage.prompt_tokens).toBe(100);
     expect((usageChunk as any).usage.completion_tokens).toBe(50);
     expect((usageChunk as any).usage.prompt_tokens_details.cached_tokens).toBe(20);
+    expect((usageChunk as any).usage.prompt_tokens_details.cache_write_tokens).toBe(10);
+    expect(extractUsageFromSseBuffer(sse)?.cacheWriteTokens).toBe(10);
   });
 
   it('streams tool calls as incremental OpenAI tool_calls deltas', async () => {
@@ -281,7 +292,79 @@ describe('ai-sdk request conversion', () => {
     });
   });
 
-  it('translates image_url user parts', () => {
+  it('backfills empty-content messages so Bedrock never sees an empty content field', () => {
+    // An assistant turn with no text and no tool_calls (e.g. persisted from an
+    // earlier empty upstream completion), an empty user turn, and a blank tool
+    // result would each serialize to an empty content field that the Bedrock
+    // Converse API rejects. All three must round-trip with non-empty content.
+    const { messages } = toModelMessages([
+      { role: 'user', content: '' },
+      { role: 'assistant', content: '' },
+      { role: 'user', content: [{ type: 'text', text: '   ' }] },
+      { role: 'assistant', content: '', tool_calls: [{ id: 'c1', function: { name: 'wx', arguments: '{}' } }] },
+      { role: 'tool', tool_call_id: 'c1', name: 'wx', content: '' },
+    ]);
+    expect(messages[0]).toEqual({ role: 'user', content: '(no content)' });
+    expect(messages[1]).toEqual({ role: 'assistant', content: '(no content)' });
+    expect(messages[2]).toEqual({ role: 'user', content: '(no content)' });
+    // messages[3] is the assistant tool-call; messages[4] is its (empty) result.
+    expect(messages[4]).toMatchObject({
+      role: 'tool',
+      content: [{ type: 'tool-result', output: { type: 'text', value: '(no content)' } }],
+    });
+    // Sanity: nothing emitted an empty string / empty array content.
+    for (const m of messages) {
+      if (typeof m.content === 'string') expect(m.content.trim().length).toBeGreaterThan(0);
+      else expect(m.content.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('drops an orphaned tool_call (cancelled mid-tool turn) so strict providers accept it', () => {
+    // Assistant asked for two tools but only one result came back (turn was
+    // cancelled). Bedrock/Anthropic reject the unmatched tool_use; the matched
+    // one must survive.
+    const { messages } = toModelMessages([
+      { role: 'user', content: 'go' },
+      {
+        role: 'assistant',
+        content: 'working',
+        tool_calls: [
+          { id: 'ok', function: { name: 'a', arguments: '{}' } },
+          { id: 'orphan', function: { name: 'b', arguments: '{}' } },
+        ],
+      },
+      { role: 'tool', tool_call_id: 'ok', name: 'a', content: 'done' },
+    ]);
+    const assistant = messages.find((m) => m.role === 'assistant');
+    const toolCalls = (assistant?.content as Array<{ type: string; toolCallId?: string }>).filter(
+      (p) => p.type === 'tool-call',
+    );
+    expect(toolCalls.map((p) => p.toolCallId)).toEqual(['ok']);
+  });
+
+  it('drops an orphaned tool result (no matching tool_call) entirely', () => {
+    const { messages } = toModelMessages([
+      { role: 'user', content: 'go' },
+      { role: 'assistant', content: 'ok' },
+      { role: 'tool', tool_call_id: 'ghost', name: 'x', content: 'stray' },
+    ]);
+    expect(messages.some((m) => m.role === 'tool')).toBe(false);
+  });
+
+  it('keeps well-formed tool pairs untouched', () => {
+    const { messages } = toModelMessages([
+      { role: 'user', content: 'go' },
+      { role: 'assistant', content: '', tool_calls: [{ id: 'c1', function: { name: 'wx', arguments: '{}' } }] },
+      { role: 'tool', tool_call_id: 'c1', name: 'wx', content: 'sunny' },
+    ]);
+    expect(messages.some((m) => m.role === 'tool')).toBe(true);
+    const assistant = messages.find((m) => m.role === 'assistant');
+    expect((assistant?.content as Array<{ type: string }>).some((p) => p.type === 'tool-call')).toBe(
+      true,
+    );
+  });
+
+  it('translates image_url user parts, decoding data: URLs to bytes', () => {
     const { messages } = toModelMessages([
       {
         role: 'user',
@@ -291,13 +374,14 @@ describe('ai-sdk request conversion', () => {
         ],
       },
     ]);
-    expect(messages[0]).toMatchObject({
-      role: 'user',
-      content: [
-        { type: 'text', text: 'what is this' },
-        { type: 'image', image: 'data:image/png;base64,AAAA' },
-      ],
-    });
+    const imagePart = (messages[0]?.content as Array<{ type: string; image: unknown }>).find(
+      (p) => p.type === 'image',
+    );
+    expect(imagePart).toBeDefined();
+    // data: URL decoded to Uint8Array so Bedrock treats it as inline data
+    // (not a URL reference, which Bedrock rejects).
+    expect(imagePart!.image).toBeInstanceOf(Uint8Array);
+    expect(Array.from(imagePart!.image as Uint8Array)).toEqual([0, 0, 0]); // bytes of "AAAA"
   });
 
   it('defaults maxOutputTokens for anthropic/bedrock (non-thinking), maps reasoning_effort + tool_choice', () => {
@@ -321,70 +405,193 @@ describe('ai-sdk request conversion', () => {
     expect(openai.maxOutputTokens).toBe(2000);
     expect(openai.providerOptions).toEqual({ openai: { reasoningEffort: 'high' } });
   });
+
+  // `UpstreamDescriptor.bodyExtras` ("upstream-specific fields merged into the
+  // outgoing request body, overriding any same-named client fields (e.g.
+  // OpenRouter's `provider` routing preferences pinning managed models to
+  // reliable hosts)") lost its only reader when the native openai-compat
+  // transport was deleted on 2026-07-18 — apps/api still BUILDS it from the
+  // catalog's `openrouterProvider`, but nothing in this package read it, so the
+  // whole OpenRouter provider-routing mechanism was silently inert and every
+  // managed OpenRouter request load-balanced across all 21 endpoints serving
+  // the slug. For the openai-compatible family, any key under
+  // providerOptions[<providerName>] that the package's own schema does not
+  // claim rides onto the wire verbatim — which is how `provider` reaches
+  // OpenRouter.
+  it('forwards descriptor bodyExtras onto the wire for openai-compatible upstreams', () => {
+    const args = buildAiSdkArgs({ messages: [] }, 'openai-compatible', {
+      providerName: 'openrouter',
+      bodyExtras: { provider: { order: ['deepseek'], allow_fallbacks: true } },
+    });
+    expect(args.providerOptions).toEqual({
+      openrouter: { provider: { order: ['deepseek'], allow_fallbacks: true } },
+    });
+  });
+
+  it('bodyExtras overrides a same-named client field and never leaks to other families', () => {
+    const compat = buildAiSdkArgs(
+      { messages: [], provider: { order: ['someone-else'] } },
+      'openai-compatible',
+      { providerName: 'openrouter', bodyExtras: { provider: { order: ['deepseek'] } } },
+    );
+    expect((compat.providerOptions as Record<string, Record<string, unknown>>).openrouter.provider)
+      .toEqual({ order: ['deepseek'] });
+
+    const anthropic = buildAiSdkArgs({ messages: [] }, 'anthropic', {
+      providerName: 'anthropic',
+      bodyExtras: { provider: { order: ['deepseek'] } },
+    });
+    expect(anthropic.providerOptions).toBeUndefined();
+  });
+});
+
+// buildAiSdkArgs is now models.dev-capability-driven: when the caller passes
+// the resolved CatalogModel (index.ts resolves it via @kortix/llm-catalog's
+// `catalogModelForWireModel`), the four generation params are clamped ONCE in
+// normalizeRequest through the CANONICAL `clampGenerationConfig` — the exact
+// same gate the host runs on route defaults, now also applied to the
+// client-supplied values that path never touched. With NO model the clamp is a
+// deliberate NO-OP (permissive parity), which is why every test above still
+// passes a body with no model and sees pre-gating behavior verbatim.
+describe('ai-sdk per-request capability gating (reuses @kortix/llm-catalog clampGenerationConfig)', () => {
+  // Fixtures use only capability shapes that derive identically in every
+  // catalog version (an explicit `effort` reasoning_options entry, a literal
+  // `temperature` flag, an explicit `limit.output`) — never a bare
+  // `reasoning:true`-with-no-options, whose effort-control synthesis is a
+  // catalog-internal heuristic, not the contract under test here.
+  const effortModel = (over: Partial<CatalogModel> = {}): CatalogModel => ({
+    id: 'test-model',
+    name: 'Test Model',
+    reasoning: true,
+    reasoning_options: [{ type: 'effort', values: ['low', 'medium', 'high'] }],
+    temperature: true,
+    limit: { output: 8000 },
+    ...over,
+  });
+
+  it('(a) drops a client temperature (and top_p) for a temperature:false model, keeps them for a capable one', () => {
+    const fixed = buildAiSdkArgs({ messages: [], temperature: 0.7, top_p: 0.9 }, 'openai', {
+      model: effortModel({ temperature: false }),
+    });
+    expect(fixed.temperature).toBeUndefined();
+    expect(fixed.topP).toBeUndefined();
+
+    const tunable = buildAiSdkArgs({ messages: [], temperature: 0.7, top_p: 0.9 }, 'openai', {
+      model: effortModel({ temperature: true }),
+    });
+    expect(tunable.temperature).toBe(0.7);
+    expect(tunable.topP).toBe(0.9);
+  });
+
+  it('(b) drops a reasoning_effort the model does not publish, keeps a published one, and clamps max_tokens to limit.output', () => {
+    // 'xhigh' is NOT in the model's effort values → dropped, so no reasoningEffort
+    // reaches providerOptions at all (providerOptions ends up empty → undefined).
+    const rejected = buildAiSdkArgs(
+      { messages: [], reasoning_effort: 'xhigh', max_tokens: 100000 },
+      'openai',
+      { model: effortModel() },
+    );
+    expect(rejected.providerOptions).toBeUndefined();
+    // max_tokens clamped down to the model's real output ceiling.
+    expect(rejected.maxOutputTokens).toBe(8000);
+
+    // A published tier survives verbatim.
+    const accepted = buildAiSdkArgs({ messages: [], reasoning_effort: 'high' }, 'openai', {
+      model: effortModel(),
+    });
+    expect(accepted.providerOptions).toEqual({ openai: { reasoningEffort: 'high' } });
+  });
+
+  it('(c) a non-reasoning model suppresses thinking/reasoningEffort entirely (anthropic family)', () => {
+    // reasoning:false + no reasoning_options → the effort tier is dropped, so
+    // resolveThinkingRequest never turns extended thinking on and maxOutputTokens
+    // falls back to the plain (non-thinking) 4096 default, not the thinking bump.
+    const args = buildAiSdkArgs({ messages: [], reasoning_effort: 'high' }, 'anthropic', {
+      model: effortModel({ reasoning: false, reasoning_options: undefined }),
+    });
+    expect(args.providerOptions).toBeUndefined();
+    expect(args.maxOutputTokens).toBe(4096);
+  });
+
+  it('(d) parity: with NO model passed, gating is a no-op — output matches the pre-gating result exactly', () => {
+    const body = { messages: [], temperature: 1.5, top_p: 0.2, reasoning_effort: 'xhigh' };
+    const ungated = buildAiSdkArgs({ ...body }, 'openai');
+    // Every capability-relevant field passes through untouched — no model, no gate.
+    expect(ungated.temperature).toBe(1.5);
+    expect(ungated.topP).toBe(0.2);
+    // 'xhigh' would be dropped by a temperature:true/effort-limited model above,
+    // but with no model it survives verbatim — the exact permissive parity contract.
+    expect(ungated.providerOptions).toEqual({ openai: { reasoningEffort: 'xhigh' } });
+  });
 });
 
 // Regression coverage for the PR #4943 review finding: the deleted native
 // anthropic/bedrock transports translated reasoning_effort/raw `thinking`
 // into real Anthropic extended thinking and applied prompt-cache
 // breakpoints; the ai-sdk engine had neither. See request.ts's
-// `resolveAnthropicThinkingBudget` / `applyAnthropicPromptCaching` for the
+// `resolveThinkingRequest` / `applyAnthropicPromptCaching` for the
 // ported implementation and the exact @ai-sdk/anthropic +
 // @ai-sdk/amazon-bedrock field names it's built against.
 describe('ai-sdk anthropic/bedrock extended thinking (ported from native)', () => {
-  it('anthropic: reasoning_effort maps to providerOptions.anthropic.thinking (not reasoningEffort) and bumps maxOutputTokens', () => {
+  it('anthropic: reasoning_effort maps to adaptive thinking + effort (never enabled/budgetTokens) and bumps maxOutputTokens', () => {
     const args = buildAiSdkArgs({ messages: [], reasoning_effort: 'high' }, 'anthropic');
     expect(args.providerOptions).toMatchObject({
-      anthropic: { thinking: { type: 'enabled', budgetTokens: 16000 } },
+      anthropic: { thinking: { type: 'adaptive' }, effort: 'high' },
     });
+    // The legacy enabled/budgetTokens shape must NEVER be sent — current-gen
+    // Claude (Opus 4.5+/4.8) 400s on `thinking.type:"enabled"`.
+    expect((args.providerOptions as any)?.anthropic?.thinking?.type).not.toBe('enabled');
+    expect((args.providerOptions as any)?.anthropic?.thinking?.budgetTokens).toBeUndefined();
     // The bogus flat key from the generic (openai-shaped) path must never appear.
     expect((args.providerOptions as any)?.anthropic?.reasoningEffort).toBeUndefined();
     // No explicit max_tokens + thinking active → bumped to the thinking default,
-    // not the plain 4096 non-thinking default (mirrors native's
-    // DEFAULT_MAX_TOKENS_WITH_THINKING so budgetTokens < maxOutputTokens holds).
+    // not the plain 4096 non-thinking default, so there's headroom for thinking.
     expect(args.maxOutputTokens).toBe(32000);
   });
 
-  it('anthropic: every reasoning_effort level maps to the ported native budget table', () => {
-    const table: Record<string, number> = {
-      minimal: 1024,
-      low: 2048,
-      medium: 8192,
-      high: 16000,
-      // 'max' maps to a 32000 budget, but with no explicit max_tokens the
-      // thinking default IS 32000 too — the clamp (budgetTokens < maxOutputTokens)
-      // brings it down to max(1024, 32000-1024) = 30976.
-      max: 30976,
+  it('anthropic: every reasoning_effort level maps to an adaptive effort tier (minimal folds to low)', () => {
+    const table: Record<string, string> = {
+      minimal: 'low', // Anthropic's effort enum has no 'minimal' tier
+      low: 'low',
+      medium: 'medium',
+      high: 'high',
+      xhigh: 'xhigh',
+      max: 'max',
     };
-    for (const [effort, budgetTokens] of Object.entries(table)) {
+    for (const [effort, expected] of Object.entries(table)) {
       const args = buildAiSdkArgs({ messages: [], reasoning_effort: effort }, 'anthropic');
-      expect((args.providerOptions as any)?.anthropic?.thinking).toEqual({
-        type: 'enabled',
-        budgetTokens,
+      expect((args.providerOptions as any)?.anthropic).toMatchObject({
+        thinking: { type: 'adaptive' },
+        effort: expected,
       });
     }
   });
 
-  it('anthropic: clamps budgetTokens below an explicit small max_tokens instead of leaving it >= max_tokens', () => {
+  it('anthropic: adaptive thinking carries no token budget, so a small explicit max_tokens is honored without a clamp', () => {
     const args = buildAiSdkArgs(
       { messages: [], reasoning_effort: 'max', max_tokens: 2000 },
       'anthropic',
     );
     expect(args.maxOutputTokens).toBe(2000);
-    // max(1024, 2000-1024) = 1024 < the max-effort 32000 budget → clamped to 1024.
-    expect((args.providerOptions as any)?.anthropic?.thinking).toEqual({
-      type: 'enabled',
-      budgetTokens: 1024,
+    expect((args.providerOptions as any)?.anthropic).toMatchObject({
+      thinking: { type: 'adaptive' },
+      effort: 'max',
     });
+    // No budgetTokens to clamp — adaptive lets the model manage its own budget.
+    expect((args.providerOptions as any)?.anthropic?.thinking?.budgetTokens).toBeUndefined();
   });
 
-  it('anthropic: a raw Anthropic-shaped body.thinking passes through verbatim', () => {
+  it('anthropic: a raw Anthropic-shaped body.thinking budget maps onto an adaptive effort tier', () => {
     const args = buildAiSdkArgs(
       { messages: [], thinking: { type: 'enabled', budget_tokens: 5000 } },
       'anthropic',
     );
+    // 5000 tokens → the 'medium' tier (<= 8192), emitted as adaptive + effort —
+    // never the raw enabled/budgetTokens shape current-gen Claude rejects.
     expect(args.providerOptions).toMatchObject({
-      anthropic: { thinking: { type: 'enabled', budgetTokens: 5000 } },
+      anthropic: { thinking: { type: 'adaptive' }, effort: 'medium' },
     });
+    expect((args.providerOptions as any)?.anthropic?.thinking?.type).not.toBe('enabled');
     expect(args.maxOutputTokens).toBe(32000);
   });
 
@@ -398,14 +605,61 @@ describe('ai-sdk anthropic/bedrock extended thinking (ported from native)', () =
     expect(args.maxOutputTokens).toBe(4096);
   });
 
-  it('bedrock: reasoning_effort maps to providerOptions.bedrock.reasoningConfig, never providerOptions.anthropic', () => {
+  it('bedrock: reasoning_effort maps to adaptive reasoningConfig + effort (never enabled/budgetTokens), never providerOptions.anthropic', () => {
     const args = buildAiSdkArgs({ messages: [], reasoning_effort: 'medium' }, 'bedrock');
     expect(args.providerOptions).toMatchObject({
-      bedrock: { reasoningConfig: { type: 'enabled', budgetTokens: 8192 } },
+      bedrock: { reasoningConfig: { type: 'adaptive', maxReasoningEffort: 'medium' } },
     });
+    // Current-gen Bedrock Claude (Sonnet 5, Opus 4.5+) 400s on the legacy
+    // enabled/budgetTokens shape — it must NEVER be sent (verified against real
+    // Bedrock us-east-1). Adaptive carries no budget to clamp.
+    expect((args.providerOptions as any)?.bedrock?.reasoningConfig?.type).not.toBe('enabled');
+    expect((args.providerOptions as any)?.bedrock?.reasoningConfig?.budgetTokens).toBeUndefined();
     expect(args.providerOptions).not.toHaveProperty('anthropic');
-    expect((args.providerOptions as any)?.bedrock?.reasoningEffort).toBeUndefined();
     expect(args.maxOutputTokens).toBe(32000);
+  });
+
+  it('bedrock: max effort maps to adaptive+max even with a small explicit max_tokens (no budget clamp, no enabled)', () => {
+    const args = buildAiSdkArgs(
+      { messages: [], reasoning_effort: 'max', max_tokens: 2000 },
+      'bedrock',
+    );
+    expect(args.maxOutputTokens).toBe(2000);
+    // Adaptive has no budget to clamp against max_tokens — the whole class of
+    // "budget >= max_tokens" Converse 400s disappears with adaptive.
+    expect((args.providerOptions as any)?.bedrock?.reasoningConfig).toEqual({
+      type: 'adaptive',
+      maxReasoningEffort: 'max',
+    });
+  });
+
+  it('bedrock: every reasoning_effort level maps to an adaptive effort tier and NEVER emits type:"enabled" (minimal folds to low)', () => {
+    const cases: Array<[string, string]> = [
+      ['minimal', 'low'],
+      ['low', 'low'],
+      ['medium', 'medium'],
+      ['high', 'high'],
+      ['xhigh', 'xhigh'],
+      ['max', 'max'],
+    ];
+    for (const [effort, tier] of cases) {
+      const args = buildAiSdkArgs({ messages: [], reasoning_effort: effort }, 'bedrock');
+      expect((args.providerOptions as any)?.bedrock?.reasoningConfig).toEqual({
+        type: 'adaptive',
+        maxReasoningEffort: tier,
+      });
+    }
+  });
+
+  it('bedrock: a raw body.thinking:{type:"enabled",budget_tokens} is normalized to adaptive (never forwarded verbatim)', () => {
+    const args = buildAiSdkArgs(
+      { messages: [], thinking: { type: 'enabled', budget_tokens: 5000 } },
+      'bedrock',
+    );
+    // The old enabled/budgetTokens shape current-gen Bedrock Claude rejects must
+    // never reach the wire — even when the client itself sent it.
+    expect((args.providerOptions as any)?.bedrock?.reasoningConfig?.type).toBe('adaptive');
+    expect((args.providerOptions as any)?.bedrock?.reasoningConfig?.budgetTokens).toBeUndefined();
   });
 
   it('does not set thinking/reasoningConfig or bump maxOutputTokens for openai/openai-compatible families', () => {
@@ -420,6 +674,82 @@ describe('ai-sdk anthropic/bedrock extended thinking (ported from native)', () =
     );
     expect(openrouter.providerOptions).toEqual({ openrouter: { reasoningEffort: 'high' } });
     expect(openrouter.maxOutputTokens).toBeUndefined();
+  });
+});
+
+describe('trailing assistant prefill is stripped across the board (one normalization fixes both errors)', () => {
+  // Reproduces two real production errors, both from a trailing assistant message
+  // (a replayed partial from a cancelled turn):
+  //   • Bedrock `global.anthropic.claude-sonnet-5` → HTTP 400 "This model does not
+  //     support assistant message prefill. The conversation must end with a user
+  //     message."
+  //   • ChatGPT-Codex `gpt-5.6-sol` → empty 200 stream → empty_completion.
+  // A conversation must end on a user/tool turn, so toModelMessages drops the
+  // trailing assistant UNCONDITIONALLY (like repairToolPairing) — every family.
+  const withTrailingAssistant = {
+    messages: [
+      { role: 'user', content: 'hello' },
+      { role: 'assistant', content: 'partial reply the client replayed' },
+    ],
+  };
+
+  for (const family of ['bedrock', 'anthropic', 'openai', 'openai-compatible'] as const) {
+    it(`${family}: strips the trailing assistant so the request ends on a user message`, () => {
+      const args = buildAiSdkArgs({ ...withTrailingAssistant }, family);
+      expect(args.messages).toHaveLength(1);
+      expect(args.messages[args.messages.length - 1].role).toBe('user');
+    });
+  }
+
+  it('codex (openai + reasoning effort): strips the trailing assistant that makes the Responses backend return empty', () => {
+    const args = buildAiSdkArgs({ ...withTrailingAssistant, reasoning_effort: 'low' }, 'openai', {
+      providerName: 'openai-codex',
+    });
+    expect(args.messages).toHaveLength(1);
+    expect(args.messages[0].role).toBe('user');
+  });
+
+  it('strips multiple consecutive trailing assistant turns, keeps the last user/tool turn', () => {
+    const args = buildAiSdkArgs(
+      {
+        messages: [
+          { role: 'user', content: 'q' },
+          { role: 'assistant', content: 'a1' },
+          { role: 'assistant', content: 'a2' },
+        ],
+      },
+      'bedrock',
+    );
+    expect(args.messages).toHaveLength(1);
+    expect(args.messages[0].role).toBe('user');
+  });
+
+  it('a conversation already ending on a user turn is untouched', () => {
+    const args = buildAiSdkArgs(
+      { messages: [{ role: 'assistant', content: 'hi' }, { role: 'user', content: 'go' }] },
+      'openai',
+    );
+    expect(args.messages).toHaveLength(2);
+    expect(args.messages[args.messages.length - 1].role).toBe('user');
+  });
+
+  it('bedrock: the prompt-cache breakpoint lands on the surviving user turn, not a removed assistant', () => {
+    const args = buildAiSdkArgs({ ...withTrailingAssistant }, 'bedrock');
+    const last = args.messages[args.messages.length - 1] as {
+      role: string;
+      providerOptions?: { bedrock?: { cachePoint?: unknown } };
+    };
+    expect(last.role).toBe('user');
+    expect(last.providerOptions?.bedrock?.cachePoint).toEqual({ type: 'default' });
+  });
+
+  it('never strips down to an empty conversation (all-assistant history is left for the upstream)', () => {
+    const args = buildAiSdkArgs(
+      { messages: [{ role: 'assistant', content: 'only' }] },
+      'bedrock',
+    );
+    expect(args.messages).toHaveLength(1);
+    expect(args.messages[0].role).toBe('assistant');
   });
 });
 
@@ -897,6 +1227,82 @@ describe('Piece A — OpenAI Responses API absorbed into the ai-sdk engine', () 
     });
   });
 
+  // REGRESSION (prod, 2026-07-20): every codex/* model 400'd with a bare
+  // `"Bad Request"` SSE frame. The deleted native transport set `store:false`
+  // unconditionally for Codex (openai-responses/request.ts:156); #4943 made
+  // ai-sdk the sole engine and never ported that line, so `store` went
+  // undefined → dropped from the wire body → the ChatGPT backend rejected it.
+  // Omitted and `false` are DIFFERENT requests to that backend.
+  describe('buildAiSdkArgs — Codex requires an explicit store:false', () => {
+    it('sets store:false for the openai-codex provider', () => {
+      const args = buildAiSdkArgs({ messages: [] }, 'openai', {
+        providerName: 'openai-codex',
+      });
+      expect(args.providerOptions?.openai).toMatchObject({ store: false });
+    });
+
+    it('keeps store:false alongside the reasoning effort Codex always sends', () => {
+      const args = buildAiSdkArgs({ messages: [] }, 'openai', {
+        providerName: 'openai-codex',
+        defaultReasoningEffort: 'low',
+      });
+      expect(args.providerOptions).toEqual({ openai: { reasoningEffort: 'low', store: false } });
+    });
+
+    it('does NOT set store for plain OpenAI — the platform API defaults it itself', () => {
+      const args = buildAiSdkArgs({ messages: [], reasoning_effort: 'high' }, 'openai', {
+        providerName: 'openai',
+      });
+      expect(args.providerOptions?.openai).not.toHaveProperty('store');
+    });
+
+    it('does not set store when no provider name is passed at all', () => {
+      const args = buildAiSdkArgs({ messages: [], reasoning_effort: 'high' }, 'openai');
+      expect(args.providerOptions?.openai).not.toHaveProperty('store');
+    });
+
+    // Deliberately UNCONDITIONAL, matching the native transport it replaces:
+    // `store` is not in extraOpenAiFields' allowlist, so a client-supplied
+    // `store` never reaches providerOptions in the first place, and Codex is
+    // the one backend where the wrong value fails the entire request. If a
+    // future change starts forwarding client `store`, this test fails and the
+    // Codex override must be re-examined rather than silently overridden.
+    it('forces store:false for Codex even when the client body sets store:true', () => {
+      const args = buildAiSdkArgs({ messages: [], store: true }, 'openai', {
+        providerName: 'openai-codex',
+      });
+      expect(args.providerOptions?.openai).toMatchObject({ store: false });
+    });
+  });
+
+  // REGRESSION (prod, 2026-07-20): every REAL Codex turn 400'd with
+  // `{"detail":"Unsupported parameter: max_output_tokens"}` (captured via the
+  // error-detail path). @ai-sdk/openai serializes maxOutputTokens →
+  // max_output_tokens, which the ChatGPT backend rejects. Simple probes with no
+  // cap passed, masking it. Drop the cap for Codex; keep it for plain OpenAI.
+  describe('buildAiSdkArgs — Codex must NOT send max_output_tokens', () => {
+    it('drops an explicit max_tokens for openai-codex', () => {
+      const args = buildAiSdkArgs({ messages: [], max_tokens: 1024 }, 'openai', {
+        providerName: 'openai-codex',
+      });
+      expect(args.maxOutputTokens).toBeUndefined();
+    });
+
+    it('drops max_completion_tokens for openai-codex too', () => {
+      const args = buildAiSdkArgs({ messages: [], max_completion_tokens: 2048 }, 'openai', {
+        providerName: 'openai-codex',
+      });
+      expect(args.maxOutputTokens).toBeUndefined();
+    });
+
+    it('STILL forwards max_tokens for plain OpenAI (the platform API accepts it)', () => {
+      const args = buildAiSdkArgs({ messages: [], max_tokens: 1024 }, 'openai', {
+        providerName: 'openai',
+      });
+      expect(args.maxOutputTokens).toBe(1024);
+    });
+  });
+
   // Codex's backend is stream-only (`stream:false` 400s — see
   // openai-responses/request.ts's chatToResponses comment). The AI SDK's
   // non-streaming `doGenerate` always sends `stream:false`, so
@@ -1172,6 +1578,43 @@ describe('ai-sdk streaming error frame — defect 4 (401 surfaces cleanly, no ha
     // handling, verified above. This still confirms doStream itself is
     // invoked exactly once, not retried internally.
     expect(calls).toBe(1);
+  });
+
+  // Defect (2026-08-01, live-reported): an upstream 400 "context length
+  // exceeded from messages" surfaced to the user as a generic "Bad Gateway"
+  // instead of the real error + real status. The AI SDK wraps a non-2xx HTTP
+  // response in an APICallError whose `.message` is the generic HTTP status
+  // text ("Bad Request") — the actionable message ("context length exceeded
+  // from messages") lives in `.responseBody` (the raw upstream JSON), and the
+  // numeric status in `.statusCode`. The streaming adapter (sse.ts) threaded
+  // `.responseBody` into the frame's `detail` but used the generic
+  // `.message` as the client-facing message, AND only emitted a numeric
+  // `code` for terminal-auth failures — so a 400 reached the pipeline's
+  // statusForErrorFrame as `code: undefined`, which falls through to a blanket
+  // 502 "Bad Gateway". Both the real message and the real status were lost.
+  // This test pins the defect at the SSE-frame layer; the handler-layer test
+  // (handler.test.ts) pins the end-to-end client-facing response.
+  it('an APICallError with a generic message + real responseBody surfaces the real upstream message and status', async () => {
+    const sse = await readAll(
+      openAiSseFromFullStream(
+        parts({
+          type: 'error',
+          error: Object.assign(new Error('Bad Request'), {
+            statusCode: 400,
+            responseBody:
+              '{"error":{"message":"context length exceeded from messages","type":"invalid_request_error","code":"context_length_exceeded"}}',
+          }),
+        }),
+        CTX,
+      ),
+    );
+    const frame = sseErrorFrame(sse);
+    // REAL upstream message must reach the client, not the generic "Bad Request".
+    expect(frame?.message).toBe('context length exceeded from messages');
+    // The numeric upstream status must be carried so the pipeline classifies
+    // it as 400, not a blanket 502.
+    expect(frame?.code).toBe(400);
+    expect(sseHasContent(sse)).toBe(false);
   });
 });
 

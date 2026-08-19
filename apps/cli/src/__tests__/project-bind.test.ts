@@ -18,7 +18,6 @@ const AUTH: Auth = {
 const ENV_KEYS = [
   'KORTIX_CONFIG_FILE',
   'KORTIX_CLI_TOKEN',
-  'KORTIX_EXECUTOR_TOKEN',
   'KORTIX_TOKEN',
   'KORTIX_API_URL',
   'KORTIX_PROJECT_ID',
@@ -141,6 +140,62 @@ describe('ensureDefaultProjectBinding', () => {
     expect(outcome.project).toBeNull();
     expect(storedDefaultProject()).toBeUndefined();
     expect(stderrChunks.join('')).toContain('kortix init');
+  });
+
+  it('says "in this account", not "your first" — the user may have projects elsewhere', async () => {
+    // The old wording told someone with four projects under a sibling account to
+    // create their first one. It is also the line that makes a command look
+    // failed right before its cross-account fallback succeeds.
+    mockProjects([]);
+
+    await ensureDefaultProjectBinding(AUTH);
+
+    const out = stderrChunks.join('');
+    expect(out).toContain('No projects in this account');
+    expect(out).toContain('kortix accounts use');
+    expect(out).not.toContain('your first');
+  });
+
+  it('stays SILENT on a FAILED project list too, not just an empty one', async () => {
+    // `quiet` promises silence on every path that ends unbound. It first only
+    // covered the empty-account branch, so a caller with a fallback still got a
+    // "could not list projects" line before its scan succeeded.
+    mockProjects({ status: 500 });
+
+    const outcome = await ensureDefaultProjectBinding(AUTH, { quiet: true });
+
+    expect(outcome.project).toBeNull();
+    expect(stderrChunks.join('')).toBe('');
+  });
+
+  it('stays SILENT on a non-TTY with several projects', async () => {
+    mockProjects([project('proj_a', 'A'), project('proj_b', 'B')]);
+
+    const outcome = await ensureDefaultProjectBinding(AUTH, { quiet: true });
+
+    expect(outcome.project).toBeNull();
+    expect(stderrChunks.join('')).toBe('');
+  });
+
+  it('still SPEAKS on those paths without quiet', async () => {
+    // The flag must not become a blanket gag: a caller with no fallback needs
+    // to know why nothing bound.
+    mockProjects({ status: 500 });
+    await ensureDefaultProjectBinding(AUTH);
+    expect(stderrChunks.join('')).toContain('Could not list projects');
+  });
+
+  it('stays SILENT when the caller has a fallback', async () => {
+    // `locateSessionAnywhere` scans the host's other accounts next and usually
+    // finds the session. Announcing "no projects" first reports a failure that
+    // has not happened — the command goes on to succeed, but the output reads
+    // as an error.
+    mockProjects([]);
+
+    const outcome = await ensureDefaultProjectBinding(AUTH, { quiet: true });
+
+    expect(outcome.project).toBeNull();
+    expect(stderrChunks.join('')).toBe('');
   });
 
   it('does not prompt or bind on a non-TTY when several projects exist', async () => {

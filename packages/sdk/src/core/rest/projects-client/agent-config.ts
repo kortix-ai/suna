@@ -52,7 +52,13 @@ export interface OpencodeAgentConfig {
  *  module doc above). */
 export interface AgentConfigBlock {
   enabled?: boolean;
+  sandbox?: string;
   connectors?: AgentGrantSetV2;
+  /** Connectors that must resolve before the session starts. */
+  connectors_required?: string[];
+  /** @deprecated Input alias for `connectors_required`. Responses use only
+   *  `connectors_required`. */
+  connectors_personal?: string[];
   secrets?: AgentGrantSetV2;
   skills?: AgentGrantSetV2;
   kortix_cli?: AgentGrantSetV2;
@@ -73,11 +79,15 @@ export interface AgentConfigResponse {
 }
 
 export async function getAgentConfig(projectId: string, agentName: string) {
-  return unwrap(
+  const response = unwrap(
     await backendApi.get<AgentConfigResponse>(
       `/projects/${projectId}/agents/${encodeURIComponent(agentName)}/config`,
     ),
   );
+  return {
+    ...response,
+    block: response.block ? canonicalizeRequiredConnectors(response.block) : null,
+  };
 }
 
 export async function updateAgentConfig(
@@ -85,13 +95,85 @@ export async function updateAgentConfig(
   agentName: string,
   block: AgentConfigBlock,
 ) {
-  return unwrap(
+  const canonicalBlock = canonicalizeRequiredConnectors(block);
+  const response = unwrap(
     await backendApi.put<{
       ok: boolean;
       agent: string;
       schema_version: number;
       block: AgentConfigBlock | null;
-    }>(`/projects/${projectId}/agents/${encodeURIComponent(agentName)}/config`, block),
+    }>(`/projects/${projectId}/agents/${encodeURIComponent(agentName)}/config`, canonicalBlock),
+  );
+  return {
+    ...response,
+    block: response.block ? canonicalizeRequiredConnectors(response.block) : null,
+  };
+}
+
+function normalizeConnectorList(values: string[]): string[] {
+  const normalized: string[] = [];
+  for (const value of values) {
+    const slug = value.trim();
+    if (slug && !normalized.includes(slug)) normalized.push(slug);
+  }
+  return normalized;
+}
+
+function equalConnectorSets(left: string[], right: string[]): boolean {
+  if (left.length !== right.length) return false;
+  const rightSet = new Set(right);
+  return left.every((slug) => rightSet.has(slug));
+}
+
+function canonicalizeRequiredConnectors(block: AgentConfigBlock): AgentConfigBlock {
+  const canonical = block.connectors_required
+    ? normalizeConnectorList(block.connectors_required)
+    : undefined;
+  const legacy = block.connectors_personal
+    ? normalizeConnectorList(block.connectors_personal)
+    : undefined;
+  if (canonical && legacy && !equalConnectorSets(canonical, legacy)) {
+    throw new Error('connectors_personal must match connectors_required when both fields are present');
+  }
+  const next = { ...block };
+  delete next.connectors_personal;
+  if (canonical !== undefined || legacy !== undefined) {
+    next.connectors_required = canonical ?? legacy;
+  }
+  return next;
+}
+
+export interface GrantSecretToAgentResponse {
+  identifier: string;
+  agent: string;
+  /** True when the agent's list already admitted the identifier, so no commit ran. */
+  already_granted: boolean;
+  /** True when this edit wrote the manifest's FIRST `agents:` block. From then
+   *  on an agent that is not listed receives no project secrets. */
+  adopted_governance: boolean;
+}
+
+/**
+ * Grant one project secret to one agent: merge the IDENTIFIER into that agent's
+ * `secrets:` list in kortix.yaml, upserting the agent entry when the manifest
+ * does not declare it yet.
+ *
+ * Broker and network-boundary delivery reach a session only through such an
+ * explicit list — `secrets: all` withholds both — so this is the one-click fix
+ * for the `no_agent_grant` verdict `ProjectSecret.delivery_blocked_reason`
+ * reports. Distinct from `setAgentScope` (agent-scope.ts), which REPLACES an
+ * already-declared agent's grant set.
+ */
+export async function grantSecretToAgent(
+  projectId: string,
+  identifier: string,
+  agentName: string,
+) {
+  return unwrap(
+    await backendApi.post<GrantSecretToAgentResponse>(
+      `/projects/${projectId}/secrets/${encodeURIComponent(identifier)}/grant`,
+      { agent: agentName },
+    ),
   );
 }
 

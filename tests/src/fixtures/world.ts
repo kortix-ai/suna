@@ -22,9 +22,19 @@ import type {
 import type { RegisteredFlow } from '../core/flow';
 import { ResourceStack } from './registry';
 import { adminDeleteUser } from './supabase';
-import { provisionMatrix, synthUser, type Provisioned } from './principals';
+import { provisionMatrix, synthUser, synthUserWithEmail, type Provisioned } from './principals';
 import { provisionProject } from './provision';
 import { grantEphemeralPlatformAdmin } from './platform-admin';
+import { ADMIN_TOKEN_LABEL, NO_ADMIN_TOKEN_HINT } from './enterprise-demo';
+import {
+  createDatabaseProject,
+  createDatabaseSession,
+  deleteDatabaseProject,
+  mergeDatabaseProjectMetadata,
+} from './database-project';
+import { mapWithConcurrency } from '../core/concurrency';
+import { createLocalGitRepository } from './local-git';
+import type { FixtureStats } from '../core/result';
 
 const PUBLIC_DOMAINS = new Set(['system', 'access']);
 
@@ -32,6 +42,7 @@ export interface World {
   principals: Principals;
   newStack(): ResourceStack;
   makeFixtures(stack: ResourceStack): Fixtures;
+  fixtureStats(): FixtureStats;
   teardownAll(): Promise<void>;
 }
 
@@ -61,6 +72,7 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
       principals,
       newStack: () => new ResourceStack(new Client(env.apiUrl)),
       makeFixtures: () => noFixtures,
+      fixtureStats: () => ({ databaseProjectCount: 0, managedProjectCount: 0 }),
       teardownAll: async () => {},
     };
   }
@@ -74,7 +86,7 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
 
   const runId = (globalThis as any).__KE2E_RUN_ID__ ?? 'run';
   const provisioned: Provisioned = await provisionMatrix(env, runId);
-  const owner = provisioned.principals.OWNER;
+  const owner = provisioned.principals.OWNER!;
   let revokePlatformAdmin: (() => Promise<void>) | null = null;
 
   // Release QA needs a real, short-lived Supabase identity for the platform
@@ -95,33 +107,89 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
     log.step(`provision: run-scoped platform admin ${platformAdmin.user.id} active`);
   }
   const adminClient = new Client(env.apiUrl).as(owner as Identity);
+  const canCreateDatabaseProject = env.capabilities.database && env.target !== 'prod';
+  const deleteDatabaseProjectFixture = canCreateDatabaseProject
+    ? (projectId: string) => deleteDatabaseProject(env, projectId)
+    : undefined;
   // Users synthesized mid-run (team members) — deleted in teardownAll.
   const extraUserIds: string[] = [];
+  let databaseProjectCount = 0;
+  let managedProjectCount = 0;
+  // Session create runs managed-git operations (branch push) synchronously, so
+  // it can never succeed against a database-only project's ke2e.invalid remote.
+  // Sessions on those projects are written straight to the database instead.
+  const databaseProjectIds = new Set<string>();
   // One shared read-only project, provisioned at most once per run.
   let sharedProjectPromise: Promise<CreatedProject> | null = null;
-  const sharedStack = new ResourceStack(adminClient);
+  let sharedSeededProjectPromise: Promise<CreatedProject> | null = null;
+  const sharedStack = new ResourceStack(adminClient, deleteDatabaseProjectFixture);
+
+  async function createProject(
+    stack: ResourceStack,
+    opts?: {
+      name?: string;
+      accountId?: string;
+      seed?: boolean;
+      managedGit?: boolean;
+      metadata?: Record<string, unknown>;
+    },
+  ): Promise<CreatedProject> {
+    const name = opts?.name ?? `e2e-${runId}-proj-${rand()}`;
+    const accountId = opts?.accountId ?? owner.accountId!;
+    if (canCreateDatabaseProject && (env.target === 'local' || (!opts?.seed && !opts?.managedGit))) {
+      const localRepository =
+        env.target === 'local' && (opts?.seed || opts?.managedGit)
+          ? await createLocalGitRepository(name)
+          : null;
+      if (localRepository) {
+        stack.push('local-git', localRepository.root, { dispose: localRepository.dispose });
+      }
+      const project = await createDatabaseProject(env, {
+        accountId,
+        userId: owner.userId!,
+        name,
+        repoUrl: localRepository?.repoUrl,
+        metadata: opts?.metadata,
+      });
+      databaseProjectCount++;
+      databaseProjectIds.add(project.id);
+      stack.push('database-project', project.id);
+      return project;
+    }
+
+    const id = await provisionProject(adminClient, {
+      name,
+      ...(opts?.accountId ? { account_id: opts.accountId } : {}),
+      ...(opts?.seed ? { seed_starter: true } : {}),
+    });
+    managedProjectCount++;
+    stack.push('project', id);
+    if (opts?.metadata) await mergeDatabaseProjectMetadata(env, id, opts.metadata);
+    return { id, name } as CreatedProject;
+  }
 
   const fixturesFor = (stack: ResourceStack): Fixtures => ({
     name: (slug) => `e2e-${runId}-${slug}`,
     sharedProject() {
       if (!sharedProjectPromise) {
-        sharedProjectPromise = (async () => {
-          const id = await provisionProject(adminClient, { name: `e2e-${runId}-shared` });
-          sharedStack.push('project', id);
-          return { id, name: `e2e-${runId}-shared` } as CreatedProject;
-        })();
+        sharedProjectPromise = createProject(sharedStack, {
+          name: `e2e-${runId}-shared`,
+          managedGit: true,
+        });
       }
       return sharedProjectPromise;
     },
+    sharedSeededProject() {
+      if (!sharedSeededProjectPromise) {
+        sharedSeededProjectPromise = createProject(sharedStack, {
+          name: `e2e-${runId}-shared-seeded`,
+          seed: true,
+        });
+      }
+      return sharedSeededProjectPromise;
+    },
     async project(opts) {
-      const name = opts?.name ?? `e2e-${runId}-proj-${rand()}`;
-      const id = await provisionProject(adminClient, {
-        name,
-        ...(opts?.accountId ? { account_id: opts.accountId } : {}),
-        ...(opts?.seed ? { seed_starter: true } : {}),
-      });
-      stack.push('project', id);
-      return { id, name } as CreatedProject;
+      return createProject(stack, opts);
     },
     async team(opts) {
       const res = await adminClient.post('/v1/accounts', {
@@ -131,11 +199,19 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
       if (!accountId) throw new Error(`team account create returned no id: ${res.text()}`);
       stack.push('account', accountId);
       if (opts?.enterprise) {
-        const enabled = await adminClient.put(
-          '/v1/accounts/:accountId/iam/enterprise-demo',
-          { enabled: true },
-          { params: { accountId } },
-        );
+        // The enterprise-demo PUT is platform-admin-only — the OWNER of this
+        // fixture account gets 403 {code:'admin_required'}. Unlock through the
+        // run-scoped platform admin provisioned above.
+        if (!env.adminToken) {
+          throw new Error(`enterprise team fixture needs a platform admin — ${NO_ADMIN_TOKEN_HINT}`);
+        }
+        const enabled = await adminClient
+          .withBearer(env.adminToken, ADMIN_TOKEN_LABEL)
+          .put(
+            '/v1/accounts/:accountId/iam/enterprise-demo',
+            { enabled: true },
+            { params: { accountId } },
+          );
         if (enabled.statusCode !== 200 || enabled.json<any>()?.enabled !== true) {
           throw new Error(`enterprise team enable failed: ${enabled.text()}`);
         }
@@ -160,14 +236,11 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
           );
         },
         async project(o) {
-          const name = o?.name ?? `e2e-${runId}-tproj-${rand()}`;
-          const id = await provisionProject(adminClient, {
-            name,
-            account_id: accountId,
-            ...(o?.seed ? { seed_starter: true } : {}),
+          return createProject(stack, {
+            ...o,
+            name: o?.name ?? `e2e-${runId}-tproj-${rand()}`,
+            accountId,
           });
-          stack.push('project', id);
-          return { id, name } as CreatedProject;
         },
       };
     },
@@ -185,7 +258,31 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
       }
       return u.principal;
     },
+    async userWithEmail(email, opts) {
+      const u = await synthUserWithEmail(env, email.toLowerCase(), opts?.label ?? 'ADDRESSEE');
+      extraUserIds.push(u.user.id);
+      // Same lazy-personal-account bootstrap as `user()` — minting a PAT forces
+      // the personal account + owner membership into existence so subsequent
+      // account-scoped reads (e.g. /v1/accounts/me) work for this identity.
+      const bootstrap = await new Client(env.apiUrl)
+        .as(u.principal)
+        .post('/v1/accounts/tokens', { name: `e2e-${runId}-user-email-bootstrap` });
+      if (bootstrap.statusCode !== 201) {
+        throw new Error(`standalone user-with-email bootstrap failed: ${bootstrap.text()}`);
+      }
+      return u.principal;
+    },
     async session(project, opts) {
+      if (databaseProjectIds.has(project.id)) {
+        const id = await createDatabaseSession(env, {
+          projectId: project.id,
+          accountId: owner.accountId!,
+          userId: owner.userId!,
+        });
+        // No stack entry: deleting the database-only project cascades to its
+        // sessions (project_sessions.project_id ON DELETE CASCADE).
+        return { id, projectId: project.id } as CreatedSession;
+      }
       // `prompt` was never consumed by the session API; use the documented
       // field now that the HTTP boundary rejects unknown create properties.
       const res = await adminClient.post(
@@ -216,9 +313,13 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
 
   return {
     principals: principalsProxy(provisioned.principals),
-    newStack: () => new ResourceStack(adminClient),
+    newStack: () => new ResourceStack(adminClient, deleteDatabaseProjectFixture),
     makeFixtures: fixturesFor,
+    fixtureStats: () => ({ databaseProjectCount, managedProjectCount }),
     async teardownAll() {
+      log.info(
+        `fixtures: ${databaseProjectCount} database-only projects · ${managedProjectCount} managed repositories`,
+      );
       await sharedStack.teardown();
       if (revokePlatformAdmin) {
         try {
@@ -238,13 +339,15 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
           log.warn(`teardown run account ${acct} failed: ${(err as Error)?.message ?? err}`);
         }
       }
-      for (const uid of [...provisioned.supabaseUserIds, ...extraUserIds]) {
+      const userIds = [...provisioned.supabaseUserIds, ...extraUserIds];
+      const cleanupWorkers = Number(process.env.KE2E_TEARDOWN_WORKERS ?? 2);
+      await mapWithConcurrency(userIds, cleanupWorkers, async (uid) => {
         try {
           await adminDeleteUser(env, uid);
         } catch (err) {
           log.warn(`teardown user ${uid} failed: ${(err as Error)?.message ?? err}`);
         }
-      }
+      });
     },
   };
 }
@@ -257,10 +360,12 @@ function makeUnavailableFixtures(): Fixtures {
     name: (slug) => slug,
     project: fail as any,
     sharedProject: fail as any,
+    sharedSeededProject: fail as any,
     session: fail as any,
     pat: fail as any,
     team: fail as any,
     user: fail as any,
+    userWithEmail: fail as any,
   };
 }
 

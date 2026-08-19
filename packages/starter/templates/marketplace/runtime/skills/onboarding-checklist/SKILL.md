@@ -116,8 +116,7 @@ pending, not as done.
   grant systems access, so they proceed directly — but they're still reported
   in the same result post.
 - **Scoped, brokered credentials.** Google Workspace and Linear access is
-  injected into the sandbox at runtime and never exposed to the model or
-  written to logs.
+  injected into the sandbox at runtime, scoped to this agent's grant.
 - **One case per new hire, no cross-run memory beyond the standard.** Each run
   is independent — don't infer anything about today's new hire from a previous
   session's state beyond what's recorded on the person's own case, and never

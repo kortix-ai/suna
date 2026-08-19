@@ -6,8 +6,22 @@ const managedModelSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
   upstreamModelId: z.string().min(1),
-  transport: z.enum(['bedrock', 'openrouter']),
+  transport: z.enum(['aster', 'bedrock', 'openrouter']),
+  providerBrand: z.string().min(1).optional(),
   pricingRef: z.string().min(1),
+  pricing: z.object({
+    inputPerMillion: z.number().nonnegative(),
+    outputPerMillion: z.number().nonnegative(),
+    cachedInputPerMillion: z.number().nonnegative().optional(),
+    cacheWritePerMillion: z.number().nonnegative().optional(),
+    contextOver200k: z.object({
+      inputPerMillion: z.number().nonnegative(),
+      outputPerMillion: z.number().nonnegative(),
+      cachedInputPerMillion: z.number().nonnegative().optional(),
+      cacheWritePerMillion: z.number().nonnegative().optional(),
+      contextThreshold: z.number().int().positive(),
+    }).optional(),
+  }).optional(),
   tier: z.enum(['flagship', 'balanced', 'fast']),
   vision: z.boolean(),
   limit: z.object({
@@ -46,7 +60,7 @@ export function parseManagedModels(
  * API/control-plane managed model overlay used by runtime routing and catalog
  * responses. CLOUD-ONLY: empty whenever KORTIX_MANAGED_PROVIDER_ENABLED is off
  * (the self-host default) — a self-host operator brings their own LLM keys and
- * must never see or route to Kortix's shared Bedrock/OpenRouter credentials.
+ * must never see or route to Kortix's shared upstream credentials.
  * This is the single choke point: every consumer (the served model catalog,
  * the picker, and request-time routing) reads through here or getRuntimeManagedModel()
  * below, so gating it here alone keeps the managed lineup off everywhere.
@@ -54,10 +68,9 @@ export function parseManagedModels(
  * IMPORTANT — what the "managed provider" IS and IS NOT (a recurring
  * misconception): KORTIX_MANAGED_PROVIDER_ENABLED is a CLOUD-ONLY CONVENIENCE
  * so cloud users can spend their KORTIX CREDITS for a zero-config experience —
- * it routes to Kortix's OWN shared Bedrock/OpenRouter credentials, billed as
- * credits. It is NOT the mechanism by which "Bedrock" (or OpenRouter, or any
- * provider) is available. Bedrock is a STANDALONE provider in its own right —
- * exactly like OpenRouter/OpenAI/Anthropic — that a project uses by connecting
+ * it routes to Kortix's own shared upstream credentials, billed as credits.
+ * It is not the mechanism by which Bedrock or OpenRouter is available.
+ * Bedrock is a standalone provider that a project uses by connecting
  * its OWN credentials (BYOK). To give a self-host Bedrock you connect Bedrock
  * as a standalone BYOK provider (project secret AWS_BEARER_TOKEN_BEDROCK →
  * resolveCatalogUpstream('amazon-bedrock') builds a kind:'bedrock' descriptor
@@ -91,6 +104,55 @@ const BUNDLED_BY_ID = new Map(BUNDLED_MANAGED_MODELS.map((model) => [model.id, m
 
 export function isKnownManagedModelId(id: string): boolean {
   return BUNDLED_BY_ID.has(id);
+}
+
+/**
+ * The managed lineup this deployment can actually SERVE: every configured model
+ * whose transport credential is present. `hasTransportCredential` is injected so
+ * the rule stays pure and testable without config.
+ *
+ * `RUNTIME_MANAGED_MODELS` answers "which models did the operator configure",
+ * which is not the same question. Offering a configured-but-uncredentialed model
+ * is what made the picker advertise `glm-5.2` while every selection of it 400'd.
+ */
+export function servedManagedModels(
+  models: readonly ManagedModel[],
+  hasTransportCredential: (model: ManagedModel) => boolean,
+): ManagedModel[] {
+  return models.filter(hasTransportCredential);
+}
+
+/** Strip the opencode `kortix/` namespace off a managed ref. */
+function bareManagedId(ref: string): string {
+  return ref.startsWith('kortix/') ? ref.slice('kortix/'.length) : ref;
+}
+
+/**
+ * The platform default model, guaranteed reachable.
+ *
+ * `LLM_GATEWAY_DEFAULT_MODEL` is what an operator asked for; it is not
+ * necessarily servable. When the configured default is a managed id this
+ * deployment cannot reach (its transport credential is absent — e.g. `glm-5.2`
+ * with no ASTER_API_KEY), every `auto` request and every "use the default" pick
+ * dies with a resolution error the user cannot act on. Degrade to a served
+ * managed model instead — flagship first, then catalog order.
+ *
+ * A BYOK ref (`provider/model`) is returned untouched: it resolves from a
+ * PROJECT key, so a managed transport says nothing about whether it works, and
+ * `degradeUnservableDefault` already probes that case per-project.
+ */
+export function resolvePlatformDefaultModelId(
+  configured: string,
+  served: readonly ManagedModel[],
+): string {
+  const trimmed = configured.trim();
+  if (!trimmed) return trimmed;
+  const bare = bareManagedId(trimmed);
+  // Not a managed id at all → a BYOK ref; leave it alone.
+  if (!isKnownManagedModelId(bare)) return trimmed;
+  if (served.some((model) => model.id === bare)) return trimmed;
+  const replacement = served.find((model) => model.tier === 'flagship') ?? served[0];
+  return replacement ? replacement.id : trimmed;
 }
 
 export type { ManagedModel };

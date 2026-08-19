@@ -1,11 +1,15 @@
 'use client';
 
-import { CreditCard, KeyRound } from 'lucide-react';
-import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
+import { CreditCardIcon as CreditCard, KeyIcon as KeyRound } from '@phosphor-icons/react';
+import { AnimatePresence, m, useReducedMotion } from 'motion/react';
 
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/features/layout/section/empty-state';
+import type { FlatModel } from './session-chat-input';
 import { useModelConnectionGate } from './use-model-connection-gate';
+
+/** Stable empty list so the hook's `models = []` default isn't re-allocated per render. */
+const EMPTY_MODELS: FlatModel[] = [];
 
 /**
  * The single "no model connected" teaching moment — an icon, a plain-English
@@ -20,7 +24,8 @@ export function ModelConnectionGate({
   size?: 'sm' | 'default';
   className?: string;
 }) {
-  const { openConnectProvider, openUpgrade, modal, showUpgradeOption } = useModelConnectionGate();
+  const { openConnectProvider, openUpgrade, modal, showUpgradeOption } =
+    useModelConnectionGate(EMPTY_MODELS);
 
   return (
     <>
@@ -42,11 +47,7 @@ export function ModelConnectionGate({
               Upgrade
             </Button>
           ) : (
-            <Button
-              type="button"
-              size="sm"
-              onClick={() => openConnectProvider('providers')}
-            >
+            <Button type="button" size="sm" onClick={() => openConnectProvider('providers')}>
               <KeyRound className="size-3.5" />
               Bring your own key
             </Button>
@@ -87,7 +88,8 @@ const BAR_EXIT = { type: 'spring', duration: 0.35, bounce: 0 } as const;
  * animation assumes it renders once with the final answer, not per-query.
  */
 export function ModelConnectionBar({ show }: { show: boolean }) {
-  const { openConnectProvider, openUpgrade, modal, showUpgradeOption } = useModelConnectionGate();
+  const { openConnectProvider, openUpgrade, modal, showUpgradeOption } =
+    useModelConnectionGate(EMPTY_MODELS);
   const reduceMotion = useReducedMotion();
 
   return (
@@ -95,7 +97,7 @@ export function ModelConnectionBar({ show }: { show: boolean }) {
       {modal}
       <AnimatePresence initial={false}>
         {show && (
-          <motion.div
+          <m.div
             key="model-connection-bar"
             initial={reduceMotion ? { opacity: 0 } : { height: 0 }}
             animate={
@@ -110,7 +112,7 @@ export function ModelConnectionBar({ show }: { show: boolean }) {
             }
             className="relative z-0 overflow-hidden"
           >
-            <motion.div
+            <m.div
               initial={reduceMotion ? false : { y: '-100%' }}
               animate={reduceMotion ? undefined : { y: '0%', transition: BAR_ENTER }}
               exit={reduceMotion ? undefined : { y: '-100%', transition: BAR_EXIT }}
@@ -144,8 +146,8 @@ export function ModelConnectionBar({ show }: { show: boolean }) {
                   </button>
                 </div>
               </div>
-            </motion.div>
-          </motion.div>
+            </m.div>
+          </m.div>
         )}
       </AnimatePresence>
     </>

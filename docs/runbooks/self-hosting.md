@@ -53,18 +53,7 @@ box.
   project repos. Recommended, standard choices: [Daytona](https://www.daytona.io/)
   (the default) or [Platinum](https://www.platinum.dev/), Kortix's own microVM
   sandbox provider. [E2B](https://e2b.dev/) is also supported. Any of these
-  need just an API key, settable after first boot with `kortix self-host
-  configure`.
-  - **Alternative: `local-docker` (EXPERIMENTAL — not recommended for
-    production).** Listed last in the provider picker. Runs sandboxes as
-    plain Docker containers on THIS SAME machine — no cloud provider account
-    needed, just the host's own Docker socket (mounted into `kortix-api`
-    automatically when you pick it). It is same-machine only: not
-    horizontally scalable, no multi-node scheduling, no per-container disk
-    quotas yet, and noticeably slower than the other providers because it
-    builds sandbox images locally on this machine. Good for evaluation only;
-    pick Daytona or Platinum for anything that needs to scale beyond one
-    host or run in production.
+  need an API key, settable after first boot with `kortix self-host configure`.
 - **Not required to get started:** SMTP. A fresh install auto-confirms email
   signups and leads with password auth, so the first account works with zero
   email configuration. Configure SMTP later to enable magic-link sign-in.
@@ -271,7 +260,7 @@ same box or a new one.
 | `kortix self-host version` | Show the running version, the configured channel, and whether a newer release is available. |
 | `kortix self-host stop` / `restart` | Stop / restart the stack. |
 | `kortix self-host status` | Container status (`docker compose ps`). |
-| `kortix self-host doctor` | Validate local Docker tooling and the rendered Compose config. Non-mutating. |
+| `kortix self-host doctor` | Validate Docker tooling and the rendered Compose config. Non-mutating. |
 | `kortix self-host logs [service]` | Tail Compose logs. |
 | `kortix self-host open` | Open the dashboard in a browser. |
 | `kortix self-host env ls [--show]` | Show every persistent value, grouped by service; secrets masked by default (`--show` reveals). |
@@ -372,16 +361,20 @@ tag to the concrete version it currently points to, via Docker Hub) and
 whether a newer release is available.
 
 > **Release-flow contract this depends on:** the self-host default channel is
-> `stable`, meaning the Kortix release pipeline (`deploy-prod.yml` /
-> `Promote` → GitHub Release) must publish/repoint a moving `:stable` tag on
-> all three app images (`kortix-api`, `kortix-frontend`, `kortix-gateway`) on
-> every production release, the same way it already retags `:latest` and the
-> exact `:X.Y.Z`. **As of this writing the release workflow retags `:latest`
-> and `:X.Y.Z` only — it does not yet publish `:stable`.** Until that's added,
-> self-host installs tracking the (default) `stable` channel will not see new
-> versions from the auto-updater; use `--channel latest` or pin `--tag
-> <version>` in the meantime, and treat wiring up `:stable` publishing as a
-> release-pipeline follow-up, not a self-host CLI change.
+> `stable`. A prod release (`deploy-prod.yml` → GitHub Release) retags
+> `:latest` and the exact `:X.Y.Z` on all three app images (`kortix-api`,
+> `kortix-frontend`, `kortix-gateway`) automatically. The moving `:stable`
+> tag is promoted **separately and deliberately**, not on every release: a
+> human runs the
+> [`Promote Self-Host Stable`](https://github.com/kortix-ai/suna/actions/workflows/promote-self-host-stable.yml)
+> workflow (`workflow_dispatch`, picks a version) to repoint `:stable` →
+> that version's digest (`docker buildx imagetools create`) on all three
+> images. Curation is intentional — we don't push every prod release to
+> every self-hosted box overnight; only proven versions reach `:stable`.
+> From the moment a version is promoted, self-host installs tracking the
+> (default) `stable` channel pick it up on their next auto-updater cycle.
+> To get a release that hasn't been promoted to `:stable` yet, use
+> `--channel latest` or pin `--tag <version>`.
 
 ## Configuring SMTP, Daytona, and other integrations later
 
@@ -403,7 +396,7 @@ kortix self-host env set SMTP_HOST=smtp.example.com SMTP_PORT=587 SMTP_USER=... 
 kortix self-host env set ENABLE_EMAIL_AUTOCONFIRM=false KORTIX_PUBLIC_AUTH_METHODS=password,magic
 
 # Pipedream connectors (optional)
-kortix self-host env set INTEGRATION_AUTH_PROVIDER=pipedream PIPEDREAM_CLIENT_ID=... \
+kortix self-host env set CONNECTOR_AUTH_PROVIDER=pipedream PIPEDREAM_CLIENT_ID=... \
   PIPEDREAM_CLIENT_SECRET=... PIPEDREAM_PROJECT_ID=...
 ```
 
@@ -513,6 +506,49 @@ docker compose --project-name kortix-<instance> \
 Restore is the inverse: stop the stack, restore `volumes/db/data` (whole-
 directory approach) or `psql < backup.sql` against a fresh instance (logical
 approach), then start.
+
+### Backup & disaster recovery (enterprise)
+
+For a production / enterprise deployment, "we have backups" is not a
+finished answer — an untested backup is a liability. State and verify four
+things explicitly:
+
+- **RPO (data-loss window).** With only the on-box Postgres data directory,
+  a box that dies between backups loses everything since the last backup.
+  Pick a cadence and state it: a daily `pg_dump` (logical, ~24h RPO) is the
+  floor; for tighter RPO use a host-level block snapshot of the instance
+  directory on a schedule (EBS snapshots, your VPS provider's volume
+  snapshots, or a `cron` + `rsync`/`tar` to a separate host). The whole-
+  directory `tar` approach above requires `kortix self-host stop` (brief
+  downtime); the `pg_dump` logical approach does not.
+- **RTO (recovery-time objective).** A fresh box: provision → `kortix
+  self-host init` → restore `.env` + `volumes/db/data` (or `psql <
+  backup.sql`) → `kortix self-host start`. State how long that takes on
+  YOUR box and practice it once (below).
+- **`.env` is the root of trust.** Lose `volumes/db/data` and you lose
+  data; lose `.env` and you lose the ability to ever authenticate or
+  decrypt existing data even after a DB restore — `SUPABASE_JWT_SECRET`
+  and `SAML_PRIVATE_KEY` in particular pin all issued sessions and SSO
+  trust. Back `.env` up **separately** (not just inside the instance
+  directory snapshot), at a provider/secrets vault with independent
+  durability, and treat it as a credential.
+- **Restore drill (run once before going live, then ~quarterly).** An
+  untested restore procedure is not a restore procedure. On a throwaway
+  box:
+  1. `kortix self-host init` a fresh instance with the SAME domain (or a
+     test domain) — do NOT start it yet.
+  2. Restore the backed-up `.env` over the freshly-generated one (so JWT
+     keys match the restored DB).
+  3. Restore data: `psql < backup.sql` (logical) against the running
+     `supabase-db`, or `kortix self-host stop` then replace
+     `volumes/db/data` (whole-directory).
+  4. `kortix self-host start`; verify sign-in with an existing account
+     works (proves JWT keys + DB are consistent) and one project/session
+     loads (proves Storage + DB rows).
+  5. Record how long steps 1-4 took — that's your real RTO.
+
+A deployment is not enterprise-ready until the restore drill has succeeded
+at least once against a backup taken from the production instance.
 
 ## Uninstalling / starting over
 

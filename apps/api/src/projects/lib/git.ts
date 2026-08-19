@@ -1,22 +1,46 @@
 import { auth } from '../../openapi';
+import { config } from '../../config';
 import { validateAccountToken } from '../../repositories/account-tokens';
 import { validateSecretKey } from '../../repositories/api-keys';
 import { isAccountToken, isKortixToken } from '../../shared/crypto';
 import { db } from '../../shared/db';
-import { getBackend, managedGithubInstallId, managedGithubToken, type GitConnectionRef, type GitScope, type UpstreamGit } from '../git-backends';
+import { getBackend, managedGithubInstallId, managedGithubToken, parseBasicAuthHeader, type GitConnectionRef, type GitScope, type UpstreamGit } from '../git-backends';
 import { buildGitHubAppInstallUrl, createInstallationToken, getRepo, getRepositoryBranch, isGithubAppConfigured, type GitHubAuthContext, type GitHubRepo } from '../github';
-import { decryptProjectSecret, encryptProjectSecret, getProjectSecretValue } from '../secrets';
-import { accountGithubInstallationStates, accountGithubInstallations, accountMembers, projectGitConnections, projectGitCredentials, projects, sessionSandboxes } from '@kortix/db';
+import {
+  decryptProjectSecret,
+  encryptProjectSecret,
+  getProjectSecretValueForConsumer,
+} from '../secrets';
+import { recordAuditEvent } from '../../shared/audit';
+import { accountGithubInstallationStates, accountGithubInstallations, accountMembers, projectGitConnections, projectGitCredentials, projectSessions, projects, sessionSandboxes } from '@kortix/db';
 import { and, eq, gt, inArray, isNull } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { ttlMemo } from '../../shared/ttl-memo';
+import {
+  isImpersonatingAccount,
+  isImpersonationBlockedAccount,
+} from '../../shared/impersonation';
+// Imported from the leaf modules, not the `../../iam` barrel: this file is
+// pulled in by most of the project surface, and several suites mock the barrel
+// with a partial shape — a barrel import here turns those into module-load
+// SyntaxErrors far from anything they're testing.
+import { PROJECT_ACTIONS } from '../../iam/actions';
+import { authorize } from '../../iam/dispatcher';
+import type { RequestContext } from '../../iam/engine';
 import { registerPrincipalScopedMemo } from '../../iam/cache-invalidation';
 import { PROJECT_GIT_AUTH_SECRET_NAME, ProjectGitConnectionRow, ProjectGitCredentialRow, ProjectRow, normalizeJsonObject, normalizeString } from './serializers';
+import {
+  sessionWorkspaceAllowsRepositoryAccess,
+  workspaceMetadataAllowsRepositoryAccess,
+} from './session-workspace-access';
 
 // Memoized briefly (positive hits only): this runs on every project-scoped
-// request, and prod pays a cross-region roundtrip per DB statement. A revoked
-// membership lingers for at most one TTL window; a fresh grant is visible
-// immediately because null results are never cached.
+// request. Each DB statement is a fast same-region roundtrip (~3ms measured,
+// not the cross-region cost this comment used to claim), but the same
+// lookup repeats across a burst of parallel requests, so caching still cuts
+// redundant query volume. A revoked membership lingers for at most one TTL
+// window; a fresh grant is visible immediately because null results are
+// never cached.
 const loadAccountMembership = ttlMemo({
   ttlMs: 15_000,
   keyFn: (userId: string, accountId: string) => `${userId}|${accountId}`,
@@ -34,6 +58,18 @@ const loadAccountMembership = ttlMemo({
 registerPrincipalScopedMemo(loadAccountMembership);
 
 export async function getAccountMembership(userId: string, accountId: string) {
+  // Act-as: a platform admin holding a live grant on this account resolves as
+  // its owner. Checked BEFORE the memo, never inside it — `loadAccountMembership`
+  // is keyed `${userId}|${accountId}` and shared across requests, so caching an
+  // impersonation-derived membership would hand the operator owner rights on
+  // their own later, non-impersonated requests for the whole TTL window.
+  if (isImpersonatingAccount(userId, accountId)) {
+    return { accountId, accountRole: 'owner' as const };
+  }
+  // …and CONFINES: while a grant is live, the operator's own memberships are
+  // out of reach. Otherwise "open the app" lands on their last project (a
+  // cookie), which is theirs, under a banner naming the customer.
+  if (isImpersonationBlockedAccount(userId, accountId)) return null;
   return loadAccountMembership(userId, accountId);
 }
 
@@ -58,7 +94,12 @@ export async function getAccountGitHubInstallation(accountId: string, installati
 export async function createGitHubInstallationInstallUrl(accountId: string, userId: string): Promise<string | null> {
   if (!isGithubAppConfigured()) return null;
   const nonce = randomUUID();
-  const installUrl = buildGitHubAppInstallUrl(accountId, nonce);
+  const installUrl = buildGitHubAppInstallUrl(
+    accountId,
+    nonce,
+    'account_link',
+    config.FRONTEND_URL,
+  );
   if (!installUrl) return null;
   await db.insert(accountGithubInstallationStates).values({
     stateNonce: nonce,
@@ -436,12 +477,19 @@ export async function resolveProjectGitAuth(project: ProjectRow): Promise<{
 }> {
   const remote = getProjectGitRemote(project, await getProjectGitConnection(project.projectId));
 
-  // Managed GitHub repos (Kortix-provisioned, under the managed org). Prefer a
-  // short-lived App installation token scoped to THIS repo whenever the App is
-  // available. A configured PAT remains the internal fallback for self-hosted
-  // installs that deliberately use the one-server-key model, but it is never
-  // exported by the API/CLI push-token boundary.
+  // Managed GitHub repos use the server PAT first. The managed GitHub App can
+  // exist without access to every repository. Repeated failed token minting
+  // adds remote latency to every Git-backed project read. The PAT is internal
+  // and is never exported by the API/CLI push-token boundary.
   if (remote.provider === 'github' && remote.managed) {
+    const pat = managedGithubToken();
+    if (pat) {
+      return {
+        auth: { token: pat, source: 'pat', owner: remote.repoOwner ?? undefined, ownerType: 'Organization' },
+        authSource: 'pat',
+      };
+    }
+
     const installId = remote.installationId ?? managedGithubInstallId();
     if (installId && isGithubAppConfigured()) {
       const repoName = remote.repoName ?? parseGitHubRepoUrl(remote.upstreamUrl ?? project.repoUrl)?.repo;
@@ -459,18 +507,10 @@ export async function resolveProjectGitAuth(project: ProjectRow): Promise<{
         };
       } catch (err) {
         console.warn(
-          `[projects] failed to mint managed GitHub installation token for ${project.projectId}; falling back to the server PAT if configured:`,
+          `[projects] failed to mint managed GitHub installation token for ${project.projectId}:`,
           err,
         );
       }
-    }
-
-    const pat = managedGithubToken();
-    if (pat) {
-      return {
-        auth: { token: pat, source: 'pat', owner: remote.repoOwner ?? undefined, ownerType: 'Organization' },
-        authSource: 'pat',
-      };
     }
     return { authSource: 'none' };
   }
@@ -510,9 +550,19 @@ export async function resolveProjectGitAuth(project: ProjectRow): Promise<{
   if (remote.authMethod === 'project_credential') {
     const credential = await getProjectGitCredential(project.projectId, remote.provider);
     if (credential) {
+      const token = decryptProjectSecret(project.projectId, credential.valueEnc);
+      await recordAuditEvent({
+        accountId: project.accountId,
+        projectId: project.projectId,
+        action: 'secret.consumer.used',
+        resourceType: 'project_git_credential',
+        resourceId: credential.credentialId,
+        source: 'git_proxy',
+        metadata: { provider: remote.provider, consumer: 'git_proxy' },
+      });
       return {
         auth: {
-          token: decryptProjectSecret(project.projectId, credential.valueEnc),
+          token,
           source: 'project_credential',
         },
         authSource: 'project_credential',
@@ -520,7 +570,12 @@ export async function resolveProjectGitAuth(project: ProjectRow): Promise<{
     }
   }
 
-  const legacyToken = await getProjectSecretValue(project.projectId, PROJECT_GIT_AUTH_SECRET_NAME);
+  const legacyToken = await getProjectSecretValueForConsumer({
+    projectId: project.projectId,
+    accountId: project.accountId,
+    name: PROJECT_GIT_AUTH_SECRET_NAME,
+    consumer: 'git_proxy',
+  });
   if (legacyToken) {
     return {
       auth: {
@@ -535,11 +590,21 @@ export async function resolveProjectGitAuth(project: ProjectRow): Promise<{
 }
 
 
-export async function withProjectGitAuth(project: ProjectRow): Promise<ProjectRow & { gitAuthToken: string | null }> {
-  const gitAuth = await resolveProjectGitAuth(project);
+export async function withProjectGitAuth(project: ProjectRow): Promise<ProjectRow & {
+  gitAuthToken: string | null;
+  gitAuthHeaders: Record<string, string>;
+}> {
+  const upstream = await resolveProjectUpstream(project, 'write');
+  const credential = parseBasicAuthHeader(upstream?.headers.Authorization);
   return {
     ...project,
-    gitAuthToken: gitAuth.auth?.token ?? null,
+    repoUrl: upstream?.url ?? project.repoUrl,
+    // Keep the legacy token field populated for GitHub API fast paths and
+    // older callers, but derive it from the backend-produced credential so
+    // provider-minted credentials (for example Code Storage `t:<jwt>`) are
+    // represented consistently with the headers used by git CLI operations.
+    gitAuthToken: credential?.token ?? null,
+    gitAuthHeaders: upstream?.headers ?? {},
   };
 }
 
@@ -581,18 +646,28 @@ export type GitProxyAuth =
  *  - sandbox runtime token → must be scoped to an active sandbox of THIS
  *    project (read + write);
  *  - account API key (kortix_…) → the account must own the project;
- *  - CLI PAT (kortix_pat_…) → account must own the project; a project-scoped
- *    PAT must match this project.
+ *  - CLI PAT (kortix_pat_…) → the account owns the project, OR the token's user
+ *    holds `project.gitops.push` / `.read` on it; a project-scoped PAT must
+ *    match this project either way.
  *
- * (Finer per-project role gating for account-level PAT writes lands with M2 —
- * for now account ownership grants write, which is safe since only account
- * members can mint these tokens.)
+ * Account ownership alone grants write, which is safe since only account
+ * members can mint these tokens. (Finer per-project role gating for THAT case
+ * lands with M2.)
+ *
+ * The per-project fallback exists because token-account equality was too strict
+ * to be the only rule: a PAT is bound to ONE account, so anybody in two
+ * accounts (personal + team, the common case) could create a project through
+ * the API and then never push to it. A project-grant collaborator was likewise
+ * accepted by POST /git-token — which hands out a STRONGER credential, a raw
+ * provider token — while being refused here. This is parity with that endpoint,
+ * not new reach.
  */
 
 export async function authorizeGitProxy(
   token: string,
   projectId: string,
-  _scope: GitScope,
+  scope: GitScope,
+  requestCtx: RequestContext = {},
 ): Promise<GitProxyAuth> {
   const [project] = await db
     .select()
@@ -602,6 +677,25 @@ export async function authorizeGitProxy(
   if (!project || project.status === 'archived') {
     return { ok: false, status: 404, message: 'Not found' };
   }
+
+  /** Does this token's USER hold the git capability this operation needs? */
+  const grantedByProjectRole = async (
+    userId: string | null | undefined,
+    actingTokenId?: string,
+  ): Promise<boolean> => {
+    if (!userId) return false;
+    const action =
+      scope === 'write' ? PROJECT_ACTIONS.PROJECT_GITOPS_PUSH : PROJECT_ACTIONS.PROJECT_GITOPS_READ;
+    const verdict = await authorize(
+      userId,
+      project.accountId,
+      action,
+      { type: 'project', id: projectId },
+      actingTokenId,
+      requestCtx,
+    );
+    return verdict.allowed;
+  };
 
   // CLI PAT first — `isKortixToken` also matches the `kortix_pat_` prefix, so
   // the account-token check MUST run before the API-key check (mirrors the auth
@@ -614,8 +708,26 @@ export async function authorizeGitProxy(
     if (result.projectId && result.projectId !== projectId) {
       return { ok: false, status: 403, message: 'token is scoped to a different project' };
     }
+    if (
+      result.sessionId &&
+      !(await sessionWorkspaceAllowsRepositoryAccess({
+        sessionId: result.sessionId,
+        accountId: result.accountId,
+        projectId,
+      }))
+    ) {
+      return {
+        ok: false,
+        status: 403,
+        message: 'session workspace does not allow repository access',
+      };
+    }
     if (result.accountId !== project.accountId) {
-      return { ok: false, status: 403, message: 'token does not own this project' };
+      // Thread the acting token so the agent-grant fold fires (userRole ∩ grant)
+      // — a bare authorize() would silently skip it.
+      if (!(await grantedByProjectRole(result.userId, result.tokenId))) {
+        return { ok: false, status: 403, message: 'token is not authorized for this project' };
+      }
     }
     return { ok: true, project };
   }
@@ -630,8 +742,19 @@ export async function authorizeGitProxy(
         return { ok: false, status: 403, message: 'sandbox token missing a sandbox scope' };
       }
       const [sandbox] = await db
-        .select({ sandboxId: sessionSandboxes.sandboxId })
+        .select({
+          sandboxId: sessionSandboxes.sandboxId,
+          sessionMetadata: projectSessions.metadata,
+        })
         .from(sessionSandboxes)
+        .innerJoin(
+          projectSessions,
+          and(
+            eq(projectSessions.sessionId, sessionSandboxes.sessionId),
+            eq(projectSessions.projectId, sessionSandboxes.projectId),
+            eq(projectSessions.accountId, sessionSandboxes.accountId),
+          ),
+        )
         .where(and(
           eq(sessionSandboxes.sandboxId, result.sandboxId),
           eq(sessionSandboxes.projectId, projectId),
@@ -640,11 +763,28 @@ export async function authorizeGitProxy(
         ))
         .limit(1);
       if (!sandbox) {
+        // Not a session box — a MONITOR box authenticates with the same token
+        // class but lives in `project_monitor_boxes` (it has no session row by
+        // design; docs/specs/2026-08-12-monitors.md §Security model). It clones
+        // the repo at default-branch HEAD through this proxy — the
+        // clone-credential route is session-shaped and cannot serve it.
+        const { loadMonitorBoxForToken } = await import('./monitor-ingest');
+        const monitorBox = await loadMonitorBoxForToken({
+          projectId,
+          accountId: result.accountId,
+          sandboxId: result.sandboxId,
+        });
+        if (monitorBox) return { ok: true, project };
         return { ok: false, status: 403, message: 'sandbox token is not scoped to this project' };
+      }
+      if (!workspaceMetadataAllowsRepositoryAccess(sandbox.sessionMetadata)) {
+        return { ok: false, status: 403, message: 'sandbox workspace does not allow Git access' };
       }
       return { ok: true, project };
     }
-    // Account-scoped user API key.
+    // Account-scoped user API key. No per-project fallback here: an API key
+    // carries no user identity, so there is no principal to evaluate project
+    // grants against — account ownership stays the only rule.
     if (result.accountId !== project.accountId) {
       return { ok: false, status: 403, message: 'token does not own this project' };
     }
@@ -763,14 +903,43 @@ export async function resolveGitHubImportWithPat(input: {
  */
 
 export async function loadGitProject(loaded: { row: ProjectRow }) {
-  const gitAuth = await resolveProjectGitAuth(loaded.row);
+  const resolved = await withProjectGitAuth(loaded.row);
   return {
-    projectId: loaded.row.projectId,
-    repoUrl: loaded.row.repoUrl,
-    defaultBranch: loaded.row.defaultBranch,
-    manifestPath: loaded.row.manifestPath,
-    gitAuthToken: gitAuth.auth?.token ?? null,
+    projectId: resolved.projectId,
+    repoUrl: resolved.repoUrl,
+    defaultBranch: resolved.defaultBranch,
+    manifestPath: resolved.manifestPath,
+    gitAuthToken: resolved.gitAuthToken,
+    gitAuthHeaders: resolved.gitAuthHeaders,
   };
+}
+
+/** Lazy provider-neutral mirror access resolution from only a project id. */
+export async function resolveProjectGitAccessById(projectId: string): Promise<{
+  repoUrl: string;
+  token: string | null;
+  headers: Record<string, string>;
+} | null> {
+  try {
+    const [row] = await db
+      .select()
+      .from(projects)
+      .where(eq(projects.projectId, projectId))
+      .limit(1);
+    if (!row) return null;
+    const resolved = await withProjectGitAuth(row);
+    return {
+      repoUrl: resolved.repoUrl,
+      token: resolved.gitAuthToken,
+      headers: resolved.gitAuthHeaders,
+    };
+  } catch (err) {
+    console.warn(
+      `[projects] lazy git-access resolve failed for ${projectId}:`,
+      err instanceof Error ? err.message : err,
+    );
+    return null;
+  }
 }
 
 /**
@@ -793,22 +962,7 @@ export async function loadGitProject(loaded: { row: ProjectRow }) {
  * exactly as before this hook existed), never crash the mirror refresh.
  */
 export async function resolveProjectGitAuthTokenById(projectId: string): Promise<string | null> {
-  try {
-    const [row] = await db
-      .select()
-      .from(projects)
-      .where(eq(projects.projectId, projectId))
-      .limit(1);
-    if (!row) return null;
-    const gitAuth = await resolveProjectGitAuth(row);
-    return gitAuth.auth?.token ?? null;
-  } catch (err) {
-    console.warn(
-      `[projects] lazy git-auth resolve failed for ${projectId}:`,
-      err instanceof Error ? err.message : err,
-    );
-    return null;
-  }
+  return (await resolveProjectGitAccessById(projectId))?.token ?? null;
 }
 
 // GET /v1/projects/:projectId/sandboxes

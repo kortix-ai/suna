@@ -2,17 +2,18 @@
 #
 #   dev-api-ecs-fargate.kortix.com → Cloudflare (proxied, Full strict) → ALB →
 #   ECS Fargate service (autoscaled) in private subnets, egress via NAT.
-#   dev.kortix.com (frontend) stays on Vercel — not managed here.
+#   dev.kortix.com → Cloudflare → a separate ECS Fargate frontend service.
+#   Vercel is disabled for the main branch.
 #
 # This ECS service is the always-warm FALLBACK behind dev-api.kortix.com: that
 # hostname is a Cloudflare Worker (infra/cloudflare/workers/api-router, env=dev)
-# that routes to EKS (dev-api-eks, primary) or here (dev-api-ecs-fargate) via its
+# that routes to Fargate via its
 # ACTIVE_BACKEND var. So this stack owns the dev-api-ecs-fargate name ONLY —
 # dev-api itself is the Worker's custom domain, NOT managed here.
 #
 # Same module set prod uses (../prod) — dev just runs smaller numbers + Fargate
-# Spot. App code ships via CI (deploy-dev rolls this in parallel with EKS).
-# Nothing here is applied automatically. See README.md.
+# Spot. App code ships via CI, and so does this root: deploy-dev.yml's
+# terraform-dev-api job applies it before the API image rolls. See README.md.
 #
 # NOTE: live was bootstrapped out-of-band (standalone ACM cert + manual proxied
 # CNAME via the Cloudflare API while EKS was made primary); a `terraform apply`
@@ -87,6 +88,13 @@ module "acm" {
 }
 
 # ── ECS Fargate API service (autoscaled) ──────────────────────────────────────
+# The env secret blob is the source of truth for which secrets exist:
+# ecs-deploy.sh wires every key in it into each task-def revision. Looked up by
+# name so the random ARN suffix is never hard-coded.
+data "aws_secretsmanager_secret" "env" {
+  name = "kortix-dev-env"
+}
+
 module "api" {
   source     = "../../modules/ecs-api"
   name       = local.name
@@ -101,11 +109,14 @@ module "api" {
   ]
   private_subnet_ids = module.network.private_subnet_ids
 
-  image           = var.api_image
-  container_port  = var.container_port
-  certificate_arn = one(module.acm[*].certificate_arn)
-  environment     = var.api_environment
-  secrets         = var.api_secrets
+  image                   = var.api_image
+  container_port          = var.container_port
+  certificate_arn         = one(module.acm[*].certificate_arn)
+  environment             = var.api_environment
+  secrets                 = var.api_secrets
+  secrets_blob_arn        = data.aws_secretsmanager_secret.env.arn
+  ses_send_region         = "us-east-2"
+  ses_send_identity_names = ["kortix.com", "kortix.ai"]
 
   # Only Cloudflare's edge may reach the ALB (no direct-to-origin WAF bypass).
   alb_ingress_cidrs = local.cloudflare_ip_ranges
@@ -113,9 +124,9 @@ module "api" {
   # dev sizing: small + spot, floor of 1
   task_cpu         = 512
   task_memory      = 1024
-  desired_count    = 1
-  min_capacity     = 1
-  max_capacity     = 3
+  desired_count    = 2
+  min_capacity     = 2
+  max_capacity     = 6
   use_fargate_spot = true
   # Validate the request-count scaling policy here before prod. Low traffic, so
   # this rarely triggers; primarily exercises the Terraform path.
@@ -147,8 +158,9 @@ module "gateway" {
   certificate_arn = var.gateway_certificate_arn
   # PORT is auto-injected by the module; the gateway also needs to call back to
   # the API, which on Fargate is the public (Cloudflare-fronted) dev-api host.
-  environment = merge(var.gateway_environment, { KORTIX_API_URL = "https://dev-api.kortix.com" })
-  secrets     = var.api_secrets
+  environment      = merge(var.gateway_environment, { KORTIX_API_URL = "https://dev-api.kortix.com" })
+  secrets          = var.api_secrets
+  secrets_blob_arn = data.aws_secretsmanager_secret.env.arn
 
   alb_ingress_cidrs = local.cloudflare_ip_ranges
 

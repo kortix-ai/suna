@@ -56,7 +56,7 @@ function AlertDescription({ className, ...props }: React.ComponentProps<'div'>) 
     <div
       data-slot="item-description"
       className={cn(
-        'text-muted-foreground text-sm leading-normal font-normal',
+        'text-muted-foreground text-sm leading-normal font-medium',
         '[&>a:hover]:text-primary [&>a]:underline [&>a]:underline-offset-4',
         '[&_p]:leading-relaxed',
         className,

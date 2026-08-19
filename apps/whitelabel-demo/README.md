@@ -1,176 +1,227 @@
-# Lumen — white-label reference app
+# Lumen white-label reference
 
-A complete, production-shaped agent client built **100% on `@kortix/sdk`**. It
-is the golden reference for using Kortix as your backend: projects, sessions,
-and **real, token-by-token streaming agent chat** — with zero raw `fetch`, zero
-`@opencode-ai/sdk` imports, and no transport code in the app itself (see
-"Two modes" below for the one deliberate, documented exception).
+Lumen is the complete reference app for `@kortix/sdk`.
 
-Rebrand `src/config/brand.ts`, point `NEXT_PUBLIC_KORTIX_API_URL` at your Kortix
-backend, and you have a white-label coding agent.
+The app has five architecture rules:
 
-## Two modes: use Kortix as your backend, behind your own backend
+1. The browser creates one Kortix client in `src/lib/kortix.ts`.
+2. One `useSession(projectId, sessionId)` hook owns each session workbench.
+3. The client does not select or implement a runtime transport.
+4. Server routes own privileged credentials and preview URL resolution.
+5. Only the SDK transport layer sends Kortix backend HTTP requests.
 
-Lumen runs in either of two modes, picked up from the server environment —
-`GET /api/mode` — with no rebuild needed to switch:
+The client renders the server-provided `experimental_features` catalog. It
+does not hard-code feature keys.
 
-- **Direct mode** (default, no server env required). The browser holds a pasted
-  Kortix API key (`kortix_pat_…`) in `localStorage` and the SDK talks straight
-  to `NEXT_PUBLIC_KORTIX_API_URL`. See "Auth" below.
-- **Wrapper mode** — the headline capability this reference demonstrates:
-  running Kortix *behind your own backend*. Set `KORTIX_API_KEY` on the server
-  and Lumen flips into a BFF:
-  - End users log in through Lumen's **own** demo auth (`/api/auth/*`) — signed
-    HMAC session tokens (`src/server/auth.ts`), not a Kortix credential.
-  - Every SDK call is re-pointed at the same-origin proxy `/api/kortix/[...path]`
-    (`src/lib/kortix.ts#configureWrapperMode`), which injects the real
-    `KORTIX_API_KEY` server-side — end users and their browsers never see it.
-  - The proxy enforces **per-user project isolation** (`src/server/users.ts`) and
-    an explicit allow/deny **route policy** (`src/server/policy.ts`, deny-by-default)
-    before forwarding, plus a per-user **rate limiter** (`src/server/rate-limit.ts`).
-  - Preview iframes can't go through that proxy — a Next.js route handler can't
-    forward a WebSocket upgrade, and a live dev server's HMR socket needs one —
-    so `/api/preview-token` mints a short-lived, **project-scoped** Kortix PAT
-    for the iframe to use directly against the upstream.
-  - `/usage` shows per-session LLM + compute cost pulled straight from the
-    gateway, with a `COST_MARKUP` multiplier applied — the re-billing surface a
-    real wrapper would charge its own users.
-  - `.env.example` documents every variable for both modes.
+## Client boundary
 
-See `AGENTS.md` for the one rule change this adds: `src/server/**` and
-`src/app/api/**` are server-only transport code and are exempt from the
-SDK-only rule, the same way raw `fetch` is correct *inside* `@kortix/sdk` itself.
+Client code imports only:
 
-## What it demonstrates
+- `@kortix/sdk`
+- `@kortix/sdk/react`
+- Local UI and application modules
 
-| Route | SDK surface |
-| --- | --- |
-| `/` | projects dashboard + create (`projects.list`, `projects.provision`) |
-| `/account` | accounts + members + invites (`accounts.*`, `projects.listForAccount`) |
-| `/projects/[id]` | new-session onboarding (`sessions.create`, `sandboxTemplates`, `onboardingComplete`) |
-| `/projects/[id]/sessions/[sessionId]` | chat · Files · Changes · Preview tabs + session actions |
-| `/projects/[id]/settings` | General · Capabilities · Secrets · Members · Connectors · Triggers · Policies |
-| `/usage` | wrapper-mode only — per-session LLM + compute cost, marked up (`/api/usage`) |
+Client code does not:
 
-### Facade coverage
+- Import a provider SDK.
+- Construct runtime or preview proxy paths.
+- Call provider REST endpoints.
+- Use a legacy runtime store.
+- Call `session.previewUrl()` or `session.proxyUrl()`.
+- Select a runtime transport.
+- Send raw requests to the Kortix backend.
 
-This reference exercises **the core `@kortix/sdk` facade a chat-first product
-needs** — every method listed below has a real UI surface (a deliberate goal
-so nothing in this list is left undemonstrated). Newer platform-admin surfaces
-— Review Center, Approvals, Gateway observability, and Slack/email/Meet channels
-— aren't part of this lightweight reference; they live
-in `apps/web`:
+`scripts/sdk-boundary.mjs` enforces these rules across client source, server
+source, and application tests. The `build`, `test`, `test:e2e`, and `typecheck`
+scripts run this check first.
 
-- **accounts** (`/account`): `list/get/create/updateName/leave/members/invite/removeMember/updateMemberRole/invites`
-- **projects**: `list/listForAccount/provision/get/detail/update/archive/llmCatalog/sandboxHealth/sandboxTemplates`
-- **project(id)**: `onboardingComplete` · `secrets.{list,upsert,remove,setPersonal,removePersonal,setGitCredential}` · `access.{list,invite,update,revoke,requests,approveRequest,rejectRequest,pendingInvites,resendInvite,revokeInvite,groupGrants}` · `connectors.{list,config,create,remove,sync}` · `policies.{list,set}` · `triggers.{list,create,update,remove,fire,setActivation}` · `files.{list,read,search,history,archive}` · `git.{commits,commit,commitDiff,branches,versionDiff}` · `changeRequests.{list,get,diff,mergePreview,open,merge,close,reopen}`
-- **session(pid,sid)**: `get/update/delete/start/restart/setSharing/previews/commit · publicShares.{list,create,revoke} · health/previewUrl/proxyUrl/setModel/send/abort/stream` (`stream` is the framework-free SSE facade for non-React hosts — a server-side wrapper, worker, or CLI; React hosts get the same events through `useSession`)
-- **react** (`@kortix/sdk/react`): `useSession(projectId, sessionId)` — the one hook powering the workbench (start/switch/SSE/canonical id/messages/send/abort/questions/permissions/models/agents/picks), see "The chat runtime" below — plus `useProjectModels`/`useVisibleAgents`/`useProjectConfig`/`writeStartStash` (new-session onboarding, `/projects/[id]`) and `answerQuestion`/`answerPermission` (interactive-prompt replies, called directly by `question-prompt.tsx`/`permission-prompt.tsx`)
+## One SDK client
 
-Every Kortix call goes through the one client created in `src/lib/kortix.ts`:
+`src/lib/kortix.ts` creates the client once:
 
 ```ts
 import { createKortix } from '@kortix/sdk';
 
 export const kortix = createKortix({
-  backendUrl: BRAND.apiUrl,            // e.g. https://api.kortix.com/v1
-  getToken: async () => getApiKey(),   // your auth — here, a pasted API key
+  backendUrl: BRAND.apiUrl,
+  getToken: async () => getApiKey(),
 });
 ```
 
-## Auth
+Wrapper mode reconfigures this same client. It does not create a second client.
 
-The whole auth story is `getToken` — the SDK doesn't care where the token
-comes from, only that `getToken()` returns one.
+## One session hook
 
-- **Direct mode.** Lumen stores a single Kortix **API key** (`kortix_pat_…`) in
-  `localStorage` and hands it to the SDK. Create one in the Kortix dashboard
-  under **Settings → API keys** (account-wide, or scoped to a single project).
-  No Supabase, no sessions table, no cookies. See `src/components/api-key-gate.tsx`
-  and `src/lib/kortix.ts`.
-- **Wrapper mode.** `getToken` instead returns Lumen's own signed session token
-  (`src/lib/session.ts`, minted by `POST /api/auth/login` — see `src/server/auth.ts`
-  and `src/components/login-gate.tsx`). The Kortix API key never reaches the
-  browser at all; it's read only by `src/app/api/**` route handlers.
-
-## The chat runtime
-
-Opening a session is the only non-trivial flow, and it's collapsed into **one
-hook**: `useSession(projectId, sessionId)` from `@kortix/sdk/react`. The host
-(`src/app/projects/[id]/sessions/[sessionId]/page.tsx`) calls it once, reads
-`session.phase`, and renders — nothing sandbox-shaped leaks into the component:
+The session route calls one hook:
 
 ```tsx
 const session = useSession(projectId, sessionId);
 
-return session.phase !== 'ready'
-  ? <BootScreen stage={session.stage} reason={session.reason} onRetry={session.retry} />
-  : <WorkbenchTabs session={session} projectId={projectId} sessionId={sessionId} />;
+return session.phase !== 'ready' ? (
+  <BootScreen
+    stage={session.stage}
+    reason={session.reason}
+    onRetry={session.retry}
+  />
+) : (
+  <WorkbenchTabs
+    session={session}
+    projectId={projectId}
+    sessionId={sessionId}
+  />
+);
 ```
 
-Internally the hook drives, in order: `/start` (server long-poll until
-`stage === 'ready'`, returning the sandbox row + canonical
-`opencode_session_id`) → pointing the SDK's active runtime at that sandbox →
-the live SSE event stream → resolving the canonical OpenCode root session id →
-message sync (`messages`/`status`/`diffs`/`todos`) → the interactive
-questions/permissions store → server-side capabilities (`models`, `agents`,
-`commands`) → per-session model/agent picks → the `send`/`cancel`/`runCommand`
-mutations. The host never imports a sandbox switcher, a health poller, or an
-event-stream provider — `useSession` is the whole contract. See
-`packages/sdk/src/react/use-session.ts` for the implementation and
-`src/components/workbench/workbench-tabs.tsx` for how the chat thread consumes
-the result (`session.messages`, `session.send`, `session.isBusy`,
-`session.questions`/`.permissions`, `session.runtimePhase` for reconnect UI).
-The transcript itself scrolls via a plain `scrollRef` + `scrollTo` effect
-(`workbench-tabs.tsx`) — there's no dedicated scroll-container primitive.
+The hook exposes the complete workbench contract:
 
-**Message rendering** goes through the SDK's headless chat kit: `classifyTurn`
-(`@kortix/sdk/turns`) normalizes every opencode part type into a typed
-`ClassifiedPart` (plus a normalized error for failed turns), and `renderParts`
-(`@kortix/sdk/react`) requires a renderer for every kind at compile time — see
-`src/components/chat/message-view.tsx`, the living reference the SDK README
-points at (one deliberate rendering decision per part kind, including the
-`null`s). For focused, runnable snippets of this and the other core SDK flows —
-send + stream, the wrapper-mode server pattern, cost pass-through, files +
-secrets — see **`packages/sdk/examples/`** (each file's header states how to
-run it).
+- Lifecycle phase and retry state
+- Transcript messages and incremental updates
+- Send, cancel, and command actions
+- Model and agent selections
+- Questions and permission requests
+- Session status, diffs, and todos
 
-**Model selection** is server-side and pre-runtime, so it works before a
-sandbox exists and shares one source of truth between the new-session screen
-and the in-session picker: `useProjectModels(projectId)` reads the project's
-gateway catalog (`GET /projects/:id/llm-catalog`) and flattens it to
-`FlatModel[]`, sidestepping mixed gateway/BYOK key formats and per-family
-"latest" resolution. `useSession` exposes this as `session.models` and the pick
-as `session.picks.model` / `session.picks.setModel`; `ModelPicker` is a plain
-controlled component over that. Omit a model on `send` and the agent uses its
-configured default. See `src/components/chat/model-picker.tsx` and
-`packages/sdk/src/react/use-project-models.ts`.
+The host does not mount a second event provider. The host does not resolve a
+provider session identifier.
 
-## Run it
+## Project experiment
+
+The project settings page reads `project.experimental_features`.
+
+It renders each available feature by its server-provided label and description.
+It updates a feature through:
+
+```ts
+kortix.project(projectId).updateExperimentalFeature(feature.key, enabled);
+```
+
+The host does not contain hard-coded experiment keys.
+
+## Server-first preview
+
+The preview panel reads preview candidates through the session SDK handle.
+
+It sends the selected port or localhost URL to `POST /api/preview-url`. The
+server route:
+
+1. Authenticates the caller.
+2. Checks project ownership in wrapper mode.
+3. Creates a request-scoped server SDK client.
+4. Calls `session.ensureReady()`.
+5. Resolves the preview URL through the SDK.
+6. Mints a project-scoped preview token.
+7. Returns one final authenticated URL.
+
+The response does not expose a standalone token, upstream base URL, or runtime
+coordinates.
+
+## Deployment modes
+
+Lumen supports two deployment modes. `GET /api/mode` selects the mode at
+process startup.
+
+### Direct mode
+
+Direct mode is the default.
+
+- The user pastes a Kortix API key.
+- The browser stores it in `localStorage`.
+- The shared SDK client targets `NEXT_PUBLIC_KORTIX_API_URL`.
+- `/api/preview-url` uses the caller token for server-side preview resolution.
+
+### Wrapper mode
+
+Set `KORTIX_API_KEY` to enable wrapper mode.
+
+- Users authenticate through `/api/auth/*`.
+- The browser receives a Lumen session token.
+- The shared SDK client targets `/api/kortix`.
+- The BFF delegates forwarding to `@kortix/sdk/server`.
+- The SDK substitutes `KORTIX_API_KEY` on upstream requests.
+- `src/server/users.ts` enforces per-user project ownership.
+- `src/server/policy.ts` applies a deny-by-default route policy.
+- `src/server/rate-limit.ts` applies per-user limits.
+- `/api/session-costs` applies the configured `COST_MARKUP` to session costs.
+
+The Kortix API key remains server-side.
+
+## Product surfaces
+
+| Route                                 | SDK-backed surface                                                                               |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `/`                                   | Project list and provisioning                                                                    |
+| `/account`                            | Accounts, members, roles, invites, and account projects                                          |
+| `/projects/[id]`                      | Session creation, agent selection, model selection, and templates                                |
+| `/projects/[id]/sessions/[sessionId]` | Chat, files, changes, previews, shares, and session actions                                      |
+| `/projects/[id]/settings`             | General settings, experiments, capabilities, secrets, access, connectors, triggers, and policies |
+| `/session-costs`                      | Wrapper session cost and markup report                                                           |
+
+The app uses the following public SDK groups:
+
+- `kortix.accounts`
+- `kortix.projects`
+- `kortix.project(projectId)`
+- `kortix.session(projectId, sessionId)`
+- `useSession(projectId, sessionId)`
+- Project model, agent, and configuration hooks
+- Headless turn classification and part rendering
+
+## Auth
+
+The SDK has one auth seam: `getToken`.
+
+Direct mode returns the pasted Kortix API key. Wrapper mode returns the Lumen
+session token. The BFF exchanges the Lumen session for the server-held Kortix
+credential.
+
+## Run
+
+Install dependencies:
 
 ```bash
 pnpm install
-NEXT_PUBLIC_KORTIX_API_URL=https://api.kortix.com/v1 \
-  WHITELABEL_PORT=3010 pnpm --filter @kortix/whitelabel-demo dev
 ```
 
-Point `NEXT_PUBLIC_KORTIX_API_URL` at a local stack (`http://localhost:8008/v1`)
-to develop against it. Then open the app, paste an API key, and go — that's
-direct mode.
+Run direct mode:
 
-To try **wrapper mode** instead, set the variables `.env.example` documents
-under "Wrapper mode" (`KORTIX_API_KEY`, `KORTIX_UPSTREAM`, `SESSION_SECRET`, and
-optionally `DEMO_PASSWORD`/`COST_MARKUP`/`RATE_LIMIT_PER_MIN`), restart the
-server, and log in through the app's own demo login instead of pasting a key.
+```bash
+NEXT_PUBLIC_KORTIX_API_URL=https://api.kortix.com/v1 \
+  WHITELABEL_PORT=3010 \
+  pnpm --filter @kortix/whitelabel-demo dev
+```
 
-## Make it yours
+Run wrapper mode with the variables in `.env.example`:
 
-- **Brand** — `src/config/brand.ts` (name, tagline, accent, API URL).
-- **Theme** — `src/app/globals.css` (`@theme` tokens).
-- **Auth** — in direct mode, swap the API-key gate in `src/lib/kortix.ts`'s
-  `getToken` for your own (OAuth, session cookie, server-minted token —
-  anything that returns a string). In wrapper mode, swap the demo credential
-  check in `src/server/auth.ts#checkDemoCredentials` for your real user
-  directory — the session-signing and BFF-proxy plumbing around it stays as-is.
+```bash
+KORTIX_API_KEY=kortix_pat_example \
+KORTIX_UPSTREAM=https://api.kortix.com/v1 \
+SESSION_SECRET=replace-with-a-long-random-value \
+WHITELABEL_PORT=3010 \
+pnpm --filter @kortix/whitelabel-demo dev
+```
 
-Nothing else couples to Kortix. The SDK is the only backend dependency.
+## Verify
+
+Run all reference-app checks:
+
+```bash
+pnpm --filter @kortix/whitelabel-demo typecheck
+pnpm --filter @kortix/whitelabel-demo build
+pnpm --filter @kortix/whitelabel-demo test
+```
+
+The test suite boots the production Next.js server. Product flows create a
+request-scoped SDK client. Tests do not construct Kortix backend requests. The
+suite verifies auth, mode selection, ownership, route policy, proxy behavior,
+preview resolution, rate limits, session cost markup, and the SDK boundary.
+
+## Rebrand
+
+- Product name, tagline, accent, and API URL: `src/config/brand.ts`
+- Theme tokens: `src/app/globals.css`
+- Direct-mode credential input: `src/components/api-key-gate.tsx`
+- Wrapper authentication: `src/server/auth.ts`
+- Wrapper authorization: `src/server/users.ts` and `src/server/policy.ts`
+
+Keep `src/lib/kortix.ts` as the single client seam. Add missing backend behavior
+to `@kortix/sdk` before using it in this app.

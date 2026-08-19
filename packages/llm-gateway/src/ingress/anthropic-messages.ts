@@ -28,6 +28,17 @@ export interface AnthropicMessagesRequest {
   max_tokens?: number;
   temperature?: number;
   top_p?: number;
+  // Anthropic's native extended-thinking toggle — a client can explicitly
+  // enable it with a token budget (`{type:'enabled', budget_tokens}`) or
+  // explicitly turn it OFF (`{type:'disabled'}`). Forwarded verbatim into
+  // the internal body (see `anthropicMessagesToChat` below) rather than
+  // translated to `reasoning_effort`, because the ai-sdk transport's
+  // `resolveAnthropicThinkingBudget` (transports/ai-sdk/request.ts) already
+  // reads a raw `body.thinking` FIRST and, when present, never falls
+  // through to `reasoning_effort`/a project-configured default — so this is
+  // what makes an explicit client `thinking:{type:'disabled'}` immune to a
+  // project's configured reasoningEffort default turning thinking back on.
+  thinking?: { type: 'enabled' | 'disabled'; budget_tokens?: number };
   stop_sequences?: string[];
   stream?: boolean;
   metadata?: Record<string, unknown>;
@@ -222,6 +233,13 @@ export function anthropicMessagesToChat(body: AnthropicMessagesRequest): Record<
   if (body.top_p != null) out.top_p = body.top_p;
   if (Array.isArray(body.stop_sequences) && body.stop_sequences.length)
     out.stop = body.stop_sequences;
+  // MUST forward the client's explicit thinking intent (both `enabled` with
+  // its budget AND `disabled`) — see the `thinking` field doc comment above.
+  // Without this, a project-configured reasoningEffort default could turn
+  // extended thinking back ON against a client that explicitly disabled it,
+  // or a client's own explicit thinking budget would be silently dropped in
+  // favor of the default's effort level.
+  if (body.thinking && typeof body.thinking === 'object') out.thinking = body.thinking;
 
   const tools = translateAnthropicTools(body.tools);
   if (tools) out.tools = tools;

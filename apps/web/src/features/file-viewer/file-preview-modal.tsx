@@ -6,16 +6,16 @@ import { errorToast, successToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 import { dialogContentZ, dialogOverlayZ, useDialogDepth } from '@/lib/z-stack';
 import {
-  ChevronLeft,
-  ChevronRight,
-  Code,
-  Download,
-  Eye,
-  History,
-  Maximize2,
-  Minimize2,
-  X,
-} from 'lucide-react';
+  CaretLeftIcon as ChevronLeft,
+  CaretRightIcon as ChevronRight,
+  CodeIcon as Code,
+  DownloadIcon as Download,
+  EyeIcon as Eye,
+  ClockCounterClockwiseIcon as History,
+  ArrowsOutSimpleIcon as Maximize2,
+  ArrowsInSimpleIcon as Minimize2,
+  XIcon as X,
+} from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import {
   useCallback,
@@ -389,7 +389,7 @@ export function FilePreviewModal({
       {hasPrev && (
         <button
           onClick={onPrev}
-          className="bg-background/95 border-border/60 hover:bg-background absolute top-1/2 left-3 z-20 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border opacity-70 shadow-sm backdrop-blur transition-all hover:opacity-100"
+          className="bg-background/95 border-border/60 hover:bg-background absolute top-1/2 left-3 z-20 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border opacity-70 shadow-sm backdrop-blur transition-[opacity,background-color] hover:opacity-100"
           title={tI18nHardcoded.raw(
             'autoFeaturesFileViewerFilePreviewModalJsxAttrTitlePreviousb7cda316',
           )}
@@ -403,7 +403,7 @@ export function FilePreviewModal({
       {hasNext && (
         <button
           onClick={onNext}
-          className="bg-background/95 border-border/60 hover:bg-background absolute top-1/2 right-3 z-20 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border opacity-70 shadow-sm backdrop-blur transition-all hover:opacity-100"
+          className="bg-background/95 border-border/60 hover:bg-background absolute top-1/2 right-3 z-20 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border opacity-70 shadow-sm backdrop-blur transition-[opacity,background-color] hover:opacity-100"
           title={tI18nHardcoded.raw(
             'autoFeaturesFileViewerFilePreviewModalJsxAttrTitleNext96666bd8',
           )}

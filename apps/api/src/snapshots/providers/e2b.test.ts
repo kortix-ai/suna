@@ -37,13 +37,24 @@ mock.module('e2b', () => ({
   waitForProcess: (processName: string) => `wait-for-process:${processName}`,
 }));
 mock.module('../../config', () => ({
-  config: { E2B_API_KEY: 'e2b-test-key' },
+  config: {
+    E2B_API_KEY: 'e2b-test-key',
+    E2B_DOMAIN: 'e2b.essentia.kortix.com',
+  },
 }));
 mock.module('../build-context', () => ({
   DEFAULT_CPU: 2,
   DEFAULT_MEMORY_GB: 4,
   KORTIX_ENTRYPOINT: '/usr/local/bin/kortix-entrypoint',
+  stageAppBuildContext: async () => ({
+    contextDir: '/tmp/kortix-e2b-app-adapter-test',
+    dockerfileName: 'Dockerfile',
+  }),
   stageBuildContext: async () => ({
+    contextDir: '/tmp/kortix-e2b-adapter-test',
+    composedPath: '/tmp/kortix-e2b-adapter-test/Dockerfile',
+  }),
+  stageMetaBuildContext: async () => ({
     contextDir: '/tmp/kortix-e2b-adapter-test',
     composedPath: '/tmp/kortix-e2b-adapter-test/Dockerfile',
   }),
@@ -165,9 +176,10 @@ describe('E2B template adapter', () => {
     await e2bProvider.deleteSnapshot('kortix-e2b-template');
 
     expect(requests.at(-1)).toEqual({
-      url: 'https://api.e2b.dev/templates/tpl-target',
+      url: 'https://api.e2b.essentia.kortix.com/templates/tpl-target',
       method: 'DELETE',
       apiKey: 'e2b-test-key',
     });
+    expect(requests[0]?.url).toBe('https://api.e2b.essentia.kortix.com/templates');
   });
 });

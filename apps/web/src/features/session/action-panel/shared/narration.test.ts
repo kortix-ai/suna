@@ -2,6 +2,7 @@ import { describe, expect, it, test } from 'bun:test';
 import type { ToolPart } from '@/ui';
 import {
   type StepFamily,
+  contextLabelForTool,
   familyForTool,
   humanizeToolName,
   narrateFailedStep,
@@ -134,6 +135,31 @@ describe('humanizeToolName', () => {
   it('strips the MCP server prefix and title-cases', () => {
     expect(humanizeToolName('linear/create_issue')).toBe('Create Issue');
     expect(humanizeToolName('oc-session_read')).toBe('Session Read');
+  });
+});
+
+describe('contextLabelForTool - plain-language Context row labels, keyed on family', () => {
+  it('calls a shell a Terminal, whatever spelling the model used', () => {
+    expect(contextLabelForTool('bash')).toBe('Terminal');
+    expect(contextLabelForTool('oc-bash')).toBe('Terminal');
+    expect(contextLabelForTool('pty_spawn')).toBe('Terminal');
+  });
+
+  it('gives every memory spelling the one label, so they fold into one row', () => {
+    for (const tool of ['memory', 'memory_search', 'mem_search', 'ltm_search', 'get_mem']) {
+      expect(contextLabelForTool(tool)).toBe('Memory');
+    }
+  });
+
+  it('leaves every other family on humanizeToolName', () => {
+    expect(contextLabelForTool('linear/create_issue')).toBe(humanizeToolName('linear/create_issue'));
+    expect(contextLabelForTool('trigger_create')).toBe('Trigger Create');
+  });
+
+  it('never returns a raw identifier for a hidden tool either', () => {
+    // 'hidden' is not a StepFamily key, so the override lookup must not be
+    // consulted for it — the humanized name is what falls out.
+    expect(contextLabelForTool('prune')).toBe('Prune');
   });
 });
 
@@ -288,9 +314,9 @@ describe('narrateStep - create family counts every media type in a mixed group',
 describe('narrateStep - apps distinguishes discovery from connection', () => {
   it('never says "Connected to" for read-only discovery/description tools', () => {
     for (const t of [
-      'kortix_executor_discover',
-      'kortix_executor_describe',
-      'kortix_executor_connectors',
+      'kortix_connector_discover',
+      'kortix_connector_describe',
+      'kortix_connectors',
       'connector_get',
       'connector_list',
     ]) {
@@ -303,7 +329,7 @@ describe('narrateStep - apps distinguishes discovery from connection', () => {
   });
 
   it('distinguishes running a connected tool from connecting to it', () => {
-    expect(narrateStep('apps', [part('kortix_executor_call')])).not.toContain('Connected to');
+    expect(narrateStep('apps', [part('kortix_connector_call')])).not.toContain('Connected to');
   });
 });
 

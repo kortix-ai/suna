@@ -1,28 +1,32 @@
 'use client';
 
+import { Button } from '@/components/ui/button';
+import { STATUS_TEXT } from '@/components/ui/status';
+import { QuestionPrompt } from '@/features/session/question-prompt';
 import { GenericTool } from '@/features/session/tool/generic-tool';
-import { ToolError } from '@/features/session/tool/tool-error';
 import {
   BasicTool,
   BoundActivateContext,
-  partInput,
-  shouldShowToolPartInActionsPanel,
+  partOutcome,
   StalePendingContext,
   ToolActivateContext,
   ToolDurationContext,
   ToolNavigationContext,
+  ToolOutcomeContext,
   ToolRunningContext,
   ToolSurfaceContext,
 } from '@/features/session/tool/shared/infrastructure';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
-import { QuestionPrompt } from '@/features/session/question-prompt';
-import { Button } from '@/components/ui/button';
-import { STATUS_TEXT } from '@/components/ui/status';
-import { PERMISSION_LABELS, type PermissionRequest, type QuestionRequest, type ToolPart } from '@/ui';
-import { CircleAlert } from 'lucide-react';
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { useTranslations } from 'next-intl';
+import { ToolError } from '@/features/session/tool/tool-error';
 import { cn } from '@/lib/utils';
+import {
+  PERMISSION_LABELS,
+  type PermissionRequest,
+  type QuestionRequest,
+  type ToolPart,
+} from '@/ui';
+import { useTranslations } from 'next-intl';
+import { memo, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 
 interface PermissionPromptInlineProps {
   permission: PermissionRequest;
@@ -94,7 +98,7 @@ interface ToolPartRendererProps {
   disableNavigation?: boolean;
 }
 
-export function ToolPartRenderer({
+function ToolPartRendererImpl({
   part,
   sessionId,
   permission,
@@ -121,6 +125,12 @@ export function ToolPartRenderer({
   const surface = useContext(ToolSurfaceContext);
   const fillsPanel = surface === 'panel' && (part.tool === 'show' || part.tool === 'show-user');
 
+  // One verdict per part, computed once here and read by every BasicTool below
+  // it. See `partOutcome` — a tool that RETURNS its error looks identical to a
+  // tool that threw as far as the reader is concerned, so it must look
+  // identical on the row too.
+  const outcome = useMemo(() => partOutcome(part), [part]);
+
   if (part.tool === 'todoread') return null;
 
   if (part.state.status === 'error' && 'error' in part.state) {
@@ -133,23 +143,35 @@ export function ToolPartRenderer({
       return { display: d, server: s };
     })();
 
+    // No `icon` prop: the outcome context supplies the same warning triangle a
+    // tool that returned its error gets. A thrown call and a returned error are
+    // the same event to the reader, so they must not be two different marks.
+    //
+    // `defaultOpen`/`forceOpen` are threaded for the same reason every other
+    // branch threads them: the panel surface is a disclosure now, and the one
+    // thing nobody wants behind a closed row is the error that explains the
+    // failure. This branch used to drop both, so an errored call painted shut
+    // on the very surface (Advanced, a single-call detail) whose whole job is
+    // showing it.
     return (
       <BoundActivateContext.Provider value={boundActivate}>
-        <ToolDurationContext.Provider value={toolDurationMs}>
-          <BasicTool
-            icon={<CircleAlert />}
-            trigger={{
-              title: display,
-              subtitle: 'failed',
-              args: server ? [server] : undefined,
-            }}
-            badge="error"
-          >
-            <div className="p-0">
+        <ToolOutcomeContext.Provider value={outcome}>
+          <ToolDurationContext.Provider value={toolDurationMs}>
+            <BasicTool
+              trigger={{
+                title: display,
+                subtitle: 'failed',
+                args: server ? [server] : undefined,
+              }}
+              badge="error"
+              defaultOpen={defaultOpen}
+              forceOpen={!!permission || !!question}
+              locked={!!permission || !!question}
+            >
               <ToolError error={errorStr} toolName={part.tool} />
-            </div>
-          </BasicTool>
-        </ToolDurationContext.Provider>
+            </BasicTool>
+          </ToolDurationContext.Provider>
+        </ToolOutcomeContext.Provider>
       </BoundActivateContext.Provider>
     );
   }
@@ -177,42 +199,71 @@ export function ToolPartRenderer({
       onPermissionReply={onPermissionReply}
     />
   ) : (
-    <GenericTool part={part} />
+    // Same four props the registered branch above gets. `GenericTool` is the
+    // fallback for every unregistered/MCP tool, and dropping them left that
+    // whole class of call permanently closed and unopenable on the panel — the
+    // one surface where a single call IS the view.
+    <GenericTool
+      part={part}
+      defaultOpen={defaultOpen}
+      forceOpen={forceOpen}
+      locked={isLocked}
+    />
   );
 
   return (
     <ToolNavigationContext.Provider value={!disableNavigation}>
       <ToolRunningContext.Provider value={isRunning}>
-        <ToolDurationContext.Provider value={toolDurationMs}>
-          <StalePendingContext.Provider value={isStalePending}>
-            <BoundActivateContext.Provider value={boundActivate}>
-              <div className={cn('relative', fillsPanel && 'h-full')}>
-                {toolElement}
+        <ToolOutcomeContext.Provider value={outcome}>
+          <ToolDurationContext.Provider value={toolDurationMs}>
+            <StalePendingContext.Provider value={isStalePending}>
+              <BoundActivateContext.Provider value={boundActivate}>
+                <div className={cn('relative', fillsPanel && 'h-full')}>
+                  {toolElement}
 
-                {permission && onPermissionReply && (
-                  <div className="mt-1.5">
-                    <PermissionPromptInline permission={permission} onReply={onPermissionReply} />
-                  </div>
-                )}
+                  {permission && onPermissionReply && (
+                    <div className="mt-1.5">
+                      <PermissionPromptInline permission={permission} onReply={onPermissionReply} />
+                    </div>
+                  )}
 
-                {question && onQuestionReply && onQuestionReject && (
-                  <div className="mt-1.5">
-                    <QuestionPrompt
-                      request={question}
-                      onReply={onQuestionReply}
-                      onReject={onQuestionReject}
-                    />
-                  </div>
-                )}
-              </div>
-            </BoundActivateContext.Provider>
-          </StalePendingContext.Provider>
-        </ToolDurationContext.Provider>
+                  {question && onQuestionReply && onQuestionReject && (
+                    <div className="mt-1.5">
+                      <QuestionPrompt
+                        request={question}
+                        onReply={onQuestionReply}
+                        onReject={onQuestionReject}
+                      />
+                    </div>
+                  )}
+                </div>
+              </BoundActivateContext.Provider>
+            </StalePendingContext.Provider>
+          </ToolDurationContext.Provider>
+        </ToolOutcomeContext.Provider>
       </ToolRunningContext.Provider>
     </ToolNavigationContext.Provider>
   );
 }
 
-
 // Register all tool renderers after ToolPartRenderer is defined (avoids circular imports).
 import '@/features/session/tool/tools/register';
+
+/**
+ * The boundary that stops a settled tool row re-rendering with the stream.
+ *
+ * Everything expensive on a collapsed row lives BELOW this line: `partOutput`'s
+ * regex passes, `getToolDiagnostics`, `parseReadOutput`. The disclosure gate
+ * protects the child's render, but it protects nothing in the parent that
+ * computed the props — so without a boundary here, a fifty-turn transcript
+ * re-parses every tool's output on every SSE frame.
+ *
+ * The default shallow compare is right: `part` objects are replaced, not
+ * mutated, when they change; `onPermissionReply` and `onQuestionReply` are
+ * `useCallback`s; `permission` is either `undefined` or a store object.
+ *
+ * `memo` does not block context propagation, so `ToolSurfaceContext`,
+ * `ToolActivateContext` and `ToolOutcomeContext` still reach the tool.
+ */
+export const ToolPartRenderer = memo(ToolPartRendererImpl);
+ToolPartRenderer.displayName = 'ToolPartRenderer';

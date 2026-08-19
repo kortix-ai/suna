@@ -11,7 +11,8 @@
  * treating it as "not yet migrated" is the safer UI default).
  */
 
-import { getProjectDetail } from '@kortix/sdk/projects-client';
+import { getProjectDetail } from '@kortix/sdk';
+import { contract, qk } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
 
 export type ManifestVersion = 1 | 2;
@@ -35,18 +36,17 @@ export interface ProjectManifestVersionState {
 }
 
 /**
- * Reads the SAME `['project-detail', projectId]` query the rest of Customize
- * already fetches (`customize-panel.tsx`, `config-entity-view.tsx`) — this
- * hook doesn't issue its own network request when that query is already
- * warm; react-query dedupes on the identical key + queryFn.
+ * Reads the SAME `qk.project.detail(id)` query the rest of Customize already
+ * fetches (the legacy panel, `config-entity-view.tsx`) — this hook
+ * doesn't issue its own network request when that query is already warm;
+ * react-query dedupes on the identical key + queryFn.
  */
 export function useProjectManifestVersion(projectId: string): ProjectManifestVersionState {
   const detail = useQuery({
-    queryKey: ['project-detail', projectId],
+    queryKey: qk.project.detail(projectId),
     queryFn: () => getProjectDetail(projectId),
     enabled: !!projectId,
-    staleTime: 60_000,
-    refetchOnWindowFocus: false,
+    ...contract('config'),
   });
   if (detail.isLoading || !detail.data) {
     return { version: null, isLoading: detail.isLoading };

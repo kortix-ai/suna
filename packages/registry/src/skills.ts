@@ -8,6 +8,8 @@
  * This is pure (just path arithmetic) — callers attach frontmatter + content.
  */
 
+import { trimTrailingSlashes } from './paths';
+
 export interface SkillGroupFile {
   /** Path in the caller's path space (e.g. repo-relative). */
   path: string;
@@ -31,7 +33,7 @@ export interface SkillGroup {
  * `**​/SKILL.md`, each with its sibling files.
  */
 export function groupSkillFiles(paths: string[], rootPrefix: string): SkillGroup[] {
-  const prefix = rootPrefix ? `${rootPrefix.replace(/\/+$/, '')}/` : '';
+  const prefix = rootPrefix ? `${trimTrailingSlashes(rootPrefix)}/` : '';
   const skillMds = paths
     .filter((p) => p.startsWith(prefix) && /(^|\/)SKILL\.md$/.test(p))
     .sort();

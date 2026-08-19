@@ -17,7 +17,6 @@ import { stripAnsi } from '../style.ts';
 
 const ENV_KEYS = [
   'KORTIX_CLI_TOKEN',
-  'KORTIX_EXECUTOR_TOKEN',
   'KORTIX_TOKEN',
   'KORTIX_API_URL',
   'KORTIX_PROJECT_ID',
@@ -209,6 +208,56 @@ describe('renderContext + host notice', () => {
     expect(out).toContain('kortix projects use');
   });
 
+  test('breadcrumb renders the full host -> account -> project -> session path when signed in', () => {
+    writeConfig({
+      test: loggedInHost({
+        account_slug: 'kortix',
+        account_name: 'Kortix',
+        default_project: { project_id: 'proj_a', account_id: 'account_1', name: 'Alpha' },
+      }),
+    });
+    process.chdir(tmp);
+    const out = stripAnsi(renderContext());
+    // Signed-in host row carries the ● glyph + the navigation verb.
+    expect(out).toMatch(/●\s+host/);
+    expect(out).toContain('▸ kortix hosts use');
+    // Every level is present, top-down.
+    expect(out).toContain('account');
+    expect(out).toContain('project');
+    expect(out).toContain('session');
+    // The session leaf is empty (no persisted active session) and offers a verb.
+    expect(out).toContain('open one: kortix chat');
+  });
+
+  test('breadcrumb hides lower levels + points at login when signed out of the active host', () => {
+    writeConfig({
+      test: {
+        url: 'https://api.test',
+        token: '',
+        user_id: '',
+        user_email: '',
+        account_id: '',
+        logged_in_at: '',
+      },
+    });
+    process.chdir(tmp);
+    const out = stripAnsi(renderContext());
+    expect(out).toMatch(/○\s+host/);
+    expect(out).toContain('not logged in');
+    expect(out).toContain('→ kortix hosts login');
+    // Can't have an account/project without a signed-in host.
+    expect(out).not.toContain('account');
+    expect(out).not.toContain('session');
+  });
+
+  test('breadcrumb marks an unmet account gap as actionable', () => {
+    writeConfig({ test: loggedInHost({ account_id: '' }) });
+    process.chdir(tmp);
+    const out = stripAnsi(renderContext());
+    expect(out).toMatch(/⚠\s+account/);
+    expect(out).toContain('→ kortix accounts use');
+  });
+
   test('subcommand host notice appends account + default project', () => {
     writeConfig({
       test: loggedInHost({
@@ -223,6 +272,31 @@ describe('renderContext + host notice', () => {
     expect(notice).toContain('account Kortix');
     expect(notice).toContain('project Alpha');
     expect(notice).toContain('(default)');
+  });
+
+  test('a directory link displays its own host instead of the globally active host', () => {
+    writeConfig({
+      cloud: loggedInHost({ url: 'https://api.kortix.com' }),
+      customdev: loggedInHost({ url: 'https://dev-api.kortix.com' }),
+    });
+    mkdirSync(join(tmp, '.kortix'), { recursive: true });
+    saveLink(
+      {
+        project_id: 'proj_linked',
+        account_id: 'account_1',
+        host: 'customdev',
+        host_url: 'https://dev-api.kortix.com',
+        linked_at: '2026-01-01T00:00:00.000Z',
+      },
+      tmp,
+    );
+    process.chdir(tmp);
+
+    const notice = stripAnsi(renderHostNotice(['env', 'pull']) ?? '');
+    expect(notice).toContain('host customdev');
+    expect(notice).toContain('https://dev-api.kortix.com');
+    expect(notice).toContain('project proj_lin');
+    expect(notice).not.toContain('host cloud');
   });
 
   test('--host override does not claim the active account / project', () => {

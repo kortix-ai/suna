@@ -341,6 +341,164 @@ prompt = "Error sweep"
   });
 });
 
+// `type: monitor` — docs/specs/2026-08-12-monitors.md. A monitor names a repo
+// command the platform supervises 24/7; its stdout lines are the events.
+describe('validateManifest — [[triggers]] type = "monitor"', () => {
+  test('a stream monitor with run + mode passes', () => {
+    const { valid } = summarize(`
+kortix_version = 1
+[[triggers]]
+slug = "checkout-errors"
+type = "monitor"
+run = "./monitors/checkout-errors.ts"
+mode = "stream"
+prompt = "Checkout monitor emitted: {{ line }}"
+`);
+    expect(valid).toBe(true);
+  });
+
+  test('a poll monitor with an interval passes', () => {
+    const { valid } = summarize(`
+kortix_version = 1
+[[triggers]]
+slug = "queue-depth"
+type = "monitor"
+run = "./monitors/queue-depth.ts"
+mode = "poll"
+interval = "60s"
+expect_event_within = "24h"
+prompt = "Queue: {{ line }}"
+`);
+    expect(valid).toBe(true);
+  });
+
+  test('monitor requires run and mode', () => {
+    const { errorPaths } = summarize(`
+kortix_version = 1
+[[triggers]]
+slug = "bare"
+type = "monitor"
+prompt = "go"
+`);
+    expect(errorPaths).toContain('triggers[0].run');
+    expect(errorPaths).toContain('triggers[0].mode');
+  });
+
+  test('mode = "poll" requires an interval', () => {
+    const { errorPaths } = summarize(`
+kortix_version = 1
+[[triggers]]
+slug = "poller"
+type = "monitor"
+run = "./m.ts"
+mode = "poll"
+prompt = "go"
+`);
+    expect(errorPaths).toContain('triggers[0].interval');
+  });
+
+  test('an interval below the 30s floor is rejected', () => {
+    const { errorPaths } = summarize(`
+kortix_version = 1
+[[triggers]]
+slug = "poller"
+type = "monitor"
+run = "./m.ts"
+mode = "poll"
+interval = "5s"
+prompt = "go"
+`);
+    expect(errorPaths).toContain('triggers[0].interval');
+  });
+
+  test('an expect_event_within below the 5m floor is rejected', () => {
+    const { errorPaths } = summarize(`
+kortix_version = 1
+[[triggers]]
+slug = "streamer"
+type = "monitor"
+run = "./m.ts"
+mode = "stream"
+expect_event_within = "60s"
+prompt = "go"
+`);
+    expect(errorPaths).toContain('triggers[0].expect_event_within');
+  });
+
+  test('a bare number is not a duration', () => {
+    const { errorPaths } = summarize({
+      kortix_version: 1,
+      triggers: [
+        { slug: 'poller', type: 'monitor', run: './m.ts', mode: 'poll', interval: 60, prompt: 'go' },
+      ],
+    });
+    expect(errorPaths).toContain('triggers[0].interval');
+  });
+
+  test('interval on a stream monitor is rejected', () => {
+    const { errorPaths } = summarize(`
+kortix_version = 1
+[[triggers]]
+slug = "streamer"
+type = "monitor"
+run = "./m.ts"
+mode = "stream"
+interval = "60s"
+prompt = "go"
+`);
+    expect(errorPaths).toContain('triggers[0].interval');
+  });
+
+  test('an unknown mode is rejected', () => {
+    const { errorPaths } = summarize(`
+kortix_version = 1
+[[triggers]]
+slug = "streamer"
+type = "monitor"
+run = "./m.ts"
+mode = "tail"
+prompt = "go"
+`);
+    expect(errorPaths).toContain('triggers[0].mode');
+  });
+
+  // cron/webhook wiring on a monitor is a hard error: silently ignoring it
+  // would let a manifest claim a schedule the monitor runner never reads.
+  test('cron, run_at, timezone, and secret_env are rejected on a monitor', () => {
+    const { errorPaths } = summarize(`
+kortix_version = 1
+[[triggers]]
+slug = "mixed"
+type = "monitor"
+run = "./m.ts"
+mode = "stream"
+cron = "0 0 9 * * 1-5"
+run_at = "2026-06-01T09:00:00Z"
+timezone = "UTC"
+secret_env = "WEBHOOK_SECRET"
+prompt = "go"
+`);
+    expect(errorPaths).toContain('triggers[0].cron');
+    expect(errorPaths).toContain('triggers[0].run_at');
+    expect(errorPaths).toContain('triggers[0].timezone');
+    expect(errorPaths).toContain('triggers[0].secret_env');
+  });
+
+  test('a monitor still requires a prompt and a valid session_mode', () => {
+    const { errorPaths } = summarize(`
+kortix_version = 1
+[[triggers]]
+slug = "streamer"
+type = "monitor"
+run = "./m.ts"
+mode = "stream"
+session_mode = "sticky"
+`);
+    expect(errorPaths).toContain('triggers[0].prompt');
+    expect(errorPaths).toContain('triggers[0].session_mode');
+  });
+});
+
 describe('validateManifest — [[connectors]]', () => {
   test('provider must be one of the known values', () => {
     const { errorPaths } = summarize(`
@@ -396,6 +554,63 @@ spec = "https://example.com/openapi.json"
     expect(errorPaths).toContain('connectors[0].auth.secret');
   });
 
+  test('a valid `headers` table is accepted', () => {
+    const { valid, errorPaths } = summarize(`
+kortix_version = 1
+[[connectors]]
+slug = "acme"
+provider = "http"
+base_url = "https://api.acme.com"
+  [connectors.headers]
+  Accept = "application/json"
+  "X-Tenant-Id" = "acme"
+`);
+    expect(errorPaths).toEqual([]);
+    expect(valid).toBe(true);
+  });
+
+  test('an illegal header name is an error', () => {
+    const { errorPaths, issues } = summarize(`
+kortix_version = 1
+[[connectors]]
+slug = "acme"
+provider = "http"
+base_url = "https://api.acme.com"
+  [connectors.headers]
+  "X Tenant Id" = "acme"
+`);
+    expect(errorPaths).toContain('connectors[0].headers');
+    expect(issues.some((i) => i.message.includes('invalid header name'))).toBe(true);
+  });
+
+  test('CR/LF in a header value is an error (header injection)', () => {
+    const { errorPaths, issues } = summarize(`
+kortix_version = 1
+[[connectors]]
+slug = "acme"
+provider = "http"
+base_url = "https://api.acme.com"
+  [connectors.headers]
+  "X-Tenant-Id" = "acme\\r\\nX-Admin: true"
+`);
+    expect(errorPaths).toContain('connectors[0].headers');
+    expect(issues.some((i) => i.message.includes('CR or LF'))).toBe(true);
+  });
+
+  test('headers on a platform-called provider are a warning (inert at runtime)', () => {
+    const { valid, warningPaths } = summarize(`
+kortix_version = 1
+[[connectors]]
+slug = "gmail"
+provider = "pipedream"
+app = "gmail"
+  [connectors.headers]
+  Accept = "application/json"
+`);
+    expect(warningPaths).toContain('connectors[0].headers');
+    expect(valid).toBe(true);
+  });
+
   test('policy action must be one of the known values', () => {
     const { errorPaths } = summarize(`
 kortix_version = 1
@@ -413,7 +628,7 @@ spec = "https://example.com/openapi.json"
   });
 
   // The platform itself writes an equivalent entry into kortix.yaml when a Slack
-  // channel is connected (executor/channel-manifest.ts); this exercises the same
+  // channel is connected (connector/channel-manifest.ts); this exercises the same
   // shape against the legacy v1 (kortix.toml) validator. The gate must accept it,
   // or it blocks merging a manifest the backend produced.
   test('a platform-written channel connector is valid', () => {
@@ -475,25 +690,25 @@ provider = "computer"
 
   // The platform now also writes a `meet` channel connector — mirrors
   // connectors.ts's CHANNEL_PLATFORMS (which already included it) and
-  // RESERVED_SLUG_PROVIDERS (`kortix_meet`). Was previously rejected by the
+  // RESERVED_SLUG_PROVIDERS (`kortix_voice`). Was previously rejected by the
   // schema gate even though the runtime accepted it.
-  test('a platform-written "meet" channel connector is valid', () => {
+  test('a platform-written "voice" channel connector is valid', () => {
     const { valid, errorPaths } = summarize(`
 kortix_version = 1
 [[connectors]]
-slug = "kortix_meet"
+slug = "kortix_voice"
 provider = "channel"
-platform = "meet"
+platform = "voice"
 `);
     expect(errorPaths).toEqual([]);
     expect(valid).toBe(true);
   });
 
-  test('reserved slug "kortix_meet" rejects a mismatched provider', () => {
+  test('reserved slug "kortix_voice" rejects a mismatched provider', () => {
     const { errorPaths } = summarize(`
 kortix_version = 1
 [[connectors]]
-slug = "kortix_meet"
+slug = "kortix_voice"
 provider = "http"
 base_url = "https://example.com"
 `);
@@ -501,16 +716,64 @@ base_url = "https://example.com"
   });
 });
 
-describe('validateManifest — retired hosted apps section', () => {
-  test('rejects the removed section in both manifest versions', () => {
+describe('validateManifest — Kortix Apps', () => {
+  // This fixture used to set `NODE_ENV` here. It was never deployable: the API
+  // refuses reserved env names when it builds a deployment's environment, and
+  // `NODE_ENV` is on that list. The validator simply did not know, so the
+  // fixture encoded a manifest that passed `validate` and failed `deploy` —
+  // the exact drift `app-env-reserved.test.ts` now prevents. Renamed rather
+  // than deleted, because what this test is actually about is the v2 App map.
+  test('rejects the retired v1 section and accepts the provider-neutral v2 map', () => {
     expect(summarize('kortix_version = 1\n[[apps]]\nslug = "site"').errorPaths).toContain('apps');
     const v2 = validateManifest(
-      'kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\napps:\n  - slug: site',
+      `kortix_version: 2
+default_agent: w
+agents:
+  w: {}
+apps:
+  web:
+    path: .
+    type: dockerfile
+    dockerfile: Dockerfile
+    command: [bun, run, start]
+    port: 3000
+    readiness_path: /health
+    idle_timeout_seconds: 300
+    resources:
+      cpu: 1
+      memory_gb: 2
+      disk_gb: 10
+    env:
+      APP_MODE: production
+    secrets:
+      DATABASE_URL: DATABASE_URL`,
       'yaml',
     );
-    expect(v2.issues.filter((issue) => issue.severity === 'error').map((issue) => issue.path)).toContain(
-      'apps',
+    expect(v2.issues.filter((issue) => issue.severity === 'error')).toEqual([]);
+  });
+
+  test('rejects invalid v2 App ports, commands, resources, and secret mappings', () => {
+    const result = validateManifest(
+      `kortix_version: 2
+default_agent: w
+agents:
+  w: {}
+apps:
+  bad:
+    type: dockerfile
+    command: []
+    port: 8080
+    resources:
+      cpu: 0
+    secrets:
+      DATABASE_URL: ""`,
+      'yaml',
     );
+    const paths = result.issues.filter((issue) => issue.severity === 'error').map((issue) => issue.path);
+    expect(paths).toContain('apps.bad.command');
+    expect(paths).toContain('apps.bad.port');
+    expect(paths).toContain('apps.bad.resources.cpu');
+    expect(paths).toContain('apps.bad.secrets.DATABASE_URL');
   });
 });
 

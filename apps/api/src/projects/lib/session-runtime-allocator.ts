@@ -1,12 +1,16 @@
 import { eq } from 'drizzle-orm';
 
 import { projectSessions } from '@kortix/db';
+import type { SandboxProviderName } from '../../config';
+import { logger } from '../../lib/logger';
 import { ProvisionTimeline } from '../../platform/services/provision-timeline';
 import { provisionSessionSandbox } from '../../platform/services/session-sandbox';
 import { db } from '../../shared/db';
-import type { SandboxProviderName } from '../../config';
-import type { ProjectRow } from './serializers';
+import type { GitBackedProject } from '../git';
 import { RuntimeIdentityConflictError } from '../runtime-identity-error';
+import type { PreparedInitialSandboxTurn } from '../sandbox-turn-lifecycle';
+import type { ProjectRow } from './serializers';
+import { projectSessionMetadataMerge } from './session-metadata-merge';
 import { mergeSessionSandboxEnv } from './session-runtime-context';
 
 type RuntimeProject = Pick<ProjectRow, 'repoUrl' | 'defaultBranch' | 'manifestPath' | 'metadata'>;
@@ -23,9 +27,10 @@ export interface AllocateSessionRuntimeInput {
   sandboxSlug?: string;
   sessionMetadata: Record<string, unknown>;
   runtimeMetadata?: Record<string, unknown>;
+  initialTurn?: PreparedInitialSandboxTurn | null;
   extraEnvVars?: Record<string, string>;
   buildEnvVars: () => Promise<Record<string, string>>;
-  resolveGitAuthToken: () => Promise<string | null>;
+  resolveGitProject: () => Promise<GitBackedProject>;
   beforeActive?: (externalId: string) => Promise<void>;
 }
 
@@ -43,9 +48,9 @@ export function allocateSessionRuntime(input: AllocateSessionRuntimeInput): void
 async function allocateSessionRuntimeAsync(input: AllocateSessionRuntimeInput): Promise<void> {
   const tl = new ProvisionTimeline(input.sessionId, 'session-create');
   try {
-    const gitAuthPromise = input.resolveGitAuthToken().then((token) => {
+    const gitProjectPromise = input.resolveGitProject().then((project) => {
       tl.mark('git-auth');
-      return token;
+      return project;
     });
     const envPromise = input.buildEnvVars().then((envVars) => {
       tl.mark('env-vars');
@@ -66,6 +71,7 @@ async function allocateSessionRuntimeAsync(input: AllocateSessionRuntimeInput): 
         project_id: input.projectId,
         ...(input.runtimeMetadata ?? {}),
       },
+      initialTurn: input.initialTurn,
       extraEnvVars,
       projectMetadata: input.project.metadata,
       gitProject: {
@@ -75,7 +81,7 @@ async function allocateSessionRuntimeAsync(input: AllocateSessionRuntimeInput): 
         manifestPath: input.project.manifestPath,
         gitAuthToken: null,
       },
-      resolveGitAuthToken: async () => gitAuthPromise,
+      resolveGitProject: async () => gitProjectPromise,
       baseRef: input.baseRef,
       sandboxSlug: input.sandboxSlug,
       beforeActive: input.beforeActive,
@@ -92,14 +98,28 @@ async function allocateSessionRuntimeAsync(input: AllocateSessionRuntimeInput): 
       return;
     }
     const message = (err as Error)?.message || 'Sandbox provisioning failed';
-    console.error(`[projects] Failed to allocate runtime for session ${input.sessionId}:`, err);
+    // This runs detached from any request (allocateSessionRuntime is
+    // fire-and-forget — restart/create already 202'd) — a structured error is
+    // the ONLY signal this session is now failed with no session_sandboxes row
+    // behind it, so every later proxy call will 404 'sandbox not found'.
+    logger.error('[projects] runtime allocation failed — session marked failed', {
+      session_id: input.sessionId,
+      project_id: input.projectId,
+      account_id: input.accountId,
+      provider: input.providerName,
+      error: message,
+    });
     try {
       await db
         .update(projectSessions)
         .set({
           status: 'failed',
           error: message,
-          metadata: { ...input.sessionMetadata, provisioning_error: message },
+          // Merge, never re-write `input.sessionMetadata`: that snapshot was
+          // taken before allocation started, so writing it back drops anything
+          // committed since — the generated title, remote_branch,
+          // the start timeline. The session is terminal here, so nothing retries.
+          metadata: projectSessionMetadataMerge({ provisioning_error: message }),
           updatedAt: new Date(),
         })
         .where(eq(projectSessions.sessionId, input.sessionId));
@@ -113,19 +133,10 @@ async function mergeSessionMetadata(
   sessionId: string,
   extra: Record<string, unknown>,
 ): Promise<void> {
-  const [current] = await db
-    .select({ metadata: projectSessions.metadata })
-    .from(projectSessions)
-    .where(eq(projectSessions.sessionId, sessionId))
-    .limit(1);
-  const currentMetadata =
-    current?.metadata && typeof current.metadata === 'object'
-      ? (current.metadata as Record<string, unknown>)
-      : {};
   await db
     .update(projectSessions)
     .set({
-      metadata: { ...currentMetadata, ...extra },
+      metadata: projectSessionMetadataMerge(extra),
       updatedAt: new Date(),
     })
     .where(eq(projectSessions.sessionId, sessionId));

@@ -1,7 +1,7 @@
 """Render PDF pages as PNG images.
 
 Usage:
-    python render.py <input.pdf> <output_dir>
+    python3 render.py <input.pdf> <output_dir>
 """
 
 import sys

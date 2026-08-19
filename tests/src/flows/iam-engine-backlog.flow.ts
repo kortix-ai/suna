@@ -39,6 +39,7 @@
  * unions runtime hits and rejects any unknown (query-suffixed) route key.
  */
 import { flow } from '../core/flow';
+import { waitFor } from '../core/poll';
 
 // Path templates passed to the client (.get/.post take a path, not a key).
 const EFFECTIVE = '/v1/accounts/:accountId/iam/members/:userId/effective';
@@ -166,22 +167,34 @@ flow('IAM-6', { domain: 'iam', routes: [R_EFFECTIVE] }, async (ctx) => {
 });
 
 // ─── IAM-9: super-admin bypass ──────────────────────────────────────────────
-// The account creator (OWNER) is super-admin. Every probe returns
+// Promote a run-scoped account admin to super-admin. Every probe then returns
 // allowed:true with reason:super_admin — including project actions on a
-// project that does not even exist — i.e. the engine short-circuits before
-// any role/membership check. Revoking super-admin drops the reason to the
-// ordinary role path.
+// project that does not exist. Revoking super-admin drops the reason to the
+// ordinary account-role path. Do not mutate the OWNER fixture because release
+// QA grants that principal a separate platform_user_roles entry.
 
 flow(
   'IAM-9',
   { domain: 'iam', routes: [R_EFFECTIVE_BATCH, R_SUPER_ADMIN, R_EFFECTIVE] },
   async (ctx) => {
     const team = await ctx.fixtures.team();
-    const ownerId = ctx.P.OWNER.userId!;
+    const subject = await team.addMember('admin');
+    const subjectId = subject.userId;
+    if (!subjectId) throw new Error('run-scoped IAM-9 admin has no userId');
 
-    await ctx.step(
-      'OWNER (super-admin) → allowed:true reason:super_admin for everything',
-      async () => {
+    await ctx.step('promote the run-scoped admin to super-admin', async () => {
+      const promoted = await ctx.client
+        .as(ctx.P.OWNER)
+        .patch(
+          SUPER_ADMIN,
+          { isSuperAdmin: true },
+          { params: { accountId: team.id, userId: subjectId } },
+        );
+      promoted.status(200).body().has('$.is_super_admin', true);
+    });
+
+    try {
+      await ctx.step('super-admin → allowed:true reason:super_admin for everything', async () => {
         const r = await ctx.client.as(ctx.P.OWNER).post(
           EFFECTIVE_BATCH,
           {
@@ -197,7 +210,7 @@ flow(
               },
             ],
           },
-          { params: { accountId: team.id, userId: ownerId } },
+          { params: { accountId: team.id, userId: subjectId } },
         );
         r.status(200)
           .body()
@@ -206,28 +219,40 @@ flow(
           .has('$.results[1].reason', 'super_admin')
           .has('$.results[2].allowed', true)
           .has('$.results[2].reason', 'super_admin');
-      },
-    );
-
-    await ctx.step(
-      "revoke OWNER's super-admin → still allowed but via account_role, NOT super_admin",
-      async () => {
-        const rev = await ctx.client
+      });
+    } finally {
+      await ctx.step('revoke the run-scoped super-admin grant', async () => {
+        const revoked = await ctx.client
           .as(ctx.P.OWNER)
           .patch(
             SUPER_ADMIN,
             { isSuperAdmin: false },
-            { params: { accountId: team.id, userId: ownerId } },
+            { params: { accountId: team.id, userId: subjectId } },
           );
-        rev.status(200).body().has('$.is_super_admin', false);
+        revoked.status(200).body().has('$.is_super_admin', false);
+      });
+    }
 
-        const r = await ctx.client.as(ctx.P.OWNER).get(EFFECTIVE, {
-          params: { accountId: team.id, userId: ownerId },
-          query: { action: 'account.write' },
-        });
-        r.status(200).body().has('$.allowed', true).has('$.reason', 'account_role');
-      },
-    );
+    await ctx.step('revoked admin converges to account_role across API replicas', async () => {
+      const result = await waitFor(
+        async () => {
+          const r = await ctx.client.as(ctx.P.OWNER).get(EFFECTIVE, {
+            params: { accountId: team.id, userId: subjectId },
+            query: { action: 'account.write' },
+          });
+          r.status(200);
+          return r.json<{ allowed?: boolean; reason?: string }>();
+        },
+        {
+          until: (body) => body.allowed === true && body.reason === 'account_role',
+          timeoutMs: 30_000,
+          intervalMs: 1_000,
+        },
+      );
+      if (result.reason !== 'account_role') {
+        throw new Error(`IAM-9 revoke did not converge: ${JSON.stringify(result)}`);
+      }
+    });
   },
 );
 
@@ -387,9 +412,9 @@ flow('IAM-12', { domain: 'iam', routes: [R_EFFECTIVE_BATCH, R_EFFECTIVE] }, asyn
   });
 
   await ctx.step(
-    'project_members row bridges to the project role: direct Editor → project.write allowed',
+    'project_members row bridges to the project role: direct Manager → project.write allowed',
     async () => {
-      await team.grantProjectRole(project.id, member.userId!, 'editor');
+      await team.grantProjectRole(project.id, member.userId!, 'manager');
       const r = await ctx.client.as(ctx.P.OWNER).get(EFFECTIVE, {
         params: { accountId: team.id, userId: member.userId! },
         query: { action: 'project.write', resourceType: 'project', resourceId: project.id },

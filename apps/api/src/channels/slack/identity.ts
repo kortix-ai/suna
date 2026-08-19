@@ -285,7 +285,7 @@ export async function createSlackAccessRequest(input: {
     projectId: input.projectId,
     requesterUserId: identity.userId,
     requesterEmail: email || identity.userId,
-    message: 'Requested from Slack. Approve as Editor so they can run Kortix from Slack.',
+    message: 'Requested from Slack. Approve so they can run Kortix from Slack.',
   });
   return { status: 'created', ...base };
 }

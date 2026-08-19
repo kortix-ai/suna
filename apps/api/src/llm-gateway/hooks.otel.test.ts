@@ -48,7 +48,7 @@ function baseTrace(overrides: Partial<GatewayTrace> = {}): GatewayTrace {
     latencyMs: 850,
     attempts: 1,
     candidatesTried: ['claude-sonnet-4-5'],
-    usage: { promptTokens: 120, completionTokens: 45, cachedTokens: 10, cacheWriteTokens: 0 },
+    usage: { promptTokens: 120, completionTokens: 45, cachedTokens: 10, cacheWriteTokens: 7 },
     upstreamCost: 0.002,
     finalCost: 0.003,
     request: {},
@@ -120,6 +120,7 @@ describe('emitGatewayGenAiSpan', () => {
     expect(attrScalar(span, 'kortix.upstream_cost_usd')).toBe(0.002);
     expect(attrScalar(span, 'kortix.provider')).toBe('bedrock');
     expect(attrScalar(span, 'kortix.cached_tokens')).toBe('10');
+    expect(attrScalar(span, 'kortix.cache_write_tokens')).toBe('7');
     expect(attrScalar(span, 'kortix.streaming')).toBe(false);
     expect(attrScalar(span, 'kortix.billing_mode')).toBe('credits');
     expect(attrScalar(span, 'kortix.request_id')).toBe('req_gw_1');
@@ -143,6 +144,67 @@ describe('emitGatewayGenAiSpan', () => {
     const span = lastSpan();
     expect(attrScalar(span, 'kortix.error_code')).toBe('upstream_error');
     expect(attrScalar(span, 'kortix.ok')).toBe(false);
+  });
+
+  test('emits the candidate failure chain and fallback outcome attributes', async () => {
+    await emitAndFlush(
+      baseTrace({
+        ok: false,
+        status: 502,
+        attemptFailures: [
+          {
+            attempt: 1,
+            provider: 'openai-codex',
+            routeModel: 'codex/gpt-5.6-sol',
+            resolvedModel: 'gpt-5.6-sol',
+            stage: 'stream_error',
+            status: 400,
+            code: 'context_length_exceeded',
+            message: 'context rejected',
+          },
+          {
+            attempt: 2,
+            provider: 'aster',
+            routeModel: 'glm-5.2',
+            resolvedModel: 'glm-5.2',
+            stage: 'completion_validation',
+            code: 'empty_completion',
+            message: 'Upstream stream closed before producing usable content',
+          },
+        ],
+      }),
+    );
+
+    const span = lastSpan();
+    expect(attrScalar(span, 'kortix.failure_count')).toBe('2');
+    expect(attrScalar(span, 'kortix.failure_codes')).toBe(
+      'context_length_exceeded,empty_completion',
+    );
+    expect(attrScalar(span, 'kortix.context_rejected')).toBe(true);
+    // `kortix.probe_timeout` is gone — a probe timeout commits the stream
+    // rather than failing it, so the attribute could only ever report false.
+    expect(attrScalar(span, 'kortix.probe_timeout')).toBeUndefined();
+    expect(attrScalar(span, 'kortix.fallback_recovered')).toBe(false);
+
+    await emitAndFlush(
+      baseTrace({
+        ok: true,
+        status: 200,
+        attemptFailures: [
+          {
+            attempt: 1,
+            provider: 'primary',
+            routeModel: 'primary/model',
+            resolvedModel: 'model',
+            stage: 'dispatch',
+            status: 429,
+            code: 'rate_limit_exceeded',
+            message: 'rate limited',
+          },
+        ],
+      }),
+    );
+    expect(attrScalar(lastSpan(), 'kortix.fallback_recovered')).toBe(true);
   });
 
   test('computes the span time window from latencyMs', async () => {

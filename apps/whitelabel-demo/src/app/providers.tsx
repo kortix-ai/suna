@@ -1,9 +1,10 @@
 'use client';
 
+import Loading from '@/components/ui/loading';
+
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { Loader2 } from 'lucide-react';
 import { createContext, useContext, useEffect, useState } from 'react';
 
 // Importing the client configures the SDK platform seam once (createKortix),
@@ -63,7 +64,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
   if (wrapperMode === null) {
     return (
       <div className="grid min-h-dvh place-items-center bg-background">
-        <Loader2 className="size-5 animate-spin text-muted-foreground" />
+        <Loading className="size-5 text-muted-foreground" />
       </div>
     );
   }

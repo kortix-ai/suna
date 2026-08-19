@@ -1,15 +1,20 @@
 'use client';
 
+import Loading from '@/components/ui/loading';
+
 import { AgentPicker } from '@/components/chat/agent-picker';
 import { Composer } from '@/components/chat/composer';
 import { MessageView } from '@/components/chat/message-view';
 import { ModelPicker } from '@/components/chat/model-picker';
 import { PermissionPrompt } from '@/components/chat/permission-prompt';
+import { ScopeBar } from '@/components/chat/scope-bar';
 import { QuestionPrompt } from '@/components/chat/question-prompt';
 import { Bubble, BubbleContent } from '@/components/ui/bubble';
 import { Button } from '@/components/ui/button';
 import { Marker, MarkerContent, MarkerIcon } from '@/components/ui/marker';
 import { Message } from '@/components/ui/message';
+import { SessionScope } from '@/components/workbench/session-scope';
+import { sendFailureTitle } from '@/lib/send-failure';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ChangesPanel } from '@/components/workbench/changes-panel';
 import { FilesPanel } from '@/components/workbench/files-panel';
@@ -19,8 +24,8 @@ import { qk } from '@/lib/query-keys';
 import { cn } from '@/lib/utils';
 import type { UseSessionResult } from '@kortix/sdk/react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, Loader2, RotateCw, Sparkles } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { AlertTriangle, RotateCw, Sparkles } from 'lucide-react';
+import { useEffect, useRef } from 'react';
 import { toast } from 'sonner';
 
 /** The workbench tabs: Chat + the SDK-powered Files / Changes / Preview panels. */
@@ -37,7 +42,7 @@ export function WorkbenchTabs({
     <Tabs defaultValue="chat" className="flex min-h-0 flex-1 flex-col gap-0">
       <div className="px-5 pt-3.5">
         <TabsList>
-          {(['chat', 'files', 'changes', 'preview'] as const).map((v) => (
+          {(['chat', 'files', 'changes', 'preview', 'scope'] as const).map((v) => (
             <TabsTrigger key={v} value={v} className="px-3.5 capitalize">
               {v}
             </TabsTrigger>
@@ -53,6 +58,18 @@ export function WorkbenchTabs({
       <TabsContent value="files" className="min-h-0 flex-1 overflow-hidden p-4">
         <FilesPanel projectId={projectId} />
       </TabsContent>
+      {/* What this session can still change. Shown as a first-class tab rather
+          than a settings footnote: 'can I switch the agent / secrets now?' is a
+          question people ask mid-session, and the answers genuinely differ. */}
+      <TabsContent value="scope" className="min-h-0 flex-1 overflow-y-auto p-4">
+        <div className="mx-auto max-w-xl">
+          <h2 className="text-sm font-medium">What this session can change</h2>
+          <p className="mb-3 mt-0.5 text-xs text-muted-foreground">
+            Overrides are set when a session starts. These are the ones you can still move.
+          </p>
+          <SessionScope projectId={projectId} sessionId={sessionId} />
+        </div>
+      </TabsContent>
       <TabsContent value="changes" className="min-h-0 flex-1 overflow-hidden p-4">
         <ChangesPanel projectId={projectId} sessionId={sessionId} />
       </TabsContent>
@@ -66,7 +83,7 @@ export function WorkbenchTabs({
 /**
  * The chat thread. Reads everything off the single `useSession` result — messages,
  * optimistic send, interactive prompts, the model/agent picks, and the runtime
- * phase. No useChat, no useCanonicalOpenCodeSession, no sandbox wiring.
+ * phase. No second chat hook, provider-session resolver, or infrastructure wiring.
  */
 function Thread({ session: c }: { session: UseSessionResult }) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -109,37 +126,11 @@ function Thread({ session: c }: { session: UseSessionResult }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runtimeDown]);
 
-  // Stall watchdog: if the agent is "working" but nothing has streamed for a
-  // while, the run likely lost its runtime — surface it instead of an endless
-  // spinner. Any new message/part or a busy-state change resets the timer.
-  const [stalled, setStalled] = useState(false);
-  const lastActivityRef = useRef(Date.now());
-  useEffect(() => {
-    lastActivityRef.current = Date.now();
-    setStalled(false);
-  }, [c.messages, c.isBusy, c.hasPending]);
-  useEffect(() => {
-    if (!c.isBusy) {
-      setStalled(false);
-      return;
-    }
-    const id = setInterval(() => {
-      if (Date.now() - lastActivityRef.current > 60_000) setStalled(true);
-    }, 5_000);
-    return () => clearInterval(id);
-  }, [c.isBusy]);
-
-  // The OpenCode root id is resolved inside useSession; show a connect state
-  // until it lands (the chat can't address a session without it).
-  if (!c.opencodeSessionId) {
-    return (
-      <div className="grid flex-1 place-items-center">
-        <div className="flex items-center gap-2.5 text-sm text-muted-foreground">
-          <Loader2 className="size-4 animate-spin" /> Connecting to the agent…
-        </div>
-      </div>
-    );
-  }
+  // No stall watchdog here any more. `c.isBusy` is the working projection
+  // (bounded, fed by GET .../turn), and the server closes wedged turns itself
+  // (the husk finalizer) — a 60s client clock could only contradict that
+  // authority, and it fired on any long tool call, a slow model, or a
+  // backgrounded tab.
 
   return (
     <>
@@ -147,7 +138,7 @@ function Thread({ session: c }: { session: UseSessionResult }) {
         <div className="mx-auto max-w-3xl space-y-4 px-5 py-6">
           {c.isLoading && (
             <div className="flex items-center gap-2.5 py-10 text-sm text-muted-foreground">
-              <Loader2 className="size-4 animate-spin" /> Loading conversation…
+              <Loading className="size-4" /> Loading conversation…
             </div>
           )}
           {!c.isLoading && c.messages.length === 0 && !c.hasPending && !c.pending && (
@@ -175,14 +166,14 @@ function Thread({ session: c }: { session: UseSessionResult }) {
             <PermissionPrompt
               key={(p as { id: string }).id}
               request={p}
-              onResolved={() => c.removePermission((p as { id: string }).id)}
+              onAnswer={c.answerPermission}
             />
           ))}
           {c.questions.map((q) => (
             <QuestionPrompt
               key={(q as { id: string }).id}
               request={q}
-              onResolved={() => c.removeQuestion((q as { id: string }).id)}
+              onAnswer={c.answerQuestion}
               onCancel={c.cancel}
             />
           ))}
@@ -190,7 +181,7 @@ function Thread({ session: c }: { session: UseSessionResult }) {
           {c.isBusy && !c.hasPending && (
             <Marker className="py-1">
               <MarkerIcon>
-                <Loader2 className="animate-spin" />
+                <Loading />
               </MarkerIcon>
               <MarkerContent className="shimmer text-sm">
                 {c.pending ? 'Sending…' : 'Agent is working…'}
@@ -217,7 +208,11 @@ function Thread({ session: c }: { session: UseSessionResult }) {
                 onClick={() => restart.mutate()}
                 disabled={restart.isPending}
               >
-                <RotateCw className={cn('size-3.5', restart.isPending && 'animate-spin')} />
+                {restart.isPending ? (
+                  <Loading className="size-3.5" />
+                ) : (
+                  <RotateCw className="size-3.5" />
+                )}
                 Restart
               </Button>
             </div>
@@ -225,15 +220,14 @@ function Thread({ session: c }: { session: UseSessionResult }) {
             <p className="mb-2 text-center text-xs text-muted-foreground">
               Connecting to the runtime…
             </p>
-          ) : stalled && c.isBusy ? (
-            <div className="mb-2 flex items-center justify-between gap-3 rounded-xl border border-border bg-muted/40 px-3.5 py-2.5">
-              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                <AlertTriangle className="size-3.5 shrink-0" />
-                The agent has gone quiet — it may have lost its runtime.
-              </div>
-              <Button size="sm" variant="secondary" className="h-7 gap-1.5" onClick={c.cancel}>
-                Stop
-              </Button>
+          ) : null}
+          {/* A rejected send used to be SILENT: the optimistic bubble vanished,
+              the typed text was gone, and nothing said why. useSession surfaces
+              a typed sendError — read it and say what failed. */}
+          {c.sendError ? (
+            <div className="mx-4 mb-2 rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm">
+              <div className="font-medium">{sendFailureTitle(c.sendError)}</div>
+              <p className="mt-0.5 text-xs text-muted-foreground">{c.sendError.message}</p>
             </div>
           ) : null}
           <Composer
@@ -246,6 +240,7 @@ function Thread({ session: c }: { session: UseSessionResult }) {
             }
             commands={c.commands}
             onCommand={c.runCommand}
+            footer={<ScopeBar projectId={c.projectId} sessionId={c.sessionId} />}
             toolbar={
               <div className="flex items-center gap-0.5">
                 <ModelPicker models={c.models} value={c.picks.model} onChange={c.picks.setModel} />

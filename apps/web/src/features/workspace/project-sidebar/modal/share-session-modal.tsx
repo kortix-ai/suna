@@ -21,10 +21,13 @@ import {
   selectionToIntent,
   type SharingSelection,
 } from '@/features/workspace/shared/sharing-picker';
-import { setProjectSessionSharing, type ProjectSession } from '@kortix/sdk/projects-client';
-import { LockSolid, UsersSolid } from '@mynaui/icons-react';
+import { setProjectSessionSharing, type ProjectSession } from '@kortix/sdk';
+import {
+  GlobeIcon as Globe,
+  LockIcon as LockSolid,
+  UsersIcon as UsersSolid,
+} from '@phosphor-icons/react';
 import { useMutation } from '@tanstack/react-query';
-import { Globe } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useEffect, useState } from 'react';
 
@@ -35,14 +38,24 @@ const SESSION_SHARING_COPY = {
   members: { label: 'Select members', desc: 'A chosen list of members' },
 };
 
+/** The visibility badge is a status indicator (team/shared/private) — the
+ *  shared and private states render their solid glyph, matching the app's
+ *  status/solid-surface convention. */
+function UsersSolidFilled({ className }: { className?: string }) {
+  return <UsersSolid className={className} weight="fill" />;
+}
+function LockSolidFilled({ className }: { className?: string }) {
+  return <LockSolid className={className} weight="fill" />;
+}
+
 export function sessionVisibilityMeta(session: Pick<ProjectSession, 'visibility'>) {
   switch (session.visibility) {
     case 'project':
       return { icon: Globe, label: 'Team', tone: 'shared' as const };
     case 'restricted':
-      return { icon: UsersSolid, label: 'Shared', tone: 'shared' as const };
+      return { icon: UsersSolidFilled, label: 'Shared', tone: 'shared' as const };
     default:
-      return { icon: LockSolid, label: 'Private', tone: 'private' as const };
+      return { icon: LockSolidFilled, label: 'Private', tone: 'private' as const };
   }
 }
 
@@ -77,7 +90,11 @@ export function ShareSessionModal({
   onSaved?: () => void;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
-  const [sharing, setSharing] = useState<SharingSelection>({ mode: 'private', memberIds: [], groupIds: [] });
+  const [sharing, setSharing] = useState<SharingSelection>({
+    mode: 'private',
+    memberIds: [],
+    groupIds: [],
+  });
 
   useEffect(() => {
     if (!open || !session) return;

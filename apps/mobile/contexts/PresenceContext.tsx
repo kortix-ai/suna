@@ -1,6 +1,7 @@
 import { ReactNode, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState, AppStateStatus, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Crypto from 'expo-crypto';
 import { API_URL, getAuthToken } from '@/api/config';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { supabase } from '@/api/supabase';
@@ -37,7 +38,7 @@ const SESSION_STORAGE_KEY = 'presence_session_id';
 const DISABLE_PRESENCE = true;
 
 function generateSessionId(): string {
-  return `${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
+  return Crypto.randomUUID();
 }
 
 export function PresenceProvider({ children }: { children: ReactNode }) {
@@ -374,4 +375,3 @@ export function usePresenceContext() {
   }
   return context;
 }
-

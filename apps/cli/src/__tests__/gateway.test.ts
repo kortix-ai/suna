@@ -9,7 +9,6 @@ const ORIGINAL_ENV = { ...process.env };
 const SANDBOX_ENV_OVERRIDES = [
   'KORTIX_API_URL',
   'KORTIX_CLI_TOKEN',
-  'KORTIX_EXECUTOR_TOKEN',
   'KORTIX_FRONTEND_URL',
   'KORTIX_PROJECT_ID',
   'KORTIX_TOKEN',
@@ -57,7 +56,7 @@ function routingDoc() {
     version: 1,
     project: routingProject,
     effective: {
-      defaultModel: routingProject.defaultModel ?? 'kortix/auto',
+      defaultModel: routingProject.defaultModel ?? 'glm-5.2',
       defaultModelSource: routingProject.defaultModel ? 'project' : 'platform',
       visionModel: routingProject.visionModel ?? 'claude-sonnet-4.6',
       defaultFallback: routingProject.defaultFallback ?? { models: [], fallbackOn: 'transient' },
@@ -153,6 +152,9 @@ function startServer(): string {
           next_offset: null,
         });
       }
+      if (url.pathname === `${base}/logs/req_1`) {
+        return Response.json({ log_id: '11111111-1111-4111-8111-111111111111', request_id: 'req_1' });
+      }
       if (url.pathname === `${base}/playground` && req.method === 'POST') {
         const models = (entry.body as { models: string[] }).models;
         return Response.json({
@@ -217,7 +219,7 @@ describe('kortix gateway command', () => {
     const cfg = writeConfig(startServer());
     const r = await runCli(['gateway', 'routing', '--json', '--project', PROJECT], cfg);
     expect(r.code).toBe(0);
-    expect(JSON.parse(r.stdout).effective.defaultModel).toBe('kortix/auto');
+    expect(JSON.parse(r.stdout).effective.defaultModel).toBe('glm-5.2');
     expect(requests).toEqual([
       { method: 'GET', path: `/v1/projects/${PROJECT}/gateway/routing-policy` },
     ]);
@@ -295,6 +297,17 @@ describe('kortix gateway command', () => {
     const r = await runCli(['gateway', 'logs', '--failed', '--json', '--project', PROJECT], cfg);
     expect(r.code).toBe(0);
     expect(requests[0].path).toBe(`/v1/projects/${PROJECT}/gateway/logs?ok=false`);
+  }, 15_000);
+
+  test('logs accepts the request_id printed by the list command', async () => {
+    const cfg = writeConfig(startServer());
+    const r = await runCli(['gateway', 'logs', 'req_1', '--project', PROJECT], cfg);
+
+    expect(r.code).toBe(0);
+    expect(JSON.parse(r.stdout).request_id).toBe('req_1');
+    expect(requests).toEqual([
+      { method: 'GET', path: `/v1/projects/${PROJECT}/gateway/logs/req_1` },
+    ]);
   }, 15_000);
 
   test('test: POSTs prompt + models to the playground', async () => {

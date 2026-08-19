@@ -6,7 +6,7 @@
  * monochrome.
  *
  * Rendering is driven by `classifyTurn`/`classifyPart` (`@kortix/sdk`):
- * every one of opencode's 12 part types is classified into a typed
+ * every supported runtime part is classified into a typed
  * `ClassifiedPart`, and `renderParts` (`@kortix/sdk/react`) requires a
  * renderer for every kind at compile time — so a new part type (or one we
  * used to silently drop) fails the build here instead of quietly vanishing
@@ -53,7 +53,7 @@ function Reasoning({ text }: { text: string }) {
 
 /**
  * One renderer per `ClassifiedPart['kind']`. `PartRenderers<T>`'s type
- * requires every key, so removing a case (or opencode adding a new part
+ * requires every key, so removing a case or adding a new part
  * type) is a compile error here, not a silent drop in production.
  */
 const partRenderers: PartRenderers<React.ReactNode> = {
@@ -138,7 +138,7 @@ const partRenderers: PartRenderers<React.ReactNode> = {
  * complete silence, which reads as "the app is broken" when it's really
  * "the model call failed" — surface the reason instead. `classifyTurn`
  * normalizes `info.error` into `{name, message}` at the SDK layer, so this
- * component doesn't need to know about opencode's error-union shape at all.
+ * component does not inspect the runtime wire error shape.
  */
 function TurnError({ error }: { error: { name: string; message: string } }) {
   return (
@@ -165,7 +165,7 @@ export function MessageView({ message }: { message: MessageWithParts }) {
     // Bubble sits directly in the row (no min-w-0 column) so it sizes to its
     // content up to max-width — never collapses to a sliver.
     return (
-      <Message align="end">
+      <Message align="end" data-message-role="user">
         <Bubble variant="secondary" align="end">
           <BubbleContent>{text}</BubbleContent>
         </Bubble>
@@ -175,7 +175,7 @@ export function MessageView({ message }: { message: MessageWithParts }) {
 
   if (isEmpty) return null;
   return (
-    <div className="space-y-2.5 text-sm leading-relaxed">
+    <div data-message-role="assistant" className="space-y-2.5 text-sm leading-relaxed">
       {/* Fragment (not a div) so parts that deliberately render `null`
           (step/snapshot/agent/unknown) don't leave behind an empty spacer
           under `space-y-2.5`. */}

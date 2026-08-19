@@ -20,6 +20,7 @@ function baseConfig(): Config {
   return {
     servicePort: 8000,
     opencodeInternalPort: 4096,
+    opencodeStandbyPort: 4097,
     staticPort: 3211,
     workspace: WORKSPACE,
     projectTarget: WORKSPACE,
@@ -38,6 +39,10 @@ function baseConfig(): Config {
     gitUserName: 'Kortix Agent',
     gitUserEmail: 'agent@kortix.ai',
     cloneFilter: '',
+    cloneDepth: 1,
+    workload: '',
+    monitorsJson: '',
+    monitorBoxEpoch: '',
   }
 }
 
@@ -150,6 +155,70 @@ describe('daemon file write routes', () => {
     form.append('file', new File(['x'], 'passwd', { type: 'text/plain' }))
     const res = await fetch(`${base}/file/upload`, { method: 'POST', headers: authHeaders(), body: form })
     expect(res.status).toBe(403)
+  })
+
+  // The traversal test above only covers a malicious `path` FIELD. The multipart
+  // FILENAME was trusted verbatim and interpolated as `${targetDir}/${file.name}`,
+  // so `../../opt/evil.sh` resolved out of the target directory and passed the
+  // allowed-roots check (which accepts /workspace, /opt, /tmp and /home). That
+  // gap is exactly why this shipped, so it gets its own test.
+  it('confines a traversing multipart filename to the target directory', async () => {
+    const form = new FormData()
+    form.append('path', `${WORKSPACE}/uploads`)
+    form.append('file', new File(['pwned'], '../../opt/evil.sh', { type: 'text/plain' }))
+    const res = await fetch(`${base}/file/upload`, { method: 'POST', headers: authHeaders(), body: form })
+
+    expect(res.status).toBe(200)
+    const results = (await res.json()) as { path: string }[]
+    // Basenamed, so it lands INSIDE the target directory under a bare name.
+    expect(results[0]!.path).toBe(`${WORKSPACE}/uploads/evil.sh`)
+    // And nothing was created at the escaped location.
+    await expect(fs.access('/opt/evil.sh')).rejects.toThrow()
+  })
+
+  it('rejects a filename that basenames to nothing', async () => {
+    for (const hostile of ['..', '.', '/', '../']) {
+      const form = new FormData()
+      form.append('path', `${WORKSPACE}/uploads`)
+      form.append('file', new File(['x'], hostile, { type: 'text/plain' }))
+      const res = await fetch(`${base}/file/upload`, { method: 'POST', headers: authHeaders(), body: form })
+      expect(res.status).toBe(400)
+    }
+  })
+
+  // Bun's multipart parser drops `filename` on a zero-length part, so an empty
+  // upload used to land as a file literally named "undefined".
+  it('uses the `filename` field when a zero-byte part loses its name', async () => {
+    const form = new FormData()
+    form.append('path', `${WORKSPACE}/uploads`)
+    form.append('filename', 'empty.json')
+    form.append('file', new File([], 'empty.json', { type: 'application/json' }))
+    const res = await fetch(`${base}/file/upload`, { method: 'POST', headers: authHeaders(), body: form })
+
+    expect(res.status).toBe(200)
+    const results = (await res.json()) as { path: string; size: number }[]
+    expect(results[0]!.path).toBe(`${WORKSPACE}/uploads/empty.json`)
+    expect(results[0]!.size).toBe(0)
+    expect(await fs.readFile(results[0]!.path, 'utf8')).toBe('')
+  })
+
+  it('never writes a file named "undefined"', async () => {
+    const form = new FormData()
+    form.append('path', `${WORKSPACE}/uploads`)
+    form.append('file', new File([], '', { type: 'application/octet-stream' }))
+    const res = await fetch(`${base}/file/upload`, { method: 'POST', headers: authHeaders(), body: form })
+    expect(res.status).toBe(400)
+    await expect(fs.access(`${WORKSPACE}/uploads/undefined`)).rejects.toThrow()
+  })
+
+  it('the `filename` field never overrides a real part filename', async () => {
+    const form = new FormData()
+    form.append('path', `${WORKSPACE}/uploads`)
+    form.append('filename', 'ignored.txt')
+    form.append('file', new File(['real'], 'actual.txt', { type: 'text/plain' }))
+    const res = await fetch(`${base}/file/upload`, { method: 'POST', headers: authHeaders(), body: form })
+    const results = (await res.json()) as { path: string }[]
+    expect(results[0]!.path).toBe(`${WORKSPACE}/uploads/actual.txt`)
   })
 
   it('mkdir creates a directory', async () => {

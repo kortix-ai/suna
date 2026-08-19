@@ -7,10 +7,10 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
-import { KortixAccount } from '@kortix/sdk/projects-client';
+import { Plus } from '@/features/icon/icons/plus';
 import { cn } from '@/lib/utils';
+import { KortixAccount } from '@kortix/sdk';
 import { useTranslations } from 'next-intl';
-import { Icon } from '../icon/icon';
 
 const NewProjectControl = ({
   viewAll,
@@ -41,7 +41,7 @@ const NewProjectControl = ({
         disabled={!activeAccountId || !canCreateActive}
         className={classes}
       >
-        <Icon.Plus />
+        <Plus />
         {label}
       </Button>
     );
@@ -50,7 +50,7 @@ const NewProjectControl = ({
   if (creatableAccounts.length === 0) {
     return (
       <Button disabled className={classes}>
-        <Icon.Plus />
+        <Plus />
         {label}
       </Button>
     );
@@ -60,7 +60,7 @@ const NewProjectControl = ({
     const only = creatableAccounts[0];
     return (
       <Button onClick={() => onPick(only.account_id)} className={classes}>
-        <Icon.Plus />
+        <Plus />
         {label}
       </Button>
     );
@@ -70,7 +70,7 @@ const NewProjectControl = ({
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button className={classes}>
-          <Icon.Plus />
+          <Plus />
           {label}
         </Button>
       </DropdownMenuTrigger>

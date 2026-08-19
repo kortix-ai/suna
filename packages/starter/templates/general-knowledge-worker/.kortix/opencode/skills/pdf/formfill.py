@@ -1,9 +1,9 @@
 """Native fillable PDF field operations.
 
 Usage:
-    python formfill.py detect <file.pdf>
-    python formfill.py extract <input.pdf> <output.json>
-    python formfill.py fill <input.pdf> <values.json> <output.pdf>
+    python3 formfill.py detect <file.pdf>
+    python3 formfill.py extract <input.pdf> <output.json>
+    python3 formfill.py fill <input.pdf> <values.json> <output.pdf>
 """
 
 import json

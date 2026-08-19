@@ -1,13 +1,26 @@
 import type {
+  GatewayAttemptFailure,
   GatewayConfig,
   GatewayLogger,
   ModelFallbackCondition,
+  ModelGenerationDefaults,
   UpstreamDescriptor,
 } from '../domain';
-import { CircuitOpenError, ClientAbortError, UpstreamHttpError } from '../errors';
+import {
+  CircuitOpenError,
+  ClientAbortError,
+  NetworkError,
+  TimeoutError,
+  UpstreamHttpError,
+  UpstreamMisconfiguredError,
+  looksLikeTerminalAuthFailure,
+} from '../errors';
 import { type FetchImpl, callUpstream } from '../http';
+import { parseUpstreamErrorBody } from '../http/parse-upstream-error';
 import type { CircuitBreaker } from '../resilience';
 import { gatewayErrorBody } from './error-response';
+import { appendAttemptFailure, failureChainMessage } from './failure-chain';
+import { applyGenerationDefaults } from './generation-defaults';
 import type { TraceEmitter, TraceFields } from './trace';
 
 // 4xx statuses that mean "this upstream won't serve you right now" rather than
@@ -26,33 +39,14 @@ function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-function parseUpstreamBody(body: string): { message: string; code?: string } {
-  if (!body) return { message: 'Upstream request failed' };
-  try {
-    const parsed = JSON.parse(body) as Record<string, unknown>;
-    const nested = parsed.error;
-    if (typeof nested === 'string') {
-      return { message: nested, code: typeof parsed.code === 'string' ? parsed.code : undefined };
-    }
-    if (nested && typeof nested === 'object') {
-      const error = nested as Record<string, unknown>;
-      return {
-        message: typeof error.message === 'string' ? error.message : body,
-        code:
-          typeof error.code === 'string'
-            ? error.code
-            : typeof error.type === 'string'
-              ? error.type
-              : undefined,
-      };
-    }
-    return {
-      message: typeof parsed.message === 'string' ? parsed.message : body,
-      code: typeof parsed.code === 'string' ? parsed.code : undefined,
-    };
-  } catch {
-    return { message: body };
-  }
+// Mines the REAL human-readable message + code from an upstream error's
+// response body (the raw `UpstreamHttpError.body` the AI SDK populates with
+// `responseBody`). Delegates to the shared `parseUpstreamErrorBody` so the
+// non-streaming and streaming paths surface the same message for the same
+// upstream failure — e.g. "context length exceeded from messages" instead of a
+// generic "Bad Request"/"Bad Gateway" (2026-08-01 defect).
+function parseUpstreamBody(body: string): { message: string; code?: string | number } {
+  return parseUpstreamErrorBody(body);
 }
 
 function suggestionFor(status: number): string {
@@ -66,6 +60,13 @@ function suggestionFor(status: number): string {
 }
 
 export interface FailoverContext {
+  /** The RAW request body — i.e. WITHOUT any project/account-configured
+   *  generation defaults injected. Each candidate attempt layers in its OWN
+   *  freshly-clamped defaults via `generationDefaultsForModel` below (see
+   *  the loop) rather than trusting a single pre-baked payload for every
+   *  candidate, which would silently forward the PRIMARY model's defaults
+   *  (temperature, reasoning_effort, max_tokens) to a fallback candidate
+   *  with different capabilities. */
   candidates: RoutedUpstreamCandidate[];
   payload: Record<string, unknown>;
   config: GatewayConfig;
@@ -80,6 +81,15 @@ export interface FailoverContext {
   /** Inbound client's abort signal — aborts an in-flight candidate attempt
    *  immediately if the caller disconnects before any upstream is chosen. */
   signal?: AbortSignal;
+  /** Re-derive `ModelGenerationDefaults` for a specific candidate's
+   *  `routeModel` right before dispatch — see `ModelRoutePlan`'s doc
+   *  comment (`domain/routing.ts`). Applied fresh per candidate via
+   *  `applyGenerationDefaults` (explicit client values still win; only
+   *  fields the client didn't already set get filled). Omitted entirely
+   *  when the host configured no generation defaults at all. */
+  generationDefaultsForModel?: (model: string) => ModelGenerationDefaults | undefined;
+  /** Candidate failures already observed by an earlier validation pass. */
+  attemptFailures?: GatewayAttemptFailure[];
 }
 
 export interface RoutedUpstreamCandidate {
@@ -93,6 +103,13 @@ export interface FailoverSuccess {
   tried: string[];
   modelsTried: string[];
   attempts: number;
+  /** The ACTUAL payload sent to `chosen` — `ctx.payload` with `chosen`'s own
+   *  freshly-clamped generation defaults layered in (see
+   *  `generationDefaultsForModel`). Callers that need to know exactly what
+   *  reached the wire (tracing/capture) should use this instead of
+   *  `ctx.payload`. */
+  dispatchedPayload: Record<string, unknown>;
+  attemptFailures: GatewayAttemptFailure[];
 }
 
 export type FailoverResult =
@@ -113,12 +130,16 @@ export async function runFailover(ctx: FailoverContext): Promise<FailoverResult>
     capturedRequest,
     fallbackOn,
     signal,
+    generationDefaultsForModel,
+    attemptFailures: priorAttemptFailures,
   } = ctx;
+  const attemptFailures = [...(priorAttemptFailures ?? [])];
   const tried: string[] = [];
   const modelsTried: string[] = [];
   let attempts = 0;
   let upstream: Response | null = null;
   let chosen: RoutedUpstreamCandidate | null = null;
+  let dispatchedPayload: Record<string, unknown> = payload;
   let lastError: unknown;
 
   const debug = (event: string, fields?: Record<string, unknown>): void =>
@@ -129,6 +150,14 @@ export async function runFailover(ctx: FailoverContext): Promise<FailoverResult>
     const { descriptor, routeModel } = candidate;
     const hasFallback = i < candidates.length - 1;
     const hasModelFallback = candidates.slice(i + 1).some((next) => next.routeModel !== routeModel);
+    const hasCredentialFallback = candidates.slice(i + 1).some(
+      (next) =>
+        next.routeModel === routeModel &&
+        next.descriptor.provider === descriptor.provider &&
+        descriptor.credentialRef !== undefined &&
+        next.descriptor.credentialRef !== undefined &&
+        next.descriptor.credentialRef !== descriptor.credentialRef,
+    );
     tried.push(descriptor.provider);
     if (modelsTried.at(-1) !== routeModel) modelsTried.push(routeModel);
     attempts += 1;
@@ -144,8 +173,16 @@ export async function runFailover(ctx: FailoverContext): Promise<FailoverResult>
       breakerState: breaker.current,
       hasFallback,
     });
+    // Re-clamped for THIS candidate, never trusted from a prior candidate —
+    // see FailoverContext.generationDefaultsForModel's doc comment. `payload`
+    // itself carries no generation defaults (the host never bakes them in
+    // before routing), so this is the ONLY place they're injected, and it
+    // happens fresh for every candidate the loop tries.
+    const candidatePayload = generationDefaultsForModel
+      ? applyGenerationDefaults(payload, generationDefaultsForModel(routeModel))
+      : payload;
     try {
-      upstream = await callUpstream(payload, descriptor, {
+      upstream = await callUpstream(candidatePayload, descriptor, {
         retry: {
           ...config.retry,
           onRetry: (info) => {
@@ -165,6 +202,7 @@ export async function runFailover(ctx: FailoverContext): Promise<FailoverResult>
         requestId,
       });
       chosen = candidate;
+      dispatchedPayload = candidatePayload;
       debug('upstream_attempt_ok', {
         provider: descriptor.provider,
         status: upstream.status,
@@ -173,6 +211,31 @@ export async function runFailover(ctx: FailoverContext): Promise<FailoverResult>
       break;
     } catch (err) {
       lastError = err;
+      const upstreamError =
+        err instanceof UpstreamHttpError
+          ? parseUpstreamBody(err.body)
+          : { message: errorMessage(err) };
+      const errorKind =
+        err instanceof ClientAbortError
+          ? 'client_disconnected'
+          : err instanceof TimeoutError
+            ? 'upstream_timeout'
+            : err instanceof CircuitOpenError
+              ? 'circuit_open'
+              : err instanceof UpstreamMisconfiguredError
+                ? 'upstream_misconfigured'
+                : err instanceof NetworkError
+                  ? 'upstream_network_error'
+                  : 'upstream_dispatch_error';
+      appendAttemptFailure(attemptFailures, {
+        provider: descriptor.provider,
+        routeModel,
+        resolvedModel: descriptor.resolvedModel,
+        stage: 'dispatch',
+        ...(err instanceof UpstreamHttpError ? { status: err.status } : {}),
+        code: upstreamError.code ?? errorKind,
+        message: upstreamError.message,
+      });
       debug('upstream_attempt_failed', {
         provider: descriptor.provider,
         ms: Date.now() - attemptStart,
@@ -196,6 +259,7 @@ export async function runFailover(ctx: FailoverContext): Promise<FailoverResult>
           errorMessage: 'Client disconnected before a response was ready',
           attempts,
           candidatesTried: tried,
+          attemptFailures,
           request: capturedRequest,
         });
         return {
@@ -212,19 +276,30 @@ export async function runFailover(ctx: FailoverContext): Promise<FailoverResult>
               resolvedModel: descriptor.resolvedModel ?? trace.requestedModel ?? '',
               requestId,
               suggestion: 'No action needed — the client already disconnected.',
+              attemptFailures,
             }),
             499,
           ),
         };
       }
       if (err instanceof UpstreamHttpError && err.status >= 400 && err.status < 500) {
+        const credentialFailure =
+          hasCredentialFallback &&
+          (err.status === 401 ||
+            (err.status === 400 &&
+              looksLikeTerminalAuthFailure(
+                `${upstreamError.message} ${upstreamError.code ?? ''}`,
+              )));
         // A rate-limit / quota / billing error (429/402/403) on a candidate that
         // has a fallback behind it — e.g. a user's BYOK key out of quota, with a
         // managed model queued next — falls over instead of failing the turn.
         // (429 was already retried on this candidate by callUpstream, so reaching
         // here means it's persistent, not a transient blip.) Other 4xx — bad
-        // request, auth, model-not-found — are the caller's to fix: return as-is.
+        // here means it is persistent. Authentication failures advance only
+        // when the same route has another configured credential. Other 4xx
+        // responses return unchanged.
         if (
+          credentialFailure ||
           (LIMIT_STATUSES.has(err.status) && hasFallback) ||
           (fallbackOn === 'any-error' && hasModelFallback)
         ) {
@@ -233,7 +308,11 @@ export async function runFailover(ctx: FailoverContext): Promise<FailoverResult>
             fromModel: routeModel,
             status: err.status,
             reason:
-              fallbackOn === 'any-error' && hasModelFallback ? 'model_policy' : 'provider_limit',
+              credentialFailure
+                ? 'credential'
+                : fallbackOn === 'any-error' && hasModelFallback
+                  ? 'model_policy'
+                  : 'provider_limit',
           });
           continue;
         }
@@ -241,7 +320,10 @@ export async function runFailover(ctx: FailoverContext): Promise<FailoverResult>
           provider: descriptor.provider,
           status: err.status,
         });
-        const upstreamError = parseUpstreamBody(err.body);
+        const clientErrorCode =
+          upstreamError.code === 'context_length_exceeded'
+            ? 'context_length_exceeded'
+            : 'upstream_client_error';
         emit({
           ...trace,
           resolvedModel: descriptor.resolvedModel,
@@ -249,10 +331,11 @@ export async function runFailover(ctx: FailoverContext): Promise<FailoverResult>
           billingMode: descriptor.billingMode,
           status: err.status,
           ok: false,
-          errorCode: 'upstream_client_error',
+          errorCode: clientErrorCode,
           errorMessage: upstreamError.message,
           attempts,
           candidatesTried: tried,
+          attemptFailures,
           request: capturedRequest,
         });
         return {
@@ -260,14 +343,21 @@ export async function runFailover(ctx: FailoverContext): Promise<FailoverResult>
           response: json(
             gatewayErrorBody({
               message: upstreamError.message,
-              code: 'upstream_client_error',
-              upstreamCode: upstreamError.code,
+              code: clientErrorCode,
+              upstreamCode:
+                clientErrorCode === 'context_length_exceeded'
+                  ? clientErrorCode
+                  : upstreamError.code,
               upstreamStatus: err.status,
               provider: descriptor.provider,
               requestedModel: trace.requestedModel ?? '',
               resolvedModel: descriptor.resolvedModel ?? trace.requestedModel ?? '',
               requestId,
-              suggestion: suggestionFor(err.status),
+              suggestion:
+                clientErrorCode === 'context_length_exceeded'
+                  ? 'Compact the conversation or reduce the input, then retry.'
+                  : suggestionFor(err.status),
+              attemptFailures,
             }),
             err.status,
           ),
@@ -288,12 +378,17 @@ export async function runFailover(ctx: FailoverContext): Promise<FailoverResult>
       lastError instanceof UpstreamHttpError
         ? parseUpstreamBody(lastError.body)
         : { message: errorMessage(lastError) };
+    const message = failureChainMessage(
+      attemptFailures,
+      upstreamError.message || 'All upstreams unavailable',
+      requestId,
+    );
     debug('all_upstreams_exhausted', {
       circuitOpen: open,
       status,
       tried,
       attempts,
-      error: upstreamError.message,
+      error: message,
     });
     emit({
       ...trace,
@@ -302,16 +397,17 @@ export async function runFailover(ctx: FailoverContext): Promise<FailoverResult>
       ok: false,
       resolvedModel: lastDescriptor?.resolvedModel,
       errorCode,
-      errorMessage: upstreamError.message,
+      errorMessage: message,
       attempts,
       candidatesTried: tried,
+      attemptFailures,
       request: capturedRequest,
     });
     return {
       kind: 'response',
       response: json(
         gatewayErrorBody({
-          message: upstreamError.message || 'All upstreams unavailable',
+          message,
           code: errorCode,
           upstreamCode: upstreamError.code,
           upstreamStatus: lastError instanceof UpstreamHttpError ? lastError.status : undefined,
@@ -322,11 +418,23 @@ export async function runFailover(ctx: FailoverContext): Promise<FailoverResult>
           suggestion: suggestionFor(
             lastError instanceof UpstreamHttpError ? lastError.status : status,
           ),
+          attemptFailures,
         }),
         status,
       ),
     };
   }
 
-  return { kind: 'success', value: { upstream, chosen, tried, modelsTried, attempts } };
+  return {
+    kind: 'success',
+    value: {
+      upstream,
+      chosen,
+      tried,
+      modelsTried,
+      attempts,
+      dispatchedPayload,
+      attemptFailures,
+    },
+  };
 }

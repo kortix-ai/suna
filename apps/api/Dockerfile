@@ -12,6 +12,24 @@ ARG BUN_VERSION=1.2
 ARG SANDBOX_AGENT_BUN_VERSION=1.3.11
 FROM oven/bun:${BUN_VERSION}-slim AS base
 
+# ---- Kortix Apps Runtime Stage ----
+# App snapshots are built at API runtime. The deployed API image therefore
+# carries the exact supervisor and ingress binaries that every provider adds to
+# a user image.
+FROM golang:1.25-bookworm AS app-runtime
+
+WORKDIR /runtime
+COPY apps/kortix-app-runtime/go.mod apps/kortix-app-runtime/main.go ./
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+    -buildvcs=false -trimpath -ldflags='-s -w' -o /out/kortix-appd .
+
+COPY apps/kortix-app-runtime/caddy/go.mod apps/kortix-app-runtime/caddy/go.sum ./caddy/
+WORKDIR /runtime/caddy
+RUN go mod download
+COPY apps/kortix-app-runtime/caddy/main.go ./
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+      -trimpath -ldflags='-s -w' -o /out/caddy .
+
 # ---- Sandbox Agent Stage ----
 # The API builds Daytona layered snapshots at runtime. Those snapshots bake the
 # sandbox-side daemon from this repo, so the deployable API image must carry the
@@ -40,18 +58,33 @@ WORKDIR /cli
 
 ARG KORTIX_AGENT_BUN_TARGET=bun-linux-x64
 
+# Stamp the binary with the SAME version the API image bakes (the `runner` stage
+# below declares the identical ARGs, and every workflow that builds this image
+# passes both). Without this the sandbox-baked CLI compiled to the literal
+# fallback `dev` — production sandboxes reported `vdev` and nothing in the
+# system could tell that their CLI predated the API's route rename.
+#
+# Deliberately `<version>+<short-commit>`: the version alone repeats for every
+# build of a release, and the commit is what identifies the exact source. Local
+# builds with neither ARG produce `dev+unknown`; a bare `bun run build` outside
+# Docker still produces plain `dev` (no --define).
+ARG KORTIX_VERSION=dev
+ARG KORTIX_COMMIT=unknown
+
 # Minimal workspace so bun resolves the `@kortix/*` packages the CLI imports
 # to their source, then compile (inlines them + smol-toml into one binary).
 COPY apps/cli ./apps/cli
-COPY packages/executor-sdk ./packages/executor-sdk
 COPY packages/llm-catalog ./packages/llm-catalog
 COPY packages/manifest-schema ./packages/manifest-schema
 COPY packages/registry ./packages/registry
+COPY packages/sdk ./packages/sdk
 COPY packages/shared ./packages/shared
 COPY packages/starter ./packages/starter
 RUN printf '{"name":"kortix-cli-build","private":true,"workspaces":["apps/cli","packages/*"]}\n' > package.json \
     && bun install --no-save \
-    && BUN_COMPILE_TARGET=${KORTIX_AGENT_BUN_TARGET} bash apps/cli/scripts/build.sh
+    && BUN_COMPILE_TARGET=${KORTIX_AGENT_BUN_TARGET} \
+       KORTIX_CLI_VERSION="${KORTIX_VERSION}+$(printf '%s' "${KORTIX_COMMIT}" | cut -c1-8)" \
+       bash apps/cli/scripts/build.sh
 
 # ---- Deps Stage ----
 # Install with pnpm (matches lockfile), run with bun
@@ -63,6 +96,7 @@ ARG SERVICE
 
 # Copy workspace root files for pnpm install
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
+COPY patches ./patches
 
 # Copy the target app and workspace packages it depends on
 COPY ${SERVICE} ./${SERVICE}
@@ -75,6 +109,7 @@ COPY packages/starter ./packages/starter
 COPY packages/manifest-schema ./packages/manifest-schema
 COPY packages/registry ./packages/registry
 COPY packages/llm-gateway ./packages/llm-gateway
+COPY packages/sdk ./packages/sdk
 
 # Install pnpm and deps for this app + workspace packages it depends on.
 # --shamefully-hoist flattens node_modules (no symlinks) so COPY works on all Docker versions.
@@ -137,6 +172,13 @@ COPY --from=deps /app/packages/db/tsconfig.json ./packages/db/tsconfig.json
 # Kortix cloud applies them in the deploy pipeline's migrate-db job instead.
 COPY --from=deps /app/packages/db/migrations ./packages/db/migrations
 COPY --from=deps /app/packages/db/scripts/migrate.ts ./packages/db/scripts/migrate.ts
+COPY --from=deps /app/packages/db/scripts/local-audit-v2-ledger-repair.ts ./packages/db/scripts/local-audit-v2-ledger-repair.ts
+COPY --from=deps /app/packages/db/scripts/local-invalid-index-repair.ts ./packages/db/scripts/local-invalid-index-repair.ts
+COPY --from=deps /app/packages/db/scripts/local-warm-session-index-repair.ts ./packages/db/scripts/local-warm-session-index-repair.ts
+COPY --from=deps /app/packages/db/scripts/migration-target.ts ./packages/db/scripts/migration-target.ts
+COPY --from=deps /app/packages/db/scripts/migration-ledger-repair.ts ./packages/db/scripts/migration-ledger-repair.ts
+COPY --from=deps /app/packages/db/scripts/migration-retry.ts ./packages/db/scripts/migration-retry.ts
+COPY --from=deps /app/packages/db/scripts/migration-runtime-overrides.ts ./packages/db/scripts/migration-runtime-overrides.ts
 # Non-kortix bootstrap (basejump + credit RPCs + signup triggers) for FRESH
 # self-host databases. `migrate.ts bootstrap` applies this before `up` when
 # basejump is absent (no-op on provisioned cloud/dev DBs).
@@ -168,9 +210,15 @@ COPY --from=deps /app/packages/registry/tsconfig.json ./packages/registry/tsconf
 # Copy runtime artifacts used by the layered snapshot builder.
 COPY --from=sandbox-agent /agent/dist/kortix-agent ./apps/kortix-sandbox-agent-server/dist/kortix-agent
 COPY --from=sandbox-cli /cli/apps/cli/dist/kortix ./apps/cli/dist/kortix
+COPY --from=sandbox-cli /cli/apps/cli/dist/kortix.version ./apps/cli/dist/kortix.version
+COPY --from=sandbox-cli /cli/apps/cli/dist/kortix-connectors-runtime.attestation.json ./apps/cli/dist/kortix-connectors-runtime.attestation.json
+COPY --from=app-runtime /out/kortix-appd ./apps/kortix-app-runtime/dist/kortix-appd-linux-amd64
+COPY --from=app-runtime /out/caddy ./apps/kortix-app-runtime/dist/caddy-linux-amd64
 COPY apps/sandbox/entrypoint.sh ./apps/sandbox/entrypoint.sh
+COPY apps/sandbox/opencode-warmup.sh ./apps/sandbox/opencode-warmup.sh
+COPY apps/sandbox/MACHINE.md ./apps/sandbox/MACHINE.md
 COPY apps/sandbox/slack-cli ./apps/sandbox/slack-cli
-COPY packages/executor-sdk ./packages/executor-sdk
+COPY packages/sdk ./packages/sdk
 
 # Source the layered-snapshot builder fingerprints at RUNTIME. It hashes the
 # SOURCE (not the compiled binaries above, which `bun build --compile` produces
@@ -195,13 +243,16 @@ COPY --from=deps /app/packages/agent-tunnel/package.json ./${SERVICE}/node_modul
 
 # Drop test-only source copied in with workspace packages. The runtime image
 # executes the API directly from TypeScript source, but does not need tests.
+# The runtime rejects a compiled agent that is older than its source. Refresh
+# the copied binary after all source copies and cleanup steps.
 RUN rm -rf \
     ${SERVICE}/src/__tests__ \
     apps/kortix-sandbox-agent-server/src/__tests__ \
     apps/cli/src/__tests__ \
     packages/starter/src/__tests__ \
     packages/manifest-schema/src/__tests__ \
-    packages/api-contract/src/__tests__
+    packages/api-contract/src/__tests__ && \
+    touch apps/kortix-sandbox-agent-server/dist/kortix-agent
 
 WORKDIR /app/${SERVICE}
 
@@ -216,7 +267,7 @@ LABEL org.opencontainers.image.title="kortix-api" \
       org.opencontainers.image.vendor="Kortix"
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
-  CMD bun -e "fetch('http://localhost:'+(process.env.PORT||8000)+'/v1/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+  CMD bun -e "fetch('http://localhost:'+(process.env.PORT||8000)+'/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
 # Non-root user (bun image ships with 'bun' user)
 USER bun

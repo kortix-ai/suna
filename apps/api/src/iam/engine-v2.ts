@@ -32,12 +32,17 @@ import {
   type AgentGrant,
 } from '@kortix/db';
 import { db } from '../shared/db';
+import { retryTransientDatabaseRead } from '../shared/database-errors';
+import {
+  isImpersonatingAccount,
+  isImpersonationBlockedAccount,
+} from '../shared/impersonation';
 import { ttlMemo } from '../shared/ttl-memo';
 import { agentMayPerform } from './agent-scope';
 import { registerPrincipalScopedMemo } from './cache-invalidation';
 import {
   filterAccessibleResourceIds,
-  isResourceAccessible,
+  isProjectResourceUsableByMember,
   loadProjectResourceGrants,
 } from './resource-grants';
 import type {
@@ -112,10 +117,12 @@ export function deriveEffectiveProjectRole(
 
 // ─── DB lookups ────────────────────────────────────────────────────────────
 //
-// LATENCY NOTE (prod incident, 2026-06-12): every DB statement from the prod
-// fleet pays a cross-region roundtrip, and these principal lookups run on
-// every single authed request — often 10+ times in parallel during one page
-// load. Two levers keep that off the floor of every request:
+// LATENCY NOTE (prod incident, 2026-06-12; measurement corrected 2026-07-26):
+// every DB statement from the prod fleet is a fast same-region roundtrip
+// (~3ms measured — DB and API both sit in eu-west-2, not the cross-region
+// cost originally assumed here), and these principal lookups run on every
+// single authed request — often 10+ times in parallel during one page load.
+// Two levers keep that off the floor of every request:
 //   1. Independent queries run via Promise.all (depth, not count, costs time).
 //   2. Results are memoized for a short TTL (IAM_CACHE_TTL_MS, default 15s) —
 //      *positive* results only, so a freshly granted member sees access
@@ -174,37 +181,39 @@ async function resolveActorV2Uncached(
       .select({ groupId: accountGroupMembers.groupId })
       .from(accountGroupMembers)
       .where(eq(accountGroupMembers.userId, userId)),
-    db
-      .select({
-        scopeType: iamPolicies.scopeType,
-        scopeId: iamPolicies.scopeId,
-        action: iamRoleActions.action,
-      })
-      .from(iamPolicies)
-      .innerJoin(iamRoleActions, eq(iamRoleActions.roleId, iamPolicies.roleId))
-      .where(
-        and(
-          eq(iamPolicies.accountId, accountId),
-          or(isNull(iamPolicies.expiresAt), gt(iamPolicies.expiresAt, sql`now()`)),
-          or(
-            and(eq(iamPolicies.principalType, 'member'), eq(iamPolicies.principalId, userId)),
-            and(
-              eq(iamPolicies.principalType, 'group'),
-              inArray(
-                iamPolicies.principalId,
-                db
-                  .select({ gid: accountGroupMembers.groupId })
-                  .from(accountGroupMembers)
-                  .where(eq(accountGroupMembers.userId, userId)),
+    retryTransientDatabaseRead(async () =>
+      db
+        .select({
+          scopeType: iamPolicies.scopeType,
+          scopeId: iamPolicies.scopeId,
+          action: iamRoleActions.action,
+        })
+        .from(iamPolicies)
+        .innerJoin(iamRoleActions, eq(iamRoleActions.roleId, iamPolicies.roleId))
+        .where(
+          and(
+            eq(iamPolicies.accountId, accountId),
+            or(isNull(iamPolicies.expiresAt), gt(iamPolicies.expiresAt, sql`now()`)),
+            or(
+              and(eq(iamPolicies.principalType, 'member'), eq(iamPolicies.principalId, userId)),
+              and(
+                eq(iamPolicies.principalType, 'group'),
+                inArray(
+                  iamPolicies.principalId,
+                  db
+                    .select({ gid: accountGroupMembers.groupId })
+                    .from(accountGroupMembers)
+                    .where(eq(accountGroupMembers.userId, userId)),
+                ),
               ),
+              // Service-account principal: a token policy keyed on this id. Harmless
+              // for a human request (SA ids and user ids are disjoint uuids, so this
+              // matches nothing), load-bearing for an SA request (its standing role).
+              and(eq(iamPolicies.principalType, 'token'), eq(iamPolicies.principalId, userId)),
             ),
-            // Service-account principal: a token policy keyed on this id. Harmless
-            // for a human request (SA ids and user ids are disjoint uuids, so this
-            // matches nothing), load-bearing for an SA request (its standing role).
-            and(eq(iamPolicies.principalType, 'token'), eq(iamPolicies.principalId, userId)),
           ),
         ),
-      ),
+    ),
   ]);
   const customActions: CustomAction[] = policyRows.map((r) => ({
     scopeType: r.scopeType,
@@ -520,6 +529,29 @@ export async function authorizeV2(
   const scope = scopeForActionV2(action);
   const effectiveTarget: AuthorizeTarget = target ?? { type: 'account' };
 
+  // ACT-AS: a platform admin holding a live impersonation grant on THIS account
+  // authorizes as its owner. Placed at the very top, before `resolveActingActor`,
+  // for one reason that is easy to get wrong: `resolveActorV2` is a TTL memo
+  // keyed `${userId}|${accountId}` and shared across requests. Widening the
+  // actor inside it would cache "owner" and serve it to the same operator's own
+  // NON-impersonated requests for the rest of the TTL window. Short-circuiting
+  // here touches no cache at all.
+  //
+  // The grant was already validated this request (middleware/impersonation.ts):
+  // owned by this user, unrevoked, unexpired, and the user is a platform admin
+  // right now. `impersonatedAccountFor` additionally requires the user id to
+  // match the operator, so a second principal resolved during the same request
+  // (a session's creator, a service account) gets the ordinary answer.
+  if (isImpersonatingAccount(userId, accountId)) {
+    return { allowed: true, reason: 'impersonation' };
+  }
+  // And denies every OTHER account for the duration — the operator's own
+  // included. See isImpersonationBlockedAccount for why confinement, not just
+  // widening, is the correct shape.
+  if (isImpersonationBlockedAccount(userId, accountId)) {
+    return { allowed: false, reason: 'impersonation_scope' };
+  }
+
   // Load the acting token's binding once (memoized) — it carries the project
   // scope, the agent grant, AND the standing-identity service account. JWT/
   // browser requests have no actingTokenId, so they skip this entirely (the
@@ -594,13 +626,21 @@ export async function authorizeV2(
     return { allowed: false, reason: 'project_role_insufficient' };
   }
 
-  // PER-RESOURCE SCOPING (human members only). When the action targets a
+  // PER-RESOURCE SCOPING (member-tier humans only). When the action targets a
   // SPECIFIC agent/skill (target.resource set), intersect the verdict with
-  // iam_resource_grants: if that resource is scoped (>=1 grant row), the member
-  // must be in the granted set (themselves or one of their groups). Unscoped
-  // resources stay project-wide — so this never locks anyone out of a resource
-  // nobody scoped. Owner/admins keep implicit Manager and bypass; service
-  // accounts are governed by their own policies + agentGrant, not this fold.
+  // iam_resource_grants. `isProjectResourceUsableByMember` owns the open-vs-
+  // closed policy per resource type: AGENTS are deny-by-default (an explicit
+  // grant is required), skills and secrets stay project-wide when unscoped.
+  //
+  // WHO BYPASSES ENTIRELY: only account owner/admins (implicit Manager) and
+  // service accounts. A project `manager` still goes THROUGH the fold — an
+  // explicit grant restricts them exactly as it restricts a member, which is
+  // what makes "scope this agent to the finance group" mean anything. What the
+  // manager tier buys is the UNSCOPED default: open for a manager, closed for a
+  // member. Without that distinction, turning agents deny-by-default would lock
+  // a project manager who has created no grants yet out of the agents they
+  // administer.
+  const managerTier = effective !== null && projectRoleAllows(effective, 'project.write');
   if (
     effectiveTarget.type === 'project' &&
     effectiveTarget.resource &&
@@ -608,7 +648,15 @@ export async function authorizeV2(
     !implicitProjectRoleForAccount(actor.accountRole ?? 'member')
   ) {
     const grants = await loadProjectResourceGrants(effectiveTarget.id, effectiveTarget.resource.type);
-    if (!isResourceAccessible(grants.get(effectiveTarget.resource.id), userId, actor.groupIds)) {
+    if (
+      !isProjectResourceUsableByMember(
+        effectiveTarget.resource.type,
+        grants.get(effectiveTarget.resource.id),
+        userId,
+        actor.groupIds,
+        managerTier,
+      )
+    ) {
       return { allowed: false, reason: 'resource_scope_insufficient' };
     }
   }
@@ -653,7 +701,20 @@ export async function filterAccessibleProjectResources(
   // owner/admins keep implicit Manager — both see the full list.
   if (actor.kind !== 'member') return resourceIds;
   if (implicitProjectRoleForAccount(actor.accountRole ?? 'member')) return resourceIds;
-  return filterAccessibleResourceIds(projectId, resourceType, resourceIds, userId, actor.groupIds);
+  // Same tier question authorizeV2's fold asks, resolved the same way: a
+  // project `manager` still has explicitly-scoped agents filtered OUT of their
+  // list, but keeps the unscoped ones — otherwise the Customize UI they own
+  // renders empty. One memoized role lookup.
+  const effective = await loadEffectiveProjectRole(actor, userId, projectId);
+  const managerTier = effective !== null && projectRoleAllows(effective, 'project.write');
+  return filterAccessibleResourceIds(
+    projectId,
+    resourceType,
+    resourceIds,
+    userId,
+    actor.groupIds,
+    managerTier,
+  );
 }
 
 // ─── List accessible resources ─────────────────────────────────────────────
@@ -676,6 +737,13 @@ export async function listAccessibleProjectsV2(
   | { mode: 'none' }
   | { mode: 'allow_only'; allowed: Set<string> }
 > {
+  // ACT-AS: same short-circuit as authorizeV2, and for the same cache reason.
+  // Without it the operator sees an empty project list inside an account whose
+  // every project they can already open by id — a confusing half-state, not a
+  // narrower one.
+  if (isImpersonatingAccount(userId, accountId)) return { mode: 'all' };
+  if (isImpersonationBlockedAccount(userId, accountId)) return { mode: 'none' };
+
   // Standing identity (opt-in): an activated agent-session SA lists the SA's
   // accessible projects; a role-less agent SA falls back to the launching user.
   // (Mirror authorizeV2 via the shared resolver.)

@@ -1,9 +1,14 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import * as realRequestContext from '../lib/request-context';
+import * as realAuthAudit from '../shared/auth-audit';
+import * as realSentry from '../lib/sentry';
+import * as realSsoSync from '../iam/sso-sync';
 
 let verifyResult: unknown;
 let networkUser: unknown;
 
 mock.module('../shared/jwt-verify', () => ({
+  decodeSupabaseJwtPayload: () => null,
   verifySupabaseJwt: async () => verifyResult,
 }));
 
@@ -15,15 +20,22 @@ mock.module('../shared/supabase', () => ({
 
 const syncCalls: Array<{ userId: string; email: string; jwtPayload: unknown }> = [];
 mock.module('../iam/sso-sync', () => ({
+  ...realSsoSync,
   syncSsoMembership: async (args: { userId: string; email: string; jwtPayload: unknown }) => {
     syncCalls.push(args);
     return { skipped: false, memberCreated: true };
   },
 }));
 
-mock.module('../shared/auth-audit', () => ({ auditLoginSuccess: () => {}, auditLoginFail: () => {} }));
-mock.module('../lib/sentry', () => ({ setSentryUser: () => {} }));
-mock.module('../lib/request-context', () => ({ setContextField: () => {} }));
+// Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
+// lists exports by hand deletes every export it omits — the failure surfaces in
+// whatever unrelated file imports the missing name next, attributed to no test.
+mock.module('../shared/auth-audit', () => ({ ...realAuthAudit, ...realAuthAudit, auditLoginSuccess: () => {}, auditLoginFail: () => {} }));
+mock.module('../lib/sentry', () => ({ ...realSentry, setSentryUser: () => {} }));
+// Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
+// lists exports by hand deletes every export it omits — the failure surfaces in
+// whatever unrelated file imports the missing name next, attributed to no test.
+mock.module('../lib/request-context', () => ({ ...realRequestContext, setContextField: () => {} }));
 
 const { supabaseAuth, combinedAuth } = await import('./auth');
 

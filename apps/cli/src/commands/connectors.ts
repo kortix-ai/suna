@@ -12,9 +12,12 @@ import {
   removeArrayBlock,
   setTableScalar,
 } from '../manifest-edit.ts';
+import { setConnectorSecretBinding } from '@kortix/sdk';
+import { withKortixScope } from '../api/sdk.ts';
 import { C, help, pad, status } from '../style.ts';
+import { runConnector } from './connector-gateway.ts';
 
-// ── Shapes (mirror apps/api/src/executor) ───────────────────────────────────
+// ── Shapes (mirror apps/api/src/connectors) ───────────────────────────────────
 
 type Provider = 'pipedream' | 'mcp' | 'openapi' | 'postman' | 'graphql' | 'http';
 
@@ -43,11 +46,22 @@ interface SyncResult {
   errors: Array<{ slug: string; error: string }>;
 }
 
+interface Connection {
+  connection_id: string;
+  connector_alias: string;
+  owner_type: 'project' | 'agent' | 'member' | 'subject' | 'external';
+  owner_id: string | null;
+  label?: string;
+  status: 'active' | 'revoked' | 'error';
+  is_default?: boolean;
+  metadata?: Record<string, unknown>;
+}
+
 const PROVIDERS: readonly Provider[] = ['pipedream', 'mcp', 'openapi', 'postman', 'graphql', 'http'];
 
 const HELP = help`Usage: kortix connectors <subcommand> [options]
 
-Manage the project's connectors — the integrations agents call as tools
+Manage the project's connectors — the external systems agents call as tools
 (Pipedream apps, MCP servers, OpenAPI/Postman/GraphQL/HTTP endpoints). Mirrors the
 dashboard's Customize → Connectors. Connectors are project-wide visible; the
 only access gate is which AGENTS may call one (\`kortix agents scope\` /
@@ -58,8 +72,11 @@ edit your LOCAL file — run \`kortix ship\` to apply, then \`sync\` to reconcil
 Only credentials, OAuth, and reads talk to the cloud.
 
 Subcommands:
-  ls [--json]                       List connectors + status, auth.
-  show <slug> [--json]              Show one connector's tools (actions).
+  ls [--session <id>] [--json]      List project or session-bound connectors.
+  show <slug>[.<action>] [--json]   Show a connector or one action schema.
+  discover <intent> [--json]        Search session tools by intent.
+  call <slug> <action> [json]       Invoke one connector action.
+  connections <subcommand>          Manage configured connector connections.
   add <slug> --provider <p> [...]   Add a [[connectors]] block to kortix.yaml.
                                     Add --apply to skip ship/CR and apply it
                                     instantly on the cloud project (commit to
@@ -67,15 +84,14 @@ Subcommands:
   rm <slug> [--apply]               Remove a [[connectors]] block from kortix.yaml
                                     (or --apply to remove on the cloud now).
   rename <slug> <name…>             Set a connector's display name (applies now).
-  mode <slug> shared                 Set the profile model (applies now + re-syncs; shared is the only mode).
+  mode <slug> shared                 Set the connection mode (applies now + re-syncs; shared is the only mode).
   sync                              Reconcile the catalog from the shipped kortix.yaml.
   credential <slug> [value]         Set a connector's credential (prompts if
                                     no value; reads stdin with \`-\`).
-  connect <slug>                    Start a Pipedream 1-click connect.
-  link <slug> [--expires <min>]     Mint a DURABLE shareable Quick Connect link
-                                    to hand a human (web: popup, Slack: link).
-                                    Auto-finalizes — no \`finalize\` needed.
-  finalize <slug>                   Confirm a Pipedream connection completed.
+  secret <slug> <identifier>        Use a project secret as this connector's
+                                    server-side credential. Add --clear to
+                                    remove the binding.
+  connect <slug> [--expires <min>]  Start a Pipedream 1-click connection.
   apps [<query>] [--json]           Browse the Pipedream app catalog.
   policy ls [--json]                Show project-wide execution policies.
   policy set --default <risk|allow_all>   Set the default execution mode.
@@ -84,6 +100,7 @@ Subcommands:
                                     <match> = tool name, glob (send_*) or /regex/.
   policy <slug> rm <match>          Remove a connector rule.
   policy <slug> clear               Remove all of a connector's rules.
+  mcp                               Run the stdio MCP server.
 
 Add options (provider-specific):
   --name <label>           Human label (default: slug).
@@ -94,13 +111,46 @@ Add options (provider-specific):
   --endpoint <url>         GraphQL endpoint (provider=graphql).
   --base-url <url>         HTTP base URL (provider=http).
   --spec <url|path>        OpenAPI/Postman/GraphQL/HTTP spec or source ref.
-  --auth-type <t>          none|bearer|basic|custom.
+  --auth-type <t>          Manual override: none|bearer|basic|custom|oauth1.
+                           Omit to auto-detect from the source; none opts out.
   --credential <mode>      shared (the only mode).
 
 Global:
   --project <id>     Operate on this project id (default: linked).
   --host <name>      Operate against a non-default Kortix host.
   -h, --help         Show this help.
+`;
+
+const CONNECTIONS_HELP = help`Usage: kortix connectors connections <subcommand> [options]
+
+Manage connections — configured authorizations for project connectors.
+
+Subcommands:
+  ls [--all] [--json]               List visible connections. --all lists the
+                                    manage-gated owner roster.
+  add <connector> <label> [options] Create or reconcile a connection.
+  credential <id> [value|-]         Set a connection credential.
+  revoke <id>                       Revoke a connection.
+  activate <id>                     Activate a connection.
+  default <id>                      Make a connection its owner-scope default.
+  connect <id> [options]            Start Pipedream OAuth for a connection.
+  finalize <id> [--json]            Finalize Pipedream OAuth for a connection.
+
+Add options:
+  --owner <type>       project|agent|member|subject|external (default: project).
+  --owner-id <id>      Required for non-project owners.
+  --mine               Derive a member owner from the current human token.
+  --metadata <json>    Connection metadata as a JSON object.
+
+Pipedream options:
+  --success-redirect <url>   Redirect after a successful connection.
+  --error-redirect <url>     Redirect after a failed connection.
+
+Global:
+  --project <id>       Operate on this project id (default: linked).
+  --host <name>        Operate against a non-default Kortix host.
+  --json               Emit the API response as JSON.
+  -h, --help           Show this help.
 `;
 
 export async function runConnectors(argv: string[]): Promise<number> {
@@ -111,13 +161,38 @@ export async function runConnectors(argv: string[]): Promise<number> {
 
   const sub = argv[0];
   const rest = argv.slice(1);
+  if (
+    sub === 'connections' &&
+    (rest.length === 0 || rest[0] === '-h' || rest[0] === '--help')
+  ) {
+    process.stdout.write(CONNECTIONS_HELP);
+    return rest.length === 0 ? 2 : 0;
+  }
+  if (sub === 'discover' || sub === 'call' || sub === 'mcp') {
+    return runConnector([sub, ...rest]);
+  }
+  if (sub === 'show' && rest[0]?.includes('.')) {
+    return runConnector(['show', ...rest]);
+  }
+  if ((sub === 'ls' || sub === 'list') && rest.includes('--session')) {
+    const forwarded = rest.filter(
+      (arg, index) => arg !== '--session' && rest[index - 1] !== '--session',
+    );
+    return runConnector(['ls', ...forwarded]);
+  }
   let f: Record<string, string | undefined> = {};
   let asStdin = false;
   let json = false;
   let applyRemote = false;
+  let clearSecretBinding = false;
+  let allConnections = false;
+  let mine = false;
   try {
     json = takeFlagBool(rest, ['--json']);
     applyRemote = takeFlagBool(rest, ['--apply']);
+    clearSecretBinding = takeFlagBool(rest, ['--clear']);
+    allConnections = takeFlagBool(rest, ['--all']);
+    mine = takeFlagBool(rest, ['--mine']);
     f.project = takeFlagValue(rest, ['--project']);
     f.host = takeFlagValue(rest, ['--host']);
     f.name = takeFlagValue(rest, ['--name']);
@@ -132,6 +207,12 @@ export async function runConnectors(argv: string[]): Promise<number> {
     f.credential = takeFlagValue(rest, ['--credential']);
     f.cursor = takeFlagValue(rest, ['--cursor']);
     f.default = takeFlagValue(rest, ['--default']);
+    f.expires = takeFlagValue(rest, ['--expires']);
+    f.owner = takeFlagValue(rest, ['--owner']);
+    f.ownerId = takeFlagValue(rest, ['--owner-id']);
+    f.metadata = takeFlagValue(rest, ['--metadata']);
+    f.successRedirect = takeFlagValue(rest, ['--success-redirect']);
+    f.errorRedirect = takeFlagValue(rest, ['--error-redirect']);
     asStdin = takeFlagBool(rest, ['--stdin']);
   } catch (err) {
     process.stderr.write(`${status.err((err as Error).message)}\n`);
@@ -151,9 +232,22 @@ export async function runConnectors(argv: string[]): Promise<number> {
 
   const ctx = await resolveProjectContext({ projectArg: f.project, hostArg: f.host });
   if (!ctx) return 1;
-  const ex = `/executor/projects/${ctx.projectId}`;
+  const ex = `/connectors/projects/${ctx.projectId}`;
 
   try {
+    if (sub === 'connections') {
+      return await runConnections({
+        action: positional[0],
+        positional: positional.slice(1),
+        ctx,
+        flags: f,
+        json,
+        all: allConnections,
+        mine,
+        asStdin,
+        rawArgs: rest,
+      });
+    }
     switch (sub) {
       // `--apply` paths: mutate the cloud project directly (commit to
       // kortix.yaml on main + sync, like the dashboard) — no local edit, no CR.
@@ -175,11 +269,18 @@ export async function runConnectors(argv: string[]): Promise<number> {
         if (f.spec) draft.spec = f.spec;
         if (f.credential) draft.credential = f.credential;
         if (f.authType) draft.auth = { type: f.authType };
-        const resp = await ctx.client.post<{ ok: boolean; sync?: unknown }>(`${ex}/connectors`, draft);
+        const resp = await ctx.client.post<{
+          ok: boolean;
+          sync?: unknown;
+          authDiscovery?: { status: string; recommended?: { type?: string } | null };
+        }>(`${ex}/connectors`, draft);
         if (json) { emitJson(resp); return 0; }
         process.stdout.write(
           `${status.ok(`${C.bold}${slug}${C.reset} live on the project`)} ${C.dim}(committed to kortix.yaml on main + synced)${C.reset}\n` +
-            `  ${C.dim}Next: ${C.reset}${C.cyan}kortix connectors link ${slug}${C.reset}${C.dim} or ${C.reset}${C.cyan}connect ${slug}${C.reset}\n`,
+            (resp.authDiscovery?.recommended?.type
+              ? `  ${C.dim}Authentication: ${C.reset}${resp.authDiscovery.recommended.type}${C.dim} (auto-detected; set the credential next)${C.reset}\n`
+              : '') +
+            `  ${C.dim}Next: ${C.reset}${C.cyan}kortix connectors credential ${slug}${C.reset}\n`,
         );
         return 0;
       }
@@ -234,7 +335,11 @@ export async function runConnectors(argv: string[]): Promise<number> {
         process.stdout.write(`\n  ${C.bold}${c.name}${C.reset} ${C.faded}(${c.slug})${C.reset}\n`);
         process.stdout.write(`  ${C.dim}provider ${C.reset}${c.provider}   ${C.dim}status ${C.reset}${statusCell(c.status)}   ${C.dim}cred ${C.reset}${c.credentialMode}${c.secretSet ? ` ${C.green}(set)${C.reset}` : ''}\n\n`);
         if (c.actions.length === 0) {
-          process.stdout.write(`  ${C.dim}No tools materialized yet — run \`kortix connectors sync\`.${C.reset}\n\n`);
+          const message =
+            c.provider === 'http' && !c.actions.length
+              ? 'No tools are available. Add --spec to define HTTP actions.'
+              : 'No tools materialized yet — run `kortix connectors sync`.';
+          process.stdout.write(`  ${C.dim}${message}${C.reset}\n\n`);
           return 0;
         }
         for (const a of c.actions) {
@@ -271,63 +376,45 @@ export async function runConnectors(argv: string[]): Promise<number> {
         process.stdout.write(`${status.ok(`Credential set for ${C.bold}${slug}${C.reset}`)}\n`);
         return 0;
       }
-      case 'connect': {
-        const slug = positional[0];
-        if (!slug) return missing('a connector slug');
-        const resp = await ctx.client.post<{ token: string; app: string; connectUrl?: string }>(
-          `${ex}/connectors/${encodeURIComponent(slug)}/connect`,
+      case 'secret': {
+        const input = connectorSecretBindingInput(positional, clearSecretBinding);
+        if ('error' in input) return missing(input.error);
+        await withKortixScope(ctx.auth, () =>
+          setConnectorSecretBinding(ctx.projectId, input.slug, input.secretIdentifier),
         );
-        process.stdout.write(`\n  ${C.bold}Connect ${slug}${C.reset} ${C.faded}(${resp.app})${C.reset}\n`);
-        if (resp.connectUrl) {
-          process.stdout.write(`  ${C.dim}Open this URL to authorize:${C.reset}\n  ${C.cyan}${resp.connectUrl}${C.reset}\n`);
-        } else {
-          process.stdout.write(
-            `  ${C.dim}1-click token minted. Complete the connect in the dashboard, or via the${C.reset}\n` +
-              `  ${C.dim}Pipedream SDK with this token:${C.reset}\n  ${C.faded}${resp.token}${C.reset}\n`,
-          );
-        }
         process.stdout.write(
-          `\n  ${C.dim}When done, run ${C.reset}${C.cyan}kortix connectors finalize ${slug}${C.reset}${C.dim} to confirm.${C.reset}\n\n`,
+          input.secretIdentifier
+            ? `${status.ok(`Secret ${C.bold}${input.secretIdentifier}${C.reset} bound to ${C.bold}${input.slug}${C.reset}`)}\n`
+            : `${status.ok(`Secret binding removed from ${C.bold}${input.slug}${C.reset}`)}\n`,
         );
         return 0;
       }
-      case 'link': {
-        // Mint a DURABLE, shareable Quick Connect link (vs `connect`, which
-        // returns a raw short-lived Pipedream URL for the dashboard/SDK flow).
-        // Hand this to whoever should authorize — web opens a connect popup,
-        // Slack renders it as a tappable link, and it mints a fresh Pipedream
-        // token each open so it never goes stale. Auto-finalizes via webhook.
+      case 'connect': {
         const slug = positional[0];
         if (!slug) return missing('a connector slug');
-        const resp = await ctx.client.post<{ url: string; slug: string; app: string | null; expires_at: string }>(
-          `/projects/${ctx.projectId}/connect-requests`,
-          { slug, ...(f.expires ? { expires_in_minutes: Number(f.expires) } : {}) },
-        );
+        const expires = f.expires === undefined ? undefined : Number(f.expires);
+        if (expires !== undefined && (!Number.isFinite(expires) || expires <= 0)) {
+          return missing('--expires <positive minutes>');
+        }
+        const resp = await ctx.client.post<{
+          url: string;
+          slug: string;
+          app: string | null;
+          expires_at: string;
+        }>(`/projects/${ctx.projectId}/connect-requests`, {
+          slug,
+          ...(expires === undefined ? {} : { expires_in_minutes: expires }),
+        });
         if (json) {
           emitJson(resp);
           return 0;
         }
         process.stdout.write(
-          `\n  ${C.bold}Hand this link to whoever should connect ${slug}${C.reset}` +
-            `${resp.app ? ` ${C.faded}(${resp.app})${C.reset}` : ''}\n` +
+          `\n  ${C.bold}Connect ${slug}${C.reset}\n` +
             `  ${C.cyan}${resp.url}${C.reset}\n\n` +
-            `  ${C.dim}Web: opens a 1-click connect popup. Slack: a tappable link. No keys touch the repo.${C.reset}\n` +
-            `  ${C.dim}Expires ${resp.expires_at}.${C.reset}\n\n`,
+            `  ${C.dim}Expires ${resp.expires_at}. The connection finalizes automatically.${C.reset}\n\n`,
         );
         return 0;
-      }
-      case 'finalize': {
-        const slug = positional[0];
-        if (!slug) return missing('a connector slug');
-        const resp = await ctx.client.post<{ connected: boolean; accountId?: string }>(
-          `${ex}/connectors/${encodeURIComponent(slug)}/connect/finalize`,
-        );
-        if (resp.connected) {
-          process.stdout.write(`${status.ok(`${C.bold}${slug}${C.reset} connected${resp.accountId ? ` ${C.faded}(${resp.accountId})${C.reset}` : ''}`)}\n`);
-          return 0;
-        }
-        process.stdout.write(`  ${status.warn(`${slug} not connected yet — finish the authorize step, then retry.`)}\n`);
-        return 1;
       }
       case 'rename':
       case 'name': {
@@ -352,7 +439,7 @@ export async function runConnectors(argv: string[]): Promise<number> {
         }
         if (mode !== 'shared') return missing('<shared>');
         await ctx.client.put(`${ex}/connectors/${encodeURIComponent(slug)}/credential-mode`, { mode });
-        process.stdout.write(`${status.ok(`Profile model for ${C.bold}${slug}${C.reset} → ${mode}`)}\n`);
+        process.stdout.write(`${status.ok(`Connection mode for ${C.bold}${slug}${C.reset} → ${mode}`)}\n`);
         return 0;
       }
       case 'apps': {
@@ -464,6 +551,202 @@ export async function runConnectors(argv: string[]): Promise<number> {
   }
 }
 
+async function runConnections(input: {
+  action: string | undefined;
+  positional: string[];
+  ctx: NonNullable<Awaited<ReturnType<typeof resolveProjectContext>>>;
+  flags: Record<string, string | undefined>;
+  json: boolean;
+  all: boolean;
+  mine: boolean;
+  asStdin: boolean;
+  rawArgs: string[];
+}): Promise<number> {
+  const { action, positional, ctx, flags, json, all, mine, asStdin, rawArgs } = input;
+  if (!action || action === '-h' || action === '--help') {
+    process.stdout.write(CONNECTIONS_HELP);
+    return action ? 0 : 2;
+  }
+
+  const base = `/projects/${ctx.projectId}/connections`;
+  switch (action) {
+    case 'ls':
+    case 'list': {
+      const response = await ctx.client.get<{ connections: Connection[] }>(
+        all ? `${base}/all` : base,
+      );
+      if (json) {
+        emitJson(response);
+        return 0;
+      }
+      if (response.connections.length === 0) {
+        process.stdout.write(`  ${C.dim}No connections.${C.reset}\n`);
+        return 0;
+      }
+      const connectorWidth = Math.max(
+        9,
+        ...response.connections.map((connection) => connection.connector_alias.length),
+      );
+      const labelWidth = Math.max(
+        5,
+        ...response.connections.map((connection) => (connection.label ?? '').length),
+      );
+      process.stdout.write('\n');
+      process.stdout.write(
+        `  ${C.dim}${pad('CONNECTOR', connectorWidth)}  ${pad('LABEL', labelWidth)}  OWNER     STATUS   DEFAULT  CONNECTION ID${C.reset}\n`,
+      );
+      for (const connection of response.connections) {
+        process.stdout.write(
+          `  ${pad(connection.connector_alias, connectorWidth)}  ${pad(connection.label ?? '—', labelWidth)}  ` +
+            `${pad(connection.owner_type, 9)} ${pad(connection.status, 8)} ` +
+            `${pad(connection.is_default ? 'yes' : 'no', 8)} ${connection.connection_id}\n`,
+        );
+      }
+      process.stdout.write(
+        `\n  ${C.dim}${response.connections.length} connection${response.connections.length === 1 ? '' : 's'}${C.reset}\n\n`,
+      );
+      return 0;
+    }
+    case 'add':
+    case 'create': {
+      const connectorAlias = positional[0];
+      const label = positional[1];
+      if (!connectorAlias) return missing('a connector slug');
+      if (!label) return missing('a connection label');
+      if (mine && (flags.owner || flags.ownerId)) {
+        return invalid('--mine cannot be combined with --owner or --owner-id');
+      }
+      const metadata = parseMetadata(flags.metadata);
+      if (metadata instanceof Error) return invalid(metadata.message);
+      const body: Record<string, unknown> = {
+        connector_alias: connectorAlias,
+        label,
+        ...(metadata === undefined ? {} : { metadata }),
+      };
+      let path = base;
+      if (mine) {
+        path = `${base}/me`;
+      } else {
+        const ownerType = flags.owner ?? 'project';
+        if (!['project', 'agent', 'member', 'subject', 'external'].includes(ownerType)) {
+          return invalid('--owner must be project, agent, member, subject, or external');
+        }
+        if (ownerType === 'project' && flags.ownerId) {
+          return invalid('--owner-id is not valid for a project connection');
+        }
+        if (ownerType !== 'project' && !flags.ownerId) {
+          return missing('--owner-id for a non-project connection');
+        }
+        body.owner_type = ownerType;
+        if (flags.ownerId) body.owner_id = flags.ownerId;
+      }
+      const response = await ctx.client.post<Connection>(path, body);
+      if (json) {
+        emitJson(response);
+        return 0;
+      }
+      process.stdout.write(
+        `${status.ok(`Connection ${C.bold}${response.connection_id}${C.reset} configured for ${connectorAlias}`)}\n`,
+      );
+      return 0;
+    }
+    case 'credential':
+    case 'cred': {
+      const connectionId = positional[0];
+      if (!connectionId) return missing('a connection id');
+      const wantStdin = asStdin || rawArgs.includes('-');
+      let value = positional[1];
+      if (wantStdin) {
+        value = (await readStdin()).replace(/\n$/, '');
+      } else if (!value) {
+        value = await promptSecret(`  value for connection ${C.bold}${connectionId}${C.reset}`);
+      }
+      if (!value) return invalid('No value provided.');
+      const response = await ctx.client.put<{ ok: true }>(
+        `${base}/${encodeURIComponent(connectionId)}/credential`,
+        { value },
+      );
+      if (json) emitJson(response);
+      else process.stdout.write(`${status.ok(`Credential set for connection ${C.bold}${connectionId}${C.reset}`)}\n`);
+      return 0;
+    }
+    case 'revoke':
+    case 'activate':
+    case 'default': {
+      const connectionId = positional[0];
+      if (!connectionId) return missing('a connection id');
+      const response = await ctx.client.put<{ ok: true }>(
+        `${base}/${encodeURIComponent(connectionId)}/${action}`,
+        {},
+      );
+      if (json) emitJson(response);
+      else process.stdout.write(`${status.ok(`${connectionActionPastTense(action)} connection ${C.bold}${connectionId}${C.reset}`)}\n`);
+      return 0;
+    }
+    case 'connect': {
+      const connectionId = positional[0];
+      if (!connectionId) return missing('a connection id');
+      const body = {
+        ...(flags.successRedirect ? { success_redirect_uri: flags.successRedirect } : {}),
+        ...(flags.errorRedirect ? { error_redirect_uri: flags.errorRedirect } : {}),
+      };
+      const response = await ctx.client.post<{
+        token?: string;
+        app?: string;
+        connectUrl?: string;
+      }>(`${base}/${encodeURIComponent(connectionId)}/connect`, body);
+      if (json) {
+        emitJson(response);
+        return 0;
+      }
+      if (response.connectUrl) process.stdout.write(`${response.connectUrl}\n`);
+      else emitJson(response);
+      return 0;
+    }
+    case 'finalize': {
+      const connectionId = positional[0];
+      if (!connectionId) return missing('a connection id');
+      const response = await ctx.client.post<{ connected: boolean; accountId?: string }>(
+        `${base}/${encodeURIComponent(connectionId)}/connect/finalize`,
+        {},
+      );
+      if (json) emitJson(response);
+      else {
+        process.stdout.write(
+          response.connected
+            ? `${status.ok(`Connected ${C.bold}${connectionId}${C.reset}`)}\n`
+            : `${status.warn(`Connection ${connectionId} is not ready`)}\n`,
+        );
+      }
+      return response.connected ? 0 : 1;
+    }
+    default:
+      process.stderr.write(
+        `${status.err(`unknown connections subcommand "${action}"`)}\n\n${CONNECTIONS_HELP}`,
+      );
+      return 2;
+  }
+}
+
+function parseMetadata(value: string | undefined): Record<string, unknown> | undefined | Error {
+  if (value === undefined) return undefined;
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return new Error('--metadata must be a JSON object');
+    }
+    return parsed as Record<string, unknown>;
+  } catch {
+    return new Error('--metadata must be valid JSON');
+  }
+}
+
+function connectionActionPastTense(action: 'revoke' | 'activate' | 'default'): string {
+  if (action === 'revoke') return 'Revoked';
+  if (action === 'activate') return 'Activated';
+  return 'Set as default';
+}
+
 // ── Local kortix.yaml config edits (source of truth; no cloud round-trip) ────
 
 function connectorAddLocal(slug: string | undefined, f: Record<string, string | undefined>): number {
@@ -493,7 +776,8 @@ function connectorAddLocal(slug: string | undefined, f: Record<string, string | 
     appendArrayBlock('connectors', fields);
     process.stdout.write(
       `${status.ok(`Added [[connectors]] ${C.bold}${slug}${C.reset} to kortix.yaml`)}\n` +
-        `  ${C.dim}Apply it with ${C.reset}${C.cyan}kortix ship${C.reset}${C.dim}, then set auth: ${C.reset}${C.cyan}kortix connectors credential ${slug}${C.reset}${C.dim} / ${C.reset}${C.cyan}connect ${slug}${C.reset}\n`,
+        `  ${C.dim}Apply it with ${C.reset}${C.cyan}kortix ship${C.reset}${C.dim}; authentication will be detected from the source unless --auth-type overrides it.${C.reset}\n` +
+        `  ${C.dim}Then set the credential with ${C.reset}${C.cyan}kortix connectors credential ${slug}${C.reset}\n`,
     );
     return 0;
   } catch (err) {
@@ -534,6 +818,19 @@ function policySetLocal(mode: string | undefined): number {
   }
 }
 
+export function connectorSecretBindingInput(
+  positional: string[],
+  clear: boolean,
+): { slug: string; secretIdentifier: string | null } | { error: string } {
+  const slug = positional[0];
+  if (!slug) return { error: 'a connector slug' };
+  const secretIdentifier = positional[1];
+  if (clear && secretIdentifier) return { error: 'Do not pass a secret identifier with --clear.' };
+  if (clear) return { slug, secretIdentifier: null };
+  if (!secretIdentifier) return { error: 'a secret identifier' };
+  return { slug, secretIdentifier };
+}
+
 function statusCell(s: AdminConnector['status']): string {
   const color =
     s === 'active' ? C.green : s === 'error' ? C.red : s === 'needs_auth' ? C.yellow : C.faded;
@@ -571,6 +868,11 @@ async function readStdin(): Promise<string> {
 
 function missing(what: string): number {
   process.stderr.write(`${status.err(`Pass ${what}.`)}\n`);
+  return 2;
+}
+
+function invalid(message: string): number {
+  process.stderr.write(`${status.err(message)}\n`);
   return 2;
 }
 

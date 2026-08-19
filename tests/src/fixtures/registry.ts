@@ -16,7 +16,10 @@ export interface TrackedResource {
 export class ResourceStack {
   private items: TrackedResource[] = [];
 
-  constructor(private admin: Client) {}
+  constructor(
+    private admin: Client,
+    private deleteDatabaseProject?: (projectId: string) => Promise<void>,
+  ) {}
 
   push(kind: string, id: string, meta?: Record<string, any>): void {
     this.items.push({ kind, id, meta });
@@ -41,8 +44,41 @@ export class ResourceStack {
           params: { projectId: r.meta?.projectId, id: r.id },
         });
         break;
+      case "sandbox-template":
+        await this.admin.del(
+          "/v1/projects/:projectId/sandbox-templates/:templateId",
+          {
+            params: {
+              projectId: r.meta?.projectId,
+              templateId: r.id,
+            },
+          },
+        );
+        break;
       case "project":
         await this.admin.del("/v1/projects/:id", { params: { id: r.id }, query: { purge: true } });
+        break;
+      case "database-project":
+        if (!this.deleteDatabaseProject) {
+          throw new Error("database project teardown is not configured");
+        }
+        await this.deleteDatabaseProject(r.id);
+        break;
+      case "local-git":
+        if (typeof r.meta?.dispose !== "function") {
+          throw new Error("local Git teardown is not configured");
+        }
+        await r.meta.dispose();
+        break;
+      case "tunnelPermission":
+        await this.admin.del("/v1/tunnel/permissions/:tunnelId/:permissionId", {
+          params: { tunnelId: r.meta?.tunnelId, permissionId: r.id },
+        });
+        break;
+      case "tunnelConnection":
+        await this.admin.del("/v1/tunnel/connections/:tunnelId", {
+          params: { tunnelId: r.id },
+        });
         break;
       case "token":
         await this.admin.del("/v1/accounts/tokens/:id", { params: { id: r.id } });

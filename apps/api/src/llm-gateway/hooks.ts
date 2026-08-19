@@ -5,26 +5,31 @@ import type {
   GatewayTrace,
   UsageEvent,
 } from '@kortix/llm-gateway';
-import { assertBillingActive, BillingGateError } from '../billing/services/billing-gate';
+import { BillingGateError, assertBillingActive } from '../billing/services/billing-gate';
 import { deductForLlmUsage, grantCredits } from '../billing/services/credits';
-import { getCachedAccountTier } from '../billing/services/entitlements';
-import { accountIsFreeTierForModels, llmPriceMarkup } from '../billing/services/tiers';
+import { accountMayUseManagedModels, getCachedAccountTier } from '../billing/services/entitlements';
+import { llmPriceMarkup } from '../billing/services/tiers';
 import { attributeYoloToken } from '../billing/services/yolo-tokens';
 import { config } from '../config';
 import { logger } from '../lib/logger';
 import { emitOtelSpan, isOtelTraceExporterConfigured, type OtelExporterOverride } from '../lib/otel';
-import { peekCachedProjectOtelExporter } from '../repositories/gateway-otel-config';
-import { isPureHoldRefund, reconcileBillingHold } from './billing-hold-reconciliation';
+import {
+  createExtendThrottle,
+  extendSandboxDeadline,
+  llmActivityGrantMs,
+} from '../projects/sandbox-deadline';
 import { validateAccountToken } from '../repositories/account-tokens';
+import { peekCachedProjectOtelExporter } from '../repositories/gateway-otel-config';
 import { isGatewayKey } from '../shared/crypto';
 import { recordGatewayTrace } from '../shared/gateway-logs';
 import { recordUsageEvent } from '../shared/usage-events';
+import { isPureHoldRefund, reconcileBillingHold } from './billing-hold-reconciliation';
 import { checkBudget } from './budgets';
-import { resolveDefaultModelForPrincipal } from './resolution/default-model';
 import { validateGatewayKey } from './gateway-keys';
 import { gatewayModelCatalog } from './models/catalog-models';
-import { resolveGatewayRoute } from './routing';
+import { resolveDefaultModelForPrincipal } from './resolution/default-model';
 import { resolveCandidates } from './resolution/resolve-candidates';
+import { resolveGatewayRoute } from './routing';
 
 // ─── Canonical gateway control plane ────────────────────────────────────────
 //
@@ -56,7 +61,7 @@ async function resolvePrincipal(token: string): Promise<AuthedPrincipal | null> 
   const account = await validateAccountToken(token);
   if (account.isValid && account.userId && account.accountId) {
     // projectId/sessionId attribute usage to the calling session (the sandbox
-    // executor token is minted per-session with session_id = sandbox_id) — the
+    // connector token is minted per-session with session_id = sandbox_id) — the
     // reaper's activity signal + precise per-session billing.
     return {
       userId: account.userId,
@@ -78,16 +83,20 @@ async function resolvePrincipal(token: string): Promise<AuthedPrincipal | null> 
 async function withResolvedTier(principal: AuthedPrincipal): Promise<AuthedPrincipal> {
   const tiered: AuthedPrincipal = config.KORTIX_BILLING_INTERNAL_ENABLED
     ? await (async () => {
-        const tier = await getCachedAccountTier(principal.accountId);
-        return { ...principal, tier, freeModelsOnly: accountIsFreeTierForModels(tier) };
+        // Both reads share the entitlements tier-snapshot cache: one DB read,
+        // one wall-clock instant, no tier-vs-managed skew. `freeModelsOnly`
+        // is the managed-models entitlement (trial overlay + operator
+        // override included), not a literal tier=='free' check.
+        const [tier, managedModels] = await Promise.all([
+          getCachedAccountTier(principal.accountId),
+          accountMayUseManagedModels(principal.accountId),
+        ]);
+        return { ...principal, tier, freeModelsOnly: !managedModels };
       })()
     : { ...principal, freeModelsOnly: false };
-  // Resolve the account/project/agent-configured default model once, here, so it
-  // travels with the principal (including across the RPC boundary to the
-  // standalone pod) and `auto` resolves to it. freeModelsOnly is already set
-  // above, so the resolver can drop a managed default for free tier. Never let a
-  // resolution hiccup break auth for every LLM call — degrade to the platform
-  // target (undefined) on error.
+  // Resolve the account/project/agent-configured concrete default once, here,
+  // so it travels with the principal across the standalone-gateway RPC boundary.
+  // Never let a resolution error break authentication for every LLM call.
   let defaultModel: string | undefined;
   try {
     defaultModel = await resolveDefaultModelForPrincipal(tiered);
@@ -105,7 +114,10 @@ async function withResolvedTier(principal: AuthedPrincipal): Promise<AuthedPrinc
  * instead of nothing. (A UI notification / email digest is a larger product
  * surface left for a follow-up; see PR description.)
  */
-function logGatewayBudgetWarnings(principal: AuthedPrincipal, warnings: string[] | undefined): void {
+function logGatewayBudgetWarnings(
+  principal: AuthedPrincipal,
+  warnings: string[] | undefined,
+): void {
   if (!warnings?.length) return;
   for (const message of warnings) {
     logger.warn(`[gateway] budget warn threshold reached: ${message}`, {
@@ -134,7 +146,7 @@ export async function authorizeRequest(token: string): Promise<AuthorizeResult> 
     return { ok: false, status: 401, errorCode: 'invalid_token', message: 'Invalid token' };
   }
   try {
-    const billing = await assertBillingActive(principal.accountId);
+    const billing = await assertLlmBillingActive(principal.accountId);
     if (billing?.holdUsd) principal = { ...principal, billingHold: { amountUsd: billing.holdUsd } };
   } catch (err) {
     return {
@@ -169,6 +181,22 @@ export async function authorizeRequest(token: string): Promise<AuthorizeResult> 
 }
 
 /**
+ * Apply the LLM wallet gate only to accounts that can spend wallet credits on
+ * Kortix-managed models. Free-tier wallets fund sandbox compute only.
+ */
+export async function assertLlmBillingActive(
+  accountId: string,
+): Promise<{ holdUsd?: number } | void> {
+  // Accounts without the managed-models entitlement (BYOK-only, whether by
+  // tier, trial, or operator override) never spend wallet credits on managed
+  // inference — their wallets fund sandbox compute only, so skip the LLM gate.
+  if (config.KORTIX_BILLING_INTERNAL_ENABLED) {
+    if (!(await accountMayUseManagedModels(accountId))) return;
+  }
+  return assertBillingActive(accountId);
+}
+
+/**
  * Record a usage event (always, for observability, unless it's a pure hold
  * refund with nothing to observe) and settle the wallet.
  *
@@ -182,8 +210,44 @@ export async function authorizeRequest(token: string): Promise<AuthorizeResult> 
  * original flat deduct, skipped entirely when the route isn't billable
  * (billingMode === 'none').
  */
+/**
+ * One deadline write per minute per session for LLM activity. A single turn can
+ * make dozens of gateway calls; the extend is monotone, so the ones inside a
+ * window would land on the value the first already produced.
+ */
+const llmActivityThrottle = createExtendThrottle(60_000);
+
+/**
+ * THE MID-TURN EXTENSION, and the reason a long turn no longer gets killed.
+ *
+ * A turn is granted 4 hours when it STARTS, and nothing else used to re-extend
+ * it — so the measured tail (MAX ~8.4h, roughly 7-18 turns per 30 days over 4h)
+ * was work the reaper would stop mid-flight. `usage_events` closes that: it is
+ * written by the gateway after a real upstream completion, never by the sandbox,
+ * so it satisfies the invariant — the box cannot mint one without spending real
+ * money through our own control plane, and the row IS the billing record.
+ *
+ * `event.sessionId` is safe as the target for exactly the reason `originRef` is:
+ * the gateway principal's session id comes from the connector token, minted
+ * server-side with sessionId = sandboxId = the project session id, so a caller
+ * cannot name someone else's session. Fire-and-forget — a deadline write must
+ * never fail a billing settlement.
+ */
+function extendDeadlineForLlmActivity(sessionId: string | null | undefined): void {
+  if (!sessionId) return;
+  if (!llmActivityThrottle.take(sessionId)) return;
+  void extendSandboxDeadline({ sessionId }, llmActivityGrantMs()).catch((err) =>
+    logger.warn('[deadline] llm-activity extend failed', {
+      sessionId,
+      err: err instanceof Error ? err.message : String(err),
+    }),
+  );
+}
+
 export async function recordGatewayUsage(event: UsageEvent): Promise<void> {
   const pureHoldRefund = isPureHoldRefund(event);
+  // A pure hold refund observed nothing — no upstream call happened.
+  if (!pureHoldRefund) extendDeadlineForLlmActivity(event.sessionId);
 
   const usageEventId = pureHoldRefund
     ? null
@@ -277,6 +341,8 @@ export function emitGatewayGenAiSpan(trace: GatewayTrace): void {
       : null;
   if (!isOtelTraceExporterConfigured(override)) return;
   try {
+    const attemptFailures = trace.attemptFailures ?? [];
+    const failureCodes = attemptFailures.map((failure) => String(failure.code));
     const endTimeMs = Date.now();
     const startTimeMs = endTimeMs - Math.max(0, trace.latencyMs || 0);
     const resolvedModel = trace.resolvedModel || trace.requestedModel;
@@ -296,12 +362,21 @@ export function emitGatewayGenAiSpan(trace: GatewayTrace): void {
         'kortix.upstream_cost_usd': trace.upstreamCost,
         'kortix.provider': trace.provider,
         'kortix.cached_tokens': trace.usage.cachedTokens,
+        'kortix.cache_write_tokens': trace.usage.cacheWriteTokens,
         'kortix.streaming': trace.streaming,
         'kortix.billing_mode': trace.billingMode,
         'kortix.request_id': trace.requestId,
         'kortix.attempts': trace.attempts,
         'kortix.gateway_status': trace.status,
         'kortix.ok': trace.ok,
+        'kortix.failure_count': attemptFailures.length,
+        'kortix.failure_codes': failureCodes.join(','),
+        'kortix.context_rejected': failureCodes.includes('context_length_exceeded'),
+        // `kortix.probe_timeout` removed: the gateway's first-byte deadline
+        // commits the stream instead of failing it, so `stream_probe_timeout`
+        // can no longer reach a failure chain and the attribute was pinned to
+        // false on every span.
+        'kortix.fallback_recovered': trace.ok && attemptFailures.length > 0,
         ...(trace.errorCode ? { 'kortix.error_code': trace.errorCode } : {}),
       },
     }, override).catch((error) => {
@@ -342,17 +417,17 @@ export async function persistGatewayTrace(trace: GatewayTrace): Promise<void> {
     promptTokens: trace.usage.promptTokens,
     completionTokens: trace.usage.completionTokens,
     cachedTokens: trace.usage.cachedTokens,
+    cacheWriteTokens: trace.usage.cacheWriteTokens,
     upstreamCost: trace.upstreamCost,
     finalCost: trace.finalCost,
     streaming: trace.streaming,
     billingMode: trace.billingMode,
     request: trace.request,
     response: trace.response,
-    // gateway_request_logs has no cache_write_tokens column (unlike
-    // usage_events, which does) — stash it in metadata rather than take on a
-    // schema migration for a purely observational field; the dollar amount
-    // (finalCost/upstreamCost) already reflects the cache-write premium.
-    metadata: { ...trace.metadata, cacheWriteTokens: trace.usage.cacheWriteTokens },
+    metadata: {
+      ...trace.metadata,
+      ...(trace.attemptFailures?.length ? { attemptFailures: trace.attemptFailures } : {}),
+    },
   });
   // Non-blocking: never let telemetry delay the caller or affect the trace write.
   emitGatewayGenAiSpan(trace);
@@ -364,7 +439,7 @@ export function createInProcessGatewayHooks(): GatewayHooks {
     authenticate: authenticatePrincipal,
     resolveRoute: resolveGatewayRoute,
     resolveUpstream: resolveCandidates,
-    assertBillingActive,
+    assertBillingActive: assertLlmBillingActive,
     assertBudget: assertGatewayBudget,
     recordUsage: recordGatewayUsage,
     recordTrace: persistGatewayTrace,

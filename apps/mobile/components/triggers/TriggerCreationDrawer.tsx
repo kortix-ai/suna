@@ -39,8 +39,8 @@ import {
   useCreateComposioEventTrigger,
 } from '@/lib/triggers';
 import type { TriggerConfiguration } from '@/api/types';
-import { useComposioProfiles } from '@/hooks/useComposio';
-import type { ComposioApp, ComposioProfile } from '@/hooks/useComposio';
+import { useComposioConnections } from '@/hooks/useComposio';
+import type { ComposioApp, ComposioConnection } from '@/hooks/useComposio';
 import { BottomSheetModal, BottomSheetBackdrop, BottomSheetScrollView, TouchableOpacity as BottomSheetTouchable } from '@gorhom/bottom-sheet';
 import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
@@ -48,7 +48,7 @@ import { Loading } from '../loading/loading';
 import { AppSelectionStep } from './AppSelectionStep';
 import { TriggerSelectionStep } from './TriggerSelectionStep';
 import { TriggerConfigStep } from './TriggerConfigStep';
-import { ComposioConnectorContent } from '../settings/integrations/ComposioConnector';
+import { ComposioConnectorContent } from '../settings/connections/ComposioConnector';
 import type { TriggerApp, ComposioTriggerType } from '@/api/types';
 import { SvgUri } from 'react-native-svg';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -212,7 +212,7 @@ export function TriggerCreationDrawer({
   const [selectedApp, setSelectedApp] = useState<TriggerApp | null>(null);
   const [selectedTrigger, setSelectedTrigger] = useState<ComposioTriggerType | null>(null);
   const [eventConfig, setEventConfig] = useState<Record<string, any>>({});
-  const [profileId, setProfileId] = useState('');
+  const [connectionId, setConnectionId] = useState('');
   const [model, setModel] = useState('kortix/basic');
   const [showComposioConnector, setShowComposioConnector] = useState(false);
   const [appSearchQuery, setAppSearchQuery] = useState('');
@@ -237,11 +237,10 @@ export function TriggerCreationDrawer({
     visible && !!selectedApp && (eventStep === 'triggers' || (isEditMode && eventStep === 'config'))
   );
   const {
-    data: profiles,
-    isLoading: isLoadingProfiles,
-    error: profilesError,
-    refetch: refetchProfiles,
-  } = useComposioProfiles();
+    data: connections,
+    isLoading: isLoadingConnections,
+    refetch: refetchConnections,
+  } = useComposioConnections();
 
   // Use dynamic sizing for initial type selection to fit content, fixed height for other steps
   // In edit mode, always use fixed height since we start at config step
@@ -289,10 +288,10 @@ export function TriggerCreationDrawer({
 
       if (isComposioTrigger) {
         // Event trigger
-        setProfileId(triggerConfig.profile_id || '');
+        setConnectionId(triggerConfig.connection_id || '');
         const {
           agent_prompt,
-          profile_id,
+          connection_id,
           provider_id,
           trigger_slug,
           qualified_name,
@@ -393,7 +392,7 @@ export function TriggerCreationDrawer({
         setSelectedApp(null);
         setSelectedTrigger(null);
         setEventConfig({});
-        setProfileId('');
+        setConnectionId('');
         setModel('kortix/basic');
         setShowComposioConnector(false);
         setAppSearchQuery('');
@@ -497,15 +496,15 @@ export function TriggerCreationDrawer({
   // Helper to check connection status for an app
   const getAppConnectionStatus = useMemo(() => {
     return (appSlug: string) => {
-      if (!profiles) return { isConnected: false, hasProfiles: false };
-      const appProfiles = profiles.filter((p: ComposioProfile) => p.toolkit_slug === appSlug);
-      const connectedProfiles = appProfiles.filter((p: ComposioProfile) => p.is_connected);
+      if (!connections) return { isConnected: false, hasConnections: false };
+      const appConnections = connections.filter((connection: ComposioConnection) => connection.toolkit_slug === appSlug);
+      const connectedConnections = appConnections.filter((connection: ComposioConnection) => connection.is_connected);
       return {
-        isConnected: connectedProfiles.length > 0,
-        hasProfiles: appProfiles.length > 0,
+        isConnected: connectedConnections.length > 0,
+        hasConnections: appConnections.length > 0,
       };
     };
-  }, [profiles]);
+  }, [connections]);
 
   const handleCreate = async () => {
     if (isEditMode && existingTrigger) {
@@ -514,14 +513,14 @@ export function TriggerCreationDrawer({
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
         if (selectedType === 'event') {
-          if (!triggerName.trim() || !agentPrompt.trim() || !profileId || !isEventConfigValid) {
+          if (!triggerName.trim() || !agentPrompt.trim() || !connectionId || !isEventConfigValid) {
             Alert.alert('Error', 'Please fill in all required fields');
             return;
           }
 
           const updatedConfig = {
             ...eventConfig,
-            profile_id: profileId,
+            connection_id: connectionId,
             trigger_slug: selectedTrigger!.slug,
             qualified_name: `composio.${selectedApp?.slug}`,
             provider_id: 'composio',
@@ -606,8 +605,8 @@ export function TriggerCreationDrawer({
         Alert.alert('Error', 'Please enter agent instructions');
         return;
       }
-      if (!profileId) {
-        Alert.alert('Error', 'Please select a connection profile');
+      if (!connectionId) {
+        Alert.alert('Error', 'Please select a connection');
         return;
       }
       if (!isEventConfigValid) {
@@ -633,19 +632,19 @@ export function TriggerCreationDrawer({
       try {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
-        const selectedProfile = profiles?.find((p: ComposioProfile) => p.profile_id === profileId);
+        const selectedConnection = connections?.find((candidate: ComposioConnection) => candidate.connection_id === connectionId);
 
         const payload = {
           agent_id: agentId,
           slug: selectedTrigger.slug,
           toolkit_slug: selectedApp.slug,
-          profile_id: profileId,
+          connection_id: connectionId,
           name: triggerName,
           agent_prompt: agentPrompt,
           trigger_config: eventConfig,
           route: 'agent' as const,
           model: model,
-          connected_account_id: selectedProfile?.connected_account_id,
+          connected_account_id: selectedConnection?.connected_account_id,
         };
 
         const result = await createEventTriggerMutation.mutateAsync(payload);
@@ -746,7 +745,7 @@ export function TriggerCreationDrawer({
   // Check if form is valid
   const isFormValid =
     selectedType === 'event'
-      ? triggerName.trim() && profileId && isEventConfigValid && agentPrompt.trim()
+      ? triggerName.trim() && connectionId && isEventConfigValid && agentPrompt.trim()
       : triggerName.trim() &&
         agentPrompt.trim() &&
         (scheduleMode === 'preset'
@@ -809,16 +808,16 @@ export function TriggerCreationDrawer({
                 setSelectedApp(null);
               }
             }}
-            onComplete={(createdProfileId, appName, appSlug) => {
-              setProfileId(createdProfileId);
+            onComplete={(createdConnectionId, appName, appSlug) => {
+              setConnectionId(createdConnectionId);
               setShowComposioConnector(false);
-              refetchProfiles();
-              // After creating profile, move to triggers step if we're still on apps step
+              refetchConnections();
+              // Move to the trigger step after the connection is created.
               if (eventStep === 'apps') {
                 setEventStep('triggers');
               }
             }}
-            mode="profile-only"
+            mode="connection-only"
             noPadding={false}
           />
         ) : (
@@ -1295,7 +1294,7 @@ export function TriggerCreationDrawer({
                         setShowComposioConnector(true);
                       }
                     }}
-                    profiles={profiles || []}
+                    connections={connections || []}
                   />
                 )}
 
@@ -1353,11 +1352,11 @@ export function TriggerCreationDrawer({
                         app={selectedApp}
                         config={eventConfig}
                         onConfigChange={setEventConfig}
-                        profileId={profileId}
-                        onProfileChange={setProfileId}
-                        profiles={profiles || []}
-                        isLoadingProfiles={isLoadingProfiles}
-                        onCreateProfile={() => setShowComposioConnector(true)}
+                        connectionId={connectionId}
+                        onConnectionChange={setConnectionId}
+                        connections={connections || []}
+                        isLoadingConnections={isLoadingConnections}
+                        onCreateConnection={() => setShowComposioConnector(true)}
                         triggerName={triggerName}
                         onTriggerNameChange={setTriggerName}
                         agentPrompt={agentPrompt}

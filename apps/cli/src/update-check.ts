@@ -7,8 +7,14 @@ import { C, stripAnsi } from './style.ts';
 // Update notifier.
 //
 // On `kortix` (bare) we resolve the latest published release from GitHub and,
-// if it's newer than the running binary, surface a prominent box telling the
-// user to run `kortix update`. Subcommands get a passive one-line nudge.
+// if it's newer than the running binary, surface a prominent box AND — when
+// we're on a real terminal — offer to install it right there (see
+// `offerInteractiveUpdate` in index.ts). Subcommands get a passive one-line
+// nudge and are NEVER interrupted: they have to stay scriptable.
+//
+// Declining is remembered PER VERSION (`snoozedTag`), so "skip" silences the
+// question for that release only — the next one asks again. The box keeps
+// showing either way, so a skip never hides that the CLI is behind.
 //
 // To keep this off the hot path we cache the last-known latest version in
 // ~/.config/kortix/update-check.json and only hit the network at most once per
@@ -20,13 +26,14 @@ import { C, stripAnsi } from './style.ts';
 // ─────────────────────────────────────────────────────────────────────────────
 
 const REPO = process.env.KORTIX_REPO ?? 'kortix-ai/suna';
-const LATEST_RELEASE_URL = `https://api.github.com/repos/${REPO}/releases/latest`;
 const CHECK_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
 const FETCH_TIMEOUT_MS = 1500;
 
 interface CacheEntry {
   latest: string;
   checkedAt: number;
+  /** Release tag the user last answered "skip" to. */
+  snoozedTag?: string;
 }
 
 function cachePath(): string {
@@ -66,7 +73,11 @@ function readCache(): CacheEntry | null {
     const raw = readFileSync(cachePath(), 'utf8');
     const parsed = JSON.parse(raw) as Partial<CacheEntry>;
     if (typeof parsed.latest === 'string' && typeof parsed.checkedAt === 'number') {
-      return { latest: parsed.latest, checkedAt: parsed.checkedAt };
+      return {
+        latest: parsed.latest,
+        checkedAt: parsed.checkedAt,
+        ...(typeof parsed.snoozedTag === 'string' ? { snoozedTag: parsed.snoozedTag } : {}),
+      };
     }
   } catch {
     /* missing or corrupt — treat as no cache */
@@ -84,11 +95,37 @@ function writeCache(entry: CacheEntry): void {
   }
 }
 
+/** Did the user already answer "skip" for exactly this release? */
+export function isUpdateSnoozed(latestTag: string): boolean {
+  return readCache()?.snoozedTag === latestTag;
+}
+
+/**
+ * Remember that the user declined THIS release, so bare `kortix` stops asking
+ * until a newer one lands. Deliberately keyed to the tag rather than a
+ * timestamp: a snooze that expires would re-ask for a version they already
+ * turned down, and one that never expires would hide a release they've never
+ * seen. The box still renders regardless.
+ */
+export function snoozeUpdate(latestTag: string): void {
+  const cached = readCache();
+  writeCache({
+    latest: cached?.latest ?? latestTag,
+    checkedAt: cached?.checkedAt ?? Date.now(),
+    snoozedTag: latestTag,
+  });
+}
+
 async function fetchLatestTag(): Promise<string | null> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
   try {
-    const res = await fetch(LATEST_RELEASE_URL, {
+    // The literal host stays AT the call site on purpose: this is the one
+    // non-Kortix fetch the CLI makes, and `scripts/sdk-boundary.mjs` can only
+    // verify that statically. Behind a `LATEST_RELEASE_URL` constant the target
+    // is opaque to the lint, which is exactly the shape a Kortix call could
+    // hide in.
+    const res = await fetch(`https://api.github.com/repos/${REPO}/releases/latest`, {
       signal: ctrl.signal,
       headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'kortix-cli' },
     });
@@ -116,7 +153,13 @@ async function resolveLatestTag(allowFetch: boolean): Promise<string | null> {
 
   const tag = await fetchLatestTag();
   if (tag) {
-    writeCache({ latest: tag, checkedAt: Date.now() });
+    // Carry the snooze across TTL refreshes — dropping it here would re-ask
+    // about a release the user already declined every 6 hours.
+    writeCache({
+      latest: tag,
+      checkedAt: Date.now(),
+      ...(cached?.snoozedTag ? { snoozedTag: cached.snoozedTag } : {}),
+    });
     return tag;
   }
   return cached?.latest ?? null;
@@ -129,7 +172,9 @@ function boxLine(content: string): string {
   return `  ${C.yellow}║${C.reset} ${content}${' '.repeat(padding)} ${C.yellow}║${C.reset}`;
 }
 
-function renderBox(current: string, latestDisplay: string): string {
+/** `hint` is the call-to-action line. The interactive path replaces the
+ *  "run kortix update" advice, since it's about to ask instead. */
+function renderBox(current: string, latestDisplay: string, hint: string): string {
   const title = ' update available ';
   const fill = Math.max(0, BOX_INNER + 2 - 2 - title.length);
   const top = `  ${C.yellow}╔══${C.reset}${C.bold}${title}${C.reset}${C.yellow}${'═'.repeat(fill)}╗${C.reset}`;
@@ -138,7 +183,7 @@ function renderBox(current: string, latestDisplay: string): string {
     '',
     top,
     boxLine(`${C.bold}Kortix CLI${C.reset} ${C.dim}v${current}${C.reset}  ${C.yellow}→${C.reset}  ${C.green}${C.bold}${latestDisplay}${C.reset}`),
-    boxLine(`Run  ${C.cyan}kortix update${C.reset}  to upgrade.`),
+    boxLine(hint),
     bottom,
   ].join('\n');
 }
@@ -147,6 +192,57 @@ function renderLine(current: string, latestDisplay: string): string {
   return (
     `  ${C.yellow}!${C.reset}  ${C.yellow}Update available: v${current} → ${latestDisplay} — run${C.reset} ` +
     `${C.cyan}kortix update${C.reset}`
+  );
+}
+
+export interface UpdateStatus {
+  /** Running version, e.g. "0.10.15". */
+  current: string;
+  /** Release tag as published, e.g. "v0.10.16" — the snooze key. */
+  latestTag: string;
+  /** Display form, always `v`-prefixed. */
+  latestDisplay: string;
+}
+
+/**
+ * Is a newer release available? null when up to date, disabled, or the release
+ * info can't be resolved (offline, rate-limited, dev build). Never throws.
+ */
+export async function resolveUpdateStatus(
+  current: string,
+  opts: { allowFetch: boolean },
+): Promise<UpdateStatus | null> {
+  try {
+    if (isDisabled(current)) return null;
+    const cur = parseVersion(current);
+    if (!cur) return null;
+
+    const latestTag = await resolveLatestTag(opts.allowFetch);
+    if (!latestTag) return null;
+    const latest = parseVersion(latestTag);
+    if (!latest) return null;
+    if (compareVersions(latest, cur) <= 0) return null;
+
+    return {
+      current,
+      latestTag,
+      latestDisplay: latestTag.startsWith('v') ? latestTag : `v${latestTag}`,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** The prominent box. `interactive` swaps the call-to-action for the prompt
+ *  that's about to be asked, so we never tell them to run a command we're
+ *  offering to run for them. */
+export function renderUpdateBox(status: UpdateStatus, interactive = false): string {
+  return renderBox(
+    status.current,
+    status.latestDisplay,
+    interactive
+      ? `${C.dim}Installing takes a few seconds.${C.reset}`
+      : `Run  ${C.cyan}kortix update${C.reset}  to upgrade.`,
   );
 }
 
@@ -165,22 +261,9 @@ export async function getUpdateNotice(
   current: string,
   opts: UpdateNoticeOptions,
 ): Promise<string | null> {
-  try {
-    if (isDisabled(current)) return null;
-    const cur = parseVersion(current);
-    if (!cur) return null;
-
-    const latestTag = await resolveLatestTag(opts.allowFetch);
-    if (!latestTag) return null;
-    const latest = parseVersion(latestTag);
-    if (!latest) return null;
-    if (compareVersions(latest, cur) <= 0) return null;
-
-    const latestDisplay = latestTag.startsWith('v') ? latestTag : `v${latestTag}`;
-    return opts.style === 'box'
-      ? renderBox(current, latestDisplay)
-      : renderLine(current, latestDisplay);
-  } catch {
-    return null;
-  }
+  const status = await resolveUpdateStatus(current, { allowFetch: opts.allowFetch });
+  if (!status) return null;
+  return opts.style === 'box'
+    ? renderUpdateBox(status)
+    : renderLine(status.current, status.latestDisplay);
 }

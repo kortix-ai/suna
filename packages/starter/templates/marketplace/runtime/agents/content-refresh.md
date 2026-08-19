@@ -6,7 +6,6 @@ description: >-
   decaying set using its own ledger, refreshes copy, stats, and internal
   links, and opens a PR — never publishing or merging.
 mode: primary
-model: kortix/anthropic/claude-sonnet-5
 permission: allow
 ---
 

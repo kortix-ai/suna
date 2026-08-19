@@ -3,18 +3,21 @@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/marketing/button';
 import KortixGrid from '@/components/ui/marketing/gridder';
+import { ComputeCreditCalculator } from '@/features/billing/compute-credit-calculator';
 import { PricingPlanCard } from '@/features/billing/pricing-plan-card';
 import { PRICING_PLANS } from '@/features/billing/pricing-plans';
-import { ArrowRight } from 'lucide-react';
+import { ArrowRightIcon as ArrowRight } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 
 const START_URL = '/auth';
 const DEMO_URL = '/enterprise';
 
+// Keyed by MARKETING plan id (display-only — see pricing-plans.ts). Never an
+// API tier key.
 const PLAN_CTAS: Record<(typeof PRICING_PLANS)[number]['id'], { cta: string; href: string }> = {
   free: { cta: 'Get started', href: START_URL },
-  team: { cta: 'Get started', href: START_URL },
+  team_seat: { cta: 'Get started', href: START_URL },
   enterprise: { cta: 'Request demo', href: DEMO_URL },
 };
 
@@ -24,43 +27,43 @@ const CREDIT_POINTS: { title: string; body: string }[] = [
     body: 'Free includes 200 credits each month for Agent Computer runtime. Those credits do not pay for managed LLM calls.',
   },
   {
-    title: 'Use the models you already pay for',
-    body: 'Bring your own API key or connect your ChatGPT subscription for premium model access.',
+    title: 'Keep model billing with your provider',
+    body: 'Bring your own API key or connect ChatGPT. You pay your model provider directly and keep Kortix credits for Agent Computer runtime.',
   },
   {
     title: 'Compute by the second',
-    body: 'Billed per resource, per second: $0.0000084/vCPU, $0.0000027/GiB RAM, $0.000000018/GiB disk. The default 2 vCPU / 4 GiB / 20 GiB machine runs about $0.10/hour, and auto-stops when idle so you pay $0 the moment it’s not running.',
+    body: 'Billed per resource, per second: $0.0000168/vCPU, $0.0000054/GiB RAM, $0.000000036/GiB storage. The default 2 vCPU / 4 GiB / 20 GiB machine runs about $0.20/hour, and auto-stops when idle so you pay $0 the moment it’s not running.',
   },
 ];
 
 const CREDIT_EXAMPLES: { label: string; body: string }[] = [
   { label: 'Free start', body: '200 credits covers sandbox runtime for early projects and demos.' },
   {
-    label: 'Bring your model',
-    body: 'Use BYOK or ChatGPT subscription when you want premium models without using Kortix credits.',
+    label: 'Managed models are optional',
+    body: 'Kortix-managed models remain available when you need them. Their token-based usage draws from pooled Team credits.',
   },
   {
     label: 'Team scale',
-    body: 'Upgrade when you want the latest AI models, pooled credits, and seats for the whole team.',
+    body: 'Each Team seat includes 2,500 pooled credits. Used only for compute, that covers about 125 hours on the default Agent Computer.',
   },
 ];
 
 const FAQ: [string, string][] = [
   [
     'What does Free include?',
-    'Free includes 200 credits each month for sandbox compute and 3 projects. Bring your own API key or connect your ChatGPT subscription for premium access. Managed Claude, GPT, and Gemini on Kortix keys are paid.',
+    'Free includes 200 credits each month for sandbox compute and 1 project. Bring your own API key or connect your ChatGPT subscription for premium access. Managed Claude, GPT, and Gemini on Kortix keys are paid.',
   ],
   [
     'What does a Team seat include?',
-    '$40/seat/month includes 2,500 pooled credits per seat, access to the latest AI models, and seats for the people on your team. Add seats anytime; credits scale with them.',
+    '$40/seat/month includes 2,500 pooled credits per seat, optional managed model access, and seats for the people on your team. Agent Computer runtime and managed model token usage draw from the same pool.',
   ],
   [
     'How are models and compute priced?',
-    'Free credits are sandbox-only. Team credits cover managed models and compute from one wallet. Bring your own key or connect ChatGPT and you pay the provider directly. Agent Computer compute is billed per second, per resource — $0.0000084/vCPU, $0.0000027/GiB RAM, $0.000000018/GiB disk — about $0.10/hour for the default 2 vCPU / 4 GiB / 20 GiB machine, and $0 while stopped.',
+    'Agent Computer compute is billed per second, per resource — $0.0000168/vCPU, $0.0000054/GiB RAM, $0.000000036/GiB storage — about $0.20/hour for the default 2 vCPU / 4 GiB / 20 GiB machine, and $0 while stopped. Bring your own key or connect ChatGPT to pay your model provider directly. If you choose Kortix-managed models, their input, output, and cached tokens use Team credits at that model’s rate. Free credits remain sandbox-only.',
   ],
   [
     'Do I pay per seat or per usage?',
-    'Both. The seat is a flat monthly fee that already includes credits; if your team runs heavy, top up credits on top. A light month costs just the seats.',
+    'Both. The seat is a flat monthly fee that includes credits. Top up only when Agent Computer runtime or optional managed model usage exhausts the pooled balance.',
   ],
   [
     'What about Enterprise?',
@@ -119,6 +122,9 @@ export default function PricingPage() {
               )}
             </p>
           </div>
+          <div className="mt-10">
+            <ComputeCreditCalculator />
+          </div>
           <div className="mt-12 grid gap-8 md:grid-cols-3">
             {CREDIT_POINTS.map((p) => (
               <div key={p.title} className="space-y-2">
@@ -158,7 +164,7 @@ export default function PricingPage() {
       </div>
 
       {/* ── CTA footer ─────────────────────────────────────────── */}
-      <section id="cta" className="relative mx-auto max-w-6xl px-6 py-16 sm:py-24 xl:px-0">
+      <section id="cta" className="relative mx-auto max-w-7xl px-6 py-16 sm:py-24 xl:px-0">
         <div className="border-border bg-card relative overflow-hidden rounded-sm border text-center">
           <div className="flex grid-cols-12 flex-col-reverse gap-2 md:grid">
             <div className="col-span-4 flex flex-col items-start justify-start p-6 *:text-left">

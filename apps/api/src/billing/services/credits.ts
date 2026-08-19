@@ -7,7 +7,11 @@ import {
   updateCreditAccount,
 } from '../repositories/credit-accounts';
 import { insertLedgerEntry } from '../repositories/transactions';
+import { assertRpcDebitLedgerType } from '../ledger-type-honesty';
 import { MINIMUM_CREDIT_FOR_RUN, TOKEN_PRICE_MULTIPLIER } from './tiers';
+import { getManagedModel } from '@kortix/llm-catalog';
+import { calculateCost as calculateGatewayCost } from '@kortix/llm-gateway';
+import { requireModelPricing } from '../../router/config/models';
 
 const CREDIT_GRANT_DUPLICATE_MARKERS = [
   'kortix_unique_stripe_event',
@@ -36,10 +40,10 @@ function errorChainText(error: unknown): string {
 function isDuplicateCreditGrantError(error: unknown): boolean {
   const text = errorChainText(error).toLowerCase();
   const hasDuplicateSignal =
-    text.includes('duplicate key') ||
-    text.includes('unique constraint') ||
-    text.includes('23505');
-  return hasDuplicateSignal && CREDIT_GRANT_DUPLICATE_MARKERS.some((marker) => text.includes(marker));
+    text.includes('duplicate key') || text.includes('unique constraint') || text.includes('23505');
+  return (
+    hasDuplicateSignal && CREDIT_GRANT_DUPLICATE_MARKERS.some((marker) => text.includes(marker))
+  );
 }
 
 export async function getBalance(accountId: string) {
@@ -54,8 +58,11 @@ export async function getBalance(accountId: string) {
   };
 }
 
-export async function getCreditSummary(accountId: string) {
-  const account = await getCreditAccount(accountId);
+export async function getCreditSummary(
+  accountId: string,
+  prefetchedAccount?: Awaited<ReturnType<typeof getCreditAccount>>,
+) {
+  const account = prefetchedAccount !== undefined ? prefetchedAccount : await getCreditAccount(accountId);
   if (!account) {
     return { total: 0, daily: 0, monthly: 0, extra: 0, canRun: false };
   }
@@ -86,7 +93,22 @@ export async function deductCredits(
   amount: number,
   description: string,
   ledgerType: LedgerDebitType = 'usage',
+  /**
+   * Stable key identifying the thing being paid for.
+   *
+   * Without it, a debit whose RPC response is lost AFTER the function committed
+   * is invisible to us: the wallet moved, this code believes it did not, and the
+   * caller charges the same thing again. Commit-then-timeout is the ordinary
+   * failure of a pooled RPC under load. Pass a key derived from WHAT is being
+   * billed (not from the clock or a random id) so a retry produces the same one.
+   */
+  idempotencyKey?: string,
 ) {
+  // The RPC hardcodes `type = 'usage'` on the ledger row, so a non-usage kind
+  // here manufactures a row that contradicts itself. Reject before the money
+  // moves rather than after (2026-07-30 mislabelled-clawback incident).
+  assertRpcDebitLedgerType(ledgerType);
+
   const supabase = getSupabase();
 
   const { data, error } = await supabase.rpc('atomic_use_credits', {
@@ -94,6 +116,7 @@ export async function deductCredits(
     p_amount: amount,
     p_description: description,
     p_ledger_type: ledgerType,
+    ...(idempotencyKey ? { p_idempotency_key: idempotencyKey } : {}),
   });
 
   if (error) {
@@ -167,48 +190,55 @@ export async function deductForLlmUsage(opts: {
   return result;
 }
 
-interface ModelPricing {
-  inputPricePerMillion: number;
-  outputPricePerMillion: number;
-  cachedInputPricePerMillion?: number;
-}
-
-// Fallback pricing keyed by model id (models.dev live pricing is the primary
-// source; this is the backstop). Current models only — superseded versions are
-// not listed and resolve via models.dev or the default below.
-const MODEL_PRICING: Record<string, ModelPricing> = {
-  'claude-opus-4.8': { inputPricePerMillion: 5, outputPricePerMillion: 25 },
-  'claude-sonnet-4.6': { inputPricePerMillion: 3, outputPricePerMillion: 15 },
-  'gpt-5.5': { inputPricePerMillion: 5, outputPricePerMillion: 30 },
-  'gemini-3.5-flash': { inputPricePerMillion: 1.5, outputPricePerMillion: 9 },
-  'gemini-3.1-pro': { inputPricePerMillion: 2, outputPricePerMillion: 12 },
-  'deepseek-v4-flash': { inputPricePerMillion: 0.0983, outputPricePerMillion: 0.1966 },
-  'deepseek-v4-pro': { inputPricePerMillion: 0.435, outputPricePerMillion: 0.87 },
-  'qwen3.7-max': { inputPricePerMillion: 1.2, outputPricePerMillion: 6 },
-  'glm-5.2': { inputPricePerMillion: 0.98, outputPricePerMillion: 3.08 },
-  'minimax-m3': { inputPricePerMillion: 0.3, outputPricePerMillion: 1.2 },
-  'grok-4.3': { inputPricePerMillion: 1.25, outputPricePerMillion: 2.5 },
-};
-
-function getModelPricing(model: string): ModelPricing {
-  if (MODEL_PRICING[model]) return MODEL_PRICING[model];
-
-  for (const [key, pricing] of Object.entries(MODEL_PRICING)) {
-    if (model.startsWith(key) || model.includes(key)) return pricing;
-  }
-
-  return { inputPricePerMillion: 2, outputPricePerMillion: 10 };
-}
-
 export function calculateTokenCost(
   promptTokens: number,
   completionTokens: number,
   model: string,
 ): number {
-  const pricing = getModelPricing(model);
-  const inputCost = (promptTokens / 1_000_000) * pricing.inputPricePerMillion;
-  const outputCost = (completionTokens / 1_000_000) * pricing.outputPricePerMillion;
-  return (inputCost + outputCost) * TOKEN_PRICE_MULTIPLIER;
+  const managed = getManagedModel(model);
+  if (managed?.pricing) {
+    return calculateGatewayCost(
+      model,
+      { promptTokens, completionTokens, cachedTokens: 0, cacheWriteTokens: 0 },
+      TOKEN_PRICE_MULTIPLIER,
+      undefined,
+      managed.pricing,
+    ).finalCost;
+  }
+
+  const pricingRef = managed?.pricingRef ?? model;
+  const slash = pricingRef.indexOf('/');
+  const providerId = slash > 0 ? pricingRef.slice(0, slash) : 'openrouter';
+  const modelId = slash > 0 ? pricingRef.slice(slash + 1) : pricingRef;
+  const pricing = requireModelPricing(modelId, providerId);
+  return calculateGatewayCost(
+    model,
+    { promptTokens, completionTokens, cachedTokens: 0, cacheWriteTokens: 0 },
+    TOKEN_PRICE_MULTIPLIER,
+    undefined,
+    {
+      inputPerMillion: pricing.inputPer1M,
+      outputPerMillion: pricing.outputPer1M,
+      cachedInputPerMillion: pricing.cacheReadPer1M,
+      cacheWritePerMillion: pricing.cacheWritePer1M,
+      tiers: pricing.tiers?.map((tier) => ({
+        inputPerMillion: tier.inputPer1M,
+        outputPerMillion: tier.outputPer1M,
+        cachedInputPerMillion: tier.cacheReadPer1M,
+        cacheWritePerMillion: tier.cacheWritePer1M,
+        contextThreshold: tier.contextThreshold,
+      })),
+      contextOver200k: pricing.contextOver200k
+        ? {
+            inputPerMillion: pricing.contextOver200k.inputPer1M,
+            outputPerMillion: pricing.contextOver200k.outputPer1M,
+            cachedInputPerMillion: pricing.contextOver200k.cacheReadPer1M,
+            cacheWritePerMillion: pricing.contextOver200k.cacheWritePer1M,
+            contextThreshold: pricing.contextOver200k.contextThreshold,
+          }
+        : undefined,
+    },
+  ).finalCost;
 }
 
 export async function grantCredits(
@@ -218,16 +248,27 @@ export async function grantCredits(
   description: string,
   isExpiring = true,
   stripeEventId?: string,
+  opts?: {
+    /** Ledger expiry stamp for expiring grants (e.g. a trial's end date). */
+    expiresAt?: string | null;
+    /**
+     * Explicit idempotency key. NOTE: the RPC only dedupes keys seen within
+     * the last hour — callers that need long-window idempotency (monthly
+     * re-grants) must check the ledger for the key themselves before calling.
+     */
+    idempotencyKey?: string | null;
+  },
 ) {
   const supabase = getSupabase();
-  const idempotencyKey = stripeEventId ? `grant:${accountId}:${stripeEventId}` : null;
+  const idempotencyKey =
+    opts?.idempotencyKey ?? (stripeEventId ? `grant:${accountId}:${stripeEventId}` : null);
 
   const { data, error } = await supabase.rpc('atomic_add_credits', {
     p_account_id: accountId,
     p_amount: amount,
     p_is_expiring: isExpiring,
     p_description: description,
-    p_expires_at: null,
+    p_expires_at: opts?.expiresAt ?? null,
     p_type: type,
     p_stripe_event_id: stripeEventId ?? null,
     p_idempotency_key: idempotencyKey,

@@ -181,6 +181,37 @@ describe('anthropicMessagesToChat', () => {
     });
     expect(out.stream).toBe(true);
   });
+
+  // SHOULD-FIX regression (adversarial review of PR #4995): a client's
+  // explicit `thinking` field used to be silently dropped entirely — this
+  // let a project-configured `reasoningEffort` default turn extended
+  // thinking back ON against a client that explicitly disabled it, and
+  // separately dropped a client's own explicit thinking budget.
+  test('forwards an explicit thinking:{type:"enabled", budget_tokens} verbatim', () => {
+    const out = anthropicMessagesToChat({
+      model: 'claude-opus-4-8',
+      messages: [{ role: 'user', content: 'go' }],
+      thinking: { type: 'enabled', budget_tokens: 5000 },
+    });
+    expect(out.thinking).toEqual({ type: 'enabled', budget_tokens: 5000 });
+  });
+
+  test('forwards an explicit thinking:{type:"disabled"} verbatim — never silently dropped', () => {
+    const out = anthropicMessagesToChat({
+      model: 'claude-opus-4-8',
+      messages: [{ role: 'user', content: 'go' }],
+      thinking: { type: 'disabled' },
+    });
+    expect(out.thinking).toEqual({ type: 'disabled' });
+  });
+
+  test('omits thinking entirely when the client did not set it', () => {
+    const out = anthropicMessagesToChat({
+      model: 'claude-opus-4-8',
+      messages: [{ role: 'user', content: 'go' }],
+    });
+    expect(out.thinking).toBeUndefined();
+  });
 });
 
 describe('chatJsonToAnthropicMessage', () => {

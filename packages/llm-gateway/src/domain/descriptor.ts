@@ -16,6 +16,12 @@ export interface UpstreamPricing {
   // documented multiple of inputPerMillion when a live source doesn't provide
   // it (see usage/pricing.ts).
   cacheWritePerMillion?: number;
+  tiers?: UpstreamPricingTier[];
+  contextOver200k?: UpstreamPricingTier;
+}
+
+export interface UpstreamPricingTier extends UpstreamPricing {
+  contextThreshold: number;
 }
 
 export interface UpstreamDescriptor {
@@ -23,6 +29,8 @@ export interface UpstreamDescriptor {
   kind: ProviderKind;
   baseUrl: string;
   apiKey: string;
+  /** Stable non-secret identifier for credentials that share one provider. */
+  credentialRef?: string;
   billingMode: BillingMode;
   markup: number;
   appName?: string;

@@ -17,7 +17,7 @@ import {
   hideSupersededSlack,
   withChannelDeclaration,
   withoutChannelDeclaration,
-} from '../executor/channel-rules';
+} from '../connectors/channel-rules';
 
 function parse(body: string) {
   const src = [`kortix_version: ${KNOWN_SCHEMA_VERSION}`, 'project:\n  name: t', body].join('\n');
@@ -193,12 +193,12 @@ describe('withChannelDeclaration', () => {
     ]);
   });
 
-  test('does not collapse named email inbox profiles onto the reserved slug', () => {
-    const profiles = [
+  test('does not collapse named email inbox connectors onto the reserved slug', () => {
+    const declaredConnectors = [
       { slug: 'email_support', provider: 'channel', platform: 'email', name: 'Support email' },
       { slug: 'email_sales', provider: 'channel', platform: 'email', name: 'Sales email' },
     ];
-    const { connectors, changed } = withChannelDeclaration(profiles, 'email', EMAIL_RESERVED_SLUG, 'Email');
+    const { connectors, changed } = withChannelDeclaration(declaredConnectors, 'email', EMAIL_RESERVED_SLUG, 'Email');
     expect(changed).toBe(true);
     expect(connectors).toEqual([
       { slug: 'email_support', provider: 'channel', platform: 'email', name: 'Support email' },
@@ -238,7 +238,7 @@ describe('withoutChannelDeclaration', () => {
     expect(connectors).toEqual([{ slug: 'gmail', provider: 'pipedream' }]);
   });
 
-  test('removes only the reserved email channel declaration and keeps named inbox profiles', () => {
+  test('removes only the reserved email channel declaration and keeps named inbox connectors', () => {
     const list = [
       { slug: 'email_support', provider: 'channel', platform: 'email', name: 'Support email' },
       { slug: 'kortix_email', provider: 'channel', platform: 'email', name: 'Email' },

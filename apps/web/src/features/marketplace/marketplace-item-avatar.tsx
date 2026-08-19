@@ -1,27 +1,27 @@
 'use client';
 
 import {
-  BookOpen,
-  Boxes,
-  Brain,
-  Code,
-  Compass,
-  Database,
-  FileCode2,
-  FlaskConical,
-  Globe,
-  Layers,
-  Lightbulb,
-  PenTool,
-  Puzzle,
-  Rocket,
-  Sparkles,
-  Terminal,
-  Wand2,
-  Wrench,
-  Zap,
-  type LucideIcon,
-} from 'lucide-react';
+  BookOpenIcon as BookOpen,
+  CubeIcon as Boxes,
+  BrainIcon as Brain,
+  CodeIcon as Code,
+  CompassIcon as Compass,
+  DatabaseIcon as Database,
+  FileCodeIcon as FileCode2,
+  FlaskIcon as FlaskConical,
+  GlobeIcon as Globe,
+  StackIcon as Layers,
+  LightbulbIcon as Lightbulb,
+  PenNibIcon as PenTool,
+  PuzzlePieceIcon as Puzzle,
+  RocketIcon as Rocket,
+  SparkleIcon as Sparkles,
+  TerminalWindowIcon as Terminal,
+  MagicWandIcon as Wand2,
+  WrenchIcon as Wrench,
+  LightningIcon as Zap,
+  type Icon as LucideIcon,
+} from '@phosphor-icons/react';
 
 import { EntityAvatar, type EntityAvatarSize } from '@/components/ui/entity-avatar';
 import type { MarketplaceItem } from '@/lib/marketplace-client';

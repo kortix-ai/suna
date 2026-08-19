@@ -1,4 +1,12 @@
 import {
+  MONITOR_MIN_EXPECT_EVENT_WITHIN_SECONDS,
+  MONITOR_MIN_INTERVAL_SECONDS,
+  MONITOR_MODES,
+  MONITOR_RUN_MAX_LENGTH,
+  formatDurationSeconds,
+  parseDurationSeconds,
+} from '@kortix/manifest-schema';
+import {
   emitJson,
   resolveProjectContext,
   surfaceApiError,
@@ -13,6 +21,7 @@ import {
 } from '../manifest-edit.ts';
 import { C, help, pad, status } from '../style.ts';
 import type {
+  ProjectTrigger,
   ProjectTriggersResponse,
   TriggerFireResponse,
 } from '../api/types.ts';
@@ -20,14 +29,14 @@ import type {
 const HELP = help`Usage: kortix triggers <subcommand> [options]
 
 Manage the [[triggers]] declared in your project's kortix.yaml — cron
-schedules and webhooks. add/rm/enable/disable edit the LOCAL kortix.yaml
-(the source of truth); \`kortix ship\` applies them. ls/fire/info read live
-state from the cloud. pause/resume are a SERVER-SIDE activation switch
-(cloud state, not the manifest).
+schedules, webhooks, and monitors. add/rm/enable/disable edit the LOCAL
+kortix.yaml (the source of truth); \`kortix ship\` applies them. ls/fire/info
+read live state from the cloud. pause/resume are a SERVER-SIDE activation
+switch (cloud state, not the manifest).
 
 Subcommands:
   ls [--json]              List triggers + runtime state.
-  add <slug> [options]     Append a [[triggers]] block (cron or webhook).
+  add <slug> [options]     Append a [[triggers]] block (cron, webhook, monitor).
   rm <slug>                Remove a trigger from kortix.yaml.
   fire <slug>              Manually fire a trigger now.
   enable <slug>            Set enabled = true on a trigger.
@@ -40,14 +49,26 @@ Subcommands:
   info <slug> [--json]     Show one trigger in full.
 
 Add options:
-  --type <cron|webhook>    Trigger type (default cron).
+  --type <cron|webhook|monitor>
+                           Trigger type (default cron).
   --prompt <text>          Initial prompt for the spawned session (required).
-  --agent <name>           Agent to run (default: the opencode default).
+  --agent <name>           Logical agent to run (default: project default_agent).
   --cron <expr>            6-field cron (cron type). e.g. "0 0 9 * * 1-5".
   --timezone <tz>          Timezone for cron (default UTC).
   --secret-env <NAME>      HMAC secret env var (webhook type).
   --name <label>           Display name (default: slug).
   --disabled               Create it disabled (default enabled).
+
+Monitor options (--type monitor). A monitor is a repo command the platform
+runs 24/7; each stdout line fires the trigger. EXPERIMENTAL — the platform
+runs monitors only where the \`monitors\` feature flag is on.
+  --run <cmd>              Repo-relative command to supervise (required).
+  --mode <poll|stream>     poll = re-run on --interval; stream = keep alive
+                           (required).
+  --interval <dur>         Poll period, mode=poll only. Min 30s. e.g. 60s, 5m.
+  --expect-event-within <dur>
+                           Silence watchdog: no event inside this window fires
+                           a lifecycle event instead. Min 5m. e.g. 24h.
 
 Global options:
   --project <id>     Operate on this project id (default: linked).
@@ -77,6 +98,10 @@ export async function runTriggers(argv: string[]): Promise<number> {
     tf.cron = takeFlagValue(rest, ['--cron']);
     tf.timezone = takeFlagValue(rest, ['--timezone']);
     tf.secretEnv = takeFlagValue(rest, ['--secret-env']);
+    tf.run = takeFlagValue(rest, ['--run']);
+    tf.mode = takeFlagValue(rest, ['--mode']);
+    tf.interval = takeFlagValue(rest, ['--interval']);
+    tf.expectEventWithin = takeFlagValue(rest, ['--expect-event-within']);
     tf.name = takeFlagValue(rest, ['--name']);
     disabled = (() => {
       const i = rest.indexOf('--disabled');
@@ -152,14 +177,11 @@ async function triggersLs(opts: CtxOpts, json = false): Promise<number> {
     const nameW = Math.max(...resp.triggers.map((t) => t.name.length), 4);
     process.stdout.write('\n');
     process.stdout.write(
-      `  ${C.dim}${pad('SLUG', slugW)}   ${pad('NAME', nameW)}   TYPE     STATE     SCHEDULE / SECRET             LAST FIRED${C.reset}\n`,
+      `  ${C.dim}${pad('SLUG', slugW)}   ${pad('NAME', nameW)}   TYPE     STATE     SCHEDULE / SECRET / MODE      LAST FIRED${C.reset}\n`,
     );
     for (const t of resp.triggers) {
       const state = t.enabled ? `${C.green}enabled ${C.reset}` : `${C.faded}disabled${C.reset}`;
-      const detail =
-        t.type === 'cron'
-          ? `${t.cron ?? '?'} (${t.timezone})`
-          : `secret_env=${t.secret_env ?? '?'}`;
+      const detail = triggerDetail(t);
       const lastFired = t.last_fired_at ? formatRelative(t.last_fired_at) : '—';
       process.stdout.write(
         `  ${pad(t.slug, slugW)}   ${pad(t.name, nameW)}   ${pad(t.type, 7)}  ${state}   ${pad(trimMid(detail, 30), 30)}  ${C.faded}${lastFired}${C.reset}\n`,
@@ -239,8 +261,8 @@ function triggersAddLocal(
     return 2;
   }
   const type = (tf.type ?? 'cron').toLowerCase();
-  if (type !== 'cron' && type !== 'webhook') {
-    process.stderr.write(`${status.err('--type must be cron or webhook.')}\n`);
+  if (type !== 'cron' && type !== 'webhook' && type !== 'monitor') {
+    process.stderr.write(`${status.err('--type must be cron, webhook, or monitor.')}\n`);
     return 2;
   }
   if (!tf.prompt) {
@@ -250,6 +272,26 @@ function triggersAddLocal(
   if (type === 'cron' && !tf.cron) {
     process.stderr.write(`${status.err('cron triggers need --cron "<6-field expr>".')}\n`);
     return 2;
+  }
+  // Monitor flags on a cron/webhook trigger are a hard error, not a silent
+  // drop — the platform would never read them.
+  if (type !== 'monitor') {
+    const stray = MONITOR_ONLY_FLAGS.find(([, value]) => tf[value] !== undefined);
+    if (stray) {
+      process.stderr.write(
+        `${status.err(`${stray[0]} is only valid on a monitor trigger (--type monitor).`)}\n`,
+      );
+      return 2;
+    }
+  }
+  let monitor: MonitorFields | null = null;
+  if (type === 'monitor') {
+    const parsed = parseMonitorFlags(tf);
+    if ('error' in parsed) {
+      process.stderr.write(`${status.err(parsed.error)}\n`);
+      return 2;
+    }
+    monitor = parsed;
   }
   try {
     if (arrayEntryExists('triggers', 'slug', slug)) {
@@ -264,6 +306,17 @@ function triggersAddLocal(
     if (type === 'cron') {
       fields.cron = tf.cron;
       fields.timezone = tf.timezone ?? 'UTC';
+    } else if (type === 'monitor' && monitor) {
+      fields.run = monitor.run;
+      fields.mode = monitor.mode;
+      // Durations are re-emitted canonically ("60s" → "1m"), the same
+      // normalization the API's write path applies.
+      if (monitor.intervalSeconds !== null) {
+        fields.interval = formatDurationSeconds(monitor.intervalSeconds);
+      }
+      if (monitor.expectEventWithinSeconds !== null) {
+        fields.expect_event_within = formatDurationSeconds(monitor.expectEventWithinSeconds);
+      }
     } else if (tf.secretEnv) {
       fields.secret_env = tf.secretEnv;
     }
@@ -349,23 +402,162 @@ async function triggersInfo(slug: string | undefined, opts: CtxOpts, json = fals
     return 0;
   }
 
+  // One label column, sized to the widest label actually shown, so a monitor's
+  // long `expect_event_within` doesn't leave the panel ragged.
+  const rows: Array<[string, string]> = [
+    ['type', t.type],
+    ['enabled', t.enabled ? `${C.green}true${C.reset}` : `${C.faded}false${C.reset}`],
+    ['agent', t.agent],
+  ];
+  if (t.type === 'cron') {
+    rows.push(['cron', t.cron ?? '—'], ['timezone', t.timezone]);
+  } else if (t.type === 'monitor') {
+    rows.push(['run', t.run ?? '—'], ['mode', t.mode ?? '—']);
+    if (t.interval_seconds !== null && t.interval_seconds !== undefined) {
+      rows.push(['interval', formatDurationSeconds(t.interval_seconds)]);
+    }
+    if (t.expect_event_within_seconds !== null && t.expect_event_within_seconds !== undefined) {
+      rows.push([
+        'expect_event_within',
+        formatDurationSeconds(t.expect_event_within_seconds),
+      ]);
+    }
+  } else {
+    rows.push(['secret_env', t.secret_env ?? '—']);
+    if (t.webhook_url) rows.push(['webhook_url', t.webhook_url]);
+  }
+  rows.push(['last_fired', t.last_fired_at ?? 'never']);
+  rows.push(['prompt', trimMid(t.prompt_template.replace(/\n/g, ' '), 80)]);
+  const labelW = Math.max(...rows.map(([label]) => label.length)) + 1;
+
   process.stdout.write('\n');
   process.stdout.write(`  ${C.bold}${t.name}${C.reset} ${C.faded}(${t.slug})${C.reset}\n`);
-  process.stdout.write(`  ${C.dim}type        ${C.reset}${t.type}\n`);
-  process.stdout.write(`  ${C.dim}enabled     ${C.reset}${t.enabled ? `${C.green}true${C.reset}` : `${C.faded}false${C.reset}`}\n`);
-  process.stdout.write(`  ${C.dim}agent       ${C.reset}${t.agent}\n`);
-  if (t.type === 'cron') {
-    process.stdout.write(`  ${C.dim}cron        ${C.reset}${t.cron ?? '—'}\n`);
-    process.stdout.write(`  ${C.dim}timezone    ${C.reset}${t.timezone}\n`);
-  } else {
-    process.stdout.write(`  ${C.dim}secret_env  ${C.reset}${t.secret_env ?? '—'}\n`);
-    if (t.webhook_url) {
-      process.stdout.write(`  ${C.dim}webhook_url ${C.reset}${t.webhook_url}\n`);
-    }
+  for (const [label, value] of rows) {
+    process.stdout.write(`  ${C.dim}${pad(label, labelW)} ${C.reset}${value}\n`);
   }
-  process.stdout.write(`  ${C.dim}last_fired  ${C.reset}${t.last_fired_at ?? 'never'}\n`);
-  process.stdout.write(`  ${C.dim}prompt      ${C.reset}${trimMid(t.prompt_template.replace(/\n/g, ' '), 80)}\n\n`);
+  process.stdout.write('\n');
   return 0;
+}
+
+// ── monitor flags ──────────────────────────────────────────────────────────
+
+/** Flags that only mean something on a `--type monitor` add. */
+const MONITOR_ONLY_FLAGS: ReadonlyArray<[string, string]> = [
+  ['--run', 'run'],
+  ['--mode', 'mode'],
+  ['--interval', 'interval'],
+  ['--expect-event-within', 'expectEventWithin'],
+];
+
+/** Flags that are cron/webhook wiring and are rejected on a monitor. */
+const MONITOR_REJECTED_FLAGS: ReadonlyArray<[string, string]> = [
+  ['--cron', 'cron'],
+  ['--timezone', 'timezone'],
+  ['--secret-env', 'secretEnv'],
+];
+
+interface MonitorFields {
+  run: string;
+  mode: string;
+  intervalSeconds: number | null;
+  expectEventWithinSeconds: number | null;
+}
+
+/**
+ * Validate the `--type monitor` flags locally, rule for rule with the API's
+ * `parseMonitorFields` and `@kortix/manifest-schema`'s `validateMonitorTrigger`.
+ * The CLI writes the manifest, so it must reject exactly what `kortix ship`
+ * would reject — a manifest that only fails server-side is a worse error than
+ * no manifest at all. Spec: docs/specs/2026-08-12-monitors.md.
+ */
+function parseMonitorFlags(
+  tf: Record<string, string | undefined>,
+): MonitorFields | { error: string } {
+  const rejected = MONITOR_REJECTED_FLAGS.find(([, key]) => tf[key] !== undefined);
+  if (rejected) {
+    return {
+      error: `${rejected[0]} is not valid on a monitor trigger — monitors are driven by their \`run\` process.`,
+    };
+  }
+
+  const run = (tf.run ?? '').trim();
+  if (!run) {
+    return { error: 'monitor triggers need --run "<command>" (repo-relative).' };
+  }
+  if (run.length > MONITOR_RUN_MAX_LENGTH) {
+    return { error: `--run must be at most ${MONITOR_RUN_MAX_LENGTH} characters.` };
+  }
+  if (/[\r\n]/.test(run)) {
+    return { error: '--run must be a single command line — no newlines.' };
+  }
+
+  const mode = (tf.mode ?? '').trim().toLowerCase();
+  if (!(MONITOR_MODES as readonly string[]).includes(mode)) {
+    return {
+      error: `--mode must be ${MONITOR_MODES.join(' or ')} (got "${mode || 'unset'}").`,
+    };
+  }
+
+  let intervalSeconds: number | null = null;
+  if (mode === 'poll') {
+    const parsed = parseFlagDuration(tf.interval, '--interval', MONITOR_MIN_INTERVAL_SECONDS);
+    if ('error' in parsed) return parsed;
+    intervalSeconds = parsed.seconds;
+  } else if (tf.interval !== undefined) {
+    return {
+      error: '--interval is only valid on a `--mode poll` monitor — a stream runs continuously.',
+    };
+  }
+
+  let expectEventWithinSeconds: number | null = null;
+  if (tf.expectEventWithin !== undefined) {
+    const parsed = parseFlagDuration(
+      tf.expectEventWithin,
+      '--expect-event-within',
+      MONITOR_MIN_EXPECT_EVENT_WITHIN_SECONDS,
+    );
+    if ('error' in parsed) return parsed;
+    expectEventWithinSeconds = parsed.seconds;
+  }
+
+  return { run, mode, intervalSeconds, expectEventWithinSeconds };
+}
+
+/** Parse a duration flag ("30s", "5m", "24h", "7d") against its platform floor. */
+function parseFlagDuration(
+  raw: string | undefined,
+  flag: string,
+  floorSeconds: number,
+): { seconds: number } | { error: string } {
+  const floor = formatDurationSeconds(floorSeconds);
+  const value = (raw ?? '').trim();
+  if (!value) {
+    return {
+      error: `${flag} is required here — a duration like "${floor}", "5m", or "24h" (minimum ${floor}).`,
+    };
+  }
+  const seconds = parseDurationSeconds(value);
+  if (seconds === null) {
+    return {
+      error: `${flag} must be a positive integer plus s/m/h/d, e.g. "${floor}" (got "${value}").`,
+    };
+  }
+  if (seconds < floorSeconds) {
+    return { error: `${flag} must be at least ${floor} (got "${value}").` };
+  }
+  return { seconds };
+}
+
+/** One-line schedule/source column for `ls` — cron expression, webhook secret, or monitor shape. */
+function triggerDetail(t: ProjectTrigger): string {
+  if (t.type === 'cron') return `${t.cron ?? '?'} (${t.timezone})`;
+  if (t.type === 'monitor') {
+    const mode = t.mode ?? '?';
+    return t.interval_seconds !== null && t.interval_seconds !== undefined
+      ? `${mode} ${formatDurationSeconds(t.interval_seconds)}`
+      : mode;
+  }
+  return `secret_env=${t.secret_env ?? '?'}`;
 }
 
 // ── helpers ────────────────────────────────────────────────────────────────

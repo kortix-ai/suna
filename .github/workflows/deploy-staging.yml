@@ -26,18 +26,15 @@ permissions:
 
 env:
   AWS_REGION: us-west-2
-  CLUSTER: kortix-dev-eks
   NAMESPACE: kortix-staging
   STAGING_SUPABASE_REF: ujzsbwvurfyeuerxxeaz
   API_APP: kortix-api
   GATEWAY_APP: kortix-gateway
-  API_HOST: staging-api-eks.kortix.com
+  API_HOST: staging-api-ecs-fargate.kortix.com
   GATEWAY_HOST: gateway-staging.kortix.com
   PUBLIC_API_HOST: staging-api.kortix.com
   WEB_HOST: staging.kortix.com
-  VALUES: infra/k8s/envs/staging/values.yaml
-  GATEWAY_VALUES: infra/k8s/envs/staging/gateway-values.yaml
-  ROLE: arn:aws:iam::935064898258:role/kortix-gha-eks-deploy-staging
+  ECS_WEB_HOST: staging-fe-ecs.kortix.com
 
 jobs:
   preflight:
@@ -88,15 +85,60 @@ jobs:
           SHA8: ${{ steps.ref.outputs.sha8 }}
         run: |
           set -euo pipefail
-          for image in kortix/kortix-api kortix/kortix-gateway; do
+          for image in kortix/kortix-api kortix/kortix-gateway kortix/kortix-frontend; do
             docker buildx imagetools inspect "${image}:staging-${SHA8}" >/dev/null
             echo "found ${image}:staging-${SHA8}"
           done
+
+  # ── Apply staging Terraform before any image rolls ──────────────────────────
+  # Both staging roots are safe to apply unattended: every variable has a
+  # default and the committed terraform.tfvars.example is identical to those
+  # defaults (api_environment = {}, manage_dns = false), so CI plans exactly
+  # what an operator plans. Skipped while TF_APPLY_ROLE_ARN_STAGING is unset.
+  terraform-staging:
+    name: Apply staging Terraform
+    needs: preflight
+    if: vars.TF_APPLY_ROLE_ARN_STAGING != ''
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/terraform-apply.yml
+    with:
+      tf_root: infra/terraform/environments/staging
+      aws_region: us-west-2
+      role_arn: ${{ vars.TF_APPLY_ROLE_ARN_STAGING }}
+      github_environment: staging
+      trusted_branch: staging
+      cloudflare: true
+      ref: ${{ needs.preflight.outputs.sha }}
+    secrets: inherit
+
+  # staging-web shares modules/ecs-api with staging; apply it after so a shared
+  # module change lands in one order, not two racing ones.
+  terraform-staging-web:
+    name: Apply staging web Terraform
+    needs: [preflight, terraform-staging]
+    if: vars.TF_APPLY_ROLE_ARN_STAGING != ''
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/terraform-apply.yml
+    with:
+      tf_root: infra/terraform/environments/staging-web
+      aws_region: us-west-2
+      role_arn: ${{ vars.TF_APPLY_ROLE_ARN_STAGING }}
+      github_environment: staging
+      trusted_branch: staging
+      cloudflare: true
+      ref: ${{ needs.preflight.outputs.sha }}
+    secrets: inherit
 
   sync-secret:
     name: Sync staging secret bundle
     needs: preflight
     runs-on: ubuntu-latest
+    env:
+      ROLE: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
     steps:
       - uses: aws-actions/configure-aws-credentials@v6
         with:
@@ -182,8 +224,13 @@ jobs:
               KORTIX_URL: $api,
               CORS_ALLOWED_ORIGINS: $frontend,
               LLM_GATEWAY_BASE_URL: $gateway,
-              ALLOWED_SANDBOX_PROVIDERS: "daytona,platinum,e2b",
-              KORTIX_WARM_SNAPSHOT_ENABLED: "false"
+              ALLOWED_SANDBOX_PROVIDERS: "daytona,platinum",
+              KORTIX_WARM_SNAPSHOT_ENABLED: "false",
+              # The staging Supabase database permits 60 connections. ECS can
+              # run 3 API tasks. Four app connections plus one leader connection
+              # per process
+              # leaves 12 slots for Supabase services, migrations, and QA.
+              DB_POOL_MAX: "4"
             }')"
 
           if [ "$staging_secret_exists" = true ]; then
@@ -207,7 +254,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           ref: ${{ needs.preflight.outputs.sha }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
       - uses: oven-sh/setup-bun@v2
@@ -232,14 +279,19 @@ jobs:
           fi
           pnpm --filter @kortix/db migrate
 
-  # Roll staging ECS Fargate (api + gateway) alongside the EKS deploy, stamping
-  # the same staging version string the EKS values pin carries (kortixVersion)
-  # so both backends report identical versions — the same parity rule prod
-  # enforces. deploy-web `needs:` this job, so a broken ECS staging deploy fails
-  # the staging rollout loudly instead of silently drifting the standby.
+  # Roll staging ECS Fargate (api + gateway). deploy-web `needs:` this job,
+  # so a broken ECS staging deploy fails the staging rollout loudly.
   deploy-ecs:
     name: Deploy API + gateway to staging (ECS Fargate)
-    needs: [preflight, sync-secret, migrate-db]
+    needs: [preflight, sync-secret, migrate-db, terraform-staging]
+    # `always()` is required because terraform-staging is SKIPPED while
+    # TF_APPLY_ROLE_ARN_STAGING is unset. Every other upstream stays required.
+    if: >-
+      ${{ always()
+        && needs.preflight.result == 'success'
+        && needs.sync-secret.result == 'success'
+        && needs.migrate-db.result == 'success'
+        && (needs.terraform-staging.result == 'success' || needs.terraform-staging.result == 'skipped') }}
     runs-on: ubuntu-latest
     permissions:
       id-token: write # OIDC → ECS deploy role
@@ -261,94 +313,8 @@ jobs:
           bash infra/scripts/ecs-deploy.sh staging "kortix/kortix-api:staging-${SHA8}" --version "${VERSION}"
           bash infra/scripts/ecs-deploy.sh staging "kortix/kortix-gateway:staging-${SHA8}" --service gateway --version "${VERSION}"
 
-  deploy-k8s:
-    name: Deploy API and gateway to staging
-    needs: [preflight, sync-secret, migrate-db]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: staging
-          fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Install yq
-        run: |
-          sudo wget -qO /usr/local/bin/yq \
-            https://github.com/mikefarah/yq/releases/download/v4.47.2/yq_linux_amd64
-          sudo chmod +x /usr/local/bin/yq
-      - name: Pin staging GitOps image tags
-        env:
-          TAG: staging-${{ needs.preflight.outputs.sha8 }}
-          VERSION: ${{ needs.preflight.outputs.version }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          git fetch origin staging:refs/remotes/origin/staging --quiet
-          git checkout -B staging origin/staging
-          yq -i '.image.tag = strenv(TAG) | .kortixVersion = strenv(VERSION)' "$VALUES"
-          yq -i '.image.tag = strenv(TAG) | .kortixVersion = strenv(VERSION)' "$GATEWAY_VALUES"
-          if git diff --quiet -- "$VALUES" "$GATEWAY_VALUES"; then
-            echo "staging GitOps values already pinned to ${TAG}."
-          else
-            git config user.name "kortix-ci[bot]"
-            git config user.email "kortix-ci[bot]@users.noreply.github.com"
-            git add "$VALUES" "$GATEWAY_VALUES"
-            git commit -m "chore(staging): deploy ${TAG} [skip ci]"
-            git push origin HEAD:staging
-          fi
-      - uses: aws-actions/configure-aws-credentials@v6
-        with:
-          role-to-assume: ${{ env.ROLE }}
-          aws-region: ${{ env.AWS_REGION }}
-      - name: Update kubeconfig
-        run: aws eks update-kubeconfig --name "$CLUSTER" --region "$AWS_REGION"
-      - name: Apply Argo CD staging applications
-        run: |
-          set -euo pipefail
-          kubectl apply -f infra/k8s/argocd/applications/staging.yaml
-          kubectl apply -f infra/k8s/argocd/applications/gateway-staging.yaml
-          kubectl -n argocd annotate application kortix-staging argocd.argoproj.io/refresh=hard --overwrite
-          kubectl -n argocd annotate application kortix-gateway-staging argocd.argoproj.io/refresh=hard --overwrite
-      - name: Wait for staging deployments
-        env:
-          TAG: staging-${{ needs.preflight.outputs.sha8 }}
-        run: |
-          set -euo pipefail
-          for i in $(seq 1 80); do
-            api_img="$(kubectl -n "$NAMESPACE" get deploy "$API_APP" -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || true)"
-            gw_img="$(kubectl -n "$NAMESPACE" get deploy "$GATEWAY_APP" -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || true)"
-            api_avail="$(kubectl -n "$NAMESPACE" get deploy "$API_APP" -o jsonpath='{.status.availableReplicas}' 2>/dev/null || echo 0)"
-            gw_avail="$(kubectl -n "$NAMESPACE" get deploy "$GATEWAY_APP" -o jsonpath='{.status.availableReplicas}' 2>/dev/null || echo 0)"
-            api_desired="$(kubectl -n "$NAMESPACE" get deploy "$API_APP" -o jsonpath='{.spec.replicas}' 2>/dev/null || echo '?')"
-            gw_desired="$(kubectl -n "$NAMESPACE" get deploy "$GATEWAY_APP" -o jsonpath='{.spec.replicas}' 2>/dev/null || echo '?')"
-            echo "($i/80) api=${api_img:-?} ${api_avail:-0}/${api_desired}; gateway=${gw_img:-?} ${gw_avail:-0}/${gw_desired}"
-            if printf '%s' "$api_img" | grep -q ":${TAG}$" \
-               && printf '%s' "$gw_img" | grep -q ":${TAG}$" \
-               && [ "${api_avail:-0}" = "$api_desired" ] \
-               && [ "${gw_avail:-0}" = "$gw_desired" ]; then
-              exit 0
-            fi
-            sleep 15
-          done
-          echo "::error::staging deployments did not roll out to ${TAG}."
-          kubectl -n "$NAMESPACE" get deploy,pods,externalsecret,ingress -o wide || true
-          exit 1
-      - name: Capture ALB hostnames
-        id: ing
-        run: |
-          set -euo pipefail
-          api_alb="$(kubectl -n "$NAMESPACE" get ingress "$API_APP" -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')"
-          gateway_alb="$(kubectl -n "$NAMESPACE" get ingress "$GATEWAY_APP" -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')"
-          [ -n "$api_alb" ] && [ -n "$gateway_alb" ]
-          echo "api_alb=$api_alb" >> "$GITHUB_OUTPUT"
-          echo "gateway_alb=$gateway_alb" >> "$GITHUB_OUTPUT"
-    outputs:
-      api_alb: ${{ steps.ing.outputs.api_alb }}
-      gateway_alb: ${{ steps.ing.outputs.gateway_alb }}
-
   wire-cloudflare:
     name: Wire Cloudflare staging DNS and Worker
-    needs: deploy-k8s
     runs-on: ubuntu-latest
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -360,43 +326,6 @@ jobs:
       - uses: actions/checkout@v7
         with:
           ref: staging
-      - name: Upsert proxied CNAME records
-        env:
-          API_ALB: ${{ needs.deploy-k8s.outputs.api_alb }}
-          GATEWAY_ALB: ${{ needs.deploy-k8s.outputs.gateway_alb }}
-        run: |
-          set -euo pipefail
-          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
-            echo "::error::CLOUDFLARE_API_TOKEN is required."; exit 1
-          fi
-          upsert() {
-            local name="$1" target="$2"
-            local existing
-            existing="$(curl -fsS \
-              -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
-              "https://api.cloudflare.com/client/v4/zones/${CLOUDFLARE_ZONE_ID}/dns_records?type=CNAME&name=${name}")"
-            local id
-            id="$(printf '%s' "$existing" | jq -r '.result[0].id // empty')"
-            local body
-            body="$(jq -n --arg type CNAME --arg name "$name" --arg content "$target" \
-              '{type:$type,name:$name,content:$content,ttl:1,proxied:true}')"
-            if [ -n "$id" ]; then
-              curl -fsS -X PUT \
-                -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
-                -H "Content-Type: application/json" \
-                "https://api.cloudflare.com/client/v4/zones/${CLOUDFLARE_ZONE_ID}/dns_records/${id}" \
-                --data "$body" >/dev/null
-            else
-              curl -fsS -X POST \
-                -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
-                -H "Content-Type: application/json" \
-                "https://api.cloudflare.com/client/v4/zones/${CLOUDFLARE_ZONE_ID}/dns_records" \
-                --data "$body" >/dev/null
-            fi
-            echo "wired ${name}"
-          }
-          upsert "$API_HOST" "$API_ALB"
-          upsert "$GATEWAY_HOST" "$GATEWAY_ALB"
       - name: Deploy staging API router Worker
         working-directory: infra/cloudflare/workers/api-router
         env:
@@ -413,22 +342,15 @@ jobs:
             exit 1
           fi
 
-          # DRIFT WARNING: this REST deploy REPLACES the staging Worker's
-          # bindings wholesale on every staging rollout — it re-asserts
-          # ACTIVE_BACKEND=eks and drops any GATEWAY_* vars a `wrangler deploy
-          # --env staging` (wrangler.toml says ecs-fargate) may have set. Live
-          # staging is therefore EKS-active BY THIS JOB. If staging is ever
-          # flipped to ECS-active like prod, change the binding here (and
-          # wrangler.toml) together, or the next staging deploy flips it back.
+          # This REST deploy replaces all staging Worker bindings. The API
+          # and gateway both use ECS Fargate. EKS was decommissioned 2026-08-02.
           metadata="$(jq -cn '{
             main_module: "worker.mjs",
             compatibility_date: "2026-06-01",
             bindings: [
               {type:"plain_text", name:"ACTIVE_BACKEND", text:"ecs-fargate"},
-              {type:"plain_text", name:"BACKEND_EKS", text:"https://staging-api-eks.kortix.com"},
               {type:"plain_text", name:"BACKEND_ECS_FARGATE", text:"https://staging-api-ecs-fargate.kortix.com"},
               {type:"plain_text", name:"GATEWAY_ACTIVE_BACKEND", text:"ecs-fargate"},
-              {type:"plain_text", name:"GATEWAY_BACKEND_EKS", text:"https://gateway-staging-eks.kortix.com"},
               {type:"plain_text", name:"GATEWAY_BACKEND_ECS_FARGATE", text:"https://gateway-staging-ecs-fargate.kortix.com"}
             ]
           }')"
@@ -478,10 +400,82 @@ jobs:
             sleep 5
           done
 
-  deploy-web:
+  deploy-web-ecs:
+    name: Deploy staging web to ECS Fargate
+    needs: [preflight, deploy-ecs, terraform-staging-web]
+    if: >-
+      ${{ always()
+        && needs.preflight.result == 'success'
+        && needs.deploy-ecs.result == 'success'
+        && (needs.terraform-staging-web.result == 'success' || needs.terraform-staging-web.result == 'skipped') }}
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      ROLE: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
+      DOTENV_PRIVATE_KEY_STAGING: ${{ secrets.WEB_DOTENV_PRIVATE_KEY_STAGING }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.preflight.outputs.sha }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ env.ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Sync the encrypted staging web profile to Secrets Manager
+        run: |
+          set -euo pipefail
+          test -n "${DOTENV_PRIVATE_KEY_STAGING:-}" || {
+            echo "::error::WEB_DOTENV_PRIVATE_KEY_STAGING is not configured."
+            exit 1
+          }
+          npx --yes @dotenvx/dotenvx@1.75.1 run \
+            -f apps/web/.env.staging -- bash infra/scripts/sync-web-env.sh staging
+      - name: Roll the staging web service onto the immutable image
+        env:
+          SHA8: ${{ needs.preflight.outputs.sha8 }}
+          VERSION: ${{ needs.preflight.outputs.version }}
+        run: |
+          bash infra/scripts/ecs-deploy.sh \
+            staging \
+            "kortix/kortix-frontend:staging-${SHA8}" \
+            --service web \
+            --version "${VERSION}"
+
+  publish-web-ecs-dns:
+    name: Publish staging FE-ECS DNS
+    needs: [deploy-web-ecs]
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      ROLE: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ env.ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Point only the isolated staging FE-ECS hostname at the web ALB
+        run: |
+          set -euo pipefail
+          alb="$(aws elbv2 describe-load-balancers \
+            --names kortix-staging-web-alb \
+            --query 'LoadBalancers[0].DNSName' \
+            --output text)"
+          node infra/scripts/sync-web-dns.mjs staging "$alb"
+
+  deploy-web-vercel:
     name: Deploy staging web to Vercel
-    # deploy-ecs in needs = ECS/EKS parity gates the staging rollout the same way
-    # verify-live-version gates prod: a failed ECS roll can't pass silently.
+    # deploy-ecs gates the staging rollout: a failed ECS roll can't pass silently.
     needs: [preflight, wire-cloudflare, deploy-ecs]
     runs-on: ubuntu-latest
     env:
@@ -494,7 +488,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           ref: ${{ needs.preflight.outputs.sha }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
       - name: Deploy and alias staging.kortix.com
@@ -542,29 +536,67 @@ jobs:
           npx vercel alias set "$url" "$WEB_HOST" --token "$VERCEL_TOKEN"
 
   verify:
-    name: Verify live staging
-    needs: [preflight, deploy-k8s, wire-cloudflare, deploy-web]
+    name: Verify live staging on ECS and Vercel
+    needs: [preflight, wire-cloudflare, deploy-web-vercel, publish-web-ecs-dns]
     runs-on: ubuntu-latest
     steps:
-      - name: Verify API, web TLS, and runtime config
+      - name: Verify API and both web deployment paths
         env:
+          EXPECTED_COMMIT: ${{ needs.preflight.outputs.sha }}
           EXPECTED_VERSION: ${{ needs.preflight.outputs.version }}
           # staging.kortix.com sits behind Vercel deployment protection (SSO);
           # send this header so the web verification reaches the app, not the
           # Vercel login wall. The API host is the ALB and needs no bypass.
           VERCEL_BYPASS: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+          WEB_PROTECTION_PASSWORD: ${{ secrets.WEB_PROTECTION_PASSWORD }}
         run: |
           set -euo pipefail
-          for i in $(seq 1 30); do
+          test -n "${WEB_PROTECTION_PASSWORD:-}" || {
+            echo "::error::WEB_PROTECTION_PASSWORD is not configured."
+            exit 1
+          }
+          for attempt in $(seq 1 30); do
             api="$(curl -fsS --max-time 15 "https://${PUBLIC_API_HOST}/v1/health" 2>/dev/null || true)"
             envv="$(printf '%s' "$api" | jq -r '.environment // empty' 2>/dev/null || true)"
             version="$(printf '%s' "$api" | jq -r '.version // empty' 2>/dev/null || true)"
             if [ "$envv" = "staging" ] && [ "$version" = "$EXPECTED_VERSION" ]; then
               break
             fi
+            echo "(${attempt}/30) waiting for staging API version ${EXPECTED_VERSION}"
             sleep 10
           done
           [ "${envv:-}" = "staging" ] || { echo "::error::staging API did not report environment=staging"; exit 1; }
+
+          ecs="https://${ECS_WEB_HOST}"
+          cookie_jar="$(mktemp)"
+          trap 'rm -f "$cookie_jar"' EXIT
+          anonymous="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 "$ecs/")"
+          wrong="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 -u 'kortix:wrong-password' "$ecs/")"
+          protected="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 \
+            -c "$cookie_jar" -u "kortix:${WEB_PROTECTION_PASSWORD}" "$ecs/")"
+          cookie_status="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 \
+            -b "$cookie_jar" "$ecs/")"
+          [ "$anonymous" = 401 ] || { echo "::error::staging ECS frontend anonymous status=$anonymous"; exit 1; }
+          [ "$wrong" = 401 ] || { echo "::error::staging ECS frontend wrong-password status=$wrong"; exit 1; }
+          { [ "$protected" = 200 ] || [ "$protected" = 307 ] || [ "$protected" = 308 ]; } || {
+            echo "::error::staging ECS frontend valid-password status=$protected"; exit 1;
+          }
+          { [ "$cookie_status" = 200 ] || [ "$cookie_status" = 307 ] || [ "$cookie_status" = 308 ]; } || {
+            echo "::error::staging ECS frontend shared-cookie status=$cookie_status"; exit 1;
+          }
+          grep -E $'^(#HttpOnly_)?\\.kortix\\.com\t' "$cookie_jar" >/dev/null || {
+            echo "::error::staging ECS frontend did not set the parent-domain access cookie"; exit 1;
+          }
+          ecs_health="$(curl -fsS --max-time 20 "$ecs/api/health")"
+          [ "$(jq -r '.commit // empty' <<<"$ecs_health")" = "$EXPECTED_COMMIT" ] || {
+            echo "::error::staging ECS frontend commit mismatch"; exit 1;
+          }
+          [ "$(jq -r '.version // empty' <<<"$ecs_health")" = "$EXPECTED_VERSION" ] || {
+            echo "::error::staging ECS frontend version mismatch"; exit 1;
+          }
+          ecs_runtime="$(curl -fsS --max-time 20 -b "$cookie_jar" "$ecs/api/runtime-config")"
+          printf '%s' "$ecs_runtime" | grep -F "\"BACKEND_URL\":\"https://${PUBLIC_API_HOST}/v1\"" >/dev/null
+          printf '%s' "$ecs_runtime" | grep -F "\"APP_URL\":\"https://${ECS_WEB_HOST}\"" >/dev/null
 
           curl -fsSI --max-time 20 -H "x-vercel-protection-bypass: ${VERCEL_BYPASS}" "https://${WEB_HOST}/" >/tmp/web-headers
           runtime="$(curl -fsS --max-time 20 -H "x-vercel-protection-bypass: ${VERCEL_BYPASS}" "https://${WEB_HOST}/api/runtime-config")"
@@ -577,8 +609,9 @@ jobs:
           {
             echo "### Staging verified"
             echo "- API: https://${PUBLIC_API_HOST}/v1/health reports staging ${EXPECTED_VERSION}"
-            echo "- Web: https://${WEB_HOST} serves staging runtime config"
-            echo "- GitOps: API ALB ${{ needs.deploy-k8s.outputs.api_alb }}"
+            echo "- ECS web: https://${ECS_WEB_HOST} reports ${EXPECTED_COMMIT} and accepts the shared test cookie"
+            echo "- Vercel web: https://${WEB_HOST} serves staging runtime config"
+            echo "- GitOps: API ALB via ECS Fargate"
           } >> "$GITHUB_STEP_SUMMARY"
 
   # ── Move the self-host `:staging` channel tag onto the images just verified ─

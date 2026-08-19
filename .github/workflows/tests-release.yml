@@ -1,0 +1,101 @@
+name: Tests - release
+
+on:
+  pull_request:
+    branches: [prod]
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+
+concurrency:
+  group: tests-release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deployed-staging:
+    name: full suite + quality gates
+    runs-on: ubuntu-latest
+    # `pnpm test -- --target-full` runs all 433 REST/CLI/browser flows against
+    # deployed staging serially. MEASURED on run 31535558700: setup + all 433
+    # flows finished at 44m36s (the tail browser journeys are far slower than
+    # the early REST flows), then the post-test secret-guard/upload steps push
+    # the job past 45m. The old 20-min cap killed it at ~316/433 EVERY release
+    # (v0.12.7 and v0.12.8 both cancelled, not failed) — the gate was
+    # structurally un-passable. Lanes run concurrently; every client retries the
+    # transient laundered-503 (session-create self-heals). Once the Vercel-SSO
+    # bypass let the browser lane actually run, the full suite is ~65-75m real
+    # (the flow lane alone is ~60m), so the cap is 90m. Staging's JWT lifetime
+    # was raised to 2h (was 1h) so a >60m run no longer expires its tokens.
+    # Follow-up: shard the runner (flow + browser as parallel jobs) to cut this.
+    timeout-minutes: 90
+    env:
+      KE2E_API_URL: ${{ vars.QA_API_BASE_URL || 'https://staging-api.kortix.com/v1' }}
+      E2E_BASE_URL: ${{ vars.QA_WEB_BASE_URL || 'https://staging.kortix.com' }}
+      KE2E_GATEWAY_URL: ${{ vars.QA_GATEWAY_URL || 'https://gateway-staging.kortix.com' }}
+      KE2E_TARGET: staging
+      KE2E_LIVE_CONFIRM: ci
+      KE2E_OWNER_EMAIL: ${{ secrets.KE2E_OWNER_EMAIL }}
+      KE2E_OWNER_PASSWORD: ${{ secrets.KE2E_OWNER_PASSWORD }}
+      KE2E_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+      KE2E_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+      KE2E_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
+      KE2E_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+      KE2E_INTERNAL_SERVICE_KEY: ${{ secrets.STAGING_INTERNAL_SERVICE_KEY }}
+      KE2E_STRIPE_SECRET_KEY: ${{ secrets.STAGING_STRIPE_SECRET_KEY }}
+      KE2E_STRIPE_WEBHOOK_SECRET: ${{ secrets.STAGING_STRIPE_WEBHOOK_SECRET }}
+      E2E_AGENTMAIL_API_KEY: ${{ secrets.E2E_AGENTMAIL_API_KEY }}
+      KE2E_CAP_MANAGED_GIT_PUSH: ${{ vars.KE2E_CAP_MANAGED_GIT_PUSH || '0' }}
+      WEB_PROTECTION_PASSWORD: ${{ secrets.WEB_PROTECTION_PASSWORD }}
+      # Staging is behind Vercel SSO deployment protection; the browser lane must
+      # send x-vercel-protection-bypass (playwright.config) or every authenticated
+      # page 302s to vercel.com/sso-api. This env was missing when tests-release
+      # replaced the old qa-release gate, so the browser lane could never reach
+      # the app.
+      VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Require the deployed staging source SHA
+        run: |
+          set -euo pipefail
+          test -f RELEASE_SOURCE_SHA || {
+            echo "::error::Release PR has no RELEASE_SOURCE_SHA."
+            exit 1
+          }
+          source_sha="$(tr -d '[:space:]' < RELEASE_SOURCE_SHA)"
+          [[ "$source_sha" =~ ^[0-9a-f]{40}$ ]] || {
+            echo "::error::RELEASE_SOURCE_SHA must contain one 40-character Git SHA."
+            exit 1
+          }
+          echo "KE2E_EXPECT_SHA=$source_sha" >> "$GITHUB_ENV"
+          echo "Expected deployed staging SHA: $source_sha"
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 8.11.0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install deployed-target dependencies
+        run: |
+          pnpm install --frozen-lockfile --filter @kortix/tests...
+          pnpm --dir tests exec playwright install --with-deps chromium
+      - name: Run every deployed staging flow and browser journey through the root runner
+        run: pnpm test -- --target-full
+      - name: Guard test artifacts against secrets
+        if: always()
+        run: |
+          set -euo pipefail
+          if rg -l 'kortix_(pat|sa)_[A-Za-z0-9]{12,}|sk-[A-Za-z0-9]{20,}|eyJ[A-Za-z0-9_-]{30,}\.' tests/test-results 2>/dev/null; then
+            echo "::error::A test artifact contains a secret-shaped value."
+            exit 1
+          fi
+          echo "No secret-shaped values found."
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: tests-release-deployed-staging
+          path: tests/test-results/**
+          if-no-files-found: warn
+          retention-days: 90

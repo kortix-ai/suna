@@ -18,3 +18,9 @@ variable "tags" {
   type    = map(string)
   default = {}
 }
+
+variable "manage_validation_records" {
+  description = "Create Cloudflare validation records. Disable this when another regional certificate already owns the identical ACM validation CNAME."
+  type        = bool
+  default     = true
+}

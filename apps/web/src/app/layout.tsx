@@ -1,17 +1,22 @@
+import { WebMcpTools } from '@/components/agent-discovery/webmcp-tools';
 import { BrowserNoiseGuard } from '@/components/browser-noise-guard';
 import { DesktopChrome } from '@/components/desktop/desktop-chrome';
 import { DesktopUrlPrompt } from '@/components/desktop/desktop-url-prompt';
 import { ThemeProvider } from '@/components/home/theme-provider';
 import { I18nProvider } from '@/components/i18n-provider';
 import { KortixProjectScope } from '@/components/kortix-project-scope';
+import { LazyMotionProvider } from '@/components/lazy-motion-provider';
+import { IconProvider } from '@/components/ui/icon-provider';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import { RequestDemoProvider } from '@/features/contact/request-demo-provider';
 import { MfaStepUpProvider } from '@/features/auth/mfa-step-up';
+import { RequestDemoProvider } from '@/features/contact/request-demo-provider';
 import { AuthProvider } from '@/features/providers/auth-provider';
+import { locales, type Locale } from '@/i18n/config';
 import { DESKTOP_INIT_SCRIPT, DESKTOP_UA_TOKEN } from '@/lib/desktop';
 import { getHardcodedUiServerText } from '@/lib/hardcoded-ui-server';
 import '@/lib/polyfills';
 import { getServerPublicEnv } from '@/lib/public-env-server';
+import { safeJsonForHtml } from '@/lib/security/safe-json';
 import { siteMetadata } from '@/lib/site-metadata';
 import { cn } from '@/lib/utils';
 import { featureFlags } from '@kortix/sdk/feature-flags';
@@ -67,6 +72,16 @@ const LocalhostLinkInterceptor = lazy(() =>
 const MaintenanceBannerHost = lazy(() =>
   import('@/components/announcements/maintenance-banner-host').then((mod) => ({
     default: mod.MaintenanceBannerHost,
+  })),
+);
+const AppFilePreviewHost = lazy(() =>
+  import('@/components/app-file-preview-host').then((mod) => ({
+    default: mod.AppFilePreviewHost,
+  })),
+);
+const ImpersonationBanner = lazy(() =>
+  import('@/components/impersonation/impersonation-banner').then((mod) => ({
+    default: mod.ImpersonationBanner,
   })),
 );
 
@@ -142,9 +157,9 @@ export const metadata: Metadata = {
     apple: [{ url: '/logo_black.png', sizes: '180x180' }],
   },
   manifest: '/manifest.json',
-  alternates: {
-    canonical: siteMetadata.url,
-  },
+  // No root canonical: Next.js inherits `alternates` into every page that does
+  // not set its own, which would mark unrelated pages as duplicates of the
+  // homepage. Each indexable page declares its own canonical instead.
 };
 
 export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
@@ -159,12 +174,20 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
   // website still loads them as normal. Keeps third-party de-anonymization
   // pixels (Vector/Artisan via GTM, plus the hardcoded loader) out of the
   // authenticated native client.
-  const isDesktopApp = (await headers()).get('user-agent')?.includes(DESKTOP_UA_TOKEN) ?? false;
+  const requestHeaders = await headers();
+  const isDesktopApp = requestHeaders.get('user-agent')?.includes(DESKTOP_UA_TOKEN) ?? false;
+
+  // Locale-routed marketing pages (/de, /fr, …) are rewritten onto the
+  // unprefixed route by the middleware, which records the locale in x-locale.
+  const requestLocale = requestHeaders.get('x-locale');
+  const htmlLang =
+    requestLocale && locales.includes(requestLocale as Locale) ? requestLocale : 'en';
 
   return (
     <html
-      lang="en"
+      lang={htmlLang}
       translate="no"
+      data-scroll-behavior="smooth"
       suppressHydrationWarning
       className={cn('notranslate', roobert.variable, roobertMono.variable)}
     >
@@ -173,7 +196,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
             Docker images get correct env vars regardless of build-time defaults. */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `window.__KORTIX_RUNTIME_CONFIG=${JSON.stringify(runtimeEnv)};window.__RUNTIME_ENV=window.__KORTIX_RUNTIME_CONFIG;`,
+            __html: `window.__KORTIX_RUNTIME_CONFIG=${safeJsonForHtml(runtimeEnv)};window.__RUNTIME_ENV=window.__KORTIX_RUNTIME_CONFIG;`,
           }}
         />
 
@@ -221,8 +244,6 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
                   context = { master_group: 'General', content_group: 'Other', page_type: 'home', language: lang };
                 } else if (pathname.indexOf('/auth') === 0) {
                   context = { master_group: 'General', content_group: 'User', page_type: 'auth', language: lang };
-                } else if (pathname === '/projects') {
-                  context = { master_group: 'Platform', content_group: 'Projects', page_type: 'home', language: lang };
                 } else if (pathname.indexOf('/workspace') === 0 || pathname.indexOf('/projects') === 0 || pathname.indexOf('/thread') === 0) {
                   context = { master_group: 'Platform', content_group: 'Projects', page_type: 'thread', language: lang };
                 } else if (pathname.indexOf('/settings') === 0) {
@@ -248,7 +269,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{
-            __html: JSON.stringify({
+            __html: safeJsonForHtml({
               '@context': 'https://schema.org',
               '@type': 'Organization',
               name: siteMetadata.name,
@@ -278,7 +299,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{
-            __html: JSON.stringify({
+            __html: safeJsonForHtml({
               '@context': 'https://schema.org',
               '@type': 'SoftwareApplication',
               name: siteMetadata.title,
@@ -314,66 +335,86 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
         className="notranslate text-foreground bg-background min-h-screen w-full scroll-smooth font-sans font-medium antialiased"
         suppressHydrationWarning
       >
+        <WebMcpTools />
         <ThemeProvider
           attribute="class"
           defaultTheme="system"
           enableSystem
           disableTransitionOnChange
         >
-          <TooltipProvider delayDuration={300}>
-            <AuthProvider>
-              <I18nProvider>
-                <BrowserNoiseGuard />
-                <DesktopChrome />
-                <DesktopUrlPrompt />
-                <ReactQueryProvider>
-                  <Toaster />
-                  {/* Global "Request a demo" qualifier modal — mounted once here
+          <LazyMotionProvider>
+            <IconProvider>
+              <TooltipProvider delayDuration={300}>
+                <AuthProvider>
+                  <I18nProvider>
+                    <BrowserNoiseGuard />
+                    <DesktopChrome />
+                    <DesktopUrlPrompt />
+                    <ReactQueryProvider>
+                      <Toaster />
+                      {/* Global "Request a demo" qualifier modal — mounted once here
                       so every enterprise CTA across the app (accounts settings,
                       billing, IAM) can open it via useRequestDemo(). */}
-                  <RequestDemoProvider>
-                    {/* Account-wide MFA: catches the SDK's kortix:mfa-required
+                      <RequestDemoProvider>
+                        {/* Account-wide MFA: catches the SDK's kortix:mfa-required
                         event (coded 403) and walks the user through a TOTP
                         step-up so the retried action passes the IAM gate. */}
-                    <MfaStepUpProvider>
-                      <KortixProjectScope>{children}</KortixProjectScope>
-                    </MfaStepUpProvider>
-                  </RequestDemoProvider>
-                  {/* Global maintenance/incident banner (info/warning/critical).
+                        <MfaStepUpProvider>
+                          <KortixProjectScope>{children}</KortixProjectScope>
+                        </MfaStepUpProvider>
+                      </RequestDemoProvider>
+                      {/* Global maintenance/incident banner (info/warning/critical).
                       Needs the query client, so it mounts inside ReactQueryProvider. */}
-                  <Suspense fallback={null}>
-                    <MaintenanceBannerHost />
-                  </Suspense>
-                </ReactQueryProvider>
-                {/* Analytics - lazy loaded to not block FCP */}
-                <Suspense fallback={null}>
-                  <Analytics />
-                </Suspense>
-                {process.env.NEXT_PUBLIC_GTM_ID && !isDesktopApp && (
-                  <Suspense fallback={null}>
-                    <GoogleTagManager gtmId={process.env.NEXT_PUBLIC_GTM_ID} />
-                  </Suspense>
-                )}
-                <Suspense fallback={null}>
-                  <SpeedInsights />
-                </Suspense>
-                <Suspense fallback={null}>
-                  <PostHogIdentify />
-                </Suspense>
-                <Suspense fallback={null}>
-                  <RouteChangeTracker />
-                </Suspense>
-                <Suspense fallback={null}>
-                  <AuthEventTracker />
-                </Suspense>
-                <Suspense fallback={null}>
-                  <LocalhostLinkInterceptor />
-                </Suspense>
-              </I18nProvider>
-            </AuthProvider>
-          </TooltipProvider>
+                      <Suspense fallback={null}>
+                        <MaintenanceBannerHost />
+                      </Suspense>
+                      {/* Fallback file-preview modal for surfaces with no session side
+                      panel (dashboard, project pages). Its file/history hooks need
+                      the query client, so it mounts inside ReactQueryProvider like
+                      MaintenanceBannerHost above. */}
+                      <Suspense fallback={null}>
+                        <AppFilePreviewHost />
+                      </Suspense>
+                      {/* Act-as banner. Mounted at the ROOT, not under (app):
+                      a platform admin acting as a customer carries the grant on
+                      every request from this tab, including the admin console
+                      and account settings, so the banner has to be true
+                      everywhere too. Renders nothing when no grant is held. */}
+                      <Suspense fallback={null}>
+                        <ImpersonationBanner />
+                      </Suspense>
+                    </ReactQueryProvider>
+                    {/* Analytics - lazy loaded to not block FCP */}
+                    <Suspense fallback={null}>
+                      <Analytics />
+                    </Suspense>
+                    {process.env.NEXT_PUBLIC_GTM_ID && !isDesktopApp && (
+                      <Suspense fallback={null}>
+                        <GoogleTagManager gtmId={process.env.NEXT_PUBLIC_GTM_ID} />
+                      </Suspense>
+                    )}
+                    <Suspense fallback={null}>
+                      <SpeedInsights />
+                    </Suspense>
+                    <Suspense fallback={null}>
+                      <PostHogIdentify />
+                    </Suspense>
+                    <Suspense fallback={null}>
+                      <RouteChangeTracker />
+                    </Suspense>
+                    <Suspense fallback={null}>
+                      <AuthEventTracker />
+                    </Suspense>
+                    <Suspense fallback={null}>
+                      <LocalhostLinkInterceptor />
+                    </Suspense>
+                  </I18nProvider>
+                </AuthProvider>
+              </TooltipProvider>
+            </IconProvider>
+          </LazyMotionProvider>
         </ThemeProvider>
-        <div id="portal" className="fixed left-0 top-0 z-40" />
+        <div id="portal" className="fixed top-0 left-0 z-40" />
       </body>
     </html>
   );

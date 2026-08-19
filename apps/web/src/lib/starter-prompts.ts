@@ -14,15 +14,14 @@
  */
 
 import {
-  BarChart3,
-  Building2,
-  FileText,
-  Globe,
-  Presentation,
-  Scale,
-  Search,
-  type LucideIcon,
-} from 'lucide-react';
+  ChartBarIcon as BarChart3,
+  BuildingsIcon as Building2,
+  GlobeIcon as Globe,
+  PresentationIcon as Presentation,
+  ScalesIcon as Scale,
+  MagnifyingGlassIcon as Search,
+  type Icon as LucideIcon,
+} from '@phosphor-icons/react';
 
 export interface StarterPrompt {
   id: string;
@@ -40,8 +39,7 @@ export const STARTER_PROMPTS: StarterPrompt[] = [
     id: 'company-memory',
     icon: Building2,
     label: 'Onboard your agent',
-    description:
-      "Ask about your company, customers, and team — saves it all to memory.",
+    description: 'Ask about your company, customers, and team — saves it all to memory.',
     prompt:
       "Onboard me. Ask about my company — what we do, who our customers are, who's on the team, our products, our top priorities. Save what you learn into project memory so you remember it in every future session, and open a change request when you're done so I can review.",
   },
@@ -51,7 +49,7 @@ export const STARTER_PROMPTS: StarterPrompt[] = [
     label: 'Build a landing page',
     description: 'A clean, sales-ready page for a product or campaign.',
     prompt:
-      "Build a sales-ready landing page for my product. Ask for the product name, the audience, and the key value props, then design and ship the page.",
+      'Build a sales-ready landing page for my product. Ask for the product name, the audience, and the key value props, then design and ship the page.',
   },
   {
     id: 'competitor-brief',
@@ -75,7 +73,7 @@ export const STARTER_PROMPTS: StarterPrompt[] = [
     label: 'Draft a contract',
     description: 'NDAs, MSAs, ToS — drafted with citations.',
     prompt:
-      "Draft a contract for me. Ask what kind (NDA, MSA, ToS, etc.), the parties involved, and any special terms, then produce a clean DOCX with proper citations.",
+      'Draft a contract for me. Ask what kind (NDA, MSA, ToS, etc.), the parties involved, and any special terms, then produce a clean DOCX with proper citations.',
   },
   {
     id: 'data-analysis',

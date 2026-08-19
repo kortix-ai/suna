@@ -8,6 +8,10 @@
  * Actions mutate parent state optimistically via the passed handlers.
  */
 
+import {
+  type ApprovalDecisionValue,
+  ApprovalRequest,
+} from '@/components/approvals/approval-request';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
@@ -24,20 +28,21 @@ import {
 } from '@/components/ui/modal';
 import { StatusBadge } from '@/components/ui/status';
 import { infoToast, successToast } from '@/components/ui/toast';
+import { useChangeRequestMergePreview } from '@/features/project-files/hooks/use-change-requests';
 import { cn } from '@/lib/utils';
 import {
-  ArrowUpRight,
-  Check,
-  CheckCircleSolid,
-  ChevronDown,
-  Eye,
-  SparklesSolid,
-} from '@mynaui/icons-react';
+  ArrowUpRightIcon as ArrowUpRight,
+  CheckIcon as Check,
+  CheckCircleIcon as CheckCircleSolid,
+  CaretDownIcon as ChevronDown,
+  EyeIcon as Eye,
+  SparkleIcon as SparklesSolid,
+} from '@phosphor-icons/react';
 import { useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { ChangeFilesModal } from './change-files';
-import { formatItemAgeLong } from './review-actions';
+import { connectorCallId, formatItemAgeLong } from './review-actions';
 import {
   APPROVAL_ACTION_ICON,
   KIND_META,
@@ -50,12 +55,10 @@ import { type ApprovalAction, type ReviewItem, type ReviewStatus, isSafeRisk } f
 export interface ReviewActions {
   resolve: (id: string, status: ReviewStatus, toast?: string, feedback?: string) => void;
   decideAction: (itemId: string, actionId: string, decision: 'approved' | 'denied') => void;
-  approveAllSafe: (itemId: string) => void;
   /** Open the item's originating session (e.g. to watch the agent revise). */
   openSession?: (sessionId: string) => void;
-  /** Live-data mode: executor approvals resolve inline via `resolve()` too
-   *  (the same `resolveApproval` call the in-session prompt uses), not just
-   *  native/CR items. */
+  /** Live-data mode. The shared Connector parameter review submits its exact
+   *  decision through `resolve()`. */
   connected?: boolean;
   /** The review item id currently mid-mutation, if any — drives the
    *  per-item `Loading` state on Approve/Deny while connected. */
@@ -63,6 +66,9 @@ export interface ReviewActions {
   /** Which verdict `pendingId`'s in-flight mutation is — so Approve and Deny
    *  don't both show `Loading` at once. */
   pendingDecision?: 'approve' | 'deny' | null;
+  /** Start a real session from the blocked Change Request head branch. */
+  recoverChange?: (item: Extract<ReviewItem, { kind: 'change' }>, conflicts: string[]) => void;
+  recoveringCrId?: string | null;
 }
 
 /** A muted bordered panel — the friendly content surface. */
@@ -171,10 +177,12 @@ function ChangeBody({
   item,
   actions,
   onClose,
+  conflicts,
 }: {
   item: Extract<ReviewItem, { kind: 'change' }>;
   actions: ReviewActions;
   onClose: () => void;
+  conflicts: string[];
 }) {
   const d = item.detail;
   const whatChanged = d.whatChanged ?? [];
@@ -186,8 +194,8 @@ function ChangeBody({
         <div className="bg-kortix-orange/[0.06] rounded-lg px-4 py-3.5">
           <SectionLabel>You asked for changes</SectionLabel>
           <ul className="space-y-1.5">
-            {requested.map((r, i) => (
-              <li key={r.at ?? `${i}`} className="text-foreground flex items-start gap-2 text-sm">
+            {requested.map((r) => (
+              <li key={r.at ?? r.text} className="text-foreground flex items-start gap-2 text-sm">
                 <span
                   className="bg-kortix-orange mt-1.5 size-1.5 shrink-0 rounded-full"
                   aria-hidden
@@ -277,24 +285,35 @@ function ChangeBody({
         </div>
       )}
 
-      {d.conflicts && d.conflicts.length > 0 && (
+      {conflicts.length > 0 && (
         <InfoBanner
           tone="warning"
-          title={`This overlaps with recent work in ${d.conflicts.length} files`}
+          title={`Merge conflicts in ${conflicts.length} ${conflicts.length === 1 ? 'file' : 'files'}`}
           action={
             <Button
               size="sm"
               variant="secondary"
+              disabled={actions.recoveringCrId === d.crId}
               onClick={() => {
-                actions.resolve(item.id, 'waiting', 'Resolving the overlap with the agent…');
-                onClose();
+                if (actions.recoverChange) {
+                  actions.recoverChange(item, conflicts);
+                } else {
+                  actions.resolve(item.id, 'waiting', 'Solving the merge conflicts with an agent…');
+                  onClose();
+                }
               }}
             >
-              Resolve with agent
+              {actions.recoveringCrId === d.crId ? (
+                <Loading className="size-3.5 shrink-0" />
+              ) : (
+                <SparklesSolid className="size-3.5 shrink-0" />
+              )}
+              Solve with agent
             </Button>
           }
         >
-          The agent can rebase and fix the overlap for you — no merge markers to touch.
+          Start an agent session from this change. The agent will merge the latest base branch,
+          resolve the conflicts, run checks, and open a replacement change.
         </InfoBanner>
       )}
 
@@ -320,7 +339,6 @@ function ApprovalActionRow({
   readOnly,
   onApprove,
   onDeny,
-  onAlwaysAllow,
   onOpenSession,
 }: {
   action: ApprovalAction;
@@ -332,7 +350,6 @@ function ApprovalActionRow({
   readOnly?: boolean;
   onApprove: () => void;
   onDeny: () => void;
-  onAlwaysAllow: () => void;
   onOpenSession?: () => void;
 }) {
   const Icon = APPROVAL_ACTION_ICON[action.icon];
@@ -412,14 +429,6 @@ function ApprovalActionRow({
                   See it in the session
                   <ArrowUpRight className="size-3" />
                 </button>
-              ) : !connected ? (
-                <button
-                  type="button"
-                  onClick={onAlwaysAllow}
-                  className="text-muted-foreground hover:text-foreground text-xs underline-offset-2 hover:underline"
-                >
-                  Always allow this
-                </button>
               ) : null}
             </div>
           )}
@@ -437,42 +446,51 @@ function ApprovalBody({
   actions: ReviewActions;
 }) {
   const list = item.detail.actions ?? [];
-  const safePending = list.filter((a) => isSafeRisk(a.risk) && !a.decided);
+  const adaptedExecutionId = connectorCallId(item.id);
+  const adaptedAction = adaptedExecutionId ? list[0] : null;
+  if (actions.connected && adaptedAction) {
+    const busyDecision: ApprovalDecisionValue | null =
+      actions.pendingId === item.id ? (actions.pendingDecision ?? null) : null;
+    return (
+      <ApprovalRequest
+        request={{
+          action: adaptedAction.actionPath ?? adaptedAction.title,
+          risk: adaptedAction.connectorRisk ?? adaptedAction.risk,
+          projectName: item.project,
+          requestedAt: item.createdAt,
+          argsPreview: adaptedAction.rawArgsPreview ?? null,
+          reviewComplete: adaptedAction.reviewComplete === true,
+          pending: item.status === 'needs_you',
+          resolution:
+            item.status === 'approved' ? 'approve' : item.status === 'rejected' ? 'deny' : null,
+          status:
+            item.status === 'approved'
+              ? 'ok'
+              : item.status === 'rejected'
+                ? 'denied'
+                : 'pending_approval',
+        }}
+        onDecision={(decision) =>
+          actions.resolve(
+            item.id,
+            decision === 'approve' ? 'approved' : 'rejected',
+            decision === 'approve' ? 'Approved — the agent will continue' : 'Denied',
+          )
+        }
+        busyDecision={busyDecision}
+      />
+    );
+  }
   const openSession =
     actions.openSession && item.sessionId
       ? () => actions.openSession?.(item.sessionId as string)
       : undefined;
-  // Connected mode resolves each action for real via `resolve()` (routes to
-  // `resolveApproval` — the same call the in-session prompt uses), so the row
-  // pending state is keyed off the shared `pendingId` rather than local proto
-  // state. Prototype mode keeps the instant local `decideAction` + "Always
-  // allow this" full-allow affordance.
+  // Adapted Connector approvals return through ApprovalRequest above. This
+  // native/prototype branch keeps its existing whole-item decision behavior.
   return (
     <>
-      {!actions.connected && safePending.length > 0 && (
-        <InfoBanner
-          tone="success"
-          title={`${safePending.length} ${safePending.length === 1 ? 'action is' : 'actions are'} safe to approve together`}
-          action={
-            <Button
-              size="sm"
-              onClick={() => {
-                actions.approveAllSafe(item.id);
-                successToast(`Approved ${safePending.length} safe actions`);
-              }}
-            >
-              Approve all safe
-            </Button>
-          }
-        >
-          Reads and low-risk writes. Risky actions stay below for you to decide one by one.
-        </InfoBanner>
-      )}
-      {/* A connected item resolves as ONE unit (`/act` and `resolveApproval`
-          take a single verdict for the whole item), so with several pending
-          actions the per-row button pairs would misrepresent their granularity
-          — clicking Approve on one row would green-light all of them. Rows go
-          display-only and one clearly-labeled decision bar carries the verdict. */}
+      {/* Native multi-action approvals resolve as one item. Adapted Connector
+          approvals cannot reach this branch. */}
       {(() => {
         const wholeItem = !!actions.connected && list.filter((a) => !a.decided).length > 1;
         const busy = actions.connected && actions.pendingId === item.id;
@@ -502,10 +520,6 @@ function ApprovalBody({
                     }
                     actions.decideAction(item.id, a.id, 'denied');
                     infoToast(`Denied · ${a.title}`);
-                  }}
-                  onAlwaysAllow={() => {
-                    actions.decideAction(item.id, a.id, 'approved');
-                    infoToast(`Saved — ${a.connector} ${a.action} won’t ask again`);
                   }}
                 />
               ))}
@@ -560,7 +574,7 @@ function OutputBody({ item }: { item: Extract<ReviewItem, { kind: 'output' }> })
     <>
       <Panel>
         <div className="text-foreground flex items-start gap-2 text-sm text-pretty">
-          <SparklesSolid className="text-kortix-purple mt-0.5 size-4 shrink-0" />
+          <SparklesSolid weight="fill" className="text-kortix-purple mt-0.5 size-4 shrink-0" />
           <span>{d.note}</span>
         </div>
       </Panel>
@@ -674,7 +688,7 @@ function BatchBody({ item }: { item: Extract<ReviewItem, { kind: 'batch' }> }) {
           {children.map((c) => (
             <li key={c.id} className="flex items-center gap-2.5 px-4 py-2">
               {c.status === 'done' ? (
-                <CheckCircleSolid className="text-kortix-green size-4 shrink-0" />
+                <CheckCircleSolid weight="fill" className="text-kortix-green size-4 shrink-0" />
               ) : (
                 <Eye className="dark:text-kortix-yellow size-4 shrink-0 text-yellow-600" />
               )}
@@ -719,6 +733,7 @@ function FeedbackComposer({
           }
         }}
         rows={3}
+        aria-label="What should the agent change?"
         placeholder="What should the agent change? (optional — sent back as a follow-up)"
         className="bg-popover focus-visible:border-primary/40 w-full resize-none rounded-md border px-3 py-2 text-sm outline-none"
       />
@@ -742,10 +757,14 @@ function Footer({
   item,
   actions,
   onClose,
+  conflicts,
+  checkingConflicts,
 }: {
   item: ReviewItem;
   actions: ReviewActions;
   onClose: () => void;
+  conflicts: string[];
+  checkingConflicts: boolean;
 }) {
   const [composing, setComposing] = useState(false);
 
@@ -775,15 +794,6 @@ function Footer({
   if (item.kind === 'approval') {
     return (
       <ModalFooter className="border-border/60 border-t pt-4">
-        <Button
-          variant="ghost"
-          onClick={() => {
-            actions.resolve(item.id, 'rejected', 'Denied all remaining actions');
-            onClose();
-          }}
-        >
-          Deny all
-        </Button>
         <Button variant="outline-ghost" onClick={onClose}>
           Close
         </Button>
@@ -793,7 +803,7 @@ function Footer({
 
   // change · output · batch
   const secondaryLabel = item.secondaryAction;
-  const hasConflicts = item.kind === 'change' && (item.detail.conflicts?.length ?? 0) > 0;
+  const hasConflicts = item.kind === 'change' && conflicts.length > 0;
 
   if (composing && secondaryLabel) {
     return (
@@ -817,24 +827,49 @@ function Footer({
   return (
     <ModalFooter className="border-border/60 border-t pt-4">
       {hasConflicts && (
-        <span className="text-muted-foreground mr-auto text-xs">Resolve the overlap first</span>
+        <span className="text-muted-foreground mr-auto text-xs">The change cannot merge yet</span>
       )}
       {secondaryLabel && (
         <Button variant="ghost" onClick={() => setComposing(true)}>
           {secondaryLabel}
         </Button>
       )}
-      <Button
-        variant={item.risk === 'high' ? 'danger' : item.risk === 'medium' ? 'warning' : 'default'}
-        disabled={hasConflicts}
-        onClick={() => {
-          actions.resolve(item.id, 'approved', `${item.primaryAction} · done`);
-          onClose();
-        }}
-      >
-        <Check className="size-4" />
-        {item.primaryAction}
-      </Button>
+      {hasConflicts && item.kind === 'change' ? (
+        <Button
+          disabled={actions.recoveringCrId === item.detail.crId}
+          onClick={() => {
+            if (actions.recoverChange) {
+              actions.recoverChange(item, conflicts);
+            } else {
+              actions.resolve(item.id, 'waiting', 'Solving the merge conflicts with an agent…');
+              onClose();
+            }
+          }}
+        >
+          {actions.recoveringCrId === item.detail.crId ? (
+            <Loading className="size-4 shrink-0" />
+          ) : (
+            <SparklesSolid className="size-4 shrink-0" />
+          )}
+          Solve with agent
+        </Button>
+      ) : (
+        <Button
+          variant={item.risk === 'high' ? 'danger' : item.risk === 'medium' ? 'warning' : 'default'}
+          disabled={checkingConflicts}
+          onClick={() => {
+            actions.resolve(item.id, 'approved', `${item.primaryAction} · done`);
+            onClose();
+          }}
+        >
+          {checkingConflicts ? (
+            <Loading className="size-4 shrink-0" />
+          ) : (
+            <Check className="size-4" />
+          )}
+          {checkingConflicts ? 'Checking...' : item.primaryAction}
+        </Button>
+      )}
     </ModalFooter>
   );
 }
@@ -848,8 +883,21 @@ export function ReviewDetailModal({
   actions: ReviewActions;
   onClose: () => void;
 }) {
+  const crId = item?.kind === 'change' ? (item.detail.crId ?? null) : null;
+  const mergePreview = useChangeRequestMergePreview(crId, Boolean(crId));
   if (!item) return null;
 
+  const previewHasConflicts = Boolean(
+    mergePreview.data && !mergePreview.data.is_up_to_date && !mergePreview.data.can_merge,
+  );
+  const conflicts =
+    item.kind === 'change'
+      ? crId
+        ? previewHasConflicts
+          ? (mergePreview.data?.conflicts ?? [])
+          : []
+        : (item.detail.conflicts ?? [])
+      : [];
   const kind = KIND_META[item.kind];
   const Source = SOURCE_META[item.source];
 
@@ -893,7 +941,9 @@ export function ReviewDetailModal({
             {item.agent} · {formatItemAgeLong(item.createdAt)}
           </div>
 
-          {item.kind === 'change' && <ChangeBody item={item} actions={actions} onClose={onClose} />}
+          {item.kind === 'change' && (
+            <ChangeBody item={item} actions={actions} onClose={onClose} conflicts={conflicts} />
+          )}
           {item.kind === 'approval' && <ApprovalBody item={item} actions={actions} />}
           {item.kind === 'output' && <OutputBody item={item} />}
           {item.kind === 'decision' && (
@@ -902,7 +952,13 @@ export function ReviewDetailModal({
           {item.kind === 'batch' && <BatchBody item={item} />}
         </ModalBody>
 
-        <Footer item={item} actions={actions} onClose={onClose} />
+        <Footer
+          item={item}
+          actions={actions}
+          onClose={onClose}
+          conflicts={conflicts}
+          checkingConflicts={Boolean(crId) && mergePreview.isLoading}
+        />
       </ModalContent>
     </Modal>
   );

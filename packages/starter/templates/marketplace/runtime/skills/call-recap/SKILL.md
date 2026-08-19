@@ -102,8 +102,7 @@ live by this point — only the outbound email waits on the rep.
   contacts only reflect what the call actually covered — never inferred
   beyond it.
 - **Scoped secrets.** Google Drive, HubSpot, and Linear credentials are
-  injected by the connector at runtime and never exposed to the model or
-  written to logs.
+  injected by the connector at runtime, scoped to this agent's grant.
 - **No chat posts.** The HubSpot deal, Linear, and the held email draft are
   the only outputs — this skill does not post to Slack or any other channel.
 </guardrails>

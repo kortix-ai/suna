@@ -8,5 +8,12 @@
   "packageManager": "pnpm@9.15.4",
   "dependencies": {
     "deepsec": "^2.1.2"
+  },
+  "pnpm": {
+    "overrides": {
+      "@hono/node-server@>=1.0.0 <2.0.10": "2.0.10",
+      "fast-uri@>=3.0.0 <3.1.4": "3.1.4",
+      "protobufjs@>=7.0.0 <7.6.5": "7.6.5"
+    }
   }
 }

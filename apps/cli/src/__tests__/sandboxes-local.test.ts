@@ -3,7 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import type { SandboxTemplate } from '@kortix/shared/sandbox';
 
 import {
-  composeLocalDockerfile,
+  composeSandboxDockerfile,
   dockerBuildArgs,
   resolveLocalTemplate,
 } from '../commands/sandboxes-local.ts';
@@ -15,33 +15,31 @@ const tpl = (slug: string, extra: Partial<SandboxTemplate> = {}): SandboxTemplat
   ...extra,
 });
 
-describe('composeLocalDockerfile', () => {
+describe('composeSandboxDockerfile', () => {
   const USER = 'FROM ubuntu:24.04\nRUN apt-get update && apt-get install -y gdal-bin\n';
 
-  test('includes the pip floor — the thing the local build exists to exercise', () => {
-    // Incident (b): the floor's `numpy>=1.26` vs a user's dpkg-owned numpy
-    // 1.26.4 → "Cannot uninstall numpy 1.26.4, RECORD file not found". If the
-    // composed text doesn't run pip, this command reproduces nothing.
-    const out = composeLocalDockerfile(USER, { layer: true });
-    expect(out).toContain('/opt/kortix/pyfloor/bin/pip install');
-    expect(out).toContain('"numpy>=1.26"');
+  test('includes the managed runtime floor that local builds exercise', () => {
+    const out = composeSandboxDockerfile(USER, { layer: true });
+    expect(out).toContain('sha256sum -c -');
+    expect(out).toContain('uv python install --default');
+    expect(out).toContain('pnpm runtime set node');
     expect(out).toContain('apt-get install');
+    expect(out).not.toContain('/opt/kortix/pyfloor');
   });
 
   test('keeps the user Dockerfile verbatim, above the layer', () => {
-    const out = composeLocalDockerfile(USER, { layer: true });
+    const out = composeSandboxDockerfile(USER, { layer: true });
     expect(out.startsWith('FROM ubuntu:24.04\nRUN apt-get update')).toBe(true);
     expect(out.indexOf('gdal-bin')).toBeLessThan(out.indexOf('Kortix runtime layer'));
   });
 
   test('omits the artifact tail — those COPYs need binaries a consumer cannot stage', () => {
-    const out = composeLocalDockerfile(USER, { layer: true });
+    const out = composeSandboxDockerfile(USER, { layer: true });
     for (const artifact of [
       'COPY kortix-agent.gz',
       'kortix.gz',
       'kortix-entrypoint',
       'kortix-slack-cli',
-      'kortix-executor-sdk',
       'scaffold.git',
       'install-shims.sh',
       'ENTRYPOINT',
@@ -52,13 +50,13 @@ describe('composeLocalDockerfile', () => {
 
   test('omits the staged-context steps (opencode config warm-up, warm repo)', () => {
     // Both would emit COPY/clone steps against a context this build doesn't have.
-    const out = composeLocalDockerfile(USER, { layer: true });
+    const out = composeSandboxDockerfile(USER, { layer: true });
     expect(out).not.toContain('/opt/kortix/warm-config');
     expect(out).not.toContain('warm-repo');
   });
 
   test('--no-layer yields the user text alone', () => {
-    expect(composeLocalDockerfile(USER, { layer: false })).toBe(USER);
+    expect(composeSandboxDockerfile(USER, { layer: false })).toBe(USER);
   });
 
   test('normalizes the legacy starter block the same way the snapshot builder does', () => {
@@ -74,7 +72,7 @@ describe('composeLocalDockerfile', () => {
       '        git \\\n' +
       '        build-essential \\\n' +
       '    && rm -rf /var/lib/apt/lists/*\n';
-    expect(composeLocalDockerfile(legacy, { layer: false })).toBe('FROM ubuntu:24.04\n');
+    expect(composeSandboxDockerfile(legacy, { layer: false })).toBe('FROM ubuntu:24.04\n');
   });
 });
 

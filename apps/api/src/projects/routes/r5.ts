@@ -8,6 +8,7 @@ import {
   getCommitDiff,
   getFileHistory,
   grepRepoFiles,
+  isRepoFileNotFoundError,
   listBranches,
   listCommits,
   listRepoFiles,
@@ -17,8 +18,16 @@ import {
 } from '../git';
 import { createRoute, z } from '@hono/zod-openapi';
 import { projects } from '@kortix/db';
-import { eq } from 'drizzle-orm';
-import { assertProjectCapability, loadProjectForUser, projectCapabilityAllowed } from '../lib/access';
+import { eq, type SQL } from 'drizzle-orm';
+import {
+  assertAgentSessionWorkspaceAllowsRepository,
+  assertProjectCapability,
+  loadProjectForUser,
+  projectCapabilityAllowed,
+} from '../lib/access';
+import { metadataMerge } from '../lib/metadata-merge';
+import { normalizeProjectIcon } from '../lib/project-icon';
+import { normalizeProjectGlyph } from '../lib/project-glyph';
 import { applyDetailCapabilityFilter } from '../lib/detail-capability-filter';
 import { denierFromConfig, filterConfigResourcesForUser, resourceDenierForRequest } from '../lib/project-resources';
 import { AnyObject, CommitSchema, ProjectSchema, projectsApp } from '../lib/app';
@@ -29,6 +38,8 @@ import {
   serializeProject,
   serializeProjectGitConnection,
 } from '../lib/serializers';
+import { resolveFeatureFlag } from '../../feature-flags/registry';
+import { addPlatformMetaAgent } from '../lib/platform-meta-agent';
 
 function isMissingGitPathError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error || '');
@@ -57,6 +68,11 @@ projectsApp.openapi(
 
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  await assertAgentSessionWorkspaceAllowsRepository(
+    c,
+    loaded.row.accountId,
+    projectId,
+  );
 
   await db
     .update(projects)
@@ -91,6 +107,11 @@ projectsApp.openapi(
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  await assertAgentSessionWorkspaceAllowsRepository(
+    c,
+    loaded.row.accountId,
+    projectId,
+  );
 
   const gitProject = await withProjectGitAuth(loaded.row);
   let files: Awaited<ReturnType<typeof listRepoFiles>> = [];
@@ -112,7 +133,13 @@ projectsApp.openapi(
     projectId,
     actingTokenId: (c.get('iamTokenId') as string | undefined) ?? undefined,
   };
-  const config = await filterConfigResourcesForUser(rawConfig, denierCtx);
+  const filteredConfig = await filterConfigResourcesForUser(rawConfig, denierCtx);
+  // The platform coordinator appears in the agent list (and becomes the
+  // default) only for projects that opted into the `meta_agent` experimental
+  // feature. Flag off: the config is exactly the repo-declared surface.
+  const config = resolveFeatureFlag(loaded.row.metadata, 'meta_agent')
+    ? addPlatformMetaAgent(filteredConfig)
+    : filteredConfig;
   // …and hide the raw FILES of those resources from the file list (visibility
   // isolation). Reuses the config already loaded — no extra git round-trip.
   const denier = await denierFromConfig(rawConfig, denierCtx);
@@ -350,6 +377,12 @@ projectsApp.openapi(
   const projectId = c.req.param('projectId');
   const path = normalizeString(c.req.query('path'));
   if (!path) return c.json({ error: 'path query param is required' }, 400);
+  // Absolute and traversal paths can never resolve inside the repo tree —
+  // e.g. the platform meta agent's /workspace/AGENTS.md lives in the sandbox
+  // image, not the project repo. Answer like any other missing file.
+  if (path.startsWith('/') || path.includes('..')) {
+    return c.json({ error: 'File not found' }, 404);
+  }
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_FILE_READ);
@@ -371,7 +404,14 @@ projectsApp.openapi(
     const content = await readRepoFile(await withProjectGitAuth(loaded.row), path, ref);
     return c.json({ path, ref, content });
   } catch (error) {
-    if (isMissingGitPathError(error)) {
+    // `readRepoFile` converts a `git show` "path does not exist" failure into a
+    // typed `RepoFileNotFoundError` (message: `file not found in repository at
+    // '<ref>:<path>'`), which the `isMissingGitPathError` regex below does NOT
+    // match — without this branch the typed error leaked as an uncaught 500
+    // (Better Stack pattern `5b40ec1a…`). Keep `isMissingGitPathError` as a
+    // backstop for genuine `GitOperationError`s carrying the raw `fatal: path
+    // … does not exist in …` message from callers that bypass `readRepoFile`.
+    if (isRepoFileNotFoundError(error) || isMissingGitPathError(error)) {
       return c.json({ error: 'File not found' }, 404);
     }
     throw error;
@@ -401,6 +441,12 @@ projectsApp.openapi(
   const projectId = c.req.param('projectId');
   const path = normalizeString(c.req.query('path'));
   if (!path) return c.json({ error: 'path query param is required' }, 400);
+  // Absolute and traversal paths can never resolve inside the repo tree —
+  // e.g. the platform meta agent's /workspace/AGENTS.md lives in the sandbox
+  // image, not the project repo. Answer like any other missing file.
+  if (path.startsWith('/') || path.includes('..')) {
+    return c.json({ error: 'File not found' }, 404);
+  }
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_FILE_READ);
@@ -688,9 +734,68 @@ projectsApp.openapi(
   if (defaultBranch) updates.defaultBranch = defaultBranch;
   if (manifestPath) updates.manifestPath = manifestPath;
 
+  // `icon` and `icon_glyph` are the two fields here where "absent" and "null"
+  // mean different things, and where a malformed value must be distinguished
+  // from an explicit removal. Both normalizers collapse invalid input AND an
+  // explicit null to `null`, so only the request BODY — not the normalizer's
+  // return value — can tell those apart. Resolution is by VALIDITY, not by
+  // key presence, so a PATCH agrees with the three create paths (provision /
+  // create-repo / link-repository) on every shared input, including a body
+  // that carries both keys:
+  //
+  //   neither key present                 → no metadata write; untouched
+  //   icon_glyph valid                    → merge { icon_glyph }, delete `icon`
+  //   icon_glyph invalid, icon valid      → merge { icon },       delete `icon_glyph`
+  //   icon valid alone                    → merge { icon },       delete `icon_glyph`
+  //   icon_glyph invalid, icon invalid/absent, icon_glyph: null   → delete `icon_glyph`
+  //   icon invalid/absent, icon_glyph invalid/absent, icon: null  → delete `icon`
+  //   icon: null AND icon_glyph: null (both explicit)             → delete BOTH keys
+  //   icon invalid alone (no valid glyph, no explicit null)       → no metadata write
+  //   both invalid, neither explicitly null                       → no metadata write
+  //
+  // A malformed value must never be able to wipe a choice the user made — only
+  // an explicit `null` on a key clears THAT key. Sending both keys `null` in
+  // the same request reads as "clear the icon entirely" and clears both,
+  // rather than picking one key to privilege for deletion.
+  //
+  // THE INVARIANT: a project shows one icon, so writing either key deletes the
+  // other in the SAME statement — `metadataMerge` emits
+  // `(coalesce(metadata,'{}') - 'icon') || '{"icon_glyph":…}'::jsonb`, one
+  // expression under the row's own lock. Enforcing it here rather than in the
+  // modal means every client gets the rule without implementing it.
+  //
+  // A valid `icon_glyph` always wins over `icon` (checked first below), same
+  // as the create paths: a request carrying both valid values resolves to the
+  // glyph, and the emoji is dropped.
+  const iconGlyphPresent = 'icon_glyph' in body;
+  const iconGlyph = iconGlyphPresent ? normalizeProjectGlyph(body.icon_glyph) : null;
+  const iconPresent = 'icon' in body;
+  const icon = iconPresent ? normalizeProjectIcon(body.icon) : null;
+
+  let metadataExpr: SQL | undefined;
+  if (iconGlyph) {
+    metadataExpr = metadataMerge({ icon_glyph: iconGlyph }, ['icon']);
+  } else if (icon) {
+    metadataExpr = metadataMerge({ icon }, ['icon_glyph']);
+  } else {
+    // Neither side resolved to a value worth storing. Delete only the keys
+    // the caller EXPLICITLY nulled — a key that's absent or merely malformed
+    // is left untouched, per the invariant above.
+    const deleteKeys: string[] = [];
+    if (iconGlyphPresent && body.icon_glyph === null) deleteKeys.push('icon_glyph');
+    if (iconPresent && body.icon === null) deleteKeys.push('icon');
+    if (deleteKeys.length > 0) metadataExpr = metadataMerge({}, deleteKeys);
+  }
+
   const [row] = await db
     .update(projects)
-    .set(updates)
+    .set({
+      ...updates,
+      // Spread rather than assigned into `updates`: that object is typed
+      // `Partial<$inferInsert>`, which has no room for a SQL expression, while
+      // Drizzle's own `.set()` input accepts one per column.
+      ...(metadataExpr ? { metadata: metadataExpr } : {}),
+    })
     .where(eq(projects.projectId, projectId))
     .returning();
 

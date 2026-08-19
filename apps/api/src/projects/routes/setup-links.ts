@@ -1,7 +1,7 @@
 /**
  * Agent-minted SETUP LINKS — the authenticated half.
  *
- * The in-sandbox agent (its KORTIX_EXECUTOR_TOKEN / KORTIX_CLI_TOKEN is a
+ * The in-sandbox agent (its `KORTIX_CLI_TOKEN` is a
  * session-scoped PAT, accepted by supabaseAuth) calls these to mint a
  * short-lived link it can hand to a human to (a) enter a project secret value,
  * or (b) 1-click connect a Pipedream app.
@@ -14,8 +14,8 @@
 import { auth, errors, json } from '../../openapi';
 import { config } from '../../config';
 import { createRoute, z } from '@hono/zod-openapi';
-import { loadPipedreamConnector } from '../../executor/db-deps';
-import { pipedreamConfigured } from '../../executor/pipedream';
+import { connectLinkEligibility } from '../../connectors/db-deps';
+import { pipedreamConfigured } from '../../connectors/pipedream';
 import { mintSetupLink, type SecretFieldSpec } from '../../setup-links/token';
 import { isValidSecretName } from '../secrets';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
@@ -95,7 +95,7 @@ projectsApp.openapi(
     const scope = normalizeString(body.scope) === 'connector' ? 'connector' : 'runtime';
     const { token, expiresAt } = mintSetupLink(
       projectId,
-      { kind: 'secret', fields, scope, uid: loaded.userId },
+      { kind: 'secret', fields, scope, uid: loaded.userId, sid: (c.get('sessionId') as string | undefined) ?? null },
       { expiresInMinutes: typeof body.expires_in_minutes === 'number' ? body.expires_in_minutes : undefined },
     );
 
@@ -127,7 +127,7 @@ projectsApp.openapi(
     },
     responses: {
       200: json(z.any(), 'A connect link'),
-      ...errors(400, 404, 501),
+      ...errors(400, 404, 409, 501),
     },
   }),
   async (c: any) => {
@@ -144,17 +144,56 @@ projectsApp.openapi(
     const slug = normalizeString(body.slug);
     if (!slug) return c.json({ error: 'slug is required' }, 400);
 
-    const conn = await loadPipedreamConnector(projectId, slug);
-    if (!conn) {
+    const eligibility = await connectLinkEligibility(projectId, slug);
+    if (!eligibility.ok) {
+      // Each reason has a different person and a different fix behind it, and
+      // the old single message named the wrong one for two of the three.
+      if (eligibility.reason === 'not_pipedream') {
+        return c.json(
+          {
+            error:
+              `"${slug}" is a ${eligibility.providerType} connector, and setup links are Pipedream ` +
+              'Quick Connect links. It is already on this project — connect it the way that ' +
+              'provider is connected rather than adding it to kortix.yaml again.',
+            code: 'CONNECTOR_NOT_PIPEDREAM',
+          },
+          409,
+        );
+      }
+      if (eligibility.reason === 'no_app') {
+        return c.json(
+          {
+            error: `"${slug}" is a Pipedream connector on this project but names no Pipedream app, so no connect link can be built for it.`,
+            code: 'CONNECTOR_PIPEDREAM_APP_MISSING',
+          },
+          409,
+        );
+      }
       return c.json(
-        { error: `"${slug}" is not a connected-via-Pipedream connector on this project. Add it to kortix.yaml first.` },
+        { error: `"${slug}" is not a connector on this project. Add it to kortix.yaml first.` },
         404,
+      );
+    }
+    const conn = eligibility;
+    if (conn.authorizationStrategy !== 'project') {
+      return c.json(
+        {
+          error: 'Shared connect links require a project authorization strategy',
+          code: 'CONNECTOR_AUTHORIZATION_STRATEGY_MISMATCH',
+        },
+        409,
       );
     }
 
     const { token, expiresAt } = mintSetupLink(
       projectId,
-      { kind: 'connector', slug, app: conn.app, uid: loaded.userId },
+      {
+        kind: 'connector',
+        slug,
+        app: conn.app,
+        uid: loaded.userId,
+        sid: (c.get('sessionId') as string | undefined) ?? null,
+      },
       { expiresInMinutes: typeof body.expires_in_minutes === 'number' ? body.expires_in_minutes : undefined },
     );
 

@@ -55,6 +55,14 @@ locals {
       dimension = replace(arn, "/^.*:loadbalancer\\//", "")
     }
   }
+  usw2_compliance_waf_albs = {
+    for arn, alb in local.usw2_albs : arn => alb
+    if !contains(["kortix-dev-web-alb", "kortix-staging-web-alb"], alb.name)
+  }
+  euw2_compliance_waf_albs = {
+    for arn, alb in local.euw2_albs : arn => alb
+    if alb.name != "kortix-prod-web-alb"
+  }
   alarm_tags = {
     ManagedBy = "kortix-compliance"
     Control   = "DCF-86"
@@ -74,7 +82,11 @@ data "aws_iam_policy_document" "drata_sns_inspection" {
       "sns:ListSubscriptionsByTopic",
       "sns:ListTopics",
     ]
-    resources = [data.aws_sns_topic.usw2_alerts.arn, data.aws_sns_topic.euw2_alerts.arn]
+    resources = [
+      data.aws_sns_topic.usw2_alerts.arn,
+      data.aws_sns_topic.euw2_alerts.arn,
+      aws_sns_topic.use2_alerts.arn,
+    ]
   }
 
   statement {
@@ -91,14 +103,14 @@ resource "aws_iam_role_policy" "drata_sns_inspection" {
 }
 
 resource "aws_wafv2_web_acl_association" "usw2" {
-  for_each     = local.usw2_albs
+  for_each     = local.usw2_compliance_waf_albs
   resource_arn = each.key
   web_acl_arn  = data.aws_wafv2_web_acl.usw2.arn
 }
 
 resource "aws_wafv2_web_acl_association" "euw2" {
   provider     = aws.euw2
-  for_each     = local.euw2_albs
+  for_each     = local.euw2_compliance_waf_albs
   resource_arn = each.key
   web_acl_arn  = data.aws_wafv2_web_acl.euw2.arn
 }

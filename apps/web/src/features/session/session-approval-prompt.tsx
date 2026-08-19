@@ -1,261 +1,306 @@
 'use client';
 
 /**
- * Inline "agent needs your approval" prompt, pinned above the composer — the
- * in-session face of a connector action a policy gated as `require_approval`.
- * Mirrors opencode's native tool-permission prompt (SessionPermissionPrompt)
- * so it feels native: approve lets the paused run proceed, deny refuses it and
- * the agent continues.
+ * In-session "agent needs your approval" card, pinned above the composer.
  *
- * Decision scopes, visually separated by how long they last:
- *  - per request: Deny / Allow once / Allow for session (this exact action,
- *    rest of this session)
- *  - per session: "Allow everything" — a `*` wildcard session grant, so no
- *    gated action asks again this session
- *  - persistent (footer, gated on `project.connector.write`): prepend an
- *    `always_run` project policy for this tool — future sessions stop asking.
+ * It is a decision surface again — but only because it now shows what is being
+ * decided. Two rules constrain it, and both came from real failures:
  *
- * Self-contained: reads projectId + the (Kortix) session id from the route and
- * shares the session-audit query with the header nudge + Audit panel, so all
- * three stay in lockstep.
+ *  1. **Never ask an unanswerable question.** The card used to show
+ *     `Run gmail.send_email` and nothing else — no recipient, no subject — so
+ *     "is this allowed?" could not be judged. Whether a call is safe depends on
+ *     its ARGUMENTS. The fix was to move the decision to a standalone page that
+ *     listed them; the fix here is to expand the redacted parameters in place,
+ *     using the SAME `ApprovalParameters` component that page renders. The
+ *     question and the evidence now arrive together, without leaving the
+ *     session.
+ *  2. **One decision, one call.** The buttons are exactly Deny and Approve this
+ *     call (`ApprovalDecisionActions`). The old session-wide, blanket, and
+ *     per-tool waiver buttons are gone: a reflex click that clears today's
+ *     prompt must not pre-authorise every later call, including ones with
+ *     entirely different arguments. To let a tool run unattended, author an
+ *     `always_run` rule in the Policies panel, where the whole rule set is in
+ *     view.
+ *
+ * The standalone /approve/<token> page stays, reachable from the ↗ on every
+ * row. That link is what gets relayed out-of-band (chat, email), so the human
+ * need not be watching the session — and it is the same absolute URL the API
+ * mints, so there is one link shape.
+ *
+ * Liveness is unchanged: rows come from the shared `useSessionAudit` query,
+ * which polls every 5s here. A decision taken anywhere else — the link, the
+ * Audit panel, another tab — drops the row on the next poll.
  */
 
+import {
+  ApprovalDecisionActions,
+  type ApprovalDecisionValue,
+  ApprovalIncompleteNotice,
+  ApprovalParameters,
+} from '@/components/approvals/approval-request';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import Loading from '@/components/ui/loading';
+import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
+import Hint from '@/components/ui/hint';
 import { errorToast, successToast } from '@/components/ui/toast';
 import {
-  isPendingAction,
+  approvalArgsSummary,
+  approvalNoticeHeadline,
+  type ApprovalNoticeRow,
+  approvalNoticeRows,
+  approvalRequestFromAction,
+  type DecidedApproval,
+  nextExpandedApproval,
+} from '@/features/session/session-approval-review';
+import {
   relativeTime,
   riskTone,
   useResolveApproval,
   useSessionAudit,
 } from '@/features/session/session-audit-shared';
-import { PROJECT_ACTIONS } from '@/lib/project-actions';
-import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import {
-  type SessionAuditAction,
-  listProjectPolicies,
-  setProjectPolicies,
-} from '@kortix/sdk/projects-client';
-import { ShieldAlert } from 'lucide-react';
+  CaretDownIcon,
+  CheckCircleIcon,
+  ArrowSquareOutIcon as ExternalLink,
+  ShieldWarningIcon as ShieldAlert,
+} from '@phosphor-icons/react';
 import { useParams } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
-/** The fully-qualified tool path project policies match (`slug.path`). The
- *  audit trail already stores the qualified form in `action`; the slug is only
- *  prepended defensively if a row ever carries the relative form. */
-function qualifiedAction(a: SessionAuditAction): string | null {
-  if (!a.connector) return null;
-  return a.action.startsWith(`${a.connector}.`) ? a.action : `${a.connector}.${a.action}`;
-}
+/** How long a just-decided row stays on screen to confirm the outcome. */
+const DECIDED_LINGER_MS = 5_000;
 
 export function SessionApprovalPrompt() {
   const { id: projectId, sessionId: projectSessionId } = useParams<{
     id: string;
     sessionId: string;
   }>();
-  // Poll a touch faster than the panel/nudge — this is the blocking gate the
-  // user is actively waiting on.
+  // Poll faster while the callback decision is pending.
   const { data } = useSessionAudit(projectId, projectSessionId, { refetchInterval: 5_000 });
   const resolve = useResolveApproval(projectId, projectSessionId);
-  const canWritePolicies = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE);
-  // Which button is loading: `${executionId}:deny|once|session`, 'session-all',
-  // or `policy:${qualifiedAction}`.
-  const [busy, setBusy] = useState<string | null>(null);
 
-  const pending = (data?.actions ?? []).filter(isPendingAction);
-  if (pending.length === 0) return null;
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const [busy, setBusy] = useState<Record<string, ApprovalDecisionValue>>({});
+  const [decided, setDecided] = useState<Record<string, DecidedApproval>>({});
 
-  const decide = (
-    executionId: string,
-    decision: 'approve' | 'deny',
-    scope: 'once' | 'session' = 'once',
-  ) => {
-    setBusy(`${executionId}:${decision === 'deny' ? 'deny' : scope}`);
+  // Each lingering confirmation owns one timer; drop them all on unmount so a
+  // late setState never lands on a torn-down card.
+  const timers = useRef<number[]>([]);
+  useEffect(() => {
+    const pending = timers.current;
+    return () => {
+      for (const timer of pending) clearTimeout(timer);
+    };
+  }, []);
+
+  const rows = approvalNoticeRows(data?.actions ?? [], decided);
+
+  const decide = (executionId: string, decision: ApprovalDecisionValue) => {
+    const row = rows.find((candidate) => candidate.action.execution_id === executionId);
+    if (!row) return;
+    setBusy((current) => ({ ...current, [executionId]: decision }));
     resolve.mutate(
-      { executionId, decision, scope },
+      { executionId, decision },
       {
-        onSuccess: () =>
-          successToast(
-            decision === 'deny'
-              ? 'Denied'
-              : scope === 'session'
-                ? "Allowed — won't ask again for this action this session"
-                : 'Approved — the agent will continue',
-          ),
-        onError: (e: unknown) =>
-          errorToast(e instanceof Error ? e.message : 'Failed to resolve approval'),
-        onSettled: () => setBusy(null),
+        onSuccess: () => {
+          setDecided((current) => ({
+            ...current,
+            [executionId]: { action: row.action, decision },
+          }));
+          setExpanded((current) => (current === executionId ? null : current));
+          successToast(decision === 'approve' ? 'Action approved' : 'Action denied');
+          timers.current.push(
+            window.setTimeout(() => {
+              setDecided((current) => {
+                const next = { ...current };
+                delete next[executionId];
+                return next;
+              });
+            }, DECIDED_LINGER_MS),
+          );
+        },
+        onError: (cause: unknown) =>
+          errorToast(cause instanceof Error ? cause.message : 'Failed to resolve approval'),
+        onSettled: () =>
+          setBusy((current) => {
+            const next = { ...current };
+            delete next[executionId];
+            return next;
+          }),
       },
     );
   };
 
-  // "Allow everything for this session": resolve the first pending row with the
-  // wildcard scope (the server records a `*` grant per connector), then release
-  // any other rows already pending — the wildcard only stops FUTURE asks.
-  const allowAllForSession = async () => {
-    setBusy('session-all');
-    try {
-      const [first, ...rest] = pending;
-      await resolve.mutateAsync({
-        executionId: first.execution_id,
-        decision: 'approve',
-        scope: 'session_all',
-      });
-      await Promise.all(
-        rest.map((a) =>
-          resolve.mutateAsync({ executionId: a.execution_id, decision: 'approve', scope: 'once' }),
-        ),
-      );
-      successToast("Allowed — won't ask again for anything this session");
-    } catch (e) {
-      errorToast(e instanceof Error ? e.message : 'Failed to resolve approvals');
-    } finally {
-      setBusy(null);
-    }
-  };
+  return (
+    <SessionApprovalNotice
+      rows={rows}
+      expanded={expanded}
+      busy={busy}
+      onToggle={(executionId) =>
+        setExpanded((current) => nextExpandedApproval(current, executionId))
+      }
+      onDecide={decide}
+    />
+  );
+}
 
-  // Persist "always run this tool" into the project's policies (kortix.yaml
-  // connectors[].policies — the same list the Policies panel edits), then
-  // release the pending rows it covers. PREPENDED: policy resolution is
-  // first-match-wins, so the new allow must outrank an existing
-  // require_approval pattern.
-  const alwaysRunInPolicy = async (qualified: string) => {
-    if (!projectId) return;
-    setBusy(`policy:${qualified}`);
-    try {
-      const current = await listProjectPolicies(projectId);
-      const withoutDup = (current.policies ?? []).filter((p) => p.match !== qualified);
-      await setProjectPolicies(
-        projectId,
-        [{ match: qualified, action: 'always_run' }, ...withoutDup],
-        current.defaultMode ?? 'risk',
-      );
-      const covered = pending.filter((a) => qualifiedAction(a) === qualified);
-      await Promise.all(
-        covered.map((a) =>
-          resolve.mutateAsync({ executionId: a.execution_id, decision: 'approve', scope: 'once' }),
-        ),
-      );
-      successToast(`Saved — "${qualified}" always runs in this project now`);
-    } catch (e) {
-      errorToast(e instanceof Error ? e.message : 'Failed to update project policies');
-    } finally {
-      setBusy(null);
-    }
-  };
+interface SessionApprovalNoticeProps {
+  rows: ApprovalNoticeRow[];
+  /** Execution id of the one open row, or null. */
+  expanded: string | null;
+  busy: Record<string, ApprovalDecisionValue>;
+  onToggle: (executionId: string) => void;
+  onDecide: (executionId: string, decision: ApprovalDecisionValue) => void;
+}
 
-  const qualifiedActions = [
-    ...new Set(pending.map(qualifiedAction).filter((q): q is string => !!q)),
-  ];
+/**
+ * The card itself — no data fetching, no mutation, so both the collapsed and
+ * the expanded rendering are directly testable.
+ */
+export function SessionApprovalNotice({
+  rows,
+  expanded,
+  busy,
+  onToggle,
+  onDecide,
+}: SessionApprovalNoticeProps) {
+  if (rows.length === 0) return null;
+
+  const pendingCount = rows.filter((row) => row.decision === null).length;
+  const headline = approvalNoticeHeadline(pendingCount);
 
   return (
-    <div className="mb-2 overflow-hidden rounded-xl border border-amber-500/40 bg-amber-50/60 dark:bg-amber-950/20">
-      <div className="flex items-center gap-2 border-amber-500/20 border-b px-3 py-1.5">
-        <ShieldAlert className="size-3.5 text-amber-600 dark:text-amber-400" />
-        <span className="text-foreground text-xs font-semibold tracking-tight">
-          {pending.length === 1
-            ? 'The agent needs your approval'
-            : `${pending.length} actions need your approval`}
-        </span>
-        <span className="text-muted-foreground text-[11px]">— it's paused until you decide</span>
+    <div
+      className={cn(
+        'bg-popover mb-2 overflow-hidden rounded-md border',
+        pendingCount > 0 ? 'border-kortix-orange/25' : 'border-border',
+      )}
+    >
+      <div
+        className={cn(
+          'flex items-center gap-2 border-b px-3 py-2',
+          pendingCount > 0 ? 'border-kortix-orange/20' : 'border-border',
+        )}
+      >
+        {pendingCount > 0 ? (
+          <ShieldAlert className="text-kortix-orange size-4" />
+        ) : (
+          <CheckCircleIcon weight="fill" className="text-kortix-green size-4" />
+        )}
+        <span className="text-foreground text-xs font-medium">{headline.title}</span>
+        {headline.hint ? (
+          <span className="text-muted-foreground text-xs">— {headline.hint}</span>
+        ) : null}
       </div>
-      <ul className="divide-amber-500/15 divide-y">
-        {pending.map((a) => {
-          const rowBusy = busy?.startsWith(`${a.execution_id}:`) ? busy.split(':')[1] : null;
+      <ul className="divide-border divide-y">
+        {rows.map(({ action, decision }) => {
+          const executionId = action.execution_id;
+          const summary = approvalArgsSummary(action);
+          const request = approvalRequestFromAction(action, decision === null);
+          const open = expanded === executionId;
+          const reviewComplete = request.reviewComplete !== false;
+
           return (
-            <li key={a.execution_id} className="flex items-center gap-2 px-3 py-2">
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-muted-foreground text-xs">Run</span>
-                  <code
-                    title={qualifiedAction(a) ?? a.action}
-                    className="text-foreground truncate font-mono text-xs font-medium"
+            <li key={executionId}>
+              <Disclosure open={open} onOpenChange={() => onToggle(executionId)}>
+                <DisclosureTrigger>
+                  <div
+                    className={cn(
+                      'flex cursor-pointer items-center gap-2 px-3 py-2 transition-colors',
+                      'hover:bg-foreground/[0.03]',
+                    )}
                   >
-                    {a.action}
-                  </code>
-                  {a.risk ? (
-                    <Badge variant={riskTone(a.risk)} size="xs" className="shrink-0 capitalize">
-                      {a.risk}
-                    </Badge>
-                  ) : null}
-                </div>
-                <p className="text-muted-foreground mt-0.5 text-[11px]">
-                  Requested {relativeTime(a.at)}
-                </p>
-              </div>
-              <div className="flex shrink-0 items-center gap-1.5">
-                <Button
-                  size="xs"
-                  variant="muted"
-                  className={cn('hover:bg-destructive/10 hover:text-destructive')}
-                  disabled={!!busy}
-                  onClick={() => decide(a.execution_id, 'deny')}
-                >
-                  {rowBusy === 'deny' ? <Loading className="size-3 animate-spin" /> : null}
-                  Deny
-                </Button>
-                <Button
-                  size="xs"
-                  variant="outline"
-                  title="Allow this action for the rest of this session — the agent won't ask again for it"
-                  disabled={!!busy}
-                  onClick={() => decide(a.execution_id, 'approve', 'session')}
-                >
-                  {rowBusy === 'session' ? <Loading className="size-3 animate-spin" /> : null}
-                  Allow for session
-                </Button>
-                <Button
-                  size="xs"
-                  variant="default"
-                  disabled={!!busy}
-                  onClick={() => decide(a.execution_id, 'approve', 'once')}
-                >
-                  {rowBusy === 'once' ? <Loading className="size-3 animate-spin" /> : null}
-                  Allow once
-                </Button>
-              </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-muted-foreground text-xs">Run</span>
+                        <code className="text-foreground truncate font-mono text-xs font-medium">
+                          {action.action}
+                        </code>
+                        {action.risk ? (
+                          <Badge
+                            variant={riskTone(action.risk)}
+                            size="xs"
+                            className="shrink-0 capitalize"
+                          >
+                            {action.risk}
+                          </Badge>
+                        ) : null}
+                      </div>
+                      {summary ? (
+                        <p className="text-foreground/80 mt-0.5 truncate font-mono text-xs">
+                          {summary}
+                        </p>
+                      ) : null}
+                      <p className="text-muted-foreground mt-0.5 text-xs">
+                        Requested {relativeTime(action.at)}
+                      </p>
+                    </div>
+                    {decision ? (
+                      <Badge
+                        variant={decision === 'approve' ? 'success' : 'destructive'}
+                        size="sm"
+                        className="shrink-0"
+                      >
+                        {decision === 'approve' ? 'Approved' : 'Denied'}
+                      </Badge>
+                    ) : (
+                      <span className="text-muted-foreground flex shrink-0 items-center gap-1 text-xs">
+                        Review
+                        <CaretDownIcon
+                          className={cn(
+                            'size-3 transition-transform duration-150',
+                            open && 'rotate-180',
+                          )}
+                        />
+                      </span>
+                    )}
+                    {action.approval_url ? (
+                      <Hint label="Open the full approval page" side="top">
+                        <Button
+                          size="icon-sm"
+                          variant="ghost"
+                          className="text-muted-foreground shrink-0"
+                          asChild
+                        >
+                          {/* Plain anchor, not next/link: the same absolute URL is what
+                              gets relayed out-of-band, so there is one link shape. */}
+                          <a
+                            href={action.approval_url}
+                            aria-label="Open the full approval page"
+                            onClick={(event) => event.stopPropagation()}
+                            onKeyDown={(event) => event.stopPropagation()}
+                          >
+                            <ExternalLink className="size-3.5" />
+                          </a>
+                        </Button>
+                      </Hint>
+                    ) : null}
+                  </div>
+                </DisclosureTrigger>
+                <DisclosureContent>
+                  <div className="space-y-2 px-3 pb-3">
+                    <ApprovalParameters
+                      dense
+                      argsPreview={request.argsPreview}
+                      reviewComplete={reviewComplete}
+                    />
+                    {!reviewComplete ? <ApprovalIncompleteNotice dense /> : null}
+                    {decision === null ? (
+                      <ApprovalDecisionActions
+                        dense
+                        onDecision={(next) => onDecide(executionId, next)}
+                        busyDecision={busy[executionId] ?? null}
+                        approveDisabled={!reviewComplete}
+                      />
+                    ) : null}
+                  </div>
+                </DisclosureContent>
+              </Disclosure>
             </li>
           );
         })}
       </ul>
-      <div className="flex items-center gap-2 border-amber-500/15 border-t px-3 py-1.5">
-        <span className="text-muted-foreground text-[11px]">This session:</span>
-        <Button
-          size="xs"
-          variant="ghost"
-          title="Allow every gated action for the rest of this session"
-          disabled={!!busy}
-          onClick={() => void allowAllForSession()}
-        >
-          {busy === 'session-all' ? <Loading className="size-3 animate-spin" /> : null}
-          Allow everything
-        </Button>
-      </div>
-      {canWritePolicies.allowed && qualifiedActions.length > 0 ? (
-        // Deliberately set apart from the one-off buttons above: these WRITE the
-        // project's policy config — every future session stops asking.
-        <div className="bg-muted/40 border-border/40 flex flex-wrap items-center gap-2 border-t px-3 py-1.5">
-          <span className="text-muted-foreground text-[11px]">
-            Project policy <span className="opacity-70">(applies to future sessions)</span>:
-          </span>
-          {qualifiedActions.map((qualified) => (
-            <Button
-              key={qualified}
-              size="xs"
-              variant="ghost"
-              className="text-muted-foreground hover:text-foreground"
-              disabled={!!busy}
-              onClick={() => void alwaysRunInPolicy(qualified)}
-            >
-              {busy === `policy:${qualified}` ? <Loading className="size-3 animate-spin" /> : null}
-              Always allow "{qualified}"
-            </Button>
-          ))}
-        </div>
-      ) : null}
     </div>
   );
 }

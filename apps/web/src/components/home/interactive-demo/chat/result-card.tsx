@@ -1,5 +1,8 @@
-import { Check, type LucideIcon } from 'lucide-react';
-import { PiCheckCircleFill } from 'react-icons/pi';
+import {
+  CheckIcon as Check,
+  CheckCircleIcon as PiCheckCircleFill,
+  type Icon as LucideIcon,
+} from '@phosphor-icons/react';
 
 export function FileResult({
   name,
@@ -52,7 +55,7 @@ export function ListResult({ title, items }: { title: string; items: string[] })
 export function SentResult({ title, meta }: { title: string; meta: string }) {
   return (
     <div className="border-border/60 bg-card mt-3 flex items-center gap-3 rounded-md border p-3">
-      <PiCheckCircleFill className="text-kortix-green size-5 shrink-0" />
+      <PiCheckCircleFill weight="fill" className="text-kortix-green size-5 shrink-0" />
       <div className="min-w-0">
         <div className="text-foreground text-sm font-medium">{title}</div>
         <div className="text-muted-foreground text-xs">{meta}</div>

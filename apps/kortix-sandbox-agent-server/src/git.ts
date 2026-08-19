@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { mkdir, rename, rm, stat } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { mkdir, readdir, rename, rm, stat } from 'node:fs/promises'
+import { basename, dirname, join } from 'node:path'
 
 import type { Config } from './config'
 import { logger } from './logger'
@@ -159,6 +159,7 @@ async function configureSafeDirectory(target: string): Promise<void> {
 export function buildGitAuthArgs(
   repoUrl: string | undefined,
   token: string | undefined,
+  username = 'x-access-token',
 ): string[] {
   if (!token) return []
 
@@ -175,7 +176,7 @@ export function buildGitAuthArgs(
     }
   }
 
-  const headerValue = Buffer.from(`x-access-token:${token}`).toString('base64')
+  const headerValue = Buffer.from(`${username}:${token}`).toString('base64')
   const header = `AUTHORIZATION: basic ${headerValue}`
   const args = ['-c', `http.${authOrigin}/.extraheader=${header}`]
 
@@ -190,13 +191,21 @@ export function buildGitAuthArgs(
   return args
 }
 
+interface CloneCredential {
+  username: string
+  token: string
+}
+
 async function gitWithAuth(
-  token: string | undefined,
+  credential: CloneCredential | undefined,
   repoUrl: string | undefined,
   args: string[],
   opts: { cwd?: string; timeoutMs?: number } = {},
 ): Promise<ExecResult> {
-  return execGit([...buildGitAuthArgs(repoUrl, token), ...args], opts)
+  return execGit([
+    ...buildGitAuthArgs(repoUrl, credential?.token, credential?.username),
+    ...args,
+  ], opts)
 }
 
 const CLONE_CRED_TIMEOUT_MS = 15_000
@@ -204,19 +213,19 @@ const CLONE_CRED_ATTEMPTS = 4
 
 /**
  * Per-process cache for the clone-credential round-trip. `materializeRepo`
- * calls `resolveCloneToken` twice (base clone + branch checkout) on the cold
+ * calls `resolveCloneCredential` twice (base clone + branch checkout) on the cold
  * path; the API token doesn't change within a single boot, so caching it
  * avoids a second control-plane round-trip over the public internet.
  * Memoize on the input shape (api+project+token) so re-keying invalidates.
  */
-let cachedCloneToken: { key: string; value: string | undefined } | null = null
+let cachedCloneToken: { key: string; value: CloneCredential | undefined } | null = null
 
 /** Test-only: drop the cached clone token so a fresh fetch happens next call. */
 export function __clearCloneTokenCacheForTests(): void {
   cachedCloneToken = null
 }
 
-async function resolveCloneToken(cfg: Config): Promise<string | undefined> {
+async function resolveCloneCredential(cfg: Config): Promise<CloneCredential | undefined> {
   if (!cfg.apiUrl || !cfg.projectId || !cfg.sandboxToken) return undefined
   // Universal proxy origin: when the repo is served by the Kortix git proxy
   // (KORTIX_REPO_URL = `${KORTIX_URL}/v1/git/<projectId>.git`), the git
@@ -224,7 +233,7 @@ async function resolveCloneToken(cfg: Config): Promise<string | undefined> {
   // the real upstream + host credential server-side. No clone-credential round
   // trip, and a real GitHub token never enters the sandbox.
   if (cfg.repoUrl && /\/v1\/git\//.test(cfg.repoUrl)) {
-    return cfg.sandboxToken
+    return { username: 'x-access-token', token: cfg.sandboxToken }
   }
   const cacheKey = `${cfg.apiUrl}\0${cfg.projectId}\0${cfg.sandboxToken}`
   if (cachedCloneToken?.key === cacheKey) return cachedCloneToken.value
@@ -265,10 +274,11 @@ async function resolveCloneToken(cfg: Config): Promise<string | undefined> {
         throw new Error(`clone-credential ${res.status}: ${text || res.statusText}`)
       }
       const body = await res.json().catch(() => null) as
-        | { auth?: { token?: string | null } | null }
+        | { auth?: { username?: string | null; token?: string | null } | null }
         | null
       const token = body?.auth?.token?.trim()
-      const value = token || undefined
+      const username = body?.auth?.username?.trim() || 'x-access-token'
+      const value = token ? { username, token } : undefined
       cachedCloneToken = { key: cacheKey, value }
       return value
     } catch (err) {
@@ -337,6 +347,8 @@ export async function configureGitCredentialHelper(
   if (!cfg.repoUrl || !cfg.projectId || !cfg.sandboxToken) return
   const host = deriveAuthHost(cfg.repoUrl)
   if (!host) return
+  const username = (await resolveCloneCredential(cfg).catch(() => undefined))?.username
+    ?? 'x-access-token'
 
   const env = { HOME: home }
   // `--replace-all` keeps re-boots idempotent instead of appending duplicate
@@ -355,7 +367,7 @@ export async function configureGitCredentialHelper(
   // Pin the username so git doesn't prompt for it when the remote URL carries
   // no userinfo (GitHub expects the literal `x-access-token`).
   await execGit(
-    ['config', '--global', '--replace-all', `credential.${host}.username`, 'x-access-token'],
+    ['config', '--global', '--replace-all', `credential.${host}.username`, username],
     { env },
   )
   logger.info('[git] configured managed credential helper (global)', { host })
@@ -375,6 +387,8 @@ export async function configureRepoCredentialHelper(cfg: Config, target: string)
   if (!(await pathExists(`${target}/.git`))) return
   const host = deriveAuthHost(cfg.repoUrl)
   if (!host) return
+  const username = (await resolveCloneCredential(cfg).catch(() => undefined))?.username
+    ?? 'x-access-token'
 
   const setHelper = await execGit(
     ['-C', target, 'config', '--local', '--replace-all', `credential.${host}.helper`, credentialHelperSpec()],
@@ -387,7 +401,7 @@ export async function configureRepoCredentialHelper(cfg: Config, target: string)
     return
   }
   await execGit(
-    ['-C', target, 'config', '--local', '--replace-all', `credential.${host}.username`, 'x-access-token'],
+    ['-C', target, 'config', '--local', '--replace-all', `credential.${host}.username`, username],
   )
   logger.info('[git] configured managed credential helper (repo-local)', { host, target })
 }
@@ -421,17 +435,17 @@ export async function runGitCredentialHelper(
  * (git then falls back to its other helpers / prompts).
  */
 export async function resolveGitCredentialOutput(cfg: Config): Promise<string | null> {
-  let token: string | undefined
+  let credential: CloneCredential | undefined
   try {
-    token = await resolveCloneToken(cfg)
+    credential = await resolveCloneCredential(cfg)
   } catch (err) {
     logger.warn('[git] credential helper could not resolve token', {
       err: err instanceof Error ? err.message : String(err),
     })
     return null
   }
-  if (!token) return null
-  return `username=x-access-token\npassword=${token}\n`
+  if (!credential) return null
+  return `username=${credential.username}\npassword=${credential.token}\n`
 }
 
 function readAllStdin(): Promise<string> {
@@ -479,28 +493,41 @@ async function clearStaleGitLock(target: string): Promise<void> {
   }
 }
 
+/** True when `target` is a shallow (depth-limited) clone. */
+export async function isShallowRepo(target: string): Promise<boolean> {
+  const res = await execGit(['-C', target, 'rev-parse', '--is-shallow-repository'])
+  return res.code === 0 && res.stdout.trim() === 'true'
+}
+
 async function checkoutSessionBranch(
   cfg: Config,
   target: string,
   branch: string,
-  token: string | undefined,
+  credential: CloneCredential | undefined,
 ): Promise<void> {
   const refSpec = `+refs/heads/${branch}:refs/remotes/origin/${branch}`
+  // Keep a shallow repo shallow while fetching the session branch — without
+  // this, git deepens to full history and hands the resume path the exact cost
+  // the shallow clone just avoided. Gated on the repo ACTUALLY being shallow:
+  // once the background backfill has unshallowed it, passing --depth would
+  // re-truncate a complete repo.
+  const depthArgs = (await isShallowRepo(target)) ? ['--depth', '1'] : []
   // Same stall-abort + hard timeout as the clone: a restored VM's RX can hang
   // this fetch with no reset. On failure/timeout we fall through to a local
   // branch from the base checkout (below), so the session still boots.
-  const fetched = await gitWithAuth(token, cfg.repoUrl, [
+  const fetched = await gitWithAuth(credential, cfg.repoUrl, [
     '-c', 'http.lowSpeedLimit=1000', '-c', 'http.lowSpeedTime=12',
     '-C',
     target,
     'fetch',
+    ...depthArgs,
     'origin',
     refSpec,
   ], { timeoutMs: 30_000 })
 
   if (fetched.code === 0) {
     await clearStaleGitLock(target)
-    const checkout = await gitWithAuth(token, cfg.repoUrl, [
+    const checkout = await gitWithAuth(credential, cfg.repoUrl, [
       '-C',
       target,
       'checkout',
@@ -524,7 +551,7 @@ async function checkoutSessionBranch(
   }
 
   await clearStaleGitLock(target)
-  const local = await gitWithAuth(token, cfg.repoUrl, [
+  const local = await gitWithAuth(credential, cfg.repoUrl, [
     '-C',
     target,
     'checkout',
@@ -539,13 +566,47 @@ async function checkoutSessionBranch(
 
 async function checkoutLocalSessionBranch(target: string, branch: string): Promise<void> {
   await clearStaleGitLock(target)
-  const local = await execGit([
-    '-C',
-    target,
-    'checkout',
-    '-B',
-    branch,
+
+  // `-B` with no start point RESETS the branch to whatever HEAD is. That is
+  // right exactly once — creating the session branch on a fresh baked checkout —
+  // and destructive every other time, because this runs on EVERY daemon boot
+  // where /workspace/.git already exists.
+  //
+  // The damage needs no attacker and no unusual behaviour: the agent moves HEAD
+  // off the session branch (a `git checkout main` to diff against base is
+  // ordinary), then the box reboots in place — the idle reaper and the proxy's
+  // auto-resume both do that with no user action at all — and every commit the
+  // session made is force-reset away. `git checkout -B` exits 0 and prints only
+  // "Switched to and reset branch", so nothing surfaces; the commits survive
+  // solely in a reflog the user is never told about.
+  //
+  // The guard that was meant to prevent re-materializing the wrong content
+  // (`mismatched`, keyed on cfg.sessionFresh + cfg.baseSha) cannot help here:
+  // KORTIX_SESSION_FRESH and KORTIX_BASE_SHA have no producer left in apps/api,
+  // so it is always false and this line always runs.
+  //
+  // So: only CREATE. If the ref already exists, a plain checkout moves HEAD to
+  // it and cannot move the ref.
+  const exists = await execGit([
+    '-C', target, 'rev-parse', '--verify', '--quiet', `refs/heads/${branch}`,
   ])
+  if (exists.code === 0) {
+    const switched = await execGit(['-C', target, 'checkout', branch])
+    if (switched.code !== 0) {
+      // Deliberately NOT falling back to `-B`: that fallback is the data loss.
+      // A session left on another branch still boots and still has its files;
+      // a reset one has lost commits. Loud, and non-fatal.
+      logger.error('[git] could not switch to the existing session branch; leaving HEAD as-is', {
+        branch,
+        stderr: switched.stderr,
+      })
+      return
+    }
+    logger.info('[git] switched to existing session branch', { branch })
+    return
+  }
+
+  const local = await execGit(['-C', target, 'checkout', '-B', branch])
   if (local.code !== 0) {
     throw new Error(`failed to create local session branch ${branch}: ${local.stderr}`)
   }
@@ -586,6 +647,38 @@ async function initLocalRepoAtBase(cfg: Config, dir: string, base: string): Prom
 }
 
 /**
+ * The workspace's PARENT directory is not writable by the daemon: /workspace
+ * sits directly under the root-owned `/` and the daemon runs as the
+ * unprivileged runtime user. Materialization therefore must never create a
+ * sibling of `target` or replace the `target` directory node itself (both
+ * `rename(tmp, target)` and `rm(target)` mutate dirents in the parent). All
+ * staging happens INSIDE `target`, and a finished stage is swapped in by
+ * replacing target's CONTENTS — same-filesystem renames that only need write
+ * access to `target`, which the runtime user owns.
+ */
+async function createStagePath(target: string, kind: string): Promise<string> {
+  await mkdir(target, { recursive: true })
+  return join(target, `.kortix-${kind}-${process.pid}-${Date.now()}`)
+}
+
+async function clearDirContents(dir: string, keep?: string): Promise<void> {
+  for (const entry of await readdir(dir)) {
+    if (entry === keep) continue
+    await rm(join(dir, entry), { recursive: true, force: true })
+  }
+}
+
+/** Crash-safe enough for boot: a failure mid-swap leaves a `.kortix-*` stage
+ *  dir that the next attempt's clearDirContents/createStagePath cycle wipes. */
+async function swapStageIntoTarget(stage: string, target: string): Promise<void> {
+  await clearDirContents(target, basename(stage))
+  for (const entry of await readdir(stage)) {
+    await rename(join(stage, entry), join(target, entry))
+  }
+  await rm(stage, { recursive: true, force: true })
+}
+
+/**
  * Materialize the project repository into `cfg.projectTarget` at the configured
  * branch. Ported from core/scripts/kortix-daemon clone_project_if_requested.
  */
@@ -596,7 +689,7 @@ export async function materializeRepo(cfg: Config): Promise<void> {
 
   const target = cfg.projectTarget
   const base = cfg.defaultBranch
-  await mkdir(dirname(target), { recursive: true })
+  await mkdir(target, { recursive: true })
 
   if (await pathExists(`${target}/.git`)) {
     await configureSafeDirectory(target)
@@ -618,10 +711,10 @@ export async function materializeRepo(cfg: Config): Promise<void> {
       return
     }
     logger.info('[git] baked checkout != session base; re-materializing real repo', { bakedHead, baseSha: cfg.baseSha })
-    await rm(target, { recursive: true, force: true })
+    await clearDirContents(target)
   }
   {
-    const cloneToken = await resolveCloneToken(cfg)
+    const cloneCredential = await resolveCloneCredential(cfg)
     // Scaffold fast path: the image bakes the canonical starter repo at
     // /opt/kortix/scaffold.git whose root commit is SHARED with every project
     // seeded from the starter (deterministic root — comp git-backends/seed.ts).
@@ -631,22 +724,23 @@ export async function materializeRepo(cfg: Config): Promise<void> {
     // dev tunnel, 2026-06-13). Imported repos / other starters share no
     // ancestor → the fetch degrades to a full pack (same as a clone); ANY
     // failure falls through to the battle-tested clone path below.
-    if (await tryScaffoldDeltaFetch(cfg, target, base, cloneToken)) {
+    if (await tryScaffoldDeltaFetch(cfg, target, base, cloneCredential)) {
       if (cfg.branchName) {
         // Fresh session → branch == base, create it LOCALLY (zero network).
         // Restart/resume → the remote branch may carry the agent's commits.
         if (cfg.sessionFresh) await checkoutLocalSessionBranch(target, cfg.branchName)
-        else await checkoutSessionBranch(cfg, target, cfg.branchName, cloneToken)
+        else await checkoutSessionBranch(cfg, target, cfg.branchName, cloneCredential)
       }
       await configureRepoGitIdentity(cfg, target)
       return
     }
-    const tmpTarget = join(dirname(target), `.kortix-clone-${process.pid}-${Date.now()}`)
+    const tmpTarget = await createStagePath(target, 'clone')
     await rm(tmpTarget, { recursive: true, force: true })
     logger.info('[git] cloning repo', {
       repoUrl: cfg.repoUrl,
       base,
       target,
+      depth: cfg.cloneDepth || 'full',
       filter: cfg.cloneFilter || 'none',
     })
     // Two failure modes on a restored microVM whose virtio-net RX intermittently
@@ -662,11 +756,17 @@ export async function materializeRepo(cfg: Config): Promise<void> {
     // 12 s) so a hang becomes a fast failure, then we retry with jittered
     // backoff (jitter de-clusters concurrent retries so they don't re-stampede).
     // 4 attempts × (≤12 s stall-abort + backoff) stays well under the 75 s ceiling
-    // while a transient blip clears in 1–2 retries. resolveCloneToken already
+    // while a transient blip clears in 1–2 retries. resolveCloneCredential already
     // retries the credential fetch; the clone itself needs it just as much.
+    // `--depth` is the single biggest boot-latency lever: history is ~95% of the
+    // transfer and 0% of what a fresh session's working tree needs. See
+    // KORTIX_CLONE_DEPTH in config.ts for the measurements. A remote that can't
+    // serve shallow degrades to a full clone on its own (the retry loop below
+    // treats that like any other clone failure and retries unfiltered).
+    const depthArgs = cfg.cloneDepth > 0 ? ['--depth', String(cfg.cloneDepth)] : []
     const baseCloneArgs = [
       '-c', 'http.lowSpeedLimit=1000', '-c', 'http.lowSpeedTime=12',
-      'clone', '--branch', base, '--single-branch',
+      'clone', '--branch', base, '--single-branch', ...depthArgs,
     ]
     const isTransientGit = (s: string) =>
       /early EOF|RPC failed|Connection reset|Recv failure|fetch-pack|unexpected disconnect|index-pack|Could not resolve host|Connection timed out|timed out|GnuTLS recv|SSL_read|TLS packet|Failed to connect|Empty reply|Operation too slow|transfer closed|server hung up|remote end hung up|Stream closed|HTTP 5/i.test(s)
@@ -685,7 +785,7 @@ export async function materializeRepo(cfg: Config): Promise<void> {
       // Blobless partial clone keeps full history but defers file blobs, cutting
       // the boot-time transfer from a full-history pack to roughly the working
       // tree. This is the dominant per-session boot cost on large repos.
-      cloned = await gitWithAuth(cloneToken, cfg.repoUrl, [
+      cloned = await gitWithAuth(cloneCredential, cfg.repoUrl, [
         ...baseCloneArgs,
         ...(cfg.cloneFilter ? [`--filter=${cfg.cloneFilter}`] : []),
         cfg.repoUrl,
@@ -699,7 +799,7 @@ export async function materializeRepo(cfg: Config): Promise<void> {
           stderr: cloned.stderr.slice(0, 200),
         })
         await rm(tmpTarget, { recursive: true, force: true }).catch(() => {})
-        cloned = await gitWithAuth(cloneToken, cfg.repoUrl, [...baseCloneArgs, cfg.repoUrl, tmpTarget], { timeoutMs: 35_000 })
+        cloned = await gitWithAuth(cloneCredential, cfg.repoUrl, [...baseCloneArgs, cfg.repoUrl, tmpTarget], { timeoutMs: 35_000 })
       }
       if (cloned.code === 0) break
       // Empty upstream is terminal-but-fine: stop retrying and init locally below.
@@ -725,8 +825,7 @@ export async function materializeRepo(cfg: Config): Promise<void> {
         throw new Error(`git clone failed after ${MAX_CLONE_ATTEMPTS} attempt(s): ${cloned.stderr}`)
       }
     }
-    await rm(target, { recursive: true, force: true })
-    await rename(tmpTarget, target)
+    await swapStageIntoTarget(tmpTarget, target)
     // Fresh clone already left the working tree on `base` at tip — the old
     // extra `git fetch origin base` + `git reset --hard` here was a redundant
     // network round-trip on the per-session boot hot path. Removed.
@@ -737,13 +836,52 @@ export async function materializeRepo(cfg: Config): Promise<void> {
       // Fresh session → branch == freshly-cloned base; local, no extra fetch.
       await checkoutLocalSessionBranch(target, cfg.branchName)
     } else {
-      // resolveCloneToken is memoized — this second call is now ~free.
-      const cloneToken = await resolveCloneToken(cfg)
-      await checkoutSessionBranch(cfg, target, cfg.branchName, cloneToken)
+      // resolveCloneCredential is memoized — this second call is now ~free.
+      const cloneCredential = await resolveCloneCredential(cfg)
+      await checkoutSessionBranch(cfg, target, cfg.branchName, cloneCredential)
     }
   }
 
   await configureRepoGitIdentity(cfg, target)
+}
+
+/**
+ * Restore full history AFTER boot, off the critical path.
+ *
+ * The boot clone is shallow (`--depth 1`) because history is ~95% of the
+ * transfer and none of what a fresh working tree needs — but an agent that runs
+ * `git log`, `git blame`, or `git diff <base>` later does need it. This fetches
+ * the rest in the background once the session is already usable, so the shallow
+ * clone is invisible to everything downstream.
+ *
+ * Deliberately fire-and-forget and fully best-effort: a session whose backfill
+ * fails is still a working session (shallow), and blocking boot on it would
+ * reintroduce the cost we just removed. Idempotent — a repo that is already
+ * complete is skipped.
+ */
+export function scheduleHistoryBackfill(cfg: Config, target: string): void {
+  void (async () => {
+    try {
+      if (!(await isShallowRepo(target))) return
+      const started = Date.now()
+      const credential = await resolveCloneCredential(cfg)
+      const res = await gitWithAuth(credential, cfg.repoUrl, [
+        '-c', 'http.lowSpeedLimit=1000', '-c', 'http.lowSpeedTime=12',
+        '-C', target, 'fetch', '--unshallow', '--tags', 'origin',
+      ], { timeoutMs: 300_000 })
+      if (res.code !== 0) {
+        logger.warn('[git] history backfill failed; repo stays shallow', {
+          stderr: res.stderr.slice(0, 200),
+        })
+        return
+      }
+      logger.info('[git] history backfill complete', { ms: Date.now() - started })
+    } catch (err) {
+      logger.warn('[git] history backfill errored; repo stays shallow', {
+        err: err instanceof Error ? err.message : String(err),
+      })
+    }
+  })()
 }
 
 const SCAFFOLD_REPO_PATH = '/opt/kortix/scaffold.git'
@@ -761,17 +899,15 @@ const SCAFFOLD_REPO_PATH = '/opt/kortix/scaffold.git'
  */
 export async function materializeScaffoldSeed(target: string, base: string): Promise<boolean> {
   if (!existsSync(SCAFFOLD_REPO_PATH)) return false
-  const tmp = join(dirname(target), `.kortix-seed-${process.pid}-${Date.now()}`)
+  const tmp = await createStagePath(target, 'seed')
   const t0 = Date.now()
   try {
-    await mkdir(dirname(target), { recursive: true })
     await rm(tmp, { recursive: true, force: true })
     const cloned = await execGit(['clone', '-q', SCAFFOLD_REPO_PATH, tmp])
     if (cloned.code !== 0) throw new Error(`seed scaffold clone: ${cloned.stderr}`)
     const co = await execGit(['-C', tmp, 'checkout', '-q', '-B', base, 'HEAD'])
     if (co.code !== 0) throw new Error(`seed checkout base: ${co.stderr}`)
-    await rm(target, { recursive: true, force: true })
-    await rename(tmp, target)
+    await swapStageIntoTarget(tmp, target)
     logger.info('[git] seed scaffold materialized (zero-network)', { ms: Date.now() - t0, base })
     return true
   } catch (err) {
@@ -799,7 +935,7 @@ export async function materializeProjectSeed(cfg: Config): Promise<boolean> {
   if (!cfg.repoUrl) return false
   const t0 = Date.now()
   try {
-    await rm(cfg.projectTarget, { recursive: true, force: true })
+    await clearDirContents(cfg.projectTarget)
     // No branchName during seed capture (no session yet); baseSha=tip so a baked /workspace
     // (if any) is treated as mismatched and re-materialized to the real repo.
     await materializeRepo({ ...cfg, branchName: undefined, sessionFresh: true })
@@ -823,10 +959,10 @@ async function tryScaffoldDeltaFetch(
   cfg: Config,
   target: string,
   base: string,
-  cloneToken: string | undefined,
+  cloneCredential: CloneCredential | undefined,
 ): Promise<boolean> {
   if (!existsSync(SCAFFOLD_REPO_PATH) || !cfg.repoUrl) return false
-  const tmp = join(dirname(target), `.kortix-scaffold-${process.pid}-${Date.now()}`)
+  const tmp = await createStagePath(target, 'scaffold')
   const t0 = Date.now()
   try {
     await rm(tmp, { recursive: true, force: true })
@@ -845,12 +981,11 @@ async function tryScaffoldDeltaFetch(
     if (cfg.sessionFresh && cfg.baseSha && localHead === cfg.baseSha) {
       const co = await execGit(['-C', tmp, 'checkout', '-q', '-B', base, 'HEAD'])
       if (co.code !== 0) throw new Error(`checkout base (local): ${co.stderr}`)
-      await rm(target, { recursive: true, force: true })
-      await rename(tmp, target)
+      await swapStageIntoTarget(tmp, target)
       logger.info('[git] repo materialized via scaffold (zero-network: baked scaffold == base tip)', { ms: Date.now() - t0, base, head: localHead })
       return true
     }
-    const fetched = await gitWithAuth(cloneToken, cfg.repoUrl, [
+    const fetched = await gitWithAuth(cloneCredential, cfg.repoUrl, [
       '-C', tmp,
       '-c', 'http.lowSpeedLimit=1000', '-c', 'http.lowSpeedTime=12',
       'fetch', '-q', 'origin', base,
@@ -858,8 +993,7 @@ async function tryScaffoldDeltaFetch(
     if (fetched.code !== 0) throw new Error(`fetch: ${fetched.stderr}`)
     const co = await execGit(['-C', tmp, 'checkout', '-q', '-B', base, 'FETCH_HEAD'])
     if (co.code !== 0) throw new Error(`checkout base: ${co.stderr}`)
-    await rm(target, { recursive: true, force: true })
-    await rename(tmp, target)
+    await swapStageIntoTarget(tmp, target)
     logger.info('[git] repo materialized via scaffold delta-fetch', { ms: Date.now() - t0, base })
     return true
   } catch (err) {
@@ -878,11 +1012,24 @@ export type RepoInfo = {
   remoteUrl: string | null
 }
 
+/**
+ * Read branch/commit/remote for a materialized repo.
+ *
+ * The three git calls run CONCURRENTLY, not in sequence. This is on a hotter path
+ * than it looks: `/kortix/health` calls it on EVERY request (to compute
+ * `repo_ready`), and both the frontend and the API poll health throughout boot —
+ * so three serial process spawns per poll land squarely in the window where the
+ * guest is CPU-saturated by the clone's index-pack, on a 2-vCPU box. All three
+ * are read-only plumbing commands that take no index lock, so concurrency here is
+ * safe; only the `.git` existence check has to happen first.
+ */
 export async function readRepoInfo(target: string): Promise<RepoInfo | null> {
   if (!(await pathExists(`${target}/.git`))) return null
-  const branch = await execGit(['-C', target, 'rev-parse', '--abbrev-ref', 'HEAD'])
-  const commit = await execGit(['-C', target, 'rev-parse', 'HEAD'])
-  const remote = await execGit(['-C', target, 'remote', 'get-url', 'origin'])
+  const [branch, commit, remote] = await Promise.all([
+    execGit(['-C', target, 'rev-parse', '--abbrev-ref', 'HEAD']),
+    execGit(['-C', target, 'rev-parse', 'HEAD']),
+    execGit(['-C', target, 'remote', 'get-url', 'origin']),
+  ])
   return {
     path: target,
     branch: branch.code === 0 ? branch.stdout.trim() : null,
@@ -952,9 +1099,9 @@ export async function commitAndPushWorkingTree(
   }
 
   // 2. Push HEAD to the session branch on origin.
-  const cloneToken = await resolveCloneToken(cfg)
+  const cloneCredential = await resolveCloneCredential(cfg)
   const authRepoUrl = cfg.repoUrl ?? before.remoteUrl ?? undefined
-  const push = await gitWithAuth(cloneToken, authRepoUrl, [
+  const push = await gitWithAuth(cloneCredential, authRepoUrl, [
     '-C',
     target,
     'push',
@@ -983,9 +1130,9 @@ export async function refreshRepo(cfg: Config): Promise<{ before: RepoInfo; afte
     throw new Error('project repo is not materialized')
   }
 
-  const cloneToken = await resolveCloneToken(cfg)
+  const cloneCredential = await resolveCloneCredential(cfg)
   if (cfg.repoUrl) {
-    const setUrl = await gitWithAuth(cloneToken, cfg.repoUrl, [
+    const setUrl = await gitWithAuth(cloneCredential, cfg.repoUrl, [
       '-C',
       target,
       'remote',
@@ -998,7 +1145,7 @@ export async function refreshRepo(cfg: Config): Promise<{ before: RepoInfo; afte
 
   const authRepoUrl = cfg.repoUrl ?? before.remoteUrl ?? undefined
   const branch = cfg.branchName || before.branch || cfg.defaultBranch
-  const fetched = await gitWithAuth(cloneToken, authRepoUrl, [
+  const fetched = await gitWithAuth(cloneCredential, authRepoUrl, [
     '-C',
     target,
     'fetch',
@@ -1006,17 +1153,39 @@ export async function refreshRepo(cfg: Config): Promise<{ before: RepoInfo; afte
     'origin',
     `+refs/heads/${branch}:refs/remotes/origin/${branch}`,
   ])
-  if (fetched.code !== 0) throw new Error(`git fetch refresh failed: ${fetched.stderr}`)
+  // A session branch that was never pushed has NO remote ref, and that is the
+  // ordinary state of a session which has not proposed its changes yet — the
+  // branch is created locally at boot and only reaches origin when the user
+  // proposes. Treating it as a failure made `POST /kortix/refresh` answer 500
+  // for exactly those sessions, which is the common case: reload is offered by
+  // the stale-config notice, and a brand-new session is the one most likely to
+  // be told its config moved.
+  //
+  // Verified live on dev against a freshly provisioned session:
+  //   git fetch refresh failed: fatal: couldn't find remote ref refs/heads/<session-id>
+  //
+  // There is nothing upstream to fast-forward from, so skip the pull and let
+  // the rest of the refresh — notably the config-dir sync, which reads the BASE
+  // ref, not this branch — carry on. Any other fetch failure is still fatal.
+  const missingRemoteBranch =
+    fetched.code !== 0 && /couldn't find remote ref/i.test(fetched.stderr)
+  if (fetched.code !== 0 && !missingRemoteBranch) {
+    throw new Error(`git fetch refresh failed: ${fetched.stderr}`)
+  }
 
-  const pulled = await gitWithAuth(cloneToken, authRepoUrl, [
-    '-C',
-    target,
-    'pull',
-    '--ff-only',
-    'origin',
-    branch,
-  ])
-  if (pulled.code !== 0) throw new Error(`git pull refresh failed: ${pulled.stderr}`)
+  if (missingRemoteBranch) {
+    logger.info('[git] session branch is not on the remote yet; nothing to pull', { branch })
+  } else {
+    const pulled = await gitWithAuth(cloneCredential, authRepoUrl, [
+      '-C',
+      target,
+      'pull',
+      '--ff-only',
+      'origin',
+      branch,
+    ])
+    if (pulled.code !== 0) throw new Error(`git pull refresh failed: ${pulled.stderr}`)
+  }
 
   const after = await readRepoInfo(target)
   if (!after) throw new Error('project repo disappeared after refresh')
@@ -1031,21 +1200,33 @@ export async function refreshRepo(cfg: Config): Promise<{ before: RepoInfo; afte
  * safe because a fresh session has no local work yet. No opencode restart
  * needed; opencode's file watcher picks up the changed files.
  */
-export async function syncWorkspaceToBase(cfg: Config): Promise<{ before: RepoInfo; after: RepoInfo }> {
+export async function syncWorkspaceToBase(
+  cfg: Config,
+  baseSha?: string,
+): Promise<{ before: RepoInfo; after: RepoInfo }> {
   const target = cfg.projectTarget
   const before = await readRepoInfo(target)
   if (!before) throw new Error('project repo is not materialized')
+  if (baseSha && before.commit === baseSha) {
+    logger.info('[git] workspace already matches base', {
+      base: cfg.defaultBranch,
+      branch: before.branch,
+      commit: before.commit,
+    })
+    return { before, after: before }
+  }
 
-  const cloneToken = await resolveCloneToken(cfg)
+  const cloneCredential = await resolveCloneCredential(cfg)
   const base = cfg.defaultBranch
-  const fetched = await gitWithAuth(cloneToken, cfg.repoUrl, [
+  const fetched = await gitWithAuth(cloneCredential, cfg.repoUrl, [
     '-C', target, 'fetch', '--prune', 'origin', `+refs/heads/${base}:refs/remotes/origin/${base}`,
   ])
   if (fetched.code !== 0) throw new Error(`git fetch base failed: ${fetched.stderr}`)
 
   const branch = cfg.branchName || before.branch || base
-  const reset = await gitWithAuth(cloneToken, cfg.repoUrl, [
-    '-C', target, 'checkout', '-B', branch, `refs/remotes/origin/${base}`,
+  const targetRef = baseSha ?? `refs/remotes/origin/${base}`
+  const reset = await gitWithAuth(cloneCredential, cfg.repoUrl, [
+    '-C', target, 'checkout', '-B', branch, targetRef,
   ])
   if (reset.code !== 0) throw new Error(`git reset to base failed: ${reset.stderr}`)
 
@@ -1053,4 +1234,121 @@ export async function syncWorkspaceToBase(cfg: Config): Promise<{ before: RepoIn
   if (!after) throw new Error('project repo disappeared after base sync')
   logger.info('[git] synced workspace to latest base', { base, branch, before: before.commit, after: after.commit })
   return { before, after }
+}
+
+/**
+ * Every git call in the config-dir sync runs with pathspec magic OFF.
+ *
+ * `opencode.config_dir` is repo-controlled, it becomes a pathspec, and git
+ * honours magic like `:(top)*` even after `--`. Without this, a manifest could
+ * turn "sync the agent config directory" into `git checkout <base> -- ':(top)*'`
+ * — a rewrite of the whole working tree. Verified against the real primitives:
+ * the magic form rewrites files outside the directory, the literalized form
+ * does not.
+ *
+ * `resolveOpencodeConfigDirRelative` also rejects non-literal values, so this is
+ * the second of two independent guards. It is the one that holds even if a
+ * future caller passes a path from somewhere else.
+ */
+const LITERAL = { env: { GIT_LITERAL_PATHSPECS: '1' } } as const
+
+export interface ConfigDirSyncResult {
+  /** True only when files were actually replaced from the base ref. */
+  synced: boolean
+  /** Why nothing was replaced. Absent on success. */
+  skipped?:
+    | 'no tracked config dir'
+    | 'already matches base'
+    | 'local changes'
+    | 'local commits'
+    | 'not in base'
+    | 'fetch failed'
+    | 'checkout failed'
+}
+
+/**
+ * Bring ONLY the opencode config directory up to the base ref.
+ *
+ * This is the operation `reload` actually needs, and the reason it exists is a
+ * measured one: opencode is spawned with `OPENCODE_CONFIG_DIR` pointing INTO the
+ * working tree, and the agent `.md` files there beat the compiled config we push
+ * as JSON. So pushing the compiled config alone moves the etag and changes
+ * nothing the agent reads — verified on dev, where the marker was present in
+ * `~/.config/kortix-opencode.json` and absent from `/config` and `/agent`.
+ *
+ * Distinct from `syncWorkspaceToBase` in the one way that matters: that resets
+ * the BRANCH (`git checkout -B <branch> <sha>`), which discards any commit the
+ * session has made. This touches a single pathspec and never moves a ref, so
+ * commits, other files, and the branch itself are untouched.
+ *
+ * It refuses rather than overwrites. If the session has edited its own agent
+ * config — uncommitted, or committed on top of base — that is work, and a button
+ * labelled "reload config" has no business discarding it. The caller reports the
+ * skip so the user is told the agent did NOT change.
+ *
+ * Leaves the update UNSTAGED: `git checkout <sha> -- <path>` writes the index
+ * too, so the index is reset afterwards. The result is a plain working-tree
+ * modification, and its diff against base is empty by construction — so a change
+ * request opened from this session carries nothing extra.
+ */
+export async function syncOpencodeConfigDirToBase(
+  cfg: Config,
+  relConfigDir: string | null,
+  baseSha?: string,
+): Promise<ConfigDirSyncResult> {
+  if (!relConfigDir) return { synced: false, skipped: 'no tracked config dir' }
+  const target = cfg.projectTarget
+  const base = cfg.defaultBranch
+  const cloneCredential = await resolveCloneCredential(cfg)
+
+  const fetched = await gitWithAuth(cloneCredential, cfg.repoUrl, [
+    '-C', target, 'fetch', '--prune', 'origin', `+refs/heads/${base}:refs/remotes/origin/${base}`,
+  ])
+  if (fetched.code !== 0) {
+    logger.warn('[git] config-dir sync: fetch failed', { stderr: fetched.stderr })
+    return { synced: false, skipped: 'fetch failed' }
+  }
+  const ref = baseSha ?? `refs/remotes/origin/${base}`
+
+  // "Already base" is checked FIRST, and the order is load-bearing rather than
+  // cosmetic. A successful sync leaves the working tree matching base while HEAD
+  // still carries the old content, so the directory is legitimately dirty
+  // afterwards. Checking dirtiness first made every reload after the first one
+  // refuse with 'local changes' — the guard could not tell the user's edit from
+  // our own previous one. Comparing against base instead answers the question
+  // that actually matters, and it cannot mask a real edit: content that differs
+  // from base falls through to the guards below.
+  const diff = await execGit(['-C', target, 'diff', '--quiet', ref, '--', relConfigDir], LITERAL)
+  if (diff.code === 0) return { synced: false, skipped: 'already matches base' }
+
+  // Uncommitted edits under the config dir — including untracked files, which
+  // `git checkout` would silently leave behind in a half-updated directory.
+  const dirty = await execGit(['-C', target, 'status', '--porcelain', '--', relConfigDir], LITERAL)
+  if (dirty.code === 0 && dirty.stdout.trim().length > 0) {
+    return { synced: false, skipped: 'local changes' }
+  }
+
+  // Commits this session made on top of base that touch the config dir. Without
+  // this a session that edited and COMMITTED its agent would have that silently
+  // reverted by a reload.
+  const ahead = await execGit(
+    ['-C', target, 'log', '--oneline', `${ref}..HEAD`, '--', relConfigDir],
+    LITERAL,
+  )
+  if (ahead.code === 0 && ahead.stdout.trim().length > 0) {
+    return { synced: false, skipped: 'local commits' }
+  }
+
+  const checkout = await execGit(['-C', target, 'checkout', ref, '--', relConfigDir], LITERAL)
+  if (checkout.code !== 0) {
+    // The most likely cause is that base has no such directory at all.
+    const missing = /did not match any file|pathspec/i.test(checkout.stderr)
+    logger.warn('[git] config-dir sync: checkout failed', { stderr: checkout.stderr })
+    return { synced: false, skipped: missing ? 'not in base' : 'checkout failed' }
+  }
+  // Un-stage: leave a plain working-tree change, not a staged one.
+  await execGit(['-C', target, 'reset', '-q', '--', relConfigDir], LITERAL)
+
+  logger.info('[git] synced opencode config dir to base', { dir: relConfigDir, ref })
+  return { synced: true }
 }

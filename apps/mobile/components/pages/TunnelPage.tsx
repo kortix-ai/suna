@@ -36,7 +36,6 @@ import {
 } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
 import { haptics } from '@/lib/haptics';
 import { buildTunnelConnectCommand } from '@/lib/tunnel-connect-command';
 import * as Clipboard from 'expo-clipboard';

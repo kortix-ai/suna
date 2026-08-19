@@ -6,18 +6,10 @@ export type SandboxConnectionStatus =
 	| "connected"
 	| "unreachable";
 
-export type SandboxRecoveryPhase =
-	| "idle"
-	| "restarting_workload"
-	| "restarting_runtime"
-	| "restarting_host";
-
 interface SandboxConnectionStore {
 	status: SandboxConnectionStatus;
 	/** How many consecutive health-check failures */
 	failCount: number;
-	/** When the connection was last confirmed */
-	lastConnectedAt: number | null;
 	/** True once at least one health check has completed (success or fail) */
 	initialCheckDone: boolean;
 	/** True if we were connected at some point and then lost connection */
@@ -26,17 +18,34 @@ interface SandboxConnectionStore {
 	reconnectAttempts: number;
 	/** Timestamp when status changed to unreachable/connecting (for "down since") */
 	disconnectedAt: number | null;
-	/** Current sandbox version from /kortix/health (e.g. "0.5.1") */
-	sandboxVersion: string | null;
 	/** OpenCode server version from /global/health (e.g. "1.2.10") */
 	openCodeVersion: string | null;
 	/** Whether the OpenCode server reports healthy */
 	healthy: boolean | null;
 	/** Last runtime boot/readiness error reported by /kortix/health */
 	runtimeError: string | null;
-	recoveryPhase: SandboxRecoveryPhase;
-	restartRequestedAt: number | null;
 	manualRetryNonce: number;
+	/**
+	 * When the last live SSE event from the active runtime arrived. Proof of
+	 * reachability that outranks a failed health probe: an event that just came
+	 * over the wire cannot be stale, while a probe on a loaded box can time out
+	 * even though the runtime is mid-turn and serving traffic. See
+	 * `shouldIgnoreProbeFailure` in `react/use-runtime-reconnect`.
+	 */
+	lastRuntimeEvidenceAt: number | null;
+	/**
+	 * When the runtime last started waiting to become healthy — set the moment
+	 * `healthy` isn't `true` and cleared the moment it is. Unlike
+	 * `disconnectedAt` (which tracks `status`, and is CLEARED the instant a
+	 * "booting" 503 classification calls `setSandboxStatus('connected')`), this
+	 * survives an indefinite `connected`-but-not-`healthy` stretch — the case a
+	 * wedged OpenCode boot produces: every probe gets a 503, which resets the
+	 * failure counter each time, so `status` never crosses the unreachable
+	 * threshold and `disconnectedAt` never even gets set. Without a clock that
+	 * survives that shape, that case has no time bound at all. See
+	 * `react/use-runtime-boot-stalled`.
+	 */
+	bootingSinceAt: number | null;
 }
 
 // ── Persist wasConnected across hard refreshes via sessionStorage ──
@@ -44,7 +53,6 @@ interface SandboxConnectionStore {
 // blocking overlay. By persisting it, users who were previously connected
 // see the lightweight reconnect pill instead, making reconnection feel instant.
 const STORAGE_KEY = "kortix-runtime-was-connected";
-const PROVISION_VERIFIED_KEY = "kortix-runtime-provision-verified";
 // Stronger than PROVISION_VERIFIED: POST /start already resolved stage='ready',
 // which the backend only returns once it reached the daemon's /session (runtime
 // proven healthy server-side). When this flag is set, the new instance starts
@@ -72,22 +80,6 @@ function saveWasConnected(value: boolean) {
 	}
 }
 
-function loadProvisionVerified(): boolean {
-	try {
-		return sessionStorage.getItem(PROVISION_VERIFIED_KEY) === "1";
-	} catch {
-		return false;
-	}
-}
-
-function clearProvisionVerified() {
-	try {
-		sessionStorage.removeItem(PROVISION_VERIFIED_KEY);
-	} catch {
-		/* SSR or storage unavailable */
-	}
-}
-
 function loadRuntimeReadyVerified(): boolean {
 	try {
 		return sessionStorage.getItem(RUNTIME_READY_VERIFIED_KEY) === "1";
@@ -107,24 +99,25 @@ function clearRuntimeReadyVerified() {
 export const useSandboxConnectionStore = create<SandboxConnectionStore>(() => ({
 	status: "connecting",
 	failCount: 0,
-	lastConnectedAt: null,
 	initialCheckDone: false,
 	wasConnected: loadWasConnected(),
 	reconnectAttempts: 0,
 	disconnectedAt: null,
-	sandboxVersion: null,
 	openCodeVersion: null,
 	healthy: null,
 	runtimeError: null,
-	recoveryPhase: "idle",
-	restartRequestedAt: null,
 	manualRetryNonce: 0,
+	lastRuntimeEvidenceAt: null,
+	bootingSinceAt: null,
 }));
 
 export function requestRuntimeReconnect() {
 	useSandboxConnectionStore.setState((state) => ({
 		status: "connecting", healthy: null, failCount: 0, runtimeError: null,
 		disconnectedAt: state.disconnectedAt ?? Date.now(), manualRetryNonce: state.manualRetryNonce + 1,
+		// A manual retry is the user's own reset — give the stall clock a fresh
+		// start too, instead of it re-firing on the very next tick.
+		bootingSinceAt: Date.now(),
 	}));
 }
 
@@ -138,13 +131,10 @@ export function setSandboxStatus(next: SandboxConnectionStatus) {
 	const updates: Partial<SandboxConnectionStore> = { status: next };
 
 	if (next === "connected") {
-		updates.lastConnectedAt = Date.now();
 		updates.failCount = 0;
 		updates.wasConnected = true;
 		updates.reconnectAttempts = 0;
 		updates.disconnectedAt = null;
-		updates.recoveryPhase = "idle";
-		updates.restartRequestedAt = null;
 		saveWasConnected(true);
 
 		if (state.status === "unreachable") {
@@ -200,15 +190,13 @@ export function resetSandboxFail() {
  * instance starts fresh. Without this, `wasConnected` from a previous instance
  * leaks into the new one, causing wrong thresholds and stale UI.
  *
- * Exception: if the provisioning page just verified health and set the
- * PROVISION_VERIFIED_KEY flag, we start as "connected" with wasConnected=true
- * so the dashboard doesn't show a blocking overlay during the transition.
+ * Exception: if POST /start already proved the runtime ready
+ * (`markRuntimeReadyVerified`), we start connected+healthy so the chat
+ * subscribes at the switch instead of after one more client health RTT.
  */
 export function resetForServerSwitch() {
 	const runtimeReady = loadRuntimeReadyVerified();
-	const fromProvisioning = loadProvisionVerified();
 	clearRuntimeReadyVerified();
-	clearProvisionVerified();
 
 	if (runtimeReady) {
 		// /start already resolved stage==='ready' (markRuntimeReadyVerified is set
@@ -231,35 +219,12 @@ export function resetForServerSwitch() {
 			wasConnected: true,
 			reconnectAttempts: 0,
 			disconnectedAt: null,
-			sandboxVersion: null,
 			openCodeVersion: null,
 			healthy: true,
 			runtimeError: null,
-			recoveryPhase: "idle",
-			restartRequestedAt: null,
 			manualRetryNonce: 0,
-		});
-		saveWasConnected(true);
-		return;
-	}
-
-	if (fromProvisioning) {
-		// Provisioning already verified health — skip the blocking overlay.
-		// The health poller will still run and correct the status if needed.
-		useSandboxConnectionStore.setState({
-			status: "connecting",
-			failCount: 0,
-			initialCheckDone: false,
-			wasConnected: true, // lightweight reconnect pill instead of blocking overlay
-			reconnectAttempts: 0,
-			disconnectedAt: null,
-			sandboxVersion: null,
-			openCodeVersion: null,
-			healthy: null,
-			runtimeError: null,
-			recoveryPhase: "idle",
-			restartRequestedAt: null,
-			manualRetryNonce: 0,
+			lastRuntimeEvidenceAt: null,
+			bootingSinceAt: null,
 		});
 		saveWasConnected(true);
 		return;
@@ -272,42 +237,25 @@ export function resetForServerSwitch() {
 		wasConnected: false,
 		reconnectAttempts: 0,
 		disconnectedAt: null,
-		sandboxVersion: null,
 		openCodeVersion: null,
 		healthy: null,
 		runtimeError: null,
-		recoveryPhase: "idle",
-		restartRequestedAt: null,
 		manualRetryNonce: 0,
+		lastRuntimeEvidenceAt: null,
+		bootingSinceAt: Date.now(),
 	});
 	saveWasConnected(false);
 }
 
-export function markRecoveryRequested(phase: Exclude<SandboxRecoveryPhase, 'idle'>) {
-	const now = Date.now();
-	useSandboxConnectionStore.setState((state) => ({
-		recoveryPhase: phase,
-		restartRequestedAt: now,
-		status: state.status === "connected" ? "connecting" : state.status,
-		disconnectedAt: state.disconnectedAt ?? now,
-	}));
-}
-
-export function markHostRestartRequested() {
-	markRecoveryRequested("restarting_host");
-}
-
 /**
- * Called by the provisioning page right before redirecting to the dashboard.
- * Signals that the sandbox was already verified as healthy, so the dashboard
- * should NOT show a full-screen blocking overlay on first load.
+ * Record that a live SSE event from the active runtime just arrived. Cheap and
+ * called per event, so it only writes when the timestamp actually moves the
+ * freshness window (>= 1s granularity keeps store notifications rare).
  */
-export function markProvisioningVerified() {
-	try {
-		sessionStorage.setItem(PROVISION_VERIFIED_KEY, "1");
-	} catch {
-		/* SSR or storage unavailable */
-	}
+export function noteRuntimeEvidence(at: number = Date.now()) {
+	const previous = useSandboxConnectionStore.getState().lastRuntimeEvidenceAt;
+	if (previous !== null && at - previous < 1_000) return;
+	useSandboxConnectionStore.setState({ lastRuntimeEvidenceAt: at });
 }
 
 /**
@@ -324,12 +272,6 @@ export function markRuntimeReadyVerified() {
 	}
 }
 
-export function setSandboxVersion(version: string | null) {
-	const current = useSandboxConnectionStore.getState().sandboxVersion;
-	if (current === version) return;
-	useSandboxConnectionStore.setState({ sandboxVersion: version });
-}
-
 export function setOpenCodeHealth(healthy: boolean, version?: string, runtimeError?: string | null) {
 	const state = useSandboxConnectionStore.getState();
 	const updates: Partial<SandboxConnectionStore> = {};
@@ -340,6 +282,16 @@ export function setOpenCodeHealth(healthy: boolean, version?: string, runtimeErr
 		updates.runtimeError = nextRuntimeError;
 	} else if (healthy && state.runtimeError !== null) {
 		updates.runtimeError = null;
+	}
+	// Start (or keep) the stall clock while not healthy; clear it the instant
+	// we are. A "booting" 503 classification resets `failCount` on every tick
+	// (see `use-runtime-reconnect`'s `classifyProbeResult`), so it can repeat
+	// forever without ever crossing the unreachable threshold — this clock is
+	// the only thing that still bounds that case. See `bootingSinceAt`.
+	if (healthy) {
+		if (state.bootingSinceAt !== null) updates.bootingSinceAt = null;
+	} else if (state.bootingSinceAt === null) {
+		updates.bootingSinceAt = Date.now();
 	}
 	if (Object.keys(updates).length > 0) {
 		useSandboxConnectionStore.setState(updates);

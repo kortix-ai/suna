@@ -6,8 +6,11 @@
  * two-part rise entrance. Used by /auth and every auth sub-surface.
  */
 
-import { DangerTriangleSolid, InfoCircleSolid } from '@mynaui/icons-react';
-import { motion, useReducedMotion } from 'motion/react';
+import {
+  WarningIcon as DangerTriangleSolid,
+  InfoIcon as InfoCircleSolid,
+} from '@phosphor-icons/react';
+import { m, useReducedMotion } from 'motion/react';
 import { useRef } from 'react';
 
 import { KortixLogo } from '@/components/ui/kortix-logo';
@@ -33,14 +36,14 @@ export function Rise({
 }) {
   const prefersReducedMotion = useReducedMotion();
   return (
-    <motion.div
+    <m.div
       className={className}
       initial={{ opacity: 0, y: prefersReducedMotion ? 0 : 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3, delay, ease: AUTH_EASE }}
     >
       {children}
-    </motion.div>
+    </m.div>
   );
 }
 
@@ -94,7 +97,7 @@ export function FieldLabel({ htmlFor, children }: { htmlFor: string; children: R
 export function ErrorStrip({ message }: { message: string }) {
   return (
     <div className="border-destructive/20 bg-destructive/10 text-destructive mb-5 flex items-center gap-2 rounded-md border px-3 py-2.5">
-      <DangerTriangleSolid className="size-4 shrink-0" />
+      <DangerTriangleSolid weight="fill" className="size-4 shrink-0" />
       <span className="text-sm">{message}</span>
     </div>
   );
@@ -103,7 +106,7 @@ export function ErrorStrip({ message }: { message: string }) {
 export function InfoStrip({ message }: { message: string }) {
   return (
     <div className="border-border bg-muted/60 text-foreground/80 mb-5 flex items-center gap-2 rounded-md border px-3 py-2.5">
-      <InfoCircleSolid className="size-4 shrink-0" />
+      <InfoCircleSolid weight="fill" className="size-4 shrink-0" />
       <span className="text-sm">{message}</span>
     </div>
   );
@@ -112,7 +115,7 @@ export function InfoStrip({ message }: { message: string }) {
 export function SuccessStrip({ message }: { message: string }) {
   return (
     <div className="border-border bg-muted/60 text-foreground/80 mb-5 flex items-center gap-2 rounded-md border px-3 py-2.5">
-      <InfoCircleSolid className="text-kortix-green size-4 shrink-0" />
+      <InfoCircleSolid weight="fill" className="text-kortix-green size-4 shrink-0" />
       <span className="text-sm">{message}</span>
     </div>
   );

@@ -1,7 +1,32 @@
-// Project channels — Slack + email inbound/outbound integration installs.
+// Project channels — Slack + email inbound/outbound connection installs.
 
 import { backendApi } from '../../http/api-client';
 import { unwrap } from './shared';
+
+export interface ChatIdentityBindResult {
+  ok: boolean;
+  workspaceName: string | null;
+  hasAccess: boolean;
+  resumed: boolean;
+}
+
+async function bindChatIdentity(
+  service: 'slack' | 'teams',
+  token: string,
+): Promise<ChatIdentityBindResult> {
+  return unwrap(
+    await backendApi.post<ChatIdentityBindResult>(`/channels/${service}/identity/bind`, { token }),
+    'Failed to connect your account',
+  );
+}
+
+export function bindSlackIdentity(token: string): Promise<ChatIdentityBindResult> {
+  return bindChatIdentity('slack', token);
+}
+
+export function bindTeamsIdentity(token: string): Promise<ChatIdentityBindResult> {
+  return bindChatIdentity('teams', token);
+}
 
 export interface SlackInstallation {
   workspaceId: string;
@@ -125,13 +150,17 @@ export interface EmailSenderPolicy {
   mode: 'allow_all' | 'restricted';
   allowedEmails: string[];
   allowedDomains: string[];
+  /**
+   * Case-insensitive, unanchored RE2-compatible pattern (maximum 256
+   * characters). Backreferences and look-around are intentionally unsupported.
+   */
   allowedRegex: string | null;
 }
 
 export interface EmailInstallation {
-  /** Canonical Kortix connection profile to pass in connector_bindings.email. */
-  profileId: string | null;
-  profileSlug: string;
+  /** Kortix connection to pass in connector_bindings.email. */
+  connectionId: string | null;
+  connectorSlug: string;
   inboxId: string;
   email: string;
   displayName: string | null;
@@ -140,13 +169,33 @@ export interface EmailInstallation {
   installedAt: string;
 }
 
-type EmailInstallationWire = Omit<EmailInstallation, 'profileId'> & {
-  profile_id?: string | null;
-  profileId?: string | null;
+export type EmailConnectionInstallation = EmailInstallation;
+
+type EmailInstallationWire = Omit<
+  EmailInstallation,
+  'connectionId' | 'connectorSlug'
+> & {
+  connection_id?: string | null;
+  connectionId?: string | null;
+  connector_slug?: string | null;
+  connectorSlug?: string | null;
+  connection_slug?: string | null;
+  connectionSlug?: string | null;
 };
 
-function normalizeEmailInstallation(value: EmailInstallationWire): EmailInstallation {
-  return { ...value, profileId: value.profileId ?? value.profile_id ?? null };
+function normalizeEmailInstallation(value: EmailInstallationWire): EmailConnectionInstallation {
+  const connectionId = value.connectionId ?? value.connection_id ?? null;
+  const connectorSlug =
+    value.connectorSlug ??
+    value.connector_slug ??
+    value.connectionSlug ??
+    value.connection_slug ??
+    'kortix_email';
+  return {
+    ...value,
+    connectionId,
+    connectorSlug,
+  };
 }
 
 export interface EmailMode {
@@ -160,7 +209,7 @@ const DEFAULT_EMAIL_MODE: EmailMode = { provider: 'agentmail', managed_available
 export async function getEmailInstallation(
   projectId: string,
   connectorSlug?: string | null,
-): Promise<EmailInstallation | null> {
+): Promise<EmailConnectionInstallation | null> {
   const query = connectorSlug ? `?connector_slug=${encodeURIComponent(connectorSlug)}` : '';
   const res = await backendApi.get<EmailInstallationWire | null>(
     `/projects/${encodeURIComponent(projectId)}/channels/email/installation${query}`,
@@ -193,7 +242,7 @@ export interface ConnectEmailInput {
 export async function connectEmail(
   projectId: string,
   input: ConnectEmailInput,
-): Promise<EmailInstallation> {
+): Promise<EmailConnectionInstallation> {
   const installation = unwrap(
     await backendApi.post<EmailInstallationWire>(
       `/projects/${encodeURIComponent(projectId)}/channels/email/connect`,
@@ -221,7 +270,7 @@ export async function updateEmailPolicy(
   projectId: string,
   connectorSlug: string | null | undefined,
   senderPolicy: EmailSenderPolicy,
-): Promise<EmailInstallation> {
+): Promise<EmailConnectionInstallation> {
   const installation = unwrap(
     await backendApi.patch<EmailInstallationWire>(
       `/projects/${encodeURIComponent(projectId)}/channels/email/installation`,
@@ -233,44 +282,9 @@ export async function updateEmailPolicy(
   return normalizeEmailInstallation(installation);
 }
 
-// ── Meet — the bot voice + display name a project's Google/Zoom Meet channel uses ──
-
-export interface MeetVoice {
-  id: string;
-  name: string;
-  desc: string;
-}
-
-export interface MeetVoicesResponse {
-  selected: string;
-  bot_name: string;
-  default_bot_name: string;
-  speak_enabled: boolean;
-  voices: MeetVoice[];
-}
-
-export async function getMeetVoices(projectId: string): Promise<MeetVoicesResponse | null> {
-  const res = await backendApi.get<MeetVoicesResponse>(
-    `/projects/${encodeURIComponent(projectId)}/channels/meet/voices`,
-    { showErrors: false },
-  );
-  if (!res.success) return null;
-  return res.data ?? null;
-}
-
-export async function setMeetVoice(
-  projectId: string,
-  voice: string,
-): Promise<{ selected: string }> {
-  return unwrap(
-    await backendApi.put<{ selected: string }>(
-      `/projects/${encodeURIComponent(projectId)}/channels/meet/voice`,
-      { voice },
-      { showErrors: false },
-    ),
-    'Failed to save voice',
-  );
-}
+// ── Voice — the display name the bot uses when it joins a call ──
+// The voice itself now comes from the realtime provider, not a per-project
+// ElevenLabs pick, so the name is all that's left to configure here.
 
 export async function setMeetBotName(
   projectId: string,
@@ -284,17 +298,6 @@ export async function setMeetBotName(
     ),
     'Failed to save name',
   );
-}
-
-/** Returns a base64-encoded audio sample for the given voice, or null on failure. */
-export async function previewMeetVoice(projectId: string, voiceId: string): Promise<string | null> {
-  const res = await backendApi.post<{ b64: string }>(
-    `/projects/${encodeURIComponent(projectId)}/channels/meet/voices/${encodeURIComponent(voiceId)}/preview`,
-    {},
-    { showErrors: false },
-  );
-  if (!res.success || !res.data?.b64) return null;
-  return res.data.b64;
 }
 
 // ── Channel bindings — which agent/model/join-policy a bound chat channel uses ──
@@ -368,30 +371,5 @@ export async function updateChannelBinding(
       { showErrors: false },
     ),
     'Failed to update channel binding',
-  );
-}
-
-export interface SpeakInMeetingResult {
-  ok: boolean;
-  voice: string;
-}
-
-/**
- * Make the meeting bot speak: text → ElevenLabs (project voice) → Recall
- * `output_audio`, both keys kept server-side. Backs `meet speak`.
- */
-export async function speakInMeeting(
-  projectId: string,
-  botId: string,
-  text: string,
-  voice?: string,
-): Promise<SpeakInMeetingResult> {
-  return unwrap(
-    await backendApi.post<SpeakInMeetingResult>(
-      `/projects/${encodeURIComponent(projectId)}/channels/meet/speak`,
-      { bot_id: botId, text, voice },
-      { showErrors: false },
-    ),
-    'Failed to speak in meeting',
   );
 }

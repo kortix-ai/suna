@@ -10,6 +10,7 @@ function baseConfig(workspace: string): Config {
   return {
     servicePort: 8000,
     opencodeInternalPort: 4096,
+    opencodeStandbyPort: 4097,
     staticPort: 3211,
     workspace,
     projectTarget: workspace,
@@ -28,6 +29,10 @@ function baseConfig(workspace: string): Config {
     gitUserName: 'Kortix Agent',
     gitUserEmail: 'agent@kortix.ai',
     cloneFilter: '',
+    cloneDepth: 1,
+    workload: '',
+    monitorsJson: '',
+    monitorBoxEpoch: '',
   }
 }
 

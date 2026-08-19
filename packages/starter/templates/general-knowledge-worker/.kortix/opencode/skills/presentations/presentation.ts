@@ -108,19 +108,11 @@ function generateViewer(presPath: string, metadata: PresentationMetadata): void 
 }
 
 function runPythonScript(script: string, args: string[], timeoutMs = 300_000): string {
-  const isLinux = process.platform === "linux";
   const shellArg = (value: string) => `'${value.replace(/'/g, `'\\''`)}'`;
   const scriptArgs = [script, ...args].map(shellArg).join(" ");
-  const cmd = isLinux
-    ? `python3 ${scriptArgs}`
-    : `uv run --managed-python --python 3.12 ${scriptArgs}`;
-  const env: Record<string, string | undefined> = { ...process.env };
-  if (!isLinux) {
-    env.UV_CACHE_DIR = env.UV_CACHE_DIR ?? join(process.env.HOME ?? "/tmp", ".cache", "uv");
-    env.PYENV_VERSION = "system";
-  }
+  const cmd = `python3 ${scriptArgs}`;
   try {
-    return execSync(cmd, { cwd: SCRIPTS_DIR, timeout: timeoutMs, encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"], env }).trim();
+    return execSync(cmd, { cwd: SCRIPTS_DIR, timeout: timeoutMs, encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] }).trim();
   } catch (e: unknown) {
     const err = e as { stdout?: string; stderr?: string; message?: string };
     const stdout = err.stdout?.trim() ?? "";

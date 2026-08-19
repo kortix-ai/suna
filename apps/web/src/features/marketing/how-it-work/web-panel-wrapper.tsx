@@ -2,29 +2,38 @@
 
 import type { PageId } from '@/components/home/interactive-demo/types';
 import { cn } from '@/lib/utils';
-import { Blocks, Brain, GitPullRequest, MessageSquare } from 'lucide-react';
+import {
+  SquaresFourIcon as Blocks,
+  BrainIcon as Brain,
+  GitPullRequestIcon as GitPullRequest,
+  HardDrivesIcon,
+  SparkleIcon as HiMiniSparkles,
+  ShieldIcon as MdShield,
+  ChatIcon as MessageSquare,
+  ChatCircleDotsIcon as PiChatCircleDotsFill,
+  CpuIcon as RiCpuLine,
+  FolderIcon as RiFolder3Fill,
+  RobotIcon as RiRobot3Fill,
+} from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import type { ReactNode } from 'react';
-import { HiMiniSparkles } from 'react-icons/hi2';
-import { MdShield } from 'react-icons/md';
-import { PiChatCircleDotsFill } from 'react-icons/pi';
-import { RiCpuLine, RiFolder3Fill, RiRobot3Fill } from 'react-icons/ri';
 
-type MarketingPanelTab = PageId | 'review' | 'memory';
+type MarketingPanelTab = PageId | 'review' | 'memory' | 'sandbox';
 
 const DEMO_PANEL_TABS: Record<MarketingPanelTab, { label: string; icon: ReactNode }> = {
   home: { label: 'Home', icon: null },
-  projects: { label: 'Projects', icon: <RiFolder3Fill className="size-4" /> },
-  chat: { label: 'Chat', icon: <PiChatCircleDotsFill className="size-4" /> },
-  agents: { label: 'Agents', icon: <RiRobot3Fill className="size-4" /> },
-  skills: { label: 'Skills', icon: <HiMiniSparkles className="size-4" /> },
-  integrations: { label: 'Integrations', icon: <Blocks className="size-4" /> },
+  projects: { label: 'Projects', icon: <RiFolder3Fill weight="fill" className="size-4" /> },
+  chat: { label: 'Chat', icon: <PiChatCircleDotsFill weight="fill" className="size-4" /> },
+  agents: { label: 'Agents', icon: <RiRobot3Fill weight="fill" className="size-4" /> },
+  skills: { label: 'Skills', icon: <HiMiniSparkles weight="fill" className="size-4" /> },
+  connectors: { label: 'Connectors', icon: <Blocks className="size-4" /> },
   models: { label: 'Models', icon: <RiCpuLine className="size-4" /> },
   scheduling: { label: 'Scheduling', icon: null },
   channels: { label: 'Channels', icon: <MessageSquare className="size-4" /> },
-  security: { label: 'Security', icon: <MdShield className="size-4" /> },
+  security: { label: 'Security', icon: <MdShield weight="fill" className="size-4" /> },
   review: { label: 'Review', icon: <GitPullRequest className="size-4" /> },
   memory: { label: 'Memory', icon: <Brain className="size-4" /> },
+  sandbox: { label: 'Sandbox', icon: <HardDrivesIcon className="size-4" /> },
 };
 
 function TabScallopEdge({ side }: { side: 'left' | 'right' }) {
@@ -85,7 +94,12 @@ export function WebPanelWrapper({
             // : 'rounded-t-xl sm:rounded-t-[calc(var(--radius-xl)-4px)]',
           )}
         >
-          <div className="scrollbar-hide min-h-0 flex-1 overflow-y-auto p-4 sm:p-5">{children}</div>
+          {/* `overflow-hidden`, never `auto`. These are illustrative product
+              surfaces inside a pinned scroll section: a scrollable region here
+              swallows the wheel the moment the pointer crosses it, and the
+              reader gets stuck on the page without knowing why. Content that
+              does not fit is clipped, and each panel is composed to fit. */}
+          <div className="min-h-0 flex-1 overflow-hidden p-3 sm:p-4">{children}</div>
         </div>
       </div>
     </div>

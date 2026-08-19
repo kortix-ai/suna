@@ -1,5 +1,8 @@
 # Agent-First Configuration & Authorization Unification
 
+> **Extended on 2026-07-28.** This document remains the version 2 governance
+> record. Version 2 remains the active OpenCode REST manifest contract.
+
 **Status:** Shipped — Marko + Fable, 2026-07-05. Phases 0–2 (hygiene, schema v2 +
 compiler, mandatory agents) are live, and `per_user` credential removal (part of
 Phase 3's original scope) shipped early. Still open: secrets v2 (named secrets
@@ -53,7 +56,7 @@ Facts established by direct code inspection — each of these shapes a decision 
 8. **Secrets are single-valued.** One shared value per (project, name);
    `agent_scope` only narrows *who may see that one value*. No display name — the
    name *is* the env key. Same-key-different-value-per-agent does not exist.
-9. **Connector "profile" is informal.** It means "one `executor_connectors` row."
+9. **Connector is the formal term.** It means "one `connectors` row."
    Unscoped (`agent_scope` empty) = usable by ALL agents; same two-axis model as
    secrets (agent-side self-narrow ∩ resource-side gate). `per_user` credential
    mode composes with, and is orthogonal to, agent scoping — and it resolves the
@@ -61,7 +64,7 @@ Facts established by direct code inspection — each of these shapes a decision 
    agent-based sessions (AUTHZ plan §3b/§4b).
 10. **CLI permissions and connector policies are different systems for good
     reason.** `kortix_cli` grants are role-anchored (`userRole ∩ agentGrant` — the
-    agent can never exceed its launching human); the executor policy engine is
+    agent can never exceed its launching human); the connector policy engine is
     risk-tiered per-call approval for discovered external actions. Folding CLI
     into connectors would forfeit the role ceiling. What CLI *lacks* is the
     approval tier: `project.gitops.merge` is pure allow/deny today.
@@ -122,7 +125,7 @@ default_agent: support
 agents:
   support:
     enabled: true                       # default true; false = can't start sessions
-    connectors: [github, slack]         # profile slugs | all | none
+    connectors: [github, slack]         # connector slugs | all | none
     secrets: [STRIPE_KEY, GH_TOKEN]     # renamed from `env`; names | all | none
     skills: [pdf-export]                # project skill names | all | none
     kortix_cli: [project.session.start, project.cr.open]
@@ -265,19 +268,19 @@ agent." Target:
   `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` platform-credential examples are gone
   from it and from the doc prose that used to showcase them.
 
-### 2.5 Connector profiles, channels, and the meaning of "ALL"
+### 2.5 Connectors, channels, and the meaning of "ALL"
 
-- **Formalize the profile.** "Connector profile" = named `executor_connectors`
+- **Formalize the connector.** "Connector" = named `connectors`
   row (slug + display name + provider + credential mode + policies + agent
   scope). No new entity needed — the spec's contribution is making the term
   precise and using it consistently in UI/docs/CLI.
-- **ALL semantics, stated once and enforced twice:** a profile with empty
-  `agent_scope` is usable by **all declared agents**; a profile with a scope is
+- **ALL semantics, stated once and enforced twice:** a connector with empty
+  `agent_scope` is usable by **all declared agents**; a connector with a scope is
   usable only by those agents. Symmetrically, an agent's `connectors: all` means
-  "all profiles not scoped away from me." Effective access is always the
-  intersection (agent-side self-narrow ∩ profile-side gate) — this is already
+  "all connectors not scoped away from me." Effective access is always the
+  intersection (agent-side self-narrow ∩ connector-side gate) — this is already
   how `connectorUsable` + `agentMayUseConnector` behave; v2 documents it and the
-  UI displays the *effective* matrix (per agent: which profiles, and why).
+  UI displays the *effective* matrix (per agent: which connectors, and why).
 - **Under v2's deny-by-default**, `connectors: none` (the omitted default) means
   a new agent sees nothing until granted — "ALL" stops being an accident of
   omission and becomes an explicit choice on either side.
@@ -288,7 +291,7 @@ agent." Target:
   from the schema** (v2) rather than wired up: channel↔agent routing is live
   operational state (like OAuth installs), not declarative config — same
   boundary rule that keeps credentials out of git. The channel *integration*
-  itself remains a connector profile (`provider: channel`), which is the
+  itself remains a connector (`provider: channel`), which is the
   declarative part.
 - **`per_user` credential mode is removed now, and redesigned later as an
   explicit "connect your own account" feature** (decided 2026-07-05, after prod
@@ -324,17 +327,17 @@ agent." Target:
 
 ### 2.6 Kortix CLI permissions: role-anchored, approval-capable
 
-Decision: **do not fold `kortix_cli` into connector profiles.** The role ceiling
+Decision: **do not fold `kortix_cli` into connectors.** The role ceiling
 (`userRole ∩ agentGrant`) is the system's core invariant and lives in the IAM
 engine; connectors' access model has no role awareness, and faking it inside the
-executor gateway would duplicate the engine. What we take from the executor
+connector gateway would duplicate the engine. What we take from the connector
 instead is its approval UX:
 
 - Add an optional risk tier to CLI leaf actions: `project.gitops.merge`,
   `project.members.manage` (initial set) can be marked
   `require_approval` per project (manifest: `approvals.kortix_cli: [project.gitops.merge]`).
   Enforcement reuses `sessionToolApprovals` + the Review Center / Slack card
-  machinery the executor already has — additive layer *after* the allow/deny
+  machinery the connector already has — additive layer *after* the allow/deny
   gate, never a substitute for it.
 - Prerequisite (found during research, cheap to do first): an **enforcement
   audit** proving every grantable `PROJECT_ACTIONS` leaf is actually asserted on

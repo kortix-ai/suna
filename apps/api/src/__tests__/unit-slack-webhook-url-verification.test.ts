@@ -5,7 +5,9 @@ let loadSigningSecretCalls = 0;
 let projectSigningSecret: string | null = null;
 const handledBlockActions: unknown[] = [];
 
+const realInstallStore = await import('../channels/install-store');
 mock.module('../channels/install-store', () => ({
+  ...realInstallStore,
   SLACK_BOT_TOKEN: 'SLACK_BOT_TOKEN',
   SLACK_SIGNING_SECRET: 'SLACK_SIGNING_SECRET',
   SLACK_TEAM_ID: 'SLACK_TEAM_ID',

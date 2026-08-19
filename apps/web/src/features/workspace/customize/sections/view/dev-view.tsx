@@ -1,7 +1,7 @@
 'use client';
 
+import { CheckIcon as Check, CopyIcon as Copy } from '@phosphor-icons/react';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { Check, Copy } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { FormEvent, useState, type ComponentType, type ReactNode } from 'react';
 
@@ -20,21 +20,27 @@ import {
   StepperTrigger,
 } from '@/components/ui/stepper';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { Icon } from '@/features/icon/icon';
+import { Claude } from '@/features/icon/icons/claude';
+import { Codex } from '@/features/icon/icons/codex';
+import { Cursor } from '@/features/icon/icons/cursor';
+import { RuntimeMark as OpenCode } from '@/features/icon/icons/open-code';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { useCopy } from '@/hooks/use-copy';
-import { getProject, inviteRepoCollaborator, isManagedGithubProject } from '@kortix/sdk/projects-client';
+import { getEnv } from '@/lib/env-config';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
+import { useDeploymentCliInstallCommand } from '@/lib/use-deployment-cli-install-command';
 import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
+import { getProject, inviteRepoCollaborator, isManagedGithubProject } from '@kortix/sdk';
+import { contract, qk } from '@kortix/sdk/react';
 import CustomizeSectionWrapper from '../component/section-wrapper';
 
 export function DevView({ projectId }: { projectId: string }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const projectQuery = useQuery({
-    queryKey: ['project', projectId],
+    queryKey: qk.project.summary(projectId),
     queryFn: () => getProject(projectId),
-    staleTime: 20_000,
+    ...contract('config'),
   });
 
   const project = projectQuery.data;
@@ -98,6 +104,7 @@ function DevSteps({
   const repoDir = repoDirFor(project.repo_url) || 'my-project';
   const managed = isManagedGithubProject(project);
   const branch = project.default_branch || 'main';
+  const installCommand = useDeploymentCliInstallCommand(getEnv().VERSION);
 
   const steps: DevStep[] = [];
 
@@ -132,9 +139,7 @@ function DevSteps({
       hint: tI18nHardcoded.raw(
         'autoComponentsProjectsCustomizeSectionsDevViewJsxAttrHintManages9608753c',
       ),
-      content: (
-        <CommandBlock lines={['curl -fsSL https://kortix.com/install | bash', 'kortix login']} />
-      ),
+      content: <CommandBlock lines={[installCommand, 'kortix login']} />,
     },
     {
       title: tI18nHardcoded.raw(
@@ -245,8 +250,8 @@ function CommandBlock({ lines }: { lines: string[] }) {
     <div className="group border-border bg-muted relative overflow-hidden rounded-md border">
       <pre className="scrollbar-hide overflow-x-auto px-3.5 py-3 pr-12 text-sm leading-relaxed">
         <code className="text-foreground font-mono">
-          {lines.map((line, i) => (
-            <div key={i} className="flex">
+          {lines.map((line) => (
+            <div key={line} className="flex">
               <span className="min-w-0 break-all">{line}</span>
             </div>
           ))}
@@ -271,10 +276,10 @@ function CommandBlock({ lines }: { lines: string[] }) {
 type LauncherIcon = ComponentType<{ className?: string }>;
 
 const LAUNCHERS: { label: string; command: string; icon: LauncherIcon }[] = [
-  { label: 'Claude Code', command: 'claude', icon: Icon.Claude },
-  { label: 'Cursor', command: 'cursor .', icon: Icon.Cursor },
-  { label: 'Codex', command: 'codex', icon: Icon.Codex },
-  { label: 'opencode', command: 'opencode', icon: Icon.OpenCode },
+  { label: 'Claude Code', command: 'claude', icon: Claude },
+  { label: 'Cursor', command: 'cursor .', icon: Cursor },
+  { label: 'Codex', command: 'codex', icon: Codex },
+  { label: 'opencode', command: 'opencode', icon: OpenCode },
 ];
 
 function Launchers() {
@@ -343,7 +348,7 @@ function RepoAccessForm({ projectId }: { projectId: string }) {
           />
         </div>
         <Button type="submit" className="shrink-0" disabled={!username.trim() || invite.isPending}>
-          {invite.isPending ? <Loading className="size-3.5 animate-spin" /> : null}
+          {invite.isPending ? <Loading className="size-3.5" /> : null}
           {tI18nHardcoded.raw('autoComponentsProjectsCustomizeSectionsDevViewJsxTextAddMedc5ab441')}
         </Button>
       </div>

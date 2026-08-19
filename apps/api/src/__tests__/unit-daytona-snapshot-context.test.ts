@@ -1,8 +1,13 @@
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { execFileSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { chmod, mkdir, symlink } from 'node:fs/promises';
+import { chmod, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
+import {
+  buildCliConnectorSourceDigest,
+  buildFileSha256,
+} from '@kortix/shared/sandbox-runtime-artifact';
 
 function setTestEnv(name: string, value: string): void {
   if (!process.env[name] || process.env[name]?.startsWith('encrypted:')) {
@@ -21,29 +26,33 @@ setTestEnv('DAYTONA_SERVER_URL', 'https://daytona.example.test');
 setTestEnv('DAYTONA_TARGET', 'test-target');
 setTestEnv('FRONTEND_URL', 'http://localhost:3000');
 setTestEnv('INTERNAL_KORTIX_ENV', 'dev');
-setTestEnv('RECALL_BASE_URL', 'https://us-west-2.recall.ai/api/v1');
 
 const fixtureRoot = mkdtempSync(join(tmpdir(), 'kortix-daytona-context-test-'));
 const agentPath = join(fixtureRoot, 'kortix-agent');
 const cliPath = join(fixtureRoot, 'kortix');
+const cliAttestationPath = join(fixtureRoot, 'kortix-connectors-runtime.attestation.json');
 const entrypointPath = join(fixtureRoot, 'entrypoint.sh');
 const slackCliPath = join(fixtureRoot, 'slack-cli');
-const executorSdkPath = join(fixtureRoot, 'executor-sdk');
 const opencodeConfigPath = join(fixtureRoot, 'opencode-config');
 
 writeFileSync(agentPath, '#!/bin/sh\n');
 writeFileSync(cliPath, '#!/bin/sh\n');
 writeFileSync(entrypointPath, '#!/bin/sh\n');
+writeFileSync(
+  cliAttestationPath,
+  `${JSON.stringify({
+    schema_version: 1,
+    source_sha256: await buildCliConnectorSourceDigest(
+      resolve(import.meta.dir, '../../../cli'),
+    ),
+    binary_sha256: await buildFileSha256(cliPath),
+    target: 'bun-linux-x64',
+  })}\n`,
+);
 await chmod(agentPath, 0o755);
 await chmod(cliPath, 0o755);
 await chmod(entrypointPath, 0o755);
 await mkdir(slackCliPath, { recursive: true });
-await mkdir(executorSdkPath, { recursive: true });
-await mkdir(join(executorSdkPath, 'node_modules'), { recursive: true });
-await symlink(
-  '/definitely-not-present/typescript',
-  join(executorSdkPath, 'node_modules', 'typescript'),
-);
 await mkdir(opencodeConfigPath, { recursive: true });
 
 // Set per-test (NOT at module load): build-context reads these lazily, so setting
@@ -52,9 +61,9 @@ await mkdir(opencodeConfigPath, { recursive: true });
 beforeEach(() => {
   process.env.KORTIX_SNAPSHOT_AGENT_BIN_PATH = agentPath;
   process.env.KORTIX_SNAPSHOT_CLI_BIN_PATH = cliPath;
+  process.env.KORTIX_SNAPSHOT_CLI_ATTESTATION_PATH = cliAttestationPath;
   process.env.KORTIX_SNAPSHOT_ENTRYPOINT_PATH = entrypointPath;
   process.env.KORTIX_SNAPSHOT_SLACK_CLI_PATH = slackCliPath;
-  process.env.KORTIX_SNAPSHOT_EXECUTOR_SDK_PATH = executorSdkPath;
   process.env.KORTIX_SNAPSHOT_OPENCODE_CONFIG_PATH = opencodeConfigPath;
   getSnapshotImpl = async () => ({ state: snapshotState() });
   deleteSnapshotImpl = async () => {};
@@ -62,7 +71,8 @@ beforeEach(() => {
 
 let dockerfileSeen = '';
 let scaffoldPresentAtDaytonaBoundary = false;
-let executorNodeModulesPresentAtProviderBoundary = false;
+let scaffoldBareAtDaytonaBoundary = false;
+let warmGitArchivePresentAtDaytonaBoundary = false;
 // One push per build attempt — the composed Dockerfile path (== context dir).
 // Each entry is a DISTINCT temp dir iff the adapter re-staged a fresh context.
 const contextPaths: string[] = [];
@@ -78,9 +88,15 @@ mock.module('@daytonaio/sdk', () => ({
       dockerfileSeen = readFileSync(path, 'utf8');
       // Checked HERE (at the Daytona boundary, mid-build) — buildSnapshot's
       // finally cleans the context after, so this can't be asserted afterward.
-      scaffoldPresentAtDaytonaBoundary = existsSync(join(path, '..', 'scaffold.git', 'HEAD'));
-      executorNodeModulesPresentAtProviderBoundary = existsSync(
-        join(path, '..', 'kortix-executor-sdk', 'node_modules'),
+      const scaffoldPath = join(path, '..', 'scaffold.git');
+      scaffoldPresentAtDaytonaBoundary = existsSync(join(scaffoldPath, 'HEAD'));
+      scaffoldBareAtDaytonaBoundary =
+        scaffoldPresentAtDaytonaBoundary &&
+        execFileSync('git', ['--git-dir', scaffoldPath, 'rev-parse', '--is-bare-repository'], {
+          encoding: 'utf8',
+        }).trim() === 'true';
+      warmGitArchivePresentAtDaytonaBoundary = existsSync(
+        join(path, '..', 'kortix-warm-repo-git.tar'),
       );
       contextPaths.push(path);
       return { kind: 'mock-image', path };
@@ -123,8 +139,54 @@ describe('Daytona snapshot build context', () => {
 
     expect(dockerfileSeen).toContain('COPY scaffold.git /opt/kortix/scaffold.git');
     expect(scaffoldPresentAtDaytonaBoundary).toBe(true);
-    expect(executorNodeModulesPresentAtProviderBoundary).toBe(false);
+    expect(scaffoldBareAtDaytonaBoundary).toBe(true);
   });
+
+  test('uploads Git metadata as one visible archive and restores .git in the image', async () => {
+    const source = join(fixtureRoot, 'warm-source');
+    rmSync(source, { recursive: true, force: true });
+    await mkdir(source, { recursive: true });
+    writeFileSync(join(source, 'README.md'), '# warm\n');
+    const gitEnv = {
+      ...process.env,
+      GIT_AUTHOR_NAME: 'Kortix Test',
+      GIT_AUTHOR_EMAIL: 'test@kortix.test',
+      GIT_COMMITTER_NAME: 'Kortix Test',
+      GIT_COMMITTER_EMAIL: 'test@kortix.test',
+    };
+    execFileSync('git', ['init', '-b', 'main'], { cwd: source, env: gitEnv });
+    execFileSync('git', ['add', '-A'], { cwd: source, env: gitEnv });
+    execFileSync('git', ['commit', '-m', 'warm fixture'], { cwd: source, env: gitEnv });
+    const tip = execFileSync('git', ['rev-parse', 'HEAD'], {
+      cwd: source,
+      env: gitEnv,
+      encoding: 'utf8',
+    }).trim();
+
+    warmGitArchivePresentAtDaytonaBoundary = false;
+    await daytonaProvider.buildSnapshot({
+      snapshotName: 'kortix-warm-git-archive',
+      baseImageRef: 'registry.example.test/kortix-default:latest',
+      spec: {},
+      slug: 'default',
+      warmRepo: {
+        cloneUrl: `file://${source}`,
+        cloneHeaders: {},
+        branch: 'main',
+        tip,
+        originUrl: 'https://api.example.test/v1/projects/project-1/git',
+      },
+    });
+
+    expect(warmGitArchivePresentAtDaytonaBoundary).toBe(true);
+    expect(dockerfileSeen).toContain(
+      'COPY kortix-warm-repo-git.tar /tmp/kortix-warm-repo-git.tar',
+    );
+    expect(dockerfileSeen).toContain(
+      'tar -xf /tmp/kortix-warm-repo-git.tar -C /workspace/.git --strip-components=1',
+    );
+    expect(dockerfileSeen).not.toContain('rm -f /tmp/kortix-warm-repo-git.tar');
+  }, 30_000);
 });
 
 describe('Daytona snapshot state', () => {
@@ -146,7 +208,32 @@ describe('Daytona snapshot state', () => {
       });
     };
 
-    expect(await daytonaProvider.getSnapshotState('kortix-new-template')).toBe('unknown');
+    expect(await daytonaProvider.getSnapshotState('kortix-transient-probe')).toBe('unknown');
+  });
+
+  test('briefly caches a negative probe result per name (burst collapse)', async () => {
+    let calls = 0;
+    getSnapshotImpl = async () => {
+      calls += 1;
+      throw Object.assign(new Error('Snapshot with name kortix-neg-cache not found'), {
+        statusCode: 404,
+      });
+    };
+
+    expect(await daytonaProvider.getSnapshotState('kortix-neg-cache')).toBe('missing');
+    expect(await daytonaProvider.getSnapshotState('kortix-neg-cache')).toBe('missing');
+    expect(calls).toBe(1);
+  });
+
+  test('never caches unknown — recovery after an outage is observed immediately', async () => {
+    getSnapshotImpl = async () => {
+      throw Object.assign(new Error('upstream unavailable'), { statusCode: 503 });
+    };
+
+    expect(await daytonaProvider.getSnapshotState('kortix-outage-recovery')).toBe('unknown');
+
+    getSnapshotImpl = async () => ({ state: 'active' });
+    expect(await daytonaProvider.getSnapshotState('kortix-outage-recovery')).toBe('active');
   });
 
   test('keeps a timed-out Daytona probe unknown', async () => {
@@ -215,6 +302,32 @@ describe('Daytona snapshot state', () => {
 });
 
 describe('Daytona auto-build self-heal', () => {
+  test('deletes a retained failed snapshot and retries a duplicate snapshot name', async () => {
+    contextPaths.length = 0;
+    let attempt = 0;
+    let built = false;
+    let deleted = false;
+    createImpl = async () => {
+      attempt += 1;
+      if (attempt === 1) {
+        throw new Error(
+          'Snapshot with name "kortix-default-7f989bb9735b" already exists for this organization',
+        );
+      }
+      built = true;
+    };
+    snapshotState = () => (built ? 'active' : 'failed');
+    deleteSnapshotImpl = async () => {
+      deleted = true;
+    };
+
+    await daytonaProvider.buildSnapshot(buildInput('kortix-default-7f989bb9735b'));
+
+    expect(deleted).toBe(true);
+    expect(attempt).toBe(2);
+    expect(contextPaths.length).toBe(2);
+  }, 15_000);
+
   test('re-stages a FRESH context + retries on a stale-context error, then succeeds', async () => {
     contextPaths.length = 0;
     let attempt = 0;

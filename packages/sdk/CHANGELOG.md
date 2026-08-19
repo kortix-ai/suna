@@ -6,6 +6,9 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## Unreleased
 
 ### Added
+- Typed unified session-cost reads through
+  `billing.sessionCosts.{list,get}` and `session(pid,sid).cost()`. The response
+  combines finalized LLM and compute costs, model usage, and ledger entries.
 - `getProjectModelPicker()` plus `kortix.projects.modelPicker` and
   `kortix.project(id).modelPicker()` for the compact, connection-aware selector
   catalog; the existing `llmCatalog` remains the complete runtime catalog.
@@ -35,6 +38,12 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `502`/`503`/`504` responses on idempotent reads (`GET`/`HEAD`) up to two times
   with 250ms → 500ms backoff. Mutations and HTTP `500` responses are never
   retried.
+
+### Removed
+
+- The retired local sandbox value was removed from `AppHostingProvider`. This
+  is an intentional breaking type-contract change and requires a breaking SDK
+  release. The API no longer accepts or emits that value.
 
 ### Internal
 - `src/` is now tiered: `core/` (isomorphic), `browser/`, `node/`, `react/`.

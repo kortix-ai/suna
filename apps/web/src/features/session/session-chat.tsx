@@ -2,109 +2,96 @@
 
 import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
 import { detectCommandFromText } from '@/features/session/detect-command';
-import { SandboxImage } from '@/features/session/sandbox-image';
 import { SessionApprovalPrompt } from '@/features/session/session-approval-prompt';
 import { isPendingAction, useSessionAudit } from '@/features/session/session-audit-shared';
 import { SessionPermissionPrompt } from '@/features/session/session-permission-prompt';
 import { useSessionWallpaperLayer } from '@/features/session/session-wallpaper-layer';
+import { errorMessageOf, isDeliveredButDisconnected } from '@/lib/delivered-but-disconnected';
 import {
-  AlertTriangle,
-  ArrowDown,
-  Brain,
-  Check,
-  CheckCircle,
-  ChevronDown,
-  ChevronRight,
-  Copy,
-  ExternalLink,
-  FileText,
-  Globe,
-  Image as ImageIcon,
-  Layers,
-  Loader2,
-  Reply,
-  Scissors,
-  Search,
-  Terminal,
-  Timer,
-} from 'lucide-react';
+  WarningIcon as AlertTriangle,
+  ArrowBendUpLeftIcon,
+  CaretDownIcon,
+  CheckCircleIcon as CheckCircle,
+  CheckIcon,
+  CaretDownIcon as ChevronDown,
+  ArrowSquareOutIcon as ExternalLink,
+  StackIcon as Layers,
+  ArrowCounterClockwiseIcon as RotateCcw,
+} from '@phosphor-icons/react';
+import { AnimatePresence, m } from 'motion/react';
 import { useTranslations } from 'next-intl';
 import { useParams, usePathname, useRouter } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { hasRetryingAssistantTurn } from '@kortix/sdk';
+import {
+  COMPOSER_EDITOR_SELECTOR,
+  SUGGESTION_MENU_SELECTOR,
+  shouldCountEscape,
+} from './esc-to-stop';
+import {
+  SystemNotificationCard,
+  parseSystemNotifications,
+  stripSystemPtyText,
+} from './message-parsing';
+import { projectQueueRows } from './queue-projection';
+import { runLegacyQueueMigration } from './queue-migration-runner';
+import { createQueueUndoAction } from './queued-message-restore';
+import { ActivityBurst } from './turn/activity-burst';
+import { ExpandableOutput } from './turn/expandable-output';
+import { planAnchorMessageId } from './turn/plan-anchor';
+import { segmentTurn } from './turn/segment-turn';
+import { stabilizeTurns } from './turn/stable-turns';
+import { ThrottledMarkdown } from './turn/throttled-markdown';
+import { TurnViewport } from './turn/turn-viewport';
+import { UserMessage } from './turn/user-message';
 
+import { resolveComposerAgent } from '@/features/session/composer/composer-agent-access';
+import { Composer as SessionChatInput } from '@/features/session/composer/composer';
+import { ConnectorRequiredNotice } from '@/features/session/connector-required-notice';
 import { SessionSiteHeader } from '@/features/session/header/session-site-header';
 import { NO_MODEL_AVAILABLE_MESSAGE } from '@/features/session/model-availability';
-import { ConnectProviderDialog } from '@/features/session/model-selector';
+import {
+  ConnectProviderDialog,
+  type ModelDefaultControls,
+} from '@/features/session/model-selector';
+import { SessionOverridesComposer } from '@/features/session/overrides/session-overrides-composer';
 import {
   type QuestionAction,
   QuestionPrompt,
   type QuestionPromptHandle,
 } from '@/features/session/question-prompt';
-import {
-  isInvisibleActivityPart,
-  isNoGroupActivityTool,
-  isShellActivityTool,
-  normalizeActivityToolName,
-  shellActivityGroupLabel,
-  writeActivityGroupLabel,
-} from '@/features/session/session-activity-groups';
-import {
-  type AttachedFile,
-  SessionChatInput,
-  type TrackedMention,
-} from '@/features/session/session-chat-input';
+import { SessionActionPanelColumn } from '@/features/session/session-action-panel-column';
+import type { AttachedFile, TrackedMention } from '@/features/session/session-chat-input';
 import { SessionContextModal } from '@/features/session/session-context-modal';
 import { SessionRetryDisplay, TurnErrorDisplay } from '@/features/session/session-error-banner';
 import { SessionWelcome } from '@/features/session/session-welcome';
-import { GridFileCard } from './grid-file-card';
+import { SessionBusyIndicator } from './session-busy-indicator';
+import { SessionTurnMeta } from './session-turn-meta';
+import {
+  sessionTurnDurationMs,
+  sessionTurnEndedAt,
+  sessionTurnSpan,
+} from './session-turn-meta-rows';
 
-import { AnimatedThinkingText } from '@/components/ui/animated-thinking-text';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
-import { STATUS_BG, STATUS_BORDER, STATUS_TEXT } from '@/components/ui/status';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { searchWorkspaceFiles } from '@/features/files';
-import { uploadFile } from '@/features/files/api/opencode-files';
-import { AssistantPendingRow } from '@/features/session/assistant-pending-row';
+import Loading from '@/components/ui/loading';
+import { dismissToast, errorToast, infoToast } from '@/components/ui/toast';
+import { uploadFile } from '@/features/files/api/runtime-files';
+import { useUserPreferencesStore } from '@/stores/user-preferences-store';
 // billingApi / invalidateAccountState / useQueryClient removed — billing is handled server-side by the router
 import { ChatMinimap } from '@/features/session/chat-minimap';
 import { SessionStartingLoader } from '@/features/session/session-starting-loader';
 import { SubSessionModal } from '@/features/session/sub-session-modal';
-import { contextToolSummary, contextToolTrigger } from '@/features/session/tool/tool-meta';
 import { ToolActivateContext, ToolPartRenderer } from '@/features/session/tool/tool-renderers';
 import {
   buildOptimisticPromptTextWithUploads,
   buildPromptPartsWithUploads,
 } from '@/features/session/uploaded-file-refs';
-import { useOpenCodeConfig } from '@/hooks/opencode/use-opencode-config';
-import {
-  type ModelKey,
-  formatModelString,
-  formatPromptModel,
-  parseModelKey,
-  useOpenCodeLocal,
-} from '@/hooks/opencode/use-opencode-local';
-import type { ProviderListResponse } from '@/hooks/opencode/use-opencode-sessions';
-import {
-  ascendingId,
-  rejectQuestion,
-  replyToPermission,
-  replyToQuestion,
-  useAbortOpenCodeSession,
-  useOpenCodeAgents,
-  useOpenCodeCommands,
-  useOpenCodeProviders,
-  useOpenCodeRuntimeReady,
-  useOpenCodeSession,
-  useOpenCodeSessions,
-} from '@/hooks/opencode/use-opencode-sessions';
-import { useSessionSync } from '@/hooks/opencode/use-session-sync';
 import { useAutoScroll } from '@/hooks/use-auto-scroll';
 import { useModelPricingLookup } from '@/lib/model-pricing';
-import { getClient } from '@/lib/opencode-sdk';
 import {
   type AgentRefLike,
   type FileRefLike,
@@ -122,53 +109,30 @@ import {
   stripKortixSystemTags,
 } from '@/lib/utils/kortix-system-tags';
 import { useChatSendStore } from '@/stores/chat-send-store';
-import { useFilePreviewStore } from '@/stores/file-preview-store';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { useMessageJumpStore } from '@/stores/message-jump-store';
 import { useOnboardingModeStore } from '@/stores/onboarding-mode-store';
-import { useOpenCodeCompactionStore } from '@/stores/opencode-compaction-store';
-import { useOpenCodePendingStore } from '@/stores/opencode-pending-store';
-import { useSyncStore } from '@/stores/opencode-sync-store';
-import { usePendingFilesStore } from '@/stores/pending-files-store';
 import { useSessionBrowserStore } from '@/stores/session-browser-store';
 import {
+  useAttachRequest,
   useSessionComposerPrefillStore,
   useSessionPrefill,
 } from '@/stores/session-composer-prefill-store';
 import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
-import {
-  type KortixSendError,
-  abandonOptimisticSend,
-  applyOptimisticAbort,
-  beginOptimisticSend,
-  classifySendError,
-  clearStartStash,
-  readStartStash,
-  replayStartStash,
-  sendAndRecover,
-  usePermissionSelfHeal,
-  useProjectConfig,
-  useQuestionSelfHeal,
-} from '@kortix/sdk/react';
 // Shared UI primitives (framework-agnostic, reusable on mobile)
+import { Copy } from '@/features/icon/icons/copy';
 import {
-  type AgentPart,
   type Command,
-  type FilePart,
   type MessageWithParts,
   type Part,
   type PermissionRequest,
   type QuestionRequest,
-  type ReasoningPart,
   type TextPart,
   type ToolPart,
   type Turn,
   collectTurnParts,
   findLastTextPart,
-  formatCost,
   formatDuration,
-  formatTokens,
-  getHiddenToolParts,
   getPermissionForTool,
   getRetryInfo,
   getRetryMessage,
@@ -181,19 +145,70 @@ import {
   groupMessagesIntoTurns,
   isAgentPart,
   isAttachment,
-  isCompactionPart,
-  isFilePart,
-  isLastUserMessage,
-  isPatchPart,
   isReasoningPart,
-  isSnapshotPart,
   isTextPart,
   isToolPart,
-  isToolPartHidden,
   shouldShowToolPart,
-  splitUserParts,
 } from '@/ui';
-import { SandboxUrlDetector } from './sandbox-url-detector';
+import { abortErrorReason, isAbortError, updateProjectSession } from '@kortix/sdk';
+import type { ProviderListResponse } from '@kortix/sdk/react';
+import {
+  type AbortSettlement,
+  type KortixSendError,
+  type ModelKey,
+  type UseSessionResult,
+  abandonOptimisticSend,
+  applyOptimisticAbort,
+  ascendingId,
+  awaitAbortSettlement,
+  beginOptimisticSend,
+  classifySendError,
+  clearStartStash,
+  formatModelString,
+  formatPromptModel,
+  markOptimisticSendDispatched,
+  mintSessionWireMessageId,
+  parseModelKey,
+  readStartStash,
+  recoverFromSendFailure,
+  rejectQuestion,
+  startSessionWithPrompt,
+  replyToPermission,
+  replyToQuestion,
+  requestRuntimeReconnect,
+  sendAndRecover,
+  useAbortRuntimeSession,
+  useExecuteRuntimeCommand,
+  usePermissionSelfHeal,
+  useProjectConfig,
+  useQuestionSelfHeal,
+  useRuntimeAgents,
+  useRuntimeBootStalled,
+  useRuntimeCommands,
+  useRuntimeConfig,
+  useRuntimeConnectionStore,
+  useRuntimePendingStore,
+  useRuntimePhase,
+  useRuntimeProviders,
+  useSessionPrompts,
+  useRuntimeReady,
+  useRuntimeSession,
+  useRuntimeSessions,
+  useSessionModelSelection,
+  useSessionStateStore,
+  useSessionSync,
+  useSessionWorking,
+  useSessionWorkingStore,
+} from '@kortix/sdk/react';
+import { CodeBlockEndpoints, SandboxUrlDetector } from './sandbox-url-detector';
+import {
+  resolveLastTurnWorking,
+  serverHoldsOpenTurn,
+  sessionComposerReadiness,
+} from './session-composer-readiness';
+import { captureTurnScrollAnchor, restoreTurnScrollAnchor } from './session-history-scroll';
+import { resolveSessionContentState } from './session-load-state';
+import { shouldLoadOlderHistory } from './session-older-autoload';
 
 // ============================================================================
 // Reply-to context (select & reply feature)
@@ -372,7 +387,7 @@ function AnsweredQuestionCard({ part }: { part: ToolPart }) {
         <Button
           type="button"
           variant="popover"
-          className="bg-card flex h-auto w-full items-center justify-start gap-1.5 rounded-none px-4 py-2.5 text-left"
+          className="bg-card flex h-auto w-full items-center justify-start gap-1.5 rounded-none px-4 py-2 text-left"
         >
           <span className="text-foreground text-xs font-medium">Questions</span>
           <span className="text-muted-foreground text-xs tabular-nums">
@@ -387,12 +402,12 @@ function AnsweredQuestionCard({ part }: { part: ToolPart }) {
         </Button>
       </DisclosureTrigger>
       <DisclosureContent variant="outline" contentClassName="border-border border-t">
-        <div className="space-y-4 px-4 py-2.5">
+        <div className="space-y-2 px-3.5 py-2">
           {questions.map((q, i) => {
             const answer = answers[i] || [];
             const answerText = answer.join(', ') || 'No answer';
             return (
-              <div key={i} className="space-y-1">
+              <div key={q.question} className="space-y-0.5">
                 <div className="[&_*]:!text-muted-foreground [&_strong]:!text-muted-foreground [&_code]:!text-xs [&_li]:!my-0 [&_ol]:!my-0 [&_p]:!my-0 [&_p]:!text-xs [&_p]:!leading-relaxed [&_p]:!text-pretty [&_ul]:!my-0">
                   <UnifiedMarkdown content={q.question} />
                 </div>
@@ -407,776 +422,92 @@ function AnsweredQuestionCard({ part }: { part: ToolPart }) {
 }
 
 // ============================================================================
-// Highlight @mentions in plain text (for optimistic & user messages)
+// Message parsing exported to message-parsing.tsx
 // ============================================================================
 
-function HighlightMentions({
-  text,
-  agentNames,
-  onFileClick,
-}: {
-  text: string;
-  agentNames?: string[];
-  onFileClick?: (path: string) => void;
-}) {
-  // Strip every ref block (project/file/agent/session) before processing
-  // inline @ mentions so the visible text never shows raw XML.
-  const { cleanText, sessions } = useMemo(() => {
-    const a = parseProjectReferences(text);
-    const b = parseFileMentionReferences(a.cleanText);
-    const c = parseAgentMentionReferences(b.cleanText);
-    const d = parseSessionReferences(c.cleanText);
-    return {
-      cleanText: d.cleanText,
-      sessions: d.sessions,
-    };
-  }, [text]);
+/** How long Stop will wait for the inbox hold before it issues the cancel
+ *  anyway. The hold going first is a preference — it saves a stopped prompt
+ *  from coming back a reaper pass later — while the abort is the thing the user
+ *  pressed the button for, and a stalled request must never hold it hostage
+ *  with the agent still running. One round-trip's worth, no more. */
+const STOP_HOLD_DEADLINE_MS = 1500;
 
-  const segments = useMemo(() => {
-    type MentionType = 'file' | 'agent' | 'session';
-    if (!cleanText) return [{ text: cleanText, type: undefined as MentionType | undefined }];
-
-    // Detect session @mentions first (titles can contain spaces)
-    const sessionDetected: { start: number; end: number; type: MentionType }[] = [];
-    for (const s of sessions) {
-      const needle = `@${s.title}`;
-      const idx = cleanText.indexOf(needle);
-      if (idx !== -1) {
-        sessionDetected.push({
-          start: idx,
-          end: idx + needle.length,
-          type: 'session',
-        });
-      }
-    }
-
-    const agentSet = new Set(agentNames || []);
-    const mentionRegex = /@(\S+)/g;
-    const detected: { start: number; end: number; type: MentionType }[] = [...sessionDetected];
-    let match: RegExpExecArray | null;
-    while ((match = mentionRegex.exec(cleanText)) !== null) {
-      const mStart = match.index;
-      // Skip if overlaps with a session mention
-      if (sessionDetected.some((s) => mStart >= s.start && mStart < s.end)) continue;
-      const name = match[1];
-      // Treat @ses_<id> tokens as session mentions
-      const type: MentionType = name.startsWith('ses_')
-        ? 'session'
-        : agentSet.has(name)
-          ? 'agent'
-          : 'file';
-      detected.push({
-        start: mStart,
-        end: match.index + match[0].length,
-        type,
-      });
-    }
-    if (detected.length === 0) return [{ text: cleanText, type: undefined }];
-
-    detected.sort((a, b) => a.start - b.start || b.end - a.end);
-    const result: { text: string; type?: MentionType }[] = [];
-    let lastIndex = 0;
-    for (const ref of detected) {
-      if (ref.start < lastIndex) continue;
-      if (ref.start > lastIndex) result.push({ text: cleanText.slice(lastIndex, ref.start) });
-      result.push({
-        text: cleanText.slice(ref.start, ref.end),
-        type: ref.type,
-      });
-      lastIndex = ref.end;
-    }
-    if (lastIndex < cleanText.length) result.push({ text: cleanText.slice(lastIndex) });
-    return result;
-  }, [cleanText, agentNames, sessions]);
-
-  // Uniform monochrome mention style — Kortix brand is strictly neutral, so
-  // every mention kind (file / agent / session) renders identically
-  // as an underlined foreground chip. Kind is distinguished by click target.
-  const mentionClass =
-    'font-medium text-foreground underline decoration-foreground/30 underline-offset-[3px] hover:decoration-foreground/70 cursor-pointer';
-  const mentionClassStatic = 'font-medium text-foreground';
-
-  return (
-    <>
-      {segments.map((seg, i) =>
-        seg.type === 'file' && onFileClick ? (
-          <span
-            key={i}
-            className={mentionClass}
-            onClick={(e) => {
-              e.stopPropagation();
-              onFileClick(seg.text.replace(/^@/, ''));
-            }}
-          >
-            {seg.text}
-          </span>
-        ) : seg.type === 'session' ? (
-          <span
-            key={i}
-            className={mentionClass}
-            onClick={(e) => {
-              e.stopPropagation();
-              const raw = seg.text.replace(/^@/, '');
-              // Direct session ID (ses_...) — navigate without title lookup
-              if (raw.startsWith('ses_')) {
-                openTabAndNavigate({
-                  id: raw,
-                  title: 'Session',
-                  type: 'session',
-                  href: `/sessions/${raw}`,
-                });
-                return;
-              }
-              const ref = sessions.find((s) => s.title === raw);
-              if (ref) {
-                openTabAndNavigate({
-                  id: ref.id,
-                  title: ref.title || 'Session',
-                  type: 'session',
-                  href: `/sessions/${ref.id}`,
-                });
-              }
-            }}
-          >
-            {seg.text}
-          </span>
-        ) : (
-          <span
-            key={i}
-            className={cn((seg.type === 'file' || seg.type === 'agent') && mentionClassStatic)}
-          >
-            {seg.text}
-          </span>
-        ),
-      )}
-    </>
-  );
+/** Dependencies `stopThenSendNow` needs, injected so the ordering logic is
+ *  directly testable without React or a DOM. */
+export interface StopThenSendNowDeps {
+  /** True when a turn is currently running and must be stopped first. */
+  isRunning: () => boolean;
+  /** The still-pending `AbortSettlement` for a stop already issued by someone
+   *  else (e.g. a direct click on the Stop button), if one exists. Checked
+   *  BEFORE `isRunning()`: the abort receipt makes the projection `isRunning`
+   *  reads answer idle before that earlier stop's settlement arrives, so
+   *  `isRunning()` alone cannot see an in-flight stop issued outside this
+   *  call. Returns `undefined` when no stop is currently pending for this
+   *  session. */
+  pendingSettlement: () => Promise<AbortSettlement> | undefined;
+  /** Issue the stop and resolve with its `AbortSettlement`, or `null` if this
+   *  stop produced no trackable settlement. Called only when
+   *  `pendingSettlement()` is `undefined` and `isRunning()` is true. Never
+   *  expected to reject — `AbortSettlement`-producing paths
+   *  (`sessionState.cancel()`, `awaitAbortSettlement`) never do. A `null`
+   *  settlement means there is nothing to wait for, so the dispatch follows
+   *  at once. */
+  stop: () => Promise<AbortSettlement | null>;
+  /** The actual send-now dispatch: `POST .../prompts/:id/retry`, which
+   *  promotes the row the user pointed at and releases the session's inbox
+   *  hold ITSELF, in that order. Nothing here may release the hold first —
+   *  see `stopThenSendNow`'s doc. */
+  dispatch: () => Promise<void>;
 }
 
-// ============================================================================
-// Parse <file> XML references from uploaded file text parts
-// ============================================================================
-
-interface ParsedFileRef {
-  path: string;
-  mime: string;
-  filename: string;
-}
-
-const FILE_TAG_REGEX =
-  /<file\s+path="([^"]*?)"\s+mime="([^"]*?)"\s+filename="([^"]*?)">\s*[\s\S]*?<\/file>/g;
-
-// Fixed third-party brand colors for channel-source cards. These are the
-// platforms' own brand hues (not themeable), so they live as named
-// constants rather than as inline hex literals.
-const CHANNEL_BRAND_COLOR = {
-  Telegram: '#29B6F6',
-  Slack: '#E91E63',
-} as const;
-
-function parseFileReferences(text: string): {
-  cleanText: string;
-  files: ParsedFileRef[];
-} {
-  const files: ParsedFileRef[] = [];
-  const cleanText = text
-    .replace(FILE_TAG_REGEX, (_, path, mime, filename) => {
-      files.push({ path, mime, filename });
-      return '';
-    })
-    .trim();
-  return { cleanText, files };
-}
-
-// ============================================================================
-// Parse <session_ref> XML tags from session mention text parts
-// ============================================================================
-
-interface ParsedSessionRef {
-  id: string;
-  title: string;
-}
-
-function parseSessionReferences(text: string): {
-  cleanText: string;
-  sessions: ParsedSessionRef[];
-} {
-  const sessions: ParsedSessionRef[] = [];
-  let cleaned = text.replace(
-    /<session_ref\s+id="([^"]*?)"\s+title="([^"]*?)"\s*\/>/g,
-    (_, id, title) => {
-      sessions.push({ id, title });
-      return '';
-    },
-  );
-  // Strip the instruction header text
-  cleaned = cleaned
-    .replace(
-      /\n*Referenced sessions \(use the session_context tool to fetch details when needed\):\n?/g,
-      '',
-    )
-    .trim();
-  return { cleanText: cleaned, sessions };
-}
-
-// ============================================================================
-// Parse <project_ref> XML references from project mentions / selector
-// ============================================================================
-
-export interface ParsedProjectRef {
-  id?: string;
-  name: string;
-  path?: string;
-  description?: string;
-}
-
-function unescapeAttr(v: string): string {
-  return v.replace(/&quot;/g, '"').replace(/&amp;/g, '&');
-}
-
-function parseProjectReferences(text: string): {
-  cleanText: string;
-  projects: ParsedProjectRef[];
-} {
-  // Historical messages may contain <project_ref/> blocks. Projects are no
-  // longer a user-facing/runtime concept, so strip the metadata without
-  // rendering project chips or passing project refs forward.
-  let cleaned = text.replace(/<project_ref\b([\s\S]*?)\/>/g, '');
-  // Strip the instruction header (description uses [^)]* which is safe
-  // because the header never contains a literal `)` before its closing one).
-  cleaned = cleaned.replace(/\n*Referenced projects \([^)]*\):\n?/g, '').trim();
-  return { cleanText: cleaned, projects: [] };
-}
-
-// ============================================================================
-// Parse <file_ref> + <agent_ref> XML tags from @ mentions in chat input
-// ============================================================================
-//
-// Uploaded files still use the existing <file path="..." mime="..." ...>
-// tag (parseFileReferences). These new tags only cover @-mention-style refs
-// to existing workspace files and agents, so the agent sees structured
-// metadata and the renderer strips them out of the visible text.
-
-export interface ParsedFileMentionRef {
-  path: string;
-  name: string;
-}
-export interface ParsedAgentMentionRef {
-  name: string;
-}
-
-function parseFileMentionReferences(text: string): {
-  cleanText: string;
-  files: ParsedFileMentionRef[];
-} {
-  const files: ParsedFileMentionRef[] = [];
-  let cleaned = text.replace(/<file_ref\b([\s\S]*?)\/>/g, (_, attrs: string) => {
-    const pick = (key: string): string | undefined => {
-      const m = attrs.match(new RegExp(`${key}="([^"]*?)"`));
-      return m ? unescapeAttr(m[1]) : undefined;
-    };
-    const path = pick('path');
-    const name = pick('name') ?? path;
-    if (path) files.push({ path, name: name || path });
-    return '';
-  });
-  cleaned = cleaned.replace(/\n*Referenced files \([^)]*\):\n?/g, '').trim();
-  return { cleanText: cleaned, files };
-}
-
-function parseAgentMentionReferences(text: string): {
-  cleanText: string;
-  agents: ParsedAgentMentionRef[];
-} {
-  const agents: ParsedAgentMentionRef[] = [];
-  let cleaned = text.replace(/<agent_ref\b([\s\S]*?)\/>/g, (_, attrs: string) => {
-    const pick = (key: string): string | undefined => {
-      const m = attrs.match(new RegExp(`${key}="([^"]*?)"`));
-      return m ? unescapeAttr(m[1]) : undefined;
-    };
-    const name = pick('name');
-    if (name) agents.push({ name });
-    return '';
-  });
-  cleaned = cleaned.replace(/\n*Referenced agents \([^)]*\):\n?/g, '').trim();
-  return { cleanText: cleaned, agents };
-}
-
-// ============================================================================
-// Parse <reply_context> XML from select-and-reply feature
-// ============================================================================
-
-function parseReplyContext(text: string): {
-  cleanText: string;
-  replyContext: string | null;
-} {
-  const match = text.match(/<reply_context>([\s\S]*?)<\/reply_context>/);
-  if (!match) return { cleanText: text, replyContext: null };
-  const replyContext = match[1].trim();
-  const cleanText = text.replace(/<reply_context>[\s\S]*?<\/reply_context>\s*/, '').trim();
-  return { cleanText, replyContext };
-}
-
-// ============================================================================
-// Parse <dcp-notification> XML tags from DCP plugin messages
-// ============================================================================
-
-interface DCPPrunedItem {
-  tool: string;
-  description: string;
-}
-
-interface DCPNotification {
-  type: 'prune' | 'compress';
-  tokensSaved: number;
-  batchSaved: number;
-  prunedCount: number;
-  extractedTokens: number;
-  reason?: string;
-  items: DCPPrunedItem[];
-  distilled?: string;
-  // compress-specific
-  messagesCount?: number;
-  toolsCount?: number;
-  topic?: string;
-  summary?: string;
-}
-
-const DCP_TAG_REGEX = /<dcp-notification\s+([^>]*)>([\s\S]*?)<\/dcp-notification>/g;
-const DCP_ITEM_REGEX = /<dcp-item\s+tool="([^"]*?)"\s+description="([^"]*?)"\s*\/>/g;
-const DCP_DISTILLED_REGEX = /<dcp-distilled>([\s\S]*?)<\/dcp-distilled>/;
-const DCP_SUMMARY_REGEX = /<dcp-summary>([\s\S]*?)<\/dcp-summary>/;
-
-function unescapeXml(str: string): string {
-  return str
-    .replace(/&quot;/g, '"')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&amp;/g, '&');
-}
-
-function parseAttr(attrs: string, name: string): string | undefined {
-  const re = new RegExp(`${name}="([^"]*?)"`);
-  const m = attrs.match(re);
-  return m ? unescapeXml(m[1]) : undefined;
-}
-
-// Legacy DCP format: "▣ DCP | ~12.5K tokens saved total" (pre-XML version)
-const DCP_LEGACY_REGEX = /^▣ DCP \| ~([\d.]+K?) tokens saved total/;
-const DCP_LEGACY_PRUNING_REGEX =
-  /▣ Pruning \(~([\d.]+K?) tokens(?:, distilled ([\d.]+K?) tokens)?\)(?:\s*—\s*(.+))?/;
-const DCP_LEGACY_ITEM_REGEX = /→\s+(\S+?):\s+(.+)/g;
-
-// ── Generic XML notification parsing ──────────────────────────────────
-//
-// Matches any XML block: <tag_name>...content...</tag_name>
-// No hardcoded tag names. Runs LAST in the parsing pipeline so all
-// other XML subsystems (file refs, session refs, reply context, DCP,
-// kortix_system) have already consumed their tags. Whatever remains
-// is a system notification.
-const XML_BLOCK_REGEX = /<([a-z][a-z0-9_-]*)>([\s\S]*?)<\/\1>/gi;
-
-interface SystemNotification {
-  tag: string;
-  label: string;
-  fields: [string, string][];
-  body: string;
-}
-
-/** A message typed while the agent was busy, held client-side until a safe boundary. */
-interface QueuedMessage {
-  id: string;
-  text: string;
-  files?: AttachedFile[];
-  mentions?: TrackedMention[];
-}
-
-/** Parse all remaining XML blocks from text as system notifications. */
-function parseSystemNotifications(text: string): {
-  cleanText: string;
-  notifications: SystemNotification[];
-} {
-  const notifications: SystemNotification[] = [];
-  const cleanText = text
-    .replace(XML_BLOCK_REGEX, (_full, tag: string, rawBody: string) => {
-      const fields: [string, string][] = [];
-      const bodyLines: string[] = [];
-      let pastHeader = false;
-
-      for (const line of rawBody.trim().split('\n')) {
-        if (pastHeader) {
-          bodyLines.push(line);
-          continue;
-        }
-        if (line.trim() === '') {
-          pastHeader = true;
-          continue;
-        }
-        const m = line.match(/^([A-Za-z][\w\s]*?):\s*(.+)$/);
-        if (m) {
-          fields.push([m[1].trim(), m[2].trim()]);
-        } else {
-          pastHeader = true;
-          bodyLines.push(line);
-        }
-      }
-
-      notifications.push({
-        tag: tag.toLowerCase(),
-        label: tag.replace(/[-_]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()),
-        fields,
-        body: bodyLines.join('\n').trim(),
-      });
-      return '';
-    })
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
-  return { cleanText, notifications };
-}
-
-function stripSystemPtyText(text: string): string {
-  if (!text) return '';
-  // Only strip kortix_system tags (backend-internal metadata).
-  // Notification XML is stripped later by parseSystemNotifications()
-  // which runs last in the parsing pipeline.
-  return stripKortixSystemTags(text)
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
-}
-
-function parseLegacyDCPNotification(text: string): DCPNotification | null {
-  const headerMatch = text.match(DCP_LEGACY_REGEX);
-  if (!headerMatch) return null;
-
-  const tokenStr = headerMatch[1];
-  const tokensSaved = tokenStr.endsWith('K')
-    ? Math.round(Number.parseFloat(tokenStr.slice(0, -1)) * 1000)
-    : Number.parseInt(tokenStr, 10);
-
-  const pruningMatch = text.match(DCP_LEGACY_PRUNING_REGEX);
-  let batchSaved = 0;
-  let extractedTokens = 0;
-  let reason: string | undefined;
-  if (pruningMatch) {
-    const batchStr = pruningMatch[1];
-    batchSaved = batchStr.endsWith('K')
-      ? Math.round(Number.parseFloat(batchStr.slice(0, -1)) * 1000)
-      : Number.parseInt(batchStr, 10);
-    if (pruningMatch[2]) {
-      const extStr = pruningMatch[2];
-      extractedTokens = extStr.endsWith('K')
-        ? Math.round(Number.parseFloat(extStr.slice(0, -1)) * 1000)
-        : Number.parseInt(extStr, 10);
-    }
-    reason = pruningMatch[3]?.trim();
+/**
+ * Orchestrates "Stop & send": end the current turn (if one is running), wait
+ * for that to actually settle, then dispatch.
+ *
+ * T10: waits for the SERVER-confirmed `AbortSettlement` `stop()`
+ * returns — never a raw status slot. (There used to be a `waitForSessionIdle`
+ * fallback that polled the sync-store slot; the abort's own optimistic idle
+ * frame flipped that slot synchronously, so the poll resolved on its first
+ * check at every reachable call site and its 5s timer was unreachable. C4
+ * deleted the frame, which made the predicate constant the other way. Gone.)
+ * `stop()`'s settlement is already bounded (~5s, see
+ * `awaitAbortSettlement`), never rejects, and a
+ * `{status:'failed'}` or `{status:'timed-out'}` result still lets `dispatch()`
+ * proceed once that bound elapses: whichever cancel path produced the
+ * settlement already cancelled any local in-flight delivery
+ * (`abortInFlightDeliveries`) before returning it, so there is nothing left on
+ * the client to race even without a server acknowledgement.
+ *
+ * When nothing is running and no stop is pending, `stop()` is never called
+ * and the send is not delayed at all.
+ *
+ * IT DOES NOT LIFT THE INBOX HOLD. Stop holds every queued row
+ * (`available_at = now + 24h`); "send now" is `POST .../prompts/:id/retry`,
+ * and `retryInboxPrompt` promotes THAT row and only then releases the hold.
+ * Lifting it here first made all held rows due at one instant and kicked a
+ * drain that claims by `available_at, created_at` — so the oldest prompt ran
+ * and the one the user clicked queued behind its turn. `dispatch()` owns the
+ * whole ordering.
+ *
+ * T10 (settlement race): a stop can already be in flight when this runs —
+ * e.g. the user clicked Stop directly, whose `noteAbortReceipt` makes the
+ * projection `isRunning()` reads answer idle well before that stop's
+ * `AbortSettlement` arrives from the server. Gating on `isRunning()` alone
+ * would then see "idle" and dispatch immediately, racing the still-in-flight
+ * abort. `pendingSettlement()` is consulted
+ * FIRST for exactly this reason: if a settlement is already pending for this
+ * session, it is awaited (and `stop()` is NOT called again — a stop was
+ * already issued) before resuming/dispatching, regardless of what
+ * `isRunning()` reports.
+ */
+export async function stopThenSendNow(deps: StopThenSendNowDeps): Promise<void> {
+  const pending = deps.pendingSettlement();
+  if (pending) {
+    await pending;
+  } else if (deps.isRunning()) {
+    await deps.stop();
   }
-
-  const items: DCPPrunedItem[] = [];
-  let itemMatch;
-  DCP_LEGACY_ITEM_REGEX.lastIndex = 0;
-  while ((itemMatch = DCP_LEGACY_ITEM_REGEX.exec(text)) !== null) {
-    items.push({ tool: itemMatch[1], description: itemMatch[2].trim() });
-  }
-
-  // Check for compress format
-  const isCompress = text.includes('▣ Compressing');
-
-  return {
-    type: isCompress ? 'compress' : 'prune',
-    tokensSaved,
-    batchSaved,
-    prunedCount: items.length,
-    extractedTokens,
-    reason,
-    items,
-  };
-}
-
-function parseDCPNotifications(text: string): {
-  cleanText: string;
-  notifications: DCPNotification[];
-} {
-  const notifications: DCPNotification[] = [];
-
-  // First try XML format
-  const cleanText = text
-    .replace(DCP_TAG_REGEX, (_, attrs: string, body: string) => {
-      const type = (parseAttr(attrs, 'type') || 'prune') as 'prune' | 'compress';
-      const tokensSaved = Number.parseInt(parseAttr(attrs, 'tokens-saved') || '0', 10);
-      const batchSaved = Number.parseInt(parseAttr(attrs, 'batch-saved') || '0', 10);
-      const prunedCount = Number.parseInt(parseAttr(attrs, 'pruned-count') || '0', 10);
-      const extractedTokens = Number.parseInt(parseAttr(attrs, 'extracted-tokens') || '0', 10);
-      const reason = parseAttr(attrs, 'reason');
-
-      // Parse items
-      const items: DCPPrunedItem[] = [];
-      let itemMatch;
-      DCP_ITEM_REGEX.lastIndex = 0;
-      while ((itemMatch = DCP_ITEM_REGEX.exec(body)) !== null) {
-        items.push({
-          tool: unescapeXml(itemMatch[1]),
-          description: unescapeXml(itemMatch[2]),
-        });
-      }
-
-      // Parse distilled
-      const distilledMatch = body.match(DCP_DISTILLED_REGEX);
-      const distilled = distilledMatch ? unescapeXml(distilledMatch[1]) : undefined;
-
-      // Compress-specific
-      const messagesCount =
-        Number.parseInt(parseAttr(attrs, 'messages-count') || '0', 10) || undefined;
-      const toolsCount = Number.parseInt(parseAttr(attrs, 'tools-count') || '0', 10) || undefined;
-      const topic = parseAttr(attrs, 'topic');
-      const summaryMatch = body.match(DCP_SUMMARY_REGEX);
-      const summary = summaryMatch ? unescapeXml(summaryMatch[1]) : undefined;
-
-      notifications.push({
-        type,
-        tokensSaved,
-        batchSaved,
-        prunedCount,
-        extractedTokens,
-        reason,
-        items,
-        distilled,
-        messagesCount,
-        toolsCount,
-        topic,
-        summary,
-      });
-      return '';
-    })
-    .trim();
-
-  // If no XML notifications found, try legacy format
-  if (notifications.length === 0 && cleanText) {
-    const legacy = parseLegacyDCPNotification(cleanText);
-    if (legacy) {
-      notifications.push(legacy);
-      return { cleanText: '', notifications };
-    }
-  }
-
-  return { cleanText, notifications };
-}
-
-// ============================================================================
-// DCP Notification Card — styled component for pruning/compress events
-// ============================================================================
-
-const DCP_REASON_LABELS: Record<string, string> = {
-  completion: 'Task Complete',
-  noise: 'Noise Removal',
-  extraction: 'Extraction',
-};
-
-function formatDCPTokens(tokens: number): string {
-  if (tokens >= 1000) {
-    const k = (tokens / 1000).toFixed(1).replace('.0', '');
-    return `${k}K`;
-  }
-  return tokens.toString();
-}
-
-function DCPNotificationCard({ notification }: { notification: DCPNotification }) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
-  const [expanded, setExpanded] = useState(false);
-  const isPrune = notification.type === 'prune';
-  const hasItems = notification.items.length > 0;
-  const hasDetails = hasItems || notification.distilled || notification.summary;
-
-  return (
-    <div className="border-border/60 bg-card/50 overflow-hidden rounded-2xl border">
-      {/* Header */}
-      <Button
-        onClick={() => hasDetails && setExpanded(!expanded)}
-        variant="ghost"
-        className={cn(
-          'border-border/40 bg-muted/30 flex h-auto w-full items-center justify-start gap-2 rounded-none border-b px-3 py-2',
-          !hasDetails && 'pointer-events-none',
-        )}
-      >
-        <Scissors className="text-muted-foreground/70 size-3.5 flex-shrink-0" />
-        <span className="text-muted-foreground/70 text-xs font-medium tracking-wider uppercase">
-          {isPrune ? 'Context Pruned' : 'Context Compressed'}
-        </span>
-
-        {/* Stats pills */}
-        <div className="ml-auto flex items-center gap-1.5">
-          {notification.reason && (
-            <Badge variant="muted" size="sm">
-              {DCP_REASON_LABELS[notification.reason] || notification.reason}
-            </Badge>
-          )}
-          {isPrune && notification.prunedCount > 0 && (
-            <Badge variant="warning" size="sm">
-              {notification.prunedCount} pruned
-            </Badge>
-          )}
-          {!isPrune && notification.messagesCount && notification.messagesCount > 0 && (
-            <Badge variant="info" size="sm">
-              {notification.messagesCount} msgs
-            </Badge>
-          )}
-          {notification.batchSaved > 0 && (
-            <Badge variant="success" size="sm">
-              -{formatDCPTokens(notification.batchSaved)} tokens
-            </Badge>
-          )}
-          <Badge variant="muted" size="sm">
-            {formatDCPTokens(notification.tokensSaved)} saved
-          </Badge>
-          {hasDetails && (
-            <ChevronDown
-              className={cn(
-                'text-muted-foreground/50 size-3 transition-transform',
-                expanded && 'rotate-180',
-              )}
-            />
-          )}
-        </div>
-      </Button>
-
-      {/* Expandable details */}
-      {expanded && hasDetails && (
-        <div className="space-y-2 px-3 py-2">
-          {/* Pruned items list */}
-          {hasItems && (
-            <div className="space-y-0.5">
-              {notification.items.map((item, i) => (
-                <div key={i} className="text-muted-foreground/80 flex items-center gap-2 text-xs">
-                  <span className="text-muted-foreground/40">
-                    {tHardcodedUi.raw('componentsSessionSessionChat.line1124JsxTextRarr')}
-                  </span>
-                  <span className="bg-muted/50 text-muted-foreground/70 rounded px-1 py-0.5 font-mono text-xs">
-                    {item.tool}
-                  </span>
-                  {item.description && (
-                    <span className="max-w-[300px] truncate">{item.description}</span>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Compress topic */}
-          {notification.topic && (
-            <div className="text-muted-foreground/80 text-xs">
-              <span className="text-muted-foreground/50">Topic:</span>{' '}
-              <span>{notification.topic}</span>
-            </div>
-          )}
-
-          {/* Distilled content */}
-          {notification.distilled && (
-            <div className="border-border/30 mt-1.5 border-t pt-1.5">
-              <div className="text-muted-foreground/60 mb-1 text-xs font-medium tracking-wider uppercase">
-                Distilled
-              </div>
-              <div className="text-muted-foreground/80 max-h-32 overflow-y-auto text-xs break-words whitespace-pre-wrap">
-                {notification.distilled}
-              </div>
-            </div>
-          )}
-
-          {/* Compress summary */}
-          {notification.summary && (
-            <div className="border-border/30 mt-1.5 border-t pt-1.5">
-              <div className="text-muted-foreground/60 mb-1 text-xs font-medium tracking-wider uppercase">
-                Summary
-              </div>
-              <div className="text-muted-foreground/80 max-h-32 overflow-y-auto text-xs break-words whitespace-pre-wrap">
-                {notification.summary}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function SystemNotificationCard({ notification }: { notification: SystemNotification }) {
-  const [open, setOpen] = useState(false);
-
-  // Show first 1-2 short field values inline as muted detail
-  const inlineDetail = notification.fields
-    .slice(0, 2)
-    .map(([, v]) => v)
-    .filter((v) => v.length < 40)
-    .join(' · ');
-
-  // Expandable when there's a body, >2 fields, or any long values
-  const hasExpandable =
-    !!notification.body ||
-    notification.fields.length > 2 ||
-    notification.fields.some(([, v]) => v.length >= 40);
-
-  const isError = notification.tag.includes('failed') || notification.tag.includes('blocker');
-  const isWarning = notification.tag.includes('stopped');
-
-  const iconColor = isError
-    ? 'text-destructive/50'
-    : isWarning
-      ? STATUS_TEXT.warning
-      : 'text-muted-foreground/50';
-
-  const trigger = (
-    <div
-      className={cn(
-        'flex items-center gap-1.5 rounded-2xl px-2.5 py-1.5',
-        'bg-muted/20 border-border/40 border',
-        'max-w-full text-xs select-none',
-        hasExpandable && 'hover:bg-muted/40 cursor-pointer transition-colors',
-      )}
-    >
-      <Terminal className={cn('size-3.5 flex-shrink-0', iconColor)} />
-      <span className="text-muted-foreground/70 truncate">
-        {notification.label}
-        {inlineDetail && (
-          <span className="text-muted-foreground/40 ml-1.5 font-mono">{inlineDetail}</span>
-        )}
-      </span>
-      {hasExpandable && (
-        <ChevronRight
-          className={cn(
-            'text-muted-foreground/30 ml-auto size-3 flex-shrink-0 transition-transform',
-            open && 'rotate-90',
-          )}
-        />
-      )}
-    </div>
-  );
-
-  if (!hasExpandable) return trigger;
-
-  return (
-    <Collapsible open={open} onOpenChange={setOpen}>
-      <CollapsibleTrigger asChild>{trigger}</CollapsibleTrigger>
-      <CollapsibleContent>
-        <div className="border-border/40 bg-muted/10 space-y-1 rounded-b-lg border border-t-0 px-3 py-2 text-xs">
-          {notification.fields.length > 0 && (
-            <div className="space-y-0.5">
-              {notification.fields.map(([key, value], i) => (
-                <div key={i} className="flex min-w-0 gap-2">
-                  <span className="text-muted-foreground/40 flex-shrink-0">{key}:</span>
-                  <span className="text-muted-foreground/60 font-mono text-xs break-all">
-                    {value}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-          {notification.body && (
-            <div className="text-muted-foreground/50 max-h-48 overflow-y-auto font-mono text-xs break-all whitespace-pre-wrap">
-              {notification.body.slice(0, 2000)}
-            </div>
-          )}
-        </div>
-      </CollapsibleContent>
-    </Collapsible>
-  );
+  await deps.dispatch();
 }
 
 // ============================================================================
@@ -1204,10 +535,13 @@ function isNotificationOnlyMessage(parts: Part[]): boolean {
  *  inline with the conversation flow, styled like tool-call cards. */
 function NotificationTurn({ turn }: { turn: Turn }) {
   const rawText = useMemo(() => {
-    return turn.userMessage.parts
-      .filter((p) => isTextPart(p) && !(p as TextPart).synthetic && !(p as any).ignored)
-      .map((p) => (p as TextPart).text || '')
-      .join('\n');
+    const texts: string[] = [];
+    for (const p of turn.userMessage.parts) {
+      if (isTextPart(p) && !(p as TextPart).synthetic && !(p as any).ignored) {
+        texts.push((p as TextPart).text || '');
+      }
+    }
+    return texts.join('\n');
   }, [turn.userMessage.parts]);
 
   const { notifications } = useMemo(
@@ -1219,963 +553,10 @@ function NotificationTurn({ turn }: { turn: Turn }) {
 
   return (
     <div className="flex w-full flex-col gap-1.5">
-      {notifications.map((n, i) => (
-        <SystemNotificationCard key={`${n.tag}-${i}`} notification={n} />
+      {notifications.map((n) => (
+        <SystemNotificationCard key={`${n.tag}-${n.body}`} notification={n} />
       ))}
     </div>
-  );
-}
-
-// ============================================================================
-// Edit Part Dialog — inline editing for text parts
-// ============================================================================
-
-// ============================================================================
-// User Message Row
-// ============================================================================
-
-function UserMessageRow({
-  message,
-  agentNames,
-  commandInfo,
-  commands,
-}: {
-  message: MessageWithParts;
-  agentNames?: string[];
-  commandInfo?: { name: string; args?: string };
-  commands?: Command[];
-}) {
-  const openFileInComputer = useKortixComputerStore((s) => s.openFileInComputer);
-  const openPreview = useFilePreviewStore((s) => s.openPreview);
-  const { attachments, stickyParts } = useMemo(
-    () => splitUserParts(message.parts),
-    [message.parts],
-  );
-
-  // Extract text from sticky parts, parse out <file> and <session_ref> XML references
-  // Filter out both synthetic AND ignored parts from user-visible text
-  const visibleTextParts = stickyParts
-    .filter(isTextPart)
-    .filter(
-      (p) => (p as TextPart).text?.trim() && !(p as TextPart).synthetic && !(p as any).ignored,
-    ) as TextPart[];
-  const rawVisibleText = visibleTextParts.map((p) => p.text).join('\n');
-  const rawText = stripSystemPtyText(rawVisibleText);
-  const { cleanText: textAfterReply, replyContext } = useMemo(
-    () => parseReplyContext(rawText),
-    [rawText],
-  );
-  const { cleanText: textAfterFiles, files: uploadedFiles } = useMemo(
-    () => parseFileReferences(textAfterReply),
-    [textAfterReply],
-  );
-  const { cleanText: textAfterProjects } = useMemo(
-    () => parseProjectReferences(textAfterFiles),
-    [textAfterFiles],
-  );
-  const { cleanText: textAfterFileMentions, files: fileMentionRefs } = useMemo(
-    () => parseFileMentionReferences(textAfterProjects),
-    [textAfterProjects],
-  );
-  const { cleanText: textAfterAgentMentions, agents: agentMentionRefs } = useMemo(
-    () => parseAgentMentionReferences(textAfterFileMentions),
-    [textAfterFileMentions],
-  );
-  const { cleanText: textAfterSessions, sessions: sessionRefs } = useMemo(
-    () => parseSessionReferences(textAfterAgentMentions),
-    [textAfterAgentMentions],
-  );
-  // System notification XML — parsed LAST so all other XML subsystems
-  // (file refs, session refs, reply context, etc.) consume their tags first.
-  // Whatever XML blocks remain are system notifications.
-  const { cleanText: text, notifications: systemNotifications } = useMemo(
-    () => parseSystemNotifications(textAfterSessions),
-    [textAfterSessions],
-  );
-  // Silence unused-variable warnings — these parsed refs are currently only
-  // consumed as stripping side-effects.
-  void fileMentionRefs;
-  void agentMentionRefs;
-
-  // Resolve effective command info: use runtime-tracked info or fall back to template matching
-  const effectiveCommandInfo = useMemo(
-    () => commandInfo ?? detectCommandFromText(rawText, commands),
-    [commandInfo, rawText, commands],
-  );
-
-  // Detect channel message (Telegram/Slack) in user message
-  const channelMessageInfo = useMemo(() => {
-    if (!rawText) return undefined;
-    const headerMatch = rawText.match(/^\[(\w+)\s*·\s*([^·]+?)\s*·\s*message from\s+([^\]]+)\]\s*/);
-    if (!headerMatch) return undefined;
-    const platform = headerMatch[1] as 'Telegram' | 'Slack';
-    const context = headerMatch[2].trim();
-    const userName = headerMatch[3].trim();
-    const afterHeader = rawText.slice(headerMatch[0].length);
-    const instrStart = afterHeader.search(
-      /\n\s*(Chat ID:|── Telegram instructions|── Slack instructions)/,
-    );
-    const messageText =
-      instrStart >= 0 ? afterHeader.slice(0, instrStart).trim() : afterHeader.trim();
-    return { platform, context, userName, messageText };
-  }, [rawText]);
-
-  // Detect trigger_event in user message
-  const triggerEventInfo = useMemo(() => {
-    if (!rawText) return undefined;
-    const match = rawText.match(/<trigger_event>\s*([\s\S]*?)\s*<\/trigger_event>/);
-    if (!match) return undefined;
-    try {
-      const data = JSON.parse(match[1]);
-      const promptText = rawText.replace(/<trigger_event>[\s\S]*?<\/trigger_event>/, '').trim();
-      return { data, prompt: promptText };
-    } catch {
-      return undefined;
-    }
-  }, [rawText]);
-
-  // Extract DCP notifications from ignored text parts (DCP plugin sends ignored user messages)
-  const ignoredTextParts = stickyParts
-    .filter(isTextPart)
-    .filter((p) => (p as any).ignored && (p as TextPart).text?.trim());
-  const ignoredRawText = ignoredTextParts.map((p) => (p as TextPart).text).join('\n');
-  const dcpNotifications = useMemo(() => {
-    if (!ignoredRawText) return [];
-    return parseDCPNotifications(ignoredRawText).notifications;
-  }, [ignoredRawText]);
-
-  // Check if any text part was edited
-  const isEdited = visibleTextParts.some((p) => (p as any).metadata?.edited);
-
-  // Inline file references
-  const inlineFiles = stickyParts.filter(isFilePart) as FilePart[];
-  const filesWithSource = inlineFiles.filter(
-    (f) => f.source?.text?.start !== undefined && f.source?.text?.end !== undefined,
-  );
-
-  // Agent mentions
-  const agentParts = stickyParts.filter(isAgentPart) as AgentPart[];
-
-  const [expanded, setExpanded] = useState(false);
-  const [canExpand, setCanExpand] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const textRef = useRef<HTMLDivElement>(null);
-
-  // Use ResizeObserver + rAF to reliably detect overflow after layout settles
-  useEffect(() => {
-    const el = textRef.current;
-    if (!el || expanded) return;
-
-    const measure = () => {
-      setCanExpand(el.scrollHeight > el.clientHeight + 2);
-    };
-
-    // Measure after next frame to ensure layout is computed
-    const rafId = requestAnimationFrame(measure);
-
-    // Also observe resize changes (font loads, container resize, etc.)
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-
-    return () => {
-      cancelAnimationFrame(rafId);
-      ro.disconnect();
-    };
-  }, [text, expanded]);
-
-  const handleCopy = async () => {
-    if (!text) return;
-    await navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  // Build highlighted text segments
-  const segments = useMemo(() => {
-    if (!text) return [];
-    type SegType = 'file' | 'agent' | 'session';
-
-    // Detect session @mentions first (titles can contain spaces, so indexOf is used)
-    const sessionDetected: { start: number; end: number; type: SegType }[] = [];
-    for (const s of sessionRefs) {
-      const needle = `@${s.title}`;
-      const idx = text.indexOf(needle);
-      if (idx !== -1) {
-        sessionDetected.push({
-          start: idx,
-          end: idx + needle.length,
-          type: 'session',
-        });
-      }
-    }
-
-    // Collect server-provided source refs (file/agent), filtering out any that
-    // overlap with a session mention (the server sees @Title as a file mention
-    // for the first word only — the session range is more accurate).
-    const serverRefs = [
-      ...filesWithSource.map((f) => ({
-        start: f.source!.text!.start,
-        end: f.source!.text!.end,
-        type: 'file' as SegType,
-      })),
-      ...agentParts
-        .filter((a) => a.source?.start !== undefined && a.source?.end !== undefined)
-        .map((a) => ({
-          start: a.source!.start,
-          end: a.source!.end,
-          type: 'agent' as SegType,
-        })),
-    ].filter((r) => !sessionDetected.some((s) => r.start >= s.start && r.start < s.end));
-
-    // Merge session + server refs
-    const allRefs = [...sessionDetected, ...serverRefs];
-
-    if (allRefs.length > 0) {
-      allRefs.sort((a, b) => a.start - b.start || b.end - a.end);
-      const result: { text: string; type?: SegType }[] = [];
-      let lastIndex = 0;
-      for (const ref of allRefs) {
-        if (ref.start < lastIndex) continue;
-        if (ref.start > lastIndex) result.push({ text: text.slice(lastIndex, ref.start) });
-        result.push({ text: text.slice(ref.start, ref.end), type: ref.type });
-        lastIndex = ref.end;
-      }
-      if (lastIndex < text.length) result.push({ text: text.slice(lastIndex) });
-      return result;
-    }
-
-    // Fallback: detect @mentions from text using regex
-    const agentSet = new Set(agentNames || []);
-    const mentionRegex = /@(\S+)/g;
-    const detected: { start: number; end: number; type: SegType }[] = [];
-    let match: RegExpExecArray | null;
-    while ((match = mentionRegex.exec(text)) !== null) {
-      const mStart = match.index;
-      const token = match[1];
-      // Treat @ses_<id> tokens as session mentions
-      const type: SegType = token.startsWith('ses_')
-        ? 'session'
-        : agentSet.has(token)
-          ? 'agent'
-          : 'file';
-      detected.push({
-        start: mStart,
-        end: match.index + match[0].length,
-        type,
-      });
-    }
-
-    if (detected.length === 0) return [{ text, type: undefined }];
-
-    detected.sort((a, b) => a.start - b.start || b.end - a.end);
-    const result: { text: string; type?: SegType }[] = [];
-    let lastIndex = 0;
-    for (const ref of detected) {
-      if (ref.start < lastIndex) continue;
-      if (ref.start > lastIndex) result.push({ text: text.slice(lastIndex, ref.start) });
-      result.push({ text: text.slice(ref.start, ref.end), type: ref.type });
-      lastIndex = ref.end;
-    }
-    if (lastIndex < text.length) result.push({ text: text.slice(lastIndex) });
-    return result;
-  }, [text, filesWithSource, agentParts, agentNames, sessionRefs]);
-
-  // If the message is purely notifications (no real user content), render only the cards
-  const hasUserContent = !!(
-    text ||
-    replyContext ||
-    uploadedFiles.length > 0 ||
-    sessionRefs.length > 0 ||
-    systemNotifications.length > 0 ||
-    attachments.length > 0
-  );
-
-  if (!hasUserContent && (dcpNotifications.length > 0 || systemNotifications.length > 0)) {
-    return (
-      <div className="flex w-full flex-col gap-1.5">
-        {systemNotifications.map((n, i) => (
-          <SystemNotificationCard key={`${n.tag}-${i}`} notification={n} />
-        ))}
-        {dcpNotifications.map((n, i) => (
-          <DCPNotificationCard key={i} notification={n} />
-        ))}
-      </div>
-    );
-  }
-
-  // Channel messages (Telegram/Slack): render as a branded card with user name
-  if (channelMessageInfo) {
-    const isTelegram = channelMessageInfo.platform === 'Telegram';
-    const brandColor = isTelegram ? CHANNEL_BRAND_COLOR.Telegram : CHANNEL_BRAND_COLOR.Slack;
-    return (
-      <div className="flex flex-col items-end gap-1">
-        <div className="border-border/60 bg-muted/40 inline-flex max-w-[85%] flex-col gap-1.5 rounded-2xl border px-4 py-2.5">
-          <div className="flex items-center gap-2">
-            <svg className="size-3.5 shrink-0" viewBox="0 0 24 24" fill={brandColor}>
-              {isTelegram ? (
-                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8c-.15 1.58-.8 5.42-1.13 7.19-.14.75-.42 1-.68 1.03-.58.05-1.02-.38-1.58-.75-.88-.58-1.38-.94-2.23-1.5-.99-.65-.35-1.01.22-1.59.15-.15 2.71-2.48 2.76-2.69a.2.2 0 00-.05-.18c-.06-.05-.14-.03-.21-.02-.09.02-1.49.95-4.22 2.79-.4.27-.76.41-1.08.4-.36-.01-1.04-.2-1.55-.37-.63-.2-1.12-.31-1.08-.66.02-.18.27-.36.74-.55 2.92-1.27 4.86-2.11 5.83-2.51 2.78-1.16 3.35-1.36 3.73-1.36.08 0 .27.02.39.12.1.08.13.19.14.27-.01.06.01.24 0 .38z" />
-              ) : (
-                <path d="M5.042 15.165a2.528 2.528 0 0 1-2.52 2.523A2.528 2.528 0 0 1 0 15.165a2.527 2.527 0 0 1 2.522-2.52h2.52v2.52zM6.313 15.165a2.527 2.527 0 0 1 2.521-2.52 2.527 2.527 0 0 1 2.521 2.52v6.313A2.528 2.528 0 0 1 8.834 24a2.528 2.528 0 0 1-2.521-2.522v-6.313zM8.834 5.042a2.528 2.528 0 0 1-2.521-2.52A2.528 2.528 0 0 1 8.834 0a2.528 2.528 0 0 1 2.521 2.522v2.52H8.834zM8.834 6.313a2.528 2.528 0 0 1 2.521 2.521 2.528 2.528 0 0 1-2.521 2.521H2.522A2.528 2.528 0 0 1 0 8.834a2.528 2.528 0 0 1 2.522-2.521h6.312zM18.956 8.834a2.528 2.528 0 0 1 2.522-2.521A2.528 2.528 0 0 1 24 8.834a2.528 2.528 0 0 1-2.522 2.521h-2.522V8.834zM17.688 8.834a2.528 2.528 0 0 1-2.523 2.521 2.527 2.527 0 0 1-2.52-2.521V2.522A2.527 2.527 0 0 1 15.165 0a2.528 2.528 0 0 1 2.523 2.522v6.312zM15.165 18.956a2.528 2.528 0 0 1 2.523 2.522A2.528 2.528 0 0 1 15.165 24a2.527 2.527 0 0 1-2.52-2.522v-2.522h2.52zM15.165 17.688a2.527 2.527 0 0 1-2.52-2.523 2.526 2.526 0 0 1 2.52-2.52h6.313A2.527 2.527 0 0 1 24 15.165a2.528 2.528 0 0 1-2.522 2.523h-6.313z" />
-              )}
-            </svg>
-            <span className="text-xs font-medium" style={{ color: brandColor }}>
-              {channelMessageInfo.platform}
-            </span>
-            <span className="text-muted-foreground text-xs">·</span>
-            <span className="text-foreground text-sm font-medium">
-              {channelMessageInfo.userName}
-            </span>
-          </div>
-          {channelMessageInfo.messageText && (
-            <div className="text-foreground text-sm break-words">
-              {channelMessageInfo.messageText}
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  // Trigger event messages: render as a right-aligned card
-  if (triggerEventInfo) {
-    return (
-      <div className="flex flex-col items-end gap-1">
-        <div className="border-border/60 bg-muted/40 inline-flex flex-col gap-1.5 rounded-2xl border px-4 py-2.5">
-          <div className="flex items-center gap-2">
-            <Timer className="text-muted-foreground size-3.5 shrink-0" />
-            <span className="text-foreground font-mono text-sm">
-              {triggerEventInfo.data?.trigger || 'Scheduled Task'}
-            </span>
-            {triggerEventInfo.data?.data?.manual && (
-              <span className="text-muted-foreground bg-muted rounded px-1.5 py-0.5 text-xs font-medium">
-                Manual
-              </span>
-            )}
-          </div>
-          {triggerEventInfo.prompt && (
-            <div
-              className="text-muted-foreground max-w-[400px] pl-5.5 text-xs break-words"
-              style={{ paddingLeft: '1.375rem' }}
-            >
-              {triggerEventInfo.prompt}
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  // Command messages: render as a right-aligned card instead of the raw template text
-  if (effectiveCommandInfo) {
-    return (
-      <div className="flex flex-col items-end gap-1">
-        <div className="border-border/60 bg-muted/40 inline-flex flex-col gap-1.5 rounded-2xl border px-4 py-2.5">
-          <div className="flex items-center gap-2">
-            <Terminal className="text-muted-foreground size-3.5 shrink-0" />
-            <span className="text-foreground font-mono text-sm">/{effectiveCommandInfo.name}</span>
-          </div>
-          {effectiveCommandInfo.args && (
-            <div
-              className="text-muted-foreground max-w-[400px] pl-5.5 text-xs break-words"
-              style={{ paddingLeft: '1.375rem' }}
-            >
-              {effectiveCommandInfo.args}
-            </div>
-          )}
-        </div>
-        {/* DCP notifications from ignored parts */}
-        {dcpNotifications.length > 0 && (
-          <div className="mt-1 flex w-full flex-col gap-1.5">
-            {dcpNotifications.map((n, i) => (
-              <DCPNotificationCard key={i} notification={n} />
-            ))}
-          </div>
-        )}
-        {systemNotifications.length > 0 && (
-          <div className="mt-1 flex w-full flex-col gap-1.5">
-            {systemNotifications.map((n, i) => (
-              <SystemNotificationCard key={`cmd-${n.tag}-${i}`} notification={n} />
-            ))}
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex flex-col items-end gap-1">
-      <div
-        className={cn(
-          'bg-card flex max-w-[90%] flex-col overflow-hidden rounded-3xl rounded-br-lg border',
-          canExpand && 'hover:bg-card/80 cursor-pointer transition-colors',
-        )}
-        onClick={() => canExpand && setExpanded(!expanded)}
-      >
-        {/* Attachment thumbnails (images/PDFs) */}
-        {attachments.length > 0 && (
-          <div className="flex flex-wrap gap-2 p-3 pb-0">
-            {attachments.map((file) => (
-              <div key={file.id} className="border-border/50 overflow-hidden rounded-lg border">
-                {file.mime?.startsWith('image/') && file.url ? (
-                  <SandboxImage
-                    src={file.url}
-                    alt={file.filename ?? 'Attachment'}
-                    className="max-h-32 max-w-48 object-cover"
-                    preview
-                  />
-                ) : file.mime === 'application/pdf' ? (
-                  <div className="bg-muted/30 flex items-center gap-2 px-3 py-2">
-                    <FileText className="text-muted-foreground size-4" />
-                    <span className="text-muted-foreground text-xs">{file.filename || 'PDF'}</span>
-                  </div>
-                ) : (
-                  <div className="bg-muted/30 flex items-center gap-2 px-3 py-2">
-                    <ImageIcon className="text-muted-foreground size-4" />
-                    <span className="text-muted-foreground text-xs">{file.filename || 'File'}</span>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Uploaded file references (from <file> XML tags) */}
-        {uploadedFiles.length > 0 && (
-          <div className="flex flex-wrap gap-2 p-3 pb-0">
-            {uploadedFiles.map((f, i) => (
-              <div key={i} onClick={(e) => e.stopPropagation()}>
-                <GridFileCard
-                  filePath={f.path}
-                  fileName={f.path.split('/').pop() || f.path}
-                  onClick={() => openPreview(f.path)}
-                />
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Project references — compact neutral chips, one per referenced project */}
-        {/* Reply context banner */}
-        {replyContext && (
-          <div className="bg-primary/5 border-primary/10 mx-3 mt-3 mb-0 flex items-center gap-2 rounded-2xl border px-3 py-1.5">
-            <Reply className="text-primary/60 size-3 flex-shrink-0" />
-            <span className="text-muted-foreground truncate text-xs">
-              {replyContext.length > 150 ? `${replyContext.slice(0, 150)}...` : replyContext}
-            </span>
-          </div>
-        )}
-
-        {/* Text content */}
-        {text && (
-          <div className="group relative px-4 py-3">
-            <div
-              ref={textRef}
-              className={cn(
-                'min-w-0 text-sm leading-relaxed break-words whitespace-pre-wrap',
-                !expanded && 'max-h-[200px] overflow-hidden',
-              )}
-            >
-              {segments.length > 0 ? (
-                segments.map((seg, i) => {
-                  const mentionClass =
-                    'font-medium text-foreground underline decoration-foreground/30 underline-offset-[3px] hover:decoration-foreground/70 cursor-pointer';
-                  return seg.type === 'file' ? (
-                    <span
-                      key={i}
-                      className={mentionClass}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        openFileInComputer(seg.text.replace(/^@/, ''));
-                      }}
-                    >
-                      {seg.text}
-                    </span>
-                  ) : seg.type === 'session' ? (
-                    <span
-                      key={i}
-                      className={mentionClass}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        const raw = seg.text.replace(/^@/, '');
-                        // Direct session ID (ses_...) — navigate without title lookup
-                        if (raw.startsWith('ses_')) {
-                          openTabAndNavigate({
-                            id: raw,
-                            title: 'Session',
-                            type: 'session',
-                            href: `/sessions/${raw}`,
-                          });
-                          return;
-                        }
-                        const ref = sessionRefs.find((s) => s.title === raw);
-                        if (ref) {
-                          openTabAndNavigate({
-                            id: ref.id,
-                            title: ref.title || 'Session',
-                            type: 'session',
-                            href: `/sessions/${ref.id}`,
-                          });
-                        }
-                      }}
-                    >
-                      {seg.text}
-                    </span>
-                  ) : (
-                    <span
-                      key={i}
-                      className={cn(seg.type === 'agent' && 'text-foreground font-medium')}
-                    >
-                      {seg.text}
-                    </span>
-                  );
-                })
-              ) : (
-                <span>{text}</span>
-              )}
-            </div>
-
-            {/* Gradient fade overlay for collapsed long messages */}
-            {canExpand && !expanded && (
-              <div className="from-card pointer-events-none absolute inset-x-0 bottom-3 h-10 bg-gradient-to-t to-transparent" />
-            )}
-
-            {/* Expand/collapse indicator */}
-            {canExpand && (
-              <div className="bg-card/80 text-muted-foreground absolute right-4 bottom-3 z-10 rounded-md p-1 backdrop-blur-sm">
-                <ChevronDown
-                  className={cn('size-3.5 transition-transform', expanded && 'rotate-180')}
-                />
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-      {isEdited && <span className="text-muted-foreground/50 pr-1 text-xs">edited</span>}
-
-      {/* DCP notifications from ignored parts (rendered below user bubble if mixed) */}
-      {dcpNotifications.length > 0 && (
-        <div className="mt-1 flex w-full flex-col gap-1.5">
-          {dcpNotifications.map((n, i) => (
-            <DCPNotificationCard key={i} notification={n} />
-          ))}
-        </div>
-      )}
-      {systemNotifications.length > 0 && (
-        <div className="mt-1 flex w-full flex-col gap-1.5">
-          {systemNotifications.map((n, i) => (
-            <SystemNotificationCard key={`mixed-${n.tag}-${i}`} notification={n} />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ============================================================================
-// Throttled Markdown — limits re-renders during streaming (~30fps)
-// ============================================================================
-
-/**
- * Strip the incomplete trailing table row while streaming so the markdown
- * parser doesn't render broken borders / pipe characters.
- *
- * A markdown table row must start with `|` and end with `|` followed by a
- * newline. If the last line of the content looks like an incomplete row
- * (starts with `|` but doesn't end with `|`), we trim it. We also trim a
- * trailing separator row that is still being typed (e.g. `| --- | --`).
- */
-function trimIncompleteTableRow(text: string): string {
-  // Fast path: no pipe at all → nothing to trim
-  if (!text.includes('|')) return text;
-
-  const lines = text.split('\n');
-  // Walk backwards and remove incomplete table lines from the end.
-  // A table row must start AND end with `|` to be considered complete.
-  while (lines.length > 0) {
-    const last = lines[lines.length - 1];
-    const trimmed = last.trim();
-    // Empty trailing line — stop
-    if (trimmed === '') break;
-    // A complete table row/separator ends with `|`
-    if (trimmed.startsWith('|') && !trimmed.endsWith('|')) {
-      lines.pop();
-    } else {
-      break;
-    }
-  }
-  return lines.join('\n');
-}
-
-function closeUnterminatedCodeFence(text: string): string {
-  if (!text) return text;
-  const lines = text.split('\n');
-  let fenceCount = 0;
-  for (const line of lines) {
-    if (line.trimStart().startsWith('```')) {
-      fenceCount++;
-    }
-  }
-  if (fenceCount % 2 === 0) return text;
-  return `${text}\n\n\`\`\``;
-}
-
-function ThrottledMarkdown({ content, isStreaming }: { content: string; isStreaming: boolean }) {
-  // During streaming, only close unterminated code fences (safe — just
-  // appends closing backticks). Do NOT trim table rows — that strips
-  // real content mid-stream and causes garbled text until completion.
-  // The reference (opencode PacedMarkdown) does zero content modification.
-  const displayContent = isStreaming
-    ? closeUnterminatedCodeFence(content)
-    : trimIncompleteTableRow(content);
-  return <UnifiedMarkdown content={displayContent} isStreaming={isStreaming} />;
-}
-
-/**
- * @deprecated Use `ActivityCard`. Kept only to avoid ripple edits elsewhere.
- */
-function GroupedReasoningCard({
-  parts,
-  isStreaming,
-}: {
-  parts: ReasoningPart[];
-  isStreaming: boolean;
-}) {
-  const [open, setOpen] = useState(false);
-  const [streamSeconds, setStreamSeconds] = useState(0);
-
-  // Determine if the last part is still streaming
-  const lastPart = parts[parts.length - 1];
-  const lastEnd = (lastPart as any).time?.end;
-  const reasoningStreaming = isStreaming && !(typeof lastEnd === 'number' && lastEnd > 0);
-
-  // Find the earliest start across all parts for the live timer
-  const earliestStart = useMemo(() => {
-    let earliest: number | undefined;
-    for (const p of parts) {
-      const s = (p as any).time?.start;
-      if (typeof s === 'number' && (earliest === undefined || s < earliest)) earliest = s;
-    }
-    return earliest;
-  }, [parts]);
-
-  useEffect(() => {
-    if (!reasoningStreaming || typeof earliestStart !== 'number') {
-      setStreamSeconds(0);
-      return;
-    }
-    const update = () =>
-      setStreamSeconds(Math.max(0, Math.round((Date.now() - earliestStart) / 1000)));
-    update();
-    const timer = setInterval(update, 1000);
-    return () => clearInterval(timer);
-  }, [reasoningStreaming, earliestStart]);
-
-  // Aggregate total duration from all completed parts
-  const totalDuration = useMemo(() => {
-    let total = 0;
-    let any = false;
-    for (const p of parts) {
-      const s = (p as any).time?.start;
-      const e = (p as any).time?.end;
-      if (typeof s === 'number' && typeof e === 'number' && e > s) {
-        total += e - s;
-        any = true;
-      }
-    }
-    return any ? total : undefined;
-  }, [parts]);
-
-  // Build a one-line preview from the first reasoning block
-  const preview = useMemo(() => {
-    for (const p of parts) {
-      const t = p.text?.trim();
-      if (t) {
-        // Extract the first bold heading or first sentence
-        const boldMatch = t.match(/\*\*(.+?)\*\*/);
-        if (boldMatch) return boldMatch[1];
-        const firstLine = t.split('\n')[0].replace(/^#+\s*/, '');
-        return firstLine.length > 80 ? firstLine.slice(0, 77) + '...' : firstLine;
-      }
-    }
-    return '';
-  }, [parts]);
-
-  const nonEmptyParts = useMemo(() => parts.filter((p) => p.text?.trim()), [parts]);
-
-  if (nonEmptyParts.length === 0) return null;
-
-  return (
-    <Collapsible open={open} onOpenChange={setOpen}>
-      <CollapsibleTrigger asChild>
-        <div
-          className={cn(
-            'flex items-center gap-1.5 py-0.5',
-            'cursor-pointer text-xs select-none',
-            'text-muted-foreground/70',
-            'group/reasoning max-w-full transition-colors',
-          )}
-        >
-          <Brain
-            className={cn(
-              'text-muted-foreground/50 size-3.5 flex-shrink-0',
-              reasoningStreaming && 'animate-pulse-heartbeat',
-            )}
-          />
-
-          <span className="min-w-0 flex-1 truncate">{preview || 'Thinking'}</span>
-          {reasoningStreaming && (
-            <Loader2 className="text-muted-foreground/40 size-3 flex-shrink-0 animate-spin" />
-          )}
-          <ChevronRight
-            className={cn(
-              'size-3 flex-shrink-0 transition-transform',
-              'text-muted-foreground/30 opacity-0 group-hover/reasoning:opacity-100',
-              open && 'rotate-90 opacity-100',
-            )}
-          />
-        </div>
-      </CollapsibleTrigger>
-
-      <CollapsibleContent>
-        <div className="border-border/30 mt-0.5 mb-1.5 ml-[7px] border-l pl-3">
-          <div className="text-muted-foreground/50 [&_.kortix-markdown_div]:!text-muted-foreground/50 [&_.kortix-markdown_li]:!text-muted-foreground/50 [&_.kortix-markdown_strong]:!text-muted-foreground/60 [&_.kortix-markdown_em]:!text-muted-foreground/60 space-y-2 [&_.kortix-markdown]:italic [&_.kortix-markdown_div]:!text-xs [&_.kortix-markdown_div]:!leading-[1.5] [&_.kortix-markdown_li]:!text-xs [&_.kortix-markdown_li]:!leading-[1.5]">
-            {nonEmptyParts.map((p, i) => (
-              <div key={p.id ?? i}>
-                <ThrottledMarkdown content={p.text!} isStreaming={false} />
-              </div>
-            ))}
-          </div>
-        </div>
-      </CollapsibleContent>
-    </Collapsible>
-  );
-}
-
-/**
- * Unified "activity" card that collapses any run of agent-side work —
- * reasoning + tool calls, in original order — into a single compact shelf.
- * Text parts (and other user-facing dividers) break the run.
- *
- * Auto-opens while anything is still streaming/running; collapses once the
- * burst settles. Respects manual user toggles thereafter.
- */
-/**
- * Folded Tier-1 "exploration" card.
- *
- * Holds a run of reasoning + Tier-1 tool calls and renders:
- *   • Collapsed: `<icon> <verb> <N noun> · <current/last primary arg>   <timer>`
- *     Verb comes from the run's categories (e.g. "Searched", "Read",
- *     "Explored"), not a generic "N actions".
- *   • Expanded:  reasoning blocks + compact per-tool rows (each row is the
- *     existing ToolPartRenderer, which itself is expandable for full output).
- *
- * Auto-opens while anything is streaming; collapses once settled. Respects
- * manual user toggles after the first click.
- */
-/**
- * Same-tool group: collapses 2+ consecutive calls of the same tool into
- * one collapsible row. Header: "Read · 5 files · 3s". Expanded: flat
- * one-liners per call with individual durations.
- */
-function SameToolGroup({
-  toolName,
-  entries,
-  sessionId,
-  disableNavigation,
-  busy,
-}: {
-  toolName: string;
-  entries: Array<{ part: ToolPart; message: MessageWithParts }>;
-  sessionId: string;
-  disableNavigation?: boolean;
-  busy?: boolean;
-}) {
-  const [open, setOpen] = useState(false);
-
-  const anyRunning = useMemo(
-    () =>
-      !!busy &&
-      entries.some(
-        ({ part }) =>
-          (part.state as any)?.status === 'pending' || (part.state as any)?.status === 'running',
-      ),
-    [busy, entries],
-  );
-
-  const totalDurationMs = useMemo(() => {
-    let earliest = Number.POSITIVE_INFINITY;
-    let latest = 0;
-    for (const { part } of entries) {
-      const s = (part.state as any)?.time?.start;
-      const e = (part.state as any)?.time?.end;
-      if (typeof s === 'number' && s < earliest) earliest = s;
-      if (typeof e === 'number' && e > latest) latest = e;
-    }
-    return latest > earliest ? latest - earliest : 0;
-  }, [entries]);
-
-  const durationLabel =
-    !anyRunning && totalDurationMs >= 1000 ? `${Math.round(totalDurationMs / 1000)}s` : '';
-
-  const isContext = toolName === '__context__';
-  const isResearch = toolName === '__research__';
-  const isShell = useMemo(() => {
-    return isShellActivityTool(entries[0]?.part.tool);
-  }, [entries]);
-  const isWrite = useMemo(
-    () => normalizeActivityToolName(entries[0]?.part.tool) === 'write',
-    [entries],
-  );
-
-  const headerLabel = useMemo(() => {
-    if (isContext) {
-      const s = contextToolSummary(entries.map((e) => e.part));
-      const items: string[] = [];
-      if (s.read > 0) items.push(`${s.read} read${s.read > 1 ? 's' : ''}`);
-      if (s.search > 0) items.push(`${s.search} search${s.search > 1 ? 'es' : ''}`);
-      if (s.list > 0) items.push(`${s.list} list${s.list > 1 ? 's' : ''}`);
-      const summary = items.join(', ');
-      const prefix = anyRunning ? 'Gathering context' : 'Gathered context';
-      return summary ? `${prefix} · ${summary}` : prefix;
-    }
-
-    if (isResearch) {
-      let searches = 0;
-      let fetches = 0;
-      let scrapes = 0;
-      for (const { part } of entries) {
-        const n = part.tool.replace(/^oc-/, '').replace(/-/g, '_');
-        if (n === 'web_search' || n === 'websearch') searches++;
-        else if (n === 'webfetch' || n === 'web_fetch') fetches++;
-        else if (n === 'scrape' || n === 'scrape_webpage') scrapes++;
-      }
-      const items: string[] = [];
-      if (searches > 0) items.push(`${searches} search${searches > 1 ? 'es' : ''}`);
-      if (fetches > 0) items.push(`${fetches} fetch${fetches > 1 ? 'es' : ''}`);
-      if (scrapes > 0) items.push(`${scrapes} scrape${scrapes > 1 ? 's' : ''}`);
-      const summary = items.join(', ');
-      const prefix = anyRunning ? 'Researching' : 'Researched';
-      return summary ? `${prefix} · ${summary}` : `${prefix} · ${entries.length}x`;
-    }
-
-    if (isShell) {
-      return shellActivityGroupLabel(entries.length, anyRunning);
-    }
-
-    if (isWrite) {
-      return writeActivityGroupLabel(entries.length, anyRunning);
-    }
-
-    const t = contextToolTrigger(entries[0].part);
-    return `${t.title} · ${entries.length}x`;
-  }, [isContext, isResearch, isShell, isWrite, entries, anyRunning]);
-
-  return (
-    <Collapsible open={open} onOpenChange={setOpen}>
-      <CollapsibleTrigger asChild>
-        <div
-          className={cn(
-            'flex items-center gap-1.5 py-0.5',
-            'cursor-pointer text-xs select-none',
-            'text-muted-foreground/70',
-            'group/grp max-w-full transition-colors',
-          )}
-        >
-          {isResearch ? (
-            <Globe
-              className={cn(
-                'text-muted-foreground/50 size-3.5 flex-shrink-0',
-                anyRunning && 'animate-pulse-heartbeat',
-              )}
-            />
-          ) : isShell ? (
-            <Terminal
-              className={cn(
-                'text-muted-foreground/50 size-3.5 flex-shrink-0',
-                anyRunning && 'animate-pulse-heartbeat',
-              )}
-            />
-          ) : (
-            <Search
-              className={cn(
-                'text-muted-foreground/50 size-3.5 flex-shrink-0',
-                anyRunning && 'animate-pulse-heartbeat',
-              )}
-            />
-          )}
-          <span className="min-w-0 flex-1 truncate">{headerLabel}</span>
-          {durationLabel && (
-            <span className="text-muted-foreground/40 flex-shrink-0 font-mono text-xs tabular-nums">
-              {durationLabel}
-            </span>
-          )}
-          {anyRunning && (
-            <Loader2 className="text-muted-foreground/40 size-3 flex-shrink-0 animate-spin" />
-          )}
-          <ChevronRight
-            className={cn(
-              'size-3 flex-shrink-0 transition-transform',
-              'text-muted-foreground/30 opacity-0 group-hover/grp:opacity-100',
-              open && 'rotate-90 opacity-100',
-            )}
-          />
-        </div>
-      </CollapsibleTrigger>
-
-      <CollapsibleContent>
-        <div className="border-border/30 mt-0.5 mb-1.5 ml-[7px] space-y-0.5 border-l pl-3">
-          {isContext
-            ? entries.map(({ part }) => {
-                const t = contextToolTrigger(part);
-                const running =
-                  (part.state as any)?.status === 'pending' ||
-                  (part.state as any)?.status === 'running';
-                const s = (part.state as any)?.time?.start;
-                const e = (part.state as any)?.time?.end;
-                const dur = typeof s === 'number' && typeof e === 'number' && e > s ? e - s : 0;
-                return (
-                  <div
-                    key={part.id}
-                    className="text-muted-foreground/60 flex min-w-0 items-center gap-1.5 py-0.5 text-xs"
-                  >
-                    <span className="flex-shrink-0">{t.title}</span>
-                    {!running && t.subtitle && (
-                      <span
-                        className="min-w-0 flex-1 truncate font-mono opacity-70"
-                        title={t.subtitle}
-                      >
-                        {t.subtitle}
-                      </span>
-                    )}
-                    {!running && dur >= 1000 && (
-                      <span className="text-muted-foreground/40 ml-auto flex-shrink-0 font-mono text-xs tabular-nums">
-                        {Math.round(dur / 1000)}s
-                      </span>
-                    )}
-                    {running && (
-                      <Loader2 className="text-muted-foreground/40 size-2.5 flex-shrink-0 animate-spin" />
-                    )}
-                  </div>
-                );
-              })
-            : entries.map(({ part }) => (
-                // Same-tool, non-context groups (e.g. 3x web_search) render
-                // each call with its full ToolPartRenderer so users see real
-                // results — answers, sources, images — not just the input arg.
-                // Sits inside the rail's left padding (no negative margin) so
-                // each row aligns under the group header label, matching the
-                // reasoning block's nested treatment.
-                <div key={part.id}>
-                  <ToolPartRenderer
-                    part={part}
-                    sessionId={sessionId}
-                    disableNavigation={disableNavigation}
-                  />
-                </div>
-              ))}
-        </div>
-      </CollapsibleContent>
-    </Collapsible>
   );
 }
 
@@ -2183,9 +564,45 @@ function SameToolGroup({
 // Session Turn — core turn component
 // ============================================================================
 
+/**
+ * Pure derivation of "was this turn's error an abort, and why" from a turn's
+ * assistant messages — the exact logic `turnErrorIsAbort`/`turnErrorAbortReason`
+ * below run per render. Extracted (T17) so it can be exercised by real
+ * behavior tests (`interrupted-label.test.ts`) instead of a source-text
+ * pattern match. No behavior change: both `useMemo`s below now call this one
+ * function instead of duplicating its two loops.
+ *
+ * Scans for the FIRST assistant message carrying an object error (matching
+ * `getTurnError`'s own "first wins" rule) and classifies THAT message once —
+ * see the two `useMemo`s below for why identity/reason must come from the
+ * SDK's single `isAbortError`/`abortErrorReason` classifier.
+ */
+export function deriveTurnErrorAbortState(turn: {
+  assistantMessages: ReadonlyArray<{ info: unknown }>;
+}): { isAbort: boolean; abortReason: string | undefined } {
+  for (const msg of turn.assistantMessages) {
+    const err = (msg.info as { error?: unknown }).error;
+    if (!err || typeof err !== 'object') continue;
+    const isAbort = isAbortError(err);
+    return { isAbort, abortReason: isAbort ? abortErrorReason(err) : undefined };
+  }
+  return { isAbort: false, abortReason: undefined };
+}
+
 interface SessionTurnProps {
   turn: Turn;
-  allMessages: MessageWithParts[];
+  /**
+   * Both were derived HERE from `allMessages`, once per turn, on every render.
+   *
+   * `ownsPlan` was the worst thing in the chat: `planAnchorMessageId` walks
+   * every message and calls `parts.some(...)` on each, so a fifty-turn session
+   * ran an O(total-parts) scan fifty times per frame. Hoisting it to the parent
+   * makes it one scan for the whole transcript. `isLast` is cheap by comparison,
+   * but it took `allMessages` — a new array every frame — which alone would have
+   * defeated `React.memo` on this component.
+   */
+  isLast: boolean;
+  ownsPlan: boolean;
   sessionId: string;
   sessionStatus: import('@/ui').SessionStatus | undefined;
   permissions: PermissionRequest[];
@@ -2193,8 +610,13 @@ interface SessionTurnProps {
   agentNames?: string[];
   /** Whether this is the first turn in the session */
   isFirstTurn: boolean;
-  /** Whether the session is busy */
-  isBusy: boolean;
+  /**
+   * The session's working state, resolved ONCE by the parent
+   * (`resolveLastTurnWorking`): the projection for a Kortix session, the raw
+   * SSE slot only for a child session that has no `/turn` row. Only the last
+   * turn ever renders it — a non-last turn is settled by definition.
+   */
+  lastTurnWorking: boolean;
   /** Whether this turn contains a compaction */
   isCompaction?: boolean;
   /** Providers data for the Connect Provider dialog */
@@ -2207,30 +629,103 @@ interface SessionTurnProps {
   disableToolNavigation?: boolean;
   /** Permission reply handler */
   onPermissionReply: (requestId: string, reply: 'once' | 'always' | 'reject') => Promise<void>;
+  /** Stage an in-place session rewind and restore this prompt in the composer. */
+  onRewind: (messageId: string, text: string) => void;
+  /** Disable history changes while the session is busy or read-only. */
+  rewindDisabled: boolean;
 }
 
-function SessionTurn({
+/**
+ * The worker-run result row shown above a turn — an entity row in the design
+ * system's sense, not a tinted banner: the surface stays neutral and the status
+ * lives in one tinted icon tile, so a run of these reads as a list rather than
+ * a stack of coloured alerts.
+ *
+ * Extracted from the turn body so the row can be rendered (and looked at) on
+ * its own, and so the turn's render reads as a list of sections rather than
+ * forty lines of card markup inlined among them.
+ */
+export function SessionReportCard({
+  report,
+  onOpen,
+}: {
+  report: SessionReport;
+  onOpen: () => void;
+}) {
+  const complete = report.status === 'COMPLETE';
+  return (
+    // A real <button>: Enter, Space and the focus ring come free, where the
+    // previous role="button" div hand-rolled Enter only.
+    <button
+      type="button"
+      onClick={onOpen}
+      className="group/report bg-popover hover:bg-accent/40 flex w-full items-center gap-3 rounded-md border px-3 py-2 text-left transition-colors active:scale-[0.99]"
+    >
+      <span
+        className={cn(
+          'flex size-8 shrink-0 items-center justify-center rounded-sm',
+          complete ? 'bg-kortix-green/15' : 'bg-kortix-red/15',
+        )}
+      >
+        {complete ? (
+          <CheckCircle className="text-kortix-green size-4" />
+        ) : (
+          <AlertTriangle className="text-kortix-red size-4" />
+        )}
+      </span>
+
+      <span className="min-w-0 flex-1">
+        <span className="text-foreground block truncate text-sm font-medium">
+          Worker {complete ? 'complete' : 'failed'}
+        </span>
+        {/* One meta line, truncated by CSS against the real available width —
+            the old 60-character slice cut mid-word at every viewport and still
+            overflowed narrow ones. */}
+        {(report.project || report.prompt) && (
+          <span className="text-muted-foreground block truncate text-xs">
+            {report.project}
+            {report.project && report.prompt && (
+              <span className="text-muted-foreground/40"> &bull; </span>
+            )}
+            {report.prompt}
+          </span>
+        )}
+      </span>
+
+      <ExternalLink className="text-muted-foreground/40 group-hover/report:text-muted-foreground size-3.5 shrink-0 transition-colors" />
+    </button>
+  );
+}
+
+function SessionTurnImpl({
   turn,
-  allMessages,
+  isLast,
+  ownsPlan,
   sessionId,
   sessionStatus,
   permissions,
   questions,
   agentNames,
   isFirstTurn,
-  isBusy,
+  lastTurnWorking,
   isCompaction,
   providers,
   commandMessages,
   commands,
   disableToolNavigation,
   onPermissionReply,
+  onRewind,
+  rewindDisabled,
 }: SessionTurnProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [copied, setCopied] = useState(false);
-  const [userCopied, setUserCopied] = useState(false);
   const [connectProviderOpen, setConnectProviderOpen] = useState(false);
   const pricingLookup = useModelPricingLookup(providers);
+  // `?? 'normal'` — legacy persisted preferences predate this key (same rule
+  // as every `panelMode` read site).
+  const conversationDensity = useUserPreferencesStore(
+    (s) => s.preferences.conversationDensity ?? 'normal',
+  );
 
   // Derived state from shared helpers
   const allParts = useMemo(() => collectTurnParts(turn), [turn]);
@@ -2253,19 +748,14 @@ function SessionTurn({
     () => allParts.some(({ part }) => isReasoningPart(part) && !!part.text?.trim()),
     [allParts],
   );
-  const isLast = useMemo(
-    () => isLastUserMessage(turn.userMessage.info.id, allMessages),
-    [turn.userMessage.info.id, allMessages],
-  );
-  // A turn is "working" when:
-  // 1. The session status says busy/retry (via getWorkingState), OR
-  // 2. This is the last turn AND the parent component says isBusy (e.g. we
-  //    just sent a message but sessionStatus hasn't updated to busy yet).
-  //    This covers the race between sending and the server acknowledging.
-  const working = useMemo(
-    () => getWorkingState(sessionStatus, isLast) || (isLast && isBusy),
-    [sessionStatus, isLast, isBusy],
-  );
+  // The LAST turn's working state is the session's, and the parent resolved
+  // that answer once (`resolveLastTurnWorking`): the projection
+  // (`useSessionWorking` → `GET .../turn`) for a Kortix session, the raw SSE
+  // slot only for a child session with no `/turn` row. A non-last turn is
+  // NEVER working — that is a fact about the transcript, not an observation,
+  // and it is what removes the "last turn shimmers for ever" symptom the raw
+  // slot's dropped end-of-turn frames caused here.
+  const working = isLast && lastTurnWorking;
   const activeAssistantMessage = useMemo(() => {
     if (turn.assistantMessages.length === 0) return undefined;
     for (let i = turn.assistantMessages.length - 1; i >= 0; i--) {
@@ -2276,10 +766,11 @@ function SessionTurn({
   }, [turn.assistantMessages]);
   const streamingResponseRaw = useMemo(() => {
     if (!activeAssistantMessage) return '';
-    return activeAssistantMessage.parts
-      .filter(isTextPart)
-      .map((p) => p.text ?? '')
-      .join('');
+    let text = '';
+    for (const p of activeAssistantMessage.parts) {
+      if (isTextPart(p)) text += p.text ?? '';
+    }
+    return text;
   }, [activeAssistantMessage]);
   const lastTextPart = useMemo(() => findLastTextPart(allParts), [allParts]);
   const responseRaw = lastTextPart?.text ?? '';
@@ -2312,7 +803,11 @@ function SessionTurn({
     : !hasSteps && completedTextParts.length > 0
       ? completedTextParts.join('\n\n')
       : responseRaw.trim() || abortedTextFallback;
-  // Retry info (only on last turn)
+  // Retry info (only on last turn). These KEEP reading the raw `sessionStatus`
+  // frame on purpose: they render the retry *reason* carried on the frame
+  // (attempt count, provider message, next-retry time), which the working
+  // projection does not carry. Do not "finish the job" by moving them to the
+  // projection — the shimmer decision above is the only thing that moved.
   const retryInfo = useMemo(
     () => (isLast ? getRetryInfo(sessionStatus) : undefined),
     [sessionStatus, isLast],
@@ -2346,6 +841,34 @@ function SessionTurn({
     return undefined;
   }, [turn]);
 
+  /**
+   * Was the turn ACTUALLY aborted, as opposed to failing with a message that
+   * happens to contain the word?
+   *
+   * `getTurnError` flattens the structured error to a display string and drops
+   * its `name`, so the banner was left substring-matching "abort" over arbitrary
+   * prose — which renders a genuine failure as a muted "Interrupted" and hides
+   * what really went wrong. The identity is right here on the message; read it
+   * through the SDK's single `isAbortError` classifier, which recognizes both
+   * real producers: the opencode wire's `MessageAbortedError` and the client's
+   * synthesized `AbortError` patch applied when the user hits Stop.
+   */
+  const turnErrorIsAbort = useMemo(() => deriveTurnErrorAbortState(turn).isAbort, [turn]);
+
+  /**
+   * The machine-readable WHY behind `turnErrorIsAbort`, when the abort was
+   * client-synthesized and tagged one (`data.reason` — see
+   * `core/http/abort-error.ts`'s `AbortReason` union).
+   *
+   * `undefined` covers two different cases the banner treats identically to
+   * `'user'`: no abort at all, and a genuine wire `MessageAbortedError`
+   * (opencode's own abort — never tagged, see the classifier's doc comment).
+   * Only a reason present AND not `'user'` (currently just
+   * `'runtime-disposed'`, from `markSessionAbortedLocally`) means "pure
+   * infrastructure, render nothing" — see `TurnErrorDisplay`.
+   */
+  const turnErrorAbortReason = useMemo(() => deriveTurnErrorAbortState(turn).abortReason, [turn]);
+
   // The gateway's structured fields (provider/suggestion/request_id) for
   // `turnError`, when recoverable — lets TurnErrorDisplay render WHICH
   // provider failed and WHAT to do about it instead of only the raw message.
@@ -2360,23 +883,6 @@ function SessionTurn({
     [permissions, sessionId],
   );
 
-  // Question matching for this turn (used to pass to ToolPartRenderer for forceOpen/locked state)
-  const nextQuestion = useMemo(() => {
-    const sessionQuestions = questions.filter((q) => q.sessionID === sessionId);
-    if (sessionQuestions.length === 0) return undefined;
-    const turnMessageIds = new Set(turn.assistantMessages.map((m) => m.info.id));
-    const matched = sessionQuestions.find((q) => q.tool && turnMessageIds.has(q.tool.messageID));
-    if (matched) return matched;
-    if (isLast) return sessionQuestions[0];
-    return undefined;
-  }, [questions, sessionId, turn.assistantMessages, isLast]);
-
-  // Hidden tool parts (when permission/question is active)
-  const hidden = useMemo(
-    () => getHiddenToolParts(nextPermission, nextQuestion),
-    [nextPermission, nextQuestion],
-  );
-
   // Answered question parts — shown inline alongside streamed text.
   // Uses the optimisticAnswersCache as a fallback: when the user answers a
   // question we cache {answers, input} immediately. SSE message.part.updated
@@ -2386,10 +892,9 @@ function SessionTurn({
   // Only skip tool parts whose callID matches a currently-pending question.
   const answeredQuestionParts = useMemo(() => {
     const pendingCallIds = new Set(
-      questions
-        .filter((q) => q.sessionID === sessionId)
-        .map((q) => q.tool?.callID)
-        .filter(Boolean),
+      questions.flatMap((q) =>
+        q.sessionID === sessionId && q.tool?.callID ? [q.tool.callID] : [],
+      ),
     );
 
     // Collect ALL question tool parts first so we can determine which ones
@@ -2610,14 +1115,13 @@ function SessionTurn({
 
   // User message text — for copy action
   const userMessageText = useMemo(() => {
-    const textParts = turn.userMessage.parts.filter(
-      (p) => isTextPart(p) && !(p as TextPart).synthetic && !(p as any).ignored,
-    ) as TextPart[];
-    return textParts
-      .map((p) => stripSystemPtyText(p.text))
-      .filter((t) => t.trim())
-      .join('\n')
-      .trim();
+    const texts: string[] = [];
+    for (const p of turn.userMessage.parts) {
+      if (!isTextPart(p) || (p as TextPart).synthetic || (p as any).ignored) continue;
+      const text = stripSystemPtyText((p as TextPart).text);
+      if (text.trim()) texts.push(text);
+    }
+    return texts.join('\n').trim();
   }, [turn.userMessage.parts]);
 
   const commandForTurn = useMemo(() => {
@@ -2627,15 +1131,9 @@ function SessionTurn({
     return detectCommandFromText(userMessageText, commands);
   }, [commandMessages, turn.userMessage.info.id, userMessageText, commands]);
 
-  const handleCopyUser = async () => {
-    if (!userMessageText) return;
-    await navigator.clipboard.writeText(userMessageText);
-    setUserCopied(true);
-    setTimeout(() => setUserCopied(false), 2000);
-  };
-
   // ---- Status throttling (2.5s) ----
-  const lastStatusChangeRef = useRef(Date.now());
+  const [statusThrottleStart] = useState(() => Date.now());
+  const lastStatusChangeRef = useRef(statusThrottleStart);
   const statusTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const childMessages = undefined as MessageWithParts[] | undefined; // placeholder for child session delegation
   const rawStatus = useMemo(
@@ -2677,21 +1175,19 @@ function SessionTurn({
   }, [retryInfo]);
 
   // ---- Duration ticking ----
-  const [duration, setDuration] = useState('');
+  // Only a LIVE turn needs a clock. The old effect also ran for settled turns,
+  // where it called setDuration on mount and forced every completed turn in the
+  // transcript through a second render for a number that never changes. The
+  // early return below is what removes that pass. A settled turn's duration is
+  // now SessionTurnMeta's job, from turnDurationMs.
+  const turnEndedAt = useMemo(() => sessionTurnEndedAt(turn), [turn]);
+  const turnDurationMs = useMemo(() => sessionTurnDurationMs(turn), [turn]);
+  const [liveDuration, setLiveDuration] = useState('');
   useEffect(() => {
-    const startTime = (turn.userMessage.info as any)?.time?.created;
-    if (!startTime) return;
-
-    if (!working) {
-      const lastMsg = turn.assistantMessages[turn.assistantMessages.length - 1];
-      const endTime =
-        (lastMsg?.info as any)?.time?.completed ||
-        (lastMsg?.info as any)?.time?.created ||
-        startTime;
-      setDuration(formatDuration(endTime - startTime));
-      return;
-    }
-    const update = () => setDuration(formatDuration(Date.now() - startTime));
+    if (!working) return;
+    const { startedAt } = sessionTurnSpan(turn);
+    if (startedAt == null) return;
+    const update = () => setLiveDuration(formatDuration(Date.now() - startedAt));
     update();
     const timer = setInterval(update, 1000);
     return () => clearInterval(timer);
@@ -2702,9 +1198,11 @@ function SessionTurn({
     // When inline content is active, copy all text parts (not just the last one)
     const textToCopy = inlineContentParts
       ? inlineContentParts
-          .filter((item) => item.type === 'text')
-          .map((item) => (item.part as TextPart).text?.trim())
-          .filter(Boolean)
+          .flatMap((item) => {
+            if (item.type !== 'text') return [];
+            const text = (item.part as TextPart).text?.trim();
+            return text ? [text] : [];
+          })
           .join('\n\n')
       : response;
     if (!textToCopy) return;
@@ -2712,6 +1210,66 @@ function SessionTurn({
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
+
+  // Parts with a pending permission need a visible, actionable surface — they
+  // must never fold into a collapsed burst. Answered questions are NOT
+  // standalone: they are a step of the turn (the agent asked, the user
+  // answered, the work continued), so they render inside the activity burst as
+  // their own chain row (`AnsweredQuestionStep` in turn/answered-question-step)
+  // instead of a card that force-splits the burst around it. Pending/dismissed
+  // questions are not standalone either: the real, actionable prompt for
+  // a pending question lives in the composer (SessionChatInput's questionSlot),
+  // which has the answer-reply plumbing this component doesn't; surfacing an
+  // inert, answer-less card here would only be a confusing duplicate. Those
+  // are filtered out of the turn body entirely below, matching the old
+  // behaviour of rendering nothing for them in the steps list.
+  // Computed before the early-return branches below so this hook always
+  // runs in the same order, regardless of which branch this render takes.
+  const standaloneCallIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const permission of permissions) {
+      if (permission.sessionID === sessionId && permission.tool?.callID) {
+        ids.add(permission.tool.callID);
+      }
+    }
+    return ids;
+  }, [permissions, sessionId]);
+
+  /**
+   * The turn's parts, cut into bursts / standalone tools / text.
+   *
+   * This ran INLINE in the JSX below, which meant a `map`, a `filter` and the
+   * whole of `segmentTurn` on every render of this turn — and, worse, a brand
+   * new `segment.parts` array for every burst every time. `ActivityBurst` keys
+   * its `useMemo`s on `parts`, so a fresh array identity per render made every
+   * one of them a guaranteed miss: `mergeBurstSteps`, `burstSummary` and
+   * `stepLabel` recomputed for every burst in the turn on every frame, and no
+   * `React.memo` below could ever hold. A turn re-renders for reasons that have
+   * nothing to do with its parts — a hover, a permission arriving, the parent's
+   * state — and each of those paid the full price.
+   *
+   * Memoised, the arrays keep their identity until the parts actually change,
+   * which is what makes the memo boundaries downstream able to bite.
+   */
+  const segments = useMemo(() => {
+    const parts: (typeof allParts)[number]['part'][] = [];
+    for (const { part } of allParts) {
+      if (isToolPart(part) && part.tool === 'todowrite') continue;
+      if (isToolPart(part) && part.tool === 'question') {
+        // Keep only answered questions, and only if not rendering inline.
+        if (!answeredQuestionPartsById.has(part.id) || shouldUseInlineContent) continue;
+        // A kept question rides into its burst as the ANSWERED part — the
+        // one from answeredQuestionParts, possibly synthetic with
+        // optimistically-cached or output-parsed answers the raw store part
+        // does not carry yet. Without this substitution the burst row would
+        // show "0 answered" until the server confirms.
+        parts.push(answeredQuestionPartsById.get(part.id) ?? part);
+        continue;
+      }
+      parts.push(part);
+    }
+    return segmentTurn(parts, { standaloneCallIds });
+  }, [allParts, answeredQuestionPartsById, shouldUseInlineContent, standaloneCallIds]);
 
   // ============================================================================
   // Shell mode — short-circuit rendering
@@ -2729,7 +1287,13 @@ function SessionTurn({
           defaultOpen
         />
         {turnError && (
-          <TurnErrorDisplay errorText={turnError} errorDetails={turnErrorDetails} className="mt-2" />
+          <TurnErrorDisplay
+            errorText={turnError}
+            errorDetails={turnErrorDetails}
+            isAbort={turnErrorIsAbort}
+            abortReason={turnErrorAbortReason}
+            className="mt-2"
+          />
         )}
         <ConnectProviderDialog
           open={connectProviderOpen}
@@ -2782,48 +1346,14 @@ function SessionTurn({
   // ============================================================================
 
   return (
-    <div className="group/turn space-y-3">
+    <div className="group/turn text-factor-[2] space-y-2.5">
       {/* ── Session report card — clickable, opens worker session modal ── */}
       {sessionReport && (
         <>
-          <div
-            role="button"
-            tabIndex={0}
-            onClick={() => setSessionReportModalOpen(true)}
-            onKeyDown={(e) => e.key === 'Enter' && setSessionReportModalOpen(true)}
-            className={cn(
-              'flex items-center gap-2 rounded-2xl px-3 py-2 text-xs',
-              'group/report cursor-pointer border transition-colors select-none',
-              sessionReport.status === 'COMPLETE'
-                ? cn(STATUS_BG.success, STATUS_BORDER.success, 'hover:bg-emerald-500/15')
-                : 'bg-destructive/5 border-destructive/20 hover:bg-destructive/10',
-            )}
-          >
-            {sessionReport.status === 'COMPLETE' ? (
-              <CheckCircle className={cn('size-3.5 flex-shrink-0', STATUS_TEXT.success)} />
-            ) : (
-              <AlertTriangle className="text-destructive size-3.5 flex-shrink-0" />
-            )}
-            <div className="flex min-w-0 flex-1 items-center gap-1.5">
-              <span
-                className={cn(
-                  'font-medium',
-                  sessionReport.status === 'COMPLETE' ? STATUS_TEXT.success : 'text-destructive',
-                )}
-              >
-                Worker {sessionReport.status === 'COMPLETE' ? 'Complete' : 'Failed'}
-              </span>
-              {sessionReport.project && (
-                <span className="text-muted-foreground/60">· {sessionReport.project}</span>
-              )}
-              {sessionReport.prompt && (
-                <span className="text-muted-foreground/40 truncate">
-                  {sessionReport.prompt.slice(0, 60)}
-                </span>
-              )}
-            </div>
-            <ExternalLink className="text-muted-foreground/30 group-hover/report:text-muted-foreground/60 size-3 flex-shrink-0 transition-colors" />
-          </div>
+          <SessionReportCard
+            report={sessionReport}
+            onOpen={() => setSessionReportModalOpen(true)}
+          />
           <SubSessionModal
             open={sessionReportModalOpen}
             onOpenChange={setSessionReportModalOpen}
@@ -2843,302 +1373,80 @@ function SessionTurn({
 			    (e.g. background task notification with only synthetic parts). */}
       {hasVisibleUserContent && (
         <div>
-          <UserMessageRow
+          <UserMessage
             message={turn.userMessage}
             agentNames={agentNames}
             commandInfo={commandMessages?.get(turn.userMessage.info.id)}
             commands={commands}
-          />
-          {userMessageText && (
-            <div className="mt-1 flex justify-end opacity-0 transition-opacity duration-150 group-hover/turn:opacity-100">
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon-xs" onClick={handleCopyUser}>
-                    {userCopied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>{userCopied ? 'Copied!' : 'Copy'}</TooltipContent>
-              </Tooltip>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Kortix logo header */}
-      {(working || hasSteps || hasReasoning) && (
-        <div className="mt-3 flex items-center gap-2">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="/kortix-logomark-white.svg"
-            alt="Kortix"
-            className="h-[14px] w-auto flex-shrink-0 invert dark:invert-0"
+            sessionId={sessionId}
+            ownsPlan={ownsPlan}
+            onRewind={onRewind}
+            rewindDisabled={rewindDisabled}
           />
         </div>
       )}
 
       {/* ── Assistant parts content ──
-			  Renders ALL parts from all assistant messages,
-			  EXCEPT: the response part (last text) is hidden when not working
-			  (it renders separately below as the Response section). */}
+			  Segments the turn into bursts (collapsed activity), standalone
+			  parts (deliverables, sub-agents, and any part with a pending
+			  permission or an active question), and text (prose between
+			  bursts). Replaces the old same-tool / reasoning grouping — see
+			  features/session/turn/segment-turn.ts.
+			  Two part kinds are filtered out before segmentation:
+			    - `todowrite` — the plan card beneath the user message is now
+			      the single canonical todo surface; showing the same checklist
+			      again inside a burst would just duplicate it.
+			    - `question`: only answered questions are kept — they fold into
+			      their burst as a "Questions · N answered" chain row
+			      (turn/answered-question-step.tsx). Pending and dismissed
+			      questions are dropped entirely. Additionally, answered
+			      questions are dropped when rendering inline content (below),
+			      since that mode shows them already, in natural order. */}
       {(working || hasSteps || hasReasoning) && turn.assistantMessages.length > 0 && (
-        <div className="space-y-2">
-          {(() => {
-            // Same-tool grouping: consecutive calls of the SAME tool
-            // (e.g. 5 reads, 3 greps) fold into one collapsible.
-            // Singles stay individual. Reasoning groups separately.
-            // ALL tool rows get a left border rail for visual separation.
-            type ToolEntry = { part: ToolPart; message: MessageWithParts };
-            type RenderItem =
-              | { type: 'part'; part: Part; message: MessageWithParts }
-              | { type: 'reasoning-group'; parts: ReasoningPart[]; key: string }
-              | { type: 'tool-group'; toolName: string; entries: ToolEntry[]; key: string }
-              | { type: 'tool-single'; part: ToolPart; message: MessageWithParts };
-
-            const items: RenderItem[] = [];
-            let pendingReasoning: ReasoningPart[] = [];
-            let pendingTools: ToolEntry[] = [];
-            let pendingToolName: string | null = null;
-
-            const flushReasoning = () => {
-              if (pendingReasoning.length > 0) {
-                items.push({
-                  type: 'reasoning-group',
-                  parts: pendingReasoning,
-                  key: `reasoning-${(pendingReasoning[0] as any).id ?? items.length}`,
-                });
-                pendingReasoning = [];
-              }
-            };
-
-            const flushTools = () => {
-              if (pendingTools.length >= 2 && pendingToolName) {
-                items.push({
-                  type: 'tool-group',
-                  toolName: pendingToolName,
-                  entries: pendingTools,
-                  key: `tg-${pendingTools[0].part.id}`,
-                });
-              } else if (pendingTools.length === 1) {
-                items.push({
-                  type: 'tool-single',
-                  part: pendingTools[0].part,
-                  message: pendingTools[0].message,
-                });
-              }
-              pendingTools = [];
-              pendingToolName = null;
-            };
-
-            // Normalize tool name for grouping.
-            //   __context__ — read/glob/grep/list collapse into one
-            //                "Gathered context" pile (compact one-liners).
-            //   __research__ — web_search / webfetch / scrape collapse into
-            //                  one "Research" pile (full results expanded).
-            // Same-tool runs (e.g. 3× apply_patch, 3× edit) group naturally
-            // by their normalized tool name and render full per-call results.
-            const CONTEXT_SET = new Set(['read', 'glob', 'grep', 'list']);
-            const RESEARCH_SET = new Set([
-              'web_search',
-              'websearch',
-              'webfetch',
-              'web_fetch',
-              'scrape',
-              'scrape_webpage',
-            ]);
-            const norm = (t: string) => {
-              const n = t.replace(/^oc-/, '').replace(/-/g, '_');
-              if (CONTEXT_SET.has(n)) return '__context__';
-              if (RESEARCH_SET.has(n)) return '__research__';
-              return n;
-            };
-
-            for (const { part, message } of allParts) {
-              if (isReasoningPart(part)) {
-                if (part.text?.trim()) {
-                  flushTools();
-                  pendingReasoning.push(part);
-                }
-                continue;
-              }
-              // Render-nothing parts (blank text, internal snapshot/patch
-              // bookkeeping) must not split a run of groupable tools — otherwise
-              // consecutive shells fragment into inconsistent singles instead of
-              // one "Ran N commands" group.
-              if (isInvisibleActivityPart(part)) continue;
-              flushReasoning();
-
-              if (isToolPart(part)) {
-                const tp = part as ToolPart;
-                const hasPermission = !!getPermissionForTool(permissions, tp.callID);
-                const groupable =
-                  shouldShowToolPart(tp) &&
-                  tp.tool !== 'todowrite' &&
-                  tp.tool !== 'question' &&
-                  !isNoGroupActivityTool(tp.tool) &&
-                  !hasPermission &&
-                  !isToolPartHidden(tp, message.info.id, hidden);
-
-                if (groupable) {
-                  const n = norm(tp.tool);
-                  if (pendingToolName === n) {
-                    pendingTools.push({ part: tp, message });
-                  } else {
-                    flushTools();
-                    pendingToolName = n;
-                    pendingTools = [{ part: tp, message }];
-                  }
-                  continue;
-                }
-              }
-
-              flushTools();
-              items.push({ type: 'part', part, message });
+        <div className="space-y-3">
+          {segments.map((segment, index) => {
+            if (segment.kind === 'burst') {
+              return (
+                <ActivityBurst
+                  key={`burst-${segment.parts[0]?.id ?? 'empty'}`}
+                  parts={segment.parts}
+                  sessionId={sessionId}
+                  working={working}
+                  isTrailing={index === segments.length - 1}
+                  disableNavigation={disableToolNavigation}
+                  density={conversationDensity}
+                />
+              );
             }
-            flushReasoning();
-            flushTools();
 
-            const reasoningActive = working && permissions.length === 0 && questions.length === 0;
+            if (segment.kind === 'standalone') {
+              if (!shouldShowToolPart(segment.part)) return null;
+              return (
+                <ToolPartRenderer
+                  key={segment.part.id}
+                  part={segment.part}
+                  sessionId={sessionId}
+                  disableNavigation={disableToolNavigation}
+                  permission={getPermissionForTool(permissions, segment.part.callID)}
+                  onPermissionReply={onPermissionReply}
+                />
+              );
+            }
 
-            return items.map((item) => {
-              // Reasoning group
-              if (item.type === 'reasoning-group') {
-                return (
-                  <div key={item.key}>
-                    <GroupedReasoningCard parts={item.parts} isStreaming={reasoningActive} />
-                  </div>
-                );
-              }
-
-              // Same-tool group (2+ consecutive)
-              if (item.type === 'tool-group') {
-                return (
-                  <div key={item.key}>
-                    <SameToolGroup
-                      toolName={item.toolName}
-                      entries={item.entries}
-                      sessionId={sessionId}
-                      disableNavigation={disableToolNavigation}
-                      busy={working}
-                    />
-                  </div>
-                );
-              }
-
-              // Single tool (with left rail)
-              if (item.type === 'tool-single') {
-                if (!shouldShowToolPart(item.part)) return null;
-                const perm = getPermissionForTool(permissions, item.part.callID);
-                if (isToolPartHidden(item.part, item.message.info.id, hidden)) return null;
-                return (
-                  <div key={item.part.id}>
-                    <ToolPartRenderer
-                      part={item.part}
-                      sessionId={sessionId}
-                      disableNavigation={disableToolNavigation}
-                      permission={perm}
-                      onPermissionReply={onPermissionReply}
-                    />
-                  </div>
-                );
-              }
-
-              const { part, message } = item;
-
-              // When inline content rendering is active (text + answered questions in order),
-              // hide ALL text parts from steps since they render in the inline section
-              if (shouldUseInlineContent && isTextPart(part) && part.text?.trim()) return null;
-
-              // Text parts (intermediate + streaming response while working)
-              if (isTextPart(part)) {
-                if (!part.text?.trim()) return null;
-                // Text response rendering for no-step turns is handled below in
-                // the dedicated response section to avoid duplicate output.
-                if (!hasSteps) return null;
-                return (
-                  <div key={part.id} className="min-w-0 text-sm">
-                    <ThrottledMarkdown content={part.text} isStreaming={working} />
-                  </div>
-                );
-              }
-
-              // Compaction indicator
-              if (isCompactionPart(part)) {
-                return (
-                  <div key={part.id} className="flex items-center gap-2 py-2.5">
-                    <div className="bg-border h-px flex-1" />
-                    <div className="bg-muted/80 border-border/60 flex items-center gap-1.5 rounded-2xl border px-2.5 py-1">
-                      <Layers className="text-muted-foreground size-3" />
-                      <span className="text-muted-foreground text-xs font-semibold tracking-wide">
-                        Compaction
-                      </span>
-                    </div>
-                    <div className="bg-border h-px flex-1" />
-                  </div>
-                );
-              }
-
-              // Tool parts
-              if (isToolPart(part)) {
-                if (!shouldShowToolPart(part)) return null;
-                if (part.tool === 'todowrite') return null;
-                if (part.tool === 'question') {
-                  // When inline content rendering is active, answered questions
-                  // render in the inline content section — skip here to avoid duplicates.
-                  if (shouldUseInlineContent) return null;
-                  // Render answered questions inline at their natural position
-                  // so they appear exactly where the user answered them.
-                  const answeredPart = answeredQuestionPartsById.get(part.id);
-                  if (answeredPart) {
-                    return <AnsweredQuestionCard key={part.id} part={answeredPart} />;
-                  }
-                  // Unanswered/dismissed questions: don't render in steps;
-                  // dismissed ones show via the turnError banner.
-                  return null;
-                }
-
-                const perm = getPermissionForTool(permissions, part.callID);
-
-                // Hide tool parts that have active permission
-                if (isToolPartHidden(part, message.info.id, hidden)) return null;
-
-                return (
-                  <div key={part.id}>
-                    <ToolPartRenderer
-                      part={part}
-                      sessionId={sessionId}
-                      disableNavigation={disableToolNavigation}
-                      permission={perm}
-                      onPermissionReply={onPermissionReply}
-                    />
-                  </div>
-                );
-              }
-
-              // Snapshot & patch parts — internal bookkeeping, not rendered in chat
-              if (isSnapshotPart(part) || isPatchPart(part)) {
-                return null;
-              }
-
-              return null;
-            });
-          })()}
+            // Text segments render as prose between bursts. Text rendering
+            // for no-step turns is handled below in the dedicated response
+            // section, to avoid duplicate output.
+            if (!hasSteps) return null;
+            const text = segment.part.text?.trim();
+            if (!text) return null;
+            return (
+              <div key={segment.part.id} className="min-w-0 text-sm">
+                <ThrottledMarkdown content={text} isStreaming={working} />
+              </div>
+            );
+          })}
         </div>
       )}
-
-      {/* Kortix logo — shown when there are no steps and not working (otherwise logo is already above the steps trigger) */}
-      {!hasSteps &&
-        !hasReasoning &&
-        !working &&
-        (response || answeredQuestionParts.length > 0 || turnError) && (
-          <div className="mt-3 mb-3 flex items-center gap-2">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src="/kortix-logomark-white.svg"
-              alt="Kortix"
-              className="h-[14px] w-auto flex-shrink-0 invert dark:invert-0"
-            />
-          </div>
-        )}
 
       {/* ── Screen reader ── */}
       <div className="sr-only" aria-live="polite">
@@ -3190,19 +1498,29 @@ function SessionTurn({
             !hasSteps &&
             response &&
             (commandForTurn ? (
-              <div className="border-border/60 from-muted/15 to-background overflow-hidden rounded-2xl border bg-gradient-to-b">
-                <div className="border-border/50 bg-muted/25 flex items-center gap-2 border-b px-3 py-2">
-                  <Terminal className="text-muted-foreground size-3.5 shrink-0" />
-                  <span className="text-foreground font-mono text-xs">/{commandForTurn.name}</span>
-                  {commandForTurn.args && (
-                    <span className="text-muted-foreground truncate text-xs">
-                      {commandForTurn.args}
+              <div className="space-y-2">
+                <div className="bg-secondary flex w-full flex-col overflow-hidden rounded-lg">
+                  <div className="text-foreground flex min-w-0 items-center justify-between gap-2 p-3 pb-0 text-xs [&>svg]:size-4">
+                    <span
+                      className="bg-popover text-foreground/95 dark:bg-card min-w-0 truncate rounded-[calc(var(--radius-sm)-0.5px)] border px-1.5 py-[0.08rem] align-baseline font-mono text-[0.95em] font-medium wrap-anywhere whitespace-nowrap"
+                      title={`/${commandForTurn.name}`}
+                    >
+                      {commandForTurn.name}
                     </span>
-                  )}
+                  </div>
+                  {/* Command output clamps to a readable height and opens from a
+                      centred toggle on the fade. `from-secondary` matches the
+                      panel this sits on — the gradient has to dissolve into the
+                      surface, not paint a band over it. */}
+                  <ExpandableOutput
+                    className="min-h-0"
+                    fadeClassName="from-secondary"
+                    contentClassName="px-4 py-3 text-sm"
+                  >
+                    <SandboxUrlDetector content={response} isStreaming={false} />
+                  </ExpandableOutput>
                 </div>
-                <div className="px-3 py-2.5 text-sm">
-                  <SandboxUrlDetector content={response} isStreaming={false} />
-                </div>
+                <CodeBlockEndpoints content={response} />
               </div>
             ) : (
               <div className="text-sm">
@@ -3238,60 +1556,69 @@ function SessionTurn({
               message={retryMessage}
               attempt={retryInfo.attempt}
               secondsLeft={retrySecondsLeft}
+              details={retryInfo.details}
             />
           )}
-          <div
-            className={cn(
-              'flex items-center gap-2 py-1 text-xs transition-colors',
-              'text-muted-foreground',
-            )}
-          >
-            <span className="relative flex size-3">
-              <span className="bg-muted-foreground/30 absolute inline-flex h-full w-full animate-ping rounded-full" />
-              <span className="bg-muted-foreground/50 relative inline-flex size-3 rounded-full" />
-            </span>
-            {retryInfo ? (
-              <span className="text-muted-foreground/70">
-                {tHardcodedUi.raw('componentsSessionSessionChat.line3820JsxTextWaitingToRetry')}
-              </span>
-            ) : (
-              <AnimatedThinkingText statusText={throttledStatus || undefined} className="text-xs" />
-            )}
-            <span className="text-muted-foreground/50">·</span>
-            <span className="text-muted-foreground/70">{duration}</span>
-          </div>
+          <SessionBusyIndicator
+            sessionId={sessionId}
+            statusText={throttledStatus || undefined}
+            retryLabel={
+              retryInfo
+                ? String(
+                    tHardcodedUi.raw('componentsSessionSessionChat.line3820JsxTextWaitingToRetry'),
+                  )
+                : undefined
+            }
+          />
         </div>
       )}
 
       {/* ── Error (abort / failure banner) ── */}
-      {turnError && <TurnErrorDisplay errorText={turnError} errorDetails={turnErrorDetails} />}
+      {turnError && (
+        <TurnErrorDisplay
+          errorText={turnError}
+          errorDetails={turnErrorDetails}
+          isAbort={turnErrorIsAbort}
+          abortReason={turnErrorAbortReason}
+        />
+      )}
 
       {/* Question prompt — now rendered inside the chat input card (questionSlot) */}
 
-      {/* ── Action bar (copy + duration/cost only) ── */}
+      {/* ── Action bar (copy + turn meta) ── */}
       {!working && response && (
-        <div className="flex items-center gap-0.5 opacity-0 transition-opacity duration-150 group-hover/turn:opacity-100">
-          {/* Duration & cost */}
-          {duration && (
-            <span className="text-muted-foreground/50 mr-1 text-xs">
-              {duration}
-              {costInfo && (
-                <>
-                  {' '}
-                  · {formatCost(costInfo.cost)} ·{' '}
-                  {formatTokens(costInfo.tokens.input + costInfo.tokens.output)}t
-                </>
-              )}
+        <div className="flex items-center gap-0.5 opacity-0 transition-opacity duration-150 group-hover/turn:opacity-100 focus-within:opacity-100 has-[[data-state=open]]:opacity-100">
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={handleCopy}
+            aria-label={copied ? 'Copied' : 'Copy response'}
+          >
+            <span className="relative inline-flex shrink-0 items-center justify-center">
+              <AnimatePresence initial={false} mode="popLayout">
+                <m.span
+                  key={copied ? 'check' : 'copy'}
+                  initial={{ scale: 0.25, opacity: 0, filter: 'blur(4px)' }}
+                  animate={{ scale: 1, opacity: 1, filter: 'blur(0px)' }}
+                  exit={{ scale: 0.25, opacity: 0, filter: 'blur(4px)' }}
+                  transition={{ type: 'spring', duration: 0.3, bounce: 0 }}
+                  className="absolute inset-0 inline-flex items-center justify-center"
+                >
+                  {copied ? (
+                    <CheckIcon className="text-foreground/70 size-[1.05rem]" />
+                  ) : (
+                    <Copy className="text-foreground/70 size-[1.05rem]" />
+                  )}
+                </m.span>
+              </AnimatePresence>
             </span>
-          )}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon-xs" onClick={handleCopy}>
-                {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>{copied ? 'Copied!' : 'Copy'}</TooltipContent>
-          </Tooltip>
+          </Button>
+          <SessionTurnMeta
+            endedAt={turnEndedAt}
+            durationMs={turnDurationMs}
+            cost={costInfo}
+            className="flex items-center justify-center"
+          />
         </div>
       )}
 
@@ -3304,12 +1631,37 @@ function SessionTurn({
   );
 }
 
+/**
+ * The boundary that stops the transcript re-rendering with the stream.
+ *
+ * `messages` is rebuilt on every SSE frame, so this component used to re-render
+ * for every turn in the session ~60 times a second — and each of those renders
+ * re-ran ~28 `useMemo`s (all keyed on `turn`), a `planAnchorMessageId` scan of
+ * the whole transcript, `segmentTurn`, and every tool renderer beneath it.
+ * `content-visibility: auto` on the wrapper hid the layout cost of that, not the
+ * JavaScript.
+ *
+ * The default shallow compare is correct here ONLY because three things were
+ * fixed first, and each is load-bearing: `turn` keeps its identity when its
+ * messages have not changed (`stabilizeTurns`), the `allMessages` array prop is
+ * gone (replaced by the `isLast` / `ownsPlan` booleans derived once above), and
+ * `onRewind` is a `useCallback` rather than an inline arrow. Any one of the
+ * three reverting silently turns this memo back into a no-op — it would still
+ * compile, still pass tests, and simply never bail out.
+ */
+const SessionTurn = memo(SessionTurnImpl);
+SessionTurn.displayName = 'SessionTurn';
+
 // ============================================================================
 // Main SessionChat Component
 // ============================================================================
 
 interface SessionChatProps {
   sessionId: string;
+  /** Durable Kortix project session id used by project-session APIs. */
+  projectSessionId?: string;
+  /** Complete SDK state for the root session. Omit for a read-only child session. */
+  sessionState?: UseSessionResult;
   /** Project id lets agent pickers use the server-side project manifest/catalog. */
   projectId?: string;
   /** Immutable project-session agent. When set, prompts are locked to this agent. */
@@ -3326,6 +1678,8 @@ interface SessionChatProps {
 
 export function SessionChat({
   sessionId,
+  projectSessionId,
+  sessionState,
   projectId,
   boundAgentName,
   headerLeadingAction,
@@ -3448,27 +1802,38 @@ export function SessionChat({
   }, [selectionPopup]);
 
   // ---- KortixComputer side panel ----
-  const { isSidePanelOpen, setIsSidePanelOpen, openFileInComputer } = useKortixComputerStore();
-  const openPreview = useFilePreviewStore((s) => s.openPreview);
-  const handleTogglePanel = useCallback(() => {
-    setIsSidePanelOpen(!isSidePanelOpen);
-  }, [isSidePanelOpen, setIsSidePanelOpen]);
+  // No `isSidePanelOpen` subscription here any more. The header's toggle was
+  // the only thing that needed it, and the chat was re-rendering in full on
+  // every open and close of a panel beside it for a value it no longer reads.
+  // The action panel column owns its own flag and subscribes to it itself.
+  const openFileInComputer = useKortixComputerStore((s) => s.openFileInComputer);
 
   // ---- Hooks ----
   // runtimeReady gates the session query (it's disabled until the sandbox
   // runtime is connected + healthy). We need it here too so the render logic
   // can tell "still booting" apart from "genuinely gone".
-  const runtimeReady = useOpenCodeRuntimeReady();
-  const { data: session, isFetched: sessionFetched } = useOpenCodeSession(sessionId);
+  const runtimeReady = useRuntimeReady();
+  // "The health poller GAVE UP", which `!runtimeReady` does not say — that is
+  // also every ordinary boot. Only the composer notice reads it, to tell a probe
+  // that has not answered yet from one that keeps failing.
+  const runtimeUnreachable = useRuntimeConnectionStore((s) => s.status === 'unreachable');
+  const { data: session, isFetched: sessionFetched } = useRuntimeSession(sessionId);
   // useSessionSync is the SINGLE source of truth for messages (matches OpenCode SolidJS).
   // It fetches on first access, then SSE events keep it up to date.
   // No React Query fallback — prevents stale refetches from overwriting live data.
-  const { messages: syncMessages, isLoading: syncMessagesLoading } = useSessionSync(sessionId);
+  const localSync = useSessionSync(sessionState ? '' : sessionId);
+  const {
+    messages: syncMessages,
+    isLoading: syncMessagesLoading,
+    hasOlder,
+    isLoadingOlder,
+    loadOlder,
+  } = sessionState ?? localSync;
   const messages = syncMessages.length > 0 ? syncMessages : undefined;
   const messagesLoading = syncMessagesLoading;
   // Project sessions use the server-side project agent roster. Non-project
   // sessions fall back to OpenCode's directory-scoped runtime discovery.
-  const { data: agents } = useOpenCodeAgents({ directory: session?.directory, projectId });
+  const { data: agents } = useRuntimeAgents({ directory: session?.directory, projectId });
   // Pending connector-approvals for this session pause the run — lock the
   // composer (like a question) until they're resolved. Shares the query key with
   // SessionApprovalPrompt, so it's one request.
@@ -3479,15 +1844,88 @@ export function SessionChat({
     { refetchInterval: 5_000 },
   );
   const hasPendingApproval = (approvalAudit?.actions ?? []).some(isPendingAction);
-  const { data: commands } = useOpenCodeCommands();
-  const { data: providers, isLoading: providersLoading } = useOpenCodeProviders();
-  const { data: allSessions } = useOpenCodeSessions();
-  const { data: config } = useOpenCodeConfig();
+  const { data: commands } = useRuntimeCommands();
+  const { data: providers, isLoading: providersLoading } = useRuntimeProviders();
+  const { data: allSessions } = useRuntimeSessions();
+  const { data: config } = useRuntimeConfig();
   const projectConfig = useProjectConfig(projectId);
-  const abortSession = useAbortOpenCodeSession();
+  const abortSession = useAbortRuntimeSession();
+  const executeCommand = useExecuteRuntimeCommand();
+
+  // THE send path. Every prompt this composer accepts becomes a durable server
+  // row before anything else happens, so a closed tab, a second device, or a
+  // crash cannot lose it, and the server — not this component — decides whether
+  // it runs now or waits for the turn in flight.
+  const promptInbox = useSessionPrompts(projectId, projectSessionId);
+
+  // The one-time hand-off of whatever the deleted browser queue was still
+  // holding — see `queue-migration.ts`.
+  //
+  // Here rather than in a list route because THIS is the only component that
+  // knows both ids a legacy blob can be keyed by: the OpenCode chat id
+  // (`sessionId`, what `SessionChat` drained under) and the Kortix session id
+  // (`projectSessionId`, the only one the inbox takes). A list route knows
+  // neither mapping.
+  //
+  // Sessions are pre-mounted per tab, so several of these run at once; the pass
+  // is serialized by `runLegacyQueueMigration` and a skip-only pass gives its
+  // attempt back, so a session that can only see another session's rows does
+  // not spend the retry budget.
+  useEffect(() => {
+    if (!projectId || !projectSessionId) return;
+    void runLegacyQueueMigration({
+      legacyIds: [sessionId, projectSessionId],
+      projectId,
+      // The route takes the KORTIX id; the wire message id is minted against
+      // the OPENCODE transcript. Two ids, two parameters — see the runner.
+      sessionId: projectSessionId,
+      wireSessionId: sessionId,
+      enqueue: promptInbox.enqueue,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId, projectSessionId, sessionId]);
+
+  // T10: the most recently issued stop/cancel's `AbortSettlement`
+  // promise for this session, so `stopThenSendNow` (used by
+  // `handleQueueSendNow`) can await the SERVER-confirmed settlement instead
+  // of racing the optimistic idle flip `applyOptimisticAbort` makes
+  // synchronously. Keyed by sessionId even though this component instance is
+  // 1:1 with a session, matching the sessionId-keyed conventions used
+  // elsewhere in this file (e.g. the zustand stores) rather than assuming the
+  // prop never changes across this instance's lifetime.
+  const pendingAbortSettlementRef = useRef<Map<string, Promise<AbortSettlement>>>(new Map());
+
+  /**
+   * The one place that issues a stop/cancel for this session's run, whether
+   * through the mounted `sessionState` hook or the fallback raw mutation.
+   * Both branches resolve a real `AbortSettlement` (never throwing — see
+   * `awaitAbortSettlement`) and stash it in `pendingAbortSettlementRef` for
+   * `stopThenSendNow` to await. Cleared once it settles so a stale settlement
+   * never gates an unrelated future send.
+   */
+  const issueSessionCancel = useCallback((): Promise<AbortSettlement> => {
+    // The stop's own receipt, taken before the cancel goes out and settled
+    // when it is acknowledged. `applyOptimisticAbort` writes an idle status
+    // frame, which invalidates the `/turn` query — and the read that comes
+    // back still shows the turn, because the cancel needs ~1.6s to reach the
+    // daemon. Without this the composer flipped Send back to Stop ~120ms after
+    // the click and stayed there for the whole abort. See `AbortReceipt`.
+    useSessionWorkingStore.getState().noteAbortReceipt(projectSessionId ?? '', Date.now());
+    const settlement = sessionState
+      ? sessionState.cancel()
+      : awaitAbortSettlement(() => abortSession.mutateAsync(sessionId));
+    pendingAbortSettlementRef.current.set(sessionId, settlement);
+    void settlement.finally(() => {
+      useSessionWorkingStore.getState().settleAbortReceipt(projectSessionId ?? '', Date.now());
+      if (pendingAbortSettlementRef.current.get(sessionId) === settlement) {
+        pendingAbortSettlementRef.current.delete(sessionId);
+      }
+    });
+    return settlement;
+  }, [sessionId, projectSessionId, sessionState, abortSession]);
 
   // ---- Unified model/agent/variant state (1:1 port of SolidJS local.tsx) ----
-  const local = useOpenCodeLocal({
+  const local = useSessionModelSelection({
     agents,
     providers,
     config,
@@ -3495,13 +1933,26 @@ export function SessionChat({
     boundAgentName,
     defaultAgentName: projectConfig?.open_code_default_agent,
   });
-  // Session agent-lock is DISABLED (mirrors the backend KORTIX_ENFORCE_SESSION_AGENT_LOCK,
-  // default off): the picker still defaults to the session's agent (seeded via
-  // useOpenCodeLocal's boundAgentName) but stays switchable — sends use the current
-  // pick, not a forced lock. Flip to true to restore the hard lock once per-agent
-  // executor-token scoping lands (see docs/specs/2026-06-28-agent-defaults-todo.md).
-  const SESSION_AGENT_LOCK_ENABLED: boolean = false;
-  const lockedAgentName = SESSION_AGENT_LOCK_ENABLED ? boundAgentName?.trim() || null : null;
+  // The agent picker defaults to the session's agent (seeded via useRuntimeLocal's
+  // boundAgentName) but stays switchable: sends use the current pick. Switching
+  // mid-session is allowed everywhere — the grant re-mint re-resolves the
+  // connector tokens for the newly picked agent on every turn.
+  /**
+   * The agent this composer will ACTUALLY run — see `composer-agent-access.ts`.
+   *
+   * Project agents are deny-by-default for a member: `agents` can come back
+   * empty, and the project's `default_agent` may not be in it. `local.agent`
+   * resolves over the SDK's visible roster (subagents included) and yields
+   * `undefined` on an empty one, which rendered no agent in the picker while
+   * the send still went out under the server's manifest default.
+   */
+  const composerAgent = resolveComposerAgent({
+    agents,
+    defaultAgent: boundAgentName ?? projectConfig?.open_code_default_agent,
+    selectedAgent: local.agent.current?.name ?? null,
+  });
+  const composerAgentName = composerAgent.selected;
+  const noAccessibleAgents = composerAgent.disabled;
   const localAgentSet = local.agent.set;
   const localModelCurrentKey = local.model.currentKey;
   // Wire model to SEND: `auto` when on the default (gateway resolves it), else
@@ -3539,20 +1990,21 @@ export function SessionChat({
 
   const pendingPromptHandled = useRef(false);
 
-  // ---- Polling fallback & optimistic send ----
-  const [pollingActive, setPollingActive] = useState(false);
-  const [pendingUserMessage, setPendingUserMessage] = useState<string | null>(null);
-  const [pendingUserMessageId, setPendingUserMessageId] = useState<string | null>(null);
-  const [pendingCommand, setPendingCommand] = useState<{
-    name: string;
-    description?: string;
-  } | null>(null);
   const [commandError, setCommandError] = useState<KortixSendError | null>(null);
-  const [failedStartDraft, setFailedStartDraft] = useState<{
+  // The last prompt handed to the runtime, verbatim. Only read by the
+  // connector-refusal card, to re-send exactly what was refused.
+  const lastSubmittedRef = useRef<{ parts: unknown[]; options: Record<string, unknown> } | null>(
+    null,
+  );
+  const [rewindTarget, setRewindTarget] = useState<{
+    messageId: string;
     text: string;
-    files: AttachedFile[];
+  } | null>(null);
+  const [rewindDraft, setRewindDraft] = useState<{
+    text: string;
     id: number;
   } | null>(null);
+  const rewindPrefillId = useRef(0);
   // "Ask for changes" (W12) — a deliverable's toolbar can hand the composer a
   // starter line. Held (not one-shot) in the store; the composer's own
   // `prefill.id` effect below is what makes application happen exactly once.
@@ -3564,175 +2016,145 @@ export function SessionChat({
   // parent), so the text has already landed by the time we clear it here.
   useEffect(() => {
     if (sessionPrefill) useSessionComposerPrefillStore.getState().clearPrefill(sessionId);
-  }, [sessionPrefill?.id, sessionId]);
-  // Map of user message IDs → command info, so UserMessageRow can render
-  // a compact command pill instead of the raw expanded template text.
-  const commandMessagesRef = useRef<Map<string, { name: string; args?: string }>>(new Map());
-  // Stash the pending command info so we can associate it with the user message
-  // even if the busy signal arrives before the message list updates.
-  const pendingCommandStashRef = useRef<{ name: string; args?: string } | null>(null);
-  // Track whether a pending prompt send is in flight (dashboard→session flow).
-  // Keeps isBusy true until the server acknowledges with a busy status.
-  const [pendingSendInFlight, setPendingSendInFlight] = useState(false);
-  const [pendingSendMessageId, setPendingSendMessageId] = useState<string | null>(null);
-  // Grace period: don't stop polling immediately on idle after a recent send
-  const lastSendTimeRef = useRef<number>(0);
-  // ---- Optimistic prompt (from dashboard/project page) ----
-  // Backed by the SDK's start-stash (`readStartStash`/`clearStartStash`), which
-  // understands both the modern `kortix:start:<id>` shape and every legacy
-  // producer's bare `opencode_pending_prompt:<id>` + `opencode_pending_options:<id>`
-  // pair — so pushState navigation still works with no `?new=true` dependency,
-  // and no web code needs to know the storage key names directly.
-  const [optimisticPrompt, setOptimisticPrompt] = useState<string | null>(() => {
-    if (typeof window !== 'undefined') {
-      return readStartStash(sessionId)?.prompt ?? null;
+  }, [sessionPrefill, sessionId]);
+  // WHICH held draft the composer is handed right now, in priority order, in
+  // ONE place. The four sources mint their ids from four independent counters,
+  // so `prefill.id` alone cannot say which one the composer just applied — and
+  // the carried draft's handshake below has to know exactly that.
+  const composerPrefill = useMemo(() => {
+    if (rewindDraft) {
+      return {
+        source: 'rewind' as const,
+        text: rewindDraft.text,
+        id: rewindDraft.id,
+        mode: 'replace' as const,
+      };
+    }
+    if (sessionPrefill) {
+      return {
+        source: 'session' as const,
+        text: sessionPrefill.text,
+        id: sessionPrefill.id,
+        mode: 'merge' as const,
+      };
     }
     return null;
-  });
+  }, [rewindDraft, sessionPrefill]);
+  // "Add context" (Task 5) — the empty Context card's button asks the
+  // composer to open its attach flow. Same held/id-keyed handoff as the
+  // prefill above, cleared the same way once the composer's own id-keyed
+  // effect has acted on it.
+  const attachRequestId = useAttachRequest(sessionId);
+  useEffect(() => {
+    if (attachRequestId != null) {
+      useSessionComposerPrefillStore.getState().clearAttachRequest(sessionId);
+    }
+  }, [attachRequestId, sessionId]);
+  // Map of user message IDs → command info, so UserMessage can render
+  // a compact command pill instead of the raw expanded template text.
+  const commandMessagesRef = useRef<
+    Map<string, { name: string; args?: string; split?: { before: string; after: string } }>
+  >(new Map());
+  // Stash the pending command info so we can associate it with the user message
+  // even if the busy signal arrives before the message list updates.
+  const pendingCommandStashRef = useRef<{
+    name: string;
+    args?: string;
+    /** Where the chip sat in `args` — display only. See `handleCommand`. */
+    split?: { before: string; after: string };
+  } | null>(null);
+  /**
+   * This tab's record that a prompt went out, and when.
+   *
+   * It replaces `pendingSendInFlight` — a boolean set on send, cleared by an
+   * effect that watched for a busy status or a matching assistant reply, and
+   * backstopped by a 30s timer because both of those signals can be lost. The
+   * receipt is the same fact with a bound and a provenance tag: it claims
+   * `working` only until a server source that CAN know about the send answers,
+   * and `projectWorking` releases it either way — see `useSessionWorking`.
+   *
+   * It lives in the SDK's per-session store rather than in this component
+   * because `useSession` mounts a projection for the SAME session and both
+   * share one `GET .../turn` cache entry. With a receipt each, the observer
+   * that had none polled on its own timer, wrote an uninformed "no turns" read
+   * into that shared entry, and flipped this composer to idle mid-send.
+   *
+   * `note` is taken before the POST; `accept` is what lets a `/turn` read
+   * answer for the send at all, because until `POST .../prompts` returns there
+   * is no row for it to see. Only the paths that know nothing is coming clear
+   * it — a refused send, Stop, and leaving the session.
+   */
+  const receiptSessionId = projectSessionId ?? '';
+  const noteSendReceipt = useCallback(
+    (messageId: string) =>
+      useSessionWorkingStore
+        .getState()
+        .noteSendReceipt(receiptSessionId, { messageId, atMs: Date.now() }),
+    [receiptSessionId],
+  );
+  const acceptSendReceipt = useCallback(
+    (messageId: string) =>
+      useSessionWorkingStore.getState().acceptSendReceipt(receiptSessionId, messageId, Date.now()),
+    [receiptSessionId],
+  );
+  const clearSendReceipt = useCallback(
+    // The id is REQUIRED of every caller that has one: `clearSendReceipt` is
+    // keyed by session, so an unguarded clear from an older send's failure
+    // deleted a NEWER send's receipt while its POST was still on the wire, and
+    // an uninformed `/turn` read then flipped the composer back to Send
+    // mid-send. Omitted only where nothing is coming for ANY send.
+    (messageId?: string) =>
+      useSessionWorkingStore.getState().clearSendReceipt(receiptSessionId, messageId),
+    [receiptSessionId],
+  );
 
-  // Hydrate options from the SDK's start-stash and send the pending prompt for
-  // new sessions. The dashboard/project page (or the instant session shell)
-  // stashes the prompt and navigates here. We send the message from here (not
-  // the producer) so that SSE listeners and polling are already active when the
-  // response starts streaming back.
+  // ---- Start-stash PICKS seeding (model/agent/variant) ----
   //
-  // The write-race retry (stash read), readiness poll (agent/model), and
-  // failure-recovery (stash restore + classify + idle + rehydrate-or-remove)
-  // mechanics are all owned by the SDK's `replayStartStash` — this effect only
-  // supplies the web-specific pieces: resolving agent/model/variant readiness
-  // against this session's own local model/agent stores, building the
-  // optimistic text + outgoing parts (file uploads), and restoring pending
-  // files on failure.
+  // The stash no longer carries the first prompt for this host: the prompt is
+  // a durable inbox row before this component ever mounts (created server-side
+  // from `create.pending_prompt`, or POSTed by `startSessionWithPrompt`), and
+  // it renders in the queue strip like every other pending prompt. What still
+  // travels here are the producer's PICKS, seeded once into this session's
+  // local stores. The old replay effect — a 30s readiness poll, an optimistic
+  // bubble that its own timeout path never cleared, and per-send receipt
+  // bookkeeping — is gone with the hand-off it served.
+  //
+  // A NON-empty prompt in the stash is a legacy hand-off (a pre-deploy tab, or
+  // an unconverted producer): POST it to the inbox rather than dropping it.
   useEffect(() => {
     if (pendingPromptHandled.current) return;
-
-    // Set by `prepare` below (once, before any failure can occur) so
-    // `onFailure` can restore the same files it consumed.
-    let filesToRestoreOnFailure: AttachedFile[] = [];
-
-    const handle = replayStartStash<{ options: Record<string, unknown> }>({
-      sessionId,
-      classify: classifySessionError,
-      checkReadiness: (stash) => {
-        // Restore agent/model/variant selections from the producer.
-        const options: Record<string, unknown> = {};
-        let selectedModelForSend: ModelKey | undefined;
-        const isSelectableModel = (model: ModelKey): boolean =>
-          localModelList.some(
-            (m) => m.providerID === model.providerID && m.modelID === model.modelID,
-          ) && localModelVisible(model);
-        if (stash.agent) {
-          if (!lockedAgentName || stash.agent === lockedAgentName) {
-            options.agent = stash.agent;
-            localAgentSet(stash.agent);
-          }
-        }
-        if (stash.model && isSelectableModel(stash.model as ModelKey)) {
-          options.model = stash.model;
-          selectedModelForSend = stash.model as ModelKey;
-          localModelSet(stash.model as ModelKey);
-        }
-        if (stash.variant) {
-          options.variant = stash.variant;
-          localVariantSet(stash.variant);
-        }
-        if (lockedAgentName) {
-          options.agent = lockedAgentName;
-        }
-        if (!selectedModelForSend && localModelSendKey) {
-          options.model = localModelSendKey;
-          selectedModelForSend = localModelSendKey;
-        }
-        if (!selectedModelForSend) return null;
-        return { options };
-      },
-      onReadinessTimeout: () => {
-        setCommandError({
-          kind: 'runtime-error',
-          message: NO_MODEL_AVAILABLE_MESSAGE,
-          cause: null,
-        });
-      },
-      prepare: (stash, ready) => {
-        pendingPromptHandled.current = true;
-        setPollingActive(true);
-        setPendingSendInFlight(true);
-        clearStartStash(sessionId);
-
-        const sendOpts = ready.options as {
-          agent?: string;
-          model?: ModelKey;
-          variant?: string;
-        };
-        const messageID = ascendingId('msg');
-        const textPartId = ascendingId('prt');
-        // Consume pending files before rendering the optimistic message so
-        // uploaded file cards are visible while the sandbox is still starting.
-        const pendingFiles = usePendingFilesStore.getState().consumePendingFiles();
-        filesToRestoreOnFailure = pendingFiles;
-        const optimisticPendingPrompt = buildOptimisticPromptTextWithUploads(
-          stash.prompt,
-          pendingFiles,
-        );
-        setOptimisticPrompt(optimisticPendingPrompt);
-        setPendingSendMessageId(messageID);
-        lastSendTimeRef.current = Date.now();
-
-        return {
-          messageId: messageID,
-          optimisticText: optimisticPendingPrompt,
-          partIds: [textPartId],
-          sendOptions: {
-            ...(session?.directory ? { directory: session.directory } : {}),
-            ...(sendOpts?.agent && { agent: sendOpts.agent }),
-            ...(sendOpts?.model && { model: formatPromptModel(sendOpts.model) }),
-            ...(sendOpts?.variant && { variant: sendOpts.variant }),
-          },
-          // Upload local files and build the parts array (text + file refs).
-          buildParts: async () => {
-            const built = await buildPromptPartsWithUploads(stash.prompt, pendingFiles, uploadFile);
-            return [{ type: 'text' as const, text: built.text }, ...built.remoteParts];
-          },
-        };
-      },
-      onFailure: (stash, _err, classified) => {
-        setPendingSendInFlight(false);
-        setPendingSendMessageId(null);
-        setOptimisticPrompt(null);
-        setPollingActive(false);
-        setCommandError(classified);
-        usePendingFilesStore.getState().setPendingFiles(filesToRestoreOnFailure);
-        // replayStartStash restores durable sessionStorage itself. Rehydrate the
-        // visible composer too, so the user can retry immediately without a
-        // reload and without losing either the prompt or local File objects.
-        setFailedStartDraft({
-          text: stash.prompt,
-          files: filesToRestoreOnFailure,
-          id: Date.now(),
-        });
-      },
-    });
-
-    return () => handle.cancel();
-  }, [
-    sessionId,
-    localAgentSet,
-    localModelCurrentKey,
-    localModelSendKey,
-    localModelList,
-    localModelSet,
-    localModelVisible,
-    localVariantSet,
-    lockedAgentName,
-    session?.directory,
-  ]);
-
-  // Clear optimistic prompt once real messages arrive
-  useEffect(() => {
-    if (optimisticPrompt && messages && messages.length > 0) {
-      setOptimisticPrompt(null);
+    const stash = readStartStash(sessionId);
+    if (!stash) return;
+    pendingPromptHandled.current = true;
+    clearStartStash(sessionId);
+    if (stash.agent) localAgentSet(stash.agent);
+    if (
+      stash.model &&
+      localModelList.some(
+        (m) => m.providerID === stash.model!.providerID && m.modelID === stash.model!.modelID,
+      ) &&
+      localModelVisible(stash.model as ModelKey)
+    ) {
+      localModelSet(stash.model as ModelKey, { autoSeed: true });
     }
-  }, [optimisticPrompt, messages]);
+    if (stash.variant) localVariantSet(stash.variant);
+    const legacyPrompt = stash.prompt.trim();
+    if (legacyPrompt && projectId && projectSessionId) {
+      void startSessionWithPrompt(projectId, projectSessionId, {
+        parts: [{ type: 'text', text: legacyPrompt }],
+        overrides: {
+          ...(stash.agent ? { agent: stash.agent } : {}),
+          ...(stash.model ? { model: stash.model } : {}),
+          ...(stash.variant ? { variant: stash.variant } : {}),
+        },
+      }).catch((error) => {
+        console.error('[session-chat] failed to queue the stashed legacy prompt', error);
+        setCommandError(classifySessionError(error));
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId, projectId, projectSessionId]);
+
 
   const agentNames = useMemo(() => local.agent.list.map((a) => a.name), [local.agent.list]);
 
@@ -3742,7 +2164,7 @@ export function SessionChat({
   // selection yet. This handles opening a session for the first time. If the user
   // already changed the model in this session (persisted per-session in localStorage),
   // we don't overwrite it — the per-session selection takes priority via the
-  // resolution chain in useOpenCodeLocal.
+  // resolution chain in useRuntimeLocal.
   const lastUserMessage = useMemo(
     () => (messages ? [...messages].reverse().find((m) => m.info.role === 'user') : undefined),
     [messages],
@@ -3767,26 +2189,55 @@ export function SessionChat({
 
   // ---- Session status ----
   // Use sync store as primary (matches OpenCode), fall back to status store
-  const syncStatus = useSyncStore((s) => s.sessionStatus[sessionId]);
-  const isOptimisticCompacting = useOpenCodeCompactionStore((s) =>
-    Boolean(s.compactingBySession[sessionId]),
-  );
-  const sessionStatus = syncStatus;
-  const isServerBusy = sessionStatus?.type === 'busy' || sessionStatus?.type === 'retry';
+  const syncStatus = useSessionStateStore((s) => s.sessionStatus[sessionId]);
+  const isOptimisticCompacting = sessionState?.isCompacting ?? false;
+  const sessionStatus = sessionState?.status ?? syncStatus;
 
-  // Pending: last assistant message has no time.completed.
-  // Used as a SECONDARY signal — only contributes to busy when the
-  // server also says busy. Prevents the event-ordering race where
-  // session.idle arrives before message.updated sets time.completed.
-  const hasIncompleteAssistant = useMemo(() => {
-    if (!messages || messages.length === 0) return false;
-    for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].info.role === 'assistant') {
-        return !(messages[i].info as any).time?.completed;
-      }
-    }
-    return false;
-  }, [messages]);
+  /**
+   * IS THIS SESSION WORKING — one answer, and it says where it came from.
+   *
+   * It used to be read straight off the SSE status slot, which is a stream
+   * this tab can miss frames from: a dropped end-of-turn frame left the
+   * composer on "stop" until a reload, and a dropped start-of-turn frame let
+   * the queue drain into a live turn. The projection reads the control plane's
+   * turn authority first (`GET .../turn`), the stream second, and this tab's
+   * own send receipt only until either of them answers.
+   */
+  // A child-session mount (`sub-session-modal.tsx` passes no project ids) has
+  // no Kortix session row for `/turn` to answer about, so the projection below
+  // is disabled and every working read falls back to the raw stream slot —
+  // the same split `session-layout.tsx` makes for its busy indicator.
+  const isChildSession = !projectId || !projectSessionId;
+  const working = useSessionWorking(projectId ?? '', projectSessionId ?? '', {
+    enabled: !isChildSession,
+    runtimeSessionId: sessionId,
+  });
+  const isServerBusy = working.state === 'working';
+
+  // The one transcript-derived gate that survives, and the only one that
+  // carries proof: during a provider 429 OpenCode stamps `info.error` with
+  // `data.isRetryable === true` and keeps writing the SAME assistant message,
+  // while the status frame this tab holds can read non-busy for all of it. The
+  // projection cannot substitute — a frame stamped after the last `/turn` read
+  // outranks that read by design — so without this a `/` command submitted
+  // now would go out into a turn that is still running.
+  //
+  // Paired with the server's own authority so it can never wedge: an assistant
+  // message left open by a sandbox that died mid-turn (no error, no
+  // completion) is not a retry, AND a dead box's turn is husk-finalized, so
+  // `serverOpenTurnToken` goes null and the gate opens. That pair is what the
+  // old 10s husk clock and its confirmation round-trip existed to approximate.
+  //
+  // The TOKEN, not the message id: a `/` command's own turn carries no wire
+  // `messageID`, so keying this on the id left the gate open for exactly the
+  // producer it guards.
+  //
+  // It gates COMMANDS only now (`sessionWorking` on the composer). A prompt is
+  // an inbox row and the server's admission gate holds it.
+  const hasRetryingAssistant = useMemo(
+    () => hasRetryingAssistantTurn(messages) && working.serverOpenTurnToken !== null,
+    [messages, working.serverOpenTurnToken],
+  );
 
   const hasPendingUserReply = useMemo(() => {
     if (!messages || messages.length === 0) return false;
@@ -3804,11 +2255,17 @@ export function SessionChat({
     return true;
   }, [messages]);
 
-  // Matching the reference: session status is the PRIMARY source of truth.
-  // hasIncompleteAssistant only matters while the server also says busy
-  // (prevents the idle→incomplete race). pendingSendInFlight covers the
-  // gap between user send and server ack.
-  const effectiveBusy = isServerBusy || pendingSendInFlight || isOptimisticCompacting;
+  // The working projection, plus compaction — which `projectWorking`
+  // deliberately knows nothing about, because a compaction is not a turn and
+  // `GET .../turn` reports none for it.
+  //
+  // It is no longer a client-only latch either. `sessionState.isCompacting` is
+  // its own projection (`core/session/compaction.ts`) over the runtime's
+  // `Session.time.compacting` row plus this tab's own bounded `/compact` stamp,
+  // so a lost `session.compacted` frame stops pinning the composer at
+  // `OPTIMISTIC_COMPACTION_MAX_MS` instead of for the lifetime of the tab, and
+  // a compaction started by a second device is visible here at all.
+  const effectiveBusy = isServerBusy || isOptimisticCompacting;
 
   // Short visual fade (300ms) — matches the reference's 260ms delay-hide.
   // Goes true immediately, stays visible briefly after going idle so the
@@ -3825,11 +2282,32 @@ export function SessionChat({
     return () => clearTimeout(busyTimerRef.current);
   }, [effectiveBusy]);
 
-  const expectAssistantResponse =
-    isServerBusy ||
-    hasPendingUserReply ||
-    (isServerBusy && hasIncompleteAssistant) ||
-    pendingSendInFlight;
+  // The one working answer the LAST turn card renders (its shimmer). Resolved
+  // here, once, so the card never reads the raw slot for a Kortix session —
+  // see `resolveLastTurnWorking` for the split and the defect it removes.
+  const lastTurnWorking = resolveLastTurnWorking({
+    isChildSession,
+    // The delay-hidden projection, so the card and the composer settle on the
+    // same frame instead of the card flickering 300ms earlier.
+    projectionBusy: isBusy,
+    rawSlotBusy: getWorkingState(sessionStatus, true),
+  });
+
+  // Read by `handleSend` for its RENDERING decision only (see
+  // `willWaitInInbox`). Refs, not the values: `handleSend` is a stable callback
+  // that a dozen surfaces hold, and adding busy state to its deps would rebuild
+  // it on every turn transition. Written in an EFFECT, never during render — a
+  // render-phase ref write is what deadlocked the session shell once already.
+  const isBusyRef = useRef(false);
+  const queuedMessagesRef = useRef(0);
+  useEffect(() => {
+    isBusyRef.current = effectiveBusy;
+  }, [effectiveBusy]);
+
+  // Render-driven only: the session is working, or the transcript shows a user
+  // message nothing has answered yet. The transcript-inference terms are gone —
+  // "is a turn running" has one authority now.
+  const expectAssistantResponse = isServerBusy || hasPendingUserReply;
 
   const shouldRecoveryPoll = expectAssistantResponse;
 
@@ -3865,7 +2343,7 @@ export function SessionChat({
     const cacheFingerprint = `${cached.messageID}:${cached.partID}:${cached.text.length}`;
     if (streamCacheRestoredRef.current === cacheFingerprint) return;
 
-    const store = useSyncStore.getState();
+    const store = useSessionStateStore.getState();
     const currentMsgs = store.getMessages(sessionId);
     let latestUserId: string | undefined;
     for (let i = currentMsgs.length - 1; i >= 0; i--) {
@@ -3923,122 +2401,119 @@ export function SessionChat({
     } as any);
   }, [messages, sessionId, shouldRecoveryPoll, streamCacheKey, hasPendingUserReply]);
 
-  // Client-side message queue — mirrors Claude Code / Codex: a message typed
-  // while the agent is mid-turn is held here instead of being sent straight
-  // through (the OpenCode server would happily accept it immediately, but
-  // interleaving it into a live turn reads badly). It's flushed one at a time
-  // at the next safe boundary: either a tool call finishing, or the turn
-  // going idle. See SessionChatInput.handleSubmit → onQueueMessage, and the
-  // drain effect below.
-  const [queuedMessages, setQueuedMessages] = useState<QueuedMessage[]>([]);
-  const queuedMessagesRef = useRef<QueuedMessage[]>([]);
+  // WHAT THE COMPOSER RENDERS IS THE SERVER INBOX — see `projectQueueRows`.
+  //
+  // `GET .../prompts` is the queue: durable, shared across tabs and devices,
+  // ordered and admitted by the control plane. There is no browser lane beside
+  // it any more, so there is no second list to keep in sync, no per-row origin
+  // to route actions by, and nothing left that a closed tab can lose.
+  //
+  // The transcript is passed in because a row whose message is ALREADY on
+  // screen is not a queue row: the optimistic bubble of an idle send is painted
+  // before the POST returns, and a mid-turn prompt's real user message arrives
+  // over SSE seconds later. Without this cross-check the same text renders
+  // twice — once as the answer being streamed, once as a pending row.
+  const transcriptUserMessageIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const message of messages ?? []) {
+      if (message.info.role === 'user') ids.add(message.info.id);
+    }
+    return ids;
+  }, [messages]);
+  const queueRows = useMemo(
+    () =>
+      projectQueueRows({
+        prompts: promptInbox.prompts,
+        transcriptMessageIds: transcriptUserMessageIds,
+      }),
+    [promptInbox.prompts, transcriptUserMessageIds],
+  );
+  const queuedMessages = queueRows.queued;
+  const failedQueuedMessages = queueRows.failed;
   useEffect(() => {
-    queuedMessagesRef.current = queuedMessages;
-  }, [queuedMessages]);
-  // Local, never-sent-to-server counter — separate from `ascendingId`, whose
-  // prefix union ('msg' | 'prt') is meaningful for server-compatible message
-  // ordering and shouldn't grow a prefix for a purely client-side draft id.
-  const queuedIdCounterRef = useRef(0);
+    // `queued` already carries the rows on the wire — see `projectQueueRows` —
+    // so adding `inFlightIds` here would count each of them twice.
+    queuedMessagesRef.current = queueRows.queued.length;
+  }, [queueRows.queued.length]);
+  // A row the server has CLAIMED is on the wire; locking it against
+  // edit/remove/reorder is the same rule as before.
+  const queueInFlightIds = queueRows.inFlightIds;
 
-  const handleQueueMessage = useCallback(
-    (text: string, files?: AttachedFile[], mentions?: TrackedMention[]) => {
-      const id = `queued-${++queuedIdCounterRef.current}`;
-      setQueuedMessages((prev) => [...prev, { id, text, files, mentions }]);
+  // Removing used to be a local-store delete with an undo toast that restored
+  // the entry into that store. The row is durable now, so a removal is a real
+  // DELETE and the undo has to re-create it — which the inbox makes exact,
+  // because re-POSTing the SAME `clientMessageId` is idempotent by unique
+  // index rather than by a client-side latch.
+  const handleRemoveQueuedMessage = useCallback(
+    async (id: string) => {
+      // The DELETE hands back what it destroyed, and that is the only lossless
+      // undo: the row is hard-deleted, and the list view carries a 2000-char
+      // text preview with no parts at all. Restoring from the list dropped
+      // every attachment and the model/agent picks — silently, under a button
+      // that says "Undo".
+      let removed: Awaited<ReturnType<typeof promptInbox.remove>>;
+      try {
+        removed = await promptInbox.remove(id);
+      } catch (error) {
+        // A prompt already on the wire cannot be cancelled — the server
+        // answers 409 rather than lying about it.
+        errorToast(
+          error instanceof Error && /409/.test(error.message)
+            ? 'That prompt is already being delivered'
+            : 'Could not remove that prompt',
+        );
+        return;
+      }
+      if (!removed) return;
+
+      // Undo rather than a confirm dialog. A queue is something you curate —
+      // gating every removal behind a modal would make it unusable, and the
+      // thing being removed is a draft, not data. Reversible beats guarded.
+      const undoToastId = `queue-undo-${sessionId}-${removed.prompt_id}`;
+      infoToast('Removed from queue', {
+        id: undoToastId,
+        duration: 5000,
+        button: (
+          <Button
+            size="sm"
+            variant="outline"
+            // The SAME `clientMessageId`, so an undo re-creates ONE row and a
+            // double-click cannot create two. A FRESH wire id, because
+            // OpenCode orders by id and the original one was minted before the
+            // turn that has been writing higher ids since. The parts and
+            // overrides are the ORIGINALS, straight from the delete's own
+            // response — see `createQueueUndoAction`.
+            onClick={createQueueUndoAction({
+              removed,
+              mintMessageId: () => mintSessionWireMessageId(sessionId),
+              enqueue: promptInbox.enqueue,
+              dismiss: () => dismissToast(undoToastId),
+              onError: () => errorToast('Could not restore that prompt'),
+            })}
+          >
+            Undo
+          </Button>
+        ),
+      });
     },
-    [],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [sessionId, promptInbox.remove, promptInbox.enqueue],
   );
 
-  const handleRemoveQueuedMessage = useCallback((id: string) => {
-    setQueuedMessages((prev) => prev.filter((m) => m.id !== id));
-  }, []);
+  const handleRetryQueuedMessage = useCallback(
+    (id: string) => {
+      // Re-queued UNDER ITS ORIGINAL WIRE ID, so a delivery that actually
+      // landed is still absorbed by the proxy instead of running twice.
+      void promptInbox.retry(id).catch(() => errorToast('Could not retry that prompt'));
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [promptInbox.retry],
+  );
 
-  // Stop polling when session goes idle (via SSE or polling fallback).
-  // Grace period: if we sent a message recently (within 5s), don't stop polling
-  // on the first idle status — the server may not have started processing yet.
-  useEffect(() => {
-    if (pollingActive && sessionStatus?.type === 'idle') {
-      const timeSinceSend = Date.now() - lastSendTimeRef.current;
-      if (timeSinceSend < 5000) {
-        // Still within grace period — check again shortly
-        const remaining = 5000 - timeSinceSend;
-        const timer = setTimeout(() => {
-          // Re-check: if still idle after grace period, stop polling
-          const currentStatus = useSyncStore.getState().sessionStatus[sessionId];
-          if (currentStatus?.type === 'idle') {
-            setPollingActive(false);
-          }
-        }, remaining);
-        return () => clearTimeout(timer);
-      }
-      setPollingActive(false);
-    }
-  }, [pollingActive, sessionStatus?.type, sessionId]);
-
-  // Clear pendingSendInFlight once the server acknowledges it's working,
-  // or when new messages arrive (fallback for command sends).
-  // This bridges the gap between the optimistic prompt clearing and the
-  // server status updating — keeps isBusy true so the turn shows a loader.
-  useEffect(() => {
-    if (!pendingSendInFlight) return;
-    if (isServerBusy) {
-      setPendingSendInFlight(false);
-      setPendingSendMessageId(null);
-      return;
-    }
-    // If we got an assistant reply for the pending user message, the server
-    // already accepted and processed this send even if status events were missed.
-    const hasAssistantReply = pendingSendMessageId
-      ? !!messages?.some(
-          (m) => m.info.role === 'assistant' && (m.info as any).parentID === pendingSendMessageId,
-        )
-      : false;
-    if (hasAssistantReply) {
-      setPendingSendInFlight(false);
-      setPendingSendMessageId(null);
-    }
-  }, [pendingSendInFlight, isServerBusy, messages, pendingSendMessageId]);
-
-  // Safety timeout: clear pendingSendInFlight after 30s even if the server
-  // never acknowledged. Prevents the UI from being stuck forever in "busy"
-  // when the send succeeded (HTTP 204) but the server never started processing.
-  useEffect(() => {
-    if (!pendingSendInFlight) return;
-    const timer = setTimeout(() => {
-      setPendingSendInFlight(false);
-      setPendingSendMessageId(null);
-    }, 30_000);
-    return () => clearTimeout(timer);
-  }, [pendingSendInFlight]);
-
-  // SSE + heartbeat timeout is the source of truth for streaming state.
-  // No watchdogs, no polling, no reconcilers — matching the reference.
-
-  // Clear pending user message when we can confirm the message is in cache
-  // (by ID), or when new messages arrive (fallback for command sends).
-  // When a command was pending, associate the newest user message with the
-  // command info so UserMessageRow can render a nice pill instead of raw template text.
+  // Associate stashed command info with the newest user message when messages
+  // arrive, so `UserMessage` renders the command pill instead of raw template
+  // text. `prevMsgLenRef` exists for this one observation.
   const prevMsgLenRef = useRef(messages?.length || 0);
-  useEffect(() => {
-    if (!pendingUserMessage) return;
-    const hasPendingMessage = pendingUserMessageId
-      ? !!messages?.some((m) => m.info.id === pendingUserMessageId)
-      : false;
-    if (hasPendingMessage) {
-      setPendingUserMessage(null);
-      setPendingUserMessageId(null);
-      setPendingCommand(null);
-      return;
-    }
-    const len = messages?.length || 0;
-    if (len > prevMsgLenRef.current) {
-      setPendingUserMessage(null);
-      setPendingUserMessageId(null);
-      setPendingCommand(null);
-    }
-  }, [messages, messages?.length, pendingUserMessage, pendingUserMessageId]);
-
-  // Associate stashed command info with the newest user message when messages arrive.
-  // Runs separately so it captures the mapping even if busy fires before messages update.
   useEffect(() => {
     const stash = pendingCommandStashRef.current;
     if (!stash || !messages) return;
@@ -4059,7 +2534,7 @@ export function SessionChat({
   }, [messages?.length]);
 
   // ---- Auto-scroll (replaces inline scroll logic) ----
-  const hasActiveQuestion = useOpenCodePendingStore((s) =>
+  const hasActiveQuestion = useRuntimePendingStore((s) =>
     Object.values(s.questions).some((q) => q.sessionID === sessionId),
   );
   const messageCount = messages?.length ?? 0;
@@ -4073,10 +2548,60 @@ export function SessionChat({
     scrollToEnd,
     scrollToAbsoluteBottom,
     smoothScrollToAbsoluteBottom,
+    anchorTurn,
   } = useAutoScroll({
     working: isBusy && !hasActiveQuestion,
     hasContent: messageCount > 0,
   });
+  // Older history loads by scrolling, not by clicking: a sentinel above the
+  // first turn pulls the previous page as it nears the top of the viewport.
+  // A pull always prepends content above the reader, so every one is wrapped
+  // in the turn anchor — capture where the topmost visible turn sits, restore
+  // it after the prepended turns render, and the viewport never jumps.
+  const [olderPullFailed, setOlderPullFailed] = useState(false);
+  useEffect(() => {
+    setOlderPullFailed(false);
+  }, [sessionId]);
+  const handleLoadOlder = useCallback(async () => {
+    const node = scrollRef.current;
+    const anchor = node ? captureTurnScrollAnchor(node) : null;
+    try {
+      await loadOlder();
+      setOlderPullFailed(false);
+    } catch {
+      // Surface a retry instead of letting the sentinel re-arm into a loop.
+      setOlderPullFailed(true);
+    }
+    if (!node) return;
+    requestAnimationFrame(() => {
+      restoreTurnScrollAnchor(node, anchor);
+    });
+  }, [loadOlder, scrollRef]);
+  const olderSentinelRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const node = olderSentinelRef.current;
+    if (!node || !hasOlder) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (
+          shouldLoadOlderHistory({
+            isIntersecting: !!entry?.isIntersecting,
+            hasOlder,
+            isLoadingOlder,
+            lastPullFailed: olderPullFailed,
+          })
+        ) {
+          void handleLoadOlder();
+        }
+      },
+      // Pull before the reader reaches the top so history is already there.
+      { root: scrollRef.current, rootMargin: '400px 0px 0px 0px' },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+    // sessionId is a dep because switching sessions swaps the scroll
+    // container the observer is rooted in.
+  }, [hasOlder, isLoadingOlder, olderPullFailed, handleLoadOlder, scrollRef, sessionId]);
 
   // Scroll to the bottom on initial load / session change.
   // Uses a callback ref on the scroll container to guarantee it's mounted.
@@ -4127,11 +2652,13 @@ export function SessionChat({
   // preserves scroll position automatically. No action needed here.
 
   // ---- Pending permissions & questions ----
-  const allPermissions = useOpenCodePendingStore((s) => s.permissions);
-  const allQuestions = useOpenCodePendingStore((s) => s.questions);
+  const allPermissions = useRuntimePendingStore((s) => s.permissions);
+  const allQuestions = useRuntimePendingStore((s) => s.questions);
   const pendingPermissions = useMemo(
-    () => Object.values(allPermissions).filter((p) => p.sessionID === sessionId),
-    [allPermissions, sessionId],
+    () =>
+      sessionState?.permissions ??
+      Object.values(allPermissions).filter((p) => p.sessionID === sessionId),
+    [sessionState?.permissions, allPermissions, sessionId],
   );
   const suppressedQuestionIdsRef = useRef<Map<string, number>>(new Map());
   const suppressQuestionFor = useCallback((requestId: string, ms = 15000) => {
@@ -4148,10 +2675,11 @@ export function SessionChat({
   }, []);
   const pendingQuestions = useMemo(
     () =>
-      Object.values(allQuestions).filter(
-        (q) => q.sessionID === sessionId && !isQuestionSuppressed(q.id),
-      ),
-    [allQuestions, sessionId, isQuestionSuppressed],
+      (
+        sessionState?.questions ??
+        Object.values(allQuestions).filter((q) => q.sessionID === sessionId)
+      ).filter((q) => !isQuestionSuppressed(q.id)),
+    [sessionState?.questions, allQuestions, sessionId, isQuestionSuppressed],
   );
   const QUESTION_PROMPT_ANIMATION_MS = 320;
   const activePendingQuestion = pendingQuestions[0] ?? null;
@@ -4186,9 +2714,48 @@ export function SessionChat({
       }
     };
   }, []);
-  const turns = useMemo(() => (messages ? groupMessagesIntoTurns(messages) : []), [messages]);
+  const rawTurns = useMemo(() => (messages ? groupMessagesIntoTurns(messages) : []), [messages]);
+  /**
+   * `groupMessagesIntoTurns` allocates a fresh object per turn on every call, and
+   * `messages` is rebuilt on every SSE frame — so a fifty-turn session handed
+   * React fifty new `turn` objects ~60 times a second, of which at most one had
+   * changed. `turn` is the dependency of ~28 memos inside `SessionTurn`, so that
+   * one fact invalidated all of them, for every turn, every frame.
+   *
+   * The previous stable array is carried in a ref written after commit, so
+   * render stays pure; `stabilizeTurns` is idempotent, so StrictMode's double
+   * invocation lands on the same objects.
+   */
+  const stableTurnsRef = useRef<Turn[]>([]);
+  const turns = useMemo(() => stabilizeTurns(rawTurns, stableTurnsRef.current), [rawTurns]);
+  useEffect(() => {
+    stableTurnsRef.current = turns;
+  }, [turns]);
+
+  /**
+   * One scan of the transcript, not one per turn.
+   *
+   * `planAnchorMessageId` inspects every part of every message. It used to run
+   * inside each turn, which made it O(turns x total-parts) — on the order of
+   * 100k part inspections per frame for a long session.
+   */
+  const planAnchorId = useMemo(() => (messages ? planAnchorMessageId(messages) : null), [messages]);
+  const lastUserMessageId = useMemo(() => {
+    if (!messages) return null;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].info.role === 'user') return messages[i].info.id;
+    }
+    return null;
+  }, [messages]);
+  /** Hoisted out of the JSX: an inline arrow prop defeats `React.memo` by itself. */
+  const handleRewind = useCallback(
+    (messageId: string, text: string) => setRewindTarget({ messageId, text }),
+    [],
+  );
   const hasAnyMessages = turns.length > 0;
-  const hasChatContent = hasAnyMessages || (!!optimisticPrompt && !hasAnyMessages);
+  // A pending inbox row counts as content: the session HAS the user's message
+  // (durably), so the welcome overlay must not paint over the queue strip.
+  const hasChatContent = hasAnyMessages || promptInbox.prompts.length > 0;
   // Full-bleed wallpaper layer mounted by SessionLayout (null on mobile /
   // standalone). When present, the welcome wallpaper is portaled into it so it
   // spans the entire session width instead of shrinking with the chat panel.
@@ -4225,36 +2792,44 @@ export function SessionChat({
   // Self-heal a missed `question.asked` SSE event (a `question` tool part
   // rendering as running with nothing in the pending store for this session) —
   // see the SDK's `useQuestionSelfHeal` for why this poll is distinct from
-  // `useOpenCodeEventStream`'s reconnect-gap hydration.
+  // `useRuntimeEventStream`'s reconnect-gap hydration.
   useQuestionSelfHeal(sessionId, messages, {
-    enabled: isActiveSessionTab,
+    enabled: !sessionState && isActiveSessionTab,
     isSuppressed: isQuestionSuppressed,
   });
   // The permission twin — a missed `permission.asked` frame otherwise leaves
   // the agent silently blocked with no card to answer (the "have to type
   // `continue`" wedge).
-  usePermissionSelfHeal(sessionId, messages, { enabled: isActiveSessionTab });
+  usePermissionSelfHeal(sessionId, messages, {
+    enabled: !sessionState && isActiveSessionTab,
+  });
 
   // ---- Permission/question reply handlers ----
-  const removePermission = useOpenCodePendingStore((s) => s.removePermission);
-  const removeQuestion = useOpenCodePendingStore((s) => s.removeQuestion);
+  const removePermission = useRuntimePendingStore((s) => s.removePermission);
+  const removeQuestion = useRuntimePendingStore((s) => s.removeQuestion);
 
   const handlePermissionReply = useCallback(
     async (requestId: string, reply: 'once' | 'always' | 'reject') => {
       // No optimistic remove: only drop the card once the runtime accepted the
       // reply — a failed reply must stay answerable. Rethrow so callers
       // (prompt buttons) reset their busy state and surface the error.
-      await replyToPermission(requestId, reply);
-      removePermission(requestId);
+      if (sessionState) {
+        await sessionState.answerPermission(requestId, reply);
+      } else {
+        await replyToPermission(requestId, reply);
+        removePermission(requestId);
+      }
     },
-    [removePermission],
+    [sessionState, removePermission],
   );
 
   const handleQuestionReply = useCallback(
     async (requestId: string, answers: string[][]) => {
       // Snapshot the question BEFORE removing it so we can cache the
       // answer against the tool part's ID.
-      const questionReq = useOpenCodePendingStore.getState().questions[requestId];
+      const questionReq =
+        sessionState?.questions.find((question) => question.id === requestId) ??
+        useRuntimePendingStore.getState().questions[requestId];
 
       suppressQuestionFor(requestId);
       // Optimistically remove the question so the textarea shows immediately
@@ -4266,7 +2841,7 @@ export function SessionChat({
       // answeredQuestionParts reads from this cache as a fallback.
       if (questionReq?.tool?.messageID) {
         const { messageID } = questionReq.tool;
-        const parts = useSyncStore.getState().parts[messageID];
+        const parts = useSessionStateStore.getState().parts[messageID];
         if (parts) {
           const match = parts.find(
             (p) =>
@@ -4284,12 +2859,13 @@ export function SessionChat({
       }
 
       try {
-        await replyToQuestion(requestId, answers);
+        if (sessionState) await sessionState.answerQuestion(requestId, answers);
+        else await replyToQuestion(requestId, answers);
       } catch {
         // ignore — SSE "question.replied" event will also remove it
       }
     },
-    [removeQuestion, suppressQuestionFor],
+    [sessionState, removeQuestion, suppressQuestionFor],
   );
 
   const handleQuestionReject = useCallback(
@@ -4298,16 +2874,22 @@ export function SessionChat({
       // Optimistically remove the question so the textarea shows immediately
       removeQuestion(requestId);
       try {
-        await rejectQuestion(requestId);
+        if (sessionState) await sessionState.rejectQuestion(requestId);
+        else await rejectQuestion(requestId);
       } catch {
         // ignore — SSE "question.rejected" event will also remove it
       }
-      // Also abort the session so the "The operation was aborted." banner appears
-      if (!abortSession.isPending) {
-        abortSession.mutate(sessionId);
+      // Also abort the session so the "The operation was aborted." banner
+      // appears. Routed through `issueSessionCancel` (T10) so this
+      // cancel's `AbortSettlement` is tracked the same as every other stop
+      // path, in case a queued "send now" follows a question rejection.
+      if (sessionState) {
+        issueSessionCancel();
+      } else if (!abortSession.isPending) {
+        issueSessionCancel();
       }
     },
-    [removeQuestion, abortSession, sessionId, suppressQuestionFor],
+    [sessionState, removeQuestion, abortSession, suppressQuestionFor, issueSessionCancel],
   );
   const hasCompactionTurn = useMemo(
     () =>
@@ -4343,14 +2925,10 @@ export function SessionChat({
 
   // Reset on session change
   useEffect(() => {
-    setPollingActive(false);
-    setPendingUserMessage(null);
-    setPendingUserMessageId(null);
-    setPendingCommand(null);
-    setPendingSendInFlight(false);
-    setPendingSendMessageId(null);
-    lastSendTimeRef.current = 0;
-  }, [sessionId]);
+    clearSendReceipt();
+    setRewindTarget(null);
+    setRewindDraft(null);
+  }, [sessionId, clearSendReceipt]);
 
   // ============================================================================
   // Billing: DISABLED — billing is handled server-side by the router
@@ -4359,19 +2937,64 @@ export function SessionChat({
   // got cost config and step-finish.cost became non-zero.
   // ============================================================================
 
-  // ============================================================================
-  // TODO(session-rewind): Bring back an in-place "edit past message + rewind"
-  // flow instead of the removed edit-fork-prompt feature. The old behaviour
-  // created a native fork of the session at a message and reopened the new
-  // session with the edited prompt restored in the composer — that UX was the
-  // wrong model. What we actually want is a proper rewind/rollback on the SAME
-  // session (edit a prior user message, roll the session back to that point,
-  // and re-run from there), which opencode supports natively. Removed here so
-  // it can be rebuilt correctly. The old surface spanned: useForkSession()
-  // (SDK), the fork-draft stash (writeForkDraft/readForkDraft/clearForkDraft),
-  // the Fork / Edit-fork buttons + Confirm/Edit dialogs on user messages, and
-  // the composer draft-restore in session-chat-input.tsx.
-  // ============================================================================
+  const handleConfirmRewind = useCallback(async () => {
+    if (!sessionState || !rewindTarget) return;
+    try {
+      const { messageId, text } = rewindTarget;
+      await sessionState.rewind(messageId);
+      // THE QUEUED ROWS GO, and this is not a preference.
+      //
+      // A rewind stages `session.revert`; the NEXT prompt delivered is what
+      // commits the truncation. The inbox admits by `created_at`, so a row
+      // queued before the rewind is admitted BEFORE the replacement prompt
+      // this flow prefills — it would commit the user's rewind and then run
+      // against the trajectory that rewind just deleted.
+      //
+      // Holding them instead does not hold: `POST .../prompts` releases the
+      // session's hold, and the send that releases it is precisely the one the
+      // rewind prefills. So the rows are removed, exactly as the browser
+      // queue's `clearSession` removed them — but visibly, and once, for every
+      // tab, rather than per tab.
+      const doomed = promptInbox.prompts.filter((prompt) => prompt.state !== 'delivering');
+      let removed = 0;
+      for (const prompt of doomed) {
+        // Sequential: a row that turns out to be on the wire answers 409, and
+        // that is not a reason to stop removing the rest.
+        const gone = await promptInbox.remove(prompt.prompt_id).catch((error) => {
+          console.warn('[session-chat] failed to remove a queued prompt on rewind', error);
+          return null;
+        });
+        if (gone) removed += 1;
+      }
+      if (removed > 0) {
+        infoToast(
+          removed === 1 ? 'Queued message removed' : `${removed} queued messages removed`,
+          {
+            description: 'They were written for the messages this rewind discards.',
+          },
+        );
+      }
+      setRewindDraft({ text, id: ++rewindPrefillId.current });
+      setRewindTarget(null);
+    } catch (error) {
+      errorToast('Session rewind failed', {
+        description: formatCommandError(error),
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rewindTarget, sessionState, promptInbox.prompts, promptInbox.remove]);
+
+  const handleRestoreRewind = useCallback(async () => {
+    if (!sessionState?.rewindMessageId) return;
+    try {
+      await sessionState.restoreRewind();
+      setRewindDraft({ text: '', id: ++rewindPrefillId.current });
+    } catch (error) {
+      errorToast('Session restore failed', {
+        description: formatCommandError(error),
+      });
+    }
+  }, [sessionState]);
 
   // ============================================================================
   // Send / Stop / Command handlers
@@ -4392,6 +3015,14 @@ export function SessionChat({
         agent?: string | null;
         model?: { providerID: string; modelID: string } | null;
         variant?: string | null;
+        /**
+         * The queue entry's stable key, when this send is a queued entry being
+         * dispatched. Re-dispatching the SAME entry (a retry) re-sends one wire
+         * `messageID` so the sandbox proxy still recognises the delivery;
+         * a different entry, even with identical text, gets its own. Omitted
+         * for a direct composer send, which has no retry path.
+         */
+        clientMessageId?: string;
       },
     ) => {
       setCommandError(null);
@@ -4410,12 +3041,13 @@ export function SessionChat({
       // File and agent refs from tracked @ mentions. File uploads still use
       // the separate <file path="..." mime="..." ...>…</file> block below —
       // these are only for plain @ references to existing files/agents.
-      const fileMentionRefs: FileRefLike[] = (mentions ?? [])
-        .filter((m) => m.kind === 'file' && m.label)
-        .map((m) => ({ path: m.label, name: m.label }));
-      const agentMentionRefs: AgentRefLike[] = (mentions ?? [])
-        .filter((m) => m.kind === 'agent' && m.label)
-        .map((m) => ({ name: m.label }));
+      const fileMentionRefs: FileRefLike[] = [];
+      const agentMentionRefs: AgentRefLike[] = [];
+      for (const m of mentions ?? []) {
+        if (!m.label) continue;
+        if (m.kind === 'file') fileMentionRefs.push({ path: m.label, name: m.label });
+        else if (m.kind === 'agent') agentMentionRefs.push({ name: m.label });
+      }
 
       // Play send sound
       playSound('send');
@@ -4430,7 +3062,7 @@ export function SessionChat({
       const attachedFiles = files ?? [];
 
       // Build optimistic text that includes session ref XML so that
-      // HighlightMentions / UserMessageRow can detect multi-word session
+      // HighlightMentions / UserMessage can detect multi-word session
       // mentions (e.g. "@Intro message") before the server echoes back.
       const sessionMentionsForOptimistic =
         mentions?.filter((m) => m.kind === 'session' && m.value) ?? [];
@@ -4439,10 +3071,14 @@ export function SessionChat({
       const rawOptimisticSessionIds: typeof sessionMentionsForOptimistic = [];
       const rawOptimisticRegex = /@(ses_[A-Za-z0-9]+)/g;
       let rawOptimisticMatch: RegExpExecArray | null;
+      let optimisticSessionsById: Map<string, any> | null = null;
       while ((rawOptimisticMatch = rawOptimisticRegex.exec(text)) !== null) {
         const rawId = rawOptimisticMatch[1];
         if (sessionMentionsForOptimistic.some((m) => m.value === rawId)) continue;
-        const found = allSessions?.find((s: any) => s.id === rawId);
+        optimisticSessionsById ??= new Map(
+          (allSessions ?? []).map((s: any) => [s.id, s] as const),
+        );
+        const found = optimisticSessionsById.get(rawId);
         rawOptimisticSessionIds.push({
           kind: 'session',
           label: found?.title || rawId,
@@ -4471,27 +3107,52 @@ export function SessionChat({
         if (block) optimisticText = `${optimisticText}\n\n${block}`;
       }
 
+      // WILL THIS PROMPT RUN NOW, OR WAIT?
+      //
+      // The SERVER decides admission — that is the whole point of the inbox —
+      // but the rendering decision is local and has to be made here, before the
+      // POST. A prompt that will wait belongs in the queue strip and nowhere
+      // else: painting it into the transcript too puts the same message on
+      // screen twice, in an order that never happened (below a still-streaming
+      // answer), and the optimistic sweep at the end of the running turn then
+      // deletes the bubble and the drain re-adds it seconds later.
+      //
+      // Reading `isBusy` here is not a re-run of the old queue-vs-send
+      // decision: nothing about ORDERING depends on it. A wrong guess costs one
+      // frame of optimism, not a misordered or dropped message.
+      const willWaitInInbox = isBusyRef.current || queuedMessagesRef.current > 0;
+
       // Optimistic: show message immediately in sync store + set busy
       // Matches OpenCode: sync.set("session_status", session.id, { type: "busy" })
-      beginOptimisticSend(sessionId, messageID, optimisticText, [textPartId]);
+      if (!willWaitInInbox) {
+        beginOptimisticSend(sessionId, messageID, optimisticText, [textPartId]);
+      }
 
-      // Scroll so the new user message appears at the top of the viewport.
-      // MutationObserver recalcs spacer automatically when the new turn renders.
-      // Fire twice: early (before DOM update) to reset scroll state so the RAF
-      // auto-scroll loop is unblocked, and again after the turn likely rendered.
-      scrollToBottom();
-      setTimeout(() => scrollToBottom(), 100);
+      // Anchor the new user message at the top of the viewport.
+      //
+      // This used to be `scrollToBottom()` plus a second one on a 100ms timer,
+      // "after the turn likely rendered". Both fired at send time and both
+      // targeted the LAST `[data-turn-id]`, so until the new turn committed
+      // they anchored the previous one — and on a slow render the real turn
+      // landed afterwards and moved the viewport unprompted. `anchorTurn`
+      // waits for THIS turn's element instead of guessing, gives up rather
+      // than firing late, and abandons on any wheel/touch so it never yanks a
+      // reader who has scrolled away. See `turn-anchor.ts`.
+      // Nothing to anchor when the prompt is going to wait: no bubble was
+      // painted, and anchoring would move the viewport off the running turn.
+      if (!willWaitInInbox) anchorTurn(messageID);
 
       const options: Record<string, unknown> = {};
       const overrideAgent = overrides?.agent;
       const overrideModel = overrides?.model;
       const overrideVariant = overrides?.variant;
-      if (lockedAgentName) {
-        options.agent = lockedAgentName;
-      } else if (overrideAgent !== undefined) {
+      if (overrideAgent !== undefined) {
         if (overrideAgent) options.agent = overrideAgent;
-      } else if (local.agent.current) {
-        options.agent = local.agent.current.name;
+      } else if (composerAgentName) {
+        // The name the picker is SHOWING, not `local.agent.current`: an
+        // inaccessible project default resolves to the first agent this user
+        // holds a grant on, and the send must carry that same one.
+        options.agent = composerAgentName;
       }
       if (overrideModel !== undefined) {
         if (overrideModel) options.model = overrideModel;
@@ -4515,8 +3176,9 @@ export function SessionChat({
         built = await buildPromptPartsWithUploads(textPrompt.text, attachedFiles, uploadFile);
       } catch (err) {
         // Never reached the network — nothing to rehydrate from the server,
-        // so just clear busy and drop the optimistic message outright.
-        abandonOptimisticSend(sessionId, messageID);
+        // so just clear busy and drop the optimistic message outright. (A
+        // waiting prompt painted nothing, so there is nothing to drop.)
+        if (!willWaitInInbox) abandonOptimisticSend(sessionId, messageID);
         const classified = classifySessionError(err);
         setCommandError(classified);
         throw err instanceof Error ? err : new Error(classified.message);
@@ -4532,12 +3194,14 @@ export function SessionChat({
       const rawSessionIdMentions: TrackedMention[] = [];
       const rawSessionIdRegex = /@(ses_[A-Za-z0-9]+)/g;
       let rawMatch: RegExpExecArray | null;
+      let sessionsById: Map<string, any> | null = null;
       while ((rawMatch = rawSessionIdRegex.exec(textPrompt.text)) !== null) {
         const rawId = rawMatch[1];
         // Skip if already covered by a tracked mention
         if (trackedSessionMentions.some((m) => m.value === rawId)) continue;
         // Look up session by ID
-        const found = allSessions?.find((s: any) => s.id === rawId);
+        sessionsById ??= new Map((allSessions ?? []).map((s: any) => [s.id, s] as const));
+        const found = sessionsById.get(rawId);
         if (found) {
           rawSessionIdMentions.push({
             kind: 'session',
@@ -4570,15 +3234,25 @@ export function SessionChat({
         if (block) textPrompt.text = `${textPrompt.text}\n\n${block}`;
       }
 
-      // Send via the SDK's promptOpenCodeMessage — the server accepts the
+      // Send via the SDK's promptRuntimeMessage — the server accepts the
       // prompt (204) and streams the response over SSE; we await the ACK so
       // callers (queue drain, input box) can handle send failures, but the
       // actual response body still arrives via the sync store.
       //
-      // Don't send part IDs or messageID — let the server generate them with
-      // its own clock. Client-generated IDs can sort before server IDs due to
-      // clock skew (browser vs Docker container), causing the server's loop to
-      // exit immediately thinking the prompt was already answered.
+      // Don't send part IDs. `ascendingId` encodes the HIGH bits of the id
+      // clock where opencode encodes the LOW 48 (see the warning on it in the
+      // SDK), so a client id of that shape sorts before EVERY server id: the
+      // server's "has this prompt already been answered?" ordering check reads
+      // a stale assistant reply as the answer and the turn never runs.
+      //
+      // The `messageID` is a different matter and IS sent — by the SDK, not
+      // from here. `promptOpenCodeMessage` mints it in opencode's own wire
+      // format and places it above everything already in this session's
+      // transcript, which is what makes it safe; without one, two identical
+      // prompts inside 60s hash to a single proxy delivery and the second is
+      // silently dropped. Do not "restore" the old no-messageID behaviour on
+      // the strength of the part-id reasoning above — they are not the same
+      // hazard, and the mint is the guard against this one.
       const mappedParts = parts.map((p: any) => {
         if (p.type === 'file')
           return {
@@ -4590,34 +3264,126 @@ export function SessionChat({
         return { type: 'text' as const, text: p.text };
       });
       const sendOpts = Object.keys(options).length > 0 ? options : undefined;
+      // Kept so a turn refused for a missing connector can be re-sent verbatim
+      // once the account is connected. Without it the user connects, the card
+      // retries, and re-sends nothing — losing the message they typed, which is
+      // a worse outcome than the refusal they started with.
+      lastSubmittedRef.current = { parts: mappedParts, options };
 
-      // Sending to the sandbox's OpenCode server can transiently fail — the
-      // container may be waking from auto-stop, restarting, or the tunnel
-      // blips. `promptOpenCodeMessage` (packages/sdk) owns retrying transient
-      // failures with backoff so a flaky send self-heals; only a real 4xx (bad
-      // request / auth / missing model key), or exhausting the retry window,
-      // surfaces here. The optimistic user message + busy status stay up the
-      // whole time, so the UI shows the send in progress throughout. On
-      // failure, `sendAndRecover` runs the shared recovery routine: clear
-      // busy, then either rehydrate real messages from the server (some error
-      // paths — e.g. missing API key — never emit a `session.error` SSE
-      // event) or drop the optimistic message if the server has no record.
-      const result = await sendAndRecover({
-        sessionId,
-        messageId: messageID,
-        parts: mappedParts,
-        options: {
-          // Pass the session's directory so opencode resolves project-scoped
-          // agents (.opencode/agent/*.md under the project) and applies them
-          // when the user picked a project agent from the picker.
-          ...(session?.directory ? { directory: session.directory } : {}),
-          ...(sendOpts?.agent ? { agent: sendOpts.agent } : {}),
-          ...(sendOpts?.model ? { model: formatPromptModel(sendOpts.model as ModelKey) } : {}),
-          ...(sendOpts?.variant ? { variant: sendOpts.variant } : {}),
-        } as any,
-        classify: classifySessionError,
-      });
+      // The prompt is going out, so the optimistic message stops being
+      // `pending`. This is what lets the server's echo — which arrives under a
+      // DIFFERENT id — supersede it instead of rendering beside it.
+      //
+      // `useSession.sendParts` normally marks dispatch by correlating the
+      // client-generated part ids carried with the prompt. We strip those ids
+      // on purpose (see the note above `mappedParts`: client ids can sort
+      // before server ids under clock skew and make the server's loop exit
+      // early), so there is nothing for it to correlate on and the mark never
+      // happened. The result was every message rendering twice for the whole
+      // turn, until the session went idle and the optimistic sweep ran.
+      if (!willWaitInInbox) markOptimisticSendDispatched(sessionId, messageID);
+
+      const selectedAgent = typeof sendOpts?.agent === 'string' ? sendOpts.agent : null;
+      const selectedVariant = typeof sendOpts?.variant === 'string' ? sendOpts.variant : null;
+      const selectedModel = sendOpts?.model ? (sendOpts.model as ModelKey) : null;
+
+      // THE ONE SEND PATH: the server-side prompt inbox.
+      //
+      // This used to POST straight into the sandbox's OpenCode server, and
+      // anything the user typed while the agent was busy went into a browser
+      // queue instead — which meant a closed tab, a second device, or a crash
+      // lost it silently, and two tabs on one session disagreed about what was
+      // pending. Now every prompt becomes a durable row first, and the SERVER
+      // decides whether it runs now or waits: the admission gate reads the same
+      // turn authority `GET .../turn` serves from, so the composer never has to
+      // guess whether a turn is in flight.
+      //
+      // The WIRE id is minted here, by the SDK, and never by the control plane:
+      // OpenCode resolves "has this prompt already been answered?" by id ORDER,
+      // and only this process holds the transcript to place one against. It is
+      // NOT `messageID` above — that is `ascendingId`, which encodes the wrong
+      // bits and is optimistic-render-only (see the SDK's warning on it).
+      const clientMessageId = overrides?.clientMessageId ?? messageID;
+      // The prompt is out of this tab's hands the moment the row lands, so the
+      // receipt is taken BEFORE the POST: it is what holds the composer on
+      // "working" until `GET .../turn` reports the turn the inbox admitted.
+      noteSendReceipt(clientMessageId);
+      const result = await (async () => {
+        try {
+          if (!projectId || !projectSessionId) {
+            throw new Error('This session has no project — cannot queue a prompt');
+          }
+          const created = await promptInbox.enqueue({
+            clientMessageId,
+            messageId: mintSessionWireMessageId(sessionId, clientMessageId),
+            parts: mappedParts,
+            overrides: {
+              // Pass the session's directory so opencode resolves project-scoped
+              // agents (.opencode/agent/*.md under the project) and applies them
+              // when the user picked a project agent from the picker.
+              ...(session?.directory ? { directory: session.directory } : {}),
+              ...(selectedAgent ? { agent: selectedAgent } : {}),
+              ...(selectedModel ? { model: formatPromptModel(selectedModel) } : {}),
+              ...(selectedVariant ? { variant: selectedVariant } : {}),
+            },
+          });
+          // The server's admission verdict, not a guess. A `failed` row is a
+          // real refusal wearing a 200: a re-POST of a `clientMessageId` whose
+          // row already dead-lettered dedupes into that row, and discarding
+          // the result used to accept the receipt, clear the draft, and tell
+          // the user nothing. Thrown here so the ordinary failure path below
+          // clears the named receipt and surfaces the error.
+          if (created.state === 'failed') {
+            throw new Error(
+              'This prompt was refused — its earlier delivery already failed. Edit it and send again.',
+            );
+          }
+          // The server has the prompt. From here — and NOT before — a
+          // `GET .../turn` read is able to see it, so one is allowed to answer
+          // for it. `useSessionPrompts` raises the inbox floor at the same
+          // moment, which is what covers the window before the row is
+          // delivered and becomes a turn.
+          acceptSendReceipt(clientMessageId);
+          // Correct the rendering guess with the server's answer: the guess
+          // said "will wait" (so no optimistic bubble was painted), but the
+          // server admitted it to run now. Paint the bubble after the fact so
+          // the user's message is not stranded in the queue strip while the
+          // turn it started streams above an empty transcript slot. Under the
+          // in-turn forwarding gate this fires often: an awake session answers
+          // `queued`/`delivering` for a prompt the old gate made `waiting`.
+          // Only when nothing else is in line: a row behind other queued rows
+          // genuinely waits its turn even when admissible, and painting it now
+          // would fake an order the queue has not produced yet.
+          const correctedWillWait =
+            willWaitInInbox &&
+            queuedMessagesRef.current === 0 &&
+            (created.state === 'queued' || created.state === 'delivering');
+          if (correctedWillWait) {
+            beginOptimisticSend(sessionId, messageID, optimisticText, [textPartId]);
+            markOptimisticSendDispatched(sessionId, messageID);
+            anchorTurn(messageID);
+          }
+          return { ok: true } as const;
+        } catch (cause) {
+          // Unchanged recovery: clear busy, then either rehydrate the real
+          // messages or drop the optimistic one if the server has no record.
+          // A prompt that was going to WAIT painted no optimistic message and
+          // did not flip the session busy, so there is nothing to unwind —
+          // classifying the error is all that is left to do.
+          const error = willWaitInInbox
+            ? classifySessionError(cause)
+            : recoverFromSendFailure(sessionId, messageID, cause, {
+                classify: classifySessionError,
+              });
+          return { ok: false, error, cause } as const;
+        }
+      })();
       if (!result.ok) {
+        // Nothing durable was created, so nothing is coming — drop the receipt
+        // rather than let a refused send claim `working` for a minute. Named,
+        // so a slow refusal cannot drop the receipt of a send the user made
+        // after it.
+        clearSendReceipt(clientMessageId);
         setCommandError(result.error);
         throw result.cause instanceof Error ? result.cause : new Error(result.error.message);
       }
@@ -4627,14 +3393,20 @@ export function SessionChat({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [
       sessionId,
-      lockedAgentName,
-      local.agent.current,
+      projectId,
+      projectSessionId,
+      promptInbox.enqueue,
+      noteSendReceipt,
+      acceptSendReceipt,
+      clearSendReceipt,
+      composerAgentName,
       local.model.currentKey,
       local.model.sendKey,
       local.model.variant.current,
-      scrollToBottom,
+      anchorTurn,
       replyTo,
       messages,
+      sessionState,
     ],
   );
 
@@ -4646,67 +3418,29 @@ export function SessionChat({
   const registerSender = useChatSendStore((s) => s.registerSender);
   const unregisterSender = useChatSendStore((s) => s.unregisterSender);
   useEffect(() => {
-    registerSender(sessionId, (text: string) => handleSend(text));
+    registerSender(
+      sessionId,
+      async (text: string) => {
+        // No local queue-vs-send decision any more: the send IS the queue. The
+        // inbox admits the prompt when the session can take it, so a caller
+        // that used to be told "queued" is simply told "sent" — the prompt is
+        // durable either way, which is the stronger promise.
+        await handleSend(text);
+        return 'sent';
+      },
+      projectSessionId ? [projectSessionId] : [],
+    );
     return () => unregisterSender(sessionId);
-  }, [sessionId, handleSend, registerSender, unregisterSender]);
-
-  // Drain the ENTIRE queue at once at the next safe boundary — a tool call
-  // finishing (status flips to 'completed' or 'error'), or the turn going
-  // idle (covers the case where a message was queued during what turns out
-  // to be the LAST tool call, with nothing after it to hit). Everything
-  // queued goes out together as soon as one boundary is hit; it does NOT
-  // trickle out one message per subsequent boundary. Tracks tool completions
-  // it's already reacted to in a ref so re-renders don't re-fire.
-  const seenCompletedToolIdsRef = useRef<Set<string>>(new Set());
-  const wasBusyForDrainRef = useRef(isBusy);
-  useEffect(() => {
-    let hitToolBoundary = false;
-    if (messages) {
-      const seen = seenCompletedToolIdsRef.current;
-      for (const m of messages) {
-        if (m.info.role !== 'assistant') continue;
-        for (const part of m.parts) {
-          if (part.type !== 'tool') continue;
-          const status = (part as ToolPart).state?.status;
-          if ((status === 'completed' || status === 'error') && !seen.has(part.id)) {
-            seen.add(part.id);
-            hitToolBoundary = true;
-          }
-        }
-      }
-    }
-
-    const wasBusy = wasBusyForDrainRef.current;
-    wasBusyForDrainRef.current = isBusy;
-    const hitIdleBoundary = wasBusy && !isBusy;
-
-    if (!hitToolBoundary && !hitIdleBoundary) return;
-
-    const queue = queuedMessagesRef.current;
-    if (queue.length === 0) return;
-
-    setQueuedMessages([]);
-    void (async () => {
-      const failed: QueuedMessage[] = [];
-      for (const item of queue) {
-        try {
-          await handleSend(item.text, item.files, item.mentions);
-        } catch {
-          failed.push(item);
-        }
-      }
-      // Send failures are already surfaced via commandError — put any back
-      // so the user doesn't silently lose the queued draft.
-      if (failed.length > 0) setQueuedMessages((cur) => [...failed, ...cur]);
-    })();
-  }, [messages, isBusy, handleSend]);
+    // No local busy/queue gates in the deps any more: the sender does not read
+    // them, because the server decides admission.
+  }, [sessionId, projectSessionId, handleSend, registerSender, unregisterSender]);
 
   // NOTE: no client-side "auto-continue after approval" here — resuming the
   // agent when nobody was holding the gated call is the RESOLVE ENDPOINT's job
   // (server-side continueSession delivery in r7.ts), so it works with zero
   // browsers open. A web-side nudge would just double-send.
 
-  const handleStop = useCallback(() => {
+  const handleStop = useCallback(async () => {
     // Guard against rapid clicks — ignore if an abort is already in flight
     if (abortSession.isPending) {
       console.log(`[handleStop] Ignoring - abort already in flight for session ${sessionId}`);
@@ -4720,9 +3454,90 @@ export function SessionChat({
     applyOptimisticAbort(sessionId);
     clearTimeout(busyTimerRef.current);
     setIsBusy(false);
+    // Stop means the send this tab was still waiting on is over too.
+    clearSendReceipt();
 
-    abortSession.mutate(sessionId);
-  }, [sessionId, abortSession]);
+    // Stopping means stop doing things, and that includes the queue. Without
+    // this the interrupt is followed a beat later by exactly the message the
+    // user was trying to get ahead of.
+    //
+    // ONE hold, on the server, because the queue is not in this tab any more.
+    // Pausing a browser drain left every OTHER tab's view of the queue running
+    // and never reached the server at all.
+    //
+    // AWAITED, and BEFORE the abort. A prompt is now forwarded to OpenCode the
+    // moment it is admitted, so at stop time the session's queue can hold rows
+    // that OpenCode already has. The abort drops OpenCode's in-memory queue,
+    // and the reaper then sees those messages unanswered and hands them back —
+    // due now — unless the hold has already marked them stop-paused. Ordering
+    // the two calls makes "the hold precedes the abort" a fact instead of an
+    // argument about reaper cadence. The user sees no delay: the optimistic
+    // paint above already ran, so only the network abort moves one hop later.
+    //
+    // BOUNDED, because the abort is now sequenced behind a network call and
+    // `holdSessionPrompts` carries no client timeout of its own. A stalled
+    // socket can hang for minutes, and every one of those is the agent still
+    // running, still calling tools and still spending tokens under a UI that
+    // says it stopped. Past the bound the abort goes out anyway and the hold
+    // finishes on its own — the ordering is a preference, the abort is not.
+    await Promise.race([
+      promptInbox.hold(true).catch((error) => {
+        // Caught, never rethrown: a failed hold must not also cost the user
+        // their abort. The cost of that path is the one this ordering removes —
+        // a stopped prompt can still come back a reaper pass later.
+        console.warn('[session-chat] failed to hold the prompt inbox on stop', error);
+      }),
+      new Promise((resolve) => setTimeout(resolve, STOP_HOLD_DEADLINE_MS)),
+    ]);
+
+    // Routed through `issueSessionCancel` (T10) so this stop's
+    // `AbortSettlement` is tracked for `handleQueueSendNow`'s
+    // `stopThenSendNow` to await — see that function's doc for why.
+    issueSessionCancel();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId, abortSession, issueSessionCancel, promptInbox.hold]);
+
+  /**
+   * The per-row action: end the current turn if one is running, then send that
+   * message. The only path that interrupts a running turn — automatic draining
+   * never does — which is why it is a deliberate click and says what it does.
+   *
+   * T10: waits for the real `AbortSettlement` the stop it just issued
+   * produces (via `stopThenSendNow`), not a guess and not the optimistic
+   * idle flip `handleStop` makes synchronously — so the prompt cannot race
+   * the abort still in flight on the server.
+   */
+  const handleQueueSendNow = useCallback(
+    async (id: string) => {
+      await stopThenSendNow({
+        // The control plane's turn authority (`serverOpenTurnToken`), not the
+        // raw SSE slot. Both stale directions of the slot were real failures
+        // here: stale-idle dispatched into a live turn (OpenCode answers that
+        // by aborting it — the "Interrupted" symptom), and stale-busy issued a
+        // spurious Stop that held the whole inbox.
+        isRunning: () => serverHoldsOpenTurn(working),
+        pendingSettlement: () => pendingAbortSettlementRef.current.get(sessionId),
+        stop: async () => {
+          // AWAITED: `handleStop` holds the inbox before it issues the cancel,
+          // so the settlement this reads only exists once that has happened.
+          // Reading the ref synchronously would find nothing, and a null
+          // settlement dispatches at once — racing the abort still in flight.
+          await handleStop();
+          return pendingAbortSettlementRef.current.get(sessionId) ?? null;
+        },
+        // `retry` is the inbox's own "run this one next", and it is the WHOLE
+        // dispatch: it promotes the row past the ordering gate and only THEN
+        // releases the session's hold, so the prompt the user pointed at is
+        // the one that runs and the rest of the queue follows it. Releasing
+        // the hold separately first is what made the oldest row run instead.
+        dispatch: async () => {
+          await promptInbox.retry(id).catch(() => errorToast('Could not send that prompt'));
+        },
+      });
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [sessionId, handleStop, promptInbox.retry, working],
+  );
 
   // ---- Triple-ESC to stop ----
   // ESC 1 → show hint (2 more). ESC 2 → show hint (1 more). ESC 3 → stop.
@@ -4757,26 +3572,51 @@ export function SessionChat({
     // modal), which must not issue stop commands.
     if (!isActiveSessionTab || readOnly) return;
 
+    // Sampled in the CAPTURE phase — before ProseMirror/@tiptap/suggestion
+    // run — because an Escape that dismisses the `@`/`/` menu unmounts its
+    // listbox synchronously inside the editor's own keydown handling; by
+    // bubble time the menu this press was meant for is already gone. See
+    // `EscapePress` in esc-to-stop.ts.
+    let suggestionMenuWasOpen = false;
+    const onKeyDownCapture = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      suggestionMenuWasOpen = document.querySelector(SUGGESTION_MENU_SELECTOR) !== null;
+    };
+
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || !isBusy) return;
 
-      // ESC was already consumed by something else — e.g. the composer's own
-      // slash/mention popover (which calls preventDefault) or another focused
-      // control that handled it — so it must never advance the stop counter.
-      if (e.defaultPrevented) return;
-
       // ESC-to-stop is a page-wide shortcut: it must fire whether or not the
       // composer is focused, because users watch the agent run with focus
-      // elsewhere (chat body, a tool view, or nothing at all). The only presses
-      // we ignore are those meant for an open overlay the user is interacting
-      // with — when focus sits inside a dialog/menu/popover/select, that ESC is
-      // for dismissing it, not for stopping. (A hovered tooltip never takes
-      // focus, so the stop button's own tooltip can't suppress the shortcut.)
+      // elsewhere (chat body, a tool view, or nothing at all) AND with focus
+      // in the chat input itself. The presses that must not advance the
+      // counter: one meant for an open overlay the user is interacting with
+      // (focus in a dialog/menu/popover/select — that ESC dismisses it; a
+      // hovered tooltip never takes focus, so the stop button's own tooltip
+      // can't suppress the shortcut), and one another control already
+      // consumed. `defaultPrevented` decides "consumed" EXCEPT for presses
+      // inside the composer editor: ProseMirror's backdrop key mapping
+      // preventDefaults EVERY Escape in the contenteditable, so there the
+      // real consumed-signal is the `@`/`/` menu having been open at capture
+      // time. shouldCountEscape (esc-to-stop.ts) owns the decision.
       const active = document.activeElement;
-      const focusInOverlay = active?.closest(
-        '[role="dialog"],[role="alertdialog"],[role="menu"],[data-radix-popper-content-wrapper]',
-      );
-      if (focusInOverlay) return;
+      const focusInOverlay =
+        active?.closest(
+          '[role="dialog"],[role="alertdialog"],[role="menu"],[data-radix-popper-content-wrapper]',
+        ) != null;
+      const fromComposerEditor =
+        e.target instanceof Element && e.target.closest(COMPOSER_EDITOR_SELECTOR) !== null;
+      if (
+        !shouldCountEscape({
+          fromComposerEditor,
+          defaultPrevented: e.defaultPrevented,
+          suggestionMenuWasOpen,
+          focusInOverlay,
+          isComposing: e.isComposing,
+        })
+      ) {
+        return;
+      }
 
       e.preventDefault();
 
@@ -4786,9 +3626,10 @@ export function SessionChat({
       if (withinWindow) {
         const currentCount = escDeadlineRef.current ? Math.max(1, escCount) : 0;
         if (currentCount >= 2) {
-          // Third ESC → stop
+          // Third ESC → stop. Not awaited: the keyboard path has nothing to
+          // sequence after it, and `handleStop` never rejects.
           clearEscHint();
-          handleStop();
+          void handleStop();
         } else {
           // Second ESC → advance count, refresh cooloff
           setEscCount(2);
@@ -4811,8 +3652,12 @@ export function SessionChat({
       }
     };
 
+    window.addEventListener('keydown', onKeyDownCapture, true);
     window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('keydown', onKeyDownCapture, true);
+      window.removeEventListener('keydown', onKeyDown);
+    };
   }, [isActiveSessionTab, readOnly, isBusy, handleStop, clearEscHint, escCount]);
 
   // Reset when session goes idle
@@ -4820,42 +3665,79 @@ export function SessionChat({
     if (!isBusy) clearEscHint();
   }, [isBusy, clearEscHint]);
 
+  // Unmount-only: a fade timer armed by a keydown must not outlive the chat.
+  useEffect(() => {
+    return () => {
+      if (escFadeTimerRef.current) {
+        clearTimeout(escFadeTimerRef.current);
+      }
+    };
+  }, []);
+
   // Ref-based guard against rapid double-fire of commands (replaces
   // the old executeCommand.isPending check from the TQ mutation).
   const commandInFlightRef = useRef(false);
 
   const handleCommand = useCallback(
-    (cmd: Command, args?: string) => {
-      if (commandInFlightRef.current) return;
+    (cmd: Command, args?: string, split?: { before: string; after: string }): boolean => {
+      // Returns whether the command was DISPATCHED, not whether it succeeded.
+      // The composer needs that distinction: a swallowed dispatch that reports
+      // success clears the draft, so the command is lost with nothing on screen
+      // to say so.
+      if (commandInFlightRef.current) return false;
       setCommandError(null);
 
       playSound('send');
-      const label = args ? `/${cmd.name} ${args}` : `/${cmd.name}`;
-      const selectedModel = local.model.sendKey
-        ? formatModelString(local.model.sendKey)
-        : undefined;
+      // Rebuild the sentence the way it was WRITTEN, not command-first. This
+      // used to be `/${name} ${args}` unconditionally, which is why typing
+      // `explain /webapp to me` produced `/webapp explain to me` — the chip's
+      // position is not recoverable from `args`, so it has to be carried
+      // (`split`, from the editor's serializer) or it is lost here.
+      const label = split
+        ? [split.before, `/${cmd.name}`, split.after].filter(Boolean).join(' ')
+        : args
+          ? `/${cmd.name} ${args}`
+          : `/${cmd.name}`;
+      const selectedModel = local.model.sendKey ?? undefined;
       const handleCommandError = (err?: unknown) => {
-        setPendingCommand(null);
-        setPendingUserMessage(null);
-        setPendingUserMessageId(null);
-        setPollingActive(false);
+        // A command that was DELIVERED and then lost its connection is not a
+        // failed command. `/command` blocks for the whole turn, so both proxy
+        // hops routinely stop waiting while opencode is still working — and the
+        // request was already on the wire when they did. Clearing the session
+        // to `idle` and painting an error here told the user their message had
+        // not sent while the agent was actively answering it, and invited the
+        // retry that aborts the live turn and stamps it "Interrupted".
+        // See `delivered-but-disconnected.ts`.
+        if (isDeliveredButDisconnected(errorMessageOf(err))) {
+          pendingCommandStashRef.current = null;
+          // The session status stays put on purpose: the turn is live and SSE
+          // owns it from here.
+          return;
+        }
+        // Release the receipt taken at dispatch — it is what held the composer
+        // on "working" for a command that has now failed. No fabricated idle
+        // frame beside it: dropping the receipt IS the honest signal, and a
+        // written frame outranked the control plane's `/turn` answer.
+        clearSendReceipt(label);
         pendingCommandStashRef.current = null;
-        useSyncStore.getState().setStatus(sessionId, { type: 'idle' });
         setCommandError(classifySessionError(err));
       };
 
-      setPendingCommand({
-        name: cmd.name,
-        description: args || cmd.description,
-      });
       pendingCommandStashRef.current = {
         name: cmd.name,
         args: args || cmd.description,
+        // Carried to `UserMessage` via `commandMessagesRef` so the sent bubble
+        // draws the chip where it was typed. Display only.
+        split,
       };
-      setPendingUserMessage(label);
-      setPendingUserMessageId(null);
-      setPollingActive(true);
-      lastSendTimeRef.current = Date.now();
+      // Closes the queue drain's working gate SYNCHRONOUSLY. Without it a
+      // command dispatched from the queue left every gate clear: the drain's
+      // 700ms settle window would elapse before the server reported busy, the
+      // next queued message would go out, and a new prompt mid-turn aborts the
+      // one running — the "Interrupted" symptom the queue exists to prevent.
+      // A command is not an inbox row, so this receipt is the only thing that
+      // covers it until the runtime reports the turn.
+      noteSendReceipt(label);
 
       // Match SolidJS reference (submit.ts:259-289): fire command
       // directly via SDK — no TanStack Query, no mutation retry, no
@@ -4863,20 +3745,23 @@ export function SessionChat({
       // SSE delivers it. Commands use the blocking /command endpoint
       // which can take minutes; using TQ would cause retry on timeout.
       commandInFlightRef.current = true;
-      const client = getClient();
-      void client.session
-        .command({
-          sessionID: sessionId,
+      const agent = composerAgentName ?? undefined;
+      const variant = local.model.variant.current;
+      void (
+        sessionState?.runCommand(cmd.name, args || '', {
+          agent,
+          model: selectedModel,
+          variant,
+        }) ??
+        executeCommand.mutateAsync({
+          sessionId,
           command: cmd.name,
-          arguments: args || '',
-          ...((lockedAgentName || local.agent.current?.name) && {
-            agent: lockedAgentName || local.agent.current?.name,
-          }),
-          ...(selectedModel && { model: selectedModel }),
-          ...(local.model.variant.current && {
-            variant: local.model.variant.current,
-          }),
-        } as any)
+          args: args || '',
+          ...(agent ? { agent } : {}),
+          ...(selectedModel ? { model: formatModelString(selectedModel) } : {}),
+          ...(variant ? { variant } : {}),
+        })
+      )
         .then((res: any) => {
           if (res?.error) {
             handleCommandError(res.error);
@@ -4885,34 +3770,37 @@ export function SessionChat({
         .catch(handleCommandError)
         .finally(() => {
           commandInFlightRef.current = false;
+          // `/command` blocks for the whole turn, so this is the turn ending —
+          // and the instant from which a `/turn` read can speak for it. Nothing
+          // accepted a command's receipt before, and an unaccepted receipt puts
+          // the server floor at infinity: for a full 60s after every `/compact`
+          // the control plane's own "no turns" answer was discarded, and a
+          // dropped idle frame held the composer on Stop for twice the 30s
+          // backstop this replaced. A no-op when `handleCommandError` already
+          // dropped the receipt, or when a newer send replaced it.
+          acceptSendReceipt(label);
         });
       setTimeout(() => scrollToBottom(), 50);
+      return true;
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [
       sessionId,
       scrollToBottom,
-      lockedAgentName,
-      local.agent.current,
+      sessionState,
+      executeCommand,
+      composerAgentName,
       local.model.currentKey,
       local.model.sendKey,
       local.model.variant.current,
     ],
   );
 
-  const handleFileSearch = useCallback(async (query: string): Promise<string[]> => {
-    try {
-      return await searchWorkspaceFiles(query);
-    } catch {
-      return [];
-    }
-  }, []);
-
   const pathname = usePathname();
   const router = useRouter();
 
   // Thread context for subsessions only (real parentID).
-  const { data: parentSessionData } = useOpenCodeSession(session?.parentID || '');
+  const { data: parentSessionData } = useRuntimeSession(session?.parentID || '');
   const threadContext = useMemo(() => {
     if (!session?.parentID || !parentSessionData) return undefined;
     const projectRoute = pathname?.match(/^\/projects\/([^/]+)\/sessions\/([^/]+)/);
@@ -4937,6 +3825,124 @@ export function SessionChat({
     };
   }, [session?.parentID, parentSessionData, pathname, router]);
 
+  // ---- Stable props for <SessionChatInput> (it's React.memo-wrapped, so every
+  // prop below must keep referential identity across renders that don't
+  // actually change it — otherwise the memo is defeated on every streaming
+  // token). Bodies are verbatim copies of what used to be inlined in the JSX. ----
+
+  const handleAgentChange = useCallback(
+    (name: string | null | undefined) => local.agent.set(name ?? undefined),
+    [local.agent],
+  );
+
+  const handleModelChange = useCallback(
+    (m: ModelKey | null) => local.model.set(m ?? undefined, { recent: true }),
+    [local.model],
+  );
+
+  // Only the ACCOUNT default is settable from the picker now — it is the one
+  // scope with no screen of its own. The project default lives in the provider
+  // modal's Models tab and the agent default on the agent's detail page, both
+  // of which also SHOW and can CLEAR what is set. See ModelDefaultControls.
+  const chatModelDefaultControls: ModelDefaultControls = useMemo(
+    () => ({
+      accountDefault: local.model.defaults.accountDefault ?? null,
+      onSetAccountDefault: (m) => {
+        void local.model.defaults.setAccountDefault(m);
+      },
+    }),
+    [local.model.defaults],
+  );
+
+  const handleVariantChange = useCallback(
+    (v: string | null | undefined) => local.model.variant.set(v ?? undefined),
+    [local.model.variant],
+  );
+
+  const handleContextClick = useCallback(() => setContextModalOpen(true), []);
+
+  const handleCustomAnswer = useCallback((text: string) => {
+    questionPromptRef.current?.submitCustomAnswer(text);
+  }, []);
+
+  const handleQuestionAction = useCallback(() => {
+    questionPromptRef.current?.performAction();
+  }, []);
+
+  const chatCommands = useMemo(() => commands || [], [commands]);
+  const sessionScopeAgentName = composerAgentName ?? undefined;
+
+  const chatToolbarSlot = useMemo(
+    () =>
+      projectId && projectSessionId ? (
+        <SessionOverridesComposer
+          projectId={projectId}
+          sessionId={projectSessionId}
+          selectedAgent={sessionScopeAgentName ?? null}
+        />
+      ) : undefined,
+    [projectId, projectSessionId, sessionScopeAgentName],
+  );
+
+  const chatInputSlot = useMemo(
+    () => (
+      <>
+        {/* Connector actions a policy gated for approval — pauses the run
+            until the human decides. Self-hides when nothing's pending. */}
+        <SessionApprovalPrompt />
+        {/* Opencode tool permissions (bash/edit/…) awaiting a decision —
+            the turn is blocked inside the runtime and resumes the moment
+            a reply lands. Self-hides when nothing's pending. */}
+        <SessionPermissionPrompt
+          sessionId={sessionId}
+          permissions={pendingPermissions}
+          onReply={handlePermissionReply}
+        />
+        {renderedQuestion ? (
+          <div
+            className={cn(
+              'overflow-hidden w-full transition-[max-height,opacity,transform] ease-in-out',
+              questionPromptVisible
+                ? 'max-h-130 translate-y-0 opacity-100 duration-300'
+                : 'pointer-events-none max-h-0 -translate-y-1 opacity-0 duration-320',
+            )}
+          >
+            <QuestionPrompt
+              key={renderedQuestion.id}
+              ref={questionPromptRef}
+              request={renderedQuestion}
+              onReply={handleQuestionReply}
+              onReject={handleQuestionReject}
+              onActionChange={handleQuestionActionChange}
+            />
+          </div>
+        ) : null}
+      </>
+    ),
+    [
+      sessionId,
+      pendingPermissions,
+      handlePermissionReply,
+      renderedQuestion,
+      questionPromptVisible,
+      handleQuestionReply,
+      handleQuestionReject,
+      handleQuestionActionChange,
+    ],
+  );
+
+  // The rewound-path notice lives on the composer toolbar, beside send/stop —
+  // send is what commits the path, so the control sits at the moment of
+  // commitment instead of in a banner above the card. No manual useMemo: the
+  // React Compiler memoizes this component, and a hand-written dependency list
+  // narrower than `sessionState` makes it skip the whole component.
+  const composerRewind = sessionState?.rewindMessageId
+    ? {
+        pending: sessionState.rewindPending,
+        onRestore: () => void handleRestoreRewind(),
+      }
+    : undefined;
+
   // ============================================================================
   // Loading / Not-found states
   // ============================================================================
@@ -4953,20 +3959,49 @@ export function SessionChat({
   // This eliminates the loader for empty sessions entirely: instead of
   // spinning while we wait to confirm "0 messages", we show the welcome
   // screen right away.
-  const hasMessages = messages && messages.length > 0;
+  const hasMessages = Boolean(messages?.length);
   // "Not found" is a TERMINAL answer, never a loading guess. It's only true once
   // the runtime is connected AND the session lookup has actually run and come
   // back empty. While the runtime is still connecting (the query is disabled and
   // therefore reports isLoading=false) or the lookup is in flight, we know
   // nothing yet — so we must show the loading state, not the error. This is what
   // stops the "This session is not accessible right now." flash on boot.
-  const sessionResolved = runtimeReady && sessionFetched;
-  const isNotFound = !session && sessionResolved && !optimisticPrompt;
+  // `useRuntimePhase()` distinguishes a booting/reconnecting sandbox from one
+  // confirmed unreachable past the poll loop's failure threshold — plain
+  // `runtimeReady` collapses both into the same false. See `retryable` on
+  // `SessionComposerReadiness`.
+  const runtimePhase = useRuntimePhase();
+  // Covers the one gap `unreachable` can't: a sandbox proxy that keeps
+  // answering with a 503 (OpenCode wedged mid-boot) resets the probe's
+  // failure counter every tick, so `unreachable` never fires no matter how
+  // long it stays wedged. See `useRuntimeBootStalled`.
+  const runtimeStalled = useRuntimeBootStalled();
+  const composerReadiness = sessionComposerReadiness({
+    runtimeReady,
+    // Only an OPEN TURN the control plane is holding counts here. This tab's
+    // optimistic receipt and a stream frame both survive a box that died
+    // mid-turn, and a durable inbox row (which the projection also sources to
+    // `server`) exists precisely while nothing is running yet — see
+    // `serverHoldsOpenTurn`.
+    serverTurnLive: serverHoldsOpenTurn(working),
+    unreachable: runtimePhase === 'unreachable' || runtimeUnreachable,
+    stalled: runtimeStalled,
+  });
+  // #6509's `promptLikelyDropped` notice is deliberately NOT carried over: it
+  // instrumented the deleted prompt-observation stall machinery to warn about
+  // accepted-but-never-started prompts, and that state is structurally gone —
+  // a prompt is a durable inbox row before anything else happens, and an
+  // unconfirmed delivery is redelivered by the reaper (see step 7).
+  const { isNotFound, isDataLoading } = resolveSessionContentState({
+    runtimeReady,
+    sessionFetched,
+    hasRuntimeSession: Boolean(session),
+    hasMessages,
+    hasOptimisticPrompt: promptInbox.prompts.length > 0,
+  });
   // Everything that isn't "we have content" and isn't the terminal not-found
   // state is loading — including the boot window where the query is still
   // disabled (isLoading=false) waiting on the runtime.
-  const isDataLoading = !session && !isNotFound && !hasMessages && !optimisticPrompt;
-  const showOptimistic = !!optimisticPrompt && !hasMessages;
   const isTransitioningFromWelcome = !prevHasChatContentRef.current && hasChatContent;
   // The welcome wallpaper is the EMPTY-STATE backdrop for a *resolved* session.
   // The loading/connecting phase never reaches here (it early-returns the loader
@@ -4999,7 +4034,7 @@ export function SessionChat({
   if (isDataLoading) {
     return (
       <div className="bg-background relative flex h-full flex-col" data-testid="session-chat">
-        <SessionStartingLoader stage="ready" />
+        <SessionStartingLoader stage="ready" variant="compact" />
       </div>
     );
   }
@@ -5029,8 +4064,6 @@ export function SessionChat({
         <SessionSiteHeader
           sessionId={sessionId}
           sessionTitle={session?.title || 'Untitled'}
-          onToggleSidePanel={handleTogglePanel}
-          isSidePanelOpen={isSidePanelOpen}
           leadingAction={headerLeadingAction}
         />
       )}
@@ -5045,394 +4078,410 @@ export function SessionChat({
         allSessions={allSessions}
       />
 
-      {/* Content area — loading, not-found, or actual messages. The single
-          session loader (SessionStartingLoader) carries through here on its
-          "Connecting" phase so there's never a second, different loader. */}
-      {isNotFound ? (
-        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
-          <div className="text-muted-foreground text-sm">
-            {tHardcodedUi.raw(
-              'componentsSessionSessionChat.line5821JsxTextThisSessionIsNotAccessibleRightNow',
-            )}
-          </div>
-          <button
-            type="button"
-            onClick={() => {
-              try {
-                if (sessionId) useTabStore.getState().closeTab?.(sessionId);
-              } catch {}
-              if (typeof window !== 'undefined') window.location.assign('/');
-            }}
-            className="text-primary text-sm hover:underline"
-          >
-            {tHardcodedUi.raw('componentsSessionSessionChat.line5833JsxTextGoToHome')}
-          </button>
-        </div>
-      ) : (
-        <div ref={chatAreaRef} className="relative z-10 min-h-0 flex-1">
-          <div
-            ref={scrollContainerCallbackRef}
-            className={cn(
-              'scrollbar-hide relative z-10 h-full flex-1 overflow-y-auto [scroll-behavior:auto]',
-              shouldShowWelcomeOverlay ? 'bg-transparent' : 'bg-background',
-            )}
-            onMouseUp={handleChatMouseUp}
-            onMouseDown={handleChatMouseDown}
-            onScroll={handleChatScroll}
-          >
-            <div
-              ref={contentRef}
-              role="log"
-              className="mx-auto w-full max-w-3xl min-w-0 px-3 py-6 sm:px-6"
-            >
-              <div className="flex min-w-0 flex-col">
-                {/* Optimistic user message */}
-                {showOptimistic && (
-                  <div data-turn-id="optimistic" className="mt-12 first:mt-0">
-                    <div className="flex justify-end">
-                      <div className="bg-card flex max-w-[90%] flex-col overflow-hidden rounded-3xl rounded-br-lg border">
-                        {(() => {
-                          const { cleanText: afterReply, replyContext: optReply } =
-                            parseReplyContext(optimisticPrompt || '');
-                          const { cleanText: afterFiles, files } = parseFileReferences(afterReply);
-                          const { cleanText: afterProjects } = parseProjectReferences(afterFiles);
-                          const { cleanText: afterFileMentions } =
-                            parseFileMentionReferences(afterProjects);
-                          const { cleanText: afterAgentMentions } =
-                            parseAgentMentionReferences(afterFileMentions);
-                          const { cleanText } = parseSessionReferences(afterAgentMentions);
-                          return (
-                            <>
-                              {optReply && (
-                                <div className="bg-primary/5 border-primary/10 mx-3 mt-3 mb-0 flex items-center gap-2 rounded-2xl border px-3 py-1.5">
-                                  <Reply className="text-primary/60 size-3 flex-shrink-0" />
-                                  <span className="text-muted-foreground truncate text-xs">
-                                    {optReply.length > 150
-                                      ? `${optReply.slice(0, 150)}...`
-                                      : optReply}
-                                  </span>
-                                </div>
-                              )}
-                              {files.length > 0 && (
-                                <div className="flex flex-wrap gap-2 p-3 pb-0">
-                                  {files.map((f, i) => (
-                                    <div key={i} onClick={(e) => e.stopPropagation()}>
-                                      <GridFileCard
-                                        filePath={f.path}
-                                        fileName={f.path.split('/').pop() || f.path}
-                                        onClick={() => openPreview(f.path)}
-                                      />
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                              {cleanText && (
-                                <p className="px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap">
-                                  <HighlightMentions
-                                    text={cleanText}
-                                    agentNames={agentNames}
-                                    onFileClick={openFileInComputer}
-                                  />
-                                </p>
-                              )}
-                            </>
-                          );
-                        })()}
-                      </div>
-                    </div>
-                    <AssistantPendingRow className="mt-6" />
-                  </div>
+      {/* Chat and the action panel share one row. The panel is a real column,
+          not an overlay: opening it takes width from this row, and the chat
+          column below re-centers its own content in what is left. That is the
+          whole reason for this wrapper — an absolutely positioned panel
+          floated over the transcript instead of moving it. */}
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        <div className="relative flex min-w-0 flex-1 flex-col">
+          {/* Content area — loading, not-found, or actual messages. The single
+              session loader (SessionStartingLoader) carries through here on its
+              "Connecting" phase so there's never a second, different loader. */}
+          {isNotFound ? (
+            <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
+              <div className="text-muted-foreground text-sm">
+                {tHardcodedUi.raw(
+                  'componentsSessionSessionChat.line5821JsxTextThisSessionIsNotAccessibleRightNow',
                 )}
-
-                {isOptimisticCompacting && !hasCompactionTurn && (
-                  <div className="mt-12 space-y-3">
-                    <div className="my-3 flex items-center gap-3 py-4">
-                      <div className="bg-border h-px flex-1" />
-                      <div className="bg-muted/80 border-border/60 flex items-center gap-2 rounded-2xl border px-3 py-1.5">
-                        <Layers className="text-muted-foreground size-3.5" />
-                        <span className="text-muted-foreground text-xs font-semibold tracking-wide">
-                          Compaction
-                        </span>
-                      </div>
-                      <div className="bg-border h-px flex-1" />
-                    </div>
-                    <div className="flex items-center gap-3">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src="/kortix-logomark-white.svg"
-                        alt="Kortix"
-                        className="h-[14px] w-auto flex-shrink-0 invert dark:invert-0"
-                      />
-                      <div className="text-muted-foreground text-sm">
-                        {tHardcodedUi.raw(
-                          'componentsSessionSessionChat.line5954JsxTextCompactingSession',
-                        )}
-                      </div>
-                    </div>
-                  </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  try {
+                    if (sessionId) useTabStore.getState().closeTab?.(sessionId);
+                  } catch {}
+                  if (typeof window !== 'undefined') window.location.assign('/');
+                }}
+                className="text-primary text-sm hover:underline"
+              >
+                {tHardcodedUi.raw('componentsSessionSessionChat.line5833JsxTextGoToHome')}
+              </button>
+            </div>
+          ) : (
+            <div ref={chatAreaRef} className="relative z-10 min-h-0 flex-1">
+              <div
+                ref={scrollContainerCallbackRef}
+                className={cn(
+                  // overflow-anchor:none — this scroll area does ALL of its own
+                  // anchoring (useAutoScroll's spacer + RAF follow, the send-path
+                  // turn anchor, and the history-prepend content-space restore in
+                  // session-history-scroll.ts). The browser's native scroll
+                  // anchoring (default `overflow-anchor: auto`) tries to
+                  // compensate for the SAME prepends independently, and the two
+                  // corrections stacking is the other half of the scroll-up
+                  // teleport: ours restores the reader's position, then the
+                  // native one nudges it again.
+                  'scrollbar-hide relative z-10 h-full flex-1 overflow-y-auto [scroll-behavior:auto] [overflow-anchor:none]',
+                  shouldShowWelcomeOverlay ? 'bg-transparent' : 'bg-background',
                 )}
+                onMouseUp={handleChatMouseUp}
+                onMouseDown={handleChatMouseDown}
+                onScroll={handleChatScroll}
+              >
+                <div
+                  ref={contentRef}
+                  role="log"
+                  className="mx-auto w-full max-w-3xl min-w-0 px-4 py-6 pb-32 md:pr-1"
+                >
+                  <div className="flex min-w-0 flex-col">
+                    {isOptimisticCompacting && !hasCompactionTurn && (
+                      <div className="mt-12 space-y-3">
+                        <div className="my-3 flex items-center gap-3 py-4">
+                          <div className="bg-border h-px flex-1" />
+                          <div className="bg-muted/80 border-border/60 flex items-center gap-2 rounded-2xl border px-3 py-1.5">
+                            <Layers className="text-muted-foreground size-3.5" />
+                            <span className="text-muted-foreground text-xs font-semibold tracking-wide">
+                              Compaction
+                            </span>
+                          </div>
+                          <div className="bg-border h-px flex-1" />
+                        </div>
+                        <div className="flex items-center gap-3">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src="/kortix-logomark-white.svg"
+                            alt="Kortix"
+                            className="h-[14px] w-auto shrink-0 invert dark:invert-0"
+                          />
+                          <div className="text-muted-foreground text-sm">
+                            {tHardcodedUi.raw(
+                              'componentsSessionSessionChat.line5954JsxTextCompactingSession',
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
 
-                {/* Turn-based message rendering.
+                    {/* Turn-based message rendering.
                     ToolActivateContext makes inline tool rows open the side
                     panel (Actions) focused on that tool, instead of expanding. */}
-                <ToolActivateContext.Provider value={toolActivate}>
-                  {turns.map((turn, turnIndex) => {
-                    // Check if this turn is a compaction summary
-                    const hasCompaction =
-                      turn.assistantMessages.some((msg) => (msg.info as any).summary === true) ||
-                      turn.assistantMessages.some((msg) =>
-                        msg.parts.some((p) => p.type === 'compaction'),
-                      );
-
-                    // Notification-only early-return removed: it rendered the
-                    // user's pty_* card but skipped turn.assistantMessages,
-                    // hiding every subsequent assistant response in that turn.
-                    // Fall through to the normal turn renderer instead.
-
-                    return (
-                      <div
-                        key={turn.userMessage.info.id}
-                        data-turn-id={turn.userMessage.info.id}
-                        className={turnIndex === 0 ? '' : 'mt-12'}
-                      >
-                        {/* Compaction divider — shown before the first turn after compaction */}
-                        {hasCompaction && (
-                          <div className="my-3 flex items-center gap-3 py-4">
-                            <div className="bg-border h-px flex-1" />
-                            <div className="bg-muted/80 border-border/60 flex items-center gap-2 rounded-2xl border px-3 py-1.5">
-                              <Layers className="text-muted-foreground size-3.5" />
-                              <span className="text-muted-foreground text-xs font-semibold tracking-wide">
-                                Compaction
-                              </span>
-                            </div>
-                            <div className="bg-border h-px flex-1" />
+                    {hasOlder && (
+                      <div className="mb-6 flex flex-col items-center gap-2">
+                        {/* Sentinel: crossing into view pulls the previous page.
+                        Sits above the spinner so it clears the viewport as
+                        soon as the prepended turns render. */}
+                        <div ref={olderSentinelRef} aria-hidden className="h-px w-full" />
+                        {isLoadingOlder && <Loading />}
+                        {olderPullFailed && !isLoadingOlder && (
+                          <div className="flex items-center gap-2">
+                            <span className="text-muted-foreground text-xs">
+                              Couldn&apos;t load older messages.
+                            </span>
+                            <Button
+                              type="button"
+                              variant="outline-ghost"
+                              size="sm"
+                              onClick={() => void handleLoadOlder()}
+                            >
+                              Retry
+                            </Button>
                           </div>
                         )}
-                        <SessionTurn
-                          turn={turn}
-                          allMessages={messages!}
-                          sessionId={sessionId}
-                          sessionStatus={sessionStatus}
-                          permissions={pendingPermissions}
-                          questions={pendingQuestions}
-                          agentNames={agentNames}
-                          isFirstTurn={turnIndex === 0}
-                          isBusy={isBusy}
-                          isCompaction={hasCompaction}
-                          providers={providers}
-                          commandMessages={commandMessagesRef.current}
-                          commands={commands}
-                          disableToolNavigation={disableToolNavigation}
-                          onPermissionReply={handlePermissionReply}
-                        />
                       </div>
-                    );
-                  })}
-                </ToolActivateContext.Provider>
+                    )}
+                    <ToolActivateContext.Provider value={toolActivate}>
+                      {turns.map((turn, turnIndex) => {
+                        // Check if this turn is a compaction summary
+                        const hasCompaction =
+                          turn.assistantMessages.some(
+                            (msg) => (msg.info as any).summary === true,
+                          ) ||
+                          turn.assistantMessages.some((msg) =>
+                            msg.parts.some((p) => p.type === 'compaction'),
+                          );
 
-                {/* Busy indicator when no turns yet but session is busy */}
-                {commandError && <TurnErrorDisplay error={commandError} className="mt-2" />}
-                {!showOptimistic && isBusy && turns.length === 0 && <AssistantPendingRow />}
-              </div>
-              {/* Spacer — ensures the last message can scroll to the top of
+                        // Notification-only early-return removed: it rendered the
+                        // user's pty_* card but skipped turn.assistantMessages,
+                        // hiding every subsequent assistant response in that turn.
+                        // Fall through to the normal turn renderer instead.
+
+                        return (
+                          <TurnViewport
+                            key={turn.userMessage.info.id}
+                            turnId={turn.userMessage.info.id}
+                            className={turnIndex === 0 ? '' : 'mt-12'}
+                          >
+                            {/* Compaction divider — shown before the first turn after compaction */}
+                            {hasCompaction && (
+                              <div className="my-3 flex items-center gap-3 py-4">
+                                <div className="bg-border h-px flex-1" />
+                                <div className="bg-muted/80 border-border/60 flex items-center gap-2 rounded-2xl border px-3 py-1.5">
+                                  <Layers className="text-muted-foreground size-3.5" />
+                                  <span className="text-muted-foreground text-xs font-semibold tracking-wide">
+                                    Compaction
+                                  </span>
+                                </div>
+                                <div className="bg-border h-px flex-1" />
+                              </div>
+                            )}
+                            <SessionTurn
+                              turn={turn}
+                              isLast={turn.userMessage.info.id === lastUserMessageId}
+                              ownsPlan={turn.userMessage.info.id === planAnchorId}
+                              sessionId={sessionId}
+                              sessionStatus={sessionStatus}
+                              permissions={pendingPermissions}
+                              questions={pendingQuestions}
+                              agentNames={agentNames}
+                              isFirstTurn={turnIndex === 0}
+                              lastTurnWorking={lastTurnWorking}
+                              isCompaction={hasCompaction}
+                              providers={providers}
+                              commandMessages={commandMessagesRef.current}
+                              commands={commands}
+                              disableToolNavigation={disableToolNavigation}
+                              onPermissionReply={handlePermissionReply}
+                              onRewind={handleRewind}
+                              rewindDisabled={
+                                !!readOnly || !sessionState || isBusy || sessionState.rewindPending
+                              }
+                            />
+                          </TurnViewport>
+                        );
+                      })}
+                    </ToolActivateContext.Provider>
+
+                    {/* Busy indicator when no turns yet but session is busy */}
+                    {commandError && (
+                      <TurnErrorDisplay
+                        error={commandError}
+                        isAbort={isAbortError(commandError.cause)}
+                        className="mt-2"
+                      />
+                    )}
+                    {/* A turn refused for a missing connector renders HERE — after
+                    the last turn, directly under the message that triggered it —
+                    rather than as a one-line pill. It is the one failure with a
+                    button that fixes it.
+
+                    Fed `commandError`, NOT `sessionState.sendError`: the SDK sets
+                    `sendError` only inside `useSession.send()`, and this file has
+                    always gone through `sendParts` instead (the send above, and the
+                    resend below). So `sendError` is permanently null here, and
+                    since `TurnErrorDisplay` deliberately suppresses `kind:
+                    'connector'` to leave the remedy to this card, a refused turn
+                    rendered NOTHING — no card, no pill. `commandError` is the same
+                    typed error, classified through the same `classifySendError`. */}
+                    <ConnectorRequiredNotice
+                      error={commandError}
+                      projectId={projectId}
+                      resend={
+                        sessionState && lastSubmittedRef.current
+                          ? () => {
+                              const last = lastSubmittedRef.current;
+                              if (!last) return;
+                              // Clear before, re-classify after: this bypasses the
+                              // normal submit path, which is the only other place
+                              // `commandError` is managed. Without the clear the
+                              // card outlives a successful retry; without the catch
+                              // a second refusal looks like success.
+                              setCommandError(null);
+                              void sessionState
+                                .sendParts(
+                                  last.parts as Parameters<typeof sessionState.sendParts>[0],
+                                  last.options as Parameters<typeof sessionState.sendParts>[1],
+                                )
+                                .catch((err: unknown) =>
+                                  setCommandError(classifySessionError(err)),
+                                );
+                            }
+                          : undefined
+                      }
+                      className="mt-2"
+                    />
+                    {/* Busy with no turn to attach it to yet — the same waiting row
+                        the optimistic turn and every live turn use, so it never
+                        changes shape as the first turn materialises. */}
+                    {isBusy && turns.length === 0 && (
+                      <SessionBusyIndicator sessionId={sessionId} />
+                    )}
+                  </div>
+                  {/* Spacer — ensures the last message can scroll to the top of
 						    the viewport (ChatGPT-style). Without this, scrollToBottom
 						    only brings the last message to the bottom of the screen.
 						    Height is dynamically measured from the scroll container so
 						    the newest message appears flush at the top. */}
-              <div ref={spacerElRef} />
-            </div>
-          </div>
+                  <div ref={spacerElRef} />
+                </div>
+              </div>
 
-          {/* Selection "Reply" popup — floats near selected text */}
-          {selectionPopup && (
-            <div
-              data-reply-popup
-              className="absolute z-50"
-              style={{
-                left: `${selectionPopup.x}px`,
-                top: `${selectionPopup.y}px`,
-                transform: 'translate(-50%, -100%)',
-              }}
-            >
-              <Button
-                onClick={handleSelectionReply}
-                size="xs"
-                className="animate-in fade-in-0 zoom-in-95 origin-bottom duration-150 ease-out text-xs"
-              >
-                Reply
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  viewBox="0 0 24 24"
-                  width="24"
-                  height="24"
-                  color="currentColor"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  className="size-4"
+              {/* Selection "Reply" popup — floats near selected text */}
+              {selectionPopup && (
+                <div
+                  data-reply-popup
+                  className="absolute z-50"
+                  style={{
+                    left: `${selectionPopup.x}px`,
+                    top: `${selectionPopup.y}px`,
+                    transform: 'translate(-50%, -100%)',
+                  }}
                 >
-                  <path d="M3.99219 10H11.9922C13.8521 10 14.7821 10 15.5451 10.2044C17.6157 10.7592 19.2329 12.3765 19.7877 14.4471C19.9922 15.2101 19.9922 16.1401 19.9922 18"></path>
-                  <path
-                    d="M7.99219 6L6.83839 6.87652C4.94092 8.31801 3.99219 9.03875 3.99219 10C3.99219 10.9612 4.94092 11.682 6.83839 13.1235L7.99219 14"
-                    strokeLinejoin="round"
-                  ></path>
-                </svg>
-              </Button>
+                  <Button
+                    onClick={handleSelectionReply}
+                    size="sm"
+                    className="animate-in fade-in-0 zoom-in-95 origin-bottom px-3 text-xs duration-150 ease-out has-[>svg]:px-3"
+                  >
+                    Reply
+                    <ArrowBendUpLeftIcon className="size-4 shrink-0" />
+                  </Button>
+                </div>
+              )}
+
+              {/* Chat Minimap */}
+              <ChatMinimap
+                turns={turns}
+                scrollRef={scrollRef as React.RefObject<HTMLDivElement>}
+                contentRef={contentRef as React.RefObject<HTMLDivElement>}
+              />
+
+              <div
+                className={cn(
+                  'absolute bottom-4 left-1/2 z-20 -translate-x-1/2 transition-[opacity,translate,scale] ease-[cubic-bezier(0.23,1,0.32,1)] motion-reduce:translate-y-0 motion-reduce:scale-100 motion-reduce:transition-opacity',
+                  showScrollButton
+                    ? 'translate-y-0 scale-100 opacity-100 duration-150'
+                    : 'pointer-events-none translate-y-1 scale-[0.97] opacity-0 duration-100',
+                )}
+              >
+                <Button
+                  variant="secondary"
+                  size="icon-md"
+                  aria-hidden={!showScrollButton}
+                  tabIndex={showScrollButton ? undefined : -1}
+                  className={cn(
+                    'hit-area-2 hover:bg-secondary border-border border shadow-xs',
+                    'transition-[scale] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] active:scale-[0.96]',
+                  )}
+                  onClick={smoothScrollToAbsoluteBottom}
+                >
+                  <CaretDownIcon className="size-4" />
+                </Button>
+              </div>
             </div>
           )}
 
-          {/* Chat Minimap */}
-          <ChatMinimap
-            turns={turns}
-            scrollRef={scrollRef as React.RefObject<HTMLDivElement>}
-            contentRef={contentRef as React.RefObject<HTMLDivElement>}
-          />
-
-          {/* Scroll to bottom FAB */}
-          <div
-            className={cn(
-              'absolute bottom-4 left-1/2 -translate-x-1/2 transition-colors duration-300 ease-out',
-              showScrollButton
-                ? 'translate-y-0 scale-100 opacity-100'
-                : 'pointer-events-none translate-y-4 scale-95 opacity-0',
-            )}
-          >
-            <Button
-              variant="outline"
-              size="sm"
-              className="bg-background/90 border-border/60 h-7 rounded-full text-xs shadow-lg"
-              onClick={smoothScrollToAbsoluteBottom}
-            >
-              <ArrowDown className="mr-1 size-3" />
-              {tHardcodedUi.raw('componentsSessionSessionChat.line6095JsxTextScrollToBottom')}
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {/* Input — hidden in read-only mode (sub-session modal) */}
-      {!readOnly && (
-        <SessionChatInput
-          onSend={async (text, files, mentions) => {
-            await handleSend(text, files, mentions);
-            if (failedStartDraft) {
-              clearStartStash(sessionId);
-              usePendingFilesStore.getState().consumePendingFiles();
-              setFailedStartDraft(null);
-            }
-          }}
-          prefill={
-            failedStartDraft
-              ? {
-                  text: failedStartDraft.text,
-                  files: failedStartDraft.files,
-                  id: failedStartDraft.id,
-                  mode: 'merge',
-                }
-              : sessionPrefill
-                ? { text: sessionPrefill.text, id: sessionPrefill.id, mode: 'merge' }
-                : null
-          }
-          isBusy={isBusy}
-          queuedMessages={queuedMessages}
-          onQueueMessage={handleQueueMessage}
-          onRemoveQueuedMessage={handleRemoveQueuedMessage}
-          onStop={handleStop}
-          escCount={escCount}
-          agents={local.agent.list}
-          selectedAgent={lockedAgentName ?? local.agent.current?.name ?? null}
-          onAgentChange={lockedAgentName ? undefined : (name) => local.agent.set(name ?? undefined)}
-          agentSelectorLocked={!!lockedAgentName}
-          commands={commands || []}
-          onCommand={handleCommand}
-          models={local.model.list}
-          selectedModel={local.model.currentKey ?? null}
-          onModelChange={(m) => local.model.set(m ?? undefined, { recent: true })}
-          modelDefaultControls={{
-            agentName: lockedAgentName ?? local.agent.current?.name,
-            onSetAccountDefault: (m) => {
-              void local.model.defaults.setAccountDefault(m);
-            },
-            onSetAgentDefault:
-              lockedAgentName || local.agent.current
-                ? (m) => {
-                    const name = lockedAgentName ?? local.agent.current?.name;
-                    if (name) void local.model.defaults.setAgentDefault(name, m);
-                  }
-                : undefined,
-            onSetProjectDefault: (m) => {
-              void local.model.defaults.setProjectDefault(m);
-            },
-          }}
-          variants={local.model.variant.list}
-          selectedVariant={local.model.variant.current ?? null}
-          onVariantChange={(v) => local.model.variant.set(v ?? undefined)}
-          messages={messages}
-          sessionId={sessionId}
-          onFileSearch={handleFileSearch}
-          providers={providers}
-          modelRequired
-          modelsLoading={providersLoading}
-          threadContext={threadContext}
-          onContextClick={() => setContextModalOpen(true)}
-          replyTo={replyTo}
-          onClearReply={handleClearReply}
-          // Only lock the input into question-answer mode while the session is
-          // actually busy (a live question keeps the run busy). If a question
-          // chip is ever showing while the session is idle — e.g. a dead /
-          // abandoned question the agent left behind — the input stays unlocked
-          // so a typed message is sent to the agent instead of being swallowed
-          // as a custom answer.
-          lockForQuestion={!!renderedQuestion && isBusy}
-          // Same dead-prompt guard as questions: only lock while the agent is
-          // actually paused on the decision (isBusy), so a stale card can't
-          // swallow the composer on an idle session.
-          lockForApproval={hasPendingApproval || (pendingPermissions.length > 0 && isBusy)}
-          onCustomAnswer={(text) => {
-            questionPromptRef.current?.submitCustomAnswer(text);
-          }}
-          questionButtonLabel={renderedQuestion ? questionAction.label : null}
-          questionCanAct={questionAction.canAct}
-          onQuestionAction={() => {
-            questionPromptRef.current?.performAction();
-          }}
-          inputSlot={
+          {/* Input — hidden in read-only mode (sub-session modal) */}
+          {!readOnly && (
             <>
-              {/* Connector actions a policy gated for approval — pauses the run
-                  until the human decides. Self-hides when nothing's pending. */}
-              <SessionApprovalPrompt />
-              {/* Opencode tool permissions (bash/edit/…) awaiting a decision —
-                  the turn is blocked inside the runtime and resumes the moment
-                  a reply lands. Self-hides when nothing's pending. */}
-              <SessionPermissionPrompt
+              <SessionChatInput
+                onSend={async (text, files, mentions) => {
+                  await handleSend(text, files, mentions);
+                }}
+                prefill={composerPrefill}
+                attachRequestId={attachRequestId}
+                isBusy={isBusy}
+                // The ONE projection, not the 300 ms busy fade: it is what
+                // decides whether a `/` command may be dispatched, and a fade
+                // timer that has already lapsed would let one abort a live turn.
+                // `effectiveBusy` folds in optimistic compaction (not a turn, so
+                // not in `working`), and `hasRetryingAssistant` covers the
+                // window where a retryable provider error keeps the turn alive
+                // with no busy frame to show for it.
+                sessionWorking={effectiveBusy || hasRetryingAssistant}
+                // Gates `/` COMMANDS only. A prompt typed at a sleeping box is
+                // an inbox row and goes out when the box answers; a command has
+                // no row, and `runCommand` swallows it silently until the
+                // runtime is switched.
+                runtimeReady={runtimeReady}
+                rewind={composerRewind}
+                queuedMessages={queuedMessages}
+                failedQueuedMessages={failedQueuedMessages}
+                queueInFlightIds={queueInFlightIds}
+                queuePaused={queueRows.held}
+                queueIsRunning={isBusy}
+                onSendQueuedMessageNow={handleQueueSendNow}
+                onRemoveQueuedMessage={handleRemoveQueuedMessage}
+                onRetryQueuedMessage={handleRetryQueuedMessage}
+                onStop={handleStop}
+                escCount={escCount}
+                agents={local.agent.list}
+                selectedAgent={composerAgentName}
+                onAgentChange={handleAgentChange}
+                noAccessibleAgents={noAccessibleAgents}
+                commands={chatCommands}
+                onCommand={handleCommand}
+                models={local.model.list}
+                selectedModel={local.model.currentKey ?? null}
+                onModelChange={handleModelChange}
+                modelDefaultControls={chatModelDefaultControls}
+                variants={local.model.variant.list}
+                selectedVariant={local.model.variant.current ?? null}
+                onVariantChange={handleVariantChange}
+                messages={messages}
                 sessionId={sessionId}
-                permissions={pendingPermissions}
-                onReply={handlePermissionReply}
+                projectId={projectId}
+                providers={providers}
+                modelRequired
+                modelsLoading={providersLoading}
+                threadContext={threadContext}
+                onContextClick={handleContextClick}
+                replyTo={replyTo}
+                onClearReply={handleClearReply}
+                // Only lock the input into question-answer mode while the session is
+                // actually busy (a live question keeps the run busy). If a question
+                // chip is ever showing while the session is idle — e.g. a dead /
+                // abandoned question the agent left behind — the input stays unlocked
+                // so a typed message is sent to the agent instead of being swallowed
+                // as a custom answer.
+                lockForQuestion={!!renderedQuestion && isBusy}
+                // Same dead-prompt guard as questions: only lock while the agent is
+                // actually paused on the decision (isBusy), so a stale card can't
+                // swallow the composer on an idle session.
+                lockForApproval={hasPendingApproval || (pendingPermissions.length > 0 && isBusy)}
+                onCustomAnswer={handleCustomAnswer}
+                questionButtonLabel={renderedQuestion ? questionAction.label : null}
+                questionCanAct={questionAction.canAct}
+                onQuestionAction={handleQuestionAction}
+                inputSlot={chatInputSlot}
+                toolbarSlot={chatToolbarSlot}
+                // The shell can now render on a cached transcript alone, i.e. before
+                // the sandbox answers — so sending has to be gated separately from
+                // reading. See sessionComposerReadiness.
+                notice={composerReadiness.notice}
+                onNoticeRetry={
+                  composerReadiness.notice && composerReadiness.retryable
+                    ? requestRuntimeReconnect
+                    : undefined
+                }
               />
-              {renderedQuestion ? (
-                <div
-                  className={cn(
-                    'overflow-hidden transition-[max-height,opacity,transform] ease-in-out',
-                    questionPromptVisible
-                      ? 'max-h-[520px] translate-y-0 opacity-100 duration-300'
-                      : 'pointer-events-none max-h-0 -translate-y-1 opacity-0 duration-320',
-                  )}
-                >
-                  <QuestionPrompt
-                    key={renderedQuestion.id}
-                    ref={questionPromptRef}
-                    request={renderedQuestion}
-                    onReply={handleQuestionReply}
-                    onReject={handleQuestionReject}
-                    onActionChange={handleQuestionActionChange}
-                  />
-                </div>
-              ) : null}
+              <ConfirmDialog
+                open={!!rewindTarget}
+                onOpenChange={(open) => !open && setRewindTarget(null)}
+                title="Edit from this message?"
+                description={
+                  <>
+                    <p>This rewinds the same session and restores its files to this message.</p>
+                    <p className="mt-2">
+                      You can restore the removed path until you send a replacement prompt.
+                    </p>
+                  </>
+                }
+                confirmLabel="Rewind session"
+                confirmVariant="destructive"
+                confirmIcon={<RotateCcw className="size-3.5" />}
+                isPending={sessionState?.rewindPending}
+                onConfirm={() => void handleConfirmRewind()}
+              />
             </>
-          }
-        />
-      )}
+          )}
+        </div>
+
+        {/* The action panel column — a sibling of the chat, so it pushes
+            rather than covers. Self-gates to null on mobile and outside a
+            SessionPanelProvider (the read-only sub-session modal renders this
+            component with no panel around it). */}
+        {!hideHeader && !readOnly && <SessionActionPanelColumn />}
+      </div>
     </div>
   );
 }

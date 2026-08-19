@@ -4,10 +4,10 @@
     {
       "id": 1,
       "prompt": "Write me a LinkedIn post announcing that our AI agent platform now runs fully in your own repo.",
-      "expected_output": "Should read /product-marketing.md for context (and internal-comms for voice/terminology) before writing, asking only for anything genuinely missing like the goal or target action. Should produce one LinkedIn post built as one hook + one idea + one action: a strong first line before the 'see more' fold, line breaks for readability, ~1,200-1,500 chars, no link in the body (link in first comment instead), and a single clear CTA. Should not pack multiple ideas into the post.",
+      "expected_output": "Should read /product-marketing.md for context (and comms for voice/terminology) before writing, asking only for anything genuinely missing like the goal or target action. Should produce one LinkedIn post built as one hook + one idea + one action: a strong first line before the 'see more' fold, line breaks for readability, ~1,200-1,500 chars, no link in the body (link in first comment instead), and a single clear CTA. Should not pack multiple ideas into the post.",
       "assertions": [
         "Reads /product-marketing.md (or fallbacks) first",
-        "References internal-comms for voice/terminology",
+        "References comms for voice/terminology",
         "Leads with a hook before the fold",
         "One idea, one clear CTA",
         "Keeps links out of the post body"

@@ -86,12 +86,26 @@ describe('awaitTerminalStage — session-start long-poll loop', () => {
     expect(n).toBe(1);
   });
 
-  test('stops if the session vanishes mid-wait (resolve → null)', async () => {
+  test('stops on a non-retriable wake payload even when its stage is starting', async () => {
+    let n = 0;
     const r = await awaitTerminalStage(
       mk('provisioning'),
-      async () => null,
+      async () => {
+        n++;
+        return mk('starting', false);
+      },
       { waitMs: 6000, now: stepNow(200), sleepFn: noSleep },
     );
+    expect(r.retriable).toBe(false);
+    expect(n).toBe(1);
+  });
+
+  test('stops if the session vanishes mid-wait (resolve → null)', async () => {
+    const r = await awaitTerminalStage(mk('provisioning'), async () => null, {
+      waitMs: 6000,
+      now: stepNow(200),
+      sleepFn: noSleep,
+    });
     expect(r.stage).toBe('provisioning'); // keeps the last good payload
   });
 });

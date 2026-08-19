@@ -1,5 +1,6 @@
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
 import { auth, errors, json } from '../../openapi';
+import { isPlatformAdmin } from '../../shared/platform-roles';
 import { managedGithubOwner, managedGithubOwnerType, managedGithubToken } from '../git-backends';
 import {
   createInstallationToken,
@@ -43,7 +44,7 @@ projectsApp.openapi(
     },
     responses: {
       200: json(z.any(), 'Repositories available to the installation'),
-      ...errors(409, 502),
+      ...errors(403, 409, 502),
     },
   }),
   async (c: any) => {
@@ -53,12 +54,23 @@ projectsApp.openapi(
     const installationId = normalizeString(
       c.req.query('installation_id') ?? c.req.query('installationId'),
     );
+    const search = normalizeString(c.req.query('search'))?.slice(0, 120) ?? undefined;
+    const requestedLimit = Number.parseInt(c.req.query('limit') ?? '', 10);
+    const limit = Number.isFinite(requestedLimit)
+      ? Math.min(100, Math.max(1, requestedLimit))
+      : 100;
 
     // The managed-git PAT ("Use a token" self-host setup) surfaces as a
     // synthetic installation (see serializeGitHubInstallations) since it has
     // no real GitHub App installation to list repos from — list via the PAT
     // itself instead of an installation token.
     if (installationId === PAT_MANAGED_GIT_INSTALLATION_ID) {
+      if (!(await isPlatformAdmin(scope.userId))) {
+        return c.json(
+          { error: 'Managed GitHub repository import requires platform admin access' },
+          403,
+        );
+      }
       const owner = managedGithubOwner();
       const token = managedGithubToken();
       if (!owner || !token) {
@@ -69,6 +81,8 @@ projectsApp.openapi(
           owner,
           ownerType: managedGithubOwnerType(),
           auth: { token },
+          search,
+          limit,
         });
         return c.json({
           account_id: scope.accountId,
@@ -94,7 +108,12 @@ projectsApp.openapi(
     }
 
     try {
-      const repos = await listInstallationRepositories(installation.installationId);
+      const repos = await listInstallationRepositories(installation.installationId, {
+        owner: installation.ownerLogin,
+        ownerType: installation.ownerType === 'User' ? 'User' : 'Organization',
+        search,
+        limit,
+      });
       return c.json({
         account_id: scope.accountId,
         installation_id: installation.installationId,

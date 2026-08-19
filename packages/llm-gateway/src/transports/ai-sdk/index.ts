@@ -1,3 +1,4 @@
+import { CATALOG, catalogModelForWireModel } from '@kortix/llm-catalog';
 import { InvalidPromptError, generateText, streamText } from 'ai';
 import type { UpstreamDescriptor } from '../../domain';
 import { NetworkError, UpstreamHttpError, looksLikeTerminalAuthFailure } from '../../errors';
@@ -131,7 +132,19 @@ export function toTransportError(err: unknown, provider: string): Error {
         ? e.cause.statusCode
         : undefined;
   if (typeof statusCode === 'number') {
-    return new UpstreamHttpError(statusCode, e.responseBody ?? e.message ?? '', provider);
+    // `responseBody` is the RAW upstream body — the actionable text lives there
+    // when the AI SDK's own `.message` fell back to `response.statusText`
+    // (generic "Bad Request"/"Internal Server Error") because the body failed
+    // the provider's error-schema parse. Prefer it whenever it is non-empty;
+    // only fall back to the AI SDK's `.message` (which may itself be the real
+    // `error.message` when the schema DID match) when no body was captured.
+    // The downstream `parseUpstreamBody` (failover.ts → parseUpstreamErrorBody)
+    // mines the real `error.message`/`error.code` out of this raw body.
+    const body =
+      typeof e.responseBody === 'string' && e.responseBody.trim().length > 0
+        ? e.responseBody
+        : (e.message ?? '');
+    return new UpstreamHttpError(statusCode, body, provider);
   }
   const message = e?.message ?? (err instanceof Error ? err.message : String(err));
   if (looksLikeTerminalAuthFailure(message)) {
@@ -238,6 +251,21 @@ export async function callUpstreamViaAiSdk(
     // model.ts passed to createOpenAICompatible for this descriptor — see
     // request.ts's providerOptionsKeyFor / defect 5 comment.
     providerName: descriptor.provider,
+    // The resolved catalog model for the WIRE model id (managed slug, BYOK
+    // `provider/id`, or `codex/id` — `catalogModelForWireModel` stitches all
+    // three), so buildAiSdkArgs can gate reasoning_effort/temperature/top_p/
+    // max_tokens against its real models.dev capabilities (see request.ts's
+    // normalizeRequest). `undefined` for an unknown/unresolvable id → no gating
+    // (permissive parity). Keyed off the client wire id, not descriptor
+    // .resolvedModel (which is the UPSTREAM id — a Bedrock/OpenRouter slug that
+    // wouldn't resolve here). The bundled static CATALOG is authoritative for
+    // capability shape; the transport has no live snapshot.
+    model: catalogModelForWireModel(String(body.model ?? ''), CATALOG),
+    // Upstream-pinned wire fields (OpenRouter `provider` routing). Read from the
+    // descriptor here rather than the body: apps/api's resolveCandidates builds
+    // it per-candidate from the catalog, so a failover onto a different upstream
+    // carries ITS pin, not the previous candidate's.
+    bodyExtras: descriptor.bodyExtras,
   });
   const clientWantsStream = body.stream === true;
   const ctx = {

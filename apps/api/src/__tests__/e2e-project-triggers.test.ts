@@ -15,10 +15,17 @@ import {
 } from '@kortix/db';
 
 const USER_ID = '00000000-0000-4000-a000-000000000001';
+const SERVICE_ACCOUNT_ID = '00000000-0000-4000-a000-000000000002';
 const ACCOUNT_ID = '00000000-0000-4000-a000-000000000101';
 const PROJECT_ID = '00000000-0000-4000-a000-000000000201';
 const MANIFEST_PATH = 'kortix.yaml';
 const TEST_AUTH_KEY = '__KORTIX_E2E_AUTH__';
+
+process.env.DAYTONA_API_KEY = 'test-daytona-key';
+process.env.DAYTONA_SERVER_URL = 'https://daytona.example.test';
+process.env.DAYTONA_TARGET = 'test-target';
+process.env.KORTIX_URL = 'https://api.example.test';
+process.env.LLM_GATEWAY_ENABLED = 'true';
 
 // ─── In-memory git mock ─────────────────────────────────────────────────────
 // Every git read/write goes through this map so a test's "commitFile" is
@@ -31,12 +38,21 @@ let deleteCalls: Array<{ path: string; message: string }>;
 let branchCreateCalls = 0;
 let sandboxProvisionCalls = 0;
 let lastProvisionEnv: Record<string, string> | null = null;
-let runtimeRows: Array<{ projectId: string; slug: string; lastFiredAt: Date | null; updatedAt: Date }>;
+let runtimeRows: any[];
+let triggerExecutionRows: any[];
 let sessionRows: Array<typeof projectSessions.$inferSelect>;
 let lifecycleCommandRows: Array<typeof sessionLifecycleCommands.$inferSelect>;
 let activeSessionCount = 0;
 let provisioningSessionCount = 0;
 let secretRows: Array<typeof projectSecrets.$inferSelect>;
+let manifestReadCalls = 0;
+let mirrorInvalidationCalls = 0;
+let manifestCommitConflictsRemaining = 0;
+let modelDefaults: {
+  account: string | null;
+  agents: Record<string, string>;
+  projects: Record<string, string>;
+};
 
 function setTestAuth(userId = USER_ID, userEmail = 'triggers@example.test') {
   (globalThis as any)[TEST_AUTH_KEY] = { userId, userEmail };
@@ -50,9 +66,12 @@ const projectRow: typeof projects.$inferSelect = {
   projectId: PROJECT_ID,
   accountId: ACCOUNT_ID,
   name: 'Trigger Project',
+  sandboxProviderGeneration: 0,
+  secretDefaultStrategy: 'runtime' as const,
   repoUrl: 'https://github.com/kortix-ai/trigger-project.git',
   defaultBranch: 'main',
   manifestPath: 'kortix.yaml',
+  idempotencyKey: null,
   status: 'active',
   metadata: {},
   lastOpenedAt: null,
@@ -61,6 +80,7 @@ const projectRow: typeof projects.$inferSelect = {
 };
 
 function resetState() {
+  resetRateLimiters();
   setTestAuth();
   repoFiles = new Map();
   commitCalls = [];
@@ -69,12 +89,19 @@ function resetState() {
   sandboxProvisionCalls = 0;
   lastProvisionEnv = null;
   runtimeRows = [];
+  triggerExecutionRows = [];
   sessionRows = [];
   lifecycleCommandRows = [];
   activeSessionCount = 0;
   provisioningSessionCount = 0;
   secretRows = [];
+  manifestReadCalls = 0;
+  mirrorInvalidationCalls = 0;
+  manifestCommitConflictsRemaining = 0;
+  modelDefaults = { account: null, agents: {}, projects: {} };
+  projectRow.metadata = {};
   secretValues.clear();
+  secretConsumerReads.length = 0;
 }
 
 function sign(rawBody: string, secret: string) {
@@ -84,6 +111,11 @@ function sign(rawBody: string, secret: string) {
 mockIamEngineAllowAll();
 
 mockIamMembershipSyncNoop();
+
+mock.module('../projects/session-lifecycle/actor', () => ({
+  resolveProjectAutomationActor: async () => USER_ID,
+  resolveAgentRunAttribution: async () => SERVICE_ACCOUNT_ID,
+}));
 
 const realAuthMiddleware = await import('../middleware/auth');
 mock.module('../middleware/auth', () => ({
@@ -96,7 +128,9 @@ mock.module('../middleware/auth', () => ({
   },
 }));
 
+const actualGit = await import('../projects/git');
 mock.module('../projects/git', () => ({
+  ...actualGit,
   grepRepoFiles: async () => [],
   searchRepoFileNames: async () => [],
   createRemoteSessionBranch: async () => {
@@ -116,26 +150,47 @@ mock.module('../projects/git', () => ({
     return content;
   },
   readManifestFromRepo: async (_p: any, candidatePaths: string[]) => {
+    manifestReadCalls += 1;
     for (const path of candidatePaths) {
       const content = repoFiles.get(path);
-      if (content !== undefined) return { path, content };
+      if (content !== undefined) {
+        return {
+          path,
+          content,
+          sha: `sha-${path}`,
+          candidatePaths,
+        };
+      }
     }
     return null;
   },
   loadProjectConfig: async () => ({ env: { required: [], optional: [] } }),
   listBranches: async () => [],
+  remoteBranchExists: async () => true,
   listCommits: async () => ({ entries: [], nextCursor: null }),
   getCommit: async () => null,
   getCommitDiff: async () => null,
   getFileHistory: async () => ({ entries: [], nextCursor: null }),
-  invalidateProjectMirror: () => {},
+  invalidateProjectMirror: () => {
+    mirrorInvalidationCalls += 1;
+  },
   resolveCommitSha: async () => 'a'.repeat(40),
   resolveBranchTip: async () => 'a'.repeat(40),
   getBranchDiff: async () => ({ files: [], diff: '' }),
   getDiffBetweenShas: async () => ({ files: [], diff: '' }),
   previewMerge: async () => ({ canMerge: true, conflicts: [] }),
   mergeBranches: async () => ({ mergedSha: 'a'.repeat(40) }),
-  commitFileToBranch: async () => ({ commitSha: 'a'.repeat(40) }),
+  commitFileToBranch: async (_project: unknown, opts: { path: string; content: string; message: string }) => {
+    if (manifestCommitConflictsRemaining > 0) {
+      manifestCommitConflictsRemaining -= 1;
+      const error = new Error(`File "${opts.path}" changed since it was read`);
+      error.name = 'GitFileRevisionConflictError';
+      throw error;
+    }
+    repoFiles.set(opts.path, opts.content);
+    commitCalls.push({ path: opts.path, message: opts.message });
+    return { commitSha: 'a'.repeat(40) };
+  },
   deleteRemoteSessionBranch: async () => undefined,
   diffStat: async () => ({ files: [], additions: 0, deletions: 0 }),
   getFileAtRef: async () => null,
@@ -147,6 +202,7 @@ mock.module('../projects/git', () => ({
 
 mock.module("../snapshots/builder", () => ({
   ensureSandboxImage: async () => ({ snapshotName: "kortix-default-test", slug: "default", contentHash: "a".repeat(64), built: false, isDefault: true }),
+  ensureMetaSandboxImage: async () => ({ snapshotName: "kortix-meta-test", slug: "meta", contentHash: "b".repeat(64), built: false, isDefault: false }),
   deleteSandboxImage: async () => ({ deleted: false, snapshotName: "kortix-default-test", slug: "default" }),
   listSnapshotBuilds: async () => [],
   listSandboxTemplates: async () => [],
@@ -160,6 +216,12 @@ mock.module("../snapshots/builder", () => ({
   reconcileStaleBuilds: async () => undefined,
   ensurePlatformDefaultImage: async () => undefined,
   resolveCommitSha: async () => "a".repeat(40),
+  ensurePerProjectWarmImage: async () => ({
+    snapshotName: "kortix-ppwarm-test",
+    tip: "a".repeat(40),
+    built: false,
+    provider: "daytona",
+  }),
   DEFAULT_SANDBOX_SLUG: "default",
 }));
 
@@ -209,6 +271,8 @@ mock.module('../projects/github', () => ({
     description: null,
   }),
   getRepositoryBranch: async ({ branch }: { branch: string }) => ({ name: branch, protected: false }),
+  verifyGitHubInstallationAdmin: async () => undefined,
+  listLinkableGitHubAppInstallations: async () => [],
   listInstallationRepositories: async () => [],
   listOwnerRepositories: async () => [],
   listRepositoryBranches: async () => [],
@@ -221,6 +285,20 @@ mock.module('../projects/github', () => ({
   createBranchRef: async () => undefined,
 }));
 
+const realProjectGit = await import('../projects/lib/git');
+mock.module('../projects/lib/git', () => ({
+  ...realProjectGit,
+  resolveProjectGitAuth: async () => ({
+    auth: { token: 'test-git-token', source: 'project_credential' },
+    authSource: 'project_credential',
+  }),
+  withProjectGitAuth: async (project: Record<string, unknown>) => ({
+    ...project,
+    gitAuthToken: 'test-git-token',
+    gitAuthHeaders: {},
+  }),
+}));
+
 mock.module('../platform/services/session-sandbox', () => ({
   provisionSessionSandbox: async (input: any) => {
     sandboxProvisionCalls += 1;
@@ -230,6 +308,12 @@ mock.module('../platform/services/session-sandbox', () => ({
 
 mock.module('../platform/services/provider-balancer', () => ({
   selectProvider: async () => 'daytona',
+}));
+
+mock.module('../llm-gateway/enablement', () => ({
+  projectLlmGatewayEnabled: (metadata: unknown) =>
+    (metadata as { experimental?: { llm_gateway?: unknown } } | null)?.experimental
+      ?.llm_gateway === true,
 }));
 
 mock.module('../shared/resolve-account', () => ({
@@ -265,6 +349,7 @@ mock.module('../billing/repositories/credit-accounts', () => ({
 // Stub secrets so webhook tests can resolve the trigger's signing secret.
 // Tests can read/override `secretValues` to drive specific behaviors.
 const secretValues = new Map<string, string>();
+const secretConsumerReads: Array<Record<string, unknown>> = [];
 const realProjectSecrets = await import('../projects/secrets');
 mock.module('../projects/secrets', () => ({
   ...realProjectSecrets,
@@ -274,10 +359,13 @@ mock.module('../projects/secrets', () => ({
   listProjectSecrets: async () => ({}),
   listProjectSecretsForUser: async () => ({}),
   listProjectSecretsSnapshot: async () => ({ env: {}, names: [], revision: 'empty' }),
+  listProjectSecretNamesForConsumer: async () => [],
   listProjectSecretsSnapshotForUser: async () => ({ env: {}, names: [], revision: 'empty' }),
   projectSecretsRevision: async () => 'empty',
-  getProjectSecretValue: async (_projectId: string, name: string) =>
-    secretValues.get(name) ?? null,
+  getProjectSecretValueForConsumer: async (input: { name: string; consumer: string }) => {
+    secretConsumerReads.push(input);
+    return input.consumer === 'connector' ? (secretValues.get(input.name) ?? null) : null;
+  },
 }));
 
 const triggerDbMock: any = {
@@ -286,6 +374,7 @@ const triggerDbMock: any = {
       from: (table: unknown) => ({
         where: () => {
           const result: any[] & { orderBy?: () => any; limit?: () => Promise<any[]> } = [];
+          (result as any).for = () => result;
           result.orderBy = () => {
             const rows =
               table === sessionLifecycleCommands
@@ -323,6 +412,7 @@ const triggerDbMock: any = {
             }
             if (table === accountGithubInstallations) return [];
             if (table === projectMembers) return [];
+            if (table === projectSessions) return sessionRows.slice(0, 1);
             if (table === sessionLifecycleCommands) return lifecycleCommandRows.slice(0, 1);
             // `getGitTriggerRuntime` does a bare `.select().from(projectTriggerRuntime)
             // .where(...).limit(1)` (no `orderBy`, no field projection) — without this
@@ -369,6 +459,12 @@ const triggerDbMock: any = {
               error: null,
               createdBy: values.createdBy ?? null,
               visibility: values.visibility ?? 'private',
+              origin: values.origin ?? 'user',
+              originRef: values.originRef ?? null,
+              secretsAllowlist: values.secretsAllowlist ?? null,
+              requiredConnectors: null,
+              connectorBindingsInheritUnbound: values.connectorBindingsInheritUnbound ?? false,
+              connectorBindingsConfigured: values.connectorBindingsConfigured ?? false,
               metadata: values.metadata ?? {},
               createdAt: values.createdAt ?? now,
               updatedAt: values.updatedAt ?? now,
@@ -444,10 +540,17 @@ const triggerDbMock: any = {
               const idx = runtimeRows.findIndex(
                 (r) => r.projectId === values.projectId && r.slug === values.slug,
               );
+              const existing = idx >= 0 ? runtimeRows[idx] : undefined;
               const next = {
+                ...existing,
+                ...values,
+                ...set,
                 projectId: values.projectId,
                 slug: values.slug,
-                lastFiredAt: (set.lastFiredAt ?? values.lastFiredAt) as Date | null,
+                lastFiredAt: (set.lastFiredAt ??
+                  values.lastFiredAt ??
+                  existing?.lastFiredAt ??
+                  null) as Date | null,
                 updatedAt: (set.updatedAt ?? values.updatedAt ?? new Date()) as Date,
               };
               if (idx >= 0) runtimeRows[idx] = next;
@@ -478,6 +581,17 @@ const triggerDbMock: any = {
             if (table === sessionLifecycleCommands) {
               lifecycleCommandRows = lifecycleCommandRows.map((row) => ({ ...row, ...setValues }));
             }
+            if (table === projectSessions) {
+              sessionRows = sessionRows.map((row) => ({
+                ...row,
+                ...(typeof setValues.createdBy === 'string'
+                  ? { createdBy: setValues.createdBy }
+                  : {}),
+                ...(typeof setValues.visibility === 'string'
+                  ? { visibility: setValues.visibility }
+                  : {}),
+              }));
+            }
             return resolve([]);
           },
         }),
@@ -498,12 +612,137 @@ mock.module('../shared/db', () => ({
   db: triggerDbMock,
 }));
 
+mock.module('../projects/trigger-execution-store', () => ({
+  claimDueScheduleSlots: async ({ now, limit }: { now: Date; limit: number }) => {
+    const due = runtimeRows
+      .filter(
+        (row) =>
+          row.enabled === true &&
+          row.triggerType === 'cron' &&
+          row.nextFireAt instanceof Date &&
+          row.nextFireAt <= now &&
+          projectRow.metadata?.triggers_paused !== true,
+      )
+      .slice(0, limit);
+    return due.map((row) => {
+      const scheduledFor = row.nextFireAt as Date;
+      const execution = {
+        executionId: randomUUID(),
+        projectId: row.projectId,
+        slug: row.slug,
+        scheduleRevision: row.scheduleRevision,
+        scheduledFor,
+        status: 'queued',
+        spec: row.scheduleSpec,
+        payload: {
+          cron: {
+            schedule: row.scheduleSpec.cron,
+            timezone: row.scheduleSpec.timezone,
+            scheduled_for: scheduledFor.toISOString(),
+            claimed_at: now.toISOString(),
+          },
+          trigger: { slug: row.slug, type: 'cron', kind: 'git' },
+        },
+        attempts: 0,
+        availableAt: now,
+        lockedBy: null,
+        lockedUntil: null,
+        sessionId: null,
+        commandId: null,
+        lastError: null,
+        claimedAt: now,
+        dispatchedAt: null,
+        completedAt: null,
+        createdAt: now,
+        updatedAt: now,
+      };
+      triggerExecutionRows.push(execution);
+      row.lastScheduledFor = scheduledFor;
+      row.nextFireAt = row.scheduleSpec.runAt ? null : new Date(now.getTime() + 1_000);
+      return { execution, inserted: true };
+    });
+  },
+  claimTriggerExecutions: async ({
+    now,
+    workerId,
+    limit,
+  }: {
+    now: Date;
+    workerId: string;
+    limit: number;
+  }) =>
+    triggerExecutionRows
+      .filter(
+        (row) =>
+          (row.status === 'queued' && row.availableAt <= now) ||
+          (row.status === 'running' && row.lockedUntil <= now),
+      )
+      .slice(0, limit)
+      .map((row) => {
+        row.status = 'running';
+        row.attempts += 1;
+        row.lockedBy = workerId;
+        row.lockedUntil = new Date(now.getTime() + 120_000);
+        return row;
+      }),
+  markTriggerExecutionDispatched: async ({ row, dispatchedAt }: any) => {
+    row.dispatchedAt = dispatchedAt;
+  },
+  markTriggerExecutionSucceeded: async ({ row, completedAt, sessionId, commandId }: any) => {
+    Object.assign(row, {
+      status: 'succeeded',
+      completedAt,
+      sessionId: sessionId ?? null,
+      commandId: commandId ?? null,
+      lockedBy: null,
+      lockedUntil: null,
+    });
+  },
+  markTriggerExecutionSkipped: async ({ row, skippedAt, reason }: any) => {
+    Object.assign(row, {
+      status: 'skipped',
+      completedAt: skippedAt,
+      lastError: reason,
+      lockedBy: null,
+      lockedUntil: null,
+    });
+  },
+  markTriggerExecutionFailed: async ({ row, failedAt, error }: any) => {
+    const terminal = row.attempts >= 5;
+    Object.assign(row, {
+      status: terminal ? 'dead_lettered' : 'queued',
+      completedAt: terminal ? failedAt : null,
+      availableAt: new Date(failedAt.getTime() + 2_000),
+      lastError: error,
+      lockedBy: null,
+      lockedUntil: null,
+    });
+    return terminal ? 'dead_lettered' : 'queued';
+  },
+  countUncatalogedTriggerProjects: async () =>
+    runtimeRows.some((row) => !row.scheduleRevision) ? 1 : 0,
+}));
+
+const realModelPreferences = await import('../repositories/model-preferences');
+mock.module('../repositories/model-preferences', () => ({
+  ...realModelPreferences,
+  getAccountModelDefaults: async () => modelDefaults,
+}));
+
+const realDefaultModel = await import('../llm-gateway/resolution/default-model');
+mock.module('../llm-gateway/resolution/default-model', () => ({
+  ...realDefaultModel,
+  isModelServableForAccount: async () => true,
+}));
+
 const {
   drainSessionLifecycleQueue,
+  drainTriggerExecutionQueue,
   projectsApp,
   projectWebhooksApp,
   runProjectTriggerSweep,
 } = await import('../projects/index');
+const { resetRateLimiters } = await import('../shared/rate-limit');
 
 function createApp() {
   const app = new Hono();
@@ -557,6 +796,56 @@ function cronEntry(opts: {
   return lines.join('\n');
 }
 
+function seedRuntimeCron(opts: {
+  slug: string;
+  prompt: string;
+  nextFireAt: Date;
+}) {
+  runtimeRows.push({
+    projectId: PROJECT_ID,
+    slug: opts.slug,
+    lastFiredAt: null,
+    lastStatus: null,
+    lastError: null,
+    lastAttemptAt: null,
+    ownerUserId: null,
+    description: null,
+    strategy: 'runtime' as const,
+    egressPolicy: null,
+    handlePrefix: null,
+    rotatedAt: null,
+    strategyLocked: false,
+    sessionId: null,
+    triggerType: 'cron',
+    enabled: true,
+    scheduleCron: '* * * * * *',
+    scheduleRunAt: null,
+    scheduleTimezone: 'UTC',
+    scheduleRevision: 'a'.repeat(64),
+    scheduleSpec: {
+      slug: opts.slug,
+      path: `kortix.yaml#triggers.${opts.slug}`,
+      name: opts.slug,
+      type: 'cron',
+      agent: 'default',
+      model: null,
+      enabled: true,
+      promptTemplate: opts.prompt,
+      cron: '* * * * * *',
+      runAt: null,
+      timezone: 'UTC',
+      secretEnv: null,
+      sessionMode: 'fresh',
+      pinnedSessionId: null,
+      sessionKey: null,
+      filter: null,
+    },
+    nextFireAt: opts.nextFireAt,
+    lastScheduledFor: null,
+    updatedAt: opts.nextFireAt,
+  });
+}
+
 /** Build a `triggers:` list-item block for a webhook trigger. */
 function webhookEntry(opts: {
   slug: string;
@@ -600,7 +889,7 @@ describe('git-backed triggers — CRUD', () => {
 
     // Manifest content reflects the new trigger as a `triggers:` entry.
     const written = repoFiles.get(MANIFEST_PATH)!;
-    expect(written).toContain('kortix_version: 1');
+    expect(written).toContain('kortix_version: 2');
     expect(written).toContain('triggers:');
     expect(written).toContain('slug: daily-digest');
     expect(written).toContain('name: Daily Digest');
@@ -618,6 +907,9 @@ describe('git-backed triggers — CRUD', () => {
       enabled: true,
       agent: 'default',
     });
+    expect(runtimeRows).toHaveLength(1);
+    expect(runtimeRows[0]!.slug).toBe('daily-digest');
+    expect(runtimeRows[0]!.lastFiredAt).toBeNull();
   });
 
   test('POST /triggers commits a webhook trigger and exposes the URL on listing', async () => {
@@ -642,6 +934,29 @@ describe('git-backed triggers — CRUD', () => {
       secret_env: 'SLACK_WEBHOOK_SECRET',
     });
     expect(body.triggers[0].webhook_url).toContain(`/v1/webhooks/projects/${PROJECT_ID}/slack-hook`);
+  });
+
+  test('POST /triggers reloads and retries one manifest revision conflict', async () => {
+    seedManifest();
+    manifestCommitConflictsRemaining = 1;
+
+    const app = createApp();
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/triggers`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: 'Daily Digest',
+        type: 'cron',
+        cron: '0 0 9 * * 1-5',
+        timezone: 'UTC',
+        prompt_template: 'Pull the deploy logs.',
+      }),
+    });
+
+    expect(res.status).toBe(201);
+    expect(manifestReadCalls).toBe(3);
+    expect(commitCalls).toHaveLength(1);
+    expect(repoFiles.get(MANIFEST_PATH)).toContain('slug: daily-digest');
   });
 
   test('POST /triggers rejects duplicate slugs', async () => {
@@ -726,6 +1041,26 @@ describe('git-backed triggers — CRUD', () => {
     expect(body.errors[0].slug).toBe('broken');
   });
 
+  test('GET /triggers preserves runtime rows when the manifest is not parseable', async () => {
+    repoFiles.set(MANIFEST_PATH, 'kortix_version: [invalid');
+    runtimeRows.push({
+      projectId: PROJECT_ID,
+      slug: 'existing',
+      lastFiredAt: null,
+      updatedAt: new Date('2026-01-03T12:00:00Z'),
+    });
+
+    const app = createApp();
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/triggers`);
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.triggers).toEqual([]);
+    expect(body.errors).toHaveLength(1);
+    expect(body.errors[0].slug).toBe('(manifest)');
+    expect(runtimeRows.map((row) => row.slug)).toEqual(['existing']);
+  });
+
   test('PATCH /triggers/:slug rewrites the manifest entry with the merged spec', async () => {
     seedManifest(cronEntry({
       slug: 'one',
@@ -754,6 +1089,32 @@ describe('git-backed triggers — CRUD', () => {
     // Unchanged fields preserved from the existing spec.
     expect(updated).toContain('cron: 0 */15 * * * *');
     expect(updated).toContain('old prompt');
+  });
+
+  test('PATCH /triggers/:slug reloads and retries one manifest revision conflict', async () => {
+    seedManifest(cronEntry({
+      slug: 'one',
+      name: 'Old name',
+      agent: 'default',
+      enabled: true,
+      cron: '0 */15 * * * *',
+      timezone: 'UTC',
+      prompt: 'old prompt',
+    }));
+    manifestCommitConflictsRemaining = 1;
+
+    const app = createApp();
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/triggers/one`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'New name', enabled: false }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(manifestReadCalls).toBe(3);
+    expect(commitCalls).toHaveLength(1);
+    expect(repoFiles.get(MANIFEST_PATH)).toContain('name: New name');
+    expect(repoFiles.get(MANIFEST_PATH)).toContain('enabled: false');
   });
 
   test('POST /triggers accepts and returns a pinned model', async () => {
@@ -841,6 +1202,25 @@ describe('git-backed triggers — CRUD', () => {
     expect(updated).toContain('slug: two');
   });
 
+  test('DELETE /triggers/:slug reloads and retries one manifest revision conflict', async () => {
+    seedManifest(
+      cronEntry({ slug: 'one', name: 'One', cron: '* * * * * *', prompt: 'body' }),
+      cronEntry({ slug: 'two', name: 'Two', cron: '* * * * * *', prompt: 'body' }),
+    );
+    manifestCommitConflictsRemaining = 1;
+
+    const app = createApp();
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/triggers/one`, {
+      method: 'DELETE',
+    });
+
+    expect(res.status).toBe(200);
+    expect(manifestReadCalls).toBe(2);
+    expect(commitCalls).toHaveLength(1);
+    expect(repoFiles.get(MANIFEST_PATH)).not.toContain('slug: one');
+    expect(repoFiles.get(MANIFEST_PATH)).toContain('slug: two');
+  });
+
   test('DELETE /triggers/:slug returns 404 when the entry is already gone', async () => {
     const app = createApp();
     const res = await app.request(`/v1/projects/${PROJECT_ID}/triggers/ghost`, {
@@ -878,6 +1258,8 @@ describe('git-backed triggers — runtime fire paths', () => {
     await new Promise((r) => setTimeout(r, 0));
     expect(sandboxProvisionCalls).toBe(1);
     expect(lastProvisionEnv?.KORTIX_INITIAL_PROMPT).toMatch(/Run at \d{4}-\d{2}-\d{2}T/);
+    expect(sessionRows.at(-1)?.visibility).toBe('private');
+    expect(sessionRows.at(-1)?.createdBy).toBe(SERVICE_ACCOUNT_ID);
     // Runtime row was upserted with last_fired_at.
     expect(runtimeRows).toHaveLength(1);
     expect(runtimeRows[0]!.slug).toBe('daily');
@@ -889,7 +1271,7 @@ describe('git-backed triggers — runtime fire paths', () => {
       slug: 'daily',
       name: 'Daily',
       cron: '* * * * * *',
-      model: 'anthropic/claude-sonnet-4-6',
+      model: 'glm-5.2',
       prompt: 'Run at {{ fired_at }}',
     }));
 
@@ -904,10 +1286,15 @@ describe('git-backed triggers — runtime fire paths', () => {
 
     await new Promise((r) => setTimeout(r, 0));
     expect(sandboxProvisionCalls).toBe(1);
-    expect(lastProvisionEnv?.KORTIX_OPENCODE_MODEL).toBe('anthropic/claude-sonnet-4-6');
+    expect(lastProvisionEnv?.KORTIX_OPENCODE_MODEL).toBe('kortix/glm-5.2');
   });
 
-  test('manual fire without a model leaves the default resolution chain untouched', async () => {
+  test('manual fire without overrides resolves the project model and selected agent before provisioning', async () => {
+    modelDefaults.projects[PROJECT_ID] = 'glm-5.2';
+    projectRow.metadata = {
+      default_agent: 'asana-refresher',
+      experimental: { llm_gateway: true },
+    };
     seedManifest(cronEntry({
       slug: 'daily',
       name: 'Daily',
@@ -925,7 +1312,11 @@ describe('git-backed triggers — runtime fire paths', () => {
 
     await new Promise((r) => setTimeout(r, 0));
     expect(sandboxProvisionCalls).toBe(1);
-    expect(lastProvisionEnv?.KORTIX_OPENCODE_MODEL).toBeUndefined();
+    expect(sessionRows.at(-1)?.agentName).toBe('asana-refresher');
+    expect(sessionRows.at(-1)?.metadata).toMatchObject({
+      opencode_model: 'kortix/glm-5.2',
+      opencode_model_source: 'project',
+    });
   });
 
   test('manual fire queues durably under backpressure', async () => {
@@ -962,9 +1353,16 @@ describe('git-backed triggers — runtime fire paths', () => {
       cron: '* * * * * *',
       prompt: 'Sweep run',
     }));
+    const scheduledFor = new Date('2026-01-01T00:00:30Z');
+    seedRuntimeCron({ slug: 'sweep', prompt: 'Sweep run', nextFireAt: scheduledFor });
 
-    const result = await runProjectTriggerSweep(new Date('2026-01-01T00:00:30Z'));
-    expect(result).toMatchObject({ scanned: 1, fired: 1, failed: 0 });
+    const result = await runProjectTriggerSweep(scheduledFor);
+    expect(result).toMatchObject({ scanned: 1, fired: 0, failed: 0 });
+    expect(await drainTriggerExecutionQueue(scheduledFor)).toMatchObject({
+      fired: 1,
+      queued: 0,
+      failed: 0,
+    });
     await new Promise((r) => setTimeout(r, 0));
     expect(sandboxProvisionCalls).toBe(1);
     expect(lastProvisionEnv?.KORTIX_INITIAL_PROMPT).toBe('Sweep run');
@@ -977,22 +1375,40 @@ describe('git-backed triggers — runtime fire paths', () => {
       cron: '* * * * * *',
       prompt: 'Sweep run',
     }));
+    const firstSlot = new Date('2026-01-01T00:00:30Z');
+    seedRuntimeCron({ slug: 'sweep', prompt: 'Sweep run', nextFireAt: firstSlot });
     provisioningSessionCount = 3;
 
-    const result = await runProjectTriggerSweep(new Date('2026-01-01T00:00:30Z'));
-    expect(result).toMatchObject({ scanned: 1, fired: 0, queued: 1, failed: 0 });
+    const result = await runProjectTriggerSweep(firstSlot);
+    expect(result).toMatchObject({ scanned: 1, fired: 0, queued: 0, failed: 0 });
+    expect(await drainTriggerExecutionQueue(firstSlot)).toMatchObject({
+      fired: 0,
+      queued: 1,
+      failed: 0,
+    });
     await new Promise((r) => setTimeout(r, 0));
     expect(sandboxProvisionCalls).toBe(0);
     expect(runtimeRows).toHaveLength(1);
-    expect(runtimeRows[0]!.lastFiredAt?.toISOString()).toBe('2026-01-01T00:00:30.000Z');
+    expect(runtimeRows[0]!.lastFiredAt).toBeTruthy();
+    expect(triggerExecutionRows[0]?.scheduledFor.toISOString()).toBe(
+      '2026-01-01T00:00:30.000Z',
+    );
 
     provisioningSessionCount = 0;
-    const retry = await runProjectTriggerSweep(new Date('2026-01-01T00:00:31Z'));
-    expect(retry).toMatchObject({ scanned: 1, fired: 1, queued: 0, failed: 0 });
+    const secondSlot = new Date('2026-01-01T00:00:31Z');
+    const retry = await runProjectTriggerSweep(secondSlot);
+    expect(retry).toMatchObject({ scanned: 1, fired: 0, queued: 0, failed: 0 });
+    expect(await drainTriggerExecutionQueue(secondSlot)).toMatchObject({
+      fired: 1,
+      queued: 0,
+      failed: 0,
+    });
     await new Promise((r) => setTimeout(r, 0));
     expect(sandboxProvisionCalls).toBe(1);
     expect(runtimeRows).toHaveLength(1);
-    expect(runtimeRows[0]!.lastFiredAt?.toISOString()).toBe('2026-01-01T00:00:31.000Z');
+    expect(triggerExecutionRows[1]?.scheduledFor.toISOString()).toBe(
+      '2026-01-01T00:00:31.000Z',
+    );
   });
 
   test('webhook fires verify the HMAC signature and reject impostors', async () => {
@@ -1012,6 +1428,7 @@ describe('git-backed triggers — runtime fire paths', () => {
       body: rawBody,
     });
     expect(missing.status).toBe(401);
+    expect(manifestReadCalls).toBe(0);
     expect(sandboxProvisionCalls).toBe(0);
 
     const wrong = await app.request(`/v1/webhooks/projects/${PROJECT_ID}/hook`, {
@@ -1023,6 +1440,20 @@ describe('git-backed triggers — runtime fire paths', () => {
       body: rawBody,
     });
     expect(wrong.status).toBe(401);
+    expect(mirrorInvalidationCalls).toBe(1);
+    expect(manifestReadCalls).toBe(1);
+
+    const repeated = await app.request(`/v1/webhooks/projects/${PROJECT_ID}/hook`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Kortix-Signature': sign(rawBody, 'another-wrong-secret'),
+      },
+      body: rawBody,
+    });
+    expect(repeated.status).toBe(401);
+    expect(mirrorInvalidationCalls).toBe(1);
+    expect(manifestReadCalls).toBe(2);
   });
 
   test('webhook fires with a valid HMAC spawn a session', async () => {
@@ -1048,6 +1479,12 @@ describe('git-backed triggers — runtime fire paths', () => {
     expect(res.status).toBe(202);
     const body = await res.json();
     expect(body.status).toBe('fired');
+    expect(secretConsumerReads[0]).toMatchObject({
+      projectId: PROJECT_ID,
+      accountId: ACCOUNT_ID,
+      name: 'HOOK_SECRET',
+      consumer: 'connector',
+    });
     await new Promise((r) => setTimeout(r, 0));
     expect(sandboxProvisionCalls).toBe(1);
     expect(lastProvisionEnv?.KORTIX_INITIAL_PROMPT).toBe('New opened');

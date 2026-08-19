@@ -1,13 +1,13 @@
 'use client';
 
-import { AlertTriangle, Download } from 'lucide-react';
+import { WarningIcon as AlertTriangle, DownloadIcon as Download } from '@phosphor-icons/react';
 import { PowerPointViewer, type ViewerTheme } from 'pptx-react-viewer';
 import { useCallback, useEffect, useLayoutEffect, useState } from 'react';
 import { I18nextProvider } from 'react-i18next';
 
 import { Button } from '@/components/ui/button';
 import { KortixLoader } from '@/components/ui/kortix-loader';
-import { downloadFile } from '@/features/files/api/opencode-files';
+import { downloadFile } from '@/features/files/api/runtime-files';
 import { cn } from '@/lib/utils';
 
 import { getPptxI18n } from './pptx-i18n';

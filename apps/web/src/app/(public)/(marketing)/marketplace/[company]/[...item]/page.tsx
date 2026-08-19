@@ -8,25 +8,25 @@ import {
   listPublicMarketplaceItems,
   listPublicMarketplaces,
 } from '@/lib/marketplace-public';
-import { itemIdToPathParts, pathPartsToItemId } from '@/lib/marketplace-slug';
+import { pathPartsToItemId } from '@/lib/marketplace-slug';
+import { socialMetadata } from '@/lib/seo/metadata';
+import { CANONICAL_ORIGIN } from '@/lib/site-metadata';
 
-export const revalidate = 3600;
+// The root layout (app/layout.tsx) forces the whole app into per-request dynamic
+// rendering via `connection()`/`headers()` (so self-host Docker images read env
+// at request time, not build time). ISR config here (`revalidate` +
+// `generateStaticParams`) is therefore dead — and worse, it routed uncached
+// item URLs through Next's on-demand static-generation path, which collides with
+// the layout's dynamic APIs and throws an UNCAUGHT `DYNAMIC_SERVER_USAGE` → a 500
+// for EVERY /marketplace/<company>/<item> page (generateStaticParams also returns
+// [] whenever the API isn't reachable at build time, e.g. any Docker image build,
+// so nothing was pre-rendered anyway). Force dynamic to match reality: SSR each
+// request, no static-generation pass to conflict with.
+export const dynamic = 'force-dynamic';
 
 interface PageParams {
   company: string;
   item: string[];
-}
-
-export async function generateStaticParams() {
-  try {
-    const { items } = await listPublicMarketplaceItems();
-    return items.map((entry) => {
-      const { company, item } = itemIdToPathParts(entry.id);
-      return { company, item };
-    });
-  } catch {
-    return [];
-  }
 }
 
 export async function generateMetadata({
@@ -36,16 +36,19 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { company, item } = await params;
   const id = pathPartsToItemId(company, item);
+  const pathname = `/marketplace/${company}/${item.map(encodeURIComponent).join('/')}`;
   try {
     const detail = await getPublicMarketplaceItem(id);
     const description = detail.description ?? `${detail.title} on the Kortix Marketplace.`;
+    const title = `${detail.title} — Kortix Marketplace`;
     return {
-      title: `${detail.title} — Kortix Marketplace`,
+      title: { absolute: title },
       description,
-      openGraph: { title: `${detail.title} — Kortix Marketplace`, description },
+      alternates: { canonical: `${CANONICAL_ORIGIN}${pathname}` },
+      ...socialMetadata(title, description, `${CANONICAL_ORIGIN}${pathname}`),
     };
   } catch {
-    return { title: 'Marketplace — Kortix' };
+    return { title: 'Marketplace — Kortix', robots: { index: false, follow: false } };
   }
 }
 

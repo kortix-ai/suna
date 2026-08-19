@@ -3,27 +3,21 @@
 import { useTranslations } from 'next-intl';
 
 import {
-  useEffect,
-  useMemo,
-  useState,
-} from 'react';
+  WarningCircleIcon as AlertCircle,
+  ArrowLeftIcon as ArrowLeft,
+  ArrowsLeftRightIcon as ArrowLeftRight,
+  PowerIcon as Power,
+  WifiSlashIcon as WifiOff,
+} from '@phosphor-icons/react';
 import { useRouter } from 'next/navigation';
-import {
-  AlertCircle,
-  ArrowLeft,
-  ArrowLeftRight,
-  Power,
-  RefreshCw,
-  WifiOff,
-} from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { Button } from '@/components/ui/button';
-import {
-  STAGE_LABELS,
-  type ProvisioningStageInfo,
-} from '@/lib/provisioning-stages';
-import { type SandboxRecoveryPhase, useSandboxConnectionStore } from '@kortix/sdk/sandbox-connection-store';
+import Loading from '@/components/ui/loading';
+import { STAGE_LABELS, type ProvisioningStageInfo } from '@/lib/provisioning-stages';
+import { useRuntimeConnectionStore } from '@kortix/sdk/react';
+import { useAppHome } from '@/lib/onboarding/use-app-home';
 
 /**
  * ConnectingScreen — canonical lightweight loader for auth, project routing,
@@ -56,15 +50,14 @@ export function ConnectingScreen({
   minimal = false,
   hideWorkspacePicker = false,
 }: ConnectingScreenProps = {}) {
+  const appHome = useAppHome();
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const status = useSandboxConnectionStore((s) => s.status);
-  const wasConnected = useSandboxConnectionStore((s) => s.wasConnected);
-  const initialCheckDone = useSandboxConnectionStore((s) => s.initialCheckDone);
-  const reconnectAttempts = useSandboxConnectionStore((s) => s.reconnectAttempts);
-  const disconnectedAt = useSandboxConnectionStore((s) => s.disconnectedAt);
-  const recoveryPhase = useSandboxConnectionStore((s) => s.recoveryPhase);
-  const restartRequestedAt = useSandboxConnectionStore((s) => s.restartRequestedAt);
-  const healthy = useSandboxConnectionStore((s) => s.healthy);
+  const status = useRuntimeConnectionStore((s) => s.status);
+  const wasConnected = useRuntimeConnectionStore((s) => s.wasConnected);
+  const initialCheckDone = useRuntimeConnectionStore((s) => s.initialCheckDone);
+  const reconnectAttempts = useRuntimeConnectionStore((s) => s.reconnectAttempts);
+  const disconnectedAt = useRuntimeConnectionStore((s) => s.disconnectedAt);
+  const healthy = useRuntimeConnectionStore((s) => s.healthy);
 
   const router = useRouter();
 
@@ -75,7 +68,7 @@ export function ConnectingScreen({
   const runtimeSummary = 'Runtime services degraded';
 
   const handleSwitch = () => {
-    router.push(backHref || '/projects');
+    router.push(backHref || appHome);
   };
 
   const serverLabel = labelOverride?.trim() || 'workspace';
@@ -99,10 +92,7 @@ export function ConnectingScreen({
   if (stopped) {
     return (
       <FullScreenShell showWorkspacePicker={!hideWorkspacePicker}>
-        <StoppedView
-          label={stopped.name || labelOverride || serverLabel}
-          onBack={handleSwitch}
-        />
+        <StoppedView label={stopped.name || labelOverride || serverLabel} onBack={handleSwitch} />
       </FullScreenShell>
     );
   }
@@ -129,19 +119,12 @@ export function ConnectingScreen({
   if (!forceConnecting && status === 'connected' && healthy !== false) return null;
 
   const isMidSessionDrop =
-    !forceConnecting &&
-    wasConnected &&
-    initialCheckDone &&
-    status !== 'connected';
+    !forceConnecting && wasConnected && initialCheckDone && status !== 'connected';
 
   if (isMidSessionDrop) {
     return (
       <>
-        <ReconnectPill
-          status={status}
-          disconnectedAt={disconnectedAt}
-          onSwitch={handleSwitch}
-        />
+        <ReconnectPill status={status} disconnectedAt={disconnectedAt} onSwitch={handleSwitch} />
       </>
     );
   }
@@ -150,7 +133,9 @@ export function ConnectingScreen({
     return (
       <>
         <HealthPill
-          title={tHardcodedUi.raw('componentsDashboardConnectingScreen.line156JsxAttrTitleRuntimeDegraded')}
+          title={tHardcodedUi.raw(
+            'componentsDashboardConnectingScreen.line156JsxAttrTitleRuntimeDegraded',
+          )}
           detail={runtimeSummary}
           onSwitch={handleSwitch}
         />
@@ -166,8 +151,6 @@ export function ConnectingScreen({
             label={serverLabel}
             reconnectAttempts={reconnectAttempts}
             provider={effectiveProvider}
-            recoveryPhase={recoveryPhase}
-            restartRequestedAt={restartRequestedAt}
             degraded={false}
             onSwitch={handleSwitch}
             sandboxId={resolvedSandboxId}
@@ -177,13 +160,7 @@ export function ConnectingScreen({
     );
   }
 
-  return (
-    <CompactConnectingSignal
-      title={title}
-      overrideStage={overrideStage}
-      minimal={minimal}
-    />
-  );
+  return <CompactConnectingSignal title={title} overrideStage={overrideStage} minimal={minimal} />;
 }
 
 export interface ConnectingScreenProps {
@@ -264,7 +241,7 @@ function FullScreenShell({
   showWorkspacePicker?: boolean;
 }) {
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-background">
+    <div className="bg-background fixed inset-0 z-[60] flex items-center justify-center">
       <div className="relative z-10 flex w-full max-w-[420px] flex-col items-center gap-8 px-8">
         {children}
       </div>
@@ -302,10 +279,10 @@ function CompactConnectingSignal({
 function ProgressLine() {
   return (
     <div
-      className="h-[1.5px] w-[160px] overflow-hidden rounded-full bg-foreground/[0.06]"
+      className="bg-foreground/[0.06] h-[1.5px] w-[160px] overflow-hidden rounded-full"
       aria-hidden
     >
-      <div className="h-full w-1/3 rounded-full bg-foreground/50 animate-connect-progress" />
+      <div className="bg-foreground/50 animate-connect-progress h-full w-1/3 rounded-full" />
     </div>
   );
 }
@@ -339,29 +316,25 @@ function ProvisioningView({
 }) {
   const pct = Math.max(0, Math.min(100, progress));
   const stageText =
-    stageLabel ||
-    (currentStage ? STAGE_LABELS[currentStage] : undefined) ||
-    'Preparing workspace';
+    stageLabel || (currentStage ? STAGE_LABELS[currentStage] : undefined) || 'Preparing workspace';
 
   return (
     <>
       <KortixLogo size={40} />
 
-      <p className="text-sm font-normal text-foreground/55 max-w-[320px] truncate">
-        {label}
-      </p>
+      <p className="text-foreground/55 max-w-[320px] truncate text-sm font-normal">{label}</p>
 
       <DeterminateProgress pct={pct} />
 
-      <div className="flex items-center gap-2 text-xs text-muted-foreground/50">
-        <span className="tabular-nums font-medium">{Math.round(pct)}%</span>
-        <span className="h-[10px] w-px bg-foreground/[0.08]" aria-hidden />
+      <div className="text-muted-foreground/50 flex items-center gap-2 text-xs">
+        <span className="font-medium tabular-nums">{Math.round(pct)}%</span>
+        <span className="bg-foreground/[0.08] h-[10px] w-px" aria-hidden />
         <span className="max-w-[220px] truncate">{stageText}</span>
       </div>
 
       {machineInfo?.ip && (
-        <div className="inline-flex items-center gap-1.5 text-xs font-mono tracking-wide text-muted-foreground/35">
-          <span className="h-1 w-1 rounded-full bg-foreground/40" />
+        <div className="text-muted-foreground/35 inline-flex items-center gap-1.5 font-mono text-xs tracking-wide">
+          <span className="bg-foreground/40 h-1 w-1 rounded-full" />
           {machineInfo.location?.toLowerCase().match(/us|hil/) ? 'US' : 'EU'}
           <span>·</span>
           {machineInfo.ip}
@@ -377,11 +350,11 @@ function ProvisioningView({
 function DeterminateProgress({ pct }: { pct: number }) {
   return (
     <div
-      className="h-[1.5px] w-[160px] overflow-hidden rounded-full bg-foreground/[0.06]"
+      className="bg-foreground/[0.06] h-[1.5px] w-[160px] overflow-hidden rounded-full"
       aria-hidden
     >
       <div
-        className="h-full rounded-full bg-foreground/60 transition-[width] duration-500 ease-out"
+        className="bg-foreground/60 h-full rounded-full transition-[width] duration-500 ease-out"
         style={{ width: `${Math.max(pct, 2)}%` }}
       />
     </div>
@@ -409,30 +382,32 @@ function ErrorView({
   return (
     <>
       <div
-        className="flex h-12 w-12 items-center justify-center rounded-full border border-destructive/20 bg-destructive/10"
+        className="border-destructive/20 bg-destructive/10 flex h-12 w-12 items-center justify-center rounded-full border"
         aria-hidden
       >
-        <AlertCircle className="h-5 w-5 text-destructive/70" />
+        <AlertCircle className="text-destructive/70 h-5 w-5" />
       </div>
 
       <div className="flex flex-col items-center gap-1">
-        <h1 className="text-sm font-medium text-foreground/90">{tHardcodedUi.raw('componentsDashboardConnectingScreen.line422JsxTextCouldnAposTStart')}{' '}{label}
+        <h1 className="text-foreground/90 text-sm font-medium">
+          {tHardcodedUi.raw('componentsDashboardConnectingScreen.line422JsxTextCouldnAposTStart')}{' '}
+          {label}
         </h1>
         {(serverType || location) && (
-          <p className="font-mono text-xs text-muted-foreground/35">
+          <p className="text-muted-foreground/35 font-mono text-xs">
             {[serverType, location].filter(Boolean).join(' · ')}
           </p>
         )}
       </div>
 
-      <p className="max-w-[320px] text-center text-xs leading-relaxed text-muted-foreground/60 break-words">
+      <p className="text-muted-foreground/60 max-w-[320px] text-center text-xs leading-relaxed wrap-break-word">
         {message}
       </p>
 
       <button
         type="button"
         onClick={onBack}
-        className="inline-flex h-8 items-center gap-1.5 rounded-full border border-border/40 px-4 text-xs font-medium text-foreground/70 transition-colors hover:border-border/70 hover:text-foreground cursor-pointer"
+        className="border-border/40 text-foreground/70 hover:border-border/70 hover:text-foreground inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-full border px-4 text-xs font-medium transition-colors"
       >
         <ArrowLeft className="h-3 w-3" />
         Back
@@ -445,34 +420,34 @@ function ErrorView({
 // Stopped view — workspace exists but is not running
 // ─────────────────────────────────────────────────────────────────────────────
 
-function StoppedView({
-  label,
-  onBack,
-}: {
-  label: string;
-  onBack: () => void;
-}) {
+function StoppedView({ label, onBack }: { label: string; onBack: () => void }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <>
       <div
-        className="flex h-12 w-12 items-center justify-center rounded-full border border-border/40 bg-foreground/[0.03]"
+        className="border-border/40 bg-foreground/[0.03] flex h-12 w-12 items-center justify-center rounded-full border"
         aria-hidden
       >
-        <Power className="h-5 w-5 text-muted-foreground/60" />
+        <Power className="text-muted-foreground/60 h-5 w-5" />
       </div>
 
       <div className="flex flex-col items-center gap-1">
-        <h1 className="text-sm font-medium text-foreground/90">
-          {label}{tHardcodedUi.raw('componentsDashboardConnectingScreen.line469JsxTextIsStopped')}</h1>
-        <p className="max-w-[300px] text-center text-xs leading-relaxed text-muted-foreground/55">{tHardcodedUi.raw('componentsDashboardConnectingScreen.line472JsxTextOpenANewSessionOrReturnToProjects')}</p>
+        <h1 className="text-foreground/90 text-sm font-medium">
+          {label}
+          {tHardcodedUi.raw('componentsDashboardConnectingScreen.line469JsxTextIsStopped')}
+        </h1>
+        <p className="text-muted-foreground/55 max-w-[300px] text-center text-xs leading-relaxed">
+          {tHardcodedUi.raw(
+            'componentsDashboardConnectingScreen.line472JsxTextOpenANewSessionOrReturnToProjects',
+          )}
+        </p>
       </div>
 
       <div className="flex items-center gap-2">
         <button
           type="button"
           onClick={onBack}
-          className="inline-flex h-8 items-center gap-1.5 rounded-full border border-border/40 px-4 text-xs font-medium text-foreground/70 transition-colors hover:border-border/70 hover:text-foreground cursor-pointer"
+          className="border-border/40 text-foreground/70 hover:border-border/70 hover:text-foreground inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-full border px-4 text-xs font-medium transition-colors"
         >
           <ArrowLeft className="h-3 w-3" />
           Back
@@ -491,7 +466,7 @@ function BackLink({ onClick }: { onClick: () => void }) {
     <button
       type="button"
       onClick={onClick}
-      className="fixed left-5 top-5 inline-flex items-center gap-1.5 text-xs text-muted-foreground/35 transition-colors hover:text-foreground/70 cursor-pointer"
+      className="text-muted-foreground/35 hover:text-foreground/70 fixed top-5 left-5 inline-flex cursor-pointer items-center gap-1.5 text-xs transition-colors"
     >
       <ArrowLeft className="h-3 w-3" />
       Back
@@ -507,8 +482,6 @@ function UnreachableView({
   label,
   reconnectAttempts,
   provider,
-  recoveryPhase,
-  restartRequestedAt,
   degraded,
   onSwitch,
   sandboxId,
@@ -516,55 +489,40 @@ function UnreachableView({
   label: string;
   reconnectAttempts: number;
   provider?: string;
-  recoveryPhase: SandboxRecoveryPhase;
-  restartRequestedAt: number | null;
   degraded?: boolean;
   onSwitch: () => void;
   sandboxId?: string;
 }) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
-  const isRestartRecovering = recoveryPhase !== 'idle';
-  const secondsSinceRestart = restartRequestedAt ? Math.max(1, Math.floor((Date.now() - restartRequestedAt) / 1000)) : null;
-
   return (
     <>
       <div
-        className="flex h-12 w-12 items-center justify-center rounded-full border border-destructive/20 bg-destructive/10"
+        className="border-destructive/20 bg-destructive/10 flex h-12 w-12 items-center justify-center rounded-full border"
         aria-hidden
       >
-        <WifiOff className="h-5 w-5 text-destructive/70" />
+        <WifiOff className="text-destructive/70 h-5 w-5" />
       </div>
 
       <div className="flex flex-col items-center gap-1.5">
-        <h1 className="text-sm font-medium text-foreground/90">
-          {recoveryPhase === 'restarting_host' ? 'Rebooting host' : recoveryPhase === 'restarting_runtime' ? 'Restarting runtime services' : recoveryPhase === 'restarting_workload' ? 'Restarting workload' : degraded ? 'Workspace services unavailable' : 'Workspace offline'}
+        <h1 className="text-foreground/90 text-sm font-medium">
+          {degraded ? 'Workspace services unavailable' : 'Workspace offline'}
         </h1>
-        <p className="max-w-[300px] text-center text-xs leading-relaxed text-muted-foreground/55">
-          {recoveryPhase === 'restarting_host'
-            ? 'The host reboot was accepted. Waiting for the machine and services to come back online.'
-            : recoveryPhase === 'restarting_runtime'
-              ? 'The runtime restart was accepted. Waiting for core services to come back online.'
-            : recoveryPhase === 'restarting_workload'
-              ? 'The workload restart was accepted. Waiting for the container and core services to come back online.'
-            : degraded
-              ? 'The host is reachable, but the core workspace runtime is failing requests. Restart the runtime or workload to recover services.'
+        <p className="text-muted-foreground/55 max-w-[300px] text-center text-xs leading-relaxed">
+          {degraded
+            ? 'The host is reachable, but the core workspace runtime is failing requests. Restart the runtime or workload to recover services.'
             : 'This workspace is unreachable. Return to projects and open or create another session.'}
         </p>
         {sandboxId ? (
-          <p className="text-xs font-mono text-muted-foreground/35">Sandbox {sandboxId.slice(0, 8)}</p>
-        ) : null}
-        {isRestartRecovering && secondsSinceRestart ? (
-          <p className="text-xs font-mono text-muted-foreground/35">{tHardcodedUi.raw('componentsDashboardConnectingScreen.line564JsxTextRecovering')}{secondsSinceRestart}s</p>
+          <p className="text-muted-foreground/35 font-mono text-xs">
+            Sandbox {sandboxId.slice(0, 8)}
+          </p>
         ) : null}
       </div>
 
-      <div className="inline-flex items-center gap-1.5 text-xs text-muted-foreground/45">
-        <RefreshCw className="h-3 w-3 animate-spin" />
-        <span>
-          {recoveryPhase === 'restarting_host' ? 'Waiting for host and services' : recoveryPhase === 'restarting_runtime' ? 'Waiting for core runtime' : recoveryPhase === 'restarting_workload' ? 'Waiting for workload and services' : 'Retrying automatically'}
-        </span>
-        {reconnectAttempts > 0 && !isRestartRecovering && (
-          <span className="font-mono tabular-nums text-muted-foreground/35">
+      <div className="text-muted-foreground/45 inline-flex items-center gap-1.5 text-xs">
+        <Loading className="h-3 w-3" />
+        <span>Retrying automatically</span>
+        {reconnectAttempts > 0 && (
+          <span className="text-muted-foreground/35 font-mono tabular-nums">
             · {reconnectAttempts}
           </span>
         )}
@@ -574,7 +532,7 @@ function UnreachableView({
         <button
           type="button"
           onClick={onSwitch}
-          className="inline-flex h-8 items-center gap-1.5 rounded-full border border-border/40 px-4 text-xs font-medium text-foreground/70 transition-colors hover:border-border/70 hover:text-foreground cursor-pointer"
+          className="border-border/40 text-foreground/70 hover:border-border/70 hover:text-foreground inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-full border px-4 text-xs font-medium transition-colors"
         >
           <ArrowLeftRight className="h-3 w-3" />
           Projects
@@ -598,32 +556,22 @@ function ReconnectPill({
   onSwitch: () => void;
 }) {
   const elapsed = useElapsedTime(disconnectedAt);
-  const label = status === 'unreachable'
-      ? 'Unreachable'
-      : 'Reconnecting';
+  const label = status === 'unreachable' ? 'Unreachable' : 'Reconnecting';
 
   return (
-    <div className="fixed bottom-6 right-6 z-[60] animate-in slide-in-from-bottom-3 fade-in duration-300">
-      <div className="flex items-center gap-2.5 rounded-full border border-border/50 bg-background/95 pl-3 pr-1.5 py-1.5 shadow-lg shadow-black/5 backdrop-blur-xl">
-        <span className="relative flex h-2 w-2 flex-shrink-0">
+    <div className="animate-in slide-in-from-bottom-3 fade-in fixed right-6 bottom-6 z-[60] duration-300">
+      <div className="border-border/50 bg-background/95 flex items-center gap-2.5 rounded-full border py-1.5 pr-1.5 pl-3 shadow-lg shadow-black/5 backdrop-blur-xl">
+        <span className="relative flex h-2 w-2 shrink-0">
           <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75" />
           <span className="relative inline-flex h-2 w-2 rounded-full bg-amber-500" />
         </span>
 
-        <span className="whitespace-nowrap text-xs text-muted-foreground">
+        <span className="text-muted-foreground text-xs whitespace-nowrap">
           {label}
-          {elapsed ? (
-            <span className="text-muted-foreground/40"> · {elapsed}</span>
-          ) : null}
+          {elapsed ? <span className="text-muted-foreground/40"> · {elapsed}</span> : null}
         </span>
 
-        <Button
-          type="button"
-          onClick={onSwitch}
-          variant="muted"
-          size="xs"
-          className="rounded-full"
-        >
+        <Button type="button" onClick={onSwitch} variant="muted" size="xs" className="rounded-full">
           <ArrowLeftRight className="h-2.5 w-2.5" />
           Projects
         </Button>
@@ -642,25 +590,19 @@ function HealthPill({
   onSwitch: () => void;
 }) {
   return (
-    <div className="fixed bottom-6 right-6 z-[60] animate-in slide-in-from-bottom-3 fade-in duration-300">
-      <div className="flex items-center gap-2.5 rounded-full border border-border/50 bg-background/95 pl-3 pr-1.5 py-1.5 shadow-lg shadow-black/5 backdrop-blur-xl">
-        <span className="relative flex h-2 w-2 flex-shrink-0">
+    <div className="animate-in slide-in-from-bottom-3 fade-in fixed right-6 bottom-6 z-[60] duration-300">
+      <div className="border-border/50 bg-background/95 flex items-center gap-2.5 rounded-full border py-1.5 pr-1.5 pl-3 shadow-lg shadow-black/5 backdrop-blur-xl">
+        <span className="relative flex h-2 w-2 shrink-0">
           <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75" />
           <span className="relative inline-flex h-2 w-2 rounded-full bg-amber-500" />
         </span>
 
-        <span className="max-w-[220px] truncate whitespace-nowrap text-xs text-muted-foreground">
+        <span className="text-muted-foreground max-w-[220px] truncate text-xs whitespace-nowrap">
           {title}
           {detail ? <span className="text-muted-foreground/40"> · {detail}</span> : null}
         </span>
 
-        <Button
-          type="button"
-          onClick={onSwitch}
-          variant="muted"
-          size="xs"
-          className="rounded-full"
-        >
+        <Button type="button" onClick={onSwitch} variant="muted" size="xs" className="rounded-full">
           <ArrowLeftRight className="h-2.5 w-2.5" />
           Projects
         </Button>

@@ -41,6 +41,9 @@ let commitCalls: any[];
 let listRepoFileCalls: any[];
 let readRepoFileCalls: any[];
 let archiveCalls: any[];
+let deleteManagedRepoCalls: any[];
+let deleteManagedRepoError: Error | null;
+let deleteManagedRepoResult: boolean;
 let rejectedBranch: string | null;
 
 function setCurrentUser(userId: string, userEmail: string) {
@@ -92,6 +95,9 @@ function resetState() {
   listRepoFileCalls = [];
   readRepoFileCalls = [];
   archiveCalls = [];
+  deleteManagedRepoCalls = [];
+  deleteManagedRepoError = null;
+  deleteManagedRepoResult = false;
   rejectedBranch = null;
 }
 
@@ -111,10 +117,10 @@ mock.module('../iam/dispatcher', () => {
     if (am.accountRole === 'owner' || am.accountRole === 'admin') return true;
     const pm = dbState.projectMemberRows.find((r) => r.userId === userId && r.projectId === PROJECT_ID);
     const pr = pm?.projectRole ?? null;
-    if (action === 'project.read') return pr === 'member' || pr === 'editor' || pr === 'manager';
+    if (action === 'project.read') return pr === 'member' || pr === 'manager';
     // Session lifecycle: any project member (a plain `member` included) may run sessions.
-    if (action.startsWith('project.session.')) return pr === 'member' || pr === 'editor' || pr === 'manager';
-    if (action === 'project.write') return pr === 'editor' || pr === 'manager';
+    if (action.startsWith('project.session.')) return pr === 'member' || pr === 'manager';
+    if (action === 'project.write') return pr === 'manager';
     return pr === 'manager';
   };
   return {
@@ -152,7 +158,9 @@ mock.module('../middleware/auth', () => ({
   },
 }));
 
+const actualGit = await import('../projects/git');
 mock.module('../projects/git', () => ({
+  ...actualGit,
   grepRepoFiles: async () => [],
   searchRepoFileNames: async () => [],
   createRemoteSessionBranch: async () => undefined,
@@ -168,7 +176,18 @@ mock.module('../projects/git', () => ({
   readRepoFile: async (project: ProjectRow, path: string, ref: string) => {
     readRepoFileCalls.push({ projectId: project.projectId, path, ref });
     if (path === 'missing.txt') {
+      // The legacy `GitOperationError` shape: a raw `fatal: path … does not
+      // exist in …` message. `isMissingGitPathError` matches this → 404.
       throw new Error("fatal: path 'missing.txt' does not exist in 'feature'");
+    }
+    if (path === 'not-found.txt') {
+      // The typed shape `readRepoFile` actually throws in prod (files.ts:127) —
+      // a `RepoFileNotFoundError` whose message does NOT match the
+      // `isMissingGitPathError` regex. Without the route branching on
+      // `isRepoFileNotFoundError`, this leaked as an uncaught 500 (Better Stack
+      // pattern `5b40ec1a…`). Throw the REAL class so the regression test
+      // exercises the exact prod code path, not a string lookalike.
+      throw new actualGit.RepoFileNotFoundError(path, ref);
     }
     return `content:${path}@${ref}`;
   },
@@ -186,6 +205,7 @@ mock.module('../projects/git', () => ({
     });
   },
   listBranches: async () => [],
+  remoteBranchExists: async () => true,
   listCommits: async () => ({ entries: [], nextCursor: null }),
   getCommit: async () => null,
   getCommitDiff: async () => null,
@@ -207,8 +227,17 @@ mock.module('../projects/git', () => ({
   materializeRepoContext: async () => '/tmp/fake-snapshot-context',
 }));
 
+mock.module('../projects/lib/project-deletion', () => ({
+  deleteManagedProjectRepo: async (project: ProjectRow) => {
+    deleteManagedRepoCalls.push(project);
+    if (deleteManagedRepoError) throw deleteManagedRepoError;
+    return deleteManagedRepoResult;
+  },
+}));
+
 mock.module("../snapshots/builder", () => ({
   ensureSandboxImage: async () => ({ snapshotName: "kortix-default-test", slug: "default", contentHash: "a".repeat(64), built: false, isDefault: true }),
+  ensureMetaSandboxImage: async () => ({ snapshotName: "kortix-meta-test", slug: "meta", contentHash: "b".repeat(64), built: false, isDefault: false }),
   deleteSandboxImage: async () => ({ deleted: false, snapshotName: "kortix-default-test", slug: "default" }),
   listSnapshotBuilds: async () => [],
   listSandboxTemplates: async () => [],
@@ -222,10 +251,18 @@ mock.module("../snapshots/builder", () => ({
   reconcileProjectTemplates: async () => ({ checked: 0, updated: 0 }),
   kickProjectTemplatePrebuilds: () => {},
   resolveCommitSha: async () => "a".repeat(40),
+  ensurePerProjectWarmImage: async () => ({
+    snapshotName: "kortix-ppwarm-test",
+    tip: "a".repeat(40),
+    built: false,
+    provider: "daytona",
+  }),
   DEFAULT_SANDBOX_SLUG: "default",
 }));
 
+const actualGithub = await import('../projects/github');
 mock.module('../projects/github', () => ({
+  ...actualGithub,
   parseGitHubRepoUrl: () => null,
   isOrgAccount: async () => false,
   buildGitHubAppInstallUrl: () => 'https://github.com/apps/kortix-test/installations/new',
@@ -510,6 +547,38 @@ describe('projects API contract', () => {
     expect(await missingFile.json()).toEqual({ error: 'File not found' });
     expect(readRepoFileCalls.at(-1)).toEqual({ projectId: PROJECT_ID, path: 'missing.txt', ref: 'feature' });
 
+    // Regression (Better Stack pattern `5b40ec1a…`): `readRepoFile` now throws a
+    // typed `RepoFileNotFoundError` (message `file not found in repository at
+    // '<ref>:<path>'`) instead of the raw `fatal: path … does not exist in …`
+    // `GitOperationError`. The route's catch block only matched the OLD regex
+    // (`isMissingGitPathError`), so the typed error leaked uncaught to
+    // `app.onError` → 500 → captureException → Sentry. The mock above throws
+    // the REAL `RepoFileNotFoundError` class for `not-found.txt`, so this
+    // exercises the exact prod code path. The fix makes the route branch on
+    // `isRepoFileNotFoundError` and return 404 — a 404 here proves the typed
+    // error no longer reaches the 500/Sentry path.
+    const typedMissingFile = await app.request(
+      `/v1/projects/${PROJECT_ID}/files/content?path=not-found.txt&ref=feature`,
+    );
+    expect(typedMissingFile.status).toBe(404);
+    expect(await typedMissingFile.json()).toEqual({ error: 'File not found' });
+    expect(readRepoFileCalls.at(-1)).toEqual({ projectId: PROJECT_ID, path: 'not-found.txt', ref: 'feature' });
+
+    // Absolute and traversal paths can never resolve inside the repo tree —
+    // the meta agent's /workspace/AGENTS.md source lives in the sandbox image.
+    // The route answers 404 without reaching git instead of letting the path
+    // guard throw a 500.
+    const absolutePath = await app.request(
+      `/v1/projects/${PROJECT_ID}/files/content?path=${encodeURIComponent('/workspace/AGENTS.md')}`,
+    );
+    expect(absolutePath.status).toBe(404);
+    expect(await absolutePath.json()).toEqual({ error: 'File not found' });
+    const traversalPath = await app.request(
+      `/v1/projects/${PROJECT_ID}/files/content?path=${encodeURIComponent('../etc/passwd')}`,
+    );
+    expect(traversalPath.status).toBe(404);
+    expect(readRepoFileCalls.at(-1)).toEqual({ projectId: PROJECT_ID, path: 'not-found.txt', ref: 'feature' });
+
     const read = await app.request(`/v1/projects/${PROJECT_ID}`);
     expect(read.status).toBe(200);
     expect(dbState.projectRows.find((project) => project.projectId === PROJECT_ID)?.lastOpenedAt).toBeInstanceOf(Date);
@@ -559,6 +628,7 @@ describe('projects API contract', () => {
         });
       },
       listBranches: async () => [],
+      remoteBranchExists: async () => true,
       listCommits: async () => ({ entries: [], nextCursor: null }),
       getCommit: async () => null,
       getCommitDiff: async () => null,
@@ -602,11 +672,40 @@ describe('projects API contract', () => {
 
     const del = await app.request(`/v1/projects/${PROJECT_ID}`, { method: 'DELETE' });
     expect(del.status).toBe(200);
-    expect(await del.json()).toEqual({ ok: true });
+    expect(await del.json()).toEqual({ ok: true, archived: true, repo_deleted: false });
+    expect(deleteManagedRepoCalls).toEqual([]);
     expect(dbState.projectRows.find((project) => project.projectId === PROJECT_ID)?.status).toBe('archived');
 
     const after = await app.request(`/v1/projects/${PROJECT_ID}`);
     expect(after.status).toBe(404);
+  });
+
+  test('purges a managed repository only when explicitly requested', async () => {
+    const app = createApp();
+    deleteManagedRepoResult = true;
+
+    const del = await app.request(`/v1/projects/${PROJECT_ID}?purge=true`, {
+      method: 'DELETE',
+    });
+
+    expect(del.status).toBe(200);
+    expect(await del.json()).toEqual({ ok: true, archived: true, repo_deleted: true });
+    expect(deleteManagedRepoCalls.map((project) => project.projectId)).toEqual([PROJECT_ID]);
+    expect(dbState.projectRows.find((project) => project.projectId === PROJECT_ID)?.status).toBe(
+      'archived',
+    );
+  });
+
+  test('does not archive a project when managed repository deletion fails', async () => {
+    const app = createApp();
+    deleteManagedRepoError = new Error('provider unavailable');
+
+    const del = await app.request(`/v1/projects/${PROJECT_ID}?purge=true`, { method: 'DELETE' });
+
+    expect(del.status).toBe(502);
+    expect(await del.json()).toEqual({ error: 'Failed to delete managed project repository' });
+    expect(deleteManagedRepoCalls.map((project) => project.projectId)).toEqual([PROJECT_ID]);
+    expect(dbState.projectRows.find((project) => project.projectId === PROJECT_ID)?.status).toBe('active');
   });
 
   test('lists and manages explicit project access grants without overriding account managers', async () => {
@@ -647,30 +746,60 @@ describe('projects API contract', () => {
     const grant = await app.request(`/v1/projects/${PROJECT_ID}/access/${MEMBER_ID}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ role: 'editor' }),
+      body: JSON.stringify({ role: 'manager' }),
     });
     expect(grant.status).toBe(200);
     expect(await grant.json()).toMatchObject({
       user_id: MEMBER_ID,
       account_role: 'member',
-      project_role: 'editor',
-      effective_project_role: 'editor',
+      project_role: 'manager',
+      effective_project_role: 'manager',
       has_implicit_access: false,
     });
     expect(dbState.projectMemberRows).toContainEqual(expect.objectContaining({
       projectId: PROJECT_ID,
       userId: MEMBER_ID,
-      projectRole: 'editor',
+      projectRole: 'manager',
     }));
 
     access = await app.request(`/v1/projects/${PROJECT_ID}/access`);
     body = await access.json();
     const memberRow = body.members.find((member: any) => member.user_id === MEMBER_ID);
     expect(memberRow).toMatchObject({
-      project_role: 'editor',
-      effective_project_role: 'editor',
+      project_role: 'manager',
+      effective_project_role: 'manager',
       has_implicit_access: false,
     });
+
+    // The removed `editor` role is rejected on write, never folded to manager.
+    const rejected = await app.request(`/v1/projects/${PROJECT_ID}/access/${MEMBER_ID}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ role: 'editor' }),
+    });
+    expect(rejected.status).toBe(400);
+    expect((await rejected.json()).error).toContain('manager|member');
+
+    // …and a row that ALREADY says `editor` — what a pre-removal replica can
+    // still write mid-rollout, and what every un-migrated environment holds —
+    // is FOLDED to manager on read. The access list must never emit a role the
+    // API would reject on write.
+    const stored = dbState.projectMemberRows.find(
+      (r: any) => r.projectId === PROJECT_ID && r.userId === MEMBER_ID,
+    );
+    expect(stored).toBeDefined();
+    // Cast: the type no longer admits `editor`; the DB enum still can.
+    (stored as { projectRole: string }).projectRole = 'editor';
+
+    access = await app.request(`/v1/projects/${PROJECT_ID}/access`);
+    body = await access.json();
+    const foldedRow = body.members.find((member: any) => member.user_id === MEMBER_ID);
+    expect(foldedRow).toMatchObject({
+      project_role: 'manager',
+      effective_project_role: 'manager',
+    });
+
+    stored!.projectRole = 'manager';
 
     const ownerGrant = await app.request(`/v1/projects/${PROJECT_ID}/access/${OWNER_ID}`, {
       method: 'PUT',

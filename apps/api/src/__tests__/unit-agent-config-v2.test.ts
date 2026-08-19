@@ -19,9 +19,11 @@ import { describe, expect, test } from 'bun:test';
 import {
   applyAgentBlockV2,
   applyDefaultAgentV2,
+  normalizeRequiredConnectorAliases,
   readAgentBlockV2,
 } from '../projects/lib/agent-config-v2';
 import { parseManifestString, synthesizeBlankManifest } from '../projects/triggers';
+import { extractAgents } from '../projects/agents';
 
 const V2 = `
 kortix_version: 2
@@ -81,6 +83,42 @@ describe('readAgentBlockV2', () => {
     if (!read.ok) return;
     expect(read.schemaVersion).toBe(1);
     expect(read.block).toBeNull();
+  });
+
+  test('normalizes the deprecated input alias in the response block', () => {
+    const read = readAgentBlockV2(
+      v2Manifest(`
+kortix_version: 2
+default_agent: support
+agents:
+  support:
+    connectors: [gmail]
+    connectors_personal: [gmail]
+`),
+      'support',
+    );
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.block?.connectors_required).toEqual(['gmail']);
+    expect(read.block).not.toHaveProperty('connectors_personal');
+  });
+
+  test('rejects conflicting aliases instead of returning an ambiguous block', () => {
+    const read = readAgentBlockV2(
+      v2Manifest(`
+kortix_version: 2
+default_agent: support
+agents:
+  support:
+    connectors: [gmail, slack]
+    connectors_required: [gmail]
+    connectors_personal: [slack]
+`),
+      'support',
+    );
+    expect(read.ok).toBe(false);
+    if (read.ok) return;
+    expect(read.error).toContain('must match');
   });
 });
 
@@ -272,5 +310,59 @@ describe('the raw path `loadManifestForEdit` actually produces for a blank proje
     });
     const applied = applyDefaultAgentV2(manifest, manifest.raw.default_agent as string);
     expect(applied.ok).toBe(true);
+  });
+});
+
+describe('connectors_required — the config route validation gate', () => {
+  const manifestWith = (connectors: string[]) =>
+    parseManifestString(
+      ['kortix_version: 2', 'default_agent: support', 'agents:', '  support:', `    connectors: [${connectors.join(', ')}]`, ''].join('\n'),
+      'yaml',
+      'kortix.yaml',
+    );
+
+  test('a valid subset survives apply + re-parse with no errors', () => {
+    const manifest = manifestWith(['gmail', 'slack']);
+    const applied = applyAgentBlockV2(manifest, 'support', {
+      connectors: ['gmail', 'slack'],
+      connectors_required: ['gmail'],
+    } as never);
+    expect(applied.ok).toBe(true);
+    if (!applied.ok) return;
+    const parsed = extractAgents({ ...manifest, raw: applied.raw });
+    expect(parsed.errors).toEqual([]);
+    expect(parsed.specs.find((s) => s.name === 'support')?.connectorsRequired).toEqual(['gmail']);
+  });
+
+  test('grant narrowing prunes required connectors before serialization', () => {
+    const manifest = manifestWith(['gmail']);
+    const applied = applyAgentBlockV2(manifest, 'support', {
+      connectors: ['gmail'],
+      connectors_required: ['slack'],
+    } as never);
+    expect(applied.ok).toBe(true);
+    if (!applied.ok) return;
+    const block = (applied.raw.agents as Record<string, Record<string, unknown>>).support;
+    expect(block).not.toHaveProperty('connectors_required');
+  });
+
+  test('the deprecated alias is imported and serialized as canonical', () => {
+    const manifest = manifestWith(['gmail']);
+    const applied = applyAgentBlockV2(manifest, 'support', {
+      connectors: ['gmail'],
+      connectors_personal: ['gmail'],
+    } as never);
+    expect(applied.ok).toBe(true);
+    if (!applied.ok) return;
+    const block = (applied.raw.agents as Record<string, Record<string, unknown>>).support;
+    expect(block.connectors_required).toEqual(['gmail']);
+    expect(block).not.toHaveProperty('connectors_personal');
+  });
+
+  test('an explicit empty list survives request normalization so scope can clear it', () => {
+    const normalized = normalizeRequiredConnectorAliases({ connectors_required: [] });
+    expect(normalized.ok).toBe(true);
+    if (!normalized.ok) return;
+    expect(normalized.block.connectors_required).toEqual([]);
   });
 });

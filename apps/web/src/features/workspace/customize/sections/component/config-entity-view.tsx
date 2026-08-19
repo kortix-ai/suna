@@ -26,15 +26,21 @@ import {
   useConfigureThread,
 } from '@/features/workspace/customize/use-configure-thread';
 import { cn } from '@/lib/utils';
+import { type ProjectConfigSummary, getProjectDetail, readProjectFile } from '@kortix/sdk';
+import { contract, qk } from '@kortix/sdk/react';
 import {
-  type ProjectConfigSummary,
-  getProjectDetail,
-  readProjectFile,
-} from '@kortix/sdk/projects-client';
-import { DangerTriangleSolid, Pencil, Search } from '@mynaui/icons-react';
+  CaretRightIcon as ChevronRight,
+  CopyIcon as Copy,
+  WarningIcon as DangerTriangleSolid,
+  type Icon as LucideIcon,
+  PencilSimpleIcon,
+  PlusIcon as Plus,
+  MagnifyingGlassIcon as Search,
+} from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
-import { Copy, type LucideIcon, Plus } from 'lucide-react';
 import { type ReactNode, useMemo, useState } from 'react';
+
+import { configEntitySourcePath } from './config-entity-source-path';
 
 export type ConfigEntity = { name: string; path: string; description: string | null };
 
@@ -91,15 +97,38 @@ export interface ConfigEntityViewProps<T extends ConfigEntity> {
   renderContext?: (config: ProjectConfigSummary) => ReactNode;
 
   /**
+   * Bucket rows under collapsible group headers in the `split` sidebar. Return
+   * the group label for an entity. Omit for a flat list (agents, commands).
+   *
+   * Group ORDER follows `groupOrder`; anything unlisted sorts last alphabetically.
+   */
+  groupBy?: (entity: T) => string;
+  /** Group labels in display order. Groups in `collapsedGroups` start folded. */
+  groupOrder?: string[];
+  collapsedGroups?: string[];
+
+  /**
+   * Single-line sidebar rows: drop the description subtitle (it moves to the
+   * row's `title` tooltip) and tighten the vertical rhythm. Roughly doubles how
+   * many entities fit on screen — the difference between scanning a list and
+   * scrolling one, once a project carries a couple dozen skills.
+   */
+  compactRows?: boolean;
+
+  /**
    * 'accordion' — a vertical list where each row expands its detail inline.
-   * 'split' (the standard for agents, skills & commands) — a master-detail
-   * layout: a separate, self-scrolling sidebar that lists every entity on the
-   * LEFT, the selected entity's source in the MIDDLE, and (when provided)
+   * 'split' (the standard for agents & commands) — a master-detail layout: a
+   * separate, self-scrolling sidebar that lists every entity on the LEFT, the
+   * selected entity's source in the MIDDLE, and (when provided)
    * `renderDetailExtra` as a right aside — e.g. agents surface their
    * scope/model/assignment cards in that third column. Widens the section to
    * fit the extra panes.
+   * 'grid' — a browse-then-drill view: every entity as a card in a responsive
+   * grid, with the detail replacing the grid once one is picked. A 264px
+   * sidebar turns a couple dozen entities into a scroll; a grid puts the same
+   * set on one screen with room for each description.
    */
-  layout?: 'accordion' | 'split';
+  layout?: 'accordion' | 'split' | 'grid';
 }
 
 export function ConfigEntityView<T extends ConfigEntity>(props: ConfigEntityViewProps<T>) {
@@ -128,12 +157,16 @@ export function ConfigEntityView<T extends ConfigEntity>(props: ConfigEntityView
     layout = 'accordion',
     canWrite = true,
     className,
+    groupBy,
+    groupOrder,
+    collapsedGroups,
+    compactRows = false,
   } = props;
 
   const detailQuery = useQuery({
-    queryKey: ['project-detail', projectId],
+    queryKey: qk.project.detail(projectId),
     queryFn: () => getProjectDetail(projectId),
-    staleTime: 10_000,
+    ...contract('config'),
   });
 
   const config = detailQuery.data?.config ?? null;
@@ -163,6 +196,80 @@ export function ConfigEntityView<T extends ConfigEntity>(props: ConfigEntityView
   // back to the first visible entity so there's always something previewed.
   const selected = filtered.find((e) => e.path === selectedPath) ?? filtered[0] ?? null;
 
+  // Sidebar rows bucketed by `groupBy`, in `groupOrder` (unlisted groups last,
+  // alphabetically). A single group carries no header — grouping should only
+  // cost a row of chrome when it actually separates something.
+  const groups = useMemo(() => {
+    if (!groupBy) return null;
+    const buckets = new Map<string, T[]>();
+    for (const entity of filtered) {
+      const label = groupBy(entity);
+      const bucket = buckets.get(label);
+      if (bucket) bucket.push(entity);
+      else buckets.set(label, [entity]);
+    }
+    if (buckets.size <= 1) return null;
+    const order = groupOrder ?? [];
+    return [...buckets.entries()].sort(([a], [b]) => {
+      const ai = order.indexOf(a);
+      const bi = order.indexOf(b);
+      if (ai !== -1 && bi !== -1) return ai - bi;
+      if (ai !== -1) return -1;
+      if (bi !== -1) return 1;
+      return a.localeCompare(b);
+    });
+  }, [filtered, groupBy, groupOrder]);
+
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set(collapsedGroups ?? []));
+  const toggleGroup = (label: string) =>
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(label)) next.delete(label);
+      else next.add(label);
+      return next;
+    });
+
+  const renderRow = (entity: T, rowConfig: ProjectConfigSummary) => {
+    const trailing = renderRowTrailing?.(entity, rowConfig);
+    const isActive = selected?.path === entity.path;
+    return (
+      <li key={entity.path}>
+        <button
+          type="button"
+          onClick={() => setSelectedPath(entity.path)}
+          aria-current={isActive}
+          title={compactRows ? (entity.description ?? undefined) : undefined}
+          className={cn(
+            'group flex w-full flex-col rounded-md text-left transition-colors',
+            'focus-visible:ring-kortix-blue/50 focus-visible:ring-2 focus-visible:outline-none',
+            compactRows ? 'gap-0 py-1 pr-2 pl-2.5' : 'gap-0.5 py-2 pr-2.5 pl-3',
+            isActive ? 'bg-primary/[0.06]' : 'hover:bg-muted/40',
+          )}
+        >
+          <span className="flex w-full items-center gap-2">
+            <span
+              className={cn(
+                'min-w-0 flex-1 truncate font-medium',
+                compactRows ? 'text-[13px]' : 'text-sm',
+                isActive ? 'text-foreground' : 'text-foreground/70 group-hover:text-foreground',
+              )}
+            >
+              {renderTriggerLabel(entity)}
+            </span>
+            {trailing ? (
+              <span className="flex shrink-0 items-center gap-1.5">{trailing}</span>
+            ) : null}
+          </span>
+          {!compactRows && entity.description ? (
+            <span className="text-muted-foreground/60 w-full truncate text-xs">
+              {entity.description}
+            </span>
+          ) : null}
+        </button>
+      </li>
+    );
+  };
+
   const searchInput = (
     <InputGroupSearch>
       <InputGroupSearchIcon>
@@ -187,7 +294,7 @@ export function ConfigEntityView<T extends ConfigEntity>(props: ConfigEntityView
       ))}
     </div>
   ) : isForbidden ? (
-    <InfoBanner tone="warning" icon={DangerTriangleSolid} title="Access required">
+    <InfoBanner tone="warning" icon={<DangerTriangleSolid weight="fill" />} title="Access required">
       You don&apos;t have permission to read this repository.
     </InfoBanner>
   ) : detailQuery.isError ? (
@@ -300,47 +407,47 @@ export function ConfigEntityView<T extends ConfigEntity>(props: ConfigEntityView
               aria-label={`${title} list`}
               className="scrollbar-minimal px-2 pb-4 lg:min-h-0 lg:flex-1 lg:overflow-y-auto"
             >
-              <ul className="space-y-0.5">
-                {filtered.map((entity) => {
-                  const trailing = renderRowTrailing?.(entity, config);
-                  const isActive = selected?.path === entity.path;
-                  return (
-                    <li key={entity.path}>
-                      <button
-                        type="button"
-                        onClick={() => setSelectedPath(entity.path)}
-                        aria-current={isActive}
-                        className={cn(
-                          'group flex w-full flex-col gap-0.5 rounded-md py-2 pr-2.5 pl-3 text-left transition-colors',
-                          'focus-visible:ring-kortix-blue/50 focus-visible:ring-2 focus-visible:outline-none',
-                          isActive ? 'bg-primary/[0.06]' : 'hover:bg-muted/40',
-                        )}
-                      >
-                        <span className="flex w-full items-center gap-2">
-                          <span
+              {groups ? (
+                <div className="space-y-1">
+                  {groups.map(([label, items]) => {
+                    const isCollapsed = collapsed.has(label);
+                    return (
+                      <div key={label}>
+                        <button
+                          type="button"
+                          onClick={() => toggleGroup(label)}
+                          aria-expanded={!isCollapsed}
+                          className={cn(
+                            'text-muted-foreground/70 hover:text-foreground flex w-full items-center gap-1.5 rounded-md px-2.5 py-1.5',
+                            'text-[11px] font-medium tracking-wide uppercase transition-colors',
+                            'focus-visible:ring-kortix-blue/50 focus-visible:ring-2 focus-visible:outline-none',
+                          )}
+                        >
+                          <ChevronRight
                             className={cn(
-                              'min-w-0 flex-1 truncate text-sm font-medium',
-                              isActive
-                                ? 'text-foreground'
-                                : 'text-foreground/70 group-hover:text-foreground',
+                              'size-3 shrink-0 transition-transform',
+                              isCollapsed ? '' : 'rotate-90',
                             )}
-                          >
-                            {renderTriggerLabel(entity)}
+                          />
+                          <span className="truncate">{label}</span>
+                          <span className="text-muted-foreground/40 ml-auto tabular-nums">
+                            {items.length}
                           </span>
-                          {trailing ? (
-                            <span className="flex shrink-0 items-center gap-1.5">{trailing}</span>
-                          ) : null}
-                        </span>
-                        {entity.description ? (
-                          <span className="text-muted-foreground/60 w-full truncate text-xs">
-                            {entity.description}
-                          </span>
-                        ) : null}
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
+                        </button>
+                        {isCollapsed ? null : (
+                          <ul className="space-y-0.5">
+                            {items.map((entity) => renderRow(entity, config))}
+                          </ul>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <ul className="space-y-0.5">
+                  {filtered.map((entity) => renderRow(entity, config))}
+                </ul>
+              )}
             </nav>
           )}
         </aside>
@@ -384,7 +491,124 @@ export function ConfigEntityView<T extends ConfigEntity>(props: ConfigEntityView
     </div>
   ) : null;
 
-  const body = layout === 'split' ? splitBody : accordionBody;
+  // Grid — browse as cards, then drill into one. The detail replaces the grid
+  // rather than sitting beside it, so both views get the full section width.
+  const gridCard = (entity: T, cardConfig: ProjectConfigSummary) => {
+    const trailing = renderRowTrailing?.(entity, cardConfig);
+    return (
+      <button
+        key={entity.path}
+        type="button"
+        onClick={() => setSelectedPath(entity.path)}
+        className={cn(
+          'group border-border/60 bg-card hover:border-border flex flex-col gap-1.5 rounded-lg border p-4 text-left',
+          'hover:bg-muted/30 transition-colors',
+          'focus-visible:ring-kortix-blue/50 focus-visible:ring-2 focus-visible:outline-none',
+        )}
+      >
+        <span className="flex w-full items-start gap-2">
+          <span className="text-foreground min-w-0 flex-1 truncate text-sm font-medium">
+            {renderTriggerLabel(entity)}
+          </span>
+          {trailing ? <span className="flex shrink-0 items-center gap-1.5">{trailing}</span> : null}
+        </span>
+        {entity.description ? (
+          <span className="text-muted-foreground/70 line-clamp-3 text-xs leading-relaxed">
+            {entity.description}
+          </span>
+        ) : null}
+      </button>
+    );
+  };
+
+  // Unlike `selected`, this never falls back to the first entity — in grid mode
+  // "nothing picked" is the browse state, and a search that filters the picked
+  // entity out must return to the grid, not silently swap in a different one.
+  const gridSelected = selectedPath
+    ? (filtered.find((e) => e.path === selectedPath) ?? null)
+    : null;
+
+  const gridBody = stateContent ? (
+    <div className="h-full overflow-y-auto px-6 py-10">{stateContent}</div>
+  ) : config ? (
+    <div className="h-full overflow-y-auto">
+      {gridSelected ? (
+        <div className="mx-auto max-w-3xl px-6 py-8 lg:py-10">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground mb-6 -ml-2 gap-1.5"
+            onClick={() => setSelectedPath(null)}
+          >
+            <ChevronRight className="size-3.5 rotate-180" />
+            All {noun}s
+          </Button>
+          <EntityDetail
+            key={gridSelected.path}
+            projectId={projectId}
+            kind={kind}
+            entity={gridSelected}
+            config={config}
+            renderDetailTitle={renderDetailTitle}
+            renderDetailMeta={renderDetailMeta}
+            emptyBodyLabel={emptyBodyLabel}
+            canWrite={canWrite}
+            split
+          />
+        </div>
+      ) : (
+        <div className="px-6 py-6">
+          {entities.length > 0 && renderContext ? (
+            <div className="mb-4">{renderContext(config)}</div>
+          ) : null}
+          <div className="mb-5 max-w-md">{searchInput}</div>
+          {filtered.length === 0 ? (
+            noMatches
+          ) : groups ? (
+            <div className="space-y-8">
+              {groups.map(([label, items]) => {
+                const isCollapsed = collapsed.has(label);
+                return (
+                  <section key={label}>
+                    <button
+                      type="button"
+                      onClick={() => toggleGroup(label)}
+                      aria-expanded={!isCollapsed}
+                      className={cn(
+                        'text-muted-foreground/70 hover:text-foreground mb-3 flex items-center gap-1.5 rounded-md',
+                        'text-[11px] font-medium tracking-wide uppercase transition-colors',
+                        'focus-visible:ring-kortix-blue/50 focus-visible:ring-2 focus-visible:outline-none',
+                      )}
+                    >
+                      <ChevronRight
+                        className={cn(
+                          'size-3 shrink-0 transition-transform',
+                          isCollapsed ? '' : 'rotate-90',
+                        )}
+                      />
+                      {label}
+                      <span className="text-muted-foreground/40 tabular-nums">{items.length}</span>
+                    </button>
+                    {isCollapsed ? null : (
+                      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+                        {items.map((entity) => gridCard(entity, config))}
+                      </div>
+                    )}
+                  </section>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+              {filtered.map((entity) => gridCard(entity, config))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  ) : null;
+
+  const body = layout === 'grid' ? gridBody : layout === 'split' ? splitBody : accordionBody;
 
   return (
     <CustomizeSectionWrapper
@@ -392,7 +616,7 @@ export function ConfigEntityView<T extends ConfigEntity>(props: ConfigEntityView
       title={title}
       description={description}
       docs={docs}
-      fill={layout === 'split'}
+      fill={layout === 'split' || layout === 'grid'}
       action={
         <div className="flex items-center gap-1.5">
           <MarketplaceSectionButton projectId={projectId} />
@@ -515,10 +739,15 @@ function EntityDetail<T extends ConfigEntity>({
   split,
 }: EntityDetailProps<T>) {
   const configure = useConfigureThread(projectId);
+  // A platform-managed entity (e.g. the meta coordinator) declares an
+  // absolute sandbox path — its source lives in the sandbox image, not the
+  // project repo, so there is nothing to fetch.
+  const platformSource = entity.path.startsWith('/');
   const fileQuery = useQuery({
-    queryKey: ['project-file-source', projectId, entity.path],
-    queryFn: () => readProjectFile(projectId, entity.path),
-    staleTime: 30_000,
+    queryKey: qk.project.fileSource(projectId, entity.path),
+    queryFn: () => readProjectFile(projectId, configEntitySourcePath(entity.path)),
+    ...contract('config'),
+    enabled: !platformSource,
   });
 
   const onCopy = async () => {
@@ -541,7 +770,11 @@ function EntityDetail<T extends ConfigEntity>({
   // ConfigEntityView), so the detail here is just the header + source.
   const extra = split ? null : renderDetailExtra?.(entity, config);
 
-  const source = fileQuery.isLoading ? (
+  const source = platformSource ? (
+    <p className="text-muted-foreground/60 text-sm italic">
+      Managed by the platform — the source ships inside the session sandbox ({entity.path}).
+    </p>
+  ) : fileQuery.isLoading ? (
     <div className="space-y-2.5">
       <Skeleton className="h-4 w-full" />
       <Skeleton className="h-4 w-11/12" />
@@ -627,19 +860,19 @@ function DetailToolbarActions({
   return (
     <ButtonGroup className="shrink-0">
       {canWrite ? (
-        <Hint label="Edit">
+        <Hint label="Edit" side="bottom">
           <Button variant="outline" size="sm" onClick={onEdit} disabled={editing}>
             {editing ? (
               <Loading className="size-3.5 shrink-0" />
             ) : (
-              <Pencil className="size-3.5 shrink-0" />
+              <PencilSimpleIcon className="size-3.5 shrink-0" />
             )}
             Edit
           </Button>
         </Hint>
       ) : null}
       <Hint label="Copy source">
-        <Button variant="outline" size="icon" onClick={onCopy} disabled={copyDisabled}>
+        <Button variant="outline" size="icon" className='size-8' onClick={onCopy} disabled={copyDisabled}>
           <Copy className="size-3.5 shrink-0" />
         </Button>
       </Hint>

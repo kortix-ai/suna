@@ -1,9 +1,14 @@
 import { ThemeToggle } from '@/components/home/theme-toggle';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
-import { Icon } from '@/features/icon/icon';
+// Server components import icons from '@/lib/icons/ssr': phosphor's
+// context-free SSR entry defaults to weight "regular" and silently ignores
+// DEFAULT_ICON_WEIGHT (see ssr.tsx's docblock). The client-only brand marks
+// under '@/features/icon/icons/*' stay inside 'use client' surfaces like
+// docs-page-actions.tsx, which picks its own GitHub mark for its actions.
+import { GithubLogoIcon, SparkleIcon } from '@/lib/icons/ssr';
 import { source } from '@/lib/source';
 import { DocsLayout } from 'fumadocs-ui/layouts/docs';
-import { RootProvider } from 'fumadocs-ui/provider';
+import { RootProvider } from 'fumadocs-ui/provider/next';
 import type { ReactNode } from 'react';
 
 import {
@@ -18,7 +23,7 @@ import {
 // contain its own anchor — a nested <a> breaks hydration.
 function DocsLogo() {
   return (
-    <span className="flex items-center gap-2.5 no-underline ml-1">
+    <span className="ml-1 flex items-center gap-2.5 no-underline">
       {/* The canonical full Kortix logo (symbol + wordmark), via the shared
           KortixLogo component so the docs stay in lockstep with the rest of
           the app's brand treatment. */}
@@ -51,18 +56,18 @@ export default function Layout({ children }: { children: ReactNode }) {
         }}
         links={[
           {
-            text: 'Home',
-            url: '/',
-          },
-          {
-            text: 'Changelog',
-            url: '/changelog',
+            type: 'icon',
+            text: 'Get started',
+            label: 'Get started',
+            icon: <SparkleIcon />,
+            url: '/auth',
+            external: false,
           },
           {
             type: 'icon',
             text: 'GitHub',
             label: 'GitHub',
-            icon: <Icon.Github />,
+            icon: <GithubLogoIcon />,
             url: 'https://github.com/kortix-ai/suna',
             external: true,
           },

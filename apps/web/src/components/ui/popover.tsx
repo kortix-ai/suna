@@ -5,13 +5,44 @@ import * as React from 'react';
 
 import { cn } from '@/lib/utils';
 import { floatingZ, useDialogDepth } from '@/lib/z-stack';
+import { FLOATING_PANEL } from './menu-recipe';
+import { triggerVariants, type TriggerVariantProps } from './trigger-variants';
+
+/**
+ * The surface comes from `FLOATING_PANEL`, shared with the dropdown, context
+ * menu and select — a popover is the same card, so it should not have its own
+ * background, border, radius, shadow or enter/exit animation.
+ *
+ * What stays local is what a popover holds rather than what it is: `p-4`
+ * because the content is prose and controls rather than a list of `p-1` rows,
+ * a `w-72` default, and `outline-hidden` because Radix focuses the panel itself
+ * on open and the ring would trace the whole card.
+ */
+const POPOVER_PANEL = cn(
+  FLOATING_PANEL,
+  'w-72 origin-(--radix-popover-content-transform-origin) p-4 outline-hidden',
+);
 
 function Popover({ ...props }: React.ComponentProps<typeof PopoverPrimitive.Root>) {
   return <PopoverPrimitive.Root data-slot="popover" {...props} />;
 }
 
-function PopoverTrigger({ ...props }: React.ComponentProps<typeof PopoverPrimitive.Trigger>) {
-  return <PopoverPrimitive.Trigger data-slot="popover-trigger" {...props} />;
+function PopoverTrigger({
+  className,
+  variant,
+  size,
+  asChild,
+  ...props
+}: Omit<React.ComponentProps<typeof PopoverPrimitive.Trigger>, 'size'> & TriggerVariantProps) {
+  return (
+    <PopoverPrimitive.Trigger
+      data-slot="popover-trigger"
+      asChild={asChild}
+      // With `asChild` the child owns its styling — merging ours would double it.
+      className={asChild ? className : cn(triggerVariants({ variant, size }), className)}
+      {...props}
+    />
+  );
 }
 
 function PopoverContent({
@@ -31,10 +62,7 @@ function PopoverContent({
         data-slot="popover-content"
         align={align}
         sideOffset={sideOffset}
-        className={cn(
-          'bg-popover text-popover-foreground data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 border-border w-72 origin-(--radix-popover-content-transform-origin) rounded-lg border p-4 outline-hidden',
-          className,
-        )}
+        className={cn(POPOVER_PANEL, className)}
         style={{ zIndex: floatingZ(depth), ...style }}
         {...props}
       />

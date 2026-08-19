@@ -12,7 +12,7 @@ Turn product context into scroll-stopping, platform-native content — and turn 
 Read the shared context first, then write — don't interrogate.
 
 1. **Product context** — read `/product-marketing.md`. Reuse audience, personas, customer language, proof points, and goals from it. If it's missing, you can still work, but suggest setting it up via the `product-marketing` skill so every post stays on-product.
-2. **Voice & messaging** — read [`../internal-comms/SKILL.md`](../internal-comms/SKILL.md) for tone, positioning, and canonical terminology before writing any copy. It governs *what* you say.
+2. **Voice & messaging** — read [`../comms/SKILL.md`](../comms/SKILL.md) for tone, positioning, and canonical terminology before writing any copy. It governs *what* you say.
 3. **Visuals** — for carousels, quote graphics, thumbnails, or video covers, don't describe pixels here — hand the brief to [`../kortix-image/SKILL.md`](../kortix-image/SKILL.md) (which honors `brand-guidelines`).
 
 Only ask for what the context doesn't cover: the **goal** (awareness / leads / traffic / community), **platform(s)**, the **action** you want readers to take, and whether it's **personal or company** brand. Default sensibly from the context rather than asking.
@@ -97,5 +97,5 @@ When stuck, generate from the pillars, not from a blank page: repurpose a past h
 ## Related skills
 
 - **product-marketing** — owns the shared `/product-marketing.md` context this skill reads first
-- **internal-comms** — voice, positioning, and approved terminology for all copy
+- **comms** — voice, positioning, and approved terminology for all copy
 - **kortix-image** — produces the carousels, graphics, thumbnails, and video covers

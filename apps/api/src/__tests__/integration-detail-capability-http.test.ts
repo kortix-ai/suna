@@ -13,7 +13,7 @@ import { createAccountToken } from '../repositories/account-tokens';
 const ACCOUNT = crypto.randomUUID();
 const PROJECT = crypto.randomUUID();
 const MEMBER = crypto.randomUUID();
-const EDITOR = crypto.randomUUID();
+const MANAGER = crypto.randomUUID();
 
 const minted: string[] = [];
 
@@ -31,11 +31,11 @@ beforeAll(async () => {
   });
   await db.insert(accountMembers).values([
     { userId: MEMBER, accountId: ACCOUNT, accountRole: 'member', isSuperAdmin: false },
-    { userId: EDITOR, accountId: ACCOUNT, accountRole: 'member', isSuperAdmin: false },
+    { userId: MANAGER, accountId: ACCOUNT, accountRole: 'member', isSuperAdmin: false },
   ]);
   await db.insert(projectMembers).values([
     { accountId: ACCOUNT, projectId: PROJECT, userId: MEMBER, projectRole: 'member' },
-    { accountId: ACCOUNT, projectId: PROJECT, userId: EDITOR, projectRole: 'editor' },
+    { accountId: ACCOUNT, projectId: PROJECT, userId: MANAGER, projectRole: 'manager' },
   ]);
 });
 
@@ -87,8 +87,8 @@ describe('HTTP — GET /detail stays loadable for a member (file list filtered, 
     }
   });
 
-  test('EDITOR (has file.read) → NOT 403', async () => {
-    const secret = await mint(EDITOR);
+  test('MANAGER (has file.read) → NOT 403', async () => {
+    const secret = await mint(MANAGER);
     const res = await getDetail(secret);
     expect(res.status).not.toBe(403);
   });

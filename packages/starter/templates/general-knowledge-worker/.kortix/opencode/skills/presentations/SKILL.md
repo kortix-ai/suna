@@ -66,13 +66,10 @@ URL scheme:
 - `http://localhost:3210/` — index listing all presentations
 - `http://localhost:3210/presentations/<name>/` — viewer for that deck
 - `http://localhost:3210/presentations/<name>/slide_01.html` — raw slide file
-- `http://localhost:3210/presentations/<name>/download/pdf` — export and download PDF
-- `http://localhost:3210/presentations/<name>/download/pptx` — export and download PPTX
 
-The viewer includes PDF and PPTX download buttons by default. They call the
-served `/download/pdf` and `/download/pptx` routes, export the current deck on
-demand, and return a browser download. For script-only generation, keep using
-`export_pdf` and `export_pptx`.
+The viewer does not include PDF or PPTX export controls. After you show the
+viewer, offer to create a portable PDF or PPTX copy for the user. Run
+`export_pdf` or `export_pptx` only when the user requests that export.
 
 After starting the server, show the URL to the user via `show`:
 ```
@@ -113,7 +110,7 @@ show(action="show", type="url", url="http://localhost:3210/presentations/<name>/
 ## Workflow (HTML deck path)
 
 ```
-create_slide × N → validate_slide → serve → show viewer URL → user can download PDF/PPTX from viewer
+create_slide × N → validate_slide → serve → show viewer URL → offer to create a PDF or PPTX export
 ```
 
 ---
@@ -227,11 +224,11 @@ Use this path — instead of (or in addition to) the HTML deck's `export_pptx` a
 
 | Objective | Technique | Reference |
 |-----------|-----------|-----------|
-| Extract text or data | `python -m markitdown presentation.pptx` | Also: `scripts/slides.py thumbnail` for visual grid |
+| Extract text or data | `anydoc presentation.pptx` | Also: `scripts/slides.py thumbnail` for visual grid |
 | Modify an existing file or template | Unpack to XML, edit, repack | See [PPTX-EDITING.md](PPTX-EDITING.md) |
 | Generate a deck from scratch | JavaScript with `pptxgenjs` | See [PPTX-CREATING.md](PPTX-CREATING.md) |
 
-Pre-installed sandbox packages: `markitdown[pptx]`, `Pillow`, `pptxgenjs` (Node), `react-icons` + `react` + `react-dom` + `sharp` (icon rendering), LibreOffice (`soffice`), Poppler (`pdftoppm`), `lxml`.
+LibreOffice (`soffice`), Poppler (`pdftoppm`), and `anydoc` are installed system tools. Python packages such as `lxml`, `pillow`, `python-pptx`, `playwright`, and `markitdown[pptx]` are pre-installed — run scripts with `python3`. Use `uv run --with <package>` only for a package that is not pre-installed. Project-local Node packages provide `pptxgenjs`, React, and Sharp.
 
 Scripts live in `skills/presentations/scripts/`: `repair.py` (fix pptxgenjs OOXML bugs), `unpack.py` / `pack.py` (unpack a `.pptx` to editable XML and repack it), `slides.py` (`clean` / `add` / `thumbnail` subcommands for slide-level XML surgery).
 
@@ -243,16 +240,16 @@ Render equations with Unicode math symbols only. Do not use OMML or generate equ
 
 Every plain-PPTX task MUST complete ALL three QA steps below before delivering the file. Skipping any step is a failure.
 
-**Step 1: Content QA.** Run markitdown on the output file and review the extracted text:
+**Step 1: Content QA.** Run anydoc on the output file and review the extracted text:
 
 ```bash
-python -m markitdown output.pptx
+anydoc output.pptx
 ```
 
 Check for missing content, typos, wrong order. When using templates, check for leftover placeholder text:
 
 ```bash
-python -m markitdown output.pptx | grep -iE "xxxx|lorem|ipsum|this.*(page|slide).*layout"
+anydoc output.pptx | grep -iE "xxxx|lorem|ipsum|this.*(page|slide).*layout"
 ```
 
 If grep returns results, fix them before proceeding.

@@ -1,5 +1,8 @@
 # The final, enterprise-ready authorization model — plan
 
+> This plan preserves the authorization design record. Session runtime uses
+> OpenCode REST and `kortix_version: 2`.
+
 Source: founder notes ("CLEAR ACCESS / AUTHORISATION MODEL IS NEEDED. THAT IS 100% FINAL &
 ENTERPRISE READY."). This doc maps every ask to the **current code state** and lays out a
 **sequenced, decision-baked plan** to close the gaps. It is for team review before code.
@@ -21,14 +24,14 @@ Verified against the code on `feat/iam-rbac-v1` (merged with `main`). Do **not**
 | Capability | State | Evidence |
 |---|---|---|
 | Allow-only, deny-by-default engine (`authorizeV2`) | ✅ | `apps/api/src/iam/engine-v2.ts` |
-| Agent-scoped **session token** (agentGrant + serviceAccountId), not user-only | ✅ | `platform/services/session-sandbox.ts` mintExecutorToken; validated `middleware/auth.ts` |
+| Agent-scoped **session token** (agentGrant + serviceAccountId), not user-only | ✅ | `platform/services/session-sandbox.ts` mintConnectorToken; validated `middleware/auth.ts` |
 | **kortix.yaml `agents:`** = source of truth for agent scope (env/connectors/kortix_cli) | ✅ | `projects/agents.ts` |
 | Git auth **never injected** into the sandbox (build-time only) | ✅ | `session-sandbox.ts` resolveGitAuthToken |
 | Custom roles + policies, group→role, per-resource grants, revoke immediacy | ✅ | `iam/engine-v2.ts`, `iam/resource-grants.ts`, `iam/cache-invalidation.ts` |
 | Standing-identity **service accounts** (agents authorize as their SA once activated) | ✅ (opt-in) | `iam/engine-v2.ts` resolveActorV2; `repositories/service-accounts.ts` |
 | Triggers **run as the agent** (human "Runs as" removed) | ✅ | `projects/lib/triggers.ts` resolveTriggerActor |
 | **Immediate offboarding** — member removal revokes PATs + live session tokens | ✅ | `repositories/account-tokens.ts` revokeAllAccountTokensForUser |
-| APPROVE/ASK/BLOCK **policy resolution** (risk + policies → mode) | ✅ | `executor/*` resolveEffectiveAction |
+| APPROVE/ASK/BLOCK **policy resolution** (risk + policies → mode) | ✅ | `connector/*` resolveEffectiveAction |
 | **Per-session cost** (LLM + compute) | ✅ | `gateway_request_logs.finalCost`, `sandbox_compute_sessions.costUsd` |
 | Snapshot **bake/sync** (baked binaries vs cloned repo/secrets; content-addressed rebuild) | ✅ | `snapshots/builder`, `shared.ts` version pins |
 | **SSO + Azure AD SCIM** directory-sync, tested + runbook | ✅ | `iam/sso-sync.ts`, `scim/*`, `docs/ENTRA_SSO_SCIM_SETUP.md` |
@@ -40,7 +43,8 @@ only, ignoring its `_scope` param, so a sandbox can still `git clone`/`pull` the
 are unaffected (runtime-injected, never in the repo); the gap is config/skill/memory file visibility
 only. Planned fix: stamp resource caps into the session token at mint and have `authorizeGitProxy`
 honor them. See `docs/IAM_RBAC_V1_PLAN.md` §10 ("Known limitation (deferred): sandbox git-clone
-boundary") for detail. Marko-acknowledged, deferred out of v1, tracked as follow-up.
+boundary") for detail. The team accepted this v1 deferral and tracks it as a
+follow-up.
 
 The remaining work is the **enforcement/UX loop around** this foundation, plus a few
 architectural decoupling epics.
@@ -54,7 +58,7 @@ human that started the task? What about a trigger/webhook? Who sees these?"
 
 **Current state.** Policy **resolution** works: an action resolves to `allow | ask | block` from
 its risk + connector/project policies, and the gateway returns `pending_approval` for an ASK.
-But the **loop is open**: `executor_executions` has `approvedBy`/`resolvedAt` columns that are
+But the **loop is open**: `connector_calls` has `approvedBy`/`resolvedAt` columns that are
 never written; there is **no approval inbox, no approve/deny endpoint, no "who can approve" rule**,
 and an unattended run that hits ASK just returns `202 pending_approval` to a webhook with nowhere
 to resolve it. The genuinely hard part is **resuming a parked synchronous tool call** after
@@ -83,27 +87,26 @@ approval.
 
 ---
 
-## 2. Per-session AUDIT LOG + per-agent/actor COST  *(safe, additive — do first)*
+## 2. Per-session audit log and cost
 
 **Ask:** "Clear per session AUDIT LOG of everything the agent did" + "Clear per session/agent/user
 COST understanding."
 
-**Current state.** All the data exists but isn't surfaced per session/agent:
-`executor_executions` (every gated tool/connector call, with risk + status + approval),
-`audit_events` (HTTP mutations + IAM), `gateway_request_logs.finalCost`,
-`sandbox_compute_sessions.costUsd`. There is **no single per-session audit endpoint** and **no
-per-agent/per-actor cost rollup** endpoint.
+**Current state.** The API exposes a per-session action audit. It also exposes
+unified account and project-filtered session-cost records.
+
+Session cost combines finalized `gateway_request_logs.final_cost_precise` and
+billed `sandbox_compute_sessions.cost_usd`. The detail response includes model
+usage and discriminated LLM/compute ledger entries.
 
 **Plan:**
-- **2a — `GET /v1/projects/:id/sessions/:sessionId/audit` (M).** Chronological timeline of every
-  executor-gated action the agent took (action, risk, allow/ask/block verdict, who acted, who
-  approved). (Prototyped this pass; reverted to keep the merge PR clean — ship as its own PR with
-  route-manifest regen + a ke2e flow.)
-- **2b — Cost attribution (M).** `GET /v1/projects/:id/sessions/:sessionId/cost` (already partly
-  via gateway/sessions) + per-**agent** and per-**actor** rollups (the columns exist:
-  `usage_events.actorUserId`, `gateway_request_logs.actorUserId`, `executor_executions.actingUserId`).
+- **2a — shipped.** `GET /v1/projects/:id/sessions/:sessionId/audit` returns the
+  chronological connector action timeline.
+- **2b — shipped.** `GET /v1/usage/session-costs` returns a paginated list.
+  `GET /v1/usage/session-costs/:sessionId` returns one detailed ledger. The
+  SDK exposes `billing.sessionCosts` and `session(projectId, sessionId).cost()`.
 - **2c — Audit webhook/export (S, later).** Extend the existing account audit-webhook to include
-  executor executions + session-scoped export for SIEM.
+  connector executions + session-scoped export for SIEM.
 
 **Risk:** read-only + additive. **Decision needed:** none. **This is the recommended first PR.**
 
@@ -112,7 +115,7 @@ per-agent/per-actor cost rollup** endpoint.
 ## 3. Resource OWNERSHIP + private triggers/webhooks  *(product decision)*
 
 **Ask:** "Introduce PRIVATE triggers/webhooks. Every resource should be scoped to ownership.
-Remove the concept of everyone brings their own to profile."
+Remove the concept of everyone bringing their own connection."
 
 **Current state.** Triggers/webhooks are **project-wide visible** to anyone with `project.read`;
 `project_trigger_runtime.ownerUserId` was only ever credential-resolution metadata (now removed)
@@ -125,9 +128,9 @@ model (share-scope + grants); triggers/skills/commands do not.
   column to the trigger runtime and gate `loadTriggersForResponse` + the fire endpoints on it.
   Default: creator-owned + optionally shared, mirroring secrets/connectors — "private by default,
   share explicitly."
-- **3b — Remove per-user connector profiles (M, BREAKING).** **DONE 2026-07-05** — see
+- **3b — Remove per-user connectors (M, BREAKING).** **DONE 2026-07-05** — see
   docs/specs/2026-07-05-agent-first-config-unification.md §2.5. "Everyone brings their own
-  profile" (`executor_connectors.credentialMode='per_user'` + `resolveCredentialValue` by
+  connection" (`connectors.credentialMode='per_user'` + `resolveCredentialValue` by
   userId) was removed: connectors are now **shared only**. Migration
   `packages/db/migrations/20260705191549103_remove_per_user_credential_mode.sql` flipped every
   `per_user` connector to `shared` and deleted its per-member credential rows (no silent
@@ -173,18 +176,18 @@ give access to the appropriate allowed Kortix scopes."
 
 **Current state.** The session token is already agent-scoped (§0). Remaining sprawl is mostly
 **legacy aliases** injected for back-compat: `KORTIX_TOKEN` (alias of `KORTIX_SANDBOX_TOKEN`),
-`KORTIX_EXECUTOR_TOKEN` (alias of `KORTIX_CLI_TOKEN`), `KORTIX_YOLO_*` (was redundant with
+`KORTIX_CLI_TOKEN`, `KORTIX_YOLO_*` (was redundant with
 `KORTIX_LLM_*` — **done**, see 5a). The deeper "one token, resolve all downstream creds
 (connectors/secrets/git) server-side at call time, inject nothing" is architectural.
 
 **Plan:**
-- **5a — Drop legacy aliases (S, coordinated).** ~~Remove `KORTIX_TOKEN`/`KORTIX_EXECUTOR_TOKEN`/
+- **5a — Drop legacy aliases (S, coordinated).** ~~Remove `KORTIX_TOKEN`/
   `KORTIX_YOLO_*` after the sandbox image cycles (daemons currently read them)~~ — **done for
   `KORTIX_YOLO_*`**: injection, the env allowlist, and the config default all removed in this pass.
-  `KORTIX_TOKEN`/`KORTIX_EXECUTOR_TOKEN` remain, still gated on the sandbox-image-cycle coordination
+  `KORTIX_TOKEN` remains, still gated on the sandbox-image-cycle coordination
   documented as "Phase 2" in `docs/specs/2026-06-28-token-session-agent-identity.md`.
 - **5b — Server-side credential resolution (L).** Stop injecting project runtime secrets at boot;
-  have the executor resolve connectors/secrets/git per-call against the session token's scope, so
+  have the connector resolve connectors/secrets/git per-call against the session token's scope, so
   the sandbox holds exactly one opaque, agent-scoped token and no raw credentials. Big, but it's
   the real "clean token model."
 
@@ -192,26 +195,22 @@ give access to the appropriate allowed Kortix scopes."
 
 ---
 
-## 6. Harnesses (Codex/Claude/Eve) + server-side skills  *(epic)*
+## 6. Server-side skills  *(epic)*
 
-**Ask:** "Want Codex/Claude SUPPORT (besides Opencode) — how do we load all these as harnesses?" +
-"Skills we can move server-side for discovery (perplexity computer style) for authorization
-control (need to modify opencode?)."
+**Ask:** "Skills we can move server-side for discovery (perplexity computer style) for authorization
+control (need to modify OpenCode?)."
 
-**Current state.** The CLI scaffolds multi-harness symlinks (`.claude`/`.codex`/`.agents` →
-`.kortix/opencode`), but the **session runtime is hardcoded to opencode** (`createOpencodeSupervisor`
-always spawns `opencode serve`; token mint assumes an opencode "executor session"). Skills are
-**file-based** (cloned at boot, discovered for IAM grants at build time) — no server-side skill
-discovery API.
+**Current state.** The session runtime uses OpenCode. Skills are **file-based**
+(cloned at boot and discovered for IAM grants at build time). There is no
+server-side skill discovery API.
 
 **Plan (epic):**
-- **6a** Abstract the harness spawn into a pluggable interface (spawn cmd, config injection,
-  identity, token shape) with opencode as the first implementation; add Codex/Claude adapters.
-- **6b** Server-side skill discovery: a `/skills` API the harness pulls at runtime (needs an
-  opencode modification), enabling per-request authorization control over which skills load.
+- **6a** Server-side skill discovery: a `/skills` API OpenCode pulls at runtime
+  (needs an OpenCode modification). This enables per-request authorization
+  control over which skills load.
 
-**Risk:** large; touches the runtime + a fork of opencode. **Decision needed:** priority + which
-harness first.
+**Risk:** large; touches the runtime and an OpenCode fork. **Decision needed:**
+priority.
 
 ---
 
@@ -246,7 +245,7 @@ the SDK lacks full workspace file-I/O CRUD + some hooks; and **git is a hard dep
 3. **PR B:** §1a–1c approve/ask/block loop (decisions baked; defer 1d resume).
 4. **PR C:** §3a resource ownership / private triggers.
 5. **Founder-gated:** §3b remove per-user connectors (migration), §4 full agent-identity,
-   §5 token consolidation, §6 harnesses, §7b CMS decoupling — each its own planned PR.
+   §5 token consolidation, §6 server-side skills, §7b CMS decoupling — each its own planned PR.
 
 Everything above §3b is additive/safe and can ship without breaking existing projects. Everything
 from §3b down changes existing behavior and needs an explicit greenlight + migration.

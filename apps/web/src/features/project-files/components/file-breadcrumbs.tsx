@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
-import { ChevronRight, FolderRoot } from 'lucide-react';
 import { useFilesStore, useFilesStoreApi } from '@/features/file-browser/store/files-store';
-import { openTabAndNavigate } from '@/stores/tab-store';
 import { cn } from '@/lib/utils';
+import { openTabAndNavigate } from '@/stores/tab-store';
+import { CaretRightIcon as ChevronRight, FolderIcon as FolderRoot } from '@phosphor-icons/react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getFileIcon } from './file-icon';
 
 // ---------------------------------------------------------------------------
@@ -52,7 +52,7 @@ function BreadcrumbSegments({
 
   return (
     <nav
-      className="flex items-center gap-0.5 min-w-0 flex-1 overflow-x-auto"
+      className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto"
       onDoubleClick={onDoubleClick}
       title={onDoubleClick ? 'Double-click to edit path' : undefined}
     >
@@ -60,10 +60,10 @@ function BreadcrumbSegments({
       <button
         onClick={onHomeClick}
         className={cn(
-          'flex items-center gap-1 px-2 py-1 rounded-lg transition-colors cursor-pointer shrink-0',
+          'flex shrink-0 cursor-pointer items-center gap-1 rounded-lg px-2 py-1 transition-colors',
           'hover:bg-muted',
           visibleSegments.length === 0
-            ? 'text-foreground font-medium bg-muted/50'
+            ? 'text-foreground bg-muted/50 font-medium'
             : 'text-muted-foreground',
         )}
       >
@@ -80,11 +80,11 @@ function BreadcrumbSegments({
         const pathToHere = '/' + segments.slice(0, absoluteIndex + 1).join('/');
 
         return (
-          <div key={pathToHere} className="flex items-center gap-0.5 min-w-0 shrink-0">
-            <ChevronRight className="h-3 w-3 text-muted-foreground/50 shrink-0" />
+          <div key={pathToHere} className="flex min-w-0 shrink-0 items-center gap-0.5">
+            <ChevronRight className="text-muted-foreground/50 h-3 w-3 shrink-0" />
             {isLast && fileMode ? (
               /* File name — non-clickable active segment with optional icon */
-              <span className="inline-flex items-center gap-1.5 px-1.5 py-1 text-xs text-foreground font-medium bg-muted/30 rounded-lg truncate max-w-[200px]">
+              <span className="text-foreground bg-muted/30 inline-flex max-w-[200px] items-center gap-1.5 truncate rounded-lg px-1.5 py-1 text-xs font-medium">
                 {fileIcon}
                 {segment}
               </span>
@@ -92,10 +92,10 @@ function BreadcrumbSegments({
               <button
                 onClick={() => onSegmentClick(absoluteIndex)}
                 className={cn(
-                  'px-1.5 py-1 rounded-lg transition-colors cursor-pointer truncate max-w-[180px] text-xs',
+                  'max-w-[180px] cursor-pointer truncate rounded-lg px-1.5 py-1 text-xs transition-colors',
                   'hover:bg-muted',
                   isLast && !fileMode
-                    ? 'text-foreground font-medium bg-muted/30'
+                    ? 'text-foreground bg-muted/30 font-medium'
                     : 'text-muted-foreground',
                 )}
               >
@@ -151,6 +151,7 @@ export function FileBreadcrumbs() {
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
+      if (e.nativeEvent.isComposing) return;
       if (e.key === 'Enter' && isEditing) {
         navigateToPath(editValue.trim() || '/');
         setIsEditing(false);
@@ -188,32 +189,34 @@ export function FileBreadcrumbs() {
 
   if (isEditing) {
     return (
-      <div
-        className="flex items-center gap-1 text-sm min-w-0 flex-1"
-        onKeyDown={handleKeyDown}
-      >
+      <div className="flex min-w-0 flex-1 items-center gap-1 text-sm" onKeyDown={handleKeyDown}>
         <input
           ref={inputRef}
           type="text"
           value={editValue}
           onChange={(e) => setEditValue(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter') { navigateToPath(editValue.trim() || '/'); setIsEditing(false); }
+            if (e.nativeEvent.isComposing) return;
+            if (e.key === 'Enter') {
+              navigateToPath(editValue.trim() || '/');
+              setIsEditing(false);
+            }
             if (e.key === 'Escape') setIsEditing(false);
           }}
-          onBlur={() => { navigateToPath(editValue.trim() || '/'); setIsEditing(false); }}
-          className="flex-1 min-w-0 h-7 px-2 text-sm bg-card border rounded-2xl outline-none focus:ring-2 focus:ring-primary/50 font-mono"
+          onBlur={() => {
+            navigateToPath(editValue.trim() || '/');
+            setIsEditing(false);
+          }}
+          className="bg-card focus:ring-primary/50 h-7 min-w-0 flex-1 rounded-2xl border px-2 font-mono text-sm outline-none focus:ring-2"
           placeholder="/path/to/folder"
+          aria-label="Path to folder"
         />
       </div>
     );
   }
 
   return (
-    <div
-      className="min-w-0 flex-1"
-      onKeyDown={handleKeyDown}
-    >
+    <div className="min-w-0 flex-1" onKeyDown={handleKeyDown}>
       <BreadcrumbSegments
         segments={segments}
         onSegmentClick={handleSegmentClick}
@@ -247,10 +250,7 @@ export function FilePathBreadcrumbs({ filePath, className }: FilePathBreadcrumbs
   const rootPath = useFilesStore((s) => s.rootPath);
   const homePath = rootPath || '/workspace';
 
-  const segments = useMemo(
-    () => filePath.split('/').filter(Boolean),
-    [filePath],
-  );
+  const segments = useMemo(() => filePath.split('/').filter(Boolean), [filePath]);
 
   const fileName = segments[segments.length - 1] || '';
 

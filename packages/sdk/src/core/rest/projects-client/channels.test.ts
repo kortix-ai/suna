@@ -3,20 +3,18 @@ import { configureKortix } from '../../http/config';
 import {
   connectEmail,
   connectSlack,
+  bindSlackIdentity,
+  bindTeamsIdentity,
   disconnectEmail,
   disconnectSlack,
   getEmailInstallation,
   getEmailMode,
-  getMeetVoices,
   getSlackChannelFile,
   getSlackInstallation,
   getSlackManifest,
   getSlackMode,
   listChannelBindings,
-  previewMeetVoice,
   setMeetBotName,
-  setMeetVoice,
-  speakInMeeting,
   updateChannelBinding,
   updateEmailPolicy,
   uploadSlackChannelFile,
@@ -63,6 +61,20 @@ test('connectSlack posts bot token + signing secret', async () => {
   expect(result.workspaceId).toBe('W1');
 });
 
+test('chat identity binding stays behind typed SDK methods', async () => {
+  nextResponse = {
+    status: 200,
+    body: { ok: true, workspaceName: 'Acme', hasAccess: true, resumed: false },
+  };
+  await bindSlackIdentity('slack-token');
+  expect(last().url).toContain('/channels/slack/identity/bind');
+  expect(last().body).toEqual({ token: 'slack-token' });
+
+  await bindTeamsIdentity('teams-token');
+  expect(last().url).toContain('/channels/teams/identity/bind');
+  expect(last().body).toEqual({ token: 'teams-token' });
+});
+
 test('getSlackMode falls back to a safe default on failure', async () => {
   nextResponse = { status: 500, body: {} };
   const result = await getSlackMode('P1');
@@ -103,8 +115,8 @@ test('connectEmail posts the connect payload', async () => {
   nextResponse = {
     status: 200,
     body: {
-      profile_id: 'profile-email-1',
-      profileSlug: 'inbox-1',
+      connection_id: 'connection-email-1',
+      connector_slug: 'inbox-1',
       inboxId: 'i1',
       email: 'a@b.com',
       displayName: null,
@@ -121,7 +133,56 @@ test('connectEmail posts the connect payload', async () => {
   const installation = await connectEmail('P1', { email: 'a@b.com' });
   expect(last().url).toContain('/projects/P1/channels/email/connect');
   expect(last().body).toEqual({ email: 'a@b.com' });
-  expect(installation.profileId).toBe('profile-email-1');
+  expect(installation.connectionId).toBe('connection-email-1');
+});
+
+test('connectEmail normalizes the canonical connector slug', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      connection_id: 'connection-email-1',
+      connector_slug: 'support_inbox',
+      inboxId: 'i1',
+      email: 'support@example.com',
+      displayName: null,
+      webhookId: null,
+      senderPolicy: {
+        mode: 'allow_all',
+        allowedEmails: [],
+        allowedDomains: [],
+        allowedRegex: null,
+      },
+      installedAt: '2026-01-01',
+    },
+  };
+
+  const installation = await connectEmail('P1', { connector_slug: 'support_inbox' });
+
+  expect(installation.connectorSlug).toBe('support_inbox');
+});
+
+test('connectEmail accepts the canonical camel-case connector slug', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      connectorSlug: 'support_inbox',
+      inboxId: 'i1',
+      email: 'support@example.com',
+      displayName: null,
+      webhookId: null,
+      senderPolicy: {
+        mode: 'allow_all',
+        allowedEmails: [],
+        allowedDomains: [],
+        allowedRegex: null,
+      },
+      installedAt: '2026-01-01',
+    },
+  };
+
+  const installation = await connectEmail('P1', { connector_slug: 'support_inbox' });
+
+  expect(installation.connectorSlug).toBe('support_inbox');
 });
 
 test('disconnectEmail throws with the server error message on failure', async () => {
@@ -129,21 +190,7 @@ test('disconnectEmail throws with the server error message on failure', async ()
   await expect(disconnectEmail('P1')).rejects.toThrow('nope');
 });
 
-test('getMeetVoices hits the meet voices endpoint and returns null on failure', async () => {
-  nextResponse = { status: 404, body: { message: 'not found' } };
-  const result = await getMeetVoices('P1');
-  expect(last().url).toContain('/projects/P1/channels/meet/voices');
-  expect(result).toBeNull();
-});
 
-test('setMeetVoice PUTs the selected voice', async () => {
-  nextResponse = { status: 200, body: { selected: 'voice-1' } };
-  const result = await setMeetVoice('P1', 'voice-1');
-  expect(last().url).toContain('/projects/P1/channels/meet/voice');
-  expect(last().method).toBe('PUT');
-  expect(last().body).toEqual({ voice: 'voice-1' });
-  expect(result.selected).toBe('voice-1');
-});
 
 test('setMeetBotName PUTs the bot name', async () => {
   nextResponse = { status: 200, body: { bot_name: 'Suna' } };
@@ -153,16 +200,6 @@ test('setMeetBotName PUTs the bot name', async () => {
   expect(last().body).toEqual({ name: 'Suna' });
 });
 
-test('previewMeetVoice posts to the per-voice preview endpoint and returns null on failure', async () => {
-  nextResponse = { status: 200, body: { b64: 'abc123' } };
-  const result = await previewMeetVoice('P1', 'voice-1');
-  expect(last().url).toContain('/projects/P1/channels/meet/voices/voice-1/preview');
-  expect(last().method).toBe('POST');
-  expect(result).toBe('abc123');
-
-  nextResponse = { status: 500, body: {} };
-  expect(await previewMeetVoice('P1', 'voice-1')).toBeNull();
-});
 
 test('getSlackChannelFile GETs the file proxy with the url query param', async () => {
   nextResponse = { status: 200, body: { data: 'bytes' } };
@@ -191,20 +228,12 @@ test('uploadSlackChannelFile posts channel/filename/content_base64 to the upload
   expect(result.ok).toBe(true);
 });
 
-test('speakInMeeting posts bot_id/text/voice to the meet speak endpoint', async () => {
-  nextResponse = { status: 200, body: { ok: true, voice: 'voice-1' } };
-  const result = await speakInMeeting('P1', 'bot-1', 'hello there', 'voice-1');
-  expect(last().url).toContain('/projects/P1/channels/meet/speak');
-  expect(last().method).toBe('POST');
-  expect(last().body).toEqual({ bot_id: 'bot-1', text: 'hello there', voice: 'voice-1' });
-  expect(result.voice).toBe('voice-1');
-});
 
 test('updateEmailPolicy defaults connector_slug to kortix_email', async () => {
   nextResponse = {
     status: 200,
     body: {
-      profileSlug: 'inbox-1',
+      connectorSlug: 'inbox-1',
       inboxId: 'i1',
       email: 'a@b.com',
       displayName: null,

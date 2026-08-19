@@ -7,6 +7,7 @@ import { KortixLetterField } from '@/components/ui/marketing/kortix-letter-field
 import { UseCasesBrowser } from '@/components/use-cases/use-cases-browser';
 import { UseCasesCta } from '@/components/use-cases/use-cases-cta';
 import { getAllUseCases } from '@/lib/use-cases';
+import { safeJsonForHtml } from '@/lib/security/safe-json';
 import { siteMetadata } from '@/lib/site-metadata';
 
 const TITLE = 'Use Cases';
@@ -76,7 +77,7 @@ export default function UseCasesIndexPage() {
     <main className="bg-background relative min-h-screen">
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        dangerouslySetInnerHTML={{ __html: safeJsonForHtml(jsonLd) }}
       />
 
       {/* Hero — animated letter field backdrop, like the marketing pages. */}
@@ -84,7 +85,7 @@ export default function UseCasesIndexPage() {
         <div className="absolute inset-0 z-0 mask-y-to-95%">
           <KortixLetterField seed={7412} />
         </div>
-        <div className="relative z-10 mx-auto max-w-6xl">
+        <div className="relative z-10 mx-auto max-w-7xl">
           <Reveal>
             <Badge variant="kortix" className="rounded">
               {EYEBROW}
@@ -100,7 +101,7 @@ export default function UseCasesIndexPage() {
       </section>
 
       <section className="px-5 py-10 sm:py-14">
-        <div className="mx-auto max-w-6xl">
+        <div className="mx-auto max-w-7xl">
           <UseCasesBrowser posts={useCases} />
         </div>
       </section>

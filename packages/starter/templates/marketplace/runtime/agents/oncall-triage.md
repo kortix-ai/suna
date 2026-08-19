@@ -7,7 +7,6 @@ description: >-
   severity is at or above {{page_severity_threshold}} or it can't resolve the
   alert.
 mode: primary
-model: kortix/codex/gpt-5.5
 permission: allow
 ---
 

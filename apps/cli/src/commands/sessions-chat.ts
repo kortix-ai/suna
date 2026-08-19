@@ -1,41 +1,35 @@
 import { createInterface } from 'node:readline';
+import type { MessageWithParts, OpencodeClient, Part, SessionHandle } from '@kortix/sdk';
 
-import { ApiError } from '../api/client.ts';
-import {
-  opencodeClient,
-  type OpencodeMessageWithParts,
-  type OpencodePart,
-} from '../api/sandbox-proxy.ts';
-import { loadAuthForHost, loadAuth, type Auth } from '../api/auth.ts';
-import { hasEnvTokenHost } from '../api/config.ts';
-import { loadLink } from '../project-link.ts';
+import type { Auth } from '../api/auth.ts';
+import { kortixFromAuth, unwrapRuntime, withKortixScope } from '../api/sdk.ts';
+import type { ProjectSession } from '../api/types.ts';
 import {
   emitJson,
   locateSessionAnywhere,
   resolveProjectContext,
   surfaceApiError,
-  takeFlagValue,
   takeFlagBool,
+  takeFlagValue,
 } from '../command-helpers.ts';
-import type { ProjectSession } from '../api/types.ts';
-import { selectFromList } from '../tui-select.ts';
 import { C, help, pad, status } from '../style.ts';
+import { selectFromList } from '../tui-select.ts';
 
 type CtxOpts = { projectArg?: string; hostArg?: string };
 
 export interface ResolvedSession {
   /** Kortix session row. */
   session: ProjectSession;
-  /** Auth used (so opencodeClient builds with the right base URL). */
+  /** Auth used for every scoped SDK call. */
   auth: Auth;
-  /** Convenience: bound OpenCode client. */
-  oc: ReturnType<typeof opencodeClient>;
-  /** The sandbox's external/provider id — the `/v1/p/{proxyId}/…` proxy key. */
-  proxyId: string;
-  /** Sandbox daemon/runtime port parsed from sandbox_url. */
-  runtimePort: number;
-  /** The OpenCode session id INSIDE the sandbox. May need creating. */
-  opencodeSessionId: string | null;
+  /** Session-scoped SDK handle. */
+  handle: SessionHandle;
+  /** Typed OpenCode REST client bound to this session's runtime. */
+  runtime: OpencodeClient;
+  /** SDK-resolved runtime URL used by the local `opencode attach` adapter. */
+  runtimeUrl: string;
+  /** Canonical OpenCode session id resolved by `/start`. */
+  opencodeSessionId: string;
   /** Kortix-side API client (for PATCH/save-back). */
   ctx: NonNullable<Awaited<ReturnType<typeof resolveProjectContext>>>;
 }
@@ -57,6 +51,7 @@ export async function loadSessionForChat(
   sessionId: string,
   opts: CtxOpts,
   cliCommand = 'sessions chat',
+  options: { requireRunning?: boolean } = {},
 ): Promise<ResolvedSession | null> {
   const found = await locateSessionAnywhere(
     sessionId,
@@ -73,42 +68,28 @@ export async function loadSessionForChat(
     );
   }
 
-  if (session.status !== 'running') {
+  if (options.requireRunning !== false && session.status !== 'running') {
     process.stderr.write(
       `${status.err(`Session ${session.session_id} is ${session.status}, not running.`)}\n` +
         `  ${C.dim}Run \`kortix sessions restart ${session.session_id}\` first.${C.reset}\n`,
     );
     return null;
   }
-  // The OpenCode proxy is keyed by the sandbox's *external* (provider) id and
-  // runtime daemon port, which appear inside sandbox_url:
-  //   https://<host>/v1/p/<external-id>/8000
-  // `sandbox_id` is the Kortix row id and the proxy rejects it ("sandbox not
-  // found"). The external id is also ephemeral — it changes on every restart —
-  // so we always derive it fresh from the just-fetched session row.
-  const proxyTarget = proxyTargetFromSession(session);
-  if (!proxyTarget) {
-    process.stderr.write(
-      `${status.err('Session has no reachable sandbox yet — provisioning may not be done.')}\n` +
-        `  ${C.dim}Check \`kortix sessions info ${session.session_id}\`.${C.reset}\n`,
-    );
+  const handle = kortixFromAuth(auth).session(projectId, session.session_id);
+  let ready: Awaited<ReturnType<SessionHandle['ensureReady']>>;
+  try {
+    ready = await withKortixScope(auth, () => handle.ensureReady());
+  } catch (error) {
+    surfaceApiError(error);
     return null;
   }
-
-  // Same auth `locateSessionAnywhere` resolved the session with, so the
-  // sandbox proxy auth header matches the host the session actually lives on.
-  const oc = opencodeClient({
-    auth,
-    sandboxId: proxyTarget.proxyId,
-    port: proxyTarget.runtimePort,
-  });
   return {
     session,
     auth,
-    oc,
-    proxyId: proxyTarget.proxyId,
-    runtimePort: proxyTarget.runtimePort,
-    opencodeSessionId: session.opencode_session_id,
+    handle,
+    runtime: handle.runtime,
+    runtimeUrl: ready.runtimeUrl,
+    opencodeSessionId: ready.opencodeSessionId,
     ctx,
   };
 }
@@ -119,79 +100,19 @@ export async function loadSessionForChat(
  * create one — and persist the id back to Kortix so subsequent CLI calls
  * stay glued to the same conversation.
  */
-export async function ensureOpencodeSession(r: ResolvedSession): Promise<string | null> {
-  if (r.opencodeSessionId) {
-    try {
-      await r.oc.getSession(r.opencodeSessionId);
-      return r.opencodeSessionId;
-    } catch (err) {
-      // A restarted sandbox can leave the DB pin pointing at an OpenCode root
-      // that no longer exists. Heal below by adopting the live root instead of
-      // surfacing "Session not found" to every chat/log/connect command.
-      if (!(err instanceof ApiError) || err.status !== 404) {
-        surfaceApiError(err);
-        return null;
-      }
-    }
-  }
-
-  // First try to discover an existing session inside the sandbox.
-  try {
-    const sessions = await r.oc.listSessions();
-    const first = sessions[0];
-    if (first?.id) {
-      await persistOpencodeSessionId(r, first.id);
-      return first.id;
-    }
-  } catch (err) {
-    if (err instanceof ApiError && err.status >= 500) {
-      // Sandbox still booting — surface and bail. Don't try to create
-      // a session against a half-up service.
-      surfaceApiError(err);
-      return null;
-    }
-    // 404/empty — fall through to create.
-  }
-
-  // Create one.
-  try {
-    const created = await r.oc.createSession();
-    if (!created?.id) {
-      process.stderr.write(`${status.err('OpenCode returned no session id.')}\n`);
-      return null;
-    }
-    await persistOpencodeSessionId(r, created.id);
-    return created.id;
-  } catch (err) {
-    surfaceApiError(err);
-    return null;
-  }
-}
-
-async function persistOpencodeSessionId(
-  r: ResolvedSession,
-  opencodeSessionId: string,
-): Promise<void> {
-  try {
-    await r.ctx.client.patch<ProjectSession>(
-      `/projects/${r.ctx.projectId}/sessions/${r.session.session_id}`,
-      { opencode_session_id: opencodeSessionId },
-    );
-  } catch {
-    // Non-fatal — the message will still go through, the link is just
-    // not pinned in our DB. The drift sync job picks this up eventually.
-  }
+export async function ensureOpencodeSession(r: ResolvedSession): Promise<string> {
+  return r.opencodeSessionId;
 }
 
 /** Extract a plain-text representation of a message's parts. */
-export function extractMessageText(msg: OpencodeMessageWithParts): string {
+export function extractMessageText(msg: MessageWithParts): string {
   return msg.parts
     .map((p) => partToText(p))
     .filter((s) => s.length > 0)
     .join('\n');
 }
 
-function partToText(part: OpencodePart): string {
+function partToText(part: Part): string {
   if (part.type === 'text' && typeof (part as { text?: string }).text === 'string') {
     if ((part as { synthetic?: boolean }).synthetic) return '';
     return (part as { text: string }).text;
@@ -212,15 +133,11 @@ function partToText(part: OpencodePart): string {
   return '';
 }
 
-export function printMessage(msg: OpencodeMessageWithParts): void {
+export function printMessage(msg: MessageWithParts): void {
   const role = msg.info.role === 'assistant' ? 'assistant' : msg.info.role;
   const color = role === 'assistant' ? C.cyan : C.green;
-  const ts = msg.info.time?.created
-    ? new Date(msg.info.time.created).toLocaleTimeString()
-    : '';
-  process.stdout.write(
-    `\n${color}${C.bold}${role}${C.reset} ${C.faded}${ts}${C.reset}\n`,
-  );
+  const ts = msg.info.time?.created ? new Date(msg.info.time.created).toLocaleTimeString() : '';
+  process.stdout.write(`\n${color}${C.bold}${role}${C.reset} ${C.faded}${ts}${C.reset}\n`);
   const body = extractMessageText(msg);
   if (body) {
     for (const line of body.split('\n')) {
@@ -245,33 +162,6 @@ export function prompt(label: string): Promise<string> {
       resolve(answer);
     });
   });
-}
-
-/**
- * The proxy id (`/v1/p/<id>/…`) is the sandbox's external/provider id, which
- * only appears embedded in sandbox_url. Falls back to sandbox_id for older
- * servers that surface no URL (proxy will then error clearly).
- */
-export function proxyIdFromSession(session: ProjectSession): string | null {
-  return proxyTargetFromSession(session)?.proxyId ?? session.sandbox_id ?? null;
-}
-
-export function runtimePortFromSession(session: ProjectSession): number {
-  return proxyTargetFromSession(session)?.runtimePort ?? 8000;
-}
-
-function proxyTargetFromSession(session: ProjectSession): { proxyId: string; runtimePort: number } | null {
-  if (session.sandbox_url) {
-    const m = session.sandbox_url.match(/\/p\/([^/]+)\/(\d+)(?:\/|$)/);
-    if (m?.[1]) {
-      const parsedPort = Number(m[2]);
-      return {
-        proxyId: m[1],
-        runtimePort: Number.isInteger(parsedPort) && parsedPort > 0 ? parsedPort : 8000,
-      };
-    }
-  }
-  return session.sandbox_id ? { proxyId: session.sandbox_id, runtimePort: 8000 } : null;
 }
 
 const CHAT_HELP = help`Usage: kortix sessions chat [<session-id>] [options]
@@ -341,7 +231,7 @@ export async function runSessionsChat(argv: string[]): Promise<number> {
 
   // ── One-shot ─────────────────────────────────────────────────────────────
   if (promptText !== undefined) {
-    return sendAndPrint(resolved, ocSessionId, promptText, extra, json);
+    return sendAndPrint(resolved, promptText, extra, json);
   }
 
   // ── Interactive REPL ───────────────────────────────────────────────────────
@@ -352,7 +242,14 @@ export async function runSessionsChat(argv: string[]): Promise<number> {
   );
   // Replay any prior conversation so the REPL has context on screen.
   try {
-    const history = await resolved.oc.listMessages(ocSessionId, 20);
+    const history = await withKortixScope(resolved.auth, async () =>
+      unwrapRuntime(
+        await resolved.runtime.session.messages({
+          sessionID: ocSessionId,
+          limit: 20,
+        }),
+      ),
+    );
     for (const msg of history) printMessage(msg);
   } catch {
     /* no history / sandbox warming — start fresh */
@@ -361,9 +258,9 @@ export async function runSessionsChat(argv: string[]): Promise<number> {
   for (;;) {
     const line = await prompt(`\n${C.green}${C.bold}you${C.reset} `);
     const text = line.trim();
-    if (text === '' ) continue;
+    if (text === '') continue;
     if (text === 'exit' || text === 'quit') break;
-    const code = await sendAndPrint(resolved, ocSessionId, text, extra);
+    const code = await sendAndPrint(resolved, text, extra);
     if (code !== 0) {
       // Transient sandbox error — let the user retry rather than killing the REPL.
       process.stderr.write(`${C.dim}(message failed — try again, or \`exit\`)${C.reset}\n`);
@@ -401,9 +298,7 @@ async function resolveChatSessionId(
         `${status.ok(`Started session ${C.bold}${created.session_id.split('-')[0]}${C.reset}`)} ${C.dim}(${created.status})${C.reset}\n`,
       );
       if (created.status !== 'running') {
-        process.stdout.write(
-          `  ${C.dim}Waiting for the sandbox to come up…${C.reset}\n`,
-        );
+        process.stdout.write(`  ${C.dim}Waiting for the sandbox to come up…${C.reset}\n`);
         const ready = await waitForRunning(ctx, created.session_id);
         if (!ready) return null;
       }
@@ -451,17 +346,18 @@ export async function chooseRunningSession(
   const running = sessions
     .filter((s) => s.status === 'running')
     .sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at));
-  if (running.length === 0) return null;
-  if (running.length === 1) return running[0]!;
+  const first = running[0];
+  if (!first) return null;
+  if (running.length === 1) return first;
 
   const tty = process.stdin.isTTY === true && process.stdout.isTTY === true;
-  if (!tty) return running[0]!;
+  if (!tty) return first;
 
   const picked = await selectFromList<ProjectSession>({
     title: pickTitle,
     items: running.map((s) => ({
       value: s,
-      label: s.name ?? s.session_id.split('-')[0]!,
+      label: s.name ?? s.session_id.split('-')[0] ?? s.session_id,
       sublabel: `${s.status} · ${s.session_id.split('-')[0]} · ${s.branch_name}`,
     })),
   });
@@ -513,7 +409,9 @@ async function waitForRunning(
     }
     if (s.status === 'running') return true;
     if (s.status === 'failed' || s.status === 'stopped') {
-      process.stderr.write(`${status.err(`Session ${s.status}${s.error ? `: ${s.error}` : ''}.`)}\n`);
+      process.stderr.write(
+        `${status.err(`Session ${s.status}${s.error ? `: ${s.error}` : ''}.`)}\n`,
+      );
       return false;
     }
     await new Promise((r) => setTimeout(r, 4000));
@@ -599,9 +497,16 @@ export async function runSessionsLog(argv: string[]): Promise<number> {
   const ocSessionId = await ensureOpencodeSession(resolved);
   if (!ocSessionId) return 1;
 
-  let messages: OpencodeMessageWithParts[];
+  let messages: MessageWithParts[];
   try {
-    messages = await resolved.oc.listMessages(ocSessionId, limit);
+    messages = await withKortixScope(resolved.auth, async () =>
+      unwrapRuntime(
+        await resolved.runtime.session.messages({
+          sessionID: ocSessionId,
+          limit,
+        }),
+      ),
+    );
   } catch (err) {
     return surfaceApiError(err);
   }
@@ -626,8 +531,8 @@ export async function runSessionsLog(argv: string[]): Promise<number> {
 }
 
 /** Compact, ANSI-free shape of a message for `--json` consumption. */
-function messageToJson(msg: OpencodeMessageWithParts): Record<string, unknown> {
-  const info = msg.info as OpencodeMessageWithParts['info'] & {
+function messageToJson(msg: MessageWithParts): Record<string, unknown> {
+  const info = msg.info as MessageWithParts['info'] & {
     time?: { created?: number; completed?: number };
     error?: { name?: string; message?: string } | null;
     agent?: string;
@@ -664,7 +569,6 @@ function messageToJson(msg: OpencodeMessageWithParts): Record<string, unknown> {
 /** Send one prompt, print the assistant reply (and any error). */
 async function sendAndPrint(
   resolved: ResolvedSession,
-  ocSessionId: string,
   text: string,
   extra: { agent?: string } | undefined,
   json = false,
@@ -672,10 +576,8 @@ async function sendAndPrint(
   // In --json mode keep stdout pure JSON (no "…thinking" spinner).
   if (!json) process.stdout.write(`${C.dim}…thinking${C.reset}\r`);
   try {
-    const reply = await resolved.oc.sendPrompt(
-      ocSessionId,
-      [{ type: 'text', text }],
-      extra,
+    const reply = await withKortixScope(resolved.auth, async () =>
+      unwrapRuntime(await resolved.handle.send(text, extra)),
     );
     if (json) {
       emitJson(messageToJson({ info: reply.info, parts: reply.parts }));
@@ -747,32 +649,25 @@ export async function runSessionsStatus(argv: string[]): Promise<number> {
     process.stderr.write(`${status.err((err as Error).message)}\n`);
     return 2;
   }
+  if (rest.length > 0) {
+    process.stderr.write(`${status.err(`Unexpected argument: ${rest[0]}`)}\n${STATUS_HELP}\n`);
+    return 2;
+  }
   const opts: CtxOpts = { projectArg, hostArg };
   const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
 
-  // Same auth the project context resolved with — needed for the OpenCode proxy.
-  const hostFromLink =
-    !hostArg && !hasEnvTokenHost() ? loadLink()?.host ?? undefined : undefined;
-  const hostName = hostArg ?? hostFromLink;
-  const auth = hostName ? loadAuthForHost(hostName) : loadAuth();
-  if (!auth) {
-    process.stderr.write(`${status.err('Not logged in.')}\n`);
-    return 1;
-  }
+  const auth = ctx.auth;
 
   let sessions: ProjectSession[];
   try {
-    sessions = await ctx.client.get<ProjectSession[]>(
-      `/projects/${ctx.projectId}/sessions`,
-    );
+    sessions = await ctx.client.get<ProjectSession[]>(`/projects/${ctx.projectId}/sessions`);
   } catch (err) {
     return surfaceApiError(err);
   }
 
-  const shown = (all
-    ? sessions
-    : sessions.filter((s) => s.status !== 'stopped' && s.status !== 'completed')
+  const shown = (
+    all ? sessions : sessions.filter((s) => s.status !== 'stopped' && s.status !== 'completed')
   ).sort(
     (a, b) =>
       statusRank(a.status) - statusRank(b.status) ||
@@ -783,7 +678,7 @@ export async function runSessionsStatus(argv: string[]): Promise<number> {
   const running = shown.filter((s) => s.status === 'running');
   const activity = new Map<string, SessionActivity>();
   await mapLimit(running, 8, async (s) => {
-    const a = await fetchSessionActivity(s, auth);
+    const a = await fetchSessionActivity(s, ctx.projectId, auth);
     if (a) activity.set(s.session_id, a);
   });
 
@@ -837,57 +732,121 @@ export async function runSessionsStatus(argv: string[]): Promise<number> {
   return 0;
 }
 
+const SESSION_ACTIVITY_PHASE_TIMEOUT_MS = 2_500;
+
 /** Read one running session's latest message and summarize what it's doing. */
 async function fetchSessionActivity(
   s: ProjectSession,
+  projectId: string,
   auth: Auth,
 ): Promise<SessionActivity | null> {
-  const proxyId = proxyIdFromSession(s);
-  if (!proxyId) return null;
-  const oc = opencodeClient({ auth, sandboxId: proxyId, port: runtimePortFromSession(s) });
   try {
-    let ocId = s.opencode_session_id;
-    if (!ocId) {
-      const list = await oc.listSessions();
-      ocId = list[0]?.id ?? null;
-    }
-    if (!ocId) return null;
-    const msgs = await oc.listMessages(ocId, 2);
-    const last = msgs[msgs.length - 1];
-    if (!last) return { working: false, summary: 'no messages yet' };
-    return deriveActivity(last);
+    const handle = kortixFromAuth(auth).session(projectId, s.session_id);
+    const ready = await withKortixScope(auth, () =>
+      handle.ensureReady({ readyTimeoutMs: SESSION_ACTIVITY_PHASE_TIMEOUT_MS }),
+    );
+    // Fetch a small recent window (not just the last message): an assistant turn
+    // can start — or dispatch a subagent batch that leaves a user-role message
+    // newest — after the user's prompt, and classifying off ONLY the last message
+    // then mislabels a busy session as "queued".
+    const messageRequest = {
+      sessionID: ready.opencodeSessionId,
+      limit: 6,
+      // The generated OpenCode client accepts RequestInit fields. The narrowed
+      // SDK facade type currently lists only endpoint fields.
+      signal: AbortSignal.timeout(SESSION_ACTIVITY_PHASE_TIMEOUT_MS),
+    } as Parameters<typeof handle.runtime.session.messages>[0] & { signal: AbortSignal };
+    const msgs = await withKortixScope(auth, async () =>
+      unwrapRuntime(
+        await handle.runtime.session.messages(messageRequest),
+      ),
+    );
+    if (msgs.length === 0) return { working: false, summary: 'no messages yet' };
+    return deriveActivity(msgs, s.status);
   } catch {
     // Sandbox still warming / proxy hiccup — treat as unknown, not fatal.
     return null;
   }
 }
 
-/** Turn the latest message into a compact "what's it doing" summary. */
-function deriveActivity(m: OpencodeMessageWithParts): SessionActivity {
-  const info = m.info as OpencodeMessageWithParts['info'] & {
+/**
+ * Turn a session's recent messages + Kortix status into a compact "what's it
+ * doing" summary. Reads the whole recent window (not just the newest message) so
+ * an in-flight assistant turn is never missed, and honours the lifecycle status
+ * so a still-booting box isn't reported as an idle/queued agent.
+ */
+export function deriveActivity(
+  messages: MessageWithParts[],
+  status: ProjectSession['status'],
+): SessionActivity {
+  // Lifecycle states before the agent can run describe the BOX, not a turn.
+  if (status === 'provisioning' || status === 'branching') {
+    return { working: true, summary: 'provisioning…' };
+  }
+  if (status === 'queued') {
+    return { working: true, summary: 'booting…' };
+  }
+
+  const last = messages[messages.length - 1];
+  if (!last) return { working: false, summary: 'no messages yet' };
+  const lastInfo = last.info as MessageWithParts['info'] & {
     time?: { created?: number; completed?: number };
   };
-  const at = info.time?.created ? new Date(info.time.created).toISOString() : undefined;
-  if (info.role === 'user') {
-    return { working: true, summary: 'queued — agent picking up…', last_role: 'user', last_at: at };
-  }
+  const at = lastInfo.time?.created ? new Date(lastInfo.time.created).toISOString() : undefined;
+
+  // A running/pending tool ANYWHERE in the window means the agent is actively
+  // working — even when the newest message is a (subagent) user-role prompt.
   let runningTool: string | undefined;
   let lastTool: string | undefined;
-  for (const p of m.parts) {
-    if (p.type === 'tool') {
+  for (const msg of messages) {
+    for (const p of msg.parts) {
+      if (p.type !== 'tool') continue;
       lastTool = (p as { tool?: string }).tool;
       const st = (p as { state?: { status?: string } }).state?.status;
       if (st === 'running' || st === 'pending') runningTool = (p as { tool?: string }).tool;
     }
   }
   if (runningTool) {
-    return { working: true, tool: runningTool, summary: `running ${runningTool}…`, last_role: 'assistant', last_at: at };
+    return {
+      working: true,
+      tool: runningTool,
+      summary: `running ${runningTool}…`,
+      last_role: 'assistant',
+      last_at: at,
+    };
   }
-  const completed = info.time?.completed;
-  if (!completed) {
-    return { working: true, summary: 'thinking…', last_role: 'assistant', last_at: at };
+
+  // The most-recent assistant turn: if it hasn't completed (and didn't error) the
+  // agent is still generating — report "working", not "queued", even if a later
+  // user-role message is technically newest.
+  let latestAssistant:
+    | (MessageWithParts['info'] & { time?: { completed?: number }; error?: unknown })
+    | undefined;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i];
+    if (!message) continue;
+    const info = message.info;
+    if (info.role === 'assistant') {
+      latestAssistant = info as MessageWithParts['info'] & {
+        time?: { completed?: number };
+        error?: unknown;
+      };
+      break;
+    }
   }
-  const text = m.parts
+  if (latestAssistant && latestAssistant.time?.completed == null && !latestAssistant.error) {
+    return { working: true, summary: 'working…', last_role: 'assistant', last_at: at };
+  }
+
+  // Newest message is the user's and no assistant turn has started — genuinely
+  // queued, waiting for the agent to pick it up.
+  if (lastInfo.role === 'user') {
+    return { working: true, summary: 'queued — agent picking up…', last_role: 'user', last_at: at };
+  }
+
+  // Otherwise the last assistant turn is done — summarize its reply.
+  const completed = lastInfo.time?.completed;
+  const text = last.parts
     .filter(
       (p) =>
         p.type === 'text' &&
@@ -902,7 +861,7 @@ function deriveActivity(m: OpencodeMessageWithParts): SessionActivity {
     working: false,
     summary: text ? truncate(text, 64) : lastTool ? `idle (last: ${lastTool})` : 'idle',
     last_role: 'assistant',
-    last_at: new Date(completed).toISOString(),
+    last_at: completed ? new Date(completed).toISOString() : at,
   };
 }
 
@@ -917,12 +876,12 @@ async function mapLimit<T>(
     while (i < items.length) {
       const idx = i;
       i += 1;
-      await fn(items[idx]!);
+      const item = items[idx];
+      if (item === undefined) continue;
+      await fn(item);
     }
   };
-  await Promise.all(
-    Array.from({ length: Math.min(limit, items.length) }, () => worker()),
-  );
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, () => worker()));
 }
 
 function statusRank(s: string): number {

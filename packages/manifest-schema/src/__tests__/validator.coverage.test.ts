@@ -336,6 +336,22 @@ describe('validateManifest — trigger edge cases', () => {
     ).toContain('triggers[0].timezone');
   });
 
+  test('ambiguous timezone abbreviations are rejected', () => {
+    expect(
+      errorPaths(
+        'kortix_version = 1\n[[triggers]]\nslug = "d"\ntype = "cron"\ncron = "0 9 * * *"\nprompt = "go"\ntimezone = "PST"',
+      ),
+    ).toContain('triggers[0].timezone');
+  });
+
+  test('invalid cron expressions are rejected', () => {
+    expect(
+      errorPaths(
+        'kortix_version = 1\n[[triggers]]\nslug = "d"\ntype = "cron"\ncron = "0 25 * * *"\nprompt = "go"\ntimezone = "UTC"',
+      ),
+    ).toContain('triggers[0].cron');
+  });
+
   test('non-boolean enabled is rejected', () => {
     expect(
       errorPaths(
@@ -484,7 +500,4 @@ describe('validateManifest — non-blocking warnings (runtime enforces; gate adv
     expect(warningPaths('kortix_version = 1\n[[connectors]]\nslug = "h"\nprovider = "http"\nbase_url = "https://e.com"\ncredential = "team"')).toContain('connectors[0].credential');
   });
 
-  test('trigger with a non-IANA timezone warns (would never fire) but does not block', () => {
-    assertWarnsButValid('kortix_version = 1\n[[triggers]]\nslug = "t"\ntype = "cron"\ncron = "0 9 * * *"\nprompt = "go"\ntimezone = "PST"', 'triggers[0].timezone');
-  });
 });

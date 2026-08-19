@@ -7,7 +7,6 @@ description: >-
   {{postmortem_path}} — root cause and action items proposed, never
   finalized or published on its own.
 mode: primary
-model: kortix/codex/gpt-5.5
 permission: allow
 ---
 

@@ -22,16 +22,23 @@ import {
 } from '@/components/ui/modal';
 import { Switch } from '@/components/ui/switch';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { useOpenCodeSession } from '@/hooks/opencode/use-opencode-sessions';
-import { useSessionSync } from '@/hooks/opencode/use-session-sync';
+import { useRuntimeSession } from '@kortix/sdk/react';
+import {
+  loadSessionTranscriptMessages,
+  useSessionSync,
+} from '@kortix/sdk/react';
 import {
   DEFAULT_TRANSCRIPT_OPTIONS,
   formatTranscript,
   getTranscriptFilename,
   type TranscriptOptions,
 } from '@kortix/sdk';
-import { Check, Copy, Download } from 'lucide-react';
-import { useCallback, useMemo, useState } from 'react';
+import {
+  CheckIcon as Check,
+  CopyIcon as Copy,
+  DownloadIcon as Download,
+} from '@phosphor-icons/react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 // ============================================================================
 // Export Modal
@@ -39,12 +46,14 @@ import { useCallback, useMemo, useState } from 'react';
 
 interface ExportTranscriptModalProps {
   sessionId: string;
+  kortixSessionScope?: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
 export function ExportTranscriptModal({
   sessionId,
+  kortixSessionScope,
   open,
   onOpenChange,
 }: ExportTranscriptModalProps) {
@@ -52,8 +61,36 @@ export function ExportTranscriptModal({
   const [options, setOptions] = useState<TranscriptOptions>(DEFAULT_TRANSCRIPT_OPTIONS);
   const [copied, setCopied] = useState(false);
 
-  const { data: session } = useOpenCodeSession(sessionId);
-  const { messages, isLoading: isLoadingMessages } = useSessionSync(sessionId);
+  const { data: session } = useRuntimeSession(sessionId);
+  const { messages: visibleMessages } = useSessionSync(sessionId, { kortixSessionScope });
+  const [messages, setMessages] = useState(visibleMessages);
+  const [isLoadingMessages, setIsLoadingMessages] = useState(false);
+  const visibleMessagesRef = useRef(visibleMessages);
+  useEffect(() => {
+    visibleMessagesRef.current = visibleMessages;
+  }, [visibleMessages]);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    setIsLoadingMessages(true);
+    void loadSessionTranscriptMessages(sessionId)
+      .then((history) => {
+        if (!cancelled) setMessages(history);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setMessages(visibleMessagesRef.current);
+          errorToast('Failed to load complete transcript');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingMessages(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, sessionId]);
 
   const transcript = useMemo(() => {
     if (!session || messages.length === 0) return '';

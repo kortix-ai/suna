@@ -14,8 +14,15 @@
  *   /audit/*                 — paginated audit logs
  */
 
-import { createWsHandlers, type AuthResult } from 'agent-tunnel';
-import { eq, and, lt } from 'drizzle-orm';
+import {
+  createWsHandlers,
+  isTunnelCapability,
+  type AuthResult,
+  type TunnelAuthMessage,
+} from 'agent-tunnel';
+import { randomBytes } from 'node:crypto';
+import { bodyLimit } from 'hono/body-limit';
+import { eq, and, isNotNull, lt } from 'drizzle-orm';
 import { tunnelConnections, tunnelPermissions, tunnelDeviceAuthRequests } from '@kortix/db';
 import { config } from '../config';
 import type { AppEnv } from '../types';
@@ -35,18 +42,51 @@ import {
   stopTunnelRpcForwarder,
 } from './core/cluster-forwarder';
 import { notifyTunnelEvent } from './routes/permission-requests';
+import { tunnelRateLimiter } from './core/rate-limiter';
 // Static imports — these MUST NOT be dynamic `await import(...)`. Under
 // `bun --hot` (local dev) a dynamic import inside the WS auth handler can wedge
 // and never settle, so onAuthenticate hangs → the agent never gets `auth_ok`
 // and the tunnel is stuck "offline" forever. See the prod-timeout incident note.
-import { isTunnelToken, isKortixToken, hashSecretKey, deriveSigningKey } from '../shared/crypto';
-import { validateSecretKey } from '../repositories/api-keys';
-import { getSupabase } from '../shared/supabase';
+import { fingerprintTunnelCredentialHash, isTunnelToken, verifySecretKey } from '../shared/crypto';
 import { db } from '../shared/db';
+import { reconcileComputerConnectors } from '../connectors/sync';
 
 // ─── Hono Sub-App ────────────────────────────────────────────────────────────
 
 const tunnelApp = makeOpenApiApp<AppEnv>();
+
+export function effectiveRegisteredCapabilities(
+  reported: unknown,
+  approved: unknown,
+): string[] | null {
+  if (
+    !Array.isArray(reported) ||
+    reported.length > 3 ||
+    new Set(reported).size !== reported.length ||
+    !reported.every(
+      (capability) => typeof capability === 'string' && isTunnelCapability(capability),
+    )
+  ) {
+    return null;
+  }
+  const approvedSet = new Set(
+    Array.isArray(approved)
+      ? approved.filter(
+          (capability): capability is string =>
+            typeof capability === 'string' && isTunnelCapability(capability),
+        )
+      : [],
+  );
+  return reported.filter((capability) => approvedSet.has(capability));
+}
+
+tunnelApp.use(
+  '*',
+  bodyLimit({
+    maxSize: config.TUNNEL_MAX_WS_MESSAGE_SIZE,
+    onError: (c) => c.json({ error: 'Tunnel request body is too large' }, 413),
+  }),
+);
 
 tunnelApp.route('/connections', createConnectionsRouter());
 tunnelApp.route('/permissions', createPermissionsRouter());
@@ -60,55 +100,51 @@ tunnelApp.route('/device-auth', createDeviceAuthRouter());
 const wsHandlers = createWsHandlers(tunnelRelay, {
   heartbeat: heartbeatManager,
   maxMessageSize: config.TUNNEL_MAX_WS_MESSAGE_SIZE,
-  async onAuthenticate(tunnelId: string, token: string): Promise<AuthResult | null> {
-    let accountId: string | null = null;
-    let tunnel: any = null;
+  async onAuthenticate(
+    tunnelId: string,
+    token: string,
+    auth: TunnelAuthMessage,
+  ): Promise<AuthResult | null> {
+    // Only the machine-specific setup token can become a tunnel agent.
+    // User, PAT, service-account, and sandbox credentials are HTTP principals;
+    // accepting them here lets those callers impersonate and replace a machine.
+    if (!isTunnelToken(token)) return null;
+    const [tunnel] = await db
+      .select()
+      .from(tunnelConnections)
+      .where(eq(tunnelConnections.tunnelId, tunnelId));
+    // Resolve the untrusted tunnel id before running the intentionally costly
+    // secret verifier. Random ids cannot become a synchronous scrypt DoS.
+    if (!tunnel?.setupTokenHash || !verifySecretKey(token, tunnel.setupTokenHash)) return null;
 
-    if (isTunnelToken(token)) {
-      const tokenHash = hashSecretKey(token);
-      const [row] = await db
-        .select()
-        .from(tunnelConnections)
-        .where(and(
-          eq(tunnelConnections.tunnelId, tunnelId),
-          eq(tunnelConnections.setupTokenHash, tokenHash),
-        ));
-      if (row) {
-        accountId = row.accountId;
-        tunnel = row;
-      }
-    } else if (isKortixToken(token)) {
-      const result = await validateSecretKey(token);
-      if (result.isValid) accountId = result.accountId!;
-    } else {
-      try {
-        const supabase = getSupabase();
-        const { data: { user }, error } = await supabase.auth.getUser(token);
-        if (!error && user) accountId = user.id;
-      } catch {}
-    }
+    // The DB list is the browser-approved ceiling. The auth list is the exact
+    // handler surface registered by this agent process. Intersect both so an
+    // old or compromised client cannot advertise stale or extra capabilities.
+    const capabilities = effectiveRegisteredCapabilities(
+      auth.capabilities ?? [],
+      tunnel.capabilities,
+    );
+    if (!capabilities) return null;
+    const agentVersion =
+      typeof auth.agentVersion === 'string' &&
+      auth.agentVersion.length <= 64 &&
+      !/[\r\n]/.test(auth.agentVersion)
+        ? auth.agentVersion
+        : null;
 
-    if (!accountId) return null;
-
-    if (!tunnel) {
-      const [row] = await db
-        .select()
-        .from(tunnelConnections)
-        .where(and(
-          eq(tunnelConnections.tunnelId, tunnelId),
-          eq(tunnelConnections.accountId, accountId),
-        ));
-      tunnel = row;
-    }
-
-    if (!tunnel) return null;
-
-    const signingKey = deriveSigningKey(token, config.TUNNEL_SIGNING_SECRET);
+    // A fresh key binds nonces and signatures to this TLS WebSocket session.
+    // Reconnecting never reuses the HMAC key, so captured frames cannot replay
+    // after a reconnect even when the long-lived setup token is unchanged.
+    const signingKey = randomBytes(32).toString('hex');
     return {
       signingKey,
       metadata: {
-        accountId,
-        capabilities: tunnel.capabilities || [],
+        accountId: tunnel.accountId,
+        capabilities,
+        approvedCapabilities: tunnel.capabilities || [],
+        agentVersion,
+        machineInfo: tunnel.machineInfo ?? {},
+        credentialFingerprint: fingerprintTunnelCredentialHash(tunnel.setupTokenHash),
       },
     };
   },
@@ -116,7 +152,41 @@ const wsHandlers = createWsHandlers(tunnelRelay, {
 
 // ─── Lifecycle ───────────────────────────────────────────────────────────────
 
+// Heartbeat liveness is transport state, not DB persistence state. Record the
+// signed pong synchronously before the async capability/heartbeat DB handler
+// runs below. Without this wiring, every healthy agent times out after three
+// intervals even though its pongs update the connection row successfully.
+tunnelRelay.on('message:pong', ({ tunnelId }) => {
+  heartbeatManager.recordPong(tunnelId);
+});
+
 let permissionCleanupInterval: ReturnType<typeof setInterval> | null = null;
+
+async function syncActiveTunnelPermissions(
+  tunnelId: string,
+  capabilities: readonly string[],
+): Promise<void> {
+  const activePermissions = await db
+    .select({
+      permissionId: tunnelPermissions.permissionId,
+      capability: tunnelPermissions.capability,
+      scope: tunnelPermissions.scope,
+      expiresAt: tunnelPermissions.expiresAt,
+    })
+    .from(tunnelPermissions)
+    .where(and(eq(tunnelPermissions.tunnelId, tunnelId), eq(tunnelPermissions.status, 'active')));
+
+  tunnelRelay.sendNotification(tunnelId, 'tunnel.permissions.sync', {
+    permissions: activePermissions
+      .filter((permission) => capabilities.includes(permission.capability))
+      .map((permission) => ({
+        permissionId: permission.permissionId,
+        capability: permission.capability,
+        scope: permission.scope,
+        expiresAt: permission.expiresAt?.toISOString() ?? undefined,
+      })),
+  });
+}
 
 function startTunnelService(): void {
   if (!config.TUNNEL_ENABLED) {
@@ -131,38 +201,35 @@ function startTunnelService(): void {
 
   tunnelRelay.on('agent:connect', async ({ tunnelId, metadata }) => {
     const accountId = metadata?.accountId as string | undefined;
+    const capabilities = Array.isArray(metadata?.capabilities)
+      ? (metadata.capabilities as string[])
+      : [];
+    const machineInfo =
+      metadata?.machineInfo && typeof metadata.machineInfo === 'object'
+        ? (metadata.machineInfo as Record<string, unknown>)
+        : {};
 
     try {
-      await markTunnelRelayOwner(tunnelId, { status: 'online' });
+      await markTunnelRelayOwner(tunnelId, {
+        status: 'online',
+        machineInfo: {
+          ...machineInfo,
+          registeredCapabilities: capabilities,
+          ...(typeof metadata?.agentVersion === 'string'
+            ? { agentVersion: metadata.agentVersion }
+            : {}),
+        },
+      });
 
       if (accountId) {
         notifyTunnelEvent(accountId, 'tunnel_connected', { tunnelId });
+        // The first real handshake is the materialization boundary. Device
+        // approval creates an offline row before this point and must not expose
+        // a connector for a machine that never connected.
+        void reconcileComputerConnectors(accountId);
       }
 
-      // Sync active permissions to the agent
-      const activePerms = await db
-        .select({
-          permissionId: tunnelPermissions.permissionId,
-          capability: tunnelPermissions.capability,
-          scope: tunnelPermissions.scope,
-          expiresAt: tunnelPermissions.expiresAt,
-        })
-        .from(tunnelPermissions)
-        .where(
-          and(
-            eq(tunnelPermissions.tunnelId, tunnelId),
-            eq(tunnelPermissions.status, 'active'),
-          ),
-        );
-
-      tunnelRelay.sendNotification(tunnelId, 'tunnel.permissions.sync', {
-        permissions: activePerms.map((p) => ({
-          permissionId: p.permissionId,
-          capability: p.capability,
-          scope: p.scope,
-          expiresAt: p.expiresAt?.toISOString() ?? undefined,
-        })),
-      });
+      await syncActiveTunnelPermissions(tunnelId, capabilities);
     } catch (err) {
       console.warn(`[tunnel] Permission sync failed:`, err);
     }
@@ -190,17 +257,68 @@ function startTunnelService(): void {
 
   tunnelRelay.on('message:pong', async ({ tunnelId, params }) => {
     try {
-      markTunnelRelayOwner(tunnelId, { status: 'online' })
-        .catch((err) => console.warn(`[tunnel-heartbeat] DB update failed for ${tunnelId}:`, err));
-
-      const mi = params?.machineInfo;
-      if (mi && typeof mi === 'object' && (mi as any).hostname) {
-        db.update(tunnelConnections)
-          .set({ machineInfo: mi, status: 'online', updatedAt: new Date() })
-          .where(eq(tunnelConnections.tunnelId, tunnelId))
-          .catch(() => {});
+      const metadata = tunnelRelay.getAgentMetadata(tunnelId);
+      const [connection] = await db
+        .select({
+          setupTokenHash: tunnelConnections.setupTokenHash,
+          capabilities: tunnelConnections.capabilities,
+          machineInfo: tunnelConnections.machineInfo,
+        })
+        .from(tunnelConnections)
+        .where(eq(tunnelConnections.tunnelId, tunnelId))
+        .limit(1);
+      if (
+        !connection?.setupTokenHash ||
+        metadata?.credentialFingerprint !==
+          fingerprintTunnelCredentialHash(connection.setupTokenHash)
+      ) {
+        tunnelRelay.disconnectAgent(tunnelId, 4003, 'device credential revoked');
+        return;
       }
-    } catch {}
+
+      const capabilities = effectiveRegisteredCapabilities(
+        params?.capabilities ?? [],
+        connection.capabilities,
+      );
+      if (!capabilities) {
+        tunnelRelay.disconnectAgent(tunnelId, 4003, 'invalid capability registration');
+        return;
+      }
+      const previousCapabilities = Array.isArray(metadata?.capabilities)
+        ? metadata.capabilities
+        : [];
+      tunnelRelay.updateAgentMetadata(tunnelId, { capabilities });
+
+      markTunnelRelayOwner(tunnelId, { status: 'online' }).catch((err) =>
+        console.warn(`[tunnel-heartbeat] DB update failed for ${tunnelId}:`, err),
+      );
+
+      const mi =
+        params?.machineInfo && typeof params.machineInfo === 'object'
+          ? (params.machineInfo as Record<string, unknown>)
+          : {};
+      await db
+        .update(tunnelConnections)
+        .set({
+          machineInfo: {
+            ...((connection.machineInfo as Record<string, unknown> | null) ?? {}),
+            ...mi,
+            registeredCapabilities: capabilities,
+          },
+          status: 'online',
+          updatedAt: new Date(),
+        })
+        .where(eq(tunnelConnections.tunnelId, tunnelId));
+
+      if (
+        previousCapabilities.length !== capabilities.length ||
+        capabilities.some((capability) => !previousCapabilities.includes(capability))
+      ) {
+        await syncActiveTunnelPermissions(tunnelId, capabilities);
+      }
+    } catch (error) {
+      console.warn(`[tunnel-heartbeat] Capability update failed for ${tunnelId}:`, error);
+    }
   });
 
   tunnelRelay.on('agent:timeout', async ({ tunnelId }) => {
@@ -220,11 +338,9 @@ function startTunnelService(): void {
         .update(tunnelPermissions)
         .set({ status: 'expired', updatedAt: new Date() })
         .where(
-          and(
-            eq(tunnelPermissions.status, 'active'),
-            lt(tunnelPermissions.expiresAt, new Date()),
-          ),
+          and(eq(tunnelPermissions.status, 'active'), lt(tunnelPermissions.expiresAt, new Date())),
         );
+      tunnelRateLimiter.cleanup();
 
       // Expire pending device auth requests
       await db
@@ -236,6 +352,21 @@ function startTunnelService(): void {
             lt(tunnelDeviceAuthRequests.expiresAt, new Date()),
           ),
         );
+      await db
+        .update(tunnelDeviceAuthRequests)
+        .set({ setupToken: null, updatedAt: new Date() })
+        .where(
+          and(
+            lt(tunnelDeviceAuthRequests.expiresAt, new Date()),
+            isNotNull(tunnelDeviceAuthRequests.setupToken),
+          ),
+        );
+      // Device-auth rows are a short credential handoff, not an audit log.
+      // Retain terminal metadata for one day for retry diagnostics, then remove
+      // the secret hash, hostname, and account association.
+      await db
+        .delete(tunnelDeviceAuthRequests)
+        .where(lt(tunnelDeviceAuthRequests.expiresAt, new Date(Date.now() - 24 * 60 * 60_000)));
     } catch (err) {
       console.warn('[TUNNEL] Permission cleanup error:', err);
     }
@@ -255,17 +386,14 @@ function stopTunnelService(): void {
   console.log('[TUNNEL] Tunnel service stopped');
 }
 
-function getTunnelServiceStatus(): { enabled: boolean; connectedAgents: number } {
+function getTunnelServiceStatus(): {
+  enabled: boolean;
+  connectedAgents: number;
+} {
   return {
     enabled: config.TUNNEL_ENABLED,
     connectedAgents: tunnelRelay.getConnectedCount(),
   };
 }
 
-export {
-  tunnelApp,
-  wsHandlers,
-  startTunnelService,
-  stopTunnelService,
-  getTunnelServiceStatus,
-};
+export { tunnelApp, wsHandlers, startTunnelService, stopTunnelService, getTunnelServiceStatus };

@@ -95,7 +95,7 @@ The agent's only write is an appended row in the AP ledger and a Slack post. It
 has no access to a payment rail, and nothing in its instructions lets it schedule
 or mark an invoice as paid — that action belongs to a person, every time, with no
 exception for a clean match. Credentials are encrypted in the secrets manager and
-injected at runtime, never shown to the model or written to logs.
+injected at runtime, scoped to the agents you grant them to.
 
 </Step>
 <Step title="Route the batch for approval">
@@ -121,11 +121,9 @@ normal AP process. The agent's part ends at the Slack post.
 Accounts payable is where a mistake costs real money, so the agent's access is
 scoped to match:
 
-- **Isolation.** Every run happens in its own microVM sandbox. The session can
-  reach only Gmail, the AP sheet, and Slack, and nothing else leaves it.
+- **Isolation.** Every run happens in its own isolated sandbox. The session is granted access only to Gmail, the AP sheet, and Slack, and nothing else is written back out.
 - **Scoped secrets.** The Gmail, Sheets, and Slack credentials are encrypted in
-  the secrets manager and injected into the sandbox at runtime, never exposed to
-  the model or the logs.
+  the secrets manager and injected into the sandbox at runtime, scoped to the agents you grant them to.
 - **No payment action, ever.** The agent has no connector, tool, or instruction
   that schedules a payment or marks an invoice as paid. Every invoice, clean or
   flagged, is routed to a person for that decision.

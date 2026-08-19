@@ -17,6 +17,45 @@ flow(
       const r = await ctx.client.as(ctx.P.OWNER).get('/v1/billing/account-state');
       r.status(200);
     });
+    await ctx.step('account state carries the resolved `plan` block', async () => {
+      // `plan` names the plan the account BEHAVES as (trial / per-seat self-heal
+      // applied); `subscription.tier_key` stays the STORED plan Stripe sold.
+      // A fresh owner has no trial and no seat subscription, so the two agree —
+      // that agreement is the invariant this pins, along with the block being
+      // present and fully populated.
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/billing/account-state');
+      const state = r.status(200).json<{
+        plan?: Record<string, unknown>;
+        subscription: { tier_key: string };
+        tier: { name: string };
+      }>();
+      r.body()
+        .exists('$.plan')
+        .exists('$.plan.key')
+        .exists('$.plan.family')
+        .exists('$.plan.label')
+        .exists('$.plan.status')
+        .exists('$.plan.shape')
+        .exists('$.plan.is_grandfathered')
+        .has('$.plan.key', state.subscription.tier_key)
+        .has('$.tier.name', state.subscription.tier_key);
+      if (typeof state.plan?.rank !== 'number') {
+        throw new Error(`plan.rank must be a number, got ${JSON.stringify(state.plan?.rank)}`);
+      }
+      // `is_grandfathered` is resolved from the account's stored
+      // is_grandfathered_free column, so on a shared long-lived fixture account
+      // it is legitimately data-dependent — pin the TYPE, not a fixed value.
+      // (A fixed `false` here flaked the release gate once the shared OWNER
+      // account was grandfathered upstream.)
+      if (typeof state.plan?.is_grandfathered !== 'boolean') {
+        throw new Error(
+          `plan.is_grandfathered must be a boolean, got ${JSON.stringify(state.plan?.is_grandfathered)}`,
+        );
+      }
+      if (!['free', 'team', 'enterprise'].includes(String(state.plan?.family))) {
+        throw new Error(`plan.family must be a public family, got ${String(state.plan?.family)}`);
+      }
+    });
     await ctx.step('OWNER reads the minimal account-state variant → 200', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).get('/v1/billing/account-state/minimal');
       r.status(200);
@@ -42,7 +81,18 @@ flow(
           .has('$.tier.monthly_credits', 2)
           .has('$.credits.total', 2)
           .has('$.credits.monthly', 2)
-          .has('$.credits.can_run', true);
+          .has('$.credits.can_run', true)
+          // billing_state is the unambiguous discriminator every client branches
+          // on. A funded free account is `active`; `can_run:false` must never be
+          // read as "no plan" (see billing/services/billing-state.ts).
+          .has('$.billing_state', 'active')
+          .has('$.has_active_subscription', false)
+          // Lifetime rollups are maintained from credit_ledger. They read 0 on
+          // every account before migration 20260729013905335 because nothing
+          // had incremented them since the Python -> TS rewrite.
+          .exists('$.credits.lifetime_granted')
+          .exists('$.credits.lifetime_purchased')
+          .exists('$.credits.lifetime_used');
       },
     );
   },
@@ -63,6 +113,37 @@ flow(
         .withBearer(ctx.env.internalServiceKey!, 'INTERNAL_CRON')
         .post('/v1/billing/cron/free-tier-rotation', {});
       r.status(200).body().exists('$.processed').exists('$.skipped').exists('$.errors');
+    });
+  },
+);
+
+/**
+ * BILL-16 — the yearly credit rotation cron (billing/index.ts). Same
+ * `requireInternalCronAuth` gate as BILL-13's free-tier-rotation (Bearer or
+ * X-Kortix-Internal-Key must timing-safe-equal INTERNAL_SERVICE_KEY), but
+ * unlike BILL-13 we deliberately do NOT call this one with the real internal
+ * key: a genuine yearly rotation grants/rolls real credits across every
+ * account on the deployment, which is not something ke2e should ever trigger
+ * for real, even against staging. Boundary-only: no/garbage credentials → 401,
+ * proving the route is mounted and gated without ever reaching
+ * processYearlyCreditRotation().
+ */
+flow(
+  'BILL-16',
+  {
+    domain: 'billing',
+    routes: ['POST /v1/billing/cron/yearly-rotation'],
+  },
+  async (ctx) => {
+    await ctx.step('no credentials → 401 (route mounted + gated, rotation never runs)', async () => {
+      const r = await ctx.client.as(ctx.P.ANON).post('/v1/billing/cron/yearly-rotation', {});
+      r.status(401);
+    });
+    await ctx.step('wrong bearer → 401 (never the real internal key)', async () => {
+      const r = await ctx.client
+        .withBearer('ke2e-not-the-internal-key', 'WRONG_TOKEN')
+        .post('/v1/billing/cron/yearly-rotation', {});
+      r.status(401);
     });
   },
 );

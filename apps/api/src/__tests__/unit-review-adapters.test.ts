@@ -2,18 +2,18 @@
  * Review Center adapters — Change Requests folded into the inbox read model.
  */
 import { describe, expect, test } from 'bun:test';
-import type { changeRequests, executorExecutions } from '@kortix/db';
+import type { changeRequests, connectorCalls } from '@kortix/db';
 import {
   CR_ID_PREFIX,
-  EXEC_ID_PREFIX,
+  CALL_ID_PREFIX,
   adapterSourceForId,
   changeRequestToReviewItem,
-  executorExecutionToReviewItem,
+  connectorCallToReviewItem,
   isAdaptedId,
 } from '../projects/review-adapters';
 
 type ChangeRequestRow = typeof changeRequests.$inferSelect;
-type ExecutorExecutionRow = typeof executorExecutions.$inferSelect;
+type ConnectorCallRow = typeof connectorCalls.$inferSelect;
 
 const baseCr: ChangeRequestRow = {
   crId: 'cr-1',
@@ -40,22 +40,22 @@ const baseCr: ChangeRequestRow = {
 };
 
 describe('adapterSourceForId / isAdaptedId', () => {
-  test('recognizes the cr: and exec: prefixes; native ids are not adapted', () => {
+  test('recognizes the cr: and call: prefixes; native ids are not adapted', () => {
     expect(adapterSourceForId('cr:abc')).toBe('cr');
-    expect(adapterSourceForId('exec:abc')).toBe('exec');
+    expect(adapterSourceForId('call:abc')).toBe('call');
     expect(adapterSourceForId('rv-native')).toBeNull();
     expect(isAdaptedId('cr:abc')).toBe(true);
-    expect(isAdaptedId('exec:abc')).toBe(true);
+    expect(isAdaptedId('call:abc')).toBe(true);
     expect(isAdaptedId('rv-native')).toBe(false);
   });
 });
 
-const baseExec: ExecutorExecutionRow = {
+const baseCall: ConnectorCallRow = {
   executionId: 'ex-1',
   accountId: 'acc-1',
   projectId: 'proj-1',
   connectorId: 'conn-1',
-  profileId: null,
+  connectionId: null,
   actionPath: 'gmail.messages.send',
   actingUserId: 'user-1',
   sessionId: null,
@@ -68,21 +68,65 @@ const baseExec: ExecutorExecutionRow = {
   resolvedAt: null,
 };
 
-describe('executorExecutionToReviewItem', () => {
-  test('a pending executor call maps to a needs_you approval item', () => {
-    const item = executorExecutionToReviewItem(baseExec);
-    expect(item.review_item_id).toBe(`${EXEC_ID_PREFIX}ex-1`);
+describe('connectorCallToReviewItem', () => {
+  test('a pending connector call maps to a needs_you approval item', () => {
+    const item = connectorCallToReviewItem(baseCall);
+    expect(item.review_item_id).toBe(`${CALL_ID_PREFIX}ex-1`);
     expect(item.kind).toBe('approval');
     expect(item.status).toBe('needs_you');
     expect(item.title).toBe('Approve: gmail.messages.send');
-    expect(item.detail).toMatchObject({ execution_id: 'ex-1', action_path: 'gmail.messages.send' });
+    expect(item.detail).toMatchObject({
+      execution_id: 'ex-1',
+      action_path: 'gmail.messages.send',
+    });
   });
 
-  test('maps executor risk → review risk (read/write/destructive → low/medium/high)', () => {
-    expect(executorExecutionToReviewItem({ ...baseExec, risk: 'read' }).risk).toBe('low');
-    expect(executorExecutionToReviewItem({ ...baseExec, risk: 'write' }).risk).toBe('medium');
-    expect(executorExecutionToReviewItem({ ...baseExec, risk: 'destructive' }).risk).toBe('high');
-    expect(executorExecutionToReviewItem({ ...baseExec, risk: null }).risk).toBe('medium');
+  test('maps connector risk → review risk (read/write/destructive → low/medium/high)', () => {
+    expect(connectorCallToReviewItem({ ...baseCall, risk: 'read' }).risk).toBe('low');
+    expect(connectorCallToReviewItem({ ...baseCall, risk: 'write' }).risk).toBe('medium');
+    expect(connectorCallToReviewItem({ ...baseCall, risk: 'destructive' }).risk).toBe('high');
+    expect(connectorCallToReviewItem({ ...baseCall, risk: null }).risk).toBe('medium');
+  });
+
+  test('carries the complete redacted parameter preview into Review Center', () => {
+    const argsPreview = {
+      to: ['reviewer@example.com'],
+      subject: 'Approval contract',
+      body: 'The approver must see this body before deciding.',
+      access_token: '[redacted]',
+    };
+    const item = connectorCallToReviewItem(
+      {
+        ...baseCall,
+        resultSummary: {
+          args_preview: argsPreview,
+          args_preview_complete: true,
+        },
+      },
+      { includeArgsPreview: true },
+    );
+
+    expect(item.detail).toMatchObject({
+      args_preview: argsPreview,
+      args_preview_complete: true,
+      args_preview_authorized: true,
+    });
+  });
+
+  test('withholds sensitive parameters when the caller lacks approval authority', () => {
+    const item = connectorCallToReviewItem({
+      ...baseCall,
+      resultSummary: {
+        args_preview: { to: ['private@example.com'], body: 'private body' },
+        args_preview_complete: true,
+      },
+    });
+
+    expect(item.detail).not.toHaveProperty('args_preview');
+    expect(item.detail).toMatchObject({
+      args_preview_complete: false,
+      args_preview_authorized: false,
+    });
   });
 });
 
@@ -94,7 +138,11 @@ describe('changeRequestToReviewItem', () => {
     expect(item.status).toBe('needs_you');
     expect(item.title).toBe('Refresh the pricing page');
     expect(item.summary).toBe('#7 · session/pricing → main');
-    expect(item.detail).toMatchObject({ cr_id: 'cr-1', number: 7, base_ref: 'main' });
+    expect(item.detail).toMatchObject({
+      cr_id: 'cr-1',
+      number: 7,
+      base_ref: 'main',
+    });
     expect(item.acted_at).toBeNull();
     expect(item.created_at).toBe('2026-06-30T10:00:00.000Z');
   });
@@ -112,7 +160,11 @@ describe('changeRequestToReviewItem', () => {
   });
 
   test('a closed CR maps to rejected', () => {
-    const item = changeRequestToReviewItem({ ...baseCr, status: 'closed', closedBy: 'user-3' });
+    const item = changeRequestToReviewItem({
+      ...baseCr,
+      status: 'closed',
+      closedBy: 'user-3',
+    });
     expect(item.status).toBe('rejected');
     expect(item.acted_by).toBe('user-3');
   });
@@ -122,8 +174,16 @@ describe('changeRequestToReviewItem', () => {
       ...baseCr,
       metadata: {
         requested_changes: [
-          { text: 'Fix the first one', by: 'user-9', at: '2026-06-30T11:00:00.000Z' },
-          { text: 'Capitalize each word', by: 'user-9', at: '2026-06-30T12:00:00.000Z' },
+          {
+            text: 'Fix the first one',
+            by: 'user-9',
+            at: '2026-06-30T11:00:00.000Z',
+          },
+          {
+            text: 'Capitalize each word',
+            by: 'user-9',
+            at: '2026-06-30T12:00:00.000Z',
+          },
         ],
       },
     });

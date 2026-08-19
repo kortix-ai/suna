@@ -1,21 +1,15 @@
 'use client';
+import { BasicTool, partInput } from '@/features/session/tool/shared/infrastructure';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
-import {
-  BasicTool,
-  partInput,
-} from '@/features/session/tool/shared/infrastructure';
-import {
-  StopCircle,
-} from 'lucide-react';
-
+import { StopCircleIcon as StopCircle } from '@phosphor-icons/react';
 
 export function AgentStopTool({ part, forceOpen }: ToolProps) {
   const input = partInput(part);
   const agentId = (input.agent_id as string) || '';
   return (
     <BasicTool
-      icon={<StopCircle className="size-3.5 flex-shrink-0" />}
+      icon={<StopCircle className="size-3.5 shrink-0" />}
       trigger={{
         title: 'Stop agent',
         subtitle: agentId ? agentId.slice(-12) : undefined,
@@ -44,4 +38,3 @@ function parseTaskRows(
   }
   return rows;
 }
-

@@ -6,7 +6,6 @@ description: >-
   segment, competitor, price, and the stage deals die in, and posts themes
   plus recommendations to {{alert_channel}}.
 mode: primary
-model: kortix/anthropic/claude-sonnet-5
 permission: allow
 ---
 

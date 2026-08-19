@@ -7,13 +7,20 @@
  * them twice.
  */
 
-import { Segmented } from './agent-editor-primitives';
-import { KORTIX_CLI_CATALOG } from './agent-editor-catalog';
+import { Tabs, TabsListCompact, TabsTriggerCompact } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
-import type { AgentGrantSetV2 } from '@kortix/sdk/projects-client';
-import { useState } from 'react';
+import type { AgentGrantSetV2 } from '@kortix/sdk';
+import { CheckIcon } from '@phosphor-icons/react';
+import { type ReactNode, useState } from 'react';
+import { KORTIX_CLI_CATALOG } from './agent-editor-catalog';
 
 type GrantMode = 'all' | 'pick' | 'none';
+
+const GRANT_MODES: { value: GrantMode; label: string }[] = [
+  { value: 'all', label: 'All' },
+  { value: 'pick', label: 'Pick' },
+  { value: 'none', label: 'None' },
+];
 
 function GrantModeField({
   value,
@@ -30,9 +37,13 @@ function GrantModeField({
 }) {
   const mode: GrantMode =
     value === 'all' ? 'all' : value === 'none' || value === undefined ? 'none' : 'pick';
-  const [wantPick, setWantPick] = useState(Array.isArray(value) && value.length > 0);
+  const [wantPick, setWantPick] = useState(() => Array.isArray(value) && value.length > 0);
   const effectiveMode: GrantMode =
-    value === 'all' ? 'all' : Array.isArray(value) && (value.length > 0 || wantPick) ? 'pick' : mode;
+    value === 'all'
+      ? 'all'
+      : Array.isArray(value) && (value.length > 0 || wantPick)
+        ? 'pick'
+        : mode;
   const selected = new Set(Array.isArray(value) ? value : []);
 
   const pick = (m: GrantMode) => {
@@ -51,20 +62,20 @@ function GrantModeField({
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-center gap-2">
-        <Segmented
-          options={[
-            { value: 'all', label: 'All' },
-            { value: 'pick', label: 'Pick' },
-            { value: 'none', label: 'None' },
-          ]}
-          value={effectiveMode}
-          onChange={(m) => m && pick(m)}
-        />
+        <Tabs value={effectiveMode} onValueChange={(m) => pick(m as GrantMode)} className="w-fit">
+          <TabsListCompact type="default" aria-label="Grant mode">
+            {GRANT_MODES.map((m) => (
+              <TabsTriggerCompact key={m.value} value={m.value}>
+                {m.label}
+              </TabsTriggerCompact>
+            ))}
+          </TabsListCompact>
+        </Tabs>
         {effectiveMode === 'all' && (
-          <span className="text-muted-foreground/60 text-[11px]">{allLabel}</span>
+          <span className="text-muted-foreground text-xs">{allLabel}</span>
         )}
         {effectiveMode === 'none' && (
-          <span className="text-muted-foreground/60 text-[11px]">{noneLabel}</span>
+          <span className="text-muted-foreground text-xs">{noneLabel}</span>
         )}
       </div>
       {effectiveMode === 'pick' ? children({ selected, toggle }) : null}
@@ -80,12 +91,19 @@ export function GrantSetField({
   options,
   emptyLabel,
   allLabel,
+  rowAccessory,
 }: {
   value: AgentGrantSetV2 | undefined;
   onChange: (v: AgentGrantSetV2) => void;
   options: { id: string; label: string }[];
   emptyLabel: string;
   allLabel: string;
+  /** Optional control rendered BESIDE each granted row (e.g. the connectors
+   *  field's "personal" toggle). The row itself is a `<button>`, so an
+   *  interactive accessory cannot be nested inside it — when this returns a
+   *  node the row is wrapped in a flex container and the accessory becomes a
+   *  sibling. Fields that pass nothing render exactly as before. */
+  rowAccessory?: (id: string, isSelected: boolean) => ReactNode;
 }) {
   return (
     <GrantModeField
@@ -96,37 +114,52 @@ export function GrantSetField({
     >
       {({ selected, toggle }) => {
         const optionIds = new Set(options.map((o) => o.id));
-        const orphans = [...selected].filter((id) => !optionIds.has(id)).map((id) => ({ id, label: id }));
+        const orphans: { id: string; label: string }[] = [];
+        for (const id of selected) {
+          if (!optionIds.has(id)) orphans.push({ id, label: id });
+        }
         const rows = [...options, ...orphans];
         return rows.length === 0 ? (
-          <p className="text-muted-foreground/60 text-[11px]">{emptyLabel}</p>
+          <p className="text-muted-foreground text-xs">{emptyLabel}</p>
         ) : (
-          <div className="border-border/60 max-h-40 overflow-y-auto rounded-md border p-1">
+          <div className="border-border/60 max-h-44 overflow-y-auto rounded-md border p-1">
             {rows.map((o) => {
               const isSel = selected.has(o.id);
               const isOrphan = !optionIds.has(o.id);
-              return (
+              const accessory = rowAccessory?.(o.id, isSel);
+              const row = (
                 <button
                   key={o.id}
                   type="button"
                   aria-pressed={isSel}
                   onClick={() => toggle(o.id)}
                   className={cn(
-                    'flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs transition-[color,background-color,transform] active:scale-[0.96]',
+                    'flex items-center gap-2 rounded px-2 py-1.5 text-left text-xs transition-[color,background-color,transform] active:scale-[0.96]',
+                    accessory ? 'min-w-0 flex-1' : 'w-full',
                     isSel ? 'bg-secondary' : 'hover:bg-muted/50',
                   )}
                 >
                   <span
                     className={cn(
-                      'flex size-3.5 shrink-0 items-center justify-center rounded-[4px] border text-[9px]',
-                      isSel ? 'border-foreground bg-foreground text-background' : 'border-border/70',
+                      'flex size-4 shrink-0 items-center justify-center rounded-[4px] border',
+                      isSel
+                        ? 'border-foreground bg-foreground text-background'
+                        : 'border-border/70',
                     )}
                   >
-                    {isSel ? '✓' : ''}
+                    {isSel ? <CheckIcon className="size-2.5" /> : null}
                   </span>
                   <span className="min-w-0 flex-1 truncate font-mono">{o.label}</span>
-                  {isOrphan && <span className="text-kortix-orange">missing</span>}
+                  {isOrphan && <span className="text-kortix-orange shrink-0">missing</span>}
                 </button>
+              );
+              return accessory ? (
+                <div key={o.id} className="flex items-center gap-1">
+                  {row}
+                  {accessory}
+                </div>
+              ) : (
+                row
               );
             })}
           </div>
@@ -148,16 +181,14 @@ export function KortixCliField({
     <GrantModeField
       value={value}
       onChange={onChange}
-      allLabel="Every Kortix-CLI power the launcher holds."
-      noneLabel="No Kortix-CLI powers."
+      allLabel="Everything the person who started the session can do."
+      noneLabel="Deny — nothing granted."
     >
       {({ selected, toggle }) => (
-        <div className="border-border/60 max-h-56 space-y-2 overflow-y-auto rounded-md border p-2">
+        <div className="border-border/60 max-h-64 space-y-3 overflow-y-auto rounded-md border p-2.5">
           {KORTIX_CLI_CATALOG.map((grp) => (
-            <div key={grp.group} className="space-y-1">
-              <p className="text-muted-foreground/70 text-[10px] font-medium tracking-wide uppercase">
-                {grp.group}
-              </p>
+            <div key={grp.group} className="space-y-1.5">
+              <p className="text-muted-foreground text-xs font-medium">{grp.group}</p>
               <div className="flex flex-wrap gap-1">
                 {grp.actions.map((action) => {
                   const isSel = selected.has(action);
@@ -168,7 +199,7 @@ export function KortixCliField({
                       aria-pressed={isSel}
                       onClick={() => toggle(action)}
                       className={cn(
-                        'rounded px-1.5 py-1 font-mono text-[11px] transition-[color,background-color,transform] active:scale-[0.96]',
+                        'rounded px-1.5 py-1 font-mono text-xs transition-[color,background-color,transform] active:scale-[0.96]',
                         isSel
                           ? 'bg-foreground text-background'
                           : 'bg-muted/40 text-muted-foreground hover:bg-muted',

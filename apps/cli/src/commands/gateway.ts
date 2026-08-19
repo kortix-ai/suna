@@ -26,11 +26,12 @@ OpenAI-compatible endpoint. (Connect provider credentials with
 
 Routing:
   routing [get]                     Show the effective default model, fallback
-                                    chain, and vision model (+ where each
+                                    chain, and vision fallback (+ where each
                                     resolves from). --json.
   routing set [flags]               Update the project routing policy:
     --default-model <id>              Default model ("" to clear).
-    --vision-model <id>               Model for image-bearing requests.
+    --vision-model <id>               Vision fallback for image requests that
+                                      use a text-only default model.
     --fallback <id,id,…>              Fallback chain ("" to clear).
     --fallback-on transient|any-error
     --file <path|->                   Full policy JSON (stdin with -).
@@ -53,7 +54,7 @@ Access:
 Observability:
   usage [--days N]                  Request/error/cost totals + by-model. --json.
   logs [--limit N] [--failed]       Recent gateway requests. --json.
-  logs <logId>                      One request's full detail (JSON).
+  logs <logId|requestId>            One request's full detail (JSON).
   test <model…> [--prompt <text>]   Run a prompt through one or more models.
 
 Global options:
@@ -265,7 +266,7 @@ function renderRouting(doc: RoutingPolicyDoc): number {
   process.stdout.write(
     `\n  ${C.dim}EFFECTIVE ROUTING${C.reset}\n` +
       `  default model   ${C.bold}${e.defaultModel}${C.reset} ${C.dim}(${e.defaultModelSource})${C.reset}\n` +
-      `  vision model    ${e.visionModel}\n` +
+      `  vision fallback ${e.visionModel} ${C.dim}(used when the default model cannot see images)${C.reset}\n` +
       `  fallback        ${fb}\n`,
   );
   if (doc.project.rules.length) {
@@ -460,7 +461,7 @@ export async function gatewayLogs(rest: string[], opts: CtxOpts, json: boolean):
   }
   const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
-  // `gateway logs <logId>` fetches one row's full request/response detail.
+  // `gateway logs <logId|requestId>` fetches one row's full request/response detail.
   const id = rest.find((a) => !a.startsWith('-'));
   try {
     if (id) {

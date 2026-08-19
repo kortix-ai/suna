@@ -147,17 +147,35 @@ Docker running when Supabase needs to be reached or started.
 
 ```sh
 pnpm worktree stop <n>
+pnpm worktree stop --all      # every worktree at once
 ```
 
-Kills the web/api/gateway processes. Shared-DB mode leaves the primary Supabase
-running. Isolated-DB mode also stops the worktree's Supabase. Data (DB volume
-for isolated mode, branch, files) is preserved; `start` resumes it.
+Kills the web/api/gateway **process trees** — the dev servers plus the ~15 workers
+each one forks, the Cloudflare tunnel, and `stripe listen` — then verifies they are
+gone before recording the stop. Shared-DB mode leaves the primary Supabase running.
+Isolated-DB mode also stops the worktree's Supabase. Data (DB volume for isolated
+mode, branch, files) is preserved; `start` resumes it.
+
+**Stop what you are not using.** A stack holds ~19 processes and a few GB that
+Turbopack never gives back, so a handful of forgotten stacks will exhaust swap and
+get something OOM-killed. `stop --all` is the end-of-day sweep and the way back
+from stacks orphaned by an OOM kill (their supervisor is gone, so there is no
+`Ctrl+C` left to press). `pnpm worktree doctor` shows what is actually running,
+including worktrees whose recorded status has drifted from reality.
 
 ### `nuke` (alias `rm`) — tear down and free the slot
 
 ```sh
-pnpm worktree nuke <n> [--force]
+pnpm worktree nuke <n> [n2 …] [--force] [--yes]
+pnpm worktree nuke            # TTY: pick from a list, then confirm each
 ```
+
+Accepts one or many worktree names. **Every target is confirmed individually**
+before anything is destroyed (default **No** — answer no to skip one,
+Esc/Ctrl+C to stop the rest); `--yes` or a non-TTY stdin skips the prompts for
+scripts and agents. Bare `pnpm worktree nuke` in a TTY shows the worktree list
+to multi-select targets from (space to select, enter to confirm); the
+interactive menu (`pnpm worktree` → nuke) uses the same picker.
 
 Stops servers, removes the git worktree, **deletes the branch**, drops the slot,
 and frees the app ports. In shared-DB mode it does **not** stop or delete the
@@ -166,6 +184,34 @@ worktree project's Docker containers/volumes/network. By default the branch is
 deleted with `git branch -d` (safe — refuses if unmerged); `--force` uses
 `git worktree remove --force` **and** `git branch -D` (drops unmerged commits).
 Only `nuke` after the work is merged or pushed.
+
+### `nuke --all` — bulk teardown with time rules
+
+```sh
+pnpm worktree nuke --all [--older-than <dur>] [--idle <dur>] [--include-dirty] [--dry-run] [--yes]
+pnpm worktree nuke --all --older-than 2d --yes      # everything created >2 days ago
+pnpm worktree nuke --all --idle 12h --dry-run       # preview: nothing touched in 12h
+```
+
+Scans every registry slot, prints one `keep`/`nuke` line per worktree with the
+reason, then tears down the selected ones with the same per-worktree `nukeOne`
+path as `nuke <n>` (stack stop, isolated-DB Docker cleanup, `git worktree
+remove`, `git branch -d`, slot freed). Selection rules, in order:
+
+- a **running** stack (web or api port answering) is always kept;
+- a slot whose **directory is missing** is always freed;
+- **uncommitted tracked changes** keep the worktree unless `--include-dirty`;
+- `--older-than <dur>` compares the registry `createdAt`;
+- `--idle <dur>` compares last activity = max(HEAD commit time, worktree index
+  mtime); a slot with no readable activity falls back to `createdAt`.
+
+Durations are `<n>m|h|d|w` (`30m`, `12h`, `3d`, `2w`). Both time rules must
+pass when both are given. With no time rule every stopped, clean slot is
+selected. A TTY asks for one confirmation for the whole batch; `--yes` or a
+non-TTY stdin skips it. Local branches survive as with `nuke <n>` (`-d` only,
+`--force` for `-D`), so committed work is never lost — only the checkout and
+its `node_modules` go. `bun` reads stdin: when calling from a shell loop, pass
+`</dev/null`.
 
 ### `pr` — push the branch and open a pull request
 
@@ -182,13 +228,37 @@ If `gh` isn't installed it still pushes and prints a compare URL. On a fork, gh
 may ask which base repo — answer the prompt (or pass `--repo`). Requires the
 push remote (`origin`) to be authenticated for your account.
 
-### `list` (alias `ls`) — table of all worktrees
+### `list` (alias `ls`) — every worktree and its ports
 
 ```sh
-pnpm worktree list
+pnpm worktree list           # all of them, running first then alphabetical
+pnpm worktree list md        # substring filter
+pnpm worktree list --json    # machine-readable, for scripts and jq
 ```
 
-Shows name, slot, status, DB mode, branch, and the web/api/db/studio ports.
+One line per worktree: live status, name, and its web/api ports, with a dot
+leader between the name and the port so the eye cannot slip a row. Both ports
+are OSC 8 hyperlinks — ⌘-click them in a supporting terminal.
+
+Status is a **real listening-port scan** (one `lsof` for the whole box, ~40ms),
+not the registry field, so it cannot go stale the way a recorded status can. If
+`lsof` is unavailable the command falls back to the registry and says so in the
+footer. `list` never writes the registry — `doctor` owns drift repair.
+
+Constants live in the footer instead of in every row: the shared Supabase
+db/studio ports, the counts, and — when any worktree runs `--db` — a note that
+DB modes are mixed.
+
+A filter matching exactly one worktree expands into full clickable URLs:
+
+```
+  ○ md-table  slot 19 · stopped · shared db
+
+    web     http://localhost:14900
+    api     http://localhost:14908/v1
+    studio  http://localhost:54323
+    path    /Users/you/root/kortix/suna-md-table
+```
 
 ### `status` — live health
 

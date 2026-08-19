@@ -1,5 +1,10 @@
 import type { FinishReason, LanguageModelUsage, ProviderMetadata } from 'ai';
 import { looksLikeTerminalAuthFailure } from '../../errors';
+import {
+  extractUpstreamErrorDetail,
+  isGenericStatusText,
+  parseUpstreamErrorBody,
+} from '../../http/parse-upstream-error';
 
 // Adapts the AI SDK's provider-neutral stream/result back into the OpenAI
 // chat.completions SSE + JSON shapes the gateway pipeline (probe, relay, usage
@@ -13,7 +18,10 @@ export interface OpenAiUsage {
   prompt_tokens: number;
   completion_tokens: number;
   total_tokens: number;
-  prompt_tokens_details?: { cached_tokens: number };
+  prompt_tokens_details?: {
+    cached_tokens?: number;
+    cache_write_tokens?: number;
+  };
   completion_tokens_details?: { reasoning_tokens: number };
   cost?: number;
 }
@@ -35,10 +43,10 @@ function costFromProviderMetadata(metadata: ProviderMetadata | undefined): numbe
 }
 
 // LanguageModelUsage → OpenAI `usage`. `inputTokens` is the full prompt count
-// (cached included), matching OpenAI's `prompt_tokens`; the cached subset is
-// broken out under `prompt_tokens_details.cached_tokens` exactly as the native
-// path forwards it, so the gateway's usage extractor + pricing table produce the
-// same cost on both engines. `cost`, when present, is the real upstream-billed
+// (cache reads and writes included), matching OpenAI's `prompt_tokens`; both
+// subsets are broken out under `prompt_tokens_details` exactly as the native
+// path forwards them, so the gateway's usage extractor + pricing table produce
+// the same cost on both engines. `cost`, when present, is the real upstream-billed
 // dollar figure (e.g. OpenRouter's `usage.cost`) — the gateway's cost-hint
 // extractor (usage/extract.ts normalizeUsageChunk) reads it as
 // `upstreamCostHint` and pricing.ts prefers it whenever no catalog price is
@@ -51,6 +59,7 @@ export function mapUsage(
   const prompt = usage?.inputTokens ?? 0;
   const completion = usage?.outputTokens ?? 0;
   const cached = usage?.inputTokenDetails?.cacheReadTokens ?? 0;
+  const cacheWrite = usage?.inputTokenDetails?.cacheWriteTokens ?? 0;
   const reasoning = usage?.outputTokenDetails?.reasoningTokens ?? 0;
   const total = usage?.totalTokens ?? prompt + completion;
   const out: OpenAiUsage = {
@@ -58,7 +67,12 @@ export function mapUsage(
     completion_tokens: completion,
     total_tokens: total,
   };
-  if (cached > 0) out.prompt_tokens_details = { cached_tokens: cached };
+  if (cached > 0 || cacheWrite > 0) {
+    out.prompt_tokens_details = {
+      ...(cached > 0 ? { cached_tokens: cached } : {}),
+      ...(cacheWrite > 0 ? { cache_write_tokens: cacheWrite } : {}),
+    };
+  }
   if (reasoning > 0) out.completion_tokens_details = { reasoning_tokens: reasoning };
   const cost = costFromProviderMetadata(providerMetadata);
   if (cost !== undefined) out.cost = cost;
@@ -87,6 +101,18 @@ function chatId(): string {
 function sse(obj: unknown): Uint8Array {
   return enc.encode(`data: ${JSON.stringify(obj)}\n\n`);
 }
+
+// SSE comment line — ignored by every SSE/OpenAI client (and by the gateway's
+// own probe, which only parses `data:` lines), so it is invisible payload.
+//
+// Emitted the moment the AI SDK reports the upstream stream has started. Before
+// this, the bridge produced its first byte only on the first `text-delta` /
+// `reasoning-delta`: `start` and `start-step` fell through the switch silently,
+// so the entire prefill window looked byte-identical to a dead upstream. On a
+// large context that window routinely outran the probe's deadline and a healthy
+// turn was cancelled. One byte at stream-open is all it takes to tell the two
+// apart.
+const STREAM_OPEN_FRAME = enc.encode(': keep-alive\n\n');
 
 interface StreamCtx {
   model: string;
@@ -148,6 +174,14 @@ export function openAiSseFromFullStream(
           if (next.done) break;
           const part = next.value;
           switch (part.type) {
+            case 'start':
+            case 'start-step': {
+              // Liveness only — carries no model output, so it must not open a
+              // `data:` frame (that would make the probe treat a prefilling
+              // stream as having produced content).
+              emit(STREAM_OPEN_FRAME);
+              break;
+            }
             case 'text-delta': {
               if (!roleSent) {
                 emit(delta({ role: 'assistant', content: '' }));
@@ -252,7 +286,7 @@ export function openAiSseFromFullStream(
               // structurally rather than assuming one specific class.
               const errObj =
                 err && typeof err === 'object' ? (err as Record<string, unknown>) : undefined;
-              const message =
+              const rawMessage =
                 err instanceof Error
                   ? err.message
                   : typeof err === 'string'
@@ -269,10 +303,75 @@ export function openAiSseFromFullStream(
               const code =
                 typeof rawCode === 'number' || typeof rawCode === 'string'
                   ? rawCode
-                  : looksLikeTerminalAuthFailure(message)
+                  : looksLikeTerminalAuthFailure(rawMessage)
                     ? 401
                     : undefined;
-              emit(sse({ error: { message, ...(code != null ? { code } : {}) } }));
+              // `@ai-sdk/*` wraps an HTTP failure in an APICallError whose
+              // `.message` is the upstream's real `error.message` ONLY when the
+              // body parsed against the provider's error schema; if it didn't (a
+              // non-OpenAI-shaped error, an HTML error page, a plain string,
+              // ...) the AI SDK falls back to `response.statusText` — a generic
+              // "Bad Request" / "Internal Server Error" / "Bad Gateway" that
+              // tells the caller nothing. The actionable message then lives
+              // ONLY in `.responseBody` (raw) / `.data` (parsed when the schema
+              // matched). Mine those for the real message whenever the
+              // `.message` is a generic status text, so the caller sees "context
+              // length exceeded from messages" (and the gateway classifies a
+              // 400 as 400) instead of a useless "Bad Gateway". Keep the
+              // original generic message + the raw body in `detail` so a
+              // diagnosis that needs them still can. (2026-08-01: upstream 400
+              // surfaced as "Bad Gateway".)
+              let message = rawMessage;
+              let detailCode: string | number | undefined;
+              if (err instanceof Error && isGenericStatusText(rawMessage)) {
+                // `.data` is the schema-PARSED body (only present when it matched
+                // the provider's error schema — in which case `.message` would
+                // usually already be the real one, but mine it anyway in case a
+                // custom errorToMessage returned a generic value); `.responseBody`
+                // is the RAW string, the reliable source for everything else.
+                const fromData = extractUpstreamErrorDetail(errObj?.data);
+                const fromBody =
+                  typeof errObj?.responseBody === 'string' && errObj.responseBody.length > 0
+                    ? parseUpstreamErrorBody(errObj.responseBody, rawMessage)
+                    : null;
+                const mined = fromData ?? fromBody;
+                if (mined && mined.message && !isGenericStatusText(mined.message)) {
+                  message = mined.message;
+                  detailCode = mined.code;
+                }
+              }
+              // `@ai-sdk/*`'s APICallError also stashes the actionable fields
+              // (`.responseBody` raw, `.data` parsed, `.url`) here — keep them
+              // on the emitted frame's `detail` so `sseErrorFrame` carries them
+              // to the logs. Bounded so a huge upstream body can't blow up a log
+              // line.
+              const detail: Record<string, unknown> = {};
+              const responseBody = errObj?.responseBody;
+              if (typeof responseBody === 'string' && responseBody.length > 0) {
+                detail.responseBody = responseBody.slice(0, 2000);
+              }
+              if (errObj?.data !== undefined) detail.data = errObj.data;
+              if (typeof errObj?.url === 'string') detail.url = errObj.url;
+              // If a body-mined STRING code is present AND there is no numeric
+              // status code, the string IS the frame's code (preserves the
+              // existing contract for plain-object error parts like the
+              // "overloaded_error" frame — `upstream_code` stays the string).
+              // When a numeric status code IS available (the APICallError case),
+              // it MUST win as `code` so the pipeline's statusForErrorFrame
+              // classifies the HTTP status correctly (a 400 as 400, not a blanket
+              // 502 "Bad Gateway"); the upstream's own string code survives in
+              // `detail` (responseBody/data) for anything that needs it.
+              const finalCode =
+                typeof code === 'number' || detailCode === undefined ? code : detailCode;
+              emit(
+                sse({
+                  error: {
+                    message,
+                    ...(finalCode != null ? { code: finalCode } : {}),
+                    ...(Object.keys(detail).length > 0 ? detail : {}),
+                  },
+                }),
+              );
               break;
             }
             default:

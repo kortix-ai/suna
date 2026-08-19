@@ -1,0 +1,104 @@
+# Kortix as a Backend (KaaB) — v1 Plan
+
+Status: Historical and superseded
+
+> This document records the original v1 design. It is not current API
+> guidance. The product removed customer-reference usage attribution,
+> per-reference limits, and customer-reference connector selection. Use
+> [Drive Kortix as a Backend](./KORTIX_AS_A_BACKEND_GUIDE.md) for the current
+> session, connection, scope, and cost contracts.
+
+> **Historical runtime scope.** This plan uses the published
+> `opencode_model` compatibility name and the OpenCode REST path.
+
+## 0. TL;DR
+
+**The ask:** let a third party wrap Kortix as a backend — many end-users on **one shared agent + repo**, each bringing **their own** connectors, model, and context, passed **at session start**, overriding the agent's defaults.
+
+**The finding (verified in-repo):** ~80% of this **already ships**. The session-create contract already accepts per-session overrides, by reference, broker-safe. This is **activation + two small gaps**, not a rewrite.
+
+**The shape:** a session is `{ config-with-optional-overrides, provenance }`. **Origin** decides who may override what and how the session behaves; **overrides** carry references; the broker resolves them server-side. Internal Kortix = `origin: user`, no overrides → **byte-identical to today**. Not a mode toggle — one pipeline, policy branches on the origin enum.
+
+## 1. Already works today (use it now)
+
+Session create — `POST /v1/projects/:id/sessions` ([contract `index.ts:298`, `.strict()`](../packages/api-contract/src/index.ts); core [`lib/sessions.ts:434`](../apps/api/src/projects/lib/sessions.ts)) — already accepts and overrides-over-defaults:
+
+| Dimension | Field today | Safe because | Gotcha |
+| --- | --- | --- | --- |
+| **Connectors** | `connector_bindings: {alias: {connection_id}}` | broker resolves per gateway call (`resolveSessionConnectorConnection(sessionId, alias)`); session binding beats default; **credential never enters the request or sandbox** | **all-or-nothing**: bind any → every *unbound* alias goes null (§4.1) |
+| **Model** | `opencode_model` | inline id, not a secret; catalog-validated | must be opencode ref form `kortix/<id>` — a bare wire id **silently drops** to default |
+| **Agent** | `agent_name` | per-resource `agent.read` gate | soft-bound — the runtime prompt's `agent` can still switch it (still grant-gated) |
+| **End-user context** | `runtime_context` (scalar map) | credential-like keys regex-rejected → `KORTIX_SESSION_CONTEXT` env | non-secret only; 64 keys / 16KB cap |
+
+Connectors already have **user-owned connections decoupled from the agent** (`connector_connections` + encrypted `connection_credentials`, migration `20260712190000000`). **That is exactly "each user brings their own, pass the reference."**
+
+## 2. Auth — how the wrapper connects
+
+**Kortix authenticates the wrapper; the wrapper vouches for its end-user.** (Stripe-Connect / Twilio-subaccount model.)
+
+- **Caller = any programmatic customer credential** *(REV 3 — shipped in PR #5147; supersedes the SA-only stance below)*: the **account API key / PAT** (`kortix_pat_` — the credential the Tokens UI mints as "Create API key"), a **Service Account** (`kortix_sa_`), or a dedicated account API key (`kortix_`, `apiKeyType='user'`, dormant until issuance ships). All resolve `origin: backend`. **Why the reversal from SA-only:** a fresh service account has *no* IAM policy binding — `createServiceAccount` attaches none, the engine skips membership for SAs, and granting `project.session.start` requires a custom role + per-project token-principal policy, both behind the enterprise-only `rbac` entitlement. SA-only would be dark for every non-enterprise account. The PAT inherits its creator's project membership → works on every tier with zero IAM setup. SA remains the *recommended* credential for enterprise/CI (deny-by-default governance, survives offboarding, independently revocable). Hard exclusions, enforced with regression tests: the **internal sandbox key** (`kortix_sb_`, the `KORTIX_TOKEN` inside every sandbox) and **any agent-scoped token** are never backend — an in-session agent cannot vouch for a phantom end-user.
+- **End-user identity = a parameter, not an auth principal** — the wrapper passes `end_user_ref` (its own user id) + that user's `connection_id`s. Kortix records `origin: backend`, resolves *that user's* connections, attributes usage to `end_user_ref`. **End-users never authenticate to Kortix.** Scales to 100k with no per-user login and no subject-identity system.
+
+**Developer UX (the whole integration — zero-setup path, any tier):**
+```
+1. Settings → Tokens → Create API key → paste kortix_pat_… into backend env  (once)
+2. Per end-user: store their credential once → get connection_id                (server-to-server)
+3. POST /sessions  (Bearer kortix_pat_…)
+   { agent_name, end_user_ref:"user-123", connector_bindings:{ gmail:{connection_id} } }
+```
+**Enterprise/CI path (least privilege):** New service account → attach policy (`session.start` + connections) → same call with `Bearer kortix_sa_…`.
+Base case (shared agent, no per-user connectors) = steps 1–2 only.
+
+**Direct streaming (optional):** to let an end-user's browser stream a session directly, the backend mints a **short-lived, session-scoped token** for that one session and hands *that* to the browser — never the `kortix_sa_` key. Governed by the existing PAT max-lifetime / idle-revoke policy.
+
+## 3. The 3 gaps to build
+
+1. **`origin` as a first-class field + policy gate** (the spine). Today it's informal (`metadata.source='trigger:cron'`). Promote to `origin: user|trigger|schedule|backend` + `end_user_ref`, resolved once at create in `sessions.ts`. It gates **which override fields a caller may set** (only `backend` may set connector/secret refs; `user` only model) and **behavior** (approval relay, attribution). Small: column + resolve-at-create + a `canOverride(origin, field)` check.
+2. **Secrets by reference** (the one net-new config dim). Merge a referenced secret bundle in **`resolveOwnerRawEnv`** (the hot-push path), not just boot (§4.2). Scope split: `connector`-scope = broker, never in sandbox = always safe; `runtime`-scope enters the sandbox = only safe while the wrapper **proxies chat** (end-users have no raw sandbox access).
+3. **Skills subset** (v2-manifest only, mostly deferred). Intersect a requested subset with each agent's compiled `permission.skill` grant in `buildSessionSandboxEnvVars`. *Selecting* repo skills = clean; *injecting new* skills = untrusted code = out of scope.
+
+**Enablers:** a **server-to-server connector-connection mint** for the wrapper; softening the **all-or-nothing binding** (a "bind these, inherit rest" mode).
+
+## 4. Edge cases (the parts that bite)
+
+**4.1 Connector all-or-nothing (verified).** ✅ **DECIDED + SHIPPED.** Bind one connector and every unbound alias resolves null → that connector goes dark for the session. *Resolution:* `inherit_unbound: true` shipped as an **opt-in** session-create flag (contract + `project_sessions.connector_bindings_inherit_unbound` + the resolver gate), and **all-or-nothing remains the DEFAULT** — the resolver still fails closed unless the flag is set. Opt-in was chosen over flipping the default so that adding a connection can never silently change what an existing session resolves; the safe-but-surprising behaviour stays the one you get without asking. `require_connectors` sets the flag automatically, since requiring one personal connector must not null the agent's others.
+
+**4.2 Secret hot-push clobber (verified, the killer).** Every prompt re-pushes the project snapshot; a boot-only secret override reverts on turn 1. *Handling:* the merge MUST live in `resolveOwnerRawEnv`, not only boot. Non-negotiable.
+
+**4.3 Session-sharing / resume identity leak.** A `backend` session resumed or viewed by a teammate (or the wrapper's own admin) must NOT resolve the *viewer's* connections. *Handling:* **lock the resolved connection set to the session at start** (bindings are already session rows) — never re-resolve by the current actor. `backend` sessions default `visibility: private`.
+
+**4.4 Connection authorization (cross-tenant).** A service account referencing a `connection_id` it doesn't own must return 403 (already: `validateSessionConnectorBindings`, same account+project+active). Also reject a connection for a connector the **agent isn't granted** (already: `agentMayUseConnector` fold) — keep both.
+
+**4.5 Connection revoked mid-session.** End-user disconnects their Gmail while a session is live. *Handling:* the broker fails **closed** — a bound-but-revoked connection returns null, never falls back to the shared default (verified). The wrapper must surface "reconnect".
+
+**4.6 Origin spoofing.** *(updated for REV 3)* No caller may claim `origin: backend` via the body — origin is **derived from the caller's token kind** (`authType` + `apiKeyType` + agent-scope), never accepted from the request. The spoofing surface that matters: the **in-sandbox `KORTIX_TOKEN`** (`apiKey`+`sandbox`) and **agent-scoped tokens** must never resolve backend — enforced with a *positive* `apiKeyType==='user'` check (a missing/unknown type can never be promoted) and an explicit agent-scope exclusion, both regression-tested. `end_user_ref` is trusted only from a backend-origin caller; anyone else supplying it gets `403 origin_override_forbidden`. The queued-create path replays the same derivation signals captured at enqueue time, so backpressure can't degrade or upgrade an origin.
+
+**4.7 Model not servable / wrong form.** *Handling:* normalize via `toOpencodeModelRef` and **fail-fast** at create with `isModelServableForAccount` (reuses the request-time resolver) — never silently fall to default.
+
+**4.8 Idempotent retries.** Session create already takes an idempotency key; a retried start must not double-create or double-charge. *Handling:* require the wrapper to send it; document it.
+
+**4.9 Warm-pool / snapshot reuse.** A recycled warm sandbox must not carry a prior session's overridden env/secrets. *Verify:* env is (re)pushed per session at boot + hot-push — confirm no residual from the pool image before GA.
+
+**4.10 Per-end-user cost & concurrency.** ✅ **SHIPPED.** Caps were account-level only, so one end-user could exhaust the account cap and block everyone. Now: `usage_events.end_user_ref` (server-derived, partial-indexed) with `GET /v1/usage?end_user_ref=…` and `group_by=end_user_ref`; plus an opt-in per-`end_user_ref` live-session cap (`KORTIX_BACKEND_PER_ORIGIN_SESSION_LIMIT` → `429 per_origin_session_limit`) checked alongside the account cap at create. Caveats recorded in the guide: rows predating the column (and all non-session spend) are `NULL` = unattributed and excluded from the rollup, and the cap shares the account cap's check-then-act race, so it is a runaway guard rather than a hard quota.
+
+**4.11 Trigger/webhook on behalf of an end-user.** A webhook that should run as end-user X needs `origin: trigger` **plus** X's `end_user_ref` and connection binding. Let a trigger carry an `end_user_ref` plus connector bindings so origin and overrides compose — the wrapper's most powerful pattern (event → the right user's session).
+
+## 5. Build order
+
+1. ✅ **SHIPPED (PR #5147)** — `origin` field + resolver + `canOverride` policy gate, incl. REV 3 backend credentials (PAT/SA/user-apiKey), sandbox+agent-scope exclusions, queued-create signal carry, and the Tokens-UI "Using the API" story.
+2. Document + expose the shipping path (connectors/model/agent/context) as the "backend" contract, with §4 gotchas. **This alone makes base-agent wrapping real today.**
+3. ✅ **SHIPPED** — Server-to-server connector-connection mint + all-or-nothing softening (4.1): `inherit_unbound` (opt-in, default unchanged), multiple connections per connector (team + per-member, label-keyed, per-owner defaults), `require_connectors` + the `CONNECTOR_CONNECTION_REQUIRED` gate, agent-declared `connectors_personal`, and the owner/admin roster.
+4. ✅ **SHIPPED (PR #5154, stacked on #5147)** — Secret-bundle by reference: a backend-only per-session `secrets` allowlist by identifier. Pure NARROWING — injected env = (agent grant) ∩ (allowlist), enforced at BOTH sandbox boot and hot-push (the clobber fix); `[]` = zero secrets; null = byte-identical to today. Immutable first-class column, 403/400/404/409 validation. (Deferred: create-time ambiguity 409, silent-drop warning, web UX.)
+5. Skills subset (v2, optional).
+
+Each new contract field needs a schema add + a ke2e route-coverage test (the `.strict()` contract + coverage gate); transport is free (body flows verbatim to the core).
+
+## 6. Open decisions
+
+1. ~~**All-or-nothing vs inherit-unbound** connector binding (4.1)~~ — ✅ **RESOLVED:** all-or-nothing stays the default; `inherit_unbound: true` is opt-in. See 4.1.
+2. **Runtime-secret overrides**: allow at all in v1, or connector-scope only until untrusted-sandbox hardening exists?
+3. ~~**Native per-`end_user_ref` caps/concurrency** (4.10)~~ — ✅ **RESOLVED: built.** Usage is attributed per `end_user_ref` on `usage_events` (server-derived, with `?end_user_ref=` filter and `group_by=end_user_ref`), and `KORTIX_BACKEND_PER_ORIGIN_SESSION_LIMIT` caps live sessions per end-user (opt-in, `429 per_origin_session_limit`). Both denormalize/derive server-side rather than joining on the client-supplied `session_id`, which is spoofable on the legacy router path.
+
+## 7. Explicitly out of scope (v1)
+
+Per-end-user **custom code** (new skills/connectors — untrusted code); per-end-user **file/memory state** + the release/overlay machinery (a proxying wrapper doesn't need it); a Kortix-hosted end-user UI. These return only if a wrapper needs untrusted **direct** sandbox access — a later phase, not now.

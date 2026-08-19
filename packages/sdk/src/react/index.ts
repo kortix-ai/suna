@@ -13,6 +13,7 @@ export {
   rejectQuestion,
   classifySendError,
   type KortixSendError,
+  type KortixSendErrorConnector,
   type KortixSendErrorKind,
   type SendState,
 } from './use-session';
@@ -57,12 +58,18 @@ export * from './use-kortix-master';
 export {
   useSessionSend,
   beginOptimisticSend,
+  markOptimisticSendDispatched,
   abandonOptimisticSend,
   recoverFromSendFailure,
   sendAndRecover,
+  sendWithReceipt,
+  stopWithReceipt,
+  STOP_HOLD_DEADLINE_MS,
   applyOptimisticAbort,
   replayStartStash,
   type OpenCodeMessagesClient,
+  type SendWithReceiptArgs,
+  type StopWithReceiptOptions,
   type SendRecoveryOptions,
   type SendAndRecoverArgs,
   type SendAndRecoverResult,
@@ -93,3 +100,43 @@ export { useProjectSecrets, projectSecretsKey } from './use-project-secrets';
 export { useProjectTriggers, projectTriggersKey } from './use-project-triggers';
 export { useChangeRequests, changeRequestsKey } from './use-change-requests';
 export { useGatewayRoutingPolicy, gatewayRoutingPolicyKey } from './use-gateway-routing-policy';
+export {
+  useProjectApps,
+  useAppDeployments,
+  useAppAccess,
+  projectAppsKey,
+  appDeploymentsKey,
+} from './use-project-apps';
+
+// The expected "no compaction model configured" configuration state thrown by
+// `useSummarizeOpenCodeSession`'s mutation when every model-resolution fallback
+// tier fails. Re-exported here so hosts + the telemetry noise gate can
+// `instanceof`-match it without reaching into the hook's internal path.
+export { NoCompactionModelError } from './use-opencode-sessions/no-compaction-model-error';
+export * from './use-admin-accounts';
+export * from './use-admin-projects';
+export * from './use-admin-analytics';
+export * from './use-admin-activity-analytics';
+export * from './use-admin-feedback';
+export * from './use-system-status';
+export * from './use-ops-overview';
+export * from './use-admin-billing';
+export * from './use-impersonation';
+export * from './use-teams-installations';
+export * from './use-tunnel';
+export * from './use-admin-sandboxes';
+export * from './use-authenticated-preview-url';
+export * from './run-pty-command';
+export * from './runtime-actions';
+
+// The client-cache-unification `qk` key factory (rooted at `'kx'`, disjoint
+// from `kortixKeys`'s `'kortix'` root above) + its four freshness tiers, the
+// single `useProjectName` accessor, and the invalidation/optimistic-write
+// helpers that keep the projects-list and project-detail caches in sync. See
+// `query-keys.ts` for why the root segment is `'kx'` and not `'kortix'`.
+export * from './query-keys';
+export * from './query-contracts';
+export * from './use-project-name';
+export * from './use-project-session';
+export * from './invalidate-project';
+export * from './use-feature-flag';

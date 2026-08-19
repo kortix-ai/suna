@@ -3,12 +3,13 @@ import { printBanner } from './banner.ts';
 import { runAccess } from './commands/access.ts';
 import { runAccounts } from './commands/accounts.ts';
 import { runAgents } from './commands/agents.ts';
+import { runApps } from './commands/apps.ts';
 import { runChannels } from './commands/channels.ts';
 import { runConnectors } from './commands/connectors.ts';
 import { runCr } from './commands/cr.ts';
 import { runEnv } from './commands/env.ts';
-import { runExecutor } from './commands/executor.ts';
 import { runFiles } from './commands/files.ts';
+import { runGitCredential } from './commands/git-credential.ts';
 import { runGateway } from './commands/gateway.ts';
 import { runGrants } from './commands/grants.ts';
 import { runHosts } from './commands/hosts.ts';
@@ -19,23 +20,34 @@ import { runMarketplace } from './commands/marketplace.ts';
 import { runProjects } from './commands/projects.ts';
 import { runProviders } from './commands/providers.ts';
 import { runRegistry } from './commands/registry.ts';
+import { runAudit } from './commands/audit.ts';
 import { runRoles } from './commands/roles.ts';
 import { runSandboxes } from './commands/sandboxes.ts';
 import { runSchema } from './commands/schema.ts';
 import { runSecrets } from './commands/secrets.ts';
 import { runSelfHost } from './commands/self-host.ts';
 import { runSessionsChat } from './commands/sessions-chat.ts';
+import { runSessionsConnect } from './commands/sessions-connect.ts';
 import { runSessions } from './commands/sessions.ts';
 import { runShip } from './commands/ship.ts';
-import { runSkills } from './commands/skills.ts';
+import { SYSTEM_SKILLS_COMMAND, runSystemSkills } from './commands/system-skills.ts';
 import { runTriggers } from './commands/triggers.ts';
 import { runUninstall } from './commands/uninstall.ts';
 import { runUpdate } from './commands/update.ts';
 import { runValidate } from './commands/validate.ts';
 import { runWhoami } from './commands/whoami.ts';
+import { runDoctor } from './commands/doctor.ts';
 import { renderContext, renderHostNotice } from './host-notice.ts';
+import { printPermissionDenialIdentity } from './token-denial.ts';
 import { C, header, pad, rule, visibleWidth } from './style.ts';
-import { getUpdateNotice } from './update-check.ts';
+import { confirm } from './prompts.ts';
+import {
+  getUpdateNotice,
+  isUpdateSnoozed,
+  renderUpdateBox,
+  resolveUpdateStatus,
+  snoozeUpdate,
+} from './update-check.ts';
 
 // CI bakes the real version via --define process.env.KORTIX_CLI_VERSION (the
 // unified X.Y.Z on release, X.Y.Z-dev.<sha> on dev). This fallback only applies
@@ -59,42 +71,66 @@ interface CommandTier {
   sections: readonly CommandSection[];
 }
 
-// The help layout is three tiers matching how you actually think about the CLI:
-// what lives OUTSIDE any project (who you are, which cloud/account, which
-// projects exist), what operates ON the linked project (its code, its agents &
-// integrations, its sessions, its access), and the CLI tool itself. Order +
-// membership here IS the layout.
+// The help layout leads with the navigable hierarchy — Host › Account ›
+// Project › Session, top-down, each with its `use` selection verb — then the
+// feature bands that operate ON the linked project, then the CLI tool itself.
+// You sign into a HOST, pick an ACCOUNT within it, pick a PROJECT within that,
+// and open SESSIONS in the project. Order + membership here IS the layout.
 const TIERS: readonly CommandTier[] = [
+  // Deliberately the first band on the screen. An agent in any harness that
+  // holds only this binary and a token has to be able to find, unprompted, the
+  // one command that teaches it the platform — so it leads, and its blurb says
+  // what it is for in plain words rather than naming a noun ("skills") the
+  // reader does not have a definition for yet.
   {
-    label: 'Account',
+    label: 'Start here',
     sections: [
       {
-        title: 'Authentication',
+        title: '',
         commands: [
-          { name: 'login', blurb: 'Authenticate against the Kortix cloud' },
-          { name: 'logout', blurb: 'Remove the stored auth token' },
-          { name: 'whoami', blurb: 'Show the currently authenticated user' },
-          { name: 'token', blurb: 'Show the active token context (project/session/agent grants)' },
+          {
+            name: 'system-skills',
+            args: '[get <name>]',
+            blurb: 'Learn how to drive Kortix — the platform docs, served live by your host',
+          },
         ],
       },
+    ],
+  },
+  {
+    label: 'Where you are  (host › account › project › session)',
+    sections: [
       {
-        title: 'Hosts & accounts',
+        title: 'Sign in — per host',
         commands: [
-          { name: 'hosts', args: '<subcommand>', blurb: 'Manage + switch Kortix API hosts' },
           {
-            name: 'accounts',
+            name: 'hosts',
             args: '<subcommand>',
-            blurb: 'List + switch the active account (multi-account logins)',
+            blurb: 'Sign in + switch Kortix instances (login/logout/use/ls)',
           },
+          { name: 'login', blurb: 'Sign in to the active host (shortcut for `hosts login`)' },
+          { name: 'logout', blurb: 'Sign out of the active host (shortcut for `hosts logout`)' },
+          { name: 'whoami', blurb: 'Inspect the active host — signed-in user + account' },
+          { name: 'token', blurb: 'Inspect the active token context (project/session/agent grants)' },
           {
             name: 'self-host',
             args: '<subcommand>',
-            blurb: 'Run your own Kortix Cloud from Docker images',
+            blurb: 'Run your own Kortix instance from Docker images',
           },
         ],
       },
       {
-        title: 'Projects',
+        title: 'Account — within the host',
+        commands: [
+          {
+            name: 'accounts',
+            args: '<subcommand>',
+            blurb: 'Switch the active account (use / ls / current)',
+          },
+        ],
+      },
+      {
+        title: 'Project — within the account',
         commands: [
           {
             name: 'init',
@@ -104,7 +140,27 @@ const TIERS: readonly CommandTier[] = [
           {
             name: 'projects',
             args: '<subcommand>',
-            blurb: 'List, link, set-default, open Kortix cloud projects',
+            blurb: 'List, link, set-default (use), open Kortix cloud projects',
+          },
+        ],
+      },
+      {
+        title: 'Session — within the project',
+        commands: [
+          {
+            name: 'sessions',
+            args: '<subcommand>',
+            blurb: 'List, create, restart project sessions',
+          },
+          {
+            name: 'connect',
+            args: '[session-id]',
+            blurb: 'Attach the full OpenCode TUI to a session (picker when no id given)',
+          },
+          {
+            name: 'chat',
+            args: '[session-id]',
+            blurb: "Talk to a session's agent (REPL or --prompt)",
           },
         ],
       },
@@ -119,6 +175,11 @@ const TIERS: readonly CommandTier[] = [
           { name: 'ship', blurb: 'Create the cloud project (first run) + push your code' },
           { name: 'validate', blurb: "Statically validate this project's kortix.yaml" },
           {
+            name: 'doctor',
+            args: '[--no-session]',
+            blurb: 'End-to-end health check: auth, project, session, agent reply',
+          },
+          {
             name: 'schema',
             args: '[--version 1|2]',
             blurb: 'Print the canonical kortix.yaml/kortix.toml JSON Schema',
@@ -126,7 +187,7 @@ const TIERS: readonly CommandTier[] = [
         ],
       },
       {
-        title: 'Agents & integrations',
+        title: 'Agents & connectors',
         commands: [
           { name: 'agents', args: '<subcommand>', blurb: 'Set which model each agent runs on' },
           {
@@ -137,7 +198,7 @@ const TIERS: readonly CommandTier[] = [
           {
             name: 'connectors',
             args: '<subcommand>',
-            blurb: 'Manage integrations agents call as tools (Pipedream/MCP/HTTP)',
+            blurb: 'Manage connectors agents call as tools (Pipedream/MCP/HTTP)',
           },
           {
             name: 'secrets',
@@ -165,35 +226,20 @@ const TIERS: readonly CommandTier[] = [
             blurb: 'Manage sandbox images: templates, builds, health',
           },
           {
+            name: 'apps',
+            args: '<subcommand>',
+            blurb: 'Experimental: deploy serverless Apps with stable Kortix URLs',
+          },
+          {
             name: 'marketplace',
             args: '<subcommand>',
             blurb: 'Search, show, install, and inspect marketplace items',
           },
-          {
-            name: 'skills',
-            args: '<subcommand>',
-            blurb: 'Load Kortix system skills (how Kortix works) live from the CLI',
-          },
-          {
-            name: 'executor',
-            args: '<subcommand>',
-            blurb: 'Call connectors as tools (discover/describe/call) + run the MCP server',
-          },
         ],
       },
       {
-        title: 'Sessions & work',
+        title: 'Files, changes & triggers',
         commands: [
-          {
-            name: 'sessions',
-            args: '<subcommand>',
-            blurb: 'List, create, restart project sessions',
-          },
-          {
-            name: 'chat',
-            args: '[session-id]',
-            blurb: "Talk to a session's agent (REPL or --prompt)",
-          },
           {
             name: 'files',
             args: '<subcommand>',
@@ -215,6 +261,11 @@ const TIERS: readonly CommandTier[] = [
             name: 'roles',
             args: '<subcommand>',
             blurb: 'Manage IAM custom roles + policy assignments (account-scoped)',
+          },
+          {
+            name: 'audit',
+            args: '<subcommand>',
+            blurb: 'Read the account audit trail (who did what, when)',
           },
           {
             name: 'grants',
@@ -249,7 +300,10 @@ function tierBand(label: string): string {
 }
 
 function renderHelp(): string {
-  const allCommands = TIERS.flatMap((t) => t.sections.flatMap((s) => s.commands));
+  const visibleCommands = (commands: readonly Command[]) => commands;
+  const allCommands = TIERS.flatMap((t) =>
+    t.sections.flatMap((s) => visibleCommands(s.commands)),
+  );
   const labelWidth = Math.max(
     ...allCommands.map((c) => (c.args ? `${c.name} ${c.args}` : c.name).length),
   );
@@ -258,7 +312,9 @@ function renderHelp(): string {
   lines.push(header('Kortix CLI', VERSION));
   lines.push(rule());
   for (const tier of TIERS) {
-    const sections = tier.sections.filter((s) => s.commands.length > 0);
+    const sections = tier.sections
+      .map((section) => ({ ...section, commands: visibleCommands(section.commands) }))
+      .filter((s) => s.commands.length > 0);
     if (sections.length === 0) continue;
     lines.push('');
     lines.push(tierBand(tier.label));
@@ -286,14 +342,70 @@ function printVersion(): void {
 // The landing screen: ASCII banner → host/account/project context → update
 // notice → the grouped command list. `kortix`, `kortix help`, and
 // `kortix --help` all render EXACTLY this, so there's no "which one shows the
-// banner/context" surprise.
-async function printLanding(): Promise<void> {
+// banner/context" surprise. The one difference is that BARE `kortix` may stop
+// at the update notice to ask (see offerInteractiveUpdate) — an explicit help
+// request stays a pure, non-blocking render.
+async function printLanding(opts: { offerUpdate: boolean }): Promise<void> {
   printBanner();
   // Always surface what host/account/project commands will act on.
   process.stdout.write(`${renderContext()}\n`);
-  const notice = await getUpdateNotice(VERSION, { allowFetch: true, style: 'box' });
-  if (notice) process.stdout.write(`${notice}\n`);
+  if (opts.offerUpdate) {
+    if (await offerInteractiveUpdate()) return; // binary replaced — this help is stale
+  } else {
+    const notice = await getUpdateNotice(VERSION, { allowFetch: true, style: 'box' });
+    if (notice) process.stdout.write(`${notice}\n`);
+  }
   process.stdout.write(renderHelp());
+}
+
+/** Can we actually ask a question here? `resolveUpdateStatus` already rules out
+ *  CI and a non-TTY stdout; a prompt additionally needs a readable stdin, and
+ *  an explicit opt-out for anyone who wants the notice without the question. */
+function canPromptForUpdate(): boolean {
+  if (process.env.KORTIX_NO_UPDATE_PROMPT) return false;
+  return process.stdin.isTTY === true && process.stdout.isTTY === true;
+}
+
+/**
+ * Bare `kortix` on a terminal: show the update box and offer to install it on
+ * the spot, so being out of date takes a deliberate "no" rather than the
+ * inertia of never getting around to `kortix update`.
+ *
+ * Returns true when the binary was replaced — the caller then skips the help
+ * screen, which came from the version that no longer exists on disk.
+ */
+async function offerInteractiveUpdate(): Promise<boolean> {
+  const status = await resolveUpdateStatus(VERSION, { allowFetch: true });
+  if (!status) return false;
+
+  const askable = canPromptForUpdate() && !isUpdateSnoozed(status.latestTag);
+  process.stdout.write(`${renderUpdateBox(status, askable)}\n`);
+  if (!askable) return false;
+
+  let accepted: boolean;
+  try {
+    // Defaults to yes on Enter — the point is to make staying behind the
+    // deliberate choice. But a stream that just ENDS is nobody answering, and
+    // that must never self-trigger a binary-replacing install.
+    accepted = await confirm(`  Update to ${status.latestDisplay} now?`, true, {
+      onEndOfInput: false,
+    });
+  } catch {
+    return false; // not really interactive after all — leave the box standing
+  }
+  if (!accepted) {
+    // Remember the "no" so we ask once per release, not once per invocation.
+    snoozeUpdate(status.latestTag);
+    process.stdout.write(
+      `  ${C.dim}Skipped. Run ${C.reset}${C.cyan}kortix update${C.reset}${C.dim} whenever you're ready.${C.reset}\n`,
+    );
+    return false;
+  }
+
+  process.stdout.write('\n');
+  if ((await runUpdate([])) !== 0) return false;
+  process.stdout.write(`  ${C.dim}Run ${C.reset}${C.cyan}kortix${C.reset}${C.dim} again to pick it up.${C.reset}\n\n`);
+  return true;
 }
 
 async function main(argv: string[]): Promise<number> {
@@ -305,9 +417,13 @@ async function main(argv: string[]): Promise<number> {
     printVersion();
     return 0;
   }
-  // Bare `kortix` and explicit help are the same landing screen — no difference.
+  // Bare `kortix` and explicit help are the same landing screen. Only the bare
+  // form offers to update: `kortix --help` is what people (and scripts) reach
+  // for to READ something, and it must never block on a question. Bare
+  // `kortix` must ALWAYS land here — the interactive session picker is an
+  // explicit verb (`kortix connect`), never the front door.
   if (argv.length === 0 || argv[0] === 'help' || argv[0] === '--help' || argv[0] === '-h') {
-    await printLanding();
+    await printLanding({ offerUpdate: argv.length === 0 });
     return 0;
   }
   if (argv[0] === 'version') {
@@ -316,10 +432,17 @@ async function main(argv: string[]): Promise<number> {
     if (notice) process.stdout.write(`${notice}\n`);
     return 0;
   }
-  // `executor` is a MACHINE surface (the in-sandbox agent parses stdout as JSON,
-  // and `executor mcp` speaks JSON-RPC on stdout). Skip the human-oriented host
-  // + update notices so its output stays clean.
-  if (argv[0] !== 'executor') {
+  // Machine-only Git credential-helper protocol. It must never print the
+  // human host/update notices that would corrupt key=value output on stdout.
+  if (argv[0] === 'git-credential') {
+    return runGitCredential(argv.slice(1));
+  }
+  const connectorMachineCommand =
+    argv[0] === 'connectors' &&
+    (['call', 'discover', 'mcp'].includes(argv[1] ?? '') ||
+      (argv[1] === 'show' && (argv[2] ?? '').includes('.')) ||
+      ((argv[1] === 'ls' || argv[1] === 'list') && argv.includes('--session')));
+  if (!connectorMachineCommand) {
     printActiveHostNotice(argv);
     await printUpdateNoticeForCommand(argv[0]);
   }
@@ -345,6 +468,9 @@ async function main(argv: string[]): Promise<number> {
   if (argv[0] === 'whoami') {
     return runWhoami(argv.slice(1));
   }
+  if (argv[0] === 'doctor') {
+    return runDoctor(argv.slice(1));
+  }
   if (argv[0] === 'token') {
     return runWhoami(['--token-only', ...argv.slice(1)]);
   }
@@ -369,17 +495,27 @@ async function main(argv: string[]): Promise<number> {
   if (argv[0] === 'gateway') {
     return runGateway(argv.slice(1));
   }
+  if (argv[0] === 'apps') {
+    return runApps(argv.slice(1));
+  }
   if (argv[0] === 'self-host') {
     return runSelfHost(argv.slice(1));
   }
   if (argv[0] === 'env') {
     return runEnv(argv.slice(1));
   }
-  if (argv[0] === 'sessions') {
+  // Singular `session` is a permanent alias — `kortix session new` is typed
+  // often enough that a "did you mean" round-trip is pure friction.
+  if (argv[0] === 'sessions' || argv[0] === 'session') {
     return runSessions(argv.slice(1));
   }
   if (argv[0] === 'chat') {
     return runSessionsChat(argv.slice(1));
+  }
+  // Top-level aliases for `sessions connect` — the flagship "land me in the
+  // TUI" verb deserves a first-class name.
+  if (argv[0] === 'connect' || argv[0] === 'attach') {
+    return runSessionsConnect(argv.slice(1));
   }
   if (argv[0] === 'files') {
     return runFiles(argv.slice(1));
@@ -393,14 +529,15 @@ async function main(argv: string[]): Promise<number> {
   if (argv[0] === 'connectors') {
     return runConnectors(argv.slice(1));
   }
-  if (argv[0] === 'executor') {
-    return runExecutor(argv.slice(1));
-  }
   if (argv[0] === 'marketplace') {
     return runMarketplace(argv.slice(1));
   }
-  if (argv[0] === 'skills') {
-    return runSkills(argv.slice(1));
+  // `system-skills` is the canonical name; `skills` stays a permanent alias
+  // because every already-baked sandbox image seeds a kortix-system skill whose
+  // live pointer says `kortix skills get <name>`. Both hand the invoked name
+  // down so every hint the command prints matches how it was called.
+  if (argv[0] === SYSTEM_SKILLS_COMMAND || argv[0] === 'skills') {
+    return runSystemSkills(argv.slice(1), argv[0]);
   }
   if (argv[0] === 'registry') {
     process.stderr.write(
@@ -419,6 +556,9 @@ async function main(argv: string[]): Promise<number> {
   }
   if (argv[0] === 'roles') {
     return runRoles(argv.slice(1));
+  }
+  if (argv[0] === 'audit') {
+    return runAudit(argv.slice(1));
   }
   if (argv[0] === 'grants') {
     return runGrants(argv.slice(1));
@@ -453,12 +593,16 @@ const KNOWN_COMMANDS = [
   'login',
   'logout',
   'whoami',
+  'doctor',
   'token',
   'hosts',
   'accounts',
   'projects',
   'sessions',
+  'session',
   'chat',
+  'connect',
+  'attach',
   'files',
   'cr',
   'triggers',
@@ -467,15 +611,17 @@ const KNOWN_COMMANDS = [
   'providers',
   'env',
   'gateway',
+  'apps',
   'channels',
   'sandboxes',
   'marketplace',
+  'system-skills',
   'skills',
-  'executor',
   'registry',
   'agents',
   'access',
   'roles',
+  'audit',
   'grants',
   'update',
   'uninstall',
@@ -534,7 +680,7 @@ async function printUpdateNoticeForCommand(command: string): Promise<void> {
 }
 
 // `process.exit()` does NOT wait for a piped stdout/stderr to flush — on large
-// output (e.g. `kortix projects ls --all --json | jq`, or executor JSON the
+// output (e.g. `kortix projects ls --all --json | jq`, or connector JSON the
 // in-sandbox agent parses) it drops everything past the ~64KiB pipe buffer,
 // producing truncated/invalid output. Instead set the exit code and let the
 // runtime flush both streams and exit naturally. Release stdin first so an
@@ -551,6 +697,12 @@ function finish(code: number): void {
 }
 
 main(process.argv.slice(2))
+  // A refused call names the action, never the identity. Answer that here —
+  // once, after the command's own output, and only when something was refused.
+  .then(async (code) => {
+    await printPermissionDenialIdentity();
+    return code;
+  })
   .then((code) => finish(code))
   .catch((err: unknown) => {
     const msg = err instanceof Error ? err.message : String(err);

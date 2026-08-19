@@ -2,10 +2,30 @@
 
 import { cn } from '@/lib/utils';
 import { floatingZ, useDialogDepth } from '@/lib/z-stack';
+import {
+  CheckIcon as Check,
+  CaretDownIcon as ChevronDown,
+  CaretUpIcon as ChevronUp,
+} from '@phosphor-icons/react';
 import * as SelectPrimitive from '@radix-ui/react-select';
-import { Check, ChevronDown, ChevronUp } from 'lucide-react';
 import * as React from 'react';
-import { ButtonProps } from './button';
+import { MENU_LABEL, MENU_PANEL, MENU_SEPARATOR, menuRow, type MenuRowSize } from './menu-recipe';
+import {
+  TRIGGER_CARET_CLASS,
+  TRIGGER_ICON_SIZE,
+  triggerVariants,
+  type TriggerVariantProps,
+} from './trigger-variants';
+
+/**
+ * A select is a menu: the same floating surface holding the same rows, and it
+ * shares both with the dropdown and context menu through `./menu-recipe`.
+ *
+ * Local to a select: `max-h-96` plus the scroll buttons, because the option
+ * list is data-length and a dropdown's is authored; and `min-w-56`, because a
+ * select is anchored to a trigger it should not visibly undercut.
+ */
+const SELECT_PANEL = cn(MENU_PANEL, 'max-h-96 min-w-56 overflow-hidden');
 
 const Select = SelectPrimitive.Root;
 
@@ -13,35 +33,27 @@ const SelectGroup = SelectPrimitive.Group;
 
 const SelectValue = SelectPrimitive.Value;
 
+export type SelectTriggerProps = Omit<
+  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Trigger>,
+  'size'
+> &
+  TriggerVariantProps & {
+    arrow?: boolean;
+  };
+
 const SelectTrigger = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Trigger>,
-  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Trigger> & {
-    variant?: 'default' | 'outline' | 'secondary' | 'accent' | 'popover' | 'transparent';
-    size?: ButtonProps['size'];
-    arrow?: boolean;
-  }
->(({ className, children, variant = 'default', size = 'default', arrow = true, ...props }, ref) => (
+  SelectTriggerProps
+>(({ className, children, variant, size, arrow = true, ...props }, ref) => (
   <SelectPrimitive.Trigger
     ref={ref}
-    className={cn(
-      'border-border bg-input text-foreground ring-offset-background placeholder:text-muted-foreground hover:bg-input/90 focus-visible:ring-kortix-base flex h-9 w-fit items-center justify-between rounded-md border px-4 py-2 text-sm outline-none focus-visible:ring-[0.6px] focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 has-[>svg]:px-3 data-[state=open]:ring-0 [&>span]:line-clamp-1',
-      variant === 'outline' &&
-        'bg-transprarent hover:bg-foreground/5/80 border-input hover:text-accent-foreground h-9 px-3',
-      variant === 'secondary' && 'bg-input text-primary hover:bg-input',
-      variant === 'secondary' && 'mx-0.5 w-fit',
-      variant === 'accent' && 'mx-0.5 w-fit',
-      variant === 'accent' && 'bg-primary/5 text-accent-foreground hover:bg-primary/10 h-8',
-      variant === 'popover' &&
-        'bg-popover text-foreground border-border focus:border-kortix-blue focus:border focus:outline-none',
-      variant === 'transparent' && 'text-foreground border-none bg-transparent',
-      className,
-    )}
+    className={cn(triggerVariants({ variant, size }), className)}
     {...props}
   >
     {children}
     {arrow && (
       <SelectPrimitive.Icon asChild>
-        <ChevronDown className="ml-2 size-4 shrink-0 opacity-50" />
+        <ChevronDown className={cn(TRIGGER_CARET_CLASS, TRIGGER_ICON_SIZE[size ?? 'sm'])} />
       </SelectPrimitive.Icon>
     )}
   </SelectPrimitive.Trigger>
@@ -87,8 +99,7 @@ const SelectContent = React.forwardRef<
       <SelectPrimitive.Content
         ref={ref}
         className={cn(
-          'border-border bg-background text-popover-foreground data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 max-h-96 min-w-40 overflow-hidden rounded-lg border-[1.5px] p-1',
-          'shadow-[0_8px_32px_0_rgba(30,41,59,0.10),0_1.5px_6px_0_rgba(30,41,59,0.04)] backdrop-blur-md',
+          SELECT_PANEL,
           position === 'popper' &&
             'data-[side=bottom]:translate-y-1 data-[side=left]:-translate-x-1 data-[side=right]:translate-x-1 data-[side=top]:-translate-y-1',
           className,
@@ -118,30 +129,35 @@ const SelectLabel = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Label>,
   React.ComponentPropsWithoutRef<typeof SelectPrimitive.Label>
 >(({ className, ...props }, ref) => (
-  <SelectPrimitive.Label
-    ref={ref}
-    className={cn('py-1.5 pr-2 pl-8 text-sm font-semibold', className)}
-    {...props}
-  />
+  // Was `pl-8 text-sm font-semibold` — the `pl-8` reserved a left gutter for a
+  // leading check that this select does not have (its indicator is at
+  // `right-3`), so the label sat indented past every option under it.
+  <SelectPrimitive.Label ref={ref} className={cn(MENU_LABEL, className)} {...props} />
 ));
 SelectLabel.displayName = SelectPrimitive.Label.displayName;
 
 const SelectItem = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Item>,
   React.ComponentPropsWithoutRef<typeof SelectPrimitive.Item> & {
-    variant?: 'default' | 'secondary';
+    /**
+     * `md` (`px-3 py-2`) is the select's default rather than the dropdown's
+     * `sm`: an option is a form target the pointer travels to, not an action in
+     * a menu the pointer is already inside. Same scale, one step apart.
+     */
+    size?: MenuRowSize;
     /** Renders below children in the dropdown only — not in the trigger. */
     description?: React.ReactNode;
   }
->(({ className, children, variant = 'default', description, ...props }, ref) => (
+  // The removed `variant="secondary"` had no call sites in the app. It carried
+  // its own radius (`rounded-[0.4rem]`), its own padding and `transition-all
+  // duration-500`, so any row that ever used it would have broken the column.
+>(({ className, children, size = 'md', description, ...props }, ref) => (
   <SelectPrimitive.Item
     ref={ref}
     className={cn(
-      'focus:bg-accent focus:text-accent-foreground relative flex w-full cursor-default items-center rounded-md px-4 py-1.5 text-sm outline-none select-none data-disabled:pointer-events-none data-disabled:opacity-50',
+      menuRow(size, 'default'),
       description &&
         'items-start [&>[data-slot=select-item-indicator]]:top-2 [&>[data-slot=select-item-indicator]]:translate-y-0',
-      variant === 'secondary' &&
-        'text-primary/80 hover:bg-accent hover:text-primary focus:bg-foreground/10 focus:text-primary relative flex w-full cursor-default items-center justify-start gap-2 rounded-[0.4rem] px-2 py-1.5 text-sm font-normal transition-all duration-500 outline-none select-none data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0',
       className,
     )}
     {...props}
@@ -158,7 +174,7 @@ const SelectItem = React.forwardRef<
     {description ? (
       <div className="flex min-w-0 flex-col gap-0.5">
         <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
-        <span className="max-w-[260px] text-[11px] leading-snug whitespace-normal text-muted-foreground">
+        <span className="text-muted-foreground max-w-[260px] text-[11px] leading-snug whitespace-normal">
           {description}
         </span>
       </div>
@@ -173,11 +189,7 @@ const SelectSeparator = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Separator>,
   React.ComponentPropsWithoutRef<typeof SelectPrimitive.Separator>
 >(({ className, ...props }, ref) => (
-  <SelectPrimitive.Separator
-    ref={ref}
-    className={cn('bg-muted -mx-1 my-1 h-px', className)}
-    {...props}
-  />
+  <SelectPrimitive.Separator ref={ref} className={cn(MENU_SEPARATOR, className)} {...props} />
 ));
 SelectSeparator.displayName = SelectPrimitive.Separator.displayName;
 

@@ -2,14 +2,21 @@ import { projectSessions, sandboxes } from '@kortix/db';
 import { AUTO_TOPUP_DEFAULT_AMOUNT, AUTO_TOPUP_DEFAULT_THRESHOLD } from '@kortix/shared';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { config } from '../../config';
-import { maxConcurrentSessionsForTier } from '../../shared/account-limits';
 import { db } from '../../shared/db';
 import { isPlatformAdmin } from '../../shared/platform-roles';
 import type { AccountStateResponse, CommitmentInfo, ScheduledChange } from '../../types';
-import { getCreditAccount, getSubscriptionInfo } from '../repositories/credit-accounts';
+import { getCreditAccount } from '../repositories/credit-accounts';
 import { getAutoTopupSettings } from './auto-topup';
+import { resolveAccountBilling } from './billing-cache';
+import {
+  billingSnapshotFromAccount,
+  billingStateAllowsRun,
+  hasLiveSubscription,
+  resolveBillingState,
+} from './billing-state';
 import { getCreditSummary } from './credits';
 import { initializeFreeTierAccount } from './free-tier';
+import { PLAN_CATALOG, PLAN_FAMILY_LABELS } from './plan-catalog';
 import { countActiveMembers } from './seat-management';
 import {
   PER_SEAT_PRICE_USD,
@@ -24,9 +31,11 @@ import {
   isPerSeatAccount,
 } from './tiers';
 import { getAccountEntitlements } from './entitlements';
-import { getUsageBreakdownThisPeriod } from './usage-breakdown';
+import { currentPeriodStart, getUsageBreakdownThisPeriod } from './usage-breakdown';
 
 const ACTIVE_SESSION_STATUSES = ['queued', 'branching', 'provisioning', 'running'] as const;
+
+type CreditAccountRow = Awaited<ReturnType<typeof getCreditAccount>>;
 
 type InstanceSummary = AccountStateResponse['instances'][number] & {
   stripe_subscription_id: string | null;
@@ -53,23 +62,102 @@ async function countActiveSessions(accountId: string): Promise<number> {
 }
 
 export async function buildMinimalAccountState(accountId: string): Promise<AccountStateResponse> {
-  let sub = await getSubscriptionInfo(accountId);
-  if (!sub) {
+  // Single source of truth for the credit_accounts row for this request.
+  // getCreditSummary / getAccountEntitlements / getAutoTopupSettings used to
+  // each independently re-fetch this identical row — now they take it as a
+  // param, cutting 4 reads of the same row down to 1. Request-scoped only, not
+  // cached across requests: this endpoint gates real spending, so it must
+  // always read the live balance.
+  let account = await getCreditAccount(accountId);
+  if (!account) {
     await initializeFreeTierAccount(accountId);
-    sub = await getSubscriptionInfo(accountId);
+    account = await getCreditAccount(accountId);
   }
+  const sub = account;
 
-  const credits = await getCreditSummary(accountId);
-  const isAdmin = await isPlatformAdmin(accountId);
-
+  // STORED tier — the plan Stripe sold. It stays the wire value of
+  // `subscription.tier_key` (and drives everything Stripe-owned below: the
+  // subscription status, the daily-credit grant config, the scheduled change,
+  // the legacy-machine claims).
   const tierName = sub ? (sub.tier ?? 'free') : 'none';
   const tier = getTier(tierName);
-  // Entitlements must honor the self-serve enterprise DEMO flag, not just the
-  // billing tier — otherwise flipping the demo on never surfaces the SSO/SCIM
-  // cards (the tier's static entitlements say sso:false). getAccountEntitlements
-  // applies the demo override.
-  const entitlements = await getAccountEntitlements(accountId);
   const dailyConfig = getDailyCreditConfig(tierName);
+
+  // RESOLVED plan — the plan the account BEHAVES as: active admin trial >
+  // per-seat self-heal > stored tier, with the enterprise and managed-models
+  // overrides applied (billing/services/resolve-billing.ts). `sub` is passed in
+  // so this costs no extra read; the request already holds the row.
+  //
+  // The two used to be conflated: a trialing account's account-state described
+  // its STORED plan while every gate enforced the TRIAL plan, so the dashboard
+  // disagreed with the server about what the account could do. `plan` and
+  // `tier` below now report the resolved view; `subscription` keeps the stored
+  // one for wire compatibility.
+  const resolved = await resolveAccountBilling(accountId, { row: sub });
+
+  const fetchInstances = async (): Promise<InstanceSummary[]> => {
+    try {
+      const sandboxRows = await db
+        .select()
+        .from(sandboxes)
+        .where(
+          and(
+            eq(sandboxes.accountId, accountId),
+            inArray(sandboxes.status, ['active', 'provisioning', 'stopped', 'error']),
+          ),
+        );
+
+      return sandboxRows.map((row) => {
+        const metadata = row.metadata as Record<string, unknown> | null;
+        const billingRow = row as typeof row & {
+          stripeSubscriptionId?: string | null;
+          cancelAtPeriodEnd?: boolean | null;
+          cancelAt?: string | null;
+        };
+        return {
+          sandbox_id: row.sandboxId,
+          external_id: row.externalId || null,
+          name: row.name,
+          provider: row.provider,
+          status: row.status,
+          server_type: metadataString(metadata?.serverType),
+          location: metadataString(metadata?.location),
+          error_message: metadataString(metadata?.errorMessage),
+          is_included: row.isIncluded ?? false,
+          stripe_subscription_id:
+            billingRow.stripeSubscriptionId || (metadata?.stripe_subscription_id as string) || null,
+          stripe_subscription_item_id: row.stripeSubscriptionItemId ?? null,
+          cancel_at_period_end: billingRow.cancelAtPeriodEnd || !!metadata?.cancel_at_period_end,
+          cancel_at: billingRow.cancelAt || (metadata?.cancel_at as string) || null,
+          created_at: row.createdAt.toISOString(),
+        };
+      });
+    } catch {
+      // DB may not be available in local mode
+      return [];
+    }
+  };
+
+  // All of these are independent of one another (each keyed only on accountId
+  // and/or the `account` row already fetched above) — run them concurrently
+  // instead of ~8 sequential round-trips.
+  const [credits, isAdmin, entitlements, autoTopup, instances, memberCount, usageThisPeriod, activeSessions] =
+    await Promise.all([
+      getCreditSummary(accountId, account),
+      isPlatformAdmin(accountId),
+      // Entitlements must honor the self-serve enterprise DEMO flag, not just the
+      // billing tier — otherwise flipping the demo on never surfaces the SSO/SCIM
+      // cards (the tier's static entitlements say sso:false). getAccountEntitlements
+      // applies the demo override.
+      getAccountEntitlements(accountId, account),
+      getAutoTopupSettings(accountId, account),
+      fetchInstances(),
+      countActiveMembers(accountId).catch(() => 1),
+      isPerSeatAccount(sub?.billingModel)
+        ? getUsageBreakdownThisPeriod(accountId, currentPeriodStart(sub?.billingCycleAnchor ?? null)).catch(() => null)
+        : Promise.resolve(null),
+      countActiveSessions(accountId).catch(() => 0),
+    ]);
 
   let dailyRefresh = null;
   if (dailyConfig) {
@@ -104,51 +192,6 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
   const commitment = extractCommitment(sub);
   const scheduledChange = extractScheduledChange(sub, tierName);
 
-  // Auto-topup settings
-  const autoTopup = await getAutoTopupSettings(accountId);
-
-  // User's instances (sandboxes)
-  let instances: InstanceSummary[] = [];
-  try {
-    const sandboxRows = await db
-      .select()
-      .from(sandboxes)
-      .where(
-        and(
-          eq(sandboxes.accountId, accountId),
-          inArray(sandboxes.status, ['active', 'provisioning', 'stopped', 'error']),
-        ),
-      );
-
-    instances = sandboxRows.map((row) => {
-      const metadata = row.metadata as Record<string, unknown> | null;
-      const billingRow = row as typeof row & {
-        stripeSubscriptionId?: string | null;
-        cancelAtPeriodEnd?: boolean | null;
-        cancelAt?: string | null;
-      };
-      return {
-        sandbox_id: row.sandboxId,
-        external_id: row.externalId || null,
-        name: row.name,
-        provider: row.provider,
-        status: row.status,
-        server_type: metadataString(metadata?.serverType),
-        location: metadataString(metadata?.location),
-        error_message: metadataString(metadata?.errorMessage),
-        is_included: row.isIncluded ?? false,
-        stripe_subscription_id:
-          billingRow.stripeSubscriptionId || (metadata?.stripe_subscription_id as string) || null,
-        stripe_subscription_item_id: row.stripeSubscriptionItemId ?? null,
-        cancel_at_period_end: billingRow.cancelAtPeriodEnd || !!metadata?.cancel_at_period_end,
-        cancel_at: billingRow.cancelAt || (metadata?.cancel_at as string) || null,
-        created_at: row.createdAt.toISOString(),
-      };
-    });
-  } catch {
-    // DB may not be available in local mode
-  }
-
   // Legacy paid users with no active machine can claim a free default computer
   const hasActiveMachine = instances.some(
     (i) => i.status === 'active' || i.status === 'provisioning',
@@ -168,16 +211,56 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
     null) as AccountStateResponse['subscription']['billing_period'];
   const provider = (sub?.provider ?? 'stripe') as AccountStateResponse['subscription']['provider'];
 
+  // The SAME state machine the billing gate admits on (billing-state.ts).
+  // `credits.canRun` is a bare wallet-floor check and disagrees with the gate
+  // for an active per-seat subscription (which is not wallet-gated) — that
+  // divergence is what made the session page tell a paying Team account with a
+  // $0.0099 wallet "Your team isn't on a plan yet". can_run must answer the
+  // same question the gate answers, and `billing_state` says WHY.
+  const billingSnapshot = billingSnapshotFromAccount(sub);
+  const billingState = resolveBillingState(billingSnapshot);
+
   const state = {
     credits: {
       total: credits.total,
       daily: credits.daily,
       monthly: credits.monthly,
       extra: credits.extra,
-      can_run: isAdmin ? true : credits.canRun,
+      can_run: isAdmin ? true : billingStateAllowsRun(billingState),
+      // Lifetime rollups, maintained from credit_ledger by the
+      // apply_credit_ledger_lifetime_rollup trigger (migration
+      // 20260729013905335). They read 0 on every account before that migration
+      // because nothing had incremented them since the Python -> TS rewrite —
+      // web and mobile both hardcoded 0 into their `credits` shape rather than
+      // reading a column that was always 0 anyway. Surfaced here so those
+      // surfaces show the real figures instead of a placeholder.
+      lifetime_granted: Number(sub?.lifetimeGranted ?? 0) || 0,
+      lifetime_purchased: Number(sub?.lifetimePurchased ?? 0) || 0,
+      lifetime_used: Number(sub?.lifetimeUsed ?? 0) || 0,
       daily_refresh: dailyRefresh,
     },
+    billing_state: isAdmin ? ('active' as const) : billingState,
+    has_active_subscription: hasLiveSubscription(billingSnapshot),
+    // The plan the account BEHAVES as, named the way the product names plans.
+    // Additive: `tier` and `subscription` are unchanged in shape.
+    plan: {
+      key: resolved.plan.key,
+      family: resolved.plan.family,
+      label: resolved.display.label,
+      sublabel: resolved.display.sublabel,
+      status: resolved.plan.status,
+      shape: resolved.plan.shape,
+      rank: resolved.plan.rank,
+      // Sold once, still honored exactly as sold, no longer offered. The UI
+      // uses this to show the plan as-is instead of mapping it onto a current
+      // plan it is not.
+      is_grandfathered: resolved.plan.status === 'grandfathered',
+    },
     subscription: {
+      // STORED, not resolved: this block describes the Stripe subscription, so
+      // `tier_key` and its display name stay the pair Stripe sold. A trial does
+      // not create a subscription, and reporting the trial plan here would tell
+      // the billing UI to render a subscription that does not exist.
       tier_key: tierName,
       tier_display_name: isAdmin && tierName === 'none' ? 'Admin' : tier.displayName,
       status: subscriptionStatus,
@@ -191,16 +274,32 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
       has_scheduled_change: scheduledChange !== null,
       scheduled_change: scheduledChange,
       commitment,
-      can_purchase_credits: isAdmin ? true : tier.canPurchaseCredits,
+      // RESOLVED: this is the same predicate the purchase-credits route gates
+      // on (billing/routes/payments.ts). Reporting the stored tier's answer
+      // here while the route enforced the resolved one would show a trialing
+      // account a buy button the server rejects, or hide one it accepts.
+      can_purchase_credits: isAdmin ? true : resolved.entitlements.canPurchaseCredits,
     },
     tier: {
-      name: tier.name,
-      display_name: isAdmin && tierName === 'none' ? 'Admin' : tier.displayName,
+      // RESOLVED: what the account behaves as, so this matches what every gate
+      // enforces. `subscription.tier_key` above still carries the stored key.
+      name: resolved.plan.key,
+      display_name: isAdmin && tierName === 'none' ? 'Admin' : resolved.plan.displayName,
+      // STORED: `monthly_credits` is the recurring GRANT, which Stripe owns. A
+      // trial is an entitlement overlay and grants no credits, so the number
+      // here must keep describing the subscription, not the trial.
       monthly_credits: tier.monthlyCredits,
-      can_purchase_credits: isAdmin ? true : tier.canPurchaseCredits,
+      can_purchase_credits: isAdmin ? true : resolved.entitlements.canPurchaseCredits,
       entitlements,
     },
     enterprise_license_available: config.ENTERPRISE_LICENSE_AVAILABLE,
+    // Surface the per-account contracted-Enterprise flag so the admin console
+    // and the frontend can distinguish a real Enterprise contract (entitlements
+    // sourced from `enterprise_entitled`, independent of billing tier) from a
+    // self-serve demo or a self-host license. When true, the frontend hides
+    // the self-serve "Enterprise features — Demo" toggle (a real contract
+    // supersedes the demo) and the admin console shows the contract state.
+    enterprise_entitled: !!sub?.enterpriseEntitled,
     models: [],
     auto_topup: autoTopup,
     instances,
@@ -212,7 +311,7 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
       | 'legacy',
     // Live member count = the seat quantity a per-seat subscribe bills for now
     // (matches createPerSeatCheckoutSession). Drives the modal's projected total.
-    member_count: await countActiveMembers(accountId).catch(() => 1),
+    member_count: memberCount,
     seats: isPerSeatAccount(sub?.billingModel)
       ? {
           count: sub?.seatCount ?? 1,
@@ -221,21 +320,22 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
           typical_llm_budget_per_seat_usd: TYPICAL_LLM_BUDGET_PER_SEAT_USD,
         }
       : undefined,
-    usage_this_period: isPerSeatAccount(sub?.billingModel)
-      ? await getUsageBreakdownThisPeriod(accountId, sub?.billingCycleAnchor ?? null).catch(
-          () => null,
-        )
-      : null,
+    usage_this_period: isPerSeatAccount(sub?.billingModel) ? usageThisPeriod : null,
     limits: {
       concurrent_sessions: {
-        active: await countActiveSessions(accountId).catch(() => 0),
-        // Per-account override (credit_accounts.max_concurrent_sessions) wins
-        // over the tier limit — mirrors resolveAccountSessionLimit, reusing the
-        // `sub` row already fetched above instead of a second read.
-        limit:
-          typeof sub?.maxConcurrentSessions === 'number' && sub.maxConcurrentSessions > 0
-            ? Math.floor(sub.maxConcurrentSessions)
-            : maxConcurrentSessionsForTier(tierName),
+        active: activeSessions,
+        // The number the SERVER enforces, from the same resolver
+        // resolveAccountSessionLimit uses: the per-account override
+        // (credit_accounts.max_concurrent_sessions) wins over the plan cap in
+        // both directions, the per-seat self-heal keeps stale tier data from
+        // showing a paying team the free ceiling, and an active trial shows the
+        // trial plan's cap. Deriving it independently here is exactly how the
+        // dashboard and the server came to disagree about one number.
+        limit: config.KORTIX_BILLING_INTERNAL_ENABLED
+          ? resolved.limits.concurrentSessions.value
+          : // Billing off (local / self-hosted): the cap is lifted entirely,
+            // mirroring maxConcurrentSessionsForTier.
+            Number.MAX_SAFE_INTEGER,
       },
     },
   };
@@ -259,7 +359,22 @@ export function buildLocalAccountState(): AccountStateResponse {
       monthly: 0,
       extra: 0,
       can_run: true,
+      lifetime_granted: 0,
+      lifetime_purchased: 0,
+      lifetime_used: 0,
       daily_refresh: null,
+    },
+    billing_state: 'active',
+    has_active_subscription: false,
+    plan: {
+      key: 'free',
+      family: 'free',
+      label: PLAN_FAMILY_LABELS.free,
+      sublabel: null,
+      status: 'current',
+      shape: 'none',
+      rank: PLAN_CATALOG.free?.rank ?? 1,
+      is_grandfathered: false,
     },
     subscription: {
       tier_key: 'free',
@@ -291,6 +406,9 @@ export function buildLocalAccountState(): AccountStateResponse {
       entitlements: getTierEntitlements('free'),
     },
     enterprise_license_available: config.ENTERPRISE_LICENSE_AVAILABLE,
+    // No-DB local mode has no credit_accounts row, so the contracted-Enterprise
+    // flag is false by construction (fail-closed).
+    enterprise_entitled: false,
     models: [],
     auto_topup: {
       enabled: false,
@@ -306,7 +424,7 @@ export function buildLocalAccountState(): AccountStateResponse {
   };
 }
 
-function extractCommitment(sub: Awaited<ReturnType<typeof getSubscriptionInfo>>): CommitmentInfo {
+function extractCommitment(sub: CreditAccountRow): CommitmentInfo {
   if (!sub?.commitmentType || !sub.commitmentEndDate) {
     return {
       has_commitment: false,
@@ -334,11 +452,7 @@ function extractCommitment(sub: Awaited<ReturnType<typeof getSubscriptionInfo>>)
   };
 }
 
-function getSubscriptionStatus(
-  sub: Awaited<ReturnType<typeof getSubscriptionInfo>>,
-  tierName: string,
-  isAdmin: boolean,
-): string {
+function getSubscriptionStatus(sub: CreditAccountRow, tierName: string, isAdmin: boolean): string {
   if (isAdmin && tierName === 'none') return 'active';
   if (!sub) return tierName === 'free' ? 'active' : 'no_subscription';
   if (sub.provider === 'revenuecat') {
@@ -352,7 +466,7 @@ function getSubscriptionStatus(
 }
 
 function extractScheduledChange(
-  sub: Awaited<ReturnType<typeof getSubscriptionInfo>>,
+  sub: CreditAccountRow,
   currentTierName: string,
 ): ScheduledChange | null {
   if (sub?.scheduledTierChange && sub.scheduledTierChangeDate) {

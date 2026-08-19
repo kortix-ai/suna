@@ -8,13 +8,14 @@ import { runProjects } from '../commands/projects.ts';
 import { activeAccount, defaultProject } from '../api/config.ts';
 import { stripAnsi } from '../style.ts';
 
+const JSON_HEADERS = { 'content-type': 'application/json' };
+
 const ORIGINAL_FETCH = globalThis.fetch;
 const ORIGINAL_STDOUT_WRITE = process.stdout.write;
 const ORIGINAL_STDERR_WRITE = process.stderr.write;
 
 const ENV_KEYS = [
   'KORTIX_CLI_TOKEN',
-  'KORTIX_EXECUTOR_TOKEN',
   'KORTIX_TOKEN',
   'KORTIX_API_URL',
   'KORTIX_FRONTEND_URL',
@@ -81,10 +82,10 @@ function mockApi(extra?: (url: string) => Response | undefined) {
     if (url === 'https://api.test/v1/accounts/me') {
       return new Response(
         JSON.stringify({ user_id: 'user_1', email: 'user@example.test', accounts: ACCOUNTS }),
-        { status: 200 },
+        { status: 200, headers: JSON_HEADERS },
       );
     }
-    return new Response(JSON.stringify({ error: `unexpected ${url}` }), { status: 500 });
+    return new Response(JSON.stringify({ error: `unexpected ${url}` }), { status: 500, headers: JSON_HEADERS });
   }) as typeof fetch;
 }
 
@@ -181,7 +182,7 @@ describe('kortix projects use', () => {
             created_at: '2026-01-01T00:00:00.000Z',
             updated_at: '2026-01-01T00:00:00.000Z',
           }),
-          { status: 200 },
+          { status: 200, headers: JSON_HEADERS },
         );
       }
       return undefined;
@@ -205,7 +206,7 @@ describe('kortix projects ls scoping', () => {
   test('scopes the list to the active account', async () => {
     mockApi((url) => {
       if (url.startsWith('https://api.test/v1/projects')) {
-        return new Response(JSON.stringify([]), { status: 200 });
+        return new Response(JSON.stringify([]), { status: 200, headers: JSON_HEADERS });
       }
       return undefined;
     });

@@ -335,4 +335,103 @@ describe('manifest-edit — YAML (Document-AST editing, comment-preserving)', ()
     appendArrayBlock('triggers', { slug: 'weekly', type: 'cron' }, dir);
     expect(arrayEntryExists('triggers', 'slug', 'weekly', dir)).toBe(true);
   });
+
+  test('preserves every unrelated YAML byte during a targeted scalar edit', async () => {
+    const { setScalarInArrayBlock, manifestFile } = await import('../manifest-edit');
+    const { readFileSync } = await import('node:fs');
+    const before = [
+      'kortix_version: 1',
+      'metadata: { owner: "ops", labels: [alpha,beta] } # exact flow style',
+      '',
+      'triggers:',
+      '  - slug: nightly # exact trigger comment',
+      '    enabled: true',
+      '    prompt: "keep quoting"',
+      '',
+      'tail:  value   # exact spaces',
+      '',
+    ].join('\n');
+    writeFileSync(join(dir, 'kortix.yaml'), before);
+
+    expect(setScalarInArrayBlock('triggers', 'slug', 'nightly', 'enabled', false, dir)).toBe(true);
+
+    const after = readFileSync(manifestFile(dir), 'utf8');
+    expect(after).toBe(before.replace('    enabled: true', '    enabled: false'));
+  });
+
+  test('preserves every existing YAML byte when appending one array entry', async () => {
+    const { appendArrayBlock, manifestFile } = await import('../manifest-edit');
+    const { readFileSync } = await import('node:fs');
+    const before = [
+      'kortix_version: 1',
+      'metadata: { owner: "ops", labels: [alpha,beta] } # exact flow style',
+      '',
+      'connectors:',
+      '  - slug: first # exact connector comment',
+      '    provider: http',
+      '',
+      'tail:  value   # exact spaces',
+      '',
+    ].join('\n');
+    writeFileSync(join(dir, 'kortix.yaml'), before);
+
+    appendArrayBlock('connectors', { slug: 'second', provider: 'mcp', url: 'https://mcp.test' }, dir);
+
+    const after = readFileSync(manifestFile(dir), 'utf8');
+    expect(after).toBe(
+      before.replace(
+        '\n\ntail:  value',
+        '\n  - slug: second\n    provider: mcp\n    url: https://mcp.test\n\ntail:  value',
+      ),
+    );
+  });
+
+  test('removes only the selected YAML array entry bytes', async () => {
+    const { removeArrayBlock, manifestFile } = await import('../manifest-edit');
+    const { readFileSync } = await import('node:fs');
+    const before = [
+      'kortix_version: 1',
+      'connectors:',
+      '  - slug: first # keep inline',
+      '    provider: http',
+      '  # remove with second',
+      '  - slug: second',
+      '    provider: mcp',
+      'tail:  [x,y] # exact tail',
+      '',
+    ].join('\n');
+    writeFileSync(join(dir, 'kortix.yaml'), before);
+
+    expect(removeArrayBlock('connectors', 'slug', 'second', dir)).toBe(true);
+
+    const after = readFileSync(manifestFile(dir), 'utf8');
+    expect(after).toBe(
+      before.replace('  # remove with second\n  - slug: second\n    provider: mcp\n', ''),
+    );
+  });
+
+  test('updates and appends a YAML table scalar without changing unrelated bytes', async () => {
+    const { setTableScalar, manifestFile } = await import('../manifest-edit');
+    const { readFileSync } = await import('node:fs');
+    const before = [
+      'kortix_version: 1',
+      'policy:',
+      '  default_mode: ask # keep this comment',
+      'tail:  [x,y] # exact tail',
+      '',
+    ].join('\n');
+    writeFileSync(join(dir, 'kortix.yaml'), before);
+
+    setTableScalar('policy', 'default_mode', 'allow_all', dir);
+    expect(readFileSync(manifestFile(dir), 'utf8')).toBe(
+      before.replace('default_mode: ask', 'default_mode: allow_all'),
+    );
+
+    setTableScalar('policy', 'review', true, dir);
+    expect(readFileSync(manifestFile(dir), 'utf8')).toBe(
+      before
+        .replace('default_mode: ask', 'default_mode: allow_all')
+        .replace('tail:  [x,y]', '  review: true\ntail:  [x,y]'),
+    );
+  });
 });

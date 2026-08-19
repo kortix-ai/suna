@@ -92,7 +92,7 @@ function perSeatSubscription(quantity: number, overrides: Record<string, any> = 
 }
 
 describe('per-seat webhook reconciliation', () => {
-  test('quantity 1 → 3: seat_count updates, one seat_grant of $80 emitted', async () => {
+  test('quantity 1 → 3: seat_count updates, one seat_grant of $50 emitted', async () => {
     const sub = perSeatSubscription(3);
     const event = createMockStripeEvent('customer.subscription.updated', sub);
 
@@ -105,14 +105,19 @@ describe('per-seat webhook reconciliation', () => {
     expect(persistedUpdate?.data.billingModel).toBe('per_seat');
     expect(persistedUpdate?.data.seatSubscriptionItemId).toBe('si_seat_123');
 
-    // Delta = 3 - 1 = 2 seats → grant $80 (PER_SEAT_PRICE_USD $40 × 2)
+    // Delta = 3 - 1 = 2 seats → grant $50 (INCLUDED_CREDITS_PER_SEAT_USD $25 × 2).
+    // NOT $80: the $40 seat PRICE is not the wallet allowance.
     expect(grantCreditsCalls.length).toBe(1);
     const [accountId, amount, type, , , idempotencyKey] = grantCreditsCalls[0];
     expect(accountId).toBe('acc_test_123');
-    expect(amount).toBe(80);
+    expect(amount).toBe(50);
     expect(type).toBe('seat_grant');
     expect(idempotencyKey).toBeDefined();
-    expect(String(idempotencyKey)).toContain('seats:3');
+    // Keyed on the seat count REACHED within this billing period, so a team that
+    // shrinks and regrows to 3 inside one cycle reuses the key instead of being
+    // funded twice for the same seat.
+    expect(String(idempotencyKey)).toContain(':seats:');
+    expect(String(idempotencyKey).endsWith(':3')).toBe(true);
   });
 
   test('auto-topup defaults rescale unless user customized', async () => {
@@ -174,7 +179,7 @@ describe('per-seat webhook reconciliation', () => {
     // All grant calls for this seat-count transition use the same key.
     const keys = new Set(grantCreditsCalls.map((c) => c[5]));
     expect(keys.size).toBe(1);
-    expect([...keys][0]).toContain('seats:3');
+    expect(String([...keys][0]).endsWith(':3')).toBe(true);
   });
 
   test('legacy subscription (no per-seat item) — billing_model unchanged, no seat fields touched', async () => {
@@ -251,14 +256,14 @@ describe('per-seat webhook reconciliation', () => {
     const seatUpdate = updateCalls.find((c) => c.data.seatCount === 4);
     expect(seatUpdate).toBeDefined();
     expect(grantCreditsCalls.length).toBe(1);
-    expect(grantCreditsCalls[0][1]).toBe(120); // delta 4-1=3 seats × $40 = $120
+    expect(grantCreditsCalls[0][1]).toBe(75); // delta 4-1=3 seats × $25 allowance = $75
   });
 
   test('grant amount math is correct for various deltas', async () => {
     const cases = [
-      { from: 1, to: 2, expectedGrant: 40 },
-      { from: 1, to: 5, expectedGrant: 160 },
-      { from: 1, to: 10, expectedGrant: 360 },
+      { from: 1, to: 2, expectedGrant: 25 },
+      { from: 1, to: 5, expectedGrant: 100 },
+      { from: 1, to: 10, expectedGrant: 225 },
     ];
     for (const { from, to, expectedGrant } of cases) {
       grantCreditsCalls = [];
@@ -348,5 +353,168 @@ describe('legacy → per-seat adoption (regression)', () => {
 
     // Second delivery short-circuits before any reconciliation.
     expect(grantCreditsCalls.length).toBe(1);
+  });
+
+  // ── Enterprise + per-seat coexistence (contract-readiness regression) ──────
+  //
+  // A deal that is BOTH Enterprise (entitlements) AND per-seat (billing) — a
+  // flat Enterprise fee plus per-seat billing with pooled per-seat credits —
+  // must hold both at once. The previous webhook
+  // reconciliation unconditionally set `updates.tier = 'per_seat'` on any
+  // per-seat subscription item (webhooks.ts syncSubscriptionState), which
+  // clobbered a sales-assigned `tier='enterprise'` (or an
+  // `enterprise_entitled` account) on the very first per-seat webhook AND on
+  // every subsequent seat-quantity update, silently stripping SSO/SCIM/RBAC/
+  // audit. These tests lock the fix: the per-seat billing semantics
+  // (billing_model, seatCount, seat grant) are still reconciled, but `tier` is
+  // left untouched so the enterprise identity entitlements (sourced from
+  // `tier='enterprise'` or `enterprise_entitled`) survive.
+  describe('enterprise + per-seat coexistence — tier not clobbered', () => {
+    test('enterprise_entitled=true + per-seat sub update → billing_model reconciled, tier NOT set to per_seat', async () => {
+      // The contracted shape: enterprise entitlements (via flag)
+      // + a per-seat Stripe subscription. An ordinary seat-quantity update lands.
+      mockRegistry.getCreditAccount = async () =>
+        createMockCreditAccount({
+          tier: 'enterprise',
+          enterpriseEntitled: true,
+          billingModel: 'per_seat',
+          seatCount: 2,
+          seatSubscriptionItemId: 'si_seat_123',
+          stripeSubscriptionId: 'sub_seat_123',
+          autoTopupCustomized: true,
+        });
+
+      // Webhook fires for a seat-count change 2 → 4 — the ordinary update path
+      // that used to strip enterprise entitlements.
+      const sub = perSeatSubscription(4);
+      const event = createMockStripeEvent('customer.subscription.updated', sub);
+
+      await processStripeWebhook(JSON.stringify(event), 'whsec_test');
+
+      const persisted = [...updateCalls, ...upsertCalls.map((u) => ({ accountId: u.accountId, data: u.data }))]
+        .find((c) => c.data.seatCount !== undefined);
+      expect(persisted).toBeDefined();
+      // Per-seat billing semantics ARE reconciled:
+      expect(persisted?.data.billingModel).toBe('per_seat');
+      expect(persisted?.data.seatCount).toBe(4);
+      expect(persisted?.data.seatSubscriptionItemId).toBe('si_seat_123');
+      // But tier is NOT clobbered to 'per_seat' — the key fix. The update must
+      // not carry a `tier` write at all (enterprise tier is preserved).
+      expect(persisted?.data.tier).toBeUndefined();
+    });
+
+    test('enterprise_entitled=true + per-seat sub update → seat grant still emitted (delta funded)', async () => {
+      // The no-clobber guard must not break the per-seat credit grant: a
+      // seat-count increase still funds the new seats from the pooled wallet.
+      mockRegistry.getCreditAccount = async () =>
+        createMockCreditAccount({
+          tier: 'enterprise',
+          enterpriseEntitled: true,
+          billingModel: 'per_seat',
+          seatCount: 2,
+          seatSubscriptionItemId: 'si_seat_123',
+          stripeSubscriptionId: 'sub_seat_123',
+          autoTopupCustomized: true,
+        });
+
+      const sub = perSeatSubscription(5); // +3 seats
+      const event = createMockStripeEvent('customer.subscription.updated', sub);
+
+      await processStripeWebhook(JSON.stringify(event), 'whsec_test');
+
+      // Delta = 5 - 2 = 3 seats → grant $75 (INCLUDED_CREDITS_PER_SEAT_USD $25 × 3).
+      expect(grantCreditsCalls.length).toBe(1);
+      const [, amount, type, , , idempotencyKey] = grantCreditsCalls[0];
+      expect(amount).toBe(75);
+      expect(type).toBe('seat_grant');
+      expect(String(idempotencyKey)).toContain(':seats:');
+      expect(String(idempotencyKey).endsWith(':5')).toBe(true);
+    });
+
+    test('tier=enterprise (no flag) + per-seat sub update → tier NOT clobbered', async () => {
+      // The legacy sales-assigned path (tier='enterprise' without the new flag)
+      // must also be protected — the guard keys off tier='enterprise' too.
+      mockRegistry.getCreditAccount = async () =>
+        createMockCreditAccount({
+          tier: 'enterprise',
+          enterpriseEntitled: false,
+          billingModel: 'per_seat',
+          seatCount: 1,
+          seatSubscriptionItemId: 'si_seat_123',
+          stripeSubscriptionId: 'sub_seat_123',
+          autoTopupCustomized: true,
+        });
+
+      const sub = perSeatSubscription(3);
+      const event = createMockStripeEvent('customer.subscription.updated', sub);
+
+      await processStripeWebhook(JSON.stringify(event), 'whsec_test');
+
+      const persisted = [...updateCalls, ...upsertCalls.map((u) => ({ accountId: u.accountId, data: u.data }))]
+        .find((c) => c.data.seatCount !== undefined);
+      expect(persisted).toBeDefined();
+      expect(persisted?.data.billingModel).toBe('per_seat');
+      expect(persisted?.data.seatCount).toBe(3);
+      expect(persisted?.data.tier).toBeUndefined();
+    });
+
+    test('non-enterprise per-seat account → tier still set to per_seat (unchanged behaviour)', async () => {
+      // The guard must NOT change behaviour for ordinary per-seat accounts
+      // (no enterprise entitlement): tier='per_seat' is still written, exactly
+      // as before. This is the regression guard for the common case.
+      mockRegistry.getCreditAccount = async () =>
+        createMockCreditAccount({
+          tier: 'free',
+          enterpriseEntitled: false,
+          billingModel: 'per_seat',
+          seatCount: 1,
+          seatSubscriptionItemId: 'si_seat_123',
+          stripeSubscriptionId: 'sub_seat_123',
+          autoTopupCustomized: true,
+        });
+
+      const sub = perSeatSubscription(3);
+      const event = createMockStripeEvent('customer.subscription.updated', sub);
+
+      await processStripeWebhook(JSON.stringify(event), 'whsec_test');
+
+      const persisted = [...updateCalls, ...upsertCalls.map((u) => ({ accountId: u.accountId, data: u.data }))]
+        .find((c) => c.data.seatCount !== undefined);
+      expect(persisted).toBeDefined();
+      expect(persisted?.data.billingModel).toBe('per_seat');
+      expect(persisted?.data.seatCount).toBe(3);
+      // tier IS clobbered to per_seat for ordinary accounts — unchanged.
+      expect(persisted?.data.tier).toBe('per_seat');
+    });
+
+    test('enterprise_entitled=true, no existing per-seat → first per-seat webhook still does NOT set tier', async () => {
+      // An operator flags the account enterprise_entitled at sign-up (tier is
+      // still 'free', no per-seat sub yet). The customer then buys a per-seat
+      // subscription. The activation webhook must adopt the sub + reconcile
+      // billing, but NOT flip tier to per_seat.
+      mockRegistry.getCreditAccount = async () =>
+        createMockCreditAccount({
+          tier: 'free',
+          enterpriseEntitled: true,
+          billingModel: 'legacy',
+          seatCount: 0,
+          stripeSubscriptionId: null,
+          autoTopupCustomized: false,
+        });
+
+      const sub = perSeatSubscription(2);
+      const event = createMockStripeEvent('customer.subscription.created', sub);
+
+      await processStripeWebhook(JSON.stringify(event), 'whsec_test');
+
+      const persisted = [...updateCalls, ...upsertCalls.map((u) => ({ accountId: u.accountId, data: u.data }))]
+        .find((c) => c.data.billingModel === 'per_seat');
+      expect(persisted).toBeDefined();
+      expect(persisted?.data.billingModel).toBe('per_seat');
+      expect(persisted?.data.seatCount).toBe(2);
+      // The free → per_seat activation must NOT clobber tier for an
+      // enterprise-entitled account; entitlements stay sourced from the flag.
+      expect(persisted?.data.tier).toBeUndefined();
+    });
   });
 });

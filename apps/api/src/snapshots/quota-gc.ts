@@ -27,6 +27,7 @@ import {
   listDaytonaSnapshots,
 } from '../shared/daytona';
 import { db } from '../shared/db';
+import { collectPinnedImageRefs } from './pinned-images';
 import {
   DAYTONA_ORG_SNAPSHOT_LIMIT,
   QUOTA_GC_MAX_PER_PASS,
@@ -122,7 +123,19 @@ export async function reconcileSnapshotQuota(
     if (r.name && r.active) referenced.add(r.name);
   }
 
-  const plan = selectSnapshotsToReap({ all, referenced, now });
+  // FIX-K-lite: never reap an image that is the ACTIVE routing pin of ANY project.
+  // proj8 (8 hex) scoping over the org-wide list could otherwise let one project's
+  // superseded-tip selection delete another project's LIVE pinned cache on a
+  // collision. A listing/DB error here degrades to "no extra protection", which is
+  // acceptable — the pressure gate + freshness rules still bound deletions.
+  let pinnedImages = new Set<string>();
+  try {
+    pinnedImages = await collectPinnedImageRefs();
+  } catch (err) {
+    console.warn('[snapshot-gc] pinned-image lookup failed — proceeding without pin protection:', err instanceof Error ? err.message : err);
+  }
+
+  const plan = selectSnapshotsToReap({ all, referenced, pinnedImages, now });
   result.orgTotal = plan.orgTotal;
   result.managedCount = plan.managedCount;
   result.eligible = plan.doomed.length + plan.deferred;

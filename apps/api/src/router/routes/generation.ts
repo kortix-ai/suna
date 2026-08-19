@@ -3,6 +3,7 @@ import { gatewayRequestLogs } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { HTTPException } from 'hono/http-exception';
 import { combinedAuth } from '../../middleware/auth';
+import { rejectSandboxTokens } from '../../middleware/reject-sandbox-tokens';
 import { auth, errors, json, makeOpenApiApp } from '../../openapi';
 import { db } from '../../shared/db';
 import { resolveScopedAccountId } from '../../shared/resolve-account';
@@ -12,6 +13,10 @@ import { mapGatewayLogToGeneration } from './generation-mapper';
 const generationApp = makeOpenApiApp<AppEnv>();
 
 generationApp.use('*', combinedAuth);
+// Sandbox agent tokens (kortix_ keys with a sandboxId) must not read gateway
+// call forensics across the whole account — prompts/cost/latency for any
+// requestId. See reject-sandbox-tokens.ts.
+generationApp.use('*', rejectSandboxTokens);
 
 const GenerationDataSchema = z
   .object({
@@ -23,6 +28,7 @@ const GenerationDataSchema = z
     tokens_prompt: z.number(),
     tokens_completion: z.number(),
     tokens_cached: z.number(),
+    tokens_cache_write: z.number(),
     total_cost: z.number(),
     upstream_cost: z.number(),
     latency_ms: z.number(),

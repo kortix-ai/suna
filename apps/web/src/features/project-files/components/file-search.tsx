@@ -3,11 +3,16 @@
 import { useTranslations } from 'next-intl';
 
 import { Input } from '@/components/ui/input';
+import { useFilesStore } from '@/features/file-browser/store/files-store';
 import { cn } from '@/lib/utils';
-import { FileText, Folder, Search, X } from 'lucide-react';
+import {
+  FileTextIcon as FileText,
+  FolderIcon as Folder,
+  MagnifyingGlassIcon as Search,
+  XIcon as X,
+} from '@phosphor-icons/react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useFileExplorerSource } from '../explorer-source';
-import { useFilesStore } from '@/features/file-browser/store/files-store';
 
 export function FileSearch() {
   const tI18nHardcoded = useTranslations('hardcodedUi');
@@ -76,19 +81,15 @@ export function FileSearch() {
 
       if (e.key === 'ArrowDown') {
         e.preventDefault();
-        setSelectedIndex((prev) => {
-          const next = prev < results.length - 1 ? prev + 1 : 0;
-          // Use requestAnimationFrame so the DOM has updated before scrolling
-          requestAnimationFrame(() => scrollItemIntoView(next));
-          return next;
-        });
+        const next = selectedIndex < results.length - 1 ? selectedIndex + 1 : 0;
+        setSelectedIndex(next);
+        // Use requestAnimationFrame so the DOM has updated before scrolling
+        requestAnimationFrame(() => scrollItemIntoView(next));
       } else if (e.key === 'ArrowUp') {
         e.preventDefault();
-        setSelectedIndex((prev) => {
-          const next = prev > 0 ? prev - 1 : results.length - 1;
-          requestAnimationFrame(() => scrollItemIntoView(next));
-          return next;
-        });
+        const next = selectedIndex > 0 ? selectedIndex - 1 : results.length - 1;
+        setSelectedIndex(next);
+        requestAnimationFrame(() => scrollItemIntoView(next));
       } else if (e.key === 'Enter') {
         e.preventDefault();
         if (results[selectedIndex]) {

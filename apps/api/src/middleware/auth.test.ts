@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { Hono } from 'hono';
+import * as realPreviewOwnership from '../shared/preview-ownership';
+import * as realRequestContext from '../lib/request-context';
+import * as realAuthAudit from '../shared/auth-audit';
+import * as realSentry from '../lib/sentry';
+import * as realSsoSync from '../iam/sso-sync';
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 // Two projects under the same account, each with its own sandbox — this is
@@ -67,20 +72,28 @@ mock.module('../shared/supabase', () => ({
 
 // Sandbox → project resolution, keyed by sandboxId the same way the real
 // session_sandboxes lookup would be (uuid/externalId → project_id).
+// Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
+// lists exports by hand deletes every export it omits — the failure surfaces in
+// whatever unrelated file imports the missing name next, attributed to no test.
 mock.module('../shared/preview-ownership', () => ({
+  ...realPreviewOwnership,
   canAccessPreviewSandbox: async () => true,
   resolveSandboxProjectId: async (sandboxId: string) =>
     sandboxProjectByOwnSandboxId[sandboxId] ?? null,
 }));
 
+// Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
+// lists exports by hand deletes every export it omits — the failure surfaces in
+// whatever unrelated file imports the missing name next, attributed to no test.
 mock.module('../shared/auth-audit', () => ({
+  ...realAuthAudit,
   auditLoginSuccess: () => {},
   auditLoginFail: () => {},
 }));
 
-mock.module('../lib/sentry', () => ({ setSentryUser: () => {} }));
-mock.module('../lib/request-context', () => ({ setContextField: () => {} }));
-mock.module('../iam/sso-sync', () => ({ syncSsoMembership: async () => {} }));
+mock.module('../lib/sentry', () => ({ ...realSentry, setSentryUser: () => {} }));
+mock.module('../lib/request-context', () => ({ ...realRequestContext, setContextField: () => {} }));
+mock.module('../iam/sso-sync', () => ({ ...realSsoSync, syncSsoMembership: async () => {} }));
 
 const { combinedAuth } = await import('./auth');
 
@@ -96,6 +109,12 @@ function appWithProbe() {
   app.get('/v1/projects/:projectId', (c) =>
     c.json({ userId: c.get('userId' as never), projectId: c.req.param('projectId') }),
   );
+  app.get('/v1/connectors/projects/:projectId/catalog', (c) =>
+    c.json({ userId: c.get('userId' as never), projectId: c.req.param('projectId') }),
+  );
+  app.get('/v1/skills', (c) => c.json({ ok: true }));
+  app.get('/v1/skills/:name', (c) => c.json({ ok: true, name: c.req.param('name') }));
+  app.get('/v1/skills/:name/file', (c) => c.json({ ok: true }));
   return app;
 }
 
@@ -149,6 +168,60 @@ describe('project-scoped PAT on the sandbox-proxy path', () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.projectId).toBe(PROJECT_A);
+  });
+
+  test('project-scoped PAT can reach its own canonical /v1/connectors/projects/:id/* routes', async () => {
+    const res = await appWithProbe().request(`/v1/connectors/projects/${PROJECT_A}/catalog`, {
+      headers: { Authorization: 'Bearer kortix_pat_project_a' },
+    });
+
+    expect(res.status).toBe(200);
+    expect((await res.json()).projectId).toBe(PROJECT_A);
+  });
+
+  test('project-scoped PAT cannot reach another project through connector routes', async () => {
+    const res = await appWithProbe().request(`/v1/connectors/projects/${PROJECT_B}/catalog`, {
+      headers: { Authorization: 'Bearer kortix_pat_project_a' },
+    });
+
+    expect(res.status).toBe(403);
+    expect(await res.text()).toContain('Project-scoped token cannot access a different project');
+  });
+
+  // The in-sandbox `KORTIX_CLI_TOKEN` IS a project+session-scoped PAT, and
+  // enforceTokenProjectScope is default-deny. /v1/skills shipped without an
+  // allowlist entry, so the one caller the system skills exist for — an agent
+  // in a sandbox running the `kortix skills get <name>` that every baked image
+  // seeds — got a 403. Nothing caught it: the routes' own unit test mounts the
+  // app WITHOUT combinedAuth, and the e2e flow only exercises ANON and a
+  // Supabase-JWT owner. These are that regression guard.
+  test('project-scoped PAT CAN list the system skills (the in-sandbox agent)', async () => {
+    const res = await appWithProbe().request('/v1/skills', {
+      headers: { Authorization: 'Bearer kortix_pat_project_a' },
+    });
+
+    expect(res.status).toBe(200);
+  });
+
+  test('project-scoped PAT CAN read a system skill body and a reference file', async () => {
+    const body = await appWithProbe().request('/v1/skills/kortix-system', {
+      headers: { Authorization: 'Bearer kortix_pat_project_a' },
+    });
+    expect(body.status).toBe(200);
+
+    const file = await appWithProbe().request(
+      '/v1/skills/kortix-system/file?path=references/capabilities.md',
+      { headers: { Authorization: 'Bearer kortix_pat_project_a' } },
+    );
+    expect(file.status).toBe(200);
+  });
+
+  test('the /v1/skills allowlist does not leak to a lookalike prefix', async () => {
+    const res = await appWithProbe().request('/v1/skillsomething', {
+      headers: { Authorization: 'Bearer kortix_pat_project_a' },
+    });
+
+    expect(res.status).toBe(403);
   });
 
   test('account-scoped PAT (no project binding) reaches the sandbox proxy unchanged', async () => {

@@ -169,7 +169,8 @@
             "type": "string",
             "enum": [
               "cron",
-              "webhook"
+              "webhook",
+              "monitor"
             ]
           },
           "name": {
@@ -202,15 +203,29 @@
             "enum": [
               "fresh",
               "reuse",
-              "pinned"
+              "pinned",
+              "keyed"
             ]
+          },
+          "session_key": {
+            "type": "string"
+          },
+          "sessionKey": {
+            "type": "string"
+          },
+          "filter": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
           },
           "sessionMode": {
             "type": "string",
             "enum": [
               "fresh",
               "reuse",
-              "pinned"
+              "pinned",
+              "keyed"
             ]
           },
           "session_id": {
@@ -255,6 +270,26 @@
           "secretEnv": {
             "type": "string",
             "pattern": "^[A-Z_][A-Z0-9_]*$"
+          },
+          "run": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "poll",
+              "stream"
+            ]
+          },
+          "interval": {
+            "type": "string",
+            "pattern": "^([1-9][0-9]*)(s|m|h|d)$"
+          },
+          "expect_event_within": {
+            "type": "string",
+            "pattern": "^([1-9][0-9]*)(s|m|h|d)$"
           }
         },
         "additionalProperties": true,
@@ -328,6 +363,70 @@
                 }
               ]
             }
+          },
+          {
+            "if": {
+              "properties": {
+                "type": {
+                  "const": "monitor"
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "run",
+                "mode"
+              ],
+              "properties": {
+                "cron": false,
+                "schedule": false,
+                "run_at": false,
+                "runAt": false,
+                "timezone": false,
+                "secret_env": false,
+                "secretEnv": false
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "type": {
+                  "const": "monitor"
+                },
+                "mode": {
+                  "const": "poll"
+                }
+              },
+              "required": [
+                "mode"
+              ]
+            },
+            "then": {
+              "required": [
+                "interval"
+              ]
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "type": {
+                  "const": "monitor"
+                },
+                "mode": {
+                  "const": "stream"
+                }
+              },
+              "required": [
+                "mode"
+              ]
+            },
+            "then": {
+              "properties": {
+                "interval": false
+              }
+            }
           }
         ]
       }
@@ -344,6 +443,10 @@
           "slug": {
             "type": "string",
             "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
           },
           "provider": {
             "type": "string",
@@ -388,10 +491,18 @@
               "slack",
               "teams",
               "email",
-              "meet"
+              "voice"
             ]
           },
           "credential": {},
+          "authorization_strategy": {
+            "type": "string",
+            "enum": [
+              "project",
+              "user"
+            ],
+            "default": "project"
+          },
           "agent_scope": {},
           "auth": {
             "type": "object",
@@ -405,13 +516,30 @@
                   "bearer",
                   "basic",
                   "custom",
+                  "api_key",
                   "oauth1",
+                  "hmac",
+                  "aws_sigv4",
+                  "mtls",
                   "none"
                 ]
               },
               "secret": false
             },
             "additionalProperties": true
+          },
+          "headers": {
+            "type": "object",
+            "maxProperties": 32,
+            "propertyNames": {
+              "pattern": "^[A-Za-z0-9!#$%&'*+.^_`|~-]+$",
+              "maxLength": 128
+            },
+            "additionalProperties": {
+              "type": "string",
+              "maxLength": 2048,
+              "pattern": "^[^\\r\\n]*$"
+            }
           },
           "policies": {
             "type": "array",
@@ -492,7 +620,7 @@
             "if": {
               "properties": {
                 "slug": {
-                  "const": "kortix_meet"
+                  "const": "kortix_voice"
                 }
               }
             },
@@ -685,6 +813,7 @@
                     "project.gateway.spend.read",
                     "project.gateway.budget.set",
                     "project.gateway.keys.manage",
+                    "project.gateway.otel.manage",
                     "project.agent.read",
                     "project.agent.write",
                     "project.skill.read",
@@ -701,8 +830,11 @@
                     "project.secret.read",
                     "project.secret.write",
                     "project.connector.read",
-                    "project.connector.profiles.manage",
+                    "project.connector.connections.manage",
                     "project.connector.write",
+                    "project.app.read",
+                    "project.app.write",
+                    "project.app.deploy",
                     "project.review.read",
                     "project.review.submit",
                     "project.review.act",

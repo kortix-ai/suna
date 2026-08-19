@@ -2,12 +2,10 @@
  * 05 — Cost pass-through: a marked-up usage table for re-billing.
  *
  * The shape a real "Kortix as a Backend" wrapper uses to charge its own
- * users: pull per-session LLM + compute cost from the gateway
- * (`project(id).gateway.sessions`) and the caller's own credit balance
- * (`billing.creditBreakdown`), then apply a markup multiplier before showing
- * it to the end user. This mirrors `apps/whitelabel-demo`'s `/usage` route
- * (`src/app/api/usage/route.ts`), rewritten to go through the SDK facade
- * instead of a raw upstream `fetch`.
+ * users: pull finalized per-session LLM + compute cost through
+ * `billing.sessionCosts.list`, then apply a markup multiplier before showing
+ * it to the end user. The list also reports cost records that the service
+ * cannot reconcile to a current session.
  *
  * Run:
  *   KORTIX_API_URL=http://localhost:8008/v1 KORTIX_API_KEY=kortix_pat_... \
@@ -17,10 +15,49 @@
  * As an npm consumer:
  *   import { createKortix } from '@kortix/sdk';
  */
-import { createKortix } from '../src/index';
+import {
+  createKortix,
+  type Kortix,
+  type SessionCostReconciliation,
+  type SessionCostSummary,
+} from '../src/index';
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
+}
+
+async function listAllSessionCosts(kortix: Kortix, projectId: string) {
+  const sessions: SessionCostSummary[] = [];
+  let reconciliation: SessionCostReconciliation | null = null;
+  let total = 0;
+  let offset: number | null = 0;
+
+  while (offset !== null) {
+    const page = await kortix.billing.sessionCosts.list({
+      projectId,
+      limit: 100,
+      offset,
+    });
+    sessions.push(...page.sessions);
+    reconciliation ??= page.reconciliation;
+    total = page.total;
+    offset = page.next_offset;
+  }
+
+  return {
+    sessions,
+    total,
+    reconciliation:
+      reconciliation ??
+      {
+        llm_cost: 0,
+        compute_cost: 0,
+        total_cost: 0,
+        request_count: 0,
+        compute_window_count: 0,
+        compute_seconds: 0,
+      },
+  };
 }
 
 async function main() {
@@ -36,29 +73,35 @@ async function main() {
 
   const kortix = createKortix({ backendUrl, getToken: async () => apiKey });
 
-  const [sessions, credits] = await Promise.all([
-    kortix.project(projectId).gateway.sessions(30), // trailing 30 days
+  const [costs, credits] = await Promise.all([
+    listAllSessionCosts(kortix, projectId),
     kortix.billing.creditBreakdown(),
   ]);
 
   console.log(`Caller's own Kortix credit balance: ${credits.total} (${credits.non_expiring} non-expiring)\n`);
-  console.log(`Per-session cost, last ${sessions.window_days} day(s), ${markup}x markup applied:\n`);
+  console.log(`Per-session finalized cost, ${markup}x markup applied:\n`);
   console.log('session_id                            raw_cost   billed_cost   requests');
   console.log('-------------------------------------------------------------------------');
 
   let rawTotal = 0;
   let billedTotal = 0;
-  for (const s of sessions.sessions) {
+  for (const s of costs.sessions) {
     const billed = round2(s.total_cost * markup);
     rawTotal += s.total_cost;
     billedTotal += billed;
     console.log(
-      `${s.session_id.padEnd(38)} $${s.total_cost.toFixed(4).padStart(8)}   $${billed.toFixed(4).padStart(8)}   ${s.requests}`,
+      `${s.session_id.padEnd(38)} $${s.total_cost.toFixed(4).padStart(8)}   $${billed.toFixed(4).padStart(8)}   ${s.request_count}`,
     );
   }
 
   console.log('-------------------------------------------------------------------------');
   console.log(`TOTAL${' '.repeat(33)} $${round2(rawTotal).toFixed(2).padStart(8)}   $${round2(billedTotal).toFixed(2).padStart(8)}`);
+  console.log(
+    `Unreconciled cost: $${costs.reconciliation.total_cost.toFixed(4)} across ${costs.reconciliation.request_count} request(s) and ${costs.reconciliation.compute_window_count} compute window(s).`,
+  );
+  console.log(
+    `Loaded ${costs.sessions.length} of ${costs.total} session(s).`,
+  );
 }
 
 main().catch((err) => {

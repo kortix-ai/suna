@@ -5,7 +5,7 @@ description = "Presentation-gen helper scripts (validate, PDF export, PPTX expor
 requires-python = ">=3.12"
 dependencies = [
     "lxml>=6.1.0",
-    "pillow>=12.2.0",
+    "pillow>=12.3.0",
     "playwright>=1.58.0; sys_platform == 'darwin'",
     "pypdf>=4.0.0",
     "python-pptx>=1.0.2",

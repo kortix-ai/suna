@@ -61,11 +61,24 @@ const TTL_MS = 30_000;
 const cache = new Map<string, { config: ProjectOtelExporterConfig | null; expiresAt: number }>();
 const inFlight = new Set<string>();
 
+// Per-project generation counter. `invalidateProjectOtelExporterCache` bumps
+// it, and a refresh only publishes its result if the generation it started
+// under is still current. Without this, a refresh already in flight when a
+// write lands finishes AFTER the invalidation and re-publishes the PRE-write
+// row — re-enabling a just-disabled exporter, or re-arming a just-rotated
+// header, for a full TTL window. The write is the authority; a read that
+// started before it is stale by definition and must be discarded.
+const generation = new Map<string, number>();
+
 function refresh(projectId: string): void {
   if (inFlight.has(projectId)) return;
   inFlight.add(projectId);
+  const startedAt = generation.get(projectId) ?? 0;
   void loadFromDb(projectId)
-    .then((config) => cache.set(projectId, { config, expiresAt: Date.now() + TTL_MS }))
+    .then((config) => {
+      if ((generation.get(projectId) ?? 0) !== startedAt) return;
+      cache.set(projectId, { config, expiresAt: Date.now() + TTL_MS });
+    })
     .catch(() => {
       // Best-effort — leave the previous cache entry (if any) in place rather
       // than poisoning it with a transient DB error.
@@ -83,9 +96,12 @@ export function peekCachedProjectOtelExporter(
 }
 
 /** Force the next read to hit the DB — call after a config write so the
- *  change takes effect immediately instead of waiting out the TTL. */
+ *  change takes effect immediately instead of waiting out the TTL. Also
+ *  invalidates any refresh already in flight (see `generation`), so a read
+ *  that started before the write can never publish the pre-write row. */
 export function invalidateProjectOtelExporterCache(projectId: string): void {
   cache.delete(projectId);
+  generation.set(projectId, (generation.get(projectId) ?? 0) + 1);
 }
 
 // ─── CRUD (Observability tab) ───────────────────────────────────────────────

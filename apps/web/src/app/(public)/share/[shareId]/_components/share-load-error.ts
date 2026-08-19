@@ -1,4 +1,4 @@
-import { PublicSessionShareError } from '@kortix/sdk/projects-client';
+import { PublicSessionShareError } from '@kortix/sdk';
 
 export interface ShareLoadError {
   status: number | null;

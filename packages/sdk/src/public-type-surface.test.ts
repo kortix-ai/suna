@@ -1,7 +1,7 @@
-import { expect, test } from 'bun:test';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
-import ts from 'typescript';
+import { expect, test } from "bun:test";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import ts from "typescript";
 
 /**
  * A committed snapshot of the FULL type-level export surface — value AND
@@ -22,15 +22,17 @@ import ts from 'typescript';
  *
  * Regenerate deliberately:  UPDATE_TYPE_SURFACE_SNAPSHOT=1 bun test src/public-type-surface.test.ts
  */
-const SNAPSHOT = join(import.meta.dir, 'public-type-surface.snapshot.json');
-const PKG_ROOT = join(import.meta.dir, '..');
+const SNAPSHOT = join(import.meta.dir, "public-type-surface.snapshot.json");
+const PKG_ROOT = join(import.meta.dir, "..");
 
 /** The entry set is every subpath in package.json's `exports` — root `.`,
  *  `./react`, `./server`, and every subpath the runtime snapshot already
  *  covers. Derived from the same source of truth as `public-surface.test.ts`,
  *  so the two snapshots can never drift on WHICH entries they describe. */
 function collectTypeSurface(): Record<string, string[]> {
-  const pkg = JSON.parse(readFileSync(join(PKG_ROOT, 'package.json'), 'utf8')) as {
+  const pkg = JSON.parse(
+    readFileSync(join(PKG_ROOT, "package.json"), "utf8"),
+  ) as {
     exports: Record<string, string>;
   };
   const entries = Object.entries(pkg.exports).map(
@@ -60,9 +62,13 @@ function collectTypeSurface(): Record<string, string[]> {
   const surface: Record<string, string[]> = {};
   for (const [subpath, abs] of entries) {
     const sourceFile = program.getSourceFile(abs);
-    if (!sourceFile) throw new Error(`type-surface: no source file for ${subpath} (${abs})`);
+    if (!sourceFile)
+      throw new Error(`type-surface: no source file for ${subpath} (${abs})`);
     const moduleSymbol = checker.getSymbolAtLocation(sourceFile);
-    if (!moduleSymbol) throw new Error(`type-surface: ${subpath} resolved to a non-module (no exports?)`);
+    if (!moduleSymbol)
+      throw new Error(
+        `type-surface: ${subpath} resolved to a non-module (no exports?)`,
+      );
     // getExportsOfModule follows `export *` and `export … from` and returns BOTH
     // value and type exports — the type-only ones are exactly what we're here for.
     surface[subpath] = checker
@@ -80,36 +86,48 @@ function describeDrift(
   actual: Record<string, string[]>,
 ): string {
   const lines: string[] = [];
-  for (const subpath of [...new Set([...Object.keys(expected), ...Object.keys(actual)])].sort()) {
+  for (const subpath of [
+    ...new Set([...Object.keys(expected), ...Object.keys(actual)]),
+  ].sort()) {
     const before = new Set(expected[subpath] ?? []);
     const after = new Set(actual[subpath] ?? []);
     const removed = [...before].filter((n) => !after.has(n));
     const added = [...after].filter((n) => !before.has(n));
     if (removed.length === 0 && added.length === 0) continue;
     lines.push(`  ${subpath}:`);
-    for (const n of removed) lines.push(`    - ${n}   ← REMOVED/RENAMED — breaking; alias it and bump a major`);
+    for (const n of removed)
+      lines.push(
+        `    - ${n}   ← REMOVED/RENAMED — breaking; alias it and bump a major`,
+      );
     for (const n of added) lines.push(`    + ${n}   ← added — additive, fine`);
   }
-  return lines.join('\n');
+  return lines.join("\n");
 }
 
-test('public TYPE-level export surface matches the committed snapshot', () => {
+test("public TYPE-level export surface matches the committed snapshot", () => {
   const actual = collectTypeSurface();
 
-  if (process.env.UPDATE_TYPE_SURFACE_SNAPSHOT === '1') {
+  if (process.env.UPDATE_TYPE_SURFACE_SNAPSHOT === "1") {
     writeFileSync(SNAPSHOT, `${JSON.stringify(actual, null, 2)}\n`);
-    console.warn('public-type-surface.snapshot.json regenerated — REVIEW THE DIFF.');
+    console.warn(
+      "public-type-surface.snapshot.json regenerated — REVIEW THE DIFF.",
+    );
     return;
   }
 
   expect(existsSync(SNAPSHOT)).toBe(true);
-  const expected = JSON.parse(readFileSync(SNAPSHOT, 'utf8')) as Record<string, string[]>;
+  const expected = JSON.parse(readFileSync(SNAPSHOT, "utf8")) as Record<
+    string,
+    string[]
+  >;
 
   if (JSON.stringify(actual) !== JSON.stringify(expected)) {
     // A removed/renamed TYPE is a breaking change the runtime snapshot cannot
     // see. Surface the drift loudly before the bare toEqual failure, so the
     // reviewer's question — additive or breaking? — is answered at a glance.
-    console.error(`\nType-level export surface changed (types + values):\n${describeDrift(expected, actual)}\n`);
+    console.error(
+      `\nType-level export surface changed (types + values):\n${describeDrift(expected, actual)}\n`,
+    );
   }
   expect(actual).toEqual(expected);
-});
+}, 30_000);

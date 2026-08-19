@@ -58,6 +58,7 @@ jobs:
             api:
               - *pnpm
               - 'apps/api/**'
+              - 'apps/kortix-app-runtime/**'
               - 'packages/agent-tunnel/**'
               - 'packages/api-contract/**'
               - 'packages/db/**'
@@ -85,6 +86,7 @@ jobs:
             self_host:
               - *pnpm
               - 'apps/api/Dockerfile'
+              - 'apps/kortix-app-runtime/**'
               - 'apps/api/src/snapshots/builder.ts'
               - 'apps/api/src/config.ts'
               - 'packages/db/**'
@@ -103,7 +105,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Install Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
 
@@ -137,9 +139,14 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Install Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
 
       - name: Install pnpm
         run: |
@@ -150,6 +157,43 @@ jobs:
         run: pnpm install --frozen-lockfile --filter "./apps/web..."
         env:
           npm_config_engine_strict: "false"
+
+      - name: Enforce frontend SDK boundary
+        run: |
+          pnpm --dir apps/web exec bun test src/sdk-boundary.test.ts
+          pnpm --dir apps/web exec eslint src --quiet
+
+      # Next.js 16.3 turns on Turbopack's FileSystem cache for `next build`
+      # (`experimental.turbopackFileSystemCacheForBuild`, default true) and
+      # writes it to apps/web/.next/cache/turbopack. A bare runner starts with
+      # no .next, so without this step 16.3 pays the cost of WRITING that cache
+      # on every run and never reads it back. Restoring it is what turns the
+      # 16.3 build-cache feature into an actual CI speedup.
+      #
+      # Key on the lockfile plus this run's SHA so every run saves a fresh
+      # entry (actions/cache never overwrites an existing key); the restore-key
+      # falls back to the newest entry built against the same dependency set.
+      # Turbopack invalidates per-file from its own content hashes, so a
+      # restored cache from an older SHA is a valid starting point, not a
+      # source of stale output.
+      #
+      # The fallback deliberately stops at the lockfile hash. A broader
+      # `nextjs-turbopack-<os>-` key would also match caches built against a
+      # DIFFERENT next version, whose on-disk cache format need not be
+      # compatible — that is ~1GB downloaded to be discarded. Upstream's recipe
+      # scopes its restore-keys to the lockfile for the same reason:
+      # https://nextjs.org/docs/app/guides/ci-build-caching
+      #
+      # Verified on this PR: run 1 logged "Cache not found" then "Cache saved";
+      # a re-run logged "Cache restored from key" and the Turbopack compile
+      # went 105s -> 1.549s.
+      - name: Restore Turbopack build cache
+        uses: actions/cache@v4
+        with:
+          path: apps/web/.next/cache
+          key: nextjs-turbopack-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
+          restore-keys: |
+            nextjs-turbopack-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-
 
       - name: Build standalone frontend
         run: pnpm --filter ./apps/web build
@@ -204,7 +248,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Install Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
 
@@ -239,8 +283,8 @@ jobs:
   # fresh `kortix self-host` database must come up fully provisioned. Boots the
   # data plane (Postgres + Supabase + the kortix-migrate one-shot + the API) and
   # asserts the migrate one-shot applies all migrations and the
-  # owner/account flow works. The frontend/gateway + a live agent session +
-  # the update mechanism are covered by the nightly full e2e (self-host-e2e.yml).
+  # owner/account flow works. This is a deployment-topology gate. Product
+  # behavior remains covered by the root test command.
   self-host-schema:
     name: Self-host schema bootstrap
     needs: changes
@@ -252,7 +296,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Install Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
 
@@ -292,7 +336,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Install Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
 

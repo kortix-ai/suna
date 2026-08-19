@@ -1,73 +1,182 @@
 'use client';
 
 /**
- * LLM — one Customize section that consolidates the per-project gateway surfaces
- * (Providers, Overview, Logs, Budgets, API keys) behind a single tab bar, so the
- * whole section reads as one consistent surface (no competing tab styles).
+ * Models — the whole `/projects/[id]/models` page: the shared capability
+ * shell, one tab strip, and whichever section that strip has selected.
  *
- * The tab bar is one row: the section tabs sit on the left, the project default
- * model picker on the right. There's no duplicate default-model control inside
- * Routing; this shared picker is the single project-default surface.
+ * ## It is the same page as Connectors, Agents and Skills, or it is wrong
+ *
+ * This screen used to build a SECOND shell inside the first one: a full-height
+ * `Tabs` root, its own bordered tab row with its own horizontal padding, an
+ * `underline` tab list, and six `TabsContent` panels that each opened their own
+ * `overflow-y-auto`. Sat inside `CapabilityPageShell`, that read as a different
+ * product from the five sibling tabs on the Customize bar — a rule under the
+ * active label where every sibling draws a filled pill, content indented 20px
+ * further than the heading above it, and up to three nested scrollers.
+ *
+ * There is one shell now. The tab strip is the shell's `filters` slot and uses
+ * the DEFAULT `Tabs`/`TabsList`/`TabsTrigger` — no `type`, no `size`, no
+ * classes — which is character-for-character what `connectors-page.tsx` passes.
+ * The project-default model picker is the shell's `action` slot, beside the
+ * heading, where every sibling page puts its one page-level control. The active
+ * section is plain local state and renders as the shell's `children`, so the
+ * shell's scroll container is the page's only one.
+ *
+ * ## Seven tabs
+ *
+ * Order follows the work: bring a key in, choose models, add your own provider,
+ * hand a key out, shape the routing, then watch what it costs and what it did.
+ *
+ *  - **Providers** (was "API keys") is now ONLY the provider list. The gateway
+ *    key and its reference moved out — see `gateway-access-tab.tsx` for why the
+ *    split is by direction.
+ *  - **Gateway** is that key plus the endpoints for calling it. Both legacy
+ *    deep-links that used to land on `providers` (`llm-keys`, `llm-api`) land
+ *    here, because this is where their content is.
+ *  - **Playground is gone.** A prompt box that fanned one message across
+ *    models. Every project already has a real session for that, one click away,
+ *    with the full runtime behind it. Deleted, not hidden. The API route it
+ *    called (`POST /gateway/playground`) still exists and is untouched.
+ *  - **Budgets folded into Costs.** The cap belongs under the number it caps —
+ *    see `gateway-budgets.tsx`.
  *
  * The active tab is LOCAL state, so switching tabs never touches the main
- * Customize rail. Deep-links / `openCustomize('llm-providers')` set the store
- * section, which we read once (and follow on change) to pick the initial tab —
- * Providers is the default, core surface.
+ * Customize rail. Deep-links / `openCustomize('llm-providers')` set the hosting
+ * panel's section, read here via `useSettingsNav()` (once, and followed on
+ * change) to pick the initial tab.
+ *
+ * This view reads `useSettingsNav()`, never a store directly, so it mounts
+ * under either the legacy Customize panel or the new Settings panel — see
+ * `features/workspace/shared/settings-nav-context.tsx`.
  */
 
 import { useEffect, useState } from 'react';
 
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { errorToast } from '@/components/ui/toast';
+import { ProviderConnect } from '@/features/providers/provider-connect';
 import { ModelSelector } from '@/features/session/model-selector';
-import { ProjectProviderModal } from '@/features/workspace/customize/sections/llm-provider/llm-provider-modal';
-import { GatewayBudgets } from '@/features/workspace/customize/sections/view/gateway/gateway-budgets';
-import { GatewayKeys } from '@/features/workspace/customize/sections/view/gateway/gateway-keys';
+import { CapabilityPageShell } from '@/features/workspace/capabilities/shared/capability-page-shell';
+import { GatewayAccessTab } from '@/features/workspace/customize/sections/gateway-access-tab';
+import { CustomProviderPanel } from '@/features/workspace/customize/sections/llm-provider/custom-provider-panel';
+import { ModelsTab } from '@/features/workspace/customize/sections/llm-provider/models-tab';
 import { GatewayLogs } from '@/features/workspace/customize/sections/view/gateway/gateway-logs';
 import { GatewayObservability } from '@/features/workspace/customize/sections/view/gateway/gateway-observability';
 import { GatewayOverview } from '@/features/workspace/customize/sections/view/gateway/gateway-overview';
 import { GatewayRouting } from '@/features/workspace/customize/sections/view/gateway/gateway-routing';
-import { useModelDefaults } from '@/hooks/opencode/use-model-defaults';
-import type { CustomizeSection } from '@/lib/customize-sections';
+import { useSettingsNav } from '@/features/workspace/shared/settings-nav-context';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
-import { useCustomizeStore } from '@/stores/customize-store';
-import { gatewayRoutingPolicyKey, useProjectModels } from '@kortix/sdk/react';
+import { gatewayRoutingPolicyKey, useModelDefaults, useProjectModels } from '@kortix/sdk/react';
 import { useIsMutating } from '@tanstack/react-query';
+
+export const MODELS_PAGE_TITLE = 'Models';
+export const MODELS_PAGE_DESCRIPTION = 'Which providers and models this project can use.';
 
 type LlmTab =
   | 'providers'
+  | 'models'
+  | 'custom'
+  | 'gateway'
   | 'routing'
   | 'overview'
   | 'logs'
-  | 'observability'
-  | 'budgets'
-  | 'keys';
+  | 'observability';
 
-const LLM_TABS: { id: LlmTab; label: string }[] = [
+export const LLM_TABS: { id: LlmTab; label: string }[] = [
+  // The keys you bring IN. Only the provider list — it was called "API keys"
+  // and also carried the gateway key and its reference, which point the other
+  // way; see `gateway-access-tab.tsx`.
   { id: 'providers', label: 'Providers' },
+  { id: 'models', label: 'Models' },
+  // The custom-provider form used to be section 4 of the Providers tab. It
+  // moved to its own tab so the screen everyone uses to paste a key stops
+  // ending in a form almost nobody fills — see `custom-provider-panel.tsx`.
+  { id: 'custom', label: 'Custom' },
+  // The key you hand OUT, and the endpoints it opens. Two tabs once, four
+  // apart, one of them sharing the other's label.
+  { id: 'gateway', label: 'Gateway' },
   { id: 'routing', label: 'Routing' },
-  { id: 'overview', label: 'Overview' },
+  // Stats AND the spend cap — the former Budgets tab is a section of this one.
+  // Label is "Costs" — the id stays `overview` so the `llm-overview` /
+  // `llm-budgets` legacy deep-link re-points (settings-tabs.ts) and this
+  // file's own render switch keep working unchanged.
+  { id: 'overview', label: 'Costs' },
   { id: 'logs', label: 'Logs' },
+  // Where this project's gateway spans go. The last gateway tab, and the
+  // only one that writes OUT of Kortix (OTLP export to your own backend).
   { id: 'observability', label: 'Observability' },
-  { id: 'budgets', label: 'Budgets' },
-  { id: 'keys', label: 'API keys' },
 ];
 
-const TAB_BY_SECTION: Partial<Record<CustomizeSection, LlmTab>> = {
+/**
+ * The legacy Customize overlay's `llm-*` `CustomizeSection` ids. The new
+ * Settings overlay's `SettingsTab` union has no equivalent — every one of
+ * these collapses into the single `models` tab at the redirect
+ * (`settings-tabs.ts`'s `RENAMED_TABS`), so `activeTab` is never one of them
+ * while mounted there; this map only fires while mounted under the legacy
+ * panel (deleted once the cutover is complete) or for a raw deep-link value
+ * that slips through before a redirect resolves. Kept local (not imported
+ * from the legacy Customize-sections module, which no longer exists) since nothing
+ * else needs this exact 7-member set.
+ */
+type LegacyLlmSubTab =
+  | 'llm-management'
+  | 'llm-overview'
+  | 'llm-providers'
+  | 'llm-logs'
+  | 'llm-budgets'
+  | 'llm-keys'
+  | 'llm-api';
+
+const TAB_BY_SECTION: Partial<Record<LegacyLlmSubTab, LlmTab>> = {
   'llm-management': 'providers',
   'llm-providers': 'providers',
   'llm-overview': 'overview',
   'llm-logs': 'logs',
-  'llm-budgets': 'budgets',
-  'llm-keys': 'keys',
+  // Budgets is a section of Costs now. `llm-keys` (create a gateway key) and
+  // `llm-api` (call the gateway with it) point at the Gateway tab, which is
+  // where that content lives — they pointed at `providers` only for as long as
+  // it held all three key surfaces.
+  'llm-budgets': 'overview',
+  'llm-keys': 'gateway',
+  'llm-api': 'gateway',
 };
 
+/**
+ * The tab strip, pure — no hooks, so it renders under `renderToStaticMarkup`
+ * with no provider tree, which is the repo's only render-assertion idiom.
+ *
+ * The props are `connectors-page.tsx`'s exactly: a controlled `Tabs`, a bare
+ * `TabsList`, a `TabsTrigger` per entry. Nothing here may grow a `type`, a
+ * `size` or a className — the whole point of this component is that Models and
+ * Connectors draw the same control, and a prop added on one side is how they
+ * stop.
+ */
+export function LlmTabStrip({
+  value,
+  onValueChange,
+}: {
+  value: string;
+  onValueChange: (next: string) => void;
+}) {
+  return (
+    <Tabs value={value} onValueChange={onValueChange}>
+      <TabsList>
+        {LLM_TABS.map((t) => (
+          <TabsTrigger key={t.id} value={t.id}>
+            {t.label}
+          </TabsTrigger>
+        ))}
+      </TabsList>
+    </Tabs>
+  );
+}
+
 export function LlmManagementView({ projectId }: { projectId: string }) {
-  const open = useCustomizeStore((s) => s.open);
-  const section = useCustomizeStore((s) => s.section);
-  const llmProvidersTab = useCustomizeStore((s) => s.llmProvidersTab);
-  const [tab, setTab] = useState<LlmTab>(() => TAB_BY_SECTION[section] ?? 'providers');
+  const { isOpen: open, activeTab: section } = useSettingsNav();
+  const [tab, setTab] = useState<LlmTab>(
+    () => TAB_BY_SECTION[section as LegacyLlmSubTab] ?? 'providers',
+  );
 
   // The project default is the single model authority for this project. Account
   // and platform defaults are display-only inheritance when no project value is
@@ -78,7 +187,7 @@ export function LlmManagementView({ projectId }: { projectId: string }) {
   const effectiveDefault =
     modelDefaults.projectDefault ??
     modelDefaults.accountDefault ??
-    modelDefaults.platformDefault ??
+    (modelDefaults.freeTier ? undefined : modelDefaults.platformDefault) ??
     null;
   // A role with the LLM section's READ leaf (project.read) but not project.write
   // sees the gateway read-only: logs/overview/spend stay visible, but the
@@ -90,28 +199,21 @@ export function LlmManagementView({ projectId }: { projectId: string }) {
   // Follow an external deep-link (e.g. openCustomize('llm-providers')) to its
   // tab. Plain in-view tab clicks stay local and never move the main rail.
   useEffect(() => {
-    const next = TAB_BY_SECTION[section];
+    const next = TAB_BY_SECTION[section as LegacyLlmSubTab];
     if (next) setTab(next);
   }, [section]);
 
   return (
-    <Tabs
-      value={tab}
-      onValueChange={(v) => setTab(v as LlmTab)}
-      className="bg-background flex h-full min-h-0 flex-col gap-0"
-    >
-      {/* One bar: section tabs left, default-model picker right. The underline
-          list sits flush on the container's divider (no vertical padding so the
-          active underline lands exactly on the border). */}
-      <div className="border-border flex shrink-0 items-center justify-between gap-3 border-b px-5 pt-2">
-        <TabsList type="underline" size="lg" className="border-b-0">
-          {LLM_TABS.map((t) => (
-            <TabsTrigger key={t.id} value={t.id} className="w-fit flex-none text-xs">
-              {t.label}
-            </TabsTrigger>
-          ))}
-        </TabsList>
-        {canWrite ? (
+    <CapabilityPageShell
+      title={MODELS_PAGE_TITLE}
+      description={MODELS_PAGE_DESCRIPTION}
+      action={
+        /* The page's one page-level control, in the slot every sibling page
+           puts its one page-level control in. It is NOT in the `filters` row
+           beside the tabs: a bordered dropdown opposite a filled pill strip
+           reads as a second tab strip, and the row that has to look identical
+           to Connectors / Agents / Skills is exactly that one. */
+        canWrite ? (
           <div className="flex shrink-0 items-center gap-1.5">
             <span className="text-muted-foreground hidden text-xs sm:inline">Project default</span>
             <ModelSelector
@@ -129,43 +231,53 @@ export function LlmManagementView({ projectId }: { projectId: string }) {
               }}
             />
           </div>
-        ) : null}
-      </div>
-
-      {/* min-h-0 lets each panel actually shrink inside the flex column so
-          overflow-y-auto scrolls instead of clipping tall content. */}
-      <TabsContent value="providers" className="min-h-0 overflow-y-auto">
-        <ProjectProviderModal
-          asPanel
+        ) : undefined
+      }
+      filters={<LlmTabStrip value={tab} onValueChange={(v) => setTab(v as LlmTab)} />}
+    >
+      {/* One section at a time, by local state — NOT six `TabsContent` panels.
+          Radix keeps every panel in the tree and each one used to open its own
+          `overflow-y-auto`, which is how this page ended up with three nested
+          scroll containers under a shell that already had one. */}
+      {tab === 'providers' && (
+        /* JAY-510: this path mounts `ProviderConnect` DIRECTLY — no Modal, no
+           dialog, so connecting Anthropic here opens nothing. The modal shell
+           (`ProjectProviderModal`) is only for the model selector and the
+           Secrets tab, which are dialogs by construction. `p-0` because the
+           shell's column already carries the page padding. */
+        <ProviderConnect
           projectId={projectId}
-          open={open}
-          onOpenChange={() => {}}
-          defaultTab={llmProvidersTab}
           canWrite={canWrite}
+          enabled={open}
+          className="gap-4 p-0"
         />
-      </TabsContent>
-      <TabsContent value="overview" className="min-h-0 overflow-y-auto">
-        <GatewayOverview projectId={projectId} />
-      </TabsContent>
-      <TabsContent value="routing" className="min-h-0 overflow-y-auto">
+      )}
+      {/* The model-visibility list used to sit one level deeper, inside the
+          provider modal's own "Models" tab. Flattened to a sibling here so it
+          keeps a home now that `ProviderConnect` has no tabs of its own. */}
+      {tab === 'models' && <ModelsTab projectId={projectId} />}
+      {tab === 'custom' && <CustomProviderPanel projectId={projectId} canWrite={canWrite} />}
+      {tab === 'gateway' && (
+        <GatewayAccessTab
+          projectId={projectId}
+          canWrite={canWrite}
+          onViewModels={() => setTab('models')}
+        />
+      )}
+      {tab === 'routing' && (
         <GatewayRouting
           projectId={projectId}
           canWrite={canWrite}
           projectDefaultPending={modelDefaults.isUpdating}
         />
-      </TabsContent>
-      <TabsContent value="logs" className="min-h-0 overflow-y-auto">
-        <GatewayLogs projectId={projectId} />
-      </TabsContent>
-      <TabsContent value="observability" className="min-h-0 overflow-y-auto">
+      )}
+      {/* Stats + the spend cap. `canWrite` reaches the budget controls that
+          used to live one tab over. */}
+      {tab === 'overview' && <GatewayOverview projectId={projectId} canWrite={canWrite} />}
+      {tab === 'logs' && <GatewayLogs projectId={projectId} />}
+      {tab === 'observability' && (
         <GatewayObservability projectId={projectId} canWrite={canWrite} />
-      </TabsContent>
-      <TabsContent value="budgets" className="min-h-0 overflow-y-auto">
-        <GatewayBudgets projectId={projectId} canWrite={canWrite} />
-      </TabsContent>
-      <TabsContent value="keys" className="min-h-0 overflow-y-auto">
-        <GatewayKeys projectId={projectId} canWrite={canWrite} />
-      </TabsContent>
-    </Tabs>
+      )}
+    </CapabilityPageShell>
   );
 }

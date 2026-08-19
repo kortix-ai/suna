@@ -1,4 +1,5 @@
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { accountIsFreeTierForModels as realAccountIsFreeTierForModels } from '../billing/services/tiers';
 
 let billingEnabled = true;
 let accountTier = 'free';
@@ -24,16 +25,20 @@ mock.module('../config', () => ({
         if (key === 'LLM_GATEWAY_ENABLED') return true;
         if (key === 'LLM_GATEWAY_DEFAULT_ENABLED') return false;
         if (key === 'TUNNEL_ENABLED') return false;
-        if (key === 'LLM_GATEWAY_BYOK_FALLBACK_MODEL') return 'claude-sonnet-4.6';
+        if (key === 'LLM_GATEWAY_BYOK_FALLBACK_MODEL') return 'glm-5.2';
         if (key === 'LLM_GATEWAY_DEFAULT_MODEL') return 'codex/gpt-5.6-sol';
-        if (key === 'LLM_GATEWAY_VISION_MODEL') return 'claude-sonnet-4.6';
+        if (key === 'LLM_GATEWAY_VISION_MODEL') return undefined;
+        if (key === 'ASTER_API_KEY') return 'aster-key';
+        if (key === 'ASTER_API_URL') return 'https://api.asterlab.ai/v1';
         if (key === 'LLM_GATEWAY_FALLBACK_POLICIES') {
-          return [{
-            id: 'test-platform-default',
-            models: ['codex/gpt-5.6-sol'],
-            fallbackModels: ['glm-5.2'],
-            fallbackOn: 'any-error',
-          }];
+          return [
+            {
+              id: 'test-platform-default',
+              models: ['codex/gpt-5.6-sol'],
+              fallbackModels: ['glm-5.2'],
+              fallbackOn: 'any-error',
+            },
+          ];
         }
         return target[key];
       },
@@ -57,12 +62,22 @@ mock.module('../billing/services/entitlements', () => ({
     accountTierCalls += 1;
     return accountTier;
   },
+  // The managed-models entitlement resolver (trial + operator override aware
+  // in production; tier-derived here). Deliberately does NOT bump
+  // accountTierCalls: in production it reads the same cached tier snapshot as
+  // getCachedAccountTier — it is not a second tier resolution.
+  accountMayUseManagedModels: async () =>
+    billingEnabled ? !realAccountIsFreeTierForModels(accountTier) : true,
 }));
 
 mock.module('../projects/secrets', () => ({
   decryptProjectSecret: (_projectId: string, value: string) => value,
   encryptProjectSecret: (_projectId: string, value: string) => value,
   getProjectSecretValue: async () => 'user-key',
+  getProjectSecretValueForConsumer: async () => 'user-key',
+  resolveProjectSecretsForConsumer: async (input: { name: string }) => [
+    { identifier: input.name, value: 'user-key' },
+  ],
   listProjectSecrets: async () => ({}),
   listProjectSecretsForUser: async () => ({}),
   listProjectSecretsSnapshot: async () => ({
@@ -70,6 +85,7 @@ mock.module('../projects/secrets', () => ({
     names: [],
     revision: 'empty',
   }),
+  listProjectSecretNamesForConsumer: async () => [],
   listProjectSecretsSnapshotForUser: async () => ({
     env: {},
     names: [],
@@ -86,6 +102,22 @@ mock.module('../llm-gateway/credentials/codex', () => ({
   }),
 }));
 
+// One managed transport is always reachable in this file, so the two entries
+// below are derived from the same stub — `managedTransportAvailable` is
+// `managedCandidates(...).length > 0` in the real module and the mock must not
+// be able to contradict itself.
+const mockManagedCandidates = (managed: { id: string; upstreamModelId?: string }) => [
+  {
+    provider: 'openrouter',
+    kind: 'openai-chat',
+    baseUrl: 'https://openrouter.ai/api/v1',
+    apiKey: 'managed-key',
+    billingMode: 'credits',
+    markup: 1.2,
+    resolvedModel: managed.upstreamModelId ?? managed.id,
+  },
+];
+
 mock.module('../llm-gateway/resolution/descriptors', () => ({
   codexDescriptor: (_credential: unknown, model: string) => ({
     provider: 'openai-codex',
@@ -97,32 +129,21 @@ mock.module('../llm-gateway/resolution/descriptors', () => ({
     resolvedModel: model.replace(/^codex\//, ''),
   }),
   livePricing: () => undefined,
-  managedCandidates: (managed: { id: string; upstreamModelId?: string }) => [
-    {
-      provider: 'openrouter',
-      kind: 'openai-chat',
-      baseUrl: 'https://openrouter.ai/api/v1',
-      apiKey: 'managed-key',
-      billingMode: 'credits',
-      markup: 1.2,
-      resolvedModel: managed.upstreamModelId ?? managed.id,
-    },
-  ],
+  managedCandidates: mockManagedCandidates,
+  // `served-managed-models.ts` imports this to build SERVED_MANAGED_MODELS, and
+  // `catalog-models.ts` (which resolve-candidates.ts imports) imports that — so
+  // omitting it makes the whole file fail to link with
+  // `SyntaxError: Export named 'managedTransportAvailable' not found`.
+  managedTransportAvailable: (managed: { id: string; upstreamModelId?: string }) =>
+    mockManagedCandidates(managed).length > 0,
   // resolve-candidates.ts's Bedrock BYOK branch imports this unconditionally
   // (only CALLS it for kind:'bedrock' candidates, which this file never
   // exercises) — stub it so the static import binding resolves against this
   // mock.
   bedrockByokBaseUrl: (region: string | null | undefined) =>
     `https://bedrock-runtime.${region?.trim() || 'us-east-1'}.amazonaws.com`,
-}));
-
-// resolveCandidates resolves raw "auto"/"kortix/auto" via resolveGatewayRoute
-// BEFORE any BYOK/managed-model logic below runs. The real implementation
-// looks up the project's routing policy from the DB, which isn't available
-// here (config is mocked, no DATABASE_URL) — stub it to the same platform
-// default (config.LLM_GATEWAY_DEFAULT_MODEL above) the "auto" tests assert on.
-mock.module('../llm-gateway/routing', () => ({
-  resolveGatewayRoute: async () => ({ primaryModel: 'codex/gpt-5.6-sol' }),
+  normalizeBedrockInferenceProfileRegion: (model: string) => model,
+  stripBedrockInferenceProfilePrefix: (model: string) => model,
 }));
 
 const { resolveCandidates } = await import('../llm-gateway/resolution/resolve-candidates');
@@ -149,7 +170,9 @@ describe('resolveCandidates free-tier premium gate', () => {
 
   test('blocks managed premium candidates for free accounts', async () => {
     accountTier = 'free';
-    await expect(resolveCandidates(principal('free-managed'), 'claude-sonnet-4.6')).rejects.toMatchObject({
+    await expect(
+      resolveCandidates(principal('free-managed'), 'glm-5.2'),
+    ).rejects.toMatchObject({
       name: 'GatewayResolutionError',
       code: 'plan_upgrade_required',
     });
@@ -158,30 +181,32 @@ describe('resolveCandidates free-tier premium gate', () => {
 
   test('allows managed premium candidates for Team accounts', async () => {
     accountTier = 'per_seat';
-    const candidates = await resolveCandidates(principal('team-managed'), 'claude-sonnet-4.6');
+    const candidates = await resolveCandidates(principal('team-managed'), 'glm-5.2');
     expect(candidates).toHaveLength(1);
     expect(candidates[0]?.billingMode).toBe('credits');
-    expect(accountTierCalls).toBe(1);
-  });
-
-  test('resolves raw auto to the Codex GPT-5.6 Sol platform default for stale gateway callers', async () => {
-    accountTier = 'per_seat';
-    const candidates = await resolveCandidates(principal('team-auto'), 'auto');
-    expect(candidates).toHaveLength(1);
-    expect(candidates[0]?.provider).toBe('openai-codex');
-    expect(candidates[0]?.resolvedModel).toBe('gpt-5.6-sol');
+    // 0, not 1: the pass path answers via the managed-models entitlement
+    // resolver (shared tier snapshot) and never resolves the tier STRING —
+    // that fetch only happens on the refusal path to word the error.
     expect(accountTierCalls).toBe(0);
   });
 
-  test('does not tier-gate the Codex platform default for free accounts with ChatGPT auth', async () => {
+  test('rejects stale raw auto for paid accounts', async () => {
+    accountTier = 'per_seat';
+    await expect(resolveCandidates(principal('team-auto'), 'auto')).rejects.toMatchObject({
+      name: 'GatewayResolutionError',
+      code: 'model_not_found',
+    });
+    expect(accountTierCalls).toBe(0);
+  });
+
+  test('rejects stale kortix/auto for free accounts', async () => {
     accountTier = 'free';
-    const candidates = await resolveCandidates(
-      { ...principal('free-auto'), freeModelsOnly: true },
-      'auto',
-    );
-    expect(candidates).toHaveLength(1);
-    expect(candidates[0]?.provider).toBe('openai-codex');
-    expect(candidates[0]?.resolvedModel).toBe('gpt-5.6-sol');
+    await expect(
+      resolveCandidates({ ...principal('free-auto'), freeModelsOnly: true }, 'kortix/auto'),
+    ).rejects.toMatchObject({
+      name: 'GatewayResolutionError',
+      code: 'model_not_found',
+    });
     expect(accountTierCalls).toBe(0);
   });
 
@@ -217,7 +242,7 @@ describe('resolveCandidates free-tier premium gate', () => {
     billingEnabled = false;
     accountTier = 'free';
     managedProviderEnabled = true;
-    const candidates = await resolveCandidates(principal('self-host-managed'), 'claude-sonnet-4.6');
+    const candidates = await resolveCandidates(principal('self-host-managed'), 'glm-5.2');
     expect(candidates).toHaveLength(1);
     expect(accountTierCalls).toBe(0);
   });
@@ -226,7 +251,7 @@ describe('resolveCandidates free-tier premium gate', () => {
     managedProviderEnabled = false;
     accountTier = 'per_seat';
     await expect(
-      resolveCandidates(principal('self-host-flag-off'), 'claude-sonnet-4.6'),
+      resolveCandidates(principal('self-host-flag-off'), 'glm-5.2'),
     ).rejects.toMatchObject({
       name: 'GatewayResolutionError',
       code: 'model_disabled_on_deployment',

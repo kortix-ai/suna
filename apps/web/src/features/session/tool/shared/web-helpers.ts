@@ -224,10 +224,13 @@ export function parseScrapeInputUrls(input: Record<string, unknown>): string[] {
       .filter((u) => /^https?:\/\//i.test(u));
   }
   if (Array.isArray(raw)) {
-    return raw
-      .filter((u): u is string => typeof u === 'string')
-      .map((s) => s.trim())
-      .filter((u) => /^https?:\/\//i.test(u));
+    const urls: string[] = [];
+    for (const u of raw) {
+      if (typeof u !== 'string') continue;
+      const trimmed = u.trim();
+      if (/^https?:\/\//i.test(trimmed)) urls.push(trimmed);
+    }
+    return urls;
   }
   return [];
 }

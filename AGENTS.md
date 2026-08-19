@@ -1,5 +1,161 @@
 # Kortix project
 
+## Linear tracking
+
+Capability-page work uses Team `Jay`, project `customize`, and the milestone that
+matches the active phase. Search before creating issues. Move the active issue to
+`In Progress` before editing. Mark it `Done` only after the change is merged,
+deployed to dev, and verified there.
+
+## What "ownership" means
+
+The words "can you own this?", "are you on it?", and "can you take care of this?"
+all mean the same thing: you are 100% responsible. The person who handed it to
+you must be able to walk completely away, come back a week later, and find it
+done properly — because you cared about every edge and corner.
+
+- it's not done if it's not implemented
+- it's not done if the implementation is ugly
+- it's not done if it's not documented
+- it's not done if users can't discover it
+- it's not done if you can't market it
+
+Owning something means owning it end to end. The whole arc from "we have a
+problem" to "nobody has to think about this again." Not just the code change in
+the middle, the whole thing. If someone hands you something and still has to
+track whether it actually got solved, you didn't own it.
+
+Here's what that actually looks like in practice.
+
+**Start with the problem, not the solution.** A lot of the time you'll already
+have a fix in your head before you've understood what's broken. "We need to move
+from X to Y" isn't a problem, that's a solution you've pre-committed to. The real
+problem is probably "it's slow", "it's flaky", "it breaks for this customer".
+Name that first. Then ask what else could solve it, what the tradeoffs are, and
+which option actually wins.
+
+**Then pressure-test it before you build:**
+
+- **Edge cases.** Which exist, which matter, which we can safely ignore.
+- **Failures.** Networks fail, that's a given. Retry? How many times, for how
+  long?
+- **Data.** How much, does it need migrating or cleaning, how do you get real
+  data to test against, and what are you assuming about its shape that you
+  haven't actually verified?
+- **Testing.** How will you know it's correct? Are automated tests enough or do
+  you need to poke at it by hand? Is the result something you can see in a
+  screenshot or a video?
+- **The bigger picture.** How does this get announced, how does it fit the
+  roadmap, can you even picture it shipped? If something there bothers you, push
+  back. Ask.
+
+**Then actually do it**, with precision, care, urgency and calm all at once. No
+half-assing. The bar before you merge: am I proud of this? Would I put it in
+front of Steve Jobs and walk him through what I built, the constraints, the
+tradeoffs?
+
+**And then prove it works.** Not "the tests pass", prove it. In 99% of cases you
+can confirm it yourself: run it, ask an agent to walk through the scenarios, poke
+at the data before and after, take a screenshot, make a demo. Are you actually
+sure it solves the problem you started with?
+
+**Then make sure it lands in production and works in production**, which is not
+the same as merged. Did it deploy? Did the deploy quietly fail? Is there a flag
+to flip, and does the flag work? Can you use the thing in prod right now and
+confirm it's really there?
+
+**And then close the loop with everyone it touches:**
+
+- **The team.** If it's a new feature, a new convention, or a tricky thing people
+  should know about, tell them. Don't underestimate peripheral vision. You
+  knowing that someone changed Z yesterday can save someone else three hours of
+  debugging tomorrow when a bug report about Z comes in.
+- **Customers.** Whoever reported it, whoever's blocked, let them know it's
+  fixed.
+- **The world.** If it's worth announcing, announce it.
+- **Future you.** Are there follow-ups? Should you check the logs in a week to
+  make sure it's still healthy?
+
+But that's how we build a product in a small team. We don't have PMs, we don't
+have a QA department. We're small, but we're great, and we can do all of that.
+
+And it's always okay to ask for help, it's okay to ask questions, it's okay to
+redo things and triple-check. What's not okay is to quietly assume someone else
+will catch the parts you didn't think about.
+
+### The bar: autonomy, agency, ownership
+
+This is what I require from the agent I work with. In my own words:
+
+Either you are performing or you are not. Either you are taking on high
+ownership, are high agency and pushing without me having to micromanage you, or
+you are not.
+
+Especially in today's age you are limited by great talent more than ever. Because
+we can all AGI Max, you have a single chokepoint on good judgement.
+
+Every person that comes on the team has to have the capability to truly own
+something. If you have built products, you develop ownership because you owned
+something — whether it worked out or not — for a prolonged amount of time. You
+develop true agency.
+
+I hire you because I expect that if I am able to walk out of the room after
+giving you a high level thing and come back, it's going to be done good, ideally
+better than I would've done it.
+
+Most people are shit at their jobs, some are decent/good, but only people who are
+exceptional should be at Kortix.
+
+Being exceptional on paper is simple — it's a combination of Ownership, Agency
+and actual Merit/Skill. It's hard, because you have to not only be very smart but
+also crazy driven to push like a motherfucker and want to feel every edge and
+corner to make sure the output is good.
+
+## Learnings: incident rules live in the `learnings` skill
+
+`.claude/skills/learnings/SKILL.md` is the append-only register of rules paid
+for with real downtime — each with the incident that taught it and the
+automation that enforces it. Load it before writing or reviewing a DB
+migration, touching deploy/release workflows, planning a promote, or responding
+to a prod incident. After resolving ANY incident or near-miss, append its rule
+there in the same session — an incident that leaves no learning behind is not
+finished.
+
+## How to communicate: precise, technically accurate, no fluff
+
+Write every response — chat, PR text, commit messages, code comments, docs — in
+the spirit of **ASD-STE100 (Simplified Technical English)**. The goal is maximum
+technical precision with zero filler. Apply these rules:
+
+- **State facts, not vibes.** Every claim is specific and verifiable: name the
+  file, function, route, flag, SHA, status code, or number. No "should work",
+  "probably", "a bunch of", "various", "seems fine" — say what is true and how you
+  know, or say you do not know it yet.
+- **One idea per sentence.** Keep sentences short (aim ≤ 20 words) and each one
+  carries a single instruction or fact. Split compound thoughts instead of
+  chaining clauses.
+- **Active voice, present tense, direct.** "The gate rejects the request",
+  not "the request may end up being rejected". Give the instruction; do not
+  soften it.
+- **One term per concept.** Use the same word for the same thing every time —
+  do not alternate "session"/"run"/"task" for one concept. Match the codebase's
+  existing names exactly (`session_id`, not "session ID / run id").
+- **No filler, no hedging, no praise.** Cut "basically", "just", "simply",
+  "I think", "great question", "as we know", and marketing adjectives. Lead with
+  the answer; drop the throat-clearing.
+- **Quantify.** Prefer exact values over adjectives: "up to ~9 min", "returns
+  `402`", "3 of 7 flows", not "slow", "an error", "most".
+- **Show the evidence.** When you assert a behavior, cite the command you ran and
+  the real output. Distinguish verified fact from assumption explicitly.
+- **Structure over prose.** Use numbered/bulleted lists for steps, findings, and
+  status. Reserve paragraphs for genuine explanation, and keep them tight.
+- **Say the unknown plainly.** If something is unverified, blocked, or risky,
+  state it in one line — what, why, and what would resolve it — instead of
+  burying or omitting it.
+
+This standard governs how you talk. It does not override the technical rules
+below; it is how you report on them.
+
 ## First, at session start: where do you work?
 
 Before starting any non-trivial change, **ask the user which environment to work
@@ -57,7 +213,8 @@ exact dev command or interaction in the final response.
 
 `@kortix/sdk` is the **single source of truth** for everything that talks to the
 Kortix backend — projects, accounts, sessions, files, secrets, triggers, the
-OpenCode runtime, SSE streaming, model state, and auth-token plumbing. The apps
+session runtime, OpenCode REST compatibility, SSE streaming, model state,
+and auth-token plumbing. The apps
 (`apps/web`, `apps/whitelabel-demo`, `apps/mobile`) are **thin consumers**. Treat
 these as standing rules whenever you touch the data/runtime layer:
 
@@ -83,13 +240,14 @@ these as standing rules whenever you touch the data/runtime layer:
   JWT for the logged-in web app. Hosts never instantiate a second client.
 - **A whole session is one hook.** `useSession(projectId, sessionId)` owns the
   entire runtime lifecycle — `/start`, the sandbox switch, the live SSE stream,
-  readiness seeding, the canonical OpenCode id, and message sync. Hosts don't
+  readiness seeding, immutable runtime identity, the native conversation id,
+  and message sync. Hosts don't
   hand-roll the mount, drive a server-store "switch", or mount a separate event
   provider.
 - **Session-scoped + provider-agnostic.** The public API is session-scoped
   (`kortix.session(pid, sid).health() / .previewUrl() / .restart() / …`).
-  "Sandbox" and the provider (daytona / …) are server-side
-  concerns; client code must never branch on them.
+  The sandbox provider is a server-side concern. Every session uses the
+  OpenCode REST runtime. Host code must not implement a second transport.
 - **`apps/web` data modules are shims.** Files such as
   `apps/web/src/stores/server-store`, `lib/projects-client`, and
   `hooks/opencode/use-*` are thin re-exports (`export * from '@kortix/sdk/...'`).
@@ -134,20 +292,22 @@ mocked internals when a real surface exists.
 - **No silent gaps:** if a surface cannot be fully exercised in the current
   turn, say exactly which input/output remains unverified and why. Otherwise
   keep going until the real surface is verified.
-- **Final response format:** when work is finished, answer with low-fluff,
-  numbered lists. Include exactly what changed, what was verified, what remains
-  unverified or risky, and what the user should test next. Keep prose short and
-  concrete; do not bury the actionable testing path in a paragraph.
+- **Final response format:** when work is finished, answer per the **How to
+  communicate** standard at the top of this file — numbered/bulleted, no fluff.
+  Include exactly what changed, what was verified (with the command + output),
+  what remains unverified or risky, and what the user should test next. Do not
+  bury the actionable testing path in a paragraph.
 
 ### The stack (already wired)
+
 - **Web** — Next.js dev server on `http://localhost:3000`.
 - **API** — Bun server on `http://localhost:8008/v1` (`/health` returns JSON).
 - **Supabase** — local, on `http://127.0.0.1:54321` (Docker).
 - **Sandboxes** — REAL cloud sandboxes on the enabled provider (Daytona,
   Platinum, or E2B; credentials in `apps/api/.env` / `.env.local`). Each project
-  session gets its own sandbox; `session_id == sandbox_id`. The OpenCode runtime inside a sandbox is reached via the API
-  proxy: `http://localhost:8008/v1/p/<external_id>/8000/...` (SSE event stream
-  at `…/event`).
+  session gets its own sandbox; `session_id == sandbox_id`. The sandbox daemon is
+  reached through `http://localhost:8008/v1/p/<external_id>/8000/...`.
+  OpenCode REST uses the compatibility proxy.
 - **Tunnel** — `scripts/dev-local.sh` (`pnpm dev`) auto-starts a cloudflared
   quick tunnel so cloud sandboxes can call back to the local API (`KORTIX_URL`).
 
@@ -166,7 +326,9 @@ localhost:8008/v1/health`, `lsof -iTCP:3000 -sTCP:LISTEN`.
 > don't bypass them. Full procedure: the **dotenvx-secrets** skill.
 
 ### Authenticating to the live API (for scripts/tests)
+
 Mint a real JWT against local Supabase, then call the API with it:
+
 1. `SUPABASE_SERVICE_ROLE_KEY` lives in `apps/api/.env`; the anon key
    (`NEXT_PUBLIC_SUPABASE_ANON_KEY`) in `apps/web/.env`.
 2. Create a confirmed user: `POST 127.0.0.1:54321/auth/v1/admin/users`
@@ -180,33 +342,82 @@ Mint a real JWT against local Supabase, then call the API with it:
 
 See `tests/e2e/helpers/auth.ts` for the exact calls.
 
-### End-to-end harnesses
-- `pnpm --filter @kortix/tests test:e2e` — Playwright UI specs.
-- `pnpm --filter @kortix/tests test:e2e:gate5:local` — local Gate 5 verifier.
-- `pnpm --filter @kortix/tests test:e2e:gate5:target` — target Gate 5 rehearsal.
-- `tests/README.md` indexes the current E2E and Gate 5 harnesses.
+### One local testing system
 
-### End-to-end tests — `ke2e` (the canonical API suite + source of truth)
-- `suna/tests/` is the **one** black-box REST e2e suite (`ke2e` runner). It hits
-  a **live deployed API** over HTTP (`staging-api.kortix.com` / `dev-api.kortix.com` / local / prod) with
-  **real services** — no mocking. Every test maps 1:1 to a flow ID in
-  `tests/spec/end-to-end.md`; a coverage gate checks that mapping against the
-  authoritative route manifest (`tests/spec/routes.generated.json`).
-- **WIP — NOT yet enforced.** ke2e is still being built out (most flows aren't
-  written yet) and does **not** gate PRs, promotes, or deploys right now. The
-  intended end-state is test-as-source-of-truth (touch an API contract → update
-  `tests/spec/end-to-end.md` + add/adjust the flow + keep `ke2e coverage` green),
-  but treat that as aspirational guidance until the suite is complete and turned on.
-  See the `ke2e-tests` skill for how it works.
-- Run: `cd tests && bun bin/ke2e.ts run --domain system,access` (public, no creds);
-  auth'd domains need `KE2E_OWNER_EMAIL/PASSWORD` + `KE2E_LIVE_CONFIRM=1`. Open
-  `test-results/<runId>/report.html` for every request/response.
-- Regenerate the route manifest after adding/removing routes:
-  `bun run apps/api/scripts/dump-routes.ts`.
-- Provisioning is slow (snapshot build up to ~9 min, sandbox up to ~5 min) —
-  flows that boot sandboxes have generous timeouts; run long checks in the background.
+- `pnpm test` is the only repository-level test command. It runs local REST and
+  CLI flows, SDK tests, runner unit tests, route coverage, and worktree tests
+  concurrently.
+- `pnpm test -- --id ACC-4` runs one flow. `--domain access` runs one domain.
+- `pnpm test -- --sdk-only` runs only `packages/sdk` tests.
+- `pnpm test -- --browser-only` runs Playwright browser journeys. It starts the
+  deterministic local stack.
+- Local browser runs use two Playwright workers. CI browser shards use one.
+- `pnpm test -- --packages-only` runs every app/package test and publish check.
+- `pnpm test -- --full` adds browser journeys and every app/package test. It
+  starts the deterministic local stack.
+- `pnpm test -- --target-smoke` verifies the deployed staging API and gateway
+  SHA, then runs the tagged Playwright staging smoke. Release CI supplies the
+  staging credentials and `RELEASE_SOURCE_SHA`.
+- `pnpm test -- --target-full` verifies the same deployed SHA, then runs every
+  configured staging REST, CLI, and Playwright journey. The production release
+  gate uses this command and fails on any excluded API flow.
+- Browser and full modes reuse only a running API that proves the deterministic
+  test profile. Stop an ordinary development stack before either command.
+- Every root run writes lane and total timings to
+  `tests/test-results/local/benchmark-<timestamp>.json`.
+- GitHub Actions runs core, browser, and package modes in three disposable warm
+  sandboxes through `.github/workflows/tests.yml`. The slowest lane defines the
+  gate duration. Set `provider` to `platinum`, `daytona`, or `auto`. Auto tries
+  Platinum first. It uses Daytona only when Platinum infrastructure throws. A
+  non-zero test exit does not trigger fallback.
+- Platinum warm restore readiness is capped at 2 minutes. A missing marker or
+  unreachable guest after that cap triggers Daytona in `auto` mode. Cold
+  template creation retains its separate 45-minute budget.
+- Both providers fetch and verify the exact SHA, upload `tests/test-results`,
+  and delete the sandbox. The sandbox worker is infrastructure only. Do not add
+  CI-only test logic.
+- Release tests run `pnpm test -- --target-full` against deployed staging. They block
+  production when API or gateway health reports a SHA other than
+  `RELEASE_SOURCE_SHA`, when any API flow is excluded, or when a configured
+  Playwright journey fails.
+- The `preview` label creates one full self-host preview in a persistent warm
+  Platinum sandbox. `auto` uses Daytona only for a Platinum infrastructure
+  failure. The preview has its own PostgreSQL, Supabase, API, gateway, frontend,
+  Mailpit, and HTTPS origin.
+- Preview CI runs `pnpm test -- --target-full` against that origin. The sticky
+  pull request comment links the origin and its `/_tests/` HTML report.
+- A preview head change deletes the sandbox and removes the stale `preview`
+  label. Unlabel, close, and scheduled reconciliation also delete the sandbox.
+- Preview warm images contain dependencies and Docker layers only. They never
+  contain a database or runtime secret.
+- Preview Mailpit handles authentication and invite email. The dedicated
+  preview GitHub App runs the managed repository and CLI push flows. OAuth
+  initiation is the only allowed preview browser exclusion.
+
+### Product flow source of truth
+
+- `tests/spec/end-to-end.md` contains the natural-language contract and stable
+  flow IDs.
+- `tests/src/flows/*.flow.ts` implements the contracts through HTTP and real CLI
+  processes. Do not import API handlers.
+- Write each `ctx.step()` as a complete action and observable result. Cover
+  setup, authentication, action, read-back proof, negative paths, and cleanup.
+- Keep every flow's `meta.routes` synchronized with
+  `tests/spec/routes.generated.json`. Regenerate the manifest with
+  `bun run apps/api/scripts/dump-routes.ts` after route changes.
+- The local profile uses local Supabase, PostgreSQL, API, gateway, and bare Git
+  repositories. It excludes Stripe, cloud sandboxes, managed GitHub repositories,
+  and external email delivery explicitly.
+- Use Playwright only for browser-visible behavior. API-only assertions belong
+  in REST flows. SDK tests remain in `packages/sdk`.
+- Do not add another cross-cutting test harness, Makefile lane, contract suite,
+  Testcontainers suite, load suite, mutation suite, visual suite, accessibility
+  suite, or ad hoc smoke script under `tests/`.
+- Read `tests/README.md` and the repository `testing` skill before changing the
+  test system.
 
 ### Release topology — dev, staging, prod
+
 - **`main` = dev trunk.** It is the repo default branch and deploys to
   `dev.kortix.com` / `dev-api.kortix.com`. Direct pushes are allowed; breaking or
   incomplete development can live here while it is being shaken out.
@@ -222,11 +433,12 @@ See `tests/e2e/helpers/auth.ts` for the exact calls.
 - **`prod` = production.** Production moves only through **Promote to Production**,
   which uses `staging` as the source, opens a reviewed release PR into `prod`,
   publishes the release artifacts, and rolls production after merge.
-- If `qa-staging` or a staging runtime check points at `dev.kortix.com` or
+- If a staging runtime check points at `dev.kortix.com` or
   `dev-api.kortix.com`, treat that as a broken staging setup, not a passing
   staging gate.
 
 ### Driving the real UI (chrome-devtools MCP)
+
 - Routes are auth-gated (`/dashboard`, `/projects/*` → redirect to `/auth`
   unauthenticated); sign in first (seed a user as above, then log in via the
   `/auth` form, or inject the Supabase session).
@@ -239,9 +451,19 @@ See `tests/e2e/helpers/auth.ts` for the exact calls.
   can take 30–60s; warm it with `curl` or use a generous navigation timeout.
 
 ### Frontend type/lint gate
-- `apps/web` `tsc --noEmit` emits ~1500 BOGUS `TS2786` / `IntrinsicAttributes`
-  errors from a React 19↔18 types mismatch — ignore those; grep for YOUR files.
-- `npx eslint <files>` should be clean.
+
+- `apps/web` `tsc --noEmit` is clean apart from ~15 known `@types/bun`
+  `test.each` errors in 3 test files (`app/(system)/api/og/template/template-url.test.ts`,
+  `features/file-viewer/preview-fit.test.tsx`,
+  `features/session/action-panel/easy/easy-panel-logic.test.ts`).
+  The old ~1500 `TS2786` / `IntrinsicAttributes` noise from a React 19↔18
+  types mismatch (two copies of `@types/react` in one program — `packages/sdk`
+  had its own) is gone as of the Next 16 upgrade. If `TS2786` appears again,
+  treat it as a genuine duplicate-`@types/react` regression and investigate —
+  do not wave it through.
+- `npx eslint <files>` should be clean of errors. `eslint .` across the whole
+  app currently reports ~455 warnings, mostly `react-hooks/*` React Compiler
+  rules pending a dedicated audit — expected until that audit lands.
 
 ### Frontend design standard — Jay/Kortix bar
 

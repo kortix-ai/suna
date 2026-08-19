@@ -13,9 +13,18 @@ import { Rise, StepHeader } from '@/features/auth/auth-primitives';
 import { cn } from '@/lib/utils';
 
 /** Session checks and initial fetches — the frame with a quiet spinner. */
-export function AuthPendingScreen() {
+export function AuthPendingScreen({
+  footer = true,
+}: {
+  /**
+   * Pass `false` when the screen this resolves into carries no legal line, so
+   * the footer does not flash for the length of one fetch and then disappear.
+   * Inside a consent flow leave it on: it stays pinned across the swap.
+   */
+  footer?: boolean;
+}) {
   return (
-    <AuthFrame>
+    <AuthFrame footerVariant={footer ? 'default' : 'none'}>
       <div className="flex justify-center">
         <Loading className="text-muted-foreground size-5" />
       </div>

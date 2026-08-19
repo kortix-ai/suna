@@ -5,27 +5,22 @@
  *
  * Always mounted in the session header; renders nothing until this session has
  * an action awaiting a decision, then shows a count badge + popover so the
- * launcher notices even with the side panel closed. Resolve inline, or jump to
- * the full "Audit" tab. Shares its query with {@link SessionAuditPanel} (same
- * key) so the two never disagree.
+ * launcher notices even with the side panel closed. It links to the full
+ * parameter review instead of exposing a parameter-blind decision shortcut.
+ * It shares its query with {@link SessionAuditPanel} so the two never disagree.
  */
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import Loading from '@/components/ui/loading';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { errorToast, successToast } from '@/components/ui/toast';
+import { openSessionQuickView } from '@/features/session/open-session-quick-view';
 import {
   isPendingAction,
   relativeTime,
   riskTone,
-  useResolveApproval,
   useSessionAudit,
 } from '@/features/session/session-audit-shared';
-import { cn } from '@/lib/utils';
-import { useKortixComputerStore } from '@/stores/kortix-computer-store';
-import { useSessionBrowserStore } from '@/stores/session-browser-store';
-import { Check, ShieldAlert, X } from 'lucide-react';
+import { ArrowSquareOutIcon, ShieldWarningIcon } from '@phosphor-icons/react';
 import { useParams } from 'next/navigation';
 import { useState } from 'react';
 
@@ -39,34 +34,14 @@ export function SessionPendingApprovalsIndicator({ sessionId }: { sessionId: str
   }>();
 
   const { data } = useSessionAudit(projectId, projectSessionId, { silent: true });
-  const resolve = useResolveApproval(projectId, projectSessionId);
-  const [busy, setBusy] = useState<Record<string, 'approve' | 'deny'>>({});
   const [open, setOpen] = useState(false);
 
   const pending = (data?.actions ?? []).filter(isPendingAction);
   if (pending.length === 0) return null;
 
-  const decide = (executionId: string, decision: 'approve' | 'deny') => {
-    setBusy((b) => ({ ...b, [executionId]: decision }));
-    resolve.mutate(
-      { executionId, decision },
-      {
-        onSuccess: () => successToast(decision === 'approve' ? 'Action approved' : 'Action denied'),
-        onError: (e: unknown) =>
-          errorToast(e instanceof Error ? e.message : 'Failed to resolve approval'),
-        onSettled: () =>
-          setBusy((b) => {
-            const next = { ...b };
-            delete next[executionId];
-            return next;
-          }),
-      },
-    );
-  };
-
   const openAudit = () => {
-    useSessionBrowserStore.getState().setView(sessionId, 'audit');
-    useKortixComputerStore.getState().setIsSidePanelOpen(true);
+    // Same Advanced-only `viewBySession` dead end as the other chips.
+    openSessionQuickView('audit', 'chip');
     setOpen(false);
   };
 
@@ -79,10 +54,10 @@ export function SessionPendingApprovalsIndicator({ sessionId }: { sessionId: str
           aria-label={`${pending.length} action${pending.length === 1 ? '' : 's'} awaiting your approval`}
           className="relative"
         >
-          <ShieldAlert className="size-4 text-amber-500" />
-          <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-600 px-1 text-[10px] font-semibold leading-none text-white">
+          <ShieldWarningIcon className="text-kortix-orange size-4" />
+          <Badge variant="warning" size="tabular" className="absolute -top-1 -right-1">
             {pending.length}
-          </span>
+          </Badge>
         </Button>
       </PopoverTrigger>
 
@@ -97,9 +72,8 @@ export function SessionPendingApprovalsIndicator({ sessionId }: { sessionId: str
           </p>
         </div>
 
-        <div className="max-h-64 divide-border divide-y overflow-auto">
+        <div className="divide-border max-h-64 divide-y overflow-auto">
           {pending.map((a) => {
-            const b = busy[a.execution_id];
             return (
               <div key={a.execution_id} className="px-4 py-2.5">
                 <div className="flex items-center gap-2">
@@ -115,37 +89,22 @@ export function SessionPendingApprovalsIndicator({ sessionId }: { sessionId: str
                     </Badge>
                   ) : null}
                 </div>
-                <p className="text-muted-foreground mt-0.5 text-[11px]">
+                <p className="text-muted-foreground mt-0.5 text-xs">
                   {a.acted_by_email ?? 'agent'} · {relativeTime(a.at)}
                 </p>
                 <div className="mt-2 flex items-center gap-1.5">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className={cn('h-7 gap-1 px-2 text-xs')}
-                    disabled={!!b}
-                    onClick={() => decide(a.execution_id, 'deny')}
-                  >
-                    {b === 'deny' ? (
-                      <Loading className="size-3 animate-spin" />
-                    ) : (
-                      <X className="size-3" />
-                    )}
-                    Deny
-                  </Button>
-                  <Button
-                    size="sm"
-                    className="h-7 gap-1 px-2 text-xs"
-                    disabled={!!b}
-                    onClick={() => decide(a.execution_id, 'approve')}
-                  >
-                    {b === 'approve' ? (
-                      <Loading className="size-3 animate-spin" />
-                    ) : (
-                      <Check className="size-3" />
-                    )}
-                    Approve
-                  </Button>
+                  {a.approval_url ? (
+                    <Button size="sm" asChild>
+                      <a href={a.approval_url}>
+                        Review parameters
+                        <ArrowSquareOutIcon className="size-3 shrink-0" />
+                      </a>
+                    </Button>
+                  ) : (
+                    <Button size="sm" onClick={openAudit}>
+                      Review in Audit
+                    </Button>
+                  )}
                 </div>
               </div>
             );

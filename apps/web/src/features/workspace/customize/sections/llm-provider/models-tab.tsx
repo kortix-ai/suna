@@ -1,163 +1,348 @@
 'use client';
 
+/**
+ * `ModelsTab` — "which models can this project use".
+ *
+ * ## What this screen is for
+ *
+ * Exactly one thing: turning models on and off in the model menu. Everything
+ * here is subordinate to that, including the two default scopes, which are
+ * settings ABOUT a model that is already on.
+ *
+ * ## The row shows real numbers, not a paraphrase
+ *
+ * A row is the model's name, its capability icons (reasoning / tool calling /
+ * vision), its default tags, and the catalog's own figures — context window
+ * and price per 1M tokens — the same `ModelCapabilityIcons` /
+ * `formatTokenCount` / `formatPricePerMillion` `provider-detail.tsx` uses for
+ * the "Add provider" catalog. One catalog, one set of facts, everywhere it's
+ * shown. The wire id kept its one real use, pasting it into a config, and
+ * lives in a "Copy model ID" item in the row's own menu: one click for the
+ * few who need it, no line for everyone who does not.
+ */
+
 import { Button } from '@/components/ui/button';
+import Hint from '@/components/ui/hint';
+import { InlineMeta } from '@/components/ui/inline-meta';
 import { Switch } from '@/components/ui/switch';
+import { Tag } from '@/components/ui/tag';
 import { ProviderLogo } from '@/features/providers/provider-branding';
-import { modelVisibilityKeyForProviderModel } from '@/features/session/model-tags';
-import type { FlatModel } from '@/features/session/session-chat-input';
-import { useModelStore } from '@/hooks/opencode/use-model-store';
-import type { LlmProviderEntry } from '@/lib/llm-providers';
 import { cn } from '@/lib/utils';
-import { useTranslations } from 'next-intl';
-import { useMemo } from 'react';
+import {
+  useModelDefaults,
+  useModelEnablement,
+  useProjectModels,
+  wireToModelKey,
+} from '@kortix/sdk/react';
+import {
+  CheckIcon as Check,
+  FolderSimpleIcon as Folder,
+  DotsThreeIcon as MoreHorizontal,
+  StarIcon as Star,
+} from '@phosphor-icons/react';
+import { useMemo, useState } from 'react';
 
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+
+import {
+  InputGroupSearch,
+  InputGroupSearchClear,
+  InputGroupSearchIcon,
+  InputGroupSearchInput,
+} from '@/components/ui/input-group';
+import { MagnifyingGlassIcon as Search } from '@phosphor-icons/react';
+
+import { Copy } from '@/features/icon/icons/copy';
+import { buildModelGroups } from './model-rows';
+import { ModelCapabilityIcons } from './model-capability-icons';
+import { formatPricePerMillion, formatTokenCount } from './utils';
+
+/**
+ * `search` used to be driven by the provider modal's always-on search bar,
+ * which JAY-510 deleted (it sat above the tabs and filtered whichever tab
+ * happened to be open). Passing `''` would have silently dropped model search,
+ * so this tab owns its own input when no host drives one — one search box per
+ * thing being searched, instead of one box for three different lists.
+ */
 export function ModelsTab({
-  connectedProviders,
-  search,
-  llmGatewayEnabled,
+  projectId,
+  search: hostSearch,
 }: {
-  connectedProviders: LlmProviderEntry[];
-  search: string;
-  llmGatewayEnabled: boolean;
+  projectId: string;
+  search?: string;
 }) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
+  const [ownSearch, setOwnSearch] = useState('');
+  const search = hostSearch ?? ownSearch;
+  const ownsSearch = hostSearch === undefined;
 
-  const rows = useMemo(
-    () =>
-      connectedProviders.flatMap((p) =>
-        p.models.map((m) => ({
-          provider: p,
-          model: m,
-          storeKey: modelVisibilityKeyForProviderModel(p.id, m.id, llmGatewayEnabled),
-        })),
-      ),
-    [connectedProviders, llmGatewayEnabled],
-  );
+  // The SAME server list the session picker renders (`GET /model-picker`), so
+  // the two views can never show different models — and each model's `enabled`
+  // flag is resolved server-side and enforced by the gateway, so a switch here
+  // is the one and only thing deciding whether it appears there.
+  const models = useProjectModels(projectId);
+  const enablement = useModelEnablement(projectId);
+  // Setting the project default from here is what makes the locked row
+  // actionable: the only way to turn the default off is to make something else
+  // the default, so the control for that belongs on the same screen.
+  //
+  // This is also the home for the ACCOUNT default ("my default model"). It
+  // used to be a button stacked under the session model picker, alongside two
+  // other scopes, where nothing on screen said which model held any of them.
+  // Here both scopes sit on the row they apply to and each one BADGES the
+  // model that currently holds it — see the `Default` / `Your default` tags
+  // below. The picker keeps a one-click star for the account default only;
+  // this tab is where the scopes are actually managed.
+  const defaults = useModelDefaults(projectId);
 
-  const flatModels = useMemo<FlatModel[]>(
-    () =>
-      rows.map(({ provider, model, storeKey }) => ({
-        providerID: storeKey.providerID,
-        providerName: provider.label,
-        modelID: storeKey.modelID,
-        modelName: model.name,
-        releaseDate: model.released ?? undefined,
-      })),
-    [rows],
-  );
+  const groups = useMemo(() => buildModelGroups(models, search), [models, search]);
+  const enabledCount = useMemo(() => models.filter((m) => m.enabled).length, [models]);
 
-  const connectedProviderIds = useMemo(() => {
-    if (!llmGatewayEnabled) return undefined;
-    return new Set(connectedProviders.filter((p) => p.id !== 'kortix').map((p) => p.id));
-  }, [connectedProviders, llmGatewayEnabled]);
-
-  const modelStore = useModelStore(flatModels, {
-    connectedProviderIds,
-  });
-
-  const enabledCount = useMemo(
-    () => rows.filter((row) => modelStore.isVisible(row.storeKey)).length,
-    [rows, modelStore],
-  );
-  const hasOverrides = modelStore.userPrefs.length > 0;
-
-  const grouped = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    const byProvider = new Map<string, { provider: LlmProviderEntry; rows: typeof rows }>();
-    for (const row of rows) {
-      if (
-        q &&
-        !row.model.name.toLowerCase().includes(q) &&
-        !row.model.id.toLowerCase().includes(q)
-      ) {
-        continue;
-      }
-      const existing = byProvider.get(row.provider.id);
-      if (existing) existing.rows.push(row);
-      else byProvider.set(row.provider.id, { provider: row.provider, rows: [row] });
-    }
-    return Array.from(byProvider.values());
-  }, [rows, search]);
-
-  if (connectedProviders.length === 0) {
+  if (models.length === 0) {
     return (
-      <div className="flex min-h-[200px] items-center justify-center px-6 text-center">
-        <p className="text-muted-foreground/60 text-xs">
-          {tHardcodedUi.raw(
-            'componentsProjectsProjectProviderModal.line1258JsxTextConnectAProviderToSeeItsModels',
-          )}
+      <div className="flex min-h-[200px] flex-col items-center justify-center gap-1 px-6 text-center">
+        <p className="text-foreground text-sm">No models yet</p>
+        <p className="text-muted-foreground max-w-xs text-xs text-pretty">
+          Add a key on the API keys tab. The models it unlocks show up here.
         </p>
       </div>
     );
   }
 
-  if (grouped.length === 0) {
+  if (groups.length === 0) {
     return (
       <div className="flex min-h-[200px] items-center justify-center px-6 text-center">
-        <p className="text-muted-foreground/60 text-xs">
-          {search ? `No models match "${search}"` : 'No models'}
+        <p className="text-muted-foreground text-xs">
+          {search ? `Nothing matches "${search}"` : 'No models'}
         </p>
       </div>
     );
   }
 
+  // No horizontal padding of its own: `CapabilityPageShell` supplies the page
+  // column, and 20px more here indented this tab's content past the tab strip
+  // that selects it.
   return (
-    <div className="px-5 pt-3 pb-4">
-      {!search && (
-        <div className="flex items-center justify-between gap-3 px-1 pb-2.5">
-          <p className="text-muted-foreground/60 text-xs">
-            {enabledCount} of {flatModels.length}{' '}
-            {tHardcodedUi.raw(
-              'autoComponentsProjectsProjectProviderModalJsxTextShownInTheb8c08575',
-            )}
-          </p>
-          {hasOverrides && (
+    <div className="pb-4">
+      {/*
+        The search field and "Start over" share ONE row, and that row's height
+        never changes.
+
+        They used to be two stacked blocks: the search box, then a spacer row
+        (`flex items-center justify-between … pb-2.5`) whose only content was a
+        conditional "Start over" button. The button appears the instant you
+        flip your first switch — `usingDefaults` goes false — so selecting a
+        model inserted a 26px band into the layout and pushed the whole list
+        down under the cursor that had just clicked it, leaving a 46px gap
+        between the search field and the first provider where 20px had been.
+        Measured on localhost:26300: `firstGroupTop` 233.7px → 259.4px, shift
+        +25.75px. That is the "too big a gap when you select the models".
+
+        A control that only sometimes exists cannot own a row of its own. Here
+        it rides the search field's row, which is always that height, so the
+        list below is fixed no matter what the toggles say.
+      */}
+      {(ownsSearch || !enablement.usingDefaults) && (
+        <div className="mb-3 flex items-center gap-2">
+          {ownsSearch && (
+            <InputGroupSearch className="min-w-0 flex-1">
+              <InputGroupSearchIcon>
+                <Search />
+              </InputGroupSearchIcon>
+              <InputGroupSearchInput
+                type="text"
+                placeholder="Search models…"
+                autoComplete="off"
+                value={ownSearch}
+                onChange={(event) => setOwnSearch(event.target.value)}
+              />
+              <InputGroupSearchClear onClick={() => setOwnSearch('')} />
+            </InputGroupSearch>
+          )}
+          {!enablement.usingDefaults && (
             <Button
               variant="ghost"
               size="sm"
+              disabled={enablement.isUpdating}
               className="text-muted-foreground hover:text-foreground h-7 shrink-0 px-2 text-xs"
-              onClick={() => modelStore.resetVisibility()}
+              onClick={() => void enablement.resetToDefaults()}
             >
-              {tHardcodedUi.raw(
-                'autoComponentsProjectsProjectProviderModalJsxTextResetToDefaults75549180',
-              )}
+              Start over
             </Button>
           )}
         </div>
       )}
-      <div className="space-y-3">
-        {grouped.map(({ provider, rows: providerRows }) => (
-          <div key={provider.id}>
-            <div className="flex items-center gap-2 px-1 pb-1">
-              <ProviderLogo providerID={provider.id} name={provider.label} size="small" />
-              <span className="text-foreground/70 text-xs font-medium">{provider.label}</span>
-              <span className="text-muted-foreground/40 ml-auto text-xs">
-                {providerRows.length}
+
+      <div className="space-y-6">
+        {groups.map((group) => (
+          <div key={group.providerID} className="space-y-2">
+            <div className="flex items-center gap-2">
+              <ProviderLogo providerID={group.providerID} name={group.providerName} size="small" />
+              <span className="text-foreground/70 text-xs font-medium">{group.providerName}</span>
+              <span className="text-muted-foreground/40 ml-auto text-xs tabular-nums">
+                {group.rows.length}
               </span>
             </div>
             <div className="bg-popover overflow-hidden rounded-md border">
-              {providerRows.map(({ model, storeKey }, i) => {
-                const visible = modelStore.isVisible(storeKey);
+              {group.rows.map(({ model, wireId, isRollingAlias }, i) => {
+                const enabled = !!model.enabled;
+                // `auto` resolves to this one, so turning it off would break
+                // every default request — the server refuses it with a 409.
+                // Lock the switch and say why instead of letting the click
+                // become a failed action.
+                const isProjectDefault = wireId === enablement.defaultModel;
+                // `useModelDefaults` builds every scope with `wireToModelKey`,
+                // which parks the whole wire id in `modelID` under the `kortix`
+                // provider — so comparing `modelID` to this row's `wireId` is
+                // the same comparison `isProjectDefault` makes one line up, not
+                // a lucky string match.
+                const isAccountDefault = defaults.accountDefault?.modelID === wireId;
+                const ctx = formatTokenCount(model.contextWindow);
+                const priceIn = formatPricePerMillion(model.cost?.input);
+                const priceOut = formatPricePerMillion(model.cost?.output);
                 return (
-                  <label
-                    key={model.id}
+                  // A plain row, NOT a <label>: it holds three controls (copy
+                  // id, set-as-default, the switch) and a label binds to the
+                  // FIRST labelable one — the copy button — so "click the row
+                  // to toggle" never did what it looked like. Each control
+                  // carries its own accessible name instead.
+                  <div
+                    key={wireId}
                     className={cn(
-                      'hover:bg-muted/40 flex cursor-pointer items-center gap-3 px-3 py-2.5 transition-colors',
+                      'hover:bg-muted/40 flex items-start gap-3 px-3 py-2.5 transition-colors',
                       i > 0 && 'border-border border-t',
-                      !visible && 'opacity-60',
+                      !enabled && 'opacity-60',
                     )}
                   >
-                    <div className="min-w-0 flex-1">
-                      <div className="text-foreground truncate text-sm">{model.name}</div>
-                      <div className="text-muted-foreground/50 mt-0.5 truncate text-xs">
-                        {model.id}
+                    <div className="min-w-0 flex-1 space-y-1">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="text-foreground truncate text-sm">{model.modelName}</span>
+                        <ModelCapabilityIcons
+                          reasoning={model.capabilities?.reasoning}
+                          toolCall={model.capabilities?.toolcall}
+                          vision={model.capabilities?.vision}
+                        />
+                        {/* Same display name as its pinned snapshots — say which
+                            row is the one that rolls forward. "latest" named
+                            the alias; "auto-updates" names what it DOES. */}
+                        {isRollingAlias && (
+                          <Hint label="Always points at the newest version of this model">
+                            <Tag>auto-updates</Tag>
+                          </Hint>
+                        )}
+                        {/* Both scopes badge the model that holds them. A
+                            "set as default" control with no matching "this one
+                            IS the default" is the reason these moved here. */}
+                        {isProjectDefault && (
+                          <Hint label="New sessions in this project start with this model">
+                            <Tag>project default</Tag>
+                          </Hint>
+                        )}
+                        {isAccountDefault && (
+                          <Hint label="Your own starting model, in every project">
+                            <Tag>your default</Tag>
+                          </Hint>
+                        )}
                       </div>
+
+                      {(ctx || (priceIn && priceOut)) && (
+                        <InlineMeta>
+                          {ctx && <span className="tabular-nums">{ctx} ctx</span>}
+                          {priceIn && priceOut && (
+                            <span className="tabular-nums">
+                              {priceIn} / {priceOut} per 1M
+                            </span>
+                          )}
+                        </InlineMeta>
+                      )}
                     </div>
+                    {/*
+                      Both default scopes, on the row they apply to.
+
+                      Gated on `enabled` rather than on "is not already the
+                      default": a model the project does not OFFER cannot be
+                      anyone's default (the server refuses it), but a model that
+                      already holds one scope can still be given the other — the
+                      old `!isProjectDefault` gate hid the control on exactly the
+                      row you would reach for to also make it your own default.
+
+                      A menu rather than two icon buttons: two stars side by side
+                      say nothing about which is which, and each item can state
+                      its scope in words and carry its own check. It costs the
+                      project default a second click; it buys the account default
+                      a home and both of them a readable current state.
+
+                      `DropdownMenuContent` resolves its z-index through
+                      `useDialogDepth`, so it stacks above the modal this tab
+                      lives in without any per-call-site z-index.
+                    */}
+                    {enabled && (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <button
+                            type="button"
+                            disabled={defaults.isUpdating}
+                            aria-label={`Default settings for ${model.modelName}`}
+                            title="Make this a default"
+                            className="text-muted-foreground/50 hover:text-foreground hover:bg-muted data-[state=open]:bg-muted data-[state=open]:text-foreground mt-0.5 flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            <MoreHorizontal className="size-4" />
+                          </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-90">
+                          <DropdownMenuItem
+                            disabled={isProjectDefault || defaults.isUpdating}
+                            onSelect={() => void defaults.setProjectDefault(wireToModelKey(wireId))}
+                          >
+                            <Folder className="size-3.5" />
+                            Start this project&apos;s sessions with it
+                            {isProjectDefault && <Check className="ml-auto size-3.5" />}
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            disabled={isAccountDefault || defaults.isUpdating}
+                            onSelect={() => void defaults.setAccountDefault(wireToModelKey(wireId))}
+                          >
+                            <Star className="size-3.5" />
+                            Make it my default everywhere
+                            {isAccountDefault && <Check className="ml-auto size-3.5" />}
+                          </DropdownMenuItem>
+                          {/* The wire id's only home now that it is off the
+                              row. It was printed under every model name —
+                              `anthropic/claude-sonnet-4-5` on 34 rows, meaning
+                              nothing to most readers and needed only by the
+                              few about to paste one into a config file. A menu
+                              item costs them one click and everyone else
+                              nothing. */}
+                          <DropdownMenuItem
+                            onSelect={() => void navigator.clipboard?.writeText(wireId)}
+                          >
+                            <Copy className="size-3.5" />
+                            Copy model ID
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )}
                     <Switch
-                      checked={visible}
-                      onCheckedChange={(c) => modelStore.setVisibility(storeKey, c)}
+                      checked={enabled}
+                      disabled={enablement.isUpdating || isProjectDefault}
+                      aria-label={
+                        isProjectDefault
+                          ? `${model.modelName} is this project's default model and cannot be turned off`
+                          : `Offer ${model.modelName}`
+                      }
+                      title={
+                        isProjectDefault
+                          ? 'This project starts every session with this model — pick a different default before turning it off.'
+                          : undefined
+                      }
+                      onCheckedChange={(next) => void enablement.setEnabled(wireId, next)}
+                      className="mt-0.5 shrink-0"
                     />
-                  </label>
+                  </div>
                 );
               })}
             </div>

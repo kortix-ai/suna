@@ -6,11 +6,6 @@
  */
 import { flow } from "../core/flow";
 
-// GH-4 — Supabase GitHub OAuth popup is pure client-side (`signInWithOAuth`);
-// the `provider_token` is posted back to the opener window. There is NO Kortix
-// API route involved, so nothing to drive over HTTP.
-flow("GH-4", { domain: "github", todo: "client-side Supabase OAuth popup — no Kortix API route to exercise" }, async () => {});
-
 // SBX-1 — sandbox create/start is implicit on session create
 // (provisionSessionSandbox); there is no standalone endpoint. Covered
 // transitively by the session-create flows (RUN-*/SESS-*/GOLD-1).

@@ -11,8 +11,8 @@ import {
   ModalTitle,
 } from '@/components/ui/modal';
 import { loadingToast } from '@/components/ui/toast';
-import { useSummarizeOpenCodeSession } from '@/hooks/opencode/use-opencode-sessions';
-import { Layers } from 'lucide-react';
+import { useSummarizeRuntimeSession } from '@kortix/sdk/react';
+import { StackIcon as Layers } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useCallback } from 'react';
 
@@ -25,9 +25,14 @@ interface CompactDialogProps {
   onCompactStart?: () => void;
 }
 
-export function CompactModal({ sessionId, open, onOpenChange, onCompactStart }: CompactDialogProps) {
+export function CompactModal({
+  sessionId,
+  open,
+  onOpenChange,
+  onCompactStart,
+}: CompactDialogProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const summarize = useSummarizeOpenCodeSession();
+  const summarize = useSummarizeRuntimeSession();
 
   const handleCompact = useCallback(() => {
     onCompactStart?.();

@@ -20,7 +20,7 @@ function escapeLabel(v: string): string {
   return v.replace(/\\/g, '\\\\').replace(/\n/g, '\\n').replace(/"/g, '\\"');
 }
 
-class Counter {
+export class Counter {
   private values = new Map<string, { labels: Labels; value: number }>();
   constructor(
     readonly name: string,
@@ -41,7 +41,7 @@ class Counter {
   }
 }
 
-class Gauge {
+export class Gauge {
   private values = new Map<string, { labels: Labels; value: number }>();
   constructor(
     readonly name: string,
@@ -66,7 +66,7 @@ class Gauge {
   }
 }
 
-class Histogram {
+export class Histogram {
   private series = new Map<
     string,
     { labels: Labels; counts: number[]; sum: number; count: number }
@@ -130,6 +130,15 @@ export function metricsEnabled(): boolean {
   return process.env.METRICS_ENABLED !== 'false';
 }
 
+// Extra collectors (e.g. provider-transition metrics) register a renderer here
+// so their series are exposed on the same /metrics endpoint without this module
+// having to import them (would create a cycle). Each renderer returns Prometheus
+// exposition text.
+const extraRenderers: Array<() => string> = [];
+export function registerMetricRenderer(render: () => string): void {
+  extraRenderers.push(render);
+}
+
 export function recordHttpRequest(args: {
   method: string;
   route: string;
@@ -166,6 +175,7 @@ export function renderMetrics(): string {
       eventLoopLag.render(),
       processGauges.rss.render(),
       processGauges.uptime.render(),
+      ...extraRenderers.map((render) => render()),
     ].join('\n\n') + '\n'
   );
 }

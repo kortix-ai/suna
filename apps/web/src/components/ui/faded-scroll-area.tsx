@@ -9,15 +9,30 @@ export const FadedScrollArea = React.forwardRef<
   React.ComponentProps<'div'> & {
     fadeColor?: string;
     orientation?: 'vertical' | 'horizontal';
+    rootClassName?: string;
+    /** Tailwind spacing unit (`10` → `h-10`) or a CSS length (`1.5rem`). */
+    fadeSize?: string;
   }
 >(function FadedScrollArea(
-  { children, className, fadeColor = 'from-sidebar', orientation = 'vertical' },
+  {
+    children,
+    className,
+    fadeColor = 'from-sidebar',
+    orientation = 'vertical',
+    rootClassName,
+    fadeSize = '10',
+    style,
+    ...props
+  },
   ref,
 ) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [showStartFade, setShowStartFade] = useState(false);
   const [showEndFade, setShowEndFade] = useState(false);
   const isHorizontal = orientation === 'horizontal';
+  const fadeSizeValue = /^\d+(\.\d+)?$/.test(fadeSize.trim())
+    ? `calc(var(--spacing) * ${fadeSize.trim()})`
+    : fadeSize.trim();
 
   const setScrollRef = useCallback(
     (node: HTMLDivElement | null) => {
@@ -90,15 +105,17 @@ export const FadedScrollArea = React.forwardRef<
       className={cn(
         'relative flex min-h-0 min-w-0',
         isHorizontal ? 'w-full min-w-0 flex-1 self-center' : 'h-full flex-col',
+        rootClassName,
       )}
+      style={{ '--fade-size': fadeSizeValue, ...style } as React.CSSProperties}
     >
       <div
         className={cn(
           'pointer-events-none absolute z-10 transition-opacity',
           fadeColor,
           isHorizontal
-            ? 'inset-y-0 left-0 w-10 bg-gradient-to-r to-transparent'
-            : 'inset-x-0 top-0 h-10 bg-gradient-to-b to-transparent',
+            ? 'inset-y-0 left-0 w-(--fade-size) bg-gradient-to-r to-transparent'
+            : 'inset-x-0 top-0 h-(--fade-size) bg-gradient-to-b to-transparent',
           showStartFade ? 'opacity-100' : 'opacity-0',
         )}
         aria-hidden
@@ -108,8 +125,8 @@ export const FadedScrollArea = React.forwardRef<
           'pointer-events-none absolute z-10 transition-opacity',
           fadeColor,
           isHorizontal
-            ? 'inset-y-0 right-0 w-10 bg-gradient-to-l to-transparent'
-            : 'inset-x-0 bottom-0 h-10 bg-gradient-to-t to-transparent',
+            ? 'inset-y-0 right-0 w-(--fade-size) bg-gradient-to-l to-transparent'
+            : 'inset-x-0 bottom-0 h-(--fade-size) bg-gradient-to-t to-transparent',
           showEndFade ? 'opacity-100' : 'opacity-0',
         )}
         aria-hidden
@@ -121,6 +138,7 @@ export const FadedScrollArea = React.forwardRef<
           isHorizontal ? 'touch-pan-x overflow-x-auto overflow-y-hidden' : 'overflow-y-auto',
           className,
         )}
+        {...props}
       >
         {children}
       </div>

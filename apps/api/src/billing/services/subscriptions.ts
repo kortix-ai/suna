@@ -128,6 +128,11 @@ export async function createCheckoutSession(params: {
   const metadata = {
     account_id: accountId,
     tier_key: tierKey,
+    // `plan_key` is the forward name for the same value; the webhook resolves
+    // `plan_key ?? tier_key ?? price lookup`. Every writer sets BOTH — writing
+    // only one leaves the other stale and, because plan_key wins, a later
+    // tier_key-only update would be silently ignored.
+    plan_key: tierKey,
     commitment_type: commitmentType ?? 'monthly',
     ...(previousFreeSubscriptionId ? { previous_subscription_id: previousFreeSubscriptionId } : {}),
     ...(serverType ? { server_type: serverType } : {}),
@@ -168,17 +173,45 @@ export async function createCheckoutSession(params: {
       });
 
       if (subscription.status === 'active' || subscription.status === 'trialing') {
-        await upsertCreditAccount(accountId, {
+        // A machine/compute subscription must NOT clobber the account's existing
+        // paid-plan subscription pointer. Previously this upsert unconditionally
+        // set stripeSubscriptionId to the new machine sub, which hijacked the row:
+        // when the machine sub was later canceled, handleSubscriptionDeleted
+        // reverted the whole row to free — stranding a paying plan customer
+        // behind the paywall with a dead pointer. Now, only overwrite the plan
+        // pointer when the account has no existing (non-dead) plan subscription.
+        const isMachineSub = !!serverType;
+        const existingPlanIsLive =
+          account?.stripeSubscriptionId &&
+          account.stripeSubscriptionId !== subscription.id &&
+          account.stripeSubscriptionStatus !== 'canceled' &&
+          account.stripeSubscriptionStatus !== 'unpaid' &&
+          account.stripeSubscriptionStatus !== 'incomplete_expired';
+
+        const accountUpdate: Record<string, any> = {
           tier: tierKey,
           provider: 'stripe',
-          stripeSubscriptionId: subscription.id,
           stripeSubscriptionStatus: subscription.status,
           paymentStatus: 'active',
           // Auto-topup on by default: charge $5 when balance drops below $1
           autoTopupEnabled: true,
           autoTopupThreshold: String(AUTO_TOPUP_DEFAULT_THRESHOLD),
           autoTopupAmount: String(AUTO_TOPUP_DEFAULT_AMOUNT),
-        });
+        };
+
+        if (isMachineSub && existingPlanIsLive) {
+          // Machine sub created on an account that already has a live plan
+          // subscription: do NOT overwrite the plan sub pointer. Keep the
+          // existing stripeSubscriptionId so the plan sub remains the source
+          // of truth for billing/tier.
+          console.log(
+            `[Billing] Machine sub ${subscription.id} created for ${accountId} but preserving existing live plan sub ${account?.stripeSubscriptionId}`,
+          );
+        } else {
+          accountUpdate.stripeSubscriptionId = subscription.id;
+        }
+
+        await upsertCreditAccount(accountId, accountUpdate);
 
         await upsertCustomer({
           accountId,
@@ -295,6 +328,7 @@ export async function createPerSeatCheckoutSession(params: {
   const metadata = {
     account_id: accountId,
     tier_key: 'per_seat',
+    plan_key: 'per_seat',
     billing_model: 'per_seat',
     initial_seat_count: String(seatCount),
   };
@@ -342,6 +376,12 @@ export async function createInlineCheckout(params: {
   if (tier.name === 'none') throw new BillingError('Invalid tier');
 
   const account = await getCreditAccount(accountId);
+  // STORED TIER ON PURPOSE — not the effective plan. Upgrade/downgrade math is
+  // Stripe-adjacent: it decides which Stripe price to move an EXISTING
+  // subscription from, and only `credit_accounts.tier` (written by the
+  // subscription webhook reconciliation) names that price. An admin trial
+  // overlay is not a subscription, so resolving it here would compute a
+  // proration against a plan the customer was never billed for.
   const currentTier = account?.tier ?? 'free';
 
   if (account?.stripeSubscriptionId && currentTier !== 'free' && isUpgrade(currentTier, tierKey)) {
@@ -368,6 +408,7 @@ export async function createInlineCheckout(params: {
     metadata: {
       account_id: accountId,
       tier_key: tierKey,
+      plan_key: tierKey,
       billing_period: billingPeriod,
       ...(previousFreeSubscriptionId ? { previous_subscription_id: previousFreeSubscriptionId } : {}),
     },
@@ -492,6 +533,9 @@ export async function scheduleDowngrade(
   const account = await getCreditAccount(accountId);
   if (!account?.stripeSubscriptionId) throw new SubscriptionError('No active subscription');
 
+  // STORED TIER ON PURPOSE — the plan the live Stripe subscription is on. See
+  // createInlineCheckout above: a downgrade schedules a price change on that
+  // subscription, so the source plan must be the one Stripe billed.
   const currentTier = getTier(account.tier ?? 'free');
   const targetTier = getTier(targetTierKey);
 
@@ -802,7 +846,14 @@ export async function confirmCheckoutSession(params: {
     return { success: false, status: 'pending', message: 'Subscription not attached yet' };
   }
 
-  if (session.status !== 'complete' && session.payment_status !== 'paid' && session.payment_status !== 'no_payment_required') {
+  // Payment_status is the ONLY signal that money settled. The old guard also
+  // accepted session.status === 'complete', but a checkout completes with an
+  // UNPAID first invoice for delayed/failed payment methods (subscription
+  // status 'incomplete') — and this endpoint is client-callable, so that
+  // loophole reproduced the exact never-paid activation hole the webhook
+  // layer closes (see handleSubscriptionCheckout's fraud gate). Fail closed:
+  // no settled payment, no activation, no grant.
+  if (session.payment_status !== 'paid' && session.payment_status !== 'no_payment_required') {
     return { success: false, status: 'pending', message: 'Checkout payment is not completed yet' };
   }
 
@@ -900,6 +951,10 @@ async function handleUpgrade(
     metadata: {
       ...subscription.metadata,
       tier_key: targetTierKey,
+      // Must be rewritten alongside tier_key. The spread above carries the OLD
+      // plan_key forward, and plan_key wins in the webhook's resolution order —
+      // leaving it stale would resolve every post-upgrade event to the old plan.
+      plan_key: targetTierKey,
       previous_tier: subscription.metadata?.tier_key ?? 'unknown',
       downgrade: '',
       target_tier: '',

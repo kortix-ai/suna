@@ -1,6 +1,6 @@
 'use client';
 
-import { Handshake } from 'lucide-react';
+import { HandshakeIcon as Handshake } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 
 import { KortixLogo } from '@/components/sidebar/kortix-logo';

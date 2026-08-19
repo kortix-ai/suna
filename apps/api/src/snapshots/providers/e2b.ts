@@ -3,19 +3,23 @@
 import { rm } from 'node:fs/promises';
 import { Template, waitForProcess } from 'e2b';
 import { config } from '../../config';
+import { e2bDomain } from '../../platform/providers/e2b-domain';
 import {
   DEFAULT_CPU,
   DEFAULT_MEMORY_GB,
   stageBuildContext,
+  stageAppBuildContext,
+  stageMetaBuildContext,
 } from '../build-context';
-import { normalizeExistingProviderState } from './state';
+import { shortLivedObservation } from '../observation-cache';
+import { isE2BConcurrentBuildConflict, waitForConcurrentE2BBuild } from './e2b-build-conflict';
 import type {
-  BuildableTemplate,
   BuildLogTap,
+  BuildableTemplate,
   ProviderState,
   SandboxProviderAdapter,
 } from './index';
-import { shortLivedObservation } from '../observation-cache';
+import { normalizeExistingProviderState } from './state';
 
 interface E2BTemplateView {
   templateID: string;
@@ -24,16 +28,33 @@ interface E2BTemplateView {
   buildStatus?: string;
 }
 
+/**
+ * Template builds must land on the SAME cluster the runtime provider boots
+ * from, so `domain` is passed explicitly here too — the SDK would otherwise
+ * fall back to its own `e2b.app` default and build the template somewhere the
+ * sandbox can never be created. See platform/providers/e2b-domain.
+ */
 function connectionOpts() {
-  return { apiKey: config.E2B_API_KEY, requestTimeoutMs: 30_000 } as const;
+  return {
+    apiKey: config.E2B_API_KEY,
+    domain: e2bDomain(),
+    requestTimeoutMs: 30_000,
+  } as const;
+}
+
+function apiBaseUrl(): string {
+  return `https://api.${e2bDomain()}`;
 }
 
 async function listTemplates(): Promise<E2BTemplateView[]> {
-  const response = await fetch('https://api.e2b.dev/templates', {
+  const response = await fetch(`${apiBaseUrl()}/templates`, {
     headers: { 'X-API-KEY': config.E2B_API_KEY },
     signal: AbortSignal.timeout(30_000),
   });
-  if (!response.ok) throw new Error(`E2B list templates -> ${response.status} ${(await response.text()).slice(0, 300)}`);
+  if (!response.ok)
+    throw new Error(
+      `E2B list templates -> ${response.status} ${(await response.text()).slice(0, 300)}`,
+    );
   return response.json() as Promise<E2BTemplateView[]>;
 }
 
@@ -44,7 +65,11 @@ const observeTemplates = shortLivedObservation(
 
 function matchesTemplate(template: E2BTemplateView, name: string): boolean {
   return [...(template.names ?? []), ...(template.aliases ?? [])].some(
-    (candidate) => candidate === name || candidate.endsWith(`/${name}`) || candidate.endsWith(`/${name}:default`) || candidate === `${name}:default`,
+    (candidate) =>
+      candidate === name ||
+      candidate.endsWith(`/${name}`) ||
+      candidate.endsWith(`/${name}:default`) ||
+      candidate === `${name}:default`,
   );
 }
 
@@ -60,7 +85,17 @@ class E2BAdapter implements SandboxProviderAdapter {
       throw new Error('E2BAdapter.buildSnapshot: neither image nor userDockerfile set');
     }
     const userDockerfile = input.userDockerfile ?? `FROM ${input.image}\n`;
-    const context = await stageBuildContext(input.snapshotName, userDockerfile, input.warmRepo, input.isShared);
+    const context =
+      input.runtimeProfile === 'app'
+        ? await stageAppBuildContext(input.snapshotName, userDockerfile, input.appContext!)
+        : input.runtimeProfile === 'meta'
+        ? await stageMetaBuildContext()
+        : await stageBuildContext(
+            input.snapshotName,
+            userDockerfile,
+            input.warmRepo,
+            input.isShared,
+          );
     observeTemplates.invalidate();
     try {
       // fromDockerfile() converts the Dockerfile ENTRYPOINT into E2B's start
@@ -72,23 +107,32 @@ class E2BAdapter implements SandboxProviderAdapter {
       const template = Template({ fileContextPath: context.contextDir })
         .fromDockerfile(context.composedPath)
         .setStartCmd('sleep infinity', waitForProcess('sleep'));
-      await Template.build(template, input.snapshotName, {
-        ...connectionOpts(),
-        cpuCount: input.spec.cpu ?? DEFAULT_CPU,
-        memoryMB: (input.spec.memoryGb ?? DEFAULT_MEMORY_GB) * 1024,
-        // E2B's remote cache can report COPY layers as restored while omitting
-        // their files from the next RUN layer (observed with kortix-agent.gz and
-        // kortix.gz on a second identical live build). A missing runtime binary
-        // is worse than the extra build time, so E2B templates fail safe with a
-        // complete rebuild until the provider cache preserves COPY outputs.
-        skipCache: true,
-        onBuildLogs: (entry) => {
-          const line = entry.message.trim();
-          if (!line) return;
-          console.info(`[snapshots] ${input.snapshotName} [e2b]: ${line}`);
-          tap?.onLine?.(line);
-        },
-      });
+      try {
+        await Template.build(template, input.snapshotName, {
+          ...connectionOpts(),
+          cpuCount: input.spec.cpu ?? DEFAULT_CPU,
+          memoryMB: (input.spec.memoryGb ?? DEFAULT_MEMORY_GB) * 1024,
+          // E2B's remote cache can report COPY layers as restored while omitting
+          // their files from the next RUN layer (observed with kortix-agent.gz and
+          // kortix.gz on a second identical live build). A missing runtime binary
+          // is worse than the extra build time, so E2B templates fail safe with a
+          // complete rebuild until the provider cache preserves COPY outputs.
+          skipCache: true,
+          onBuildLogs: (entry) => {
+            const line = entry.message.trim();
+            if (!line) return;
+            console.info(`[snapshots] ${input.snapshotName} [e2b]: ${line}`);
+            tap?.onLine?.(line);
+          },
+        });
+      } catch (error) {
+        if (!isE2BConcurrentBuildConflict(error)) throw error;
+        const line =
+          'Another API replica triggered this E2B template build. Waiting for that build.';
+        console.warn(`[snapshots] ${input.snapshotName} [e2b]: ${line}`);
+        tap?.onLine?.(line);
+        await waitForConcurrentE2BBuild(() => this.getSnapshotState(input.snapshotName));
+      }
     } finally {
       observeTemplates.invalidate();
       await rm(context.contextDir, { recursive: true, force: true }).catch(() => {});
@@ -98,7 +142,9 @@ class E2BAdapter implements SandboxProviderAdapter {
   async getSnapshotState(snapshotName: string): Promise<ProviderState> {
     if (!this.isConfigured()) return 'missing';
     try {
-      const template = (await observeTemplates()).find((item) => matchesTemplate(item, snapshotName));
+      const template = (await observeTemplates()).find((item) =>
+        matchesTemplate(item, snapshotName),
+      );
       if (!template) return 'missing';
       // Template.exists() becomes true when E2B creates the template identity,
       // before its launchable :default tag exists. Only buildStatus=ready is a
@@ -116,13 +162,18 @@ class E2BAdapter implements SandboxProviderAdapter {
     try {
       const template = (await listTemplates()).find((item) => matchesTemplate(item, snapshotName));
       if (!template) return;
-      const response = await fetch(`https://api.e2b.dev/templates/${encodeURIComponent(template.templateID)}`, {
-        method: 'DELETE',
-        headers: { 'X-API-KEY': config.E2B_API_KEY },
-        signal: AbortSignal.timeout(30_000),
-      });
+      const response = await fetch(
+        `${apiBaseUrl()}/templates/${encodeURIComponent(template.templateID)}`,
+        {
+          method: 'DELETE',
+          headers: { 'X-API-KEY': config.E2B_API_KEY },
+          signal: AbortSignal.timeout(30_000),
+        },
+      );
       if (!response.ok && response.status !== 404) {
-        throw new Error(`E2B delete template ${snapshotName} -> ${response.status} ${(await response.text()).slice(0, 300)}`);
+        throw new Error(
+          `E2B delete template ${snapshotName} -> ${response.status} ${(await response.text()).slice(0, 300)}`,
+        );
       }
     } finally {
       observeTemplates.invalidate();

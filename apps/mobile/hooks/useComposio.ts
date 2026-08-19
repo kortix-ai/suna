@@ -14,9 +14,9 @@ interface ComposioApp {
   connection_status?: 'active' | 'error' | 'requires_auth';
 }
 
-interface ComposioProfile {
-  profile_id: string;
-  profile_name: string;
+interface ComposioConnection {
+  connection_id: string;
+  connection_name: string;
   display_name: string;
   toolkit_name: string;
   toolkit_slug: string;
@@ -37,9 +37,9 @@ interface ComposioTool {
   tags?: string[];
 }
 
-interface CreateComposioProfileRequest {
+interface CreateComposioConnectionRequest {
   toolkit_slug: string;
-  profile_name: string;
+  connection_name: string;
   display_name?: string;
   user_id?: string;
   mcp_server_name?: string;
@@ -49,9 +49,9 @@ interface CreateComposioProfileRequest {
   use_custom_auth?: boolean;
 }
 
-interface CreateComposioProfileResponse {
+interface CreateComposioConnectionResponse {
   success: boolean;
-  profile_id: string;
+  connection_id: string;
   redirect_url?: string;
   mcp_url: string;
 }
@@ -68,13 +68,26 @@ interface AuthConfigField {
 const composioKeys = {
   all: ['composio'] as const,
   apps: () => [...composioKeys.all, 'apps'] as const,
-  profiles: () => [...composioKeys.all, 'profiles'] as const,
-  tools: (profileId: string) => [...composioKeys.all, 'tools', profileId] as const,
+  connections: () => [...composioKeys.all, 'connections'] as const,
+  tools: (connectionId: string) => [...composioKeys.all, 'tools', connectionId] as const,
   toolkitDetails: (slug: string) => [...composioKeys.all, 'toolkit', slug] as const,
   toolkitTools: (slug: string) => [...composioKeys.all, 'toolkit-tools', slug] as const,
 };
 
 const SENSITIVE_LOG_KEY_RE = /secret|token|password|key|auth_config|mcp_url|config/i;
+
+type ComposioConnectionWire = Omit<ComposioConnection, 'connection_name'> & {
+  connection_name?: string;
+  /** Legacy Composio API field. */
+  profile_name?: string;
+};
+
+function normalizeComposioConnection(value: ComposioConnectionWire): ComposioConnection {
+  return {
+    ...value,
+    connection_name: value.connection_name ?? value.profile_name ?? value.display_name,
+  };
+}
 
 function redactForLog(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(redactForLog);
@@ -113,9 +126,9 @@ const useComposioApps = () => {
   });
 };
 
-const useComposioProfiles = () => {
+const useComposioConnections = () => {
   return useQuery({
-    queryKey: composioKeys.profiles(),
+    queryKey: composioKeys.connections(),
     queryFn: async () => {
       const {
         data: { session },
@@ -130,11 +143,11 @@ const useComposioProfiles = () => {
       });
 
       if (!response.ok) {
-        throw new Error('Failed to fetch Composio profiles');
+        throw new Error('Failed to fetch Composio connections');
       }
 
       const data = await response.json();
-      return data.profiles || [];
+      return (data.connections ?? data.profiles ?? []).map(normalizeComposioConnection);
     },
     staleTime: 2 * 60 * 1000,
   });
@@ -162,21 +175,20 @@ const useComposioToolkitDetails = (slug: string, options?: { enabled?: boolean }
       return response.json();
     },
     enabled: options?.enabled !== false && !!slug,
-    enabled: !!slug,
     staleTime: 10 * 60 * 1000,
   });
 };
 
-const useComposioTools = (profileId: string) => {
+const useComposioTools = (connectionId: string) => {
   return useQuery({
-    queryKey: composioKeys.tools(profileId),
+    queryKey: composioKeys.tools(connectionId),
     queryFn: async () => {
       const {
         data: { session },
       } = await supabase.auth.getSession();
       if (!session) throw new Error('Not authenticated');
 
-      const response = await fetch(`${API_URL}/composio/profiles/${profileId}/discover-tools`, {
+      const response = await fetch(`${API_URL}/composio/profiles/${connectionId}/discover-tools`, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${session.access_token}`,
@@ -190,7 +202,7 @@ const useComposioTools = (profileId: string) => {
 
       return response.json();
     },
-    enabled: !!profileId,
+    enabled: !!connectionId,
     staleTime: 5 * 60 * 1000,
   });
 };
@@ -294,17 +306,17 @@ const useComposioToolkitIcon = (slug: string) => {
   });
 };
 
-const useCreateComposioProfile = () => {
+const useCreateComposioConnection = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (request: CreateComposioProfileRequest) => {
+    mutationFn: async (request: CreateComposioConnectionRequest) => {
       const {
         data: { session },
       } = await supabase.auth.getSession();
       if (!session) throw new Error('Not authenticated');
 
-      log.log('🔄 Creating Composio profile:', redactForLog(request));
+      log.log('🔄 Creating Composio connection:', redactForLog(request));
 
       const response = await fetch(`${API_URL}/composio/profiles`, {
         method: 'POST',
@@ -312,52 +324,56 @@ const useCreateComposioProfile = () => {
           Authorization: `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(request),
+        body: JSON.stringify({
+          ...request,
+          profile_name: request.connection_name,
+          connection_name: undefined,
+        }),
       });
 
       if (!response.ok) {
         const errorText = await response.text();
-        log.error('❌ Profile creation error:', errorText);
+        log.error('❌ Connection creation error:', errorText);
 
         try {
           const errorJson = JSON.parse(errorText);
-          throw new Error(errorJson.detail || errorJson.message || 'Failed to create profile');
+          throw new Error(errorJson.detail || errorJson.message || 'Failed to create connection');
         } catch (parseError) {
           throw new Error(`Server error ${response.status}: ${errorText}`);
         }
       }
 
       const result = await response.json();
-      log.log('✅ Profile created:', redactForLog(result));
+      log.log('✅ Connection created:', redactForLog(result));
       return result;
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: composioKeys.profiles() });
+      queryClient.invalidateQueries({ queryKey: composioKeys.connections() });
       queryClient.invalidateQueries({ queryKey: composioKeys.apps() });
     },
   });
 };
 
-const useCheckProfileNameAvailability = (
+const useCheckConnectionNameAvailability = (
   toolkitSlug: string,
-  profileName: string,
+  connectionName: string,
   options?: {
     enabled?: boolean;
     debounceMs?: number;
   }
 ) => {
-  const [debouncedName, setDebouncedName] = useState(profileName);
+  const [debouncedName, setDebouncedName] = useState(connectionName);
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      setDebouncedName(profileName);
+      setDebouncedName(connectionName);
     }, options?.debounceMs || 500);
 
     return () => clearTimeout(timer);
-  }, [profileName, options?.debounceMs]);
+  }, [connectionName, options?.debounceMs]);
 
   return useQuery({
-    queryKey: ['composio', 'profile-name-availability', toolkitSlug, debouncedName],
+    queryKey: ['composio', 'connection-name-availability', toolkitSlug, debouncedName],
     queryFn: async () => {
       if (!debouncedName || debouncedName.trim().length < 1) {
         return {
@@ -374,6 +390,7 @@ const useCheckProfileNameAvailability = (
 
       const params = new URLSearchParams({
         toolkit_slug: toolkitSlug,
+        // Legacy Composio API query field.
         profile_name: debouncedName,
       });
 
@@ -388,7 +405,7 @@ const useCheckProfileNameAvailability = (
       );
 
       if (!response.ok) {
-        throw new Error('Failed to check profile name availability');
+        throw new Error('Failed to check connection name availability');
       }
 
       return response.json();
@@ -408,11 +425,11 @@ const useUpdateComposioTools = () => {
   return useMutation({
     mutationFn: async ({
       agentId,
-      profileId,
+      connectionId,
       selectedTools,
     }: {
       agentId: string;
-      profileId: string;
+      connectionId: string;
       selectedTools: string[];
     }) => {
       const {
@@ -420,12 +437,12 @@ const useUpdateComposioTools = () => {
       } = await supabase.auth.getSession();
       if (!session) throw new Error('Not authenticated');
 
-      log.log('💾 Updating agent tools - Profile ID:', profileId, 'Agent ID:', agentId);
+      log.log('💾 Updating agent tools - Connection ID:', connectionId, 'Agent ID:', agentId);
       log.log('🔧 Selected tools:', selectedTools);
 
-      // First get MCP config for the profile
+      // First get MCP config for the connection.
       const mcpConfigResponse = await fetch(
-        `${API_URL}/composio/profiles/${profileId}/mcp-config`,
+        `${API_URL}/composio/profiles/${connectionId}/mcp-config`,
         {
           headers: {
             Authorization: `Bearer ${session.access_token}`,
@@ -493,20 +510,20 @@ const useUpdateComposioTools = () => {
 
 export {
   useComposioApps,
-  useComposioProfiles,
+  useComposioConnections,
   useComposioToolkitDetails,
   useComposioToolkitIcon,
   useComposioTools,
   useComposioToolsBySlug,
   useComposioToolsBySlugInfinite,
-  useCreateComposioProfile,
-  useCheckProfileNameAvailability,
+  useCreateComposioConnection,
+  useCheckConnectionNameAvailability,
   useUpdateComposioTools,
   composioKeys,
   type ComposioApp,
-  type ComposioProfile,
+  type ComposioConnection,
   type ComposioTool,
-  type CreateComposioProfileRequest,
-  type CreateComposioProfileResponse,
+  type CreateComposioConnectionRequest,
+  type CreateComposioConnectionResponse,
   type AuthConfigField,
 };

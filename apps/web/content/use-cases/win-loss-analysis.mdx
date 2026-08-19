@@ -92,7 +92,7 @@ the model, the agent reads:
 The agent is **read-only** on HubSpot. It has no write access to any deal,
 contact, or company record, so it cannot change a stage, a close reason, or an
 amount. Its only output is the Slack post. Credentials are encrypted in the
-Secrets Manager and injected at runtime, never shown to the model or written
+Secrets Manager and injected at runtime, scoped to the agents you grant them to or written
 to logs.
 
 </Step>
@@ -118,10 +118,9 @@ is written back to HubSpot automatically.
 The agent reads every closed deal in HubSpot, so its access is scoped and
 one-directional:
 
-- **Isolation.** Every run happens in its own microVM sandbox. The session can
-  reach only HubSpot, and only the Slack post leaves the sandbox.
+- **Isolation.** Every run happens in its own isolated sandbox. The session is granted access only to HubSpot, and only the Slack post is written back out.
 - **Scoped secrets.** The HubSpot credential is encrypted in the Secrets
-  Manager and injected into the sandbox at runtime, never exposed to the model
+  Manager and injected into the sandbox at runtime, scoped to the agents you grant them to
   or the logs.
 - **Read-only.** The connector into HubSpot is read-only. The agent cannot
   change a deal's stage, close reason, competitor field, or amount; it can

@@ -86,7 +86,7 @@ model, the agent can:
 The agent writes notes and files tickets, but it only creates — it doesn't close,
 reassign, or touch existing work. An action item it can't confidently assign gets
 flagged for a person rather than routed to a guess. Credentials are encrypted in
-the secrets manager and injected at runtime, never shown to the model or written
+the secrets manager and injected at runtime, scoped to the agents you grant them to or written
 to logs.
 
 </Step>
@@ -112,12 +112,11 @@ notes. The follow-up exists as tasks instead of as a memory that fades.
 Giving an agent the ability to file tickets and assign work is a trust question.
 The relevant controls on Kortix:
 
-- **Isolation.** Each meeting runs in its own microVM sandbox. The session can
+- **Isolation.** Each meeting runs in its own isolated sandbox. The session can
   read the transcript and context it needs, and only the notes and tickets it
-  produces leave the sandbox.
+  produces are written back out.
 - **Scoped secrets.** The Calendar and Linear credentials are encrypted in the
-  secrets manager and injected into the sandbox at runtime, never exposed to the
-  model or the logs.
+  secrets manager and injected into the sandbox at runtime, scoped to the agents you grant them to.
 - **Human approval gate.** An action item the agent can't confidently assign is
   flagged for a person instead of routed to a guess.
 - **Everything is code.** The agent's persona, skills, and permissions are files

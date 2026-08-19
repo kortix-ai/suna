@@ -3,8 +3,10 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import {
+  collectPreviewTargets,
   editablePolicySignature,
   fallbackModeForPolicy,
+  hasAdvancedRoutingConfig,
   moveFallback,
   validateRoutingDraft,
 } from './gateway-routing';
@@ -12,7 +14,10 @@ import {
 const routingSource = readFileSync(join(import.meta.dir, 'gateway-routing.tsx'), 'utf8');
 const gatewayViewSource = readFileSync(join(import.meta.dir, '../../gateway-view.tsx'), 'utf8');
 const modelDefaultsSource = readFileSync(
-  join(import.meta.dir, '../../../../../../hooks/opencode/use-model-defaults.ts'),
+  join(
+    import.meta.dir,
+    '../../../../../../../../../packages/sdk/src/react/use-model-defaults.ts',
+  ),
   'utf8',
 );
 
@@ -80,18 +85,72 @@ describe('gateway routing editor helpers', () => {
     ).toContain('at least one');
   });
 
-  test('uses the shared model selector and removes vision and route-preview configuration', () => {
+  test('uses the shared model selector', () => {
     expect(routingSource).toContain("from '@/features/session/model-selector'");
     expect(routingSource).toContain('<ModelSelector');
-    expect(routingSource).not.toContain('Vision model');
-    expect(routingSource).not.toContain('Route preview');
+  });
+
+  test('renders an editable vision model override saved through the same routing policy', () => {
+    expect(routingSource).toContain('Vision model');
+    expect(routingSource).toContain('draft.visionModel');
+    expect(routingSource).toContain('unsetLabel="Inherit platform"');
+    expect(routingSource).toContain(
+      'onChange={(visionModel) => setDraft({ ...draft, visionModel })}',
+    );
+    // Included in the dirty-check so an edit here enables Save, and shipped
+    // in the same `routing.set.mutate({ ...draft, ... })` payload as the
+    // fallback chain and rules.
+    expect(routingSource).toContain('visionModel: policy.visionModel');
+  });
+
+  test('debounces a routing-policy/preview availability check and surfaces per-entry feedback', () => {
+    expect(routingSource).toContain('routing.preview.mutateAsync');
+    expect(routingSource).toContain('setTimeout');
+    expect(routingSource).toContain('AvailabilityBadge');
+    expect(routingSource).toContain('Not connected');
+  });
+
+  test('collects a deduped preview target list across the primary, vision override, default chain, and rule chains', () => {
+    expect(
+      collectPreviewTargets(
+        {
+          visionModel: 'anthropic/claude-sonnet-4.6',
+          defaultFallback: { models: ['glm-5.2', 'auto'], fallbackOn: 'transient' },
+          rules: [
+            { model: 'codex/gpt-5.6-sol', fallbackModels: ['glm-5.2'], fallbackOn: 'transient' },
+          ],
+        },
+        'anthropic/claude-opus-4.8',
+      ),
+    ).toEqual([
+      'anthropic/claude-opus-4.8',
+      'anthropic/claude-sonnet-4.6',
+      'glm-5.2',
+      'codex/gpt-5.6-sol',
+    ]);
+  });
+
+  test('preview targets skip null/auto entries and dedupe repeats', () => {
+    expect(
+      collectPreviewTargets({ visionModel: null, defaultFallback: null, rules: [] }, null),
+    ).toEqual([]);
+    expect(
+      collectPreviewTargets(
+        {
+          visionModel: 'glm-5.2',
+          defaultFallback: { models: ['glm-5.2'], fallbackOn: 'transient' },
+          rules: [],
+        },
+        'glm-5.2',
+      ),
+    ).toEqual(['glm-5.2']);
   });
 
   test('the header selector reads and writes the project default scope', () => {
     expect(gatewayViewSource).toContain('modelDefaults.projectDefault');
     expect(gatewayViewSource).toContain('.setProjectDefault(m)');
     expect(gatewayViewSource).toContain('useProjectModels(projectId)');
-    expect(gatewayViewSource).not.toContain('useOpenCodeProviders');
+    expect(gatewayViewSource).not.toContain('useRuntimeProviders');
     expect(gatewayViewSource).not.toContain('modelDefaults.setAccountDefault');
     expect(gatewayViewSource).toContain('modelDefaults.isUpdating');
     expect(gatewayViewSource).toContain("errorToast('Could not update the project default')");
@@ -99,7 +158,12 @@ describe('gateway routing editor helpers', () => {
 
   test('default changes refresh routing and the shared compact picker cache', () => {
     expect(modelDefaultsSource).toContain("['gateway-routing-policy', projectId]");
-    expect(modelDefaultsSource).toContain("['project-model-picker', projectId]");
+    // Was a standalone flat array literal, independently hand-typed from
+    // `qk.project.modelPicker(id)` — the SAME entry `useProjectModels` reads
+    // and `gateway-routing.tsx`'s own invalidation targets (see this file's
+    // other assertion on `qk.project.modelPicker(projectId)` above). Fixed as
+    // part of migrating `packages/sdk/src/react` onto `qk`.
+    expect(modelDefaultsSource).toContain("qk.project.modelPicker(projectId ?? '')");
   });
 
   test('an effective-default refetch does not overwrite an unsaved routing draft', () => {
@@ -109,9 +173,9 @@ describe('gateway routing editor helpers', () => {
       defaultFallback: { models: ['glm-5.2'], fallbackOn: 'transient' as const },
       rules: [],
     };
-    expect(
-      editablePolicySignature({ ...policy, defaultModel: 'anthropic/claude-opus-4.8' }),
-    ).toBe(editablePolicySignature(policy));
+    expect(editablePolicySignature({ ...policy, defaultModel: 'anthropic/claude-opus-4.8' })).toBe(
+      editablePolicySignature(policy),
+    );
     expect(
       editablePolicySignature({
         ...policy,
@@ -133,6 +197,84 @@ describe('gateway routing editor helpers', () => {
     expect(routingSource).toContain('routing.set.isPending ||');
     expect(routingSource).toContain('routing.reset.isPending ||');
     expect(routingSource).toContain("queryKey: ['model-defaults', projectId]");
-    expect(routingSource).toContain("queryKey: ['project-model-picker', projectId]");
+    expect(routingSource).toContain('queryKey: qk.project.modelPicker(projectId)');
+  });
+
+  test('renders a capability-gated generation-controls panel for the resolved primary model', () => {
+    expect(routingSource).toContain(
+      "from './generation-controls'",
+    );
+    expect(routingSource).toContain('<GenerationControlsPanel');
+    expect(routingSource).toContain('draft.modelGenerationConfig?.[primaryModel]');
+  });
+
+  test('Per-model overrides is promoted ahead of Vision model and Generation defaults, both foreground-weighted', () => {
+    const overridesIndex = routingSource.indexOf('Per-model overrides');
+    const visionIndex = routingSource.indexOf('>Vision model<');
+    const generationIndex = routingSource.indexOf('>Generation defaults<');
+    expect(overridesIndex).toBeGreaterThan(-1);
+    expect(visionIndex).toBeGreaterThan(-1);
+    expect(generationIndex).toBeGreaterThan(-1);
+    // Product feedback: overrides is "the core thing" and must not read as a
+    // footnote below three other panels — it now renders before Vision model
+    // and Generation defaults, not after them.
+    expect(overridesIndex).toBeLessThan(visionIndex);
+    expect(overridesIndex).toBeLessThan(generationIndex);
+    // Fallback and Per-model overrides carry the full-strength heading; Vision
+    // model and Generation defaults keep the muted default inside Advanced.
+    expect(routingSource).toContain('<Label className="text-foreground">Fallback</Label>');
+    expect(routingSource).toContain(
+      '<Label className="text-foreground">Per-model overrides</Label>',
+    );
+  });
+
+  test('Vision model and Generation defaults fold under a single Advanced disclosure', () => {
+    const disclosureIndex = routingSource.indexOf('<Disclosure open={advancedOpen}');
+    const visionIndex = routingSource.indexOf('>Vision model<');
+    const generationIndex = routingSource.indexOf('>Generation defaults<');
+    const disclosureCloseIndex = routingSource.indexOf('</Disclosure>');
+    expect(disclosureIndex).toBeGreaterThan(-1);
+    expect(disclosureIndex).toBeLessThan(visionIndex);
+    expect(disclosureIndex).toBeLessThan(generationIndex);
+    expect(disclosureCloseIndex).toBeGreaterThan(generationIndex);
+  });
+
+  test('the Advanced disclosure opens by default only when a vision override or a generation parameter is already set', () => {
+    expect(hasAdvancedRoutingConfig({ visionModel: null, modelGenerationConfig: {} })).toBe(false);
+    expect(hasAdvancedRoutingConfig({ visionModel: null, modelGenerationConfig: undefined })).toBe(
+      false,
+    );
+    expect(
+      hasAdvancedRoutingConfig({
+        visionModel: null,
+        modelGenerationConfig: { 'glm-5.2': {} },
+      }),
+    ).toBe(false);
+    expect(
+      hasAdvancedRoutingConfig({ visionModel: 'anthropic/claude-sonnet-4.6', modelGenerationConfig: {} }),
+    ).toBe(true);
+    expect(
+      hasAdvancedRoutingConfig({
+        visionModel: null,
+        modelGenerationConfig: { 'glm-5.2': { temperature: 0.5 } },
+      }),
+    ).toBe(true);
+  });
+
+  test('modelGenerationConfig is part of the dirty check and the hydration signature', () => {
+    expect(routingSource).toContain('modelGenerationConfig: policy.modelGenerationConfig ?? {}');
+    const policy = {
+      defaultModel: 'codex/gpt-5.6-sol',
+      visionModel: null,
+      defaultFallback: null,
+      rules: [],
+      modelGenerationConfig: {},
+    };
+    expect(
+      editablePolicySignature({
+        ...policy,
+        modelGenerationConfig: { 'codex/gpt-5.6-sol': { temperature: 0.5 } },
+      }),
+    ).not.toBe(editablePolicySignature(policy));
   });
 });

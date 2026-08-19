@@ -375,8 +375,8 @@ assign('sessions', [
 assign('memory', ['memory', 'memory_search', 'mem_search', 'ltm_search', 'get_mem']);
 assign('apps', [
   'connector_get', 'connector_list', 'connector_setup',
-  'kortix_executor_call', 'kortix_executor_connectors',
-  'kortix_executor_describe', 'kortix_executor_discover',
+  'kortix_connector_call', 'kortix_connectors',
+  'kortix_connector_describe', 'kortix_connector_discover',
 ]);
 assign('automations', [
   'triggers', 'trigger_create', 'trigger_delete', 'trigger_get', 'trigger_list',

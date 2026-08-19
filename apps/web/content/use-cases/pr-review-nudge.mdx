@@ -93,8 +93,7 @@ at runtime, the agent reads:
 
 The agent has **no write access to GitHub**. It cannot merge a PR, close it,
 approve it, or dismiss a review. Its only output is the Slack nudge. Credentials
-are encrypted in the Secrets Manager and injected at runtime, never shown to the
-model or written to logs.
+are encrypted in the Secrets Manager and injected at runtime, scoped to the agents you grant them to.
 
 </Step>
 <Step title="Nudge the right person">
@@ -119,10 +118,9 @@ do next — review it, ping the reviewer directly, or close it themselves.
 The agent reads across every repo it's pointed at, so its access is scoped and
 strictly one-directional:
 
-- **Isolation.** Every run happens in its own microVM sandbox. The session can
-  reach only GitHub (read-only) and Slack; nothing else leaves the sandbox.
+- **Isolation.** Every run happens in its own isolated sandbox. The session is granted access only to GitHub (read-only) and Slack; nothing else is written back out.
 - **Scoped secret.** The `GH_TOKEN` is encrypted in the Secrets Manager and
-  injected into the sandbox at runtime, never exposed to the model or the logs.
+  injected into the sandbox at runtime, scoped to the agents you grant them to.
 - **Nudge and summarize only.** The agent never merges, closes, or approves a
   PR, and never dismisses or resolves a review. It reports what's blocking and
   leaves the decision to a human.

@@ -27,6 +27,35 @@ export type SessionHealthResponse = {
   message?: string | null;
 };
 
+/**
+ * Which hop of the sandbox proxy produced a failure, as the proxy itself
+ * reports it. Mirrors `apps/api/src/sandbox-proxy/proxy-hop.ts` — the two lists
+ * are one wire contract and must not drift.
+ *
+ *   - `control_plane`    — the platform answered from the session row; the box
+ *                          was never dialled.
+ *   - `provider_ingress` — no address for the box, or its edge refused.
+ *   - `daemon`           — the box answers, the runtime process does not.
+ *   - `upstream_port`    — the user's own process on an app port is down.
+ *
+ * Only the middle two are evidence that the RUNTIME is unreachable.
+ */
+export type ProxyHop = 'control_plane' | 'provider_ingress' | 'daemon' | 'upstream_port';
+
+const PROXY_HOPS: readonly string[] = [
+  'control_plane',
+  'provider_ingress',
+  'daemon',
+  'upstream_port',
+];
+
+/** Narrow an untrusted header/body value to a hop, or null. Anything the proxy
+ *  did not attribute — an intermediary's own 502, an older deployment — must
+ *  read as "unattributed", never as a hop we happen to be lenient about. */
+export function parseProxyHop(value: unknown): ProxyHop | null {
+  return typeof value === 'string' && PROXY_HOPS.includes(value) ? (value as ProxyHop) : null;
+}
+
 export interface SessionHealthResult {
   /** HTTP status of the probe (0 when there is no active runtime URL). */
   status: number;
@@ -35,6 +64,10 @@ export interface SessionHealthResult {
   health: SessionHealthResponse | null;
   /** Raw response text — useful for non-ok diagnostics. */
   body: string;
+  /** Which proxy hop produced a failure, or null when nothing attributed it. */
+  hop: ProxyHop | null;
+  /** The status the failing hop itself returned, when it returned one. */
+  upstreamStatus: number | null;
 }
 
 /** Whether a health payload indicates the OpenCode runtime is ready. */
@@ -67,18 +100,34 @@ export async function getSessionHealth(
   init?: RequestInit,
 ): Promise<SessionHealthResult> {
   const url = (runtimeUrl === undefined ? getActiveOpenCodeUrl() : runtimeUrl) || null;
-  if (!url) return { status: 0, ok: false, health: null, body: '' };
+  if (!url)
+    return { status: 0, ok: false, health: null, body: '', hop: null, upstreamStatus: null };
   const res = await authenticatedFetch(
     `${url}/kortix/health`,
     { method: 'GET', ...init },
     { retryOnAuthError: false },
   );
   const body = await res.text().catch(() => '');
-  let health: SessionHealthResponse | null = null;
+  let parsed: Record<string, unknown> | null = null;
   try {
-    health = body ? (JSON.parse(body) as SessionHealthResponse) : null;
+    parsed = body ? (JSON.parse(body) as Record<string, unknown>) : null;
   } catch {
-    health = null;
+    parsed = null;
   }
-  return { status: res.status, ok: res.ok, health, body };
+  const health = parsed as SessionHealthResponse | null;
+  // Header first, body second. The header survives a HEAD and the proxy's HTML
+  // error page; the body fallback covers a deployment whose CORS config does not
+  // expose the header yet, where reading it would silently yield null.
+  const hop = parseProxyHop(res.headers.get('X-Kortix-Proxy-Hop')) ?? parseProxyHop(parsed?.hop);
+  // `Number(null)` and `Number('')` are both 0, so the `> 0` guard is what
+  // separates "absent" from a real status — there is no HTTP status 0.
+  const headerUpstream = Number(res.headers.get('X-Kortix-Upstream-Status'));
+  const bodyUpstream = parsed?.upstream_status;
+  const upstreamStatus =
+    Number.isFinite(headerUpstream) && headerUpstream > 0
+      ? headerUpstream
+      : typeof bodyUpstream === 'number'
+        ? bodyUpstream
+        : null;
+  return { status: res.status, ok: res.ok, health, body, hop, upstreamStatus };
 }

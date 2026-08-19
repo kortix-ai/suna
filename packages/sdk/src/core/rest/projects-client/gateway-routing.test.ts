@@ -66,11 +66,11 @@ test("routing policy transport supports get, whole-document set, reset, and prev
     body: project,
   });
 
-  await previewGatewayRoute("P1", { requestedModel: "auto", imageInput: true });
+  await previewGatewayRoute("P1", { requestedModel: "codex/gpt-5.6-sol", imageInput: true });
   expect(last()).toMatchObject({
     url: expect.stringContaining("/projects/P1/gateway/routing-policy/preview"),
     method: "POST",
-    body: { requestedModel: "auto", imageInput: true },
+    body: { requestedModel: "codex/gpt-5.6-sol", imageInput: true },
   });
 
   await resetGatewayRoutingPolicy("P1");

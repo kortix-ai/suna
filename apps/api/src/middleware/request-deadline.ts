@@ -7,7 +7,7 @@ import { HTTPException } from 'hono/http-exception';
 // Defense-in-depth against the fleet-wide "Request timed out after 30s" class
 // of incident (2026-06-08). The real root cause was DB connection-pool
 // starvation (see packages/db/src/client.ts), but a secondary failure mode is
-// any handler that makes a slow downstream call (Daytona, executor, git host)
+// any handler that makes a slow downstream call (Daytona, connector, git host)
 // without its own timeout: it hangs until the frontend's 30s client abort,
 // holding server resources the whole time and surfacing as a confusing,
 // URL-only timeout in Better Stack.
@@ -49,20 +49,23 @@ const DEADLINE_MS = (() => {
 
 const ENABLED = DEADLINE_MS > 0;
 
+/** Stable wire code for the API's total request-processing deadline. */
+export const REQUEST_DEADLINE_CODE = 'request_deadline' as const;
+
 // Route prefixes that stream, long-poll, proxy, or carry arbitrary upstream
 // latency and therefore must not be bounded by a fixed deadline.
 const EXEMPT_PREFIXES = [
-  '/v1/p',        // sandbox preview proxy (SSE event stream, long-poll, ws)
-  '/v1/tunnel',   // tunnel SSE (permission-requests) + ws
-  '/v1/git',      // git smart-HTTP (large packfile up/download)
-  '/v1/router',   // LLM gateway — streamed chat completions
-  '/v1/llm',      // LLM chat completions (streamed; p99 >10s is normal)
+  '/v1/p', // sandbox preview proxy (SSE event stream, long-poll, ws)
+  '/v1/tunnel', // tunnel SSE (permission-requests) + ws
+  '/v1/git', // git smart-HTTP (large packfile up/download)
+  '/v1/router', // LLM gateway — streamed chat completions
+  '/v1/llm', // LLM chat completions (streamed; p99 >10s is normal)
   '/v1/llm-gateway', // reverse proxy to the standalone gateway (streamed SSE)
-  '/v1/executor', // connector proxy — forwards to arbitrary upstream APIs
+  '/v1/connectors', // connector calls + git/provider sync — arbitrary upstream latency
   '/v1/webhooks', // inbound webhooks (Slack, …) — callers retry, don't truncate
-  '/v1/billing/webhooks',   // Stripe webhook processing (observed >60s, legit)
+  '/v1/billing/webhooks', // Stripe webhook processing (observed >60s, legit)
   '/v1/billing/revenuecat', // RevenueCat sync — batch reconcile, legit-long
-  '/v1/admin',    // operator maintenance endpoints — deliberate long ops
+  '/v1/admin', // operator maintenance endpoints — deliberate long ops
 ];
 
 // Path fragments for streaming or legitimately long *synchronous* endpoints
@@ -71,36 +74,37 @@ const EXEMPT_PREFIXES = [
 // can exceed the deadline while behaving correctly. Enumerated from 7 days of
 // prod duration data (2026-06-12).
 const EXEMPT_FRAGMENTS = [
-  '/turn-stream',
   '/turn-question',
   '/provision-stream',
-  '/provision',               // managed repo create + sandbox boot
-  '/start',                   // unified session open: provision/resume + pin
-                              // resolve
-  '/commit-push',             // host-driven git commit+push
-  '/marketplace/install',     // marketplace item install — git-bound like
-                              // /commit-push (fetch + hash + commit + push)
-  '/registry/install',        // registry item install — same git-bound path
-  '/marketplace/update',      // marketplace item update(s) — also matches
-                              // /marketplace/update-all (path.includes), and
-                              // (intentionally) the GET .../updates
-                              // drift-listing routes, which are
-                              // GitHub-scan-heavy and legitimately long
-  '/registry/update',         // registry item update — same git-bound path,
-                              // plus its GET .../updates drift-listing route
-  '/snapshots',               // sandbox template builds
-  '/suna-migration',          // OG Suna → opencode migration runs
-  '/legacy-migration',        // legacy VM → project migration runs
-  '/oauth/',                  // provider OAuth device flow — `start` spawns
-                              // OpenCode + waits for the device challenge, which
-                              // can exceed the deadline on a cold replica
+  '/provision', // managed repo create + sandbox boot
+  '/start', // unified session open: provision/resume + pin
+  // resolve
+  '/commit-push', // host-driven git commit+push
+  '/marketplace/install', // marketplace item install — git-bound like
+  // /commit-push (fetch + hash + commit + push)
+  '/registry/install', // registry item install — same git-bound path
+  '/marketplace/update', // marketplace item update(s) — also matches
+  // /marketplace/update-all (path.includes), and
+  // (intentionally) the GET .../updates
+  // drift-listing routes, which are
+  // GitHub-scan-heavy and legitimately long
+  '/registry/update', // registry item update — same git-bound path,
+  // plus its GET .../updates drift-listing route
+  '/snapshots', // sandbox template builds
+  '/suna-migration', // OG Suna → opencode migration runs
+  '/legacy-migration', // legacy VM → project migration runs
+  '/oauth/', // provider OAuth device flow — `start` spawns
+  // OpenCode + waits for the device challenge, which
+  // can exceed the deadline on a cold replica
 ];
 
 // Long synchronous creates that can't be matched by fragment without
 // catching unrelated routes: method + exact path (or path prefix) pairs.
 const EXEMPT_METHOD_PATHS: Array<{ method: string; path: string }> = [
-  { method: 'POST', path: '/v1/projects' },          // create + seed + provision
+  { method: 'POST', path: '/v1/projects' }, // create + seed + provision
 ];
+
+const EXEMPT_METHOD_PATH_PATTERNS: Array<{ method: string; path: RegExp }> = [];
 
 export function isExempt(c: Context): boolean {
   // WebSocket upgrade (defensive — these are handled before app.fetch).
@@ -118,6 +122,9 @@ export function isExempt(c: Context): boolean {
   }
   for (const mp of EXEMPT_METHOD_PATHS) {
     if (c.req.method === mp.method && path === mp.path) return true;
+  }
+  for (const mp of EXEMPT_METHOD_PATH_PATTERNS) {
+    if (c.req.method === mp.method && mp.path.test(path)) return true;
   }
   return false;
 }
@@ -141,6 +148,8 @@ const bounded = timeout(Math.max(DEADLINE_MS, 1), () => new RequestDeadlineHTTPE
  * without brittle string-matching, while keeping the 503 response + log intact.
  */
 export class RequestDeadlineHTTPException extends HTTPException {
+  readonly code = REQUEST_DEADLINE_CODE;
+
   constructor() {
     super(503, {
       message: `Request exceeded the ${Math.round(DEADLINE_MS / 1000)}s server processing deadline`,
@@ -148,7 +157,7 @@ export class RequestDeadlineHTTPException extends HTTPException {
   }
 }
 
-export function isRequestDeadlineHTTPException(err: unknown): boolean {
+export function isRequestDeadlineHTTPException(err: unknown): err is RequestDeadlineHTTPException {
   return err instanceof RequestDeadlineHTTPException;
 }
 

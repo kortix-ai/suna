@@ -10,7 +10,7 @@ import {
   type AutosizeTextAreaProps,
   type AutosizeTextAreaRef,
 } from '@/components/ui/textarea';
-import { Icon } from '@/features/icon/icon';
+import { Close } from '@/features/icon/icons/close';
 import { cn } from '@/lib/utils';
 
 function InputGroup({ className, ...props }: React.ComponentProps<'div'>) {
@@ -207,7 +207,7 @@ function InputGroupSearchClear({
       )}
       {...props}
     >
-      <Icon.Close className="text-muted-foreground size-4" />
+      <Close className="text-muted-foreground size-4" />
     </Button>
   );
 }

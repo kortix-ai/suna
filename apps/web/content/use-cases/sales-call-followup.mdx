@@ -87,7 +87,7 @@ model, the agent can:
 The agent reads the transcript and writes to the CRM and the task tracker on its
 own, but the outbound email never sends itself. Every recap stops at a **human
 approval gate**, so the rep reads it, edits if needed, and sends. Credentials are
-encrypted in the Secrets Manager and injected at runtime, never shown to the model
+encrypted in the Secrets Manager and injected at runtime, scoped to the agents you grant them to
 or written to logs.
 
 </Step>
@@ -113,12 +113,11 @@ follow-up happens while the call is still fresh instead of days later.
 The agent reads customer conversations and writes to the CRM, so the access is
 scoped and the outbound step stays with a person:
 
-- **Isolation.** Every call runs in its own microVM sandbox. The session reads only
+- **Isolation.** Every call runs in its own isolated sandbox. The session reads only
   the transcript it's seeded with and reaches only HubSpot and Linear; only the
-  updates and the drafted email leave the sandbox.
+  updates and the drafted email are written back out.
 - **Scoped secrets.** The transcript, HubSpot, and Linear credentials are encrypted
-  in the Secrets Manager and injected into the sandbox at runtime, never exposed to
-  the model or the logs.
+  in the Secrets Manager and injected into the sandbox at runtime, scoped to the agents you grant them to.
 - **Human approval gate.** The recap email never sends on its own. Each one is held
   for the rep to review and send; the agent writes to the CRM and tasks, the rep
   owns the outbound.

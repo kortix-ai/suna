@@ -120,7 +120,7 @@ describe('calculateCost — cache WRITE premium (the fixed leak)', () => {
     expect(upstreamCost).toBeCloseTo(3.75, 10);
   });
 
-  test('falls back to 1.25x the base input rate (Anthropic\'s published 5-minute cache-write multiplier) when no explicit rate is given', () => {
+  test("falls back to 1.25x the base input rate (Anthropic's published 5-minute cache-write multiplier) when no explicit rate is given", () => {
     const { upstreamCost } = calculateCost(
       'claude-sonnet-4.6',
       {
@@ -171,15 +171,15 @@ describe('calculateCost — cache WRITE premium (the fixed leak)', () => {
 });
 
 describe('calculateCost — upstreamCostHint precedence', () => {
-  test('a pricing table takes precedence over an upstreamCostHint when both are present', () => {
+  test('an exact upstreamCostHint takes precedence over a pricing table', () => {
     const { upstreamCost } = calculateCost(
-      'claude-sonnet-4.6',
+      'deepseek/deepseek-v4-flash',
       { promptTokens: 1_000_000, completionTokens: 0, cachedTokens: 0 },
       1,
-      999, // would be wildly wrong if used
+      0.098,
       BASE_PRICING,
     );
-    expect(upstreamCost).toBeCloseTo(3, 10);
+    expect(upstreamCost).toBeCloseTo(0.098, 10);
   });
 
   test('a positive upstreamCostHint is used verbatim when there is no pricing table', () => {
@@ -193,14 +193,16 @@ describe('calculateCost — upstreamCostHint precedence', () => {
     expect(finalCost).toBeCloseTo(0.0042 * 1.1, 10);
   });
 
-  test('an upstreamCostHint of exactly 0 is NOT treated as "present" — falls through to zero, not an error', () => {
-    const { upstreamCost } = calculateCost(
+  test('an exact zero upstream cost overrides a non-zero pricing table', () => {
+    const { upstreamCost, finalCost } = calculateCost(
       'openrouter/some-model',
       { promptTokens: 500, completionTokens: 500, cachedTokens: 0 },
-      1,
+      1.2,
       0,
+      BASE_PRICING,
     );
     expect(upstreamCost).toBe(0);
+    expect(finalCost).toBe(0);
   });
 
   test('a negative upstreamCostHint is ignored (never produces a negative bill)', () => {
@@ -221,6 +223,51 @@ describe('calculateCost — upstreamCostHint precedence', () => {
       undefined,
     );
     expect(upstreamCost).toBe(0);
+  });
+});
+
+describe('calculateCost — context-tier pricing', () => {
+  const TIERED_PRICING = {
+    ...BASE_PRICING,
+    cachedInputPerMillion: 0.3,
+    cacheWritePerMillion: 3,
+    tiers: [
+      {
+        inputPerMillion: 6,
+        outputPerMillion: 30,
+        cachedInputPerMillion: 0.6,
+        cacheWritePerMillion: 6,
+        contextThreshold: 200_000,
+      },
+    ],
+  };
+
+  test('uses base rates at the threshold', () => {
+    const { upstreamCost } = calculateCost(
+      'tiered-model',
+      { promptTokens: 200_000, completionTokens: 100_000, cachedTokens: 0 },
+      1,
+      undefined,
+      TIERED_PRICING,
+    );
+    expect(upstreamCost).toBeCloseTo(0.2 * 3 + 0.1 * 15, 10);
+  });
+
+  test('uses tier rates when prompt context exceeds the threshold', () => {
+    const { upstreamCost } = calculateCost(
+      'tiered-model',
+      {
+        promptTokens: 300_000,
+        completionTokens: 100_000,
+        cachedTokens: 100_000,
+        cacheWriteTokens: 50_000,
+      },
+      1,
+      undefined,
+      TIERED_PRICING,
+    );
+    const expected = 0.15 * 6 + 0.1 * 0.6 + 0.05 * 6 + 0.1 * 30;
+    expect(upstreamCost).toBeCloseTo(expected, 10);
   });
 });
 

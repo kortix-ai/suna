@@ -3,7 +3,7 @@
 import { Badge } from '@/components/ui/badge';
 import type { PricingPlan } from '@/features/billing/pricing-plans';
 import { cn } from '@/lib/utils';
-import { Check } from 'lucide-react';
+import { CheckIcon as Check } from '@phosphor-icons/react';
 
 interface PricingPlanCardProps {
   plan: PricingPlan;
@@ -56,7 +56,14 @@ export function PricingPlanCard({
           {plan.features.map((feature) => (
             <li key={feature} className="flex items-start justify-start gap-2 first:font-medium">
               <Check className="text-foreground mt-0.5 size-4 shrink-0" />
-              <span>{feature}</span>
+              <span>
+                <span>{feature}</span>
+                {plan.featureDetails?.[feature] ? (
+                  <span className="text-muted-foreground mt-0.5 block text-xs leading-relaxed font-normal">
+                    {plan.featureDetails[feature]}
+                  </span>
+                ) : null}
+              </span>
             </li>
           ))}
         </ul>

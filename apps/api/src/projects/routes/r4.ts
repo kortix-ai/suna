@@ -1,32 +1,36 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import {
-  ConnectionProfileSchema,
-  ReconcileConnectionProfileInputSchema,
-  UpdateConnectionProfileCredentialInputSchema,
+  ConnectionMetadataSchema,
+  ConnectionSchema,
+  ReconcileConnectionInputSchema,
+  UpdateConnectionCredentialInputSchema,
 } from '@kortix/api-contract';
 import {
-  executorConnectionProfiles,
-  executorConnectors,
+  connectorConnections,
+  connectors,
+  projectSessionConnectorBindings,
   projectSessions,
   projectTriggerRuntime,
   projects,
   sessionSandboxes,
 } from '@kortix/db';
-import { and, eq, inArray } from 'drizzle-orm';
-import { getCachedAccountTier } from '../../billing/services/entitlements';
-import { accountIsFreeTierForModels } from '../../billing/services/tiers';
+import { and, eq, inArray, isNull } from 'drizzle-orm';
+import { accountMayUseManagedModels } from '../../billing/services/entitlements';
 import {
+  agentMailProvisioningClientIds,
   agentMailUpstreamStatus,
   createAgentMailInbox,
   createAgentMailWebhook,
   isAgentMailInboxLimitError,
   resolveAgentMailApiKey,
 } from '../../channels/agentmail-api';
+import { compileEmailSenderRegex } from '../../channels/email/sender-policy-regex';
 import {
   type AgentMailSenderPolicy,
   deleteAgentMailInstall,
   deleteSlackInstall,
   deleteTeamsInstall,
+  listProjectsForWorkspace,
   loadAgentMailInstall,
   loadSlackInstall,
   loadTeamsAppIdForProject,
@@ -37,16 +41,6 @@ import {
   saveTeamsInstall,
   updateAgentMailSenderPolicy,
 } from '../../channels/install-store';
-import { previewVoiceB64, speakInMeeting } from '../../channels/meet-tts';
-import {
-  DEFAULT_MEET_BOT_NAME,
-  MEET_VOICES,
-  isMeetVoice,
-  resolveProjectBotName,
-  resolveProjectVoice,
-  setProjectBotName,
-  setProjectVoice,
-} from '../../channels/meet-voices';
 import { resolveBaseUrl } from '../../channels/slack-manifest';
 import { buildSlackInstallUrl } from '../../channels/slack-oauth';
 import { slackOauthMode } from '../../channels/slack-oauth-mode';
@@ -64,46 +58,87 @@ import {
   relayTurnQuestion,
   relayTurnStep,
 } from '../../channels/turn-relay';
+import { setProjectBotName } from '../../channels/voice-identity';
 import { config } from '../../config';
-import { upsertProfileCredential } from '../../executor/credentials';
-import { reconcileChannelConnectors } from '../../executor/sync';
-import { resolveExperimentalFeature } from '../../experimental/features';
+import {
+  resolveConnectionCredentialValue,
+  upsertConnectionCredential,
+  upsertConnectionOAuth2Credential,
+} from '../../connectors/credentials';
+import { mutateManifestWithRetry } from '../../connectors/manifest-mutation';
+import { revokeConnectionOAuth2 } from '../../connectors/oauth2-store';
+import {
+  finalizePipedreamConnectionAuthorization,
+  pipedreamConfigured,
+  pipedreamConnectUrl,
+} from '../../connectors/pipedream';
+import {
+  reconcileChannelConnectors,
+  rematerializeCatalogAfterCredentialUpdate,
+} from '../../connectors/sync';
+import { resolveFeatureFlag } from '../../feature-flags/registry';
+import { featureDisabledBody } from '../../feature-flags/gate';
 import { PROJECT_ACTIONS } from '../../iam';
+import { setContextField } from '../../lib/request-context';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
+import { resolveEnablement } from '../../llm-gateway/model-enablement';
 import { gatewayModelCatalog } from '../../llm-gateway/models/catalog-models';
 import { projectPickerCatalog } from '../../llm-gateway/models/picker-catalog';
 import { runtimeModelCatalog } from '../../llm-gateway/models/runtime-catalog';
+import { platformDefaultModelId } from '../../llm-gateway/models/served-managed-models';
 import {
   invalidateAccountModelDefaults,
   isModelServableForAccount,
   resolveEffectiveModel,
 } from '../../llm-gateway/resolution/default-model';
+import { toWireModel } from '../../llm-gateway/resolution/effective';
 import { auth, errors, json } from '../../openapi';
 import {
   deleteAccountModelPreference,
   getAccountModelDefaults,
   upsertAccountModelPreference,
 } from '../../repositories/model-preferences';
-import { getProjectRoutingPolicy } from '../../repositories/project-routing-policies';
-import { db } from '../../shared/db';
 import {
-  discoverExecutionKeepAliveEndpoint,
-  releaseExecutionLease,
-  renewExecutionLease,
-} from '../execution-lease';
-import { assertProjectCapability, loadProjectForUser } from '../lib/access';
+  getProjectRoutingPolicy,
+  setProjectModelOverrides,
+} from '../../repositories/project-routing-policies';
+import { db } from '../../shared/db';
+import { isUniqueViolation } from '../../shared/postgres-errors';
+import { continueSession } from '../session-lifecycle';
+import {
+  getOpenQuestion,
+  recordPendingQuestion,
+  renderAnswerPrompt,
+  resolvePendingQuestion,
+} from '../lib/pending-questions';
+import { loadProjectAgents } from '../agents';
+import { getAgentGrant } from '../../iam/agent-scope';
+import {
+  assertProjectCapability,
+  loadProjectForUser,
+  projectCapabilityAllowed,
+  loadVisibleSession,
+} from '../lib/access';
 import { AnyObject, TriggerSchema, projectsApp } from '../lib/app';
+import { callerKortixSessionId } from '../lib/caller-session';
+import {
+  type ConnectionOwnerType,
+  type ConnectorAuthorizationStrategy,
+  connectorAuthorizationMatchesStrategy,
+  isTrustedManagedChannelAuthorization,
+} from '../lib/connector-authorization-strategy';
+import { sessionMayEnumerateConnection } from '../lib/connector-connection-visibility';
 import { withProjectGitAuth } from '../lib/git';
+import { metadataMerge } from '../lib/metadata-merge';
+import { sandboxTokenMayActOnSession } from '../lib/sandbox-token-session';
 import { readBody, requestAuditContext } from '../lib/serializers';
 import {
   canonicalConnectorAlias,
-  loadEmailInstallProfileId,
+  loadEmailInstallConnectionId,
 } from '../lib/session-connector-bindings';
 import {
-  commitManifest,
   draftToSpec,
   fireGitTrigger,
-  loadManifestForEdit,
   loadTriggersForResponse,
   markGitTriggerFired,
   parseTriggerDraft,
@@ -112,10 +147,24 @@ import {
   specToBody,
   triggersPausedForProject,
   upsertTriggerInManifest,
-  withTriggersPaused,
 } from '../lib/triggers';
-import { listProjectSecretsSnapshot } from '../secrets';
+import { childIdleGraceMs } from '../sandbox-deadline';
+import { generateSessionTitleFromFirstPrompt } from '../session-title-generate';
+import { listProjectSecretNamesForConsumer } from '../secrets';
+import { reconcileProjectTriggerRuntime } from '../trigger-runtime-catalog';
+import {
+  PRIVATE_TRIGGER_SESSION_ACCESS,
+  parseTriggerSessionAccess,
+  setTriggerSessionAccess,
+  validateTriggerSessionAccessPrincipals,
+} from '../trigger-session-access';
 import { type ParsedManifest, extractTriggers, loadProjectTriggers } from '../triggers';
+import { turnStreamKindField, turnStreamKindNeedsConnectorWrite } from './r4-turn-stream-kind';
+import {
+  abandonSandboxTurn,
+  acceptSandboxTurn,
+  completeSandboxTurn,
+} from '../sandbox-turn-lifecycle';
 
 // Body keys that change the trigger's *repo manifest* (committed to git). A PATCH
 // whose body touches none of these has nothing to commit, so we skip git entirely
@@ -139,6 +188,9 @@ const TRIGGER_MANIFEST_KEYS = [
   'sessionMode',
   'session_id',
   'sessionId',
+  'session_key',
+  'sessionKey',
+  'filter',
 ] as const;
 
 interface SlackAuthTest {
@@ -149,10 +201,29 @@ interface SlackAuthTest {
   error?: string;
 }
 
-const ConnectionProfileViewSchema = ConnectionProfileSchema.openapi('ConnectionProfile');
+// Keep the existing OpenAPI component id for generated-client compatibility.
+const ConnectionViewSchema = ConnectionSchema.openapi('Connection');
 
-function serializeConnectionProfile(row: {
-  profileId: string;
+/**
+ * The owner/admin roster shape is narrower than Connection.
+ * It answers "who has connected this connector, and does it still work?" and
+ * nothing else. `label` and `metadata` are omitted on purpose: they are a
+ * member's own annotations on a PRIVATE connection and can carry personal
+ * identifiers (an email, an inbox id, a workspace id), which a peer manager has
+ * no need to see. Credentials are never in any connection shape.
+ */
+const ConnectionRosterEntrySchema = z
+  .object({
+    connection_id: z.string().uuid(),
+    connector_alias: z.string(),
+    owner_type: z.enum(['project', 'agent', 'member', 'subject', 'external']),
+    owner_id: z.string().nullable(),
+    status: z.enum(['active', 'revoked', 'error']),
+  })
+  .openapi('ConnectionRosterEntry');
+
+function serializeConnection(row: {
+  connectionId: string;
   connectorAlias: string;
   ownerType: string;
   ownerId: string | null;
@@ -162,7 +233,7 @@ function serializeConnectionProfile(row: {
   metadata: Record<string, unknown>;
 }) {
   return {
-    profile_id: row.profileId,
+    connection_id: row.connectionId,
     connector_alias: row.connectorAlias,
     owner_type: row.ownerType,
     owner_id: row.ownerId,
@@ -173,16 +244,145 @@ function serializeConnectionProfile(row: {
   };
 }
 
+function mayReadConnection(
+  connection: {
+    connectionId: string;
+    ownerType: ConnectionOwnerType;
+    ownerId: string | null;
+    isDefault: boolean;
+    metadata: Record<string, unknown>;
+    authorizationStrategy: ConnectorAuthorizationStrategy;
+    providerType: string;
+    connectorConfig: Record<string, unknown>;
+  },
+  userId: string,
+  actingPrincipalIsServiceAccount: boolean,
+  /** Connection ids the CALLER'S session is bound to, or null when the caller is
+   *  not session-bound. See connector-connection-visibility.ts: a sandbox's token
+   *  carries the WRAPPER's user id, so without this every end-user's agent could
+   *  enumerate every other end-user's connection and then bind it. */
+  sessionBoundConnectionIds: ReadonlySet<string> | null,
+): boolean {
+  if (!sessionMayEnumerateConnection(connection, sessionBoundConnectionIds)) return false;
+  return connectorAuthorizationMatchesStrategy({
+    strategy: connection.authorizationStrategy,
+    ownerType: connection.ownerType,
+    ownerId: connection.ownerId,
+    actingUserId: userId,
+    actingPrincipalIsServiceAccount,
+    trustedManagedSystem: isTrustedManagedChannelAuthorization({
+      providerType: connection.providerType,
+      platform:
+        typeof connection.connectorConfig.platform === 'string'
+          ? connection.connectorConfig.platform
+          : null,
+      ownerType: connection.ownerType,
+      ownerId: connection.ownerId,
+      metadata: connection.metadata,
+    }),
+  });
+}
+
+function mayMutateConnection(
+  connection: {
+    ownerType: ConnectionOwnerType;
+    ownerId: string | null;
+    metadata: Record<string, unknown>;
+    authorizationStrategy: ConnectorAuthorizationStrategy;
+    providerType: string;
+    connectorConfig: Record<string, unknown>;
+  },
+  userId: string,
+  actingPrincipalIsServiceAccount: boolean,
+  mayManageSystemConnections: boolean,
+): boolean {
+  const strategyMatches = connectorAuthorizationMatchesStrategy({
+    strategy: connection.authorizationStrategy,
+    ownerType: connection.ownerType,
+    ownerId: connection.ownerId,
+    actingUserId: userId,
+    actingPrincipalIsServiceAccount,
+    trustedManagedSystem: isTrustedManagedChannelAuthorization({
+      providerType: connection.providerType,
+      platform:
+        typeof connection.connectorConfig.platform === 'string'
+          ? connection.connectorConfig.platform
+          : null,
+      ownerType: connection.ownerType,
+      ownerId: connection.ownerId,
+      metadata: connection.metadata,
+    }),
+  });
+  if (!strategyMatches) return false;
+  return connection.authorizationStrategy === 'user' || mayManageSystemConnections;
+}
+
+async function reconcileConnectionRow(input: {
+  accountId: string;
+  projectId: string;
+  connectorId: string;
+  ownerType: 'project' | 'agent' | 'member' | 'subject' | 'external';
+  /** null for a `project` (team-shared) connection — the CHECK constraint
+   *  requires owner_id IS NULL there; every other owner type carries an id. */
+  ownerId: string | null;
+  label: string;
+  metadata: Record<string, unknown>;
+  createdBy: string;
+}) {
+  // Identity includes the LABEL: an owner may hold several connections on one
+  // connector ("Work", "Personal"), so reconciling a NEW label adds a connection
+  // while the same label stays idempotent (updates metadata in place). Matches
+  // idx_connector_connections_owner.
+  const identity = and(
+    eq(connectorConnections.connectorId, input.connectorId),
+    eq(connectorConnections.ownerType, input.ownerType),
+    input.ownerId === null
+      ? isNull(connectorConnections.ownerId)
+      : eq(connectorConnections.ownerId, input.ownerId),
+    eq(connectorConnections.label, input.label),
+  );
+  const [existing] = await db.select().from(connectorConnections).where(identity).limit(1);
+  if (existing) {
+    const [connection] = await db
+      .update(connectorConnections)
+      .set({ label: input.label, metadata: input.metadata, updatedAt: new Date() })
+      .where(eq(connectorConnections.connectionId, existing.connectionId))
+      .returning();
+    return { connection, created: false };
+  }
+  let inserted: typeof connectorConnections.$inferSelect | undefined;
+  try {
+    [inserted] = await db
+      .insert(connectorConnections)
+      .values({
+        accountId: input.accountId,
+        projectId: input.projectId,
+        connectorId: input.connectorId,
+        ownerType: input.ownerType,
+        ownerId: input.ownerId,
+        label: input.label,
+        metadata: input.metadata,
+        createdBy: input.createdBy,
+      })
+      .returning();
+  } catch (error) {
+    if (!isUniqueViolation(error)) throw error;
+  }
+  if (inserted) return { connection: inserted, created: true };
+  const [raced] = await db.select().from(connectorConnections).where(identity).limit(1);
+  return { connection: raced, created: false };
+}
+
 projectsApp.openapi(
   createRoute({
     method: 'get',
-    path: '/{projectId}/connector-profiles',
+    path: '/{projectId}/connections',
     tags: ['connectors'],
-    summary: 'List connection profiles',
+    summary: 'List connections',
     ...auth,
     request: { params: z.object({ projectId: z.string() }) },
     responses: {
-      200: json(z.object({ profiles: z.array(ConnectionProfileViewSchema) }), 'Profiles'),
+      200: json(z.object({ connections: z.array(ConnectionViewSchema) }), 'Connections'),
       ...errors(403, 404),
     },
   }),
@@ -190,48 +390,247 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    await assertProjectCapability(
+    const actingPrincipalIsServiceAccount = c.get('authType') === 'service_account';
+    // A sandbox connector token is bound to ONE session. Load what that session was
+    // actually GIVEN so the enumeration below can be narrowed to it. null for
+    // every non-session caller, which leaves the operator's view unchanged.
+    const callerSessionId = callerKortixSessionId(c);
+    let sessionBoundConnectionIds: ReadonlySet<string> | null = null;
+    if (callerSessionId) {
+      const bound = await db
+        .select({ connectionId: projectSessionConnectorBindings.connectionId })
+        .from(projectSessionConnectorBindings)
+        .where(
+          and(
+            eq(projectSessionConnectorBindings.sessionId, callerSessionId),
+            eq(projectSessionConnectorBindings.projectId, projectId),
+          ),
+        );
+      sessionBoundConnectionIds = new Set(bound.map((row) => row.connectionId));
+    }
+    const rows = await db
+      .select({
+        connectionId: connectorConnections.connectionId,
+        connectorAlias: connectors.slug,
+        ownerType: connectorConnections.ownerType,
+        ownerId: connectorConnections.ownerId,
+        label: connectorConnections.label,
+        status: connectorConnections.status,
+        isDefault: connectorConnections.isDefault,
+        metadata: connectorConnections.metadata,
+        authorizationStrategy: connectors.authorizationStrategy,
+        providerType: connectors.providerType,
+        connectorConfig: connectors.config,
+      })
+      .from(connectorConnections)
+      .innerJoin(
+        connectors,
+        eq(connectors.connectorId, connectorConnections.connectorId),
+      )
+      .where(eq(connectorConnections.projectId, projectId));
+    return c.json({
+      connections: rows
+        .filter((connection) =>
+          mayReadConnection(
+            connection,
+            loaded.userId,
+            actingPrincipalIsServiceAccount,
+            sessionBoundConnectionIds,
+          ),
+        )
+        .map(serializeConnection),
+    });
+  },
+);
+
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/connections/all',
+    tags: ['connectors'],
+    summary: "List every member's connections",
+    ...auth,
+    request: { params: z.object({ projectId: z.string() }) },
+    responses: {
+      200: json(
+        z.object({ connections: z.array(ConnectionRosterEntrySchema) }),
+        'Connection roster',
+      ),
+      ...errors(403, 404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    // A read-only roster of EVERY member's connection for this project: WHO has
+    // connected which connector, and whether it still works. Manage-gated
+    // (owner/manager), and deliberately NARROWER than the caller-scoped list —
+    // it returns identity + status ONLY. `label` and `metadata` are excluded on
+    // purpose: they are a member's own annotations on a PRIVATE connection and
+    // can carry personal identifiers (an email, an inbox_id, a workspace id).
+    // The plain list hides other members' connections entirely, so this route is
+    // the one place peer rows are visible — it must disclose the minimum that
+    // answers "has this person connected?", nothing more.
+    const mayManage = await projectCapabilityAllowed(
       c,
       loaded.userId,
       loaded.row.accountId,
       projectId,
-      PROJECT_ACTIONS.PROJECT_CONNECTOR_PROFILES_MANAGE,
+      PROJECT_ACTIONS.PROJECT_CONNECTOR_CONNECTIONS_MANAGE,
     );
+    if (!mayManage) {
+      return c.json(
+        {
+          error: 'You do not have permission to view all connections',
+          code: 'FORBIDDEN',
+        },
+        403,
+      );
+    }
     const rows = await db
       .select({
-        profileId: executorConnectionProfiles.profileId,
-        connectorAlias: executorConnectors.slug,
-        ownerType: executorConnectionProfiles.ownerType,
-        ownerId: executorConnectionProfiles.ownerId,
-        label: executorConnectionProfiles.label,
-        status: executorConnectionProfiles.status,
-        isDefault: executorConnectionProfiles.isDefault,
-        metadata: executorConnectionProfiles.metadata,
+        connectionId: connectorConnections.connectionId,
+        connectorAlias: connectors.slug,
+        ownerType: connectorConnections.ownerType,
+        ownerId: connectorConnections.ownerId,
+        status: connectorConnections.status,
       })
-      .from(executorConnectionProfiles)
+      .from(connectorConnections)
       .innerJoin(
-        executorConnectors,
-        eq(executorConnectors.connectorId, executorConnectionProfiles.connectorId),
+        connectors,
+        eq(connectors.connectorId, connectorConnections.connectorId),
       )
-      .where(eq(executorConnectionProfiles.projectId, projectId));
-    return c.json({ profiles: rows.map(serializeConnectionProfile) });
+      .where(eq(connectorConnections.projectId, projectId));
+    return c.json({
+      connections: rows.map((row) => ({
+        connection_id: row.connectionId,
+        connector_alias: row.connectorAlias,
+        owner_type: row.ownerType,
+        owner_id: row.ownerId,
+        status: row.status,
+      })),
+    });
   },
 );
 
 projectsApp.openapi(
   createRoute({
     method: 'post',
-    path: '/{projectId}/connector-profiles',
+    path: '/{projectId}/connections/me',
     tags: ['connectors'],
-    summary: 'Idempotently create or reconcile a connection profile',
+    summary: "Create or reconcile the calling member's connection",
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
-      body: { content: { 'application/json': { schema: ReconcileConnectionProfileInputSchema } } },
+      body: {
+        content: {
+          'application/json': {
+            schema: z
+              .object({
+                connector_alias: z.string().regex(/^[a-z][a-z0-9_-]{0,127}$/),
+                label: z.string().trim().min(1).max(255),
+                metadata: ConnectionMetadataSchema.optional(),
+              })
+              .strict(),
+          },
+        },
+      },
     },
     responses: {
-      200: json(ConnectionProfileViewSchema, 'Reconciled profile'),
-      201: json(ConnectionProfileViewSchema, 'Created profile'),
+      200: json(ConnectionViewSchema, 'Reconciled connection'),
+      201: json(ConnectionViewSchema, 'Created connection'),
+      ...errors(400, 403, 404, 409),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    if (c.get('authType') === 'service_account') {
+      return c.json(
+        { error: 'Only human members can reconcile user connections' },
+        403,
+      );
+    }
+    const body = await readBody(c);
+    const connectorAlias = canonicalConnectorAlias(
+      typeof body.connector_alias === 'string' ? body.connector_alias.trim() : '',
+    );
+    const label = typeof body.label === 'string' ? body.label.trim() : '';
+    const metadata =
+      body.metadata && typeof body.metadata === 'object' && !Array.isArray(body.metadata)
+        ? (body.metadata as Record<string, unknown>)
+        : {};
+    if (!connectorAlias || !label) {
+      return c.json({ error: 'connector_alias and label are required' }, 400);
+    }
+    const [connector] = await db
+      .select({
+        connectorId: connectors.connectorId,
+        providerType: connectors.providerType,
+        authorizationStrategy: connectors.authorizationStrategy,
+      })
+      .from(connectors)
+      .where(
+        and(
+          eq(connectors.projectId, projectId),
+          eq(connectors.accountId, loaded.row.accountId),
+          eq(connectors.slug, connectorAlias),
+        ),
+      )
+      .limit(1);
+    if (!connector) return c.json({ error: 'Connector not found' }, 404);
+    if (connector.providerType === 'channel') {
+      return c.json(
+        { error: 'Channel connections are reconciled from verified channel installations' },
+        409,
+      );
+    }
+    if (connector.authorizationStrategy !== 'user') {
+      return c.json(
+        {
+          error: 'This connector uses project-owned connections',
+          code: 'CONNECTOR_AUTHORIZATION_STRATEGY_MISMATCH',
+        },
+        409,
+      );
+    }
+    const ownerType = 'member' as const;
+    const ownerId = loaded.userId;
+    const { connection, created } = await reconcileConnectionRow({
+      accountId: loaded.row.accountId,
+      projectId,
+      connectorId: connector.connectorId,
+      ownerType,
+      ownerId,
+      label,
+      metadata,
+      createdBy: loaded.userId,
+    });
+    if (!connection) return c.json({ error: 'Connection could not be reconciled' }, 409);
+    return c.json(serializeConnection({ ...connection, connectorAlias }), created ? 201 : 200);
+  },
+);
+
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/connections',
+    tags: ['connectors'],
+    summary: 'Create or reconcile a connection',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+      body: {
+        content: {
+          'application/json': { schema: ReconcileConnectionInputSchema },
+        },
+      },
+    },
+    responses: {
+      200: json(ConnectionViewSchema, 'Reconciled connection'),
+      201: json(ConnectionViewSchema, 'Created connection'),
       ...errors(400, 403, 404, 409),
     },
   }),
@@ -244,119 +643,120 @@ projectsApp.openapi(
       loaded.userId,
       loaded.row.accountId,
       projectId,
-      PROJECT_ACTIONS.PROJECT_CONNECTOR_PROFILES_MANAGE,
+      PROJECT_ACTIONS.PROJECT_CONNECTOR_CONNECTIONS_MANAGE,
     );
     const body = await readBody(c);
     const requestedAlias =
       typeof body.connector_alias === 'string' ? body.connector_alias.trim() : '';
     const connectorAlias = canonicalConnectorAlias(requestedAlias);
     const ownerType = typeof body.owner_type === 'string' ? body.owner_type : 'external';
-    const ownerId = typeof body.owner_id === 'string' ? body.owner_id.trim() : '';
+    if (ownerType === 'member' && c.get('authType') === 'service_account') {
+      return c.json(
+        { error: 'Only human members can reconcile user connections' },
+        403,
+      );
+    }
+    // Backwards-compatible manager path: a submitted member owner is always
+    // rewritten to the caller. Managers may create their own member connection,
+    // but never mint one on behalf of (or later impersonate) another member.
+    const ownerId =
+      ownerType === 'member'
+        ? loaded.userId
+        : typeof body.owner_id === 'string'
+          ? body.owner_id.trim()
+          : '';
     const label = typeof body.label === 'string' ? body.label.trim() : '';
     const metadata =
       body.metadata && typeof body.metadata === 'object' && !Array.isArray(body.metadata)
         ? (body.metadata as Record<string, unknown>)
         : {};
-    if (!connectorAlias || !['agent', 'member', 'subject', 'external'].includes(ownerType)) {
-      return c.json({ error: 'connector_alias and a non-project owner_type are required' }, 400);
+    if (
+      !connectorAlias ||
+      !['project', 'agent', 'member', 'subject', 'external'].includes(ownerType)
+    ) {
+      return c.json({ error: 'connector_alias and a valid owner_type are required' }, 400);
     }
-    if (!ownerId || !label) return c.json({ error: 'owner_id and label are required' }, 400);
+    // A `project` (team-shared) connection belongs to the whole project and takes
+    // NO owner_id — several may exist per connector, distinguished by label.
+    // Creating one is already gated: this route asserts the connections-manage
+    // capability above, so reaching here means the caller may administer them.
+    if (ownerType === 'project') {
+      if (!label) return c.json({ error: 'label is required' }, 400);
+    } else if (!ownerId || !label) {
+      return c.json({ error: 'owner_id and label are required' }, 400);
+    }
     const [connector] = await db
       .select({
-        connectorId: executorConnectors.connectorId,
-        providerType: executorConnectors.providerType,
+        connectorId: connectors.connectorId,
+        providerType: connectors.providerType,
+        authorizationStrategy: connectors.authorizationStrategy,
       })
-      .from(executorConnectors)
+      .from(connectors)
       .where(
         and(
-          eq(executorConnectors.projectId, projectId),
-          eq(executorConnectors.accountId, loaded.row.accountId),
-          eq(executorConnectors.slug, connectorAlias),
+          eq(connectors.projectId, projectId),
+          eq(connectors.accountId, loaded.row.accountId),
+          eq(connectors.slug, connectorAlias),
         ),
       )
       .limit(1);
     if (!connector) return c.json({ error: 'Connector not found' }, 404);
     if (connector.providerType === 'channel') {
       return c.json(
-        { error: 'Channel profiles are reconciled from verified channel installations' },
+        { error: 'Channel connections are reconciled from verified channel installations' },
         409,
       );
     }
-    const [existing] = await db
-      .select()
-      .from(executorConnectionProfiles)
-      .where(
-        and(
-          eq(executorConnectionProfiles.connectorId, connector.connectorId),
-          eq(executorConnectionProfiles.ownerType, ownerType as any),
-          eq(executorConnectionProfiles.ownerId, ownerId),
-        ),
-      )
-      .limit(1);
-    let profile = existing;
-    let created = false;
-    if (profile) {
-      const [updated] = await db
-        .update(executorConnectionProfiles)
-        .set({ label, metadata, updatedAt: new Date() })
-        .where(eq(executorConnectionProfiles.profileId, profile.profileId))
-        .returning();
-      profile = updated;
-    } else {
-      const [inserted] = await db
-        .insert(executorConnectionProfiles)
-        .values({
-          accountId: loaded.row.accountId,
-          projectId,
-          connectorId: connector.connectorId,
-          ownerType: ownerType as 'agent' | 'member' | 'subject' | 'external',
-          ownerId,
-          label,
-          metadata,
-          createdBy: loaded.userId,
-        })
-        .onConflictDoNothing()
-        .returning();
-      if (inserted) {
-        profile = inserted;
-        created = true;
-      } else {
-        const [raced] = await db
-          .select()
-          .from(executorConnectionProfiles)
-          .where(
-            and(
-              eq(executorConnectionProfiles.connectorId, connector.connectorId),
-              eq(executorConnectionProfiles.ownerType, ownerType as any),
-              eq(executorConnectionProfiles.ownerId, ownerId),
-            ),
-          )
-          .limit(1);
-        profile = raced;
-      }
+    const normalizedOwnerId = ownerType === 'project' ? null : ownerId;
+    if (
+      !connectorAuthorizationMatchesStrategy({
+        strategy: connector.authorizationStrategy,
+        ownerType: ownerType as ConnectionOwnerType,
+        ownerId: normalizedOwnerId,
+        actingUserId: loaded.userId,
+        actingPrincipalIsServiceAccount: c.get('authType') === 'service_account',
+      })
+    ) {
+      return c.json(
+        {
+          error: `This connector uses ${connector.authorizationStrategy}-owned connections`,
+          code: 'CONNECTOR_AUTHORIZATION_STRATEGY_MISMATCH',
+        },
+        409,
+      );
     }
-    if (!profile) return c.json({ error: 'Profile could not be reconciled' }, 409);
-    const view = serializeConnectionProfile({ ...profile, connectorAlias });
+    const { connection, created } = await reconcileConnectionRow({
+      accountId: loaded.row.accountId,
+      projectId,
+      connectorId: connector.connectorId,
+      ownerType: ownerType as 'project' | 'agent' | 'member' | 'subject' | 'external',
+      ownerId: normalizedOwnerId,
+      label,
+      metadata,
+      createdBy: loaded.userId,
+    });
+    if (!connection) return c.json({ error: 'Connection could not be reconciled' }, 409);
+    const view = serializeConnection({ ...connection, connectorAlias });
     return c.json(view, created ? 201 : 200);
   },
 );
 
-for (const operation of ['credential', 'revoke', 'activate'] as const) {
+for (const operation of ['credential', 'revoke', 'activate', 'default'] as const) {
   projectsApp.openapi(
     createRoute({
       method: 'put',
-      path: `/{projectId}/connector-profiles/{profileId}/${operation}`,
+      path: `/{projectId}/connections/{connectionId}/${operation}`,
       tags: ['connectors'],
-      summary: `${operation} connection profile`,
+      summary: `${operation} connection`,
       ...auth,
       request: {
-        params: z.object({ projectId: z.string(), profileId: z.string().uuid() }),
+        params: z.object({ projectId: z.string(), connectionId: z.string().uuid() }),
         body: {
           content: {
             'application/json': {
               schema:
                 operation === 'credential'
-                  ? UpdateConnectionProfileCredentialInputSchema
+                  ? UpdateConnectionCredentialInputSchema
                   : z.object({}).strict(),
             },
           },
@@ -369,48 +769,294 @@ for (const operation of ['credential', 'revoke', 'activate'] as const) {
     }),
     async (c: any) => {
       const projectId = c.req.param('projectId');
-      const profileId = c.req.param('profileId');
+      const connectionId = c.req.param('connectionId');
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
-      await assertProjectCapability(
+      const actingPrincipalIsServiceAccount = c.get('authType') === 'service_account';
+      const mayManageSystemConnections = await projectCapabilityAllowed(
         c,
         loaded.userId,
         loaded.row.accountId,
         projectId,
-        PROJECT_ACTIONS.PROJECT_CONNECTOR_PROFILES_MANAGE,
+        PROJECT_ACTIONS.PROJECT_CONNECTOR_CONNECTIONS_MANAGE,
       );
-      const [profile] = await db
-        .select({ connectorId: executorConnectionProfiles.connectorId })
-        .from(executorConnectionProfiles)
+      const [connection] = await db
+        .select({
+          connectorId: connectorConnections.connectorId,
+          ownerType: connectorConnections.ownerType,
+          ownerId: connectorConnections.ownerId,
+          isDefault: connectorConnections.isDefault,
+          metadata: connectorConnections.metadata,
+          authorizationStrategy: connectors.authorizationStrategy,
+          providerType: connectors.providerType,
+          connectorConfig: connectors.config,
+        })
+        .from(connectorConnections)
+        .innerJoin(
+          connectors,
+          and(
+            eq(connectors.connectorId, connectorConnections.connectorId),
+            eq(connectors.accountId, connectorConnections.accountId),
+            eq(connectors.projectId, connectorConnections.projectId),
+          ),
+        )
         .where(
           and(
-            eq(executorConnectionProfiles.profileId, profileId),
-            eq(executorConnectionProfiles.projectId, projectId),
-            eq(executorConnectionProfiles.accountId, loaded.row.accountId),
+            eq(connectorConnections.connectionId, connectionId),
+            eq(connectorConnections.projectId, projectId),
+            eq(connectorConnections.accountId, loaded.row.accountId),
           ),
         )
         .limit(1);
-      if (!profile) return c.json({ error: 'Not found' }, 404);
+      if (!connection) return c.json({ error: 'Not found' }, 404);
+      if (
+        !mayMutateConnection(
+          connection,
+          loaded.userId,
+          actingPrincipalIsServiceAccount,
+          mayManageSystemConnections,
+        )
+      ) {
+        return c.json({ error: 'Not found' }, 404);
+      }
       if (operation === 'credential') {
         const body = await readBody(c);
-        if (typeof body.value !== 'string' || !body.value) {
-          return c.json({ error: 'value is required' }, 400);
+        const parsed = UpdateConnectionCredentialInputSchema.safeParse(body);
+        if (!parsed.success) {
+          return c.json(
+            {
+              error:
+                body?.oauth2 != null
+                  ? (parsed.error.issues[0]?.message ?? 'invalid OAuth2 credential')
+                  : 'value is required',
+            },
+            400,
+          );
         }
-        await upsertProfileCredential({
+        try {
+          if ('oauth2' in parsed.data) {
+            await upsertConnectionOAuth2Credential({
+              projectId,
+              connectorId: connection.connectorId,
+              connectionId,
+              oauth2: parsed.data.oauth2,
+              createdBy: loaded.userId,
+            });
+          } else {
+            await upsertConnectionCredential({
+              projectId,
+              connectorId: connection.connectorId,
+              connectionId,
+              value: parsed.data.value,
+              kind: parsed.data.kind,
+              createdBy: loaded.userId,
+            });
+          }
+        } catch (error) {
+          return c.json({ error: (error as Error).message || 'credential validation failed' }, 400);
+        }
+        await rematerializeCatalogAfterCredentialUpdate({
           projectId,
-          connectorId: profile.connectorId,
-          profileId,
-          value: body.value,
-          kind: body.kind === 'connection' ? 'connection' : 'secret',
-          createdBy: loaded.userId,
+          accountId: loaded.row.accountId,
+          provider: connection.providerType,
+          ownerType: connection.ownerType,
+          isDefault: connection.isDefault,
+          connectorId: connection.connectorId,
+          credential:
+            connection.providerType === 'mcp' &&
+            connection.ownerType === 'project' &&
+            connection.isDefault
+              ? await resolveConnectionCredentialValue({
+                  connectorId: connection.connectorId,
+                  connectionId,
+                })
+              : null,
+        });
+      } else if (operation === 'default') {
+        // Make THIS the default connection for its owner scope. Defaults are
+        // per-owner (one team default; one per member), and the partial unique
+        // indexes enforce that — so clear the current default in the SAME scope
+        // first, in one transaction, or the update would collide.
+        await db.transaction(async (tx) => {
+          const sameScope = and(
+            eq(connectorConnections.connectorId, connection.connectorId),
+            eq(connectorConnections.ownerType, connection.ownerType),
+            connection.ownerId === null
+              ? isNull(connectorConnections.ownerId)
+              : eq(connectorConnections.ownerId, connection.ownerId),
+          );
+          await tx
+            .update(connectorConnections)
+            .set({ isDefault: false, updatedAt: new Date() })
+            .where(and(sameScope, eq(connectorConnections.isDefault, true)));
+          await tx
+            .update(connectorConnections)
+            .set({ isDefault: true, updatedAt: new Date() })
+            .where(eq(connectorConnections.connectionId, connectionId));
+        });
+        await rematerializeCatalogAfterCredentialUpdate({
+          projectId,
+          accountId: loaded.row.accountId,
+          provider: connection.providerType,
+          ownerType: connection.ownerType,
+          isDefault: true,
+          connectorId: connection.connectorId,
+          credential:
+            connection.providerType === 'mcp' && connection.ownerType === 'project'
+              ? await resolveConnectionCredentialValue({
+                  connectorId: connection.connectorId,
+                  connectionId,
+                })
+              : null,
         });
       } else {
+        if (operation === 'revoke') await revokeConnectionOAuth2(connectionId);
         await db
-          .update(executorConnectionProfiles)
+          .update(connectorConnections)
           .set({ status: operation === 'revoke' ? 'revoked' : 'active', updatedAt: new Date() })
-          .where(eq(executorConnectionProfiles.profileId, profileId));
+          .where(eq(connectorConnections.connectionId, connectionId));
       }
       return c.json({ ok: true });
+    },
+  );
+}
+
+for (const operation of ['connect', 'connect/finalize'] as const) {
+  projectsApp.openapi(
+    createRoute({
+      method: 'post',
+      path: `/{projectId}/connections/{connectionId}/${operation}`,
+      tags: ['connectors'],
+      summary:
+        operation === 'connect'
+          ? 'Start Pipedream OAuth for a connection'
+          : 'Finalize Pipedream OAuth for a connection',
+      ...auth,
+      request: {
+        params: z.object({ projectId: z.string(), connectionId: z.string().uuid() }),
+        body: {
+          content: {
+            'application/json': {
+              schema:
+                operation === 'connect'
+                  ? z
+                      .object({
+                        success_redirect_uri: z.string().optional(),
+                        error_redirect_uri: z.string().optional(),
+                      })
+                      .strict()
+                  : z.object({}).strict(),
+            },
+          },
+        },
+      },
+      responses: {
+        200: json(z.any(), 'Pipedream connection result'),
+        ...errors(400, 403, 404, 409, 501),
+      },
+    }),
+    async (c: any) => {
+      const projectId = c.req.param('projectId');
+      const connectionId = c.req.param('connectionId');
+      const loaded = await loadProjectForUser(c, projectId, 'read');
+      if (!loaded) return c.json({ error: 'Not found' }, 404);
+      const actingPrincipalIsServiceAccount = c.get('authType') === 'service_account';
+      const mayManageSystemConnections = await projectCapabilityAllowed(
+        c,
+        loaded.userId,
+        loaded.row.accountId,
+        projectId,
+        PROJECT_ACTIONS.PROJECT_CONNECTOR_CONNECTIONS_MANAGE,
+      );
+      const [connection] = await db
+        .select({
+          connectorId: connectorConnections.connectorId,
+          ownerType: connectorConnections.ownerType,
+          ownerId: connectorConnections.ownerId,
+          isDefault: connectorConnections.isDefault,
+          metadata: connectorConnections.metadata,
+          connectorAlias: connectors.slug,
+          providerType: connectors.providerType,
+          connectorConfig: connectors.config,
+          authorizationStrategy: connectors.authorizationStrategy,
+        })
+        .from(connectorConnections)
+        .innerJoin(
+          connectors,
+          and(
+            eq(connectors.connectorId, connectorConnections.connectorId),
+            eq(connectors.accountId, connectorConnections.accountId),
+            eq(connectors.projectId, connectorConnections.projectId),
+          ),
+        )
+        .where(
+          and(
+            eq(connectorConnections.connectionId, connectionId),
+            eq(connectorConnections.projectId, projectId),
+            eq(connectorConnections.accountId, loaded.row.accountId),
+          ),
+        )
+        .limit(1);
+      if (
+        !connection ||
+        !mayMutateConnection(
+          connection,
+          loaded.userId,
+          actingPrincipalIsServiceAccount,
+          mayManageSystemConnections,
+        )
+      ) {
+        return c.json({ error: 'Not found' }, 404);
+      }
+      if (connection.isDefault) {
+        return c.json(
+          { error: 'Use the shared connector connect endpoint for the default connection' },
+          409,
+        );
+      }
+      if (!pipedreamConfigured()) {
+        return c.json({ error: 'pipedream not configured' }, 501);
+      }
+      const app = (connection.connectorConfig as Record<string, unknown> | null)?.app;
+      if (connection.providerType !== 'pipedream' || typeof app !== 'string' || !app) {
+        return c.json({ error: 'not a pipedream connector' }, 404);
+      }
+      if (operation === 'connect') {
+        const body = await readBody(c);
+        const redirects =
+          body.success_redirect_uri || body.error_redirect_uri
+            ? {
+                success:
+                  typeof body.success_redirect_uri === 'string'
+                    ? body.success_redirect_uri
+                    : undefined,
+                error:
+                  typeof body.error_redirect_uri === 'string' ? body.error_redirect_uri : undefined,
+              }
+            : undefined;
+        const result = await pipedreamConnectUrl(
+          projectId,
+          connection.connectorAlias,
+          app,
+          connectionId,
+          redirects,
+        );
+        return c.json({
+          token: result.token,
+          app,
+          connectUrl: result.connectUrl,
+          expiresAt: result.expiresAt,
+        });
+      }
+      const result = await finalizePipedreamConnectionAuthorization({
+        projectId,
+        slug: connection.connectorAlias,
+        app,
+        connectorId: connection.connectorId,
+        connectionId,
+        createdBy: loaded.userId,
+      });
+      return c.json(result);
     },
   );
 }
@@ -461,7 +1107,7 @@ projectsApp.openapi(
     },
     responses: {
       201: json(TriggerSchema, 'The created trigger'),
-      ...errors(400, 404, 409),
+      ...errors(400, 404, 409, 502),
     },
   }),
   async (c: any) => {
@@ -482,6 +1128,16 @@ projectsApp.openapi(
 
     const draft = parseTriggerDraft(body, { existingSlug: null });
     if ('error' in draft) return c.json({ error: draft.error }, 400);
+    const parsedAccess =
+      body.session_access === undefined
+        ? { ok: true as const, access: PRIVATE_TRIGGER_SESSION_ACCESS }
+        : parseTriggerSessionAccess(body.session_access);
+    if (!parsedAccess.ok) return c.json({ error: parsedAccess.error }, 400);
+    const accessValidationError = await validateTriggerSessionAccessPrincipals(
+      loaded.row.accountId,
+      parsedAccess.access,
+    );
+    if (accessValidationError) return c.json({ error: accessValidationError }, 400);
 
     // A `pinned` trigger may only target a session that belongs to THIS project —
     // never a nonexistent or another project's session.
@@ -504,27 +1160,36 @@ projectsApp.openapi(
       }
     }
 
-    let manifest: ParsedManifest;
-    try {
-      manifest = await loadManifestForEdit(loaded.row);
-    } catch (err) {
-      return c.json({ error: (err as Error).message || 'Failed to read manifest' }, 400);
+    let committedManifest: ParsedManifest | undefined;
+    const result = await mutateManifestWithRetry(
+      loaded.row,
+      `trigger ${draft.slug} was being created`,
+      (manifest) => {
+        if (extractTriggers(manifest).specs.some((s) => s.slug === draft.slug)) {
+          return {
+            ok: false,
+            error: `A trigger with slug "${draft.slug}" already exists. Pick a different name.`,
+            status: 409,
+          };
+        }
+        const next = upsertTriggerInManifest(manifest, draftToSpec(draft, manifest.path));
+        manifest.raw = next.raw;
+        committedManifest = manifest;
+        return { ok: true, commitMessage: `chore: add trigger ${draft.slug}` };
+      },
+    );
+    if (!result.ok) {
+      return c.json({ error: result.error }, result.status as 400 | 409 | 502);
     }
-
-    if (extractTriggers(manifest).specs.some((s) => s.slug === draft.slug)) {
-      return c.json(
-        {
-          error: `A trigger with slug "${draft.slug}" already exists. Pick a different name.`,
-        },
-        409,
-      );
-    }
-
-    const next = upsertTriggerInManifest(manifest, draftToSpec(draft, manifest.path));
-    const result = await commitManifest(loaded.row, next, `chore: add trigger ${draft.slug}`);
-    if ('error' in result) {
-      return c.json({ error: result.error }, result.status as 400 | 502);
-    }
+    if (!committedManifest) throw new Error('trigger create completed without a manifest');
+    await reconcileProjectTriggerRuntime(projectId, extractTriggers(committedManifest).specs);
+    await setTriggerSessionAccess({
+      projectId,
+      accountId: loaded.row.accountId,
+      slug: draft.slug,
+      access: parsedAccess.access,
+      pinnedSessionId: draft.pinnedSessionId,
+    });
 
     return c.json(await loadTriggersForResponse(projectId, loaded.row), 201);
   },
@@ -576,10 +1241,14 @@ projectsApp.openapi(
     if (typeof paused !== 'boolean') {
       return c.json({ error: 'paused must be a boolean' }, 400);
     }
+    // FIX-J: SQL-side atomic merge of ONLY `triggers_paused` (set true / delete)
+    // so this kill-switch write can't revert a routing pin written concurrently.
     const [row] = await db
       .update(projects)
       .set({
-        metadata: withTriggersPaused(loaded.row.metadata, paused),
+        metadata: paused
+          ? metadataMerge({ triggers_paused: true })
+          : metadataMerge({}, ['triggers_paused']),
         updatedAt: new Date(),
       })
       .where(eq(projects.projectId, projectId))
@@ -604,7 +1273,7 @@ projectsApp.openapi(
     },
     responses: {
       200: json(z.any(), 'OK'),
-      ...errors(400, 404),
+      ...errors(400, 404, 409, 502),
     },
   }),
   async (c: any) => {
@@ -621,52 +1290,88 @@ projectsApp.openapi(
       PROJECT_ACTIONS.PROJECT_TRIGGER_UPDATE,
     );
 
-    let manifest: ParsedManifest;
-    try {
-      manifest = await loadManifestForEdit(loaded.row);
-    } catch (err) {
-      return c.json({ error: (err as Error).message || 'Failed to read manifest' }, 400);
-    }
-    const current = extractTriggers(manifest).specs.find((s) => s.slug === slug);
-    if (!current) return c.json({ error: 'Not found' }, 404);
-
     // Only commit the repo manifest when a manifest field actually changed; a
     // PATCH that touches none is a no-op that skips git entirely.
     const touchesManifest = TRIGGER_MANIFEST_KEYS.some((k) => k in body);
-    if (touchesManifest) {
-      // Merge the patch onto the current spec so callers can send partial bodies
-      // (e.g. just `{ enabled: false }`). The parsed result becomes the new entry.
-      const draft = parseTriggerDraft(
-        { ...specToBody(current), ...body, slug: slug },
-        { existingSlug: slug },
+    const parsedAccess =
+      body.session_access === undefined ? null : parseTriggerSessionAccess(body.session_access);
+    if (parsedAccess && !parsedAccess.ok) return c.json({ error: parsedAccess.error }, 400);
+    if (parsedAccess?.ok) {
+      const accessValidationError = await validateTriggerSessionAccessPrincipals(
+        loaded.row.accountId,
+        parsedAccess.access,
       );
-      if ('error' in draft) return c.json({ error: draft.error }, 400);
-
-      // A `pinned` trigger may only target a session that belongs to THIS project.
-      if (draft.sessionMode === 'pinned' && draft.pinnedSessionId) {
-        const [pinned] = await db
-          .select({ sessionId: projectSessions.sessionId })
-          .from(projectSessions)
-          .where(
-            and(
-              eq(projectSessions.sessionId, draft.pinnedSessionId),
-              eq(projectSessions.projectId, projectId),
-            ),
-          )
-          .limit(1);
-        if (!pinned) {
-          return c.json(
-            { error: `Pinned session "${draft.pinnedSessionId}" was not found in this project.` },
-            400,
-          );
+      if (accessValidationError) return c.json({ error: accessValidationError }, 400);
+    }
+    let committedManifest: ParsedManifest | undefined;
+    let effectivePinnedSessionId: string | null = null;
+    const result = await mutateManifestWithRetry(
+      loaded.row,
+      `trigger ${slug} was being updated`,
+      async (manifest) => {
+        const current = extractTriggers(manifest).specs.find((s) => s.slug === slug);
+        if (!current) return { ok: false, error: 'Not found', status: 404 };
+        if (!touchesManifest) {
+          effectivePinnedSessionId = current.pinnedSessionId;
+          return { ok: true, commitMessage: null };
         }
-      }
 
-      const next = upsertTriggerInManifest(manifest, draftToSpec(draft, manifest.path));
-      const result = await commitManifest(loaded.row, next, `chore: update trigger ${slug}`);
-      if ('error' in result) {
-        return c.json({ error: result.error }, result.status as 400 | 502);
-      }
+        // Merge the patch onto the current spec so callers can send partial bodies
+        // (e.g. just `{ enabled: false }`). The parsed result becomes the new entry.
+        const base = specToBody(current);
+        // Setting a `session_key` is itself the opt-in to keyed sessions (see
+        // parseTriggerDraft). The merge base always carries an explicit
+        // `session_mode`, which would outvote a caller that sent ONLY a key — so
+        // drop it and let the key decide. An explicit mode in the patch still wins.
+        const patchesKey = 'session_key' in body || 'sessionKey' in body;
+        const patchesMode = 'session_mode' in body || 'sessionMode' in body;
+        if (patchesKey && !patchesMode) delete base.session_mode;
+        const draft = parseTriggerDraft({ ...base, ...body, slug: slug }, { existingSlug: slug });
+        if ('error' in draft) return { ok: false, error: draft.error, status: 400 };
+        effectivePinnedSessionId = draft.pinnedSessionId;
+
+        // A `pinned` trigger may only target a session that belongs to THIS project.
+        if (draft.sessionMode === 'pinned' && draft.pinnedSessionId) {
+          const [pinned] = await db
+            .select({ sessionId: projectSessions.sessionId })
+            .from(projectSessions)
+            .where(
+              and(
+                eq(projectSessions.sessionId, draft.pinnedSessionId),
+                eq(projectSessions.projectId, projectId),
+              ),
+            )
+            .limit(1);
+          if (!pinned) {
+            return {
+              ok: false,
+              error: `Pinned session "${draft.pinnedSessionId}" was not found in this project.`,
+              status: 400,
+            };
+          }
+        }
+
+        const next = upsertTriggerInManifest(manifest, draftToSpec(draft, manifest.path));
+        manifest.raw = next.raw;
+        committedManifest = manifest;
+        return { ok: true, commitMessage: `chore: update trigger ${slug}` };
+      },
+    );
+    if (!result.ok) {
+      return c.json({ error: result.error }, result.status as 400 | 404 | 409 | 502);
+    }
+    if (touchesManifest) {
+      if (!committedManifest) throw new Error('trigger update completed without a manifest');
+      await reconcileProjectTriggerRuntime(projectId, extractTriggers(committedManifest).specs);
+    }
+    if (parsedAccess?.ok) {
+      await setTriggerSessionAccess({
+        projectId,
+        accountId: loaded.row.accountId,
+        slug,
+        access: parsedAccess.access,
+        pinnedSessionId: effectivePinnedSessionId,
+      });
     }
 
     return c.json(await loadTriggersForResponse(projectId, loaded.row));
@@ -687,7 +1392,7 @@ projectsApp.openapi(
     },
     responses: {
       200: json(z.any(), 'OK'),
-      ...errors(400, 404),
+      ...errors(400, 404, 409, 502),
     },
   }),
   async (c: any) => {
@@ -707,20 +1412,20 @@ projectsApp.openapi(
       return c.json({ error: 'Invalid slug' }, 400);
     }
 
-    let manifest: ParsedManifest;
-    try {
-      manifest = await loadManifestForEdit(loaded.row);
-    } catch (err) {
-      return c.json({ error: (err as Error).message || 'Failed to read manifest' }, 400);
-    }
-    if (!extractTriggers(manifest).specs.some((s) => s.slug === slug)) {
-      return c.json({ error: 'Not found' }, 404);
-    }
-
-    const next = removeTriggerFromManifest(manifest, slug);
-    const result = await commitManifest(loaded.row, next, `chore: delete trigger ${slug}`);
-    if ('error' in result) {
-      return c.json({ error: result.error }, result.status as 400 | 502);
+    const result = await mutateManifestWithRetry(
+      loaded.row,
+      `trigger ${slug} was being deleted`,
+      (manifest) => {
+        if (!extractTriggers(manifest).specs.some((s) => s.slug === slug)) {
+          return { ok: false, error: 'Not found', status: 404 };
+        }
+        const next = removeTriggerFromManifest(manifest, slug);
+        manifest.raw = next.raw;
+        return { ok: true, commitMessage: `chore: delete trigger ${slug}` };
+      },
+    );
+    if (!result.ok) {
+      return c.json({ error: result.error }, result.status as 400 | 404 | 409 | 502);
     }
 
     // Drop runtime state too — a re-created trigger of the same slug should
@@ -961,9 +1666,10 @@ projectsApp.openapi(
     const baseUrl = resolveBaseUrl(new URL(c.req.url), teamsPublicBaseUrl());
     const byoAppId = await loadTeamsAppIdForProject(projectId);
     const install = await loadTeamsInstall(projectId).catch(() => null);
+    const enabled = teamsChannelEnabled(loaded.row.metadata);
     return c.json({
-      ...teamsMode(baseUrl, { projectId, byoAppId }),
-      orgConsentUrl: byoAppId ? null : teamsOrgConsentUrl({ projectId, baseUrl }),
+      ...teamsMode(baseUrl, { enabled, projectId, byoAppId }),
+      orgConsentUrl: byoAppId ? null : teamsOrgConsentUrl({ projectId, baseUrl, enabled }),
       orgInstalled: install?.orgInstalled ?? false,
       deepLinkUrl: install?.catalogAppId ? teamsDeepLink(install.catalogAppId) : null,
     });
@@ -986,7 +1692,11 @@ projectsApp.openapi(
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     const byoAppId = await loadTeamsAppIdForProject(projectId);
     const baseUrl = resolveBaseUrl(new URL(c.req.url), teamsPublicBaseUrl());
-    const mode = teamsMode(baseUrl, { projectId, byoAppId });
+    const mode = teamsMode(baseUrl, {
+      enabled: teamsChannelEnabled(loaded.row.metadata),
+      projectId,
+      byoAppId,
+    });
     if (!mode.available || !mode.appId) {
       return c.json({ error: 'Teams is not configured on this server' }, 409);
     }
@@ -1012,13 +1722,27 @@ projectsApp.openapi(
       params: z.object({ projectId: z.string() }),
       body: { content: { 'application/json': { schema: AnyObject } } },
     },
-    responses: { 200: json(z.any(), 'OK'), ...errors(400, 404) },
+    responses: { 200: json(z.any(), 'OK'), ...errors(400, 403, 404) },
   }),
   async (c: any) => {
-    if (!teamsChannelEnabled()) return c.json({ error: 'Not found' }, 404);
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'manage');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    // Connecting a Teams bot is a connector-write capability — a custom role can
+    // withhold it and a scoped agent must hold it (central fold), mirroring the
+    // Slack (r4 slack/connect) and email connect twins.
+    // Authz before the feature-flag check so an unauthorized caller never gets a
+    // capability-independent answer (same order as the file-upload twin below).
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
+    );
+    if (!teamsChannelEnabled(loaded.row.metadata)) {
+      return c.json(featureDisabledBody('teams'), 403);
+    }
 
     let body: { tenant_id?: string; team_name?: string; app_id?: string; app_password?: string };
     try {
@@ -1075,6 +1799,15 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'manage');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    // Disconnecting the Teams bot is connector-write — twin of the Slack/email
+    // disconnect gates; a custom role can withhold it, a scoped agent must hold it.
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
+    );
     await deleteTeamsInstall(projectId);
     void reconcileChannelConnectors(projectId);
     return c.json({ status: 'disconnected' });
@@ -1127,14 +1860,27 @@ projectsApp.openapi(
         z.object({ ok: z.boolean(), uploadId: z.string() }).passthrough(),
         'Consent card sent',
       ),
-      ...errors(400, 404),
+      ...errors(400, 403, 404),
     },
   }),
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    if (!teamsChannelEnabled()) return c.json({ error: 'Not found' }, 404);
+    // Posting a consent card drives the project bot to SEND into the customer's
+    // Teams channel — a send primitive gated on connector-write like the Slack
+    // (r4 slack/file/upload) and meet/speak twins. Authz before the feature-flag
+    // check so an unauthorized caller never gets a capability-independent answer.
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
+    );
+    if (!teamsChannelEnabled(loaded.row.metadata)) {
+      return c.json(featureDisabledBody('teams'), 403);
+    }
     const body = await readBody(c);
     const result = await initiateTeamsUpload(projectId, {
       serviceUrl: String(body.service_url ?? body.serviceUrl ?? ''),
@@ -1152,7 +1898,7 @@ projectsApp.openapi(
 // ─── Email install — AgentMail-backed inbox per project ─────────────────────
 
 function emailChannelEnabled(metadata: unknown): boolean {
-  return resolveExperimentalFeature(metadata, 'agentmail_email');
+  return resolveFeatureFlag(metadata, 'agentmail_email');
 }
 
 projectsApp.openapi(
@@ -1175,13 +1921,12 @@ projectsApp.openapi(
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     if (!emailChannelEnabled(loaded.row.metadata)) return c.json(null);
-    const connectorSlug =
-      c.req.query('connector_slug') || c.req.query('profile_slug') || 'kortix_email';
+    const connectorSlug = c.req.query('connector_slug') || 'kortix_email';
     const install = await loadAgentMailInstall(projectId, connectorSlug);
     if (!install) return c.json(null);
     return c.json({
       ...install,
-      profile_id: await loadEmailInstallProfileId(projectId, install.inboxId),
+      connection_id: await loadEmailInstallConnectionId(projectId, install.inboxId),
     });
   },
 );
@@ -1234,7 +1979,7 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     // Floor 'read' (membership); the connector.write leaf below is the real gate,
     // so a custom role that unchecks connector.write is denied even if it holds
-    // project.write. Built-in editor/manager hold the leaf.
+    // project.write. The built-in manager role holds the leaf.
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     await assertProjectCapability(
@@ -1245,18 +1990,12 @@ projectsApp.openapi(
       PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
     );
     if (!emailChannelEnabled(loaded.row.metadata)) {
-      return c.json(
-        {
-          error: 'AgentMail Email is experimental and must be enabled for this project',
-        },
-        403,
-      );
+      return c.json(featureDisabledBody('agentmail_email'), 403);
     }
 
     let body: {
       api_key?: string;
       connector_slug?: string;
-      profile_slug?: string;
       username?: string;
       domain?: string;
       inbox_id?: string;
@@ -1265,6 +2004,8 @@ projectsApp.openapi(
       display_name?: string;
       displayName?: string;
       sender_policy?: Partial<AgentMailSenderPolicy>;
+      agent_name?: string | null;
+      agentName?: string | null;
     };
     try {
       body = (await c.req.json()) as typeof body;
@@ -1277,8 +2018,28 @@ projectsApp.openapi(
       return c.json({ error: 'AgentMail API key is not configured' }, 503);
     }
 
-    const connectorSlug =
-      (body.connector_slug ?? body.profile_slug ?? 'kortix_email').trim() || 'kortix_email';
+    const connectorSlug = (body.connector_slug ?? 'kortix_email').trim() || 'kortix_email';
+    const requestedAgent = body.agent_name ?? body.agentName;
+    const agentName =
+      typeof requestedAgent === 'string' && requestedAgent.trim() ? requestedAgent.trim() : null;
+    if (requestedAgent !== undefined && requestedAgent !== null && !agentName) {
+      return c.json({ error: 'agent_name cannot be blank', code: 'invalid_agent' }, 400);
+    }
+    if (agentName) {
+      const loadedAgents = await loadProjectAgents(loaded.row, {
+        forceRefresh: true,
+        rethrowReadErrors: true,
+      });
+      if (!loadedAgents.specs.some((agent) => agent.enabled && agent.name === agentName)) {
+        return c.json(
+          {
+            error: `Agent "${agentName}" is not declared or is disabled`,
+            code: 'invalid_agent',
+          },
+          400,
+        );
+      }
+    }
     const displayName = (
       body.display_name ??
       body.displayName ??
@@ -1302,10 +2063,20 @@ projectsApp.openapi(
     } catch (err) {
       return c.json({ error: (err as Error).message }, 400);
     }
-    const clientId = `kortix-project-${projectId}`;
+    const clientIds = agentMailProvisioningClientIds(projectId, connectorSlug);
 
     let inbox: Awaited<ReturnType<typeof createAgentMailInbox>>;
     if (existingInboxId && existingEmail) {
+      // Ownership gate (pentest 2026-07-27): before claiming an existing
+      // AgentMail inbox, confirm no OTHER project already owns it. Without this,
+      // a caller with connector.write on their own project could supply a
+      // victim's inbox_id and hijack inbound mail resolution. The scoped delete
+      // in saveAgentMailInstall is defense-in-depth; this 409 is the front gate.
+      const owners = await listProjectsForWorkspace('email', existingInboxId);
+      const foreignOwner = owners.find((id) => id !== projectId);
+      if (foreignOwner) {
+        return c.json({ error: 'AgentMail inbox is already connected to another project' }, 409);
+      }
       inbox = {
         inbox_id: existingInboxId,
         email: existingEmail,
@@ -1318,7 +2089,7 @@ projectsApp.openapi(
           username,
           domain,
           displayName,
-          clientId,
+          clientId: clientIds.inbox,
           metadata: {
             provider: 'kortix',
             project_id: projectId,
@@ -1340,7 +2111,7 @@ projectsApp.openapi(
         apiKey,
         inboxId: inbox.inbox_id,
         url: `${agentMailWebhookBaseUrl(c.req.url)}/v1/webhooks/email/agentmail`,
-        clientId: `kortix-email-${projectId}`,
+        clientId: clientIds.webhook,
       });
       webhookId = webhook.webhook_id;
       webhookSecret = webhook.secret;
@@ -1353,7 +2124,7 @@ projectsApp.openapi(
 
     const summary = await saveAgentMailInstall({
       projectId,
-      profileSlug: connectorSlug,
+      connectionSlug: connectorSlug,
       apiKey: body.api_key?.trim() || null,
       inboxId: inbox.inbox_id,
       email: inbox.email,
@@ -1361,11 +2132,12 @@ projectsApp.openapi(
       webhookId,
       webhookSecret,
       senderPolicy,
+      agentName,
     });
     await reconcileChannelConnectors(projectId);
     return c.json({
       ...summary,
-      profile_id: await loadEmailInstallProfileId(projectId, summary.inboxId),
+      connection_id: await loadEmailInstallConnectionId(projectId, summary.inboxId),
     });
   },
 );
@@ -1399,16 +2171,10 @@ projectsApp.openapi(
       PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
     );
     if (!emailChannelEnabled(loaded.row.metadata)) {
-      return c.json(
-        {
-          error: 'AgentMail Email is experimental and must be enabled for this project',
-        },
-        403,
-      );
+      return c.json(featureDisabledBody('agentmail_email'), 403);
     }
     let body: {
       connector_slug?: string;
-      profile_slug?: string;
       sender_policy?: Partial<AgentMailSenderPolicy>;
     };
     try {
@@ -1416,8 +2182,7 @@ projectsApp.openapi(
     } catch {
       return c.json({ error: 'Invalid JSON body' }, 400);
     }
-    const connectorSlug =
-      (body.connector_slug ?? body.profile_slug ?? 'kortix_email').trim() || 'kortix_email';
+    const connectorSlug = (body.connector_slug ?? 'kortix_email').trim() || 'kortix_email';
     let senderPolicy: AgentMailSenderPolicy;
     try {
       senderPolicy = parseSenderPolicyBody(body.sender_policy);
@@ -1425,7 +2190,7 @@ projectsApp.openapi(
       return c.json({ error: (err as Error).message }, 400);
     }
     const summary = await updateAgentMailSenderPolicy(projectId, connectorSlug, senderPolicy);
-    if (!summary) return c.json({ error: 'Email channel profile not found' }, 404);
+    if (!summary) return c.json({ error: 'Email connection not found' }, 404);
     return c.json(summary);
   },
 );
@@ -1457,8 +2222,7 @@ projectsApp.openapi(
       projectId,
       PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
     );
-    const connectorSlug =
-      c.req.query('connector_slug') || c.req.query('profile_slug') || 'kortix_email';
+    const connectorSlug = c.req.query('connector_slug') || 'kortix_email';
     await deleteAgentMailInstall(projectId, connectorSlug);
     await reconcileChannelConnectors(projectId, {
       platform: 'email',
@@ -1481,33 +2245,11 @@ function normalizeAgentMailUsername(input: string | null | undefined): string | 
   return trimmed || null;
 }
 
-// Small static check for the classic catastrophic-backtracking shapes —
-// a quantified sub-group repeated by an outer quantifier (e.g. (x+)+, (x*)*)
-// or an ambiguous repeated alternation (e.g. (a|a)*) — before the pattern is
-// persisted and later run against every inbound email sender.
-const NESTED_QUANTIFIER_RE = /\([^()]*[+*][^()]*\)\s*[+*]/;
-const DUPLICATE_ALTERNATION_RE = /\(([^()|]+)\|\1\)\s*[+*]/;
-
-function hasCatastrophicBacktracking(pattern: string): boolean {
-  return NESTED_QUANTIFIER_RE.test(pattern) || DUPLICATE_ALTERNATION_RE.test(pattern);
-}
-
 function parseSenderPolicyBody(
   input: Partial<AgentMailSenderPolicy> | undefined,
 ): AgentMailSenderPolicy {
   const policy = normalizeSenderPolicy(input);
-  if (policy.allowedRegex) {
-    try {
-      new RegExp(policy.allowedRegex);
-    } catch {
-      throw new Error('Email sender regex is invalid');
-    }
-    if (hasCatastrophicBacktracking(policy.allowedRegex)) {
-      throw new Error(
-        'Email sender regex is not allowed: nested or ambiguous repetition can cause catastrophic backtracking (ReDoS)',
-      );
-    }
-  }
+  if (policy.allowedRegex) compileEmailSenderRegex(policy.allowedRegex);
   return policy;
 }
 
@@ -1570,26 +2312,61 @@ projectsApp.openapi(
     },
     responses: {
       200: {
-        description: 'Event stream',
-        content: { 'text/event-stream': { schema: z.any() } },
+        description: 'Relay result',
+        content: { 'application/json': { schema: z.any() } },
       },
       ...errors(400, 403, 404),
     },
   }),
   async (c: any) => {
     const projectId = c.req.param('projectId');
+    let body: {
+      session_id?: string;
+      kind?: string;
+      text?: string;
+      detail?: string;
+      output?: string;
+      sources?: Array<{ url?: string; text?: string }>;
+      blocks?: unknown[];
+      status?: string;
+      opencode_session_id?: string;
+      turn_message_id?: string;
+      turn_token?: string;
+      // Turn-end error detail (opencode AssistantMessage.error / session.error),
+      // so Slack can render "out of credits" / rate-limit / the real error.
+      error_name?: string;
+      error_message?: string;
+      error_status?: number;
+      error_retryable?: boolean;
+      error_provider?: string;
+    };
+    try {
+      body = (await c.req.json()) as typeof body;
+    } catch {
+      return c.json({ error: 'Invalid JSON body' }, 400);
+    }
+    setContextField('kind', turnStreamKindField(body.kind));
+    const sessionId = body.session_id?.trim();
+    if (!sessionId) {
+      return c.json({ error: 'session_id is required' }, 400);
+    }
 
     // Two valid callers: a project/session-scoped PAT (dashboard, operator, or
     // in-sandbox agent CLI) and the session sandbox's own service credential.
     // Each is scoped back to this projectId before a turn event is accepted.
     const authType = (c as any).get('authType') as string | undefined;
+    const apiKeyType = (c as any).get('apiKeyType') as string | undefined;
     let authenticatedSandboxId: string | null = null;
-    if (authType === 'apiKey' && (c as any).get('apiKeyType') === 'sandbox') {
+    if (authType === 'apiKey' && apiKeyType === 'sandbox') {
       const accountId = (c as any).get('accountId') as string | undefined;
       const sandboxId = (c as any).get('sandboxId') as string | undefined;
       if (!accountId || !sandboxId) {
         return c.json({ error: 'turn-stream requires a sandbox token' }, 403);
       }
+      // Sandbox images baked before 2026-07-29 still POST the retired
+      // `execution_heartbeat` / `execution_lease_*` kinds here. They fall
+      // through to the generic relay below and get a harmless `{ ok: false }`;
+      // the in-sandbox reporter treated every non-2xx as best-effort anyway.
       const [sandbox] = await db
         .select({ sandboxId: sessionSandboxes.sandboxId, sessionId: sessionSandboxes.sessionId })
         .from(sessionSandboxes)
@@ -1609,42 +2386,31 @@ projectsApp.openapi(
     } else {
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
-      await assertProjectCapability(
-        c,
-        loaded.userId,
-        loaded.row.accountId,
-        projectId,
-        PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
-      );
-    }
-
-    let body: {
-      session_id?: string;
-      kind?: string;
-      text?: string;
-      detail?: string;
-      output?: string;
-      sources?: Array<{ url?: string; text?: string }>;
-      blocks?: unknown[];
-      status?: string;
-      opencode_session_id?: string;
-      // Turn-end error detail (opencode AssistantMessage.error / session.error),
-      // so Slack can render "out of credits" / rate-limit / the real error.
-      error_name?: string;
-      error_message?: string;
-      error_status?: number;
-      error_retryable?: boolean;
-      error_provider?: string;
-      lease_ttl_seconds?: number;
-    };
-    try {
-      body = (await c.req.json()) as typeof body;
-    } catch {
-      return c.json({ error: 'Invalid JSON body' }, 400);
-    }
-    const sessionId = body.session_id?.trim();
-    if (!sessionId) {
-      return c.json({ error: 'session_id is required' }, 400);
+      // Kind-aware capability floor. The connector.write gate protects the
+      // CHANNEL-SEND primitives: `step`/`answer` — and any unknown kind — fall
+      // through to relayTurnStep/relayTurnAnswer below, which post the agent's
+      // content to the project's Slack/Teams. The SANDBOX-reported LIFECYCLE
+      // signals carry no content and fan out to no connector: `end`/`turn_end`
+      // only shorten this session's idle deadline (LEAST-only — see the comment
+      // at the `end` branch below, it can never EXTEND the box's life), and
+      // `opencode_session` only persists the root-session pin. Those are exactly
+      // what the in-sandbox agent CLI reports over its session/CLI token, which a
+      // SCOPED agent grant has no reason to hold connector.write for — gating them
+      // 403'd every turn-end report on Essentia, stranding sandboxes alive for the
+      // full idle grace (wasted compute). So exempt the lifecycle kinds and keep
+      // the connector gate as the deny-by-default floor for anything that can
+      // reach the send path. The IDOR scope (session_id -> projectId) below still
+      // applies to every kind, and the `read` floor above still requires
+      // membership.
+      if (turnStreamKindNeedsConnectorWrite(body.kind)) {
+        await assertProjectCapability(
+          c,
+          loaded.userId,
+          loaded.row.accountId,
+          projectId,
+          PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
+        );
+      }
     }
 
     if (authenticatedSandboxId) {
@@ -1667,7 +2433,12 @@ projectsApp.openapi(
     // authed for their own project can't relay turn events into another
     // tenant's live session (IDOR).
     const [turnStreamSession] = await db
-      .select({ sessionId: projectSessions.sessionId })
+      .select({
+        sessionId: projectSessions.sessionId,
+        accountId: projectSessions.accountId,
+        createdBy: projectSessions.createdBy,
+        metadata: projectSessions.metadata,
+      })
       .from(projectSessions)
       .where(
         and(eq(projectSessions.sessionId, sessionId), eq(projectSessions.projectId, projectId)),
@@ -1676,33 +2447,50 @@ projectsApp.openapi(
     if (!turnStreamSession) {
       return c.json({ error: 'Not found' }, 404);
     }
+    const turnStreamMetadata = (turnStreamSession.metadata ?? {}) as Record<string, unknown>;
+    // Coordinator-spawned worker: its idle tail is minutes, not the default
+    // grace — the box wakes on demand when the coordinator returns to it.
+    const childSession = typeof turnStreamMetadata.spawned_by_session === 'string';
 
-    if (
-      body.kind === 'execution_heartbeat' ||
-      body.kind === 'execution_lease_release' ||
-      body.kind === 'execution_lease_discover'
-    ) {
-      if (!authenticatedSandboxId)
-        return c.json({ error: 'execution lease requires a sandbox token' }, 403);
-      const target = { sandboxId: authenticatedSandboxId, sessionId, projectId };
-      if (body.kind === 'execution_lease_release')
-        return c.json({ ok: await releaseExecutionLease(target) });
-      if (body.kind === 'execution_lease_discover') {
-        const provider = await discoverExecutionKeepAliveEndpoint(target);
-        return c.json({
-          ok: provider !== null,
-          provider_url: provider?.url ?? null,
-          provider_headers: provider?.headers ?? null,
-        });
+    // A daemon restart can discover that the pre-created initial message was
+    // never delivered because it reused a root with older messages. Remove only
+    // that token-bound `delivering` record. The sandbox cannot clear an active
+    // record through this operation.
+    if (body.kind === 'turn_abandoned') {
+      if (!authenticatedSandboxId) {
+        return c.json({ error: 'turn_abandoned requires a sandbox token' }, 403);
       }
-      const result = await renewExecutionLease(target, body.lease_ttl_seconds);
-      return c.json({
-        ok: result.ok,
-        lease_until: result.leaseUntil,
-        provider_url: result.providerUrl,
-        provider_headers: result.providerHeaders,
-        provider_touched: result.providerUrl !== null,
+      const turnToken = body.turn_token?.trim();
+      if (!turnToken) return c.json({ error: 'turn_token is required' }, 400);
+      const ok = await abandonSandboxTurn({ sandboxId: authenticatedSandboxId }, turnToken);
+      return c.json({ ok });
+    }
+
+    // The API created this token-bound `delivering` record before it provisioned
+    // the sandbox. The daemon can promote that exact record after OpenCode
+    // accepts the boot prompt. It cannot create a record or revive one removed
+    // by terminal evidence. Require the sandbox credential for this upward
+    // lifecycle transition; a project/session PAT is not sufficient.
+    if (body.kind === 'turn_accepted') {
+      if (!authenticatedSandboxId) {
+        return c.json({ error: 'turn_accepted requires a sandbox token' }, 403);
+      }
+      const turnToken = body.turn_token?.trim();
+      const opencodeSessionId = body.opencode_session_id?.trim();
+      const messageId = body.turn_message_id?.trim();
+      if (!turnToken || !opencodeSessionId || !messageId) {
+        return c.json(
+          {
+            error: 'turn_token, opencode_session_id, and turn_message_id are required',
+          },
+          400,
+        );
+      }
+      const ok = await acceptSandboxTurn({ sandboxId: authenticatedSandboxId }, turnToken, {
+        opencodeSessionId,
+        messageId,
       });
+      return c.json({ ok });
     }
 
     // `end` / `turn_end` carry no text — the sandbox observed the opencode turn
@@ -1723,6 +2511,57 @@ projectsApp.openapi(
               providerID: typeof body.error_provider === 'string' ? body.error_provider : undefined,
             }
           : undefined;
+      // SANDBOX-REPORTED turn end. `shortenSandboxDeadline` is LEAST-only, so
+      // it is structurally incapable of EXTENDING the box's life — which is
+      // exactly why it is safe to trust a payload the sandbox authored, and
+      // why it needs no auth gate of its own. This is the "die 15 minutes
+      // after the last turn ended" half of the model.
+      //
+      // But ONLY for a turn that genuinely ended. `session.error` also fires
+      // while opencode is RETRYING (a 429 backoff, a transient upstream 5xx),
+      // and pulling the deadline in to 15 minutes there killed the box mid-turn
+      // on any backoff longer than that — the exact state the deleted execution
+      // lease treated correctly, because it renewed on 'busy' OR 'retry'. The
+      // classifier lives with the write (shortenSandboxDeadlineOnTurnEnd) so it
+      // cannot be re-wired here without it.
+      // A 2xx acknowledges that terminal lifecycle evidence is durable. The
+      // daemon retries network/5xx failures and periodically reconciles a lost
+      // event. Returning before this write finished made a transient DB failure
+      // look successful, so the daemon deduped the event and the active record
+      // survived until reaper reconciliation.
+      await completeSandboxTurn(
+        sessionId,
+        status,
+        {
+          opencodeSessionId:
+            typeof body.opencode_session_id === 'string' ? body.opencode_session_id : undefined,
+          messageId: typeof body.turn_message_id === 'string' ? body.turn_message_id : undefined,
+        },
+        errorInfo,
+        childSession ? childIdleGraceMs() : undefined,
+      );
+      // Second-chance auto-title: create-time generation is a single in-memory
+      // best-effort call, and a session whose only prompt was baked in-guest
+      // (`KORTIX_INITIAL_PROMPT`) never crosses a titling hook again. Turn end
+      // is the natural retry point — the generator is idempotent (needsTitle +
+      // CAS) so an already-titled session is a cheap no-op. The stored
+      // `title_source` outranks the supplied text inside the generator.
+      const titleRetrySource = [turnStreamMetadata.title_source, turnStreamMetadata.initial_prompt]
+        .find((v): v is string => typeof v === 'string' && v.trim().length > 0);
+      if (titleRetrySource && turnStreamSession.createdBy) {
+        void generateSessionTitleFromFirstPrompt({
+          projectId,
+          sessionId,
+          accountId: turnStreamSession.accountId,
+          userId: turnStreamSession.createdBy,
+          firstPromptText: titleRetrySource,
+        }).catch((err) =>
+          console.warn(
+            `[title-generate] turn-end retry failed for session ${sessionId}:`,
+            err instanceof Error ? err.message : err,
+          ),
+        );
+      }
       const ok = await relayTurnEnd(sessionId, status, errorInfo);
       return c.json({ ok });
     }
@@ -1914,6 +2753,18 @@ projectsApp.openapi(
     } else {
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
+      // Binding a Slack thread creates channel→session routing (inbound Slack
+      // messages drive this session) — a connector-write action, matching the
+      // Slack connect/disconnect/file-upload twins. Threads the acting token so
+      // a custom role that withholds connector.write, or a scoped agent lacking
+      // it, is denied. The sandbox-token branch above is already project-scoped.
+      await assertProjectCapability(
+        c,
+        loaded.userId,
+        loaded.row.accountId,
+        projectId,
+        PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
+      );
     }
 
     let body: {
@@ -1960,41 +2811,6 @@ projectsApp.openapi(
   },
 );
 
-// GET /v1/projects/:projectId/channels/meet/voices
-// The voice picker: the predefined catalog + the project's current selection,
-// plus whether speaking is wired (ElevenLabs configured).
-projectsApp.openapi(
-  createRoute({
-    method: 'get',
-    path: '/{projectId}/channels/meet/voices',
-    tags: ['channels'],
-    summary: 'GET /:projectId/channels/meet/voices',
-    ...auth,
-    request: { params: z.object({ projectId: z.string() }) },
-    responses: {
-      200: json(z.object({ ok: z.boolean() }).passthrough(), 'Voices'),
-      ...errors(404),
-    },
-  }),
-  async (c: any) => {
-    const projectId = c.req.param('projectId');
-    const loaded = await loadProjectForUser(c, projectId, 'read');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
-    const [selected, botName] = await Promise.all([
-      resolveProjectVoice(projectId),
-      resolveProjectBotName(projectId),
-    ]);
-    return c.json({
-      ok: true,
-      selected: selected.id,
-      bot_name: botName,
-      default_bot_name: DEFAULT_MEET_BOT_NAME,
-      speak_enabled: Boolean(config.ELEVENLABS_API_KEY),
-      voices: MEET_VOICES.map((v) => ({ id: v.id, name: v.name, desc: v.desc })),
-    });
-  },
-);
-
 // PUT /v1/projects/:projectId/channels/meet/name — set the bot's display name.
 projectsApp.openapi(
   createRoute({
@@ -2015,7 +2831,7 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param('projectId');
     // Floor 'read'; project.customize.write is the real gate (setting the bot
-    // name is project customization). Built-in editor/manager hold the leaf.
+    // name is project customization). The built-in manager role holds the leaf.
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     await assertProjectCapability(
@@ -2029,120 +2845,6 @@ projectsApp.openapi(
     const name = String(body.name ?? body.bot_name ?? '');
     const saved = await setProjectBotName(projectId, name);
     return c.json({ ok: true, bot_name: saved });
-  },
-);
-
-// PUT /v1/projects/:projectId/channels/meet/voice — choose the meeting voice.
-projectsApp.openapi(
-  createRoute({
-    method: 'put',
-    path: '/{projectId}/channels/meet/voice',
-    tags: ['channels'],
-    summary: 'PUT /:projectId/channels/meet/voice',
-    ...auth,
-    request: {
-      params: z.object({ projectId: z.string() }),
-      body: { content: { 'application/json': { schema: AnyObject } } },
-    },
-    responses: {
-      200: json(z.object({ ok: z.boolean(), selected: z.string() }).passthrough(), 'Saved'),
-      ...errors(400, 404),
-    },
-  }),
-  async (c: any) => {
-    const projectId = c.req.param('projectId');
-    // Floor 'read'; project.customize.write is the real gate (choosing the voice
-    // is project customization). Built-in editor/manager hold the leaf.
-    const loaded = await loadProjectForUser(c, projectId, 'read');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
-    await assertProjectCapability(
-      c,
-      loaded.userId,
-      loaded.row.accountId,
-      projectId,
-      PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE,
-    );
-    const body = await readBody(c);
-    const voiceId = String(body.voice ?? '');
-    if (!isMeetVoice(voiceId)) return c.json({ error: 'unknown voice' }, 400);
-    const voice = await setProjectVoice(projectId, voiceId);
-    return c.json({ ok: true, selected: voice.id });
-  },
-);
-
-// POST /v1/projects/:projectId/channels/meet/voices/:voiceId/preview
-// Returns a base64 MP3 of a stock line in that voice (for the picker's preview).
-projectsApp.openapi(
-  createRoute({
-    method: 'post',
-    path: '/{projectId}/channels/meet/voices/{voiceId}/preview',
-    tags: ['channels'],
-    summary: 'POST /:projectId/channels/meet/voices/:voiceId/preview',
-    ...auth,
-    request: { params: z.object({ projectId: z.string(), voiceId: z.string() }) },
-    responses: {
-      200: json(
-        z.object({ ok: z.boolean(), kind: z.string(), b64: z.string() }).passthrough(),
-        'Preview',
-      ),
-      ...errors(400, 404, 502, 503),
-    },
-  }),
-  async (c: any) => {
-    const projectId = c.req.param('projectId');
-    const loaded = await loadProjectForUser(c, projectId, 'read');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
-    const voiceId = c.req.param('voiceId');
-    if (!isMeetVoice(voiceId)) return c.json({ error: 'unknown voice' }, 400);
-    const r = await previewVoiceB64(voiceId);
-    if (!r.ok) return c.json({ error: r.error }, r.status as 400 | 404 | 502 | 503);
-    return c.json({ ok: true, kind: 'mp3', b64: r.b64 });
-  },
-);
-
-// POST /v1/projects/:projectId/channels/meet/speak — the bot speaks in the call.
-// Server-side proxy: text → ElevenLabs (project voice) → Recall output_audio.
-// Both keys stay server-side; backs `meet speak`.
-projectsApp.openapi(
-  createRoute({
-    method: 'post',
-    path: '/{projectId}/channels/meet/speak',
-    tags: ['channels'],
-    summary: 'POST /:projectId/channels/meet/speak',
-    ...auth,
-    request: {
-      params: z.object({ projectId: z.string() }),
-      body: { content: { 'application/json': { schema: AnyObject } } },
-    },
-    responses: {
-      200: json(z.object({ ok: z.boolean(), voice: z.string() }).passthrough(), 'Spoken'),
-      ...errors(400, 403, 404, 502, 503),
-    },
-  }),
-  async (c: any) => {
-    const projectId = c.req.param('projectId');
-    const loaded = await loadProjectForUser(c, projectId, 'read');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
-    // Same reasoning as the Slack upload proxy above: this is a SEND primitive
-    // (makes the meeting bot speak), not a read, so a bare project-read gate is
-    // wrong here too. channel.send is dead/unwired (see audit note removing
-    // CHANNEL_ACTIONS) — reuse the connector-write leaf instead.
-    await assertProjectCapability(
-      c,
-      loaded.userId,
-      loaded.row.accountId,
-      projectId,
-      PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
-    );
-    const body = await readBody(c);
-    const botId = String(body.bot_id ?? body.botId ?? '');
-    const text = String(body.text ?? '');
-    const voice = typeof body.voice === 'string' ? body.voice : undefined;
-    if (!botId) return c.json({ error: 'bot_id required' }, 400);
-    if (!text.trim()) return c.json({ error: 'text required' }, 400);
-    const r = await speakInMeeting(projectId, botId, text, voice);
-    if (!r.ok) return c.json({ error: r.error }, r.status as 400 | 404 | 502 | 503);
-    return c.json({ ok: true, voice: r.voice });
   },
 );
 
@@ -2217,10 +2919,9 @@ projectsApp.openapi(
     // Free-tier accounts see only managed models explicitly marked free plus
     // their own BYOK/Codex-connected catalog entries. Paid managed models and
     // synthetic AUTO stay hidden from the picker.
-    const freeManagedOnly =
-      config.KORTIX_BILLING_INTERNAL_ENABLED && ownerAccountId
-        ? accountIsFreeTierForModels(await getCachedAccountTier(ownerAccountId))
-        : false;
+    const freeManagedOnly = ownerAccountId
+      ? !(await accountMayUseManagedModels(ownerAccountId))
+      : false;
     const models = gatewayModelCatalog(projectId, { freeManagedOnly });
     return c.json({ models });
   },
@@ -2255,28 +2956,132 @@ projectsApp.openapi(
     }
 
     const accountId = loaded.row.accountId as string;
-    const freeManagedOnly = config.KORTIX_BILLING_INTERNAL_ENABLED
-      ? accountIsFreeTierForModels(await getCachedAccountTier(accountId))
-      : false;
+    const freeManagedOnly = !(await accountMayUseManagedModels(accountId));
     const [secrets, defaults, routing] = await Promise.all([
-      listProjectSecretsSnapshot(projectId).catch(() => ({ names: [] as string[] })),
+      listProjectSecretNamesForConsumer({
+        projectId,
+        principalUserId: loaded.userId,
+        consumer: 'llm_gateway',
+      }).catch(() => [] as string[]),
       getAccountModelDefaults(accountId, projectId),
       getProjectRoutingPolicy(projectId),
     ]);
+    // What `auto` resolves to for this project. Served below so the client can
+    // LOCK its switch instead of offering a toggle that always 409s.
+    const effectiveDefault = toWireModel(
+      defaults.projects[projectId] ?? defaults.account ?? platformDefaultModelId() ?? '',
+    );
     const requiredModels = [
       defaults.projects[projectId],
       defaults.account,
-      config.LLM_GATEWAY_DEFAULT_MODEL,
+      platformDefaultModelId(),
       routing?.visionModel,
       ...(routing?.defaultFallback?.models ?? []),
       ...(routing?.rules.flatMap((rule) => [rule.model, ...rule.fallbackModels]) ?? []),
     ].filter((model): model is string => !!model);
     const models = projectPickerCatalog(
       gatewayModelCatalog(projectId, { freeManagedOnly }),
-      new Set(secrets.names.map((name) => name.toUpperCase())),
+      new Set(secrets),
       requiredModels,
     );
-    return c.json({ models });
+    // Server-owned per-project enablement, resolved HERE and stamped onto each
+    // model so every client renders the same answer. The session picker shows
+    // the enabled ones; "Manage models" shows them all and switches on this
+    // flag. Neither re-derives it. Display-only: the gateway never refuses a
+    // request over enablement (that 400'd in-use models — the #5932 revert).
+    const enabled = resolveEnablement(models, routing?.modelOverrides ?? {}, requiredModels);
+    return c.json({
+      models: Object.fromEntries(
+        Object.entries(models).map(([id, model]) => [
+          id,
+          { ...model, enabled: enabled.get(id) ?? true },
+        ]),
+      ),
+      // The stored EXCEPTIONS, so a client toggling one model can PUT the
+      // merged map back without having to reconstruct it by diffing the
+      // resolved flags against a default it would have to recompute.
+      modelOverrides: routing?.modelOverrides ?? {},
+      // The model `auto` resolves to. It cannot be turned off (that would break
+      // every default request — the PUT refuses it with 409), so the client
+      // renders its switch as locked rather than letting the user click into an
+      // error.
+      defaultModel: effectiveDefault || undefined,
+      // True while the project has made no exceptions at all — the only thing
+      // "reset to defaults" has left to act on, and not derivable from the
+      // `enabled` flags alone (they look identical either way).
+      usingDefaults: Object.keys(routing?.modelOverrides ?? {}).length === 0,
+    });
+  },
+);
+
+// PUT /v1/projects/:projectId/model-enablement  { modelOverrides: {id: boolean} }
+// Replace the project's EXCEPTIONS to the default model set (the newest model
+// per family). Display-only: it decides what the pickers OFFER, never what the
+// gateway serves. An empty object restores the pure default. Refuses to turn
+// off the project's own default model (the picker would hide what `auto`
+// resolves to).
+const modelEnablementBody = z.object({
+  modelOverrides: z.record(z.string().min(1).max(128), z.boolean()),
+});
+
+projectsApp.openapi(
+  createRoute({
+    method: 'put',
+    path: '/{projectId}/model-enablement',
+    tags: ['projects'],
+    summary: 'PUT /:projectId/model-enablement',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+      body: { content: { 'application/json': { schema: modelEnablementBody } } },
+    },
+    responses: {
+      200: { description: 'OK', content: { 'application/json': { schema: z.any() } } },
+      ...errors(400, 403, 404, 409),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE,
+    );
+    const accountId = loaded.row.accountId as string;
+    const userId = c.get('userId') as string;
+
+    const parsed = modelEnablementBody.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      return c.json({ error: 'Invalid body', code: 'invalid_body' }, 400);
+    }
+    const modelOverrides: Record<string, boolean> = {};
+    for (const [model, enabled] of Object.entries(parsed.data.modelOverrides)) {
+      const wire = toWireModel(model.trim());
+      if (wire) modelOverrides[wire] = enabled;
+    }
+
+    // A project must never turn off the model its own `auto` resolves to. Only
+    // an explicit `false` can do that — omitting it leaves the default in
+    // charge, which always offers the current one.
+    const defaults = await getAccountModelDefaults(accountId, projectId);
+    const effectiveDefault =
+      defaults.projects[projectId] ?? defaults.account ?? platformDefaultModelId();
+    if (effectiveDefault && modelOverrides[toWireModel(effectiveDefault)] === false) {
+      return c.json(
+        {
+          error: 'Cannot disable the project default model — change the default first.',
+          code: 'cannot_disable_default',
+        },
+        409,
+      );
+    }
+
+    await setProjectModelOverrides({ projectId, updatedBy: userId, modelOverrides });
+    return c.json({ ok: true, modelOverrides });
   },
 );
 
@@ -2322,12 +3127,9 @@ projectsApp.openapi(
 );
 
 // ─── Default model preferences (account-scoped) ─────────────────────────────
-// The gateway is the source of truth for the default model: a request for the
-// synthetic `auto` resolves server-side to the per-agent default → account
-// default → platform default. These routes manage the account/agent defaults;
-// they operate on the project's OWNER account, the same account the gateway
-// principal carries, so the picker and the gateway always agree. Stored values
-// are gateway wire models (bare managed id, BYOK `provider/model`, or `codex/…`).
+// The gateway is the source of truth for concrete model defaults. These routes
+// manage account, project, and agent defaults. Stored values are gateway wire
+// models (bare managed id, BYOK `provider/model`, or `codex/…`).
 
 // GET /v1/projects/:projectId/model-defaults
 projectsApp.openapi(
@@ -2353,9 +3155,7 @@ projectsApp.openapi(
     const ownerAccountId = loaded.row.accountId as string;
     const userId = c.get('userId') as string;
     const defaults = await getAccountModelDefaults(ownerAccountId, projectId);
-    const freeTier = config.KORTIX_BILLING_INTERNAL_ENABLED
-      ? accountIsFreeTierForModels(await getCachedAccountTier(ownerAccountId))
-      : false;
+    const freeTier = !(await accountMayUseManagedModels(ownerAccountId));
     // Honest project-level resolution (project → account → platform) + where it
     // came from, so the UI can show "Sonnet 4.6 · project default". The
     // authoritative per-request resolution still happens in the gateway.
@@ -2367,11 +3167,11 @@ projectsApp.openapi(
       freeModelsOnly: freeTier,
     });
     return c.json({
-      platformDefault: config.LLM_GATEWAY_DEFAULT_MODEL,
+      platformDefault: platformDefaultModelId(),
       accountDefault: defaults.account,
       agentDefaults: defaults.agents,
       projectDefault: defaults.projects[projectId] ?? null,
-      resolvedForCaller: resolved.model ?? config.LLM_GATEWAY_DEFAULT_MODEL,
+      resolvedForCaller: resolved.model ?? (freeTier ? null : platformDefaultModelId()),
       resolvedSource: resolved.source,
       freeTier,
     });
@@ -2406,10 +3206,7 @@ projectsApp.openapi(
   }),
   async (c: any) => {
     const projectId = c.req.param('projectId');
-    // Floor 'read'; project.customize.write is the real gate (model defaults are
-    // project customization). NOTE: /{projectId}/model-defaults is ALSO defined in
-    // routes/model-defaults.ts (registered later in projects/index.ts) — both are
-    // gated here to be safe against route-registration order; dedupe is follow-up.
+    // Floor 'read'; project.customize.write is the real gate.
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     await assertProjectCapability(
@@ -2434,9 +3231,7 @@ projectsApp.openapi(
       );
     }
 
-    const freeModelsOnly = config.KORTIX_BILLING_INTERNAL_ENABLED
-      ? accountIsFreeTierForModels(await getCachedAccountTier(ownerAccountId))
-      : false;
+    const freeModelsOnly = !(await accountMayUseManagedModels(ownerAccountId));
     const servable = await isModelServableForAccount({
       userId,
       accountId: ownerAccountId,
@@ -2499,8 +3294,7 @@ projectsApp.openapi(
   }),
   async (c: any) => {
     const projectId = c.req.param('projectId');
-    // Floor 'read'; project.customize.write is the real gate (see PUT above; also
-    // mirrored in routes/model-defaults.ts).
+    // Floor 'read'; project.customize.write is the real gate.
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     await assertProjectCapability(
@@ -2564,6 +3358,10 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param('projectId');
 
+    // The session this credential is BOUND to, when it is a sandbox token.
+    // Null for a human caller.
+    let callerSandboxSessionId: string | null = null;
+
     const authType = (c as any).get('authType') as string | undefined;
     if (authType === 'apiKey' && (c as any).get('apiKeyType') === 'sandbox') {
       const accountId = (c as any).get('accountId') as string | undefined;
@@ -2572,7 +3370,10 @@ projectsApp.openapi(
         return c.json({ error: 'turn-question requires a sandbox token' }, 403);
       }
       const [sandbox] = await db
-        .select({ sandboxId: sessionSandboxes.sandboxId })
+        .select({
+          sandboxId: sessionSandboxes.sandboxId,
+          sessionId: sessionSandboxes.sessionId,
+        })
         .from(sessionSandboxes)
         .where(
           and(
@@ -2586,8 +3387,12 @@ projectsApp.openapi(
       if (!sandbox) {
         return c.json({ error: 'sandbox token is not scoped to this project' }, 403);
       }
+      callerSandboxSessionId = sandbox.sessionId ?? sandbox.sandboxId;
     } else {
-      const loaded = await loadProjectForUser(c, projectId, 'read');
+      // A question card finalizes and re-posts a LIVE turn, so it is a
+      // mutation of that session — 'read' is too weak. The sibling turn-stream
+      // route already requires more than read for the same reason.
+      const loaded = await loadProjectForUser(c, projectId, 'session');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
     }
 
@@ -2606,9 +3411,17 @@ projectsApp.openapi(
       return c.json({ error: 'session_id is required' }, 400);
     }
 
-    // session_id is caller-supplied — scope it back to :projectId so a caller
-    // authed for their own project can't relay a question into another
-    // tenant's live session (IDOR).
+    // session_id is caller-supplied. Scoping it to :projectId closes the
+    // cross-TENANT hole, but a sandbox token acts for exactly ONE session, so
+    // project scope still let sandbox A finalize and repost session B's live
+    // turn. sandbox_id == session_id by construction — bind to it.
+    if (
+      callerSandboxSessionId !== null &&
+      !sandboxTokenMayActOnSession(callerSandboxSessionId, sessionId)
+    ) {
+      return c.json({ error: 'sandbox token is not scoped to this session' }, 403);
+    }
+
     const [turnQuestionSession] = await db
       .select({ sessionId: projectSessions.sessionId })
       .from(projectSessions)
@@ -2657,14 +3470,164 @@ projectsApp.openapi(
       return c.json({ error: 'no valid questions provided' }, 400);
     }
 
+    // PERSIST FIRST, and independently of any channel.
+    //
+    // A waiting turn makes no gateway LLM calls, earns no deadline extension,
+    // and its box is parked on schedule — correct, and the bounded-lifetime
+    // invariant depends on it. What parking used to destroy is the question
+    // itself: opencode restarts cold, so the user returned to a session that had
+    // forgotten what it asked. Storing it out here lets the box die on time and
+    // the conversation survive it. See lib/pending-questions.ts.
+    //
+    // Deliberately does NOT touch the deadline. A box that could keep itself
+    // alive by reporting "still waiting" is the self-renewal this design
+    // deleted.
+    const resolvedAccountId = (c as any).get('accountId') as string | undefined;
+    if (resolvedAccountId) {
+      await recordPendingQuestion({
+        accountId: resolvedAccountId,
+        projectId,
+        sessionId,
+        requestId: body.request_id?.trim() || `q-${sessionId}`,
+        opencodeSessionId: (body as { opencode_session_id?: string }).opencode_session_id ?? null,
+        questions,
+      }).catch((err) => {
+        // Never fail the relay on a bookkeeping error — the agent is blocked and
+        // the channel render is still worth attempting.
+        console.warn('[turn-question] could not persist pending question:', err);
+        return null;
+      });
+    }
+
     // Non-blocking: post the question(s) into the thread and return immediately
     // with sentinel `answers`. The agent does NOT wait for an inline answer — the
     // user's in-thread reply arrives as a follow-up turn. Returning `answers` keeps
     // BOTH the new sandbox (ignores them, uses its own sentinel) and an old sandbox
     // image (resumes opencode from them) unblocked.
+    //
+    // A session with no channel has nothing to post to. That is not an error now
+    // that the question is durable: it is the ordinary web case, and failing here
+    // would make the relay look broken for every non-Slack session.
     const result = await relayTurnQuestion(sessionId, questions);
-    if (!result.ok) return c.json({ ok: false, error: result.error }, 409);
-    return c.json({ ok: true, answers: result.answers });
+    if (!result.ok) {
+      return c.json({ ok: true, persisted: true, answers: [], channel_error: result.error });
+    }
+    return c.json({ ok: true, persisted: true, answers: result.answers });
+  },
+);
+
+// GET  /v1/projects/:projectId/sessions/:sessionId/question
+// POST /v1/projects/:projectId/sessions/:sessionId/question
+//
+// The restore half of park-and-restore. The ask survives its sandbox (see
+// lib/pending-questions.ts); these two close the loop.
+//
+// GET returns the open question so a resumed session can render what it is
+// waiting on, instead of showing a conversation that mysteriously stopped.
+//
+// POST answers it. The answer CANNOT go back to the call that blocked — that
+// opencode process was parked and restarted cold, so its request id no longer
+// exists and nothing is waiting on it. It is delivered as a FOLLOW-UP TURN,
+// which is exactly how the channel path has always worked ("the user's
+// in-thread reply arrives as a follow-up turn", above), and continueSession
+// already owns waking a parked box and queueing until it is ready.
+
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/sessions/{sessionId}/question',
+    tags: ['sessions'],
+    summary: 'GET /:projectId/sessions/:sessionId/question',
+    ...auth,
+    request: { params: z.object({ projectId: z.string(), sessionId: z.string() }) },
+    responses: { 200: json(AnyObject, 'Open question, or null'), ...errors(404) },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const sessionId = c.req.param('sessionId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    // The question text is session CONTENT, so it sits behind the same leaf the
+    // other session-content reads use (projects/routes/project-sessions.ts). `loadProjectForUser(…, 'read')`
+    // is only the coarse project floor: a caller whose custom role or scoped
+    // token has `project.session.read` revoked still clears it.
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_SESSION_READ,
+    );
+    const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null);
+    if (!visible) return c.json({ error: 'Not found' }, 404);
+    return c.json({ question: await getOpenQuestion(sessionId) });
+  },
+);
+
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/sessions/{sessionId}/question',
+    tags: ['sessions'],
+    summary: 'POST /:projectId/sessions/:sessionId/question',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string(), sessionId: z.string() }),
+      body: { content: { 'application/json': { schema: AnyObject } } },
+    },
+    responses: { 200: json(AnyObject, 'Answer delivered'), ...errors(400, 404, 409) },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const sessionId = c.req.param('sessionId');
+    // The `question` tool exists so the agent YIELDS TO A HUMAN. An
+    // agent-session token is scoped to its own session, which is precisely the
+    // session holding the question it just asked — so if it could POST here it
+    // would answer itself and resume, and the tool would be decorative.
+    //
+    // Denied outright rather than scope-gated: `assertAgentScope(…
+    // PROJECT_SESSION_START)` is the usual bar for starting a turn, but that
+    // leaf ships in the default agent preset (accounts/iam/role-presets.ts), so
+    // it would admit the self-answer on a stock grant. Answering is a human
+    // operation. Same shape as the token-minting guard in r3.ts.
+    if (getAgentGrant(c)) {
+      return c.json({ error: 'Agent-session tokens cannot answer their own question' }, 403);
+    }
+    // Answering resumes a parked box and starts a turn, so this is a mutation
+    // of the session — the same bar the question relay itself uses.
+    const loaded = await loadProjectForUser(c, projectId, 'session');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null);
+    if (!visible) return c.json({ error: 'Not found' }, 404);
+
+    const body = await readBody(c);
+    const answers = (body as { answers?: unknown }).answers;
+    if (!Array.isArray(answers) || answers.length === 0) {
+      return c.json({ error: 'answers must be a non-empty array' }, 400);
+    }
+
+    const open = await getOpenQuestion(sessionId);
+    if (!open) return c.json({ error: 'no open question for this session' }, 409);
+
+    const requestId = (body as { request_id?: string }).request_id?.trim() || open.request_id;
+    // CAS: closing the question is what claims the right to deliver it. Two
+    // clients answering at once must produce ONE follow-up turn, not two.
+    const claimed = await resolvePendingQuestion({ sessionId, requestId, answers });
+    if (!claimed) {
+      return c.json({ error: 'question was already answered', code: 'ALREADY_ANSWERED' }, 409);
+    }
+
+    const outcome = await continueSession({
+      source: 'ui',
+      sessionId,
+      text: renderAnswerPrompt(open.questions, answers),
+      userId: loaded.userId,
+    });
+
+    // 'pending' is success: the box is parked and continueSession has queued the
+    // turn for when it is back. Reporting that as failure would invite a retry
+    // that the CAS above would refuse, stranding the answer.
+    return c.json({ ok: outcome === 'delivered' || outcome === 'pending', delivery: outcome });
   },
 );
 
@@ -2694,7 +3657,7 @@ projectsApp.openapi(
     // Floor 'read' (membership); project.trigger.fire is the real gate. The floor
     // was 'manage' (= project.write) — which the floor `member` role LACKS even
     // though it HOLDS trigger.fire, so a plain member could never fire a trigger
-    // (its designed fire grant was dead behind the floor). Now member/editor/
+    // (its designed fire grant was dead behind the floor). Now member/
     // manager all fire (all hold the leaf); a custom role without it is denied.
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);

@@ -86,7 +86,7 @@ model, the agent can:
 The agent operates against the **test environment only**; production is out of
 scope. It does not merge or deploy to prod. Its output is a result, and a human
 owns the merge. Credentials are encrypted in the Secrets Manager and injected at
-runtime, never shown to the model or written to logs.
+runtime, scoped to the agents you grant them to.
 
 </Step>
 <Step title="Let each PR arrive pre-QA'd">
@@ -112,12 +112,11 @@ route is caught before staging.
 The agent has access to the test environment and the edge, so the access is
 scoped and contained:
 
-- **Isolation.** Every PR runs in its own microVM sandbox on its own branch. The
+- **Isolation.** Every PR runs in its own isolated sandbox on its own branch. The
   session can install, deploy, and exercise the change to reproduce a failure;
-  only the reported result leaves the sandbox.
+  only the reported result is written back out.
 - **Scoped secrets.** The GitHub, test-environment, and Cloudflare credentials are
-  encrypted in the Secrets Manager and injected into the sandbox at runtime, never
-  exposed to the model or the logs.
+  encrypted in the Secrets Manager and injected into the sandbox at runtime, scoped to the agents you grant them to.
 - **Test environment only.** The agent's access stops at the test plane: no
   production access, no prod deploy, no merge. It reports; the team decides.
 - **Everything is code.** The agent's configuration, skills, and permissions are

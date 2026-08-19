@@ -1,16 +1,26 @@
 'use client';
 
-import { ExternalLink, FileText, Globe, Loader2, LogIn, Play, ShieldAlert } from 'lucide-react';
+import {
+  ArrowsInSimpleIcon as ArrowsInSimple,
+  ArrowsOutSimpleIcon as ArrowsOutSimple,
+  DownloadIcon as Download,
+  ArrowSquareOutIcon as ExternalLink,
+  PlayIcon as Play,
+  ShieldWarningIcon as ShieldAlert,
+} from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useParams } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { Button } from '@/components/ui/button';
+import Hint from '@/components/ui/hint';
+import Loading from '@/components/ui/loading';
 import { getAuthToken } from '@/lib/auth-token';
 import { getEnv } from '@/lib/env-config';
-import { cn } from '@/lib/utils';
+import { getPublicShareByToken, startSessionWithToken } from '@kortix/sdk';
 import { PublicFileShareView } from './public-file-share-view';
+import { downloadFileFromUrl, fileNameFromPath } from './share-file';
 import { SHARE_PAGE_ROOT_CLASS, SHARE_PREVIEW_IFRAME_CLASS } from './share-layout';
 
 interface PublicShareMeta {
@@ -52,6 +62,11 @@ export default function PublicSessionSharePage() {
   const [loading, setLoading] = useState(true);
   const [hasAuth, setHasAuth] = useState(false);
   const [starting, setStarting] = useState(false);
+  // Full screen here means "no share chrome" — the header unmounts and the
+  // shared content owns the whole viewport. Deliberately not the native
+  // Fullscreen API: the content is an iframe, and animating/entering native
+  // fullscreen forces it to re-layout twice on a surface we do not control.
+  const [fullscreen, setFullscreen] = useState(false);
 
   const base = apiBase();
   const origin = apiOrigin();
@@ -71,20 +86,18 @@ export default function PublicSessionSharePage() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      if (!token) {
-        setError('Invalid share link');
-        setLoading(false);
-        return;
-      }
       setLoading(true);
       setError(null);
       try {
-        const res = await fetch(`${base}/p/public-share/${encodeURIComponent(token)}`, {
+        if (!token) {
+          setError('Invalid share link');
+          return;
+        }
+        const body = await getPublicShareByToken<PublicShareMeta>(token, {
+          backendUrl: base,
           cache: 'no-store',
         });
-        const body = await res.json().catch(() => null);
-        if (!res.ok) throw new Error(body?.error || 'Share link unavailable');
-        if (!cancelled) setMeta(body as PublicShareMeta);
+        if (!cancelled) setMeta(body);
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : 'Share link unavailable');
       } finally {
@@ -99,6 +112,17 @@ export default function PublicSessionSharePage() {
     };
   }, [base, token]);
 
+  // Escape leaves full screen. Focus inside the iframe never reaches this
+  // listener, which is why the floating exit control below stays visible.
+  useEffect(() => {
+    if (!fullscreen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setFullscreen(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [fullscreen]);
+
   async function startSession() {
     if (!meta) return;
     const authToken = await getAuthToken();
@@ -108,17 +132,10 @@ export default function PublicSessionSharePage() {
     }
     setStarting(true);
     try {
-      await fetch(
-        `${base}/projects/${meta.share.project_id}/sessions/${meta.share.session_id}/start`,
-        {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${authToken}`,
-            'Content-Type': 'application/json',
-          },
-          body: '{}',
-        },
-      );
+      await startSessionWithToken(meta.share.project_id, meta.share.session_id, {
+        backendUrl: base,
+        accessToken: authToken,
+      });
       window.location.reload();
     } finally {
       setStarting(false);
@@ -129,10 +146,17 @@ export default function PublicSessionSharePage() {
     window.location.href = `/auth?next=${encodeURIComponent(window.location.pathname)}`;
   }
 
+  const filePath = meta?.share.file_path || meta?.share.label || '';
+  const fileName = fileNameFromPath(filePath, meta?.share.label ?? 'Shared file');
+  const handleDownload = useCallback(() => {
+    if (!fileSrc) return;
+    void downloadFileFromUrl(fileSrc, fileName);
+  }, [fileName, fileSrc]);
+
   if (loading) {
     return (
       <main className="bg-background text-foreground flex min-h-screen items-center justify-center">
-        <Loader2 className="text-muted-foreground h-5 w-5 animate-spin" />
+        <Loading className="text-muted-foreground h-5 w-5" />
       </main>
     );
   }
@@ -155,11 +179,10 @@ export default function PublicSessionSharePage() {
 
   const offline = meta.share.sandbox_status !== 'active';
   const isFileShare = meta.share.resource_type === 'file';
-  const Icon = isFileShare ? FileText : Globe;
-  const shareType = isFileShare ? 'File share' : 'Preview share';
-  const sharePermission = isFileShare
-    ? 'View only · no workspace browsing'
-    : 'No terminal, files, or session controls';
+  // A file share is titled by its file name only — the workspace path is
+  // internal detail the recipient has no context for.
+  const title = isFileShare ? fileName : meta.share.label;
+  const authHref = `/auth?next=${encodeURIComponent(`/share/session/${token}`)}`;
   const sessionHref = `/projects/${meta.share.project_id}/sessions/${meta.share.session_id}`;
   const offlineTitle = isFileShare
     ? 'This shared file is offline'
@@ -168,89 +191,105 @@ export default function PublicSessionSharePage() {
     ? 'The session runtime that serves this file is not active. Sign in with access to this project to start it.'
     : 'The session runtime is not active. Sign in with access to this project to start it.';
 
+  const openAppLabel = tI18nHardcoded.raw(
+    'autoAppPublicShareSessionTokenPageJsxTextOpenAppa9aa1bb9',
+  );
+
   return (
     <main className={SHARE_PAGE_ROOT_CLASS}>
-      <header className="border-border/70 bg-background/95 flex min-h-[64px] flex-col gap-3 border-b px-4 py-3 backdrop-blur sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex min-w-0 flex-1 flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
-          <div className="flex shrink-0 items-center gap-2.5">
-            <KortixLogo variant="logomark" size={18} className="text-foreground" />
-            <span className="bg-border hidden h-4 w-px sm:block" />
-            <span className="text-muted-foreground text-xs font-medium">
-              {tI18nHardcoded.raw('autoAppPublicShareSessionTokenPageJsxTextPublicSharedbc2d952')}
-            </span>
+      {/* Bar shape copied from the file viewer toolbar (file-preview-modal.tsx):
+          h-12, gap-2, px-3, name left, actions right. No border-b — the pane
+          below draws the seam with its own top border. */}
+      {!fullscreen && (
+        <header className="flex py-2 shrink-0 items-center gap-2 px-3.5 pr-3">
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <KortixLogo variant="symbol" size={16} className="shrink-0" />
+            <h1 className="truncate text-sm font-medium">{title}</h1>
           </div>
-          <div className="flex min-w-0 items-center gap-2.5">
-            <div
-              className={cn(
-                'border-border/70 bg-muted/40 flex h-8 w-8 shrink-0 items-center justify-center rounded-sm border',
-                isFileShare ? 'text-muted-foreground' : 'text-primary',
-              )}
-            >
-              <Icon className="h-4 w-4" />
-            </div>
-            <div className="min-w-0">
-              <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                <h1 className="max-w-full truncate text-sm font-medium">{meta.share.label}</h1>
-                <span className="text-muted-foreground text-xs">{shareType}</span>
-              </div>
-              <p className="text-muted-foreground mt-0.5 truncate text-xs">{sharePermission}</p>
-            </div>
-          </div>
-        </div>
-        <div className="flex shrink-0 flex-wrap items-center gap-2">
-          {offline && hasAuth && (
-            <Button size="sm" className="h-8 gap-1.5" onClick={startSession} disabled={starting}>
-              {starting ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Play className="h-3.5 w-3.5" />
-              )}
-              Start
-            </Button>
-          )}
-          {!hasAuth ? (
-            <Button size="sm" variant="outline" className="h-8 gap-1.5" onClick={signInForAccess}>
-              <LogIn className="h-3.5 w-3.5" />
-              {tI18nHardcoded.raw('autoAppPublicShareSessionTokenPageJsxTextSignInc63c237b')}
-            </Button>
-          ) : (
+          <div className="flex shrink-0 items-center gap-1">
+            {offline && hasAuth && (
+              <Button size="sm" onClick={startSession} disabled={starting}>
+                {starting ? <Loading /> : <Play />}
+                Start
+              </Button>
+            )}
+            {isFileShare && !offline && fileSrc && (
+              <Hint label="Download" side="bottom">
+                <Button
+                  variant="ghost"
+                  size="icon-base"
+                  aria-label="Download"
+                  onClick={handleDownload}
+                >
+                  <Download />
+                </Button>
+              </Hint>
+            )}
+            {iframeSrc && !offline && !isFileShare && (
+              <Hint label={openAppLabel} side="bottom">
+                <Button
+                  variant="ghost"
+                  size="icon-base"
+                  aria-label={openAppLabel}
+                  onClick={() => window.open(iframeSrc, '_blank', 'noopener,noreferrer')}
+                >
+                  <ExternalLink />
+                </Button>
+              </Hint>
+            )}
+            {/* One CTA in both auth states. A signed-out visitor still wants
+                "Open in Kortix"; sign-in is a step on the way there, not a
+                different destination. */}
             <Button
               size="sm"
-              variant={offline ? 'outline' : 'ghost'}
-              className="h-8 gap-1.5"
               onClick={() => {
-                window.location.href = sessionHref;
+                window.location.href = hasAuth ? sessionHref : authHref;
               }}
             >
               {tI18nHardcoded.raw('autoAppPublicShareSessionTokenPageJsxTextOpenIn2fdbf464')}
             </Button>
-          )}
-          {iframeSrc && !offline && !isFileShare && (
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-8 gap-1.5"
-              onClick={() => window.open(iframeSrc, '_blank', 'noopener,noreferrer')}
-            >
-              <ExternalLink className="h-3.5 w-3.5" />
-              {tI18nHardcoded.raw('autoAppPublicShareSessionTokenPageJsxTextOpenAppa9aa1bb9')}
-            </Button>
-          )}
-        </div>
-      </header>
-      <section className="relative min-h-0 flex-1">
+            <Hint label="Full screen" side="bottom">
+              <Button
+                variant="ghost"
+                size="icon-base"
+                aria-label="Full screen"
+                onClick={() => setFullscreen(true)}
+              >
+                <ArrowsOutSimple />
+              </Button>
+            </Hint>
+          </div>
+        </header>
+      )}
+      {/* Escape also exits, but focus inside the iframe never reaches the
+          parent document — so the way out has to be visible. `secondary` is
+          opaque: this floats over content whose colours we do not control. */}
+      {fullscreen && (
+        <Hint label="Exit full screen (Esc)" side="left">
+          <Button
+            variant="secondary"
+            size="icon-base"
+            aria-label="Exit full screen"
+            className="fixed top-2 right-3 z-50 shadow-md"
+            onClick={() => setFullscreen(false)}
+          >
+            <ArrowsInSimple />
+          </Button>
+        </Hint>
+      )}
+      {/* `overflow-clip` is what makes `rounded-t-md` visible: without it the
+          iframe paints its square background over the corners. `clip` rather
+          than `hidden` so this never becomes a scrollable box — the scrolling
+          belongs to the child. */}
+      <section className="bg-background border-border relative min-h-0 h-dvh flex-1 overflow-clip rounded-t-md border-x border-t">
         {offline ? (
-          <div className="flex h-full min-h-[60vh] items-center justify-center px-6 text-center">
+          <div className="flex h-full items-center justify-center px-6 text-center">
             <div className="max-w-sm">
               <h2 className="text-base font-semibold">{offlineTitle}</h2>
               <p className="text-muted-foreground mt-2 text-sm">{offlineDescription}</p>
               {hasAuth ? (
-                <Button className="mt-5 gap-1.5" onClick={startSession} disabled={starting}>
-                  {starting ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Play className="h-4 w-4" />
-                  )}
+                <Button className="mt-5" onClick={startSession} disabled={starting}>
+                  {starting ? <Loading /> : <Play />}
                   {tI18nHardcoded.raw(
                     'autoAppPublicShareSessionTokenPageJsxTextStartSessiond4216ec8',
                   )}
@@ -266,7 +305,7 @@ export default function PublicSessionSharePage() {
           <PublicFileShareView token={token} share={meta.share} fileUrl={fileSrc} />
         ) : (
           <iframe
-            title={meta.share.label}
+            title={title}
             src={iframeSrc}
             className={SHARE_PREVIEW_IFRAME_CLASS}
             sandbox={tI18nHardcoded.raw(

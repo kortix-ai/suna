@@ -1,14 +1,20 @@
-import { HTTPException } from "hono/http-exception";
-import { config } from "../../config";
-import { getCreditAccount } from "../repositories/credit-accounts";
-import { deductCredits } from "./credits";
-import { ensureFreeTierAccountReady } from "./free-tier";
-import { isPerSeatAccount, MINIMUM_CREDIT_FOR_RUN } from "./tiers";
+import { HTTPException } from 'hono/http-exception';
+import { config } from '../../config';
+import { getCreditAccount } from '../repositories/credit-accounts';
+import {
+  type BillingSnapshot,
+  type BillingState,
+  billingSnapshotFromAccount,
+  billingStateAllowsRun,
+  hasSubscriptionRecord,
+  resolveBillingState,
+  subscriptionBypassesWalletFloor,
+} from './billing-state';
+import { deductCredits } from './credits';
+import { ensureFreeTierAccountReady } from './free-tier';
+import { type BillingModel, MINIMUM_CREDIT_FOR_RUN, isPerSeatAccount } from './tiers';
 
-type BillingGateReason =
-  | "subscription_required"
-  | "insufficient_credits"
-  | "no_account";
+type BillingGateReason = 'subscription_required' | 'insufficient_credits' | 'no_account';
 
 export interface BillingGateOk {
   ok: true;
@@ -27,6 +33,19 @@ export interface BillingGateBlocked {
   reason: BillingGateReason;
   balance: number;
   message: string;
+  // The account's billing model + whether it has a subscription row at all.
+  // Carried on the 402 so the client can tell a genuinely-free/no-plan account
+  // ("subscribe" pitch) apart from a paying Team account whose wallet ran dry
+  // ("top up" pitch) — the same `subscription_required` reason otherwise
+  // mislabels a per-seat Team account as Free. See web global-upgrade-modal.
+  billingModel: BillingModel;
+  hasSubscription: boolean;
+  // The UNAMBIGUOUS state (billing-state.ts). `reason` is the legacy 402 error
+  // code and is intentionally lossy — a `free` wallet at zero and a lapsed Team
+  // wallet at zero both emit `insufficient_credits`, and a never-subscribed
+  // per-seat account emits `subscription_required`. Clients should branch on
+  // `billingState` and treat `reason` as the wire-compatible code only.
+  billingState: BillingState;
 }
 
 /**
@@ -40,7 +59,17 @@ export interface BillingGateBlocked {
  * read the real cause synchronously, no body parsing required.
  */
 export class BillingGateError extends HTTPException {
-  constructor(readonly reason: BillingGateReason, readonly balance: number, message: string, accountId: string) {
+  constructor(
+    readonly reason: BillingGateReason,
+    readonly balance: number,
+    message: string,
+    accountId: string,
+    extra?: {
+      billingModel?: BillingModel;
+      hasSubscription?: boolean;
+      billingState?: BillingState;
+    },
+  ) {
     super(402, {
       message,
       res: new Response(
@@ -48,11 +77,16 @@ export class BillingGateError extends HTTPException {
           error: message,
           code: reason,
           balance,
+          // Distinguish "no plan → subscribe" from "Team wallet drained → top up".
+          billing_model: extra?.billingModel ?? 'legacy',
+          has_subscription: extra?.hasSubscription ?? false,
+          // The unambiguous state — what every client should branch on.
+          billing_state: extra?.billingState ?? 'no_subscription',
           // The blocked account — so the upgrade dialog scopes to it instead of
           // the caller's primary account (see web error-handler → openUpgradeDialog).
           account_id: accountId,
         }),
-        { status: 402, headers: { "content-type": "application/json" } },
+        { status: 402, headers: { 'content-type': 'application/json' } },
       ),
     });
   }
@@ -71,32 +105,30 @@ export async function checkBillingActive(
   await ensureFreeTierAccountReady(accountId);
 
   const account = await getCreditAccount(accountId);
-  if (!account) {
-    return {
-      ok: false,
-      reason: "no_account",
-      balance: 0,
-      message: "No credit account found. Complete account setup first.",
-    };
-  }
+  const snapshot = billingSnapshotFromAccount(account);
+  const state = resolveBillingState(snapshot);
+  const balance = snapshot.balance;
+  const billingModel: BillingModel = isPerSeatAccount(snapshot.billingModel)
+    ? 'per_seat'
+    : 'legacy';
 
-  const balance = Number(account.balance ?? 0);
-  const hasActiveSub =
-    !!account.stripeSubscriptionId &&
-    account.stripeSubscriptionStatus !== "canceled" &&
-    account.stripeSubscriptionStatus !== "unpaid";
+  if (!billingStateAllowsRun(state)) return blockedResult(state, snapshot, billingModel);
 
-  if (isPerSeatAccount(account.billingModel)) {
-    // An active subscription isn't wallet-gated at all — no hold to take.
-    if (hasActiveSub) return { ok: true };
-    if (balance >= MINIMUM_CREDIT_FOR_RUN) return { ok: true };
-    return {
-      ok: false,
-      reason: "subscription_required",
-      balance,
-      message:
-        "Subscribe to activate your seat. $20/teammate per month includes wallet credits for compute and LLM usage.",
-    };
+  // A PAYING per-seat subscription isn't wallet-gated at all — no admission
+  // hold, no floor. This is the branch that makes `per_seat` + `active` + a
+  // $0.0099 wallet a RUNNABLE account, which is why `can_run` on account-state
+  // must be derived from this same state machine (see account-state.ts) rather
+  // than from a bare wallet-floor check that contradicts it.
+  //
+  // It calls the SAME predicate `resolveBillingState` used above. This used to
+  // be a locally-written `isPerSeatAccount && hasLiveSubscription`, which
+  // treated `past_due` / `incomplete` as exempt and let subscriptions that had
+  // stopped paying spend with no floor whatsoever. A non-paying per-seat
+  // account now reaches the admission hold below like any other account: it
+  // keeps running while it has credit, and blocks as `payment_failed` when it
+  // does not.
+  if (subscriptionBypassesWalletFloor(snapshot)) {
+    return { ok: true };
   }
 
   // Pure-wallet path: this used to be a read-only `balance >= floor` check,
@@ -125,20 +157,100 @@ export async function checkBillingActive(
   // an overdrawn account). See RELIABILITY-BACKLOG item 2 / PR description
   // for the full reservation system this is a pragmatic slice of.
   try {
-    await deductCredits(accountId, MINIMUM_CREDIT_FOR_RUN, "LLM gateway admission hold", "llm_debit");
+    await deductCredits(
+      accountId,
+      MINIMUM_CREDIT_FOR_RUN,
+      'LLM gateway admission hold',
+      'llm_debit',
+    );
     return { ok: true, holdUsd: MINIMUM_CREDIT_FOR_RUN };
   } catch {
+    // The hold lost the race (or the wallet moved under us). Re-resolve against
+    // an empty wallet so the blocked result carries the same discrimination the
+    // pre-check would have produced.
+    return blockedResult(
+      resolveBillingState({ ...snapshot, balance: 0 }),
+      { ...snapshot, balance },
+      billingModel,
+    );
+  }
+}
+
+/**
+ * Map a blocking `BillingState` onto the legacy 402 shape.
+ *
+ * `reason` is the WIRE-COMPATIBLE error code and is deliberately lossy — it
+ * preserves exactly the codes clients have keyed off since PR #5141 (a
+ * never-subscribed per-seat account is the only case that yields
+ * `subscription_required`; every drained wallet, free or paying, yields
+ * `insufficient_credits`). The real discrimination travels in `billingState`.
+ */
+function blockedResult(
+  state: BillingState,
+  snapshot: BillingSnapshot,
+  billingModel: BillingModel,
+): BillingGateBlocked {
+  const hasSubscription = hasSubscriptionRecord(snapshot);
+  const base = {
+    ok: false as const,
+    balance: snapshot.balance,
+    billingModel,
+    hasSubscription,
+    billingState: state,
+  };
+
+  if (state === 'no_account') {
     return {
-      ok: false,
-      reason: "insufficient_credits",
-      balance,
-      message: "Out of credits. Top up to continue.",
+      ...base,
+      reason: 'no_account',
+      message: 'No credit account found. Complete account setup first.',
     };
   }
+
+  if (state === 'payment_failed') {
+    return {
+      ...base,
+      reason: 'insufficient_credits',
+      message:
+        "Your last payment didn't go through and your wallet is empty. Update your payment method or top up to keep running.",
+    };
+  }
+
+  if (state === 'out_of_credits') {
+    return {
+      ...base,
+      reason: 'insufficient_credits',
+      message:
+        billingModel === 'per_seat'
+          ? 'Your team wallet is out of credits. Top up to keep your agents running.'
+          : 'Out of credits. Top up to continue.',
+    };
+  }
+
+  // no_subscription. Per-seat accounts get the seat pitch and the historical
+  // `subscription_required` code; legacy/free accounts keep
+  // `insufficient_credits` (their $2 grant ran out), which the client renders
+  // as the plan pitch off `billing_state`, not off this code.
+  return billingModel === 'per_seat'
+    ? {
+        ...base,
+        reason: 'subscription_required',
+        message:
+          'Subscribe to activate your seat. $40/teammate per month includes wallet credits for compute and LLM usage.',
+      }
+    : {
+        ...base,
+        reason: 'insufficient_credits',
+        message: 'Out of credits. Top up to continue.',
+      };
 }
 
 export async function assertBillingActive(accountId: string): Promise<BillingGateOk> {
   const result = await checkBillingActive(accountId);
   if (result.ok) return result;
-  throw new BillingGateError(result.reason, result.balance, result.message, accountId);
+  throw new BillingGateError(result.reason, result.balance, result.message, accountId, {
+    billingModel: result.billingModel,
+    hasSubscription: result.hasSubscription,
+    billingState: result.billingState,
+  });
 }

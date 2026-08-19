@@ -22,7 +22,6 @@ export interface BasicToolProps {
   locked?: boolean;
   onSubtitleClick?: () => void;
   badge?: React.ReactNode;
-  rightAccessory?: React.ReactNode;
   onClick?: () => void;
   durationMs?: number;
   className?: string;

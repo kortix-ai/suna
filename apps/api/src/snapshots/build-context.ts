@@ -2,7 +2,7 @@
  * Shared build-context staging for sandbox snapshots.
  *
  * Both providers build the SAME image: the user's Dockerfile + the Kortix
- * runtime layer (agent binary + CLI + entrypoint + slack-cli + executor-sdk +
+ * runtime layer (agent binary + CLI + entrypoint + slack-cli +
  * opencode/agent-browser). Daytona ships this context to its build service via
  * `Image.fromDockerfile(ctx)`; Platinum ships it to `POST /v1/templates/
  * from-build`. Staging the context here — once — guarantees the produced image
@@ -12,19 +12,36 @@
  * snapshots/providers/daytona.ts (Daytona) + snapshots/providers/platinum.ts.
  */
 
-import { copyFile, cp, mkdir, mkdtemp, rm, stat, writeFile as writeFileFs } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
 import { createReadStream, createWriteStream } from 'node:fs';
-import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import {
+  copyFile,
+  cp,
+  chmod,
+  readdir,
+  mkdir,
+  mkdtemp,
+  rename,
+  rm,
+  stat,
+  writeFile as writeFileFs,
+} from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { pipeline } from 'node:stream/promises';
+import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
 import { createGzip } from 'node:zlib';
 import { AGENT_BROWSER_VERSION, OPENCODE_VERSION } from '@kortix/shared';
+import { buildMetaSandboxDockerfile } from '@kortix/shared/sandbox';
 import { gatewayModelCatalog } from '../llm-gateway/models/catalog-models';
-import { tmpdir } from 'node:os';
-import { buildLayeredDockerfile } from './dockerfile-layer';
+import { managedSkillOverlayFiles } from '../runtime-assets/managed-skills';
+import { appCaddyBinaryPath, appdBinaryPath } from '../apps/runtime-artifacts';
 import { buildStarterFiles, DEFAULT_STARTER_TEMPLATE_ID } from '../projects/starter';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
+import { assertCliArtifactAttested } from './cli-artifact-attestation';
+import { buildLayeredDockerfile, buildPerProjectWarmFromBaseDockerfile } from './dockerfile-layer';
+import { stagingTarArgs, stagingTarEnv } from './staging-tar';
+
 const execFileAsyncBC = promisify(execFile);
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -38,17 +55,21 @@ const agentBinPath = () => process.env.KORTIX_SNAPSHOT_AGENT_BIN_PATH
   || resolve(REPO_ROOT, 'apps/kortix-sandbox-agent-server/dist/kortix-agent');
 const cliBinPath = () => process.env.KORTIX_SNAPSHOT_CLI_BIN_PATH
   || resolve(REPO_ROOT, 'apps/cli/dist/kortix');
+const cliAttestationPath = () => process.env.KORTIX_SNAPSHOT_CLI_ATTESTATION_PATH
+  || resolve(REPO_ROOT, 'apps/cli/dist/kortix-connectors-runtime.attestation.json');
 const entrypointSrcPath = () => process.env.KORTIX_SNAPSHOT_ENTRYPOINT_PATH
   || resolve(REPO_ROOT, 'apps/sandbox/entrypoint.sh');
 const slackCliSrcPath = () => process.env.KORTIX_SNAPSHOT_SLACK_CLI_PATH
   || resolve(REPO_ROOT, 'apps/sandbox/slack-cli');
-const executorSdkSrcPath = () => process.env.KORTIX_SNAPSHOT_EXECUTOR_SDK_PATH
-  || resolve(REPO_ROOT, 'packages/executor-sdk');
 // Canonical starter `.kortix/opencode` surface (pty plugin + standard tools +
 // skills). Staged into the context so the layer can warm a real opencode project
 // instance at build time (see dockerfile-layer.ts `opencodeConfigPath`).
 const opencodeConfigSrcPath = () => process.env.KORTIX_SNAPSHOT_OPENCODE_CONFIG_PATH
   || resolve(REPO_ROOT, 'packages/starter/templates/base/.kortix/opencode');
+const opencodeWarmupSrcPath = () => process.env.KORTIX_SNAPSHOT_OPENCODE_WARMUP_PATH
+  || resolve(REPO_ROOT, 'apps/sandbox/opencode-warmup.sh');
+const machineDocSrcPath = () => process.env.KORTIX_SNAPSHOT_MACHINE_DOC_PATH
+  || resolve(REPO_ROOT, 'apps/sandbox/MACHINE.md');
 
 function readPositiveIntEnv(name: string, fallback: number): number {
   const raw = Number.parseInt(process.env[name] || '', 10);
@@ -73,20 +94,438 @@ export interface StagedContext {
 }
 
 /**
+ * Stage one provider-neutral Kortix App build context. The user's Dockerfile
+ * remains the base. This function adds only the supervisor, ingress binary,
+ * and immutable non-secret runtime specification. Provider credentials and App
+ * secrets never enter the build context.
+ */
+export async function stageAppBuildContext(
+  snapshotName: string,
+  userDockerfile: string,
+  appContext: { sourceDir?: string; runtimeSpec: Record<string, unknown> },
+): Promise<StagedContext> {
+  const appdPath = appdBinaryPath();
+  const caddyPath = appCaddyBinaryPath();
+  await assertExists(appdPath, 'KORTIX_APPD_BIN_PATH');
+  await assertExists(caddyPath, 'KORTIX_APP_CADDY_BIN_PATH');
+
+  const contextDir = await mkdtemp(join(tmpdir(), 'kortix-app-snap-'));
+  try {
+    if (appContext.sourceDir) {
+      const entries = await readdir(appContext.sourceDir);
+      if (entries.includes('.kortix-app-runtime')) {
+        throw new Error('App source contains reserved path .kortix-app-runtime');
+      }
+      for (const entry of entries) {
+        await cp(join(appContext.sourceDir, entry), join(contextDir, entry), {
+          recursive: true,
+          preserveTimestamps: true,
+        });
+      }
+    }
+
+    const runtimeDir = join(contextDir, '.kortix-app-runtime');
+    await mkdir(runtimeDir, { recursive: true });
+    await copyFile(appdPath, join(runtimeDir, 'kortix-appd'));
+    await copyFile(caddyPath, join(runtimeDir, 'caddy'));
+    await chmod(join(runtimeDir, 'kortix-appd'), 0o755);
+    await chmod(join(runtimeDir, 'caddy'), 0o755);
+    await writeFileFs(
+      join(runtimeDir, 'app.json'),
+      `${JSON.stringify(appContext.runtimeSpec, null, 2)}\n`,
+      { mode: 0o644 },
+    );
+
+    const dockerfileName = '.kortix-app.Dockerfile';
+    const composedPath = join(contextDir, dockerfileName);
+    const composed = `${userDockerfile.trimEnd()}\n\n` +
+      `# Kortix Apps runtime ${snapshotName}\n` +
+      'COPY .kortix-app-runtime/kortix-appd /kortix/bin/kortix-appd\n' +
+      'COPY .kortix-app-runtime/caddy /kortix/bin/caddy\n' +
+      'COPY .kortix-app-runtime/app.json /kortix/config/app.json\n' +
+      'ENV KORTIX_APP_SPEC_PATH=/kortix/config/app.json\n' +
+      'EXPOSE 7331 8080\n' +
+      'ENTRYPOINT ["/kortix/bin/kortix-appd"]\n';
+    await writeComposedDockerfile(composedPath, composed);
+    console.info(`[apps] ${snapshotName}: App build context staged at ${contextDir}`);
+    return { contextDir, composedPath, dockerfileName };
+  } catch (error) {
+    await rm(contextDir, { recursive: true, force: true }).catch(() => {});
+    throw error;
+  }
+}
+
+/**
+ * Materialize the managed `kortix-*` skills into a build-context directory —
+ * the same extraction `packages/starter/scripts/write-managed-skills.ts` runs
+ * for the standard sandbox image. The daemon overlays `/opt/kortix/managed-skills`
+ * into the harness skills dir at boot (`ensureInjectedManagedSkills`), so this
+ * is what teaches the meta coordinator the `kortix` CLI.
+ */
+async function stageManagedSkills(outDir: string): Promise<void> {
+  // Same file set the API serves at GET /v1/runtime-assets/managed-skills, from
+  // one definition — a sandbox that reconciles at runtime must land on the exact
+  // bytes this bake would have produced, not a near-miss.
+  for (const file of managedSkillOverlayFiles()) {
+    const dest = join(outDir, file.path);
+    await mkdir(dirname(dest), { recursive: true });
+    await writeFileFs(dest, file.content);
+  }
+}
+
+export async function stageMetaBuildContext(): Promise<StagedContext> {
+  const agentPath = agentBinPath();
+  const cliPath = cliBinPath();
+  const entrypointPath = entrypointSrcPath();
+  await assertExists(agentPath, 'KORTIX_SNAPSHOT_AGENT_BIN_PATH');
+  await assertExists(cliPath, 'KORTIX_SNAPSHOT_CLI_BIN_PATH');
+  await assertExists(entrypointPath, 'KORTIX_SNAPSHOT_ENTRYPOINT_PATH');
+
+  const contextDir = await mkdtemp(join(tmpdir(), 'kortix-meta-snap-'));
+  await gzipFile(agentPath, join(contextDir, 'kortix-agent.gz'));
+  await gzipFile(cliPath, join(contextDir, 'kortix.gz'));
+  await copyFile(entrypointPath, join(contextDir, 'kortix-entrypoint'));
+  await stageManagedSkills(join(contextDir, 'managed-skills'));
+  await writeFileFs(
+    join(contextDir, 'kortix-llm-catalog.json'),
+    JSON.stringify({ models: gatewayModelCatalog('shared-seed') }),
+  );
+
+  const dockerfileName = 'Dockerfile';
+  const composedPath = join(contextDir, dockerfileName);
+  await writeFileFs(
+    composedPath,
+    buildMetaSandboxDockerfile({
+      agentBinaryPath: 'kortix-agent.gz',
+      cliBinaryPath: 'kortix.gz',
+      entrypointScriptPath: 'kortix-entrypoint',
+      catalogPath: 'kortix-llm-catalog.json',
+      managedSkillsPath: 'managed-skills',
+    }),
+  );
+  return { contextDir, composedPath, dockerfileName };
+}
+
+/**
  * Per-project COLD warm: bake the project's repo checkout into /workspace at
- * build time. Passed straight through to the Dockerfile layer, which clones the
- * repo (build-time creds, one RUN) and skips the /workspace wipe. Omit for the
- * shared, project-independent default image.
+ * build time. The credential-bearing clone happens API-side in Suna
+ * (`stageWarmRepoCheckout`), NOT inside the built image: the resulting build
+ * context carries only a sanitized, origin-reset, credential-scrubbed checkout
+ * that the Dockerfile `COPY`s. Omit for the shared, project-independent default
+ * image.
+ *
+ * SECURITY (PHASE 1): `cloneHeaders` NEVER leaves this process. It is used to
+ * clone (git config passed via ENV, never argv, never persisted to
+ * `.git/config`), and the staged bytes are verified free of auth material
+ * before they enter the build context — so no git credential reaches the
+ * uploaded context, the OCI image history, the provider build logs, or an
+ * abandoned retry object.
  */
 export interface WarmRepoContext {
   /** Upstream URL to clone from at BUILD time (real git host or proxy). */
   cloneUrl: string;
-  /** Auth headers for the build-time clone (git -c http.extraHeader). */
+  /** Auth headers for the API-side clone. Never embedded in any artifact. */
   cloneHeaders: Record<string, string>;
-  /** Branch to check out (default-branch tip). */
+  /** Branch the tip belongs to — the fallback fetch ref for git hosts that
+   *  reject fetch-by-sha, and validated as a defense-in-depth safe ref name. */
   branch: string;
+  /**
+   * The EXACT commit sha the checkout is pinned to. The warm image name is keyed
+   * on this sha (`perProjectWarmImageName(..., tip, ...)`), so the staged checkout
+   * MUST be this exact commit — cloning the branch tip (which can advance after
+   * the sha was resolved) would bake SHA_Y content under a SHA_X name, poisoning
+   * the content-addressed image. A full 40-char hex sha.
+   */
+  tip: string;
   /** Proxy origin the baked checkout's `origin` resets to (runtime re-auth). */
   originUrl: string;
+}
+
+/**
+ * ─── CREDENTIAL ROTATION REQUIREMENT (PHASE 1 finding) ───────────────────────
+ * Builds produced BEFORE this fix embedded the git-host clone credential
+ * (`Authorization: <PAT/installation token>`) inside a Dockerfile `RUN`, which
+ * shipped into: (1) the tar build context uploaded to object storage, (2) the
+ * built image's OCI layer history, (3) the provider build logs, and (4) any
+ * abandoned retry/context objects. Deleting the temp clone dir did NOT remove
+ * any of those copies. Therefore, on rollout, ANY git credential that could
+ * have been used for a per-project warm bake before this change must be treated
+ * as POTENTIALLY EXPOSED and ROTATED:
+ *   • GitHub App INSTALLATION tokens are short-lived (~1h) → low residual risk,
+ *     but any long-lived fallback PAT must be rotated.
+ *   • Any project-level BYO git PAT/credential stored + used for a warm bake
+ *     must be rotated and the old value revoked at the git host.
+ *   • Object-storage build-context objects created by prior builds should be
+ *     lifecycle-expired/deleted (see the tracking + cleanup follow-up).
+ * After this change no NEW build can leak a credential (proven by
+ * warm-repo-credential.test.ts + the shared layer-render tests), so rotation is
+ * a one-time remediation of the pre-fix window, not an ongoing requirement.
+ */
+
+/** Basename (in the build context) of the staged credential-free checkout. */
+export const WARM_REPO_STAGED_DIR = 'kortix-warm-repo';
+/**
+ * Visible tar archive of `.git`.
+ *
+ * Daytona uploads each Dockerfile COPY source as a separate context object.
+ * A directory COPY into `/workspace/.git` can complete without restoring a
+ * usable repository. A single visible file crosses that boundary unchanged.
+ */
+export const WARM_REPO_STAGED_GIT_ARCHIVE = 'kortix-warm-repo-git.tar';
+
+/**
+ * A conservative safe-subset of git branch/ref names: letters, digits, and
+ * `._/-`, no leading `-` or `/`, no `..`, bounded length. This rejects every
+ * shell metacharacter (space, `;` `"` `` ` `` `$` `|` `&` `\n` …) so a hostile
+ * `default_branch` can never inject a build-time or clone-time shell command —
+ * defense-in-depth on top of the render's shell-quoting + the clone's argv
+ * (non-shell) invocation. Deliberately stricter than `git check-ref-format`
+ * (which permits some of these) because a warm-repo branch is a plain tip name.
+ */
+export function isSafeGitBranchName(branch: string): boolean {
+  if (!branch || branch.length > 255) return false;
+  if (branch.startsWith('-') || branch.startsWith('/') || branch.endsWith('/')) return false;
+  if (branch.includes('..') || branch.includes('//')) return false;
+  return /^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(branch);
+}
+
+/**
+ * A full 40-char lowercase hex commit sha — the ONLY shape the warm-repo pin
+ * accepts. `resolveCommitSha` already guarantees this upstream; re-checking here
+ * is defense-in-depth so a malformed/attacker-influenced value can never reach a
+ * `git fetch <sha>` argument (which, while argv not shell, must still be a plain
+ * object name — never a ref-spec, option, or path).
+ */
+export function isSafeGitSha(sha: string): boolean {
+  return /^[0-9a-f]{40}$/.test(sha);
+}
+
+/**
+ * Assert a warm-repo `cloneUrl` is safe to hand to `git clone`. Git's remote
+ * layer treats a cloneUrl like `ext::sh -c '…'`, `file::…`, or `fd::…` as a
+ * REMOTE-HELPER invocation, and a `scheme://user:token@host` URL leaks the
+ * credential into FETCH_HEAD / reflog — so an attacker-influenced cloneUrl is a
+ * build-time RCE / local-file-exfiltration / secret-leak surface. We pin the
+ * transport to plain `https://` with NO userinfo. `file://` is permitted ONLY
+ * under the test harness (NODE_ENV==='test') for the no-network fixture clones —
+ * production warm cloneUrls are always the project's https upstream.
+ *
+ * Throws a CREDENTIAL-FREE error (scheme only, never the full URL/query) so a
+ * rejection never logs a token.
+ */
+export function assertSafeCloneUrl(cloneUrl: string): void {
+  let u: URL;
+  try {
+    u = new URL(cloneUrl);
+  } catch {
+    throw new Error('refusing to clone warm repo: cloneUrl is not a valid absolute URL');
+  }
+  const testFileClone =
+    process.env.NODE_ENV === 'test' && u.protocol === 'file:' && cloneUrl.startsWith('file://');
+  if (u.protocol !== 'https:' && !testFileClone) {
+    throw new Error(
+      `refusing to clone warm repo: cloneUrl must use https (rejected scheme "${u.protocol}") — ` +
+        `git remote-helper transports (ext::/file::/fd::) are not allowed`,
+    );
+  }
+  if (u.username || u.password) {
+    throw new Error('refusing to clone warm repo: cloneUrl must not embed userinfo (user:pass@host)');
+  }
+}
+
+/**
+ * Per-clone protocol allow-list, passed as `git -c` config so it is scoped to
+ * THIS clone (not global). Denies every transport by default, then re-enables
+ * ONLY the one scheme the (already-validated) cloneUrl uses — belt-and-braces
+ * with GIT_ALLOW_PROTOCOL so an unexpected redirect/submodule can't switch to a
+ * remote-helper protocol mid-clone. Exported for the regression test that
+ * asserts the pin is present in the clone invocation.
+ */
+export function warmCloneProtocolPinArgs(cloneUrl: string): string[] {
+  const scheme = new URL(cloneUrl).protocol.replace(/:$/, '');
+  return ['-c', 'protocol.allow=never', '-c', `protocol.${scheme}.allow=always`];
+}
+
+/**
+ * Clone `warmRepo` API-side into the build context as a SANITIZED,
+ * credential-free checkout the Dockerfile can `COPY` into /workspace. This is
+ * the PHASE 1 fix for the credential leak: the git auth header is used ONLY
+ * here (on the Suna host), passed to git via config-in-ENV so it never lands in
+ * process argv or `.git/config`, and the resulting bytes are verified to
+ * contain no auth material before they enter the (uploadable) build context.
+ *
+ *   1. init an empty repo and fetch the EXACT pinned sha (`warmRepo.tip`) with the
+ *      credential (env config, depth 1) — NEVER a branch clone, whose tip could
+ *      have advanced past the sha the image name is keyed on (SHA_X name ⇒ SHA_Y
+ *      content is a poisoned/wasted warm image). Falls back to a shallow branch
+ *      fetch + `checkout <tip>` for hosts that reject fetch-by-sha, and FAILS the
+ *      bake if the sha is gone (force-pushed away) rather than ship other content,
+ *   2. reset `origin` to the runtime proxy so the daemon re-auths per session,
+ *   3. drop any credential helper / http.extraHeader that could have persisted,
+ *   4. ASSERT the baked HEAD equals the pinned tip (belt-and-braces),
+ *   5. ASSERT `.git/config` carries no `authorization`/`http.extraheader`/
+ *      embedded userinfo before returning.
+ *
+ * Returns the staged dir basename + the exact baked HEAD sha (for the caller's
+ * verification / logging). Throws if the checkout still contains credentials —
+ * failing the build closed is correct; shipping a leaked token is not.
+ */
+export async function stageWarmRepoCheckout(
+  contextDir: string,
+  warmRepo: WarmRepoContext,
+): Promise<{ stagedPath: string; stagedGitPath: string; headSha: string }> {
+  if (!isSafeGitBranchName(warmRepo.branch)) {
+    throw new Error(
+      `refusing to bake per-project warm image: unsafe default branch name ${JSON.stringify(warmRepo.branch)}`,
+    );
+  }
+  if (!isSafeGitSha(warmRepo.tip)) {
+    throw new Error(
+      `refusing to bake per-project warm image: pinned tip ${JSON.stringify(warmRepo.tip)} is not a full commit sha`,
+    );
+  }
+  // Pin the clone transport BEFORE any git runs — reject remote-helper / userinfo
+  // cloneUrls (build-time RCE / secret-leak surface) up front.
+  assertSafeCloneUrl(warmRepo.cloneUrl);
+  const dest = join(contextDir, WARM_REPO_STAGED_DIR);
+  await rm(dest, { recursive: true, force: true });
+  await mkdir(dest, { recursive: true });
+
+  // git config via ENV (GIT_CONFIG_COUNT/KEY_i/VALUE_i) — NOT argv, NOT
+  // persisted. http.extraHeader is multi-valued, so repeated keys accumulate.
+  const headers = Object.entries(warmRepo.cloneHeaders ?? {});
+  const headerEnv: Record<string, string> = { GIT_CONFIG_COUNT: String(headers.length) };
+  headers.forEach(([k, v], i) => {
+    headerEnv[`GIT_CONFIG_KEY_${i}`] = 'http.extraHeader';
+    headerEnv[`GIT_CONFIG_VALUE_${i}`] = `${k}: ${v}`;
+  });
+  const cloneScheme = new URL(warmRepo.cloneUrl).protocol.replace(/:$/, '');
+  const cloneEnv = {
+    ...process.env,
+    ...headerEnv,
+    GIT_TERMINAL_PROMPT: '0',
+    // Refuse to fall back to any interactive/stored credential helper — the
+    // ENV header is the ONLY credential this clone may use.
+    GIT_CONFIG_NOSYSTEM: '1',
+    // Transport allow-list: only the validated cloneUrl scheme may run (blocks
+    // ext::/file::/fd:: remote helpers even if git is coerced into one).
+    GIT_ALLOW_PROTOCOL: cloneScheme,
+  };
+  const plainEnv = { ...process.env, GIT_TERMINAL_PROMPT: '0' };
+  const g = (args: string[], env: NodeJS.ProcessEnv) =>
+    execFileAsyncBC('git', args, { env, timeout: 300_000, maxBuffer: 64 * 1024 * 1024 });
+
+  // Init an empty repo, then fetch the EXACT pinned sha (credentialed, protocol-
+  // scoped). Cloning `--branch <branch>` would race a moved tip — the cloned HEAD
+  // could advance past the sha the image name is keyed on — so we NEVER clone the
+  // branch; we pin to the sha the cache key demands.
+  await g(['-C', dest, 'init', '-q'], plainEnv);
+  const protocolPin = warmCloneProtocolPinArgs(warmRepo.cloneUrl);
+  try {
+    // PRIMARY: fetch the exact commit. Works on git hosts that allow fetch-by-sha
+    // (GitHub with allowReachableSHA1InWant, the local file transport, …) and is
+    // immune to the branch advancing after the sha was resolved.
+    await g(
+      [...protocolPin, '-C', dest, 'fetch', '--depth', '1', warmRepo.cloneUrl, warmRepo.tip],
+      cloneEnv,
+    );
+    await g(['-C', dest, 'checkout', '-q', 'FETCH_HEAD'], plainEnv);
+  } catch {
+    // FALLBACK for a host that refuses fetch-by-sha (allowReachableSHA1InWant off):
+    // fetch the branch shallow, then check out the exact sha from it. If the sha is
+    // no longer present (force-pushed away), FAIL the bake — the SHA-keyed content
+    // no longer exists, and shipping other content under that name would poison the
+    // content-addressed image.
+    await g(
+      [...protocolPin, '-C', dest, 'fetch', '--depth', '1', warmRepo.cloneUrl, warmRepo.branch],
+      cloneEnv,
+    );
+    try {
+      await g(['-C', dest, 'checkout', '-q', warmRepo.tip], plainEnv);
+    } catch {
+      throw new Error(
+        `refusing to bake per-project warm image: pinned commit ${warmRepo.tip.slice(0, 12)} is not present ` +
+          `on branch ${JSON.stringify(warmRepo.branch)} (force-pushed away?) — the SHA-keyed content no longer exists`,
+      );
+    }
+  }
+  // origin → runtime proxy (build credential is never persisted at runtime).
+  // `git init` created no `origin`, so add it (fall back to set-url if present).
+  await g(['-C', dest, 'remote', 'add', 'origin', warmRepo.originUrl], plainEnv).catch(() =>
+    g(['-C', dest, 'remote', 'set-url', 'origin', warmRepo.originUrl], plainEnv),
+  );
+  // Belt + braces: drop anything credential-shaped that could have persisted.
+  await g(['-C', dest, 'config', '--local', '--unset-all', 'http.extraHeader'], plainEnv).catch(() => {});
+  await g(['-C', dest, 'config', '--local', '--unset-all', 'http.extraheader'], plainEnv).catch(() => {});
+  await g(['-C', dest, 'config', '--local', '--unset-all', 'credential.helper'], plainEnv).catch(() => {});
+
+  const { stdout: headOut } = await g(['-C', dest, 'rev-parse', 'HEAD'], plainEnv);
+  const headSha = headOut.trim();
+
+  // Belt-and-braces: the pinned checkout HEAD MUST equal the requested tip. Once
+  // the checkout is pinned to the sha this can never fire — it is the last guard
+  // ensuring a SHA_X-named warm image can never carry non-SHA_X content.
+  if (headSha !== warmRepo.tip) {
+    throw new Error(
+      `warm-repo checkout HEAD ${headSha} does not match the pinned tip ${warmRepo.tip} — ` +
+        `refusing to bake mismatched content under a SHA-keyed image name`,
+    );
+  }
+
+  await assertCheckoutHasNoCredentials(dest);
+  const stagedGit = join(contextDir, WARM_REPO_STAGED_GIT_ARCHIVE);
+  await rm(stagedGit, { force: true });
+  // Apple-metadata-free: this archive is extracted INSIDE the image, so leaked
+  // xattrs land as `._*` sidecars in `.git` (`.git/objects/pack/._pack-*.idx`
+  // makes git log `index file … is too small`). See staging-tar.ts.
+  await execFileAsyncBC('tar', stagingTarArgs(['-cf', stagedGit], ['-C', dest, '.git']), {
+    env: stagingTarEnv(plainEnv),
+    timeout: 300_000,
+    maxBuffer: 64 * 1024 * 1024,
+  });
+  return {
+    stagedPath: WARM_REPO_STAGED_DIR,
+    stagedGitPath: WARM_REPO_STAGED_GIT_ARCHIVE,
+    headSha,
+  };
+}
+
+/**
+ * Fail-closed guard: assert a staged warm-repo checkout carries no auth
+ * material in its `.git/config` (no `authorization` header, no persisted
+ * `http.extraheader`, no `credential.helper`, no `user:token@host` userinfo in
+ * any remote URL). Exported for the regression test that renders with a
+ * sentinel token and proves it never reaches the staged bytes.
+ */
+export async function assertCheckoutHasNoCredentials(checkoutDir: string): Promise<void> {
+  const { readFile } = await import('node:fs/promises');
+  const configPath = join(checkoutDir, '.git', 'config');
+  let config = '';
+  try {
+    config = await readFile(configPath, 'utf8');
+  } catch (err) {
+    // A genuinely-absent .git/config (ENOENT) is the ONLY safe pass: there is
+    // nothing credential-bearing to leak. ANY other read failure (EACCES from a
+    // hostile mode, EISDIR from a config that's actually a directory, ELOOP from
+    // a symlink loop, …) means we could NOT verify the checkout is clean — so we
+    // must fail the build CLOSED rather than silently treat "couldn't read" as
+    // "no credential". Swallowing every error here is how a leaked token ships.
+    if ((err as NodeJS.ErrnoException)?.code === 'ENOENT') return;
+    throw err;
+  }
+  const lower = config.toLowerCase();
+  const offenders: string[] = [];
+  if (lower.includes('authorization')) offenders.push('authorization header');
+  if (lower.includes('extraheader')) offenders.push('http.extraheader');
+  if (lower.includes('credential.helper') || lower.includes('[credential')) offenders.push('credential helper');
+  // A remote URL of the form scheme://user:token@host embeds a secret.
+  if (/url\s*=\s*[a-z]+:\/\/[^/\s]*:[^/@\s]+@/i.test(config)) offenders.push('embedded userinfo in remote url');
+  if (offenders.length > 0) {
+    throw new Error(
+      `warm-repo checkout at ${checkoutDir} still contains credential material ` +
+      `(${offenders.join(', ')}) — refusing to bake it into a build context`,
+    );
+  }
 }
 
 /**
@@ -106,15 +545,18 @@ export async function stageBuildContext(
 ): Promise<StagedContext> {
   const AGENT_BIN_PATH = agentBinPath();
   const CLI_BIN_PATH = cliBinPath();
+  const CLI_ATTESTATION_PATH = cliAttestationPath();
   const ENTRYPOINT_PATH = entrypointSrcPath();
   const SLACK_CLI_SRC_PATH = slackCliSrcPath();
-  const EXECUTOR_SDK_SRC_PATH = executorSdkSrcPath();
   const OPENCODE_CONFIG_SRC_PATH = opencodeConfigSrcPath();
+  const OPENCODE_WARMUP_SRC_PATH = opencodeWarmupSrcPath();
+  const MACHINE_DOC_SRC_PATH = machineDocSrcPath();
   await assertExists(AGENT_BIN_PATH, 'KORTIX_SNAPSHOT_AGENT_BIN_PATH');
   await assertExists(CLI_BIN_PATH, 'KORTIX_SNAPSHOT_CLI_BIN_PATH');
   await assertExists(ENTRYPOINT_PATH, 'KORTIX_SNAPSHOT_ENTRYPOINT_PATH');
   await assertExistsDir(SLACK_CLI_SRC_PATH, 'KORTIX_SNAPSHOT_SLACK_CLI_PATH');
-  await assertExistsDir(EXECUTOR_SDK_SRC_PATH, 'KORTIX_SNAPSHOT_EXECUTOR_SDK_PATH');
+  await assertExists(OPENCODE_WARMUP_SRC_PATH, 'KORTIX_SNAPSHOT_OPENCODE_WARMUP_PATH');
+  await assertExists(MACHINE_DOC_SRC_PATH, 'KORTIX_SNAPSHOT_MACHINE_DOC_PATH');
   // Fingerprint/artifact skew guard: the snapshot identity hashes the agent
   // SOURCE (templates.ts AGENT_SRC_DIR), but the image bakes this prebuilt
   // dist binary — an edited src/ with a stale dist/ ships old code under a
@@ -134,22 +576,23 @@ export async function stageBuildContext(
       );
     }
   }
+  // The snapshot identity hashes CLI SOURCE, but the image bakes this compiled
+  // binary. Refuse source/binary skew before the provider sees a context. A
+  // local API with edited CLI source and stale dist previously poisoned the
+  // shared content-addressed image under the NEW source hash.
+  await assertCliArtifactAttested({
+    cliRoot: resolve(REPO_ROOT, 'apps/cli'),
+    binaryPath: CLI_BIN_PATH,
+    attestationPath: CLI_ATTESTATION_PATH,
+  });
 
   const contextDir = await mkdtemp(join(tmpdir(), 'kortix-snap-'));
   await gzipFile(AGENT_BIN_PATH, join(contextDir, 'kortix-agent.gz'));
   await gzipFile(CLI_BIN_PATH, join(contextDir, 'kortix.gz'));
   await copyFile(ENTRYPOINT_PATH, join(contextDir, 'kortix-entrypoint'));
+  await copyFile(OPENCODE_WARMUP_SRC_PATH, join(contextDir, 'kortix-opencode-warmup'));
+  await copyFile(MACHINE_DOC_SRC_PATH, join(contextDir, 'MACHINE.md'));
   await cp(SLACK_CLI_SRC_PATH, join(contextDir, 'kortix-slack-cli'), { recursive: true });
-  // This package is copied as source and imported directly by the in-sandbox
-  // channel CLIs. Its local node_modules is neither used nor portable: pnpm
-  // represents entries as links into the checkout-wide store, and E2B hashes
-  // every context entry before upload, so copying those links produces an
-  // immediate ENOENT outside the original checkout. Keep the provider context
-  // self-contained by staging source/package metadata only.
-  await cp(EXECUTOR_SDK_SRC_PATH, join(contextDir, 'kortix-executor-sdk'), {
-    recursive: true,
-    filter: (source) => basename(source) !== 'node_modules',
-  });
   // Stage the starter opencode config for the build-time instance warm-up.
   // Best effort: if it's missing, skip the warm-up (the build still succeeds and
   // sessions just pay the first-instance cost at runtime as before).
@@ -159,6 +602,15 @@ export async function stageBuildContext(
       recursive: true,
     });
     opencodeConfigPath = 'kortix-opencode-config';
+  }
+
+  // PHASE 1: for a per-project COLD warm, clone the repo API-side into a
+  // SANITIZED, credential-free checkout the Dockerfile only COPYs. The git auth
+  // header is used here (Suna host) and NEVER embedded in the built image.
+  let warmRepoBake: { stagedPath: string; stagedGitPath: string; branch: string } | undefined;
+  if (warmRepo) {
+    const { stagedPath, stagedGitPath } = await stageWarmRepoCheckout(contextDir, warmRepo);
+    warmRepoBake = { stagedPath, stagedGitPath, branch: warmRepo.branch };
   }
 
   // Bake the FULL gateway model catalog into the image. The no-restart warm seed
@@ -189,24 +641,98 @@ export async function stageBuildContext(
     agentBinaryPath: 'kortix-agent.gz',
     cliBinaryPath: 'kortix.gz',
     entrypointScriptPath: 'kortix-entrypoint',
+    machineDocPath: 'MACHINE.md',
     slackCliPath: 'kortix-slack-cli',
-    executorSdkPath: 'kortix-executor-sdk',
     opencodeConfigPath,
+    opencodeWarmupScriptPath: 'kortix-opencode-warmup',
     catalogPath: 'kortix-llm-catalog.json',
     isSharedDefault,
-    warmRepo,
+    warmRepo: warmRepoBake,
   });
 
-  // ── Buildah-portability guard ──────────────────────────────────────────────
-  // The SAME composed context ships to BOTH providers. Daytona builds with
-  // BuildKit (supports `# syntax=docker/dockerfile:1.7` + RUN heredocs); Platinum
-  // builds with podman/buildah's classic imagebuilder, which supports NEITHER — it
-  // parses a heredoc body's first line (e.g. `import importlib`) as a Dockerfile
-  // instruction and aborts EVERY build ("Unknown instruction: IMPORT"), failing
-  // all Platinum sessions. This exact regression (a `<<'PY'` python verify added
-  // 2026-06-27) took dev down for hours because Daytona silently tolerated it.
-  // Reject it at the SOURCE with a clear error instead of an opaque remote build
-  // failure minutes later — and keep the Dockerfile portable to both builders.
+  await guardBuildahPortable(composed);
+  await writeComposedDockerfile(composedPath, composed);
+  // Fail-loud completeness guard: a context missing scaffold.git / the agent
+  // binary / the composed Dockerfile reaches the provider as a confusing remote
+  // "Path does not exist", and the auto-build can't tell it's a staging miss to
+  // recover from. Assert at the source so a miss is caught here AND is retryable
+  // (the daytona adapter re-stages on "staging incomplete").
+  await assertContextComplete(contextDir, dockerfileName, warmRepoBake?.stagedPath);
+  console.info(`[snapshots] ${snapshotName}: build context staged at ${contextDir}`);
+  return { contextDir, composedPath, dockerfileName };
+}
+
+/**
+ * Stage a MINIMAL build context for the per-project warm FAST PATH: a
+ * Dockerfile that `FROM`s an already-built runtime image (the shared default's
+ * provider-reported image ref) and only adds the warm-repo clone + opencode
+ * instance re-warm on top — see `buildPerProjectWarmFromBaseDockerfile`
+ * (dockerfile-layer.ts) for why this is the actual fix for the Chromium
+ * re-download bug: nothing here re-installs the toolchain, so there's no
+ * Chromium download to lose a cache race on.
+ *
+ * Unlike `stageBuildContext`, this does NOT stage the agent/CLI binaries,
+ * entrypoint, slack-cli, catalog, or scaffold.git — none of the
+ * artifact tail is re-COPY'd; it's inherited from `baseImageRef`. Only the
+ * starter opencode config (if present) is staged, for the instance re-warm.
+ *
+ * The caller (daytona.ts) is responsible for verifying `baseImageRef` points
+ * at an `active` snapshot before calling this — a `FROM` of a missing or
+ * still-building image fails the build immediately.
+ */
+export async function stageWarmFromBaseContext(
+  snapshotName: string,
+  baseImageRef: string,
+  warmRepo: WarmRepoContext,
+): Promise<StagedContext> {
+  const OPENCODE_CONFIG_SRC_PATH = opencodeConfigSrcPath();
+  const OPENCODE_WARMUP_SRC_PATH = opencodeWarmupSrcPath();
+  await assertExists(OPENCODE_WARMUP_SRC_PATH, 'KORTIX_SNAPSHOT_OPENCODE_WARMUP_PATH');
+  const contextDir = await mkdtemp(join(tmpdir(), 'kortix-snap-warm-'));
+  await copyFile(OPENCODE_WARMUP_SRC_PATH, join(contextDir, 'kortix-opencode-warmup'));
+  let opencodeConfigPath: string | undefined;
+  if (await isDir(OPENCODE_CONFIG_SRC_PATH)) {
+    await cp(OPENCODE_CONFIG_SRC_PATH, join(contextDir, 'kortix-opencode-config'), {
+      recursive: true,
+    });
+    opencodeConfigPath = 'kortix-opencode-config';
+  }
+
+  // PHASE 1: sanitized, credential-free repo checkout — cloned API-side, only
+  // COPY'd by the rendered Dockerfile (no git auth header in the image).
+  const { stagedPath, stagedGitPath } = await stageWarmRepoCheckout(contextDir, warmRepo);
+
+  const dockerfileName = '.kortix-snapshot.Dockerfile';
+  const composedPath = join(contextDir, dockerfileName);
+  const composed = buildPerProjectWarmFromBaseDockerfile({
+    baseImageRef,
+    warmRepo: { stagedPath, stagedGitPath, branch: warmRepo.branch },
+    opencodeConfigPath,
+    opencodeWarmupScriptPath: 'kortix-opencode-warmup',
+  });
+
+  await guardBuildahPortable(composed);
+  await writeComposedDockerfile(composedPath, composed);
+  try {
+    await stat(composedPath);
+  } catch {
+    throw new Error(`build context staging incomplete: ${dockerfileName} missing in ${contextDir}`);
+  }
+  console.info(`[snapshots] ${snapshotName}: FROM-base warm context staged at ${contextDir} (base=${baseImageRef})`);
+  return { contextDir, composedPath, dockerfileName };
+}
+
+// ── Buildah-portability guard ──────────────────────────────────────────────
+// The SAME composed context ships to BOTH providers. Daytona builds with
+// BuildKit (supports `# syntax=docker/dockerfile:1.7` + RUN heredocs); Platinum
+// builds with podman/buildah's classic imagebuilder, which supports NEITHER — it
+// parses a heredoc body's first line (e.g. `import importlib`) as a Dockerfile
+// instruction and aborts EVERY build ("Unknown instruction: IMPORT"), failing
+// all Platinum sessions. This exact regression (a `<<'PY'` python verify added
+// 2026-06-27) took dev down for hours because Daytona silently tolerated it.
+// Reject it at the SOURCE with a clear error instead of an opaque remote build
+// failure minutes later — and keep the Dockerfile portable to both builders.
+async function guardBuildahPortable(composed: string): Promise<void> {
   const heredocLine = composed
     .split('\n')
     .find((l) => !/^\s*#/.test(l) && /<<-?['"]?[A-Za-z_]\w*['"]?\s*\\?\s*$/.test(l));
@@ -218,21 +744,15 @@ export async function stageBuildContext(
         `directives work on Daytona but silently break every Platinum template build.`,
     );
   }
+}
 
+async function writeComposedDockerfile(composedPath: string, composed: string): Promise<void> {
   if (typeof (globalThis as any).Bun?.write === 'function') {
     await (globalThis as any).Bun.write(composedPath, composed);
   } else {
     const fs = await import('node:fs/promises');
     await fs.writeFile(composedPath, composed);
   }
-  // Fail-loud completeness guard: a context missing scaffold.git / the agent
-  // binary / the composed Dockerfile reaches the provider as a confusing remote
-  // "Path does not exist", and the auto-build can't tell it's a staging miss to
-  // recover from. Assert at the source so a miss is caught here AND is retryable
-  // (the daytona adapter re-stages on "staging incomplete").
-  await assertContextComplete(contextDir, dockerfileName);
-  console.info(`[snapshots] ${snapshotName}: build context staged at ${contextDir}`);
-  return { contextDir, composedPath, dockerfileName };
 }
 
 /**
@@ -240,8 +760,33 @@ export async function stageBuildContext(
  * Dockerfile COPYs, so a staging miss fails HERE (clear + retryable) instead of
  * as an opaque provider "Path does not exist" mid-build. Cheap stat checks.
  */
-async function assertContextComplete(contextDir: string, dockerfileName: string): Promise<void> {
-  for (const rel of ['scaffold.git', 'kortix-agent.gz', dockerfileName]) {
+async function assertContextComplete(
+  contextDir: string,
+  dockerfileName: string,
+  warmRepoStagedPath?: string,
+): Promise<void> {
+  const required = [
+    'scaffold.git',
+    'kortix-agent.gz',
+    'kortix-opencode-warmup',
+    'MACHINE.md',
+    // The baked model catalog is what keeps `opencode serve` off the network at
+    // boot: the daemon reads /opt/kortix/llm-catalog.json instead of fetching
+    // the gateway's ~400KB /models. If it silently fails to stage, the image
+    // still builds and every session on it pays a synchronous cross-region
+    // fetch that gates opencode's port bind. That is invisible in build logs and
+    // shows up only as "boot got slower", so assert it here.
+    'kortix-llm-catalog.json',
+    dockerfileName,
+  ];
+  // A per-project warm bake COPYs the staged checkout — verify it (and its
+  // baked .git) actually landed, so a staging miss fails HERE rather than as an
+  // opaque remote "Path does not exist" mid-build.
+  if (warmRepoStagedPath) {
+    required.push(join(warmRepoStagedPath, '.git'));
+    required.push(WARM_REPO_STAGED_GIT_ARCHIVE);
+  }
+  for (const rel of required) {
     try {
       await stat(join(contextDir, rel));
     } catch {
@@ -348,6 +893,8 @@ async function stageScaffoldRepo(contextDir: string): Promise<void> {
   await g(['config', 'user.email', 'noreply@kortix.ai'], work);
   await g(['add', '-A'], work);
   await g(['commit', '-m', 'chore: scaffold Kortix project'], work);
-  await g(['clone', '--bare', '-q', work, join(contextDir, 'scaffold.git')], contextDir);
+  const scaffoldGit = join(contextDir, 'scaffold.git');
+  await rename(join(work, '.git'), scaffoldGit);
+  await g(['--git-dir', scaffoldGit, 'config', 'core.bare', 'true'], contextDir);
   await rm(work, { recursive: true, force: true });
 }

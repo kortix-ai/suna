@@ -1,15 +1,13 @@
-"use client";
+'use client';
 
-import * as DialogPrimitive from "@radix-ui/react-dialog";
-import * as VisuallyHidden from "@radix-ui/react-visually-hidden";
-import { Minus, Plus } from "lucide-react";
-import Image from "next/image";
-import * as React from "react";
+import * as DialogPrimitive from '@radix-ui/react-dialog';
+import * as VisuallyHidden from '@radix-ui/react-visually-hidden';
+import Image from 'next/image';
+import * as React from 'react';
 
-import { Icon } from "@/features/icon/icon";
-import { cn } from "@/lib/utils";
-import { Button } from "./button";
-import { ButtonGroup } from "./button-group";
+import { Close } from '@/features/icon/icons/close';
+import { cn } from '@/lib/utils';
+import { Button } from './button';
 
 const PreviewImage = DialogPrimitive.Root;
 
@@ -25,10 +23,7 @@ const PreviewImageOverlay = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <DialogPrimitive.Overlay
     ref={ref}
-    className={cn(
-      "bg-primary/[0.99] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 dark:bg-background/[0.99] fixed inset-0 z-50",
-      className,
-    )}
+    className={cn('fixed inset-0 z-50 bg-black/40', className)}
     {...props}
   />
 ));
@@ -52,7 +47,7 @@ const MIN_ZOOM = 0.7;
 const DEFAULT_ZOOM = 1;
 const MAX_ZOOM = 2;
 const ZOOM_STEP = 0.1;
-const DEFAULT_ORIGIN = "50% 50%";
+const DEFAULT_ORIGIN = '50% 50%';
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
@@ -122,7 +117,7 @@ const PreviewImageContent = React.forwardRef<
       <DialogPrimitive.Content
         ref={ref}
         className={cn(
-          "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 fixed top-[50%] left-[50%] z-[99999] grid h-full w-full -translate-x-1/2 -translate-y-1/2 items-center justify-center gap-4 shadow-lg duration-200 sm:rounded-lg",
+          'fixed top-[50%] left-[50%] z-[99999] grid h-full w-full -translate-x-1/2 -translate-y-1/2 items-center justify-center gap-4 shadow-lg duration-200 sm:rounded-lg',
           className,
         )}
         {...props}
@@ -132,39 +127,9 @@ const PreviewImageContent = React.forwardRef<
         </VisuallyHidden.Root>
 
         <div
-          className="absolute top-2 right-2 z-[60] flex gap-1"
+          className="absolute top-3 right-3 z-[60] flex gap-1"
           onClick={(event) => event.stopPropagation()}
         >
-          <ButtonGroup>
-            <Button
-              size="icon"
-              type="button"
-              onClick={zoomOut}
-              className="text-background disabled:opacity-100"
-              aria-label="Zoom out image"
-              disabled={zoomLevel <= MIN_ZOOM}
-            >
-              <Minus className="size-4" />
-            </Button>
-            <Button
-              size="magic-sm"
-              type="button"
-              onClick={toggleZoom}
-              className="text-background h-8 font-mono text-sm"
-            >
-              {zoomPercent}%
-            </Button>
-            <Button
-              size="icon"
-              type="button"
-              className="text-background disabled:opacity-100"
-              onClick={zoomIn}
-              aria-label="Zoom in image"
-              disabled={zoomLevel >= MAX_ZOOM}
-            >
-              <Plus className="size-4" />
-            </Button>
-          </ButtonGroup>
           <PreviewImageClose asChild>
             <Button
               size="icon"
@@ -172,7 +137,7 @@ const PreviewImageContent = React.forwardRef<
               aria-label="Close image preview"
               className="text-background"
             >
-              <Icon.Close className="size-4" />
+              <Close className="size-4" />
             </Button>
           </PreviewImageClose>
         </div>
@@ -183,17 +148,17 @@ const PreviewImageContent = React.forwardRef<
           onClick={handleImageClick}
         >
           <div
-            className={cn(zoomLevel > DEFAULT_ZOOM ? "cursor-zoom-out" : "cursor-zoom-in")}
+            className={cn(zoomLevel > DEFAULT_ZOOM ? 'cursor-zoom-out' : 'cursor-zoom-in')}
             style={{
               transform: `scale(${zoomLevel})`,
               transformOrigin,
-              transition: "transform 200ms",
+              transition: 'transform 200ms',
             }}
           >
             {fileContent ? (
               <Image
                 src={fileContent}
-                alt={fileName || "Image preview"}
+                alt={fileName || 'Image preview'}
                 width={1920}
                 height={1080}
                 unoptimized
@@ -209,17 +174,17 @@ const PreviewImageContent = React.forwardRef<
 PreviewImageContent.displayName = DialogPrimitive.Content.displayName;
 
 const PreviewImageHeader = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
-  <div className={cn("flex flex-col space-y-1.5 text-center sm:text-left", className)} {...props} />
+  <div className={cn('flex flex-col space-y-1.5 text-center sm:text-left', className)} {...props} />
 );
-PreviewImageHeader.displayName = "PreviewImageHeader";
+PreviewImageHeader.displayName = 'PreviewImageHeader';
 
 const PreviewImageFooter = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
   <div
-    className={cn("flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2", className)}
+    className={cn('flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2', className)}
     {...props}
   />
 );
-PreviewImageFooter.displayName = "PreviewImageFooter";
+PreviewImageFooter.displayName = 'PreviewImageFooter';
 
 const PreviewImageTitle = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Title>,
@@ -227,7 +192,7 @@ const PreviewImageTitle = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <DialogPrimitive.Title
     ref={ref}
-    className={cn("text-lg leading-none font-semibold tracking-tight", className)}
+    className={cn('text-lg leading-none font-semibold tracking-tight', className)}
     {...props}
   />
 ));
@@ -239,7 +204,7 @@ const PreviewImageDescription = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <DialogPrimitive.Description
     ref={ref}
-    className={cn("text-muted-foreground text-sm", className)}
+    className={cn('text-muted-foreground text-sm', className)}
     {...props}
   />
 ));

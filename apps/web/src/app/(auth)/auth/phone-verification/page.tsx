@@ -4,12 +4,7 @@ import { signOut } from '@/app/(auth)/auth/actions';
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
 import { errorToast } from '@/components/ui/toast';
-import {
-  AuthMobileLogo,
-  Rise,
-  StepHeader,
-  SuccessStrip,
-} from '@/features/auth/auth-primitives';
+import { AuthMobileLogo, Rise, StepHeader, SuccessStrip } from '@/features/auth/auth-primitives';
 import { OtpVerification } from '@/features/auth/phone-verification/otp-verification';
 import { PhoneInput } from '@/features/auth/phone-verification/phone-input';
 import {
@@ -21,13 +16,15 @@ import {
   useVerifyChallenge,
 } from '@/hooks/auth';
 import { clearUserLocalStorage } from '@/lib/utils/clear-local-storage';
+import { SignOutIcon as LogOut } from '@phosphor-icons/react';
 import { useMutation } from '@tanstack/react-query';
-import { LogOut } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
+import { useAppHome } from '@/lib/onboarding/use-app-home';
 
 export default function PhoneVerificationPage() {
+  const appHome = useAppHome();
   const t = useTranslations('auth.phoneVerification');
   const [step, setStep] = useState<'phone' | 'otp'>('phone');
   const [phoneNumber, setPhoneNumber] = useState('');
@@ -166,7 +163,7 @@ export default function PhoneVerificationPage() {
       // Wait a bit for cache invalidation, then redirect. Track the timer so a
       // pre-redirect unmount doesn't fire router.push/onSuccess after unmount.
       redirectTimerRef.current = setTimeout(() => {
-        router.push('/projects');
+        router.push(appHome);
       }, 2000);
     } catch (err) {
       console.error('❌ OTP verification failed:', err);

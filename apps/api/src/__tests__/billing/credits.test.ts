@@ -53,34 +53,40 @@ beforeEach(() => {
 });
 
 // Import the REAL credits service (runs in isolated process via separate bun test invocation)
-const { calculateTokenCost, getBalance, getCreditSummary, deductCredits, grantCredits, resetExpiringCredits } =
-  await import('../../billing/services/credits');
+const {
+  calculateTokenCost,
+  getBalance,
+  getCreditSummary,
+  deductCredits,
+  grantCredits,
+  resetExpiringCredits,
+} = await import('../../billing/services/credits');
 
 const { TOKEN_PRICE_MULTIPLIER } = await import('../../billing/services/tiers');
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 describe('calculateTokenCost', () => {
-  test('known model (claude-sonnet-4.6): correct cost with 1.2x multiplier', () => {
-    const cost = calculateTokenCost(1_000_000, 1_000_000, 'claude-sonnet-4.6');
-    const expected = (3 + 15) * TOKEN_PRICE_MULTIPLIER;
+  test('known model (glm-5.2): correct cost with 1.2x multiplier', () => {
+    const cost = calculateTokenCost(1_000_000, 1_000_000, 'glm-5.2');
+    const expected = (1 + 4) * TOKEN_PRICE_MULTIPLIER;
     expect(cost).toBeCloseTo(expected, 6);
   });
 
-  test('partial model match (claude-sonnet-4.6-20250101)', () => {
-    const cost = calculateTokenCost(1_000_000, 1_000_000, 'claude-sonnet-4.6-20250101');
-    const expected = (3 + 15) * TOKEN_PRICE_MULTIPLIER;
-    expect(cost).toBeCloseTo(expected, 6);
+  test('rejects a versioned model id without exact provider pricing', () => {
+    expect(() =>
+      calculateTokenCost(1_000_000, 1_000_000, 'claude-sonnet-4.6-20250101'),
+    ).toThrow('No billing price');
   });
 
-  test('unknown model falls back to default pricing', () => {
-    const cost = calculateTokenCost(1_000_000, 1_000_000, 'some-unknown-model');
-    const expected = (2 + 10) * TOKEN_PRICE_MULTIPLIER;
-    expect(cost).toBeCloseTo(expected, 6);
+  test('rejects an unknown model instead of treating it as free', () => {
+    expect(() => calculateTokenCost(1_000_000, 1_000_000, 'some-unknown-model')).toThrow(
+      'No billing price',
+    );
   });
 
   test('0 tokens returns 0 cost', () => {
-    const cost = calculateTokenCost(0, 0, 'claude-sonnet-4.6');
+    const cost = calculateTokenCost(0, 0, 'glm-5.2');
     expect(cost).toBe(0);
   });
 });
@@ -113,7 +119,12 @@ describe('getCreditSummary', () => {
 
   test('canRun=false when balance < 0.01', async () => {
     mockRegistry.getCreditAccount = async () =>
-      createMockCreditAccount({ balance: '0.005', expiringCredits: '0', nonExpiringCredits: '0', dailyCreditsBalance: '0' });
+      createMockCreditAccount({
+        balance: '0.005',
+        expiringCredits: '0',
+        nonExpiringCredits: '0',
+        dailyCreditsBalance: '0',
+      });
     const result = await getCreditSummary('acc_test_123');
     expect(result.canRun).toBe(false);
   });
@@ -176,7 +187,7 @@ describe('deductCredits', () => {
     }
   });
 
-  test('passes only accountId, amount, description to RPC', async () => {
+  test('binds the canonical overload by NAME, always sending p_ledger_type', async () => {
     // Use the rpcCalls-tracking mock from beforeEach
     // Override with a mock that ALSO tracks and returns success
     mockRegistry.supabaseRpc = {
@@ -196,8 +207,30 @@ describe('deductCredits', () => {
     expect(rpcCalls[0].params.p_account_id).toBe('acc_test_123');
     expect(rpcCalls[0].params.p_amount).toBe(1);
     expect(rpcCalls[0].params.p_description).toBe('Test');
+    expect(rpcCalls[0].params.p_ledger_type).toBe('usage');
+    expect(Object.keys(rpcCalls[0].params).sort()).toEqual([
+      'p_account_id',
+      'p_amount',
+      'p_description',
+      'p_ledger_type',
+    ]);
     expect(rpcCalls[0].params.p_thread_id).toBeUndefined();
     expect(rpcCalls[0].params.p_message_id).toBeUndefined();
+  });
+
+  test('a granular ledgerType reaches the RPC so the usage breakdown can classify it', async () => {
+    mockRegistry.supabaseRpc = {
+      rpc: (name: string, params?: any) => {
+        rpcCalls.push({ name, params });
+        return Promise.resolve({
+          data: { success: true, amount_deducted: 2, new_total: 98, transaction_id: 'tx_789' },
+          error: null,
+        });
+      },
+    };
+
+    await deductCredits('acc_test_123', 2, 'Sandbox compute', 'compute_debit');
+    expect(rpcCalls[0].params.p_ledger_type).toBe('compute_debit');
   });
 });
 
@@ -293,7 +326,10 @@ describe('grantCredits', () => {
     mockRegistry.supabaseRpc = {
       rpc: (name: string, params?: any) => {
         rpcCalls.push({ name, params });
-        return Promise.resolve({ data: null, error: { message: 'RPC failed after writing ledger row' } });
+        return Promise.resolve({
+          data: null,
+          error: { message: 'RPC failed after writing ledger row' },
+        });
       },
     };
     mockRegistry.insertLedgerEntry = async () => {
@@ -305,7 +341,14 @@ describe('grantCredits', () => {
       });
     };
 
-    const result = await grantCredits('acc_test_123', 25, 'purchase', 'Credit purchase', false, 'cs_test_duplicate');
+    const result = await grantCredits(
+      'acc_test_123',
+      25,
+      'purchase',
+      'Credit purchase',
+      false,
+      'cs_test_duplicate',
+    );
 
     expect(result).toEqual({ success: true, duplicate_prevented: true });
     expect(updateCalls.length).toBe(0);

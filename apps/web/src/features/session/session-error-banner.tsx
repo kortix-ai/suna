@@ -2,29 +2,24 @@
 
 import { useTranslations } from 'next-intl';
 
-import { AlertCircle, Loader2, CreditCard, Zap } from 'lucide-react';
+import {
+  Checkpoint,
+  CheckpointIcon,
+  CheckpointLabel,
+  CheckpointTrigger,
+} from '@/components/ai-elements/checkpoint';
+import { Item, ItemContent, ItemDescription, ItemMedia, ItemTitle } from '@/components/ui/item';
+import Loading from '@/components/ui/loading';
 import { cn } from '@/lib/utils';
-import { Button } from '@/components/ui/button';
-import { InfoBanner } from '@/components/ui/info-banner';
 import { useAccountSettingsModalStore } from '@/stores/account-settings-modal-store';
+import { isAbortError, type GatewayErrorDetails } from '@kortix/sdk';
 import type { KortixSendError } from '@kortix/sdk/react';
-
-// ============================================================================
-// Abort detection — user-initiated stops get a lowkey treatment
-// ============================================================================
-
-const ABORT_PATTERNS = [
-  'operation was aborted',
-  'aborted',
-  'abort',
-  'cancelled',
-  'canceled',
-];
-
-function isAbortError(text: string): boolean {
-  const lower = text.toLowerCase();
-  return ABORT_PATTERNS.some((p) => lower.includes(p));
-}
+import {
+  WarningCircleIcon as AlertCircle,
+  CreditCardIcon as CreditCard,
+  WarningCircleIcon,
+  LightningIcon as Zap,
+} from '@phosphor-icons/react';
 
 // ============================================================================
 // Insufficient-credits detection — upstream 402 from /v1/router/chat/completions
@@ -68,25 +63,16 @@ function UsageLimitCard({ errorText, className }: { errorText: string; className
   const openBilling = () => openAccountSettings({ tab: 'billing' });
 
   return (
-    <InfoBanner
-      tone="warning"
-      icon={Zap}
-      title="Usage limit reached"
-      className={cn('flex-col gap-2.5', className)}
-    >
-      <p className="break-words">{errorText}</p>
-      <div className="flex items-center gap-1.5 mt-2">
-        <Button
-          size="sm"
-          variant="default"
-          className="h-7 text-xs px-2.5"
-          onClick={openBilling}
-        >
-          <Zap className="size-3 mr-1" />
-          Upgrade plan
-        </Button>
-      </div>
-    </InfoBanner>
+    <Checkpoint className={className}>
+      <CheckpointIcon>
+        <Zap className="size-4 shrink-0" />
+      </CheckpointIcon>
+      <CheckpointLabel className="overflow-visible whitespace-normal">{errorText}</CheckpointLabel>
+      <CheckpointTrigger onClick={openBilling}>
+        <Zap className="size-3" />
+        Upgrade plan
+      </CheckpointTrigger>
+    </Checkpoint>
   );
 }
 
@@ -98,40 +84,36 @@ function parseBalance(text: string): string | null {
   return `$${value.toFixed(2)}`;
 }
 
-function InsufficientCreditsCard({ errorText, className }: { errorText: string; className?: string }) {
+function InsufficientCreditsCard({
+  errorText,
+  className,
+}: {
+  errorText: string;
+  className?: string;
+}) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const openAccountSettings = useAccountSettingsModalStore((s) => s.openAccountSettings);
   const balance = parseBalance(errorText);
   const openBilling = () => openAccountSettings({ tab: 'billing', highlight: 'credits' });
+  const title = tHardcodedUi.raw(
+    'componentsSessionSessionErrorBanner.line58JsxAttrTitleYouRanOutOfCredits',
+  );
+  const label = balance ? `${title} (${balance})` : title;
 
   return (
-    <InfoBanner
-      tone="warning"
-      icon={CreditCard}
-      title={tHardcodedUi.raw('componentsSessionSessionErrorBanner.line58JsxAttrTitleYouRanOutOfCredits')}
-      className={cn('flex-col gap-2.5', className)}
-    >
-      <p>
-        {balance
-          ? `Your balance is ${balance}. Top up or enable auto top-up to continue.`
-          : 'Top up or enable auto top-up to continue.'}
-      </p>
-      <div className="flex items-center gap-1.5 mt-2">
-        <Button
-          size="sm"
-          variant="default"
-          className="h-7 text-xs px-2.5"
-          onClick={openBilling}
-        >
-          <Zap className="size-3 mr-1" />{tHardcodedUi.raw('componentsSessionSessionErrorBanner.line74JsxTextEnableAutoTopUp')}</Button>
-        <Button
-          size="sm"
-          variant="outline"
-          className="h-7 text-xs px-2.5"
-          onClick={openBilling}
-        >{tHardcodedUi.raw('componentsSessionSessionErrorBanner.line82JsxTextBuyCredits')}</Button>
-      </div>
-    </InfoBanner>
+    <Checkpoint className={className}>
+      <CheckpointIcon>
+        <CreditCard className="size-4 shrink-0" />
+      </CheckpointIcon>
+      <CheckpointLabel className="overflow-visible whitespace-normal">{label}</CheckpointLabel>
+      <CheckpointTrigger onClick={openBilling}>
+        <Zap className="size-3" />
+        {tHardcodedUi.raw('componentsSessionSessionErrorBanner.line74JsxTextEnableAutoTopUp')}
+      </CheckpointTrigger>
+      <CheckpointTrigger variant="outline" onClick={openBilling}>
+        {tHardcodedUi.raw('componentsSessionSessionErrorBanner.line82JsxTextBuyCredits')}
+      </CheckpointTrigger>
+    </Checkpoint>
   );
 }
 
@@ -139,15 +121,31 @@ function InsufficientCreditsCard({ errorText, className }: { errorText: string; 
 // TurnErrorDisplay — simple inline error card (matches SolidJS reference)
 // ============================================================================
 
-/** The LLM gateway's structured error fields, when the failure carries them —
- *  mirrors `GatewayErrorDetails`/`KortixSendError['gateway']` from the SDK,
- *  restated here so this component doesn't need a type-only SDK import for a
- *  handful of optional strings. */
-interface TurnErrorGatewayDetails {
-  provider?: string;
-  code?: string;
-  suggestion?: string;
-  requestId?: string;
+type TurnErrorGatewayDetails = Pick<
+  GatewayErrorDetails,
+  'provider' | 'code' | 'suggestion' | 'requestId' | 'attemptFailures'
+>;
+
+function failureTarget(failure: NonNullable<GatewayErrorDetails['attemptFailures']>[number]) {
+  const route =
+    failure.resolvedModel !== failure.routeModel ? ` (route ${failure.routeModel})` : '';
+  return `${failure.provider}/${failure.resolvedModel}${route}`;
+}
+
+function GatewayAttemptFailureList({ details }: { details?: TurnErrorGatewayDetails }) {
+  if (!details?.attemptFailures?.length) return null;
+
+  return (
+    <ol className="text-muted-foreground mt-1 space-y-1 text-xs">
+      {details.attemptFailures.map((failure) => (
+        <li key={failure.attempt}>
+          <span className="text-foreground font-medium">{failureTarget(failure)}</span> ·{' '}
+          {failure.status !== undefined ? `HTTP ${failure.status} · ` : ''}
+          {String(failure.code)} · {failure.message}
+        </li>
+      ))}
+    </ol>
+  );
 }
 
 interface TurnErrorDisplayProps {
@@ -172,6 +170,33 @@ interface TurnErrorDisplayProps {
    * of regexing the message.
    */
   error?: KortixSendError | null;
+  /**
+   * Was this turn ACTUALLY aborted — i.e. is the error's identity `AbortError`?
+   *
+   * Passed by the transcript, which can read the structured error on the
+   * message. `getTurnError` flattens that to a display string and drops the
+   * name, so without this the only signal left is the word "abort" appearing
+   * somewhere in the prose — which mislabels genuine failures as user
+   * interruptions and hides what actually went wrong.
+   *
+   * Undefined means "caller could not tell"; the SDK's `isAbortError` last-resort
+   * text sniff (over `text`) is used then.
+   */
+  isAbort?: boolean;
+  /**
+   * The machine-readable WHY behind `isAbort` (the SDK's `AbortReason` —
+   * `core/http/abort-error.ts`), when the caller can read one off the
+   * message (`abortErrorReason(error)`).
+   *
+   * `undefined` covers "no abort", "reason: 'user'" (a real user Stop), and
+   * a genuine wire abort (opencode's own `MessageAbortedError`, which is
+   * never tagged) — all three render the "Interrupted" row exactly as
+   * before. Any OTHER value — currently only `'runtime-disposed'`, stamped
+   * when a runtime disposes/respawns mid-stream — is pure infrastructure,
+   * not a cut turn, and renders nothing at all: no Interrupted row, no error
+   * banner. A respawn that recovers cleanly must not scar the transcript.
+   */
+  abortReason?: string;
   className?: string;
 }
 
@@ -181,19 +206,41 @@ interface TurnErrorDisplayProps {
  * Abort errors (user-initiated stops) get a minimal, lowkey treatment —
  * just muted text, no border/background card.
  */
-export function TurnErrorDisplay({ errorText, errorDetails, error, className }: TurnErrorDisplayProps) {
+export function TurnErrorDisplay({
+  errorText,
+  errorDetails,
+  error,
+  isAbort,
+  abortReason,
+  className,
+}: TurnErrorDisplayProps) {
   const text = error ? error.message : errorText;
   if (!text) return null;
   // `error.gateway` (send-failure path) wins over the `errorDetails` prop
   // (turn-level path) — only one is ever populated for a given render.
   const gateway = error?.gateway ?? errorDetails ?? undefined;
 
-  // Abort/cancelled → tiny muted note, no card
-  if (isAbortError(text)) {
+  // A connector refusal is owned by `ConnectorRequiredNotice`, which renders a
+  // card with the connect button on it. Rendering the one-line pill here too
+  // would say the same thing twice, once without the remedy.
+  if (error?.kind === 'connector') return null;
+
+  // Abort/cancelled → tiny muted note, no card. Identity when the caller knows
+  // it, prose only when it does not — both routed through the SDK's single
+  // `isAbortError` classifier (see `@kortix/sdk` `core/http/abort-error.ts`).
+  if (isAbort ?? isAbortError(text)) {
+    // A reasoned, non-user abort (currently only `'runtime-disposed'`) is
+    // pure infrastructure — a runtime that disposed and respawned, not a cut
+    // turn. Render NOTHING: no Interrupted row, no error banner. `undefined`
+    // (no reason, or `'user'`) falls through to the row exactly as before.
+    if (abortReason && abortReason !== 'user') return null;
     return (
-      <p className={cn('text-xs text-muted-foreground/50 italic', className)}>
-        Interrupted
-      </p>
+      <Checkpoint className={className}>
+        <CheckpointIcon>
+          <WarningCircleIcon className="text-muted-foreground size-4 shrink-0" />
+        </CheckpointIcon>
+        <CheckpointLabel>Interrupted</CheckpointLabel>
+      </Checkpoint>
     );
   }
 
@@ -223,38 +270,29 @@ export function TurnErrorDisplay({ errorText, errorDetails, error, className }: 
     return <UsageLimitCard errorText={text} className={className} />;
   }
 
-  // Real errors → full card. When the failure carries the gateway's
-  // structured envelope (provider/suggestion/request_id), render those too —
-  // otherwise this is just the provider's own raw error text with no clue
-  // which provider it came from or what to actually do about it (the bug
-  // behind a user seeing a bare "Unsupported parameter: max_tokens..." string).
-  const suggestion = gateway?.suggestion && gateway.suggestion !== text ? gateway.suggestion : undefined;
+  // Real errors → Checkpoint row. When the failure carries the gateway's
+  // structured envelope (provider/suggestion/request_id), fold those into the
+  // label so the provider/source of the failure stays visible.
+  const suggestion =
+    gateway?.suggestion && gateway.suggestion !== text ? gateway.suggestion : undefined;
+  const label = [
+    gateway?.provider ? `${gateway.provider}: ${text}` : text,
+    gateway?.code,
+    suggestion,
+    gateway?.requestId,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+
   return (
-    <div
-      className={cn(
-        'flex items-start gap-2 px-3 py-2 rounded-2xl border',
-        'bg-muted/40 dark:bg-muted/30',
-        'border-border/60',
-        className,
-      )}
-    >
-      <AlertCircle className="size-3.5 mt-0.5 flex-shrink-0 text-muted-foreground/70" />
-      <div className="min-w-0 flex-1">
-        <p className="text-xs text-muted-foreground break-words">
-          {gateway?.provider && (
-            <span className="font-medium text-foreground/80">{gateway.provider}: </span>
-          )}
-          {text}
-        </p>
-        {suggestion && (
-          <p className="mt-1 text-xs text-muted-foreground/70 break-words">{suggestion}</p>
-        )}
-        {gateway?.requestId && (
-          <p className="mt-1 text-[10px] text-muted-foreground/50 font-mono break-all">
-            {gateway.requestId}
-          </p>
-        )}
-      </div>
+    <div className={className}>
+      <Checkpoint>
+        <CheckpointIcon>
+          <AlertCircle className="text-muted-foreground size-4 shrink-0" />
+        </CheckpointIcon>
+        <CheckpointLabel className="overflow-visible whitespace-normal">{label}</CheckpointLabel>
+      </Checkpoint>
+      <GatewayAttemptFailureList details={gateway} />
     </div>
   );
 }
@@ -263,6 +301,7 @@ interface SessionRetryDisplayProps {
   message: string;
   attempt: number;
   secondsLeft: number;
+  details?: GatewayErrorDetails;
   className?: string;
 }
 
@@ -270,26 +309,36 @@ export function SessionRetryDisplay({
   message,
   attempt,
   secondsLeft,
+  details,
   className,
 }: SessionRetryDisplayProps) {
   if (!message) return null;
 
-  const line = secondsLeft > 0 ? `Retrying in ${secondsLeft}s (#${attempt})` : `Retrying now (#${attempt})`;
+  const title = secondsLeft > 0 ? `Retrying in ${secondsLeft}s` : 'Retrying now';
+  const metadata = [details?.provider, details?.code, details?.requestId]
+    .filter(Boolean)
+    .join(' · ');
 
   return (
-    <div
-      className={cn(
-        'flex items-start gap-2 px-3 py-2 rounded-2xl border',
-        'bg-muted/40 dark:bg-muted/30',
-        'border-border/60',
-        className,
-      )}
-    >
-      <Loader2 className="size-3.5 mt-0.5 flex-shrink-0 animate-spin text-muted-foreground/70" />
-      <div className="min-w-0">
-        <p className="text-xs text-muted-foreground break-words">{message}</p>
-        <p className="mt-1 text-xs text-muted-foreground/70">{line}</p>
-      </div>
-    </div>
+    <output aria-live="polite" className="block">
+      <Item variant="muted" size="sm" className={cn('items-start', className)}>
+        <ItemMedia variant="icon">
+          <Loading className="text-muted-foreground size-4 shrink-0" />
+        </ItemMedia>
+        <ItemContent>
+          <ItemTitle className="tabular-nums">
+            {title}
+            <span className="text-muted-foreground font-normal">#{attempt}</span>
+          </ItemTitle>
+          <ItemDescription className={cn('text-pretty', !details && 'line-clamp-2')}>
+            {message}
+          </ItemDescription>
+          {metadata ? (
+            <p className="text-muted-foreground mt-1 text-xs text-pretty">{metadata}</p>
+          ) : null}
+          <GatewayAttemptFailureList details={details} />
+        </ItemContent>
+      </Item>
+    </output>
   );
 }

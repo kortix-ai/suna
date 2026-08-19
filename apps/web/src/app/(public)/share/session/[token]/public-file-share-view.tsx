@@ -1,11 +1,9 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { Download, ExternalLink, FileText } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
-import { Button } from '@/components/ui/button';
 import {
   FileContentRenderer,
   FileSourceProvider,
@@ -15,17 +13,12 @@ import {
   type FileContentResult,
   type FileSource,
 } from '@/features/file-viewer';
-import { cn } from '@/lib/utils';
+import { downloadFileFromUrl, fileNameFromPath } from './share-file';
 import { SHARE_FILE_IFRAME_CLASS } from './share-layout';
 
 export interface PublicFileShare {
   label: string;
   file_path: string | null;
-}
-
-function fileNameFromPath(path: string | null | undefined, fallback = 'Shared file') {
-  if (!path) return fallback;
-  return path.split('/').filter(Boolean).at(-1) || fallback;
 }
 
 function isTextResponse(filePath: string, contentType: string) {
@@ -111,16 +104,17 @@ function usePublicBinaryBlob(
     },
   });
 
-  const blobUrl = useMemo(() => {
-    if (!query.data) return null;
-    return URL.createObjectURL(query.data);
-  }, [query.data]);
+  const [blobUrl, setBlobUrl] = useState<string | null>(null);
 
   useEffect(() => {
-    return () => {
-      if (blobUrl) URL.revokeObjectURL(blobUrl);
-    };
-  }, [blobUrl]);
+    if (!query.data) {
+      setBlobUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(query.data);
+    setBlobUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [query.data]);
 
   return {
     blobUrl,
@@ -129,31 +123,6 @@ function usePublicBinaryBlob(
     error:
       query.error instanceof Error ? query.error.message : query.error ? String(query.error) : null,
   };
-}
-
-function PublicFileBreadcrumbs({ filePath }: { filePath: string }) {
-  const parts = filePath
-    .replace(/^\/workspace\/?/, '')
-    .split('/')
-    .filter(Boolean);
-  return (
-    <div className="flex min-w-0 items-center gap-1 text-xs">
-      <span className="text-muted-foreground shrink-0">workspace</span>
-      {parts.map((part, index) => (
-        <span key={`${part}-${index}`} className="flex min-w-0 items-center gap-1">
-          <span className="text-muted-foreground/40">/</span>
-          <span
-            className={cn(
-              'truncate',
-              index === parts.length - 1 ? 'text-foreground font-medium' : 'text-muted-foreground',
-            )}
-          >
-            {part}
-          </span>
-        </span>
-      ))}
-    </div>
-  );
 }
 
 export function PublicFileShareView({
@@ -174,68 +143,41 @@ export function PublicFileShareView({
     () => ({
       useFileContent: (path) => usePublicFileContent(token, path, fileUrl),
       useBinaryBlob: (path) => usePublicBinaryBlob(token, path, fileUrl),
-      download: async (_filePath, name) => {
-        const res = await fetch(fileUrl, { cache: 'no-store' });
-        if (!res.ok) throw new Error(res.statusText || `HTTP ${res.status}`);
-        const blob = await res.blob();
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = name || fileName;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        URL.revokeObjectURL(url);
-      },
+      download: (_filePath, name) => downloadFileFromUrl(fileUrl, name || fileName),
       upload: async () => {
         throw new Error('Public file shares are read-only');
       },
-      Breadcrumbs: PublicFileBreadcrumbs,
+      // No `Breadcrumbs`: a recipient of a share link has no workspace to
+      // navigate, and the sender's directory layout is not theirs to see. The
+      // file name in the page header is the whole identity of this page.
     }),
     [fileName, fileUrl, token],
   );
 
+  // HTML renders from the proxy URL directly so its relative assets resolve.
   if (isHtmlFile) {
     return (
-      <div className="bg-background flex h-full min-h-0 flex-col">
-        <div className="border-border/60 flex h-11 shrink-0 items-center gap-2 border-b px-3">
-          <FileText className="text-muted-foreground h-4 w-4 shrink-0" />
-          <PublicFileBreadcrumbs filePath={filePath} />
-          <div className="ml-auto flex items-center gap-1">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
-              onClick={() => window.open(fileUrl, '_blank', 'noopener,noreferrer')}
-            >
-              <ExternalLink className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8 gap-1.5 px-3 text-xs font-medium"
-              onClick={() => source.download(filePath, fileName)}
-            >
-              <Download className="h-3.5 w-3.5" />
-              Download
-            </Button>
-          </div>
-        </div>
-        <iframe
-          title={fileName}
-          src={fileUrl}
-          className={SHARE_FILE_IFRAME_CLASS}
-          sandbox={tI18nHardcoded.raw(
-            'autoAppPublicShareSessionTokenPublicFileShareViewJsxeeb5b063',
-          )}
-        />
-      </div>
+      <iframe
+        title={fileName}
+        src={fileUrl}
+        className={SHARE_FILE_IFRAME_CLASS}
+        sandbox={tI18nHardcoded.raw('autoAppPublicShareSessionTokenPublicFileShareViewJsxeeb5b063')}
+      />
     );
   }
 
+  // `showHeader={false}`: the share page header owns the file name and the
+  // Download action, so the renderer's own bar (path breadcrumbs, VIEW ONLY
+  // badge, second Download) would only repeat it.
   return (
     <FileSourceProvider value={source}>
-      <FileContentRenderer filePath={filePath} readOnly className="bg-background h-full" />
+      <FileContentRenderer
+        codeEditorEditorClassName="bg-card dark:bg-card h-full"
+        filePath={filePath}
+        readOnly
+        showHeader={false}
+        className="bg-card h-dvh"
+      />
     </FileSourceProvider>
   );
 }

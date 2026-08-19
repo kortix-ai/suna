@@ -12,9 +12,24 @@ const RANDOM_UUID = '00000000-0000-4000-a000-0000000000d1';
 
 flow(
   'RV-1',
-  { domain: 'review', tags: ['smoke'], routes: ['GET /v1/projects/:projectId/review/items'] },
+  {
+    domain: 'review',
+    tags: ['smoke'],
+    routes: [
+      'PATCH /v1/projects/:projectId/features',
+      'GET /v1/projects/:projectId/review/items',
+    ],
+  },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
+    await ctx.step('OWNER enables Review Center for the project → 200', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).patch(
+        '/v1/projects/:projectId/features',
+        { feature: 'review_center', enabled: true },
+        { params: { projectId: p.id } },
+      );
+      r.status(200);
+    });
     await ctx.step('OWNER lists review items → 200 with envelope', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
@@ -40,9 +55,23 @@ flow(
 
 flow(
   'RV-2',
-  { domain: 'review', routes: ['GET /v1/projects/:projectId/review/items/:reviewItemId'] },
+  {
+    domain: 'review',
+    routes: [
+      'PATCH /v1/projects/:projectId/features',
+      'GET /v1/projects/:projectId/review/items/:reviewItemId',
+    ],
+  },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
+    await ctx.step('OWNER enables Review Center for the project → 200', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).patch(
+        '/v1/projects/:projectId/features',
+        { feature: 'review_center', enabled: true },
+        { params: { projectId: p.id } },
+      );
+      r.status(200);
+    });
     await ctx.step('unknown reviewItemId → 404', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
@@ -56,9 +85,23 @@ flow(
 
 flow(
   'RV-3',
-  { domain: 'review', routes: ['POST /v1/projects/:projectId/review/items'] },
+  {
+    domain: 'review',
+    routes: [
+      'PATCH /v1/projects/:projectId/features',
+      'POST /v1/projects/:projectId/review/items',
+    ],
+  },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
+    await ctx.step('OWNER enables Review Center for the project → 200', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).patch(
+        '/v1/projects/:projectId/features',
+        { feature: 'review_center', enabled: true },
+        { params: { projectId: p.id } },
+      );
+      r.status(200);
+    });
     await ctx.step('missing title → 400', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
@@ -94,9 +137,23 @@ flow(
 
 flow(
   'RV-4',
-  { domain: 'review', routes: ['POST /v1/projects/:projectId/review/items/:reviewItemId/act'] },
+  {
+    domain: 'review',
+    routes: [
+      'PATCH /v1/projects/:projectId/features',
+      'POST /v1/projects/:projectId/review/items/:reviewItemId/act',
+    ],
+  },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
+    await ctx.step('OWNER enables Review Center for the project → 200', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).patch(
+        '/v1/projects/:projectId/features',
+        { feature: 'review_center', enabled: true },
+        { params: { projectId: p.id } },
+      );
+      r.status(200);
+    });
     await ctx.step('invalid verdict → 400', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
@@ -122,9 +179,23 @@ flow(
 
 flow(
   'RV-5',
-  { domain: 'review', routes: ['POST /v1/projects/:projectId/review/bulk'] },
+  {
+    domain: 'review',
+    routes: [
+      'PATCH /v1/projects/:projectId/features',
+      'POST /v1/projects/:projectId/review/bulk',
+    ],
+  },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
+    await ctx.step('OWNER enables Review Center for the project → 200', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).patch(
+        '/v1/projects/:projectId/features',
+        { feature: 'review_center', enabled: true },
+        { params: { projectId: p.id } },
+      );
+      r.status(200);
+    });
     await ctx.step('missing ids → 400', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)

@@ -82,8 +82,7 @@ model, the agent can:
 Granting access is the step that changes who can do what, so every grant stops at
 a **human approval gate** — no access is applied until a person signs off. Each
 approved grant is logged with the request, the policy check, and the scope.
-Credentials are encrypted in the secrets manager and injected at runtime, never
-shown to the model or written to logs.
+Credentials are encrypted in the secrets manager and injected at runtime, scoped to the agents you grant them to.
 
 </Step>
 <Step title="Let each request come back scoped and logged">
@@ -107,11 +106,11 @@ becomes the narrowest IAM permission that fits, both held for sign-off.
 Giving an agent a hand in access decisions is a trust question. The relevant
 controls on Kortix:
 
-- **Isolation.** Every request runs in its own microVM sandbox on its own branch.
-  The session can reach only the systems it's scoped to, and only what it's
-  explicitly allowed to send leaves the sandbox.
+- **Isolation.** Every request runs in its own isolated sandbox on its own branch.
+  The session is granted access only to the systems it's scoped to, and only what it's
+  explicitly allowed to send is written back out.
 - **Scoped secrets.** Each credential is encrypted in the secrets manager,
-  injected into the sandbox at runtime, and never exposed to the model or the
+  injected into the sandbox at runtime, and scoped to the agents you grant them to or the
   logs.
 - **Human approval gate.** No grant is applied until a person approves it, and
   each approved grant is logged.

@@ -1,7 +1,7 @@
 'use client';
 
 import Cal, { getCalApi } from '@calcom/embed-react';
-import { Check, Mail } from 'lucide-react';
+import { CheckIcon as Check, EnvelopeIcon as Mail } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 

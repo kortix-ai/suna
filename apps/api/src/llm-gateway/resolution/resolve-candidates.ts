@@ -3,20 +3,23 @@ import {
   GatewayResolutionError,
   type UpstreamDescriptor,
 } from '@kortix/llm-gateway';
-import { getCachedAccountTier } from '../../billing/services/entitlements';
-import { accountIsFreeTierForModels } from '../../billing/services/tiers';
+import { accountMayUseManagedModels, getCachedAccountTier } from '../../billing/services/entitlements';
+import { isPaidTier } from '../../billing/services/tiers';
 import { config } from '../../config';
-import { getProjectSecretValue } from '../../projects/secrets';
+import {
+  getProjectSecretValueForConsumer,
+  resolveProjectSecretsForConsumer,
+} from '../../projects/secrets';
 import { CodexRefreshError, resolveCodexCredential } from '../credentials/codex';
 import { capabilitiesForModel } from '../models/catalog-models';
 import { getRuntimeManagedModel, isKnownManagedModelId } from '../models/managed-models';
 import { resolveCatalogUpstream } from '../models/provider-registry';
-import { resolveGatewayRoute } from '../routing';
 import {
   bedrockByokBaseUrl,
   codexDescriptor,
   livePricing,
   managedCandidates,
+  normalizeBedrockInferenceProfileRegion,
   stripBedrockInferenceProfilePrefix,
 } from './descriptors';
 
@@ -45,6 +48,12 @@ const BEDROCK_REGION_ENV_VAR = 'AWS_REGION';
 // thin re-export, not a second implementation.
 export const resolveCachedAccountTier = getCachedAccountTier;
 
+// Managed-models entitlement, same shared snapshot cache. Trial overlay and
+// the operator `managed_models_override` are applied inside — never derive
+// this from a tier string here (that is exactly the conflation the comment
+// below warns about).
+export const resolveCachedManagedModels = accountMayUseManagedModels;
+
 // A managed model to fall over to when a BYOK key hits a limit (429/402/403).
 // Gated on the managed gateway being on + the managed provider being on (CLOUD-
 // ONLY) + a configured, resolvable fallback model. getRuntimeManagedModel()/
@@ -64,6 +73,32 @@ const PLAN_UPGRADE_SUGGESTION =
   'Upgrade your plan to use this model, or choose a model available on your current plan.';
 
 /**
+ * The same block, for a plan that is PAID but simply does not include managed
+ * inference — every v3 credit plan (Starter / Team / Scale).
+ *
+ * "requires a paid plan" is false and actively misleading there: the customer
+ * is paying. Managed models are not something their plan is too small for, they
+ * are deliberately not bundled, and the remedy is a key rather than an upgrade.
+ */
+const BRING_YOUR_OWN_KEY_SUGGESTION =
+  'This plan does not include managed models. Add your own provider key to use ' +
+  'this model, or pick a model your key covers.';
+
+export function noManagedModelsError(model: string, tierIsPaid: boolean): GatewayResolutionError {
+  return tierIsPaid
+    ? new GatewayResolutionError(
+        'plan_upgrade_required',
+        `"${model}" needs your own provider key on this plan.`,
+        BRING_YOUR_OWN_KEY_SUGGESTION,
+      )
+    : new GatewayResolutionError(
+        'plan_upgrade_required',
+        `"${model}" requires a paid plan.`,
+        PLAN_UPGRADE_SUGGESTION,
+      );
+}
+
+/**
  * `resolveCandidates` throws a `GatewayResolutionError` (never returns an
  * empty array) whenever it can pin down WHY there's no upstream — the
  * generic-return-[] shape can't carry a reason, and handler.ts's dispatch
@@ -77,21 +112,7 @@ export async function resolveCandidates(
   principal: AuthedPrincipal,
   model: string,
 ): Promise<UpstreamDescriptor[]> {
-  // The gateway normally applies the API-owned route plan before calling this hook.
-  // Keep the same fallback here so a stale standalone gateway that asks the API
-  // to resolve raw "auto" still gets a concrete upstream instead of 400ing — and
-  // resolve it against the same account/agent default the control plane used.
-  // Free-tier principals cannot use managed Kortix models, so stale AUTO below
-  // resolves to no candidates rather than a paid/default upstream.
-  const effectiveModel =
-    model === 'auto' || model === 'kortix/auto'
-      ? (
-          await resolveGatewayRoute(principal, {
-            requestedModel: model,
-            requires: { imageInput: false },
-          })
-        ).primaryModel
-      : model;
+  const effectiveModel = model;
   const provider = effectiveModel.includes('/') ? effectiveModel.split('/')[0] : '';
 
   if (provider === 'codex') {
@@ -104,7 +125,10 @@ export async function resolveCandidates(
     }
     let credential: Awaited<ReturnType<typeof resolveCodexCredential>>;
     try {
-      credential = await resolveCodexCredential(principal.projectId, principal.userId);
+      credential = await resolveCodexCredential(principal.projectId, principal.userId, undefined, {
+        accountId: principal.accountId,
+        sessionId: principal.sessionId,
+      });
     } catch (err) {
       if (err instanceof CodexRefreshError) {
         // Distinguishes "connected once, but the ChatGPT session expired or was
@@ -139,12 +163,46 @@ export async function resolveCandidates(
   if (byok && principal.projectId) {
     // Provider keys are always project-wide (shared) — there is no
     // per-user/private key concept. See getProjectSecretValue.
-    const key = await getProjectSecretValue(principal.projectId, byok.envVar);
-    if (key) {
+    const readGatewaySecret = (name: string) =>
+      getProjectSecretValueForConsumer({
+        projectId: principal.projectId!,
+        accountId: principal.accountId,
+        sessionId: principal.sessionId,
+        actorUserId: principal.userId,
+        name,
+        consumer: 'llm_gateway',
+      });
+    const keys = await resolveProjectSecretsForConsumer({
+      projectId: principal.projectId,
+      accountId: principal.accountId,
+      sessionId: principal.sessionId,
+      actorUserId: principal.userId,
+      name: byok.envVar,
+      consumer: 'llm_gateway',
+    });
+    if (keys.length > 0) {
       const tier = config.KORTIX_BILLING_INTERNAL_ENABLED
         ? await resolveCachedAccountTier(principal.accountId)
         : 'self-hosted';
+      // TWO DIFFERENT QUESTIONS. Conflating them is what let a credit plan reach
+      // managed inference through the back door.
+      //
+      // 1. Does this account pay the BYOK platform fee? Free accounts do not;
+      //    every paid account does, including the v3 credit plans.
+      //    `tier` here is the RESOLVED plan key (getCachedAccountTier reads the
+      //    shared billing resolver: trial overlay and per-seat self-heal
+      //    applied), so a trial of a paid plan pays the fee for the trial
+      //    window and a stale-tier per-seat team is not waived by accident.
+      //    Deliberately plan-KEY equality with 'free', not "free family": an
+      //    unprovisioned account (`none`) has always paid this fee, and
+      //    widening the waiver to it is a pricing decision, not a refactor.
       const isFreeTier = config.KORTIX_BILLING_INTERNAL_ENABLED && tier === 'free';
+      // 2. May this account use MANAGED inference at all? `models: []` says no
+      //    for Starter/Team/Scale even though they are paid, so this cannot be a
+      //    `tier === 'free'` check — it has to be the same entitlement predicate
+      //    the direct managed path uses (trial + operator override included).
+      //    Billing disabled (self-hosted) keeps the fallback, as before.
+      const mayUseManagedModels = await resolveCachedManagedModels(principal.accountId);
       const resolvedModelId = effectiveModel.slice(provider.length + 1);
       // Capability flags from the catalog (models.dev enrichment) so the
       // transport can decide which params a reasoning-restricted model
@@ -159,39 +217,55 @@ export async function resolveCandidates(
       // Bedrock's project-scoped region also feeds the AI-SDK engine's Bedrock
       // provider (descriptor.region); resolve it once for both baseUrl + region.
       const bedrockRegion =
+        byok.kind === 'bedrock' ? await readGatewaySecret(BEDROCK_REGION_ENV_VAR) : undefined;
+      const baseUrl = byok.kind === 'bedrock' ? bedrockByokBaseUrl(bedrockRegion) : byok.baseUrl;
+      // Bedrock invoke id: normalize a wrong-geography cross-region
+      // inference-profile prefix (e.g. a `jp.` pick that got stored as an
+      // account default / session pin on a us-east-1 box) to the endpoint's own
+      // region, so it stops 400ing "The provided model identifier is invalid."
+      // No-op for every other provider and for already-correct ids.
+      const invokeModelId =
         byok.kind === 'bedrock'
-          ? await getProjectSecretValue(principal.projectId, BEDROCK_REGION_ENV_VAR)
-          : undefined;
-      const baseUrl =
-        byok.kind === 'bedrock' ? bedrockByokBaseUrl(bedrockRegion) : byok.baseUrl;
-      const byokDescriptor: UpstreamDescriptor = {
+          ? normalizeBedrockInferenceProfileRegion(resolvedModelId, bedrockRegion)
+          : resolvedModelId;
+      const byokDescriptors: UpstreamDescriptor[] = keys.map(({ identifier, value }) => ({
         provider,
         kind: byok.kind,
         npm: byok.npm,
         baseUrl,
         ...(bedrockRegion ? { region: bedrockRegion } : {}),
-        apiKey: key,
+        apiKey: value,
+        credentialRef: identifier,
         billingMode:
           config.KORTIX_BILLING_INTERNAL_ENABLED && !isFreeTier ? 'platform-fee' : 'none',
         markup: isFreeTier ? 0 : PLATFORM_FEE_MARKUP,
-        resolvedModel: resolvedModelId,
+        resolvedModel: invokeModelId,
         // Bedrock-only: the id used to INVOKE stays the full cross-region
-        // inference-profile id (resolvedModel above) — only the id used to
-        // LOOK UP pricing gets the geography prefix stripped, since the
-        // models.dev catalog only knows the base model id. See
+        // inference-profile id (resolvedModel above, region-normalized) — only
+        // the id used to LOOK UP pricing gets the geography prefix stripped,
+        // since the models.dev catalog only knows the base model id. See
         // stripBedrockInferenceProfilePrefix's doc comment.
         pricing: livePricing(
+          provider,
           byok.kind === 'bedrock'
-            ? stripBedrockInferenceProfilePrefix(resolvedModelId)
-            : resolvedModelId,
+            ? stripBedrockInferenceProfilePrefix(invokeModelId)
+            : invokeModelId,
         ),
         reasoning: capabilities.reasoning,
         temperature: capabilities.temperature,
-      };
+      }));
       // Queue a managed model behind the BYOK key: if the user's key hits a
       // rate-limit / quota / billing error, the failover loop falls over to it
       // (billed as Kortix credits) so the turn doesn't die.
-      return isFreeTier ? [byokDescriptor] : [byokDescriptor, ...byokFallbackCandidates()];
+      //
+      // Only for accounts entitled to managed models. Otherwise a plan that
+      // includes no inference could reach it by having its own key rate-limit —
+      // serving managed tokens the plan forbids, and skipping the wallet
+      // admission gate on the way, since that gate is bypassed for exactly the
+      // tiers this fallback would be serving.
+      return mayUseManagedModels
+        ? [...byokDescriptors, ...byokFallbackCandidates()]
+        : byokDescriptors;
     }
     // No shared key configured for this project — provider keys are always
     // project-wide, so there's no other place to look.
@@ -221,13 +295,11 @@ export async function resolveCandidates(
       );
     }
     if (config.KORTIX_BILLING_INTERNAL_ENABLED) {
-      const tier = await resolveCachedAccountTier(principal.accountId);
-      if (accountIsFreeTierForModels(tier)) {
-        throw new GatewayResolutionError(
-          'plan_upgrade_required',
-          `"${effectiveModel}" requires a paid plan.`,
-          PLAN_UPGRADE_SUGGESTION,
-        );
+      if (!(await resolveCachedManagedModels(principal.accountId))) {
+        // A v3 credit plan lands here too — it pays, it just doesn't bundle
+        // managed inference. Telling that customer to "upgrade" is wrong.
+        const tier = await resolveCachedAccountTier(principal.accountId);
+        throw noManagedModelsError(effectiveModel, isPaidTier(tier ?? 'free'));
       }
     }
     const candidates = managedCandidates(managed);

@@ -30,12 +30,13 @@ export function ensureKortixConfigured(): void {
   configureKortix({
     backendUrl: getEnv().BACKEND_URL,
     getToken: () => getSupabaseAccessToken(),
+    clientSource: 'web',
     getUserId: async () => {
       try {
         const {
-          data: { user },
-        } = await createClient().auth.getUser();
-        return user?.id ?? null;
+          data: { session },
+        } = await createClient().auth.getSession();
+        return session?.user?.id ?? null;
       } catch {
         return null;
       }
@@ -49,7 +50,6 @@ export function ensureKortixConfigured(): void {
       disableMobileAdvertising: parseFlagOverride(process.env.NEXT_PUBLIC_DISABLE_MOBILE_ADVERTISING),
       enableDinoGame: parseFlagOverride(process.env.NEXT_PUBLIC_ENABLE_DINO_GAME),
       enableProjects: parseFlagOverride(process.env.NEXT_PUBLIC_ENABLE_PROJECTS),
-      enableAutoModel: parseFlagOverride(process.env.NEXT_PUBLIC_ENABLE_AUTO_MODEL),
     },
     onToast: (level, message, options) => {
       const opts = options as Parameters<typeof infoToast>[1];

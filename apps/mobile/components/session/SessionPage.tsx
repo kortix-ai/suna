@@ -29,7 +29,6 @@ import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Menu as MenuIcon, X as CloseIcon } from 'lucide-react-native';
-import { Icon } from '@/components/ui/icon';
 import { Text as RNText } from 'react-native';
 
 import { useSyncStore } from '@/lib/opencode/sync-store';

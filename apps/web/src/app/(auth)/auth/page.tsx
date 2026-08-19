@@ -15,8 +15,8 @@
  * hardcoded surface.
  */
 
-import { Eye, EyeOff } from 'lucide-react';
-import { motion, useReducedMotion } from 'motion/react';
+import { EyeIcon as Eye, EyeSlashIcon as EyeOff } from '@phosphor-icons/react';
+import { m, useReducedMotion } from 'motion/react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { type FormEvent, Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
@@ -32,6 +32,7 @@ import { useAuth } from '@/features/providers/auth-provider';
 import { invalidateTokenCache, setBootstrapAuthToken } from '@/lib/auth-token';
 import { buildMobileSessionHandoffUrl } from '@/lib/auth/mobile-handoff';
 import { sanitizeAuthReturnUrl } from '@/lib/auth/return-url';
+import { markPostAuthIntent } from '@/lib/onboarding/post-auth-intent';
 import { isSessionExpired } from '@/lib/auth/session-expiry';
 import {
   type CredentialsMode,
@@ -161,7 +162,7 @@ function AuthCardForm({
 
   useEffect(() => {
     if (step !== 'code' || resendIn <= 0) return;
-    const t = setTimeout(() => setResendIn(resendIn - 1), 1000);
+    const t = setTimeout(() => setResendIn((prev) => prev - 1), 1000);
     return () => clearTimeout(t);
   }, [step, resendIn]);
 
@@ -236,6 +237,10 @@ function AuthCardForm({
       }
     }
 
+    // Client-side navigation keeps the referrer /auth itself loaded with —
+    // often a search engine — so the landing door cannot read intent from it.
+    // The marker is what proves "this user just signed in" to the door.
+    markPostAuthIntent();
     const dest = result?.redirectTo || returnUrl;
     router.push(dest);
     router.refresh();
@@ -283,7 +288,6 @@ function AuthCardForm({
       setPendingAction(null);
     }
   };
-
 
   /**
    * Probe the address's domain for a registered SAML provider and hand the
@@ -573,19 +577,19 @@ function AuthCardForm({
   if (step === 'sso' && ssoUrl) {
     return (
       <>
-        <motion.div {...rise(0)}>
+        <m.div {...rise(0)}>
           <StepHeader
             title="Use single sign-on"
             description={
               <>
-                <span className="text-foreground font-medium break-words">{email}</span> can sign in
+                <span className="text-foreground font-medium wrap-break-word">{email}</span> can sign in
                 through your organization&apos;s identity provider.
               </>
             }
           />
-        </motion.div>
+        </m.div>
 
-        <motion.div {...rise(0.06)}>
+        <m.div {...rise(0.06)}>
           {info && <InfoStrip message={info} />}
 
           <Button
@@ -638,7 +642,7 @@ function AuthCardForm({
               </button>
             </p>
           </div>
-        </motion.div>
+        </m.div>
       </>
     );
   }
@@ -647,19 +651,19 @@ function AuthCardForm({
   if (step === 'code') {
     return (
       <>
-        <motion.div {...rise(0)}>
+        <m.div {...rise(0)}>
           <StepHeader
             title="Check your email"
             description={
               <>
                 We sent a code to{' '}
-                <span className="text-foreground font-medium break-words">{sentEmail}</span>
+                <span className="text-foreground font-medium wrap-break-word">{sentEmail}</span>
               </>
             }
           />
-        </motion.div>
+        </m.div>
 
-        <motion.div {...rise(0.06)}>
+        <m.div {...rise(0.06)}>
           {info && <InfoStrip message={info} />}
 
           <CodeInput
@@ -725,7 +729,7 @@ function AuthCardForm({
               </>
             )}
           </div>
-        </motion.div>
+        </m.div>
       </>
     );
   }
@@ -735,11 +739,11 @@ function AuthCardForm({
     const copy = credentialsCopy(credMode);
     return (
       <>
-        <motion.div {...rise(0)}>
+        <m.div {...rise(0)}>
           <StepHeader title={copy.title} description={copy.description ?? undefined} />
-        </motion.div>
+        </m.div>
 
-        <motion.div {...rise(0.06)}>
+        <m.div {...rise(0.06)}>
           {info && <InfoStrip message={info} />}
 
           <form onSubmit={handleCredentialsSubmit} className="space-y-5">
@@ -808,7 +812,7 @@ function AuthCardForm({
               Email me a code instead
             </Button>
           )}
-        </motion.div>
+        </m.div>
       </>
     );
   }
@@ -816,11 +820,11 @@ function AuthCardForm({
   /* ── Entry step ── */
   return (
     <>
-      <motion.div {...rise(0)}>
+      <m.div {...rise(0)}>
         <StepHeader title="Welcome to Kortix" tagline="Your AI Command Center" />
-      </motion.div>
+      </m.div>
 
-      <motion.div {...rise(0.06)}>
+      <m.div {...rise(0.06)}>
         {info && <InfoStrip message={info} />}
 
         {googleEnabled && (
@@ -873,7 +877,9 @@ function AuthCardForm({
               disabled={pending}
               className="hover:text-foreground -my-2 py-2 underline-offset-4 transition-colors hover:underline disabled:opacity-50"
             >
-              {pendingAction === 'sso' ? 'Looking up your identity provider…' : 'Use single sign-on (SSO)'}
+              {pendingAction === 'sso'
+                ? 'Looking up your identity provider…'
+                : 'Use single sign-on (SSO)'}
             </button>
           </p>
         )}
@@ -883,7 +889,7 @@ function AuthCardForm({
         <p className="text-muted-foreground mt-8 text-sm">
           New here? Continue creates your account automatically.
         </p>
-      </motion.div>
+      </m.div>
     </>
   );
 }

@@ -87,7 +87,7 @@ model, the agent can:
 The database connector is **read-only**: the agent queries but cannot insert,
 update, or delete, and its role is scoped to the metrics tables. It posts to one
 Slack channel and nothing else. Credentials are encrypted in the secrets manager
-and injected at runtime, never shown to the model or written to logs.
+and injected at runtime, scoped to the agents you grant them to.
 
 </Step>
 <Step title="Let each Monday build its own report">
@@ -111,11 +111,10 @@ one message. No one spends their Monday assembling it.
 
 The agent reads production data, so the access is scoped and contained:
 
-- **Isolation.** Every run happens in its own microVM sandbox. The session queries
-  the metrics and drafts the report; only the Slack message leaves the sandbox.
+- **Isolation.** Every run happens in its own isolated sandbox. The session queries
+  the metrics and drafts the report; only the Slack message is written back out.
 - **Scoped secrets.** The Postgres and Slack credentials are encrypted in the
-  secrets manager and injected into the sandbox at runtime, never exposed to the
-  model or the logs.
+  secrets manager and injected into the sandbox at runtime, scoped to the agents you grant them to.
 - **Read-only database access.** The database role can select and nothing else —
   no insert, update, or delete — and it's scoped to the metrics tables. The report
   cannot change the data it reports on.

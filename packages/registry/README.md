@@ -47,12 +47,12 @@ Kortix-native ones:
 
 | type | what it is |
 | --- | --- |
-| `registry:skill` | an OpenCode `SKILL.md` (+ its reference files/folders) |
+| `registry:skill` | an Agent Skills `SKILL.md` (+ its reference files/folders) |
 | `registry:agent` | an agent persona `.md` |
 | `registry:command` | an OpenCode slash command `.md` |
 | `registry:tool` | a custom OpenCode tool (`.ts`) / plugin |
 | `registry:trigger` | a `kortix.yaml` `triggers:` block |
-| `registry:connector` | an integration definition (Pipedream/MCP/HTTP) |
+| `registry:connector` | a connector definition (Pipedream/MCP/HTTP) |
 | `registry:rules` | `AGENTS.md` / rules files |
 | `registry:memory` | seed memory files |
 | `registry:project` | a whole Kortix project scaffold |
@@ -64,8 +64,8 @@ drives categorization, icons, and validation.
 ### Target aliases
 
 A file's `target` says where it lands. Aliases expand against the consuming
-project's layout (the OpenCode config dir comes from `opencode.config_dir` in
-`kortix.yaml`, default `.kortix/opencode`):
+project's canonical OpenCode layout. Kortix-managed system skills and optional
+marketplace skills land in the OpenCode config directory:
 
 | alias | expands to |
 | --- | --- |

@@ -1,0 +1,126 @@
+---
+title: Change requests
+description: How session work reaches the default branch through review.
+---
+
+A change request (CR) merges one git branch into another. Kortix creates a CR from a session's branch (`head_ref`) onto the project's default branch (`base_ref`, usually `main`). The CR row is metadata; the merge, diff, and conflict checks run as real git operations against the project's repository. A CR is the only way session work reaches the default branch.
+
+## Why work goes through a CR
+
+A session runs in a sandbox on its own branch, named after the session ID. The sandbox does not last forever, but the branch does: git is the only durable record of a session's work. Every new session starts from the default branch. Until a CR merges, the work stays on its own branch, unreviewed and invisible to every other agent, trigger, and collaborator. This applies to every change: code, agents, skills, and the manifest (`kortix.yaml`) — no exceptions.
+
+## The agent mandate
+
+An agent must open a CR to land any change on the project's default branch. The agent does not merge its own CR — merging is the user's decision. Follow this contract:
+
+1. Commit on the session branch (`$KORTIX_BRANCH_NAME`). Make small, working commits. Do not rewrite history or force-push.
+2. Push the branch: `git push origin HEAD`.
+3. Open the CR: `kortix cr open --title "..." --description "..."`. Inside a session sandbox, `--head` and `--session` default to `$KORTIX_BRANCH_NAME` and `$KORTIX_SESSION_ID`. `--base` defaults to the project's default branch.
+4. Tell the user the CR number, so they can review it.
+5. Stop. Do not merge the CR yourself.
+
+### Anti-patterns
+
+- **Force-pushing to the default branch.** This breaks the review contract, even where the backend allows it.
+- **"It's on my branch, pull it yourself."** The session branch is gone once the sandbox stops, unless a CR merged it first.
+- **Sending the change as a file, paste, or archive.** The CR system already solves this problem.
+
+## Data model
+
+CRs live in the `change_requests` table.
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `cr_id` | uuid | Primary key. The REST API's identifier. |
+| `project_id` | uuid | The project the CR belongs to. |
+| `number` | integer | Per-project display number (`#1`, `#2`…). Unique per project. Never recycles. |
+| `title` | text | Required. |
+| `description` | text | Defaults to an empty string. |
+| `base_ref` | text | The branch merged into. Usually `main`. |
+| `head_ref` | text | The branch merged from. In a session, this is the session ID (a UUID). |
+| `status` | enum | `open`, `merged`, or `closed`. |
+| `head_commit_sha` | text | Refreshed against the live `head_ref` tip on every read, for open CRs. Captured at merge time for merged CRs. |
+| `base_commit_sha` | text | Same rule, for `base_ref`. |
+| `origin_session_id` | text | The session that opened the CR. Set to null if that session is deleted. |
+| `created_by` | uuid | The user who created the CR. |
+| `merged_at` / `merged_by` | timestamp / uuid | When and who merged the CR. |
+| `merge_commit_sha` | text | The merge commit. Equals `head_commit_sha` for a fast-forward. |
+| `closed_at` / `closed_by` | timestamp / uuid | When and who closed the CR without merging. |
+| `metadata` | jsonb | Holds `requested_changes`, a list of `{text, by, at}` entries added by `POST /:crId/request-changes`. CRs have no separate comment table. |
+| `created_at` / `updated_at` | timestamp | Set on creation. Updated on every status change or SHA refresh. |
+
+A unique index on `(project_id, number)` lets you reference a CR by its short number instead of its UUID.
+
+## Lifecycle
+
+```
+open ──(merge)──▶ merged      (terminal)
+open ──(close)──▶ closed ──(reopen)──▶ open
+```
+
+- `open` is the starting status.
+- `closed` is reversible. `POST /:crId/reopen` sets it back to `open`.
+- `merged` is terminal. You cannot reopen or close a merged CR. Open a new CR against the merged state instead.
+
+Kortix refuses to create a CR whose branch has no commits ahead of the default branch. This usually means the agent committed locally but never pushed. Push the commits, then create the CR again.
+
+## SHA refresh
+
+For an open CR, Kortix refreshes `head_commit_sha` and `base_commit_sha` against the live branches on every `GET`. If the repository is unreachable, or a branch is missing, Kortix skips the refresh and serves the CR's last known metadata. A merged CR keeps the SHAs captured at merge time — Kortix never refreshes them again.
+
+## Merge mechanics
+
+`POST /v1/projects/:projectId/change-requests/:crId/merge` runs these steps.
+
+1. Kortix reads the manifest (`kortix.yaml`) from `head_ref` and validates it against the manifest schema. A branch with no manifest passes. An invalid manifest returns `422` with `code: "MANIFEST_INVALID"` and stops the merge.
+2. Kortix fast-forwards `base_ref` if `head_ref` is strictly ahead of it.
+3. Otherwise, Kortix creates a merge commit. The default message is `Merge CR #<n>: <title>`, and you can override it with `message` in the request body. The commit author is `Kortix <noreply@kortix.ai>`.
+4. A conflict returns `409` with the conflict list. Check the same list with `GET /:crId/merge-preview` before you merge.
+5. On success, Kortix sets `status` to `merged`, records `merged_at`, `merged_by`, and `merge_commit_sha`, and invalidates the project's git cache.
+
+Merging a CR that is not `open` returns `409`.
+
+### Merge preview
+
+`GET /:crId/merge-preview` returns:
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `base_sha` | string | Current tip of `base_ref`. |
+| `head_sha` | string | Current tip of `head_ref`. |
+| `merge_base` | string \| null | Common ancestor. Null if the histories are unrelated. |
+| `is_up_to_date` | boolean | `head_ref` is fully merged into `base_ref`. |
+| `can_merge` | boolean | No conflicts. |
+| `can_fast_forward` | boolean | `head_ref` is strictly ahead of `base_ref`. |
+| `conflicts` | string[] | File paths that would conflict. |
+
+## REST API
+
+All routes sit under `/v1/projects/:projectId/change-requests`.
+
+| Method | Path | Notes |
+| --- | --- | --- |
+| GET | `/` | `?status=open\|merged\|closed\|all`. No filter returns every status. |
+| POST | `/` | Body: `{title, description?, head_ref, base_ref?, session_id?}`. Returns `201`. |
+| GET | `/:crId` | Returns the CR. Refreshes SHAs as a side effect. |
+| PATCH | `/:crId` | Edits `title` or `description`. `409` if not `open`. |
+| GET | `/:crId/diff` | Unified patch: file list, additions, deletions. |
+| GET | `/:crId/merge-preview` | See Merge preview above. |
+| POST | `/:crId/merge` | Body: `{message?}`. `422` on an invalid manifest. `409` on conflict or if not `open`. |
+| POST | `/:crId/close` | `409` if already `merged`. |
+| POST | `/:crId/reopen` | `409` if not `closed`. |
+| POST | `/:crId/request-changes` | Body: `{feedback}`. Appends to `metadata.requested_changes` and wakes the originating session's agent. `409` if not `open`. |
+
+`POST /` rejects a `head_ref` with no commits ahead of `base_ref`: `422 code: "CR_HEAD_NOT_AHEAD"`. This is the error an agent sees if it opens a CR before pushing its branch.
+
+### Authorization
+
+Read routes need read access to the project. Write routes need write access. Each write action also needs a capability, shown below for a full token and for a session's scoped token.
+
+| Action | Full-token capability | Scoped-token capability |
+| --- | --- | --- |
+| Open a CR | `project.gitops.push` | `project.cr.open` |
+| Request changes | `project.review.act` | `project.cr.open` |
+| Merge | `project.gitops.merge` | `project.cr.merge` |
+
+These are separate capabilities, so a token can open CRs without the power to merge them. This is the mechanism behind the agent mandate above.

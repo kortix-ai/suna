@@ -1,6 +1,5 @@
 'use client';
 
-import { BetterCodeBlock } from '@/components/ui/better-code-block';
 import { STATUS_TEXT } from '@/components/ui/status';
 import { TextShimmer } from '@/components/ui/text-shimmer';
 import {
@@ -11,19 +10,21 @@ import {
   partOutput,
   partStatus,
   partStreamingInput,
+  ToolCodeCard,
   ToolOutputFallback,
   ToolRunningContext,
   ToolSurfaceContext,
 } from '@/features/session/tool/shared/infrastructure';
 import { parseReadOutput } from '@/features/session/tool/shared/read-helpers';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
+import { ToolResultCard } from '@/features/session/tool/shared/result-card';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { useOcFileOpen } from '@/features/session/use-oc-file-open';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
-import { getDirectory, getFilename } from '@/ui';
-import { FileIcon, Folder } from 'lucide-react';
+import { getFilename } from '@/ui';
+import { FileIcon, FolderIcon as Folder, ReadCvLogoIcon } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
-import { useContext, useMemo } from 'react';
+import { useCallback, useContext, useMemo } from 'react';
 
 export function ReadTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -36,9 +37,12 @@ export function ReadTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const status = partStatus(part);
   const filePath = (input.filePath as string) || (streamingInput.filePath as string) || undefined;
   const filename = getFilename(filePath) || '';
-  const directory = filePath ? getDirectory(filePath) : undefined;
   const ext = filename.split('.').pop() || '';
-  const { openPreview } = useFilePreviewStore();
+  // Field selector, not the whole store: destructuring `useFilePreviewStore()`
+  // subscribes to every field, and `openPreview` writes `isOpen`/`filePath`/
+  // `lineNumber`. Opening one file preview therefore re-rendered every `read`
+  // row on screen, none of which read any of those fields.
+  const openPreview = useFilePreviewStore((s) => s.openPreview);
   const { toDisplayPath } = useOcFileOpen();
 
   const isStalePending = !running && !filename && (status === 'pending' || status === 'running');
@@ -57,70 +61,73 @@ export function ReadTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
 
   const content = parsed?.type === 'file' ? parsed.content : '';
 
+  const handleSubtitleClick = useCallback(() => {
+    if (filePath) openPreview(filePath);
+  }, [filePath, openPreview]);
+
   return (
     <>
       <BasicTool
+        icon={<ReadCvLogoIcon className="size-3.5 shrink-0" />}
         trigger={{
           title: 'Read',
-          subtitle: isStalePending ? undefined : filename || (isStalePending ? 'Working...' : undefined),
-          args: directory ? [directory] : undefined,
+          subtitle: isStalePending
+            ? undefined
+            : filename || (isStalePending ? 'Working...' : undefined),
         }}
-        onSubtitleClick={filePath ? () => openPreview(filePath) : undefined}
+        onSubtitleClick={filePath ? handleSubtitleClick : undefined}
         defaultOpen={defaultOpen}
         forceOpen={forceOpen}
         locked={locked}
         className="overflow-hidden p-0"
       >
         {content ? (
-          <div className="bg-card">
-            <BetterCodeBlock
-              code={content}
-              language={ext}
-              showBackgroundColors={false}
-              border={false}
-              className="p-0"
-            />
-          </div>
+          <ToolCodeCard code={content} language={ext} />
         ) : parsed?.type === 'directory' && parsed.entries && parsed.entries.length > 0 ? (
-          <div data-scrollable className="max-h-96 space-y-0.5 overflow-auto px-3 py-2">
-            {parsed.entries.map((entry, i) => {
+          <ToolResultCard bodyClassName="space-y-0.5 px-2 py-1.5">
+            {parsed.entries.map((entry) => {
               const isDir = entry.endsWith('/');
               return (
                 <div
-                  key={i}
+                  key={entry}
                   className="text-muted-foreground/80 flex items-center gap-1.5 font-mono text-xs"
                 >
                   {isDir ? (
-                    <Folder className="text-muted-foreground/40 size-3 flex-shrink-0" />
+                    <Folder className="text-muted-foreground/40 size-3 shrink-0" />
                   ) : (
-                    <FileIcon className="text-muted-foreground/40 size-3 flex-shrink-0" />
+                    <FileIcon className="text-muted-foreground/40 size-3 shrink-0" />
                   )}
                   <span className="truncate">{entry}</span>
                 </div>
               );
             })}
-          </div>
+          </ToolResultCard>
         ) : isStalePending ? (
-          <div className='p-4 pt-0'>
+          <ToolResultCard bodyClassName="px-2 py-1.5">
             <TextShimmer>
               {tHardcodedUi.raw(
                 'componentsSessionToolRenderers.line2853JsxTextWaitingForFileContent',
               )}
             </TextShimmer>
-          </div>
+          </ToolResultCard>
         ) : isErrorOutput(output) ? (
           <ToolOutputFallback output={output} toolName="read" />
         ) : null}
       </BasicTool>
       {surface !== 'panel' && loaded.length > 0 && (
         <div className="mt-1 space-y-0.5 pl-2">
-          {loaded.map((filepath, i) => (
+          {loaded.map((filepath) => (
             <div
-              key={i}
+              key={filepath}
               role="button"
               tabIndex={0}
               onClick={() => openPreview(filepath)}
-              onKeyDown={(e) => e.key === 'Enter' && openPreview(filepath)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  openPreview(filepath);
+                }
+              }}
               className="text-muted-foreground hover:text-foreground group flex cursor-pointer items-center gap-1.5 text-xs transition-colors"
             >
               <span className={STATUS_TEXT.success}>+</span>

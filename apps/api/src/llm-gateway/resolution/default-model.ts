@@ -1,7 +1,6 @@
 import { type AuthedPrincipal, GatewayResolutionError } from '@kortix/llm-gateway';
-import { AUTO_MODEL_ID } from '@kortix/llm-catalog';
 import { connectedByokPickerModels } from '../models/picker-catalog';
-import { listProjectSecretsSnapshot } from '../../projects/secrets';
+import { listProjectSecretNamesForConsumer } from '../../projects/secrets';
 import { DEFAULT_AGENT_SENTINEL } from '../../projects/agents';
 import {
   type AccountModelDefaults,
@@ -20,8 +19,7 @@ import { resolveCandidates } from './resolve-candidates';
 
 // Resolves the account/agent/project-configured default model for a gateway
 // principal, once at authentication (in withResolvedTier). The result is attached
-// to the principal as `defaultModel` and consumed by `pickAutoModel` to turn a
-// request for the synthetic `auto` into the model the account actually wants.
+// to the principal as `defaultModel` for concrete default-route matching.
 //
 // Resolution order (most-specific wins): per-agent default → project default →
 // account default → undefined (the caller then falls back to the platform
@@ -102,11 +100,18 @@ export function invalidateAccountModelDefaults(accountId: string): void {
  * connected. Returns null (→ the caller's unmodified platform default) when
  * the project has no BYOK key connected at all, or has no project context.
  */
-async function connectedByokFallback(projectId: string | undefined): Promise<string | null> {
+async function connectedByokFallback(
+  projectId: string | undefined,
+  principalUserId?: string,
+): Promise<string | null> {
   if (!projectId) return null;
   try {
-    const snapshot = await listProjectSecretsSnapshot(projectId);
-    const connected = new Set(snapshot.names.map((n) => n.toUpperCase()));
+    const names = await listProjectSecretNamesForConsumer({
+      projectId,
+      principalUserId,
+      consumer: 'llm_gateway',
+    });
+    const connected = new Set(names);
     return connectedByokPickerModels(connected)[0]?.id ?? null;
   } catch {
     return null; // never let a secrets-read hiccup break default resolution
@@ -147,7 +152,7 @@ export async function resolveDefaultModelForPrincipal(
         freeModelsOnly: principal.freeModelsOnly ?? false,
         model: chosen as string,
       }),
-    () => connectedByokFallback(principal.projectId),
+    () => connectedByokFallback(principal.projectId, principal.userId),
   );
   return kept ?? undefined;
 }
@@ -180,7 +185,7 @@ export async function isModelServableForAccount(params: {
   freeModelsOnly: boolean;
   model: string;
 }): Promise<boolean> {
-  if (params.model === AUTO_MODEL_ID || params.model === `kortix/${AUTO_MODEL_ID}`) return false;
+  if (params.model === 'auto' || params.model === 'kortix/auto') return false;
   // Accept either the opencode ref (`kortix/<id>`) or the bare wire id — the
   // gateway resolves the bare id, so normalize before probing candidates.
   const wire = toWireModel(params.model);
@@ -253,7 +258,7 @@ export async function resolveEffectiveModel(params: {
         freeModelsOnly: params.freeModelsOnly,
         model: chain.model as string,
       }),
-    () => connectedByokFallback(params.projectId),
+    () => connectedByokFallback(params.projectId, params.userId),
   );
   if (!kept) return { model: null, source: 'platform' };
   // kept === chain.model means the originally-configured default WAS servable

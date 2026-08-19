@@ -12,8 +12,8 @@
  *   status === 'pending'   → first-time, wizard auto-opens
  *   status === 'completed' → user finished or skipped, wizard stays closed
  *
- * Reads ride on the same `project-detail` query the rest of the project uses
- * so there's no extra round-trip — completion just reflects whatever the
+ * Reads ride on the same `qk.project.detail(id)` query the rest of the project
+ * uses so there's no extra round-trip — completion just reflects whatever the
  * already-cached metadata says. `complete()` mutates the server AND
  * optimistically updates the cache so the wizard fades out instantly.
  */
@@ -24,7 +24,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   getProjectDetail,
   setProjectOnboardingComplete,
-} from '@kortix/sdk/projects-client';
+} from '@kortix/sdk';
+import { contract, invalidateProject, qk } from '@kortix/sdk/react';
 
 export type ProjectOnboardingStatus = 'pending' | 'completed';
 
@@ -46,17 +47,15 @@ export interface ProjectOnboardingState {
   reset: () => Promise<unknown>;
 }
 
-const Q = { staleTime: 60_000, refetchOnWindowFocus: false } as const;
-
 export function useProjectOnboarding(projectId: string): ProjectOnboardingState {
   const enabled = !!projectId;
   const queryClient = useQueryClient();
 
   const detail = useQuery({
-    queryKey: ['project-detail', projectId],
+    queryKey: qk.project.detail(projectId),
     queryFn: () => getProjectDetail(projectId),
     enabled,
-    ...Q,
+    ...contract('config'),
   });
 
   const status: ProjectOnboardingStatus = useMemo(() => {
@@ -68,7 +67,7 @@ export function useProjectOnboarding(projectId: string): ProjectOnboardingState 
   // wizard fades out immediately and we don't refetch before the UI reacts.
   const applyOptimistic = useCallback(
     (completed: boolean) => {
-      const key = ['project-detail', projectId] as const;
+      const key = qk.project.detail(projectId);
       queryClient.setQueryData(key, (prev: ProjectDetailData | undefined) => {
         if (!prev?.project) return prev;
         const meta = { ...(prev.project.metadata ?? {}) } as ProjectMetadataMaybe;
@@ -91,7 +90,7 @@ export function useProjectOnboarding(projectId: string): ProjectOnboardingState 
   // a pre-existing onboarding_completed_at (e.g. an already-completed project).
   const snapshotThenApply = useCallback(
     async (completed: boolean) => {
-      const key = ['project-detail', projectId] as const;
+      const key = qk.project.detail(projectId);
       await queryClient.cancelQueries({ queryKey: key });
       const previous = queryClient.getQueryData<ProjectDetailData>(key);
       applyOptimistic(completed);
@@ -103,7 +102,7 @@ export function useProjectOnboarding(projectId: string): ProjectOnboardingState 
   const restorePrevious = useCallback(
     (context: { previous: ProjectDetailData | undefined } | undefined) => {
       if (context && context.previous !== undefined) {
-        queryClient.setQueryData(['project-detail', projectId], context.previous);
+        queryClient.setQueryData(qk.project.detail(projectId), context.previous);
       }
     },
     [projectId, queryClient],
@@ -114,7 +113,7 @@ export function useProjectOnboarding(projectId: string): ProjectOnboardingState 
     onMutate: () => snapshotThenApply(true),
     onError: (_err, _vars, context) => restorePrevious(context),
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['project-detail', projectId] });
+      void invalidateProject(queryClient, projectId);
     },
   });
 
@@ -123,7 +122,7 @@ export function useProjectOnboarding(projectId: string): ProjectOnboardingState 
     onMutate: () => snapshotThenApply(false),
     onError: (_err, _vars, context) => restorePrevious(context),
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['project-detail', projectId] });
+      void invalidateProject(queryClient, projectId);
     },
   });
 

@@ -30,6 +30,55 @@ flow("PROJ-3", { domain: "projects", requires: ["managedGit"], routes: ["POST /v
   });
 });
 
+flow(
+  "PROJ-14",
+  {
+    domain: "projects",
+    routes: ["POST /v1/projects/provision-stream"],
+  },
+  async (ctx) => {
+    await ctx.step("unsupported provider streams validating, then a terminal 400 error", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post("/v1/projects/provision-stream", {
+          name: ctx.fixtures.name("stream-invalid-provider"),
+          provider: "unsupported-provider",
+        });
+      r.status(200).headerEquals("content-type", /^text\/event-stream/);
+
+      const events = r
+        .text()
+        .split("\n\n")
+        .filter(Boolean)
+        .map((frame) => {
+          if (!frame.startsWith("data: ")) {
+            throw new Error(`provision stream emitted a non-data frame: ${frame}`);
+          }
+          return JSON.parse(frame.slice("data: ".length)) as Record<string, unknown>;
+        });
+      if (events.length !== 2) {
+        throw new Error(`provision stream emitted ${events.length} events instead of 2`);
+      }
+      if (events[0]?.type !== "phase" || events[0]?.phase !== "validating") {
+        throw new Error(`unexpected provision phase: ${JSON.stringify(events[0])}`);
+      }
+      if (events[1]?.type !== "error" || events[1]?.status !== 400) {
+        throw new Error(`unexpected provision terminal event: ${JSON.stringify(events[1])}`);
+      }
+    });
+
+    await ctx.step("ANON is rejected before an SSE stream opens", async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .post("/v1/projects/provision-stream", { name: "anonymous" });
+      r.status(401);
+      if (r.header("content-type")?.includes("text/event-stream")) {
+        throw new Error("anonymous provision opened an SSE stream");
+      }
+    });
+  },
+);
+
 flow("PROJ-5", { domain: "projects", routes: ["GET /v1/projects/:projectId"] }, async (ctx) => {
   const p = await ctx.fixtures.project();
   await ctx.step("OWNER reads project", async () => {
@@ -94,20 +143,20 @@ flow(
   "PROJ-18",
   {
     domain: "projects",
-    // `stripe` ⇒ the target enforces billing, so a free account is capped at 3
+    // `stripe` ⇒ the target enforces billing, so a free account is capped at 1
     // project; `managedGit` ⇒ managed provisioning is available to reach the cap.
     requires: ["managedGit", "stripe"],
     serial: true,
     routes: ["GET /v1/projects", "POST /v1/projects/provision"],
   },
   async (ctx) => {
-    // NONMEMBER is a fresh, UNFUNDED (free) account → its project cap is 3.
+    // NONMEMBER is a fresh, UNFUNDED (free) account → its project cap is 1.
     const list = await ctx.client.as(ctx.P.NONMEMBER).get("/v1/projects");
     list.status(200);
     const existing = list.json<any[]>()?.length ?? 0;
 
-    for (let index = existing; index < 3; index += 1) {
-      await ctx.step(`free account: project ${index + 1} of 3 allowed (201)`, async () => {
+    for (let index = existing; index < 1; index += 1) {
+      await ctx.step(`free account: project ${index + 1} of 1 allowed (201)`, async () => {
         let r = await ctx.client
           .as(ctx.P.NONMEMBER)
           .post("/v1/projects/provision", {
@@ -128,24 +177,31 @@ flow(
       });
     }
 
-    await ctx.step("free account: 4th project rejected (403 project_limit_reached)", async () => {
+    await ctx.step("free account: 2nd project rejected (403 project_limit_reached)", async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .post("/v1/projects/provision", { name: ctx.fixtures.name("free-4") });
+        .post("/v1/projects/provision", { name: ctx.fixtures.name("free-2") });
       // The quota gate runs before any repository is provisioned.
       r.status(403)
         .body()
         .has("$.code", "project_limit_reached")
-        .has("$.limit", 3)
-        .has("$.count", 3);
+        .has("$.limit", 1)
+        .has("$.count", 1);
     });
   },
 );
 
 flow("PROJ-8", { domain: "projects", routes: ["DELETE /v1/projects/:projectId"] }, async (ctx) => {
-  // Not tracked: this flow deletes it itself.
-  const r0 = await ctx.client.as(ctx.P.OWNER).post("/v1/projects/provision", { name: ctx.fixtures.name("del") });
-  const id = r0.json<any>().project_id;
+  // Local uses a database fixture so deletion remains hermetic. Remote targets
+  // provision a managed repository and then archive it through the same route.
+  const id =
+    ctx.env.target === "local"
+      ? (await ctx.fixtures.project({ name: ctx.fixtures.name("del") })).id
+      : (
+          await ctx.client.as(ctx.P.OWNER).post("/v1/projects/provision", {
+            name: ctx.fixtures.name("del"),
+          })
+        ).json<any>().project_id;
   await ctx.step("OWNER archives project", async () => {
     const r = await ctx.client.as(ctx.P.OWNER).del("/v1/projects/:projectId", { params: { projectId: id } });
     r.status(200).body().has("$.ok", true);

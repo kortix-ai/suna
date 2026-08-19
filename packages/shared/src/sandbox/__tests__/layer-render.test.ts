@@ -16,13 +16,29 @@
  * The `test`s below the golden pin the invariants that a snapshot update could
  * otherwise wave through.
  */
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, test } from 'bun:test';
-import { AGENT_BROWSER_VERSION, OPENCODE_VERSION } from '../../runtime-versions';
 import {
-  buildLayeredDockerfile,
+  AGENT_BROWSER_VERSION,
+  BUN_SHA256_AMD64,
+  BUN_SHA256_ARM64,
+  OPENCODE_VERSION,
+  PLAYWRIGHT_VERSION,
+  PNPM_SHA256_AMD64,
+  PNPM_SHA256_ARM64,
+  PYTHON_PACKAGE_FLOOR,
+  PYTHON_PACKAGE_FLOOR_IMPORTS,
+  UV_SHA256_AMD64,
+  UV_SHA256_ARM64,
+} from '../../runtime-versions';
+import {
   type BuildLayeredDockerfileOpts,
-  kortixToolchainLayer,
+  KORTIX_USER_PATH_DIRS,
   PLATFORM_DEFAULT_USER_DOCKERFILE,
+  buildLayeredDockerfile,
+  buildPerProjectWarmFromBaseDockerfile,
+  kortixToolchainLayer,
 } from '../dockerfile-layer';
 
 const COMMON = {
@@ -31,9 +47,10 @@ const COMMON = {
   agentBinaryPath: 'kortix-agent.gz',
   cliBinaryPath: 'kortix.gz',
   entrypointScriptPath: 'kortix-entrypoint',
+  machineDocPath: 'MACHINE.md',
   slackCliPath: 'kortix-slack-cli',
-  executorSdkPath: 'kortix-executor-sdk',
   opencodeConfigPath: 'kortix-opencode-config',
+  opencodeWarmupScriptPath: 'kortix-opencode-warmup',
   catalogPath: 'kortix-llm-catalog.json',
 };
 
@@ -67,10 +84,9 @@ const CASES: Array<{ label: string; opts: BuildLayeredDockerfileOpts }> = [
       userDockerfile: PLATFORM_DEFAULT_USER_DOCKERFILE,
       ...COMMON,
       warmRepo: {
-        cloneUrl: 'https://git.example.com/acme/app.git',
-        cloneHeaders: { Authorization: 'Bearer redacted' },
+        stagedPath: 'kortix-warm-repo',
+        stagedGitPath: 'kortix-warm-repo-git.tar',
         branch: 'main',
-        originUrl: 'https://kortix.example.com/v1/git/proj.git',
       },
     },
   },
@@ -84,46 +100,82 @@ describe('rendered layer (golden)', () => {
   }
 });
 
-describe('the Python floor is venv-isolated from dpkg', () => {
+describe('runtime artifact integrity', () => {
+  const rendered = kortixToolchainLayer(COMMON);
+
+  test('verifies both supported architectures against repository-controlled SHA-256 digests', () => {
+    for (const digest of [
+      PNPM_SHA256_AMD64,
+      PNPM_SHA256_ARM64,
+      UV_SHA256_AMD64,
+      UV_SHA256_ARM64,
+      BUN_SHA256_AMD64,
+      BUN_SHA256_ARM64,
+    ]) {
+      expect(rendered).toContain(digest);
+    }
+    expect(rendered.match(/sha256sum -c -/g)).toHaveLength(3);
+  });
+
+  test('does not execute remote installer scripts', () => {
+    expect(rendered).not.toContain('get.pnpm.io/install.sh');
+    expect(rendered).not.toContain('astral.sh/uv/');
+    expect(rendered).not.toContain('bun.com/install');
+    expect(rendered).not.toMatch(/curl[^|\n]*\|\s*(?:sh|bash)/);
+  });
+
+});
+
+describe('the Python runtime is managed by uv', () => {
   const toolchain = kortixToolchainLayer({ opencodeVersion: OPENCODE_VERSION });
 
-  test('never lets pip write to the system interpreter', () => {
-    // The whole dpkg-conflict class in one assertion: pip inside a venv cannot
-    // uninstall a dpkg-owned package, so it can never reproduce "Cannot uninstall
-    // numpy 1.26.4, RECORD file not found ... installed by debian".
-    expect(toolchain).not.toContain('--break-system-packages');
-    expect(toolchain).toContain('RUN /opt/kortix/pyfloor/bin/pip install --no-cache-dir \\');
-  });
-
-  test('builds the venv from the base image python, not the one apt just added', () => {
-    // Risk 1a: on `python:3.12-slim` the apt floor drops Debian's python3 at
-    // /usr/bin/python3. Building the venv from THAT (then PATH-shadowing) would
-    // downgrade the image's own interpreter. `base_py` is resolved BEFORE apt runs.
-    expect(toolchain).toContain('RUN base_py="$(command -v python3 || true)" \\');
+  test('does not install or mutate the distro Python', () => {
+    expect(toolchain).not.toContain('python3 python3-dev python3-pip python3-venv');
+    expect(toolchain.match(/uv pip install/g)).toHaveLength(1);
     expect(toolchain).toContain(
-      '    && "${base_py:-python3}" -m venv --system-site-packages /opt/kortix/pyfloor \\',
+      'uv pip install --python /home/kortix/.local/bin/python3 --break-system-packages',
     );
-    // …and it must be resolved before apt can install a second interpreter.
-    expect(toolchain.indexOf('base_py=')).toBeLessThan(toolchain.indexOf('apt-get update'));
+    expect(toolchain).not.toContain('uv pip install --system');
   });
 
-  test('--system-site-packages keeps the user own installs importable', () => {
-    // Without this the floor's python would lose the user's apt/pip packages
-    // (geopandas, fiona, …) — trading a build failure for an import failure.
-    expect(toolchain).toContain('-m venv --system-site-packages /opt/kortix/pyfloor');
+  test('bakes every floor package exactly-pinned into the managed Python', () => {
+    for (const [pkg, version] of Object.entries(PYTHON_PACKAGE_FLOOR)) {
+      expect(toolchain).toContain(`"${pkg}==${version}"`);
+    }
   });
 
-  test('verifies the import floor through the venv interpreter', () => {
+  test('proves every floor import at build time in a single-line check', () => {
+    for (const importName of Object.values(PYTHON_PACKAGE_FLOOR_IMPORTS)) {
+      expect(toolchain).toContain(`"${importName}"`);
+    }
+    expect(toolchain).toContain('python package floor OK');
+    expect(toolchain).not.toContain('<<');
+  });
+
+  test('every floor package has an import mapping and vice versa', () => {
+    expect(Object.keys(PYTHON_PACKAGE_FLOOR_IMPORTS).sort()).toEqual(
+      Object.keys(PYTHON_PACKAGE_FLOOR).sort(),
+    );
+  });
+
+  test('python-playwright matches the Node playwright that bakes Chromium', () => {
+    expect(PYTHON_PACKAGE_FLOOR.playwright).toBe(PLAYWRIGHT_VERSION);
+  });
+
+  test('installs an exact managed Python as python and python3', () => {
     expect(toolchain).toContain(
-      "    && /opt/kortix/pyfloor/bin/python -c 'import importlib;",
+      'UV_PYTHON_DOWNLOADS=automatic uv python install --default 3.12.13',
     );
+    expect(toolchain).toContain('assert sys.version_info[:3] == (3, 12, 13)');
+    expect(toolchain).toContain("&& python3 -c 'import sys;");
   });
 
   test('extends PATH rather than stomping it', () => {
     // Verified against BuildKit AND buildah's classic imagebuilder: both expand
     // $PATH in ENV from the base image config. A hardcoded absolute PATH here
     // would silently drop a user's cargo/nvm/conda entries.
-    expect(toolchain).toContain('ENV PATH=/opt/kortix/pyfloor/bin:$PATH');
+    expect(toolchain).toContain('/home/kortix/.local/bin');
+    expect(toolchain).not.toContain('/home/kortix/.venv/bin');
   });
 
   test('sets DEBIAN_FRONTEND itself instead of inheriting it by luck', () => {
@@ -131,8 +183,104 @@ describe('the Python floor is venv-isolated from dpkg', () => {
   });
 });
 
-describe('the /workspace wipe is scoped to the shared default image', () => {
-  const WIPE = 'find /workspace -mindepth 1 -delete';
+describe('Chromium sits on deterministic parents (cache order is load-bearing)', () => {
+  // Regression guard for the v0.10.11 "session never starts" incident. The
+  // provider build caches are CONTENT-ADDRESSED (Daytona has no instruction-text
+  // cache, no agent-swap), so a non-deterministic layer above the ~150MB Chromium
+  // download busts its cache and forces a re-download on every rebuild. An
+  // agent-server code change re-mints the base snapshot hash → a full Daytona
+  // rebuild → if Chromium sat below the `opencode serve` migration-bake (sqlite
+  // with live timestamps) or the warm-repo clone (fresh credential in the RUN
+  // text), it re-downloaded and overran the session-ready window. Chromium must
+  // stay directly on the deterministic apt + pip floors, ABOVE all of them.
+  const chromiumAt = (t: string) => t.indexOf('pnpm dlx playwright@');
+  const opencodeInstallAt = (t: string) => t.indexOf('"opencode-ai@');
+  const migrationBakeAt = (t: string) => t.indexOf('kortix-opencode-warmup migration');
+
+  test('the base default image installs Chromium before opencode + the migration-bake', () => {
+    const base = kortixToolchainLayer({
+      opencodeVersion: OPENCODE_VERSION,
+      agentBrowserVersion: AGENT_BROWSER_VERSION,
+      opencodeConfigPath: 'kortix-opencode-config',
+      opencodeWarmupScriptPath: 'kortix-opencode-warmup',
+      isSharedDefault: true,
+    });
+    const chromium = chromiumAt(base);
+    expect(chromium).toBeGreaterThan(-1);
+    expect(chromium).toBeLessThan(opencodeInstallAt(base));
+    expect(chromium).toBeLessThan(migrationBakeAt(base));
+  });
+
+  test('a per-project warm bake installs Chromium before the warm-repo COPY', () => {
+    const warm = kortixToolchainLayer({
+      opencodeVersion: OPENCODE_VERSION,
+      agentBrowserVersion: AGENT_BROWSER_VERSION,
+      opencodeConfigPath: 'kortix-opencode-config',
+      opencodeWarmupScriptPath: 'kortix-opencode-warmup',
+      warmRepo: {
+        stagedPath: 'kortix-warm-repo',
+        stagedGitPath: 'kortix-warm-repo-git.tar',
+        branch: 'main',
+      },
+    });
+    const chromium = chromiumAt(warm);
+    expect(chromium).toBeGreaterThan(-1);
+    // the warm-repo COPY must come strictly after Chromium (non-deterministic
+    // parents bust the content-addressed cache for everything chained below).
+    expect(chromium).toBeLessThan(warm.indexOf('COPY --chown=kortix:kortix kortix-warm-repo/'));
+  });
+});
+
+describe('PHASE 1: no git credential is ever rendered into the Dockerfile', () => {
+  // The old renderer embedded `git -c http.extraHeader='Authorization: …'` in a
+  // RUN, leaking the token into the uploaded context, OCI image history, and
+  // build logs. The credential now lives ONLY in the API-side clone
+  // (stageWarmRepoCheckout); the render must be credential-free by construction.
+  const SENTINEL = 'ghp_PHASE1SENTINELtoken0000000000000000';
+
+  test('the warm-repo render never contains an auth header or clone command', () => {
+    const warm = buildLayeredDockerfile({
+      userDockerfile: PLATFORM_DEFAULT_USER_DOCKERFILE,
+      ...COMMON,
+      warmRepo: {
+        stagedPath: 'kortix-warm-repo',
+        stagedGitPath: 'kortix-warm-repo-git.tar',
+        branch: 'main',
+      },
+    });
+    expect(warm).not.toContain('http.extraHeader');
+    expect(warm).not.toContain('Authorization');
+    // The build-time clone is gone entirely — the image only COPYs staged bytes.
+    expect(warm).not.toContain('git clone');
+    expect(warm).toContain('COPY --chown=kortix:kortix kortix-warm-repo/ /workspace/');
+    expect(warm).toContain(
+      'COPY kortix-warm-repo-git.tar /tmp/kortix-warm-repo-git.tar',
+    );
+  });
+
+  test('a sentinel-shaped branch name is shell-quoted, not interpolated raw', () => {
+    // A hostile branch name must not be able to inject a build-time shell
+    // command through the diagnostic echo (the latent sink PHASE 1 closes).
+    const evil = `main"; echo ${SENTINEL}; #`;
+    const warm = buildLayeredDockerfile({
+      userDockerfile: PLATFORM_DEFAULT_USER_DOCKERFILE,
+      ...COMMON,
+      warmRepo: {
+        stagedPath: 'kortix-warm-repo',
+        stagedGitPath: 'kortix-warm-repo-git.tar',
+        branch: evil,
+      },
+    });
+    // shq single-quotes the whole value and escapes embedded quotes, so the
+    // branch appears exactly once, fully quoted — the `; echo …` cannot escape.
+    expect(warm).toContain(`'main"; echo ${SENTINEL}; #'`);
+    // No bare, unquoted occurrence that a shell would execute.
+    expect(warm).not.toContain(`printf 'warm-repo: baked %s on %s\\n' "$(git -C /workspace rev-parse HEAD)" main"`);
+  });
+});
+
+describe('the /workspace cleanup is scoped to the shared default image', () => {
+  const WIPE = 'kortix-opencode-warmup instance wipe';
 
   test('the shared default wipes (it owns /workspace)', () => {
     const shared = buildLayeredDockerfile({
@@ -151,17 +299,183 @@ describe('the /workspace wipe is scoped to the shared default image', () => {
     expect(custom).not.toContain(WIPE);
     // It still cleans up after ITSELF — only the config it staged, and only if it
     // was the one that staged it.
-    expect(custom).toContain('[ "$staged_starter_config" = 1 ] && rm -rf /workspace/.kortix/opencode');
+    expect(custom).toContain('kortix-opencode-warmup instance targeted');
   });
 
   test('a per-project warm keeps the baked checkout (unchanged)', () => {
     const warm = buildLayeredDockerfile(CASES[2]!.opts);
     expect(warm).not.toContain(WIPE);
-    expect(warm).toContain('warm-repo: keeping baked /workspace checkout');
+    expect(warm).toContain('kortix-opencode-warmup instance keep');
   });
 
   test('warmRepo outranks isSharedDefault — a baked checkout is never wiped', () => {
     const both = buildLayeredDockerfile({ ...CASES[2]!.opts, isSharedDefault: true });
     expect(both).not.toContain(WIPE);
+  });
+});
+
+describe('the entrypoint survives providers that discard image USER/ENV', () => {
+  const rendered = buildLayeredDockerfile(CASES[0]!.opts);
+  const entrypoint = readFileSync(
+    resolve(import.meta.dir, '../../../../../apps/sandbox/entrypoint.sh'),
+    'utf8',
+  );
+
+  test('stages one script and wires it as the entrypoint', () => {
+    expect(rendered).toContain('COPY kortix-entrypoint /usr/local/bin/kortix-entrypoint');
+    expect(rendered).not.toContain('kortix-entrypoint-real');
+    expect(rendered).toContain('ENTRYPOINT ["/usr/local/bin/kortix-entrypoint"]');
+  });
+
+  test('restores the kortix PATH dirs and drops root to kortix with HOME restored', () => {
+    expect(entrypoint).toContain(`KORTIX_PATH="${KORTIX_USER_PATH_DIRS}"`);
+    expect(entrypoint).toContain('export HOME=/home/kortix USER=kortix LOGNAME=kortix');
+    expect(entrypoint).toContain('setpriv --reuid kortix --regid kortix --init-groups');
+    // -E, because sudo's default env_reset drops every KORTIX_* var and the
+    // daemon would come up with no session identity while still passing its
+    // health check. Verified against this image's own sudoers line
+    // ('kortix ALL=(ALL) NOPASSWD:ALL'): as root, -E is accepted without a
+    // SETENV tag, and without it the token arrives empty.
+    expect(entrypoint).toContain('sudo -E -u kortix --');
+  });
+
+  test('entrypoint PATH dirs cannot drift from the toolchain ENV PATH', () => {
+    expect(rendered).toContain(`PATH=${KORTIX_USER_PATH_DIRS}:$PATH`);
+  });
+
+  test('carries ONLY the two temporary Platinum mitigations, before the privilege drop, each best-effort', () => {
+    const dropAt = entrypoint.indexOf('setpriv --reuid kortix');
+    const mitigations = [
+      'mount -t tmpfs -o mode=1777,nosuid,nodev tmpfs /dev/shm',
+      'ulimit -Hn 1048576',
+      'ulimit -Sn 1048576',
+    ];
+    for (const m of mitigations) {
+      const at = entrypoint.indexOf(m);
+      expect(at).toBeGreaterThan(-1);
+      expect(at).toBeLessThan(dropAt);
+    }
+    expect(entrypoint).toContain('chmod 1777 /dev/shm 2>/dev/null || true');
+    expect(entrypoint).toContain('ulimit -Hn 1048576 2>/dev/null || true');
+    expect(entrypoint).toContain('ulimit -Sn 1048576 2>/dev/null || true');
+    expect(entrypoint).not.toContain('machine-id');
+    expect(entrypoint).not.toContain('/etc/hosts');
+    expect(entrypoint).not.toContain('/dev/stdin');
+    expect(entrypoint).not.toContain('LANG');
+  });
+
+  test('the staged entrypoint is valid bash', () => {
+    const proc = Bun.spawnSync(['bash', '-n'], { stdin: Buffer.from(entrypoint), stderr: 'pipe' });
+    expect(proc.exitCode).toBe(0);
+  });
+
+  test('build verifies entrypoint syntax before wiring it as the entrypoint', () => {
+    expect(rendered).toContain('&& bash -n /usr/local/bin/kortix-entrypoint');
+  });
+});
+
+describe('buildPerProjectWarmFromBaseDockerfile (FROM-base fast path)', () => {
+  const FROM_BASE_OPTS = {
+    baseImageRef: 'registry.daytona.internal/kortix-default-abc123:latest',
+    opencodeConfigPath: 'kortix-opencode-config',
+    opencodeWarmupScriptPath: 'kortix-opencode-warmup',
+    warmRepo: {
+      stagedPath: 'kortix-warm-repo',
+      stagedGitPath: 'kortix-warm-repo-git.tar',
+      branch: 'main',
+    },
+  };
+
+  test('golden', () => {
+    expect(buildPerProjectWarmFromBaseDockerfile(FROM_BASE_OPTS)).toMatchSnapshot();
+  });
+
+  test('FROMs the base image ref as the very first line', () => {
+    const rendered = buildPerProjectWarmFromBaseDockerfile(FROM_BASE_OPTS);
+    expect(rendered.startsWith(`FROM ${FROM_BASE_OPTS.baseImageRef}\n`)).toBe(true);
+  });
+
+  test('never re-installs the toolchain — Chromium is inherited, not re-run', () => {
+    const rendered = buildPerProjectWarmFromBaseDockerfile(FROM_BASE_OPTS);
+    expect(rendered).not.toContain('apt-get');
+    expect(rendered).not.toContain('opencode-ai@');
+    expect(rendered).not.toContain('playwright');
+    expect(rendered).not.toContain('chromium');
+    expect(rendered).not.toContain('agent-browser@');
+    expect(rendered).not.toContain('pip install');
+    expect(rendered).not.toContain('bun.com/install');
+  });
+
+  test('bakes the repo checkout and re-warms the opencode instance against it', () => {
+    const rendered = buildPerProjectWarmFromBaseDockerfile(FROM_BASE_OPTS);
+    expect(rendered).toContain('Per-project COLD warm: bake repo checkout into /workspace');
+    // MY credential-free COPY of the sanitized staged checkout …
+    expect(rendered).toContain('COPY --chown=kortix:kortix kortix-warm-repo/ /workspace/');
+    // Provider uploaders transfer the visible archive as one context object.
+    expect(rendered).toContain(
+      'COPY kortix-warm-repo-git.tar /tmp/kortix-warm-repo-git.tar',
+    );
+    expect(rendered).toContain(
+      'tar -xf /tmp/kortix-warm-repo-git.tar -C /workspace/.git --strip-components=1',
+    );
+    expect(rendered).not.toContain('rm -f /tmp/kortix-warm-repo-git.tar');
+    // … and MAIN's opencode instance re-warm via the cache-only warm-up script,
+    // which for a per-project warm keeps the baked /workspace checkout.
+    expect(rendered).toContain(
+      'RUN bash /tmp/kortix-opencode-warmup instance keep; rm -f /tmp/kortix-opencode-warmup',
+    );
+  });
+
+  test('carries no git credential — no auth header, no clone command', () => {
+    const rendered = buildPerProjectWarmFromBaseDockerfile(FROM_BASE_OPTS);
+    expect(rendered).not.toContain('http.extraHeader');
+    expect(rendered).not.toContain('Authorization');
+    expect(rendered).not.toContain('git clone');
+  });
+
+  test('renders the warm-repo + warm-up steps byte-identically to the monolithic build', () => {
+    const monolithic = buildLayeredDockerfile({
+      userDockerfile: PLATFORM_DEFAULT_USER_DOCKERFILE,
+      ...COMMON,
+      warmRepo: FROM_BASE_OPTS.warmRepo,
+    });
+    const fromBase = buildPerProjectWarmFromBaseDockerfile(FROM_BASE_OPTS);
+    const startMarker = 'COPY --chown=kortix:kortix kortix-warm-repo/ /workspace/';
+    const endMarker = 'rm -f /tmp/kortix-opencode-warmup';
+    const slice = (text: string) =>
+      text.slice(text.indexOf(startMarker), text.lastIndexOf(endMarker) + endMarker.length);
+    expect(slice(fromBase)).toBe(slice(monolithic));
+  });
+
+  test('does not COPY or reference any staged artifact paths — everything is inherited', () => {
+    const rendered = buildPerProjectWarmFromBaseDockerfile(FROM_BASE_OPTS);
+    expect(rendered).not.toContain('COPY kortix-agent.gz');
+    expect(rendered).not.toContain('COPY kortix.gz');
+    expect(rendered).not.toContain('scaffold.git');
+    expect(rendered).not.toContain('ENTRYPOINT');
+  });
+
+  test('with no opencodeConfigPath, only the warm-repo COPY is added on top of the base', () => {
+    const rendered = buildPerProjectWarmFromBaseDockerfile({
+      baseImageRef: FROM_BASE_OPTS.baseImageRef,
+      warmRepo: FROM_BASE_OPTS.warmRepo,
+    });
+    // The only COPY is the credential-free warm-repo checkout (no artifact tail,
+    // no opencode-config COPY since none was provided).
+    expect(rendered).toContain('COPY --chown=kortix:kortix kortix-warm-repo/ /workspace/');
+    expect(rendered).not.toContain('COPY kortix-opencode-config');
+    expect(rendered).toContain('Per-project COLD warm: bake repo checkout into /workspace');
+  });
+
+  test('is portable — no buildah-unsupported heredocs', () => {
+    const rendered = buildPerProjectWarmFromBaseDockerfile(FROM_BASE_OPTS);
+    const heredocLine = rendered
+      .split('\n')
+      .find((l) => !/^\s*#/.test(l) && /<<-?['"]?[A-Za-z_]\w*['"]?\s*\\?\s*$/.test(l));
+    expect(heredocLine).toBeUndefined();
+  });
+
+  test('result ends with a trailing newline', () => {
+    expect(buildPerProjectWarmFromBaseDockerfile(FROM_BASE_OPTS).endsWith('\n')).toBe(true);
   });
 });

@@ -9,7 +9,7 @@
  *
  * Because every write is an ordinary file change under `.kortix/memory/`,
  * memory edits flow through the normal Kortix change-request pipeline
- * (and the `memory-reflector` agent) exactly like code.
+ * (and the `harness-reflector` agent) exactly like code.
  *
  * Paths are repo-relative and MUST live under `.kortix/memory`
  * (e.g. `.kortix/memory/overview.md`). Nothing is auto-injected: the agent

@@ -11,7 +11,9 @@ import { memo, type ComponentType } from 'react';
 
 // One shader composition per wallpaper id; unknown shader ids fall back
 // to the Pixel Beams preset in ShaderWallpaper.
-const SHADER_WALLPAPERS: Partial<Record<Wallpaper['id'], ComponentType>> = {
+const SHADER_WALLPAPERS: Partial<
+  Record<Wallpaper['id'], ComponentType<{ maxPixelCount?: number }>>
+> = {
   silk: SilkShader,
   dither: DitherShader,
   grain: GrainShader,
@@ -22,12 +24,18 @@ interface WallpaperBackgroundProps {
   wallpaperId?: Wallpaper['id'];
   preview?: boolean;
   showBrandMark?: boolean;
+  /**
+   * Raises the Paper Shader pixel cap for still-image exports. App surfaces
+   * leave it unset and keep the 2 MP cap — see `paper-wallpaper-shaders.tsx`.
+   */
+  maxPixelCount?: number;
 }
 
 export const WallpaperBackground = memo(function WallpaperBackground({
   wallpaperId: wallpaperIdProp,
   preview = false,
   showBrandMark = true,
+  maxPixelCount,
 }: WallpaperBackgroundProps = {}) {
   const storeWallpaperId = useUserPreferencesStore(
     (s) => s.preferences.wallpaperId ?? DEFAULT_WALLPAPER_ID,
@@ -92,7 +100,7 @@ export const WallpaperBackground = memo(function WallpaperBackground({
     const ShaderComponent = SHADER_WALLPAPERS[wallpaper.id] ?? ShaderWallpaper;
     return (
       <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
-        <ShaderComponent />
+        <ShaderComponent maxPixelCount={maxPixelCount} />
       </div>
     );
   }
@@ -105,6 +113,7 @@ export const WallpaperBackground = memo(function WallpaperBackground({
           src={wallpaper.darkUrl!}
           alt=""
           fill
+          sizes="100vw"
           className="object-cover select-none"
           unoptimized
           priority
@@ -116,6 +125,7 @@ export const WallpaperBackground = memo(function WallpaperBackground({
           src={wallpaper.lightUrl!}
           alt=""
           fill
+          sizes="100vw"
           className="object-cover select-none"
           unoptimized
           priority

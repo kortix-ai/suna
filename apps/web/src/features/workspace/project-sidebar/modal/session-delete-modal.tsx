@@ -2,7 +2,8 @@
 
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { deleteProjectSession } from '@kortix/sdk/projects-client';
+import { deleteProjectSession } from '@kortix/sdk';
+import { qk } from '@kortix/sdk/react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 
@@ -30,7 +31,7 @@ export function SessionDeleteModal({
     mutationFn: (id: string) => deleteProjectSession(projectId, id),
     onSuccess: () => {
       successToast(sessionLabel ? `"${sessionLabel}" deleted` : 'Session deleted');
-      queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] });
+      queryClient.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId) });
       onDeleted?.();
       onOpenChange(false);
     },

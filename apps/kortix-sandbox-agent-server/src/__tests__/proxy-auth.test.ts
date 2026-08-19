@@ -11,7 +11,7 @@
 
 import { execFileSync } from 'node:child_process'
 import { createHmac } from 'crypto'
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { beforeEach, describe, expect, it } from 'bun:test'
@@ -23,11 +23,13 @@ import { KORTIX_USER_CONTEXT_HEADER } from '../kortix-user-context'
 import { buildGitAuthArgs, configureGlobalGitIdentity, materializeRepo, __clearCloneTokenCacheForTests, __clearRepoIdentityMemoForTests } from '../git'
 
 const TEST_TOKEN = 'test-kortix-token-32-chars-1234567890'
+const TEST_AGENT_ENV_FILE = join(tmpdir(), `kortix-proxy-agent-env-${process.pid}.sh`)
 
 function baseConfig(over: Partial<Config> = {}): Config {
   return {
     servicePort: 8000,
     opencodeInternalPort: 4096,
+    opencodeStandbyPort: 4097,
     staticPort: 3211,
     workspace: '/workspace',
     projectTarget: '/workspace',
@@ -46,6 +48,10 @@ function baseConfig(over: Partial<Config> = {}): Config {
     gitUserName: 'Kortix Agent',
     gitUserEmail: 'agent@kortix.ai',
     cloneFilter: '',
+    cloneDepth: 1,
+    workload: '',
+    monitorsJson: '',
+    monitorBoxEpoch: '',
     ...over,
   }
 }
@@ -59,7 +65,24 @@ function fakeOpencode(
     getState: () => state,
     getPid: () => null,
     getInternalUrl: () => hooks.internalUrl ?? 'http://127.0.0.1:1', // unreachable by default
+    // Health reports this so the API's PTY proxy can follow opencode across a
+    // reload swap. Omitting it made every /kortix/health assertion 500.
+    getActivePort: () => 4096,
     restart: async () => hooks.restart?.(),
+    // The env route calls reloadConfig now, which applies config in place via
+    // dispose and falls back to restart. Both land here so a test counting
+    // "was the new config applied" keeps counting exactly that.
+    reloadConfig: async () => {
+      hooks.restart?.()
+      return 'restarted' as const
+    },
+    // The refresh route now performs a VERIFIED swap: boot the new opencode,
+    // prove it serves, then retire the old one. Lands on the same hook so a
+    // test counting "was opencode replaced" keeps counting exactly that.
+    reloadVerified: async () => {
+      hooks.restart?.()
+      return { outcome: 'swapped' as const, port: 4097, pid: null }
+    },
   } as unknown as Opencode
 }
 
@@ -114,6 +137,7 @@ describe('daemon proxy auth gate', () => {
     // own fetch call count + git-config side effects.
     __clearCloneTokenCacheForTests()
     __clearRepoIdentityMemoForTests()
+    rmSync(TEST_AGENT_ENV_FILE, { force: true })
   })
 
   it('uses KORTIX_SANDBOX_TOKEN as the canonical sandbox auth token', () => {
@@ -153,6 +177,19 @@ describe('daemon proxy auth gate', () => {
       `http.https://api.kortix.test/.extraheader=AUTHORIZATION: basic ${encoded}`,
       '-c',
       `http.extraheader=AUTHORIZATION: basic ${encoded}`,
+    ])
+  })
+
+  it('uses the provider-selected username for direct-upstream auth', () => {
+    const encoded = Buffer.from('t:code-storage-jwt').toString('base64')
+
+    expect(buildGitAuthArgs(
+      'https://kortix.code.storage/project-123.git',
+      'code-storage-jwt',
+      't',
+    )).toEqual([
+      '-c',
+      `http.https://kortix.code.storage/.extraheader=AUTHORIZATION: basic ${encoded}`,
     ])
   })
 
@@ -207,6 +244,45 @@ describe('daemon proxy auth gate', () => {
       expect(gitOutput(['-C', target, 'config', 'user.email'])).toBe('agent@kortix.ai')
     } finally {
       globalThis.fetch = originalFetch
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('materializes inside a writable target when its parent is read-only', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'kortix-readonly-parent-'))
+    const originalGitConfigGlobal = process.env.GIT_CONFIG_GLOBAL
+    try {
+      const remote = join(root, 'remote.git')
+      const seed = join(root, 'seed')
+      const target = join(root, 'workspace')
+      const globalGitConfig = join(root, 'gitconfig')
+      git(['init', '--bare', remote])
+      mkdirSync(seed)
+      git(['init'], seed)
+      git(['checkout', '-b', 'main'], seed)
+      writeFileSync(join(seed, 'README.md'), 'read-only parent\n')
+      git(['add', 'README.md'], seed)
+      git(['-c', 'user.email=test@kortix.dev', '-c', 'user.name=Kortix Test', 'commit', '-m', 'seed'], seed)
+      git(['remote', 'add', 'origin', remote], seed)
+      git(['push', '-u', 'origin', 'main'], seed)
+      mkdirSync(target)
+      writeFileSync(globalGitConfig, '')
+      process.env.GIT_CONFIG_GLOBAL = globalGitConfig
+
+      chmodSync(root, 0o555)
+      await materializeRepo(baseConfig({
+        autoClone: true,
+        projectTarget: target,
+        repoUrl: remote,
+        defaultBranch: 'main',
+      }))
+
+      expect(readFileSync(join(target, 'README.md'), 'utf8')).toBe('read-only parent\n')
+      expect(readdirSync(root).filter((entry) => entry.startsWith('.kortix-'))).toEqual([])
+      expect(readdirSync(target).filter((entry) => entry.startsWith('.kortix-'))).toEqual([])
+    } finally {
+      chmodSync(root, 0o755)
+      process.env.GIT_CONFIG_GLOBAL = originalGitConfigGlobal
       rmSync(root, { recursive: true, force: true })
     }
   })
@@ -540,6 +616,33 @@ describe('daemon proxy auth gate', () => {
     expect(body.reason).toBe('malformed')
   })
 
+  // `base=1` needs the DIRECT-call header as well as the bearer. The bearer
+  // alone proves nothing about the hop: the preview proxy authenticates the
+  // user traffic it relays with this very token. See KORTIX_SERVICE_CALL_HEADER.
+  it('lets a direct API call reach /kortix/refresh?base=1', async () => {
+    const app = buildOpencodeApp(baseConfig(), fakeOpencode('ok'), Date.now())
+    const res = await app.request('/kortix/refresh?base=1&restart=0', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${TEST_TOKEN}`, 'X-Kortix-Service-Call': '1' },
+    })
+    expect(res.status).toBe(409)
+    const body = (await res.json()) as { error: string; message: string }
+    expect(body.error).toBe('refresh failed')
+    expect(body.message).toContain('not materialized')
+  })
+
+  it('rejects an invalid base_sha before Git execution', async () => {
+    const app = buildOpencodeApp(baseConfig(), fakeOpencode('ok'), Date.now())
+    const res = await app.request('/kortix/refresh?base=1&base_sha=main', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${TEST_TOKEN}`, 'X-Kortix-Service-Call': '1' },
+    })
+    expect(res.status).toBe(400)
+    expect(await res.json()).toEqual({
+      error: 'invalid base_sha',
+    })
+  })
+
   it('rejects /kortix/abort without a signed user context', async () => {
     const app = buildOpencodeApp(baseConfig(), fakeOpencode('ok'), Date.now())
     const res = await app.request('/kortix/abort', { method: 'POST' })
@@ -623,6 +726,108 @@ describe('daemon proxy auth gate', () => {
     }
   })
 
+  it('skips the base fetch when the workspace already matches base_sha', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'kortix-refresh-unchanged-'))
+    try {
+      const worktree = join(root, 'worktree')
+      mkdirSync(worktree)
+      git(['init'], worktree)
+      git(['checkout', '-b', 'session-branch'], worktree)
+      writeFileSync(join(worktree, 'README.md'), 'current\n')
+      git(['add', 'README.md'], worktree)
+      git(
+        ['-c', 'user.email=test@kortix.dev', '-c', 'user.name=Kortix Test', 'commit', '-m', 'current'],
+        worktree,
+      )
+      const baseSha = gitOutput(['rev-parse', 'HEAD'], { cwd: worktree })
+
+      const app = buildOpencodeApp(
+        baseConfig({
+          projectTarget: worktree,
+          repoUrl: join(root, 'missing-remote.git'),
+          defaultBranch: 'main',
+          branchName: 'session-branch',
+        }),
+        fakeOpencode('ok'),
+        Date.now(),
+      )
+      const res = await app.request(
+        `/kortix/refresh?base=1&base_sha=${baseSha}&restart=0`,
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${TEST_TOKEN}`, 'X-Kortix-Service-Call': '1' },
+        },
+      )
+
+      expect(res.status).toBe(200)
+      expect(await res.json()).toMatchObject({
+        ok: true,
+        repo: {
+          before: { commit: baseSha },
+          after: { commit: baseSha },
+        },
+      })
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('checks out the requested base_sha without restarting opencode', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'kortix-refresh-base-sha-'))
+    try {
+      const remote = join(root, 'remote.git')
+      const seed = join(root, 'seed')
+      const worktree = join(root, 'worktree')
+      git(['init', '--bare', remote])
+      mkdirSync(seed)
+      git(['init'], seed)
+      git(['checkout', '-b', 'main'], seed)
+      writeFileSync(join(seed, 'README.md'), 'v1\n')
+      git(['add', 'README.md'], seed)
+      git(['-c', 'user.email=test@kortix.dev', '-c', 'user.name=Kortix Test', 'commit', '-m', 'v1'], seed)
+      git(['remote', 'add', 'origin', remote], seed)
+      git(['push', '-u', 'origin', 'main'], seed)
+      git(['clone', remote, worktree])
+
+      writeFileSync(join(seed, 'README.md'), 'v2\n')
+      git(['add', 'README.md'], seed)
+      git(['-c', 'user.email=test@kortix.dev', '-c', 'user.name=Kortix Test', 'commit', '-m', 'v2'], seed)
+      git(['push', 'origin', 'main'], seed)
+      const baseSha = gitOutput(['rev-parse', 'HEAD'], { cwd: seed })
+
+      writeFileSync(join(seed, 'README.md'), 'v3\n')
+      git(['add', 'README.md'], seed)
+      git(['-c', 'user.email=test@kortix.dev', '-c', 'user.name=Kortix Test', 'commit', '-m', 'v3'], seed)
+      git(['push', 'origin', 'main'], seed)
+
+      let restartCalls = 0
+      const app = buildOpencodeApp(
+        baseConfig({
+          projectTarget: worktree,
+          repoUrl: remote,
+          defaultBranch: 'main',
+          branchName: 'session-branch',
+        }),
+        fakeOpencode('ok', { restart: () => { restartCalls += 1 } }),
+        Date.now(),
+      )
+      const res = await app.request(
+        `/kortix/refresh?base=1&base_sha=${baseSha}&restart=0`,
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${TEST_TOKEN}`, 'X-Kortix-Service-Call': '1' },
+        },
+      )
+
+      expect(res.status).toBe(200)
+      expect(readFileSync(join(worktree, 'README.md'), 'utf8')).toBe('v2\n')
+      expect(gitOutput(['rev-parse', 'HEAD'], { cwd: worktree })).toBe(baseSha)
+      expect(restartCalls).toBe(0)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('syncs project env through /kortix/env without restarting opencode', async () => {
     let restartCalls = 0
     const store = createProjectEnvStore({
@@ -636,6 +841,9 @@ describe('daemon proxy auth gate', () => {
       Date.now(),
       { repoMaterializationError: null, timeline: [] },
       store,
+      null,
+      undefined,
+      TEST_AGENT_ENV_FILE,
     )
 
     const res = await app.request('/kortix/env', {
@@ -657,6 +865,8 @@ describe('daemon proxy auth gate', () => {
       changed: true,
       revision: 'rev-1',
       names: ['NEW_SECRET', 'OLD_SECRET', 'REMOVED_SECRET'],
+      exported: 2,
+      agent_env_written: true,
     })
     expect(restartCalls).toBe(0)
     expect(mergeProjectEnv({
@@ -700,6 +910,9 @@ describe('daemon proxy auth gate', () => {
       Date.now(),
       { repoMaterializationError: null, timeline: [] },
       store,
+      null,
+      undefined,
+      TEST_AGENT_ENV_FILE,
     )
 
     try {
@@ -766,17 +979,74 @@ describe('daemon proxy auth gate', () => {
     }
   })
 
+  it('enables Connector MCP in a running session and restarts opencode once', async () => {
+    let restartCalls = 0
+    const previous = process.env.KORTIX_CONNECTORS_MCP_ENABLED
+    delete process.env.KORTIX_CONNECTORS_MCP_ENABLED
+    const store = createProjectEnvStore({} as NodeJS.ProcessEnv)
+    const app = buildOpencodeApp(
+      baseConfig(),
+      fakeOpencode('ok', { restart: () => { restartCalls += 1 } }),
+      Date.now(),
+      { repoMaterializationError: null, timeline: [] },
+      store,
+      null,
+      undefined,
+      TEST_AGENT_ENV_FILE,
+    )
+
+    const request = () =>
+      app.request('/kortix/env', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${TEST_TOKEN}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          revision: 'rev-email-mcp',
+          env: {},
+          names: [],
+          refreshModels: true,
+          opencodeEnv: { KORTIX_CONNECTORS_MCP_ENABLED: '1' },
+        }),
+      })
+
+    try {
+      const enabled = await request()
+      expect(enabled.status).toBe(200)
+      expect(await enabled.json()).toMatchObject({
+        ok: true,
+        opencode_env_changed: true,
+        opencode_env_names: ['KORTIX_CONNECTORS_MCP_ENABLED'],
+      })
+      expect(process.env.KORTIX_CONNECTORS_MCP_ENABLED as string | undefined).toBe('1')
+      expect(restartCalls).toBe(1)
+
+      const replay = await request()
+      expect(replay.status).toBe(200)
+      expect(await replay.json()).toMatchObject({
+        ok: true,
+        opencode_env_changed: false,
+        opencode_env_names: [],
+      })
+      expect(restartCalls).toBe(1)
+    } finally {
+      if (previous === undefined) delete process.env.KORTIX_CONNECTORS_MCP_ENABLED
+      else process.env.KORTIX_CONNECTORS_MCP_ENABLED = previous
+    }
+  })
+
   it('flips the provider-key deny-list with llm gateway mode (BYOK works when off)', async () => {
     const saved = {
       key: process.env.KORTIX_LLM_API_KEY,
       base: process.env.KORTIX_LLM_BASE_URL,
       deny: process.env.KORTIX_OPENCODE_DENY_ENV,
-      exec: process.env.KORTIX_EXECUTOR_TOKEN,
+      exec: process.env.KORTIX_CLI_TOKEN,
     }
     delete process.env.KORTIX_LLM_API_KEY
     delete process.env.KORTIX_LLM_BASE_URL
     delete process.env.KORTIX_OPENCODE_DENY_ENV
-    process.env.KORTIX_EXECUTOR_TOKEN = 'kortix_pat_exec'
+    process.env.KORTIX_CLI_TOKEN = 'kortix_pat_exec'
 
     const store = createProjectEnvStore({} as NodeJS.ProcessEnv)
     const app = buildOpencodeApp(
@@ -785,6 +1055,9 @@ describe('daemon proxy auth gate', () => {
       Date.now(),
       { repoMaterializationError: null, timeline: [] },
       store,
+      null,
+      undefined,
+      TEST_AGENT_ENV_FILE,
     )
 
     try {
@@ -827,7 +1100,7 @@ describe('daemon proxy auth gate', () => {
         KORTIX_LLM_API_KEY: saved.key,
         KORTIX_LLM_BASE_URL: saved.base,
         KORTIX_OPENCODE_DENY_ENV: saved.deny,
-        KORTIX_EXECUTOR_TOKEN: saved.exec,
+        KORTIX_CLI_TOKEN: saved.exec,
       })) {
         if (v === undefined) delete process.env[k]
         else process.env[k] = v
@@ -848,6 +1121,9 @@ describe('daemon proxy auth gate', () => {
       Date.now(),
       { repoMaterializationError: null, timeline: [] },
       store,
+      null,
+      undefined,
+      TEST_AGENT_ENV_FILE,
     )
 
     const res = await app.request('/kortix/env', {

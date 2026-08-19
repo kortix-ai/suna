@@ -4,13 +4,14 @@ Thin sandbox-side daemon that runs inside every Kortix project-session sandbox.
 
 **Scope:**
 
-1. Process supervisor for `opencode serve` (spawn, restart on crash, drain on
-   SIGTERM/SIGINT).
+1. Process supervisor for `opencode serve`.
 2. Reverse proxy that fronts opencode's HTTP + SSE surface on
    `KORTIX_SERVICE_PORT` (default `8000`).
-3. Small Kortix-namespaced control surface: `GET /kortix/health` and
+3. Managed Kortix system-skill injection into OpenCode's native discovery
+   directory.
+4. Small Kortix-namespaced control surface: `GET /kortix/health` and
    `POST /kortix/refresh`.
-4. Static web server on `KORTIX_STATIC_PORT` (default `3211`) — serves any
+5. Static web server on `KORTIX_STATIC_PORT` (default `3211`) — serves any
    HTML/asset the agent writes to disk, injecting a `<base>` tag so relative
    assets resolve cleanly through the sandbox proxy. Ported from main's
    always-on `core/services/static-web.js` s6 service; now runs in-process
@@ -36,11 +37,13 @@ in-process daemon.
 3. If `KORTIX_PROJECT_AUTO_CLONE=1`, `git clone` the project repo to
    `/workspace/.kortix` and check out the requested branch. Failures are
    logged but non-fatal — the daemon still serves `/kortix/health`.
-4. Resolve `OPENCODE_CONFIG_DIR` (project overlay wins over the baked default).
-5. Start the opencode supervisor in the cloned project directory (`opencode serve --port <internal> --hostname 127.0.0.1`).
+4. Inject managed system skills into `.kortix/opencode/skills`.
+5. Resolve `OPENCODE_CONFIG_DIR`.
+6. Start the OpenCode REST supervisor in the cloned project directory
+   (`opencode serve --port <internal> --hostname 127.0.0.1`).
    If the binary isn't found we keep going and report `opencode: 'starting'`.
-6. Start the Hono proxy on `0.0.0.0:KORTIX_SERVICE_PORT`.
-7. Trap signals; on shutdown, drain proxy + static web + kill child.
+7. Start the Hono proxy on `0.0.0.0:KORTIX_SERVICE_PORT`.
+8. Trap signals; on shutdown, drain proxy + static web + kill child processes.
 
 ## Routes
 

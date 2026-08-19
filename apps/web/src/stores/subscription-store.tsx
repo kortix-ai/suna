@@ -1,6 +1,6 @@
 import { useAuth } from '@/features/providers/auth-provider';
 import { useAccountState } from '@/hooks/billing';
-import { AccountState } from '@/lib/api/billing';
+import type { AccountState } from '@kortix/sdk';
 import { dollarsToCredits } from '@kortix/shared';
 import React, { useEffect } from 'react';
 import { create } from 'zustand';
@@ -96,7 +96,11 @@ export function SubscriptionStoreSync({ children }: { children: React.ReactNode 
 
 // Backward compatibility hooks - map to new unified structure
 export function useSubscriptionContext() {
-  const store = useSubscriptionStore();
+  const accountState = useSubscriptionStore((s) => s.accountState);
+  const isLoading = useSubscriptionStore((s) => s.isLoading);
+  const error = useSubscriptionStore((s) => s.error);
+  const refetch = useSubscriptionStore((s) => s.refetch);
+  const store = { accountState, isLoading, error, refetch };
 
   return {
     subscriptionData: store.accountState?.subscription
@@ -121,9 +125,11 @@ export function useSubscriptionContext() {
           credits: {
             balance: dollarsToCredits(store.accountState.credits?.total ?? 0),
             tier_credits: dollarsToCredits(store.accountState.tier?.monthly_credits ?? 0),
-            lifetime_granted: 0,
-            lifetime_purchased: 0,
-            lifetime_used: 0,
+            lifetime_granted: dollarsToCredits(store.accountState.credits?.lifetime_granted ?? 0),
+            lifetime_purchased: dollarsToCredits(
+              store.accountState.credits?.lifetime_purchased ?? 0,
+            ),
+            lifetime_used: dollarsToCredits(store.accountState.credits?.lifetime_used ?? 0),
             can_purchase_credits: store.accountState.subscription.can_purchase_credits,
           },
         }
@@ -147,7 +153,10 @@ export function useSubscriptionContext() {
 }
 
 export function useSharedSubscription() {
-  const store = useSubscriptionStore();
+  const isLoading = useSubscriptionStore((s) => s.isLoading);
+  const error = useSubscriptionStore((s) => s.error);
+  const refetch = useSubscriptionStore((s) => s.refetch);
+  const store = { isLoading, error, refetch };
   const ctx = useSubscriptionContext();
 
   return {
@@ -159,7 +168,16 @@ export function useSharedSubscription() {
 }
 
 export function useSubscriptionData() {
-  const store = useSubscriptionStore();
+  const storeAccountState = useSubscriptionStore((s) => s.accountState);
+  const storeIsLoading = useSubscriptionStore((s) => s.isLoading);
+  const storeError = useSubscriptionStore((s) => s.error);
+  const storeRefetch = useSubscriptionStore((s) => s.refetch);
+  const store = {
+    accountState: storeAccountState,
+    isLoading: storeIsLoading,
+    error: storeError,
+    refetch: storeRefetch,
+  };
   const { user } = useAuth();
 
   const { data: accountState, isLoading, error, refetch } = useAccountState({ enabled: !!user });
@@ -200,9 +218,9 @@ export function useSubscriptionData() {
       credits: {
         balance: dollarsToCredits(state.credits?.total ?? 0),
         tier_credits: dollarsToCredits(state.tier?.monthly_credits ?? 0),
-        lifetime_granted: 0,
-        lifetime_purchased: 0,
-        lifetime_used: 0,
+        lifetime_granted: dollarsToCredits(state.credits?.lifetime_granted ?? 0),
+        lifetime_purchased: dollarsToCredits(state.credits?.lifetime_purchased ?? 0),
+        lifetime_used: dollarsToCredits(state.credits?.lifetime_used ?? 0),
         can_purchase_credits: state.subscription.can_purchase_credits,
       },
       current_usage: (() => {

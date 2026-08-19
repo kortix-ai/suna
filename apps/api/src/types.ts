@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { AgentGrant } from '@kortix/db';
+import type { BillingState } from './billing/services/billing-state';
 
 // === Request Schemas (Router) ===
 
@@ -86,7 +87,7 @@ export interface AuthVariables {
   sandboxId?: string;
   /** Set for project-scoped CLI PATs — enforced against the URL :projectId. */
   tokenProjectId?: string;
-  /** Set for session-scoped sandbox executor PATs. */
+  /** Set for session-scoped sandbox connector PATs. */
   sessionId?: string;
   /** PAT token identity for the IAM engine (token-as-principal evaluation). */
   iamTokenId?: string;
@@ -94,6 +95,15 @@ export interface AuthVariables {
    *  Read by assertAgentScope() to gate Kortix CLI/API actions on top of the
    *  user's own role (net = userRole ∩ agentGrant). Null = full access. */
   agentGrant?: AgentGrant | null;
+  /** Live impersonation grant id — set only while a platform admin acts as an
+   *  account (middleware/impersonation.ts). Its presence means `accountId` is
+   *  the TARGET account, not the caller's own. */
+  impersonationGrantId?: string;
+  /** The REAL platform admin behind an impersonated request. `userId` stays the
+   *  same id; this exists so audit rows can carry both identities explicitly. */
+  impersonatorUserId?: string;
+  /** Platform role, set by requireAdmin on /v1/admin routes. */
+  platformRole?: string;
 }
 
 // Hono environment type — Variables match exactly what the auth middleware sets.
@@ -121,7 +131,7 @@ export interface TierEntitlements {
   /**
    * Custom RBAC: user-defined roles, fine-grained policy bindings, and groups
    * (IAM v1 — custom-roles.ts + groups.ts). Built-in preset roles (owner/admin/
-   * member/manager/editor/user) stay free on every tier — this only gates the
+   * member/manager/user) stay free on every tier — this only gates the
    * ability to define custom roles/policies/groups beyond those presets.
    */
   rbac: boolean;
@@ -165,6 +175,12 @@ export interface AccountStateResponse {
     monthly: number;
     extra: number;
     can_run: boolean;
+    /** Lifetime rollups derived from credit_ledger (see the
+     *  apply_credit_ledger_lifetime_rollup trigger). Reporting figures only —
+     *  no gate reads them. */
+    lifetime_granted: number;
+    lifetime_purchased: number;
+    lifetime_used: number;
     daily_refresh: {
       enabled: boolean;
       daily_amount: number;
@@ -174,7 +190,52 @@ export interface AccountStateResponse {
       seconds_until_refresh: number | null;
     } | null;
   };
+  /** The unambiguous billing situation (billing/services/billing-state.ts) —
+   *  the SAME state the billing gate admits on. Clients must branch on this,
+   *  never on `tier_key` or on `can_run` alone: `can_run: false` means "blocked",
+   *  it does NOT mean "no plan". */
+  billing_state: BillingState;
+  /** True when a Stripe subscription is currently providing service. Distinct
+   *  from `subscription.subscription_id`, which stays set after cancellation. */
+  has_active_subscription: boolean;
+  /**
+   * The plan the account BEHAVES as, named the way the product names plans.
+   *
+   * Distinct from `subscription` on purpose. `subscription.tier_key` is the
+   * STORED `credit_accounts.tier` — the plan Stripe sold. This block is the
+   * RESOLVED plan: an active admin-issued trial and the per-seat self-heal
+   * overlay the stored tier (billing/services/resolve-billing.ts), so a
+   * trialing account reports the plan its gates actually enforce. `tier.name`,
+   * `tier.display_name`, `tier.entitlements` and `limits.concurrent_sessions`
+   * come from the same resolved view.
+   *
+   * Optional: additive field, so a client built against the older shape still
+   * type-checks. The API always sends it.
+   */
+  plan?: {
+    /** Plan key — e.g. 'free', 'per_seat', 'tier_25_200', 'enterprise'. */
+    key: string;
+    /** Public ladder position: there are exactly three families. */
+    family: 'free' | 'team' | 'enterprise';
+    /** Customer-facing family name — 'Free' | 'Team' | 'Enterprise'. */
+    label: string;
+    /** Qualifier under the label, e.g. '$200/mo · grandfathered'. Null when
+     *  the plan needs no qualifier. */
+    sublabel: string | null;
+    /** Lifecycle: sellable today, sold-once-and-honored, defined-but-never-sold,
+     *  or the absence of a plan. */
+    status: 'current' | 'grandfathered' | 'retired' | 'non_plan';
+    /** How the recurring charge is computed. */
+    shape: 'none' | 'flat' | 'seat' | 'contract';
+    /** Strictly ordered ladder position (0 = no plan). Compare, don't display. */
+    rank: number;
+    /** `status === 'grandfathered'`, surfaced directly so the UI can render the
+     *  plan as sold rather than mapping it onto a current plan it is not. */
+    is_grandfathered: boolean;
+  };
   subscription: {
+    /** STORED `credit_accounts.tier` — the plan Stripe sold. For the plan the
+     *  account behaves as (trial / per-seat self-heal applied), read `plan`. */
     tier_key: string;
     tier_display_name: string;
     status: string;
@@ -191,8 +252,11 @@ export interface AccountStateResponse {
     can_purchase_credits: boolean;
   };
   tier: {
+    /** RESOLVED plan key — the plan every gate enforces (see `plan`). */
     name: string;
     display_name: string;
+    /** STORED plan's recurring credit grant. A trial grants no credits, so this
+     *  keeps describing the subscription, not the resolved plan. */
     monthly_credits: number;
     can_purchase_credits: boolean;
     /** Enterprise feature gates for this tier — drives whether the UI shows
@@ -205,6 +269,14 @@ export interface AccountStateResponse {
    *  any "Request enterprise access" upsell — there's nothing to demo-enable
    *  or upsell when the license already turned it on unconditionally. */
   enterprise_license_available: boolean;
+  /** True when an operator has flagged this account as a contracted cloud
+   *  Enterprise customer via `credit_accounts.enterprise_entitled`. The
+   *  account then resolves all enterprise entitlements (SSO/SCIM/RBAC/audit)
+   *  regardless of its billing tier, so a deal that is BOTH Enterprise
+   *  (entitlements) AND per-seat (billing) can hold both at once. Surfaced
+   *  for the admin console and for the frontend to hide the self-serve demo
+   *  toggle (a real Enterprise contract supersedes the demo). */
+  enterprise_entitled: boolean;
   /** @deprecated Model gates moved into provider configuration and sandbox model discovery. */
   models: ModelInfo[];
   auto_topup: {

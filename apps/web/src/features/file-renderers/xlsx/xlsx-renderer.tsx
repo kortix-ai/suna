@@ -1,11 +1,15 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
-import { useTheme } from 'next-themes';
-import { FileSpreadsheet, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { KortixLoader } from '@/components/ui/kortix-loader';
+import { readRuntimeFileWithRetry } from '@/features/files/api/runtime-file-read';
 import { cn } from '@/lib/utils';
+import {
+  FileXlsIcon as FileSpreadsheet,
+  ArrowClockwiseIcon as RefreshCw,
+} from '@phosphor-icons/react';
+import { useTheme } from 'next-themes';
+import { useCallback, useEffect, useState } from 'react';
 import { XlsxViewerPreview } from './xlsx-viewer';
 
 export function isBlobUrl(path: string): boolean {
@@ -16,6 +20,10 @@ interface XlsxRendererProps {
   content?: string | null;
   filePath?: string;
   fileName: string;
+  /** Extra controls for the viewer's own toolbar, rendered after zoom and
+   *  before the file menu. */
+  compact?: boolean;
+  toolbarActions?: React.ReactNode;
   className?: string;
   sandboxId?: string;
   project?: {
@@ -28,7 +36,13 @@ interface XlsxRendererProps {
   isDownloading?: boolean;
 }
 
-export function XlsxRenderer({ filePath, fileName, className }: XlsxRendererProps) {
+export function XlsxRenderer({
+  filePath,
+  fileName,
+  className,
+  compact = false,
+  toolbarActions,
+}: XlsxRendererProps) {
   const { resolvedTheme } = useTheme();
   const [src, setSrc] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -40,6 +54,7 @@ export function XlsxRenderer({ filePath, fileName, className }: XlsxRendererProp
     if (!xlsxPath) return;
     let cancelled = false;
     let objectUrl: string | null = null;
+    const abortController = new AbortController();
 
     setSrc(null);
     setError(null);
@@ -50,13 +65,22 @@ export function XlsxRenderer({ filePath, fileName, className }: XlsxRendererProp
           if (!cancelled) setSrc(xlsxPath);
           return;
         }
-        const { readFileAsBlob } = await import('@/features/files/api/opencode-files');
-        const blob = await readFileAsBlob(xlsxPath);
+        const { readFileAsBlob } = await import('@/features/files/api/runtime-files');
+        const blob = await readRuntimeFileWithRetry(
+          xlsxPath,
+          async () => {
+            const blob = await readFileAsBlob(xlsxPath);
+            if (!blob || blob.size === 0) throw new Error('Empty file received');
+            return blob;
+          },
+          undefined,
+          abortController.signal,
+        );
         if (cancelled) return;
-        if (!blob || blob.size === 0) throw new Error('Empty file received');
         objectUrl = URL.createObjectURL(blob);
         setSrc(objectUrl);
       } catch (e) {
+        if (abortController.signal.aborted) return;
         console.error('[XlsxRenderer] Error:', e);
         if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to load spreadsheet');
       }
@@ -64,6 +88,7 @@ export function XlsxRenderer({ filePath, fileName, className }: XlsxRendererProp
 
     return () => {
       cancelled = true;
+      abortController.abort();
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
   }, [xlsxPath, attempt]);
@@ -74,12 +99,12 @@ export function XlsxRenderer({ filePath, fileName, className }: XlsxRendererProp
     return (
       <div className={cn('flex h-full w-full items-center justify-center', className)}>
         <div className="space-y-3 text-center">
-          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-muted">
-            <FileSpreadsheet className="h-8 w-8 text-muted-foreground" />
+          <div className="bg-muted mx-auto flex h-16 w-16 items-center justify-center rounded-full">
+            <FileSpreadsheet className="text-muted-foreground h-8 w-8" />
           </div>
           <div>
-            <h3 className="text-lg font-medium text-foreground">Failed to load spreadsheet</h3>
-            <p className="mt-1 text-xs text-muted-foreground">{error}</p>
+            <h3 className="text-foreground text-lg font-medium">Failed to load spreadsheet</h3>
+            <p className="text-muted-foreground mt-1 text-xs">{error}</p>
           </div>
           <Button onClick={handleRetry} variant="outline" size="sm">
             <RefreshCw className="mr-2 h-3 w-3" />
@@ -104,8 +129,10 @@ export function XlsxRenderer({ filePath, fileName, className }: XlsxRendererProp
       fileName={fileName}
       isDark={resolvedTheme === 'dark'}
       onIsDarkChange={() => {}}
+      showToolbar={!compact}
       showUpload={false}
       className={cn('h-full w-full', className)}
+      toolbarActions={toolbarActions}
     />
   );
 }

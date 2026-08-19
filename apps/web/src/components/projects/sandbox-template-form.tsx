@@ -10,8 +10,12 @@ import { useTranslations } from 'next-intl';
  * layer is added automatically — the user only defines their workspace base.
  */
 
+import {
+  ShippingContainerIcon as Container,
+  FileCodeIcon as FileCode,
+  PackageIcon as Package,
+} from '@phosphor-icons/react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Container, FileCode, Loader2, Package } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -26,13 +30,15 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import Loading from '@/components/ui/loading';
+import { toast } from '@/lib/toast';
+import { cn } from '@/lib/utils';
 import {
   createSandboxTemplate,
   updateSandboxTemplate,
   type SandboxTemplate,
-} from '@kortix/sdk/projects-client';
-import { toast } from '@/lib/toast';
-import { cn } from '@/lib/utils';
+} from '@kortix/sdk';
+import { qk } from '@kortix/sdk/react';
 
 type Mode = 'image' | 'dockerfile';
 
@@ -152,8 +158,8 @@ export function SandboxTemplateForm({
       }),
     onSuccess: () => {
       toast.success('Template created — build started');
-      queryClient.invalidateQueries({ queryKey: ['project-snapshots', projectId] });
-      queryClient.invalidateQueries({ queryKey: ['project-sandboxes', projectId] });
+      queryClient.invalidateQueries({ queryKey: qk.project.snapshots(projectId) });
+      queryClient.invalidateQueries({ queryKey: qk.project.sandboxes(projectId) });
       onOpenChange(false);
     },
     onError: (err: Error) => toast.error(err.message || 'Failed to create template'),
@@ -172,8 +178,8 @@ export function SandboxTemplateForm({
       }),
     onSuccess: () => {
       toast.success('Template updated — provider sync started');
-      queryClient.invalidateQueries({ queryKey: ['project-snapshots', projectId] });
-      queryClient.invalidateQueries({ queryKey: ['project-sandboxes', projectId] });
+      queryClient.invalidateQueries({ queryKey: qk.project.snapshots(projectId) });
+      queryClient.invalidateQueries({ queryKey: qk.project.sandboxes(projectId) });
       onOpenChange(false);
     },
     onError: (err: Error) => toast.error(err.message || 'Failed to update template'),
@@ -365,7 +371,7 @@ export function SandboxTemplateForm({
             onClick={() => (isEdit ? editMut.mutate() : createMut.mutate())}
             disabled={!canSubmit || submitting}
           >
-            {submitting && <Loader2 className="mr-2 size-4 animate-spin" />}
+            {submitting && <Loading className="mr-2 size-4" />}
             {isEdit ? 'Save changes' : 'Create template'}
           </Button>
         </DialogFooter>

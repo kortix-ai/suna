@@ -126,8 +126,7 @@ invoice as paid, or write to any payment rail or accounting system beyond
   invoice triggered a duplicate/overcharge/missing-PO flag so the approver
   doesn't have to re-derive it.
 - **Scoped, brokered credentials.** Gmail, Sheets, and Slack access are
-  injected into the sandbox at runtime and never shown to the model or
-  written to logs.
+  injected into the sandbox at runtime, scoped to this agent's grant.
 - **Idempotent per run.** Match new invoices against the ledger's Gmail
   message IDs before processing so the same email is never recorded twice
   across runs.

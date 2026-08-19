@@ -5,15 +5,19 @@
  * sandbox session tokens) is revoked so they can't keep acting on a bearer.
  */
 import { describe, expect, test, beforeAll, afterAll } from 'bun:test';
-import { and, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { accountTokens, accounts, projects } from '@kortix/db';
 import { db } from '../shared/db';
-import { revokeAllAccountTokensForUser } from '../repositories/account-tokens';
+import {
+  revokeAllAccountTokensForUser,
+  revokeSessionConnectorTokens,
+} from '../repositories/account-tokens';
 
 const ACCOUNT = crypto.randomUUID();
 const PROJECT = crypto.randomUUID();
 const USER = crypto.randomUUID();
 const OTHER = crypto.randomUUID();
+const OTHER_ACCOUNT = crypto.randomUUID();
 
 let n = 0;
 async function seedToken(userId: string, opts: { projectId?: string; sessionId?: string } = {}) {
@@ -36,12 +40,14 @@ const statusOf = async (tokenId: string) =>
 
 beforeAll(async () => {
   await db.insert(accounts).values({ accountId: ACCOUNT, name: 'tok-revoke-test' });
+  await db.insert(accounts).values({ accountId: OTHER_ACCOUNT, name: 'tok-revoke-test-other' });
   await db.insert(projects).values({ projectId: PROJECT, accountId: ACCOUNT, name: 'p', repoUrl: 'https://example.com/p.git' });
 });
 
 afterAll(async () => {
   await db.delete(projects).where(eq(projects.accountId, ACCOUNT));
   await db.delete(accounts).where(eq(accounts.accountId, ACCOUNT)); // cascades tokens
+  await db.delete(accounts).where(eq(accounts.accountId, OTHER_ACCOUNT));
 });
 
 describe('revokeAllAccountTokensForUser', () => {
@@ -83,5 +89,34 @@ describe('revokeAllAccountTokensForUser', () => {
     } finally {
       await db.delete(accounts).where(eq(accounts.accountId, otherAccount));
     }
+  });
+});
+
+describe('revokeSessionConnectorTokens', () => {
+  test('revokes every live token for ONE session, leaving other sessions alone', async () => {
+    // A session can hold several tokens — each re-provision mints another under
+    // the same session_id — so revoking "the" token is not enough.
+    const first = await seedToken(USER, { projectId: PROJECT, sessionId: 'sess-gone' });
+    const afterRestart = await seedToken(USER, { projectId: PROJECT, sessionId: 'sess-gone' });
+    const neighbour = await seedToken(USER, { projectId: PROJECT, sessionId: 'sess-alive' });
+
+    const revoked = await revokeSessionConnectorTokens('sess-gone', ACCOUNT);
+
+    expect(revoked).toBe(2);
+    expect(await statusOf(first)).toBe('revoked');
+    expect(await statusOf(afterRestart)).toBe('revoked');
+    expect(await statusOf(neighbour)).toBe('active');
+  });
+
+  test('will not reach across accounts on a session id', async () => {
+    const mine = await seedToken(USER, { projectId: PROJECT, sessionId: 'sess-shared-id' });
+    expect(await revokeSessionConnectorTokens('sess-shared-id', OTHER_ACCOUNT)).toBe(0);
+    expect(await statusOf(mine)).toBe('active');
+  });
+
+  test('is idempotent — a second call revokes nothing further', async () => {
+    await seedToken(USER, { projectId: PROJECT, sessionId: 'sess-twice' });
+    expect(await revokeSessionConnectorTokens('sess-twice', ACCOUNT)).toBe(1);
+    expect(await revokeSessionConnectorTokens('sess-twice', ACCOUNT)).toBe(0);
   });
 });

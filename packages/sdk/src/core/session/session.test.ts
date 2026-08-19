@@ -15,7 +15,14 @@ import {
   rewriteLocalhostUrl,
   proxyLocalhostUrl,
   parseLocalhostUrl,
+  hasPreviewTarget,
+  isInternalLocalhostUrl,
   isPreviewUrl,
+  isProxiableLocalhostUrl,
+  buildStaticFilePreviewUrl,
+  buildStaticFileHealthPreviewUrl,
+  buildStaticFileLocalUrl,
+  buildStaticFileServicePath,
 } from './url';
 import {
   buildPreviewAuthEndpoint,
@@ -72,6 +79,54 @@ describe('session/health', () => {
 
     setCurrentRuntime(null);
   });
+
+  // Hop attribution: the sandbox proxy names which of its four hops produced a
+  // failure. Without it every 502 read the same and the web app painted "Waking
+  // this session up…" over a healthy box whose dev server merely wasn't up.
+  it('getSessionHealth reads the hop + upstream status from the proxy headers', async () => {
+    respond = () =>
+      new Response(JSON.stringify({ error: 'sandbox port unreachable' }), {
+        status: 502,
+        headers: {
+          'X-Kortix-Proxy-Hop': 'upstream_port',
+          'X-Kortix-Upstream-Status': '502',
+        },
+      });
+    const r = await getSessionHealth('http://sbx.test');
+    expect(r.hop).toBe('upstream_port');
+    expect(r.upstreamStatus).toBe(502);
+  });
+
+  it('getSessionHealth falls back to the JSON body when the header is not CORS-exposed', async () => {
+    respond = () =>
+      new Response(
+        JSON.stringify({ error: 'sandbox not ready', hop: 'control_plane', upstream_status: null }),
+        { status: 503 },
+      );
+    const r = await getSessionHealth('http://sbx.test');
+    expect(r.hop).toBe('control_plane');
+    expect(r.upstreamStatus).toBeNull();
+  });
+
+  it('getSessionHealth reports no hop when nothing attributed the failure', async () => {
+    respond = () => new Response('gateway blew up', { status: 502 });
+    const r = await getSessionHealth('http://sbx.test');
+    expect(r.hop).toBeNull();
+    expect(r.upstreamStatus).toBeNull();
+  });
+
+  it('getSessionHealth rejects a hop value outside the agreed set', async () => {
+    respond = () =>
+      new Response('{}', { status: 502, headers: { 'X-Kortix-Proxy-Hop': 'something_else' } });
+    const r = await getSessionHealth('http://sbx.test');
+    expect(r.hop).toBeNull();
+  });
+
+  it('getSessionHealth short-circuits with a null hop, not undefined', async () => {
+    const r = await getSessionHealth('');
+    expect(r.hop).toBeNull();
+    expect(r.upstreamStatus).toBeNull();
+  });
 });
 
 describe('session/url', () => {
@@ -100,6 +155,86 @@ describe('session/url', () => {
     expect(isPreviewUrl('https://api.kortix.cloud/v1/p/sbx1/3000/foo')).toBe(true);
     expect(isPreviewUrl('http://localhost:3000/foo')).toBe(false);
   });
+
+  // ── No sandbox id → no proxy URL ──
+  //
+  // Regression: with an unresolved runtime the sandbox-id slot went in empty and
+  // produced `https://staging-api.kortix.com/v1/p//3000/` — a structurally
+  // invalid proxy URL that 404s (`{"error":true,"message":"Not found"}`) while
+  // looking to the reader like a real preview link. There is no valid preview
+  // target without a sandbox id, so the only honest answer is to not rewrite.
+  describe('with no resolvable sandbox id', () => {
+    const noSandbox = { sandboxId: '', backendPort: 443, apiBaseUrl: 'https://staging-api.kortix.com/v1' };
+
+    it('hasPreviewTarget is false, so callers can hold off instead of guessing', () => {
+      expect(hasPreviewTarget(opts)).toBe(true);
+      expect(hasPreviewTarget(noSandbox)).toBe(false);
+      expect(hasPreviewTarget({ ...opts, sandboxId: '   ' })).toBe(false);
+    });
+
+    it('never emits the empty-slot path proxy URL', () => {
+      const url = rewriteLocalhostUrl(3000, '/', noSandbox);
+      expect(url).not.toContain('/p//');
+      expect(url).toBe('http://localhost:3000/');
+    });
+
+    it('never emits the empty-slot subdomain proxy URL', () => {
+      // `http://p3000-.localhost:8008/` is the subdomain-branch equivalent —
+      // equally unroutable, equally invisible to the reader.
+      const url = rewriteLocalhostUrl(3000, '/', {
+        ...noSandbox,
+        apiBaseUrl: 'http://localhost:8008/v1',
+      });
+      expect(url).not.toContain('p3000-.');
+      expect(url).toBe('http://localhost:3000/');
+    });
+
+    it('leaves a localhost URL untouched so the click handler can retry once the runtime resolves', () => {
+      expect(proxyLocalhostUrl('http://localhost:3000/', noSandbox)).toBe('http://localhost:3000/');
+    });
+
+    it('the un-rewritten URL is still recognized as proxiable, not as a dead end', () => {
+      expect(isProxiableLocalhostUrl(proxyLocalhostUrl('http://localhost:3000/', noSandbox)!)).toBe(
+        true,
+      );
+      expect(isPreviewUrl(rewriteLocalhostUrl(3000, '/', noSandbox))).toBe(false);
+    });
+
+    it('whitespace-only ids are treated as absent, not trimmed into the path', () => {
+      expect(rewriteLocalhostUrl(3000, '/x', { ...noSandbox, sandboxId: '  ' })).toBe(
+        'http://localhost:3000/x',
+      );
+    });
+
+    it('the un-proxied result is flagged internal, so iframes refuse it', () => {
+      expect(isInternalLocalhostUrl(rewriteLocalhostUrl(3000, '/', noSandbox))).toBe(true);
+    });
+  });
+
+  describe('isInternalLocalhostUrl', () => {
+    it('is true only for a bare localhost host with a port', () => {
+      expect(isInternalLocalhostUrl('http://localhost:3000/')).toBe(true);
+      expect(isInternalLocalhostUrl('http://127.0.0.1:8080/a/b?c=1')).toBe(true);
+    });
+
+    it('is false for the subdomain preview form — that host reaches kortix-api', () => {
+      // The asymmetry that matters: `p3000-sbx1.localhost` is a PROXY hostname,
+      // not the viewer's own machine. Treating it as internal would break every
+      // local self-hosted preview.
+      expect(isInternalLocalhostUrl('http://p3000-sbx1.localhost:8008/x')).toBe(false);
+      expect(isInternalLocalhostUrl(rewriteLocalhostUrl(3000, '/x', {
+        ...opts,
+        apiBaseUrl: 'http://localhost:8008/v1',
+      }))).toBe(false);
+    });
+
+    it('is false for path-based previews, remote hosts, and unparseable input', () => {
+      expect(isInternalLocalhostUrl('https://api.kortix.cloud/v1/p/sbx1/3000/x')).toBe(false);
+      expect(isInternalLocalhostUrl('https://example.com/')).toBe(false);
+      expect(isInternalLocalhostUrl('http://localhost/')).toBe(false); // no port
+      expect(isInternalLocalhostUrl('not a url')).toBe(false);
+    });
+  });
 });
 
 describe('session/preview', () => {
@@ -107,6 +242,30 @@ describe('session/preview', () => {
     expect(
       buildPreviewAuthEndpoint('http://localhost:8008/v1/p/sbx1/3000/index.html'),
     ).toBe('http://localhost:8008/v1/p/auth');
+  });
+
+  it('buildStaticFilePreviewUrl owns the static-file service route', () => {
+    expect(buildStaticFilePreviewUrl('/workspace/reports/q1 report.html', {
+      sandboxId: 'sbx1',
+      backendPort: 8008,
+      apiBaseUrl: 'http://localhost:8008/v1',
+    })).toBe(
+      'http://p3211-sbx1.localhost:8008/open?path=/workspace/reports/q1%20report.html',
+    );
+  });
+
+  it('static-file helpers hide the service port and open route', () => {
+    expect(buildStaticFileServicePath('/workspace/a b.html')).toBe(
+      '/open?path=/workspace/a%20b.html',
+    );
+    expect(buildStaticFileLocalUrl('/workspace/a b.html')).toBe(
+      'http://localhost:3211/open?path=/workspace/a%20b.html',
+    );
+    expect(buildStaticFileHealthPreviewUrl({
+      sandboxId: 'sbx1',
+      backendPort: 8008,
+      apiBaseUrl: 'https://api.kortix.cloud/v1',
+    })).toBe('https://api.kortix.cloud/v1/p/sbx1/3211/health');
   });
 
   it('isSubdomainPreviewUrl + appendPreviewToken', () => {

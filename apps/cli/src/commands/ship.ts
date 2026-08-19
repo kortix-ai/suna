@@ -9,6 +9,12 @@ import { takeFlagValue, takeFlagBool } from '../command-helpers.ts';
 import { selectFromList } from '../tui-select.ts';
 import { confirm, prompt, promptSecret } from '../prompts.ts';
 import { loadLocalManifest, lintManifest, type EnvSpec, type LocalManifest } from '../manifest.ts';
+import {
+  configureProjectGitAuth,
+  projectIsManaged,
+  resolveProjectGitTarget,
+  type ProjectGitTarget,
+} from '../project-git.ts';
 import { C, help, status } from '../style.ts';
 import { projectWebUrl } from '../web-url.ts';
 import type {
@@ -96,56 +102,26 @@ interface ShipFlags {
 
 interface ProvisionResponse extends ProjectSummary {
   push_token: string | null;
+  git_username?: string | null;
   repo_id: string;
 }
 
 interface GitTokenResponse {
   push_token: string;
+  git_username?: string | null;
   repo_id: string;
   repo_url: string;
 }
 
-type ShipCredentialMode = 'none' | 'kortix-token' | 'managed-git-token';
-
-interface ShipGitTarget {
-  repoUrl: string;
-  credentialMode: ShipCredentialMode;
+/** Both ship paths use the shared resolver (see ../project-git.ts) so ship,
+ *  clone, and the git credential helper can never disagree about how to reach
+ *  a project's repo again. */
+export function resolveProvisionShipGitTarget(project: ProvisionResponse): ProjectGitTarget {
+  return resolveProjectGitTarget(project);
 }
 
-function isGitProxyUrl(url: string | undefined | null): boolean {
-  return Boolean(url && /\/v1\/git\//.test(url));
-}
-
-function projectIsManaged(project: ProjectSummary): boolean {
-  const meta = (project.metadata ?? {}) as Record<string, any>;
-  const git = meta.git as { managed?: boolean } | undefined;
-  return git?.managed === true;
-}
-
-export function resolveProvisionShipGitTarget(project: ProvisionResponse): ShipGitTarget {
-  return {
-    repoUrl: project.repo_url,
-    credentialMode: 'managed-git-token',
-  };
-}
-
-export function resolveExistingShipGitTarget(project: ProjectSummary): ShipGitTarget {
-  if (projectIsManaged(project)) {
-    return {
-      repoUrl: project.repo_url,
-      credentialMode: 'managed-git-token',
-    };
-  }
-  if (isGitProxyUrl(project.git_origin_url)) {
-    return {
-      repoUrl: project.git_origin_url!,
-      credentialMode: 'kortix-token',
-    };
-  }
-  return {
-    repoUrl: project.repo_url,
-    credentialMode: 'none',
-  };
+export function resolveExistingShipGitTarget(project: ProjectSummary): ProjectGitTarget {
+  return resolveProjectGitTarget(project);
 }
 
 export async function runShip(argv: string[]): Promise<number> {
@@ -355,6 +331,30 @@ async function ensureProjectEnv(
 
 // ── Connectors: guided connect on ship ──────────────────────────────────────
 
+/**
+ * Say so when the connector routes are simply not there.
+ *
+ * Both connector steps below swallow their errors, and correctly so: a transient
+ * reconcile failure does not invalidate a completed git push, and the server's
+ * rotating discovery sweep retries the project anyway. But `404` is not
+ * transient — it means this binary is calling a route the API no longer has, and
+ * no amount of retrying fixes it. That is exactly the failure that went
+ * unnoticed for weeks after `/executor/*` became `/connectors/*`: every sandbox
+ * CLI 404ed on every connector call and printed nothing at all.
+ *
+ * So: surface a 404 and name the fix, keep swallowing everything else. Written
+ * to STDERR so it cannot be mistaken for ship output a script is parsing.
+ */
+function warnIfConnectorRouteMissing(err: unknown): void {
+  if (!(err instanceof ApiError) || err.status !== 404) return;
+  process.stderr.write(
+    `${status.warn('connector routes returned 404 — this `kortix` CLI looks out of date')}\n` +
+      `  ${C.dim}Update it with ${C.reset}${C.cyan}kortix update${C.reset}${C.dim}, then re-run ship. ` +
+      `Connectors were NOT reconciled.${C.reset}\n`,
+  );
+}
+
+
 interface ShipConnector {
   slug: string;
   name: string;
@@ -367,7 +367,7 @@ interface ShipConnector {
 /**
  * After a successful push, reconcile the connector catalog from the just-shipped
  * manifest and walk the user through connecting anything that still needs auth —
- * Pipedream apps via a 1-click authorize link + finalize, and
+ * Pipedream apps via an auto-finalizing one-click connection URL, and
  * HTTP/OpenAPI/GraphQL/MCP connectors via their credential secret. Mirrors
  * `ensureProjectEnv` so a single `kortix ship` leaves the project ready to run.
  * Skipped with --no-connect; non-interactive / --yes only nags with the slugs
@@ -379,21 +379,14 @@ async function ensureConnectorsConnected(
   flags: ShipFlags,
 ): Promise<void> {
   if (flags.noConnect) return;
-  const ex = `/executor/projects/${projectId}`;
-
-  // The catalog materializes from the manifest we just pushed — sync first so
-  // the cloud knows about freshly-added connectors. Best-effort.
-  try {
-    await client.post(`${ex}/connectors/sync`);
-  } catch {
-    // A sync failure shouldn't block the ship; connectors can be set up later.
-  }
+  const ex = `/connectors/projects/${projectId}`;
 
   let connectors: ShipConnector[];
   try {
     const resp = await client.get<{ connectors: ShipConnector[] }>(`${ex}/connectors`);
     connectors = resp.connectors;
-  } catch {
+  } catch (err) {
+    warnIfConnectorRouteMissing(err);
     return; // don't block the ship over connector setup
   }
   if (connectors.length === 0) return;
@@ -422,9 +415,10 @@ async function ensureConnectorsConnected(
     `\n  ${C.bold}connectors${C.reset}  ${C.dim}${pending.length} need setup — connect ${pending.length === 1 ? 'it' : 'them'} now (blank = skip):${C.reset}\n`,
   );
   let connected = 0;
+  let connectionLinks = 0;
   for (const c of pending) {
     if (c.provider === 'pipedream') {
-      if (await connectPipedreamApp(client, ex, c)) connected += 1;
+      if (await connectPipedreamApp(client, projectId, c)) connectionLinks += 1;
     } else if (c.authSecret) {
       if (await setConnectorCredential(client, ex, c)) connected += 1;
     } else {
@@ -436,44 +430,49 @@ async function ensureConnectorsConnected(
       `  ${C.dim}${connected} connector${connected === 1 ? '' : 's'} connected.${C.reset}\n`,
     );
   }
+  if (connectionLinks > 0) {
+    process.stdout.write(
+      `  ${C.dim}${connectionLinks} auto-finalizing connection URL${connectionLinks === 1 ? '' : 's'} created.${C.reset}\n`,
+    );
+  }
 }
 
-/** Pipedream 1-click: mint a connect link, let the user authorize, then finalize. */
+/**
+ * Reconcile the pushed manifest into the server runtime catalog.
+ *
+ * This step always runs. The --no-connect flag only skips credential prompts.
+ */
+export async function reconcileShippedManifest(
+  client: ApiClient,
+  projectId: string,
+): Promise<void> {
+  try {
+    await client.post(`/connectors/projects/${projectId}/connectors/sync`);
+  } catch (err) {
+    // A reconcile failure does not invalidate the completed git push.
+    // The rotating server discovery sweep retries the project — except on a
+    // 404, which no retry can fix. See warnIfConnectorRouteMissing.
+    warnIfConnectorRouteMissing(err);
+  }
+}
+
+/** Mint one auto-finalizing Pipedream connection URL for the user. */
 async function connectPipedreamApp(
   client: ApiClient,
-  ex: string,
+  projectId: string,
   c: ShipConnector,
 ): Promise<boolean> {
   try {
-    const resp = await client.post<{ token: string; app: string; connectUrl?: string }>(
-      `${ex}/connectors/${encodeURIComponent(c.slug)}/connect`,
+    const resp = await client.post<{ url: string; expires_at: string }>(
+      `/projects/${projectId}/connect-requests`,
+      { slug: c.slug },
     );
     process.stdout.write(`\n    ${C.bold}${c.slug}${C.reset} ${C.faded}(${c.name})${C.reset}\n`);
-    if (resp.connectUrl) {
-      process.stdout.write(`    ${C.dim}Authorize:${C.reset} ${C.cyan}${resp.connectUrl}${C.reset}\n`);
-    } else {
-      process.stdout.write(
-        `    ${C.dim}Complete the connect in the dashboard with token ${C.faded}${resp.token}${C.reset}\n`,
-      );
-    }
-    const ack = (await prompt(`    ${C.dim}Press Enter once authorized (blank to skip)${C.reset}`)).trim();
-    if (ack.toLowerCase() === 's' || ack.toLowerCase() === 'skip' || ack === '-') {
-      process.stdout.write(
-        `    ${C.dim}skipped — finalize later with kortix connectors finalize ${c.slug}${C.reset}\n`,
-      );
-      return false;
-    }
-    const fin = await client.post<{ connected: boolean; accountId?: string }>(
-      `${ex}/connectors/${encodeURIComponent(c.slug)}/connect/finalize`,
-    );
-    if (fin.connected) {
-      process.stdout.write(`    ${status.ok(`${C.bold}${c.slug}${C.reset} connected`)}\n`);
-      return true;
-    }
     process.stdout.write(
-      `    ${status.warn(`${c.slug} not connected yet`)} ${C.dim}— finish authorizing, then run kortix connectors finalize ${c.slug}.${C.reset}\n`,
+      `    ${C.dim}Authorize:${C.reset} ${C.cyan}${resp.url}${C.reset}\n` +
+        `    ${C.dim}Expires ${resp.expires_at}. The connection finalizes automatically.${C.reset}\n`,
     );
-    return false;
+    return true;
   } catch (err) {
     const msg = err instanceof ApiError ? err.message : (err as Error).message;
     process.stderr.write(`    ${status.err(`connect ${c.slug} failed: ${msg}`)}\n`);
@@ -590,8 +589,9 @@ async function shipFirstTime(
   const byoUrl = explicitUrl ?? existingOrigin;
 
   let project: ProjectSummary;
-  let repoUrl: string;
+  let gitTarget: ProjectGitTarget;
   let pushToken: string | null = null;
+  let pushUsername = 'x-access-token';
 
   if (byoUrl) {
     const github = isGitHubUrl(byoUrl);
@@ -611,7 +611,9 @@ async function shipFirstTime(
     project = github
       ? await linkGitHubBackedProject(client, { repoUrl: byoUrl, name, accountId, githubToken: flags.githubToken, yes: flags.yes })
       : await client.post<ProjectSummary>('/projects', { repo_url: byoUrl, name, account_id: accountId });
-    repoUrl = project.repo_url;
+    bindShippedFolder(project, hostName, auth);
+    // BYO stays BYO: push with the user's own git credentials, to their remote.
+    gitTarget = { repoUrl: project.repo_url, credentialMode: 'none' };
     // Only touch the remote when the user named one explicitly — an existing
     // `origin` is left exactly as-is so their credential setup keeps working.
     if (explicitUrl) setOrigin(explicitUrl);
@@ -631,41 +633,49 @@ async function shipFirstTime(
       account_id: accountId,
     });
     project = prov;
-    const target = resolveProvisionShipGitTarget(prov);
-    repoUrl = target.repoUrl;
-    pushToken = prov.push_token;
-    // Older/self-hosted provision responses may omit an exportable token even
-    // though the managed project can mint a repo-scoped App token afterward.
-    // Heal that boundary before attempting git push; never fall back to a
-    // server-global PAT.
-    if (!pushToken) {
-      const tok = await client.post<GitTokenResponse>(
-        `/projects/${project.project_id}/git-token`,
-      );
-      pushToken = tok.push_token;
+    // Bind the folder to the project the INSTANT it exists — before resolving a
+    // push credential, committing, or pushing, any of which can fail. Without
+    // this, a failure after provision left an unlinked cloud project behind and
+    // the retry provisioned a SECOND one, silently burning the account's
+    // project quota until creation started 403ing on the limit.
+    bindShippedFolder(project, hostName, auth);
+    gitTarget = resolveProvisionShipGitTarget(prov);
+    if (gitTarget.credentialMode === 'kortix-token') {
+      // Proxy origin — we push with our own Kortix token; the API resolves the
+      // upstream + host credential server-side. No provider token is exported.
+      pushToken = auth.token;
+    } else {
+      pushToken = prov.push_token;
+      pushUsername = prov.git_username ?? pushUsername;
+      // Proxy-less host: fall back to a repo-scoped provider token. Older
+      // provision responses may omit it even though /git-token can mint one.
+      // Never fall back to a server-global PAT (the server refuses to export it).
+      if (!pushToken) {
+        const tok = await client.post<GitTokenResponse>(
+          `/projects/${project.project_id}/git-token`,
+        );
+        pushToken = tok.push_token;
+        pushUsername = tok.git_username ?? pushUsername;
+      }
     }
-    setOrigin(repoUrl);
+    setOrigin(gitTarget.repoUrl);
+    if (gitTarget.credentialMode === 'kortix-token') {
+      configureProjectGitAuth(process.cwd(), gitTarget.repoUrl);
+    }
   }
-
-  saveLink({
-    project_id: project.project_id,
-    account_id: project.account_id,
-    host: hostName ?? activeHostName() ?? 'default',
-    host_url: auth.api_base,
-    linked_at: new Date().toISOString(),
-  });
 
   const committed = commitIfNeeded(flags);
   if (committed === 'error') return 1;
 
   await ensureProjectEnv(client, project.project_id, env, flags);
 
-  const pushed = pushCurrentBranch(repoUrl, pushToken);
+  const pushed = await pushProjectBranch(client, project, gitTarget, pushToken, pushUsername);
   if (!pushed) return 1;
 
+  await reconcileShippedManifest(client, project.project_id);
   await ensureConnectorsConnected(client, project.project_id, flags);
 
-  reportShipped(auth, project, repoUrl);
+  reportShipped(auth, project, gitTarget.repoUrl);
   return 0;
 }
 
@@ -686,7 +696,8 @@ async function shipExisting(
     throw err;
   }
   const target = resolveExistingShipGitTarget(project);
-  const managed = target.credentialMode === 'managed-git-token';
+  const mintsProviderToken = target.credentialMode === 'managed-git-token';
+  const kortixOwnsOrigin = target.credentialMode !== 'none';
   const repoUrl = target.repoUrl;
 
   process.stdout.write(
@@ -697,39 +708,64 @@ async function shipExisting(
 
   if (flags.dryRun) {
     process.stdout.write(
-      `  ${C.dim}[dry-run] would: ${managed ? 'mint push token, ' : ''}commit + push to ${repoUrl}${C.reset}\n\n`,
+      `  ${C.dim}[dry-run] would: ${mintsProviderToken ? 'mint push token, ' : ''}commit + push to ${repoUrl}${C.reset}\n\n`,
     );
     return 0;
   }
 
-  // Push credential: managed repos use a fresh provider token and push to the
-  // managed upstream URL. Non-managed proxy pushes use the Kortix CLI token.
+  // Push credential: through the proxy we authenticate with our own Kortix
+  // token; a proxy-less host mints a fresh repo-scoped provider token per ship
+  // (never persisted in .git/config).
   let pushToken: string | null = null;
+  let pushUsername = 'x-access-token';
   if (target.credentialMode === 'kortix-token') {
     pushToken = auth.token;
-  } else if (target.credentialMode === 'managed-git-token') {
+  } else if (mintsProviderToken) {
     const tok = await client.post<GitTokenResponse>(`/projects/${projectId}/git-token`);
     pushToken = tok.push_token;
+    pushUsername = tok.git_username ?? pushUsername;
   }
-  // Managed projects own the remote URL, so keep origin aligned with the
-  // upstream that matches the freshly minted provider token. BYO repos may
-  // have lost their remote (fresh clone of a linked repo); heal only when
-  // missing so user-managed credentials stay untouched.
-  if (managed) setOrigin(repoUrl);
+  // Kortix owns the remote URL for proxy + managed projects, so keep origin
+  // aligned with the target the credential above matches. BYO repos may have
+  // lost their remote (fresh clone of a linked repo); heal only when missing so
+  // user-managed credentials stay untouched.
+  if (kortixOwnsOrigin) setOrigin(repoUrl);
   else ensureOrigin(repoUrl);
+  // Leave the repo able to `git push` on its own afterwards, same as a
+  // `kortix projects clone` — the helper hands git a Kortix token on demand
+  // without ever writing one into .git/config.
+  if (target.credentialMode === 'kortix-token') configureProjectGitAuth(process.cwd(), repoUrl);
 
   const committed = commitIfNeeded(flags);
   if (committed === 'error') return 1;
 
   await ensureProjectEnv(client, projectId, env, flags);
 
-  const pushed = pushCurrentBranch(repoUrl, pushToken);
+  const pushed = await pushProjectBranch(client, project, target, pushToken, pushUsername);
   if (!pushed) return 1;
 
+  await reconcileShippedManifest(client, projectId);
   await ensureConnectorsConnected(client, projectId, flags);
 
   reportShipped(auth, project, repoUrl);
   return 0;
+}
+
+/** Write `.kortix/link.json` so this folder is bound to the cloud project.
+ *  Called the moment the project exists — see the note at its first-ship call
+ *  site for why ordering matters. */
+function bindShippedFolder(
+  project: ProjectSummary,
+  hostName: string | undefined,
+  auth: Auth,
+): void {
+  saveLink({
+    project_id: project.project_id,
+    account_id: project.account_id,
+    host: hostName ?? activeHostName() ?? 'default',
+    host_url: auth.api_base,
+    linked_at: new Date().toISOString(),
+  });
 }
 
 // ── git helpers ─────────────────────────────────────────────────────────────
@@ -825,7 +861,12 @@ function currentBranch(): string {
  * http.extraHeader so it never lands in .git/config; for BYO repos we rely on
  * the user's own git credentials. Returns the pushed branch, or null on error.
  */
-function pushCurrentBranch(repoUrl: string, pushToken: string | null): string | null {
+function pushCurrentBranch(
+  repoUrl: string,
+  pushToken: string | null,
+  gitUsername = 'x-access-token',
+  opts: { quietOnFailure?: boolean } = {},
+): string | null {
   const branch = run('git', ['rev-parse', '--abbrev-ref', 'HEAD']).stdout.trim();
   if (!branch || branch === 'HEAD') {
     process.stderr.write(
@@ -834,12 +875,14 @@ function pushCurrentBranch(repoUrl: string, pushToken: string | null): string | 
     return null;
   }
   const refspec = `${branch}:refs/heads/${branch}`;
-  const args = pushToken ? [...authHeaderArgs(repoUrl, pushToken), 'push'] : ['push'];
+  const args = pushToken ? [...authHeaderArgs(repoUrl, pushToken, gitUsername), 'push'] : ['push'];
   args.push('-u', 'origin', refspec);
 
   const push = run('git', args, { inheritStdio: true });
   if (!push.ok) {
-    process.stderr.write(`\n${status.err(`git push failed (exit ${push.code}).`)}\n`);
+    if (!opts.quietOnFailure) {
+      process.stderr.write(`\n${status.err(`git push failed (exit ${push.code}).`)}\n`);
+    }
     return null;
   }
   process.stdout.write(
@@ -848,11 +891,57 @@ function pushCurrentBranch(repoUrl: string, pushToken: string | null): string | 
   return branch;
 }
 
+/**
+ * Push the current branch, with ONE fallback transport.
+ *
+ * The proxy origin is the right default — it works whatever a host's managed
+ * git is configured with, and no provider credential ever reaches the client.
+ * But the CLI talks to hosts it wasn't shipped with: an older API authorizes
+ * the proxy on ACCOUNT OWNERSHIP alone, so a token bound to a different account
+ * of the same user is refused there while POST /git-token (which gates on the
+ * per-project `gitops.push` capability) would still serve it. So when a proxy
+ * push fails on a managed repo, retry once against the raw upstream with a
+ * minted repo-scoped token before giving up: either transport being unavailable
+ * is survivable, only both failing is a real error. Returns the branch, or null.
+ */
+async function pushProjectBranch(
+  client: ApiClient,
+  project: ProjectSummary,
+  target: ProjectGitTarget,
+  pushToken: string | null,
+  pushUsername: string,
+): Promise<string | null> {
+  const canRetry = target.credentialMode === 'kortix-token' && projectIsManaged(project);
+  const pushed = pushCurrentBranch(target.repoUrl, pushToken, pushUsername, {
+    quietOnFailure: canRetry,
+  });
+  if (pushed || !canRetry) return pushed;
+
+  let minted: GitTokenResponse;
+  try {
+    minted = await client.post<GitTokenResponse>(`/projects/${project.project_id}/git-token`);
+  } catch {
+    // No second transport available — report the push failure we swallowed.
+    process.stderr.write(`\n${status.err('git push failed.')}\n`);
+    return null;
+  }
+  process.stdout.write(
+    `  ${status.warn('Proxy push rejected — retrying against the managed upstream.')}\n`,
+  );
+  const upstreamUrl = minted.repo_url || project.repo_url;
+  setOrigin(upstreamUrl);
+  return pushCurrentBranch(upstreamUrl, minted.push_token, minted.git_username || pushUsername);
+}
+
 /** `-c http.<scheme>://<host>/.extraheader=AUTHORIZATION: basic <b64>` —
  *  mirrors the backend's git auth scheme (projects/git.ts). The extraheader
  *  key MUST carry the remote's actual scheme (http for a localhost proxy,
  *  https in prod) or git won't apply it (scheme-scoped config). */
-function authHeaderArgs(repoUrl: string, token: string): string[] {
+export function authHeaderArgs(
+  repoUrl: string,
+  token: string,
+  gitUsername = 'x-access-token',
+): string[] {
   let origin = 'https://github.com';
   try {
     const u = new URL(repoUrl);
@@ -860,8 +949,10 @@ function authHeaderArgs(repoUrl: string, token: string): string[] {
   } catch {
     /* keep default */
   }
-  const enc = Buffer.from(`x-access-token:${token}`).toString('base64');
-  return ['-c', `http.${origin}/.extraheader=AUTHORIZATION: basic ${enc}`];
+  const enc = Buffer.from(`${gitUsername}:${token}`).toString('base64');
+  // RFC 7617 treats the auth scheme case-insensitively, but Code Storage's
+  // Git endpoint currently requires the canonical `Basic` spelling.
+  return ['-c', `http.${origin}/.extraheader=Authorization: Basic ${enc}`];
 }
 
 function reportShipped(auth: Auth, project: ProjectSummary, repoUrl: string): void {
@@ -999,9 +1090,14 @@ function surface(err: unknown): number {
     if (err.status === 401) {
       process.stderr.write(`${status.err('Token rejected. Run `kortix login`.')}\n`);
     } else if (err.status === 503) {
+      // Don't diagnose — the server owns the reason. The one thing we DO know
+      // is that a stale CLI is a common cause (older builds pushed to the raw
+      // upstream with a minted provider token instead of the Kortix git proxy,
+      // which a token-configured host can't hand out), so say that and stop.
       process.stderr.write(
         `${status.err(err.message)}\n` +
-          `  ${C.dim}Managed git isn't configured on this host. Pass ${C.reset}${C.cyan}--origin <git-url>${C.reset}${C.dim} to use your own remote.${C.reset}\n`,
+          `  ${C.dim}Update first — ${C.reset}${C.cyan}kortix update${C.reset}${C.dim} — then retry. Still failing? ` +
+          `Pass ${C.reset}${C.cyan}--origin <git-url>${C.reset}${C.dim} to push to your own remote instead.${C.reset}\n`,
       );
     } else {
       process.stderr.write(`${status.err(`HTTP ${err.status}: ${err.message}`)}\n`);

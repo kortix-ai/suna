@@ -1,16 +1,25 @@
 /**
- * The BFF proxy (`/api/kortix/[...path]`) itself: auth gate, key substitution,
- * cookie stripping in both directions, request-body buffering integrity (the
- * ALB/chunked-body regression), and SSE response streaming (the "response
- * bodies still stream" regression).
+ * BFF verification through the public SDK.
+ *
+ * The app never constructs Kortix routes. Low-level request buffering,
+ * response-header sanitization, and stream forwarding live in
+ * `forwardKortixRequest()` and have focused SDK tests.
  */
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { type AppInstance, loginUser, resetUsersStore, startApp, uniqueEmail } from './harness';
+import {
+  APP_SETUP_TIMEOUT_MS,
+  type AppInstance,
+  createTestKortix,
+  loginUser,
+  resetUsersStore,
+  startApp,
+  uniqueEmail,
+} from './harness';
 import { createMockUpstream, type MockUpstream } from './mock-upstream';
 import { DEMO_PASSWORD, WRAPPER_KEY, wrapperEnv } from './env';
 
-describe('BFF proxy', () => {
+describe('BFF SDK transport', () => {
   let mock: MockUpstream;
   let app: AppInstance;
 
@@ -18,7 +27,7 @@ describe('BFF proxy', () => {
     resetUsersStore();
     mock = createMockUpstream(WRAPPER_KEY);
     app = await startApp(wrapperEnv({ KORTIX_UPSTREAM: `${mock.url}/v1` }));
-  }, 30_000);
+  }, APP_SETUP_TIMEOUT_MS);
 
   afterAll(async () => {
     await app?.stop();
@@ -26,130 +35,99 @@ describe('BFF proxy', () => {
     resetUsersStore();
   });
 
-  test('unauthenticated request to the proxy is 401 and never reaches upstream', async () => {
+  async function authenticatedClient(prefix: string) {
+    const token = await loginUser(
+      app,
+      uniqueEmail(prefix),
+      DEMO_PASSWORD,
+    );
+    return createTestKortix(app, token);
+  }
+
+  test('an invalid wrapper token is rejected before any upstream request', async () => {
     mock.reset();
-    const res = await fetch(`${app.baseUrl}/api/kortix/accounts/me`);
-    expect(res.status).toBe(401);
+    const kortix = createTestKortix(app, 'invalid-wrapper-session');
+
+    await expect(kortix.projects.list()).rejects.toMatchObject({ status: 401 });
     expect(mock.requests).toHaveLength(0);
   });
 
-  test('a valid session is forwarded with the WRAPPER key substituted in; the user token never reaches upstream', async () => {
+  test('the BFF substitutes the operator token for the wrapper user token', async () => {
     mock.reset();
-    const email = uniqueEmail('proxy-auth');
-    const token = await loginUser(app, email, DEMO_PASSWORD);
+    const kortix = await authenticatedClient('proxy-auth');
 
-    const res = await fetch(`${app.baseUrl}/api/kortix/accounts/me`, {
-      headers: { authorization: `Bearer ${token}` },
-    });
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ account_id: 'acct_test', name: 'Test Account' });
-
+    expect((await kortix.validateToken()).valid).toBe(true);
     expect(mock.requests).toHaveLength(1);
-    const upstreamReq = mock.requests[0]!;
-    expect(upstreamReq.authorization).toBe(`Bearer ${WRAPPER_KEY}`);
-    // The end user's own session token must not appear anywhere upstream.
-    expect(upstreamReq.authorization).not.toContain(token);
+    expect(mock.requests[0]!.authorization).toBe(`Bearer ${WRAPPER_KEY}`);
     expect(mock.authViolations).toHaveLength(0);
   });
 
-  test("the wrapper's own session cookie is stripped before forwarding upstream", async () => {
+  test('SDK request bodies arrive byte-for-byte with Content-Length', async () => {
+    const kortix = await authenticatedClient('body-integrity');
     mock.reset();
-    const email = uniqueEmail('cookie-strip-req');
-    const token = await loginUser(app, email, DEMO_PASSWORD);
+    const name = `Runtime ${'x'.repeat(20_000)}`;
 
-    const res = await fetch(`${app.baseUrl}/api/kortix/accounts/me`, {
-      headers: {
-        authorization: `Bearer ${token}`,
-        cookie: `lumen_session=${encodeURIComponent(token)}`,
-      },
-    });
-    expect(res.status).toBe(200);
-    expect(mock.cookieViolations).toHaveLength(0);
-    expect(mock.requests.at(-1)!.cookie).toBeNull();
+    const project = await kortix.projects.provision({ name });
+
+    expect(project.name).toBe(name);
+    expect(mock.requests).toHaveLength(1);
+    const upstreamRequest = mock.requests[0]!;
+    const expectedBody = JSON.stringify({ seed_starter: true, name });
+    expect(upstreamRequest.body).toEqual({ seed_starter: true, name });
+    expect(upstreamRequest.transferEncoding).toBeNull();
+    expect(upstreamRequest.contentLength).toBe(
+      String(Buffer.byteLength(expectedBody, 'utf8')),
+    );
   });
 
-  test("upstream's Set-Cookie never reaches the browser", async () => {
+  test('SDK reads force identity response encoding through the BFF', async () => {
+    const kortix = await authenticatedClient('response-encoding');
     mock.reset();
-    const email = uniqueEmail('cookie-strip-res');
-    const token = await loginUser(app, email, DEMO_PASSWORD);
 
-    const provision = await fetch(`${app.baseUrl}/api/kortix/projects/provision`, {
-      method: 'POST',
-      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ name: 'Cookie Strip Test' }),
-    });
-    expect(provision.status).toBe(201);
-    const project = (await provision.json()) as { project_id: string };
-
-    // The mock deliberately sets `Set-Cookie: upstream_session=leak-me` on the
-    // project-detail GET — this is the passthrough (non-buffered) response
-    // path, which is where `route.ts` explicitly strips `set-cookie`.
-    const detail = await fetch(`${app.baseUrl}/api/kortix/projects/${project.project_id}`, {
-      headers: { authorization: `Bearer ${token}` },
-    });
-    expect(detail.status).toBe(200);
-    expect(detail.headers.get('set-cookie')).toBeNull();
-  });
-
-  test('request body integrity: POST body arrives at upstream byte-for-byte with Content-Length (never chunked)', async () => {
-    mock.reset();
-    const email = uniqueEmail('body-integrity');
-    const token = await loginUser(app, email, DEMO_PASSWORD);
-
-    const payload = { hello: 'world', big: 'x'.repeat(20_000), n: 12345 };
-    const bodyText = JSON.stringify(payload);
-
-    const res = await fetch(`${app.baseUrl}/api/kortix/p/sbx_body/8000/message`, {
-      method: 'POST',
-      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-      body: bodyText,
-    });
-    expect(res.status).toBe(200);
-    const echoed = (await res.json()) as { content: string };
-    expect(echoed.content).toBe(`echo: ${bodyText}`);
+    await kortix.projects.list();
 
     expect(mock.requests).toHaveLength(1);
-    const upstreamReq = mock.requests[0]!;
-    expect(upstreamReq.body).toEqual(payload);
-    expect(upstreamReq.transferEncoding).toBeNull();
-    expect(upstreamReq.contentLength).toBe(String(Buffer.byteLength(bodyText, 'utf8')));
+    expect(mock.requests[0]!.acceptEncoding).toBe('identity');
   });
 
-  test('SSE pass-through: events arrive unbuffered, connection stays open past the first burst', async () => {
+  test('SDK session.stream receives unbuffered events and remains open', async () => {
+    const kortix = await authenticatedClient('sse');
+    const project = await kortix.projects.provision({ name: 'Runtime SSE' });
+    const session = kortix.session(project.project_id, 'sse-session');
+    await session.start();
     mock.reset();
-    const email = uniqueEmail('sse');
-    const token = await loginUser(app, email, DEMO_PASSWORD);
 
-    const start = Date.now();
-    const res = await fetch(`${app.baseUrl}/api/kortix/p/sbx_sse/8000/global/event`, {
-      headers: { authorization: `Bearer ${token}` },
+    const events: unknown[] = [];
+    let resolveFirstEvent = () => {};
+    const firstEvent = new Promise<void>((resolve) => {
+      resolveFirstEvent = resolve;
     });
-    expect(res.status).toBe(200);
-    expect(res.headers.get('content-type')).toContain('text/event-stream');
+    const stream = await session.stream({
+      onEvent(event) {
+        events.push(event);
+        resolveFirstEvent();
+      },
+    });
 
-    const reader = res.body!.getReader();
-    const decoder = new TextDecoder();
-    let buffered = '';
-
-    // First chunk should arrive fast — proves the response isn't buffered
-    // whole before being sent to the client.
-    const first = await reader.read();
-    const firstEventElapsedMs = Date.now() - start;
-    expect(first.done).toBe(false);
-    buffered += decoder.decode(first.value!, { stream: true });
-    expect(buffered).toContain('event: message');
-    expect(firstEventElapsedMs).toBeLessThan(1_000);
-
-    // Keep reading until we've seen a heartbeat too — proves the connection
-    // stays open beyond the initial burst rather than closing right away.
-    const deadline = Date.now() + 3_000;
-    while (!buffered.includes('heartbeat') && Date.now() < deadline) {
-      const next = await reader.read();
-      if (next.done) break;
-      buffered += decoder.decode(next.value!, { stream: true });
+    try {
+      await Promise.race([
+        firstEvent,
+        new Promise<never>((_, reject) =>
+          setTimeout(
+            () => reject(new Error('SDK stream did not deliver an event within 1 second')),
+            1_000,
+          ),
+        ),
+      ]);
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      expect(events.length).toBeGreaterThan(0);
+      expect(
+        mock.requests.some((request) =>
+          request.path.endsWith('/global/event'),
+        ),
+      ).toBe(true);
+    } finally {
+      stream.close();
     }
-    expect(buffered).toContain('heartbeat');
-
-    await reader.cancel();
   });
 });

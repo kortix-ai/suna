@@ -1,8 +1,19 @@
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, or, sql } from 'drizzle-orm';
 import { createRoute, z } from '@hono/zod-openapi';
-import { gatewayBudgets, gatewayRequestLogs, sandboxComputeSessions, sessionSandboxes } from '@kortix/db';
-import { calculateCost, callUpstream, GatewayResolutionError, type AuthedPrincipal } from '@kortix/llm-gateway';
+import {
+  gatewayBudgets,
+  gatewayRequestLogs,
+} from '@kortix/db';
+import {
+  calculateCost,
+  callUpstream,
+  GatewayResolutionError,
+  type AuthedPrincipal,
+} from '@kortix/llm-gateway';
+import { type GenerationConfig, clampGenerationConfig } from '@kortix/llm-catalog';
 import { resolveCandidates } from '../../llm-gateway/resolution/resolve-candidates';
+import { catalogModelForWireModel } from '../../llm-gateway/models/catalog-models';
+import { platformDefaultModelId } from '../../llm-gateway/models/served-managed-models';
 import { db } from '../../shared/db';
 import { auth, errors, json } from '../../openapi';
 import { authorize } from '../../iam';
@@ -11,16 +22,20 @@ import { PROJECT_ACTIONS } from '../../iam/actions';
 import { assertProjectCapability, loadProjectForUser, lookupEmailsByUserIds } from '../lib/access';
 import { projectsApp } from '../lib/app';
 import { UUID_V4_REGEX } from '../lib/serializers';
-import { createGatewayKey, listGatewayKeys, revokeGatewayKey } from '../../llm-gateway/gateway-keys';
+import {
+  createGatewayKey,
+  listGatewayKeys,
+  revokeGatewayKey,
+} from '../../llm-gateway/gateway-keys';
 import {
   assertGatewayBudget,
   persistGatewayTrace,
   recordGatewayUsage,
 } from '../../llm-gateway/hooks';
 import { publicGatewayBaseUrl } from '../../llm-gateway/public-url';
+import { verifyProviderConnection } from '../../llm-gateway/provider-verify';
 import { config } from '../../config';
-import { getCachedAccountTier } from '../../billing/services/entitlements';
-import { accountIsFreeTierForModels } from '../../billing/services/tiers';
+import { accountMayUseManagedModels } from '../../billing/services/entitlements';
 import { getAccountModelDefaults } from '../../repositories/model-preferences';
 import {
   getProjectRoutingPolicy,
@@ -30,6 +45,14 @@ import {
 import { invalidateAccountModelDefaults } from '../../llm-gateway/resolution/default-model';
 import { parseProjectRoutingPolicyInput } from '../../llm-gateway/routing/project-policy';
 import { resolveGatewayRoute } from '../../llm-gateway/routing';
+import { listProjectGatewaySessionSpend } from '../../shared/session-costs';
+import {
+  kortixBilledSpendSql,
+  providerBilledSpendSql,
+  splitLlmSpend,
+  totalSpendSql,
+} from '../../shared/llm-spend';
+import { classifyGatewayLogReference } from './gateway-log-reference';
 import {
   deleteProjectOtelConfig,
   getProjectOtelConfigSummary,
@@ -37,7 +60,12 @@ import {
 } from '../../repositories/gateway-otel-config';
 import { assertSafeEgressUrl, UnsafeEgressError } from '../../shared/ssrf-guard';
 
-async function canDo(c: any, projectId: string, accountId: string, action: string): Promise<boolean> {
+async function canDo(
+  c: any,
+  projectId: string,
+  accountId: string,
+  action: string,
+): Promise<boolean> {
   const verdict = await authorize(
     c.get('userId'),
     accountId,
@@ -75,6 +103,7 @@ const LIST_COLUMNS = {
   inputTokens: gatewayRequestLogs.inputTokens,
   outputTokens: gatewayRequestLogs.outputTokens,
   cachedTokens: gatewayRequestLogs.cachedTokens,
+  cacheWriteTokens: gatewayRequestLogs.cacheWriteTokens,
   upstreamCost: gatewayRequestLogs.upstreamCost,
   finalCost: gatewayRequestLogs.finalCost,
   streaming: gatewayRequestLogs.streaming,
@@ -84,6 +113,13 @@ const LIST_COLUMNS = {
 };
 
 function serializeLogRow(r: Record<string, any>) {
+  // See shared/llm-spend.ts. `final_cost` alone answers "what did Kortix bill
+  // you", which is 0 on every BYOK request — it is not what the call cost you.
+  const spend = splitLlmSpend({
+    billingMode: r.billingMode,
+    upstreamCost: r.upstreamCost,
+    finalCost: r.finalCost,
+  });
   return {
     log_id: r.logId,
     request_id: r.requestId,
@@ -100,8 +136,19 @@ function serializeLogRow(r: Record<string, any>) {
     input_tokens: r.inputTokens,
     output_tokens: r.outputTokens,
     cached_tokens: r.cachedTokens,
-    upstream_cost: Number(r.upstreamCost ?? 0),
-    final_cost: Number(r.finalCost ?? 0),
+    cache_write_tokens: r.cacheWriteTokens,
+    // What you paid your own provider, and what Kortix debited from your
+    // wallet. On a Kortix-managed (`credits`) row `provider_cost` is 0 on
+    // purpose: the upstream price there is Kortix's wholesale cost, not
+    // yours, and shipping it would publish the Kortix margin on every
+    // managed request.
+    kortix_cost: spend.kortix_cost,
+    provider_cost: spend.provider_cost,
+    total_cost: spend.total_cost,
+    /** @deprecated Same value as `provider_cost`. */
+    upstream_cost: spend.provider_cost,
+    /** @deprecated Same value as `kortix_cost`. */
+    final_cost: spend.kortix_cost,
     streaming: r.streaming,
     billing_mode: r.billingMode,
     actor_user_id: r.actorUserId,
@@ -130,9 +177,18 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_GATEWAY_LOGS_READ);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_GATEWAY_LOGS_READ,
+    );
 
-    const limit = Math.min(Math.max(Number(c.req.query('limit')) || LIST_LIMIT_DEFAULT, 1), LIST_LIMIT_MAX);
+    const limit = Math.min(
+      Math.max(Number(c.req.query('limit')) || LIST_LIMIT_DEFAULT, 1),
+      LIST_LIMIT_MAX,
+    );
     const offset = Math.max(Number(c.req.query('offset')) || 0, 0);
     const okFilter = c.req.query('ok');
 
@@ -150,7 +206,10 @@ projectsApp.openapi(
 
     const hasMore = rows.length > limit;
     const page = hasMore ? rows.slice(0, limit) : rows;
-    return c.json({ logs: page.map(serializeLogRow), next_offset: hasMore ? offset + limit : null });
+    return c.json({
+      logs: page.map(serializeLogRow),
+      next_offset: hasMore ? offset + limit : null,
+    });
   },
 );
 
@@ -166,17 +225,36 @@ projectsApp.openapi(
   }),
   async (c: any) => {
     const projectId = c.req.param('projectId');
-    const logId = c.req.param('logId');
-    if (!UUID_V4_REGEX.test(logId)) return c.json({ error: 'Invalid log id' }, 400);
+    const logReference = c.req.param('logId');
+    const referenceKind = classifyGatewayLogReference(logReference);
+    if (referenceKind === 'invalid') {
+      return c.json({ error: 'Invalid log id or request id' }, 400);
+    }
 
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_GATEWAY_LOGS_READ);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_GATEWAY_LOGS_READ,
+    );
 
     const [row] = await db
       .select()
       .from(gatewayRequestLogs)
-      .where(and(eq(gatewayRequestLogs.logId, logId), eq(gatewayRequestLogs.projectId, projectId)))
+      .where(
+        and(
+          referenceKind === 'both'
+            ? or(
+                eq(gatewayRequestLogs.logId, logReference),
+                eq(gatewayRequestLogs.requestId, logReference),
+              )
+            : eq(gatewayRequestLogs.requestId, logReference),
+          eq(gatewayRequestLogs.projectId, projectId),
+        ),
+      )
       .limit(1);
     if (!row) return c.json({ error: 'Not found' }, 404);
 
@@ -207,14 +285,22 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_GATEWAY_SPEND_READ);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_GATEWAY_SPEND_READ,
+    );
 
     const days = Math.min(Math.max(Number(c.req.query('days')) || 30, 1), 365);
     const [agg] = await db
       .select({
         requests: sql<number>`count(*)::int`,
         errors: sql<number>`count(*) filter (where not ok)::int`,
-        totalCost: sql<number>`coalesce(sum(final_cost), 0)::float8`,
+        totalCost: totalSpendSql,
+        kortixCost: kortixBilledSpendSql,
+        providerCost: providerBilledSpendSql,
         inputTokens: sql<string>`coalesce(sum(input_tokens), 0)`,
         outputTokens: sql<string>`coalesce(sum(output_tokens), 0)`,
       })
@@ -231,6 +317,8 @@ projectsApp.openapi(
       requests: agg?.requests ?? 0,
       errors: agg?.errors ?? 0,
       total_cost: agg?.totalCost ?? 0,
+      kortix_cost: agg?.kortixCost ?? 0,
+      provider_cost: agg?.providerCost ?? 0,
       input_tokens: Number(agg?.inputTokens ?? 0),
       output_tokens: Number(agg?.outputTokens ?? 0),
     });
@@ -254,7 +342,13 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_GATEWAY_SPEND_READ);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_GATEWAY_SPEND_READ,
+    );
 
     const days = Math.min(Math.max(Number(c.req.query('days')) || 30, 1), 365);
     const rows = await db
@@ -262,7 +356,9 @@ projectsApp.openapi(
         day: sql<string>`to_char(date_trunc('day', ${gatewayRequestLogs.createdAt}), 'YYYY-MM-DD')`,
         requests: sql<number>`count(*)::int`,
         errors: sql<number>`count(*) filter (where not ${gatewayRequestLogs.ok})::int`,
-        cost: sql<number>`coalesce(sum(${gatewayRequestLogs.finalCost}), 0)::float8`,
+        cost: totalSpendSql,
+        kortixCost: kortixBilledSpendSql,
+        providerCost: providerBilledSpendSql,
         inputTokens: sql<string>`coalesce(sum(${gatewayRequestLogs.inputTokens}), 0)`,
         outputTokens: sql<string>`coalesce(sum(${gatewayRequestLogs.outputTokens}), 0)`,
         p50: sql<number>`coalesce(percentile_cont(0.5) within group (order by ${gatewayRequestLogs.latencyMs}), 0)::int`,
@@ -285,6 +381,8 @@ projectsApp.openapi(
       requests: number;
       errors: number;
       cost: number;
+      kortix_cost: number;
+      provider_cost: number;
       input_tokens: number;
       output_tokens: number;
       p50: number;
@@ -300,6 +398,8 @@ projectsApp.openapi(
         requests: r?.requests ?? 0,
         errors: r?.errors ?? 0,
         cost: r?.cost ?? 0,
+        kortix_cost: r?.kortixCost ?? 0,
+        provider_cost: r?.providerCost ?? 0,
         input_tokens: Number(r?.inputTokens ?? 0),
         output_tokens: Number(r?.outputTokens ?? 0),
         p50: r?.p50 ?? 0,
@@ -328,100 +428,22 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_GATEWAY_SPEND_READ);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_GATEWAY_SPEND_READ,
+    );
 
     const days = Math.min(Math.max(Number(c.req.query('days')) || 30, 1), 365);
-
-    const [llmRows, computeRows] = await Promise.all([
-      db
-        .select({
-          sessionId: gatewayRequestLogs.sessionId,
-          requests: sql<number>`count(*)::int`,
-          errors: sql<number>`count(*) filter (where not ${gatewayRequestLogs.ok})::int`,
-          cost: sql<number>`coalesce(sum(${gatewayRequestLogs.finalCost}), 0)::float8`,
-          tokens: sql<string>`coalesce(sum(${gatewayRequestLogs.inputTokens} + ${gatewayRequestLogs.outputTokens}), 0)`,
-          models: sql<number>`count(distinct ${gatewayRequestLogs.requestedModel})::int`,
-          lastAt: sql<string>`max(${gatewayRequestLogs.createdAt})`,
-        })
-        .from(gatewayRequestLogs)
-        .where(
-          and(
-            eq(gatewayRequestLogs.projectId, projectId),
-            sql`${gatewayRequestLogs.sessionId} is not null`,
-            sql`${gatewayRequestLogs.createdAt} >= now() - make_interval(days => ${days})`,
-          ),
-        )
-        .groupBy(gatewayRequestLogs.sessionId),
-      db
-        .select({
-          sessionId: sandboxComputeSessions.sessionId,
-          cost: sql<number>`coalesce(sum(${sandboxComputeSessions.costUsd}), 0)::float8`,
-          seconds: sql<string>`coalesce(sum(extract(epoch from coalesce(${sandboxComputeSessions.endedAt}, ${sandboxComputeSessions.lastBilledAt}, now()) - ${sandboxComputeSessions.startedAt})), 0)::bigint`,
-          lastAt: sql<string>`max(${sandboxComputeSessions.lastBilledAt})`,
-        })
-        .from(sandboxComputeSessions)
-        .innerJoin(sessionSandboxes, eq(sessionSandboxes.sessionId, sandboxComputeSessions.sessionId))
-        .where(
-          and(
-            eq(sessionSandboxes.projectId, projectId),
-            sql`${sandboxComputeSessions.sessionId} is not null`,
-            sql`${sandboxComputeSessions.startedAt} >= now() - make_interval(days => ${days})`,
-          ),
-        )
-        .groupBy(sandboxComputeSessions.sessionId),
-    ]);
-
-    type Row = {
-      session_id: string;
-      llm_cost: number;
-      compute_cost: number;
-      requests: number;
-      errors: number;
-      tokens: number;
-      models: number;
-      compute_seconds: number;
-      last_at: string | null;
-    };
-    const bySession = new Map<string, Row>();
-    for (const r of llmRows) {
-      if (!r.sessionId) continue;
-      bySession.set(r.sessionId, {
-        session_id: r.sessionId,
-        llm_cost: r.cost,
-        compute_cost: 0,
-        requests: r.requests,
-        errors: r.errors,
-        tokens: Number(r.tokens),
-        models: r.models,
-        compute_seconds: 0,
-        last_at: r.lastAt,
-      });
-    }
-    for (const r of computeRows) {
-      if (!r.sessionId) continue;
-      const e = bySession.get(r.sessionId) ?? {
-        session_id: r.sessionId,
-        llm_cost: 0,
-        compute_cost: 0,
-        requests: 0,
-        errors: 0,
-        tokens: 0,
-        models: 0,
-        compute_seconds: 0,
-        last_at: null,
-      };
-      e.compute_cost = r.cost;
-      e.compute_seconds = Number(r.seconds);
-      if (r.lastAt && (!e.last_at || r.lastAt > e.last_at)) e.last_at = r.lastAt;
-      bySession.set(r.sessionId, e);
-    }
-
-    const sessions = [...bySession.values()]
-      .map((e) => ({ ...e, total_cost: e.llm_cost + e.compute_cost }))
-      .sort((a, b) => b.total_cost - a.total_cost)
-      .slice(0, 50);
-
-    return c.json({ window_days: days, sessions });
+    return c.json(
+      await listProjectGatewaySessionSpend({
+        accountId: loaded.row.accountId,
+        projectId,
+        days,
+      }),
+    );
   },
 );
 
@@ -442,7 +464,13 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_GATEWAY_SPEND_READ);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_GATEWAY_SPEND_READ,
+    );
 
     const days = Math.min(Math.max(Number(c.req.query('days')) || 30, 1), 365);
     const rows = await db
@@ -451,7 +479,9 @@ projectsApp.openapi(
         provider: gatewayRequestLogs.provider,
         requests: sql<number>`count(*)::int`,
         errors: sql<number>`count(*) filter (where not ${gatewayRequestLogs.ok})::int`,
-        cost: sql<number>`coalesce(sum(${gatewayRequestLogs.finalCost}), 0)::float8`,
+        cost: totalSpendSql,
+        kortixCost: kortixBilledSpendSql,
+        providerCost: providerBilledSpendSql,
         tokens: sql<string>`coalesce(sum(${gatewayRequestLogs.inputTokens} + ${gatewayRequestLogs.outputTokens}), 0)`,
       })
       .from(gatewayRequestLogs)
@@ -473,6 +503,8 @@ projectsApp.openapi(
         requests: r.requests,
         errors: r.errors,
         cost: r.cost,
+        kortix_cost: r.kortixCost,
+        provider_cost: r.providerCost,
         tokens: Number(r.tokens),
       })),
     });
@@ -493,7 +525,13 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_GATEWAY_SPEND_READ);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_GATEWAY_SPEND_READ,
+    );
 
     const budgets = await db
       .select()
@@ -504,7 +542,10 @@ projectsApp.openapi(
       .select({
         userId: gatewayRequestLogs.actorUserId,
         requests: sql<number>`count(*)::int`,
-        cost: sql<number>`coalesce(sum(${gatewayRequestLogs.finalCost}), 0)::float8`,
+        // Budgets cap what a project SPENDS, so per-member spend here is the
+        // same total-spend figure the budget gate enforces on — not the
+        // Kortix-billed slice, which is 0 on every BYOK request.
+        cost: totalSpendSql,
         tokens: sql<string>`coalesce(sum(${gatewayRequestLogs.inputTokens} + ${gatewayRequestLogs.outputTokens}), 0)`,
       })
       .from(gatewayRequestLogs)
@@ -516,12 +557,12 @@ projectsApp.openapi(
         ),
       )
       .groupBy(gatewayRequestLogs.actorUserId)
-      .orderBy(desc(sql`sum(${gatewayRequestLogs.finalCost})`));
+      .orderBy(desc(totalSpendSql));
 
     const [projectAgg] = await db
       .select({
         requests: sql<number>`count(*)::int`,
-        cost: sql<number>`coalesce(sum(${gatewayRequestLogs.finalCost}), 0)::float8`,
+        cost: totalSpendSql,
       })
       .from(gatewayRequestLogs)
       .where(
@@ -677,7 +718,13 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_GATEWAY_LOGS_READ);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_GATEWAY_LOGS_READ,
+    );
 
     const days = Math.min(Math.max(Number(c.req.query('days')) || 30, 1), 365);
     const rows = await db
@@ -969,6 +1016,13 @@ projectsApp.openapi(
             schema: z.object({
               prompt: z.string().min(1).max(8000),
               models: z.array(z.string()).min(1).max(6),
+              system: z.string().max(4000).optional(),
+              // Per-model generation-parameter overrides for THIS run only —
+              // never persisted. Same shape + same server-side capability
+              // clamp as the persisted routing-policy config (see
+              // clampGenerationConfig below); an unsupported/out-of-range
+              // field for a given model is silently dropped, not rejected.
+              generationConfig: z.record(z.string(), z.record(z.string(), z.unknown())).optional(),
             }),
           },
         },
@@ -991,6 +1045,11 @@ projectsApp.openapi(
     const body = await c.req.json();
     const prompt = typeof body.prompt === 'string' ? body.prompt : '';
     const models: string[] = Array.isArray(body.models) ? body.models.slice(0, 6) : [];
+    const system = typeof body.system === 'string' && body.system.trim() ? body.system : undefined;
+    const rawGenerationConfig =
+      body.generationConfig && typeof body.generationConfig === 'object'
+        ? (body.generationConfig as Record<string, unknown>)
+        : {};
     if (!prompt || models.length === 0) {
       return c.json({ error: 'prompt and models are required' }, 400);
     }
@@ -1005,11 +1064,27 @@ projectsApp.openapi(
     const results = await Promise.all(
       models.map(async (model) => {
         const requestId = crypto.randomUUID();
-        const request = {
+        // Same capability clamp the persisted routing-policy write path
+        // uses — a playground run must never send a param the resolved
+        // model can't honor either. Applied on top of the 512-token
+        // default so an explicit override can raise (or lower) it.
+        const clamped = clampGenerationConfig(
+          rawGenerationConfig[model] as GenerationConfig | undefined,
+          catalogModelForWireModel(model),
+        );
+        const request: Record<string, unknown> = {
           model,
-          messages: [{ role: 'user', content: prompt }],
+          messages: [
+            ...(system ? [{ role: 'system', content: system }] : []),
+            { role: 'user', content: prompt },
+          ],
           stream: false,
-          max_tokens: 512,
+          max_tokens: clamped.maxOutputTokens ?? 512,
+          ...(clamped.temperature !== undefined ? { temperature: clamped.temperature } : {}),
+          ...(clamped.topP !== undefined ? { top_p: clamped.topP } : {}),
+          ...(clamped.reasoningEffort !== undefined
+            ? { reasoning_effort: clamped.reasoningEffort }
+            : {}),
         };
         try {
           const candidates = await resolveCandidates(principal, model);
@@ -1024,9 +1099,12 @@ projectsApp.openapi(
           const usage = data?.usage ?? {};
           const promptTokens = Number(usage.prompt_tokens ?? usage.input_tokens ?? 0) || 0;
           const completionTokens = Number(usage.completion_tokens ?? usage.output_tokens ?? 0) || 0;
-          const cachedTokens = Number(usage.cached_tokens ?? usage.prompt_tokens_details?.cached_tokens ?? 0) || 0;
+          const cachedTokens =
+            Number(usage.cached_tokens ?? usage.prompt_tokens_details?.cached_tokens ?? 0) || 0;
           const cacheWriteTokens =
-            Number(usage.cache_write_tokens ?? usage.prompt_tokens_details?.cache_write_tokens ?? 0) || 0;
+            Number(
+              usage.cache_write_tokens ?? usage.prompt_tokens_details?.cache_write_tokens ?? 0,
+            ) || 0;
           const resolvedModel = String(data?.model ?? descriptor.resolvedModel ?? model);
           const { upstreamCost, finalCost } = calculateCost(
             resolvedModel,
@@ -1048,7 +1126,9 @@ projectsApp.openapi(
             streaming: false,
             status: res.status,
             ok: res.ok,
-            errorMessage: res.ok ? undefined : data?.error?.message ?? data?.message ?? `HTTP ${res.status}`,
+            errorMessage: res.ok
+              ? undefined
+              : (data?.error?.message ?? data?.message ?? `HTTP ${res.status}`),
             latencyMs,
             attempts: 1,
             candidatesTried: [descriptor.provider],
@@ -1092,6 +1172,9 @@ projectsApp.openapi(
             output: data?.choices?.[0]?.message?.content ?? '',
             input_tokens: promptTokens,
             output_tokens: completionTokens,
+            cost: finalCost,
+            resolved_model: resolvedModel,
+            provider: descriptor.provider,
           };
         } catch (err) {
           return { model, ok: false, error: err instanceof Error ? err.message : 'Request failed' };
@@ -1100,6 +1183,64 @@ projectsApp.openapi(
     );
 
     return c.json({ results });
+  },
+);
+
+// GAP C1 — "Connected" (a secret row exists) is not the same claim as "the
+// key works". This makes ONE cheap, single-attempt completion through the
+// same resolveCandidates -> callUpstream path a real turn uses and reports
+// verified/invalid/unknown/not_connected — see provider-verify.ts for the
+// full classification rationale. Gated on PROJECT_SECRET_READ (same leaf as
+// GET /secrets): it never exposes the key itself, only whether it works, so
+// any member who can already see that the provider is connected can check
+// whether it's actually usable.
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/gateway/providers/{providerId}/verify',
+    tags: ['gateway'],
+    summary: 'POST /:projectId/gateway/providers/:providerId/verify',
+    ...auth,
+    request: { params: z.object({ projectId: z.string(), providerId: z.string() }) },
+    responses: {
+      200: json(z.any(), 'Provider credential verification result'),
+      ...errors(403, 404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const providerId = c.req.param('providerId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_SECRET_READ,
+    );
+
+    const principal: AuthedPrincipal = {
+      userId: c.get('userId'),
+      accountId: loaded.row.accountId,
+      projectId,
+    };
+    // The ping is a real (if tiny) paid upstream call for a platform-fee-billed
+    // BYOK project — it must respect an already-exceeded project budget like
+    // any other gateway call (see playground's identical guard above). Caught
+    // rather than left to propagate: a budget block is exactly the "couldn't
+    // verify" case this endpoint already models, not a hard failure.
+    try {
+      await assertGatewayBudget(principal);
+    } catch (err) {
+      return c.json({
+        status: 'unknown',
+        message: err instanceof Error ? err.message : 'Project budget exceeded — try again later.',
+        checked_at: new Date().toISOString(),
+      });
+    }
+    const result = await verifyProviderConnection(principal, providerId);
+    return c.json({ ...result, checked_at: new Date().toISOString() });
   },
 );
 
@@ -1120,12 +1261,12 @@ async function routingPolicyDocument(ctx: RoutingContext, canWrite: boolean) {
     getAccountModelDefaults(ctx.accountId, ctx.projectId),
   ]);
   const projectDefault = defaults.projects[ctx.projectId] ?? null;
-  const effectiveDefault = projectDefault ?? defaults.account ?? config.LLM_GATEWAY_DEFAULT_MODEL;
+  const effectiveDefault = projectDefault ?? defaults.account ?? platformDefaultModelId();
   const defaultModelSource = projectDefault
-    ? 'project' as const
+    ? ('project' as const)
     : defaults.account
-      ? 'account' as const
-      : 'platform' as const;
+      ? ('account' as const)
+      : ('platform' as const);
   const route = await resolveGatewayRoute(
     {
       userId: ctx.userId,
@@ -1133,7 +1274,7 @@ async function routingPolicyDocument(ctx: RoutingContext, canWrite: boolean) {
       projectId: ctx.projectId,
       defaultModel: effectiveDefault,
     },
-    { requestedModel: 'auto', requires: { imageInput: false } },
+    { requestedModel: effectiveDefault, requires: { imageInput: false } },
   );
   return {
     version: 1 as const,
@@ -1142,20 +1283,33 @@ async function routingPolicyDocument(ctx: RoutingContext, canWrite: boolean) {
       visionModel: stored?.visionModel ?? null,
       defaultFallback: stored?.defaultFallback ?? null,
       rules: stored?.rules ?? [],
+      // Re-clamped on every READ too (not just trusted from what was stored) —
+      // the live catalog can change after a value was written (a model
+      // losing reasoning_options, temperature support flipping, ...), and
+      // the UI must never render a stale, now-invalid control value as if
+      // it were still honored. Entries that clamp to nothing are dropped.
+      modelGenerationConfig: Object.fromEntries(
+        Object.entries(stored?.modelGenerationConfig ?? {})
+          .map(
+            ([model, entry]) =>
+              [model, clampGenerationConfig(entry, catalogModelForWireModel(model))] as const,
+          )
+          .filter(([, clamped]) => Object.keys(clamped).length > 0),
+      ),
     },
     effective: {
       defaultModel: effectiveDefault,
       defaultModelSource,
-      visionModel: stored?.visionModel ?? config.LLM_GATEWAY_VISION_MODEL,
+      visionModel: stored?.visionModel ?? config.LLM_GATEWAY_VISION_MODEL ?? null,
       defaultFallback: {
         models: [...(route.fallbackModels ?? [])],
         fallbackOn: route.fallbackOn ?? 'transient',
       },
     },
     platform: {
-      defaultModel: config.LLM_GATEWAY_DEFAULT_MODEL,
-      visionModel: config.LLM_GATEWAY_VISION_MODEL,
-      defaultFallback: operatorFallbackFor(config.LLM_GATEWAY_DEFAULT_MODEL),
+      defaultModel: platformDefaultModelId(),
+      visionModel: config.LLM_GATEWAY_VISION_MODEL ?? null,
+      defaultFallback: operatorFallbackFor(platformDefaultModelId()),
     },
     capabilities: { write: canWrite },
   };
@@ -1186,11 +1340,16 @@ projectsApp.openapi(
       loaded.row.accountId,
       PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE,
     );
-    return c.json(await routingPolicyDocument({
-      projectId,
-      accountId: loaded.row.accountId,
-      userId: loaded.userId,
-    }, canWrite));
+    return c.json(
+      await routingPolicyDocument(
+        {
+          projectId,
+          accountId: loaded.row.accountId,
+          userId: loaded.userId,
+        },
+        canWrite,
+      ),
+    );
   },
 );
 
@@ -1211,36 +1370,68 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE,
+    );
     let policy;
     try {
       policy = parseProjectRoutingPolicyInput(await c.req.json());
     } catch (error) {
-      return c.json({
-        error: error instanceof Error ? error.message : 'Invalid routing policy',
-        code: 'invalid_routing_policy',
-      }, 400);
+      return c.json(
+        {
+          error: error instanceof Error ? error.message : 'Invalid routing policy',
+          code: 'invalid_routing_policy',
+        },
+        400,
+      );
     }
     const defaults = await getAccountModelDefaults(loaded.row.accountId, projectId);
-    const effectivePrimary = policy.defaultModel ?? defaults.account ?? config.LLM_GATEWAY_DEFAULT_MODEL;
+    const effectivePrimary =
+      policy.defaultModel ?? defaults.account ?? platformDefaultModelId();
     if (policy.defaultFallback?.models.includes(effectivePrimary)) {
-      return c.json({
-        error: `model "${effectivePrimary}" cannot fall back to itself`,
-        code: 'invalid_routing_policy',
-      }, 400);
+      return c.json(
+        {
+          error: `model "${effectivePrimary}" cannot fall back to itself`,
+          code: 'invalid_routing_policy',
+        },
+        400,
+      );
     }
+    // Clamp every configured entry against the model's LIVE catalog
+    // capabilities before it's ever persisted — never store a temperature
+    // for a temperature:false model, a reasoning effort outside the model's
+    // own reasoning_options, or a max-output-tokens above its limit.output.
+    // An entry that clamps to nothing (every field dropped) is dropped
+    // entirely rather than stored as an empty object.
+    const clampedGenerationConfig = Object.fromEntries(
+      Object.entries(policy.modelGenerationConfig)
+        .map(
+          ([model, entry]) =>
+            [model, clampGenerationConfig(entry, catalogModelForWireModel(model))] as const,
+        )
+        .filter(([, clamped]) => Object.keys(clamped).length > 0),
+    );
     await setProjectRoutingPolicy({
       projectId,
       accountId: loaded.row.accountId,
       updatedBy: loaded.userId,
-      policy,
+      policy: { ...policy, modelGenerationConfig: clampedGenerationConfig },
     });
     invalidateAccountModelDefaults(loaded.row.accountId);
-    return c.json(await routingPolicyDocument({
-      projectId,
-      accountId: loaded.row.accountId,
-      userId: loaded.userId,
-    }, true));
+    return c.json(
+      await routingPolicyDocument(
+        {
+          projectId,
+          accountId: loaded.row.accountId,
+          userId: loaded.userId,
+        },
+        true,
+      ),
+    );
   },
 );
 
@@ -1258,14 +1449,25 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE,
+    );
     await resetProjectRoutingPolicy({ projectId, accountId: loaded.row.accountId });
     invalidateAccountModelDefaults(loaded.row.accountId);
-    return c.json(await routingPolicyDocument({
-      projectId,
-      accountId: loaded.row.accountId,
-      userId: loaded.userId,
-    }, true));
+    return c.json(
+      await routingPolicyDocument(
+        {
+          projectId,
+          accountId: loaded.row.accountId,
+          userId: loaded.userId,
+        },
+        true,
+      ),
+    );
   },
 );
 
@@ -1297,9 +1499,7 @@ projectsApp.openapi(
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     const body = await c.req.json();
     const defaults = await getAccountModelDefaults(loaded.row.accountId, projectId);
-    const freeModelsOnly = config.KORTIX_BILLING_INTERNAL_ENABLED
-      ? accountIsFreeTierForModels(await getCachedAccountTier(loaded.row.accountId))
-      : false;
+    const freeModelsOnly = !(await accountMayUseManagedModels(loaded.row.accountId));
     const principal: AuthedPrincipal = {
       userId: loaded.userId,
       accountId: loaded.row.accountId,
@@ -1319,14 +1519,16 @@ projectsApp.openapi(
     // isn't servable — correct for an actual generation call, but here it
     // must degrade to `available: false` for JUST that model rather than
     // fail the whole Promise.all/response for every model in the list.
-    const availability = await Promise.all(models.map(async (model) => {
-      try {
-        return { model, available: (await resolveCandidates(principal, model)).length > 0 };
-      } catch (err) {
-        if (err instanceof GatewayResolutionError) return { model, available: false };
-        throw err;
-      }
-    }));
+    const availability = await Promise.all(
+      models.map(async (model) => {
+        try {
+          return { model, available: (await resolveCandidates(principal, model)).length > 0 };
+        } catch (err) {
+          if (err instanceof GatewayResolutionError) return { model, available: false };
+          throw err;
+        }
+      }),
+    );
     return c.json({ version: 1, route, models: availability });
   },
 );

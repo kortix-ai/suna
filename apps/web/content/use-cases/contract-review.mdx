@@ -86,7 +86,7 @@ The agent produces a first pass, not a decision. Redlines are drafted, never
 sent — every one stops at a **human approval gate** for a lawyer to sign off
 before it reaches the counterparty. It reads the contract and writes its summary
 and drafts; it doesn't act on the deal. Credentials are encrypted in the secrets
-manager and injected at runtime, never shown to the model or written to logs.
+manager and injected at runtime, scoped to the agents you grant them to.
 
 </Step>
 <Step title="Let each contract come back reviewed">
@@ -111,11 +111,11 @@ a blank read.
 Giving an agent a first pass on contracts is a trust question. The relevant
 controls on Kortix:
 
-- **Isolation.** Every contract runs in its own microVM sandbox on its own
-  branch. The session can reach only what it's scoped to, and only the summary
-  and drafts it produces leave the sandbox.
+- **Isolation.** Every contract runs in its own isolated sandbox on its own
+  branch. The session is granted access only to what it's scoped to, and only the summary
+  and drafts it produces are written back out.
 - **Scoped secrets.** Each credential is encrypted in the secrets manager,
-  injected into the sandbox at runtime, and never exposed to the model or the
+  injected into the sandbox at runtime, and scoped to the agents you grant them to or the
   logs.
 - **Human approval gate.** Redlines are drafted, never sent; a lawyer reviews and
   signs off before anything reaches the counterparty.

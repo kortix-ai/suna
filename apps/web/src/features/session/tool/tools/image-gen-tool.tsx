@@ -2,32 +2,31 @@
 import { TextShimmer } from '@/components/ui/text-shimmer';
 import { useFileContent } from '@/features/files/hooks/use-file-content';
 import { parseImageOutput } from '@/features/session/image-output-path';
-import { ToolRegistry } from '@/features/session/tool/shared/registry';
-import type { ToolProps } from '@/features/session/tool/shared/types';
 import {
   BasicTool,
-  isErrorOutput,
-  ToolOutputFallback,
+  isLocalSandboxFilePath,
   partInput,
   partOutput,
-  partStatus,
-  isLocalSandboxFilePath,
+  ToolOutputFallback,
 } from '@/features/session/tool/shared/infrastructure';
-import { OutputBlock } from '@/features/session/tool/shared/output-block';
-import {
-  Image as ImageIcon,
-} from 'lucide-react';
+import { ToolRegistry } from '@/features/session/tool/shared/registry';
+import { ToolResultCard } from '@/features/session/tool/shared/result-card';
+import type { ToolProps } from '@/features/session/tool/shared/types';
+import { ImageIcon } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
-import {
-  useMemo,
-} from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
+const TITLE_BY_ACTION: Record<string, string> = {
+  generate: 'Generate Image',
+  edit: 'Edit Image',
+  upscale: 'Upscale Image',
+  remove_bg: 'Remove Background',
+};
 
 export function ImageGenTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const input = partInput(part);
   const output = partOutput(part);
-  const status = partStatus(part);
   const prompt = input.prompt as string | undefined;
   const action = input.action as string | undefined;
 
@@ -42,33 +41,30 @@ export function ImageGenTool({ part, defaultOpen, forceOpen, locked }: ToolProps
     enabled: !!fileContentPath,
   });
 
-  const imageUrl = useMemo(() => {
-    if (fileContentData?.encoding === 'base64' && fileContentData?.content) {
-      const binary = atob(fileContentData.content);
-      const bytes = new Uint8Array(binary.length);
-      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-      const blob = new Blob([bytes], {
-        type: fileContentData.mimeType || 'image/webp',
-      });
-      return URL.createObjectURL(blob);
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!(fileContentData?.encoding === 'base64' && fileContentData?.content)) {
+      setImageUrl(null);
+      return;
     }
-    return null;
+    const binary = atob(fileContentData.content);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    const blob = new Blob([bytes], {
+      type: fileContentData.mimeType || 'image/webp',
+    });
+    const url = URL.createObjectURL(blob);
+    setImageUrl(url);
+    return () => URL.revokeObjectURL(url);
   }, [fileContentData]);
 
   const displayImageSrc = directUrl || imageUrl || '';
 
-  const titleMap: Record<string, string> = {
-    generate: 'Generate Image',
-    edit: 'Edit Image',
-    upscale: 'Upscale Image',
-    remove_bg: 'Remove Background',
-  };
-
   return (
     <BasicTool
-      icon={<ImageIcon className="size-3.5 flex-shrink-0" />}
+      icon={<ImageIcon className="size-3.5 shrink-0" />}
       trigger={{
-        title: titleMap[action ?? ''] || 'Image Gen',
+        title: TITLE_BY_ACTION[action ?? ''] || 'Image Gen',
         subtitle: prompt?.slice(0, 60),
       }}
       defaultOpen={defaultOpen}
@@ -76,12 +72,12 @@ export function ImageGenTool({ part, defaultOpen, forceOpen, locked }: ToolProps
       locked={locked}
     >
       {imagePath || directUrl ? (
-        <div className="p-2">
+        <ToolResultCard bodyClassName="p-1">
           {displayImageSrc ? (
             <img
               src={displayImageSrc}
               alt={String(prompt || 'Generated image')}
-              className="max-h-64 object-contain"
+              className="max-h-64 rounded-sm object-contain"
             />
           ) : isImageLoading ? (
             <div className="px-2 py-1.5 text-xs">
@@ -96,16 +92,11 @@ export function ImageGenTool({ part, defaultOpen, forceOpen, locked }: ToolProps
               {imagePath}
             </div>
           )}
-        </div>
-      ) : isErrorOutput(output) ? (
-        <ToolOutputFallback output={output} toolName="image_gen" />
+        </ToolResultCard>
       ) : output ? (
-        <div className="p-2">
-          <OutputBlock text={output} />
-        </div>
+        <ToolOutputFallback output={output} toolName="image_gen" />
       ) : null}
     </BasicTool>
   );
 }
 ToolRegistry.register('image-gen', ImageGenTool);
-

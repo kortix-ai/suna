@@ -23,11 +23,15 @@ export const metadata: Metadata = {
     title: 'Kortix Changelog',
     description: 'Every Kortix release, straight from the source.',
     url: `${CANONICAL_ORIGIN}/changelog`,
+    siteName: 'Kortix',
+    type: 'website',
+    images: [{ url: '/banner.png', width: 1200, height: 630, alt: 'Kortix Changelog' }],
   },
   twitter: {
-    card: 'summary',
+    card: 'summary_large_image',
     title: 'Kortix Changelog',
     description: 'Every Kortix release, straight from the source.',
+    images: ['/banner.png'],
   },
   alternates: { canonical: `${CANONICAL_ORIGIN}/changelog` },
 };
@@ -78,8 +82,8 @@ function ReleaseNotes({ body }: { body: string }) {
   return (
     <div
       className={
-        'text-muted-foreground text-sm leading-relaxed break-words ' +
-        '[&_a]:break-words [&_code]:break-words' +
+        'text-muted-foreground text-sm leading-relaxed wrap-break-word ' +
+        '[&_a]:wrap-break-word [&_code]:wrap-break-word' +
         '[&_h1]:text-foreground [&_h1]:mt-6 [&_h1]:mb-2 [&_h1]:text-base [&_h1]:font-semibold' +
         '[&_h2]:text-foreground [&_h2]:mt-6 [&_h2]:mb-2 [&_h2]:text-base [&_h2]:font-semibold' +
         '[&_h3]:text-foreground [&_h3]:mt-5 [&_h3]:mb-2 [&_h3]:text-sm [&_h3]:font-semibold' +

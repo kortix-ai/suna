@@ -2,9 +2,19 @@ import { type SessionRuntimeContext, SessionRuntimeContextSchema } from '@kortix
 import { projectSessionRuntimeContexts } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { db } from '../../shared/db';
+import { SECRET_CAPABILITIES_ENV_NAME } from '../secret-capabilities';
 
 /** The only environment variable a public runtime_context request can create. */
 export const SESSION_RUNTIME_CONTEXT_ENV_NAME = 'KORTIX_SESSION_CONTEXT';
+
+/**
+ * Env vars the server owns end to end. A later `extraEnvVars` merge must not
+ * forge or erase this durable context envelope.
+ */
+const SERVER_OWNED_ENV_NAMES = [
+  SESSION_RUNTIME_CONTEXT_ENV_NAME,
+  SECRET_CAPABILITIES_ENV_NAME,
+] as const;
 
 export function parseSessionRuntimeContext(
   value: unknown,
@@ -84,10 +94,13 @@ export function mergeSessionSandboxEnv(
 ): Record<string, string> {
   if (!extra) return base;
   const merged = { ...base, ...extra };
-  if (base[SESSION_RUNTIME_CONTEXT_ENV_NAME] !== undefined) {
-    merged[SESSION_RUNTIME_CONTEXT_ENV_NAME] = base[SESSION_RUNTIME_CONTEXT_ENV_NAME];
-  } else {
-    delete merged[SESSION_RUNTIME_CONTEXT_ENV_NAME];
+  // Re-pin every server-owned var AFTER the spread: `extra` may legitimately add
+  // provider/channel env, but it must never override the server's own identity
+  // envelope. Absent in `base` means the server decided this session has none,
+  // so a supplied value is deleted rather than honoured.
+  for (const name of SERVER_OWNED_ENV_NAMES) {
+    if (base[name] !== undefined) merged[name] = base[name];
+    else delete merged[name];
   }
   return merged;
 }

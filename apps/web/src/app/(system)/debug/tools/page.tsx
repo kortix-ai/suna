@@ -3,8 +3,10 @@
 import { useTranslations } from 'next-intl';
 
 import { AdvancedPanel } from '@/features/session/action-panel/advanced/advanced-panel';
+import { ToolParts } from '@/features/session/action-panel/easy/detail-view';
 import { EasyPanel } from '@/features/session/action-panel/easy/easy-panel';
 import { FileViewer } from '@/features/session/action-panel/easy/file-viewer';
+import { SessionPanelProvider } from '@/features/session/action-panel/session-panel-provider';
 import { SessionFilesExplorer } from '@/features/session/session-files-explorer';
 import { SessionFilesPanel } from '@/features/session/session-files-panel';
 import { ToolActivateContext, ToolPartRenderer } from '@/features/session/tool/tool-renderers';
@@ -211,7 +213,7 @@ const HTML_PREVIEW_CONTENT = `<!doctype html>
 // ---------------------------------------------------------------------------
 // Task 10 fixtures — the converted Advanced-mode views from T5-T7: get-mem,
 // memory-search (full rebuilds), agent-spawn/agent-status (bypasser family),
-// an executor call (tokens + OutputBlock), session-stats + dcp-compress (one
+// a connector call (tokens + OutputBlock), session-stats + dcp-compress (one
 // representative each), triggers' non-bracket fallback path (OutputBlock,
 // not the parsed row list), and project-delete (chrome-only, no output).
 // ---------------------------------------------------------------------------
@@ -272,7 +274,7 @@ const AGENT_STATUS_OUTPUT = [
   '**task-c9d0e1f2** QA the report on mobile — pending',
 ].join('\n');
 
-const EXECUTOR_CALL_OUTPUT = JSON.stringify({
+const CONNECTOR_CALL_OUTPUT = JSON.stringify({
   ok: true,
   status: 'ok',
   risk: 'read',
@@ -733,16 +735,16 @@ const GROUPS: Group[] = [
         node: part('agent_status', done({}, AGENT_STATUS_OUTPUT)),
       },
       {
-        label: 'kortix-executor_call',
+        label: 'kortix-connectors_call',
         node: part(
-          'kortix-executor_call',
+          'kortix-connectors_call',
           done(
             {
               connector: 'linear',
               action: 'list_issues',
               args: { teamId: 'ENG', limit: 5 },
             },
-            EXECUTOR_CALL_OUTPUT,
+            CONNECTOR_CALL_OUTPUT,
           ),
         ),
       },
@@ -823,9 +825,7 @@ const EASY_PARTS = [
       { query: 'Acme Corp pricing plans 2026' },
       JSON.stringify({
         query: 'Acme Corp pricing plans 2026',
-        results: [
-          { title: 'Acme Corp Pricing Plans', url: 'https://acme.example.com/pricing' },
-        ],
+        results: [{ title: 'Acme Corp Pricing Plans', url: 'https://acme.example.com/pricing' }],
       }),
     ),
   ),
@@ -929,10 +929,7 @@ const EASY_PARTS = [
   // as something the user can open.
   part(
     'write',
-    errored(
-      { filePath: '/workspace/reports/failed-draft.md' },
-      'ENOSPC: no space left on device',
-    ),
+    errored({ filePath: '/workspace/reports/failed-draft.md' }, 'ENOSPC: no space left on device'),
   ),
 
   // 5. create — image_gen, its own step (Outputs card, kind "image"). Uses a
@@ -941,7 +938,10 @@ const EASY_PARTS = [
   part(
     'image_gen',
     done(
-      { action: 'generate', prompt: 'Minimal editorial cover image for a pricing comparison report' },
+      {
+        action: 'generate',
+        prompt: 'Minimal editorial cover image for a pricing comparison report',
+      },
       JSON.stringify({
         path: '/workspace/outputs/pricing-cover.png',
         replicate_url: '/wallpapers/nebula-dark.jpg',
@@ -955,17 +955,39 @@ const EASY_PARTS = [
   // BLOCKER 2 — a raw path/URL must never reach a non-technical user); the
   // fixed narration must show a basename instead ("Showed you
   // pricing-comparison.html").
-  part(
-    'show',
-    done(
-      { type: 'file', path: '/workspace/reports/pricing-comparison.html' },
-      '',
-    ),
-  ),
+  part('show', done({ type: 'file', path: '/workspace/reports/pricing-comparison.html' }, '')),
 
   // 7. Still going — the run isn't finished, so Progress shows the shimmer.
-  part('bash', running({ command: 'pnpm exec pandoc pricing-comparison.md -o pricing-comparison.pdf' })),
+  part(
+    'bash',
+    running({ command: 'pnpm exec pandoc pricing-comparison.md -o pricing-comparison.pdf' }),
+  ),
 ];
+
+/**
+ * Easy mode takes no props any more — it reads the derived outputs/context/
+ * apps from `SessionPanelProvider`, which in the real app is mounted at
+ * `SessionLayout` above both panel surfaces. So the debug fixtures feed the
+ * PROVIDER and the panel renders whatever it finds there.
+ *
+ * `AdvancedPanel` is untouched by that split and still takes props directly,
+ * which is why only the Easy call sites are wrapped.
+ */
+function EasyFixture({
+  sessionId,
+  messages,
+  isSessionBusy,
+}: {
+  sessionId: string;
+  messages: MessageWithParts[];
+  isSessionBusy?: boolean;
+}) {
+  return (
+    <SessionPanelProvider sessionId={sessionId} messages={messages} isSessionBusy={isSessionBusy}>
+      <EasyPanel />
+    </SessionPanelProvider>
+  );
+}
 
 const EASY_MESSAGES: MessageWithParts[] = [
   {
@@ -1086,6 +1108,426 @@ const STOPPED_MESSAGES: MessageWithParts[] = [
   } as any,
 ];
 
+// ---------------------------------------------------------------------------
+// Panel detail surface (W11) — the reworked detail's own rows.
+//
+// Everything above renders tool views on the INLINE surface (chat rows) or
+// inside a whole panel that starts on its card home. The detail — the layer a
+// step or a Context group opens into — is `ToolParts`, and on this page it is
+// otherwise unreachable: it only appears after a real click inside a live
+// session. So it is mounted directly here, once per shape the rework changed.
+//
+// `ToolParts` supplies the `ToolSurfaceContext value="panel"` itself, so each
+// block below is the real panel surface, not an approximation. The wrapper
+// only reproduces the frame the detail card gives it: the panel's own width,
+// `bg-popover`, and the `p-4` body padding from `detail-view.tsx`.
+//
+// Open-state is `ToolParts`' own rule, not a prop: a lone call opens, a group
+// starts closed. Both are on screen here on purpose — that rule IS the rework.
+// ---------------------------------------------------------------------------
+
+/** A `memory view` of a FILE, in the runtime's own "content of X with line
+ *  numbers" shape — `parseMemoryView` strips the `N\t` prefix off each line. */
+const memoryViewOutput = (path: string, content: string) =>
+  [
+    `Content of ${path} with line numbers:`,
+    ...content.split('\n').map((line, i) => `${i + 1}\t${line}`),
+  ].join('\n');
+
+const MEMORY_NOTE_PATH = '.kortix/memory/notes/pricing.md';
+const MEMORY_NOTE_RENAMED = '.kortix/memory/notes/pricing-findings.md';
+
+/**
+ * A real memory note: frontmatter, headings, a list, and one fenced block whose
+ * single line is far wider than the pane.
+ *
+ * That long line is the x-scroll case W11 restored. The detail un-caps every
+ * `data-scrollable` HEIGHT so the pane is the only vertical scroller; if it had
+ * un-capped `overflow` instead, this fence would be clipped at the card frame
+ * with no way to reach the end of the line.
+ */
+const MEMORY_NOTE_MD = `---
+title: Pricing page findings
+updated: 2026-08-14
+tags: pricing, conversion, enterprise
+---
+
+# Pricing page findings
+
+The enterprise tier rendered an empty price field, and logged-out bounce on
+\`/pricing\` sat at 61% for three weeks before anyone noticed.
+
+## What changed
+
+- Enterprise now reads **Custom — talk to sales** instead of an empty cell
+- The comparison table keeps its column order at the 640px breakpoint
+- The annual toggle emits \`pricing_period_changed\` on every switch
+
+## The query behind the number
+
+\`\`\`sql
+select date_trunc('week', occurred_at) as week, count(*) filter (where event = 'page_view' and path = '/pricing') as views, count(*) filter (where event = 'bounce' and path = '/pricing') as bounces from analytics.events where occurred_at > now() - interval '90 days' group by 1 order by 1;
+\`\`\`
+
+## Open questions
+
+1. Does the annual toggle need its own funnel step?
+2. Should the SSO row link to the docs instead of the tooltip?
+`;
+
+/**
+ * (a) A multi-part memory group — the case that forced the rework.
+ *
+ * Three calls on one file: read it, edit it, rename it. Before W11 this was
+ * three sticky headers and three open payloads stacked down the pane, and the
+ * markdown document in the middle of it was a wall. Now it is three closed
+ * rows, and the reader opens the one they came for.
+ */
+const PANEL_MEMORY_PARTS = [
+  part(
+    'memory',
+    done(
+      { command: 'view', path: MEMORY_NOTE_PATH },
+      memoryViewOutput(MEMORY_NOTE_PATH, MEMORY_NOTE_MD),
+    ),
+  ),
+  part(
+    'memory',
+    done(
+      {
+        command: 'str_replace',
+        path: MEMORY_NOTE_PATH,
+        old_str: '- Enterprise now reads **Custom** instead of an empty cell',
+        new_str: '- Enterprise now reads **Custom — talk to sales** instead of an empty cell',
+      },
+      `Replaced 1 occurrence in ${MEMORY_NOTE_PATH}`,
+    ),
+  ),
+  part(
+    'memory',
+    done(
+      { command: 'rename', path: MEMORY_NOTE_PATH, new_path: MEMORY_NOTE_RENAMED },
+      `Renamed ${MEMORY_NOTE_PATH} to ${MEMORY_NOTE_RENAMED}`,
+    ),
+  ),
+];
+
+/** A skill call's output, in the runtime's own tagged shape. */
+const skillOutput = (dir: string, content: string, files: string[]) =>
+  [
+    `<skill_content dir="${dir}">`,
+    content,
+    '</skill_content>',
+    '<skill_files>',
+    ...files.map((f) => `<file>${f}</file>`),
+    '</skill_files>',
+  ].join('\n');
+
+const DESIGN_SKILL_MD = `---
+name: kortix-design-system
+description: The tokens, primitives and rules for building any surface in apps/web. Load this before creating or editing a page, card, badge, modal or empty state.
+---
+
+# Kortix design system
+
+Compose from \`@/components/ui/*\` before inventing local chrome. Neutral
+surfaces, one earned accent, token-driven spacing.
+
+- Radius is \`rounded-md\` on panel rows, \`rounded-2xl\` on page cards
+- Colour comes from \`kortix-*\` tokens, never a literal hex
+- A status needs a tinted icon tile, not a coloured card
+`;
+
+const TESTING_SKILL_MD = `---
+name: testing
+description: The single local-first test runner and the black-box flow contracts it enforces. Use for every behaviour change, bug fix, route change or failing test.
+---
+
+# Testing
+
+\`pnpm test\` is the only repository-level command. \`--id ACC-4\` runs one flow,
+\`--sdk-only\` runs \`packages/sdk\`, \`--browser-only\` runs the Playwright
+journeys against the deterministic stack.
+
+Flows assert HTTP and real CLI processes. They never import API handlers.
+`;
+
+/** (b) Two skill calls in one step — both rows carry the frontmatter
+ *  `description` as their subtitle, which is the whole reason a closed skill
+ *  row is readable at all. */
+const PANEL_SKILL_PARTS = [
+  part(
+    'skill',
+    done(
+      { name: 'kortix-design-system' },
+      skillOutput('.kortix/opencode/skills/kortix-design-system', DESIGN_SKILL_MD, [
+        'SKILL.md',
+        'references/tokens.md',
+        'references/primitives.md',
+      ]),
+    ),
+  ),
+  part(
+    'skill',
+    done(
+      { name: 'testing' },
+      skillOutput('.kortix/opencode/skills/testing', TESTING_SKILL_MD, [
+        'SKILL.md',
+        'references/flows.md',
+      ]),
+    ),
+  ),
+];
+
+/** (c) One bash call. Its `description` becomes the row's plain-language title
+ *  — "Run the session test suite", with the command itself demoted to mono
+ *  beside it — and its output carries lines far wider than the pane. */
+const PANEL_BASH_OUTPUT = `$ bun test src/features/session
+
+src/features/session/tool/tools/conformance.test.ts:
+✓ every registered tool renders a trigger on the panel surface [12.40ms]
+✓ no registered tool renders a sticky header on the panel surface [8.11ms]
+✗ pty_read folds its scrollback — expected the rendered output to contain "39 earlier lines" but the buffer arrived with 63 lines and no fold marker at all, which means splitTerminalBuffer never ran on this payload [4.02ms]
+
+src/features/session/action-panel/easy/detail-view.test.tsx:
+✓ a lone call opens, a group of three starts closed [21.77ms]
+✓ the detail un-caps scrollable HEIGHT and leaves overflow alone [6.30ms]
+
+ 62 pass
+ 1 fail
+ 184 expect() calls
+Ran 63 tests across 14 files. [1.42s]`;
+
+const PANEL_BASH_PARTS = [
+  part(
+    'bash',
+    done(
+      {
+        command: 'bun test src/features/session',
+        description: 'Run the session test suite',
+      },
+      PANEL_BASH_OUTPUT,
+      {},
+      1420,
+    ),
+  ),
+];
+
+/** (d) A terminal buffer past the fold. `splitTerminalBuffer` keeps the last 24
+ *  lines on screen and folds the rest, so a 63-line read must show "39 earlier
+ *  lines" as a closed section above the tail — not 63 lines of wall. */
+const PANEL_PTY_BUFFER = [
+  '$ pnpm --filter web dev',
+  '',
+  '> web@0.1.0 dev',
+  '> next dev --turbopack --port 14300',
+  '',
+  '  ▲ Next.js 16.0.0 (Turbopack)',
+  '  - Local:        http://localhost:14300',
+  '  - Network:      http://192.168.1.24:14300',
+  '  - Environments: .env.local, .env',
+  '',
+  ' ✓ Starting...',
+  ' ✓ Ready in 2.1s',
+  ' ○ Compiling /debug/tools ...',
+  ' ✓ Compiled /debug/tools in 31.4s (4218 modules)',
+  ' GET /debug/tools 200 in 32104ms',
+  ' GET /debug/tools 200 in 84ms',
+  ' ○ Compiling /_not-found ...',
+  ' ✓ Compiled /_not-found in 1.9s (4231 modules)',
+  ' GET /favicon.ico 200 in 2043ms',
+  ' ○ Compiling /projects/[projectId] ...',
+  ' ✓ Compiled /projects/[projectId] in 12.7s (5602 modules)',
+  ' GET /projects/prj_7a41 200 in 13288ms',
+  ' GET /api/og/template?title=Quarterly+report 200 in 412ms',
+  ' POST /api/session/ses_7a41/messages 200 in 96ms',
+  ' GET /projects/prj_7a41/files 200 in 71ms',
+  ' ○ Compiling /settings/members ...',
+  ' ✓ Compiled /settings/members in 4.4s (5711 modules)',
+  ' GET /settings/members 200 in 4812ms',
+  ' GET /settings/members 200 in 63ms',
+  ' POST /api/accounts/acc_31f0/invites 201 in 188ms',
+  ' GET /api/accounts/acc_31f0/members 200 in 44ms',
+  ' ○ Compiling /design-system ...',
+  ' ✓ Compiled /design-system in 6.2s (5904 modules)',
+  ' GET /design-system 200 in 6604ms',
+  ' GET /design-system 200 in 58ms',
+  ' ⚠ Fast Refresh had to perform a full reload.',
+  ' ○ Compiling /debug/tools ...',
+  ' ✓ Compiled /debug/tools in 2.8s (5910 modules)',
+  ' GET /debug/tools 200 in 2961ms',
+  ' GET /debug/tools 200 in 41ms',
+  ' GET /debug/tools 200 in 39ms',
+  ' GET /debug/tools 200 in 37ms',
+  ' ○ Compiling /projects ...',
+  ' ✓ Compiled /projects in 3.1s (5988 modules)',
+  ' GET /projects 200 in 3244ms',
+  ' GET /api/projects 200 in 122ms',
+  ' GET /api/projects 200 in 47ms',
+  ' ⚠ Port 14300 is in use by another process, retrying...',
+  ' ✓ Compiled in 812ms (5988 modules)',
+  ' GET /debug/tools 200 in 44ms',
+  ' GET /debug/tools 200 in 42ms',
+  ' POST /api/session/ses_7a41/stop 200 in 61ms',
+  ' GET /api/session/ses_7a41 200 in 38ms',
+  ' ✓ Compiled in 604ms (5988 modules)',
+  ' GET /debug/tools 200 in 40ms',
+  ' GET /debug/tools 200 in 43ms',
+  ' GET /debug/tools 200 in 39ms',
+  ' GET /debug/tools 200 in 41ms',
+  ' GET /debug/tools 200 in 38ms',
+  ' GET /debug/tools 200 in 45ms',
+  ' GET /debug/tools 200 in 40ms',
+  ' GET /debug/tools 200 in 37ms',
+  ' GET /debug/tools 200 in 42ms',
+];
+
+const PANEL_PTY_PARTS = [
+  part(
+    'pty_read',
+    done(
+      { id: 'pty_4f2a' },
+      [
+        '<pty_output id="pty_4f2a" status="running">',
+        ...PANEL_PTY_BUFFER.map((line, i) => `${String(i + 1).padStart(5, '0')}| ${line}`),
+        `(End of buffer — ${PANEL_PTY_BUFFER.length} lines total)`,
+        '</pty_output>',
+      ].join('\n'),
+    ),
+  ),
+];
+
+/**
+ * (e) A recalled memory, in both shapes `get_mem` returns.
+ *
+ * The observation carries the answer OPEN (title + narrative) and folds its
+ * provenance — Request, Facts, Concepts, Files read. The LTM entry is the only
+ * shape that carries Tags, which fold the same way. Two parts, so this detail
+ * also shows a group whose rows are two DIFFERENT sizes once opened.
+ */
+const PANEL_GET_MEM_OBSERVATION = `=== Observation #482 [insight] ===
+Title: Pricing page conversion insight
+Narrative:
+Logged-out visitors bounced from /pricing whenever the enterprise tier showed an empty price cell. Replacing it with "Custom — talk to sales" cut bounce by 12% in the first week and held for the next three.
+Tool: read | Prompt #14
+Session: ses_7a41
+Created: 2026-08-14
+Facts:
+- The enterprise tier rendered a blank price field for 21 days before the fix
+- Bounce on /pricing fell from 61% to 49% within seven days of the change
+- The mobile breakpoint showed the same pattern one release earlier
+Concepts: pricing, conversion, enterprise, bounce rate
+Files read: apps/web/src/app/pricing/page.tsx, apps/web/src/lib/pricing.ts, apps/web/src/features/pricing/tier-table.tsx`;
+
+const PANEL_GET_MEM_LTM = `=== LTM #1180 [preference] ===
+Caption: Easy mode is the permanent session panel default
+Content:
+Easy mode ships as THE session panel default for every account, permanently. No staged rollout, no per-account flag, no "advanced users get Advanced". Advanced stays reachable from the panel's own switch.
+Session: ses_31f0
+Created: 2026-07-02
+Updated: 2026-08-15
+Tags: easy-panel, product-decision, locked, session-ui`;
+
+const PANEL_GET_MEM_PARTS = [
+  part('get_mem', done({ source: 'obs', id: 482 }, PANEL_GET_MEM_OBSERVATION)),
+  part('get_mem', done({ source: 'ltm', id: 1180 }, PANEL_GET_MEM_LTM)),
+];
+
+/** (f) A tool with no registered renderer. An MCP server's tools are the case
+ *  that actually happens in production — nobody writes a view per connector —
+ *  so the generic fallback must still read as a panel row, and must still open
+ *  (the W11 fix: unregistered tools were the one family that stayed shut). */
+const PANEL_MCP_PARTS = [
+  part(
+    'mcp__linear__create_issue',
+    done(
+      {
+        team: 'Jay',
+        title: 'Panel detail rows do not survive a keyboard-only open',
+        description:
+          'Tab reaches the row, Enter toggles it, but focus is lost to the pane when the body mounts.',
+        project: 'customize',
+        labels: ['bug', 'a11y'],
+      },
+      JSON.stringify(
+        {
+          id: 'iss_9c22',
+          identifier: 'JAY-612',
+          url: 'https://linear.app/kortix/issue/JAY-612',
+          title: 'Panel detail rows do not survive a keyboard-only open',
+          state: 'Todo',
+        },
+        null,
+        2,
+      ),
+    ),
+  ),
+];
+
+/**
+ * `show` is the one tool that FILLS the panel instead of hanging a card under a
+ * row: `tool-part-renderer.tsx`'s `fillsPanel` special-cases it because the
+ * preview IS the payload, and `show-tool.tsx` returns its body with no shell.
+ *
+ * A content-only part (`type` + `content`, no `path` and no `url`) is the whole
+ * fixture: `sandboxPath` stays null, so every `useFileContent`/`useBinaryBlob`
+ * in `show-content-renderer.tsx` is inert and nothing here needs a sandbox.
+ * The carousel and website-preview branches are deliberately NOT fixtured —
+ * those do need a live payload and a proxied URL.
+ *
+ * What this block shows is the SHELL-LESS grammar: no disclosure row, no
+ * chevron, no payload card — the document is the detail. Every other fixture
+ * beside it draws a row you have to open first, which is the contrast.
+ *
+ * What it does NOT show is fill-to-pane-height. `fillsPanel`'s `h-full`
+ * resolves against `ToolParts`' auto-height flex column, so it only bites when
+ * a definite-height ancestor exists — the real panel's `CARD_FRAME`
+ * (`absolute inset-y-3 … overflow-hidden`, `detail-view.tsx`). Forcing a height
+ * here would clip the document at the fold, which is NOT what the panel does:
+ * there the outer `min-h-0 flex-1 overflow-auto` container scrolls instead.
+ */
+const PANEL_SHOW_PARTS = [
+  part(
+    'show',
+    done(
+      {
+        type: 'markdown',
+        title: 'Launch plan',
+        content:
+          '# Launch plan\n\n## This week\n\n- Ship the new pricing page\n- Wire up the checkout flow\n- QA on mobile + desktop\n\n## Next week\n\n1. Announcement post\n2. Email the waitlist\n3. Monitor conversion\n\n> The actions panel should stretch this content to the full height of the panel, with its own internal scroll.\n\n```ts\nexport const ready = true;\n```\n',
+      },
+      '',
+    ),
+  ),
+];
+
+/** One detail as the panel draws it — the pane's width and the detail card's
+ *  own frame and padding, from `detail-view.tsx`'s `CARD_FRAME`. */
+function PanelDetailFixture({
+  label,
+  fixture,
+  parts,
+  summary,
+}: {
+  label: string;
+  /** Also the `sessionId` — every fixture needs a distinct one so the panel
+   *  stores keyed by session never bleed between blocks. */
+  fixture: string;
+  parts: unknown[];
+  summary?: string;
+}) {
+  return (
+    <div data-panel-fixture={fixture}>
+      <div className="text-muted-foreground/60 mb-2 font-mono text-xs tracking-wide uppercase">
+        {label}
+      </div>
+      <div className="border-border bg-popover w-[420px] rounded-md border p-4 shadow">
+        <ToolParts parts={parts as any} sessionId={fixture} summary={summary} />
+      </div>
+    </div>
+  );
+}
+
 export default function DebugToolsPage() {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -1128,7 +1570,7 @@ export default function DebugToolsPage() {
               Easy
             </div>
             <div className="border-border bg-card h-[640px] w-[420px] overflow-hidden rounded-2xl border">
-              <EasyPanel sessionId="debug-easy" messages={EASY_MESSAGES} />
+              <EasyFixture sessionId="debug-easy" messages={EASY_MESSAGES} />
             </div>
           </div>
           <div>
@@ -1144,7 +1586,7 @@ export default function DebugToolsPage() {
               Easy — empty (no tool calls yet)
             </div>
             <div className="border-border bg-card h-[640px] w-[420px] overflow-hidden rounded-2xl border">
-              <EasyPanel sessionId="debug-easy-empty" messages={EMPTY_MESSAGES} />
+              <EasyFixture sessionId="debug-easy-empty" messages={EMPTY_MESSAGES} />
             </div>
           </div>
           <div>
@@ -1152,7 +1594,7 @@ export default function DebugToolsPage() {
               Easy — completed with deliverables (W2/W3/W11)
             </div>
             <div className="border-border bg-card h-[640px] w-[420px] overflow-hidden rounded-2xl border">
-              <EasyPanel
+              <EasyFixture
                 sessionId="debug-easy-completed"
                 messages={COMPLETED_MESSAGES}
                 isSessionBusy={false}
@@ -1164,7 +1606,7 @@ export default function DebugToolsPage() {
               Easy — failed run (W7)
             </div>
             <div className="border-border bg-card h-[640px] w-[420px] overflow-hidden rounded-2xl border">
-              <EasyPanel
+              <EasyFixture
                 sessionId="debug-easy-failed"
                 messages={FAILED_MESSAGES}
                 isSessionBusy={false}
@@ -1188,13 +1630,62 @@ export default function DebugToolsPage() {
               Easy — stopped by you (W7)
             </div>
             <div className="border-border bg-card h-[640px] w-[420px] overflow-hidden rounded-2xl border">
-              <EasyPanel
+              <EasyFixture
                 sessionId="debug-easy-stopped"
                 messages={STOPPED_MESSAGES}
                 isSessionBusy={false}
               />
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* Panel detail surface (W11) — `ToolParts` mounted directly, once per
+          shape the rework changed. This is the layer a step or a Context group
+          opens into; without these blocks it is unreachable on this page. */}
+      <div className="mx-auto w-full max-w-6xl px-6 pt-10">
+        <h2 className="text-muted-foreground mb-4 text-xs font-semibold tracking-wide uppercase">
+          Panel detail surface (W11)
+        </h2>
+        <div className="flex flex-wrap items-start gap-6">
+          <PanelDetailFixture
+            label="memory group — 3 calls, all closed"
+            fixture="panel-memory"
+            parts={PANEL_MEMORY_PARTS}
+            summary="Read, edited and renamed one memory note"
+          />
+          <PanelDetailFixture
+            label="skills — 2 calls, closed"
+            fixture="panel-skills"
+            parts={PANEL_SKILL_PARTS}
+            summary="Loaded 2 skills"
+          />
+          <PanelDetailFixture
+            label="bash — lone call, opens"
+            fixture="panel-bash"
+            parts={PANEL_BASH_PARTS}
+          />
+          <PanelDetailFixture
+            label="pty_read — 63 lines, 39 folded"
+            fixture="panel-pty"
+            parts={PANEL_PTY_PARTS}
+          />
+          <PanelDetailFixture
+            label="get_mem — folded provenance"
+            fixture="panel-get-mem"
+            parts={PANEL_GET_MEM_PARTS}
+            summary="Recalled 2 memories"
+          />
+          <PanelDetailFixture
+            label="unregistered tool — MCP fallback"
+            fixture="panel-mcp"
+            parts={PANEL_MCP_PARTS}
+          />
+          <PanelDetailFixture
+            label="show (markdown) — fills the detail, no row"
+            fixture="panel-show"
+            parts={PANEL_SHOW_PARTS}
+          />
         </div>
       </div>
 

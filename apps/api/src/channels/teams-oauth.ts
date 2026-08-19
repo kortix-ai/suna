@@ -1,8 +1,8 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { config } from '../config';
 import { makeOpenApiApp } from '../openapi';
-import { reconcileChannelConnectors } from '../executor/sync';
-import { teamsChannelEnabled } from './teams-auth';
+import { reconcileChannelConnectors } from '../connectors/sync';
+import { projectFeatureFlagEnabled } from '../feature-flags/for-project';
 import { saveTeamsInstall, setTeamsCatalogAppId, setTeamsOrgInstalled } from './install-store';
 import { publishTeamsAppToCatalog } from './teams/catalog';
 
@@ -108,9 +108,13 @@ async function exchangeCodeForToken(
  * the org catalog. (App-only publishing is not supported by Graph — see
  * teams/catalog.ts.)
  */
-export function teamsOrgConsentUrl(input: { projectId: string; baseUrl: string }): string | null {
+export function teamsOrgConsentUrl(input: {
+  projectId: string;
+  baseUrl: string;
+  enabled: boolean;
+}): string | null {
   const appId = config.MICROSOFT_APP_ID;
-  if (!appId || !teamsChannelEnabled()) return null;
+  if (!appId || !input.enabled) return null;
   const url = new URL(`${AUTHORITY}/authorize`);
   url.searchParams.set('client_id', appId);
   url.searchParams.set('response_type', 'code');
@@ -125,11 +129,16 @@ export const teamsOauthApp = makeOpenApiApp();
 
 teamsOauthApp.get('/callback', async (c: any) => {
   const frontend = (config.FRONTEND_URL || 'https://kortix.com').replace(/\/+$/, '');
-  if (!teamsChannelEnabled()) return c.redirect(`${frontend}/?teams_error=disabled`, 302);
   const state = verifyState(c.req.query('state'));
   if (!state) return c.redirect(`${frontend}/?teams_error=expired`, 302);
 
   const dest = (status: string) => `${frontend}/projects/${state.projectId}?teams=${status}`;
+
+  // The flag is per project, so it can only be read once the signed state
+  // tells us which project this consent belongs to.
+  if (!(await projectFeatureFlagEnabled(state.projectId, 'teams'))) {
+    return c.redirect(dest('disabled'), 302);
+  }
 
   if (c.req.query('error')) {
     console.warn('[teams-oauth] authorize error', {

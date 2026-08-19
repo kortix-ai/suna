@@ -1,3 +1,4 @@
+import { createRoute, z } from '@hono/zod-openapi';
 import { auth, errors, json } from '../../openapi';
 import {
   DEFAULT_PREVIEW_CANDIDATES,
@@ -5,10 +6,10 @@ import {
   listPublicSharesForSession,
   revokePublicShare,
 } from '../../shared/session-public-shares';
-import { createRoute, z } from '@hono/zod-openapi';
 import { loadProjectForUser, loadSessionForSharing, loadVisibleSession } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
 import { UUID_V4_REGEX, readBody } from '../lib/serializers';
+import { sessionHasMemberConnectorBinding } from '../lib/session-connector-bindings';
 
 // GET /v1/projects/:projectId/sessions/:sessionId/previews
 // Human-friendly preview candidates. The frontend should pass the active
@@ -36,7 +37,7 @@ projectsApp.openapi(
 
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    const visible = await loadVisibleSession(loaded, sessionId);
+    const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null);
     if (!visible) return c.json({ error: 'Not found' }, 404);
 
     return c.json({
@@ -72,10 +73,10 @@ projectsApp.openapi(
 
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    const visible = await loadSessionForSharing(loaded, sessionId);
+    const visible = await loadSessionForSharing(loaded, sessionId, c.get('sessionId') ?? null);
     if (!visible) return c.json({ error: 'Not found' }, 404);
     if (!visible.canManageSharing) {
-      return c.json({ error: 'Only the session owner or an editor can view public shares' }, 403);
+      return c.json({ error: 'Only the session owner or a project manager can view public shares' }, 403);
     }
 
     return c.json({ shares: await listPublicSharesForSession(sessionId) });
@@ -97,7 +98,7 @@ projectsApp.openapi(
     },
     responses: {
       201: json(z.any(), 'Public share'),
-      ...errors(400, 403, 404),
+      ...errors(400, 403, 404, 409),
     },
   }),
   async (c: any) => {
@@ -108,10 +109,25 @@ projectsApp.openapi(
     const body = await readBody(c);
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    const visible = await loadSessionForSharing(loaded, sessionId);
+    const visible = await loadSessionForSharing(loaded, sessionId, c.get('sessionId') ?? null);
     if (!visible) return c.json({ error: 'Not found' }, 404);
     if (!visible.canManageSharing) {
-      return c.json({ error: 'Only the session owner or an editor can create public shares' }, 403);
+      return c.json({ error: 'Only the session owner or a project manager can create public shares' }, 403);
+    }
+    if (
+      await sessionHasMemberConnectorBinding({
+        accountId: visible.row.accountId,
+        projectId,
+        sessionId,
+      })
+    ) {
+      return c.json(
+        {
+          error: 'Sessions using a personal connection cannot be shared publicly',
+          code: 'PERSONAL_CONNECTOR_CONNECTION_REQUIRES_PRIVATE_SESSION',
+        },
+        409,
+      );
     }
 
     const result = await createPublicShare(body, {
@@ -152,10 +168,10 @@ projectsApp.openapi(
 
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    const visible = await loadSessionForSharing(loaded, sessionId);
+    const visible = await loadSessionForSharing(loaded, sessionId, c.get('sessionId') ?? null);
     if (!visible) return c.json({ error: 'Not found' }, 404);
     if (!visible.canManageSharing) {
-      return c.json({ error: 'Only the session owner or an editor can revoke public shares' }, 403);
+      return c.json({ error: 'Only the session owner or a project manager can revoke public shares' }, 403);
     }
 
     const share = await revokePublicShare(sessionId, shareId);

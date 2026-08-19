@@ -162,7 +162,7 @@ Post one summary to {{alert_channel}} covering:
 - **Flag, never close.** Stale deals are marked for visibility; the agent
   never changes deal stage or closes a deal.
 - **Scoped secrets.** HubSpot and Clearbit credentials are injected into the
-  sandbox at runtime and never exposed to the model or written to logs.
+  sandbox at runtime, scoped to this agent's grant.
 - **No cross-run assumptions beyond the channel itself.** Each run re-derives
   duplicates, gaps, and stale deals from current HubSpot state; the only
   thing it checks from a prior run is an outstanding approval reply in

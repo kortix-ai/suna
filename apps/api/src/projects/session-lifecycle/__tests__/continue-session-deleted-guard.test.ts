@@ -30,9 +30,10 @@ const PROJECT_ID = 'proj-1';
 let sessionRow: Record<string, unknown> | null = null;
 let updateCalls: Array<{ table: unknown; updates: Record<string, unknown> }> = [];
 
-mock.module('../../../config', () => ({ config: {} }));
+mock.module('../../../config', () => ({ config: {}, SANDBOX_VERSION: 'test' }));
 
 mock.module('../../../shared/db', () => ({
+  hasDatabase: () => true,
   db: {
     select: (_proj: unknown) => ({
       from: (table: unknown) => ({
@@ -72,11 +73,14 @@ mock.module('../../routes/shared', () => ({
 }));
 mock.module('../actor', () => ({
   resolveProjectAutomationActor: async () => 'automation-user-1',
+  resolveAgentRunAttribution: async () => null,
 }));
 mock.module('../backpressure', () => ({
   sessionBackpressureState: async () => ({ shouldQueue: false, reason: null }),
 }));
+const actualStore = await import('../store');
 mock.module('../store', () => ({
+  ...actualStore,
   claimCreateSessionCommand: async () => {
     throw new Error('not expected in this test');
   },
@@ -89,9 +93,16 @@ mock.module('../store', () => ({
   markCommandQueued: async () => {
     throw new Error('not expected in this test');
   },
+  // Delivery of a row that carries a wire id closes through this now — see
+  // `markCommandForwarded`. Present so the module mock stays complete.
+  markCommandForwarded: async () => {},
   markCommandSucceeded: async () => {
     throw new Error('not expected in this test');
   },
+  // `inbox-rows.ts` imports this at module load, so the mock has to carry it or
+  // the engine import fails outright. Nothing in this file drives a row through
+  // it, so an identity pass-through is the whole of it.
+  withNextDeliveryAttempt: (payload: unknown) => payload,
   resultFromExistingCommand: () => {
     throw new Error('not expected in this test');
   },

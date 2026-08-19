@@ -58,6 +58,102 @@ resource "aws_internet_gateway" "this" {
   tags   = local.internet_gateway_tags
 }
 
+# ── Default network ACL baseline ──────────────────────────────────────────────
+# Public TCP/UDP is allowed as 1024-3388 + 3390-65535 rather than 1024-65535, so
+# RDP (3389) is excluded; SSH (22) sits below 1024 and is excluded by the
+# ephemeral floor. Rule numbers match the ACLs already deployed in every region
+# so adopting an existing VPC is a no-op rather than a rewrite. Return traffic
+# still flows because NACLs are stateless and ephemeral source ports land inside
+# the permitted ranges.
+resource "aws_default_network_acl" "this" {
+  count = var.manage_default_network_acl ? 1 : 0
+
+  default_network_acl_id = aws_vpc.this.default_network_acl_id
+
+  # Unrestricted traffic inside the VPC.
+  ingress {
+    protocol   = -1
+    rule_no    = 1
+    action     = "allow"
+    cidr_block = aws_vpc.this.cidr_block
+    from_port  = 0
+    to_port    = 0
+  }
+
+  # Individually published public TCP ports (80/443 by default).
+  dynamic "ingress" {
+    for_each = { for i, p in var.public_ingress_tcp_ports : i => p }
+    content {
+      protocol   = "tcp"
+      rule_no    = 110 + (ingress.key * 10)
+      action     = "allow"
+      cidr_block = "0.0.0.0/0"
+      from_port  = ingress.value
+      to_port    = ingress.value
+    }
+  }
+
+  # Ephemeral return ranges, split around RDP (3389).
+  ingress {
+    protocol   = "tcp"
+    rule_no    = 130
+    action     = "allow"
+    cidr_block = "0.0.0.0/0"
+    from_port  = 1024
+    to_port    = 3388
+  }
+  ingress {
+    protocol   = "tcp"
+    rule_no    = 140
+    action     = "allow"
+    cidr_block = "0.0.0.0/0"
+    from_port  = 3390
+    to_port    = 65535
+  }
+  ingress {
+    protocol   = "udp"
+    rule_no    = 150
+    action     = "allow"
+    cidr_block = "0.0.0.0/0"
+    from_port  = 1024
+    to_port    = 3388
+  }
+  ingress {
+    protocol   = "udp"
+    rule_no    = 160
+    action     = "allow"
+    cidr_block = "0.0.0.0/0"
+    from_port  = 3390
+    to_port    = 65535
+  }
+  ingress {
+    protocol   = "icmp"
+    rule_no    = 170
+    action     = "allow"
+    cidr_block = "0.0.0.0/0"
+    from_port  = 0
+    to_port    = 0
+    icmp_type  = -1
+    icmp_code  = -1
+  }
+
+  egress {
+    protocol   = -1
+    rule_no    = 100
+    action     = "allow"
+    cidr_block = "0.0.0.0/0"
+    from_port  = 0
+    to_port    = 0
+  }
+
+  tags = merge({ ManagedBy = "terraform" }, var.tags, { Name = "${var.name}-default-nacl" })
+
+  # Subnet membership follows subnet creation/deletion, not this resource.
+  lifecycle {
+    ignore_changes = [subnet_ids]
+  }
+}
+
 # ── Public subnets ────────────────────────────────────────────────────────────
 resource "aws_subnet" "public" {
   count             = var.az_count

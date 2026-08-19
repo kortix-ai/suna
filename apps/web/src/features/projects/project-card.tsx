@@ -11,21 +11,25 @@ import { EntityAvatar } from '@/components/ui/entity-avatar';
 import Loading from '@/components/ui/loading';
 import { useIsMobile } from '@/hooks/utils';
 import { relativeTime } from '@/lib/kortix/task-meta';
-import { KortixProject } from '@kortix/sdk/projects-client';
-import { ArrowUpRight, Pencil, TrashSolid } from '@mynaui/icons-react';
-import { MoreHorizontal } from 'lucide-react';
+import { KortixProject } from '@kortix/sdk';
+import {
+  ArrowUpRightIcon as ArrowUpRight,
+  DotsThreeIcon as MoreHorizontal,
+  PencilSimpleIcon,
+  TrashIcon,
+} from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 
 const ProjectCard = ({
   project,
   onOpen,
-  onRename,
+  onEdit,
   onArchive,
   archiving,
 }: {
   project: KortixProject;
   onOpen: () => void;
-  onRename: () => void;
+  onEdit: () => void;
   onArchive: () => void;
   archiving: boolean;
 }) => {
@@ -44,7 +48,22 @@ const ProjectCard = ({
         className="cursor-pointer px-5 py-4 text-left"
       >
         <div className="flex w-full items-center gap-3">
-          <EntityAvatar label={project.name} size="lg" className="bg-background" />
+          {/* No `className` fill. It is last into EntityAvatar's cn(), so any
+              background passed here beats the emoji/glyph tint and ships a
+              ringed grey tile. The `bg-background` this used to carry was
+              already dead CSS on the icon-less tile — chalkColors() writes an
+              inline background-color, which wins over any class.
+
+              `glyph` before `emoji`: EntityAvatar's own precedence is
+              glyph > emoji > icon > initial, so passing both is safe even
+              though the server never lets a project have both set — a stale
+              cached row is exactly the case that precedence exists for. */}
+          <EntityAvatar
+            label={project.name}
+            glyph={project.icon_glyph}
+            emoji={project.icon}
+            size="lg"
+          />
           <div className="min-w-0 flex-1 space-y-1">
             <h3
               title={project.name}
@@ -76,17 +95,20 @@ const ProjectCard = ({
               <ArrowUpRight className="size-4" />
               {tHardcodedUi.raw('appProjectsPage.line109JsxTextOpenProject')}
             </DropdownMenuItem>
-            <DropdownMenuItem onSelect={onRename} disabled={!canManageProject}>
-              <Pencil className="size-4" />
-              Rename
+            {/* "Edit project", not "Rename": the modal behind it edits the
+                name AND the emoji, and the label was the only thing telling
+                anyone the icon could be changed at all. */}
+            <DropdownMenuItem onSelect={onEdit} disabled={!canManageProject}>
+              <PencilSimpleIcon className="size-4" />
+              {tHardcodedUi.raw('autoFeaturesProjectsProjectCardJsxTextEditProjecta4dc3833')}
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem
-              variant="destructive"
-              onSelect={onArchive}
-              disabled={archiving || !canManageProject}
-            >
-              {archiving ? <Loading className="size-4 shrink-0" /> : <TrashSolid className="size-4" />}
+            <DropdownMenuItem onSelect={onArchive} disabled={archiving || !canManageProject}>
+              {archiving ? (
+                <Loading className="size-4 shrink-0" />
+              ) : (
+                <TrashIcon className="size-4" />
+              )}
               Archive
             </DropdownMenuItem>
           </DropdownMenuContent>

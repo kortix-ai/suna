@@ -3,8 +3,8 @@
  * Uses shared icon keys but resolves to actual React Native components
  */
 
-import { getToolIconKey } from '@agentpress/shared';
-import type { ToolIconKey } from '@agentpress/shared';
+import { getToolIconKey } from '@kortix/shared';
+import type { ToolIconKey } from '@kortix/shared';
 import {
   Globe,
   FileEdit,
@@ -82,4 +82,3 @@ export function getToolIcon(toolName: string): LucideIcon {
 
 // Re-export the icon key function for type checking
 export { getToolIconKey, type ToolIconKey };
-

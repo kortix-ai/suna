@@ -7,6 +7,8 @@ defaultProjectInstallOrder: 40
 
 # PDF Processing
 
+`pypdf`, `pdfplumber`, `pymupdf`, `pdf2image`, `pypdfium2`, `pytesseract`, `reportlab`, and `pillow` are pre-installed. Run Python files with `python3 script.py`. Use `uv run --with <package> script.py` only for a package that is not pre-installed.
+
 ## Quick Start
 
 ```python
@@ -24,6 +26,7 @@ Use this for fast inspection. Move to the tool-specific sections below when you 
 
 | Task | Tool | Details |
 |------|------|---------|
+| Convert to Markdown | anydoc | `anydoc document.pdf -o out.md` — no OCR; scanned PDFs exit `1` |
 | Create PDF from scratch | ReportLab | [libraries/reportlab.md](libraries/reportlab.md) |
 | Read / merge / split / rotate / encrypt | pypdf | — |
 | Extract text and tables | pdfplumber | [libraries/pdfplumber.md](libraries/pdfplumber.md) |
@@ -46,6 +49,8 @@ Use this for fast inspection. Move to the tool-specific sections below when you 
 **Typography:** PDFs embed any TTF font — use distinctive, professional fonts, not system defaults. Download from Google Fonts at runtime, register with ReportLab, and it embeds automatically. See [libraries/reportlab.md](libraries/reportlab.md) (Custom Fonts section) and `skills/design-foundations/SKILL.md` (PDF Pairings table + Font Strategy by Format). Default to a clean sans-serif (Inter, DM Sans, Work Sans).
 
 **CJK text:** Fonts like Inter and DM Sans only cover Latin glyphs. ReportLab has no automatic font fallback — unregistered scripts render as tofu. Register Noto Sans CJK for Chinese, Japanese, or Korean text. See [libraries/reportlab.md](libraries/reportlab.md) (CJK Font Support).
+
+**Currency & symbol glyphs:** The same Latin-only fonts also lack many currency and symbol glyphs — e.g. `₹` (U+20B9), `₩`, `₫`, `₴`, `﷼`. ReportLab and matplotlib render these as tofu with no fallback (matplotlib warns `Glyph ... missing from font(s)`). Either register a font that includes the glyph (e.g. Noto Sans), or use an ASCII fallback consistently (e.g. `Rs` for INR) across **both** charts and PDF body text so they match.
 
 ## PDF Metadata
 
@@ -84,6 +89,8 @@ All URLs in generated PDFs must be clickable. In ReportLab Paragraph objects, us
 **Encrypted PDFs:** Use `pypdf` to detect and decrypt (`reader.is_encrypted` / `reader.decrypt(pw)`). If you don't have the password, try `qpdf --password=X --decrypt`. Run `qpdf --show-encryption` to inspect what protection is applied.
 
 **Corrupted PDFs:** Run `qpdf --check` to diagnose structural problems, then `qpdf --replace-input` to attempt repair.
+
+**Verifying generated PDFs:** Rendering pages to images (pypdfium2/pdftoppm) only helps if your model can view images. If it can't, verify via text extraction instead — dump `page.extract_text()` with pypdf and check content, ordering, and that nothing overflowed — and confirm metadata (`title`, `author`) is set.
 
 **Text extraction fails:** If pdfplumber or pdftotext return empty/garbled text, the PDF is likely scanned images. Fall back to OCR (see below).
 

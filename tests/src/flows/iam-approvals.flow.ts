@@ -1,8 +1,8 @@
 /**
- * IAM approval control-plane: project access-requests, the executor
+ * IAM approval control-plane: project access-requests, the connector
  * approval inbox/resolve routes, per-agent secret/connector scoping, the
- * enterprise-demo preview toggle, and self-serve SSO metadata import. Maps
- * to spec §5 (IAM-27..IAM-33).
+ * enterprise-demo state read + operator-only toggle, and self-serve SSO
+ * metadata import. Maps to spec §5 (IAM-27..IAM-34).
  *
  * These live under /v1/projects/:id/* and /v1/accounts/:id/iam/* but are
  * grouped here as the "approval control plane" — the human-in-the-loop
@@ -14,6 +14,7 @@
  * NEVER a billing tier — they must not start 402ing.
  */
 import { flow } from '../core/flow';
+import { asPlatformAdmin, enableEnterpriseDemo } from '../fixtures/enterprise-demo';
 
 const UNKNOWN_UUID = '00000000-0000-4000-a000-000000000000';
 
@@ -122,13 +123,13 @@ flow(
           .as(ctx.P.OWNER)
           .post(
             '/v1/projects/:projectId/access-requests/:requestId/approve',
-            { role: 'editor' },
+            { role: 'manager' },
             { params: { projectId: project.id, requestId: approveRequestId } },
           );
         r.status(200)
           .body()
           .has('$.request.status', 'approved')
-          .has('$.member.project_role', 'editor');
+          .has('$.member.project_role', 'manager');
       },
     );
 
@@ -188,10 +189,10 @@ flow(
     });
 
     await ctx.step(
-      'an editor (project.write but not members.manage) cannot approve → 403',
+      'a floor project member (no members.manage) cannot approve → 403',
       async () => {
         const editorOnly = await team.addMember('member');
-        await team.grantProjectRole(project.id, editorOnly.userId!, 'editor');
+        await team.grantProjectRole(project.id, editorOnly.userId!, 'member');
         const requesterC = await team.addMember('member');
         const seeded = await ctx.client
           .as(requesterC)
@@ -414,7 +415,12 @@ flow(
   },
 );
 
-// ─── Enterprise-demo preview toggle (self-serve unlock for the Enterprise UI) ─
+// ─── Enterprise-demo state (account read) + operator-only toggle ─────────────
+// The PUT used to be self-serve (`account.write`), which made the Enterprise
+// preview an entitlement any account member could grant themselves. It is now
+// platform-admin-only: the OWNER gets 403 {code:'admin_required'} and the
+// enable is an operator action from the admin console. The GET stays
+// `account.read` so the account page can still render the state.
 
 flow(
   'IAM-32',
@@ -427,6 +433,7 @@ flow(
   },
   async (ctx) => {
     const team = await ctx.fixtures.team();
+    const member = await team.addMember('member');
 
     await ctx.step('a fresh account starts with the demo off → 200 false', async () => {
       const r = await ctx.client
@@ -435,7 +442,7 @@ flow(
       r.status(200).body().has('$.enabled', false);
     });
 
-    await ctx.step('OWNER enables the demo → 200 true', async () => {
+    await ctx.step('OWNER (has account.write, is not a platform admin) → 403 admin_required', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .put(
@@ -443,25 +450,21 @@ flow(
           { enabled: true },
           { params: { accountId: team.id } },
         );
-      r.status(200).body().has('$.enabled', true);
+      r.status(403).body().has('$.code', 'admin_required');
     });
 
-    await ctx.step('GET reflects the toggle → 200 true', async () => {
+    await ctx.step('the rejected OWNER write changed nothing → 200 false', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .get('/v1/accounts/:accountId/iam/enterprise-demo', { params: { accountId: team.id } });
-      r.status(200).body().has('$.enabled', true);
+      r.status(200).body().has('$.enabled', false);
     });
 
-    await ctx.step('non-boolean enabled → 400', async () => {
+    await ctx.step('an account MEMBER reads the state (account.read) → 200', async () => {
       const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .put(
-          '/v1/accounts/:accountId/iam/enterprise-demo',
-          { enabled: 'yes' },
-          { params: { accountId: team.id } },
-        );
-      r.status(400);
+        .as(member)
+        .get('/v1/accounts/:accountId/iam/enterprise-demo', { params: { accountId: team.id } });
+      r.status(200).body().has('$.enabled', false);
     });
 
     await ctx.step('NONMEMBER → 403', async () => {
@@ -471,16 +474,43 @@ flow(
       r.status(403);
     });
 
-    await ctx.step('OWNER disables the demo again (cleanup) → 200 false', async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .put(
+    if (ctx.env.capabilities.admin) {
+      const admin = asPlatformAdmin(ctx);
+
+      await ctx.step('platform admin enables the demo → 200 true', async () => {
+        const r = await admin.put(
+          '/v1/accounts/:accountId/iam/enterprise-demo',
+          { enabled: true },
+          { params: { accountId: team.id } },
+        );
+        r.status(200).body().has('$.enabled', true);
+      });
+
+      await ctx.step('the MEMBER read reflects the operator toggle → 200 true', async () => {
+        const r = await ctx.client
+          .as(member)
+          .get('/v1/accounts/:accountId/iam/enterprise-demo', { params: { accountId: team.id } });
+        r.status(200).body().has('$.enabled', true);
+      });
+
+      await ctx.step('platform admin: non-boolean enabled → 400', async () => {
+        const r = await admin.put(
+          '/v1/accounts/:accountId/iam/enterprise-demo',
+          { enabled: 'yes' },
+          { params: { accountId: team.id } },
+        );
+        r.status(400);
+      });
+
+      await ctx.step('platform admin disables the demo again (cleanup) → 200 false', async () => {
+        const r = await admin.put(
           '/v1/accounts/:accountId/iam/enterprise-demo',
           { enabled: false },
           { params: { accountId: team.id } },
         );
-      r.status(200).body().has('$.enabled', false);
-    });
+        r.status(200).body().has('$.enabled', false);
+      });
+    }
   },
 );
 
@@ -509,16 +539,12 @@ flow(
       },
     );
 
-    await ctx.step('enabling the enterprise-demo preview unlocks the surface', async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .put(
-          '/v1/accounts/:accountId/iam/enterprise-demo',
-          { enabled: true },
-          { params: { accountId: team.id } },
-        );
-      r.status(200).body().has('$.enabled', true);
-    });
+    await ctx.step(
+      'the platform admin enables the enterprise-demo preview, which unlocks the surface',
+      async () => {
+        await enableEnterpriseDemo(ctx, team.id);
+      },
+    );
 
     await ctx.step('missing name → 400', async () => {
       const r = await ctx.client
@@ -567,6 +593,29 @@ flow(
           { params: { accountId: team.id } },
         );
       r.status(403);
+    });
+  },
+);
+
+flow(
+  'IAM-34',
+  {
+    domain: 'iam',
+    routes: ['GET /v1/approval-links/:token'],
+  },
+  async (ctx) => {
+    await ctx.step('ANON cannot inspect an approval link → 401', async () => {
+      const r = await ctx.client.as(ctx.P.ANON).get('/v1/approval-links/:token', {
+        params: { token: 'invalid' },
+      });
+      r.status(401);
+    });
+
+    await ctx.step('an authenticated invalid token reveals no resource → 404', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/approval-links/:token', {
+        params: { token: 'invalid' },
+      });
+      r.status(404).body().has('$.error', 'Invalid or unknown link');
     });
   },
 );

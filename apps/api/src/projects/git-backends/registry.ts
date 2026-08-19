@@ -5,15 +5,20 @@
  * Forgejo/Artifacts project resolves through its own — all behind the same
  * Kortix git proxy.
  *
- * GitHub is the default + only currently-active managed backend. Forgejo /
- * Cloudflare Artifacts slot in here as drop-ins (same `GitHostBackend`
+ * GitHub is the default managed backend. code.storage (Pierre) is a second,
+ * flag-gated drop-in — select it per-deployment with
+ * `MANAGED_GIT_PROVIDER=code-storage`; it stays fully inert (isConfigured()
+ * false) until CODE_STORAGE_ORG/CODE_STORAGE_PRIVATE_KEY are set. Forgejo /
+ * Cloudflare Artifacts slot in here the same way (same `GitHostBackend`
  * interface) with zero changes to the proxy, sandbox, or CLI.
  */
+import { codeStorageBackend } from './code-storage';
 import { githubBackend } from './github';
 import type { GitHostBackend } from './types';
 
 const backends = new Map<string, GitHostBackend>([
   [githubBackend.id, githubBackend],
+  [codeStorageBackend.id, codeStorageBackend],
   // ['forgejo', forgejoBackend],
   // ['artifacts', artifactsBackend],
 ]);

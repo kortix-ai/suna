@@ -1,27 +1,37 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 
-import { AssistantPendingRow } from '@/features/session/assistant-pending-row';
 import { ComposerChatInput, type ComposerOptions } from '@/features/session/composer-chat-input';
 import { SessionSiteHeader } from '@/features/session/header/session-site-header';
+import { OptimisticTurn } from '@/features/session/optimistic-turn';
 import type { AttachedFile } from '@/features/session/session-chat-input';
 import { SessionLayout } from '@/features/session/session-layout';
-import { SessionBootChecklistInline } from '@/features/session/session-starting-loader';
 import { useSessionWallpaperLayer } from '@/features/session/session-wallpaper-layer';
 import { SessionWelcome } from '@/features/session/session-welcome';
-import { optimisticUploadedFileRef } from '@/features/session/uploaded-file-refs';
+import {
+  attachedFilesToDataUrlParts,
+  buildOptimisticPromptTextWithUploads,
+} from '@/features/session/uploaded-file-refs';
 import { ProjectHomeWelcomeBody } from '@/features/workspace/project-layout/project-home';
-import type { Command } from '@/hooks/opencode/use-opencode-sessions';
-import { readStartStash, writeStartStash } from '@kortix/sdk/react';
+import type { Command } from '@kortix/sdk/react';
+import {
+  readStartStash,
+  startSessionWithPrompt,
+  useRuntimeAgents,
+  useSessionPrompts,
+  writeStartStash,
+} from '@kortix/sdk/react';
+import { errorToast } from '@/components/ui/toast';
 import { playSound } from '@/lib/sounds';
 import { cn } from '@/lib/utils';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
-import { usePendingFilesStore } from '@/stores/pending-files-store';
-import type { SessionStartStage } from '@kortix/sdk/projects-client';
-import { GridFileCard } from './grid-file-card';
+import { usePendingFilesStore } from '@/stores/session-composer-handoff-store';
+import type { SessionStartStage } from '@kortix/sdk';
+
+const subscribeToNothing = () => () => {};
 
 /**
  * The instant session shell — shown the moment a freshly-created session opens,
@@ -34,11 +44,16 @@ import { GridFileCard } from './grid-file-card';
  * On the FIRST send we stash the message on the SDK's canonical start-stash
  * (keyed by the route session id; the session page migrates it onto the
  * OpenCode pin) so the real {@link SessionChat} auto-sends it the instant the
- * runtime is healthy — and the thread shows an inline "starting your computer"
- * status under the assistant logo until the real chat crossfades in. The boot
- * checklist also lives in the side panel, but only
- * if the user opens it (never auto-opened); once the runtime is ready the panel
- * gracefully falls back to the real (empty) Actions view.
+ * runtime is healthy.
+ *
+ * The thread it paints while waiting is not a lookalike of the real one — it is
+ * the real one's {@link OptimisticTurn}, in a scroll area with the same
+ * geometry. So the crossfade into {@link SessionChat} has nothing to give it
+ * away: same bubble, same waiting row, same position. The row says "Thinking"
+ * and keeps saying it until the agent has a real status of its own; the boot
+ * stage is reported in the side panel, for anyone who opens it (never
+ * auto-opened), and once the runtime is ready the panel falls back to the real
+ * (empty) Actions view.
  */
 export function InstantSessionShell({
   projectId,
@@ -58,19 +73,38 @@ export function InstantSessionShell({
   onSubmit?: () => void;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
-  const isSidePanelOpen = useKortixComputerStore((s) => s.isSidePanelOpen);
   // `ready` is the backend's authoritative "runtime is up" signal (POST /start).
-  // Once ready, we drop boot mode so nothing is stuck on "Connecting" — even with
-  // no message sent.
+  // Only the side panel reads it now: the thread deliberately shows the SAME
+  // waiting row at every boot stage (see below), so there is nothing there to
+  // switch on.
   const ready = stage === 'ready';
+
+  // File-mention clicks come from the same store SessionChat reads. Passing the
+  // handler here rather than leaving it undefined keeps the bubble identical
+  // across the crossfade — an unclickable mention renders as a plain span and
+  // would visibly gain an underline the moment the real chat took over.
+  // Attachment clicks live inside MessageAttachments (computer store / lightbox).
+  const openFileInComputer = useKortixComputerStore((s) => s.openFileInComputer);
+  // Same reason: an `@agent` mention only renders as an agent chip when the
+  // renderer can recognise the name. Without this list it would fall through to
+  // "file" and pick up an underline the real chat does not give it. The catalog
+  // query is already in flight — ComposerChatInput below runs the same hook.
+  const { data: agents } = useRuntimeAgents({ projectId });
+  const agentNames = useMemo(() => (agents ?? []).map((a) => a.name), [agents]);
 
   // A pending prompt may already be staged (home composer send) → show the
   // booting view immediately in that case.
+  const hydrated = useSyncExternalStore(
+    subscribeToNothing,
+    () => true,
+    () => false,
+  );
   const [submission, setSubmission] = useState<{
     text: string;
     files: AttachedFile[];
-  } | null>(() => {
-    if (typeof window === 'undefined') return null;
+  } | null>(null);
+  const stashedSubmission = useMemo(() => {
+    if (!hydrated) return null;
     // `readStartStash` covers the canonical SDK stash (written under the route
     // session id by this shell, the project-home composer, and
     // `useConfigureThread` — all three producers now share the one canonical
@@ -82,8 +116,21 @@ export function InstantSessionShell({
       text,
       files: usePendingFilesStore.getState().files,
     };
-  });
-  const submitted = submission?.text ?? null;
+  }, [hydrated, sessionId]);
+  // The durable rows are the cross-navigation truth: a send made on the
+  // project home is an inbox row by the time this shell mounts, and reading it
+  // from the server is what keeps the bubble on screen after a reload — the
+  // stash only carries picks now. The local `submission` covers the same-page
+  // send instantly; the stash read stays as a legacy fallback for a hand-off
+  // written by a pre-deploy tab.
+  const promptInbox = useSessionPrompts(projectId, sessionId, { enabled: hydrated });
+  const pendingRowSubmission = useMemo(() => {
+    const row = promptInbox.prompts.find((p) => p.text.trim().length > 0);
+    if (!row) return null;
+    return { text: row.text, files: [] as AttachedFile[] };
+  }, [promptInbox.prompts]);
+  const effectiveSubmission = submission ?? pendingRowSubmission ?? stashedSubmission;
+  const submitted = effectiveSubmission?.text ?? null;
 
   // Starter-prompt → composer prefill, identical to the project-home composer.
   const [prefill, setPrefill] = useState<{ text: string; id: number } | null>(null);
@@ -92,33 +139,50 @@ export function InstantSessionShell({
   }, []);
 
   const handleSend = useCallback(
-    (text: string, files: AttachedFile[] | undefined, options: ComposerOptions) => {
-      if ((!text.trim() && !files?.length) || submitted) return;
-      playSound('send');
-
-      // Hand the message to the real chat: it auto-sends from this stash once
-      // the runtime is healthy. `sessionId` here is the route/Kortix-session
-      // id, not the eventual OpenCode pin (`useCanonicalOpenCodeSession`
-      // resolves those independently — see `ensureOpencodeSessionPin` in
-      // apps/api/src/projects/routes/shared.ts); the session page's
-      // `migrateStash` hands this canonical stash off onto the resolved pin
-      // once it exists.
+    async (text: string, files: AttachedFile[] | undefined, options: ComposerOptions) => {
+      if (!text.trim() && !files?.length) return;
+      // Hand the PICKS to the real chat through the stash (it seeds the
+      // per-session model/agent stores from them). The prompt itself does not
+      // travel this way any more — it becomes a durable inbox row below.
       writeStartStash(sessionId, {
-        prompt: text,
+        prompt: '',
         agent: options.agent ?? null,
         model: options.model ?? null,
         variant: options.variant ?? null,
       });
-      // File objects can't survive sessionStorage — stash them in the store the
-      // real chat consumes (same path the home composer uses).
-      if (files?.length) {
-        usePendingFilesStore.getState().setPendingFiles(files);
+      // The durable row, POSTed NOW. Attachments ride as data: URLs — there is
+      // no sandbox to upload into yet. A SECOND message typed while the first
+      // boots POSTs the same way: the admission gate orders rows by
+      // (available_at, created_at), so two rows created in order deliver in
+      // order — which is exactly what the refusal that used to live here was
+      // faking with a toast and a carried draft. AWAITED, and thrown on
+      // failure, so the composer's own recovery puts the text and attachments
+      // back in the editor instead of painting a bubble for a message the
+      // server never got.
+      try {
+        const parts = [
+          { type: 'text' as const, text },
+          ...(await attachedFilesToDataUrlParts(files)),
+        ];
+        await startSessionWithPrompt(projectId, sessionId, {
+          parts,
+          overrides: {
+            ...(options.agent ? { agent: options.agent } : {}),
+            ...(options.model ? { model: options.model } : {}),
+            ...(options.variant ? { variant: options.variant } : {}),
+          },
+        });
+      } catch (error) {
+        errorToast(error instanceof Error ? error.message : 'Could not queue your message');
+        throw error;
       }
-
-      setSubmission({ text, files: files ?? [] });
-      onSubmit?.();
+      playSound('send');
+      if (!submitted) {
+        setSubmission({ text, files: files ?? [] });
+        onSubmit?.();
+      }
     },
-    [sessionId, submitted, onSubmit],
+    [projectId, sessionId, submitted, onSubmit],
   );
 
   const handleCommand = useCallback(
@@ -142,9 +206,12 @@ export function InstantSessionShell({
       // While the computer boots after the first send the input stays fully
       // normal (typeable) — only the send button flips to a stop button. The
       // stop is disabled because there's nothing running to stop yet; the real
-      // chat's live stop takes over the instant it crossfades in. (A duplicate
-      // send is harmless — handleSend ignores it while `submitted` is set.)
+      // chat's live stop takes over the instant it crossfades in.
       isBusy={!!submitted}
+      // The first message IS the turn as far as this shell is concerned, so a
+      // `/` command submitted now is refused with the same message a command
+      // typed mid-turn gets, rather than racing the boot.
+      sessionWorking={!!submitted}
       stopDisabled={!!submitted}
       autoFocus
       // Hero radius pre-submit (matches the project home); back to the default
@@ -171,13 +238,6 @@ export function InstantSessionShell({
         sessionTitle={tI18nHardcoded.raw(
           'autoFeaturesSessionInstantSessionShellJsxAttrSessionTitleNewSession6b8dfd00',
         )}
-        isSidePanelOpen={isSidePanelOpen}
-        onToggleSidePanel={() => {
-          const s = useKortixComputerStore.getState();
-          s.setActiveSession(sessionId);
-          if (s.isSidePanelOpen) s.closeSidePanel();
-          else s.openSidePanel();
-        }}
       />
 
       <div className="relative z-10 flex min-h-0 flex-1 flex-col">
@@ -196,52 +256,35 @@ export function InstantSessionShell({
             />
           </div>
         )}
+        {/* Geometry is copied from SessionChat's scroll area verbatim — same
+            container padding, same max width, same inner padding. It used to run
+            `px-4 py-4` against the chat's `py-6`, which put the whole thread 8px
+            higher here and made the crossfade land with a visible nudge. */}
         <div
           className={cn(
-            'scrollbar-hide relative z-10 overflow-y-auto px-4 py-4',
+            'scrollbar-hide relative z-10 overflow-y-auto',
             submitted ? 'h-full flex-1' : 'hidden',
           )}
         >
-          <div className="mx-auto w-full max-w-3xl min-w-0 px-3 sm:px-6">
-            {submission && (
+          <div className="mx-auto w-full max-w-3xl min-w-0 px-3 py-6 sm:px-6">
+            {effectiveSubmission && (
               <div className="flex min-w-0 flex-col">
-                {/* Optimistic turn — the EXACT same DOM shape + spacing as
-                    SessionChat's optimistic block (turn wrapper → justify-end
-                    bubble → pending row) so the bubble + Kortix logo never shift
-                    across the shell → chat crossfade. */}
-                <div className="mt-12 first:mt-0">
-                  <div className="flex justify-end">
-                    <div className="bg-card flex max-w-[90%] flex-col overflow-hidden rounded-3xl rounded-br-lg border">
-                      {submission.files.length > 0 && (
-                        <div className="flex flex-wrap gap-2 p-3 pb-0">
-                          {submission.files.map((file, i) => {
-                            const ref = optimisticUploadedFileRef(file);
-                            return (
-                              <div key={`${ref.path}-${i}`} onClick={(e) => e.stopPropagation()}>
-                                <GridFileCard
-                                  filePath={ref.path}
-                                  fileName={ref.path.split('/').pop() || ref.path}
-                                  deferPreview
-                                />
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                      <p className="px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap">
-                        {submission.text}
-                      </p>
-                    </div>
-                  </div>
-                  {/* While the computer is still coming up we show the SAME
-                      stepped boot checklist as the side panel, inline under the
-                      logomark — so the progress is visible without opening the
-                      panel. Once ready it falls back to the regular thinking text. */}
-                  <AssistantPendingRow
-                    className="mt-6"
-                    body={ready ? undefined : <SessionBootChecklistInline stage={stage} />}
-                  />
-                </div>
+                {/* The optimistic turn, rendered by the component SessionChat
+                    also renders — not a copy of it. `deferPreview` is the one
+                    difference the shell is entitled to: there is no sandbox yet,
+                    so MessageAttachments paints every tile as pending. The
+                    waiting row underneath says "Thinking" at every boot stage,
+                    exactly as it will once the real chat takes over. */}
+                <OptimisticTurn
+                  text={buildOptimisticPromptTextWithUploads(
+                    effectiveSubmission.text,
+                    effectiveSubmission.files,
+                  )}
+                  agentNames={agentNames}
+                  onFileClick={openFileInComputer}
+                  deferPreview
+                  sessionId={sessionId}
+                />
               </div>
             )}
           </div>
@@ -277,12 +320,13 @@ export function InstantSessionShell({
  * the side panel opens. Falls back to inline on mobile (no layer). Must render
  * as a descendant of SessionLayout to read the layer from context.
  */
+const shellWallpaperEl = (
+  <div className="pointer-events-none absolute inset-0 z-0">
+    <SessionWelcome />
+  </div>
+);
+
 function ShellWallpaper() {
   const layer = useSessionWallpaperLayer();
-  const wallpaper = (
-    <div className="pointer-events-none absolute inset-0 z-0">
-      <SessionWelcome />
-    </div>
-  );
-  return layer ? createPortal(wallpaper, layer) : wallpaper;
+  return layer ? createPortal(shellWallpaperEl, layer) : shellWallpaperEl;
 }

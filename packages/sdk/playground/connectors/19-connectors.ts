@@ -1,5 +1,5 @@
 /**
- * 19 — connectors (integrations): the deployment-wide easy-connect flag,
+ * 19 — connectors: the deployment-wide easy-connect flag,
  * the project's connector list, and the first connector's config + policies.
  * All reads.
  *

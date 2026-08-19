@@ -1,12 +1,26 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { projectSessionPublicShares, sessionSandboxes } from '@kortix/db';
+import {
+  connectorConnections,
+  projectSessionConnectorBindings,
+  projectSessionPublicShares,
+  sessionSandboxes,
+} from '@kortix/db';
 import { and, desc, eq } from 'drizzle-orm';
 import { db } from './db';
+import { OPENCODE_PORTS } from './opencode-ports';
 
 export type PublicShareResourceType = 'preview' | 'file';
 
 export const STATIC_FILE_SHARE_PORT = 3211;
-export const PUBLIC_SHARE_BLOCKED_PORTS = new Set([22, 4096, 8000, STATIC_FILE_SHARE_PORT]);
+// Both halves of the opencode port pair — a verified reload swaps which one is
+// live, so blocking only 4096 would leave the conversation API publicly
+// shareable through the other after a single reload. See shared/opencode-ports.
+export const PUBLIC_SHARE_BLOCKED_PORTS = new Set([
+  22,
+  ...OPENCODE_PORTS,
+  8000,
+  STATIC_FILE_SHARE_PORT,
+]);
 
 export const DEFAULT_PREVIEW_CANDIDATES = [
   { id: 'web', label: 'App preview', port: 3000, path: '/', source: 'default' },
@@ -259,6 +273,31 @@ export async function resolvePublicShare(token: string) {
   if (row.revokedAt) return { ok: false as const, status: 410, error: 'Share link revoked' };
   if (row.expiresAt && row.expiresAt.getTime() <= Date.now()) {
     return { ok: false as const, status: 410, error: 'Share link expired' };
+  }
+  // Fail closed for links created before personal-connection sharing was
+  // prohibited. A public preview/file link delegates access to the same fixed
+  // session runtime token, so it must never indirectly delegate a member's
+  // private connector credentials.
+  const [personalBinding] = await db
+    .select({ connectionId: projectSessionConnectorBindings.connectionId })
+    .from(projectSessionConnectorBindings)
+    .innerJoin(
+      connectorConnections,
+      eq(connectorConnections.connectionId, projectSessionConnectorBindings.connectionId),
+    )
+    .where(
+      and(
+        eq(projectSessionConnectorBindings.sessionId, row.sessionId),
+        eq(connectorConnections.ownerType, 'member'),
+      ),
+    )
+    .limit(1);
+  if (personalBinding) {
+    return {
+      ok: false as const,
+      status: 403,
+      error: 'Sessions using a personal connection cannot be shared publicly',
+    };
   }
   if (!row.externalId) return { ok: false as const, status: 503, error: 'Sandbox is not ready' };
   if (row.resourceType === 'preview' && (!row.port || PUBLIC_SHARE_BLOCKED_PORTS.has(row.port))) {

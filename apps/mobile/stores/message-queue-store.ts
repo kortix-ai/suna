@@ -7,6 +7,7 @@
 
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Crypto from 'expo-crypto';
 
 const QUEUE_STORAGE_KEY = 'kortix_message_queue_v1';
 
@@ -109,7 +110,7 @@ export const useMessageQueueStore = create<MessageQueueState>()((set, get) => ({
 
   enqueue: (sessionId, text) => {
     const message: QueuedMessage = {
-      id: `queued-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      id: `queued-${Crypto.randomUUID()}`,
       sessionId,
       text,
       timestamp: Date.now(),
