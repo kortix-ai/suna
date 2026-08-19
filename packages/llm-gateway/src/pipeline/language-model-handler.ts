@@ -4,6 +4,7 @@ import { parseUpstreamErrorBody } from '../http/parse-upstream-error';
 import {
   type FullStreamPart,
   aiGatewaySseFromFullStream,
+  applyNativeGatewayShaping,
   guardAgainstUnhandledResultRejections,
   resolveAiModel,
   toTransportError,
@@ -46,12 +47,19 @@ import { type NativeFailure, runNativeFailover } from './native-failover';
 //     handler.ts's empty-completion retry loop, but over typed `fullStream`
 //     parts instead of OpenAI SSE bytes. ONLY the committed candidate is billed.
 //
+// GATEWAY-SIDE request shaping (`applyNativeGatewayShaping`, request.ts):
+//   - opencode's `@ai-sdk/gateway` sends provider-native `providerOptions` for
+//     all CLIENT-SIDE shaping (thinking/reasoning, prompt-cache breakpoints,
+//     sampling), which the decoded call forwards to `streamText` verbatim.
+//   - It CANNOT send the Kortix-proxy-only tweaks `buildAiSdkArgs` +
+//     callUpstreamViaAiSdk apply on the OpenAI-compat path (codex store:false +
+//     max_output_tokens drop, OpenRouter bodyExtras, Nova maxOutputTokens
+//     clamp). Those are re-applied per-candidate in `startStream` below. Without
+//     them, codex models 400 `{"detail":"Store must be set to false"}`.
+//
 // DEFERRED to Phase 3 (documented, NOT silently missing):
 //   - Non-streaming (`ai-language-model-streaming: false`) collects the stream
 //     into a single JSON result — exact `doGenerate` wire parity is Phase 2.
-//   - `buildAiSdkArgs`'s thinking/caching re-shaping. opencode's
-//     `@ai-sdk/gateway` already sends provider-native `providerOptions`, so the
-//     decoded call args are forwarded to `streamText` verbatim here.
 // ---------------------------------------------------------------------------
 
 // Imported lazily via a typed shim so this module does not hard-depend on the
@@ -281,6 +289,16 @@ export async function handleLanguageModel(
         ...(fetchImpl ? { fetch: (input, init) => fetchImpl(String(input), init ?? {}) } : {}),
       },
     );
+    // Re-apply the GATEWAY-SIDE, provider-specific request shaping opencode's
+    // `@ai-sdk/gateway` client cannot send (codex store:false + max_output_tokens
+    // drop, OpenRouter bodyExtras, Nova maxOutputTokens clamp) — keyed off THIS
+    // candidate's resolved descriptor so a failover onto a different provider
+    // carries its own shaping. Client-side shaping (thinking/caching/sampling)
+    // stays forwarded verbatim below. Single source of truth: request.ts.
+    const shaped = applyNativeGatewayShaping(candidate.descriptor, {
+      providerOptions: decoded.call.providerOptions,
+      maxOutputTokens: decoded.call.maxOutputTokens,
+    });
     // biome-ignore lint/suspicious/noExplicitAny: decoded.call is the AI-SDK
     // CallSettings-shaped args (messages/tools/providerOptions/...), forwarded
     // to streamText verbatim; the exact union is validated by the SDK at runtime.
@@ -296,9 +314,9 @@ export async function handleLanguageModel(
       frequencyPenalty: decoded.call.frequencyPenalty,
       presencePenalty: decoded.call.presencePenalty,
       stopSequences: decoded.call.stopSequences,
-      maxOutputTokens: decoded.call.maxOutputTokens,
+      maxOutputTokens: shaped.maxOutputTokens,
       seed: decoded.call.seed,
-      providerOptions: decoded.call.providerOptions,
+      providerOptions: shaped.providerOptions,
       maxRetries: 0,
       abortSignal: req.signal,
       onError: () => {
