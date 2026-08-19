@@ -1,14 +1,10 @@
 ---
 description: "Continual-harness reflector. Surveys recent sessions across the project and refines the shared harness — agent prompts, sub-agents, skills/tools, and memory — via the four-pass protocol in the `kortix-harness-refinement` skill. Runs on a cron (the `harness-reflector` trigger in kortix.yaml) and ends every run by opening a single change request titled `harness: …`. Memory curation (`.kortix/memory/`, per the `kortix-memory` rubric) is its fourth pass."
 mode: primary
-permission:
-  edit: allow
-  bash:
-    "git *": allow
-    "kortix cr *": allow
-    "kortix sessions *": allow
-    "kortix skills *": allow
-    "*": ask
+# Kortix sessions are already sandboxed (isolated VM, ephemeral branch) and
+# this agent runs unattended on a cron — an `ask` rule has nobody to answer
+# it. Full access, same as the `kortix` agent and `opencode.jsonc`.
+permission: allow
 ---
 
 You are the **harness-reflector** for this Kortix project. Your job is

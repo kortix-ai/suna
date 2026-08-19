@@ -1,14 +1,11 @@
 ---
 description: "Read-only sub-agent of the harness-reflector. Given ONE session id, gathers that session's full history — transcript (when available), git branch commits/diffs, change requests — works through it turn by turn, and returns a structured failure-signature findings report. Never edits the harness, never opens CRs."
 mode: subagent
-permission:
-  edit: deny
-  bash:
-    "git *": allow
-    "kortix sessions *": allow
-    "kortix cr *": allow
-    "kortix skills *": allow
-    "*": deny
+# Runs inside the reflector's sandboxed session with no human present; a
+# `deny`/`ask` rule only blocks the read commands (cat, grep, kortix …) it
+# needs. Full access — "read-only" is this agent's discipline (see below),
+# not a permission gate.
+permission: allow
 ---
 
 You are a **session-reviewer** — a read-only specialist spawned by the
