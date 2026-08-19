@@ -356,6 +356,14 @@ export async function buildOpencodeConfigContent(
       // mode (cold/Daytona) it's the real gateway base + key, as before.
       baseURL: proxyMode ? llmProxyUrl! : llmBaseUrl!,
       apiKey: proxyMode ? LLM_PROXY_PLACEHOLDER_KEY : llmApiKey!,
+      // AI-SDK-native transport toggle. OFF (default) keeps the historical
+      // `@ai-sdk/openai-compatible` provider (`/chat/completions`) with ZERO
+      // behavior change; ON emits the `@ai-sdk/gateway` provider that POSTs to
+      // the gateway's native `/language-model` ingress. Pair with the
+      // gateway-side `GATEWAY_AI_SDK_NATIVE` — both must be on together.
+      aiSdkNative: ['1', 'true', 'yes', 'on'].includes(
+        (env.KORTIX_LLM_AI_SDK_NATIVE ?? '').trim().toLowerCase(),
+      ),
       managedOverlay,
       // Catalog is org-stable and ships baked into every image at
       // BAKED_LLM_CATALOG_PATH, so this resolves off DISK — no network on the
@@ -416,6 +424,17 @@ type KortixProviderOpts = {
   /** Live managed lineup fetched from `${gateway}/models?scope=managed`, or
    *  null when it was unavailable (then the BUNDLED managed set fills gaps). */
   managedOverlay?: Record<string, KortixGatewayModel> | null
+  /** AI-SDK-native transport toggle (env `KORTIX_LLM_AI_SDK_NATIVE`, default OFF).
+   *  OFF → `@ai-sdk/openai-compatible` (opencode POSTs `${baseURL}/chat/completions`,
+   *  the historical path, ZERO behavior change). ON → `@ai-sdk/gateway` (opencode
+   *  POSTs `${baseURL}/language-model` with the model id in the `ai-language-model-id`
+   *  header, hitting the gateway's native ingress). The gateway mounts BOTH
+   *  `/language-model` and the `/v1/llm/language-model` alias, so the SAME baseURL
+   *  works for either transport. Kept flag-selected (not a replacement) so the
+   *  native path can canary + roll back. Must stay in sync with the gateway-side
+   *  `GATEWAY_AI_SDK_NATIVE`: the native provider only works once the gateway's
+   *  native ingress is on, or every call 404s. */
+  aiSdkNative?: boolean
 }
 
 function buildKortixProvider(opts: KortixProviderOpts): Record<string, unknown> {
@@ -437,8 +456,21 @@ function buildKortixProvider(opts: KortixProviderOpts): Record<string, unknown> 
       return [id, opencodeModel]
     }),
   )
+  // Provider-package selection is the ONLY difference between the two transports.
+  // Both packages read the same `{ baseURL, apiKey }` options, and both carry the
+  // same `models` catalog map, so opencode's per-call `languageModel(id)`,
+  // model-picker, and cost/limits wiring are identical either way.
+  //   - `@ai-sdk/openai-compatible` → POST `${baseURL}/chat/completions`
+  //     (OpenAI wire; the historical default).
+  //   - `@ai-sdk/gateway`           → POST `${baseURL}/language-model`, model id in
+  //     the `ai-language-model-id` header (AI-SDK-native wire). `@ai-sdk/gateway`
+  //     also exposes `getAvailableModels()` (`${baseURL}/config`), but that is
+  //     called LAZILY, never on the model-create or stream hot path — opencode
+  //     sources its catalog from the `models` map here + models.dev, so NO gateway
+  //     `/config` stub is required for the native provider to function.
+  const npm = opts.aiSdkNative ? '@ai-sdk/gateway' : '@ai-sdk/openai-compatible'
   return {
-    npm: '@ai-sdk/openai-compatible',
+    npm,
     name: 'Kortix',
     options: {
       baseURL: opts.baseURL,
