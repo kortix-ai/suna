@@ -68,6 +68,7 @@ mock.module('../channels/slack-api', () => ({
   appendStream: async () => {},
   deleteMessage: async () => {},
   getChannelName: async () => 'general',
+  isBotUser: async () => true,
   joinChannel: async () => true,
   openDmChannel: async () => 'D1',
   postEphemeral: async () => true,
@@ -220,5 +221,53 @@ describe('a bot sender is never sent an identity prompt', () => {
     const h = cmds.slice(cmds.indexOf('async function slashLinkBot'));
     expect(h.slice(0, 1600), 'linking a bot must stay owner/admin gated — any app in the channel is a non-member')
       .toContain('canManageSlackPolicy');
+  });
+});
+
+// ── link-bot must never bind a HUMAN ────────────────────────────────────────
+//
+// Flagged on #6590 by review, and it was real. linkSlackIdentity UPSERTS, and
+// resolveSlackActor treats the row as the authoritative
+// (workspace, slack_user) -> kortix_user mapping, so binding a person's id would
+// silently make THEIR later Slack actions run as whoever linked them. Human and
+// bot ids are the same shape — /^[UWB][A-Z0-9]{6,}$/ matches U0B8ERR54BH (a
+// person) exactly as it matches a bot — so only Slack can tell them apart.
+
+describe('link-bot refuses anything that is not a verified bot', () => {
+  const cmds = readFileSync(join(import.meta.dir, '..', 'channels', 'slack', 'commands.ts'), 'utf8');
+  const handler = cmds.slice(cmds.indexOf('async function slashLinkBot'), cmds.indexOf('async function slashLinkBot') + 2600);
+
+  test('Slack is asked whether the target is a bot, BEFORE the link is written', () => {
+    const askedAt = handler.indexOf('isBotUser(');
+    const wroteAt = handler.indexOf('await linkSlackIdentity(');
+    expect(askedAt, 'no bot verification — a human id would be accepted').toBeGreaterThan(-1);
+    expect(wroteAt).toBeGreaterThan(-1);
+    expect(askedAt, 'the link must not be written before the check').toBeLessThan(wroteAt);
+  });
+
+  test('anything other than a definite yes refuses — null (unknown) included', () => {
+    // isBotUser returns null on missing scope / transport error / unknown user.
+    // `bot !== true` is load-bearing: `!bot` would also refuse, but a truthy
+    // check like `bot === false` alone would let null through and link a human.
+    expect(handler, 'uncertainty must refuse, not fall through').toContain('if (bot !== true) {');
+  });
+
+  test('an id already linked to someone else is never silently re-pointed', () => {
+    expect(handler, 'upsert would overwrite an existing human mapping')
+      .toContain("existing && existing.userId !== me.userId");
+  });
+
+  test('isBotUser itself fails closed', () => {
+    const api = readFileSync(join(import.meta.dir, '..', 'channels', 'slack-api.ts'), 'utf8');
+    const fn = api.slice(api.indexOf('export async function isBotUser'));
+    // Scope the assertion to the !r.ok BLOCK. A greedy match across the whole
+    // function passes even when this branch returns false, because two later
+    // `return null` lines exist — the negative control caught that.
+    const i = fn.indexOf('if (!r.ok) {');
+    expect(i, 'no failure branch at all').toBeGreaterThan(-1);
+    const branch = fn.slice(i, fn.indexOf('}', fn.indexOf('return', i)));
+    expect(branch, 'a failed users.info must be null (unknown) — false would read as "a human", and refuse every bot')
+      .toContain('return null;');
+    expect(branch, 'never answer false/true from a failed lookup').not.toMatch(/return (false|true);/);
   });
 });

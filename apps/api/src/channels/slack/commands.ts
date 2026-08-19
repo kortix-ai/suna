@@ -16,6 +16,8 @@ import { listPickerModels, labelForModelRef } from '../../llm-gateway/models/pic
 import { isModelServableForAccount, resolveEffectiveModel } from '../../llm-gateway/resolution/default-model';
 import { chooseEffectiveAgent, toOpencodeModelRef, toWireModel } from '../../llm-gateway/resolution/effective';
 import { buildSlackLoginUrl } from './login';
+import { isBotUser } from '../slack-api';
+import { loadSlackTokenForProject } from '../install-store';
 import { linkSlackIdentity, lookupSlackIdentity, revokeSlackIdentity } from './identity';
 import { conversationPolicyLabel, normalizeConversationPolicy } from './participants';
 import { lookupEmailsByUserIds } from '../../accounts/core/app';
@@ -706,6 +708,28 @@ async function slashLinkBot(ctx: SlashCtx, arg: string): Promise<SlashResponse> 
   }
   if (!(await canManageSlackPolicy(ctx, selection.projectId))) {
     return { response_type: 'ephemeral', text: 'Only a linked Kortix account owner or admin for this project can link a bot.' };
+  }
+  // A HUMAN's id must never be bound here. linkSlackIdentity upserts, and
+  // resolveSlackActor treats the row as authoritative, so linking a person would
+  // silently make THEIR later Slack actions run as whoever linked them — the
+  // exact impersonation SLACK_REQUIRE_USER_IDENTITY exists to prevent, through a
+  // different door. Human and bot ids are the same shape (U…/W…), so only Slack
+  // can tell them apart. Flagged on #6590 by review; it was a real hole.
+  const existing = await lookupSlackIdentity(ctx.teamId, botUserId);
+  if (existing && existing.userId !== me.userId) {
+    return { response_type: 'ephemeral', text: `<@${botUserId}> is already linked to a different Kortix account. Have them disconnect first.` };
+  }
+  const token = await loadSlackTokenForProject(selection.projectId);
+  const bot = token ? await isBotUser(token, botUserId) : null;
+  if (bot !== true) {
+    // null = we could not tell (missing scope, transport error, unknown user).
+    // Refuse either way: guessing is the impersonation.
+    return {
+      response_type: 'ephemeral',
+      text: bot === false
+        ? `<@${botUserId}> is a person, not a bot. \`link-bot\` only accepts an app — a person connects their own account with \`${ctx.command} login\`.`
+        : `Could not verify <@${botUserId}> with Slack. Nothing was linked; try again.`,
+    };
   }
   await linkSlackIdentity({ teamId: ctx.teamId, slackUserId: botUserId, userId: me.userId });
   return {
