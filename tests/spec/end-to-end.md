@@ -814,9 +814,11 @@ charge for compute the provider never allocated.
 
 `APP-4` Team scoping — an App's access policy governs who on the TEAM sees it,
 not only who reaches its hostname, using the model sessions use. A new App is
-`private`: a project manager who did not create it does not receive it in
-`GET …/apps`, and gets **404** (never 403 — the status must not disclose that a
-teammate's private App exists) from `GET` and `PATCH …/:appId`. Switching the
+`private`: a project member who did not create it does not receive it in
+`GET …/apps`, and gets **404** from `GET …/:appId` (never 403 — the status must
+not disclose that a teammate's private App exists); their `PATCH …/:appId` is
+**403** because a member holds no `project.app.write` at all, which discloses
+nothing either. Switching the
 policy to `project` puts the App in that teammate's list and makes it readable;
 `restricted` with their `member_ids` keeps them in; returning to `private` puts
 them back out. `password` is a PUBLIC-traffic control and stays team-visible.
