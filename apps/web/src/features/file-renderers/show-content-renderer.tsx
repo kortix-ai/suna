@@ -517,6 +517,10 @@ export function ShowContentRenderer({
   // ═════════════════════════════════════════════════════════════════════════
   // Image — loaded via useBinaryBlob → blobUrl → ImageRenderer
   // HEIC images go through an extra conversion step (blob → JPEG → blobUrl)
+  //
+  // Uses `framed()` to supply the toolbar actions header (refresh, full screen,
+  // open in panel) — same as CSV, PPTX and the plain-text/code viewer. Without
+  // it an image had no way to open in the side panel.
   // ═════════════════════════════════════════════════════════════════════════
   if (isImage && path) {
     if (blobLoading || heicConverting) return <RendererFallback className={mediaH} />;
@@ -524,10 +528,10 @@ export function ShowContentRenderer({
     // HEIC: use the converted JPEG URL
     const imageUrl = isHeic ? heicImageUrl : blobUrl;
     if (imageUrl) {
-      return (
+      return framed(
         <div className={mediaH}>
           <ImageRenderer url={imageUrl} fileName={fileName} />
-        </div>
+        </div>,
       );
     }
     return <FileCard title={title} fileName={fileName} path={path} />;
@@ -535,15 +539,18 @@ export function ShowContentRenderer({
 
   // ═════════════════════════════════════════════════════════════════════════
   // Video — loaded via useBinaryBlob → blobUrl → VideoRenderer
+  //
+  // Uses `framed()` to supply the toolbar actions header (refresh, full screen,
+  // open in panel) — same as image and the no-toolbar renderers.
   // ═════════════════════════════════════════════════════════════════════════
   if (isVideo && path) {
     if (blobLoading) return <RendererFallback className={mediaH} />;
     if (blobError) return <LoadError message={blobError} />;
     if (blobUrl) {
-      return (
+      return framed(
         <div className={mediaH}>
           <VideoRenderer url={blobUrl} />
-        </div>
+        </div>,
       );
     }
     return null;

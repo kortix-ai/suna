@@ -100,6 +100,7 @@ import { startActiveTurnRenewal, stopActiveTurnRenewal } from './projects/active
 import { kickStartupPreBuild } from './snapshots/builder';
 import { registerSunaMigrationRoutes } from './projects/suna-migration/suna-migration-routes';
 import { handleAppPublicRequest, resolveAppRequest } from './apps/public-proxy';
+import { appEdgeApp } from './apps/edge';
 import { appWsHandlers, prepareAppWsUpgrade } from './apps/ws-proxy';
 import {
   startSunaMigrationWorker,
@@ -900,6 +901,14 @@ app.route('/v1/webhooks/sandbox', sandboxWebhooksApp); // /v1/webhooks/sandbox/{
 
 // Access control — public endpoints for signup gating
 app.route('/v1/access', accessControlApp); // /v1/access/signup-status, /v1/access/check-email, /v1/access/request-access
+
+// Apps edge — UNAUTHENTICATED. The self-host reverse proxy calls
+// /v1/apps/edge/tls-check?domain=<host> as its on-demand-TLS `ask` before
+// issuing a per-App certificate; 200 only for a real App host. Public by design
+// (Caddy cannot present a bearer token); it discloses only whether a hostname
+// maps to an App. Not an App public host itself (Host = kortix-api), so it is
+// served by Hono, never intercepted by handleAppPublicRequest.
+app.route('/v1/apps/edge', appEdgeApp); // GET /v1/apps/edge/tls-check?domain=<host>
 
 // Setup links — PUBLIC, token-gated. An agent-minted (encrypted, short-lived,
 // value-only) token is the bearer capability, so a human can fill in a secret

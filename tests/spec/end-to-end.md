@@ -444,7 +444,7 @@ DB `project_secrets` (AES-256-GCM, key bound to `projectId`, unique `(project_id
 `BILL-6` auto-topup: `GET …/auto-topup/settings|setup-status` · `POST …/auto-topup/configure`. Cron: `POST /billing/cron/yearly-rotation`.
 `BILL-7` `POST /billing/deduct {prompt_tokens,completion_tokens,model}` · `POST /billing/deduct-usage {amount,description}` (agent runtime).
 `BILL-8` `POST /billing/webhooks/stripe` (also `/webhook/stripe`) — Stripe sig: missing sig → 400, misconfigured secret → 500. `POST /billing/webhooks/revenuecat` — **Bearer-token auth, bad → 401** (not an in-body sig). Both public, no auth middleware.
-`BILL-9` billing write ops (`create-checkout-session`/`create-per-seat-checkout`/`create-inline-checkout`/`confirm-inline-checkout`/`create-portal-session`/`claim-per-seat`/`cancel-subscription`/`reactivate-subscription`/`schedule-downgrade`/`cancel-scheduled-change`/`purchase-credits`/`auto-topup/configure`) — auth boundary: ANON → 401; non-account-member → 403; account `MEMBER` (`billing.read` only) → 403. They require `billing.write` (OWNER + the `billing_manager` BILLING policy only; ADMIN/AUDITOR/MEMBER denied), enforced by `billing/require-billing-write.ts` (`resolveScopedAccountId` membership check + `assertAuthorized(billing.write)`) — so a non-billing teammate can't subscribe / cancel / top-up on the account's behalf. Reconcile/read ops (`sync-subscription`, `sync-seat-quantity`, `proration-preview`, `checkout-session/:id`, `confirm-checkout-session`) stay member-accessible (membership only). **(finding 2026-06-04 RESOLVED 2026-06-11: the `billing.write` gate now exists in code; the earlier "any member passes" gap is closed.)**
+`BILL-9` billing write ops (`create-checkout-session`/`create-per-seat-checkout`/`create-inline-checkout`/`confirm-inline-checkout`/`create-portal-session`/`claim-per-seat`/`cancel-subscription`/`reactivate-subscription`/`schedule-downgrade`/`cancel-scheduled-change`/`purchase-credits`/`auto-topup/configure`/`sync-subscription`/`sync-seat-quantity`/`confirm-checkout-session`) — auth boundary: ANON → 401; non-account-member → 403; account `MEMBER` (`billing.read` only) → 403. They require `billing.write` (OWNER + the `billing_manager` BILLING policy only; ADMIN/AUDITOR/MEMBER denied), enforced by `billing/require-billing-write.ts` (`resolveScopedAccountId` membership check + `assertAuthorized(billing.write)`) — so a non-billing teammate can't subscribe / cancel / top-up / reconcile seats / confirm a checkout on the account's behalf. Read-only ops (`proration-preview`, `checkout-session/:id`) stay member-accessible (membership only). **(finding 2026-06-04 RESOLVED 2026-06-11: the `billing.write` gate now exists in code; extended 2026-08-19 to `sync-subscription`, `sync-seat-quantity`, `confirm-checkout-session`, which mutate billing state and were still membership-only.)**
 `BILL-13` The internal free-tier rotation cron runs through its authenticated route and returns processed, skipped, and error counts.
 `BILL-16` The yearly credit rotation cron rejects missing and invalid internal credentials without mutating account credits.
 `COST-1` `GET /usage/session-costs?account_id=&project_id=&limit=&offset=` → authenticated account member; project-derived account scope requires `project.gateway.spend.read`, otherwise → 403. Returns every matching session, including zero-cost sessions, as a paginated `{sessions,total,limit,offset,next_offset,reconciliation}` response. Each row combines finalized LLM cost, billed compute cost, owner, project, request, token, model, and compute-duration fields. `limit` defaults to 25 and accepts 1–100; invalid pagination → 400; ANON → 401. `GET /usage/session-costs/:sessionId?account_id=&project_id=` applies the same spend gate and returns the summary plus `model_usage` and discriminated `ledger_entries`; unknown, foreign, or project-mismatched session → 404. Sandbox tokens are rejected.
@@ -822,6 +822,17 @@ policy to `project` puts the App in that teammate's list and makes it readable;
 them back out. `password` is a PUBLIC-traffic control and stays team-visible.
 A `NONMEMBER` remains 403 on the whole surface.
 
+`APP-5` Edge TLS gate — `GET /v1/apps/edge/tls-check?domain=<host>` is the
+unauthenticated `ask` a self-host reverse proxy calls before it issues an
+on-demand certificate for an App hostname. It answers **200** only for a real
+App public host (the hostname the create route just handed out), **403** for a
+hostname that is not an App host and for a call with no `domain` at all, and
+**404** for an App-shaped hostname whose immutable route key belongs to no App.
+A local `*.apps.localhost` deployment never issues certificates and answers 200
+without the database round-trip; the 404 branch is pinned source-level in
+`apps/api/src/apps/edge.test.ts`. The route discloses only whether a hostname is
+servable — the same fact the hostname's own DNS record already states.
+
 ---
 
 ## 29. Additional executable product contracts
@@ -870,6 +881,7 @@ These contracts use product IDs. They replace the old route-coverage bucket IDs.
 `GW-9` Project gateway analytics, logs, budgets, keys, playground, and provider verification enforce project permissions and payload validation.
 `GW-10` Every internal gateway control route rejects a request without internal credentials.
 `GW-12` Internal gateway authorization rejects a request without internal credentials.
+`GW-13` `GET /v1/usage` exhausts the `group_by` enum and its per-value response shape: `provider` rows carry `provider` only, `day` rows carry `day` only, `model` rows carry both `provider` and `model` — never a field from another grouping. A malformed `start` or `end` timestamp is a 400 boundary distinct from an inverted window, and a window containing no `usage_events` returns 200 with zeroed totals and an empty `breakdown`, never 404 or 500.
 `INV-6` A pending account invite admits the invited user and applies the project bootstrap grant.
 `INV-7` Invite accept and decline are email-bound, idempotent where documented, and cannot be used by another user.
 `MEM-6` Changing an account role reconciles project grants so account-wide permissions do not retain stale project rows.

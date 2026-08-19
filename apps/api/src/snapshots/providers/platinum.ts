@@ -61,6 +61,86 @@ const UPLOAD_TIMEOUT_MS_PER_GIB = 60_000;
 // stops oversize-disk templates from being rejected with a raw "size_mb too_big"
 // 400. Single source of truth for the build-size contract; keep in sync w/ Platinum.
 export const PLATINUM_MAX_BUILD_SIZE_MB = 20480;
+/** Floor for the PLATINUM_BUILD_SIZE_MB knob below — small enough that no real
+ *  Kortix image could ever build into anything smaller, so a misconfigured
+ *  knob can never clamp the build ceiling into a guaranteed-to-fail range. */
+export const PLATINUM_MIN_BUILD_SIZE_MB = 1024;
+
+/**
+ * Build-ceiling env knob for `size_mb`, read LAZILY on EVERY call rather than
+ * captured once as a module-load const. This module is imported ONCE and
+ * shared across the whole `bun test` process (bun's module cache) — a
+ * module-load const would freeze whichever suite's env happened to be set
+ * first for every OTHER suite in the same run, making a const-based knob
+ * untestable. build-context.ts's artifact-path consts document and abolish
+ * the exact same anti-pattern for the same reason; this follows suit. Reading
+ * `process.env` fresh per call is behaviour-neutral in production, where the
+ * env is set once before the process starts.
+ *
+ * DEPLOY-NEUTRAL: the default is `PLATINUM_MAX_BUILD_SIZE_MB` itself — today's
+ * effective ceiling — so shipping this knob changes NOTHING until an operator
+ * explicitly sets `PLATINUM_BUILD_SIZE_MB` below the provider cap, after
+ * verifying the Platinum build fleet supports grow-to-fit at that size.
+ * Clamped to [PLATINUM_MIN_BUILD_SIZE_MB, PLATINUM_MAX_BUILD_SIZE_MB]: never
+ * below a floor no real image could build into, never above Platinum's own
+ * hard cap. A non-numeric or non-positive value is treated as unset (falls
+ * back to the default) rather than producing a broken/zero build ceiling from
+ * a typo'd env var.
+ */
+export function platinumBuildSizeMb(): number {
+  const raw = Number(process.env.PLATINUM_BUILD_SIZE_MB);
+  if (!Number.isFinite(raw) || raw <= 0) return PLATINUM_MAX_BUILD_SIZE_MB;
+  return Math.min(PLATINUM_MAX_BUILD_SIZE_MB, Math.max(PLATINUM_MIN_BUILD_SIZE_MB, raw));
+}
+
+/** Distinct, greppable log/error token for the size-cap build-failure class —
+ *  lets an operator search logs/Sentry for exactly this failure mode. */
+export const PLATINUM_SIZE_CAP_LOG_TOKEN = 'PLATINUM_SIZE_CAP_EXCEEDED';
+
+/**
+ * A build ext4 ceiling too small for the image content — wrapped with
+ * remediation naming the `PLATINUM_BUILD_SIZE_MB` env knob an operator would
+ * raise, plus PLATINUM_SIZE_CAP_LOG_TOKEN, so this failure class is
+ * recognizable in logs/Sentry without decoding a raw provider 400 body or an
+ * opaque "build failed". NEVER retried (see isRetryablePlatinumBuildError,
+ * isPlatinumSizeCapBuildFailure below) — the SAME content at the SAME ceiling
+ * fails identically every time, so retrying only burns a BUILD_ATTEMPTS slot.
+ */
+export class PlatinumSizeCapBuildError extends Error {
+  constructor(snapshotName: string, cause: unknown) {
+    const causeMsg = cause instanceof Error ? cause.message : String(cause);
+    super(
+      `${PLATINUM_SIZE_CAP_LOG_TOKEN}: Platinum template ${snapshotName}'s build ext4 ceiling ` +
+        `is too small for its image content and can never fit — raise the ` +
+        `PLATINUM_BUILD_SIZE_MB env knob (clamped to [${PLATINUM_MIN_BUILD_SIZE_MB}, ` +
+        `${PLATINUM_MAX_BUILD_SIZE_MB}]) or shrink the image, then rebuild. Original error: ` +
+        `${causeMsg.slice(0, 300)}`,
+    );
+    this.name = 'PlatinumSizeCapBuildError';
+  }
+}
+
+/**
+ * True iff `err` is Platinum's HOST-SIDE terminal rejection of a build ext4
+ * ceiling too small for the image content — either the `from-build`
+ * registration's `400 size_mb too_big` (Platinum's from-build zod rejecting a
+ * ceiling above its own cap) or an ENOSPC-shaped failure from the async
+ * podman build itself outgrowing a ceiling an operator lowered below what the
+ * image needs via PLATINUM_BUILD_SIZE_MB (only reachable once that knob is set
+ * below today's deploy-neutral default — see platinumBuildSizeMb above). Both
+ * are DETERMINISTIC "this size can never fit" failures, never transient.
+ */
+export function isPlatinumSizeCapBuildFailure(err: unknown): boolean {
+  if (err instanceof PlatinumSizeCapBuildError) return true;
+  const m = (err instanceof Error ? err.message : String(err)).toLowerCase();
+  return (
+    m.includes(PLATINUM_SIZE_CAP_LOG_TOKEN.toLowerCase()) ||
+    m.includes('size_mb too_big') ||
+    m.includes('template size cap') ||
+    m.includes('enospc') ||
+    m.includes('no space left on device')
+  );
+}
 
 /**
  * Retry only stale-context (staging disturbed before the S3 upload — API restart
@@ -85,6 +165,12 @@ export const PLATINUM_MAX_BUILD_SIZE_MB = 20480;
  * excluded, same as 'failed'.
  */
 export function isRetryablePlatinumBuildError(err: unknown): boolean {
+  // A build ceiling too small for the image content can never fit — retrying
+  // burns a BUILD_ATTEMPTS slot on an outcome that repeats identically. Checked
+  // FIRST, ahead of the substring heuristics below, so this class is pinned
+  // non-retryable even if a raw ENOSPC/too_big message happens to also contain
+  // one of the transient substrings matched below (e.g. "network").
+  if (isPlatinumSizeCapBuildFailure(err)) return false;
   const m = (err instanceof Error ? err.message : String(err)).toLowerCase();
   // Platinum answers 429 for TWO opposite conditions, and only one is transient:
   //   - `rate_limited` (server.ts) — the per-org mutation-rate bucket
@@ -527,12 +613,18 @@ class PlatinumAdapter implements SandboxProviderAdapter {
           name: input.snapshotName,
           context_s3_key,
           dockerfile: ctx.dockerfileName,
-          // Build-time ext4 ceiling, clamped to Platinum's from-build hard cap.
-          // Platinum grows ext4 to fit, so the artifact consumes only image+headroom
-          // (a ~9.4 GiB kortix image builds fine into a 20 GiB ceiling). The runtime
-          // disk (default_disk_gb below) stays the FULL spec — build ceiling != runtime
-          // disk. Without this clamp a >20 GiB-disk template 400s ("size_mb too_big").
-          size_mb: Math.min(diskGb * MB_PER_GB, PLATINUM_MAX_BUILD_SIZE_MB),
+          // Build-time ext4 ceiling — DECOUPLED from the runtime disk (default_disk_gb
+          // below), which always stays the FULL spec: Platinum grows ext4 to fit, so
+          // the artifact consumes only image+headroom (a ~9.4 GiB kortix image builds
+          // fine into a 20 GiB ceiling). Three terms, each capping a different thing:
+          // platinumBuildSizeMb() is the operator-tunable knob (env
+          // PLATINUM_BUILD_SIZE_MB, default = PLATINUM_MAX_BUILD_SIZE_MB — i.e.
+          // deploy-neutral until an operator explicitly lowers it); diskGb * MB_PER_GB
+          // keeps a small-disk template's ceiling no larger than it needs; PLATINUM_
+          // MAX_BUILD_SIZE_MB is Platinum's own from-build hard cap (>20 GiB-disk
+          // without it 400s "size_mb too_big"). See isPlatinumSizeCapBuildFailure for
+          // what happens when a ceiling this small can't fit the image.
+          size_mb: Math.min(platinumBuildSizeMb(), diskGb * MB_PER_GB, PLATINUM_MAX_BUILD_SIZE_MB),
           default_cpu: input.spec.cpu ?? DEFAULT_CPU,
           default_ram_mb: (input.spec.memoryGb ?? DEFAULT_MEMORY_GB) * 1024,
           default_disk_gb: diskGb,
@@ -546,6 +638,14 @@ class PlatinumAdapter implements SandboxProviderAdapter {
       // FIX-B: hand the EXACT proven id back to the caller (ppwarm → transition
       // runner) — no name-list re-derivation downstream.
       return { externalTemplateId: externalId };
+    } catch (err) {
+      // A too-small build ceiling is a DETERMINISTIC "this size can never fit"
+      // failure — wrap it with remediation (naming PLATINUM_BUILD_SIZE_MB) and
+      // the greppable log token BEFORE buildSnapshot's retry loop above sees it
+      // via isRetryablePlatinumBuildError, so it's recognizable in logs without
+      // decoding a raw provider 400 / opaque "build failed". Every other error
+      // passes through unchanged.
+      throw isPlatinumSizeCapBuildFailure(err) ? new PlatinumSizeCapBuildError(input.snapshotName, err) : err;
     } finally {
       await rm(ctx.contextDir, { recursive: true, force: true }).catch(() => {});
       await rm(tarPath, { force: true }).catch(() => {});

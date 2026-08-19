@@ -22,24 +22,14 @@
  * something outside it", and splitting that question across two top-level tabs
  * made the answer depend on knowing which direction the bytes travel.
  *
- * `icon`: a Phosphor icon component for the surfaces that have room for one —
- * the sidebar Customize row and the Customize index cards. The tab bar itself
- * is text-only (Marko, 2026-08-19: eight mixed 16px glyphs in one row read as
- * clutter; the Vercel/Linear text-tab pattern is the elegant one). The Members
- * launcher, which leaves the page for the account hub, carries a small
- * trailing ↗ instead of an icon.
+ * No `icon` field, on purpose. This module is pure data and is imported by
+ * SERVER components (`/projects/[id]/channels/page.tsx` needs `channelsHref`);
+ * a `@phosphor-icons/react` import here calls `createContext` at module load
+ * and fails `next build` ("Failed to collect page data" — Deploy Dev
+ * 2026-08-19). The tab bar is text-only anyway (Marko, 2026-08-19: eight mixed
+ * 16px glyphs in one row read as clutter); the sidebar Customize row and the
+ * index cards keep their own icons in their own client files.
  */
-import {
-  ClockCounterClockwiseIcon as TriggersIcon,
-  CubeIcon as ModelsIcon,
-  GearSixIcon as SettingsIcon,
-  LightningIcon as SkillsIcon,
-  LockKeyIcon as SecretsIcon,
-  PlugsIcon as ConnectorsIcon,
-  RobotIcon as AgentsIcon,
-  type Icon,
-} from '@phosphor-icons/react';
-
 export interface CapabilityTab {
   key:
     | 'agent'
@@ -50,7 +40,6 @@ export interface CapabilityTab {
     | 'secrets'
     | 'config';
   label: string;
-  icon: Icon;
 }
 
 /**
@@ -70,13 +59,13 @@ export interface CapabilityTab {
  * redirects here through `settings-tabs.ts`'s `GRADUATED` map.
  */
 export const CAPABILITY_TABS: readonly CapabilityTab[] = [
-  { key: 'models', label: 'Models', icon: ModelsIcon },
-  { key: 'connectors', label: 'Connectors', icon: ConnectorsIcon },
-  { key: 'agent', label: 'Agents', icon: AgentsIcon },
-  { key: 'skills', label: 'Skills', icon: SkillsIcon },
-  { key: 'triggers', label: 'Triggers', icon: TriggersIcon },
-  { key: 'secrets', label: 'Secrets', icon: SecretsIcon },
-  { key: 'config', label: 'Settings', icon: SettingsIcon },
+  { key: 'models', label: 'Models' },
+  { key: 'connectors', label: 'Connectors' },
+  { key: 'agent', label: 'Agents' },
+  { key: 'skills', label: 'Skills' },
+  { key: 'triggers', label: 'Triggers' },
+  { key: 'secrets', label: 'Secrets' },
+  { key: 'config', label: 'Settings' },
 ];
 
 export function capabilityTabHref(projectId: string, key: CapabilityTab['key']): string {

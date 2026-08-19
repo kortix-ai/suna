@@ -87,6 +87,29 @@ export interface CreateSandboxOpts {
    */
   autoStopInterval?: number;
   /**
+   * S1 (idempotent create): the FULL logical `session_sandboxes.sandboxId` —
+   * a 36-char UUID — that this create() call is provisioning for. NEVER pass
+   * the truncated `name` field (session-sandbox.ts derives it as
+   * `session-<sandboxId.slice(0, 8)>`, which collides far more often than the
+   * full UUID and is not a safe create-dedup key). OPTIONAL: only a provider
+   * that implements create-side idempotency reads it (Platinum today — see
+   * platinum.ts's deterministic Idempotency-Key + name); every other
+   * provider/test can omit it and gets today's unchanged behavior.
+   */
+  sandboxId?: string;
+  /**
+   * S1: a MONOTONIC per-sandbox create-attempt counter, persisted by
+   * session-sandbox.ts in `session_sandboxes.metadata.platinumCreateAttempt`
+   * and restored on resume so it NEVER resets across a process restart, a
+   * heal-retry, or a provider failover (a reset would replay a stale
+   * attempt's deterministic name/Idempotency-Key and could wrongly adopt an
+   * abandoned box). A provider that derives a create-dedup identity from
+   * (sandboxId, attempt) should keep that identity STABLE across retries of
+   * the SAME attempt and only mint a new one when `attempt` advances.
+   * OPTIONAL, same rationale as `sandboxId` above.
+   */
+  createAttempt?: number;
+  /**
    * Runtime contract hosted by the provider object. Missing means `session`
    * for backward compatibility with every existing caller.
    *
