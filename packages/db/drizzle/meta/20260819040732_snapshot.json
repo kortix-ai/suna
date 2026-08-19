@@ -1,6 +1,6 @@
 {
-  "id": "9f2a96b9-1b34-42fd-b32d-24beb0825526",
-  "prevId": "093fa18b-3bcd-47fc-8618-3fb39b25a29d",
+  "id": "3d10066d-9f99-4f8a-b75b-0926528ade9a",
+  "prevId": "9307f30b-f9af-45cc-96df-7e05c13860cd",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -8590,6 +8590,79 @@
         "gateway_budgets_project_id_projects_project_id_fk": {
           "name": "gateway_budgets_project_id_projects_project_id_fk",
           "tableFrom": "gateway_budgets",
+          "tableTo": "projects",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "columnsTo": [
+            "project_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "kortix.gateway_otel_configs": {
+      "name": "gateway_otel_configs",
+      "schema": "kortix",
+      "columns": {
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "enabled": {
+          "name": "enabled",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "endpoint": {
+          "name": "endpoint",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "headers_enc": {
+          "name": "headers_enc",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "gateway_otel_configs_project_id_projects_project_id_fk": {
+          "name": "gateway_otel_configs_project_id_projects_project_id_fk",
+          "tableFrom": "gateway_otel_configs",
           "tableTo": "projects",
           "schemaTo": "kortix",
           "columnsFrom": [
