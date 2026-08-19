@@ -1018,12 +1018,15 @@ flow(
           { params: { projectId: p.id, connectionId } },
         );
         incompleteRegistration.status(400);
+        // A non-member is stopped by the project gate before the connection
+        // is ever looked up, so this is 403 — the same code every other
+        // NONMEMBER step in this flow asserts — not the handler's 404.
         const foreign = await ctx.client.as(ctx.P.NONMEMBER).post(
           '/v1/projects/:projectId/connections/:connectionId/oauth2/discover-resource',
           {},
           { params: { projectId: p.id, connectionId } },
         );
-        foreign.status(404);
+        foreign.status(403);
       },
     );
 
