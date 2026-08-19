@@ -21,6 +21,26 @@ export {
   resolveAiModel,
 } from './model';
 
+// AI-SDK-NATIVE (Vercel "AI Gateway" protocol) egress + ingress — Phase 1,
+// additive alongside the OpenAI-compat path. See sse-native.ts / index.ts flag.
+export {
+  aiGatewaySseFromFullStream,
+  billingUsageFromWire,
+  wireUsageFromLanguageModelUsage,
+} from './sse-native';
+export type { NativeBillingUsage, NativeStreamCtx, WireUsage } from './sse-native';
+export {
+  AI_GATEWAY_PROTOCOL_VERSION,
+  LanguageModelRequestError,
+  decodeLanguageModelHeaders,
+  decodeLanguageModelRequest,
+} from './language-model-request';
+export type {
+  DecodedLanguageModelRequest,
+  LanguageModelHeaders,
+  LanguageModelSpecVersion,
+} from './language-model-request';
+
 function jsonResponse(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
     status,

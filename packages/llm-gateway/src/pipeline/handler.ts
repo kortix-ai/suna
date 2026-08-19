@@ -172,7 +172,7 @@ function idOf(principal: AuthedPrincipal) {
 // Uses the host's combined `authorize` hook when present (one call), else the
 // granular authenticate + assertBillingActive + assertBudget hooks. Returns a
 // uniform AuthorizeResult so the handler renders one response/trace either way.
-async function admit(
+export async function admit(
   hooks: GatewayHooks,
   token: string,
   lap: () => number,

@@ -38,6 +38,9 @@ export const config = {
     baseUrl: process.env.LANGFUSE_HOST,
   },
   captureBodies: flag('GATEWAY_CAPTURE_BODIES', true),
+  // AI-SDK-native ingress (`POST /language-model`, Vercel "AI Gateway"
+  // protocol). Default OFF — the route is inert (404) until enabled.
+  aiSdkNative: flag('GATEWAY_AI_SDK_NATIVE', false),
   // Default: 8 MiB. This accepts the measured 2,023,225-byte Aster request and
   // rejects accidental/untrusted oversized payloads before upstream dispatch.
   maxRequestBytes: optionalInt('GATEWAY_MAX_REQUEST_BYTES', DEFAULT_MAX_REQUEST_BYTES),
