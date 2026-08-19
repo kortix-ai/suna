@@ -46,7 +46,13 @@ projectsApp.openapi(
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
-  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_READ);
+  // Manager-only, like the POST/PATCH/DELETE siblings in this file and the
+  // contract in accounts/iam/groups.ts ("those routes gate on
+  // project.members.manage"). The listing carries member_count /
+  // override_count that the rest of the IAM surface treats as manager data;
+  // gating it on project.session.read let any baseline project member read
+  // it (Strix, v0.13.0 release review, CWE-863).
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
 
   // From `role_assignments`, the store the engine reads. The group NAME is
   // still identity data on `account_groups`, and the inner-join semantics are

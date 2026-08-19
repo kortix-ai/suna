@@ -182,6 +182,10 @@ interface EP {
 
 const ENDPOINTS: EP[] = [
   { name: 'GET /audit', method: 'GET', path: () => `/v1/projects/${PROJECT}/audit` },
+  // The GET is manager-only too: it exposes member_count / override_count and
+  // the group→project topology. It was gated on project.session.read until the
+  // v0.13.0 release review caught it (Strix, CWE-863).
+  { name: 'GET /group-grants', method: 'GET', path: () => `/v1/projects/${PROJECT}/group-grants` },
   { name: 'POST /group-grants', method: 'POST', path: () => `/v1/projects/${PROJECT}/group-grants`, body: {} },
   { name: 'PATCH /group-grants/{id}', method: 'PATCH', path: () => `/v1/projects/${PROJECT}/group-grants/${crypto.randomUUID()}`, body: {} },
   { name: 'DELETE /group-grants/{id}', method: 'DELETE', path: () => `/v1/projects/${PROJECT}/group-grants/${crypto.randomUUID()}` },

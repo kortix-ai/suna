@@ -100,15 +100,19 @@ jobs:
       # Pin the run id so the post-run sweep below can reclaim exactly THIS
       # shard's principals (`principals.ts` names them `e2e-<runId>-…`).
       KE2E_RUN_ID: ${{ github.run_id }}-api${{ matrix.shard }}
-      # Fleet arithmetic, not per-job tuning: 4 shards x 3 = 12 concurrent API
-      # workers and 4 x 2 = 8 concurrent sandbox boots against ONE staging
-      # environment, against 3 + 3 before sharding. Staging is a single 0.5 vCPU
-      # Spot task today, and the v0.13.0 gate already collapsed it at 3 + 3 (see
-      # the "tests-release's own load can knock staging over" learning). These
-      # two numbers are the first thing to lower if MAINTENANCE_MODE 503s
-      # reappear.
-      KE2E_API_WORKERS: '3'
-      KE2E_SANDBOX_WORKERS: '2'
+      # Fleet arithmetic, not per-job tuning. Run 32231251280 (the first run
+      # where every shard actually executed) fanned out 4x3 API + 4x2 sandbox +
+      # 3x2 browser = 26 concurrent workers against ONE staging (2 x 1 vCPU
+      # tasks, Medium DB after #6544) and ~50% of flows failed with "exceeded
+      # 120000ms" — staging slowed to the point that the 120s flow budget
+      # tripped, and with #6543 a timeout is no longer retried. The single-job
+      # gate passed 424/441 at 3 + 3. Halve the fleet: 4x2 + 4x1 = 12 against
+      # the API (plus 3x1 browsers), and give a timed-out flow exactly ONE more
+      # attempt here (not the old 3x) — the load is low enough that a retry
+      # cannot cascade. Lower these first if MAINTENANCE_MODE 503s reappear.
+      KE2E_API_WORKERS: '2'
+      KE2E_SANDBOX_WORKERS: '1'
+      KE2E_TIMEOUT_ATTEMPTS: '2'
     steps:
       - uses: actions/checkout@v7
       - name: Require the deployed staging source SHA
@@ -177,7 +181,8 @@ jobs:
         shard: [1, 2, 3]
     env:
       # 3 shards x 2 = 6 concurrent browsers, against 2 before sharding.
-      E2E_BROWSER_WORKERS: '2'
+      # One browser per shard (3 total) — see the fleet arithmetic on the api job.
+      E2E_BROWSER_WORKERS: '1'
     steps:
       - uses: actions/checkout@v7
       - name: Require the deployed staging source SHA
