@@ -217,6 +217,7 @@ function ActivityFileChipStepImpl({
       : undefined;
 
   const paths: string[] = [];
+  const seenPaths = new Set<string>();
   const fallbacks: Part[] = [];
   let failedCount = 0;
   let inFlight = false;
@@ -241,7 +242,10 @@ function ActivityFileChipStepImpl({
       fallbacks.push(part);
       continue;
     }
-    if (!paths.includes(path)) paths.push(path);
+    if (!seenPaths.has(path)) {
+      seenPaths.add(path);
+      paths.push(path);
+    }
   }
 
   if (!family) return null;

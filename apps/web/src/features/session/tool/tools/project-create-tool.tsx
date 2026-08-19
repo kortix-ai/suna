@@ -9,12 +9,12 @@ import {
 } from '@/features/session/tool/shared/infrastructure';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
-import { CaretRightIcon as ChevronRight, PlusIcon as Plus } from '@phosphor-icons/react';
+import { PlusIcon as Plus } from '@phosphor-icons/react';
 import { useCallback, useMemo } from 'react';
 
 import { parseProjectCreateOutput } from '@/lib/utils/kortix-tool-output';
 
-export function ProjectCreateTool({ part }: ToolProps) {
+export function ProjectCreateTool({ part, defaultOpen, forceOpen }: ToolProps) {
   const input = partInput(part);
   const output = partOutput(part);
   const { enabled: navigationEnabled, openTab } = useToolNavigation();
@@ -39,6 +39,8 @@ export function ProjectCreateTool({ part }: ToolProps) {
       <BasicTool
         icon={<Plus />}
         trigger={{ title: 'Workspace', subtitle: displayName || 'failed' }}
+        defaultOpen={defaultOpen}
+        forceOpen={forceOpen}
       >
         <ToolOutputFallback output={output} toolName="project_create" />
       </BasicTool>
@@ -53,7 +55,6 @@ export function ProjectCreateTool({ part }: ToolProps) {
         subtitle: displayName,
       }}
       onClick={navigationEnabled ? handleOpenWorkspace : undefined}
-      rightAccessory={navigationEnabled ? <ChevronRight /> : undefined}
     />
   );
 }

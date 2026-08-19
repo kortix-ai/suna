@@ -39,6 +39,13 @@ export const CLI_CONNECTOR_RUNTIME_FILES = [
   // is the guard that catches it).
   'src/api/sdk.ts',
   'src/api/sandbox-env.ts',
+  // `src/api/client.ts` records what the acting token resolves to from every
+  // `/accounts/me` response, so this file is compiled into the connector
+  // binary. It deliberately declares its own `AccountsMeBody` instead of
+  // importing `src/api/types.ts` — that file changes with every API type
+  // addition, and hashing it would re-mint every project's runtime identity on
+  // edits that cannot affect the connector.
+  'src/api/token-identity.ts',
   'src/project-link.ts',
 ] as const;
 

@@ -33,14 +33,16 @@ interface SessionCostDetailContentProps {
   error: Error | null;
 }
 
+const timestampFormat = new Intl.DateTimeFormat('en-US', {
+  month: 'short',
+  day: 'numeric',
+  year: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+});
+
 function formatTimestamp(value: string): string {
-  return new Date(value).toLocaleString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  return timestampFormat.format(new Date(value));
 }
 
 function ledgerTimestamp(entry: SessionCostLedgerEntry): string {

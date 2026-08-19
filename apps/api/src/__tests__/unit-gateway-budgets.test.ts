@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { gatewayBudgets, gatewayRequestLogs } from '@kortix/db';
 import type { AuthedPrincipal } from '@kortix/llm-gateway';
+import type { SQL } from 'drizzle-orm';
+import { PgDialect } from 'drizzle-orm/pg-core';
 
 /**
  * BILLING-CORRECTNESS: checkBudget (the function gating every gateway
@@ -20,6 +22,10 @@ import type { AuthedPrincipal } from '@kortix/llm-gateway';
 // needing to introspect drizzle's `where` condition object, since the mock
 // below never inspects it.
 let spendQueue: number[] = [];
+// The rendered SQL of the money expression each spend query selected, so a
+// test can assert WHICH cost the budget gate is actually measuring — not just
+// that it issued a query. See the total-spend test at the bottom.
+let spendExpressions: string[] = [];
 let budgetRows: Array<{
   scope: 'project' | 'member';
   subjectUserId: string | null;
@@ -30,11 +36,14 @@ let budgetRows: Array<{
 
 mock.module('../shared/db', () => ({
   db: {
-    select: (_fields?: unknown) => ({
+    select: (fields?: Record<string, unknown>) => ({
       from: (table: unknown) => ({
         where: async () => {
           if (table === gatewayBudgets) return budgetRows;
           if (table === gatewayRequestLogs) {
+            if (fields?.cost) {
+              spendExpressions.push(new PgDialect().sqlToQuery(fields.cost as SQL).sql);
+            }
             const cost = spendQueue.length ? spendQueue.shift()! : 0;
             return [{ cost }];
           }
@@ -59,6 +68,7 @@ function principal(overrides: Partial<AuthedPrincipal> = {}): AuthedPrincipal {
 describe('checkBudget', () => {
   beforeEach(() => {
     spendQueue = [];
+    spendExpressions = [];
     budgetRows = [];
     __resetBudgetReservationsForTests();
   });
@@ -261,5 +271,64 @@ describe('checkBudget', () => {
       expect(results.every((r) => !r.exceeded)).toBe(true);
       expect(results.every((r) => (r.warnings?.length ?? 0) === 1)).toBe(true);
     });
+  });
+});
+
+/**
+ * BILLING-CORRECTNESS: the gate measured spend with `sum(final_cost)`, which is
+ * what KORTIX billed. A BYOK route resolves to `billingMode: 'none'` with
+ * `markup: 0` (resolve-candidates.ts), so `final_cost` is 0 on every one of its
+ * requests — a "$50/month" budget on a BYOK project could never reach its limit
+ * and was silently inert no matter how many tokens the project burned.
+ *
+ * Asserted on the rendered SQL rather than on a mocked number: the number comes
+ * from `spendQueue` here, so only the expression itself can prove which cost
+ * the gate reads. See shared/llm-spend.ts.
+ */
+describe('checkBudget spend measurement', () => {
+  beforeEach(() => {
+    spendQueue = [];
+    spendExpressions = [];
+    budgetRows = [];
+    __resetBudgetReservationsForTests();
+  });
+
+  test('measures TOTAL spend, so a BYOK project budget is enforceable', async () => {
+    budgetRows = [
+      {
+        scope: 'project',
+        subjectUserId: null,
+        limitUsd: '50',
+        period: 'month',
+        action: 'block',
+      },
+    ];
+    spendQueue = [10];
+
+    await checkBudget(principal());
+
+    expect(spendExpressions).toHaveLength(1);
+    const [expression] = spendExpressions;
+    // The BYOK side — absent from the old `sum(final_cost)` query entirely.
+    expect(expression).toContain('upstream_cost_precise');
+    // The Kortix-billed side, still counted.
+    expect(expression).toContain('final_cost_precise');
+    // ...and excluded on managed rows, where the upstream price is Kortix's own
+    // cost of goods and was never the caller's spend.
+    expect(expression).toContain("'credits'");
+  });
+
+  test('a BYOK project whose total spend passes the limit is blocked', async () => {
+    budgetRows = [
+      { scope: 'project', subjectUserId: null, limitUsd: '5', period: 'month', action: 'block' },
+    ];
+    // All of it provider-billed: under the old final_cost-only measurement this
+    // same project reported 0 and sailed through every check.
+    spendQueue = [12.6];
+
+    const result = await checkBudget(principal());
+
+    expect(result.exceeded).toBe(true);
+    expect(result.message).toContain('$12.60 used this month');
   });
 });

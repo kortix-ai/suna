@@ -69,6 +69,22 @@ interface UseAutoScrollReturn {
 /** How close to the bottom (px) counts as "at the bottom" for hiding the FAB. */
 const BOTTOM_THRESHOLD = 80;
 
+/**
+ * How close to the bottom (px) the reader must get before a downward
+ * wheel/touch intent re-arms follow. Deliberately tighter than
+ * BOTTOM_THRESHOLD: during phase-1 streaming the spacer keeps the viewport
+ * within BOTTOM_THRESHOLD of scrollHeight even while a reader is
+ * meaningfully scrolled up reading history, so using the same threshold for
+ * "resume" let a single jittery trackpad tick (deltaY > 0 for one frame) snap
+ * follow back on — and the very next RAF tick would then yank the viewport
+ * down to close the gap. Requiring the reader to actually reach
+ * RESUME_THRESHOLD bounds that first correction: the tick's `overflow` is
+ * exactly `distanceFromEnd` once the spacer has collapsed (phase 2), so by
+ * construction it can never exceed RESUME_THRESHOLD px — the re-arm cannot
+ * itself be seen as a snap.
+ */
+const RESUME_THRESHOLD = 12;
+
 const TURN_TOP_OFFSET = 24;
 
 /** scrollTop that puts the last [data-turn-id] at TURN_TOP_OFFSET from viewport top. */
@@ -81,9 +97,24 @@ function measureTarget(scrollEl: HTMLDivElement, contentEl: HTMLDivElement): num
   return Math.max(0, scrollEl.scrollTop + (tr.top - sr.top) - TURN_TOP_OFFSET);
 }
 
+/** px distance from the absolute bottom of the scrollable content. */
+function distanceFromScrollEnd(el: HTMLDivElement): number {
+  return el.scrollHeight - el.scrollTop - el.clientHeight;
+}
+
 /** Classic "near the absolute bottom of scrollable content" check. */
 function isNearScrollEnd(el: HTMLDivElement): boolean {
-  return el.scrollHeight - el.scrollTop - el.clientHeight < BOTTOM_THRESHOLD;
+  return distanceFromScrollEnd(el) < BOTTOM_THRESHOLD;
+}
+
+/**
+ * Pure predicate: has the reader scrolled close enough to the end that a
+ * downward wheel/touch intent should re-arm follow? Extracted so the
+ * resume decision is testable without a browser — see RESUME_THRESHOLD for
+ * why this is stricter than isNearScrollEnd.
+ */
+export function shouldResumeFollow({ distanceFromEnd }: { distanceFromEnd: number }): boolean {
+  return distanceFromEnd < RESUME_THRESHOLD;
 }
 
 /** Whether the user has scrolled far enough from the bottom to warrant showing the FAB.
@@ -425,9 +456,10 @@ export function useAutoScroll({
         });
       }
       if (e.deltaY > 0) {
-        // Resume only when the user has manually reached absolute bottom.
+        // Resume only when the user has manually reached RESUME_THRESHOLD of
+        // the absolute bottom — not merely BOTTOM_THRESHOLD (see its comment).
         requestAnimationFrame(() => {
-          if (isNearScrollEnd(el)) {
+          if (shouldResumeFollow({ distanceFromEnd: distanceFromScrollEnd(el) })) {
             userScrolledRef.current = false;
             setShowScrollButton(false);
           }
@@ -459,9 +491,9 @@ export function useAutoScroll({
         });
       }
       if (dy > 10) {
-        // Swiping down → resume only at absolute bottom
+        // Swiping down → resume only within RESUME_THRESHOLD of absolute bottom.
         requestAnimationFrame(() => {
-          if (isNearScrollEnd(el)) {
+          if (shouldResumeFollow({ distanceFromEnd: distanceFromScrollEnd(el) })) {
             userScrolledRef.current = false;
             setShowScrollButton(false);
           }

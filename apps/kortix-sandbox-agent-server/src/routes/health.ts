@@ -4,7 +4,12 @@ import { readFileSync } from 'node:fs'
 import type { Config } from '../config'
 import { readRepoInfo } from '../git'
 import type { Opencode } from '../opencode'
-import { opencodeTurnInFlight } from '../opencode-turn-state'
+import {
+  type OpencodeDeliveryObservation,
+  inspectOpencodeRoot,
+  observeOpencodeDelivery,
+  readPinnedSessionId,
+} from '../opencode-turn-state'
 
 /**
  * The branch this VM's session is supposed to be on, read from the host-
@@ -54,6 +59,46 @@ export type SandboxBootState = {
   initialOpenCodeSessionError?: string | null
   /** Fatal local persistence failure in the OpenCode audit relay. */
   auditRelayError?: string | null
+}
+
+/**
+ * Answer `?turn=1` for the identity the caller asked about.
+ *
+ * Only the message-scoped read can attribute an ending to ONE turn. The
+ * root-scoped fallback (older daemons' callers, command turns with no message
+ * id) answers about the whole root, so it names no reason rather than lend one
+ * turn's outcome to another.
+ */
+export async function observeRequestedTurn(
+  opencodeUrl: string,
+  workspace: string,
+  identity: { sessionId: string | null; messageId: string | null },
+): Promise<OpencodeDeliveryObservation> {
+  if (identity.sessionId && identity.messageId) {
+    return observeOpencodeDelivery(opencodeUrl, workspace, identity.sessionId, identity.messageId)
+  }
+  const inspection = await inspectOpencodeRoot(opencodeUrl, workspace, identity.sessionId ?? '')
+  if (!inspection.known) return { inFlight: null, end: null }
+  return {
+    inFlight: inspection.turnInFlight,
+    // The ONE ending a root-scoped read can prove without lending another
+    // turn's outcome to this one: the root's last message is a prompt nothing
+    // answered. `abandoned` is already in the control plane's
+    // DAEMON_REPORTABLE_END_REASONS, and it is what triggers redelivery.
+    end: inspection.orphanedPrompt ? 'abandoned' : null,
+    orphanedPrompt: inspection.orphanedPrompt,
+  }
+}
+
+export function resolveTurnObservationIdentity(
+  requestedSession: string | undefined,
+  requestedMessage: string | undefined,
+  pinnedSession: string | null,
+): { sessionId: string | null; messageId: string | null } {
+  return {
+    sessionId: requestedSession || pinnedSession,
+    messageId: requestedMessage || null,
+  }
 }
 
 /**
@@ -117,6 +162,22 @@ export function createHealthRouter(
         ? 'error'
         : opencodeState
 
+    const requestedTurnSession = c.req.query('turn_session_id')?.trim()
+    const requestedTurnMessage = c.req.query('turn_message_id')?.trim()
+    const observedTurn = resolveTurnObservationIdentity(
+      requestedTurnSession,
+      requestedTurnMessage,
+      readPinnedSessionId(),
+    )
+    const turn =
+      c.req.query('turn') === '1'
+        ? await observeRequestedTurn(
+            opencode.getInternalUrl(),
+            process.env.KORTIX_WORKSPACE || '/workspace',
+            observedTurn,
+          )
+        : undefined
+
     return c.json({
       daemon: 'ok',
       status,
@@ -151,15 +212,22 @@ export function createHealthRouter(
       // from the live process env, so it tracks a hot push as well as a boot.
       agent_config_etag: process.env.KORTIX_COMPILED_AGENT_CONFIG_ETAG || null,
       // Opt-in (`?turn=1`) because it costs a call into opencode, and health is
-      // polled as a liveness check every few seconds on every idle box. Only the
-      // reload gate asks — it must not restart the runtime out from under a turn
-      // that is still running.
-      ...(c.req.query('turn') === '1'
+      // polled as a liveness check every few seconds on every idle box. Two
+      // callers ask: the reload gate, which must not restart the runtime out
+      // from under a running turn, and the control plane's reaper, which
+      // repairs turn authority a lost relay left behind.
+      ...(turn
         ? {
-            turn_in_flight: await opencodeTurnInFlight(
-              opencode.getInternalUrl(),
-              process.env.KORTIX_WORKSPACE || '/workspace',
-            ),
+            turn_in_flight: turn.inFlight,
+            // WHY it is not in flight, when the message list proves it:
+            // 'completed' | 'failed' | 'abandoned', else null. The control
+            // plane writes this straight into session_turns.end_reason — it
+            // cannot derive it, because only this process holds the messages.
+            turn_end: turn.end,
+            // "A prompt is on record with nothing answering it." Reported
+            // separately from `turn_end` because it is evidence about the
+            // PROMPT, not about the turn: the control plane redelivers on it.
+            turn_orphaned_prompt: turn.orphanedPrompt ?? false,
           }
         : {}),
       boot_error: bootState.repoMaterializationError ?? initialSessionError ?? auditRelayError,

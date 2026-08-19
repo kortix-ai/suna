@@ -1,5 +1,5 @@
 import type { PendingSessionPrompt } from '@kortix/sdk';
-import { readStartStash, type StartStash } from '@kortix/sdk/react';
+import { readStartStash } from '@kortix/sdk/react';
 
 export interface ProvisioningFailurePresentation {
   title: string;
@@ -117,12 +117,4 @@ export function pendingSessionPromptForRecovery(
   };
 }
 
-/** Build the browser delivery stash only after the user selects Retry. */
-export function startStashFromPendingSessionPrompt(prompt: PendingSessionPrompt): StartStash {
-  return {
-    prompt: prompt.text,
-    agent: prompt.agent ?? null,
-    model: prompt.model ?? null,
-    variant: prompt.variant ?? null,
-  };
-}
+

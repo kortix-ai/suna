@@ -1,6 +1,21 @@
-import { createPrivateKey, createSecretKey, randomUUID } from 'node:crypto';
-import { OAuth2ClientCredentialsSchema, type OAuth2ClientCredentials } from '@kortix/api-contract';
-import { CompactSign } from 'jose';
+import {
+  OAUTH2_RESERVED_TOKEN_PARAMETER_NAMES,
+  type OAuth2ClientCredentials,
+  OAuth2ClientCredentialsSchema,
+} from '@kortix/api-contract';
+import {
+  type AuthorizationServer,
+  type Client,
+  type ClientAuth,
+  ClientSecretBasic,
+  ClientSecretJwt,
+  ClientSecretPost,
+  None,
+  PrivateKeyJwt,
+  clientCredentialsGrantRequest,
+  customFetch,
+  modifyAssertion,
+} from 'oauth4webapi';
 import { safeEgressFetch } from '../shared/ssrf-guard';
 
 export interface OAuth2AccessToken {
@@ -20,92 +35,51 @@ interface StoredOAuth2Credential {
 interface OAuth2Runtime {
   fetchImpl?: (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
   now?: () => number;
-  randomId?: () => string;
 }
 
-export async function buildPrivateKeyClientAssertion(
-  config: OAuth2ClientCredentials,
-  runtime: Pick<OAuth2Runtime, 'now' | 'randomId'> = {},
-): Promise<string> {
-  if (
-    config.token_endpoint_auth_method !== 'private_key_jwt' ||
-    !config.private_key ||
-    !config.certificate_thumbprint
-  ) {
-    throw new Error('OAuth2 private_key_jwt requires a private key and certificate thumbprint');
+const OAUTH2_RESERVED_TOKEN_PARAMETERS = new Set<string>(OAUTH2_RESERVED_TOKEN_PARAMETER_NAMES);
+
+async function importPs256PrivateKey(pem: string): Promise<CryptoKey> {
+  const match = pem
+    .trim()
+    .match(/^-----BEGIN PRIVATE KEY-----\s*([A-Za-z0-9+/=\s]+?)\s*-----END PRIVATE KEY-----$/);
+  const encoded = match?.[1];
+  if (!encoded) throw new Error('OAuth2 private_key_jwt requires a PKCS#8 PEM private key');
+  const bytes = new Uint8Array(Buffer.from(encoded.replace(/\s+/g, ''), 'base64'));
+  return crypto.subtle.importKey('pkcs8', bytes, { name: 'RSA-PSS', hash: 'SHA-256' }, false, [
+    'sign',
+  ]);
+}
+
+async function clientAuthentication(config: OAuth2ClientCredentials): Promise<ClientAuth> {
+  switch (config.token_endpoint_auth_method) {
+    case 'none':
+      return None();
+    case 'client_secret_basic':
+      return ClientSecretBasic(config.client_secret ?? '');
+    case 'client_secret_post':
+      return ClientSecretPost(config.client_secret ?? '');
+    case 'client_secret_jwt':
+      return ClientSecretJwt(config.client_secret ?? '', {
+        [modifyAssertion](header, payload) {
+          header.typ = 'JWT';
+          payload.aud = config.token_url;
+        },
+      });
+    case 'private_key_jwt': {
+      if (!config.private_key) throw new Error('OAuth2 private_key_jwt requires a private key');
+      const key = await importPs256PrivateKey(config.private_key);
+      return PrivateKeyJwt(key, {
+        [modifyAssertion](header, payload) {
+          header.typ = 'JWT';
+          if (config.certificate_thumbprint) {
+            header['x5t#S256'] = config.certificate_thumbprint;
+          }
+          payload.aud = config.token_url;
+        },
+      });
+    }
   }
-  const nowSeconds = Math.floor((runtime.now?.() ?? Date.now()) / 1000);
-  const payload = Buffer.from(
-    JSON.stringify({
-      aud: config.token_url,
-      iss: config.client_id,
-      sub: config.client_id,
-      jti: runtime.randomId?.() ?? randomUUID(),
-      nbf: nowSeconds - 60,
-      exp: nowSeconds + 600,
-    }),
-  );
-  return new CompactSign(payload)
-    .setProtectedHeader({
-      alg: 'PS256',
-      typ: 'JWT',
-      'x5t#S256': config.certificate_thumbprint,
-    })
-    .sign(createPrivateKey(config.private_key));
-}
-
-async function buildClientSecretAssertion(
-  config: OAuth2ClientCredentials,
-  runtime: OAuth2Runtime,
-): Promise<string> {
-  const nowSeconds = Math.floor((runtime.now?.() ?? Date.now()) / 1000);
-  const payload = Buffer.from(
-    JSON.stringify({
-      aud: config.token_url,
-      iss: config.client_id,
-      sub: config.client_id,
-      jti: runtime.randomId?.() ?? randomUUID(),
-      iat: nowSeconds,
-      exp: nowSeconds + 300,
-    }),
-  );
-  return new CompactSign(payload)
-    .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
-    .sign(createSecretKey(Buffer.from(config.client_secret ?? '')));
-}
-
-async function tokenRequest(
-  config: OAuth2ClientCredentials,
-  runtime: OAuth2Runtime,
-): Promise<RequestInit> {
-  const body = new URLSearchParams({
-    grant_type: 'client_credentials',
-    client_id: config.client_id,
-  });
-  const headers = new Headers({ 'content-type': 'application/x-www-form-urlencoded' });
-
-  if (config.scopes?.length) body.set('scope', config.scopes.join(' '));
-  if (config.resource) body.set('resource', config.resource);
-  if (config.audience) body.set('audience', config.audience);
-
-  if (config.token_endpoint_auth_method === 'none') {
-    // Public client. client_id remains in the request body.
-  } else if (config.token_endpoint_auth_method === 'client_secret_basic') {
-    headers.set(
-      'authorization',
-      `Basic ${Buffer.from(`${config.client_id}:${config.client_secret}`).toString('base64')}`,
-    );
-  } else if (config.token_endpoint_auth_method === 'client_secret_post') {
-    body.set('client_secret', config.client_secret ?? '');
-  } else if (config.token_endpoint_auth_method === 'client_secret_jwt') {
-    body.set('client_assertion_type', 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer');
-    body.set('client_assertion', await buildClientSecretAssertion(config, runtime));
-  } else {
-    body.set('client_assertion_type', 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer');
-    body.set('client_assertion', await buildPrivateKeyClientAssertion(config, runtime));
-  }
-
-  return { method: 'POST', headers, body };
 }
 
 export async function acquireOAuth2ClientCredentialsToken(
@@ -113,10 +87,32 @@ export async function acquireOAuth2ClientCredentialsToken(
   runtime: OAuth2Runtime = {},
 ): Promise<OAuth2AccessToken> {
   const now = runtime.now?.() ?? Date.now();
-  const request = await tokenRequest(config, runtime);
-  const response = runtime.fetchImpl
-    ? await runtime.fetchImpl(config.token_url, request)
-    : await safeEgressFetch(config.token_url, request);
+  const parameters = new URLSearchParams();
+  for (const [key, value] of Object.entries(config.token_params ?? {})) {
+    // The API schema rejects these names. Keep this defensive filter because
+    // stored credentials can predate schema changes or originate outside the
+    // current HTTP boundary.
+    if (!OAUTH2_RESERVED_TOKEN_PARAMETERS.has(key)) parameters.set(key, value);
+  }
+  if (config.scopes?.length) parameters.set('scope', config.scopes.join(' '));
+  if (config.resource) parameters.set('resource', config.resource);
+  if (config.audience) parameters.set('audience', config.audience);
+
+  const authorizationServer: AuthorizationServer = {
+    issuer: config.token_url,
+    token_endpoint: config.token_url,
+  };
+  const client: Client = { client_id: config.client_id };
+  const fetchImpl = runtime.fetchImpl ?? safeEgressFetch;
+  const response = await clientCredentialsGrantRequest(
+    authorizationServer,
+    client,
+    await clientAuthentication(config),
+    parameters,
+    {
+      [customFetch]: (input, init) => fetchImpl(input, init as RequestInit),
+    },
+  );
   let payload: Record<string, unknown> = {};
   try {
     payload = (await response.json()) as Record<string, unknown>;

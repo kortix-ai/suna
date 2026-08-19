@@ -116,7 +116,7 @@ describe('autoClaimPendingInvites', () => {
   });
 
   test('does NOT claim a project invite (carries bootstrap grants): stays pending', async () => {
-    state.pending = [makeInvite({ bootstrapGrants: [{ project_id: 'p1', role: 'editor' }] })];
+    state.pending = [makeInvite({ bootstrapGrants: [{ project_id: 'p1', role: 'manager' }] })];
 
     await autoClaimPendingInvites('user-1', 'invitee@example.com');
 

@@ -89,7 +89,7 @@ export function DotmHex6({
     speed
   });
   const phase = reducedMotion || matrixPhase === "idle" ? 0.12 : cyclePhase;
-  const activePatternIndexes = getPatternIndexes(pattern);
+  const activePatternIndexes = new Set(getPatternIndexes(pattern));
   const gap =
     cellPadding ?? Math.max(1, Math.floor((size - dotSize * ROW_COUNTS[2]) / (ROW_COUNTS[2] - 1)));
   const rowGap = Math.max(1, (dotSize + gap) * HEX_ROW_PITCH_RATIO - dotSize);
@@ -142,7 +142,7 @@ export function DotmHex6({
         {ROW_COUNTS.map((count, row) => (
           <div key={row} style={{ display: "flex", justifyContent: "center", gap: stylePx(gap) }}>
             {Array.from({ length: count }).map((_, col) => {
-              const isActive = activePatternIndexes.includes(hexPatternIndex(row, count, col));
+              const isActive = activePatternIndexes.has(hexPatternIndex(row, count, col));
               const opacity = isActive ? opacityForCell(row, col, phase) : 0;
                         const dmxBloom = dmxDotBloomParts(isActive, opacity, bloom, halo, ob, om, op);
 

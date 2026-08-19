@@ -9,12 +9,7 @@ import {
   installBrowserSessionDirect,
   signIn,
 } from '../helpers/session-auth';
-import {
-  dismissOnboarding,
-  featureFlagRow,
-  selectAccountForUi,
-  settingsPanel,
-} from '../helpers/ui';
+import { dismissOnboarding, featureFlagRow, selectAccountForUi } from '../helpers/ui';
 
 const apiBase = process.env.E2E_API_URL || 'http://localhost:8008/v1';
 const supabaseUrl = process.env.E2E_SUPABASE_URL || 'http://127.0.0.1:54321';
@@ -129,14 +124,17 @@ test.describe('18 — Kortix Apps UI', () => {
       page.off('request', recordDisabledRequest);
 
       // Enable through the flag list — the only activation path. The gate
-      // screen's "Feature flags" button opens the settings panel straight on
-      // the Experimental tab (`feature-gate-screen.tsx:53`,
-      // `openSettings('experimental')`).
-      await page.getByRole('button', { name: 'Feature flags' }).click();
-      const panel = settingsPanel(page);
-      await expect(panel.getByRole('tabpanel', { name: 'Experimental' })).toBeVisible({
-        timeout: 30_000,
-      });
+      // screen's "Feature flags" row is a real link now
+      // (`feature-gate-screen.tsx`), to
+      // `/projects/[id]/config?section=feature-flags` — Feature flags
+      // graduated out of the Settings overlay's Experimental tab onto the
+      // Customize bar's Settings tab, same as every other project-config pane
+      // (`settings-tabs.ts` GRADUATED map).
+      await page.getByRole('link', { name: 'Feature flags' }).click();
+      const panel = page.locator('body');
+      await expect(
+        page.getByRole('heading', { name: 'Feature flags', exact: true }),
+      ).toBeVisible({ timeout: 30_000 });
       const enabledRequest = page.waitForRequest(
         (request) =>
           request.method() === 'PATCH' &&
@@ -155,7 +153,8 @@ test.describe('18 — Kortix Apps UI', () => {
         enabled: true,
       });
       expect((await enabledResponse).status()).toBe(200);
-      await page.getByRole('button', { name: 'Back to workspace' }).click();
+      // No overlay to dismiss any more — Feature flags is a plain page now,
+      // so navigating straight to Apps is the whole "leave" step.
       await page.goto(`/projects/${project.id}/apps`, {
         waitUntil: 'domcontentloaded',
       });
@@ -193,9 +192,13 @@ test.describe('18 — Kortix Apps UI', () => {
 
       await expect(page.getByRole('heading', { name: 'Apps', exact: true })).toBeVisible();
       await expect(page.getByText('Seed App', { exact: true })).toBeVisible();
-      await expect(page.getByText('Deploy from a terminal', { exact: true })).toBeVisible();
       await expect(page.getByRole('main').getByText('Experimental', { exact: true })).toHaveCount(0);
-      await expect(page.getByText('kortix apps deploy .', { exact: true })).toBeVisible();
+      // The "Deploy from a terminal" banner is gone. It sat under the grid on
+      // every visit repeating a command you need exactly once, and it is the
+      // docs link in the header's job. The deploy command still lives where it
+      // is actionable — the detail modal's Versions panel, asserted below.
+      await expect(page.getByText('Deploy from a terminal')).toHaveCount(0);
+      await expect(page.getByText('kortix apps deploy .', { exact: true })).toHaveCount(0);
       await expect(page.getByRole('button', { name: 'New App' })).toHaveCount(0);
       await expect(page.getByRole('dialog', { name: 'Create App' })).toHaveCount(0);
 

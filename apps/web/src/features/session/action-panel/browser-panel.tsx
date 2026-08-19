@@ -144,7 +144,7 @@ export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabC
   );
 
   // Navigation history
-  const [history, setHistory] = useState<string[]>([proxiedPreviewUrl].filter(Boolean));
+  const [history, setHistory] = useState<string[]>(() => [proxiedPreviewUrl].filter(Boolean));
   const [historyIndex, setHistoryIndex] = useState(0);
 
   // Inject auth token for cloud preview proxy URLs.

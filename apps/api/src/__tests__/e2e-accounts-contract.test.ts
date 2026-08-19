@@ -624,6 +624,10 @@ describe('accounts API contract', () => {
       user_id: MEMBER_ID,
       email: 'member@example.test',
       account_role: 'admin',
+      // project_grants only apply to `member` invites (admins/owners already
+      // hold implicit Manager on every project) — always [] on an admin
+      // invite even when the caller didn't ask for any grants.
+      project_grants: [],
     });
 
     const duplicate = await app.request(`/v1/accounts/${ACCOUNT_ID}/members`, {

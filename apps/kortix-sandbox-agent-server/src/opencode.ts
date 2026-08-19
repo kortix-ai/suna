@@ -1565,6 +1565,11 @@ export function createOpencodeSupervisor(
   /**
    * Close the turn the retired opencode took with it, and report whether there
    * was one. Returns null when it could not be determined.
+   *
+   * Idempotent: `options.onUnplannedRespawn` (main.ts's `finalizeOrphanedTurn`)
+   * skips a turn that already carries `info.error` — already finalized by a
+   * prior abort — so repeated replacements over the same stuck turn call
+   * `/abort` at most once, not once per replacement.
    */
   async function finalizeAfterReplacement(): Promise<boolean | null> {
     if (!options.onUnplannedRespawn) return null

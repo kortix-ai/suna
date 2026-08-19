@@ -124,13 +124,13 @@ export function ImageSearchTool({ part, defaultOpen, forceOpen, locked }: ToolPr
       ) : imageResults.length > 0 ? (
         <ToolResultCard>
           <div className="grid grid-cols-3 gap-1.5 p-1">
-            {imageResults.slice(0, 9).map((img: any, i: number) => {
+            {imageResults.slice(0, 9).map((img: any) => {
               const imgUrl = safeHttpUrl(img.url || img.imageUrl || img.image_url || '');
               if (!imgUrl) return null;
               const title = img.title || '';
               return (
                 <a
-                  key={i}
+                  key={imgUrl}
                   href={imgUrl}
                   target="_blank"
                   rel="noopener noreferrer"

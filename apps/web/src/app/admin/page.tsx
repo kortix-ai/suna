@@ -113,7 +113,7 @@ function QuickLink({
     >
       <div className="flex items-center justify-between">
         <EntityAvatar icon={Icon} size="md" />
-        <ArrowRight className="text-muted-foreground h-4 w-4 opacity-0 transition-all group-hover:translate-x-0.5 group-hover:opacity-100" />
+        <ArrowRight className="text-muted-foreground h-4 w-4 opacity-0 transition-[opacity,translate] group-hover:translate-x-0.5 group-hover:opacity-100" />
       </div>
       <div className="space-y-1">
         <div className="text-sm font-medium">{title}</div>

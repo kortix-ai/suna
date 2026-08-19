@@ -3,9 +3,9 @@
  * `settings-tab-header.tsx`'s header comment): every `*-tab.tsx` pane must
  * render `<SettingsTabHeader tab="…">` with the `tab` id it actually mounts
  * under in `settings-panel.tsx`'s `SettingsTabPane` switch — not guessed from
- * the filename. Two tabs share a rail LABEL with a different tab ("General"
- * is both `general` and `organization`'s label — see `rail.ts`), which is
- * exactly why the id is read off the switch, never inferred.
+ * the filename. Filenames and tab ids have diverged before (`api-keys-tab.tsx`
+ * mounted on `api-keys`, `connected-tab.tsx` on `connected`), which is exactly
+ * why the id is read off the switch, never inferred.
  *
  * **Source-level, not a render sweep.** `ModelsTabView` delegates its whole
  * body to a hook-driven slot (`LlmManagementView`) that needs a
@@ -33,32 +33,53 @@ const TABS_DIR = join(import.meta.dir, 'tabs');
 /**
  * Every `*-tab.tsx` on disk, mapped to the exact `SettingsTab` id
  * `settings-panel.tsx`'s `SettingsTabPane` switch mounts that file under —
- * read off that switch (and the account-scoped branch above it), not
- * guessed from the filename. `organization-tab.tsx` mounts on tab id
- * `organization` even though its rail LABEL is "General", same as
- * `general-tab.tsx`'s — the two are different tabs with the same label,
- * disambiguated only by the Organization/Workspace group heading in the
- * rail (see `rail.ts`'s `RailItem.description` doc comment).
+ * read off that switch, not guessed from the filename.
+ *
+ * Eight files left this table with the tabs they rendered:
+ * `organization-tab.tsx`, `billing-tab.tsx`, `usage-tab.tsx`,
+ * `groups-tab.tsx`, `roles-tab.tsx`, `identity-tab.tsx`, `audit-tab.tsx` and
+ * `api-keys-tab.tsx`. All eight configured the ACCOUNT, and the account
+ * already renders every one of them at `/accounts/[id]` — so the modules were
+ * deleted rather than left mounted from nowhere. Two more left it without
+ * being deleted: `models-tab.tsx` graduated a SECOND time, off
+ * `/projects/[id]/config` and onto its own top-level Customize tab, so no
+ * registry `SettingsTabHeader` reads has a `models` entry any more — it
+ * renders a hardcoded heading instead (see that file's header comment).
+ * `snapshots-tab.tsx` merged INTO the `sandbox` section — `sandbox-tab.tsx`,
+ * mounted directly above it wherever `sandbox` renders, owns the one shared
+ * heading for both now. `members-tab.tsx` graduated the same second way
+ * `models-tab.tsx` did — off `/projects/[id]/config` and onto its own
+ * top-level Customize tab (`/projects/[id]/members`) — then graduated a THIRD
+ * time and a FOURTH: first to a hardcoded `CapabilityPageShell` heading (same
+ * fix as `models-tab.tsx`), then off the project entirely, onto the account
+ * hub's Access tab (`/accounts/[id]?tab=access-projects`).
+ * `/projects/[id]/members` is a bare redirect now and `members-tab.tsx` is
+ * deleted, so it is gone from this file rather than listed as an absent
+ * heading. The `every tab file on disk is classified` case below is what
+ * keeps this table honest: a file that still renders `SettingsTabHeader` and
+ * is missing here fails immediately — swap that assertion's message if you
+ * touch it, since two files (`models-tab.tsx`, `snapshots-tab.tsx`) are now
+ * deliberately absent despite being on disk.
  */
 const TAB_ID_FOR_FILE: Record<string, string> = {
-  'api-keys-tab.tsx': 'api-keys',
-  'audit-tab.tsx': 'audit',
-  'billing-tab.tsx': 'billing',
   'connected-tab.tsx': 'connected',
-  'experimental-tab.tsx': 'experimental',
+  // Renamed on the move to `/projects/[id]/config`: the section is called
+  // "Feature flags" there, which is also the `CustomizeSection` id it has
+  // always gated on. `SettingsTabHeader` resolves it through the
+  // project-settings registry rather than the rail.
+  'experimental-tab.tsx': 'feature-flags',
   'general-tab.tsx': 'general',
-  'groups-tab.tsx': 'groups',
-  'identity-tab.tsx': 'identity',
-  'members-tab.tsx': 'members',
-  'models-tab.tsx': 'models',
-  'organization-tab.tsx': 'organization',
   'preferences-tab.tsx': 'preferences',
   'profile-tab.tsx': 'profile',
-  'roles-tab.tsx': 'roles',
   'sandbox-tab.tsx': 'sandbox',
-  'snapshots-tab.tsx': 'snapshots',
-  'usage-tab.tsx': 'usage',
+  'tokens-tab.tsx': 'tokens',
 };
+
+/** Files on disk that deliberately do NOT render `SettingsTabHeader` any
+ *  more — see the table's header comment for why each one is here instead of
+ *  in `TAB_ID_FOR_FILE`. `members-tab.tsx` is not here: it is deleted, not
+ *  present-but-headingless — see the table's header comment. */
+const FILES_WITHOUT_REGISTRY_HEADING = ['models-tab.tsx', 'snapshots-tab.tsx'];
 
 /**
  * Strip block comments, line comments, and JSX comment blocks before
@@ -88,19 +109,22 @@ describe('settings tab pane heading', () => {
     const onDisk = readdirSync(TABS_DIR)
       .filter((f) => f.endsWith('-tab.tsx') && !f.endsWith('.test.tsx'))
       .sort();
-    expect(onDisk).toEqual(Object.keys(TAB_ID_FOR_FILE).sort());
+    expect(onDisk).toEqual(
+      [...Object.keys(TAB_ID_FOR_FILE), ...FILES_WITHOUT_REGISTRY_HEADING].sort(),
+    );
   });
 
-  /**
-   * `billing-tab.tsx` returns early for loading and error states before its
-   * main return — three separate top-level `return (…)` blocks a user can
-   * land on as the Billing tab. A heading only in the main branch would
-   * leave the loading and error states unlabelled. See this tab's own header
-   * comment on `BillingTabView`.
-   */
-  test('billing-tab.tsx renders the heading in all three return branches — loading, error, and success', () => {
-    const source = strippedSource('billing-tab.tsx');
-    const matches = source.match(/<SettingsTabHeader\b[^>]*\btab="billing"/g) ?? [];
-    expect(matches.length).toBe(3);
-  });
+  for (const file of FILES_WITHOUT_REGISTRY_HEADING) {
+    test(`${file} does NOT render SettingsTabHeader — its heading moved elsewhere`, () => {
+      const source = strippedSource(file);
+      expect(source).not.toContain("import { SettingsTabHeader } from '../settings-tab-header';");
+    });
+  }
+
+  // The `billing-tab.tsx` multi-branch case is gone with the file. It pinned
+  // that all three of its top-level returns (loading, error, success) carried
+  // a heading. Billing renders on `/accounts/[id]?tab=billing` now, where the
+  // pane heading comes from that page's `PANE_META` and is drawn ABOVE the
+  // branch — one heading for every state, so the class of defect that case
+  // guarded cannot occur there.
 });

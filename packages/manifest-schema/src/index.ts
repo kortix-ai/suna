@@ -29,6 +29,7 @@ import {
   GRANTABLE_KORTIX_CLI_ACTIONS,
   LEGACY_SANDBOX_KEYS,
   LEGACY_TOLERATED_KORTIX_CLI_ACTIONS,
+  reservedEnvNameReason,
   MONITOR_MIN_EXPECT_EVENT_WITHIN_SECONDS,
   MONITOR_MIN_INTERVAL_SECONDS,
   MONITOR_MODES,
@@ -97,8 +98,13 @@ export {
   HEX_COLOR_RE_V2,
   LEGACY_SANDBOX_KEYS,
   LEGACY_TOLERATED_KORTIX_CLI_ACTIONS,
+  isReservedEnvName,
+  NEVER_DELIVERED_ENV_NAMES,
   PERMISSION_ACTION_ONLY_KEYS_V2,
   PERMISSION_ACTIONS_V2,
+  RESERVED_ENV_NAME_PREFIXES,
+  RESERVED_ENV_NAMES,
+  reservedEnvNameReason,
   RESERVED_SANDBOX_SLUG,
   RESERVED_SLUG_PROVIDERS,
   MONITOR_MIN_EXPECT_EVENT_WITHIN_SECONDS,
@@ -771,6 +777,15 @@ function validateAppStringMap(
     const where = `${path}.${key}`;
     if (validateKey && !ENV_NAME_RE.test(key)) {
       issues.push({ path: where, message: 'key must be an uppercase environment variable name.', severity: 'error' });
+    }
+    // The deploy path refuses these (`resolveAppRuntimeEnvironment` →
+    // `assertDestination`). Without the same check here, `validate` passes on a
+    // manifest that cannot deploy — which is the one job this command has.
+    if (validateKey) {
+      const reason = reservedEnvNameReason(key);
+      if (reason) {
+        issues.push({ path: where, message: `key "${key}" ${reason}`, severity: 'error' });
+      }
     }
     if (typeof value !== 'string' || value.trim() === '') {
       issues.push({ path: where, message: 'must be a non-empty string.', severity: 'error' });

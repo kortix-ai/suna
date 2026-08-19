@@ -2,8 +2,8 @@
 
 /**
  * Holds the survey answers locally and mirrors each one to the server as it is
- * given, so a user who abandons onboarding at the tools step still leaves their
- * use case and company behind. Waiting until the finish step would throw away
+ * given, so a user who abandons onboarding at the tools step still leaves
+ * their company answer behind. Waiting until the finish step would throw away
  * every partial answer, which is most of them.
  *
  * Saves are deliberately fire-and-forget. A failed profile write must not block

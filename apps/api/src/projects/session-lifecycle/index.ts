@@ -5,9 +5,17 @@ export {
   drainSessionLifecycleQueue,
 } from './engine';
 export { buildContinueSessionCommandValues, enqueueContinueSessionCommand } from './store';
+export {
+  deleteInboxPrompt,
+  holdInboxPrompts,
+  listInboxPrompts,
+  releaseInboxHold,
+  retryInboxPrompt,
+} from './inbox-rows';
 export { deleteSession, restartSession } from './actions';
 export { stopSession } from './stop';
 export { reconcileUndeliveredPrompts } from './undelivered-prompts';
+export { confirmInboxPromptConsumed, reconcileForwardedPrompts } from './consumption';
 export { resolveProjectAutomationActor, resolveAgentRunAttribution } from './actor';
 export { sessionBackpressureState, triggerBackpressureLimit } from './backpressure';
 export type {

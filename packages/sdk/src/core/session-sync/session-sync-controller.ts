@@ -24,12 +24,22 @@ export interface SessionSyncPage {
   nextCursor?: string;
 }
 
+/**
+ * Transcript state, and nothing else.
+ *
+ * This snapshot used to carry `isPromptObservedBusy` — a busy OPINION inferred
+ * from silence by a phase machine with a stall timer, a retry budget and an
+ * epoch counter. It was one of four disagreeing answers to "is this session
+ * working?", and the one that latched: every signal that could release it
+ * (`session.idle`, a status frame, the poll) can be lost, and losing them left
+ * the composer pinned on "stop" until the user reloaded. The answer now comes
+ * from `projectWorking` over the server's own turn authority
+ * (`core/session/working.ts`), so this controller holds no opinion about it.
+ */
 export interface SessionSyncSnapshot {
   freshness: SessionSyncFreshness;
   hasOlder: boolean;
   isLoadingOlder: boolean;
-  /** True while an accepted REST prompt has not reached stable runtime idle. */
-  isPromptObservedBusy?: boolean;
 }
 
 export interface SessionSyncScheduler {
@@ -54,9 +64,23 @@ export interface SessionSyncTelemetryEvent {
 export interface SessionSyncControllerOptions {
   sessionId: string;
   loadPage: (request: { limit: number; before?: string }) => Promise<SessionSyncPage>;
+  /**
+   * @deprecated Never called. The liveness poll no longer reads status: `GET
+   * .../turn` is the status authority, and this controller's own `setBusy` is
+   * already driven FROM that projection, so a status read here could only
+   * confirm or latch — never correct. Retained (ignored) because 0.12.8
+   * published it on this options type; removed in the next major.
+   */
   loadStatus?: () => Promise<SessionStatus>;
   hydrate: (messages: SessionSyncMessage[]) => void;
   markLoaded: () => void;
+  /**
+   * @deprecated Never called. Writing a REST poll's answer into the slot SSE
+   * status frames land in made a poll indistinguishable from the runtime's own
+   * voice, and re-stamped the stream observation on every tick so its age
+   * bound was never reached. Retained (ignored) because 0.12.8 published it;
+   * removed in the next major.
+   */
   setStatus?: (status: SessionStatus) => void;
   onTelemetry?: (event: SessionSyncTelemetryEvent) => void;
   scheduler?: SessionSyncScheduler;
@@ -117,28 +141,12 @@ export function loadHttpSessionHistory(
 export function createHttpSessionSyncController(
   options: HttpSessionSyncControllerOptions,
 ): SessionSyncController {
-  const fetchImpl: SessionSyncFetch = options.fetch ?? globalThis.fetch;
-  const baseUrl = options.baseUrl.replace(/\/$/, '');
-  const loadPage = createHttpSessionSyncPageLoader(options);
-  const request = async (path: string): Promise<Response> => {
-    const token = await options.getToken?.();
-    const response = await fetchImpl(`${baseUrl}${path}`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-    });
-    if (!response.ok) {
-      throw new Error(`Session synchronization failed: ${response.status}`);
-    }
-    return response;
-  };
-
+  // No `loadStatus` any more: the controller never reads status, so the
+  // `/session/status` request this used to build was dead weight on every
+  // liveness tick. The transcript tail is the whole of this controller's job.
   return new SessionSyncController({
     ...options,
-    loadPage,
-    loadStatus: async () => {
-      const response = await request('/session/status');
-      const statuses = (await response.json()) as Record<string, SessionStatus>;
-      return statuses[options.sessionId] ?? ({ type: 'idle' } as SessionStatus);
-    },
+    loadPage: createHttpSessionSyncPageLoader(options),
   });
 }
 
@@ -173,10 +181,6 @@ const defaultScheduler: SessionSyncScheduler = {
   clearTimeout: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
 };
 
-const PROMPT_IDLE_SETTLEMENT_MS = 500;
-
-type PromptObservationPhase = 'idle' | 'awaiting-work' | 'running' | 'settling';
-
 /**
  * Owns bounded session history synchronization without depending on React,
  * Zustand, IndexedDB, or a specific HTTP client.
@@ -189,7 +193,6 @@ export class SessionSyncController {
     freshness: 'idle',
     hasOlder: false,
     isLoadingOlder: false,
-    isPromptObservedBusy: false,
   };
   private nextCursor: string | undefined;
   private knownUserMessageIds = new Set<string>();
@@ -197,8 +200,6 @@ export class SessionSyncController {
   private tailRequest: Promise<void> | undefined;
   private olderRequest: Promise<void> | undefined;
   private livenessTimer: unknown;
-  private promptSettlementTimer: unknown;
-  private promptObservationPhase: PromptObservationPhase = 'idle';
   private lastActivityAt: number;
   private listeners = new Set<() => void>();
   private destroyed = false;
@@ -262,44 +263,13 @@ export class SessionSyncController {
   }
 
   /**
-   * Start monotonic completion observation for an accepted REST prompt.
+   * Switch the liveness poll on or off.
    *
-   * OpenCode can publish an idle snapshot from before the prompt and publish
-   * the real busy event later. Keep the public projection busy until real work
-   * starts and the following idle state remains quiet.
+   * NOT an opinion about whether the session is working — that answer belongs
+   * to `projectWorking` alone. This only says whether anyone still needs the
+   * transcript refreshed behind the SSE stream: a caller passes the working
+   * state it already has, and the last consumer leaving passes `false`.
    */
-  beginPromptObservation(): void {
-    this.clearPromptSettlementTimer();
-    this.promptObservationPhase = 'awaiting-work';
-    this.update({ isPromptObservedBusy: true });
-    this.setBusy(true);
-  }
-
-  /** Observe an authoritative runtime status from SSE or status reconciliation. */
-  observePromptStatus(status: SessionStatus): void {
-    if (this.promptObservationPhase === 'idle') return;
-    if (status.type !== 'idle') {
-      this.markPromptRunning();
-      return;
-    }
-    if (this.promptObservationPhase === 'awaiting-work') return;
-    this.schedulePromptSettlement();
-  }
-
-  /** Mark assistant output as proof that the accepted prompt started. */
-  observePromptActivity(): void {
-    if (this.promptObservationPhase === 'idle') return;
-    this.markPromptRunning();
-  }
-
-  /** End observation after rejection, cancellation, or a terminal runtime error. */
-  endPromptObservation(): void {
-    this.clearPromptSettlementTimer();
-    this.promptObservationPhase = 'idle';
-    this.update({ isPromptObservedBusy: false });
-    this.setBusy(false);
-  }
-
   setBusy(isBusy: boolean): void {
     if (!isBusy) {
       this.stopLivenessTimer();
@@ -316,7 +286,6 @@ export class SessionSyncController {
   destroy(): void {
     this.destroyed = true;
     this.stopLivenessTimer();
-    this.clearPromptSettlementTimer();
     this.listeners.clear();
   }
 
@@ -325,9 +294,6 @@ export class SessionSyncController {
       const firstPage = await this.loadPage('tail', reason);
       const page = await this.loadCompleteTurn(firstPage, 'tail', reason);
       if (this.destroyed) return;
-      if (this.containsNewPromptReply(page.messages)) {
-        this.observePromptActivity();
-      }
       this.rememberUserMessages(page.messages);
       this.options.hydrate(page.messages);
       if (!this.olderHistoryStarted) {
@@ -435,40 +401,38 @@ export class SessionSyncController {
     if (this.destroyed || this.scheduler.now() - this.lastActivityAt <= this.livenessIntervalMs) {
       return;
     }
-    // Load the transcript before status. A completed async prompt can transition
-    // back to idle before the first poll. The tail proves that work occurred;
-    // the following idle status can then settle prompt observation correctly.
-    await this.reconcile('poll');
-    await this.reconcileStatus();
+    // Reconcile the TAIL, and nothing else. This is the repair for a dropped
+    // SSE stream: the transcript catches up on messages the stream never
+    // delivered.
+    //
+    // A status half used to follow it, reading the runtime over REST and
+    // writing the answer into the same slot SSE frames land in. It is gone:
+    // `GET .../turn` is the status authority now, and `setBusy` — the switch
+    // that decides whether this poll runs at all — is already driven FROM that
+    // projection, so a fourth stamped input here could only confirm or latch,
+    // never correct.
+    //
+    // The wait stays bounded: a read proxied to the sandbox can park
+    // indefinitely (a wedged opencode never answers and never errors), and the
+    // poll must keep its cadence rather than stall on one request.
+    await this.raceDeadline(this.reconcile('poll'), this.livenessIntervalMs);
     this.lastActivityAt = this.scheduler.now();
   }
 
-  private containsNewPromptReply(messages: SessionSyncMessage[]): boolean {
-    if (this.promptObservationPhase === 'idle') return false;
-    const newUserMessageIds = new Set(
-      messages
-        .filter(
-          (message) =>
-            message.info.role === 'user' && !this.knownUserMessageIds.has(message.info.id),
-        )
-        .map((message) => message.info.id),
-    );
-    if (newUserMessageIds.size === 0) return false;
-    return messages.some(
-      (message) =>
-        message.info.role === 'assistant' &&
-        Boolean(message.info.parentID) &&
-        newUserMessageIds.has(message.info.parentID!),
-    );
-  }
-
-  private async reconcileStatus(): Promise<void> {
-    if (!this.options.loadStatus || !this.options.setStatus) return;
-    try {
-      this.options.setStatus(await this.options.loadStatus());
-    } catch {
-      // The next liveness interval retries both bounded reads.
-    }
+  /** Resolve when `work` settles, or when `timeoutMs` elapses — whichever first. */
+  private raceDeadline(work: Promise<unknown>, timeoutMs: number): Promise<void> {
+    return new Promise<void>((resolve) => {
+      let handle: unknown;
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        this.cancelTimer(handle);
+        resolve();
+      };
+      handle = this.startTimer(finish, timeoutMs);
+      void work.then(finish, finish);
+    });
   }
 
   private setCursor(cursor: string | undefined): void {
@@ -482,35 +446,19 @@ export class SessionSyncController {
     this.livenessTimer = undefined;
   }
 
-  private markPromptRunning(): void {
-    this.clearPromptSettlementTimer();
-    this.promptObservationPhase = 'running';
+  private startTimer(handler: () => void, delayMs: number): unknown {
+    return this.scheduler.setTimeout
+      ? this.scheduler.setTimeout(handler, delayMs)
+      : setTimeout(handler, delayMs);
   }
 
-  private schedulePromptSettlement(): void {
-    if (this.promptObservationPhase === 'settling') return;
-    this.clearPromptSettlementTimer();
-    this.promptObservationPhase = 'settling';
-    const settle = () => {
-      this.promptSettlementTimer = undefined;
-      if (this.destroyed || this.promptObservationPhase !== 'settling') return;
-      this.promptObservationPhase = 'idle';
-      this.update({ isPromptObservedBusy: false });
-      this.stopLivenessTimer();
-    };
-    this.promptSettlementTimer = this.scheduler.setTimeout
-      ? this.scheduler.setTimeout(settle, PROMPT_IDLE_SETTLEMENT_MS)
-      : setTimeout(settle, PROMPT_IDLE_SETTLEMENT_MS);
-  }
-
-  private clearPromptSettlementTimer(): void {
-    if (this.promptSettlementTimer === undefined) return;
+  private cancelTimer(handle: unknown): void {
+    if (handle === undefined) return;
     if (this.scheduler.clearTimeout) {
-      this.scheduler.clearTimeout(this.promptSettlementTimer);
+      this.scheduler.clearTimeout(handle);
     } else {
-      clearTimeout(this.promptSettlementTimer as ReturnType<typeof setTimeout>);
+      clearTimeout(handle as ReturnType<typeof setTimeout>);
     }
-    this.promptSettlementTimer = undefined;
   }
 
   private update(next: Partial<SessionSyncSnapshot>): void {
@@ -518,8 +466,7 @@ export class SessionSyncController {
     if (
       snapshot.freshness === this.snapshot.freshness &&
       snapshot.hasOlder === this.snapshot.hasOlder &&
-      snapshot.isLoadingOlder === this.snapshot.isLoadingOlder &&
-      snapshot.isPromptObservedBusy === this.snapshot.isPromptObservedBusy
+      snapshot.isLoadingOlder === this.snapshot.isLoadingOlder
     ) {
       return;
     }

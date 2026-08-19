@@ -253,7 +253,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
   },
   {
     key: 'network_boundary_shim',
-    name: 'Network boundary without Platinum',
+    name: 'Network boundary in-guest shim',
     description:
       'Use network-boundary secrets on a project that does not run on Platinum. The credential is injected by Kortix at request time instead of by a provider edge, so the sandbox still never receives the value. Requires a sandbox image that runs the in-guest shim; without it a boundary secret saves but nothing in the sandbox can spend it.',
     stability: 'experimental',
@@ -292,8 +292,11 @@ const FLAGS: readonly FeatureFlagDef[] = [
     stability: 'beta',
     available: () => true,
     // On by default: an instant session start is the point of the product, and
-    // the cost is bounded per project by the partial unique index (one warm
-    // session per user per project) and by the sandbox deadline.
+    // the cost is bounded per project by `findWarmProjectSession` (one live
+    // warm session per user per project, matched by query, not by a unique
+    // index — see projects/routes/warm-sessions.ts) plus the sandbox deadline.
+    // A replenish also excludes the session the caller just took
+    // (`exclude_session_id`), so it never hands that same session back.
     platformDefault: () => true,
     // NOT 'ui-only'. A flag that only hid client surface would let any other
     // caller keep booting billed sandboxes, which defeats the reason someone

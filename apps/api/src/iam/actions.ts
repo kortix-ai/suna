@@ -97,9 +97,9 @@ export const PROJECT_ACTIONS = {
   // Each project feature gets its own read/write leaf so a custom role can
   // DEACTIVATE one capability (omit the leaf) without losing the rest. Until a
   // route is migrated to assert these, it keeps gating on project.read/write,
-  // so adding them is additive: every write leaf is also seeded into the Editor
+  // so adding them is additive: every write leaf is also seeded into the Manager
   // built-in role and every read leaf into the User floor role (see
-  // role-perms.ts), so no existing editor/user loses a capability. All resolve to 'project' scope
+  // role-perms.ts), so no existing manager/user loses a capability. All resolve to 'project' scope
   // (prefix = 'project') via resourceTypeForAction.
   PROJECT_AGENT_READ: 'project.agent.read',
   PROJECT_AGENT_WRITE: 'project.agent.write',
@@ -134,7 +134,7 @@ export const PROJECT_ACTIONS = {
   // Review Center. `read` = see the inbox (floor user). `submit` = an agent puts
   // an output / decision / batch up for human review (floor user + their agent).
   // `act` = approve / reject / request-changes / answer — a consequential
-  // decision on agent work, so it sits with the editor tier (like gitops).
+  // decision on agent work, so it sits with the manager tier (like gitops).
   PROJECT_REVIEW_READ: 'project.review.read',
   PROJECT_REVIEW_SUBMIT: 'project.review.submit',
   PROJECT_REVIEW_ACT: 'project.review.act',

@@ -28,7 +28,8 @@ import {
 import { extractClipboardFiles } from '../clipboard-files';
 import { mergeFailedSubmissionFiles } from '../composer-draft-recovery';
 import { resolveComposerResetOnSend } from '../composer-reset';
-import { shouldQueueInsteadOfSend } from '../message-queue-boundary';
+import { NO_AGENT_ACCESS_HINT, NO_AGENT_ACCESS_LABEL } from './composer-agent-access';
+import { commandBlocker, sendBlocker, sendBlockerMessage } from './send-blockers';
 import {
   isModelRequiredButUnavailable,
   NO_MODEL_AVAILABLE_ACTION_MESSAGE,
@@ -77,10 +78,35 @@ export interface SessionChatInputProps {
     mentions?: TrackedMention[],
   ) => void | Promise<void>;
   isBusy?: boolean;
+  /**
+   * The session is working, per the ONE projection (`useSessionWorking`).
+   *
+   * Distinct from `isBusy`, which is a 300 ms fade timer for the busy
+   * indicator: this is the server's own turn authority, and it is what decides
+   * whether a `/` command may be dispatched at all. Defaults to `isBusy` so a
+   * host that has not wired it still refuses a command mid-turn — the safe
+   * direction — rather than silently allowing one.
+   */
+  sessionWorking?: boolean;
+  /**
+   * The sandbox is up and this session is switched onto it (`useRuntimeReady`).
+   *
+   * Read by the `/` COMMAND path only. A prompt does not need it — it becomes a
+   * durable inbox row and the drain delivers it once the box answers, which is
+   * what the "Waking this session up…" notice promises. A command has no row:
+   * `runCommand` returns a resolved promise when the runtime is not switched,
+   * so dispatching one at a sleeping box cleared the draft and left an
+   * optimistic bubble waiting on a turn that never starts.
+   *
+   * Defaults to `true` so a host that shows a composer without a runtime
+   * concept (project home) is unaffected; `session-chat.tsx` passes the real
+   * value.
+   */
+  runtimeReady?: boolean;
   queuedMessages?: QueuedMessageView[];
   failedQueuedMessages?: QueuedMessageView[];
-  /** The queued messages currently on the wire. Cannot be edited, moved or removed.
-   *  Plural: the queue drains as one batch, so several rows are live at once. */
+  /** The queued messages currently on the wire. Cannot be edited, moved or
+   *  removed. Plural: the server can hold more than one row `delivering`. */
   queueInFlightIds?: string[];
   /**
    * The queue is held by a stop. Dims the list — never silent.
@@ -94,21 +120,13 @@ export interface SessionChatInputProps {
   queuePaused?: boolean;
   /** The agent is mid-turn, so the per-row send must stop it first. */
   queueIsRunning?: boolean;
-  onQueueMessage?: (
-    text: string,
-    files?: AttachedFile[],
-    mentions?: TrackedMention[],
-    /** Present when this entry runs a `/` command instead of sending `text`. */
-    command?: { name: string; split?: { before: string; after: string } },
-  ) => void;
   onRemoveQueuedMessage?: (id: string) => void;
   onEditQueuedMessage?: (id: string, text: string) => void;
   /**
    * Move a queued message to `toIndex` — a position in `queuedMessages`,
-   * in-flight rows included, matching the store's pending array. The batch
-   * drains as one message composed in list order, so reordering rows edits
-   * what that message says; the store clamps the index so nothing crosses
-   * the in-flight batch.
+   * in-flight rows included. Unwired since the server owns delivery order;
+   * kept because `QueuedMessages` still renders the affordance when a host
+   * supplies a handler.
    */
   onReorderQueuedMessage?: (id: string, toIndex: number) => void;
   onSendQueuedMessageNow?: (id: string) => void;
@@ -127,6 +145,18 @@ export interface SessionChatInputProps {
   selectedAgent?: string | null;
   onAgentChange?: (agentName: string | null | undefined) => void;
   agentSelectorLocked?: boolean;
+  /**
+   * The agent roster loaded and it is EMPTY for this user — project agents are
+   * deny-by-default for a member without an explicit grant.
+   *
+   * Set it and the composer refuses the submission instead of POSTing a prompt
+   * the server answers with a 403 (or, worse, silently runs under the manifest
+   * `default_agent` nobody picked). The picker beside the send button renders
+   * the same refusal in words. Hosts that have no agent concept at all leave it
+   * `false` — an absent roster is not a denied one. See
+   * `composer-agent-access.ts`.
+   */
+  noAccessibleAgents?: boolean;
   commands?: Command[];
   /**
    * `split` is where the chip sat in `args` — display only. Without it every
@@ -146,18 +176,21 @@ export interface SessionChatInputProps {
   projectId?: string;
   disabled?: boolean;
   /**
-   * The session's runtime is up. `false` — a stopped or still-waking sandbox —
-   * does NOT disable anything: it routes a submit to the queue instead of the
-   * wire (`shouldQueueInsteadOfSend`), where the drain's matching gate holds it
-   * until the box answers. Pair it with `notice` so the reason is on screen.
-   */
-  runtimeReady?: boolean;
-  /**
    * A line shown in a bar directly ABOVE the composer card. Used for "this
    * session is still waking" — a state that used to disable the input and show
    * a spinner with no explanation, which was indistinguishable from broken.
    */
   notice?: string | null;
+  /**
+   * Renders a "Retry" action inline in the notice bar when set. Wired to
+   * `requestRuntimeReconnect()` for a confirmed-unreachable runtime, or a
+   * runtime that has been booting/connecting past a sane ceiling with no
+   * ready flip either — see `SessionComposerReadiness.retryable`. Omitted (no
+   * button) for the ordinary, still-within-budget booting/waking notice,
+   * where the background poller is expected to resolve things on its own
+   * shortly.
+   */
+  onNoticeRetry?: () => void;
   clearOnSend?: boolean;
   modelRequired?: boolean;
   modelsLoading?: boolean;
@@ -169,6 +202,25 @@ export interface SessionChatInputProps {
     files?: AttachedFile[];
     mode?: 'replace' | 'merge';
   } | null;
+  /**
+   * Called with `prefill.id` the moment that prefill has actually landed in the
+   * editor — the CONSUME half of the handoff.
+   *
+   * A prefill can only be applied once the lazy editor exists, which is one or
+   * more commits after the composer mounts. A holder that clears its draft in
+   * its own mount effect therefore clears it BEFORE this composer could read
+   * it, and the text is lost — with the effect running child-before-parent
+   * making it look correct in the case where the editor happens to be ready.
+   * So the holder waits to be told, rather than assuming.
+   */
+  onPrefillApplied?: (prefillId: number) => void;
+  /**
+   * A fresh (never-before-seen) value asks the composer to open its attach
+   * (file-picker) flow — the empty Context card's "Add context" button.
+   * Id-keyed exactly like `prefill.id`: a repeat request bumps to a new id
+   * so the effect below fires again even if the composer never unmounted.
+   */
+  attachRequestId?: number | null;
 
   providers?: ProviderListResponse;
   threadContext?: {
@@ -221,6 +273,7 @@ export interface SessionChatInputProps {
   questionCanAct?: boolean;
   onQuestionAction?: () => void;
   escCount?: number;
+  parentClassName?: string;
 }
 
 /**
@@ -278,6 +331,12 @@ const EMPTY_QUEUE: QueuedMessageView[] = [];
 /** Same, for the in-flight ids. */
 const EMPTY_QUEUE_IN_FLIGHT: string[] = [];
 
+/** Stable empty defaults so a fresh `[]` per render never breaks memoization. */
+const EMPTY_AGENTS: Agent[] = [];
+const EMPTY_COMMANDS: Command[] = [];
+const EMPTY_MODELS: FlatModel[] = [];
+const EMPTY_VARIANTS: string[] = [];
+
 /** Stable identities for the command-chip subscription below. */
 const NO_SUBSCRIPTION = () => {};
 const NO_COMMAND_CHIP = () => null;
@@ -309,12 +368,13 @@ function setDocumentWithoutStealingFocus(
 function ComposerImpl({
   onSend,
   isBusy = false,
+  sessionWorking,
+  runtimeReady = true,
   failedQueuedMessages,
   queuedMessages,
   queueInFlightIds = EMPTY_QUEUE_IN_FLIGHT,
   queuePaused = false,
   queueIsRunning = false,
-  onQueueMessage,
   onRemoveQueuedMessage,
   onEditQueuedMessage,
   onReorderQueuedMessage,
@@ -324,31 +384,34 @@ function ComposerImpl({
   stopDisabled = false,
   isSending = false,
   rewind,
-  agents = [],
+  agents = EMPTY_AGENTS,
   selectedAgent = null,
   onAgentChange,
   agentSelectorLocked = false,
-  commands = [],
+  noAccessibleAgents = false,
+  commands = EMPTY_COMMANDS,
   onCommand,
-  models = [],
+  models = EMPTY_MODELS,
   selectedModel = null,
   onModelChange,
   modelDefaultControls,
-  variants = [],
+  variants = EMPTY_VARIANTS,
   selectedVariant = null,
   onVariantChange,
   messages,
   sessionId,
   projectId,
   disabled = false,
-  runtimeReady = true,
   notice = null,
+  onNoticeRetry,
   clearOnSend = true,
   modelRequired = false,
   modelsLoading = false,
   autoFocus,
   placeholder = 'Ask anything...',
   prefill = null,
+  onPrefillApplied,
+  attachRequestId = null,
   providers,
   threadContext,
   onContextClick,
@@ -366,6 +429,7 @@ function ComposerImpl({
   questionCanAct = true,
   onQuestionAction,
   escCount = 0,
+  parentClassName,
 }: SessionChatInputProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
 
@@ -427,6 +491,15 @@ function ComposerImpl({
   const handleAttachClick = useCallback(() => {
     fileInputRef.current?.click();
   }, []);
+
+  // "Add context" (Task 5): a fresh `attachRequestId` opens the same file
+  // picker `handleAttachClick` opens for a manual click or the `/attach-file`
+  // command — see `session-composer-prefill-store.ts` for the held/id-keyed
+  // handoff this consumes.
+  useEffect(() => {
+    if (attachRequestId == null) return;
+    handleAttachClick();
+  }, [attachRequestId, handleAttachClick]);
 
   const dragHasFiles = useCallback((e: React.DragEvent<HTMLElement>) => {
     return Array.from(e.dataTransfer?.types ?? []).includes('Files');
@@ -688,7 +761,13 @@ function ComposerImpl({
     !entitlementsPending &&
     (!availableSelectedModel || !hasSelectableModels);
   const canSubmit = !isEmpty || attachedFiles.length > 0;
-  const submitDisabled = disabled || modelUnavailable || lockForApproval;
+  /**
+   * No agent may run this prompt. Refused here rather than at the server:
+   * `lockForQuestion` is exempt because answering an open question is not a new
+   * prompt and runs under the agent that asked it.
+   */
+  const agentUnavailable = noAccessibleAgents && !lockForQuestion;
+  const submitDisabled = disabled || modelUnavailable || agentUnavailable || lockForApproval;
   /**
    * A `/` command cannot carry the attached files, so this state refuses the
    * submit and says why — before anything is sent and before anything is
@@ -707,6 +786,10 @@ function ComposerImpl({
   const prefillText = prefill?.text ?? '';
   const prefillFiles = prefill?.files;
   const prefillMode = prefill?.mode;
+  const onPrefillAppliedRef = useRef(onPrefillApplied);
+  useEffect(() => {
+    onPrefillAppliedRef.current = onPrefillApplied;
+  }, [onPrefillApplied]);
   useEffect(() => {
     if (
       !shouldApplyPrefill({
@@ -738,6 +821,15 @@ function ComposerImpl({
       );
     }
     editorRef.current?.focus();
+    // Reported AFTER the text is in the editor, in the same statement run — a
+    // holder that clears on this signal cannot clear a draft that has not
+    // landed. `prefillId` is non-undefined here: `shouldApplyPrefill` returned
+    // true, which requires it.
+    //
+    // Through a ref, deliberately: this callback in the dependency array would
+    // re-run the effect whenever the caller re-created it, and a `merge` prefill
+    // applied twice appends its text twice.
+    onPrefillAppliedRef.current?.(prefillId as number);
   }, [prefillId, prefillText, prefillFiles, prefillMode, editorElement]);
 
   useEffect(() => {
@@ -833,6 +925,12 @@ function ComposerImpl({
   );
 
   const dispatchSubmission = useCallback(async () => {
+    // Ahead of the model check: with no agent to run it, the model this prompt
+    // would have used is not the user's problem.
+    if (agentUnavailable) {
+      toast.error(NO_AGENT_ACCESS_LABEL, { description: NO_AGENT_ACCESS_HINT });
+      return;
+    }
     if (modelUnavailable) {
       toast.error(NO_MODEL_AVAILABLE_MESSAGE, {
         description: NO_MODEL_AVAILABLE_ACTION_MESSAGE,
@@ -840,8 +938,20 @@ function ComposerImpl({
       return;
     }
 
-    if (lockForApproval) {
-      toast.error('Approve or deny the pending action to continue.');
+    // What refuses EVERY submission — a prompt, a `/` command, and a custom
+    // answer alike. `hasActiveQuestion` is deliberately not consulted here: an
+    // open question does not refuse a submission, it REROUTES it to
+    // `onCustomAnswer` further down. The command branch passes it for real,
+    // because a command is not an answer.
+    const submissionBlocker = sendBlocker({
+      hasActiveQuestion: false,
+      // The composer only knows "something is pending", not how many.
+      pendingPermissionCount: lockForApproval ? 1 : 0,
+      readOnly: disabled,
+    });
+    if (submissionBlocker) {
+      const copy = sendBlockerMessage(submissionBlocker);
+      toast.error(copy.message, copy.description ? { description: copy.description } : undefined);
       return;
     }
 
@@ -868,33 +978,39 @@ function ComposerImpl({
         return;
       }
 
-      // A command takes its turn like everything else.
+      // A command is REFUSED while the session is working — or while its
+      // sandbox is still waking — not queued.
       //
-      // This branch used to `return` before the queue decision below, which
-      // made a `/` command STRUCTURALLY unqueueable: submitting one while the
-      // agent was mid-turn put it straight on the wire, ahead of every message
-      // already waiting — and, because a new prompt aborts the running turn,
-      // killed the answer in progress. Ordering is the queue's whole purpose;
-      // a command is a turn, and the only thing that differs is which call
-      // dispatches it, which the drain decides at dispatch time.
-      if (
-        onQueueMessage &&
-        shouldQueueInsteadOfSend({
-          isBusy,
-          pendingCount: queuedMessages?.length ?? 0,
-          hasInFlight: queueInFlightIds.length > 0,
-          runtimeReady,
-        })
-      ) {
-        // No files: the guard above proves there are none to pass. `undefined`
-        // here is a fact about the draft, not a discard.
-        onQueueMessage(plan.args ?? '', undefined, undefined, {
-          name: plan.command.name,
-          split: draft?.commandSplit,
-        });
-      } else {
-        onCommand?.(plan.command, plan.args, draft?.commandSplit);
+      // A PROMPT is never held here: it goes to the server-side inbox, which
+      // admits it only when the session can take it, so ordering is decided by
+      // server truth rather than by this component's read of `isBusy`, and a
+      // sleeping box just means the row is delivered a little later. A COMMAND
+      // has no such row — it is dispatched by `runCommand`, never by
+      // `POST .../prompts` — so no admission gate ever sees it, putting one on
+      // the wire mid-turn aborts the answer in progress, and dispatching one at
+      // a box that is not up is swallowed by `runCommand`'s own
+      // `runtimeActionReady` guard with no request and no error.
+      //
+      // It used to wait in a browser-local queue for that reason. That queue is
+      // gone: it lived in this tab's localStorage, so a closed tab lost it, a
+      // second tab could not see it, and its release timing was a guess at a
+      // turn boundary made from a debounced `isBusy`. A refusal keeps the draft
+      // in the editor and says when the command can run — nothing is stored,
+      // and nothing can be lost.
+      const blocker = commandBlocker({
+        hasActiveQuestion: lockForQuestion,
+        // The composer only knows "something is pending", not how many.
+        pendingPermissionCount: lockForApproval ? 1 : 0,
+        readOnly: disabled,
+        isWorking: sessionWorking ?? isBusy,
+        runtimeReady,
+      });
+      if (blocker) {
+        const copy = sendBlockerMessage(blocker);
+        toast.error(copy.message, copy.description ? { description: copy.description } : undefined);
+        return;
       }
+      onCommand?.(plan.command, plan.args, draft?.commandSplit);
       if (clearOnSend) {
         editorRef.current?.clear();
         setAttachedFiles((prev) => {
@@ -936,19 +1052,6 @@ function ComposerImpl({
       setAttachedFiles([]);
     }
 
-    if (
-      onQueueMessage &&
-      shouldQueueInsteadOfSend({
-        isBusy,
-        pendingCount: queuedMessages?.length ?? 0,
-        hasInFlight: queueInFlightIds.length > 0,
-        runtimeReady,
-      })
-    ) {
-      onQueueMessage(trimmed, filesToSend, mentionsToSend);
-      return;
-    }
-
     try {
       await onSend(trimmed, filesToSend, mentionsToSend);
       for (const url of reset.urlsToRevoke) URL.revokeObjectURL(url);
@@ -987,12 +1090,13 @@ function ComposerImpl({
   }, [
     submitDisabled,
     modelUnavailable,
+    agentUnavailable,
     clearOnSend,
     onSend,
     isBusy,
-    onQueueMessage,
-    queuedMessages,
-    queueInFlightIds,
+    sessionWorking,
+    runtimeReady,
+    disabled,
     onCommand,
     commands,
     attachedFiles,
@@ -1060,7 +1164,17 @@ function ComposerImpl({
   const showQueueStrip = Boolean(threadContext || inputSlot || queueHasRows);
 
   return (
-    <div className={COMPOSER_SHELL_CLASS}>
+    <div
+      className={cn(
+        COMPOSER_SHELL_CLASS,
+        // `'below'` docks the `/` menu as an overlay of later siblings
+        // (starter suggestions). `twMerge` replaces the shell's `z-10` so
+        // this stacking context sits above them; the dock's own `z-99` only
+        // ranks inside this shell and cannot do that job.
+        slashMenuPlacement === 'below' && 'z-50',
+        parentClassName,
+      )}
+    >
       {/*
         The "still waking" notice. Above the card, in flow, so it pushes the
         composer down rather than covering anything — the same reasoning as the
@@ -1069,9 +1183,9 @@ function ComposerImpl({
         This replaces disabling the input. A stopped sandbox does not clear on
         its own, so the old treatment (dead editor, spinner where the send
         button belongs, no text) was indistinguishable from a broken composer.
-        The input stays live; `shouldQueueInsteadOfSend` routes the submit to
-        the queue and the drain's `runtimeReady` gate releases it when the box
-        answers, so nothing is lost by letting people type.
+        The input stays live; the submit becomes a durable inbox row and the
+        control plane delivers it when the box answers, so nothing is lost by
+        letting people type.
 
         `role="status"` + `aria-live="polite"`: this appears without the user
         doing anything, and it changes what the send button will DO. A screen
@@ -1148,6 +1262,17 @@ function ComposerImpl({
               <span className="text-muted-foreground min-w-0 flex-1 truncate text-xs">
                 {notice}
               </span>
+              {onNoticeRetry && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="xs"
+                  className="text-muted-foreground hover:text-foreground h-auto shrink-0 px-1.5 py-0.5 text-xs"
+                  onClick={onNoticeRetry}
+                >
+                  {'Retry'}
+                </Button>
+              )}
             </div>
           )}
 
@@ -1317,6 +1442,7 @@ function ComposerImpl({
                     selectedAgent={selectedAgent}
                     onAgentChange={onAgentChange}
                     agentSelectorLocked={agentSelectorLocked}
+                    noAccessibleAgents={noAccessibleAgents}
                     messages={messages}
                     models={models}
                     selectedModel={availableSelectedModel}
@@ -1360,6 +1486,7 @@ function ComposerImpl({
               submitDisabled={submitDisabled || commandAttachmentPlan.kind === 'refuse'}
               disabled={disabled}
               modelUnavailable={modelUnavailable}
+              agentUnavailable={agentUnavailable}
               onSubmit={handleSubmit}
             />
           </div>
@@ -1379,6 +1506,7 @@ function ComposerImpl({
           selectedAgent={selectedAgent}
           onAgentChange={onAgentChange}
           agentSelectorLocked={agentSelectorLocked}
+          noAccessibleAgents={noAccessibleAgents}
           messages={messages}
           models={models}
           selectedModel={availableSelectedModel}
@@ -1398,9 +1526,15 @@ function ComposerImpl({
         gap moves to the dock. The horizontal inset mirrors the shell's
         `px-4 md:pr-1` gutter so the menu stays flush with the card edges.
         Empty (menu closed) it has zero height and intercepts nothing.
+
+        `z-99` only beats siblings inside THIS shell (the card is
+        `isolate z-10`). The shell itself is raised to `z-50` when placement
+        is `'below'` so this whole stacking context sits above later siblings
+        (starter suggestions). A z-index on those siblings that exceeds `z-50`
+        would cover the menu again — they must stay unstacked.
       */}
       {slashMenuPlacement === 'below' && (
-        <div id={dockId} className="absolute top-full left-4 right-4 md:right-1 mt-2.5" />
+        <div id={dockId} className="absolute top-full left-4 right-4 md:right-1 mt-3.5 z-99" />
       )}
     </div>
   );

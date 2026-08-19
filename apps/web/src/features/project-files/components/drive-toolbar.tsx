@@ -217,6 +217,7 @@ export function DriveToolbar({
               onChange={(e) => setEditValue(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
+                  if (e.nativeEvent.isComposing) return;
                   navigateToPath(editValue.trim() || homePath);
                   setIsEditing(false);
                 }
@@ -257,9 +258,10 @@ export function DriveToolbar({
                       const isLast = index === segments.length - 1;
                       // First crumb of an outside-home path anchors the absolute chain
                       const isAbsoluteAnchor = outsideHome && index === 0;
+                      const pathKey = segments.slice(0, index + 1).join('/');
 
                       return (
-                        <div key={index} className="flex shrink-0 items-center gap-0.5">
+                        <div key={pathKey} className="flex shrink-0 items-center gap-0.5">
                           {isAbsoluteAnchor ? (
                             <span className="text-muted-foreground/40 shrink-0 px-1 text-xs select-none">
                               ·

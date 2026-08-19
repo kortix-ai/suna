@@ -15,9 +15,11 @@ application database.
 
 ## 1. Get an API key
 
-Create a personal access token (`kortix_pat_…`) or service-account credential
-(`kortix_sa_…`). Both authenticate a programmatic session-create request. The
-API derives `origin: "backend"` from the credential type.
+Create a personal access token (`kortix_pat_…`) in your own settings, at
+**Settings → API keys** (`/settings/tokens`), or a service-account credential
+(`kortix_sa_…`) at **Account → Tokens**. Both authenticate a programmatic
+session-create request. The API derives `origin: "backend"` from the credential
+type.
 
 ```bash
 export KORTIX_API_URL="https://your-kortix-deployment.com/v1"

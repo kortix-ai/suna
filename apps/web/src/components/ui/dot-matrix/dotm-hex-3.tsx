@@ -115,7 +115,8 @@ export function DotmHex3({
   const om = clamp01(opacityMid);
   const op = clamp01(opacityPeak);
   const phase = reducedMotion || matrixPhase === "idle" ? 0.12 : cyclePhase;
-  const activePatternIndexes = getPatternIndexes(pattern);
+  // One Set for the per-dot membership checks in the nested render loops.
+  const activePatternIndexes = new Set(getPatternIndexes(pattern));
   const { resolvedColor, dotFill } = resolveDmxColorTokens(color, colorPreset);
   const matrixStyle = {
     width: stylePx(matrixWidth),
@@ -166,7 +167,7 @@ export function DotmHex3({
             }}
           >
             {Array.from({ length: count }).map((_, col) => {
-              const isActive = activePatternIndexes.includes(hexPatternIndex(row, count, col));
+              const isActive = activePatternIndexes.has(hexPatternIndex(row, count, col));
               const opacity = isActive ? opacityForCell(row, col, phase) : 0;
 
                         const dmxBloom = dmxDotBloomParts(isActive, opacity, bloom, halo, ob, om, op);

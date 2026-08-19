@@ -191,7 +191,7 @@ async function handleReviewAction(
   }
 
   // The actor must be a linked Kortix user with write access to this project.
-  // Self-approve is allowed (launcher or any editor) — there's no separation-of-
+  // Self-approve is allowed (launcher or any manager) — there's no separation-of-
   // duties gate. No live mapping → nudge to connect / request access.
   const actor = await resolveSlackActor(teamId, slackUserId, item.accountId, thread.projectId);
   if ('reason' in actor) {

@@ -19,6 +19,12 @@ let calls: Array<{
 let startError: Error | null = null;
 let sandboxState = "running";
 let sandboxStateSequence: string[] = [];
+let lifecycleExecResult: Record<string, unknown> = {
+  stdout: "",
+  stderr: "",
+  exit_code: 0,
+};
+let lifecycleExecError: Error | null = null;
 
 mock.module("../../shared/platinum", () => ({
   isPlatinumConfigured: () => true,
@@ -32,8 +38,10 @@ mock.module("../../shared/platinum", () => ({
       startError = null;
       throw error;
     }
-    if (path.endsWith("/exec"))
-      return { result: { stdout: "", stderr: "", exit_code: 0 } };
+    if (path.endsWith("/exec")) {
+      if (lifecycleExecError) throw lifecycleExecError;
+      return { result: lifecycleExecResult };
+    }
     if (path === "/v1/sandboxes/sbx_app")
       return { id: "sbx_app", state: sandboxStateSequence.shift() ?? sandboxState };
     return {};
@@ -53,6 +61,8 @@ beforeEach(() => {
   startError = null;
   sandboxState = "running";
   sandboxStateSequence = [];
+  lifecycleExecResult = { stdout: "", stderr: "", exit_code: 0 };
+  lifecycleExecError = null;
 });
 
 test("ensureAppRuntimeStarted launches appd daemon directly without user-image shell dependencies", async () => {
@@ -67,6 +77,40 @@ test("ensureAppRuntimeStarted launches appd daemon directly without user-image s
   });
   expect(calls[0]?.body?.timeout_ms).toBe(15_000);
   expect(calls[0]?.body?.cmd).toEqual(["/kortix/bin/kortix-appd", "--daemon"]);
+});
+
+test("renewLifecycle resets Platinum activity with one bounded no-op exec", async () => {
+  const provider = new PlatinumProvider();
+
+  await provider.renewLifecycle("sbx-active");
+
+  expect(calls).toEqual([
+    {
+      path: "/v1/sandboxes/sbx-active/exec",
+      method: "POST",
+      body: { cmd: ["true"], timeout_ms: 10_000 },
+    },
+  ]);
+});
+
+test("renewLifecycle never wakes a stopped Platinum sandbox", async () => {
+  lifecycleExecError = new Error(
+    'platinum POST /v1/sandboxes/sbx-stopped/exec -> 409 {"code":"sandbox_not_running"}',
+  );
+  const provider = new PlatinumProvider();
+
+  await expect(provider.renewLifecycle("sbx-stopped")).rejects.toThrow("sandbox_not_running");
+  expect(calls.map(({ path }) => path)).toEqual(["/v1/sandboxes/sbx-stopped/exec"]);
+  expect(calls.some(({ path }) => path.endsWith("/start"))).toBe(false);
+});
+
+test("renewLifecycle rejects a failed Platinum no-op", async () => {
+  lifecycleExecResult = { stdout: "", stderr: "guest unavailable", exit_code: 23 };
+  const provider = new PlatinumProvider();
+
+  await expect(provider.renewLifecycle("sbx-failed")).rejects.toThrow(
+    "exit 23: guest unavailable",
+  );
 });
 
 test("ensureAppRuntimeStarted remains idempotent when the hosting layer calls it twice", async () => {

@@ -1,47 +1,49 @@
 'use client';
 
 /**
- * Step 7 — the finish line, and the payoff for the two survey screens.
+ * Step 5 — the finish line.
  *
- * The use case picked in step 2 selects three real starting points, each of
- * which maps to a template that already exists in `apps/web/content/use-cases/`.
- * Picking one completes onboarding AND seeds the project composer, so the first
- * thing the user sees after setup is work already in progress rather than an
- * empty box.
+ * "Open project" now does two things at once: completes onboarding AND
+ * auto-sends the first message — the exact text previewed below — as the
+ * new session's opening turn. There is no starter-tile picker any more:
+ * three generic tiles ("Turn notes into actions", "Triage my inbox", "Watch
+ * the market") plus an auto-sent message asked the user to choose twice for
+ * the same outcome, and none of the tiles used what onboarding just
+ * collected. One real, personalized opener beats three generic ones.
  *
- * A user who skipped the survey still gets three prompts — the fallback set —
- * because an empty finish screen would punish them twice for skipping.
+ * The kickoff text itself lives in `onboarding-profile.ts`
+ * (`buildOnboardingKickoffPrompt`) so this preview and the actual send always
+ * say the same thing.
  */
 
-import type { OnboardingUseCase } from '@kortix/sdk';
 import {
-  ArrowRightIcon as ArrowRight,
   CalendarBlankIcon as Calendar,
+  ChatCircleIcon as ChatCircle,
   CheckCircleIcon as CheckCircle,
 } from '@phosphor-icons/react';
 
 import { Button } from '@/components/ui/button';
 
-import { starterPromptsFor } from '../onboarding-profile';
-import { ActionRow, StepShell } from '../step-shell';
+import { buildOnboardingKickoffPrompt } from '../onboarding-profile';
+import { StepShell } from '../step-shell';
 
 export function DoneStep({
-  useCase,
-  profileCount,
+  domain,
+  connectedCount,
   showFounderCall,
   onBookCall,
   onStart,
-  onUsePrompt,
 }: {
-  useCase: OnboardingUseCase | null;
-  profileCount: number;
+  /** The company-step's domain field, trimmed. Empty when skipped. */
+  domain: string;
+  connectedCount: number;
   /** Founder-concierge tier. The CTA used to live on the deleted welcome step. */
   showFounderCall?: boolean;
   onBookCall?: () => void;
+  /** Completes onboarding AND fires the kickoff prompt as the first turn. */
   onStart: () => void;
-  onUsePrompt: (prompt: string) => void;
 }) {
-  const prompts = starterPromptsFor(useCase);
+  const kickoff = buildOnboardingKickoffPrompt(domain, connectedCount);
 
   return (
     <div className="flex flex-col gap-7">
@@ -55,25 +57,21 @@ export function DoneStep({
       <StepShell
         title="Your command center is live"
         description={
-          profileCount > 0
-            ? `${profileCount} ${profileCount === 1 ? 'tool' : 'tools'} connected and ready. Pick something for your agent to start on, or jump straight in.`
-            : 'Pick something for your agent to start on, or jump straight in.'
+          connectedCount > 0
+            ? `${connectedCount} ${connectedCount === 1 ? 'tool' : 'tools'} connected. Opening starts your first conversation with Kortix.`
+            : 'Opening starts your first conversation with Kortix.'
         }
         primaryLabel="Open project"
         onPrimary={onStart}
       >
-        <div className="flex flex-col gap-2">
-          {prompts.map((p) => (
-            <ActionRow
-              key={p.template}
-              label={p.title}
-              description={p.prompt}
-              className="items-start"
-              aria-label={`Start with: ${p.title}`}
-              onSelect={() => onUsePrompt(p.prompt)}
-              leading={<ArrowRight className="text-muted-foreground/50 size-4 shrink-0" />}
-            />
-          ))}
+        <div className="bg-popover flex items-start gap-3 rounded-md border px-4 py-4">
+          <span className="bg-muted flex size-9 shrink-0 items-center justify-center rounded-sm">
+            <ChatCircle className="text-muted-foreground size-4" />
+          </span>
+          <div className="min-w-0 flex-1 space-y-1">
+            <p className="text-muted-foreground text-xs font-medium">Your first message</p>
+            <p className="text-foreground text-sm leading-6 text-pretty">{kickoff}</p>
+          </div>
         </div>
 
         {/* Rehomed from the deleted welcome step. Quiet, below the prompts —

@@ -6,9 +6,10 @@ import { Kbd } from '@/components/ui/kbd';
 import Loading from '@/components/ui/loading';
 import { ArrowUpIcon as ArrowUp, SquareIcon } from '@phosphor-icons/react';
 import { NO_MODEL_AVAILABLE_ACTION_MESSAGE } from '../model-availability';
+import { NO_AGENT_ACCESS_MESSAGE } from './composer-agent-access';
 
 const ICON_BUTTON =
-  'shrink-0 rounded-full p-0 hit-area-1 active:scale-[0.96] active:duration-150 duration-300 ease-out ';
+  'shrink-0 rounded-full p-0 hit-area-1 transition-[color,background-color,opacity,scale] active:scale-[0.96] active:duration-150 duration-300 ease-out ';
 
 export interface SendStopControlProps {
   isSending: boolean;
@@ -24,6 +25,12 @@ export interface SendStopControlProps {
   submitDisabled: boolean;
   disabled: boolean;
   modelUnavailable: boolean;
+  /**
+   * The agent roster is empty for this user, so nothing can run this prompt.
+   * Outranks `modelUnavailable` in the copy: with no agent, the model is not
+   * the thing to go fix.
+   */
+  agentUnavailable?: boolean;
   onSubmit: () => void;
 }
 
@@ -41,8 +48,16 @@ export function SendStopControl({
   submitDisabled,
   disabled,
   modelUnavailable,
+  agentUnavailable = false,
   onSubmit,
 }: SendStopControlProps) {
+  // One line, the same one the agent picker's tooltip carries — the two
+  // controls are refusing for one reason and must not word it two ways.
+  const refusal = agentUnavailable
+    ? NO_AGENT_ACCESS_MESSAGE
+    : modelUnavailable
+      ? NO_MODEL_AVAILABLE_ACTION_MESSAGE
+      : null;
   if (isSending && !lockForQuestion) {
     return (
       <Button size="icon-base" disabled className={ICON_BUTTON}>
@@ -91,32 +106,35 @@ export function SendStopControl({
             size="sm"
             disabled={!questionCanAct || disabled}
             onClick={onSubmit}
-            className="hit-area-1 shrink-0 rounded-lg duration-300 ease-out active:scale-[0.96] active:duration-150"
+            className="hit-area-1 shrink-0 rounded-lg transition-[color,background-color,opacity,scale] duration-300 ease-out active:scale-[0.96] active:duration-150"
           >
             {questionButtonLabel}
           </Button>
         ) : (
-          <Hint
-            side="top"
-            label={modelUnavailable ? NO_MODEL_AVAILABLE_ACTION_MESSAGE : 'Send message'}
-          >
-            <Button
-              size="icon-base"
-              disabled={
-                lockForQuestion
-                  ? (!canSubmit && !questionCanAct) || disabled
-                  : !canSubmit || submitDisabled
-              }
-              onClick={onSubmit}
-              aria-label={modelUnavailable ? NO_MODEL_AVAILABLE_ACTION_MESSAGE : 'Send message'}
-              className={ICON_BUTTON}
-            >
-              {disabled ? (
-                <div className="size-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
-              ) : (
-                <ArrowUp className="size-4" />
-              )}
-            </Button>
+          <Hint side="top" label={refusal ?? 'Send message'}>
+            {/* The span, not the button, carries the tooltip trigger: a
+                disabled button takes no pointer events, so the reason the send
+                is off would never open — which is exactly the state where the
+                reason matters most. */}
+            <span className="inline-flex">
+              <Button
+                size="icon-base"
+                disabled={
+                  lockForQuestion
+                    ? (!canSubmit && !questionCanAct) || disabled
+                    : !canSubmit || submitDisabled
+                }
+                onClick={onSubmit}
+                aria-label={refusal ?? 'Send message'}
+                className={ICON_BUTTON}
+              >
+                {disabled ? (
+                  <div className="size-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                ) : (
+                  <ArrowUp className="size-4" />
+                )}
+              </Button>
+            </span>
           </Hint>
         )}
       </div>

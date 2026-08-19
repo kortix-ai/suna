@@ -35,7 +35,7 @@ describe('project access roles', () => {
   test.each([
     ['owner', null, 'manager'],
     ['admin', 'member', 'manager'],
-    ['member', 'editor', 'editor'],
+    ['member', 'manager', 'manager'],
     ['member', null, null],
   ] as Array<[AccountRole, ProjectRole | null, ProjectRole | null]>)(
     'effective role for %s + %s',
@@ -49,10 +49,6 @@ describe('project access roles', () => {
     ['member', 'session', true], // member is the floor usable role — can run sessions
     ['member', 'write', false],
     ['member', 'manage', false],
-    ['editor', 'read', true],
-    ['editor', 'session', true],
-    ['editor', 'write', true],
-    ['editor', 'manage', false],
     ['manager', 'read', true],
     ['manager', 'session', true],
     ['manager', 'write', true],
@@ -80,7 +76,8 @@ describe('project access roles', () => {
 
   test('normalizes valid role input and rejects invalid values', () => {
     expect(parseProjectRole(' Manager ')).toBe('manager');
-    expect(parseProjectRole('editor')).toBe('editor');
+    // The removed `editor` role folds to `manager` on the READ path.
+    expect(parseProjectRole('editor')).toBe('manager');
     expect(parseProjectRole('member')).toBe('member');
     // `user` and `viewer` are deprecated aliases — both fold into `member`, never round-trip.
     expect(parseProjectRole('user')).toBe('member');

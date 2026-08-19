@@ -103,7 +103,7 @@ test('the comment-stripped view of the source can still fail', () => {
   // pass forever while testing nothing. Prove the strip kept the code and
   // removed the prose in the same breath.
   expect(code).toContain('export function GitView');
-  expect(code).toContain('<SettingsTabHeader tab="repositories" />');
+  expect(code).toContain('<SettingsSubsectionHeader title="Git repo" />');
   expect(code.length).toBeGreaterThan(source.length / 3);
   // The canary is the exact string the next test asserts is absent from the
   // code. `OwnGitClient`'s doc comment quotes the old section name verbatim to
@@ -113,14 +113,19 @@ test('the comment-stripped view of the source can still fail', () => {
   expect(code).not.toContain('Kortix proxy origin');
 });
 
-test('renders exactly one page heading, from the shared rail entry', () => {
-  // The duplication this rewrite removes: the pane used to stack a
-  // `CustomizeSectionWrapper title="Git"` on `<h3>Repository` on
-  // `<h3>Repository settings`, under a rail entry already reading
-  // "Repositories". The title now has one source.
-  expect(code).toContain('<SettingsTabHeader tab="repositories" />');
+test('renders exactly one page heading, and it is a subsection now — General owns the page title', () => {
+  // Repositories merged INTO General under a "Git repo" section (Jay,
+  // 2026-08-17) — the same move Snapshots made into Sandbox templates. This
+  // pane no longer has its own page-level heading (`SettingsTabHeader`) or its
+  // own width wrapper (`GeneralTabView` supplies both via `gitRepoSlot`); it
+  // renders one `SettingsSubsectionHeader`, exactly the class of duplication
+  // the pane's ORIGINAL rewrite (stacking `CustomizeSectionWrapper title="Git"`
+  // on `<h3>Repository` on `<h3>Repository settings`) already removed once.
+  expect(code).toContain('<SettingsSubsectionHeader title="Git repo" />');
+  expect(code).not.toContain('SettingsTabHeader');
   expect(code).not.toContain('CustomizeSectionWrapper');
   expect(code).not.toContain('Repository settings');
+  expect(code).not.toContain('mx-auto w-full max-w-2xl');
 });
 
 test('does not name internal mechanisms in user-facing copy', () => {

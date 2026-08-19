@@ -66,12 +66,14 @@ test('the Apps page cannot enable Apps — activation lives only in Feature flag
   expect(view).not.toContain('updateFeatureFlag');
   expect(view).not.toContain('Enable Apps');
 
-  // The shared screen opens the one place a flag can be flipped. `main`
+  // The shared screen links to the one place a flag can be flipped. `main`
   // authored this against the Customize overlay (`openCustomize('feature-
-  // flags')`); this branch deleted that overlay, so the same single control
-  // is the settings panel's Experimental tab.
-  expect(gate).toContain("openSettings('experimental')");
+  // flags')`); that overlay is gone, the settings overlay's Experimental tab
+  // that replaced it is gone too, and the single control is now a section of
+  // the Customize bar's Settings tab. A real link, not a store call.
+  expect(gate).toContain("projectSettingsSectionHref(projectId, 'feature-flags')");
   expect(gate).not.toContain('useCustomizeStore');
+  expect(gate).not.toContain('useSettingsPanelStore');
   expect(gate).toContain('Feature flags');
   expect(gate).not.toContain('updateFeatureFlag');
   expect(gate).not.toContain('useMutation');
@@ -85,7 +87,31 @@ test('Apps UI is operational only and has no creation action or modal', () => {
   expect(view).not.toContain('Create App');
   expect(view).toContain('kortix apps deploy .');
   expect(view).toContain('<iframe');
-  expect(view).toContain('className="max-w-5xl"');
+  expect(view).toContain('className="max-w-5xl px-4"');
+});
+
+test('the Apps row matches the row contract of the group it sits in', () => {
+  // The sidebar has TWO row conventions. The top group (New session, Customize)
+  // pads with px-3 and rests muted; the bottom group (Files, Settings) does
+  // neither. Apps moved from the bottom group to the top one and kept the old
+  // class list, so its icon and label sat ~8px left of its neighbours and read a
+  // shade darker — visibly out of line.
+  const apps = readFileSync(
+    resolve(root, 'features/workspace/project-sidebar/footer/project-apps-nav.tsx'),
+    'utf8',
+  );
+  const customize = readFileSync(
+    resolve(root, 'features/workspace/project-sidebar/project-settings-nav.tsx'),
+    'utf8',
+  );
+
+  const ROW = 'group/menu-button text-muted-foreground hover:text-sidebar-foreground flex items-center gap-2 px-3 text-sm! font-medium [&_svg]:size-4!';
+  // The same string the sibling rows in this group use — if that contract is
+  // ever restyled, this fails rather than letting Apps silently drift out.
+  expect(customize).toContain(ROW);
+  expect(apps).toContain(ROW);
+  // The glyph keeps its box on a narrow sidebar, like its neighbours.
+  expect(apps).toContain('<span className="shrink-0">');
 });
 
 test('an App with no deployment never claims to be Running', () => {

@@ -1,5 +1,5 @@
 import {
-  isSessionVisibleTo,
+  isProjectSessionVisibleTo,
   type SecretGrant,
   type ShareSubject,
 } from '../../connectors/share';
@@ -96,7 +96,7 @@ export function selectSessionRowsForViewer(input: {
       typeof metadata.deletedBy === 'string' ? metadata.deletedBy : null;
     const runtimeStatus =
       input.runtimeStatusBySession.get(row.sessionId) ?? null;
-    const canAccess = isSessionVisibleTo(
+    const canAccess = isProjectSessionVisibleTo(
       row.visibility as 'private' | 'project' | 'restricted',
       row.createdBy,
       input.grantsBySession.get(row.sessionId) ?? [],
@@ -106,12 +106,16 @@ export function selectSessionRowsForViewer(input: {
         sessionId: row.sessionId,
         callerSessionId: input.callerSessionId,
       },
+      { metadata: row.metadata, canManageProject: input.canManageProject },
     );
     return { row, canAccess, runtimeStatus, deletedAt, deletedBy };
   });
 
   if (input.scope === 'project') {
-    return { authorized: true, items };
+    // A list row is a disclosure. Keep manager-only lifecycle coverage for
+    // sessions the manager can open, including warm and soft-deleted rows, but
+    // never return an inaccessible session as a redacted breadcrumb.
+    return { authorized: true, items: items.filter((item) => item.canAccess) };
   }
 
   return {
@@ -124,9 +128,8 @@ export function selectSessionRowsForViewer(input: {
       // started. The marker is dropped by the first prompt, and from that moment
       // the row lists like any other session. See lib/warm-sessions.ts.
       //
-      // `visible` scope only. The `project` scope is the manager's full
-      // inventory — somebody auditing every session in the project must still
-      // see warm rows, because they are real rows that held a real sandbox.
+      // `visible` scope only. The `project` scope keeps accessible warm rows for
+      // lifecycle inspection, but it also applies the access filter above.
       if (isWarmProjectSession(item.row.metadata)) return false;
       return item.row.status !== 'stopped' || item.runtimeStatus === 'stopped';
     }),

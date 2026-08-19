@@ -192,6 +192,40 @@ export function isSessionVisibleTo(
   return false;
 }
 
+/**
+ * True only for sessions stamped by the durable trigger create path.
+ * Both fields are required so a partial marker cannot widen access.
+ */
+export function isTriggerCreatedSessionMetadata(metadata: unknown): boolean {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return false;
+  const record = metadata as Record<string, unknown>;
+  return (
+    typeof record.source === 'string' &&
+    record.source.startsWith('trigger:') &&
+    record.trigger_kind === 'git' &&
+    typeof record.trigger_slug === 'string' &&
+    record.trigger_slug.length > 0
+  );
+}
+
+/**
+ * Project-session content visibility. Project managers can open sessions that
+ * triggers created. Ordinary private human sessions remain owner-only. The
+ * backend sibling-session gate runs first and cannot be bypassed.
+ */
+export function isProjectSessionVisibleTo(
+  visibility: SessionVisibility,
+  ownerId: string | null,
+  grants: SecretGrant[],
+  subject: ShareSubject,
+  ownership: SessionOwnershipContext,
+  context: { metadata: unknown; canManageProject: boolean },
+): boolean {
+  if (!isSessionTargetVisibleToCaller(ownership)) return false;
+  if (context.canManageProject && isTriggerCreatedSessionMetadata(context.metadata)) return true;
+  return isSessionVisibleTo(visibility, ownerId, grants, subject, ownership);
+}
+
 /** Map a sharing intent → persisted (visibility, grants). */
 export function sessionIntentToVisibility(intent: SharingIntent): {
   visibility: SessionVisibility;
@@ -215,6 +249,29 @@ export function visibilityToIntent(visibility: SessionVisibility, grants: Secret
   const memberIds = grants.filter((g) => g.principalType === 'member').map((g) => g.principalId);
   const groupIds = grants.filter((g) => g.principalType === 'group').map((g) => g.principalId);
   return { mode: 'members', memberIds, groupIds };
+}
+
+/**
+ * A session created while another running session's own token is the caller
+ * (a sub-agent/coordinator spawning a worker) inherits THAT session's sharing
+ * instead of defaulting to private. Without this, a worker a coordinator
+ * spawns is invisible to anyone the coordinator was shared with — only the
+ * human who happens to match `created_by` could ever open it, which defeats
+ * the point of sharing the parent in the first place.
+ *
+ * `requestedVisibility` explicit (automation callers — triggers, channels —
+ * always pass one) wins outright and carries no inherited grants: those
+ * callers manage their own sharing story and were never eligible to inherit.
+ * `parent` is null when there is no spawning session, or it could not be
+ * resolved (defense in depth) — falls back to the private default.
+ */
+export function resolveInheritedSessionSharing(
+  requestedVisibility: SessionVisibility | undefined,
+  parent: { visibility: SessionVisibility; grants: SecretGrant[] } | null,
+): { visibility: SessionVisibility; grants: SecretGrant[] } {
+  if (requestedVisibility !== undefined) return { visibility: requestedVisibility, grants: [] };
+  if (parent) return { visibility: parent.visibility, grants: parent.grants };
+  return { visibility: 'private', grants: [] };
 }
 
 /** Bulk-load session grants → map sessionId → grants. */

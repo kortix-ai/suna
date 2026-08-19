@@ -7,6 +7,7 @@ import { db } from "../../shared/db";
 import { ACCOUNT_ACTIONS, assertAuthorized } from "../../iam";
 import { impersonatedAccountFor } from "../../shared/impersonation";
 import { isPlatformAdmin } from "../../shared/platform-roles";
+import { sortAccountsForListing } from "./account-order";
 import { bootstrapPersonalAccount } from "./bootstrap-personal-account";
 import {
   AccountDetailSchema,
@@ -92,8 +93,11 @@ export function registerAccountRoutes(): void {
           userId,
           email: userEmail,
         });
+        // Deterministic order (owned first, oldest first): the web landing
+        // door falls back to the FIRST account of this list, so an unordered
+        // result made the default landing account nondeterministic.
         return c.json(
-          memberships.map((m) => ({
+          sortAccountsForListing(memberships).map((m) => ({
             account_id: m.accountId,
             name: displayNames.get(m.accountId) ?? accountDisplayName(m.name, userEmail),
             slug: m.accountId.slice(0, 8),

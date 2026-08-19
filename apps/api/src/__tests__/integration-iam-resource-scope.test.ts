@@ -45,9 +45,9 @@ afterAll(async () => {
 describe('per-resource scoping (iam_resource_grants)', () => {
   test('scoping one agent restricts ONLY that agent; unscoped agents stay open', async () => {
     const alice = await seedMember('member');
-    await db.insert(projectMembers).values({ accountId: ACCOUNT, projectId: PROJECT, userId: alice, projectRole: 'editor' });
+    await db.insert(projectMembers).values({ accountId: ACCOUNT, projectId: PROJECT, userId: alice, projectRole: 'manager' });
     const bob = await seedMember('member');
-    await db.insert(projectMembers).values({ accountId: ACCOUNT, projectId: PROJECT, userId: bob, projectRole: 'editor' });
+    await db.insert(projectMembers).values({ accountId: ACCOUNT, projectId: PROJECT, userId: bob, projectRole: 'manager' });
 
     // Before any grant: both agents are unscoped → both members can use both.
     expect(await canUse(alice, SCOPED_AGENT)).toBe(true);
@@ -72,7 +72,7 @@ describe('per-resource scoping (iam_resource_grants)', () => {
 
   test('granting the scoped agent to a member lets them in immediately', async () => {
     const carol = await seedMember('member');
-    await db.insert(projectMembers).values({ accountId: ACCOUNT, projectId: PROJECT, userId: carol, projectRole: 'editor' });
+    await db.insert(projectMembers).values({ accountId: ACCOUNT, projectId: PROJECT, userId: carol, projectRole: 'manager' });
     // SCOPED_AGENT was scoped (to Alice) in the previous test → Carol is out.
     expect(await canUse(carol, SCOPED_AGENT)).toBe(false);
 

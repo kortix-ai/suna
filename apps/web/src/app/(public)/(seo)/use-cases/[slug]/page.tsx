@@ -27,6 +27,7 @@ import { UseCaseMdxImage } from '@/components/use-cases/use-case-mdx-image';
 import { UseCaseToc, type TocItem } from '@/components/use-cases/use-case-toc';
 import { UseCasesCta } from '@/components/use-cases/use-cases-cta';
 import { resolveAuthor } from '@/lib/blog';
+import { safeJsonForHtml } from '@/lib/security/safe-json';
 import { siteMetadata } from '@/lib/site-metadata';
 import { getAllUseCases } from '@/lib/use-cases';
 import { useCasesSource } from '@/lib/use-cases-source';
@@ -169,7 +170,7 @@ export default async function UseCasePage(props: PageProps) {
     <main className="bg-background relative min-h-screen">
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        dangerouslySetInnerHTML={{ __html: safeJsonForHtml(jsonLd) }}
       />
 
       {/* Branded hero header — faint letter-field backdrop ties it to the platform. */}

@@ -40,4 +40,44 @@ describe('derivePhase', () => {
   test('a terminal stage wins over a runtime 503 that arrives with it', () => {
     expect(derivePhase({ ...base, terminal: true, runtimeError: RUNTIME_503 })).toBe('error');
   });
+
+  // T17 — PR #6273's own text flagged this branch ("unguarded seam 2")
+  // as shipped with no dedicated regression test beyond the two cases above.
+  // These pin the `startSettled` gate on `runtimeError` from more angles, so a
+  // future edit that drops it (`if (input.runtimeError) return 'error';`,
+  // un-gated) cannot pass silently no matter which input combination changes
+  // first. See this task's MUTATION CHECK for the real red output from that
+  // exact mutation.
+  describe('the startSettled gate on runtimeError — extra coverage (T17)', () => {
+    test('runtimeError present, startSettled false, switched true: still "starting", not "error"', () => {
+      // `switched` only matters on the error-free path (line 27) — an
+      // in-flight runtimeError must keep blocking "ready" AND must not leak
+      // into "error" just because the sandbox already switched in.
+      expect(derivePhase({ ...base, runtimeError: RUNTIME_503, switched: true })).toBe('starting');
+    });
+
+    test('runtimeError present, startSettled true, switched true: settles to "error", not "ready"', () => {
+      expect(
+        derivePhase({ ...base, runtimeError: RUNTIME_503, startSettled: true, switched: true }),
+      ).toBe('error');
+    });
+
+    test('a non-503 runtimeError is gated identically — the gate is on startSettled, not the error shape', () => {
+      const genericError = new Error('boom');
+      expect(derivePhase({ ...base, runtimeError: genericError })).toBe('starting');
+      expect(derivePhase({ ...base, runtimeError: genericError, startSettled: true })).toBe('error');
+    });
+
+    test('startSettled flipping true->false cannot un-error a runtime error once terminal is also true', () => {
+      // terminal (line 24) is checked before the runtimeError/startSettled
+      // branch (line 25) and never depends on startSettled — regardless of
+      // its value, a terminal stage is always 'error'.
+      expect(
+        derivePhase({ ...base, terminal: true, runtimeError: RUNTIME_503, startSettled: false }),
+      ).toBe('error');
+      expect(
+        derivePhase({ ...base, terminal: true, runtimeError: RUNTIME_503, startSettled: true }),
+      ).toBe('error');
+    });
+  });
 });

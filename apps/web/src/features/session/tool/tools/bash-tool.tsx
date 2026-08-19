@@ -11,6 +11,8 @@ import {
   partStreamingInput,
   StructuredOutput,
   ToolRunningContext,
+  useToolCardFrame,
+  useToolCardPad,
   useToolIndent,
 } from '@/features/session/tool/shared/infrastructure';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
@@ -34,6 +36,45 @@ import { shellExitCode, stripAnsi } from '@/ui';
 import { CodeSimpleIcon } from '@phosphor-icons/react';
 import { useContext, useMemo } from 'react';
 
+/** The row title never runs past this; a trigger is one line, not a sentence. */
+const TITLE_MAX = 60;
+
+/**
+ * The words a settled row leads with.
+ *
+ * The bash tool's input carries a `description` — the one-line summary the
+ * model writes for its own call ("Install the workspace dependencies"). The
+ * SDK already reads it as this tool's subtitle (`core/turns/parts.ts`, case
+ * `'bash'`), so the row promotes a source it had been dropping rather than
+ * inventing one. A reader scanning a turn wants to know what a command was
+ * FOR, and `pnpm -w install --frozen-lockfile` answers that only if they read
+ * shell.
+ *
+ * Three rules, in order:
+ * - A failure keeps its verdict. "Command failed" is the one thing a friendly
+ *   summary must never soften, so it outranks any description.
+ * - No description → exactly today's "Ran command". Nothing is ever derived
+ *   from the command text: a classifier answering "Installed dependencies" to
+ *   `npm i` would put a claim in the model's mouth that it never made.
+ * - Sentence case only lifts a lower-case opener. Lowering the rest would turn
+ *   "Run CI on the release branch" into "Run ci on the release branch".
+ */
+export function bashRowTitle(description: unknown, failed: boolean): string {
+  if (failed) return 'Command failed';
+
+  // Collapsed, because a description arrives as free text and may carry a
+  // newline; a trigger row renders it on one line either way.
+  const summary = typeof description === 'string' ? description.replace(/\s+/g, ' ').trim() : '';
+  if (!summary) return 'Ran command';
+
+  const cased = /^[a-z]/.test(summary) ? summary[0].toUpperCase() + summary.slice(1) : summary;
+  if (cased.length <= TITLE_MAX) return cased;
+  // Trim the tail before the ellipsis. `truncate` in `lib/utils/string` cuts on
+  // the character count alone, which strands a space in front of the ellipsis
+  // whenever the cut lands just after a word.
+  return `${cased.slice(0, TITLE_MAX).trimEnd()}…`;
+}
+
 /**
  * The command, syntax-highlighted, with its output beneath a hairline.
  *
@@ -43,6 +84,26 @@ import { useContext, useMemo } from 'react';
  * multi-line pipeline no structure at all. Highlighting spends that space on
  * the command instead, so a `curl … | python3 -c "…"` reads as the two stages
  * it is.
+ *
+ * One frame, one type rhythm: `border bg-popover rounded-md` around content
+ * panes that share a 12px inset and one `leading-relaxed` line height. That
+ * pairing — `[&_code]:text-xs [&_code]:leading-relaxed` over a 12px pane — is
+ * the same override `iam/audit-tab.tsx` uses to pull `HighlightedCode` down to
+ * a small pane: the component hardcodes `text-sm leading-[1.65]` on its own
+ * `<code>`, and a `[&_code]:` variant is one specificity step above it. The
+ * size half was already here; without the leading half the highlighted command
+ * kept a line height 0.3px off the output it sits above.
+ *
+ * That frame is the INLINE surface's. On the panel the frame and the
+ * horizontal inset both belong to the row card this hangs inside
+ * (`useToolCardFrame`), so only the vertical air around the command/output
+ * hairline survives.
+ *
+ * The empty state takes that leading too, so a command that printed nothing
+ * stands exactly where one line of output would instead of collapsing 3.5px
+ * shorter than the region it speaks for (`text-xs` alone is a flat 16px line).
+ * The exit-code strip keeps its shorter 8px vertical inset: it is metadata
+ * about the card, not a third pane of content.
  */
 function CommandBlock({
   command,
@@ -60,12 +121,29 @@ function CommandBlock({
 }) {
   const hasOutput = Boolean(richOutput || output);
   const failed = typeof exitCode === 'number' && exitCode !== 0;
+  // On the panel the row card is the frame and the disclosure body is the
+  // inset, so this card draws neither — the gate counted FOUR seams around one
+  // bash payload. The command/output hairline below is not one of them: it
+  // separates two different things and stays on both surfaces.
+  const frame = useToolCardFrame();
+  const pad = useToolCardPad();
+  // The one part of the card's inset the panel still needs. Horizontally the
+  // row body's `px-3` is the gutter, but the hairline BETWEEN the command and
+  // its output is internal to this card, and text pressed against it on both
+  // sides is worse than the extra frame ever was.
+  const paneInset = pad || 'py-2';
 
   return (
-    <div className="border-border bg-popover relative rounded-md border">
+    <div className={cn('relative', frame)}>
       <div data-scrollable className="max-h-64 overflow-auto">
         <div className="relative">
-          <pre className="text-foreground/90 p-3 pr-11 font-mono text-xs leading-[1.65] wrap-break-word whitespace-pre-wrap [&_code]:border-none [&_code]:bg-transparent [&_code]:p-0 [&_code]:text-xs [&_code]:whitespace-pre-wrap [&_pre]:whitespace-pre-wrap [&_span]:border-none [&_span]:outline-none">
+          <pre
+            className={cn(
+              'text-foreground/90 font-mono text-xs leading-relaxed wrap-break-word whitespace-pre-wrap [&_code]:border-none [&_code]:bg-transparent [&_code]:p-0 [&_code]:text-xs [&_code]:leading-relaxed [&_code]:whitespace-pre-wrap [&_pre]:whitespace-pre-wrap [&_span]:border-none [&_span]:outline-none',
+              paneInset,
+              'pr-11',
+            )}
+          >
             <HighlightedCode code={command} language="bash">
               {command}
             </HighlightedCode>
@@ -83,7 +161,13 @@ function CommandBlock({
           ) : output ? (
             <div className="relative">
               <div data-scrollable className="max-h-80 overflow-auto">
-                <div className="text-muted-foreground p-3 pr-11 font-mono text-xs leading-[1.65] wrap-break-word whitespace-pre-wrap">
+                <div
+                  className={cn(
+                    'text-muted-foreground font-mono text-xs leading-relaxed wrap-break-word whitespace-pre-wrap',
+                    paneInset,
+                    'pr-11',
+                  )}
+                >
                   {output}
                 </div>
               </div>
@@ -95,13 +179,23 @@ function CommandBlock({
               </div>
             </div>
           ) : (
-            <p className="text-muted-foreground/50 p-3 text-xs">No output</p>
+            <p className={cn('text-muted-foreground/50', paneInset, 'text-xs leading-relaxed')}>
+              No output
+            </p>
           )}
         </div>
       )}
 
       {failed && (
-        <div className="border-border/60 text-muted-foreground/70 border-t px-3 py-2 font-mono text-xs tabular-nums">
+        <div
+          className={cn(
+            'border-border/60 text-muted-foreground/70 border-t py-2 font-mono text-xs tabular-nums',
+            // Metadata about the card, not a third pane: it keeps the shorter
+            // 8px vertical inset, and only the horizontal one is the surface's
+            // to supply.
+            pad && 'px-3',
+          )}
+        >
           Exit code {exitCode}
         </div>
       )}
@@ -158,6 +252,7 @@ export function BashTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
     return shellExitCode(part.state.output ?? '');
   }, [part.state]);
   const failed = typeof exitCode === 'number' && exitCode !== 0;
+  const title = bashRowTitle(input.description, failed);
 
   const { commandPreview, extraLines } = useMemo(() => {
     const lines = command.split('\n');
@@ -189,8 +284,14 @@ export function BashTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
               </>
             ) : (
               <span className="flex min-w-0 items-center gap-2 text-xs" title={command}>
-                <span className={cn('shrink-0', failed ? 'text-kortix-red' : 'text-foreground')}>
-                  {failed ? 'Command failed' : 'Ran command'}
+                {/* `truncate`, not `shrink-0`: a description title is a
+                    sentence, and on a narrow row a rigid one would be clipped
+                    mid-word by the trigger's `overflow-hidden` instead of
+                    ending in an ellipsis. */}
+                <span
+                  className={cn('min-w-0 truncate', failed ? 'text-kortix-red' : 'text-foreground')}
+                >
+                  {title}
                 </span>
                 <span className="text-muted-foreground/60 min-w-0 truncate font-mono">
                   {commandPreview}
@@ -210,7 +311,10 @@ export function BashTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
       locked={locked}
     >
       {command && (
-        <div className={cn('mt-1.5', indent)}>
+        // `CommandBlock` is a bordered card like the shared three, so it takes
+        // the same gate: the seam belongs to the inline row it hangs under, not
+        // to the panel body that already supplies `px-3 py-3`.
+        <div className={cn(indent && 'mt-1.5', indent)}>
           <CommandBlock
             command={command}
             output={plainOutput}

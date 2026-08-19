@@ -798,15 +798,28 @@ export interface ConfigureAutoTopupInput {
   amount: number;
 }
 
-/** Configure (enable/disable, threshold, amount) auto-topup — recurring credit purchases. */
+/**
+ * Configure (enable/disable, threshold, amount) auto-topup — recurring credit
+ * purchases.
+ *
+ * `showErrors: false` — the single caller (`AutoTopupCard.handleSave`) already
+ * shows its own `errorToast` from the thrown error in its `catch` block. Without
+ * this, the SDK's global `onError` (wired to `handleApiError` in
+ * `apps/web/src/lib/kortix-config.ts`) ALSO toasted the same message, so one
+ * failed Save produced two stacked identical toasts.
+ */
 export async function configureAutoTopup(input: ConfigureAutoTopupInput): Promise<AutoTopupSettings> {
   return unwrap(
-    await backendApi.post<AutoTopupSettings>('/billing/auto-topup/configure', {
-      account_id: input.accountId,
-      enabled: input.enabled,
-      threshold: input.threshold,
-      amount: input.amount,
-    }),
+    await backendApi.post<AutoTopupSettings>(
+      '/billing/auto-topup/configure',
+      {
+        account_id: input.accountId,
+        enabled: input.enabled,
+        threshold: input.threshold,
+        amount: input.amount,
+      },
+      { showErrors: false },
+    ),
     'Failed to configure auto-topup',
   );
 }

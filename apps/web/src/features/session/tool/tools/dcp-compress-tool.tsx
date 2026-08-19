@@ -1,20 +1,18 @@
 'use client';
+import Loading from '@/components/ui/loading';
 import {
   BasicTool,
-  isErrorOutput,
   partInput,
   partOutput,
   ToolOutputFallback,
   ToolRunningContext,
 } from '@/features/session/tool/shared/infrastructure';
-import { OutputBlock } from '@/features/session/tool/shared/output-block';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
-import Loading from '@/components/ui/loading';
 import { ScissorsIcon as Scissors } from '@phosphor-icons/react';
 import { useContext } from 'react';
 
-export function DCPCompressTool({ part }: ToolProps) {
+export function DCPCompressTool({ part, defaultOpen, forceOpen }: ToolProps) {
   const input = partInput(part);
   const output = partOutput(part);
   const isRunning = useContext(ToolRunningContext);
@@ -35,14 +33,10 @@ export function DCPCompressTool({ part }: ToolProps) {
           {isRunning && <Loading className="text-muted-foreground ml-auto size-3" />}
         </div>
       }
+      defaultOpen={defaultOpen}
+      forceOpen={forceOpen}
     >
-      {isErrorOutput(output) ? (
-        <ToolOutputFallback output={output} toolName="compress" />
-      ) : output ? (
-        <div className="p-2">
-          <OutputBlock text={output} />
-        </div>
-      ) : null}
+      {output ? <ToolOutputFallback output={output} toolName="compress" /> : null}
     </BasicTool>
   );
 }

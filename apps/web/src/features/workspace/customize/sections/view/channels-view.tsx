@@ -4,6 +4,29 @@
  * Channels — where a project's agent becomes reachable from Slack, Email, and
  * Microsoft Teams.
  *
+ * ## Where this renders (it is a section, not a page)
+ *
+ * This exports `ChannelsSection`: the channels CONTENT and nothing else — no
+ * heading, no column, no scroll container. Its one mount is the Channels scope
+ * of `/projects/<id>/connectors` (`connectors-page.tsx`), which owns the
+ * `CapabilityPageShell` around it.
+ *
+ * Channels was briefly its own top-level Customize tab and rendered its own
+ * shell here. It is not any more, and the reason is a product call, not a
+ * layout one: a person who wants their agent reachable from Slack is doing the
+ * same job as a person wiring up any other outside tool, and asking them to
+ * know that one lives under "Channels" and the other under "Connectors" is
+ * asking them to know our table layout. The two are still different backend
+ * resources — `/projects/{id}/channels/*` (inbound: installations, chat
+ * identity, per-channel bindings) versus `/projects/{id}/connectors/*`
+ * (outbound: tool and OAuth access) — and nothing here merges them. Only the
+ * navigation merged.
+ *
+ * Nesting a second `CapabilityPageShell` inside the page's would print a
+ * second `<h1>` and a second `overflow-y-auto` inside the layout's one bounded
+ * column, so this file must not reintroduce one; `channels-view.chrome.test.ts`
+ * pins that.
+ *
  * ## The redesign (this file's shape changed; the data layer did not)
  *
  * Every query, mutation, feature flag, and permission check below is the same
@@ -87,7 +110,6 @@ import {
 import { SlackConnectCard } from '@/features/workspace/customize/sections/component/slack-connect-card';
 import { EmailConnectForm } from '@/features/workspace/customize/sections/connectors-view';
 import { TeamsChannelPanel } from '@/features/workspace/customize/sections/teams-channel-panel';
-import { SettingsTabHeader } from '@/features/workspace/settings/settings-tab-header';
 import {
   type ChannelBinding,
   useChannelBindings,
@@ -135,7 +157,7 @@ const EMAIL_CONNECTOR_SLUG = 'kortix_email';
  */
 const CHANNEL_LOADING_ROWS = ['channel-loading-1', 'channel-loading-2'];
 
-export function ChannelsView({ projectId }: { projectId: string | null }) {
+export function ChannelsSection({ projectId }: { projectId: string }) {
   // This view used to read the flags off the project SUMMARY query
   // (`qk.project.summary` / `getProject`, whose payload nests them one level
   // shallower). It now reads the one gating primitive, which is backed by
@@ -164,7 +186,7 @@ export function ChannelsView({ projectId }: { projectId: string | null }) {
     (emailChannelEnabled && loadingEmail);
   const oauthInstallUrl = mode?.oauth_available ? mode.install_url : null;
   const canWrite =
-    useProjectCan(projectId ?? undefined, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE).allowed === true;
+    useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE).allowed === true;
 
   // Once Slack is connected it stops being the headline and becomes a peer of
   // Email and Teams — same row, same list. So the "More channels" label only
@@ -175,21 +197,32 @@ export function ChannelsView({ projectId }: { projectId: string | null }) {
   const showMoreLabel = !slackRow && hasRows;
 
   return (
-    <div className="mx-auto w-full max-w-2xl space-y-8">
-      <SettingsTabHeader tab="channels" />
-      {!projectId ? (
-        <InfoBanner tone="neutral">Open a project to manage its channels.</InfoBanner>
-      ) : loading ? (
-        <div className="space-y-6">
+    /* Narrower than the page it sits in, and deliberately so. The Connectors
+       shell is `max-w-5xl` because a 3-up card grid needs it; everything below
+       is a stack of full-width rows and one hero card, and at 1024px the hero's
+       `aspect-[3/1]` cover band renders ~341px of mostly-empty gradient above
+       four lines of copy. Capped at `max-w-3xl` it is ~256px — the same band the
+       cover was drawn for.
+
+       Left-aligned, not `mx-auto`: the shell's `<h1>` starts at the container's
+       left edge, and a centred column under a left-aligned heading reads as a
+       misalignment rather than as a narrower measure.
+
+       No heading and no scroll container here. Both belong to the
+       `CapabilityPageShell` in `connectors-page.tsx`; a second of either would
+       print a second `<h1>` and scroll the wrong box. */
+    <div className="w-full max-w-3xl space-y-6">
+      {loading ? (
+        <>
           <Skeleton className="h-64 rounded-md" />
           <div className="space-y-2">
             {CHANNEL_LOADING_ROWS.map((key) => (
               <Skeleton key={key} className="h-14 rounded-md" />
             ))}
           </div>
-        </div>
+        </>
       ) : (
-        <div className="space-y-6">
+        <>
           {/* Slack, not connected: the hero. Connected, it drops into the row
               list below and this branch renders nothing. */}
           {install ? null : (
@@ -228,7 +261,7 @@ export function ChannelsView({ projectId }: { projectId: string | null }) {
           {install ? <SlackFollowUp projectId={projectId} canWrite={canWrite} /> : null}
 
           {teamsChannelEnabled ? <TeamsChannelPanel projectId={projectId} /> : null}
-        </div>
+        </>
       )}
     </div>
   );

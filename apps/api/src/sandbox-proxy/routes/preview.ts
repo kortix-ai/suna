@@ -2,7 +2,6 @@ import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { PROJECT_ACTIONS, authorize } from '../../iam';
 import { getTraceHeaders, setContextField } from '../../lib/request-context';
-import type { ProviderName } from '../../platform/providers';
 import { callerKortixSessionId } from '../../projects/lib/caller-session';
 import {
   PromptConnectorPreflightUnresolved,
@@ -20,10 +19,7 @@ import {
   isPreviewUseObservation,
   isSandboxAuthored,
   isTurnStartRequest,
-  observeTurnStart,
   previewGrantMs,
-  turnDeliveryGraceMs,
-  turnGrantMs,
 } from '../../projects/sandbox-deadline';
 import { generateSessionTitleFromFirstPrompt } from '../../projects/session-title-generate';
 import {
@@ -53,6 +49,15 @@ import {
   shouldSyncProjectEnvBeforeProxy,
 } from '../pre-prompt-env-sync';
 import {
+  EFFECTIVE_MESSAGE_ID_HEADER,
+  PROMPT_TRANSCRIPT_READ_LIMIT,
+  isPromptWireIdRepairPath,
+  promptBodyMessageId,
+  promptTranscriptReadPath,
+  readNewestWireIdTime,
+  repairPromptWireId,
+} from '../prompt-wire-id-repair';
+import {
   PROXY_RETRY_BUDGET_MS,
   isLongTurnCompletionRequest,
   isUploadRequest,
@@ -65,7 +70,19 @@ import {
   releasePromptDelivery,
   shouldClaimPromptDelivery,
 } from '../prompt-dedupe';
+import {
+  PROXY_HOP_HEADER,
+  PROXY_UPSTREAM_STATUS_HEADER,
+  portFailureHop,
+  type ProxyHop,
+} from '../proxy-hop';
 import { carriesSessionData, requiresSessionVisibility } from '../session-data-ports';
+import {
+  abandonSandboxTurn,
+  acceptSandboxTurn,
+  beginSandboxTurn,
+  extractTurnIdentity,
+} from '../../projects/sandbox-turn-lifecycle';
 
 // `userId` is set by combinedAuth (mounted in ../index.ts) before this route.
 // `apiKeyType` is read to decide whether a request may extend the sandbox's
@@ -278,28 +295,53 @@ function portUnreachableHtml(port: number): string {
 // Response for an unreachable / not-yet-ready sandbox port: a friendly HTML page
 // for browser navigations, machine-readable JSON otherwise. Marked no-store so a
 // retry always re-hits the upstream instead of a cached error.
-function portUnreachableResponse(opts: {
+//
+// `hop` is mandatory: the status alone cannot distinguish a parked row from a
+// dead runtime from a dev server the agent never started, and a caller that has
+// to guess guesses wrong (see `proxy-hop.ts`). `upstreamStatus` is the status
+// the failing hop actually returned, when there was one — a thrown/refused
+// connection has none.
+export function portUnreachableResponse(opts: {
   port: number;
   status: number;
   origin: string;
   incomingHeaders: Headers;
   reason: string;
+  hop: ProxyHop;
+  upstreamStatus?: number | null;
 }): Response {
-  const { port, status, origin, incomingHeaders, reason } = opts;
+  const { port, status, origin, incomingHeaders, reason, hop } = opts;
+  const upstreamStatus = opts.upstreamStatus ?? null;
   const headers = new Headers({ 'Cache-Control': 'no-store' });
+  // Set on EVERY variant, HTML included: a `fetch` probe that lands on the
+  // browser-navigation branch (it sends `Accept: text/html`) must still be able
+  // to attribute the failure.
+  headers.set(PROXY_HOP_HEADER, hop);
+  if (upstreamStatus !== null) {
+    headers.set(PROXY_UPSTREAM_STATUS_HEADER, String(upstreamStatus));
+  }
   if (origin) {
     headers.set('Access-Control-Allow-Origin', origin);
     headers.set('Access-Control-Allow-Credentials', 'true');
+    // Without this the browser hides both headers from JS and the probe is back
+    // to guessing — the web app and the API are always different origins.
+    headers.set(
+      'Access-Control-Expose-Headers',
+      `${PROXY_HOP_HEADER}, ${PROXY_UPSTREAM_STATUS_HEADER}`,
+    );
   }
   if (isBrowserNavigation(incomingHeaders)) {
     headers.set('Content-Type', 'text/html; charset=utf-8');
     return new Response(portUnreachableHtml(port), { status, headers });
   }
   headers.set('Content-Type', 'application/json');
-  return new Response(JSON.stringify({ error: reason, port, status }), {
-    status,
-    headers,
-  });
+  return new Response(
+    JSON.stringify({ error: reason, port, status, hop, upstream_status: upstreamStatus }),
+    {
+      status,
+      headers,
+    },
+  );
 }
 
 // Response for a blocking session-turn (`POST /session/:id/message`) that
@@ -872,61 +914,14 @@ export async function forwardToSandbox(
         origin,
         incomingHeaders,
         reason: `sandbox not ready (status: ${record.status})`,
+        // We never dialled the box. This is our own row read, so it says
+        // nothing about whether the runtime is reachable — a probe that counts
+        // it as evidence of a dead box is counting our own answer.
+        hop: 'control_plane',
       });
     }
   }
   const serviceKey = record.serviceKey;
-
-  // OBSERVE THE TURN START **BEFORE** FORWARDING IT.
-  //
-  // Two reasons this is here and awaited rather than fire-and-forget after the
-  // response, which is where it used to be:
-  //
-  //  1. At the 24-hour absolute run cap the grant clamps to `active_since + 24h`
-  //     — already in the past — so the old ordering ACCEPTED the prompt and let
-  //     the reaper stop the box seconds later, mid-work, swallowing the user's
-  //     message. Accepting work you are about to kill is worse than refusing it.
-  //     Refuse, park the box so the retry re-anchors a fresh stretch, and say so
-  //     in a machine-readable body.
-  //  2. Before the dedupe claim, so a refusal does not burn the caller's
-  //     Idempotency-Key and turn their retry into a bogus 200 "duplicate".
-  //
-  // A lost/failed observation fails OPEN (see observeTurnStart) — the deadline is
-  // still bounded by the DB CHECK, and refusing a prompt on uncertainty is far
-  // worse than granting one turn too many.
-  if (!sandboxAuthored && isTurnStartRequest(upstreamPort, method, remainingPath)) {
-    const observed = await observeTurnStart({ externalId: sandboxId }, turnDeliveryGraceMs());
-    if (observed === 'at_cap') {
-      const capped = {
-        sandboxId: record.sandboxId,
-        sessionId: record.sessionId,
-        externalId: record.externalId,
-        provider: record.provider as ProviderName,
-      };
-      // Dynamic import: the reaper's stop path reaches back into this module's
-      // own package (invalidateProviderCache), and a static edge here would be a
-      // real cycle. This branch is rare by construction — once per 24h of
-      // continuous work — so the one-time load cost is irrelevant.
-      void import('../../projects/reaping/stop-box')
-        .then((m) => m.parkBoxAtRunCap(capped))
-        .catch((err) =>
-          console.warn(
-            `[deadline] run-cap park could not be scheduled for ${sandboxId}:`,
-            err instanceof Error ? err.message : err,
-          ),
-        );
-      console.warn(`[PREVIEW] Refused turn on sandbox ${sandboxId}: 24h run cap reached`);
-      return jsonProxyError(
-        {
-          error: 'This sandbox has reached its 24-hour continuous run limit and is restarting.',
-          code: 'sandbox_run_cap_reached',
-          retry: true,
-        },
-        503,
-        origin,
-      );
-    }
-  }
 
   // Dedupe OpenCode prompt delivery up-front. Claim a stable key before the retry
   // loop so a duplicate inbound prompt cannot enqueue the user message twice.
@@ -962,6 +957,69 @@ export async function forwardToSandbox(
       projectId: record.projectId,
     });
   }
+
+  // `deadline_at` is the idle-stop clock. This separate record is the durable
+  // fact that a specific OpenCode turn is active. It is created immediately
+  // before the first upstream delivery attempt, promoted only after a confirmed
+  // or ambiguous acceptance, and removed by matching terminal evidence.
+  const turnIdentity =
+    !sandboxAuthored && isTurnStartRequest(upstreamPort, method, remainingPath)
+      ? extractTurnIdentity(remainingPath, requestBody)
+      : null;
+  // The wire id OpenCode will actually see, once the placement check below has
+  // run — the client's, or the proxy's re-mint. Echoed on the response so the
+  // sender can correlate, and written into `turnIdentity` so the ledger and the
+  // daemon's exact-message probe match the message that exists.
+  let effectiveMessageId: string | null = null;
+  const turnToken = turnIdentity ? crypto.randomUUID() : null;
+  let turnLifecycleBegun = false;
+  let turnLifecycleAccepted = false;
+  const beginTurnLifecycle = async (): Promise<'granted' | 'unavailable'> => {
+    if (!turnIdentity || !turnToken || turnLifecycleBegun) return 'granted';
+    try {
+      const outcome = await beginSandboxTurn(
+        { externalId: sandboxId },
+        { token: turnToken, ...turnIdentity },
+      );
+      turnLifecycleBegun = outcome === 'granted';
+      return outcome === 'no_box' ? 'unavailable' : outcome;
+    } catch (error) {
+      console.error(
+        `[turn-lifecycle] refused prompt for ${sandboxId}: delivery authority is unavailable`,
+        error,
+      );
+      return 'unavailable';
+    }
+  };
+  const acceptTurnLifecycle = async (): Promise<void> => {
+    if (!turnLifecycleBegun || !turnToken || turnLifecycleAccepted) return;
+    try {
+      turnLifecycleAccepted = await acceptSandboxTurn({ externalId: sandboxId }, turnToken);
+    } catch (error) {
+      // OpenCode already accepted this non-idempotent request. Do not convert a
+      // post-delivery database outage into a failed send or delete the durable
+      // `delivering` record. The provider-neutral reaper probes that exact
+      // token-bound record and promotes it when OpenCode reports the turn live.
+      console.error(
+        `[turn-lifecycle] acceptance persistence failed for ${sandboxId}; reaper will reconcile delivery`,
+        error,
+      );
+    }
+  };
+  const abandonTurnLifecycle = async (): Promise<void> => {
+    if (!turnLifecycleBegun || !turnToken || turnLifecycleAccepted) return;
+    try {
+      await abandonSandboxTurn({ externalId: sandboxId }, turnToken);
+      turnLifecycleBegun = false;
+    } catch (error) {
+      // Cleanup failure must not replace the upstream response. The durable
+      // delivery record expires through the reaper's exact-message probe.
+      console.error(
+        `[turn-lifecycle] delivery cleanup failed for ${sandboxId}; reaper will reconcile delivery`,
+        error,
+      );
+    }
+  };
 
   // 2. Forward with auto-wake retry.
   const MAX_RETRIES = 3;
@@ -1009,11 +1067,20 @@ export async function forwardToSandbox(
   // the 60s ALB idle timeout severs the connection (→ Cloudflare's bare 502).
   const proxyStartedAt = Date.now();
 
+  // Which hop the LAST attempt got as far as, for the give-up response below.
+  // An attempt that never resolved an ingress address failed at the provider
+  // edge; once it has one, everything after it is the box itself. Never dialling
+  // at all (out of budget on the first pass) is the provider-edge case too — we
+  // have no evidence about the box.
+  let lastAttemptHop: ProxyHop = 'provider_ingress';
+
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     const budgetRemainingMs = PROXY_RETRY_BUDGET_MS - (Date.now() - proxyStartedAt);
     if (budgetRemainingMs <= 500) break; // out of budget → friendly page below
     try {
+      lastAttemptHop = 'provider_ingress';
       const ingress = await resolveSandboxIngress(record, ingressRequest);
+      lastAttemptHop = portFailureHop(upstreamPort);
       const previewUrl = ingress.url;
       const targetUrl = previewUrl.replace(/\/$/, '') + remainingPath + queryString;
 
@@ -1074,6 +1141,52 @@ export async function forwardToSandbox(
       // identity encoding, regenerate trace headers, then apply the sandbox
       // auth/identity headers (service key, preview token, signed user-context)
       // last so they always win.
+      const authHeaders = await buildSandboxUpstreamHeaders({
+        sandboxId,
+        userId,
+        serviceKey,
+        providerHeaders: ingress.headers,
+      });
+
+      // PLACE THE WIRE ID against the target session's actual tip — for ANY
+      // target, child sessions included. See `prompt-wire-id-repair.ts` for the
+      // incident this closes. One bounded newest-N read; fail-open (a failed
+      // read keeps the client's id); runs after every refusal point and before
+      // the ledger begins, so the identity recorded is the one delivered. Once
+      // per request: a retry attempt keeps the placement the first computed.
+      if (
+        promptDelivery &&
+        !sandboxAuthored &&
+        effectiveMessageId === null &&
+        isPromptWireIdRepairPath(remainingPath) &&
+        // No client id, nothing to place — OpenCode mints, and the read is
+        // skipped entirely so a plain body pays nothing.
+        promptBodyMessageId(requestBody) !== null
+      ) {
+        const readUrl =
+          previewUrl.replace(/\/$/, '') +
+          promptTranscriptReadPath(remainingPath, PROMPT_TRANSCRIPT_READ_LIMIT);
+        const newestKnownTime = await readNewestWireIdTime({ url: readUrl, headers: authHeaders });
+        const placed = repairPromptWireId({
+          body: requestBody,
+          newestKnownTime,
+          nowMs: Date.now(),
+        });
+        if (placed.outcome === 'reminted') {
+          console.warn('[prompt-wire-id] re-minted a stale or malformed client wire id', {
+            sandboxId,
+            sessionId: record.sessionId,
+            path: remainingPath,
+            effectiveMessageId: placed.effectiveMessageId,
+          });
+          requestBody = placed.body;
+        }
+        effectiveMessageId = placed.effectiveMessageId ?? '';
+        if (turnIdentity && placed.effectiveMessageId) {
+          turnIdentity.messageId = placed.effectiveMessageId;
+        }
+      }
+
       const headers = new Headers();
       for (const [key, value] of incomingHeaders.entries()) {
         if (STRIP_FORWARD_HEADERS.has(key.toLowerCase())) continue;
@@ -1083,12 +1196,6 @@ export async function forwardToSandbox(
       for (const [key, value] of Object.entries(getTraceHeaders())) {
         headers.set(key, value);
       }
-      const authHeaders = await buildSandboxUpstreamHeaders({
-        sandboxId,
-        userId,
-        serviceKey,
-        providerHeaders: ingress.headers,
-      });
       for (const [key, value] of Object.entries(authHeaders)) {
         headers.set(key, value);
       }
@@ -1162,6 +1269,24 @@ export async function forwardToSandbox(
       );
       let upstream: Response;
       try {
+        // Begin after every pre-prompt refusal point, but before the first byte
+        // can reach OpenCode. A fast session.idle can now delete this record;
+        // the success path below promotes it with a token CAS and cannot revive
+        // a turn that already ended.
+        const turnLifecycleStart = await beginTurnLifecycle();
+        if (turnLifecycleStart !== 'granted') {
+          if (promptDedupeKey) releasePromptDelivery(promptDedupeKey);
+          return jsonProxyError(
+            {
+              error:
+                'The sandbox lifecycle authority is temporarily unavailable. The prompt was not delivered.',
+              code: 'sandbox_lifecycle_unavailable',
+              retry: true,
+            },
+            503,
+            origin,
+          );
+        }
         if (nonReplayableWrite) promptDeliveryMayHaveReachedUpstream = true;
         upstream = await fetch(targetUrl, {
           method,
@@ -1179,6 +1304,7 @@ export async function forwardToSandbox(
       }
 
       if (upstream.status >= 300 && upstream.status < 400) {
+        await abandonTurnLifecycle();
         const respHeaders = clientResponseHeaders(upstream.headers, origin);
         const safeLocation = sanitizeRedirectLocation(
           previewUrl,
@@ -1194,6 +1320,7 @@ export async function forwardToSandbox(
       }
 
       if (upstream.status === 401 && serviceKey && userId) {
+        await abandonTurnLifecycle();
         console.warn(`[PREVIEW] Sandbox ${sandboxId}:${port} rejected signed user context`);
         return jsonProxyError({ error: 'sandbox proxy authentication rejected' }, 502, origin);
       }
@@ -1216,6 +1343,7 @@ export async function forwardToSandbox(
           // (once opencode is up) actually delivers instead of short-circuiting
           // to a bogus 200 "duplicate" that would drop the message.
           if (promptDedupeKey) releasePromptDelivery(promptDedupeKey);
+          await abandonTurnLifecycle();
           const notReadyHeaders = clientResponseHeaders(upstream.headers, origin);
           return new Response(bodyText, {
             status: upstream.status,
@@ -1251,6 +1379,11 @@ export async function forwardToSandbox(
             origin,
             incomingHeaders,
             reason: 'sandbox port unreachable',
+            // The provider edge answered — it reached the box and found the
+            // port shut. So the hop is whatever lives on that port: the runtime
+            // (8000/4096/4097) or the user's own process.
+            hop: portFailureHop(upstreamPort),
+            upstreamStatus: upstream.status,
           });
         }
       }
@@ -1288,6 +1421,7 @@ export async function forwardToSandbox(
           continue;
         }
         // Not a Daytona stopped error — pass through.
+        await abandonTurnLifecycle();
         const errHeaders = clientResponseHeaders(upstream.headers, origin);
         return new Response(bodyText, {
           status: upstream.status,
@@ -1298,21 +1432,13 @@ export async function forwardToSandbox(
 
       // Got an HTTP response → sandbox is alive, pass it through with CORS.
       void markSandboxUsed(sandboxId);
-      // A successful OpenCode response proves the prompt reached the agent
-      // runtime. Upgrade the short delivery grace to the full active-turn
-      // window only now. A failed env sync, connect attempt, or upstream 5xx
-      // never receives the four-hour grant.
-      if (
-        upstream.ok &&
-        !sandboxAuthored &&
-        isTurnStartRequest(upstreamPort, method, remainingPath)
-      ) {
-        void extendSandboxDeadline({ externalId: sandboxId }, turnGrantMs()).catch((err) =>
-          console.warn(
-            `[deadline] accepted-turn extend failed for sandbox ${sandboxId}:`,
-            err instanceof Error ? err.message : err,
-          ),
-        );
+      // A 2xx confirms acceptance. A 5xx on a non-replayable turn is ambiguous:
+      // OpenCode may hold the message even though the response was lost. Both
+      // cases must preserve the turn. A definitive 4xx abandons delivery.
+      if (upstream.ok || (turnIdentity && upstream.status >= 500)) {
+        await acceptTurnLifecycle();
+      } else {
+        await abandonTurnLifecycle();
       }
       // A HUMAN IS USING THIS BOX'S PREVIEW. The turn-start observation already
       // happened before the forward (see above); this is the other
@@ -1342,6 +1468,14 @@ export async function forwardToSandbox(
         );
       }
       const respHeaders = clientResponseHeaders(upstream.headers, origin);
+      if (effectiveMessageId) {
+        respHeaders.set(EFFECTIVE_MESSAGE_ID_HEADER, effectiveMessageId);
+        const exposed = respHeaders.get('Access-Control-Expose-Headers');
+        respHeaders.set(
+          'Access-Control-Expose-Headers',
+          exposed ? `${exposed}, ${EFFECTIVE_MESSAGE_ID_HEADER}` : EFFECTIVE_MESSAGE_ID_HEADER,
+        );
+      }
       return new Response(upstream.body, {
         status: upstream.status,
         statusText: upstream.statusText,
@@ -1402,6 +1536,7 @@ export async function forwardToSandbox(
   }
 
   if (sawLongTurnTimeout) {
+    await acceptTurnLifecycle();
     return longTurnTimeoutResponse(origin);
   }
 
@@ -1422,12 +1557,17 @@ export async function forwardToSandbox(
   if (promptDedupeKey && !promptDeliveryMaybeAccepted) {
     releasePromptDelivery(promptDedupeKey);
   }
+  if (promptDeliveryMaybeAccepted) await acceptTurnLifecycle();
+  else await abandonTurnLifecycle();
   return portUnreachableResponse({
     port,
     status: 502,
     origin,
     incomingHeaders,
     reason: 'sandbox upstream unreachable',
+    // No upstream STATUS exists here — every attempt threw (refused, reset,
+    // connect timeout), so there is nothing to report but which hop we got to.
+    hop: lastAttemptHop,
   });
 }
 

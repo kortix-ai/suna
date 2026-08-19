@@ -9,6 +9,8 @@ import { CostChart } from './cost-chart';
 import { CostModelList } from './cost-model-list';
 import { CostSummaryTiles, type CostSummaryTile } from './cost-summary-tiles';
 
+const EMPTY_TILES: CostSummaryTile[] = [];
+
 export interface CostLevelShellProps {
   range: CostRange;
   onRangeChange: (next: CostRange) => void;
@@ -43,7 +45,7 @@ export function CostLevelShell({
   summary,
   isSummaryLoading,
   summaryError,
-  extraTiles = [],
+  extraTiles = EMPTY_TILES,
   showChart,
   controls,
   children,

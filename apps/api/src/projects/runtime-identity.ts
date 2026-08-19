@@ -6,6 +6,7 @@ import { logger } from '../lib/logger';
 import { captureException } from '../lib/sentry';
 import { getProvider, type ProviderName } from '../platform/providers';
 import { db } from '../shared/db';
+import { settleOpenSandboxTurns } from './sandbox-turn-lifecycle';
 import type { StopReason } from './stop-reason';
 
 export const RUNTIME_IDENTITY_UNAVAILABLE = 'runtime_identity_unavailable';
@@ -244,6 +245,13 @@ export async function preserveEstablishedRuntime(
     )
     .returning();
       if (!preservedRow) throw new RuntimeIdentityCasLostError();
+      // The box is GONE at the provider, so any turn still open ended because
+      // the runtime went away. Once the row reads `stopped`, every token-scoped
+      // ledger settle refuses it — they all require an active/provisioning row
+      // — so this transaction is the last moment the history can be closed.
+      // Savepoint-bounded: the park must not become abortable by an
+      // observation table (see settleOpenSandboxTurns).
+      await settleOpenSandboxTurns(tx, row.sandboxId, 'runtime_gone');
       return preservedRow;
     });
   } catch (err) {
@@ -360,6 +368,11 @@ export async function parkEstablishedRuntime(
         )
         .returning();
       if (!parkedRow) throw new RuntimeIdentityCasLostError();
+      // Same reason as the preserve path above: the provider box was stopped a
+      // few lines up, so a turn that was open ended with the runtime, and a
+      // `stopped` row can never be settled token by token again. The provider
+      // box being ALREADY off is also why this settle is savepoint-bounded.
+      await settleOpenSandboxTurns(tx, row.sandboxId, 'runtime_gone');
       return parkedRow;
     });
   } catch (err) {

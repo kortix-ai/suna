@@ -61,8 +61,8 @@ import {
   CellSignalLowIcon,
   CellSignalMediumIcon,
   CellSignalNoneIcon,
+  GaugeIcon,
 } from '@phosphor-icons/react';
-import { Kortix } from '../icon/icons/kortix';
 
 export interface ReasoningEffortModelKey {
   providerID: string;
@@ -182,12 +182,16 @@ function label(value: string): string {
  * (no `style={{ backgroundImage }}`).
  */
 /**
- * Cell-signal bars for effort — empty → full maps none/auto → max. Extra
- * ladder steps (`xhigh`, `max`) share Full; unknown ids fall back to Medium
- * so a future catalog value never renders without an icon.
+ * Cell-signal bars for effort — none → full ladder. Extra ladder steps
+ * (`xhigh`, `max`) share Full; unknown ids fall back to Medium so a future
+ * catalog value never renders without an icon.
  *
- * `max` / `full` paint the Kortix rainbow through the icon via
- * `mix-blend-destination-in` — `bg-clip-text` does not clip to SVG paths.
+ * `null`/`'auto'` (model decides, no project override) gets a Gauge icon
+ * instead of a cell-signal step — it isn't a fixed point on the none→full
+ * ladder, it's the dial that finds its own reading per turn. Reusing the
+ * Kortix brand mark here read as an unrelated "Kortix" button rather than a
+ * value on this control, and a generic sparkle is the same AI-chrome glyph
+ * used everywhere else in the product for unrelated things.
  *
  * A switch that returns JSX (not a component reference) — assigning
  * `const Icon = map[value]` and then `<Icon />` trips the React Compiler's
@@ -195,9 +199,9 @@ function label(value: string): string {
  */
 function EffortIcon({ value, className }: { value: string | null; className?: string }) {
   switch (value) {
-    case 'auto':
-      return <Kortix className={cn(className, 'size-4')} />;
     case null:
+    case 'auto':
+      return <GaugeIcon className={className} weight="bold" />;
     case 'none':
       return <CellSignalNoneIcon className={className} weight="fill" />;
     case 'low':
@@ -306,7 +310,7 @@ export function ReasoningEffortSelector({
               control would be a one-way door. */}
           <DropdownMenuRadioItem value={AUTO} disabled={pending}>
             <span className="flex items-center gap-2">
-              <Kortix className="size-4 shrink-0" />
+              <EffortIcon value={null} className="size-4 shrink-0" />
               Auto
             </span>
           </DropdownMenuRadioItem>

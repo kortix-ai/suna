@@ -194,8 +194,8 @@ function ChangeBody({
         <div className="bg-kortix-orange/[0.06] rounded-lg px-4 py-3.5">
           <SectionLabel>You asked for changes</SectionLabel>
           <ul className="space-y-1.5">
-            {requested.map((r, i) => (
-              <li key={r.at ?? `${i}`} className="text-foreground flex items-start gap-2 text-sm">
+            {requested.map((r) => (
+              <li key={r.at ?? r.text} className="text-foreground flex items-start gap-2 text-sm">
                 <span
                   className="bg-kortix-orange mt-1.5 size-1.5 shrink-0 rounded-full"
                   aria-hidden
@@ -733,6 +733,7 @@ function FeedbackComposer({
           }
         }}
         rows={3}
+        aria-label="What should the agent change?"
         placeholder="What should the agent change? (optional — sent back as a follow-up)"
         className="bg-popover focus-visible:border-primary/40 w-full resize-none rounded-md border px-3 py-2 text-sm outline-none"
       />

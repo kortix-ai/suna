@@ -29,12 +29,6 @@ export const uncoveredAllow: AllowEntry[] = [
     reason:
       "monitor-box-only event intake: the runner posts with its own box's sandbox token, authenticated against project_monitor_boxes; not an end-user API route. Auth, dedup, truncation, and rate-limit behavior are covered source-level in apps/api/src/__tests__/unit-monitor-ingest-route.test.ts",
   },
-  {
-    method: "GET",
-    path: "/v1/apps/edge/tls-check",
-    reason:
-      "self-host reverse-proxy edge: Caddy's on_demand_tls `ask` calls it before issuing a per-App certificate; unauthenticated by design (Caddy cannot present a token) and not an end-user API route. Decision logic + 200/403/404 contract are covered source-level in apps/api/src/apps/edge.test.ts",
-  },
   // The three worker-only voice callbacks that used to be allowlisted here
   // (/voice/prompt, /voice/run-command, /voice/turns) no longer exist: the
   // worker now speaks JSON-RPC to a single MCP route, POST /v1/projects/:*/

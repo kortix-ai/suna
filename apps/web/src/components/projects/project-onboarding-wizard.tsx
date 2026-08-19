@@ -2,7 +2,7 @@
 
 import { ArrowLeftIcon as ArrowLeft } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { AnimatePresence, motion, useReducedMotion, type Variants } from 'motion/react';
+import { AnimatePresence, m, useReducedMotion, type Variants } from 'motion/react';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type Ref } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -13,6 +13,8 @@ import { useAuth } from '@/features/providers/auth-provider';
 import { useProjectOnboarding } from '@/hooks/projects/use-project-onboarding';
 import { usePersonalContactTier } from '@/hooks/use-show-personal-contact';
 import { isConnectorsEnabled } from '@/lib/config';
+import { PROJECT_ACTIONS } from '@/lib/project-actions';
+import { useProjectCans } from '@/lib/use-project-can';
 import { useComposerPrefillStore } from '@/stores/composer-prefill-store';
 import { listConnectors } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
@@ -20,6 +22,7 @@ import { contract, qk } from '@kortix/sdk/react';
 import { completeThenNotify } from './onboarding/complete-then';
 import { slideVariants } from './onboarding/motion';
 import {
+  buildOnboardingKickoffPrompt,
   buildSteps,
   deriveCompanyDomain,
   firstStepAfterSurvey,
@@ -30,8 +33,16 @@ import { DoneStep } from './onboarding/steps/done-step';
 import { PlanStep } from './onboarding/steps/plan-step';
 import { SlackStep } from './onboarding/steps/slack-step';
 import { ToolsStep } from './onboarding/steps/tools-step';
-import { UseCaseStep } from './onboarding/steps/use-case-step';
 import { useOnboardingAnswers } from './onboarding/use-onboarding-answers';
+
+/**
+ * The two leaves this wizard gates on. Module-level so its identity is stable
+ * — `useProjectCans` keys its query on the action list.
+ */
+const ONBOARDING_GATE_ACTIONS: readonly string[] = [
+  PROJECT_ACTIONS.PROJECT_WRITE,
+  PROJECT_ACTIONS.PROJECT_CONNECTOR_READ,
+];
 
 const CAL_LINK = 'team/kortix/demo';
 const CAL_NAMESPACE = 'kortix-onboarding-wizard';
@@ -56,7 +67,7 @@ function AnimatedStep({
   const frameRef = useRef<HTMLDivElement>(null);
 
   return (
-    <motion.div
+    <m.div
       ref={(node) => {
         frameRef.current = node;
         if (typeof ref === 'function') ref(node);
@@ -73,7 +84,7 @@ function AnimatedStep({
       }}
     >
       <StepIdentityProvider idPrefix={idPrefix}>{children}</StepIdentityProvider>
-    </motion.div>
+    </m.div>
   );
 }
 
@@ -123,8 +134,19 @@ export function ProjectOnboardingWizard({
   const [domain, setDomain] = useState(() => deriveCompanyDomain(user?.email));
 
   const connectorsEnabled = isConnectorsEnabled();
-  const steps = useMemo(() => buildSteps(connectorsEnabled), [connectorsEnabled]);
-  const stepId = steps[index] ?? 'use-case';
+  // Both leaves in one batched probe — this component mounts on every project
+  // load, so two singular `/effective` GETs here are two on every load.
+  const caps = useProjectCans(projectId, ONBOARDING_GATE_ACTIONS);
+  // `project.connector.read` is manager-tier (#6522). Without it the Tools and
+  // Slack steps cannot load anything — see `buildSteps`. Hide them on a
+  // RECEIVED denial only, so a slow probe never shortens the wizard for
+  // someone who does hold the leaf.
+  const canReadConnectors = caps[PROJECT_ACTIONS.PROJECT_CONNECTOR_READ]?.allowed !== false;
+  const steps = useMemo(
+    () => buildSteps(connectorsEnabled, canReadConnectors),
+    [connectorsEnabled, canReadConnectors],
+  );
+  const stepId = steps[index] ?? 'company';
 
   // `?onboarding-reset` reopens the wizard from the top (clears completion flag).
   const resetFn = onboarding.reset;
@@ -147,11 +169,28 @@ export function ProjectOnboardingWizard({
     window.history.replaceState(null, '', url.toString());
   }, [resetHydrated, resetFn]);
 
-  const isPending = onboarding.hydrated && onboarding.status === 'pending';
+  // Who this wizard is FOR: someone who can set the project up. Every step
+  // writes something a plain project member cannot — the company domain and
+  // the completion stamp both go through `PATCH /projects/:id/onboarding`,
+  // which loads the project with `'write'` and 404s otherwise.
+  //
+  // That last one is why this is a hard gate rather than a per-step one: with
+  // no way to stamp the project onboarded, `onboarding.complete()` failed for
+  // a member, so the wizard re-opened full-screen on EVERY project load, over
+  // a workspace they were invited into and can otherwise use. Members are
+  // onboarded by whoever invited them, not by this flow.
+  //
+  // `=== false` — an unresolved probe leaves the wizard mounted, so the person
+  // who just created the project never watches it appear a beat late.
+  const cannotSetUpProject = caps[PROJECT_ACTIONS.PROJECT_WRITE]?.allowed === false;
+
+  const isPending = onboarding.hydrated && onboarding.status === 'pending' && !cannotSetUpProject;
   const connectors = useQuery({
     queryKey: qk.project.connectors(projectId),
     queryFn: () => listConnectors(projectId),
-    enabled: isPending,
+    // `GET /connectors/projects/:id/connectors` asserts project.connector.read
+    // — do not fire it for a caller the probe already said no to.
+    enabled: isPending && canReadConnectors,
     ...contract('config'),
     refetchOnWindowFocus: false,
   });
@@ -166,13 +205,14 @@ export function ProjectOnboardingWizard({
   // Direction drives the slide. Without it, Back and Continue animate
   // identically and the motion lies about which way the user moved.
   const [direction, setDirection] = useState(1);
-  const goTo = useCallback((resolve: (i: number) => number) => {
-    setIndex((i) => {
-      const target = resolve(i);
-      setDirection(target >= i ? 1 : -1);
-      return target;
-    });
-  }, []);
+  const goTo = useCallback(
+    (resolve: (i: number) => number) => {
+      const target = resolve(index);
+      setDirection(target >= index ? 1 : -1);
+      setIndex(target);
+    },
+    [index],
+  );
 
   const next = useCallback(
     () => goTo((i) => Math.min(i + 1, steps.length - 1)),
@@ -200,17 +240,21 @@ export function ProjectOnboardingWizard({
     [onboarding, onSkip],
   );
 
-  // Picking a starting point on the finish step seeds the project-home composer
-  // and closes the wizard in one action. `composer-prefill-store` is the
-  // existing one-shot handoff (project-home consumes and clears it on mount) —
-  // the same channel the command palette and "try this" deep links use.
-  const startWithPrompt = useCallback(
-    (prompt: string) => {
-      useComposerPrefillStore.getState().setPrefill(projectId, prompt);
-      void complete();
-    },
-    [projectId, complete],
+  // "Open project" both completes onboarding AND auto-starts the first
+  // conversation — `composer-prefill-store`'s `autoSend` flag (added for
+  // exactly this hand-off) makes project-home fire the kickoff prompt the
+  // moment it mounts, instead of leaving it sitting in the composer for a
+  // second click. Same one-shot channel the `?q=` deep link and command
+  // palette use for prefill-only handoffs; this is the only `autoSend: true`
+  // caller.
+  const kickoffPrompt = useMemo(
+    () => buildOnboardingKickoffPrompt(domain, connectorSlugs.length),
+    [domain, connectorSlugs.length],
   );
+  const openProject = useCallback(() => {
+    useComposerPrefillStore.getState().setPrefill(projectId, kickoffPrompt, { autoSend: true });
+    void complete();
+  }, [projectId, kickoffPrompt, complete]);
 
   // Skipping the survey jumps past BOTH questions to whatever comes next —
   // `tools` normally, `slack` when connectors are disabled.
@@ -304,20 +348,10 @@ export function ProjectOnboardingWizard({
                     variants={stepVariants}
                     idPrefix={`onboarding-${stepId}`}
                   >
-                    {stepId === 'use-case' && (
-                      <UseCaseStep
-                        value={answers.use_case ?? null}
-                        onSelect={(v) => save({ use_case: v })}
-                        onContinue={next}
-                        onSkip={skipSurvey}
-                      />
-                    )}
                     {stepId === 'company' && (
                       <CompanyStep
                         domain={domain}
-                        size={answers.company_size ?? null}
                         onDomainChange={setDomain}
-                        onSizeChange={(v) => save({ company_size: v })}
                         onContinue={() => {
                           // The domain is free text, so it saves on Continue
                           // rather than per keystroke.
@@ -345,12 +379,11 @@ export function ProjectOnboardingWizard({
                     {stepId === 'plan' && <PlanStep projectId={projectId} onContinue={next} />}
                     {stepId === 'done' && (
                       <DoneStep
-                        useCase={answers.use_case ?? null}
-                        profileCount={connectorSlugs.length}
+                        domain={domain}
+                        connectedCount={connectorSlugs.length}
                         showFounderCall={showFounderStep}
                         onBookCall={() => setCalOpen(true)}
-                        onStart={complete}
-                        onUsePrompt={startWithPrompt}
+                        onStart={openProject}
                       />
                     )}
                   </AnimatedStep>

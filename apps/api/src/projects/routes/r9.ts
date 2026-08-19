@@ -41,8 +41,8 @@ projectsApp.openapi(
     const loaded = await loadProjectForUser(c, projectId, 'write');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
 
-    // Human-side capability gate: merging lands code on the base branch. Editors/
-    // editors hold project.gitops.merge today; a custom role can OMIT it to take
+    // Human-side capability gate: merging lands code on the base branch.
+    // Managers hold project.gitops.merge today; a custom role can OMIT it to take
     // Git-Ops merge away from a department without touching the rest of write.
     await assertProjectCapability(
       c,

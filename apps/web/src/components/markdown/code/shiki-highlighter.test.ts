@@ -49,6 +49,14 @@ describe('clampCode', () => {
     expect(clamped).toBe('x'.repeat(MAX) + MARKER);
     expect(clamped).not.toContain('DROP_ME');
   });
+
+  test('unbounded skips the clamp regardless of length', () => {
+    const huge = 'x'.repeat(MAX * 5) + 'KEEP_ME';
+
+    expect(clampCode(huge, true)).toBe(huge);
+    expect(clampCode(huge, true)).toContain('KEEP_ME');
+    expect(clampCode(huge, true)).not.toContain(MARKER);
+  });
 });
 
 describe('shikiKey', () => {

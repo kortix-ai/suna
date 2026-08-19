@@ -209,7 +209,9 @@ export const PtyTerminal = forwardRef<PtyTerminalHandle, PtyTerminalProps>(funct
     const term = new XTerm({
       cursorBlink: true,
       cursorStyle: 'block',
-      fontSize: 13,
+      // Canvas-rendered text doesn't inherit the CSS root font-size scale — bump
+      // in step with it (13px base * 1.1).
+      fontSize: 14,
       fontFamily: 'JetBrains Mono, Menlo, Monaco, Consolas, monospace',
       theme: terminalTheme,
       allowProposedApi: true,

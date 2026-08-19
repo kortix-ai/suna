@@ -65,17 +65,27 @@ function error(id: JsonRpcId, code: number, message: string, data?: unknown) {
 }
 
 function publicRecordData(kind?: PublicContentKind, limit = 25) {
-  return getPublicContentRecords()
-    .filter((record) => !kind || record.kind === kind)
-    .filter((record) => record.markdownPath)
-    .slice(0, Math.min(Math.max(limit, 1), 50))
-    .map((record) => ({
+  const cap = Math.min(Math.max(limit, 1), 50);
+  const records: Array<{
+    kind: PublicContentKind;
+    title: string;
+    description: string | null;
+    path: string;
+    markdown_path: string | null;
+  }> = [];
+  for (const record of getPublicContentRecords()) {
+    if (kind && record.kind !== kind) continue;
+    if (!record.markdownPath) continue;
+    records.push({
       kind: record.kind,
       title: record.title,
       description: record.description ?? null,
       path: record.htmlPath,
       markdown_path: record.markdownPath,
-    }));
+    });
+    if (records.length >= cap) break;
+  }
+  return records;
 }
 
 function resolveMarkdownFromHtmlPath(htmlPath: string) {

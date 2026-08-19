@@ -68,10 +68,7 @@ export function GeneralTab({ onClose }: { onClose: () => void }) {
     queryFn: listAccounts,
     staleTime: 60_000,
   });
-  const accountId =
-    selectedAccountId ??
-    accountsQuery.data?.[0]?.account_id ??
-    null;
+  const accountId = selectedAccountId ?? accountsQuery.data?.[0]?.account_id ?? null;
 
   useEffect(() => {
     const accounts = accountsQuery.data;
@@ -124,13 +121,16 @@ export function GeneralTab({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     const fetchUserData = async () => {
       setIsLoading(true);
-      const { data } = await supabase.auth.getUser();
-      if (data.user) {
-        setUserName(data.user.user_metadata?.name || data.user.email?.split('@')[0] || '');
-        setUserEmail(data.user.email || '');
-        setAvatarUrl(data.user.user_metadata?.avatar_url || '');
+      try {
+        const { data } = await supabase.auth.getUser();
+        if (data.user) {
+          setUserName(data.user.user_metadata?.name || data.user.email?.split('@')[0] || '');
+          setUserEmail(data.user.email || '');
+          setAvatarUrl(data.user.user_metadata?.avatar_url || '');
+        }
+      } finally {
+        setIsLoading(false);
       }
-      setIsLoading(false);
     };
 
     fetchUserData();

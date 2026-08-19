@@ -16,7 +16,7 @@ import {
   takeFlagValue,
 } from '../command-helpers.ts';
 import { loadLocalManifest } from '../manifest.ts';
-import { C, help, pad, status } from '../style.ts';
+import { C, help, pad, status, visibleWidth } from '../style.ts';
 
 const HELP = help`Usage: kortix secrets <subcommand> [options]
 
@@ -145,6 +145,35 @@ type SecretRow = {
   deliveryStatus: 'available' | 'unavailable' | 'disabled';
   requiresRotation: boolean;
 };
+
+/**
+ * The DELIVERY cell: where the value goes, and whether it can get there.
+ *
+ * `delivery_status` is the field that says a boundary secret is dead — an
+ * `egress` secret on a project with no network boundary is stored, valid and
+ * completely undelivered. `denied` reports 'disabled' as its own target and is
+ * a choice rather than a fault, so only 'unavailable' is flagged. The marker is
+ * text, not colour, because the CLI runs unstyled under NO_COLOR and in pipes.
+ */
+export function deliveryCell(row: {
+  strategy: SecretRow['strategy'];
+  consumer: SecretRow['consumer'];
+  deliveryStatus: SecretRow['deliveryStatus'];
+  requiresRotation: boolean;
+}): string {
+  const target =
+    row.strategy === 'runtime'
+      ? 'sandbox'
+      : row.strategy === 'denied'
+        ? 'disabled'
+        : row.strategy === 'broker'
+          ? (row.consumer ?? 'Kortix broker')
+          : 'approved hosts';
+  const undeliverable =
+    row.deliveryStatus === 'unavailable' ? ` ${C.red}· unavailable${C.reset}` : '';
+  const rotation = row.requiresRotation ? ' · rotate' : '';
+  return `${target}${undeliverable}${rotation}`;
+}
 
 async function secretsLs(opts: CtxOpts, json = false): Promise<number> {
   const ctx = await resolveProjectContext(opts);
@@ -284,11 +313,25 @@ async function secretsLs(opts: CtxOpts, json = false): Promise<number> {
   }
 
   const nameW = Math.max(...allRows.map((r) => r.identifier.length), 4);
-  process.stdout.write(
-    `  ${C.dim}${pad('IDENTIFIER', nameW)}   STATUS    DELIVERY          SPEC${C.reset}\n`,
+  // The cell carries an undeliverable marker, so its width is not fixed — size
+  // the column from the rows the way IDENTIFIER already is.
+  const rendered = allRows.map((r) => ({ row: r, delivery: deliveryCell(r) }));
+  const deliveryW = Math.max(
+    ...rendered.map((entry) => visibleWidth(entry.delivery)),
+    'DELIVERY'.length,
   );
-  for (const r of allRows) {
-    const marker = r.available ? `${C.green}● ${C.reset}` : `${C.yellow}○ ${C.reset}`;
+  process.stdout.write(
+    `  ${C.dim}${pad('IDENTIFIER', nameW)}   STATUS    ${pad('DELIVERY', deliveryW)}  SPEC${C.reset}\n`,
+  );
+  for (const { row: r, delivery } of rendered) {
+    // A stored value is not a delivered one. Green-for-configured alone let a
+    // secret whose delivery path this deployment cannot run print as healthy,
+    // so the dot answers "will this arrive?", not just "is a value set?".
+    const marker = !r.available
+      ? `${C.yellow}○ ${C.reset}`
+      : r.deliveryStatus === 'unavailable'
+        ? `${C.red}● ${C.reset}`
+        : `${C.green}● ${C.reset}`;
     const statusTxt = r.available
       ? r.effectiveSource === 'mine'
         ? 'personal'
@@ -299,18 +342,8 @@ async function secretsLs(opts: CtxOpts, json = false): Promise<number> {
     // Show the injected env key only when it differs from the identifier —
     // the second-value-under-same-key case (mirrors the web's "→ key").
     const keyHint = r.key !== r.identifier ? ` ${C.dim}→ ${r.key}${C.reset}` : '';
-    const delivery =
-      r.strategy === 'runtime'
-        ? 'sandbox'
-        : r.strategy === 'denied'
-          ? 'disabled'
-          : r.strategy === 'broker'
-            ? (r.consumer ?? 'Kortix broker')
-            : 'approved hosts';
-    const rotation = r.requiresRotation ? ' · rotate' : '';
-    const deliveryText = `${delivery}${rotation}`;
     process.stdout.write(
-      `${marker}${pad(r.identifier, nameW)}   ${statusTxt}  ${pad(deliveryText, 16)}  ${specColor}${r.spec}${C.reset}${keyHint}\n`,
+      `${marker}${pad(r.identifier, nameW)}   ${statusTxt}  ${pad(delivery, deliveryW)}  ${specColor}${r.spec}${C.reset}${keyHint}\n`,
     );
   }
 
@@ -321,6 +354,16 @@ async function secretsLs(opts: CtxOpts, json = false): Promise<number> {
         `${requiredMissing.length} required secret${
           requiredMissing.length === 1 ? '' : 's'
         } missing — sessions will start but may misbehave.`,
+      )}\n`,
+    );
+  }
+  const undeliverable = allRows.filter((row) => row.deliveryStatus === 'unavailable');
+  if (undeliverable.length > 0) {
+    process.stdout.write(
+      `  ${status.warn(
+        `${undeliverable.length} secret${
+          undeliverable.length === 1 ? '' : 's'
+        } cannot be delivered — the chosen path is not available on this project.`,
       )}\n`,
     );
   }
@@ -543,9 +586,21 @@ async function secretsDelivery(args: string[], opts: CtxOpts, json = false): Pro
         `  ${C.dim}The value is available to agent code and commands inside the sandbox.${C.reset}\n`,
       );
     } else if (strategy === 'egress') {
+      // Two mechanisms satisfy this delivery — the provider edge injects at the
+      // sandbox's egress proxy, the in-guest shim relays to the broker route
+      // which injects server-side — and nothing in this response says which one
+      // the project runs. Naming either is wrong half the time, and both hold
+      // the same promise, so state the promise instead.
       process.stdout.write(
-        `  ${C.dim}Platinum injects the value outside the sandbox for approved hosts only.${C.reset}\n`,
+        `  ${C.dim}The value is injected outside the sandbox on the way to those hosts — agent code never sees it.${C.reset}\n`,
       );
+      if (result.network_boundary_available === false) {
+        process.stdout.write(
+          `  ${status.warn(
+            'No network boundary is enabled on this project — requests will leave without the value.',
+          )}\n`,
+        );
+      }
     } else if (result.requires_rotation) {
       process.stdout.write(
         `  ${C.dim}Rotate the value because an earlier sandbox may retain it.${C.reset}\n`,

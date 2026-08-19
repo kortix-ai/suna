@@ -303,8 +303,14 @@ describe('useSummarizeOpenCodeSession — model resolution fallback chain', () =
       onMutate: (args: { sessionId: string }) => void;
       onError: (err: unknown, args: { sessionId: string }) => void;
     };
+    // The store holds the ms epoch this tab issued `/compact`, not a boolean:
+    // `projectCompacting` bounds the stamp, so a lost `session.compacted`
+    // frame can no longer pin the composer for the lifetime of the tab.
+    const before = Date.now();
     hook.onMutate({ sessionId: 'ses_compact' });
-    expect(realCompactionStore.getState().compactingBySession.ses_compact).toBe(true);
+    const stamp = realCompactionStore.getState().compactingBySession.ses_compact;
+    expect(stamp).toBeNumber();
+    expect(stamp).toBeGreaterThanOrEqual(before);
     hook.onError(new Error('boom'), { sessionId: 'ses_compact' });
     expect(realCompactionStore.getState().compactingBySession.ses_compact).toBeUndefined();
   });

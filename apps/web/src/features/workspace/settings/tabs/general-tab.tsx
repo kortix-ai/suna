@@ -1,11 +1,22 @@
 'use client';
 
 /**
- * The General tab — workspace name, icon, the sandbox-provider pin, and
- * Delete workspace. Split off `settings-view.tsx`'s `SettingsView`, which
- * used to render this content alongside Repository, Automation, and the full
- * Experimental feature list on one page (Task 18's brief). Experimental now
- * has its own tab — see `experimental-tab.tsx` — and is NOT rendered here.
+ * The General tab — workspace name, icon, and Delete workspace. Split off
+ * `settings-view.tsx`'s `SettingsView`, which used to render this content
+ * alongside Repository, Automation, and the full Experimental feature list on
+ * one page (Task 18's brief). Experimental now has its own tab — see
+ * `experimental-tab.tsx` — and is NOT rendered here.
+ *
+ * **This tab does not mention sandboxes (2026-08-17).** It used to carry a
+ * "Sandbox" sub-section holding `SandboxProviderRow` — the per-project
+ * sandbox-provider pin, with `AUTO_PROVIDER` and the
+ * `applySandboxProviderResult`/`pollSandboxProviderTransition` helpers it
+ * drives. All of it is CUT to `sandbox-tab.tsx` (the Sandbox templates
+ * section), where it renders above the template list, so everything sandbox
+ * related lives on one page. Cut, not copied — there is exactly one
+ * implementation, and its behavior is unchanged; only its host page moved.
+ * See `sandbox-tab.tsx`'s header comment for the move and for why the pin is
+ * now read from the project query there.
  *
  * **What moved here, verbatim, from `settings-view.tsx`:**
  * - The rename mutation (`GeneralWorkspaceCard` below) — same
@@ -13,11 +24,6 @@
  *   as the old `GeneralProjectCard`, byte-identical apart from the name of
  *   the enclosing function. `general-tab.rename.test.tsx` pins this the same
  *   way `settings-view.rename.test.tsx` used to.
- * - `SandboxProviderRow` (including `AUTO_PROVIDER` and the
- *   `applySandboxProviderResult`/`pollSandboxProviderTransition` helpers it
- *   drives) — cut from inside the old `ExperimentalCard`'s disclosure, not
- *   copied, per the task brief ("a copy leaves two implementations to
- *   drift"). Its own behavior is unchanged; only its host page moved.
  * - The Danger Zone (renamed "Delete workspace" per the task brief, to match
  *   the Profile tab's own "Delete account" section naming) — same
  *   `archiveProject` mutation. The mechanism is still an archive, NOT a row
@@ -78,7 +84,7 @@
  * inventing a field the backend doesn't have; this tab does not render one.
  *
  * **What did NOT move here: Repository and Automation.** The task brief
- * scopes this split to exactly "General" (name, icon, sandbox pin, delete)
+ * scoped this split to exactly "General" (name, icon, sandbox pin, delete)
  * and "Experimental" — it does not mention `RepositoryCard` (default branch,
  * manifest path, GitHub collaborator invite) or `TriggersActivationCard`
  * (the project-wide "pause all triggers" switch). Neither belongs on General
@@ -99,11 +105,10 @@
  * `/projects/start` would silently re-provision a workspace the user just
  * deleted. `general-tab.archive.test.ts` carries `main`'s tests for them.
  *
- * `GeneralTabView` is the pure, props-only half — every stateful piece
- * (`GeneralWorkspaceCard`'s name+icon mutations, `SandboxProviderRow`'s
- * mutation+polling) owns its own hooks and can't render under
- * `renderToStaticMarkup` with no `QueryClientProvider`, so both are threaded
- * through as slots — same reasoning as `connected-tab.tsx`'s
+ * `GeneralTabView` is the pure, props-only half — the one stateful piece
+ * (`GeneralWorkspaceCard`'s name+icon mutations) owns its own hooks and can't
+ * render under `renderToStaticMarkup` with no `QueryClientProvider`, so it is
+ * threaded through as a slot — same reasoning as `connected-tab.tsx`'s
  * `githubAppSetupSlot`/`chatgptConnectSlot`. `GeneralTab` is the container:
  * every hook only runs once this tab is actually mounted, which
  * `SettingsTabPane` in `settings-panel.tsx` guarantees happens only while
@@ -113,25 +118,17 @@
  * hairline rule, then rows — label left, control right, consecutive rows
  * sharing ONE bordered box (`SettingsRowGroup` / `SettingsRow`, see
  * `components/ui/settings-row.tsx`). Icon and Workspace name are one group;
- * Sandbox and Danger zone each get a plain section label above their own
- * group. Delete workspace is red TEXT, not a filled destructive button — the
+ * Danger zone gets a plain section label above its own group. Delete
+ * workspace is red TEXT, not a filled destructive button — the
  * `ConfirmDialog` behind it, and the manager-only `canDelete` gate in front of
  * it, are both unchanged.
  */
 
 import { useEffect, useState, type ReactNode } from 'react';
 
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import type { GlyphSelection } from '@/components/ui/glyph-picker';
 import { Input } from '@/components/ui/input';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { SettingsRow, SettingsRowGroup } from '@/components/ui/settings-row';
 import { SettingsSubsectionHeader } from '@/components/ui/settings-subsection-header';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -139,6 +136,7 @@ import { errorToast, successToast } from '@/components/ui/toast';
 import { TypeToConfirmDialog } from '@/components/ui/type-to-confirm-dialog';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { buildProjectEditPatch } from '@/features/projects/modal/project-edit-patch';
+import { GitView } from '@/features/workspace/customize/sections/view/git-view';
 import {
   ProjectIconField,
   type ProjectIconValue,
@@ -157,17 +155,11 @@ import {
   getProject,
   listProjectsForAccount,
   updateProject,
-  updateProjectSandboxProvider,
   type KortixProject,
   type ProjectInput,
-  type SandboxProviderName,
 } from '@kortix/sdk';
-import { contract, invalidateProject, qk } from '@kortix/sdk/react';
+import { contract, qk } from '@kortix/sdk/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  applySandboxProviderResult,
-  pollSandboxProviderTransition,
-} from '../../customize/sections/view/sandbox-provider-result';
 import { SettingsTabHeader } from '../settings-tab-header';
 
 /**
@@ -225,10 +217,13 @@ export interface GeneralTabViewProps {
    *  comment. Left `undefined` by default so the bare view still renders
    *  under `renderToStaticMarkup` with no providers. */
   generalFieldsSlot?: ReactNode;
-  /** `SandboxProviderRow`, moved here unmodified from `settings-view.tsx`
-   *  — see this file's header comment. Same slot reasoning as
-   *  `generalFieldsSlot` above. */
-  sandboxProviderSlot?: ReactNode;
+  /** `GitView` — the repository connection, its status, and the two settings
+   *  that change how Kortix uses it. Repositories merged into General as a
+   *  "Git repo" subsection (Jay's call, 2026-08-17); a slot for the same
+   *  reason `generalFieldsSlot` is one — `GitView` owns its own
+   *  `useQuery`/mutations, so it can't render under `renderToStaticMarkup`
+   *  with no providers. */
+  gitRepoSlot?: ReactNode;
   /** Whether the Delete-workspace section shows at all — manager-only
    *  (`effective_project_role === 'manager'`), NOT the broader `canEdit`
    *  (manager OR `project.write`) gate `generalFieldsSlot`'s fields use.
@@ -255,7 +250,7 @@ export function GeneralTabView({
   errorMessage = '',
   onRetry = () => {},
   generalFieldsSlot,
-  sandboxProviderSlot,
+  gitRepoSlot,
   canDelete = true,
   workspaceName = '',
   archiveOpen = false,
@@ -287,7 +282,7 @@ export function GeneralTabView({
       ) : (
         <>
           {generalFieldsSlot}
-          {sandboxProviderSlot}
+          {gitRepoSlot}
           {canDelete ? (
             <section className="space-y-3">
               <SettingsSubsectionHeader title="Danger zone" />
@@ -532,110 +527,6 @@ function GeneralWorkspaceCard({
   );
 }
 
-// Per-project sandbox-provider pin — moved unmodified from `settings-view.tsx`'s
-// `ExperimentalCard` (it used to render as a row INSIDE the Experimental
-// disclosure; the task brief moves it here instead — see this file's header
-// comment). Overrides the platform's weighted distribution for THIS project
-// only. Options come from the project payload (`available_sandbox_providers`).
-// Hidden only when no provider is usable.
-const AUTO_PROVIDER = '__auto__';
-function SandboxProviderRow({
-  project,
-  canManage,
-}: {
-  project: KortixProject;
-  canManage: boolean;
-}) {
-  const queryClient = useQueryClient();
-  const available = project.available_sandbox_providers ?? [];
-  const current = project.default_sandbox_provider ?? null;
-  const label = (p: string) => p.charAt(0).toUpperCase() + p.slice(1);
-
-  const mutation = useMutation({
-    mutationFn: (next: SandboxProviderName | null) =>
-      updateProjectSandboxProvider(project.project_id, next),
-    onSuccess: (result, next) => {
-      // FIX-L: the PATCH returns EITHER the updated project (immediate) OR a
-      // preparation object (the prepare branch — a switch to a different enabled
-      // provider). Write the project cache ONLY for the immediate result; a
-      // preparation is a transition, not a project, and must not clobber the
-      // cached project shape.
-      const kind = applySandboxProviderResult(queryClient, project.project_id, result);
-      if (kind === 'preparation') {
-        successToast(
-          `Preparing ${next ? label(next) : 'the sandbox provider'}… this can take a few minutes`,
-        );
-        // Poll the durable transition (bounded, backoff, terminal-stop, 404 = done)
-        // and refresh the project once it settles so the now-active provider shows.
-        void pollSandboxProviderTransition(project.project_id, {
-          onSettled: (state) => {
-            // invalidateProject() reaches qk.project.scope(project.project_id),
-            // which qk.project.summary(project.project_id) nests under — so it
-            // already covers the bare-project row too; no separate summary
-            // invalidation needed here.
-            void invalidateProject(queryClient, project.project_id);
-            // qk.projects.scope(): restores the reach the old bare
-            // projects-literal prefix match had. A sandbox-provider switch
-            // is rare — over-invalidating a few extra account lists costs
-            // nothing measurable.
-            queryClient.invalidateQueries({ queryKey: qk.projects.scope() });
-            const status = state?.latest?.status;
-            if (status === 'activated') {
-              successToast(`Switched to ${label(state?.latest?.target_provider ?? '')}`);
-            } else if (status === 'failed') {
-              errorToast(state?.latest?.label || 'Sandbox provider switch failed');
-            }
-          },
-        });
-      }
-    },
-    onError: (error: Error) => errorToast(error.message || 'Failed to update sandbox provider'),
-  });
-
-  if (available.length === 0) return null;
-
-  return (
-    <section className="space-y-3">
-      <SettingsSubsectionHeader title="Sandbox" />
-      <SettingsRowGroup>
-        <SettingsRow
-          label={
-            <>
-              Sandbox provider
-              <Badge variant="highlight" size="sm">
-                Experimental
-              </Badge>
-            </>
-          }
-          description="Pin this project to a specific sandbox provider, overriding the platform default. New sessions here run on the chosen provider — “Automatic” follows the platform default."
-        >
-          <Select
-            value={current ?? AUTO_PROVIDER}
-            onValueChange={(v) =>
-              mutation.mutate(
-                v === AUTO_PROVIDER ? null : (available.find((provider) => provider === v) ?? null),
-              )
-            }
-            disabled={!canManage || mutation.isPending}
-          >
-            <SelectTrigger aria-label="Sandbox provider" className="h-8 w-40 shrink-0">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent align="end">
-              <SelectItem value={AUTO_PROVIDER}>Automatic</SelectItem>
-              {available.map((p) => (
-                <SelectItem key={p} value={p}>
-                  {label(p)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </SettingsRow>
-      </SettingsRowGroup>
-    </section>
-  );
-}
-
 /** Container: owns every hook (React Query, IAM probe, archive dialog state)
  *  and renders `GeneralTabView` with real data + slots. Only ever mounted
  *  while this tab is active (`SettingsTabPane` in `settings-panel.tsx`
@@ -654,7 +545,7 @@ export function GeneralTab({ projectId }: { projectId: string }) {
   // Raw, manager-only — gates ONLY the Delete-workspace section's visibility,
   // matching `settings-view.tsx`'s original split (see this file's header
   // comment). `canEdit` below (manager OR project.write) gates the fields
-  // themselves, same as the original `GeneralProjectCard`/`SandboxProviderRow`.
+  // themselves, same as the original `GeneralProjectCard`.
   const canManage = project?.effective_project_role === 'manager';
   const canWrite = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_WRITE).allowed === true;
   const canEdit = canManage || canWrite;
@@ -702,9 +593,7 @@ export function GeneralTab({ projectId }: { projectId: string }) {
       generalFieldsSlot={
         project ? <GeneralWorkspaceCard project={project} canManage={canEdit} /> : undefined
       }
-      sandboxProviderSlot={
-        project ? <SandboxProviderRow project={project} canManage={canEdit} /> : undefined
-      }
+      gitRepoSlot={<GitView projectId={projectId} />}
       canDelete={canManage}
       workspaceName={project?.name}
       archiveOpen={archiveOpen}

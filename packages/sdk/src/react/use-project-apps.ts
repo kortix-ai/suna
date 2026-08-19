@@ -109,6 +109,16 @@ export interface UseAppAccessOptions {
    * (the access modal) be the one that asks for it.
    */
   policy?: boolean;
+  /**
+   * Mint the access SESSION. Defaults to true.
+   *
+   * Same failure as `policy`, one endpoint over: `POST .../access-session` is
+   * 403 for any App the caller may see but not open, and a card that renders a
+   * live thumbnail asks for one on mount. A grid of N such Apps produced N
+   * console errors and a broken tile, for a state that is not an error — the
+   * App is simply not yours to open. Pass `App.viewer_can_access` here.
+   */
+  session?: boolean;
 }
 
 /** App access policy plus a short-lived URL that exchanges into a host-only cookie. */
@@ -119,6 +129,7 @@ export function useAppAccess(
 ) {
   const queryClient = useQueryClient();
   const wantsPolicy = options.policy ?? true;
+  const wantsSession = options.session ?? true;
   const queryKey = qk.project.appAccess(projectId ?? '', appId ?? '');
   const sessionQueryKey = qk.project.appAccessSession(projectId ?? '', appId ?? '');
   const policy = useQuery({
@@ -130,7 +141,7 @@ export function useAppAccess(
   const session = useQuery({
     queryKey: sessionQueryKey,
     queryFn: () => createAppAccessSession(projectId as string, appId as string),
-    enabled: !!projectId && !!appId,
+    enabled: !!projectId && !!appId && wantsSession,
     staleTime: 4 * 60_000,
     gcTime: 5 * 60_000,
     retry: false,

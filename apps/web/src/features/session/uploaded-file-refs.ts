@@ -306,3 +306,54 @@ export async function buildPromptPartsWithUploads(
     remoteParts,
   };
 }
+
+/**
+ * First-prompt attachments: the session's sandbox does not exist yet, so there
+ * is nowhere to upload into. Local files ride the durable prompt row as
+ * `data:` URLs instead — OpenCode's own wire shape for inline attachments —
+ * and already-remote files ride as ordinary URL parts, exactly as they do on
+ * every later send.
+ *
+ * The cap mirrors the API's serialized-row ceiling (`PROMPT_PARTS_MAX_BYTES`,
+ * 12 MB of JSON ≈ 9 MB of file bytes): a durable row is a Postgres row, not a
+ * blob store. Past it, the refusal names the way out — send the prompt and
+ * attach the file once the session is running, where the ordinary upload path
+ * takes over.
+ */
+export const DATA_URL_ATTACHMENTS_MAX_BYTES = 9 * 1024 * 1024;
+
+export async function attachedFilesToDataUrlParts(
+  files: AttachedFile[] | undefined,
+): Promise<PromptFilePart[]> {
+  if (!files?.length) return [];
+  let totalBytes = 0;
+  const parts: PromptFilePart[] = [];
+  for (const file of files) {
+    if (file.kind === 'remote') {
+      parts.push({ type: 'file', mime: file.mime, url: file.url, filename: file.filename });
+      continue;
+    }
+    totalBytes += file.file.size;
+    if (totalBytes > DATA_URL_ATTACHMENTS_MAX_BYTES) {
+      throw new Error(
+        `Attachments over ${Math.floor(DATA_URL_ATTACHMENTS_MAX_BYTES / (1024 * 1024))} MB can't ride the first message — send it, then attach the file after the session starts.`,
+      );
+    }
+    const mime = attachmentMime(file.file.type, file.file.name);
+    const bytes = new Uint8Array(await file.file.arrayBuffer());
+    // btoa over chunks: String.fromCharCode(...bytes) overflows the argument
+    // limit on multi-MB files.
+    let binary = '';
+    const CHUNK = 0x8000;
+    for (let i = 0; i < bytes.length; i += CHUNK) {
+      binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+    }
+    parts.push({
+      type: 'file',
+      mime,
+      url: `data:${mime};base64,${btoa(binary)}`,
+      filename: file.file.name,
+    });
+  }
+  return parts;
+}

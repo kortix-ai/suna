@@ -1,0 +1,40 @@
+{
+  "note": "Frozen contract for the OpenCode wire message-id clock, asserted by BOTH apps/api (src/projects/wire-message-id.test.ts) and packages/sdk (src/react/use-opencode-sessions/messages.test.ts). Two implementations exist on purpose: apps/api has no @kortix/sdk dependency, and the SDK's minter reads the browser sync store. A divergence between them silently drops turns — OpenCode decides 'has this prompt already been answered?' by id order — so it must fail two suites, not zero.",
+  "format": "msg_ + the low 48 bits of (clockMs * 0x1000) as 12 lowercase hex chars + 14 random base62 chars",
+  "timeScaleHex": "1000",
+  "timeMaskHex": "ffffffffffff",
+  "backdateMs": 120000,
+  "maxCorrectionMs": 3600000,
+  "vectors": [
+    {
+      "name": "no history: the backdated wall clock alone",
+      "nowMs": 1755500000000,
+      "newestKnownTime": null,
+      "expectedTime": "8bbf25e40000"
+    },
+    {
+      "name": "history far below the clock: no lift",
+      "nowMs": 1755500000000,
+      "newestKnownTime": "8b5fe5200000",
+      "expectedTime": "8bbf25e40000"
+    },
+    {
+      "name": "history above the clock, inside the correction bound: lift to newest+1",
+      "nowMs": 1755500000000,
+      "newestKnownTime": "8bbf43300000",
+      "expectedTime": "8bbf43300001"
+    },
+    {
+      "name": "history exactly at the backdated clock: still lifts by one",
+      "nowMs": 1755500000000,
+      "newestKnownTime": "8bbf25e40000",
+      "expectedTime": "8bbf25e40001"
+    },
+    {
+      "name": "history beyond the 1h correction bound: ignored",
+      "nowMs": 1755500000000,
+      "newestKnownTime": "8bc621000000",
+      "expectedTime": "8bbf25e40000"
+    }
+  ]
+}

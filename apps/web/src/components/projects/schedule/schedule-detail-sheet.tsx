@@ -45,6 +45,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { ModelSelector } from '@/features/session/model-selector';
 import { AgentSelector, flattenModels } from '@/features/session/session-chat-input';
+import { SharingPicker, type SharingSelection } from '@/features/workspace/shared/sharing-picker';
 import { cn } from '@/lib/utils';
 import {
   type ProjectTrigger,
@@ -100,6 +101,17 @@ import {
 } from './schedule-fields';
 
 const PLACEHOLDERS = ['{{ message.text }}', '{{ message.source }}', '{{ fired_at }}'];
+
+/** Shared formatter, hoisted so render does not rebuild the Intl machinery per
+ *  call. Options mirror `toLocaleString()`'s defaults — identical output. */
+const lastRunFormatter = new Intl.DateTimeFormat(undefined, {
+  year: 'numeric',
+  month: 'numeric',
+  day: 'numeric',
+  hour: 'numeric',
+  minute: 'numeric',
+  second: 'numeric',
+});
 
 /** A copy-pasteable request for whoever is wiring the other end up. */
 function buildSampleRequest(url: string): string {
@@ -248,17 +260,31 @@ export function ScheduleDetailSheet({
         </SheetHeader>
 
         {/* `items-stretch` overrides SheetBody's `items-start`, which would
-            otherwise shrink-wrap every panel to its content width. */}
-        {/* `items-stretch` overrides SheetBody's `items-start`, which would
             otherwise shrink-wrap every panel to its content width.
 
             Deliberately NOT a scroll container any more: the content element
             above owns scrolling now, and a second `overflow-y-auto` here would
             recreate exactly the nested-scroller bug this sheet already had —
-            the wheel going to whichever surface the cursor sits over. `flex-1`
-            and `min-h-0` go with it; they only meant anything while this was
-            the flex child that scrolled. */}
-        <SheetBody className="items-stretch gap-0 space-y-4 overflow-visible px-4 pt-0 pb-8">
+            the wheel going to whichever surface the cursor sits over.
+
+            `flex-none` and `!overflow-visible` are load-bearing, not tidying.
+            SheetBody's base is `flex min-h-0 flex-1 … overflow-y-auto`.
+            Omitting `flex-1`/`min-h-0` from THIS className does not cancel
+            them — twMerge only drops a base utility when the override
+            supplies another utility from the SAME group, and nothing here
+            was in the `flex-grow`/`flex-shrink` group. So this box stayed a
+            shrinkable flex child, free to compress below its content's
+            natural height — which is what actually clipped every panel
+            below the fold, not a missing scrollbar. `overflow-visible` had
+            the same problem from the other side: it and the base's
+            `overflow-y-auto` are different twMerge groups (`overflow` vs
+            `overflow-y`), so both survived the merge, and which one wins is
+            decided by Tailwind's internal stylesheet order — not by which
+            appears later in this string. `!overflow-visible` forces the
+            outcome instead of leaving it to that ordering. Verify with
+            `getComputedStyle(sheetBodyEl).flexGrow === '0'` and
+            `.overflowY === 'visible'` before touching this again. */}
+        <SheetBody className="flex-none items-stretch gap-0 space-y-4 !overflow-visible px-4 pt-0 pb-8">
           <WhatItDoesPanel
             projectId={projectId}
             trigger={trigger}
@@ -298,6 +324,19 @@ export function ScheduleDetailSheet({
           />
 
           <MemoryPanel
+            projectId={projectId}
+            trigger={trigger}
+            canWrite={canWrite}
+            onMutated={onMutated}
+          />
+
+          <AccessPanel
+            key={[
+              trigger.slug,
+              trigger.session_access.mode,
+              trigger.session_access.memberIds.join(','),
+              trigger.session_access.groupIds.join(','),
+            ].join(':')}
             projectId={projectId}
             trigger={trigger}
             canWrite={canWrite}
@@ -886,6 +925,95 @@ function MemoryPanel({
   );
 }
 
+function accessSummary(access: ProjectTrigger['session_access']): string {
+  if (access.mode === 'project') return 'Every project member can open trigger-created sessions.';
+  if (access.mode === 'members') {
+    const count = access.memberIds.length + access.groupIds.length;
+    return `${count} selected ${count === 1 ? 'member or group can' : 'members or groups can'} open trigger-created sessions.`;
+  }
+  return 'The trigger agent and project Managers can open trigger-created sessions.';
+}
+
+function AccessPanel({
+  projectId,
+  trigger,
+  canWrite,
+  onMutated,
+}: {
+  projectId: string;
+  trigger: ProjectTrigger;
+  canWrite: boolean;
+  onMutated: () => void;
+}) {
+  const [selection, setSelection] = useState<SharingSelection>(trigger.session_access);
+
+  const save = useMutation({
+    mutationFn: () => updateProjectTrigger(projectId, trigger.slug, { session_access: selection }),
+    onSuccess: () => {
+      successToast('Session access updated');
+      onMutated();
+    },
+    onError: (e: Error) => errorToast(e.message || 'Could not update session access'),
+  });
+
+  if (!canWrite) {
+    return (
+      <PanelSection
+        title="Session access"
+        description="Who can open sessions created by this trigger."
+      >
+        <p className="text-foreground text-sm">{accessSummary(trigger.session_access)}</p>
+        {trigger.session_mode === 'pinned' ? (
+          <p className="text-muted-foreground text-xs">
+            The pinned session keeps its own sharing settings.
+          </p>
+        ) : null}
+      </PanelSection>
+    );
+  }
+
+  const dirty =
+    selection.mode !== trigger.session_access.mode ||
+    selection.memberIds.join(',') !== trigger.session_access.memberIds.join(',') ||
+    selection.groupIds.join(',') !== trigger.session_access.groupIds.join(',');
+
+  return (
+    <PanelSection
+      title="Session access"
+      description="Who can open sessions created by this trigger. Saving also updates its prior sessions."
+      action={<SaveButton dirty={dirty} pending={save.isPending} onSave={() => save.mutate()} />}
+    >
+      <SharingPicker
+        projectId={projectId}
+        value={selection}
+        onChange={setSelection}
+        showHeading={false}
+        copy={{
+          heading: 'Who can access sessions created by this trigger',
+          private: {
+            label: 'Trigger agent and project Managers',
+            desc: 'Project Managers can always open trigger-created sessions.',
+          },
+          members: {
+            label: 'Selected teammates',
+            desc: 'Choose additional members and groups. Project Managers always have access.',
+          },
+          project: {
+            label: 'Whole project',
+            desc: 'Every project member can open these sessions.',
+          },
+        }}
+      />
+      {trigger.session_mode === 'pinned' ? (
+        <InfoBanner tone="info" className="text-xs">
+          The pinned session keeps its own sharing settings. This policy applies if the trigger
+          creates a fallback session.
+        </InfoBanner>
+      ) : null}
+    </PanelSection>
+  );
+}
+
 /* ─── Details — facts, not settings ─────────────────────────────────────── */
 
 function DetailsPanel({ trigger }: { trigger: ProjectTrigger }) {
@@ -918,7 +1046,7 @@ function DetailsPanel({ trigger }: { trigger: ProjectTrigger }) {
                 value: (
                   <span className="tabular-nums">
                     {trigger.last_fired_at
-                      ? new Date(trigger.last_fired_at).toLocaleString()
+                      ? lastRunFormatter.format(new Date(trigger.last_fired_at))
                       : describeLastRun(null)}
                   </span>
                 ),

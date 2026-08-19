@@ -21,7 +21,7 @@
  *   text on the right instead of swapping the row out for a paragraph.
  *
  * The factor list answers in four states and each one is visible: loading
- * (skeleton row), failed (red `InfoBanner` + Retry), empty (yellow "No second
+ * (skeleton row), failed (red `InfoBanner` + Retry), empty (orange "No second
  * factor enrolled" nudge), and populated (`FactorRow`s). A failed fetch never
  * borrows the empty-state copy — that copy asserts the account has no second
  * factor, which a failed fetch cannot know.
@@ -94,8 +94,19 @@ import { createClient } from '@/lib/supabase/client';
 import type { FactorInfo } from '@/lib/supabase/mfa';
 import { cn } from '@/lib/utils';
 import { SettingsTabHeader } from '../settings-tab-header';
+import {
+  type AccountMembership,
+  AccountMembershipsSection,
+  useAccountMemberships,
+} from './account-memberships';
 
 const PROFILE_QUERY_KEY = ['account', 'profile'] as const;
+
+const deletionDateFormat = new Intl.DateTimeFormat('en-US', {
+  year: 'numeric',
+  month: 'long',
+  day: 'numeric',
+});
 
 /** Supabase hands the TOTP QR back as an SVG data URL (or raw SVG in older
  *  versions) — normalize both into something an <img> can render. Moved
@@ -197,6 +208,11 @@ export interface ProfileTabViewProps {
   // Email
   userEmail?: string;
 
+  // Organizations — every account this user is a member of. See
+  // `account-memberships.tsx` for why the list lives on this tab.
+  accounts?: readonly AccountMembership[];
+  accountsLoading?: boolean;
+
   // Two-factor authentication
   factors?: FactorInfo[];
   factorsLoading?: boolean;
@@ -260,6 +276,8 @@ export function ProfileTabView({
   isSavingName = false,
   onSaveName = () => {},
   userEmail = '',
+  accounts = [],
+  accountsLoading = false,
   factors = [],
   factorsLoading = false,
   factorsError = false,
@@ -402,6 +420,13 @@ export function ProfileTabView({
         </SettingsRow>
       </SettingsRowGroup>
 
+      {/* Organizations — directly under the identity group and ABOVE Security,
+          because it answers the same question those rows do ("who am I here")
+          and because Jay asked for it to be EASY to reach: no scrolling, no tab
+          to find first. `account-memberships.tsx` carries the full rationale,
+          including why it is not a fourth rail row. */}
+      <AccountMembershipsSection accounts={accounts} isLoading={accountsLoading} />
+
       {/* Security */}
       <section className="space-y-3">
         <SettingsSubsectionHeader title="Security" />
@@ -456,7 +481,9 @@ export function ProfileTabView({
             - it failed  → say so, in red, with a Retry. Never the empty-state
               copy: "No second factor enrolled" is a claim about the account,
               and a fetch that failed knows nothing about the account.
-            - it is empty → the enrollment nudge, in yellow.
+            - it is empty → the enrollment nudge, in orange ("needs attention"
+              per the design system's status-token table — matches the same
+              copy's tone in mfa-step-up.tsx's step-up dialog).
             - it has factors → nothing here; the rows above ARE the answer.
             Loading outranks both: an in-flight list has no answer yet. */}
         {!factorsLoading && factorsError ? (
@@ -473,7 +500,7 @@ export function ProfileTabView({
             Your two-factor settings are unchanged — this is only the list failing to load.
           </InfoBanner>
         ) : !factorsLoading && factors.length === 0 && !enrolling ? (
-          <InfoBanner tone="info" icon={ShieldWarning} title="No second factor enrolled">
+          <InfoBanner tone="warning" icon={ShieldWarning} title="No second factor enrolled">
             If your organization requires MFA, you’ll be blocked from gated actions until you enroll
             an authenticator here.
           </InfoBanner>
@@ -805,6 +832,11 @@ export function ProfileTab() {
     uploadAvatarMutation.mutate(file);
   };
 
+  // --- Organizations ----------------------------------------------------
+  // Same `['accounts']` entry `WorkspaceSwitcher` already primed on mount, so
+  // this costs no extra request inside a project shell.
+  const { accounts, isLoading: accountsLoading } = useAccountMemberships();
+
   // --- Two-factor authentication --------------------------------------
   // See hooks/account/use-mfa.ts — the factors/aal queries and the enroll /
   // verify / remove / cancel-enroll mutations live there now, shared with
@@ -854,11 +886,7 @@ export function ProfileTab() {
 
   const formatDate = (dateString: string | null | undefined): string | null => {
     if (!dateString) return null;
-    return new Date(dateString).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-    });
+    return deletionDateFormat.format(new Date(dateString));
   };
 
   return (
@@ -881,6 +909,8 @@ export function ProfileTab() {
       isSavingName={saveNameMutation.isPending}
       onSaveName={() => saveNameMutation.mutate(nameDraft)}
       userEmail={profileQuery.data?.email ?? ''}
+      accounts={accounts}
+      accountsLoading={accountsLoading}
       factors={mfa.factors}
       factorsLoading={mfa.factorsLoading}
       factorsError={mfa.factorsError}

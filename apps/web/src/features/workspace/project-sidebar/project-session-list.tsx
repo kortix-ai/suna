@@ -14,6 +14,7 @@ import {
   type SessionDisplayStatus,
   type SessionSourceKind,
 } from '@/components/projects/session-label';
+import { SessionSharedIcon } from '@/components/projects/session-shared-icon';
 import { Button } from '@/components/ui/button';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import {
@@ -85,7 +86,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { format, formatDistanceToNowStrict } from 'date-fns';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { useState, type ComponentType, type ReactNode } from 'react';
+import { useMemo, useState, type ComponentType, type ReactNode } from 'react';
 
 interface ProjectSessionListProps {
   projectId: string;
@@ -173,7 +174,11 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
         sessions: query.state.data as ProjectSession[] | undefined,
         hasOpenSession: Boolean(activeSessionId),
       }),
-    refetchOnWindowFocus: false,
+    // Focus IS the cross-tab signal this list has: a session started in
+    // another tab (the home send is the default creation path now) has no
+    // other way to appear here before the 60s open-session poll. The
+    // sessions page already refetches on focus for the same reason.
+    refetchOnWindowFocus: true,
     ...contract('inventory'),
   });
 
@@ -195,6 +200,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
   const sourceFilters = useSessionFilterStore(selectSourceFilters(projectId));
   const hiddenSections = useSessionFilterStore(selectHiddenSections(projectId));
   const collapsedSections = useSessionFilterStore(selectCollapsedSections(projectId));
+  const collapsedSectionIds = useMemo(() => new Set(collapsedSections), [collapsedSections]);
   const toggleSectionCollapsed = useSessionFilterStore((s) => s.toggleSectionCollapsed);
 
   const restartMutation = useMutation({
@@ -386,7 +392,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
             sessions={sessions}
             reviewCountBySession={reviewSummary.needsYouBySession}
             showHeader={grouped.showHeaders}
-            open={!collapsedSections.includes(section.id)}
+            open={!collapsedSectionIds.has(section.id)}
             onOpenChange={() => toggleSectionCollapsed(projectId, section.id)}
           >
             {/* Two independent groupings compose here: `groupSessions` splits the
@@ -734,7 +740,7 @@ function ProjectSessionRow({
           )}
         </Link>
 
-        <div className="flex shrink-0 items-center gap-0">
+        <div className="flex shrink-0 items-center gap-0" data-session-indicators="true">
           {spawnedBy && !nested && (
             <Hint side="top" label={`Spawned by session ${spawnedBy.slice(0, 8)}`}>
               <span className="text-muted-foreground/70 flex size-4 shrink-0 items-center justify-center">
@@ -743,7 +749,10 @@ function ProjectSessionRow({
             </Hint>
           )}
           {SourceIcon && (
-            <span className="flex size-4 shrink-0 items-center justify-center">
+            <span
+              className="flex size-4 shrink-0 items-center justify-center"
+              data-session-source="true"
+            >
               <Hint
                 side="top"
                 label={
@@ -756,6 +765,7 @@ function ProjectSessionRow({
               </Hint>
             </span>
           )}
+          <SessionSharedIcon session={session} />
 
           <div className="relative w-10 min-w-10 shrink-0">
             {activity && (

@@ -9,12 +9,12 @@ import {
 } from '@/features/session/tool/shared/infrastructure';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
-import { CaretRightIcon as ChevronRight, FolderIcon as Folder } from '@phosphor-icons/react';
+import { FolderIcon as Folder } from '@phosphor-icons/react';
 import { useCallback, useMemo } from 'react';
 
 import { parseProjectSelectOutput } from '@/lib/utils/kortix-tool-output';
 
-export function ProjectSelectTool({ part }: ToolProps) {
+export function ProjectSelectTool({ part, defaultOpen, forceOpen }: ToolProps) {
   const input = partInput(part);
   const output = partOutput(part);
   const { enabled: navigationEnabled, openTab } = useToolNavigation();
@@ -36,7 +36,12 @@ export function ProjectSelectTool({ part }: ToolProps) {
 
   if (errored) {
     return (
-      <BasicTool icon={<Folder />} trigger={{ title: 'Workspace', subtitle: name || 'failed' }}>
+      <BasicTool
+        icon={<Folder />}
+        trigger={{ title: 'Workspace', subtitle: name || 'failed' }}
+        defaultOpen={defaultOpen}
+        forceOpen={forceOpen}
+      >
         <ToolOutputFallback output={output} toolName="project_select" />
       </BasicTool>
     );
@@ -50,7 +55,6 @@ export function ProjectSelectTool({ part }: ToolProps) {
         subtitle: name,
       }}
       onClick={navigationEnabled ? handleOpenWorkspace : undefined}
-      rightAccessory={navigationEnabled ? <ChevronRight /> : undefined}
     />
   );
 }

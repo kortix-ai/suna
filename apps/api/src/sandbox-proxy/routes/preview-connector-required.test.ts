@@ -103,6 +103,13 @@ mock.module('../../projects/lib/session-token-grant', () => ({
 mock.module('../../projects/opencode-session-snapshot', () => ({
   scheduleOpencodeSnapshotSync: () => {},
 }));
+const realTurnLifecycle = await import('../../projects/sandbox-turn-lifecycle');
+mock.module('../../projects/sandbox-turn-lifecycle', () => ({
+  ...realTurnLifecycle,
+  beginSandboxTurn: async () => 'granted',
+  acceptSandboxTurn: async () => true,
+  abandonSandboxTurn: async () => true,
+}));
 mock.module('../../projects/routes/shared', () => ({
   resumeStoppedSandboxByExternalId: async () => true,
 }));

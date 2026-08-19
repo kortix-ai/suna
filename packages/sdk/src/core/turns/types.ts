@@ -22,6 +22,9 @@ export interface MessageInfoLike {
   role: string;
   parentID?: string;
   error?: unknown;
+  /** When the runtime persisted the message. Optional so bare fixtures still
+   *  type-check; `groupMessagesIntoTurns` orders by it, id as the tiebreak. */
+  time?: { created?: number };
 }
 
 /** A message with its pre-resolved parts — the shape returned by `session.messages()`. */

@@ -208,21 +208,16 @@ const CardGroup = forwardRef<HTMLDivElement, CardGroupProps>(
               <m.div
                 key={sessionRef.current}
                 aria-hidden
+                layout
                 className="bg-hover pointer-events-none absolute z-0 rounded-xl"
-                initial={{
-                  opacity: 0,
+                style={{
                   top: activeRect.top,
                   left: activeRect.left,
                   width: activeRect.width,
                   height: activeRect.height,
                 }}
-                animate={{
-                  opacity: 1,
-                  top: activeRect.top,
-                  left: activeRect.left,
-                  width: activeRect.width,
-                  height: activeRect.height,
-                }}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
                 exit={{ opacity: 0, transition: spring.fast.exit }}
                 transition={{ ...spring.fast, opacity: { duration: 0.08 } }}
               />
@@ -674,7 +669,7 @@ function CardMedia({ logo, logoAlt, icon: Icon, size = 22, className }: CardMedi
         className={cn('inline-flex shrink-0 items-center gap-1.5', wrap)}
       >
         {logos.map((src, i) => (
-          <span key={i} className="inline-flex items-center gap-1.5">
+          <span key={src} className="inline-flex items-center gap-1.5">
             {i > 0 && <span aria-hidden className="bg-border h-px w-2" />}
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img

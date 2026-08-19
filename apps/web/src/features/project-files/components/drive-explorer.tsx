@@ -696,6 +696,7 @@ export function DriveExplorer({
                 value={newFolderName}
                 onChange={(e) => setNewFolderName(e.target.value)}
                 onKeyDown={(e) => {
+                  if (e.nativeEvent.isComposing) return;
                   if (e.key === 'Enter') handleCreateFolder();
                   if (e.key === 'Escape') {
                     setIsCreatingFolder(false);
@@ -719,6 +720,7 @@ export function DriveExplorer({
                 value={newFileName}
                 onChange={(e) => setNewFileName(e.target.value)}
                 onKeyDown={(e) => {
+                  if (e.nativeEvent.isComposing) return;
                   if (e.key === 'Enter') handleCreateFile();
                   if (e.key === 'Escape') {
                     setIsCreatingFile(false);

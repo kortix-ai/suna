@@ -7,6 +7,7 @@
  * how a user-stop arrives. This file is the panel's single reader of that.
  */
 
+import { isAbortError } from '@kortix/sdk';
 import type { MessageWithParts } from '@/ui';
 import type { Step } from './group-steps';
 
@@ -27,19 +28,12 @@ function lastAssistantError(messages: MessageWithParts[] | undefined): Assistant
   return null;
 }
 
-/** Mirrors the SDK's abort heuristic without importing SDK internals. */
-function isAbortErrorLike(error: AssistantError): boolean {
-  if (/abort/i.test(error.name ?? '')) return true;
-  const message = error.data?.message;
-  return typeof message === 'string' && /abort/i.test(message);
-}
-
 export function deriveRunOutcome(
   messages: MessageWithParts[] | undefined,
   lastStepStatus?: Step['status'],
 ): RunOutcome {
   const error = lastAssistantError(messages);
-  if (error) return isAbortErrorLike(error) ? 'stopped' : 'failed';
+  if (error) return isAbortError(error) ? 'stopped' : 'failed';
   if (lastStepStatus === 'error') return 'failed';
   return 'succeeded';
 }

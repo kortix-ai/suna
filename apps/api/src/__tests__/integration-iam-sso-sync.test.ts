@@ -52,9 +52,9 @@ beforeAll(async () => {
   await db.insert(accounts).values({ accountId: ACCOUNT, name: 'sso-sync-test' });
   await db.insert(projects).values({ projectId: PROJECT, accountId: ACCOUNT, name: 'p', repoUrl: 'https://example.com/p.git' });
   await db.insert(accountGroups).values({ groupId: MKT_GROUP, accountId: ACCOUNT, name: 'Marketing', source: 'scim' });
-  // The group grants EDITOR on the project — this is the admin-configured
+  // The group grants MANAGER on the project — this is the admin-configured
   // group→project→role binding the synced membership rides on.
-  await db.insert(projectGroupGrants).values({ projectId: PROJECT, groupId: MKT_GROUP, accountId: ACCOUNT, role: 'editor' });
+  await db.insert(projectGroupGrants).values({ projectId: PROJECT, groupId: MKT_GROUP, accountId: ACCOUNT, role: 'manager' });
   await db.insert(accountSsoProviders).values({
     ssoProviderId: crypto.randomUUID(),
     accountId: ACCOUNT,

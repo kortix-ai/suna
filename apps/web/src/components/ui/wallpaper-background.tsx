@@ -113,6 +113,7 @@ export const WallpaperBackground = memo(function WallpaperBackground({
           src={wallpaper.darkUrl!}
           alt=""
           fill
+          sizes="100vw"
           className="object-cover select-none"
           unoptimized
           priority
@@ -124,6 +125,7 @@ export const WallpaperBackground = memo(function WallpaperBackground({
           src={wallpaper.lightUrl!}
           alt=""
           fill
+          sizes="100vw"
           className="object-cover select-none"
           unoptimized
           priority

@@ -8,7 +8,10 @@ import {
   listCostByProject,
   listSessionCosts,
   type CostSummary,
+  type CostSummaryTotals,
+  type ProjectCostRow,
   type ProjectCostPage,
+  type SessionCostSummary,
   type SessionCostDetail,
   type SessionCostsPage,
 } from './session-costs';
@@ -46,6 +49,8 @@ const page = {
       updated_at: '2026-07-02T00:00:00.000Z',
       last_activity_at: '2026-07-02T00:00:00.000Z',
       llm_cost: 1.25,
+      llm_kortix_cost: 0.25,
+      llm_provider_cost: 1,
       compute_cost: 0.5,
       total_cost: 1.75,
       request_count: 2,
@@ -205,6 +210,8 @@ const projectCostPage = {
       project_name: 'Project One',
       session_count: 3,
       llm_cost: 1.5,
+      llm_kortix_cost: 0.5,
+      llm_provider_cost: 1,
       compute_cost: 0.5,
       total_cost: 2,
       last_activity_at: '2026-07-01T12:00:00.000Z',
@@ -259,6 +266,8 @@ test('listCostByProject accepts the project-only name_asc sort', async () => {
 const costSummary = {
   totals: {
     llm_cost: 12.4,
+    llm_kortix_cost: 2.4,
+    llm_provider_cost: 10,
     compute_cost: 34.02,
     total_cost: 46.42,
     request_count: 100,
@@ -419,4 +428,21 @@ test('fetchCostExportCsv throws with the response body on a non-OK response', as
   ) as unknown as typeof fetch;
 
   await expect(fetchCostExportCsv('projects')).rejects.toThrow('Forbidden');
+});
+
+// The org-wide cost dashboard reads these three shapes. `llm_cost` alone was
+// `sum(final_cost)` — 0 for every BYOK request — so each shape has to carry
+// the Kortix / provider split behind the corrected total.
+type CarriesLlmSpendSplit<T> = T extends {
+  llm_kortix_cost: number;
+  llm_provider_cost: number;
+}
+  ? true
+  : false;
+
+test('every account-wide cost shape carries the Kortix / provider LLM split', () => {
+  const totals: CarriesLlmSpendSplit<CostSummaryTotals> = true;
+  const projectRow: CarriesLlmSpendSplit<ProjectCostRow> = true;
+  const sessionRow: CarriesLlmSpendSplit<SessionCostSummary> = true;
+  expect([totals, projectRow, sessionRow]).toEqual([true, true, true]);
 });

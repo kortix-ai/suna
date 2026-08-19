@@ -65,7 +65,7 @@ export function SessionSearchTool({ part, defaultOpen, forceOpen, locked }: Tool
       locked={locked}
     >
       {hits.length > 0 ? (
-        <div data-scrollable className="divide-border/20 max-h-72 divide-y overflow-auto">
+        <div data-scrollable className="divide-border/20 max-h-96 divide-y overflow-auto">
           {hits.map((h) => (
             <div key={h.id} className="hover:bg-muted/20 px-3 py-2 transition-colors">
               <div className="mb-0.5 flex items-center gap-2">

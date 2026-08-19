@@ -9,12 +9,16 @@ import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
 import type { FlatModel } from '../model-flatten';
 import { AgentSelector } from './agent-selector';
+import { NO_AGENT_ACCESS_MESSAGE } from './composer-agent-access';
 import { TokenProgress } from './token-progress';
 
 /** `AgentSelector.onSelect` is required, but a LOCKED picker never calls it.
  *  Module-level so the memoized selector isn't handed a fresh inline arrow on
  *  every keystroke in the editor above it. */
 const NO_AGENT_SELECT = () => {};
+
+/** Stable identity so the empty roster doesn't remount the picker per render. */
+const EMPTY_AGENTS: Agent[] = [];
 
 /**
  * The row directly BELOW the composer card.
@@ -40,6 +44,13 @@ export interface ComposerUnderbarProps {
   selectedAgent: string | null;
   onAgentChange?: (agentName: string | null) => void;
   agentSelectorLocked: boolean;
+  /**
+   * The roster loaded and this user may run NOTHING here (deny-by-default
+   * project agents). The picker is rendered anyway — disabled, saying so —
+   * because hiding it is what made the empty case indistinguishable from a
+   * normal composer right up to the server's 403.
+   */
+  noAccessibleAgents?: boolean;
 
   messages: MessageWithParts[] | undefined;
   models: FlatModel[];
@@ -65,6 +76,7 @@ export function ComposerUnderbar({
   selectedAgent,
   onAgentChange,
   agentSelectorLocked,
+  noAccessibleAgents = false,
   messages,
   models,
   selectedModel,
@@ -74,12 +86,16 @@ export function ComposerUnderbar({
 }: ComposerUnderbarProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
 
-  /**
-   * The agent picker earns its slot only when the choice is real: there is
-   * something to pick from AND either the caller accepts a change, or the
-   * session pinned an agent and the locked trigger is what explains that.
-   */
-  const showAgent = agents.length > 0 && !!(onAgentChange || agentSelectorLocked);
+  /*
+    The agent picker is UNCONDITIONAL. It used to earn its slot
+    (`agents.length > 0 && (onAgentChange || agentSelectorLocked)`), and that
+    condition is exactly how a prompt went out with no agent on screen: the
+    roster came back empty for a member with no grant, the control vanished,
+    the composer looked entirely normal, and the server ran its manifest
+    default. Nothing may send until the agent that will run is VISIBLE, so the
+    control that shows it cannot be conditional. An empty roster renders it
+    inert (see `AgentSelector`), never absent.
+  */
 
   /*
     The horizontal padding here is an OPTICAL value, tuned by eye, not a
@@ -124,15 +140,14 @@ export function ComposerUnderbar({
           </Button>
         </Hint>
 
-        {showAgent && (
-          <AgentSelector
-            agents={agents}
-            selectedAgent={selectedAgent}
-            onSelect={onAgentChange ?? NO_AGENT_SELECT}
-            disabled={agentSelectorLocked}
-            triggerLabelClassName="max-w-[7rem]"
-          />
-        )}
+        <AgentSelector
+          agents={noAccessibleAgents ? EMPTY_AGENTS : agents}
+          selectedAgent={selectedAgent}
+          onSelect={onAgentChange ?? NO_AGENT_SELECT}
+          disabled={agentSelectorLocked}
+          triggerLabelClassName="max-w-[7rem]"
+          unavailableHint={noAccessibleAgents ? NO_AGENT_ACCESS_MESSAGE : undefined}
+        />
       </div>
 
       <div className="flex items-center gap-1">

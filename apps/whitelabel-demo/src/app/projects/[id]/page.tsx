@@ -127,6 +127,12 @@ function ProjectHome() {
           },
         ),
       );
+      // DELIBERATELY the full stash, prompt included. This app is the golden
+      // reference for an SDK consumer with no inbox client of its own: the
+      // SDK's `useSession` replay delivers `stash.prompt` once the runtime is
+      // ready, and that path must keep working. apps/web writes picks-only
+      // stashes instead and delivers the prompt as a durable inbox row
+      // (`create.pending_prompt` / `startSessionWithPrompt`).
       writeStartStash(sessionId, { prompt: text, model, agent });
       kortix
         .project(projectId)

@@ -6,7 +6,7 @@
  */
 
 import { SandboxState } from '@daytonaio/sdk';
-import { config, SANDBOX_VERSION } from '../../config';
+import { SANDBOX_VERSION, config } from '../../config';
 import { triggerEmergencyDiskArchiveSweep } from '../../projects/disk-quota-guard';
 import {
   archiveDaytonaSandboxById,
@@ -14,6 +14,7 @@ import {
   isDaytonaDiskQuotaError,
   listStoppedDaytonaSandboxesOldestFirst,
 } from '../../shared/daytona';
+import { configuredTimeoutMs, withTimeout } from '../../shared/with-timeout';
 import { serviceKeyForExternalId } from '../service-key';
 import { sandboxFrontendBaseUrl } from '../sandbox-frontend-url';
 import {
@@ -22,7 +23,6 @@ import {
   sandboxWorkloadType,
 } from './index';
 import { classifyDaytonaState } from './daytona-state';
-import { withTimeout, configuredTimeoutMs } from '../../shared/with-timeout';
 
 // The Daytona SDK's axios client is created with a 24-HOUR timeout (see
 // @daytonaio/sdk's Daytona.createAxiosInstance) — effectively unbounded for
@@ -42,7 +42,11 @@ import { withTimeout, configuredTimeoutMs } from '../../shared/with-timeout';
 // Every method below that awaits the SDK directly is bounded with
 // `withTimeout` so a hung upstream fails fast and observably instead of
 // hanging for up to a day.
-const PROVIDER_CALL_TIMEOUT_MS = configuredTimeoutMs('KORTIX_DAYTONA_CALL_TIMEOUT_MS', 20_000, 1_000);
+const PROVIDER_CALL_TIMEOUT_MS = configuredTimeoutMs(
+  'KORTIX_DAYTONA_CALL_TIMEOUT_MS',
+  20_000,
+  1_000,
+);
 // listManagedRunningSandboxes() pages through the org's whole managed fleet —
 // a large fleet can legitimately take longer than one single-call budget to
 // fully list, and PROVIDER_CALL_TIMEOUT_MS would then look identical to a
@@ -113,8 +117,6 @@ import type {
 const STATUS_CACHE_TTL_MS = 1500;
 const runningStatusCache = new Map<string, number>(); // externalId → cachedAt (ms)
 
-
-
 function isMissingSandboxError(error: unknown): boolean {
   const err = error as
     | { status?: unknown; statusCode?: unknown; code?: unknown; message?: unknown }
@@ -170,9 +172,7 @@ export class DaytonaProvider implements SandboxProvider {
 
   readonly provisioning: ProvisioningTraits = {
     async: false,
-    stages: [
-      { id: 'creating', progress: 50, message: 'Creating sandbox...' },
-    ],
+    stages: [{ id: 'creating', progress: 50, message: 'Creating sandbox...' }],
   };
 
   async getProvisioningStatus(): Promise<ProvisioningStatus | null> {
@@ -222,28 +222,30 @@ export class DaytonaProvider implements SandboxProvider {
     if (!snapshot) {
       throw new Error(
         'Daytona create() called without opts.snapshot. ' +
-        'Every sandbox must boot from a per-project snapshot built by ' +
-        'apps/api/src/snapshots/builder.ts. There is no shared fallback.',
+          'Every sandbox must boot from a per-project snapshot built by ' +
+          'apps/api/src/snapshots/builder.ts. There is no shared fallback.',
       );
     }
 
     const daytona = getDaytona();
-    const daytonaSandbox = await daytona.create(
-      {
-        snapshot,
-        envVars,
-        // Idle → stop → archive → delete. See daytonaLifecycle(): auto-stop is
-        // clamped to >= 1 so a normal session box can never be created persistent,
-        // a large auto-archive (default 3 days) keeps a hibernated box in the
-        // fast-resume "stopped" tier, and a finite auto-delete reclaims it if the
-        // API/tunnel that created it dies. Intervals are env-tunable
-        // (KORTIX_SANDBOX_AUTO*).
-        ...daytonaLifecycle(opts.autoStopInterval),
-        labels: managedSandboxLabels(workloadType),
-        public: false,
-      },
-      { timeout: createTimeoutSeconds },
-    ).catch((err) => reportIfDiskQuotaError(err, 'create'));
+    const daytonaSandbox = await daytona
+      .create(
+        {
+          snapshot,
+          envVars,
+          // Idle → stop → archive → delete. See daytonaLifecycle(): auto-stop is
+          // clamped to >= 1 so a normal session box can never be created persistent,
+          // a large auto-archive (default 3 days) keeps a hibernated box in the
+          // fast-resume "stopped" tier, and a finite auto-delete reclaims it if the
+          // API/tunnel that created it dies. Intervals are env-tunable
+          // (KORTIX_SANDBOX_AUTO*).
+          ...daytonaLifecycle(opts.autoStopInterval),
+          labels: managedSandboxLabels(workloadType),
+          public: false,
+        },
+        { timeout: createTimeoutSeconds },
+      )
+      .catch((err) => reportIfDiskQuotaError(err, 'create'));
 
     const externalId = daytonaSandbox.id;
     const apiBase = sandboxApiBase;
@@ -317,24 +319,70 @@ export class DaytonaProvider implements SandboxProvider {
   async start(externalId: string): Promise<void> {
     runningStatusCache.delete(externalId);
     const daytona = getDaytona();
-    const sandbox = await withTimeout(daytona.get(externalId), PROVIDER_CALL_TIMEOUT_MS, `Daytona get(${externalId})`);
-    await withTimeout(sandbox.start(), PROVIDER_CALL_TIMEOUT_MS, `Daytona start(${externalId})`).catch((err) =>
-      reportIfDiskQuotaError(err, 'resume'),
+    const sandbox = await withTimeout(
+      daytona.get(externalId),
+      PROVIDER_CALL_TIMEOUT_MS,
+      `Daytona get(${externalId})`,
+    );
+    await withTimeout(
+      sandbox.start(),
+      PROVIDER_CALL_TIMEOUT_MS,
+      `Daytona start(${externalId})`,
+    ).catch((err) => reportIfDiskQuotaError(err, 'resume'));
+  }
+
+  async renewLifecycle(externalId: string): Promise<void> {
+    const daytona = getDaytona();
+    const sandbox = await withTimeout(
+      daytona.get(externalId),
+      PROVIDER_CALL_TIMEOUT_MS,
+      `Daytona get(${externalId}) for lifecycle renewal`,
+    );
+    if (classifyDaytonaState(sandbox.state) !== 'running') {
+      throw new Error(`Daytona lifecycle renewal refused for non-running sandbox ${externalId}`);
+    }
+    // Guest commands do not reset Daytona's lifecycle clock. Use the provider's
+    // dedicated activity endpoint. The state gate above prevents this call from
+    // granting activity to a stopped sandbox.
+    await withTimeout(
+      sandbox.refreshActivity(),
+      PROVIDER_CALL_TIMEOUT_MS,
+      `Daytona lifecycle renewal(${externalId})`,
     );
   }
 
   async stop(externalId: string): Promise<void> {
     runningStatusCache.delete(externalId);
     const daytona = getDaytona();
-    const sandbox = await withTimeout(daytona.get(externalId), PROVIDER_CALL_TIMEOUT_MS, `Daytona get(${externalId})`);
-    await withTimeout(sandbox.stop(), PROVIDER_CALL_TIMEOUT_MS, `Daytona stop(${externalId})`);
+    const sandbox = await withTimeout(
+      daytona.get(externalId),
+      PROVIDER_CALL_TIMEOUT_MS,
+      `Daytona get(${externalId})`,
+    );
+    await withTimeout(
+      // Pass the same bound into the SDK. Its outer `withTimeout` cannot cancel
+      // a losing promise, while the SDK forwards this value to axios and the
+      // server-side wait. The stop-claim lease relies on no stale stop request
+      // surviving after this method rejects.
+      sandbox.stop(PROVIDER_CALL_TIMEOUT_MS / 1000),
+      PROVIDER_CALL_TIMEOUT_MS,
+      `Daytona stop(${externalId})`,
+    );
   }
 
   async remove(externalId: string): Promise<void> {
     runningStatusCache.delete(externalId);
     const daytona = getDaytona();
-    const sandbox = await withTimeout(daytona.get(externalId), PROVIDER_CALL_TIMEOUT_MS, `Daytona get(${externalId})`);
-    await withTimeout(daytona.delete(sandbox), PROVIDER_CALL_TIMEOUT_MS, `Daytona delete(${externalId})`);
+    const sandbox = await withTimeout(
+      daytona.get(externalId),
+      PROVIDER_CALL_TIMEOUT_MS,
+      `Daytona get(${externalId})`,
+    );
+    await withTimeout(
+      daytona.delete(sandbox),
+      PROVIDER_CALL_TIMEOUT_MS,
+      `Daytona delete(${externalId})`,
+    );
   }
 
   /**
@@ -344,7 +392,9 @@ export class DaytonaProvider implements SandboxProvider {
    * createdAt so the reaper can age-gate (never stop a box inside its grace
    * window, which would race a box mid-provision before its DB row lands).
    */
-  async listManagedRunningSandboxes(): Promise<Array<{ externalId: string; createdAt: Date | null }>> {
+  async listManagedRunningSandboxes(): Promise<
+    Array<{ externalId: string; createdAt: Date | null }>
+  > {
     // Bounds the WHOLE paginated iteration, not just one page — the async
     // generator can page indefinitely if a later page's request hangs.
     return withTimeout(
@@ -375,7 +425,11 @@ export class DaytonaProvider implements SandboxProvider {
     if (cachedAt !== undefined && Date.now() - cachedAt < STATUS_CACHE_TTL_MS) return 'running';
     try {
       const daytona = getDaytona();
-      const sandbox = await withTimeout(daytona.get(externalId), PROVIDER_CALL_TIMEOUT_MS, `Daytona get(${externalId})`);
+      const sandbox = await withTimeout(
+        daytona.get(externalId),
+        PROVIDER_CALL_TIMEOUT_MS,
+        `Daytona get(${externalId})`,
+      );
       const status = classifyDaytonaState(sandbox.state);
       if (status === 'running') {
         runningStatusCache.set(externalId, Date.now());
@@ -390,9 +444,16 @@ export class DaytonaProvider implements SandboxProvider {
     }
   }
 
-  async resolveIngress(externalId: string, request: SandboxIngressRequest): Promise<ResolvedSandboxIngress> {
+  async resolveIngress(
+    externalId: string,
+    request: SandboxIngressRequest,
+  ): Promise<ResolvedSandboxIngress> {
     const daytona = getDaytona();
-    const sandbox = await withTimeout(daytona.get(externalId), PROVIDER_CALL_TIMEOUT_MS, `Daytona get(${externalId})`);
+    const sandbox = await withTimeout(
+      daytona.get(externalId),
+      PROVIDER_CALL_TIMEOUT_MS,
+      `Daytona get(${externalId})`,
+    );
     const link: any = await withTimeout(
       (sandbox as any).getPreviewLink(request.port),
       PROVIDER_CALL_TIMEOUT_MS,

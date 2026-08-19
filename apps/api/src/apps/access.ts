@@ -240,12 +240,34 @@ export async function appAccessibleToUser(
   );
   if (!projectAccess.allowed) return false;
   const subject = await resolveShareSubject(userId);
-  return appAccessDecision({
+  if (appAccessDecision({
     mode: app.accessMode as AppAccessMode,
     ownerId: app.createdBy,
     grants: app.accessMode === 'restricted' ? await loadAppAccessGrants(app.appId) : [],
     subject,
-  });
+  })) {
+    return true;
+  }
+
+  /*
+   * A project manager may open what they can already see and delete.
+   *
+   * `appVisibleToSubject` hands managers every App in the project, deliberately
+   * — "otherwise a private App becomes unmanageable the moment the member who
+   * created it leaves". Opening was left out of that, which made the guarantee
+   * half true: a manager could rename, resize, redeploy and DELETE an App they
+   * were never allowed to look at. This is not a widening in practice either,
+   * since the same manager can set the mode to `project` and open it a click
+   * later; it removes the dance, not a boundary.
+   *
+   * It also un-strands the App that has no owner at all. `created_by` is null
+   * for every App created before creators were recorded, and for any created
+   * through a credential that carries no user — and `private` means "only the
+   * creator". With nobody to match, the decision above can never return true,
+   * so those Apps were listed to managers and openable by NOBODY, forever,
+   * answering 403 to the only people who could have fixed them.
+   */
+  return projectManager(app.accountId, app.projectId, userId);
 }
 
 /* ─── Team scoping — who on the team sees this App ────────────────────────────
@@ -370,6 +392,77 @@ export async function appVisibleToUser(app: TeamScopedApp, userId: string): Prom
   return (await filterAppsVisibleToUser([app], userId)).length === 1;
 }
 
+/**
+ * Pure: may this subject OPEN the App, as opposed to merely see it listed?
+ *
+ * Deliberately the same shape as {@link appVisibleToSubject}, because the two
+ * must not drift: an App that appears in someone's list and then refuses to
+ * open is a dead card and a 403 in their console, and an App that opens for
+ * someone who cannot see it is a leak. The invariant the tests hold is
+ * `visible ⊇ openable` in the strict sense — anything openable is visible — and
+ * in practice the two now agree for every mode.
+ *
+ * `public` and `password` short-circuit in the access-session route before any
+ * per-user decision, so they are openable here even though `appAccessDecision`
+ * answers false for `password` — that false means "the browser still owes a
+ * password", not "this caller is refused".
+ */
+export function appOpenableToSubject(input: {
+  mode: AppAccessMode;
+  ownerId: string | null;
+  grants: SecretGrant[];
+  subject: ShareSubject;
+  isProjectManager: boolean;
+}): boolean {
+  if (input.mode === 'public' || input.mode === 'password') return true;
+  if (input.isProjectManager) return true;
+  return appAccessDecision({
+    mode: input.mode,
+    ownerId: input.ownerId,
+    grants: input.grants,
+    subject: input.subject,
+  });
+}
+
+/**
+ * Which of `rows` this user may actually OPEN, as a set of App ids.
+ *
+ * Seeing an App and opening it are different verdicts, and the list needs both:
+ * without this the client cannot tell them apart, so it optimistically mints an
+ * access session for every card and collects a 403 per App it may only manage.
+ * That is a console full of errors, a broken thumbnail, and no explanation of
+ * why — for a state that is not an error at all.
+ *
+ * Batched on the same shape as {@link filterAppsVisibleToUser}: one subject
+ * resolution, one manager verdict, one grant query for the whole page.
+ */
+export async function appsOpenableByUser<T extends TeamScopedApp>(
+  rows: T[],
+  userId: string,
+): Promise<Set<string>> {
+  const [first] = rows;
+  if (!first) return new Set();
+  const [subject, isProjectManager, grants] = await Promise.all([
+    resolveShareSubject(userId),
+    projectManager(first.accountId, first.projectId, userId),
+    loadAppAccessGrantsFor(
+      rows.filter((row) => row.accessMode === 'restricted').map((row) => row.appId),
+    ),
+  ]);
+  const openable = new Set<string>();
+  for (const row of rows) {
+    const allowed = appOpenableToSubject({
+      mode: row.accessMode as AppAccessMode,
+      ownerId: row.createdBy,
+      grants: grants.get(row.appId) ?? [],
+      subject,
+      isProjectManager,
+    });
+    if (allowed) openable.add(row.appId);
+  }
+  return openable;
+}
+
 export function appAccessSessionUrl(
   url: string,
   app: { appId: string; accessRevision: number },
@@ -389,15 +482,41 @@ export function appAccessSessionUrl(
   return { url: target.toString(), expiresAt };
 }
 
+/**
+ * The App access cookie.
+ *
+ * `SameSite=None; Partitioned` in BOTH environments, which is not the obvious
+ * choice and is the only one that works.
+ *
+ * Kortix embeds an App in an iframe on its own pages, and that iframe is always
+ * cross-site: `kortix.com` (or a customer's console origin) framing
+ * `*.apps.kortix.com`. A `SameSite=Lax` cookie is sent on a top-level
+ * navigation and on nothing else — so the framed document authenticates via the
+ * `?__kortix_access=` exchange in its URL and then every fetch it makes arrives
+ * WITHOUT the cookie. The App renders and its first API call answers
+ * `401 app_auth_required`.
+ *
+ * That is invisible for a static App and fatal for any App that talks to its
+ * own API, which is most of the interesting ones. It read as "the App is
+ * broken" rather than "the cookie policy forbids this", because the page in
+ * front of you looked fine.
+ *
+ * `Partitioned` (CHIPS) is what makes `None` acceptable here: the cookie is
+ * keyed to the embedding top-level site, so it is not a general-purpose
+ * cross-site credential — it only exists inside the Kortix page that framed it,
+ * and separately in a direct tab. The token itself is already App-scoped and
+ * revision-checked, so a stolen cookie grants one App until its access policy
+ * changes.
+ *
+ * `__Host-` requires Secure, `Path=/` and no `Domain`, all of which hold here.
+ * The plain name is used only on local HTTP, where `__Host-` cannot be set.
+ */
 export function appAccessCookie(
   token: string,
   maxAgeSeconds = 8 * 60 * 60,
   localHttp = false,
 ): string {
-  const policy = localHttp
-    ? 'Secure; SameSite=None; Partitioned'
-    : 'Secure; SameSite=Lax';
-  return `${appAccessCookieName(localHttp)}=${token}; Path=/; Max-Age=${maxAgeSeconds}; HttpOnly; ${policy}`;
+  return `${appAccessCookieName(localHttp)}=${token}; Path=/; Max-Age=${maxAgeSeconds}; HttpOnly; Secure; SameSite=None; Partitioned`;
 }
 
 export function cookieValue(request: Request, name: string): string | null {

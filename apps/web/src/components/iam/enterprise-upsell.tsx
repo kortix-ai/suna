@@ -1,12 +1,19 @@
 'use client';
 
-// Upsell state for the enterprise-gated IAM surfaces (Groups, Roles, Audit,
-// SAML SSO + SCIM). Non-entitled accounts keep the tab/section visible for
+// Upsell state for the enterprise-gated IAM surfaces (Audit, SAML SSO +
+// SCIM). Non-entitled accounts keep the tab/section visible for
 // discoverability, but its content is this card: what the feature does, and a
 // "Request a demo" CTA that opens the demo-request modal directly (no detour to
 // the marketing page). Mirrors the server-side gate — the create/update routes
 // 402 without the entitlement (requireEntitlement), so we never render controls
 // the backend would reject.
+//
+// Roles is NOT one of them and never was: `GET .../iam/roles` carries no
+// entitlement check, so the built-in roles are free content and `RolesTab`
+// gates only its own New role / Edit / Duplicate controls, with an inline
+// `InfoBanner` carrying `RBAC_UPSELL_MESSAGE`. The `roles` copy variant this
+// map used to hold was written but never rendered anywhere — deleted
+// 2026-08-18 rather than left as a second, contradictory gating story.
 
 import { CheckIcon as Check, LockIcon as Lock } from '@phosphor-icons/react';
 
@@ -19,7 +26,7 @@ import { useRequestDemo } from '@/features/contact/request-demo-provider';
 // that still wants to link out.
 export const ENTERPRISE_PAGE_URL = 'https://kortix.com/enterprise';
 
-type UpsellFeature = 'groups' | 'roles' | 'audit' | 'identity';
+type UpsellFeature = 'groups' | 'audit' | 'identity';
 
 const FEATURE_COPY: Record<
   UpsellFeature,
@@ -37,16 +44,6 @@ const FEATURE_COPY: Record<
       'Attach a group to any project with a role',
       'Sync membership automatically from your identity provider',
       'Offboard someone everywhere by removing one membership',
-    ],
-  },
-  roles: {
-    title: 'Custom roles are an Enterprise feature',
-    blurb:
-      'Go beyond the built-in presets: compose roles from fine-grained capabilities and assign them exactly where they apply.',
-    points: [
-      'Pick per-capability permissions (files, secrets, triggers, …)',
-      'Duplicate a built-in preset and subtract what you don’t want',
-      'Assign roles to users or groups per project',
     ],
   },
   audit: {

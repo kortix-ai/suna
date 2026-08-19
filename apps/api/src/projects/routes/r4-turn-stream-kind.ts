@@ -1,5 +1,5 @@
 // turn-stream multiplexes several operations (progress step, final answer,
-// turn end, opencode session pin, plus the retired execution-lease kinds that
+// turn end, initial-turn acceptance, opencode session pin, plus the retired execution-lease kinds that
 // pre-2026-07-29 sandbox images still send) behind one path — normalize the caller-supplied `kind` into the value
 // attached to the request context so it lands on the `Request completed:`
 // log and `stats count() by kind` in CloudWatch Insights can finally read
@@ -11,20 +11,23 @@
 // billing, llm-gateway, ...), which requires a live DATABASE_URL/dotenvx
 // environment just to load.
 export function turnStreamKindField(kind: unknown): string {
-  return typeof kind === 'string' && kind ? kind : 'unknown';
+  return typeof kind === 'string' && kind ? kind : 'unknown'
 }
 
 // The SANDBOX-reported LIFECYCLE kinds. They carry no agent content and fan out
 // to no connector: `end`/`turn_end` only shorten this session's idle deadline
-// (LEAST-only — can never extend the box's life), and `opencode_session` only
-// persists the root-session pin. Everything NOT in this set reaches the
+// (LEAST-only — can never extend the box's life), `turn_accepted` promotes only
+// a token-bound record that the control plane created before provisioning, and
+// `opencode_session` only persists the root-session pin. Everything NOT in this set reaches the
 // content-bearing send path in turn-stream (relayTurnStep/relayTurnAnswer, which
 // post to the project's Slack/Teams), including any unknown kind.
 export const TURN_STREAM_LIFECYCLE_KINDS: ReadonlySet<string> = new Set([
   'end',
   'turn_end',
+  'turn_accepted',
+  'turn_abandoned',
   'opencode_session',
-]);
+])
 
 // Whether a turn-stream `kind` requires project.connector.write (a channel-send
 // primitive) vs is a lifecycle signal that only needs project membership.
@@ -33,5 +36,5 @@ export const TURN_STREAM_LIFECYCLE_KINDS: ReadonlySet<string> = new Set([
 // turn-end reporting for scoped agents (their session token holds no
 // connector.write), stranding sandboxes alive for the full idle grace.
 export function turnStreamKindNeedsConnectorWrite(kind: unknown): boolean {
-  return !TURN_STREAM_LIFECYCLE_KINDS.has(typeof kind === 'string' ? kind : '');
+  return !TURN_STREAM_LIFECYCLE_KINDS.has(typeof kind === 'string' ? kind : '')
 }

@@ -73,6 +73,16 @@ export function createCorsMiddleware(options: CorsMiddlewareOptions) {
       'X-Audit-Capped',
       'X-Audit-Complete',
       'X-Audit-Next-Cursor',
+      // The sandbox proxy's failure attribution (`proxy-hop.ts`). It HAS to be
+      // declared here and not only on the proxy's own response: this middleware
+      // is mounted with `app.use('*', …)` on the same app the proxy is routed
+      // into, and Hono's `Context.res` setter copies the middleware's headers
+      // onto the handler's response — the middleware's
+      // `Access-Control-Expose-Headers` overwrites the handler's. Without these
+      // two names the browser hides both headers from JS, the SDK probe reads
+      // null, and every failure is unattributed again.
+      'X-Kortix-Proxy-Hop',
+      'X-Kortix-Upstream-Status',
     ],
     credentials: true,
     maxAge: 600,

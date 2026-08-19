@@ -4,6 +4,8 @@ import { useTranslations } from 'next-intl';
 
 import {
   AsteriskIcon as Asterisk,
+  BookOpenIcon,
+  CaretDownIcon,
   KeyIcon as KeyRound,
   LockSimpleIcon as Lock,
   DotsThreeIcon as MoreHorizontal,
@@ -16,6 +18,7 @@ import { type FormEvent, useCallback, useMemo, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
   DropdownMenu,
@@ -46,7 +49,9 @@ import {
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
@@ -64,8 +69,8 @@ import { errorToast, infoToast, successToast, warningToast } from '@/components/
 import { Plus as PlusIcon } from '@/features/icon/icons/plus';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
+import { CapabilityPageShell } from '@/features/workspace/capabilities/shared/capability-page-shell';
 import { ProjectProviderModal } from '@/features/workspace/customize/sections/llm-provider/llm-provider-modal';
-import { SettingsTabHeader } from '@/features/workspace/settings/settings-tab-header';
 import { useSettingsNav } from '@/features/workspace/shared/settings-nav-context';
 import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
 import { cn } from '@/lib/utils';
@@ -94,6 +99,8 @@ import {
 } from '@phosphor-icons/react';
 import {
   type NetworkBoundaryAvailability,
+  type NetworkBoundaryMode,
+  type SecretAccessChoice,
   type SecretDeliveryBlockedReason,
   agentGrantActionLabel,
   agentGrantCandidateHint,
@@ -102,17 +109,22 @@ import {
   agentGrantOutcome,
   agentGrantPlan,
   agentGrantSnippet,
-  brokerConsumerForSecret,
   buildBrokerPolicy,
   buildNetworkBoundaryPolicy,
   canSaveSecretDelivery,
   connectorBindingChanges,
   connectorBindingOptions,
+  defaultSecretAccess,
   missingAgentGrantNotice,
   networkBoundaryAvailability,
   networkBoundaryBlockedReason,
   networkBoundaryEchoNotice,
+  networkBoundaryMode,
+  secretAccessIsSystemManaged,
+  secretAccessTarget,
   secretDeliveryBlockedReason,
+  secretDeliveryLegend,
+  secretDeliveryOptionGroups,
   secretDeliveryOptions,
   secretDeliveryPresentation,
   secretDeliverySyncWarning,
@@ -182,6 +194,7 @@ export function SecretsView({ projectId }: { projectId: string }) {
   });
   const llmGatewayEnabled = isLlmGatewayEnabled(projectDetailQuery.data?.project);
   const networkBoundary = networkBoundaryAvailability(projectDetailQuery.data?.project);
+  const boundaryMode = networkBoundaryMode(projectDetailQuery.data?.project);
 
   const secretsQuery = useQuery({
     queryKey,
@@ -240,21 +253,24 @@ export function SecretsView({ projectId }: { projectId: string }) {
     }
   };
 
+  /** The list resolved. Neither header control means anything before it does. */
+  const showContent = !secretsQuery.isLoading && !secretsQuery.isError;
+
   return (
-    <>
-      <div className="mx-auto w-full max-w-2xl space-y-8">
-        <SettingsTabHeader
-          tab="secrets"
-          action={
-            !secretsQuery.isLoading && !secretsQuery.isError && canManage ? (
-              <Button size="sm" variant="secondary" onClick={openCreate}>
-                <PlusIcon className="size-4 shrink-0" />
-                Add
-              </Button>
-            ) : null
-          }
-        />
-        <div className="space-y-4">
+    <CapabilityPageShell
+      title="Secrets"
+      /* "the VALUE out of that machine" is exact, not hedged: an HTTPS
+         broker secret does put an env var in the sandbox — an opaque
+         handle under the same key (`apps/api/src/projects/secrets.ts`
+         `env[row.key] = await input.mintHandleFor(row)`), never the
+         credential. "Sandbox is the only mode that puts a value in the
+         sandbox" is the claim the API actually guarantees
+         (`deliversPlaintextToSandbox`, `apps/api/src/secrets/strategy.ts`). */
+      description="Encrypted credentials this project keeps out of its repository. Access decides where each value goes — Sandbox sets it as an environment variable inside the machine a session runs on, and every other mode keeps the value out of that machine."
+      search={
+        /* Hidden until there is a list to search, the same rule Triggers
+           uses: a filter over nothing is a control that cannot do anything. */
+        showContent && allRows.length > 0 ? (
           <InputGroupSearch>
             <InputGroupSearchIcon>
               <Search />
@@ -264,108 +280,134 @@ export function SecretsView({ projectId }: { projectId: string }) {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               variant="popover"
+              size="sm"
             />
             <InputGroupSearchClear onClick={() => setQuery('')} />
           </InputGroupSearch>
-
-          {secretsQuery.isLoading ? (
-            <div className="space-y-1">
-              {Array.from({ length: 5 }).map((_, i) => (
-                <Skeleton key={i} className="h-10 rounded-md" />
-              ))}
-            </div>
-          ) : secretsQuery.isError ? (
-            <ErrorState
-              size="sm"
-              title={tHardcodedUi.raw(
-                'appProjectsIdCustomizeSecretsPage.line773JsxAttrTitleFailedToLoadSecrets',
-              )}
-              description={(secretsQuery.error as Error)?.message ?? 'Failed to load secrets'}
-              action={
-                <Button variant="outline" size="sm" onClick={() => secretsQuery.refetch()}>
-                  Retry
-                </Button>
-              }
-            />
-          ) : (
-            <>
-              {missingRequired.length > 0 && (
-                <InfoBanner
-                  tone="warning"
-                  icon={<DangerTriangleSolid weight="fill" />}
-                  title={`${missingRequired.length} required ${missingRequired.length === 1 ? 'secret' : 'secrets'} not set`}
-                >
-                  Sessions can still start, but the agent will be missing these values.
-                </InfoBanner>
-              )}
-
-              {filtered.length === 0 ? (
-                query.trim() ? (
-                  <p className="text-muted-foreground px-3 py-6 text-center text-xs">
-                    No matches for <span className="text-foreground font-mono">{query}</span>.
-                  </p>
-                ) : (
-                  <EmptyState
-                    icon={KeyRound}
-                    size="sm"
-                    title="No secrets yet"
-                    description="Add one to inject it into every new session."
-                    action={
-                      canManage ? (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="gap-1.5"
-                          onClick={openCreate}
-                        >
-                          <Plus className="size-3.5 shrink-0" />
-                          Add secret
-                        </Button>
-                      ) : undefined
-                    }
-                  />
-                )
-              ) : (
-                <Table className="overflow-hidden rounded-md">
-                  <TableHeader>
-                    <TableRow className="hover:bg-transparent">
-                      <TableHead>Identifier</TableHead>
-                      <TableHead>Value</TableHead>
-                      <TableHead>Access</TableHead>
-                      <TableHead className="w-[52px]">
-                        <span className="sr-only">Actions</span>
-                      </TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filtered.map((row) => (
-                      <SecretTableRow
-                        key={row.identifier}
-                        row={row}
-                        canManage={canManage}
-                        busy={removeShared.isPending && removeShared.variables === row.identifier}
-                        onEdit={() => openEdit(row)}
-                        onDelete={() => setDeleteRow(row)}
-                      />
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
-
-              <SecretDialog
-                key={dialogRow?.identifier ?? 'new'}
-                open={dialogOpen}
-                onOpenChange={setDialogOpen}
-                projectId={projectId}
-                row={dialogRow}
-                connectors={connectorsQuery.data?.connectors ?? []}
-                connectorsLoading={connectorsQuery.isLoading}
-                networkBoundary={networkBoundary}
-                onSaved={refreshSecretsAndProviders}
-              />
-            </>
-          )}
+        ) : undefined
+      }
+      action={
+        /* One right-hand cluster, secondary control first, primary last —
+           the pairing `SettingsTabHeader` renders for every pane with a
+           `docsHref`. This page has no registry entry to declare one from,
+           so the same button is written here rather than dropped. */
+        <div className="flex min-w-0 items-center gap-2">
+          {/* New tab: this page is often open over live work. */}
+          <Button asChild variant="secondary" size="sm" className="gap-1.5">
+            <Link href="/docs/project/secrets" target="_blank" rel="noreferrer">
+              <BookOpenIcon className="size-3.5 shrink-0" />
+              Docs
+            </Link>
+          </Button>
+          {showContent && canManage ? (
+            <Button size="sm" variant="secondary" onClick={openCreate}>
+              <PlusIcon className="size-4 shrink-0" />
+              Add
+            </Button>
+          ) : null}
         </div>
+      }
+      /* The shell's secondary row — where Skills and Connectors put their
+         scope tabs. The legend is the same kind of thing: one small control
+         under the header that reframes the list below it. Collapsed it is a
+         single line, so it costs the table nothing; in the content column it
+         would sit between the header and the first row it explains. */
+      filters={<SecretsAccessExplainer />}
+    >
+      <div className="space-y-4">
+        {secretsQuery.isLoading ? (
+          <div className="space-y-1">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <Skeleton key={i} className="h-10 rounded-md" />
+            ))}
+          </div>
+        ) : secretsQuery.isError ? (
+          <ErrorState
+            size="sm"
+            title={tHardcodedUi.raw(
+              'appProjectsIdCustomizeSecretsPage.line773JsxAttrTitleFailedToLoadSecrets',
+            )}
+            description={(secretsQuery.error as Error)?.message ?? 'Failed to load secrets'}
+            action={
+              <Button variant="outline" size="sm" onClick={() => secretsQuery.refetch()}>
+                Retry
+              </Button>
+            }
+          />
+        ) : (
+          <>
+            {missingRequired.length > 0 && (
+              <InfoBanner
+                tone="warning"
+                icon={<DangerTriangleSolid weight="fill" />}
+                title={`${missingRequired.length} required ${missingRequired.length === 1 ? 'secret' : 'secrets'} not set`}
+              >
+                Sessions can still start, but the agent will be missing these values.
+              </InfoBanner>
+            )}
+
+            {filtered.length === 0 ? (
+              query.trim() ? (
+                <p className="text-muted-foreground px-3 py-6 text-center text-xs">
+                  No matches for <span className="text-foreground font-mono">{query}</span>.
+                </p>
+              ) : (
+                <EmptyState
+                  icon={KeyRound}
+                  size="sm"
+                  title="No secrets yet"
+                  description="Add one to inject it into every new session."
+                  action={
+                    canManage ? (
+                      <Button variant="outline" size="sm" className="gap-1.5" onClick={openCreate}>
+                        <Plus className="size-3.5 shrink-0" />
+                        Add secret
+                      </Button>
+                    ) : undefined
+                  }
+                />
+              )
+            ) : (
+              <Table className="overflow-hidden rounded-md">
+                <TableHeader>
+                  <TableRow className="hover:bg-transparent">
+                    <TableHead>Identifier</TableHead>
+                    <TableHead>Value</TableHead>
+                    <TableHead>Access</TableHead>
+                    <TableHead className="w-[52px]">
+                      <span className="sr-only">Actions</span>
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filtered.map((row) => (
+                    <SecretTableRow
+                      key={row.identifier}
+                      row={row}
+                      canManage={canManage}
+                      busy={removeShared.isPending && removeShared.variables === row.identifier}
+                      onEdit={() => openEdit(row)}
+                      onDelete={() => setDeleteRow(row)}
+                    />
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+
+            <SecretDialog
+              key={dialogRow?.identifier ?? 'new'}
+              open={dialogOpen}
+              onOpenChange={setDialogOpen}
+              projectId={projectId}
+              row={dialogRow}
+              connectors={connectorsQuery.data?.connectors ?? []}
+              connectorsLoading={connectorsQuery.isLoading}
+              networkBoundary={networkBoundary}
+              boundaryMode={boundaryMode}
+              onSaved={refreshSecretsAndProviders}
+            />
+          </>
+        )}
       </div>
       <ProjectProviderModal
         projectId={projectId}
@@ -396,7 +438,82 @@ export function SecretsView({ projectId }: { projectId: string }) {
         }}
         isPending={removeShared.isPending}
       />
-    </>
+    </CapabilityPageShell>
+  );
+}
+
+/**
+ * What the Access column actually means, folded away until asked for.
+ *
+ * The page shipped with a bare Identifier / Value / Access table and no words
+ * at all, so `Sandbox` beside `STRIPE_API_KEY` was a label with nothing behind
+ * it. The four values are four genuinely different places a value is allowed
+ * to reach — that distinction is the whole feature, and it was invisible.
+ *
+ * Collapsed by default, and one click from the badges it defines: four
+ * definitions permanently expanded above a five-row table would be a wall of
+ * text in front of the thing the page is for.
+ *
+ * The labels and sentences come from `secretDeliveryLegend()`, the same
+ * `ACCESS_PRESENTATIONS` table that renders each row's badge and each option
+ * in the dialog's Access picker. Restating them here in JSX is how the legend
+ * and the badge start disagreeing.
+ */
+function SecretsAccessExplainer() {
+  const [open, setOpen] = useState(false);
+  return (
+    /* `w-full` because the shell's filters row is a flex line: without it the
+       expanded legend shrink-wraps to its longest sentence instead of the
+       column. */
+    <Collapsible open={open} onOpenChange={setOpen} className="w-full">
+      <CollapsibleTrigger className="text-muted-foreground hover:text-foreground flex items-center gap-1.5 text-xs font-medium transition-colors">
+        <CaretDownIcon
+          className={cn('size-3.5 shrink-0 transition-transform', open ? '' : '-rotate-90')}
+        />
+        What each Access value means
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        <dl className="border-border bg-sidebar mt-2 flex flex-col gap-2.5 rounded-md border p-3">
+          {secretDeliveryLegend().map((mode) => (
+            <div key={mode.choice} className="flex flex-col gap-1 sm:flex-row sm:gap-3">
+              <dt className="shrink-0 sm:w-36">
+                <Badge variant={mode.tone} size="sm">
+                  {mode.label}
+                </Badge>
+              </dt>
+              <dd className="text-muted-foreground min-w-0 text-xs text-pretty">
+                {mode.description}
+              </dd>
+            </div>
+          ))}
+          {/* Two things the list above cannot say on its own.
+
+              First, the grant. This used to name "Network boundary and the
+              HTTPS broker", which was wrong: `resolveSecretDelivery`
+              (apps/api/src/secrets/strategy.ts) returns `agent_grant_unscoped`
+              for EVERY strategy other than `runtime`, so LLM gateway and
+              Connector are gated by the identical rule. Sandbox is the one
+              exception, and it has to stay one — a project with no `agents:`
+              block hands every Sandbox secret to every agent, so a blanket
+              "a grant is always required" would be false for the default value
+              on most projects. See `shouldWarnMissingAgentGrant`.
+
+              Second, Git service: a value the picker does not offer, because
+              only the git-connection flow assigns it. A row can therefore show
+              a badge with no matching option, which reads as a bug unless the
+              page says who set it. */}
+          <p className="text-muted-foreground border-border mt-0.5 border-t pt-2.5 text-xs text-pretty">
+            Every value except <span className="text-foreground">Sandbox</span> reaches a session
+            only when its agent lists the identifier under{' '}
+            <code className="font-mono">secrets</code> in{' '}
+            <code className="font-mono">kortix.yaml</code>;{' '}
+            <code className="font-mono">secrets: all</code> does not count. A secret can also read{' '}
+            <span className="text-foreground">Git service</span>: Kortix assigns that one when you
+            connect a repository, and it cannot be chosen or changed here.
+          </p>
+        </dl>
+      </CollapsibleContent>
+    </Collapsible>
   );
 }
 
@@ -638,6 +755,7 @@ function SecretDialog({
   connectors,
   connectorsLoading,
   networkBoundary,
+  boundaryMode,
   onSaved,
 }: {
   open: boolean;
@@ -647,6 +765,8 @@ function SecretDialog({
   connectors: Awaited<ReturnType<typeof listConnectors>>['connectors'];
   connectorsLoading: boolean;
   networkBoundary: NetworkBoundaryAvailability;
+  /** Which mechanism will carry the header, null while none is armed. */
+  boundaryMode: NetworkBoundaryMode | null;
   onSaved: () => void;
 }) {
   const queryClient = useQueryClient();
@@ -655,23 +775,38 @@ function SecretDialog({
   const [identifier, setIdentifier] = useState(row?.identifier ?? '');
   const [key, setKey] = useState(row?.key ?? '');
   const [value, setValue] = useState('');
-  const [strategy, setStrategy] = useState<SecretDeliveryStrategy>(row?.strategy ?? 'runtime');
-  const [brokerConsumer, setBrokerConsumer] = useState(() =>
-    brokerConsumerForSecret(row?.consumer),
+  /**
+   * ONE control, one piece of state. The dialog used to hold `strategy` and
+   * `brokerConsumer` separately and render a picker for each, which made
+   * "LLM gateway" a two-step answer to a one-step question. `strategy` and
+   * `consumer` are still what gets STORED — they are derived here, not typed
+   * by the user.
+   */
+  const [access, setAccess] = useState<SecretAccessChoice>(() =>
+    defaultSecretAccess(row, networkBoundary),
   );
+  const { strategy, consumer: accessConsumer } = secretAccessTarget(access);
+  /**
+   * The git connection owns this row's Access, so the picker must not be
+   * shown at all. It offers five values, none of them `git_proxy`; rendering
+   * it would silently move the secret off the consumer the git connection
+   * reads.
+   */
+  const accessLocked = secretAccessIsSystemManaged(row?.consumer);
   const [selectedConnectorSlugs, setSelectedConnectorSlugs] = useState<string[] | null>(null);
   const effectiveSelectedConnectorSlugs =
     selectedConnectorSlugs ??
     connectors
       .filter((connector) => connector.secretIdentifier === row?.identifier)
       .map((connector) => connector.slug);
+  const effectiveSelectedConnectorSlugSet = new Set(effectiveSelectedConnectorSlugs);
   const currentPolicy = row?.egressPolicy;
   const currentInjection = currentPolicy?.inject;
   const [brokerHosts, setBrokerHosts] = useState(
-    currentPolicy?.rules.map((rule) => rule.host).join('\n') ?? '',
+    () => currentPolicy?.rules.map((rule) => rule.host).join('\n') ?? '',
   );
   const [brokerMethods, setBrokerMethods] = useState(
-    currentPolicy?.rules[0]?.methods?.join(', ') ?? 'POST',
+    () => currentPolicy?.rules[0]?.methods?.join(', ') ?? 'POST',
   );
   const [brokerPath, setBrokerPath] = useState(currentPolicy?.rules[0]?.path ?? '/');
   const [injectionKind, setInjectionKind] = useState<'header' | 'query' | 'json_body_field'>(
@@ -690,8 +825,7 @@ function SecretDialog({
     setIdentifier(row?.identifier ?? '');
     setKey(row?.key ?? '');
     setValue('');
-    setStrategy(row?.strategy ?? 'runtime');
-    setBrokerConsumer(brokerConsumerForSecret(row?.consumer));
+    setAccess(defaultSecretAccess(row, networkBoundary));
     setSelectedConnectorSlugs(null);
     setBrokerHosts(currentPolicy?.rules.map((rule) => rule.host).join('\n') ?? '');
     setBrokerMethods(currentPolicy?.rules[0]?.methods?.join(', ') ?? 'POST');
@@ -725,10 +859,7 @@ function SecretDialog({
   const prepareSavePlan = (): SecretSavePlan => {
     const finalKey = (row?.key ?? key).trim().toUpperCase();
     const finalIdentifier = (row?.identifier ?? identifier).trim() || finalKey;
-    const nextConnectorSlugs =
-      strategy === 'broker' && brokerConsumer === 'connector'
-        ? effectiveSelectedConnectorSlugs
-        : [];
+    const nextConnectorSlugs = access === 'connector' ? effectiveSelectedConnectorSlugs : [];
     const bindingChanges = connectorBindingChanges(connectors, finalIdentifier, nextConnectorSlugs);
     if (!SECRET_NAME_REGEX.test(finalKey)) {
       throw new Error('Key: use A-Z, 0-9, _ only. Must start with a letter or _. Max 64 chars.');
@@ -745,33 +876,22 @@ function SecretDialog({
     if (strategy === 'runtime' && row?.requiresRotation && !value.trim()) {
       throw new Error('Enter a new value before making this secret readable in the sandbox.');
     }
-    if (strategy === 'broker' && brokerConsumer === 'http_broker' && !brokerPolicy) {
+    if (access === 'http_broker' && !brokerPolicy) {
       throw new Error('Complete the broker destination and credential placement.');
     }
     if (strategy === 'egress' && !networkBoundaryPolicy) {
       throw new Error('Add an exact HTTPS host and a valid header placement.');
     }
-    if (
-      strategy === 'broker' &&
-      brokerConsumer === 'connector' &&
-      nextConnectorSlugs.length === 0
-    ) {
+    if (access === 'connector' && nextConnectorSlugs.length === 0) {
       throw new Error('Select at least one connector.');
     }
 
-    const nextConsumer: SecretConsumer | null =
-      strategy === 'runtime'
-        ? 'sandbox'
-        : strategy === 'denied'
-          ? null
-          : strategy === 'egress'
-            ? 'network'
-            : brokerConsumer;
+    const nextConsumer: SecretConsumer | null = accessConsumer;
     const hasValueChange = Boolean(value.trim()) || !row?.configured;
     const egressPolicy =
       strategy === 'egress'
         ? (networkBoundaryPolicy ?? undefined)
-        : strategy === 'broker' && brokerConsumer === 'http_broker' && brokerPolicy
+        : access === 'http_broker' && brokerPolicy
           ? brokerPolicy
           : undefined;
     const shouldSetStrategy =
@@ -950,19 +1070,17 @@ function SecretDialog({
     : row.configured
       ? `Edit ${row.identifier}`
       : `Set ${row.identifier}`;
-  const selectedDelivery = secretDeliveryPresentation(
-    strategy,
-    strategy === 'broker' ? brokerConsumer : undefined,
-  );
+  const selectedDelivery = secretDeliveryPresentation(strategy, accessConsumer);
   const bindingIdentifier = (row?.identifier ?? identifier).trim() || key.trim().toUpperCase();
   const connectorOptions = connectorBindingOptions(connectors, bindingIdentifier);
-  const deliveryOptions = secretDeliveryOptions(
-    strategy,
-    row?.deliveryStatus ?? 'available',
-    networkBoundary,
+  const deliveryGroups = secretDeliveryOptionGroups(
+    secretDeliveryOptions(access, row?.deliveryStatus ?? 'available', networkBoundary),
   );
   const networkBoundaryNotice = networkBoundaryBlockedReason(networkBoundary);
-  const echoNotice = networkBoundaryEchoNotice(brokerHosts);
+  // A blocked project runs neither mechanism yet, and the fix above leads with
+  // the shim flag — so describe the symptom the user will actually meet after
+  // taking it, not the provider edge's opposite one.
+  const echoNotice = networkBoundaryEchoNotice(brokerHosts, boundaryMode ?? 'in-guest-shim');
   // The dialog keeps the row it opened with, so a completed grant clears its own
   // warning — the refetch only reaches the table behind it.
   const grantNotice =
@@ -986,14 +1104,7 @@ function SecretDialog({
     requiresRotation: Boolean(row?.requiresRotation),
     currentStrategy: row?.strategy ?? 'runtime',
     nextStrategy: strategy,
-    nextConsumer:
-      strategy === 'runtime'
-        ? 'sandbox'
-        : strategy === 'denied'
-          ? null
-          : strategy === 'egress'
-            ? 'network'
-            : brokerConsumer,
+    nextConsumer: accessConsumer,
     brokerPolicyValid: brokerPolicy !== null,
     networkBoundaryPolicyValid: networkBoundaryPolicy !== null,
     selectedConnectorCount: effectiveSelectedConnectorSlugs.length,
@@ -1086,33 +1197,57 @@ function SecretDialog({
               )}
 
               <Field>
-                <FieldLabel htmlFor="secret-dialog-delivery">Delivery</FieldLabel>
-                <Select
-                  value={strategy}
-                  onValueChange={(next) => setStrategy(next as SecretDeliveryStrategy)}
-                  disabled={save.isPending}
-                >
-                  <SelectTrigger id="secret-dialog-delivery" className="min-h-10 w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {deliveryOptions.map((option) => (
-                      <SelectItem
-                        key={option.strategy}
-                        value={option.strategy}
-                        disabled={option.disabled}
-                        description={
-                          option.disabledReason
-                            ? `${option.description} ${option.disabledReason}`
-                            : option.description
-                        }
-                      >
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <FieldDescription>{selectedDelivery.description}</FieldDescription>
+                <FieldLabel htmlFor="secret-dialog-delivery">Access</FieldLabel>
+                {accessLocked ? (
+                  <div
+                    id="secret-dialog-delivery"
+                    className="border-border bg-sidebar rounded-md border p-3"
+                  >
+                    <Badge variant={selectedDelivery.tone} size="sm">
+                      {selectedDelivery.label}
+                    </Badge>
+                    <p className="text-muted-foreground mt-2 text-xs text-pretty">
+                      {selectedDelivery.description}
+                    </p>
+                  </div>
+                ) : (
+                  <Select
+                    value={access}
+                    onValueChange={(next) => setAccess(next as SecretAccessChoice)}
+                    disabled={save.isPending}
+                  >
+                    <SelectTrigger id="secret-dialog-delivery" className="min-h-10 w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    {/* One list, five values, no second screen. The group label
+                        is a heading, not an option: it says who the value
+                        serves — the project's own code, or a Kortix service
+                        the code never touches — without asking the user to
+                        choose that first. */}
+                    <SelectContent>
+                      {deliveryGroups.map((group) => (
+                        <SelectGroup key={group.group}>
+                          {group.label && <SelectLabel>{group.label}</SelectLabel>}
+                          {group.options.map((option) => (
+                            <SelectItem
+                              key={option.choice}
+                              value={option.choice}
+                              disabled={option.disabled}
+                              description={
+                                option.disabledReason
+                                  ? `${option.description} ${option.disabledReason}`
+                                  : option.description
+                              }
+                            >
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+                {!accessLocked && <FieldDescription>{selectedDelivery.description}</FieldDescription>}
               </Field>
 
               {strategy === 'runtime' && (
@@ -1281,51 +1416,13 @@ function SecretDialog({
                 </div>
               )}
 
-              {strategy === 'broker' && (
+              {/* Only two of the three broker values configure anything: a
+                  Connector picks connectors, the HTTPS broker states a
+                  policy. LLM gateway needs nothing, so it renders no panel at
+                  all — which is exactly why "Used by" was never a step. */}
+              {strategy === 'broker' && access !== 'llm_gateway' && (
                 <div className="border-border bg-sidebar space-y-4 rounded-md border p-3">
-                  <div className="space-y-1">
-                    <p className="text-sm font-medium">Kortix service</p>
-                    <p className="text-muted-foreground text-xs">
-                      The selected service uses the value outside the sandbox.
-                    </p>
-                  </div>
-
-                  <Field>
-                    <FieldLabel htmlFor="secret-dialog-broker-consumer">Used by</FieldLabel>
-                    <Select
-                      value={brokerConsumer}
-                      onValueChange={(next) =>
-                        setBrokerConsumer(next as 'llm_gateway' | 'connector' | 'http_broker')
-                      }
-                      disabled={save.isPending}
-                    >
-                      <SelectTrigger id="secret-dialog-broker-consumer" className="w-full">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem
-                          value="llm_gateway"
-                          description="Kortix sends model requests. The sandbox receives no key."
-                        >
-                          LLM gateway
-                        </SelectItem>
-                        <SelectItem
-                          value="http_broker"
-                          description="Kortix adds the value to one approved HTTPS destination."
-                        >
-                          HTTPS broker
-                        </SelectItem>
-                        <SelectItem
-                          value="connector"
-                          description="An authorized connector uses the value. The sandbox receives no key."
-                        >
-                          Connector
-                        </SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </Field>
-
-                  {brokerConsumer === 'connector' && (
+                  {access === 'connector' && (
                     <Field>
                       <FieldLabel>Connectors</FieldLabel>
                       {connectorsLoading ? (
@@ -1351,7 +1448,7 @@ function SecretDialog({
                               )}
                             >
                               <Checkbox
-                                checked={effectiveSelectedConnectorSlugs.includes(option.slug)}
+                                checked={effectiveSelectedConnectorSlugSet.has(option.slug)}
                                 disabled={option.disabled || save.isPending}
                                 onCheckedChange={(checked) => {
                                   setSelectedConnectorSlugs((current) =>
@@ -1387,7 +1484,7 @@ function SecretDialog({
                     </Field>
                   )}
 
-                  {brokerConsumer === 'http_broker' && (
+                  {access === 'http_broker' && (
                     <>
                       <InfoBanner tone="neutral" title="Opaque sandbox handle">
                         The sandbox receives a session handle. Kortix adds the real value only to a

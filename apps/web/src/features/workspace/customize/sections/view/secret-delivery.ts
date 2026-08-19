@@ -14,12 +14,105 @@ export type ConnectorBindingOption = {
   description: string;
 };
 
-export type BrokerConsumer = 'llm_gateway' | 'connector' | 'http_broker';
+/**
+ * One Access value, as the picker offers it.
+ *
+ * The stored shape is two columns — `strategy` and `consumer` — and the
+ * picker used to make the user fill them in two steps: pick "Delivery", then
+ * for "Kortix service" pick "Used by". "Kortix service" was a UX grouping
+ * over three unrelated mechanisms (LLM gateway, HTTPS broker, Connector), not
+ * a delivery mechanism itself, and it forced a second screen to express a
+ * single choice. There are five mechanisms and the user picks exactly one, so
+ * there is exactly one control.
+ *
+ * `git_proxy` is deliberately NOT here. It is assigned by the git-connection
+ * flow (apps/api/src/projects/lib/git.ts) and nothing else ever writes it, so
+ * offering it as a sixth option would be offering a choice that does not
+ * exist. It still has a label and description for the rows that carry it —
+ * see `secretAccessIsSystemManaged` and `secretDeliveryPresentation`.
+ */
+export type SecretAccessChoice =
+  | 'sandbox'
+  | 'network_boundary'
+  | 'http_broker'
+  | 'llm_gateway'
+  | 'connector'
+  | 'disabled';
 
-export function brokerConsumerForSecret(consumer?: SecretConsumer | null): BrokerConsumer {
+/**
+ * The two things an Access value can be for.
+ *
+ * `agent` — the value serves code the project runs. Either it is IN the
+ * process (Sandbox) or it is attached to that code's outbound request and
+ * never in the process at all (Network boundary, HTTPS broker).
+ *
+ * `service` — the value serves a first-party Kortix service. The project's
+ * own code never touches it.
+ *
+ * This is ORDER and copy, not a second decision: grouping the list is what
+ * makes five flat options readable, and it costs the user no extra click.
+ */
+export type SecretAccessGroup = 'agent' | 'service' | 'none';
+
+export const SECRET_ACCESS_GROUP_LABEL: Record<SecretAccessGroup, string | null> = {
+  agent: "For your agent's own code",
+  service: 'For a Kortix service',
+  none: null,
+};
+
+/** The stored `strategy` + `consumer` pair one choice writes. */
+export function secretAccessTarget(choice: SecretAccessChoice): {
+  strategy: SecretDeliveryStrategy;
+  consumer: SecretConsumer | null;
+} {
+  switch (choice) {
+    case 'sandbox':
+      return { strategy: 'runtime', consumer: 'sandbox' };
+    case 'network_boundary':
+      return { strategy: 'egress', consumer: 'network' };
+    case 'http_broker':
+      return { strategy: 'broker', consumer: 'http_broker' };
+    case 'llm_gateway':
+      return { strategy: 'broker', consumer: 'llm_gateway' };
+    case 'connector':
+      return { strategy: 'broker', consumer: 'connector' };
+    case 'disabled':
+      return { strategy: 'denied', consumer: null };
+  }
+}
+
+/**
+ * Read a stored row back into the one value the picker shows.
+ *
+ * A `git_proxy` row resolves to `http_broker` here ON PURPOSE ONLY as a
+ * last-resort fallback: callers must check `secretAccessIsSystemManaged`
+ * first and never open the picker on such a row, because silently
+ * re-labelling a git-assigned secret as an HTTPS-broker secret would rewrite
+ * its consumer on the next save.
+ */
+export function secretAccessChoice(
+  strategy: SecretDeliveryStrategy,
+  consumer?: SecretConsumer | null,
+): SecretAccessChoice {
+  if (strategy === 'runtime') return 'sandbox';
+  if (strategy === 'egress') return 'network_boundary';
+  if (strategy === 'denied') return 'disabled';
   if (consumer === 'llm_gateway') return 'llm_gateway';
   if (consumer === 'connector') return 'connector';
   return 'http_broker';
+}
+
+/**
+ * True when Kortix assigned this row's Access and a human may not reassign
+ * it.
+ *
+ * Only the git-connection flow produces one. The picker has no `git_proxy`
+ * option, so an edit dialog opened on such a row would offer five values none
+ * of which is the one it has — and saving would move the secret off the
+ * consumer the git connection depends on.
+ */
+export function secretAccessIsSystemManaged(consumer?: SecretConsumer | null): boolean {
+  return consumer === 'git_proxy';
 }
 
 export function connectorBindingOptions(
@@ -53,11 +146,10 @@ export function connectorBindingChanges(
   selectedSlugs: readonly string[],
 ): { bind: string[]; unbind: string[] } {
   const selected = new Set(selectedSlugs);
-  const currentlyBound = new Set(
-    connectors
-      .filter((connector) => connector.secretIdentifier === secretIdentifier)
-      .map((connector) => connector.slug),
-  );
+  const currentlyBound = new Set<string>();
+  for (const connector of connectors) {
+    if (connector.secretIdentifier === secretIdentifier) currentlyBound.add(connector.slug);
+  }
   return {
     bind: [...selected].filter((slug) => !currentlyBound.has(slug)),
     unbind: [...currentlyBound].filter((slug) => !selected.has(slug)),
@@ -70,69 +162,114 @@ export type SecretDeliveryPresentation = {
   tone: 'warning' | 'secondary' | 'outline';
 };
 
-const PRESENTATIONS: Record<SecretDeliveryStrategy, SecretDeliveryPresentation> = {
-  runtime: {
+/**
+ * The five pickable mechanisms, in the order the picker lists them.
+ *
+ * Order is the argument. Sandbox and Network boundary sit adjacent because
+ * they are the real either/or for one question — does the value go INTO the
+ * process, or does it only ever attach to that process's outbound request.
+ * The HTTPS broker closes that group as the policy-shaped version of the same
+ * idea. LLM gateway and Connector follow as a separate group: Kortix plumbing
+ * the project's code never interacts with, not a variant of the boundary.
+ *
+ * Wording is unchanged from the strategy-keyed table this replaces — only the
+ * key and the grouping are new — so every existing badge and sentence still
+ * reads exactly the same.
+ */
+const ACCESS_PRESENTATIONS: Record<
+  SecretAccessChoice,
+  SecretDeliveryPresentation & { group: SecretAccessGroup }
+> = {
+  sandbox: {
     // The only mode where agent code can read the value, so the badge is a
     // warning and not a neutral label. `secrets-view.tsx` says the same thing
-    // in longhand right below it (`InfoBanner tone="warning"`, "Readable inside
-    // the sandbox"); the two must agree.
+    // in longhand right below it (`InfoBanner tone="warning"`, "Readable
+    // inside the sandbox"); the two must agree.
     label: 'Sandbox',
     description: 'Available to agent code and commands as an environment variable.',
     tone: 'warning',
+    group: 'agent',
   },
-  broker: {
-    label: 'Kortix service',
-    description: 'Used by an approved Kortix service without entering the sandbox.',
-    tone: 'secondary',
-  },
-  egress: {
+  network_boundary: {
     label: 'Network boundary',
     description: 'Added to approved outbound requests at the network boundary.',
     tone: 'secondary',
+    group: 'agent',
   },
-  denied: {
+  http_broker: {
+    label: 'HTTPS broker',
+    description: 'Added only to an approved HTTPS request outside the sandbox.',
+    tone: 'secondary',
+    group: 'agent',
+  },
+  llm_gateway: {
+    label: 'LLM gateway',
+    description: 'Used for model requests without entering the sandbox.',
+    tone: 'secondary',
+    group: 'service',
+  },
+  connector: {
+    label: 'Connector',
+    description: 'Used by an authorized connector without entering the sandbox.',
+    tone: 'secondary',
+    group: 'service',
+  },
+  disabled: {
     label: 'Disabled',
     description: 'Stored securely, but unavailable to sessions and Kortix services.',
     tone: 'outline',
+    group: 'none',
   },
 };
+
+/**
+ * The one Access value no user can pick, so it lives outside the picker's
+ * table. Wording unchanged from the `git_proxy` branch this replaces.
+ */
+const GIT_SERVICE_PRESENTATION: SecretDeliveryPresentation = {
+  label: 'Git service',
+  description: 'Used for repository access without entering the sandbox.',
+  tone: 'secondary',
+};
+
+export type SecretDeliveryLegendEntry = SecretDeliveryPresentation & {
+  choice: SecretAccessChoice;
+  group: SecretAccessGroup;
+};
+
+/**
+ * Every Access value the page can show, in picker order.
+ *
+ * The Secrets page renders this as its "What each Access value means" legend.
+ * It reads the same table the picker and each row's badge read, which is the
+ * only reason the three can be trusted to agree.
+ */
+export function secretDeliveryLegend(): SecretDeliveryLegendEntry[] {
+  return (Object.keys(ACCESS_PRESENTATIONS) as SecretAccessChoice[]).map((choice) => ({
+    choice,
+    ...ACCESS_PRESENTATIONS[choice],
+  }));
+}
 
 export function secretDeliveryPresentation(
   strategy: SecretDeliveryStrategy,
   consumer?: SecretConsumer | null,
 ): SecretDeliveryPresentation {
-  if (strategy === 'broker' && consumer === 'llm_gateway') {
-    return {
-      label: 'LLM gateway',
-      description: 'Used for model requests without entering the sandbox.',
-      tone: 'secondary',
-    };
-  }
-  if (strategy === 'broker' && consumer === 'http_broker') {
-    return {
-      label: 'HTTPS broker',
-      description: 'Added only to an approved HTTPS request outside the sandbox.',
-      tone: 'secondary',
-    };
-  }
-  if (strategy === 'broker' && consumer === 'connector') {
-    return {
-      label: 'Connector',
-      description: 'Used by an authorized connector without entering the sandbox.',
-      tone: 'secondary',
-    };
-  }
-  if (strategy === 'broker' && consumer === 'git_proxy') {
-    return {
-      label: 'Git service',
-      description: 'Used for repository access without entering the sandbox.',
-      tone: 'secondary',
-    };
-  }
-  return PRESENTATIONS[strategy];
+  if (secretAccessIsSystemManaged(consumer)) return GIT_SERVICE_PRESENTATION;
+  const { group: _group, ...presentation } =
+    ACCESS_PRESENTATIONS[secretAccessChoice(strategy, consumer)];
+  return presentation;
 }
 
 export type NetworkBoundaryAvailability = 'available' | 'project_not_pinned' | 'unsupported';
+
+/** The slice of project detail the boundary questions read. Structural, because
+ *  a capability-filtered response omits fields the SDK type declares. */
+export type NetworkBoundaryProject = {
+  available_sandbox_providers?: readonly string[] | null;
+  default_sandbox_provider?: string | null;
+  experimental?: Partial<Record<string, boolean>> | null;
+};
 
 /**
  * Two independent mechanisms deliver a network-boundary secret, and a project
@@ -149,24 +286,56 @@ export type NetworkBoundaryAvailability = 'available' | 'project_not_pinned' | '
  * which nothing here can verify.
  */
 export function networkBoundaryAvailability(
-  project?: {
-    available_sandbox_providers?: readonly string[] | null;
-    default_sandbox_provider?: string | null;
-    experimental?: Partial<Record<string, boolean>> | null;
-  } | null,
+  project?: NetworkBoundaryProject | null,
 ): NetworkBoundaryAvailability {
   if (project?.experimental?.network_boundary_shim) return 'available';
   if (!project?.available_sandbox_providers?.includes('platinum')) return 'unsupported';
   return project.default_sandbox_provider === 'platinum' ? 'available' : 'project_not_pinned';
 }
 
-/** The flag's name in Feature flags → Experimental, quoted so the sentence below
- *  points at something the user can actually find. */
-const SHIM_FLAG = 'Network boundary without Platinum';
+export type NetworkBoundaryMode = 'provider-edge' | 'in-guest-shim';
 
-/** Why network-boundary delivery cannot run here, and how to fix it. Both
- *  states are now fixable, so neither says "not available" — the shim flag is
- *  an escape hatch from either one. */
+/**
+ * WHICH mechanism serves this project, not merely whether one does.
+ *
+ * Mirrors `networkBoundaryMode` in
+ * apps/api/src/secrets/network-boundary-availability.ts, including its
+ * precedence: the provider edge wins where it exists, because it needs nothing
+ * in the guest and injects for every client in the sandbox. The deployment-wide
+ * `config.isPlatinumEnabled()` half of that check reads here as Platinum being
+ * among the project's offered providers.
+ *
+ * Availability alone is not enough to write copy with: the two mechanisms
+ * produce OPPOSITE symptoms for the same working request, so a panel that knows
+ * only "yes" describes half the projects wrongly.
+ */
+export function networkBoundaryMode(
+  project?: NetworkBoundaryProject | null,
+): NetworkBoundaryMode | null {
+  if (
+    project?.available_sandbox_providers?.includes('platinum') &&
+    project.default_sandbox_provider === 'platinum'
+  ) {
+    return 'provider-edge';
+  }
+  return project?.experimental?.network_boundary_shim ? 'in-guest-shim' : null;
+}
+
+/** The flag's name in Feature flags → Experimental, quoted so the sentences
+ *  below point at something the user can actually find. Must match the
+ *  `network_boundary_shim` entry in the API's feature-flag registry, which is
+ *  what that screen renders. */
+const SHIM_FLAG = 'Network boundary in-guest shim';
+
+/**
+ * Why network-boundary delivery cannot run here, and how to fix it. Both states
+ * are now fixable, so neither says "not available".
+ *
+ * The flag leads in both. A project on a provider with no credential edge is
+ * one opt-in away from a working boundary, whereas re-pinning it to Platinum
+ * moves every session in the project onto another provider to solve a
+ * per-secret problem.
+ */
 export function networkBoundaryBlockedReason(
   availability: NetworkBoundaryAvailability,
 ): string | null {
@@ -174,35 +343,103 @@ export function networkBoundaryBlockedReason(
   if (availability === 'unsupported') {
     return `Turn on "${SHIM_FLAG}" in Feature flags → Experimental.`;
   }
-  return `This project does not run on Platinum — pin it in Feature flags → Runtime → Sandbox provider, or turn on "${SHIM_FLAG}" in Feature flags → Experimental.`;
+  return `Turn on "${SHIM_FLAG}" in Feature flags → Experimental, or pin this project to Platinum in Feature flags → Runtime → Sandbox provider.`;
+}
+
+/**
+ * The Access value the dialog opens with.
+ *
+ * An existing secret opens on the value it has — always, including a value
+ * the picker does not offer, so the caller can lock the control instead of
+ * showing the wrong one (see `secretAccessIsSystemManaged`).
+ *
+ * A NEW secret defaults to Network boundary wherever the project can deliver
+ * it, and to Sandbox everywhere else. Sandbox is the only value whose
+ * plaintext lands in a process the agent can read, so it is the one that
+ * should be chosen on purpose rather than by default.
+ */
+export function defaultSecretAccess(
+  row: { strategy: SecretDeliveryStrategy; consumer: SecretConsumer | null } | null | undefined,
+  networkBoundary: NetworkBoundaryAvailability,
+): SecretAccessChoice {
+  if (row) return secretAccessChoice(row.strategy, row.consumer);
+  return networkBoundary === 'available' ? 'network_boundary' : 'sandbox';
 }
 
 export type SecretDeliveryOption = SecretDeliveryPresentation & {
-  strategy: SecretDeliveryStrategy;
+  choice: SecretAccessChoice;
+  group: SecretAccessGroup;
   disabled: boolean;
   /** Why the option cannot be selected. Null when it can. */
   disabledReason: string | null;
 };
 
+/**
+ * Every Access value the user may pick, flat and in one list.
+ *
+ * `selected` is the value the dialog currently holds. It matters for exactly
+ * one case: a broker row whose backing service reports itself unavailable
+ * stays visible and disabled rather than vanishing, so the user can see what
+ * the secret is set to.
+ */
 export function secretDeliveryOptions(
-  selected: SecretDeliveryStrategy,
+  selected: SecretAccessChoice,
   status: SecretDeliveryStatus,
   networkBoundary: NetworkBoundaryAvailability,
 ): SecretDeliveryOption[] {
-  return (Object.keys(PRESENTATIONS) as SecretDeliveryStrategy[]).map((strategy) => {
+  const choices = Object.keys(ACCESS_PRESENTATIONS) as SecretAccessChoice[];
+  return choices.map((choice) => {
+    const presentation = ACCESS_PRESENTATIONS[choice];
+    const isBroker = secretAccessTarget(choice).strategy === 'broker';
     const disabledReason =
-      strategy === 'egress'
+      choice === 'network_boundary'
         ? networkBoundaryBlockedReason(networkBoundary)
-        : strategy === 'broker' && strategy === selected && status !== 'available'
+        : isBroker && choice === selected && status !== 'available'
           ? 'Not available in this deployment.'
           : null;
     return {
-      strategy,
-      ...PRESENTATIONS[strategy],
+      choice,
+      ...presentation,
       disabled: disabledReason !== null,
       disabledReason,
     };
   });
+}
+
+export type SecretDeliveryOptionGroup = {
+  group: SecretAccessGroup;
+  /** Null for the group that gets no heading. */
+  label: string | null;
+  options: SecretDeliveryOption[];
+};
+
+/**
+ * The same flat list, bucketed for rendering.
+ *
+ * Radix requires a `SelectLabel` to sit inside a `SelectGroup`, so the picker
+ * cannot emit a heading as a loose sibling between items — it throws
+ * "`SelectLabel` must be used within `SelectGroup`" and takes the page down
+ * with it. Grouping is therefore computed here rather than reconstructed in
+ * JSX, and the order within each group is the order `secretDeliveryOptions`
+ * produced.
+ */
+export function secretDeliveryOptionGroups(
+  options: readonly SecretDeliveryOption[],
+): SecretDeliveryOptionGroup[] {
+  const groups: SecretDeliveryOptionGroup[] = [];
+  for (const option of options) {
+    const current = groups[groups.length - 1];
+    if (current && current.group === option.group) {
+      current.options.push(option);
+      continue;
+    }
+    groups.push({
+      group: option.group,
+      label: SECRET_ACCESS_GROUP_LABEL[option.group],
+      options: [option],
+    });
+  }
+  return groups;
 }
 
 export type SecretDeliveryBlockedReason = 'no_agent_grant';
@@ -606,22 +843,39 @@ export type NetworkBoundaryEchoNotice = {
 };
 
 /**
- * The one thing about this mode nobody can deduce from inside the sandbox.
+ * The one thing about this mode nobody can deduce from inside the sandbox: what
+ * a WORKING boundary looks like when the upstream echoes the credential back.
  *
- * The boundary cuts any response that would carry the value back into the
- * guest, so an echo endpoint answers `curl: (52) Empty reply from server` —
- * byte-identical to a dead host. A product owner lost days to exactly that
- * reading, and their agent invented a TLS explanation for it. The panel that
- * configures the mode is the last place to say so before someone tests it.
+ * The two mechanisms answer that oppositely, which is why the mode is a
+ * required argument rather than a default. The provider edge cuts the response,
+ * so an echo endpoint answers `curl: (52) Empty reply from server` —
+ * byte-identical to a dead host, and an agent with nothing else to go on
+ * invents a network explanation for it. The in-guest shim relays through the
+ * broker instead and returns an ordinary 200 with `[REDACTED]` in place of the
+ * value; showing the edge's symptom there makes a working boundary look broken,
+ * and a genuinely dead host look like success. The agent is told exactly one of
+ * these two stories (apps/api/src/projects/secret-capabilities.ts), so the panel
+ * that configures the mode has to tell the user the same one.
  *
- * The probe names the first declared host so it can be pasted as-is; with no
- * host typed yet it falls back to a placeholder rather than an empty URL.
+ * The probe is shared: under both mechanisms an endpoint that SPENDS the
+ * credential answers 200 or 401, which is what makes it the one worth pasting.
+ * It names the first declared host so it can be run as-is; with no host typed
+ * yet it falls back to a placeholder rather than an empty URL.
  */
-export function networkBoundaryEchoNotice(hosts: string): NetworkBoundaryEchoNotice {
+export function networkBoundaryEchoNotice(
+  hosts: string,
+  mode: NetworkBoundaryMode,
+): NetworkBoundaryEchoNotice {
   const host = parseBoundaryHosts(hosts)[0] ?? 'api.example.com';
   return {
-    title: 'A blocked echo looks exactly like a dead host',
-    body: 'A response that would carry this value back into the sandbox is cut, so curl reports "curl: (52) Empty reply from server". On an allowed host that is the boundary working, not the host being down.',
+    title:
+      mode === 'in-guest-shim'
+        ? 'A blocked echo comes back as [REDACTED]'
+        : 'A blocked echo looks exactly like a dead host',
+    body:
+      mode === 'in-guest-shim'
+        ? 'A response that would carry this value back into the sandbox comes back with [REDACTED] in its place, so an ordinary 200 is the boundary working. An empty reply or a connection error on an allowed host is a real failure here, not the boundary doing its job.'
+        : 'A response that would carry this value back into the sandbox is cut, so curl reports "curl: (52) Empty reply from server". On an allowed host that is the boundary working, not the host being down.',
     probe: [
       '# Probe an endpoint that USES the credential, never one that echoes headers.',
       `curl -s -o /dev/null -w '%{http_code}\\n' https://${host}/<authenticated-path>`,
