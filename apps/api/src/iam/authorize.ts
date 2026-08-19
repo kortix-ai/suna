@@ -692,6 +692,14 @@ export function customRoleAllows(
 
 // ─── Object grants ──────────────────────────────────────────────────────────
 
+/**
+ * Object types whose unscoped default is CLOSED for member-tier (mirrors the
+ * `object_policies` seed: agent closed; skill/secret/app/trigger open). Kept as
+ * a constant here because the memo's caching rule must not itself depend on a
+ * DB read; `unscopedDefaultFor` stays the source of truth for the VERDICT.
+ */
+const CLOSED_BY_DEFAULT_OBJECT_TYPES: ReadonlySet<string> = new Set(['agent']);
+
 interface ObjectGrantPrincipal {
   principalType: string;
   principalId: string;
@@ -700,11 +708,15 @@ interface ObjectGrantPrincipal {
 /**
  * (project, objectType) -> objectId -> the principals granted it.
  *
- * The EMPTY map is cached, unlike every other authz memo. That is deliberate
- * and pre-existing: "this project scopes nothing" is the common, hot case, and
- * every mutation busts the project entry synchronously on the writing replica.
- * The trade is that a grant CREATE can lag one TTL window on a replica that did
- * not perform the write, where a role grant is instant.
+ * The EMPTY map is cached only for object types whose unscoped default is OPEN
+ * (skill, secret, app, trigger): there a stale empty map means "still open",
+ * which is the state the caller already had. For CLOSED-by-default types (agent)
+ * a stale empty map would mean "still closed" — invalidation is per-process, so
+ * a member granted an agent kept getting 403 for one TTL on every replica that
+ * had not seen the write (measured on dev 2026-08-19: create 403, then 201 ×3
+ * after the TTL). One extra indexed query per uncached check is the price of a
+ * grant taking effect on every replica at once — the same rule the legacy
+ * `loadProjectResourceGrants` memo already applies (#6535).
  */
 const loadObjectGrants = ttlMemo({
   ttlMs: TTL_MS,
@@ -735,7 +747,8 @@ const loadObjectGrants = ttlMemo({
     }
     return map;
   },
-  shouldCache: () => true,
+  shouldCache: (map, _projectId, objectType) =>
+    map.size > 0 || !CLOSED_BY_DEFAULT_OBJECT_TYPES.has(objectType),
 });
 registerProjectScopedMemo(loadObjectGrants);
 
