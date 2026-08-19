@@ -358,6 +358,13 @@
       "when": 1786997013968,
       "tag": "20260817200333_session_turns",
       "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1787104644469,
+      "tag": "20260819015724_rbac_canonical_model",
+      "breakpoints": true
     }
   ]
 }

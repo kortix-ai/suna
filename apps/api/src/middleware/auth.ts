@@ -12,8 +12,36 @@ import { setContextField } from '../lib/request-context';
 import { syncSsoMembership } from '../iam/sso-sync';
 import { auditLoginFail, auditLoginSuccess } from '../shared/auth-audit';
 import { applyImpersonation } from './impersonation';
+import { buildActor } from '../iam/actor';
 
 const PREVIEW_SESSION_COOKIE = '__preview_session';
+
+/**
+ * Build the canonical `Actor` from whatever the auth branch just resolved, and
+ * hand it to the handler as `c.get('actor')`.
+ *
+ * Wrapped around `next()` — like `applyImpersonation` above it — rather than
+ * called from each success branch, and for the same stated reason: every branch
+ * below (JWT local, JWT network, PAT, service account, sandbox token) is then
+ * covered BY CONSTRUCTION instead of by nine call sites a new branch could
+ * silently miss. Missing the credential is exactly the failure mode `Actor`
+ * exists to make unrepresentable.
+ *
+ * ADDITIVE in this release: `userId`, `accountId`, `authType`, `iamTokenId`,
+ * `sessionId`, `agentGrant` and `mfaAal` all stay set. The ~490 gate call sites
+ * still read them; P3 moves them onto the actor.
+ */
+async function withActor(c: Context, next: Next) {
+  try {
+    const actor = await buildActor(c);
+    if (actor) c.set('actor', actor);
+  } catch (err) {
+    // A failure here must not 500 an authenticated request: every gate can
+    // still rebuild the actor itself (`actorFor`). Log loudly.
+    console.warn('[auth] failed to build IAM actor', err);
+  }
+  await next();
+}
 
 /**
  * Run SAML JIT provisioning for a Supabase-authenticated request. Cheap no-op
@@ -122,7 +150,7 @@ export async function apiKeyAuth(c: Context, next: Next) {
     authType: 'apiKey',
     metadata: { api_key_type: result.type },
   });
-  await next();
+  await withActor(c, next);
 }
 
 /**
@@ -139,7 +167,7 @@ export async function apiKeyAuth(c: Context, next: Next) {
  * not need a second project PAT or raw Git token in env.
  */
 export async function supabaseAuth(c: Context, next: Next) {
-  return resolveSupabaseAuth(c, () => applyImpersonation(c, next));
+  return resolveSupabaseAuth(c, () => applyImpersonation(c, () => withActor(c, next)));
 }
 
 async function resolveSupabaseAuth(c: Context, next: Next) {
@@ -385,7 +413,7 @@ async function resolveSupabaseAuth(c: Context, next: Next) {
  * For preview proxy routes, also sets/refreshes the session cookie.
  */
 export async function combinedAuth(c: Context, next: Next) {
-  return resolveCombinedAuth(c, () => applyImpersonation(c, next));
+  return resolveCombinedAuth(c, () => applyImpersonation(c, () => withActor(c, next)));
 }
 
 async function resolveCombinedAuth(c: Context, next: Next) {

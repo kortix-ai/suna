@@ -468,6 +468,12 @@ export const projectMembers = kortixSchema.table(
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
+    // Real PRIMARY KEY (canonical-RBAC PR2). The table shipped with only
+    // `idx_project_members_project_user UNIQUE` — which is also every upsert's
+    // ON CONFLICT target, so dropping it in the wrong order 42P10s every write
+    // path (the failure account_members already hit). The PK builds its own
+    // index (`project_members_pkey`) and leaves that unique index untouched.
+    primaryKey({ columns: [table.projectId, table.userId] }),
     index('idx_project_members_account_user').on(table.accountId, table.userId),
     index('idx_project_members_project').on(table.projectId),
     uniqueIndex('idx_project_members_project_user').on(table.projectId, table.userId),
@@ -4227,17 +4233,27 @@ export const iamRoles = kortixSchema.table(
   'iam_roles',
   {
     roleId: uuid('role_id').defaultRandom().primaryKey(),
-    accountId: uuid('account_id')
-      .notNull()
-      .references(() => accounts.accountId, { onDelete: 'cascade' }),
-    /** Machine key, unique per account (e.g. 'marketing_operator'). */
+    /**
+     * NULL = a SYSTEM role (owner/admin/member, manager/member, agent-user),
+     * seeded once by the canonical-RBAC migration and shared by every account.
+     * Non-null = an account's own custom role, exactly as before. Every legacy
+     * read filters `account_id = :id`, so system rows are invisible to them.
+     */
+    accountId: uuid('account_id').references(() => accounts.accountId, { onDelete: 'cascade' }),
+    /** Machine key, unique per account (e.g. 'marketing_operator'). System roles
+     *  are unique on (key, scope_type) — see uq_roles_system_key (SQL-only,
+     *  partial index on account_id IS NULL). */
     key: varchar('key', { length: 64 }).notNull(),
     name: varchar('name', { length: 128 }).notNull(),
     description: text('description'),
     /** Where the role's actions apply: 'account' | 'project'. Plain text +
      *  app-level validation (mirrors resourceTypeForAction's vocabulary). */
     scopeType: varchar('scope_type', { length: 16 }).default('project').notNull(),
-    /** Reserved: v1 only creates custom roles; built-ins remain code-defined. */
+    /** `is_system` in the canonical model: true for the seeded built-in roles
+     *  (account_id IS NULL), false for every account-authored custom role. The
+     *  physical column keeps its `is_builtin` name for one release so no live
+     *  table is renamed mid-rollout; the `kortix.roles` view exposes it as
+     *  `is_system`. */
     isBuiltin: boolean('is_builtin').default(false).notNull(),
     createdBy: uuid('created_by'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
@@ -4378,6 +4394,156 @@ export const iamResourceGrants = kortixSchema.table(
     index('idx_iam_resource_grants_account').on(table.accountId),
   ],
 );
+
+// ─── Canonical RBAC (NIST RBAC1 + object scoping) ──────────────────────────
+//
+// Three new tables replace five encodings of the same idea. They are ADDITIVE
+// in this release: every legacy store keeps its rows and its writers, the
+// backfill copies them into `role_assignments`, and the canonical NAMES
+// (`kortix.roles`, `kortix.role_permissions`, `kortix.group_members`) are
+// write-through views over the legacy tables until the cutover PR swaps which
+// side is physical. Nothing here renames a live table mid-rollout.
+//
+//   permissions       the action catalog, in data instead of actions.ts
+//   role_assignments  ONE table for account_members.account_role,
+//                     project_members.project_role, project_group_grants,
+//                     iam_policies, iam_resource_grants and an invite's
+//                     bootstrap_grants
+//   object_policies   what "nobody scoped this object" means, per object TYPE
+
+/**
+ * The permission catalog. Previously `apps/api/src/iam/actions.ts` +
+ * `role-perms.ts` + `role-presets.ts NON_DELEGABLE_ACTIONS`, i.e. three code
+ * constants with no database representation and no foreign key.
+ *
+ * `scope_type` is the ONE classifier (it replaces both `scopeForActionV2` and
+ * `resourceTypeForAction`). `delegable=false` is the escalation ceiling that
+ * `NON_DELEGABLE_ACTIONS` used to hold. `area` / `level` / `implies` are the
+ * display + implication model the role-capability matrix hard-codes in the
+ * browser today, moved server-side so the two cannot drift.
+ */
+export const permissions = kortixSchema.table(
+  'permissions',
+  {
+    /** Dotted leaf, e.g. `project.gitops.push`. Primary key: the catalog IS
+     *  the set of legal action strings, and role_permissions.action FKs to it. */
+    action: varchar('action', { length: 96 }).primaryKey(),
+    /** 'account' | 'project' — the scope a role must be assigned at to grant it. */
+    scopeType: varchar('scope_type', { length: 16 }).notNull(),
+    /** 'account' | 'project' — the object type the action is performed on. */
+    resourceType: varchar('resource_type', { length: 16 }).notNull(),
+    /** false = may NEVER appear in an account-authored custom role (privilege
+     *  escalation). Replaces NON_DELEGABLE_ACTIONS. */
+    delegable: boolean('delegable').default(true).notNull(),
+    description: text('description').default('').notNull(),
+    /** UI grouping key: `project`, `sessions`, `files`, `customize`, … */
+    area: varchar('area', { length: 32 }).notNull(),
+    /** 'view' | 'edit' | 'admin'. view/edit are the two matrix columns; `admin`
+     *  leaves have no cell and render in the matrix's Advanced disclosure. */
+    level: varchar('level', { length: 16 }).notNull(),
+    /** DIRECT implications: holding this action requires holding these. The
+     *  client takes the transitive closure. */
+    implies: text('implies').array().default(sql`'{}'::text[]`).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index('idx_permissions_scope_area').on(table.scopeType, table.area)],
+);
+
+/**
+ * What "no object grant exists for this object at all" means, per OBJECT TYPE.
+ *
+ * The deny-by-default rule for agents used to be a property of the CALLER
+ * (`isProjectResourceUsableByMember`'s `managerTier` argument). It is a
+ * property of the object type: an unscoped AGENT is closed to the member tier,
+ * an unscoped skill/secret/app/trigger is open. One row per type, so adding a
+ * new scopable object type is data, not a branch.
+ */
+export const objectPolicies = kortixSchema.table('object_policies', {
+  /** 'agent' | 'skill' | 'secret' | 'app' | 'trigger'. */
+  objectType: varchar('object_type', { length: 16 }).primaryKey(),
+  /** 'closed' | 'open' — what a member-tier caller gets when the object has NO
+   *  grant rows at all. Manager tier always gets the open default. */
+  unscopedDefaultForMember: varchar('unscoped_default_for_member', { length: 8 }).notNull(),
+  description: text('description').default('').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+/**
+ * THE assignment table. One row = "this principal holds this role at this
+ * scope (optionally narrowed to one object) until this time".
+ *
+ * Replaces, in one shape:
+ *   account_members.account_role        → (user, owner|admin|member, account)
+ *   project_members.project_role        → (user, manager|member, project:id)
+ *   project_group_grants.role           → (group, manager|member, project:id)
+ *   iam_policies                        → (user|group|service_account, custom
+ *                                          role, account|project)
+ *   iam_resource_grants                 → (user|group, agent-user, project:id,
+ *                                          object=(agent, name))
+ *   account_invitations.bootstrap_grants → (pending, …) keyed by invitee email
+ *
+ * `expires_at` is filtered in SQL by every read, so a revoke is instant and the
+ * sweeper stays audit-only — the contract engine-v2 already had.
+ */
+export const roleAssignments = kortixSchema.table(
+  'role_assignments',
+  {
+    assignmentId: uuid('assignment_id').defaultRandom().primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    /** 'user' (auth uid) | 'group' (account_groups.group_id) |
+     *  'service_account' (service_accounts.service_account_id) |
+     *  'pending' (uuid5 of the lower-cased invitee email). */
+    principalType: varchar('principal_type', { length: 16 }).notNull(),
+    /** Untyped uuid — polymorphic across the four principal kinds, same choice
+     *  the legacy iam_policies.principal_id made. */
+    principalId: uuid('principal_id').notNull(),
+    roleId: uuid('role_id')
+      .notNull()
+      .references(() => iamRoles.roleId, { onDelete: 'cascade' }),
+    /** 'account' (every project in the account) | 'project' (scope_id only). */
+    scopeType: varchar('scope_type', { length: 16 }).notNull(),
+    /** project_id when scope_type='project'; NULL at account scope. No FK — a
+     *  project delete is handled by the cascade on account_id plus the engine's
+     *  own project lookup, and the column is polymorphic by design. */
+    scopeId: uuid('scope_id'),
+    /** NULL = the whole scope. Otherwise the object TYPE this assignment is
+     *  narrowed to ('agent' | 'skill' | 'secret' | 'app' | 'trigger'). */
+    objectType: varchar('object_type', { length: 16 }),
+    /** TEXT, not uuid: an agent name / skill slug from the git manifest, or an
+     *  uppercased secret identifier. */
+    objectId: text('object_id'),
+    /** Optional auto-revoke. Filtered in SQL on every read. */
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+    grantedBy: uuid('granted_by'),
+    /** 'manual' | 'scim' | 'sso' | 'invite' | 'system' — who wrote the row.
+     *  SCIM and SSO JIT keep bypassing user-authz by design, but no longer
+     *  bypass the store or the audit event. */
+    source: varchar('source', { length: 16 }).default('manual').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_role_assignments_principal').on(table.principalType, table.principalId),
+    index('idx_role_assignments_scope').on(table.scopeType, table.scopeId),
+    index('idx_role_assignments_role').on(table.roleId),
+    index('idx_role_assignments_account').on(table.accountId),
+  ],
+);
+
+export const roleAssignmentsRelations = relations(roleAssignments, ({ one }) => ({
+  account: one(accounts, {
+    fields: [roleAssignments.accountId],
+    references: [accounts.accountId],
+  }),
+  role: one(iamRoles, {
+    fields: [roleAssignments.roleId],
+    references: [iamRoles.roleId],
+  }),
+}));
 
 // ─── SCIM 2.0 provisioning tokens ──────────────────────────────────────────
 // Long-lived bearer tokens used by external IdPs (Okta, Azure AD, etc.) to
