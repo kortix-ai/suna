@@ -18,7 +18,7 @@ import { chooseEffectiveAgent, toOpencodeModelRef, toWireModel } from '../../llm
 import { buildSlackLoginUrl } from './login';
 import { findBotUserIdByName, isBotUser } from '../slack-api';
 import { loadSlackTokenForProject } from '../install-store';
-import { linkSlackIdentity, lookupSlackIdentity, revokeSlackIdentity } from './identity';
+import { linkSlackIdentity, lookupSlackIdentity, resolveSlackActor, revokeSlackIdentity } from './identity';
 import { conversationPolicyLabel, normalizeConversationPolicy } from './participants';
 import { lookupEmailsByUserIds } from '../../accounts/core/app';
 import { filterAccessibleObjects, unscopedResourceIds } from '../../iam';
@@ -726,8 +726,36 @@ async function slashLinkBot(ctx: SlashCtx, arg: string): Promise<SlashResponse> 
     }
     botUserId = byName;
   }
-  if (!(await canManageSlackPolicy(ctx, selection.projectId))) {
-    return { response_type: 'ephemeral', text: 'Only a linked Kortix account owner or admin for this project can link a bot.' };
+  // GATE: "could you have done this work yourself?" — NOT "are you an admin?".
+  //
+  // Linking binds the bot to the CALLER's own account (userId: me.userId below,
+  // and a bot already linked to someone else is refused), so it delegates the
+  // caller's authority and can never exceed it. That makes it the same shape as
+  // issuing yourself an API key, and an owner/admin requirement actively wrong:
+  // an admin linking a bot that anyone in the channel can trigger is strictly
+  // MORE dangerous than a regular member doing the same.
+  //
+  // So the check is the one resolveSlackActor already performs for every Slack
+  // message — linked identity, member of this project's account, PROJECT_WRITE.
+  // Anyone who can @-mention the agent and have it act can delegate exactly that
+  // and nothing more. Reusing it also means the two can never disagree: if this
+  // passes, the bot's mentions will resolve; if it fails, they would not have.
+  const [proj] = await db
+    .select({ accountId: projects.accountId })
+    .from(projects)
+    .where(eq(projects.projectId, selection.projectId))
+    .limit(1);
+  if (!proj) {
+    return { response_type: 'ephemeral', text: 'That channel is no longer bound to a project.' };
+  }
+  const actor = await resolveSlackActor(ctx.teamId, ctx.slackUserId, proj.accountId, selection.projectId);
+  if ('reason' in actor) {
+    return {
+      response_type: 'ephemeral',
+      text: actor.reason === 'not_member'
+        ? "You're connected, but don't have access to this project yet."
+        : `Connect your Kortix account first: \`${ctx.command} login\`.`,
+    };
   }
   // A HUMAN's id must never be bound here. linkSlackIdentity upserts, and
   // resolveSlackActor treats the row as authoritative, so linking a person would
