@@ -21,6 +21,59 @@ linked, not inlined.
 
 ## Register
 
+### `drizzle-kit generate` reports a TTY prompt as "no schema changes" (2026-08-19)
+
+**When:** running `bun packages/db/scripts/generate.ts <slug>` from any
+non-interactive shell (an agent, CI, a piped command).
+When a diff contains BOTH a created and a deleted table, drizzle-kit opens an
+interactive "created or renamed?" picker. Without a TTY it throws
+`Interactive prompts require a TTY terminal`, and the wrapper still prints
+`No schema changes detected — kortix.ts matches the snapshot. Nothing generated.`
+— the snapshot is NOT written, and `schema-sync` then rubber-stamps a stale one.
+The rule: **read the line drizzle-kit itself prints (`No schema changes, nothing
+to migrate 😴`), not the wrapper's summary**, and verify
+`drizzle/meta/_journal.json`'s tail plus the snapshot `prevId` chain by hand. To
+avoid the prompt entirely, split the change into two generate runs — deletions
+first, then creations — so neither diff has both sides.
+*Near-miss:* the canonical-RBAC cutover; `account_memberships` (created) landed
+in the same diff as three dropped tables, and the first run silently produced no
+snapshot. Same failure class as the 2026-07-16 forked-snapshot incident
+(MIGRATIONS.md "Why drizzle-kit generate needed fixing").
+
+### `ON CONFLICT (cols)` cannot run against a view (2026-08-19)
+
+**When:** replacing a table with a compatibility view (expand/contract), or
+adding an INSTEAD OF trigger.
+A view has no indexes, so `INSERT ... ON CONFLICT (a, b) DO UPDATE` fails at
+runtime with `42P10 there is no unique or exclusion constraint matching the ON
+CONFLICT specification` — INSTEAD OF triggers do not help, because inference
+happens before they run. `ON CONFLICT DO NOTHING` with NO target does work. A
+view with a JOIN is not auto-updatable at all, and a rendered/expression column
+is never assignable even on an otherwise auto-updatable view.
+The rule: **before turning a table into a view, grep every writer for
+`onConflictDoUpdate` / `ON CONFLICT (` on that relation and rewire it first.**
+*Near-miss:* the canonical-RBAC cutover — five production write sites on
+`project_members` / `project_group_grants` / `iam_resource_grants` / the
+`account_members` accept paths would have 500'd on the first grant after deploy.
+*Enforcer:* `apps/api/src/__tests__/unit-iam-gate-codemod-pin.test.ts`
+("no production module writes a legacy grant table directly").
+
+### A store swap needs the FKs the old store had, or it silently loses a cascade (2026-08-19)
+
+**When:** moving rows from several tables into one canonical table.
+`project_members`, `project_group_grants` and `iam_resource_grants` each had
+`ON DELETE CASCADE` from `kortix.projects`; the canonical `role_assignments` had
+no FK on `scope_id`, so the swap would have made "delete a project" stop
+retracting its grants. The legacy `iam_policies` never had that FK either, and
+410 of its 413 local rows pointed at deleted projects — orphans nothing could
+observe and nothing cleaned up.
+The rule: **enumerate every FK and every ON DELETE rule on the tables you are
+replacing, and reproduce them on the survivor.** Add the FK `NOT VALID`, purge
+the pre-existing violations in a batched `.concurrent.ts`, then `VALIDATE` in a
+follow-up file.
+*Near-miss:* the canonical-RBAC cutover, caught by diffing `pg_constraint` for
+the retired tables before writing the migration.
+
 ### A request/response log must never cap what it captures (2026-08-18)
 
 **When:** persisting or rendering a captured request/response body (gateway

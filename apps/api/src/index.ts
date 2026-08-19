@@ -1480,7 +1480,7 @@ if (import.meta.main) {
   ensureSchema()
     .then(async () => {
       schemaReady = true;
-      // V2 IAM hard-codes role permissions in iam/role-perms.ts, so the
+      // Role permissions are rows (kortix.role_permissions), so the
       // boot-time system-role seed + membership-policy backfill from V1
       // are no longer needed. Permissions resolve directly from
       // account_members.account_role and project_members.project_role.

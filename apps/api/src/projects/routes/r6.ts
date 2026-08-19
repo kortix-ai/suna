@@ -3,8 +3,8 @@ import { PROJECT_ACTIONS, authorize } from '../../iam';
 import { assertAgentScope } from '../../iam/agent-scope';
 import { invalidateIamCacheForUser } from '../../iam/cache-invalidation';
 import { actorOf } from '../../iam/actor';
-import { assignPendingProjectRole, revokePendingAssignments } from '../../iam/assignments';
-import { normalizeProjectRole, parseAssignableProjectRole, PROJECT_ROLE_INPUT_ERROR } from '../../iam/role-perms';
+import { assignPendingProjectRole, revokePendingAssignments, revokeProjectRole } from '../../iam/assignments';
+import { normalizeProjectRole, parseAssignableProjectRole, PROJECT_ROLE_INPUT_ERROR } from '../../iam/roles';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { lookupUserIdByEmail } from '../../shared/users';
@@ -18,7 +18,7 @@ import {
   projectRoleGrants,
 } from '../../iam/read-models';
 import { createRoute, z } from '@hono/zod-openapi';
-import { accountGroupMembers, accountGroups, accountInvitations, accountMembers, accounts, projectAccessRequests, projectMembers, projects } from '@kortix/db';
+import { accountGroupMembers, accountGroups, accountInvitations, accountMembers, accounts, projectAccessRequests, projects } from '@kortix/db';
 import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { ensureOrgMembership, grantProjectRole, loadProjectForUser, lookupEmailsByUserIds, resolveUserIdentities, parseExpiresAtBody, assertProjectCapability } from '../lib/access';
 import { notifyProjectAccessRequestManagers } from '../lib/access-requests';
@@ -1301,12 +1301,14 @@ projectsApp.openapi(
 
   const targetAccountRole = targetMembership.accountRole as AccountRole;
   if (isAccountManager(targetAccountRole)) {
-    await db
-      .delete(projectMembers)
-      .where(and(
-        eq(projectMembers.projectId, projectId),
-        eq(projectMembers.userId, targetUserId),
-      ));
+    // An owner/admin already has implicit Manager on every project, so a direct
+    // project-role assignment adds nothing and only confuses the members list.
+    // The route asserted project.members.manage above; `revokeProjectRole`
+    // carries that through rather than re-deriving a different permission.
+    await revokeProjectRole(await actorOf(c, loaded.row.accountId), loaded.row.accountId, projectId, {
+      type: 'user',
+      id: targetUserId,
+    });
     invalidateIamCacheForUser(targetUserId);
 
     return c.json({
@@ -1371,12 +1373,10 @@ projectsApp.openapi(
     return c.json({ error: 'Owners and admins have implicit access to every project' }, 409);
   }
 
-  await db
-    .delete(projectMembers)
-    .where(and(
-      eq(projectMembers.projectId, projectId),
-      eq(projectMembers.userId, targetUserId),
-    ));
+  await revokeProjectRole(await actorOf(c, loaded.row.accountId), loaded.row.accountId, projectId, {
+    type: 'user',
+    id: targetUserId,
+  });
   invalidateIamCacheForUser(targetUserId);
 
   return c.json({ ok: true });

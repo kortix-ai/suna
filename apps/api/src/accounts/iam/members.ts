@@ -9,6 +9,7 @@ import {
   accountGroupMembers,
   accountGroups,
   accountMembers,
+  accountMemberships,
   projects,
 } from '@kortix/db';
 import { db } from '../../shared/db';
@@ -123,23 +124,32 @@ iamRouter.openapi(
   // super-admin → no-op" vs "Alice was promoted on March 5". Cheap query
   // since the row is small and the update runs against the same key.
   const [before] = await db
-    .select({ isSuperAdmin: accountMembers.isSuperAdmin })
-    .from(accountMembers)
+    .select({ isSuperAdmin: accountMemberships.isSuperAdmin })
+    .from(accountMemberships)
     .where(
-      and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, targetUserId)),
+      and(
+        eq(accountMemberships.accountId, accountId),
+        eq(accountMemberships.userId, targetUserId),
+      ),
     )
     .limit(1);
 
+  // `is_super_admin` is IDENTITY, not a role (spec §1: a hard, audited bypass
+  // that 22,408 of 33,363 local rows carry), so it lives on
+  // `kortix.account_memberships` and is written there directly.
   const [updated] = await db
-    .update(accountMembers)
+    .update(accountMemberships)
     .set({ isSuperAdmin })
     .where(
       and(
-        eq(accountMembers.accountId, accountId),
-        eq(accountMembers.userId, targetUserId),
+        eq(accountMemberships.accountId, accountId),
+        eq(accountMemberships.userId, targetUserId),
       ),
     )
-    .returning({ userId: accountMembers.userId, isSuperAdmin: accountMembers.isSuperAdmin });
+    .returning({
+      userId: accountMemberships.userId,
+      isSuperAdmin: accountMemberships.isSuperAdmin,
+    });
 
   if (!updated) return c.json({ error: 'member not found' }, 404);
   // Super-admin bypasses every gate — a revoke must take effect immediately.

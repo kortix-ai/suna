@@ -26,6 +26,8 @@ const uid = () => crypto.randomUUID();
 const owner = uid();
 const plainMember = uid();
 const target = uid();
+/** A principal used by exactly one test, so no earlier grant can leak into it. */
+const straggler = uid();
 
 const minted: string[] = [];
 let ownerToken = '';
@@ -63,13 +65,15 @@ beforeAll(async () => {
     `insert into kortix.projects (project_id, account_id, name, repo_url)
      values ('${PROJECT}','${ACCOUNT}','p','https://example.invalid/p.git')`,
   );
-  // account_members is still the physical membership store during the dual-read
-  // window; the mirror trigger turns each row into the matching assignment, so
-  // this is the same state a real invite produces.
+  // `kortix.account_members` is the compatibility VIEW over
+  // `kortix.account_memberships` + `kortix.role_assignments`; its INSTEAD OF
+  // INSERT trigger writes both halves, which is the same state a real invite
+  // produces — and exercises the straggler-write path while it is at it.
   for (const [userId, role] of [
     [owner, 'owner'],
     [plainMember, 'member'],
     [target, 'member'],
+    [straggler, 'member'],
   ] as const) {
     await raw(
       `insert into kortix.account_members (user_id, account_id, account_role, is_super_admin)
@@ -319,7 +323,7 @@ describe.if(hasDatabase)('GET/POST/DELETE /v1/accounts/:accountId/iam/assignment
     expect(JSON.stringify(await ghostSa.json())).toContain('service account');
   });
 
-  test('revoking a project role removes the mirrored legacy row too', async () => {
+  test('a revoke is visible under the legacy name, because it is the same row', async () => {
     const created = (await (
       await req('POST', `/v1/accounts/${ACCOUNT}/iam/assignments`, ownerToken, {
         principal_type: 'user',
@@ -339,15 +343,11 @@ describe.if(hasDatabase)('GET/POST/DELETE /v1/accounts/:accountId/iam/assignment
         (res as unknown as Array<{ n: number }>);
       return Number(rows[0]!.n);
     };
-    // The mirror trigger is one-way (legacy -> canonical), so `assignRole`
-    // alone leaves no legacy row. Write one the way a pre-cutover replica would,
-    // then prove the revoke takes BOTH.
-    await raw(
-      `insert into kortix.project_members (account_id, project_id, user_id, project_role)
-       values ('${ACCOUNT}','${PROJECT}','${target}','member')
-       on conflict (project_id, user_id) do update set project_role = 'member'`,
-    );
-    expect(await countLegacy()).toBe(1);
+
+    // `kortix.project_members` is a VIEW over `kortix.role_assignments` as of the
+    // cutover, so the grant this route just made is already visible under the
+    // legacy name — no mirror, no second row, nothing to keep in step.
+    expect(await countLegacy()).toBeGreaterThanOrEqual(1);
 
     const res = await req(
       'DELETE',
@@ -355,10 +355,71 @@ describe.if(hasDatabase)('GET/POST/DELETE /v1/accounts/:accountId/iam/assignment
       ownerToken,
     );
     expect(res.status).toBe(200);
-    // Gone from BOTH stores — otherwise a replica still running the old image
-    // would keep honouring it, and any UPDATE of it would resurrect the
-    // assignment through the trigger.
-    expect(await countLegacy()).toBe(0);
+    // …and it is gone under the legacy name for the same reason. `toBe(0)` would
+    // be wrong: earlier tests in this file grant `target` other project roles,
+    // and the view renders the strongest surviving one, so what this asserts is
+    // that THIS assignment is gone from the canonical store.
+    const still = (await (
+      await req(
+        'GET',
+        `/v1/accounts/${ACCOUNT}/iam/assignments?principal_type=user&principal_id=${target}&scope_type=project`,
+        ownerToken,
+      )
+    ).json()) as { assignments: Array<{ assignment_id: string }> };
+    expect(still.assignments.map((a) => a.assignment_id)).not.toContain(created.assignment_id);
+  });
+
+  test('a straggler write to the legacy VIEW lands in the canonical store', async () => {
+    // The property the INSTEAD OF triggers exist for: a pre-cutover replica
+    // mid-roll, a support script, `pg_restore` or a test fixture writing
+    // `project_members` by name must produce a real assignment, not a row in a
+    // table nobody reads. ON CONFLICT is deliberately absent — a view has no
+    // index to infer, and the trigger does the upsert itself.
+    await raw(
+      `insert into kortix.project_members (account_id, project_id, user_id, project_role)
+       values ('${ACCOUNT}','${PROJECT}','${straggler}','manager')`,
+    );
+
+    const list = (await (
+      await req(
+        'GET',
+        `/v1/accounts/${ACCOUNT}/iam/assignments?principal_type=user&principal_id=${straggler}&scope_type=project`,
+        ownerToken,
+      )
+    ).json()) as { assignments: Array<{ assignment_id: string; role_key: string; scope_id: string }> };
+    const onProject = list.assignments.filter((a) => a.scope_id === PROJECT);
+    expect(onProject.map((a) => a.role_key)).toEqual(['manager']);
+
+    // The legacy UPDATE path re-points the SAME assignment rather than adding a
+    // second one — the view's primary key was (project_id, user_id).
+    await raw(
+      `update kortix.project_members set project_role = 'member'
+        where project_id = '${PROJECT}' and user_id = '${straggler}'`,
+    );
+    const after = (await (
+      await req(
+        'GET',
+        `/v1/accounts/${ACCOUNT}/iam/assignments?principal_type=user&principal_id=${straggler}&scope_type=project`,
+        ownerToken,
+      )
+    ).json()) as { assignments: Array<{ role_key: string; scope_id: string }> };
+    expect(after.assignments.filter((a) => a.scope_id === PROJECT).map((a) => a.role_key)).toEqual([
+      'member',
+    ]);
+
+    // …and the legacy DELETE retracts it.
+    await raw(
+      `delete from kortix.project_members
+        where project_id = '${PROJECT}' and user_id = '${straggler}'`,
+    );
+    const gone = (await (
+      await req(
+        'GET',
+        `/v1/accounts/${ACCOUNT}/iam/assignments?principal_type=user&principal_id=${straggler}&scope_type=project`,
+        ownerToken,
+      )
+    ).json()) as { assignments: Array<{ scope_id: string }> };
+    expect(gone.assignments.filter((a) => a.scope_id === PROJECT)).toEqual([]);
   });
 
   test('an unknown assignment id is a 404, not a 500', async () => {

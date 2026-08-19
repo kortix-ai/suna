@@ -11,7 +11,8 @@ import { describe, expect, test, beforeAll, afterAll } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { accountMembers, accounts, projectMembers, projects } from '@kortix/db';
 import { db } from '../shared/db';
-import { authorizeV2 } from '../iam/engine-v2';
+import { authorize } from '../iam/authorize';
+import { actorForUser } from '../iam/actor';
 import { PROJECT_ACTIONS, upsertResourceGrant } from '../iam';
 
 const ACCOUNT = crypto.randomUUID();
@@ -25,7 +26,7 @@ const OPEN_AGENT = 'general-bot';
 // project member — isolating the per-RESOURCE fold as the thing under test.
 const onAgent = (agent: string) => ({ type: 'project' as const, id: PROJECT, resource: { type: 'agent' as const, id: agent } });
 const canUse = async (userId: string, agent: string) =>
-  (await authorizeV2(userId, ACCOUNT, PROJECT_ACTIONS.PROJECT_SESSION_START, onAgent(agent))).allowed;
+  (await authorize(actorForUser(userId, ACCOUNT), PROJECT_ACTIONS.PROJECT_SESSION_START, onAgent(agent))).allowed;
 
 async function seedMember(role: 'owner' | 'admin' | 'member') {
   const userId = uid();
@@ -65,7 +66,7 @@ describe('per-resource scoping (iam_resource_grants)', () => {
     expect(await canUse(bob, SCOPED_AGENT)).toBe(false);
     expect(await canUse(alice, OPEN_AGENT)).toBe(true);
     expect(await canUse(bob, OPEN_AGENT)).toBe(true);
-    expect((await authorizeV2(bob, ACCOUNT, PROJECT_ACTIONS.PROJECT_SESSION_START, onAgent(SCOPED_AGENT))).reason).toBe(
+    expect((await authorize(actorForUser(bob, ACCOUNT), PROJECT_ACTIONS.PROJECT_SESSION_START, onAgent(SCOPED_AGENT))).reason).toBe(
       'resource_scope_insufficient',
     );
   });

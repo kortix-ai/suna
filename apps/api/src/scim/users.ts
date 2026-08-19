@@ -2,7 +2,7 @@
 // Registers onto the shared scimRouter via side effect.
 
 import { createRoute, z } from '@hono/zod-openapi';
-import { accountInvitations, accountMembers, roleAssignments } from '@kortix/db';
+import { accountInvitations, accountMembers, accountMemberships, roleAssignments } from '@kortix/db';
 import { and, eq, gt, isNull } from 'drizzle-orm';
 import { invalidateIamCacheForUser } from '../iam/cache-invalidation';
 import { accountRoleFor, countAccountOwners } from '../iam/read-models';
@@ -173,9 +173,11 @@ async function deprovisionMember(accountId: string, userId: string): Promise<str
   // exists to describe them: `revokeAssignment` is the only revoke path that
   // audits, and the audit event has to name what was taken away.
   await revokeScimMembership(accountId, userId);
+  // …then the IDENTITY row. Two stores since the cutover: the GRANTS live in
+  // kortix.role_assignments, the identity in kortix.account_memberships.
   await db
-    .delete(accountMembers)
-    .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, userId)));
+    .delete(accountMemberships)
+    .where(and(eq(accountMemberships.accountId, accountId), eq(accountMemberships.userId, userId)));
   invalidateIamCacheForUser(userId);
 
   // RELEASE THE PAID SEAT.
@@ -429,20 +431,22 @@ scimRouter.openapi(
     if (existingMember) {
       if (externalId) {
         await db
-          .update(accountMembers)
+          .update(accountMemberships)
           .set({ scimExternalId: externalId })
           .where(
-            and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, existingUserId)),
+            and(
+              eq(accountMemberships.accountId, accountId),
+              eq(accountMemberships.userId, existingUserId),
+            ),
           );
       }
     } else {
-      await db.insert(accountMembers).values({
+      await db.insert(accountMemberships).values({
         accountId,
         userId: existingUserId,
-        accountRole: 'member',
         scimExternalId: externalId,
       });
-      // …and the canonical grant, through the ONE write path. SCIM keeps
+      // …and the ROLE, through the ONE write path. SCIM keeps
       // bypassing user-authz by design (an IdP bearer token is not a member),
       // but it no longer bypasses the audit trail: `source: 'scim'` records that
       // the IdP created this membership, and `iam.assignment.granted` is the
@@ -579,9 +583,11 @@ async function applyUserWrite(
     if (changes.has('externalId') && typeof changes.get('externalId') === 'string') {
       const ext = changes.get('externalId') as string;
       await db
-        .update(accountMembers)
+        .update(accountMemberships)
         .set({ scimExternalId: ext })
-        .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, userId)));
+        .where(
+          and(eq(accountMemberships.accountId, accountId), eq(accountMemberships.userId, userId)),
+        );
       member.scimExternalId = ext;
     }
     const emails = await emailsByUserId([userId]);

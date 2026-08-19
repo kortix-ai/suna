@@ -4,7 +4,7 @@
  *
  * Chain: SAML JWT (Entra `memberOf` claim) → syncSsoMembership JIT-provisions the
  * account member + syncs IAM group memberships from the mapped claim values →
- * the group's project_group_grants confer a project role → authorizeV2 lets the
+ * the group's project_group_grants confer a project role → authorize lets the
  * user act. Removing the claim (removed from the group in Entra) revokes it.
  *
  * Fully isolated: a fresh account + project + SSO provider + group mapping seeded
@@ -24,7 +24,8 @@ import {
 } from '@kortix/db';
 import { db } from '../shared/db';
 import { syncSsoMembership } from '../iam/sso-sync';
-import { authorizeV2 } from '../iam/engine-v2';
+import { authorize } from '../iam/authorize';
+import { actorForUser } from '../iam/actor';
 import { PROJECT_ACTIONS } from '../iam';
 
 const ACCOUNT = crypto.randomUUID();
@@ -46,7 +47,7 @@ const jwt = (memberOf: string[]) => ({
 });
 
 const canWrite = async (userId: string) =>
-  (await authorizeV2(userId, ACCOUNT, PROJECT_ACTIONS.PROJECT_WRITE, { type: 'project', id: PROJECT })).allowed;
+  (await authorize(actorForUser(userId, ACCOUNT), PROJECT_ACTIONS.PROJECT_WRITE, { type: 'project', id: PROJECT })).allowed;
 
 beforeAll(async () => {
   await db.insert(accounts).values({ accountId: ACCOUNT, name: 'sso-sync-test' });

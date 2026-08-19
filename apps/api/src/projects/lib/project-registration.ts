@@ -2,11 +2,11 @@ import {
   type accountGithubInstallations,
   projectGitConnections,
   projectGitCredentials,
-  projectMembers,
   projects,
 } from '@kortix/db';
 
 import { invalidateIamCacheForUser } from '../../iam/cache-invalidation';
+import { grantProjectRole } from './access';
 import { db } from '../../shared/db';
 import type { GitHubRepo } from '../github';
 import { encryptProjectSecret } from '../secrets';
@@ -142,27 +142,25 @@ async function registerLinkedProject(input: RegistrationInput): Promise<ProjectR
       })
       .returning();
 
-    await tx
-      .insert(projectMembers)
-      .values({
-        accountId: input.accountId,
-        projectId: project.projectId,
-        userId: input.userId,
-        projectRole: 'manager',
-        grantedBy: input.userId,
-        updatedAt: now,
-      })
-      .onConflictDoUpdate({
-        target: [projectMembers.projectId, projectMembers.userId],
-        set: {
-          projectRole: 'manager',
-          grantedBy: input.userId,
-          updatedAt: now,
-        },
-      })
-      .returning();
-
     return project;
+  });
+
+  // The creator's Manager role, through the ONE write path.
+  //
+  // OUTSIDE the transaction, deliberately. `assignRole` is bound to the pooled
+  // `db` handle, not to `tx`, so it cannot join the transaction above; running
+  // it inside would silently open a SECOND connection and deadlock against the
+  // row this transaction still holds. The failure mode of doing it after is
+  // benign and self-healing: the project exists with no explicit member row, and
+  // the creator — who must already be an account owner/admin to have reached
+  // this route — still holds implicit Manager on every project in the account.
+  // A thrown error propagates to the caller either way.
+  await grantProjectRole({
+    accountId: input.accountId,
+    projectId: row.projectId,
+    userId: input.userId,
+    role: 'manager',
+    grantedBy: input.userId,
   });
 
   invalidateIamCacheForUser(input.userId);

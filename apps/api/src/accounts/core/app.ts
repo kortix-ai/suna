@@ -1,5 +1,5 @@
 import { z } from '@hono/zod-openapi';
-import { accountInvitations, accountMembers, iamRoles, roleAssignments, type accounts } from '@kortix/db';
+import { accountInvitations, accountMembers, accountMemberships, iamRoles, roleAssignments, type accounts } from '@kortix/db';
 import { and, asc, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { makeOpenApiApp } from '../../openapi';
@@ -9,6 +9,7 @@ import {
   isImpersonationBlockedAccount,
 } from '../../shared/impersonation';
 import { accountRoleFor, countAccountOwners } from '../../iam/read-models';
+import { assignRole, SYSTEM_ACTOR } from '../../iam/assignments';
 import { resolveAccountId } from '../../shared/resolve-account';
 import { getSupabase } from '../../shared/supabase';
 import type { AppEnv } from '../../types';
@@ -355,16 +356,22 @@ export async function autoClaimPendingInvites(userId: string, email: string): Pr
       // dialog. Leave grant-carrying invites pending for the recipient to act on.
       if ((invite.bootstrapGrants ?? []).length > 0) continue;
       try {
+        // IDENTITY, then the ROLE. `accountMemberships` is the table;
+        // `accountMembers` is a view over it plus role_assignments, and a
+        // TARGETED `ON CONFLICT` cannot run against a view (no index to infer).
         await db
-          .insert(accountMembers)
-          .values({
-            userId,
-            accountId: invite.accountId,
-            accountRole: invite.initialRole,
-          })
+          .insert(accountMemberships)
+          .values({ userId, accountId: invite.accountId })
           .onConflictDoNothing({
-            target: [accountMembers.userId, accountMembers.accountId],
+            target: [accountMemberships.userId, accountMemberships.accountId],
           });
+        await assignRole(SYSTEM_ACTOR, invite.accountId, {
+          principal: { type: 'user', id: userId },
+          roleKey: invite.initialRole,
+          scope: { type: 'account' },
+          source: 'invite',
+          exclusive: true,
+        });
         await db
           .update(accountInvitations)
           .set({ acceptedAt: new Date() })

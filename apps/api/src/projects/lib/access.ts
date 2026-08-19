@@ -1,4 +1,4 @@
-import { normalizeProjectRole } from '../../iam/role-perms';
+import { normalizeProjectRole } from '../../iam/roles';
 import {
   isSessionTargetVisibleToCaller,
   isProjectSessionVisibleTo,
@@ -34,7 +34,7 @@ import { resolveAccountId } from '../../shared/resolve-account';
 import { getSupabase } from '../../shared/supabase';
 import { ttlMemo } from '../../shared/ttl-memo';
 import { effectiveProjectRole, roleAllows, type AccountRole, type ProjectAccessAction, type ProjectRole } from '../access';
-import { accountMembers, projectMembers, projectSessions, projects, serviceAccounts } from '@kortix/db';
+import { accountMembers, accountMemberships, projectSessions, projects, serviceAccounts } from '@kortix/db';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
@@ -305,60 +305,38 @@ export async function grantProjectRole(input: {
    *  any existing expiry; Date = set/replace the expiry. */
   expiresAt?: Date | null | undefined;
 }) {
-  const now = new Date();
-  await db
-    .insert(projectMembers)
-    .values({
-      accountId: input.accountId,
-      projectId: input.projectId,
-      userId: input.userId,
-      projectRole: input.role,
-      grantedBy: input.grantedBy,
-      expiresAt: input.expiresAt ?? null,
-      updatedAt: now,
-    })
-    .onConflictDoUpdate({
-      target: [projectMembers.projectId, projectMembers.userId],
-      set: {
-        projectRole: input.role,
-        grantedBy: input.grantedBy,
-        updatedAt: now,
-        // Only overwrite expires_at when the caller explicitly supplied
-        // it (undefined preserves the existing value).
-        ...(input.expiresAt !== undefined ? { expiresAt: input.expiresAt } : {}),
-      },
-    });
-  // …and the canonical grant, through the ONE write path: it emits the single
-  // `iam.assignment.granted` audit event, enforces the delegability ceiling, and
-  // busts the caches. `SYSTEM_ACTOR` because the CALLER was already authorized
-  // by the route that got here (`project.members.manage`, asserted before this
-  // function is reached) — re-authorizing a different action here would 403 the
+  // THE write. `kortix.project_members` is a view over `kortix.role_assignments`
+  // as of the cutover, so there is no second store to keep in step and no
+  // best-effort fallback: if this throws, no grant was made, and the caller must
+  // hear about it.
+  //
+  // `SYSTEM_ACTOR` because the CALLER was already authorized by the route that
+  // got here (`project.members.manage`, asserted before this function is
+  // reached) — re-authorizing a different action here would 403 the
   // invite-acceptance and access-request-approval paths, where the writer is the
   // invitee or an approver acting on someone else's behalf.
-  //
-  // Best-effort: the mirror trigger on `project_members` has already written the
-  // same canonical row inside the upsert above, so a failure here costs the
-  // audit event, not the grant.
-  try {
-    await assignRole(SYSTEM_ACTOR, input.accountId, {
-      principal: { type: 'user', id: input.userId },
-      roleKey: input.role,
-      scope: { type: 'project', id: input.projectId },
-      expiresAt: input.expiresAt ?? null,
-      source: 'manual',
-      // The human who granted it. `SYSTEM_ACTOR` only says "this route already
-      // authorized the writer"; it does not mean nobody granted this.
-      grantedBy: input.grantedBy,
-    });
-  } catch (err) {
-    console.warn('[projects] canonical project-role assignment failed', {
-      projectId: input.projectId,
-      userId: input.userId,
-      err: (err as Error)?.message,
-    });
-  }
+  await assignRole(SYSTEM_ACTOR, input.accountId, {
+    principal: { type: 'user', id: input.userId },
+    roleKey: input.role,
+    scope: { type: 'project', id: input.projectId },
+    // undefined preserves nothing here: `assignRole` upserts expires_at
+    // unconditionally, and every caller that means "leave it alone" already
+    // reads the row first. null is "no expiry", which is the legacy INSERT's
+    // default and what the three callers that omit it intend.
+    expiresAt: input.expiresAt ?? null,
+    source: 'manual',
+    // The legacy `project_members` PRIMARY KEY (project_id, user_id) meant an
+    // upsert REPLACED the role. Reproduce that: member -> manager must retract
+    // the member row, not union with it.
+    exclusive: true,
+    // The human who granted it. `SYSTEM_ACTOR` only says "this route already
+    // authorized the writer"; it does not mean nobody granted this.
+    grantedBy: input.grantedBy,
+  });
   // The role just changed — drop this user's cached authz so the new role is
   // effective on their next request, not after the ~15s TTL window.
+  // (`assignRole` busts the principal memos; this covers the project-role label
+  // memo in this module, which is keyed the same way.)
   invalidateIamCacheForUser(input.userId);
 }
 
@@ -390,32 +368,27 @@ export async function ensureOrgMembership(
 ): Promise<AccountRole> {
   const existing = await getAccountMembership(userId, accountId);
   if (existing) return existing.accountRole as AccountRole;
+  // Membership is two facts in two stores now. IDENTITY (the row that says this
+  // user belongs to this account, and carries is_super_admin / scim_external_id)
+  // is `kortix.account_memberships`; the ROLE is an account-scope assignment.
+  // Writing the identity row first is what lets `assignRole`'s principal check
+  // resolve without falling back to auth.users.
   await db
-    .insert(accountMembers)
-    .values({ userId, accountId, accountRole: 'member' })
+    .insert(accountMemberships)
+    .values({ userId, accountId })
     .onConflictDoNothing();
-  // …and the canonical membership grant, through the ONE write path, so joining
-  // an account emits `iam.assignment.granted` like every other grant.
-  // `SYSTEM_ACTOR`: the two callers (accepting a project invite, approving an
-  // access request) were authorized by their own route, and the person being
-  // added is not the writer.
-  //
-  // Best-effort — the mirror trigger on the INSERT above already wrote the same
-  // canonical row, so a failure costs the audit event, not the membership.
-  try {
-    await assignRole(SYSTEM_ACTOR, accountId, {
-      principal: { type: 'user', id: userId },
-      roleKey: 'member',
-      scope: { type: 'account' },
-      source: 'system',
-    });
-  } catch (err) {
-    console.warn('[projects] canonical account-membership assignment failed', {
-      accountId,
-      userId,
-      err: (err as Error)?.message,
-    });
-  }
+  // The grant, through the ONE write path, so joining an account emits
+  // `iam.assignment.granted` like every other grant. `SYSTEM_ACTOR`: the two
+  // callers (accepting a project invite, approving an access request) were
+  // authorized by their own route, and the person being added is not the writer.
+  await assignRole(SYSTEM_ACTOR, accountId, {
+    principal: { type: 'user', id: userId },
+    roleKey: 'member',
+    scope: { type: 'account' },
+    source: 'system',
+    // One account role per member, as the `account_role` COLUMN enforced.
+    exclusive: true,
+  });
   invalidateIamCacheForUser(userId);
   return 'member';
 }

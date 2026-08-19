@@ -79,6 +79,23 @@ export type Credential =
    *  principal and is denied `not_a_member` by every gate, exactly as today. */
   | { kind: 'sandbox' };
 
+/**
+ * Per-request context surfaced from middleware: caller IP and MFA AAL.
+ *
+ * Optional everywhere — a call site that does not have the data omits it. It is
+ * folded into the authorize() cache key so two requests under the same user but
+ * with different IP / AAL never share a verdict.
+ *
+ * Lived in `iam/engine.ts` until the cutover deleted that module; it is the one
+ * type the retired V1 engine's public surface still had a caller for.
+ */
+export interface RequestContext {
+  /** Caller's source IP, taken from x-forwarded-for or x-real-ip. */
+  ip?: string;
+  /** JWT's `aal` claim — 'aal1' = password-only, 'aal2' = MFA-verified. */
+  mfaAal?: string;
+}
+
 export interface Actor {
   /** The authenticated identity: an auth uid, or a service-account id for the
    *  two service-account credentials. NOT necessarily the acting principal —
@@ -86,7 +103,7 @@ export interface Actor {
   userId: string;
   accountId: string;
   credential: Credential;
-  ctx: { ip?: string; mfaAal?: string };
+  ctx: RequestContext;
 }
 
 /** A principal reference, in the canonical `role_assignments` vocabulary. */

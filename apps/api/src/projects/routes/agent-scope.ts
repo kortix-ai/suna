@@ -230,7 +230,7 @@ projectsApp.openapi(
     // agent entry is `project.agent.write`, but deciding what to write means
     // reading secret metadata, and the secrets list itself is gated on
     // `project.secret.read` (r3.ts). They are separate entries in
-    // iam/role-perms.ts, so a role can hold one without the other — and with
+    // kortix.role_permissions, so a role can hold one without the other — and with
     // only the write leaf the 404/409/200 split below would answer "does this
     // identifier exist, and is its delivery denied?" for a caller deliberately
     // kept off the secrets surface. Assert the read leaf before the lookup.

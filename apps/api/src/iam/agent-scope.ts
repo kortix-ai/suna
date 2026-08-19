@@ -28,27 +28,49 @@ export function isProjectSessionPrincipal(c: Context): boolean {
 }
 
 /**
- * Synonym pairs for the change-request capability. A route gates CR creation as
- * `project.cr.open` but the central agent-grant fold (via assertProjectCapability)
- * gates the underlying commit as `project.gitops.push`; likewise CR merge is
- * `project.cr.merge` ≡ `project.gitops.merge`. Without aliasing an agent would
- * need BOTH spellings in its kortix_cli to open/merge a CR — a silent
- * double-gate. Granting EITHER member of a pair satisfies both checks.
+ * MANIFEST-INPUT NORMALIZATION, and nothing else.
+ *
+ * `project.cr.open` / `project.cr.merge` were the same capability as
+ * `project.gitops.push` / `project.gitops.merge` under a second name: a route
+ * gated CR creation as the former while the central capability fold gated the
+ * underlying commit as the latter. Spec §2.4 collapsed them — neither string is
+ * in `kortix.permissions`, so no route can assert one and no role can grant one.
+ *
+ * They survive in exactly ONE place: a hand-written `kortix_cli:` list in a
+ * kortix.yaml an author wrote before the collapse. This table rewrites such a
+ * list to the live spelling ONCE, when the grant is resolved
+ * (`canonicalizeGrantActions`, called from projects/agents.ts beside the
+ * connector canonicalization). It is a spelling correction on INPUT — NOT a
+ * runtime alias table, and NOT a second permission model: after normalization
+ * `agentMayPerform` is a plain membership test against the catalog's spelling.
  */
-const AGENT_ACTION_ALIASES: Readonly<Record<string, string>> = {
+const MANIFEST_ACTION_ALIASES: Readonly<Record<string, string>> = {
   'project.cr.open': 'project.gitops.push',
-  'project.gitops.push': 'project.cr.open',
   'project.cr.merge': 'project.gitops.merge',
-  'project.gitops.merge': 'project.cr.merge',
 };
 
-/** True if the agent-session grant permits `action` (or there is no grant). */
+/**
+ * Rewrite a grant's `kortixCli` list to the catalog's spelling.
+ *
+ * Call this exactly where `canonicalizeGrantConnectors` is called — once, on the
+ * resolved grant — so every gate compares canonical to canonical.
+ */
+export function canonicalizeGrantActions(grant: AgentGrant | null): AgentGrant | null {
+  if (!grant || grant.kortixCli === 'all') return grant;
+  const canonical = grant.kortixCli.map((a) => MANIFEST_ACTION_ALIASES[a] ?? a);
+  return { ...grant, kortixCli: [...new Set(canonical)] };
+}
+
+/**
+ * True if the agent-session grant permits `action` (or there is no grant).
+ *
+ * A plain membership test. The grant list is already in the catalog's spelling —
+ * see `canonicalizeGrantActions`.
+ */
 export function agentMayPerform(grant: AgentGrant | null, action: string): boolean {
   if (!grant) return true; // no grant = no restriction
   if (grant.kortixCli === 'all') return true;
-  if (grant.kortixCli.includes(action)) return true;
-  const alias = AGENT_ACTION_ALIASES[action];
-  return alias ? grant.kortixCli.includes(alias) : false;
+  return grant.kortixCli.includes(action);
 }
 
 /**

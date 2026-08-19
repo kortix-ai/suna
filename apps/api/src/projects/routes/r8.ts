@@ -1098,8 +1098,12 @@ projectsApp.openapi(
     );
 
     // Per-agent gate: opening a CR is the agent's intended path to propose work.
-    // Default-deny — a scoped agent must be granted project.cr.open.
-    assertAgentScope(c, 'project.cr.open');
+    // Default-deny — a scoped agent must be granted the leaf this route already
+    // gates the underlying commit on. `project.cr.open` was the SAME capability
+    // under a second name and is gone from the catalog (spec §2.4); a manifest
+    // still spelling it that way is rewritten on input by
+    // `canonicalizeGrantActions`, so the grant reaching here is always the leaf.
+    assertAgentScope(c, PROJECT_ACTIONS.PROJECT_GITOPS_PUSH);
 
     const title = normalizeString(body.title);
     if (!title) return c.json({ error: 'title is required' }, 400);
@@ -1405,8 +1409,9 @@ projectsApp.openapi(
     const body = await readBody(c);
     const loaded = await loadProjectForUser(c, projectId, 'write');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    // Per-agent gate: editing a CR is part of the change-request capability.
-    assertAgentScope(c, 'project.cr.open');
+    // Per-agent gate: editing a CR is part of the change-request capability,
+    // which is `project.gitops.push` (see the create route above).
+    assertAgentScope(c, PROJECT_ACTIONS.PROJECT_GITOPS_PUSH);
 
     const cr = await getCrById(crId, projectId);
     if (!cr) return c.json({ error: 'Change request not found' }, 404);
