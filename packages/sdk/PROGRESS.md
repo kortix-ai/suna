@@ -117,6 +117,44 @@ pnpm --filter @kortix/sdk smoke:install   → ✔ install smoke test passed
 
 ---
 
+||||||| parent of f1d78e5ed1 (chore(sdk): claim boundary-close (public-share file reader, presentation metadata reader, facade completion))
+
+### 2026-08-19 — session `claude/sdk-central` — claim: boundary-close: public-share file reader, presentation metadata reader, facade completion — IN PROGRESS
+
+No **Now** task claimed. This is user-directed boundary-close work: `apps/web`
+still reaches the Kortix API directly for three surfaces the SDK does not own.
+
+Claimed SDK scope, additive only:
+
+1. **Public-share file reader.** `core/rest/platform-client/host-boundary.ts`
+   exposes `getPublicShareByToken` (share metadata) but no file read for an
+   anonymous share viewer. Add the reader beside it, on the same
+   `HostRequestOptions` transport, with no `Authorization` header.
+2. **Presentation metadata reader.** `core/session/presentation.ts` owns only URL
+   builders (`buildPresentationTemplatePdfUrl`,
+   `buildPresentationTemplateImageUrl`, `buildRuntimePresentationConversionUrl`)
+   and `convertRuntimePresentation`. Add the metadata read so the host stops
+   hand-rolling it.
+3. **Facade completion.** Wire both onto `createKortix()` in
+   `core/client/kortix.ts` as direct references, per the recipe in `AGENTS.md`.
+
+Constraints I am holding myself to:
+
+- **Additive only.** No exported value or type name is renamed or removed.
+  `package.json` `version` stays `0.3.0` — releases bump the SDK, never the SDK
+  itself.
+- **TDD.** RED test first, watched failing for the right reason, then GREEN.
+- **Three synchronized edits** if any new subpath is added (`exports`,
+  `publishConfig.exports`, `SUBPATH_TIERS`). Current intent is no new subpath —
+  everything lands behind the root barrel.
+- **Framework-free core.** No `node:` import, no bare global; guarded reads only.
+- Both surface snapshots regenerated deliberately
+  (`UPDATE_SURFACE_SNAPSHOT=1` / `UPDATE_TYPE_SURFACE_SNAPSHOT=1`) and the diff
+  read line by line — additions only.
+- Gates run and the real output pasted before the turn ends: `typecheck`,
+  `test`, `smoke:install`.
+
+---
 ### 2026-08-19 — session `rbac-canonical` (P5) — BREAKING: the canonical assignment surface lands, the sandbox-member surface is deleted — DONE
 
 **Files:** `core/rest/projects-client/assignments.ts` + `assignments.test.ts`
