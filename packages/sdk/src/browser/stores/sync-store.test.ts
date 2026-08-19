@@ -3033,3 +3033,105 @@ describe("useSyncStore — an INBOX-BACKED optimistic message survives the idle 
 		expect(useSyncStore.getState().messages["ses_1"]?.map((m) => m.id)).toEqual(["msg_reminted"]);
 	});
 });
+
+describe("useSyncStore — cache-sourced messages are provisional until the runtime confirms them", () => {
+	test("a cache-sourced user message the runtime's own tail does not contain is dropped (a phantom)", () => {
+		const store = useSyncStore.getState();
+		// Disk repaint: two real messages and a phantom (an optimistic stub that
+		// was mirrored to disk before its echo) — all plain messages by now.
+		store.hydrate(
+			"ses_1",
+			[
+				{ info: userMessage("msg_a"), parts: [] },
+				{ info: userMessage("msg_phantom"), parts: [] },
+				{ info: userMessage("msg_c"), parts: [] },
+			],
+			{ source: "cache" },
+		);
+		expect(useSyncStore.getState().messages.ses_1.map((m) => m.id)).toEqual([
+			"msg_a",
+			"msg_c",
+			"msg_phantom",
+		]);
+		// The runtime's tail covers that range and knows nothing of the phantom.
+		store.hydrate("ses_1", [
+			{ info: userMessage("msg_a"), parts: [] },
+			{ info: userMessage("msg_c"), parts: [] },
+		]);
+		expect(useSyncStore.getState().messages.ses_1.map((m) => m.id)).toEqual(["msg_a", "msg_c"]);
+	});
+
+	test("a cache-sourced message OLDER than the runtime's tail is kept (history the tail did not reach)", () => {
+		const store = useSyncStore.getState();
+		store.hydrate(
+			"ses_1",
+			[
+				{ info: userMessage("msg_a"), parts: [] },
+				{ info: userMessage("msg_b"), parts: [] },
+			],
+			{ source: "cache" },
+		);
+		// A bounded tail that starts at msg_b: msg_a is simply older than it.
+		store.hydrate("ses_1", [
+			{ info: userMessage("msg_b"), parts: [] },
+			{ info: userMessage("msg_c"), parts: [] },
+		]);
+		expect(useSyncStore.getState().messages.ses_1.map((m) => m.id)).toEqual([
+			"msg_a",
+			"msg_b",
+			"msg_c",
+		]);
+	});
+
+	test("an optimistic message is reported as such, and a plain one is not", () => {
+		const store = useSyncStore.getState();
+		store.optimisticAdd("ses_1", userMessage("msg_opt"), []);
+		store.upsertMessage("ses_1", userMessage("msg_real"));
+		expect(store.isOptimisticMessage("ses_1", "msg_opt")).toBe(true);
+		expect(store.isOptimisticMessage("ses_1", "msg_real")).toBe(false);
+	});
+});
+
+describe("useSyncStore — a removed user message the control plane still owns keeps its bubble", () => {
+	test("message.removed for an inbox-backed message re-marks it optimistic instead of dropping it", () => {
+		// The drain deletes a stranded copy of a forwarded prompt and re-places
+		// it under a new id; the box emits message.removed for the old copy.
+		// The user's bubble must not blink out between the two.
+		const store = useSyncStore.getState();
+		store.optimisticAdd("ses_1", userMessage("msg_c"), [textPart("prt_1", "msg_c", "hi")]);
+		store.markOptimisticDispatched("ses_1", "msg_c");
+		store.markOptimisticInboxBacked("ses_1", "msg_c");
+		// The echo confirms it in place (same id).
+		store.hydrate("ses_1", [{ info: userMessage("msg_c"), parts: [textPart("prt_1", "msg_c", "hi")] }]);
+		expect(store.isOptimisticMessage("ses_1", "msg_c")).toBe(false);
+
+		store.applyEvent({
+			type: "message.removed",
+			properties: { sessionID: "ses_1", messageID: "msg_c" },
+		} as never);
+		const msgs = useSyncStore.getState().messages.ses_1;
+		expect(msgs.map((m) => m.id)).toEqual(["msg_c"]);
+		expect(useSyncStore.getState().parts.msg_c?.[0]?.id).toBe("prt_1");
+		expect(useSyncStore.getState().isOptimisticMessage("ses_1", "msg_c")).toBe(true);
+
+		// The re-placed copy arrives under a new id: it supersedes the bubble,
+		// and the alias chain keeps pointing at the id the host keyed on.
+		store.applyEvent({
+			type: "message.updated",
+			properties: { info: userMessage("msg_c2") },
+		} as never);
+		expect(useSyncStore.getState().messages.ses_1.map((m) => m.id)).toEqual(["msg_c2"]);
+		expect(useSyncStore.getState().optimisticOriginOf("ses_1", "msg_c2")).toBe("msg_c");
+		expect(useSyncStore.getState().parts.msg_c2?.[0]?.id).toBe("prt_1");
+	});
+
+	test("message.removed for a message nobody owns still removes it", () => {
+		const store = useSyncStore.getState();
+		store.upsertMessage("ses_1", userMessage("msg_x"));
+		store.applyEvent({
+			type: "message.removed",
+			properties: { sessionID: "ses_1", messageID: "msg_x" },
+		} as never);
+		expect(useSyncStore.getState().messages.ses_1).toEqual([]);
+	});
+});

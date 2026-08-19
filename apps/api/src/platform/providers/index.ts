@@ -1,5 +1,4 @@
 import { config } from '../../config';
-import type { NetworkBoundarySecretBinding } from '../../secrets/network-boundary';
 import { DaytonaProvider } from './daytona';
 import { E2BProvider } from './e2b';
 import { PlatinumProvider } from './platinum';
@@ -15,19 +14,6 @@ import { PlatinumProvider } from './platinum';
  *   - e2b — E2B Cloud
  */
 export type ProviderName = 'daytona' | 'platinum' | 'e2b';
-
-const NETWORK_BOUNDARY_SYNC_MODE: Record<ProviderName, 'on-demand' | 'authoritative'> = {
-  daytona: 'on-demand',
-  platinum: 'authoritative',
-  e2b: 'on-demand',
-};
-
-export function shouldSyncProviderNetworkBoundary(
-  name: ProviderName,
-  bindingCount: number,
-): boolean {
-  return bindingCount > 0 || NETWORK_BOUNDARY_SYNC_MODE[name] === 'authoritative';
-}
 
 /**
  * Thrown by the Daytona warm path when the experimental memory-snapshot restore
@@ -109,11 +95,6 @@ export interface CreateSandboxOpts {
    * OPTIONAL, same rationale as `sandboxId` above.
    */
   createAttempt?: number;
-  /**
-   * Network-boundary secrets a capable provider attaches atomically during
-   * sandbox creation. The values remain in the provider control plane.
-   */
-  networkBoundary?: NetworkBoundarySecretBinding[];
   /**
    * Runtime contract hosted by the provider object. Missing means `session`
    * for backward compatibility with every existing caller.
@@ -262,8 +243,6 @@ export interface SandboxProvider {
   readonly provisioning: ProvisioningTraits;
   /** Absent means the provider enforces the whole App machine specification. */
   readonly appMachineSupport?: AppMachineSupport;
-  /** The provider can attach `CreateSandboxOpts.networkBoundary` before first boot. */
-  readonly networkBoundaryAtCreate?: boolean;
   create(opts: CreateSandboxOpts): Promise<ProvisionResult>;
   /**
    * Ensure the Kortix App supervisor is running after create or resume.
@@ -327,12 +306,6 @@ export interface SandboxProvider {
   ): Promise<ResolvedSandboxIngress>;
   ensureRunning(externalId: string): Promise<void>;
   getProvisioningStatus(sandboxId: string): Promise<ProvisioningStatus | null>;
-  /** Apply the exact server-owned network credentials for one sandbox. */
-  syncNetworkBoundary?(
-    externalId: string,
-    bindings: NetworkBoundarySecretBinding[],
-    opts?: { replicaOwnerId?: string },
-  ): Promise<{ state: 'armed'; attached: number }>;
   /**
    * List the running boxes this deployment owns, for the orphan-box reaper
    * (boxes still running on the provider with no live DB row). OPTIONAL: a

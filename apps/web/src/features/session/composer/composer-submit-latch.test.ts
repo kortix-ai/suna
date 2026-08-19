@@ -49,7 +49,7 @@ describe('the composer submits through the latch', () => {
     // the instance survive every render; the handler itself is stable (`[]`)
     // because its only inputs are refs.
     const wiring = between('const submitLatchRef = useRef', 'const editorPlaceholder');
-    expect(wiring).toContain('submitLatchRef.current ??= createSubmitLatch(');
+    expect(wiring).toContain('submitLatchRef.current ??= createSubmitLatch<StashedDraft>(');
     expect(wiring).toContain('return submitLatchRef.current();');
     expect(wiring).toContain('}, []);');
   });
@@ -60,16 +60,19 @@ describe('the composer submits through the latch', () => {
     // creation would submit against stale attachedFiles/queue props.
     const wiring = between('const dispatchSubmissionRef = useRef', 'const editorPlaceholder');
     expect(wiring).toContain('dispatchSubmissionRef.current = dispatchSubmission;');
-    expect(wiring).toContain('() => dispatchSubmissionRef.current()');
+    expect(wiring).toContain('(stash) => dispatchSubmissionRef.current(stash)');
   });
 
-  test('the deferral discriminator is typed text in the live editor', () => {
+  test('the stash discriminator is typed text in the live editor, and the stash clears the editor', () => {
     // A double-fire arrives with the editor already cleared (dispatch clears it
     // synchronously); a distinct second message arrives with text. Files alone
-    // must NOT arm the deferral — un-flushed `attachedFiles` state is exactly
-    // the hazard the latch exists to swallow.
-    const wiring = between('submitLatchRef.current ??= createSubmitLatch(', 'const editorPlaceholder');
-    expect(wiring).toContain('editorRef.current?.getContent().text.trim()');
+    // must NOT arm the stash — un-flushed `attachedFiles` state is exactly
+    // the hazard the latch exists to swallow. A stashed draft leaves the
+    // editor at once, so the next Enter cannot merge into it.
+    const wiring = between('submitLatchRef.current ??= createSubmitLatch<StashedDraft>(', 'const editorPlaceholder');
+    expect(wiring).toContain("if (!editor || !content || !content.text.trim()) return null;");
+    expect(wiring).toContain('editor.clear();');
+    expect(wiring).toContain('attachedFilesRef.current = [];');
   });
 
   test('every submit entry point goes through the latched handler', () => {

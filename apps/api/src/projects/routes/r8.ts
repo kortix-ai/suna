@@ -53,6 +53,8 @@ import {
   startSession,
   stopSession,
 } from '../session-lifecycle';
+import { settleInboxHoldAfterStopInBackground } from '../session-lifecycle/inbox-hold-settle';
+import { cancelForwardedPrompt, findInboxRowIdByMessageId } from '../session-lifecycle/cancel-forwarded';
 import {
   PROMPT_TEXT_PREVIEW_CHARS,
   flattenPromptText,
@@ -526,6 +528,8 @@ const SessionPromptSchema = z.object({
   prompt_id: z.string(),
   client_message_id: z.string(),
   message_id: z.string(),
+  wire_message_id: z.string(),
+  client_sent_at_ms: z.number().nullable(),
   state: z.enum(['queued', 'delivering', 'waiting', 'failed']),
   reason: z.string().nullable(),
   text: z.string(),
@@ -542,6 +546,7 @@ const SessionPromptSchema = z.object({
 const RemovedSessionPromptSchema = z.object({
   prompt_id: z.string(),
   client_message_id: z.string(),
+  removed_message_ids: z.array(z.string()).optional(),
   message_id: z.string(),
   parts: z.array(z.any()),
   overrides: z.any().nullable(),
@@ -608,6 +613,14 @@ function serializePrompt(row: PromptRow) {
           : typeof payload.wireMessageId === 'string'
             ? payload.wireMessageId
             : '',
+    // The id the CLIENT painted its bubble under. `message_id` above moves to
+    // the re-minted id the moment the drain places the prompt — before the
+    // runtime echoes it — and a client that only knew `message_id` drew the
+    // row beside its own bubble for that window (a second dimmed copy for
+    // ~0.4 s on every mid-turn send). Both ids name one prompt.
+    wire_message_id: typeof payload.wireMessageId === 'string' ? payload.wireMessageId : '',
+    client_sent_at_ms:
+      typeof payload.clientSentAtMs === 'number' ? payload.clientSentAtMs : null,
     state,
     reason,
     text: (typeof payload.text === 'string' ? payload.text : '').slice(
@@ -630,6 +643,14 @@ function serializeRemovedPrompt(row: PromptRow) {
     // The ORIGINAL wire id, never the re-minted one: an undo re-creates the
     // submission, and `POST .../prompts` places it again from there.
     message_id: typeof payload.wireMessageId === 'string' ? payload.wireMessageId : '',
+    // EVERY id this prompt ever travelled under, so the client can clear the
+    // transcript husk a cancel leaves behind (the copy at the runtime is
+    // emptied, not necessarily deleted, while a step runs).
+    removed_message_ids: [
+      payload.wireMessageId,
+      payload.redeliveredMessageId,
+      (row.result as Record<string, unknown> | null)?.forwarded_message_id,
+    ].filter((id, i, all): id is string => typeof id === 'string' && !!id && all.indexOf(id) === i),
     // The full body, untruncated, with every file/agent part — see the DELETE
     // handler for why the display shape cannot stand in for this.
     parts: parts.length > 0 ? parts : [{ type: 'text', text: payload.text ?? '' }],
@@ -773,6 +794,13 @@ projectsApp.openapi(
       // The drain re-mints against the live root before delivering, which is
       // the only place that can place the id correctly.
       ...(body.remint_on_delivery === true ? { remintOnDelivery: true } : {}),
+      // SEND order across surfaces whose POSTs race — see the batch sort in
+      // the drain. Bounded to the near past/future so a wrong client clock
+      // cannot pin its prompts to the head or tail of every future batch.
+      ...(typeof body.client_sent_at_ms === 'number' &&
+      Math.abs(Date.now() - body.client_sent_at_ms) < 10 * 60_000
+        ? { clientSentAtMs: Math.trunc(body.client_sent_at_ms) }
+        : {}),
       parts,
       overrides,
     });
@@ -870,7 +898,11 @@ projectsApp.openapi(
     const sessionId = c.req.param('sessionId');
     const promptId = c.req.param('promptId');
     if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
-    if (!UUID_V4_REGEX.test(promptId)) return c.json({ error: 'Invalid prompt id' }, 400);
+    // A prompt is named by its row id (uuid) OR by its wire message id — the
+    // handle the bubble still has after the row leaves the list.
+    if (!UUID_V4_REGEX.test(promptId) && !/^msg_[A-Za-z0-9]{6,40}$/.test(promptId)) {
+      return c.json({ error: 'Invalid prompt id' }, 400);
+    }
 
     // Floor 'session' — see the POST /prompts gate comment. Un-queuing your own
     // pending message is running the session, not editing the project.
@@ -890,7 +922,18 @@ projectsApp.openapi(
     // The session AND inbox scopes are in the DELETE's own predicate, so
     // neither a prompt id from another session nor an automation's
     // `continue_session` row can be removed by naming it here.
-    const outcome = await deleteInboxPrompt(sessionId, promptId);
+    //
+    // A `msg_…` id names the prompt by its MESSAGE instead: the row leaves
+    // `GET .../prompts` the moment the daemon confirms persistence (~1 s),
+    // but the bubble on screen still knows its wire id — and the prompt is
+    // still cancellable until a model step reads it.
+    let effectivePromptId = promptId;
+    if (promptId.startsWith('msg_')) {
+      const found = await findInboxRowIdByMessageId(sessionId, promptId);
+      if (!found) return c.json({ error: 'Not found' }, 404);
+      effectivePromptId = found;
+    }
+    const outcome = await deleteInboxPrompt(sessionId, effectivePromptId);
     // The response CARRIES THE PROMPT IT REMOVED. A removal is offered with an
     // undo, and the row is hard-deleted, so this response is the only place the
     // full body still exists. Undoing from `GET /prompts`'s view instead
@@ -900,7 +943,30 @@ projectsApp.openapi(
       return c.json({ removed: serializeRemovedPrompt(outcome.row) }, 200);
     }
     if (outcome.outcome === 'delivering') {
-      return c.json({ error: 'Prompt is already being delivered' }, 409);
+      // On the wire is no longer the point of no return: a forwarded prompt
+      // the loop has not READ is taken back out of the runtime — whole
+      // message when idle, part by part when busy (an empty user message is
+      // invisible to the model). Only "a step is answering it" still refuses.
+      const cancelled = await cancelForwardedPrompt(sessionId, effectivePromptId);
+      if (cancelled.outcome === 'cancelled') {
+        return c.json({ removed: serializeRemovedPrompt(cancelled.row) }, 200);
+      }
+      if (cancelled.outcome === 'not_forwarded') {
+        // The row fell back into the queue while the cancel watched it.
+        const retried = await deleteInboxPrompt(sessionId, effectivePromptId);
+        if (retried.outcome === 'deleted') {
+          return c.json({ removed: serializeRemovedPrompt(retried.row) }, 200);
+        }
+      }
+      return c.json(
+        {
+          error:
+            cancelled.outcome === 'answered'
+              ? 'Prompt is already being answered'
+              : 'Prompt is being delivered and the runtime could not be reached to cancel it',
+        },
+        409,
+      );
     }
     return c.json({ error: 'Not found' }, 404);
   },
@@ -1012,7 +1078,14 @@ projectsApp.openapi(
 
     await holdInboxPrompts(sessionId, body.held);
     const rows = await listInboxPrompts(sessionId, PROMPT_LIST_LIMIT);
-    if (!body.held) void drainSessionLifecycleQueue({ limit: 1 }).catch(() => undefined);
+    if (body.held) {
+      // The instant marking above is what the client waits for; what a Stop
+      // means for prompts already on the wire needs the box and happens behind
+      // this response — see inbox-hold-settle.ts.
+      settleInboxHoldAfterStopInBackground(sessionId);
+    } else {
+      void drainSessionLifecycleQueue({ limit: 1 }).catch(() => undefined);
+    }
     return c.json({ prompts: rows.map(serializePrompt) });
   },
 );

@@ -27,7 +27,13 @@ export interface SecretEgressPolicy {
   backend?: 'llm_gateway' | 'connector' | 'git_proxy' | 'kortix_fetch';
   base_url_env?: string;
   rules: SecretEgressRule[];
-  inject: SecretInjectionSlot;
+  /**
+   * LEGACY injection slot. Optional: an egress-enforced secret is delivered to
+   * the sandbox as a HANDLE and the relay substitutes the real value on an
+   * approved host, so the policy is a host list with no slot to name. Rows
+   * stored with a slot keep injecting exactly as before.
+   */
+  inject?: SecretInjectionSlot;
   on_no_match?: 'deny' | 'observe';
   tls?: 'terminate' | 'tunnel';
 }
@@ -93,10 +99,11 @@ export interface ProjectSecret {
    *  when the manifest's agent roster admits no agent for it. Null when some
    *  agent admits it, or when the project has published no roster at all. */
   delivery_blocked_reason?: SecretDeliveryBlockedReason | null;
-  /** Whether this project can inject at the network boundary at all — via the
-   *  provider edge or the in-guest shim, whichever it has. False makes every
-   *  `egress` secret undeliverable however well-formed its policy is, so a
-   *  caller rendering `strategy: 'egress'` needs this to explain the state. */
+  /** Whether this project can enforce a secret at the network boundary at all.
+   *  Current servers always report true — one mechanism serves every sandbox
+   *  provider. Older servers could report false, which made every `egress`
+   *  secret undeliverable however well-formed its policy is, so a caller
+   *  rendering `strategy: 'egress'` still reads it to explain that state. */
   network_boundary_available?: boolean;
   /** Network policy metadata. The secret value is never present. */
   egress_policy?: SecretEgressPolicy | null;

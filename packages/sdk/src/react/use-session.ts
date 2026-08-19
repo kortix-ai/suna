@@ -498,8 +498,12 @@ export function beginOptimisticPlainTextSend(
     id: messageId,
     sessionID: sessionId,
     role: 'user',
-    time: { created: Date.now() },
-  } as Message;
+    // No `time.created`: display order is by the BOX's `time.created`
+    // (`compareMessagesForDisplay`), and a stub stamped from the browser's
+    // clock sorted ABOVE real messages whenever the box ran behind it. An
+    // untimed stub is "the newest thing the user did", on every clock.
+    time: {},
+  } as unknown as Message;
   useSyncStore.getState().optimisticAdd(sessionId, info, optimisticParts);
   // No status write. `sessionStatus` is where the runtime's own SSE frames
   // land, and a fabricated `busy` there outranked a real `GET .../turn` read

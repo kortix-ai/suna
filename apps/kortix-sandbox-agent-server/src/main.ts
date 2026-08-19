@@ -156,7 +156,7 @@ async function main() {
   if (!agentEnvDirIsTmpfs()) {
     logger.error('[boot] /dev/shm is not tmpfs — agent secret file would persist to disk; check the sandbox runtime mount')
   }
-  // Network-boundary secrets on a provider with no credential edge. Started
+  // Egress-enforced secrets — the one mechanism, on every provider. Started
   // BEFORE the first writeAgentEnvFile below, because that file is how the
   // proxy + CA variables reach the agent's shells — and before opencode spawns,
   // because the shim's port has to be listening by the time anything can make a

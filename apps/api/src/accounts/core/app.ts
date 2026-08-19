@@ -11,7 +11,7 @@ import {
 import { accountRoleFor, countAccountOwners } from '../../iam/read-models';
 import { assignRole, SYSTEM_ACTOR } from '../../iam/assignments';
 import { resolveAccountId } from '../../shared/resolve-account';
-import { getSupabase } from '../../shared/supabase';
+import { lookupEmailsByUserIds } from './owner-emails';
 import type { AppEnv } from '../../types';
 
 // ─── Public router (leaf module — no route imports here to avoid cycles) ─────
@@ -218,24 +218,11 @@ export async function countOwners(accountId: string): Promise<number> {
   return countAccountOwners(accountId);
 }
 
-export async function lookupEmailsByUserIds(
-  userIds: string[],
-): Promise<Map<string, string | null>> {
-  const result = new Map<string, string | null>();
-  if (userIds.length === 0) return result;
-  const supabase = getSupabase();
-  await Promise.all(
-    userIds.map(async (uid) => {
-      try {
-        const { data } = await supabase.auth.admin.getUserById(uid);
-        result.set(uid, data?.user?.email ?? null);
-      } catch {
-        result.set(uid, null);
-      }
-    }),
-  );
-  return result;
-}
+// Batched + cached owner-email lookup. Lives in ./owner-emails so it stays a
+// leaf module (db + sql only) and can be unit-tested without the account graph.
+// Re-exported here because it was part of this module's public surface.
+export { clearOwnerEmailCache, ownerEmailCacheSize } from './owner-emails';
+export { lookupEmailsByUserIds };
 
 // Display names for a batch of accounts, deriving the fallback for unnamed
 // (placeholder-named) accounts from the account OWNER's email — not the

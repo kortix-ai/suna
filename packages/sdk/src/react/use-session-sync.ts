@@ -159,7 +159,8 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
       ) {
         return;
       }
-      store.hydrate(sessionId, toHydrateEntries(cached));
+      // Provisional: the first runtime read settles what the disk copy holds.
+      store.hydrate(sessionId, toHydrateEntries(cached), { source: 'cache' });
     })();
     return () => {
       cancelled = true;
@@ -190,14 +191,20 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
     if (!canQueryOpenCodeSession(sessionId)) return;
     let lastMessages: unknown;
     let lastParts: unknown;
-    const persist = (state: { messages: any; parts: any }) => {
+    const persist = (state: {
+      messages: any;
+      parts: any;
+      isOptimisticMessage: (sessionID: string, messageID: string) => boolean;
+    }) => {
       // The store is shared by every session and also carries status/todos, so
       // most notifications are irrelevant here. Compare the two slices this
       // cache actually mirrors before rebuilding anything.
       if (state.messages[sessionId] === lastMessages && state.parts === lastParts) return;
       lastMessages = state.messages[sessionId];
       lastParts = state.parts;
-      void writeCachedTranscript(state, sessionId, kortixSessionScope);
+      void writeCachedTranscript(state, sessionId, kortixSessionScope, (id) =>
+        state.isOptimisticMessage(sessionId, id),
+      );
     };
     persist(useSyncStore.getState());
     return useSyncStore.subscribe(persist);

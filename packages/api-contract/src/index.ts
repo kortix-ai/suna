@@ -61,7 +61,6 @@ export const FeatureFlagMapSchema = z.object({
   meta_agent: z.boolean(),
   apps: z.boolean(),
   monitors: z.boolean(),
-  network_boundary_shim: z.boolean(),
   warm_sessions: z.boolean(),
 });
 export type FeatureFlagMap = z.infer<typeof FeatureFlagMapSchema>;
@@ -1031,7 +1030,9 @@ export const SessionStartFailureSchema = z
     category: z.enum([
       'provider-capacity',
       'git-auth',
-      // The PROVIDER cannot do network-boundary delivery (e.g. a Daytona box).
+      // LEGACY, never produced since one mechanism started serving every provider
+      // (docs/specs/2026-08-19-secrets-exposure-usage-model.md §4). Kept on the wire
+      // because sandbox rows written before that change still carry it.
       'unsupported-secret-delivery',
       // The PROJECT's own boundary policy is unusable — two secrets claiming the same
       // (host, header), or a policy the boundary cannot enforce. Never retryable.
@@ -1210,7 +1211,16 @@ export const SecretEgressPolicySchema = z.object({
       inject: SecretInjectionSlotSchema.optional(),
     }),
   ),
-  inject: SecretInjectionSlotSchema,
+  /**
+   * Where the credential is attached, for LEGACY injection rows.
+   *
+   * Optional since the exposure/usage model (docs/specs/
+   * 2026-08-19-secrets-exposure-usage-model.md §6): an egress-enforced secret
+   * is served by HANDLE SUBSTITUTION, so the policy is a host list and there is
+   * no slot to name. A row that still carries `inject` keeps injecting exactly
+   * as before.
+   */
+  inject: SecretInjectionSlotSchema.optional(),
   on_no_match: z.enum(['deny', 'observe']).optional(),
   tls: z.enum(['terminate', 'tunnel']).optional(),
 });

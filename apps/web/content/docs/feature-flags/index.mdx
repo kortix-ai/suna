@@ -111,7 +111,6 @@ Registry order — the same order **Settings → Experimental** shows.
 | `meta_agent` | Meta Agent | Experimental | Off | `behavioral` |
 | `apps` | Apps | Stable | Off | `routes` |
 | `monitors` | Monitors | Experimental | Off | `routes` |
-| `network_boundary_shim` | Network boundary in-guest shim | Experimental | Off | `behavioral` |
 | `warm_sessions` | Warm Sessions | Beta | On | `routes` |
 
 `llm_gateway` reads its per-project default from
@@ -142,8 +141,6 @@ Registry order — the same order **Settings → Experimental** shows.
   stable serverless URLs. See [Apps](/docs/feature-flags/apps).
 - **`monitors`** — run 24/7 watchers from your repo that fire trigger events
   into sessions. See [Triggers](/docs/connect/triggers).
-- **`network_boundary_shim`** — use network-boundary secrets on a project that
-  does not run on Platinum. See [Secrets](/docs/project/secrets).
 - **`warm_sessions`** — keep one sandbox booted while a project is open, so a
   new session starts without a cold boot.
 

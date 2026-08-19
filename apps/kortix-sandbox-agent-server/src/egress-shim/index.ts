@@ -314,10 +314,9 @@ export interface EgressShimSyncResult {
  * adoption — and both are long past by the time a user adds a secret to a live
  * session. That push does deliver a new `KORTIX_SECRET_CAPABILITIES` and does
  * respawn opencode, but the respawn spreads `egressShimEnv()`, which is still
- * `{}` because nothing ever started a listener. So the boundary secret silently
- * did nothing until the session was restarted, while on a provider that injects
- * at its own credential edge the same action took effect immediately — the two
- * mechanisms disagreed on whether a mid-session add works at all.
+ * `{}` because nothing ever started a listener. So the secret silently did
+ * nothing until the session was restarted — the save reported success, the
+ * catalog landed, and every request still left uncredentialed.
  *
  * Stop-then-start rather than a reconfigure: the rules are baked into the
  * listener (and into every leaf it has issued) at construction. The listening

@@ -35,7 +35,6 @@ import { isPlaceholderOpencodeTitle, runtimeRootTitleFromSnapshot } from './open
 import { normalizeProjectGlyph } from './project-glyph';
 import { normalizeProjectIcon } from './project-icon';
 import { proxyGitUrl } from './sessions';
-import { networkBoundaryDeliveryAvailable } from '../../secrets/network-boundary-availability';
 
 export const CODEX_AUTH_JSON_SECRET_NAME = 'CODEX_AUTH_JSON';
 
@@ -399,19 +398,6 @@ export function buildSecretView(input: {
   /** The project's loaded config, for the agent-grant axis. Omit it and every
    *  pre-existing field is unchanged; `delivery_blocked_reason` reports null. */
   agentGrants?: SecretAgentGrantConfig | null;
-  /**
-   * The project's `metadata` column, for the per-project boundary flag.
-   *
-   * REQUIRED, and deliberately so. It feeds `network_boundary_available` and
-   * `delivery_status`, which the web control and the CLI read to decide whether
-   * this delivery mode can be offered at all. As an optional parameter a caller
-   * that simply forgot it still typechecked and silently reported the old
-   * Platinum-only answer — a wrong feature verdict, invisible to tsc and to
-   * every test that did not happen to look. Required turns that into a compile
-   * error. Pass `undefined` explicitly for a caller that genuinely has no
-   * project; that reads as closed, never as "unset".
-   */
-  projectMetadata: unknown;
 }): Secret {
   const { identifier, name, shared, personal, canManageShared } = input;
   const system = isSystemProjectSecretName(name);
@@ -478,9 +464,7 @@ export function buildSecretView(input: {
       (strategy === 'broker' && consumer === 'llm_gateway') ||
       (strategy === 'broker' && consumer === 'git_proxy') ||
       (strategy === 'broker' && consumer === 'http_broker' && backend === 'kortix_fetch') ||
-      (strategy === 'egress' &&
-        consumer === 'network' &&
-        networkBoundaryDeliveryAvailable(input.projectMetadata)) ||
+      (strategy === 'egress' && consumer === 'network') ||
       consumer === 'connector'
         ? 'available'
         : strategy === 'denied'
@@ -491,7 +475,12 @@ export function buildSecretView(input: {
     // grant, because the CLI, the SDK and the web chip all key off that meaning.
     // The grant axis is per-project and lives here.
     delivery_blocked_reason: secretDeliveryBlockedReason(identifier, strategy, input.agentGrants),
-    network_boundary_available: networkBoundaryDeliveryAvailable(input.projectMetadata),
+    // Always true since the exposure/usage model: one mechanism serves every
+    // provider (docs/specs/2026-08-19-secrets-exposure-usage-model.md §4), so
+    // there is no deployment where egress-enforced delivery is missing. Kept on
+    // the wire because published SDK and CLI versions still read it — an absent
+    // field reads as "unknown" to them, a `false` would falsely disable the UI.
+    network_boundary_available: true,
     egress_policy: deliveryRow?.egressPolicy ?? null,
     strategy_locked: deliveryRow?.strategyLocked ?? false,
     last_rotated_at: deliveryRow?.rotatedAt?.toISOString() ?? null,
@@ -508,18 +497,14 @@ export async function loadSecretViewsForUser(input: {
   projectId: string;
   userId: string;
   canManageShared: boolean;
-  /** The loaded project's `metadata` column — see `buildSecretView`. */
-  projectMetadata: unknown;
   /** The project's loaded config. Callers that have already read it pass it so
    *  every row reports the agent-grant axis; omitting it reports null. */
   agentGrants?: SecretAgentGrantConfig | null;
 }): Promise<ReturnType<typeof buildSecretView>[]> {
-  // NAMED, not positional. `projectMetadata` is `unknown`, so it accepts any
-  // argument — as a positional parameter it silently swallowed the `agentGrants`
-  // that a call site passed in that slot, and typechecked while doing it. That
-  // is the same class of invisible failure the required flag exists to prevent,
-  // so the whole signature is by name.
-  const { projectId, userId, canManageShared, projectMetadata, agentGrants } = input;
+  // NAMED, not positional: an `unknown`-typed argument in a positional slot
+  // silently swallowed the `agentGrants` a call site passed there, and
+  // typechecked while doing it.
+  const { projectId, userId, canManageShared, agentGrants } = input;
   const rows = await db
     .select()
     .from(projectSecrets)
@@ -547,7 +532,6 @@ export async function loadSecretViewsForUser(input: {
       personal: slot.personal,
       canManageShared,
       agentGrants,
-      projectMetadata,
     }),
   );
 }

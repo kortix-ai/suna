@@ -837,3 +837,39 @@ The fix is two headers on the 407 — `Content-Length: 0` and `Connection: close
 client to reconnect rather than reuse. Verified after the change: `git ls-remote` returns the
 real SHA and `git clone` completes, with injection and blind tunnelling both still correct.
 Pinned by a regression test that asserts the framing.
+
+---
+
+## Status update — 2026-08-19: superseded as the user-facing model
+
+Everything above stays as written. It is the design history of the in-guest shim
+and the record of what was measured. Nothing in it is retracted.
+
+What changed on 2026-08-19: the approved
+[secrets exposure/usage model](./specs/2026-08-19-secrets-exposure-usage-model.md)
+made the shim the ONLY mechanism, on every provider.
+
+1. **The choice is gone.** `network_boundary_shim` is deleted from the feature-flag
+   registry and every read. There is no flag to turn on, no project to pin to
+   Platinum, and no `409 secret_delivery_unavailable`.
+2. **The Platinum credential edge is gone.** `startNetworkBoundaryArm` no longer
+   calls a provider adapter; `platinum-network-boundary.ts` and
+   `network-boundary-availability.ts` are deleted. The "do not arm the shim
+   where a provider edge owns the destination" narrowing of `e7d9bdad0c` is
+   reverted — nothing is edge-owned any more. Daytona, E2B and Platinum run the
+   same path.
+3. **One symptom set.** The edge's `curl: (52) Empty reply from server` success
+   symptom no longer exists anywhere. On every provider a working request
+   returns `200` with `[REDACTED]`, and an empty reply is a real failure. The
+   two-column symptom tables in §7 describe the world before this change.
+4. **Delivery is substitution, not header injection.** The guest env now holds
+   `IDENTIFIER=<handle>`; the relay swaps the handle for the real value on an
+   approved host. A new row's policy is a host list — no header name, no value
+   template. Rows stored with an `inject` config keep injecting exactly as
+   described above.
+5. **The user-facing vocabulary is exposure, not mechanism.** `environment`,
+   `egress-enforced`, `none`. "Network boundary" and "HTTPS broker" are no
+   longer presented as two choices on any surface.
+
+Current mechanism reference: [`SECRET_DELIVERY_CONTROL_PLANE.md`](./SECRET_DELIVERY_CONTROL_PLANE.md).
+Current user-facing contract: `apps/web/content/docs/project/secrets.mdx`.

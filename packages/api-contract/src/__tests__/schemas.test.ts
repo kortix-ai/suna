@@ -21,6 +21,7 @@ import {
   SecretSchema,
   SecretDeliveryStrategySchema,
   SecretConsumerSchema,
+  SecretEgressPolicySchema,
   UpdateSecretStrategyInputSchema,
   ConnectorConnectionRequiredErrorSchema,
   RequiredConnectorConnectionSchema,
@@ -117,7 +118,6 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
       meta_agent: false,
       apps: false,
       monitors: false,
-      network_boundary_shim: false,
       warm_sessions: false,
     },
     experimental_features: [],
@@ -693,7 +693,6 @@ describe('envelopes', () => {
       'meta_agent',
       'apps',
       'monitors',
-      'network_boundary_shim',
       'warm_sessions',
     ]);
   });
@@ -1269,6 +1268,35 @@ describe('SessionCreateInputSchema backend secret bounds', () => {
       SessionCreateInputSchema.safeParse({
         secrets: Array.from({ length: 129 }, (_, i) => `S${i}`),
       }).success,
+    ).toBe(false);
+  });
+});
+
+describe('SecretEgressPolicySchema — `inject` is optional', () => {
+  const hosts = { rules: [{ host: 'api.example.com' }], on_no_match: 'deny' as const };
+
+  test('accepts a host-list-only policy (substitution row, exposure model §6)', () => {
+    const parsed = SecretEgressPolicySchema.safeParse(hosts);
+    expect(parsed.success).toBe(true);
+    expect(parsed.success && parsed.data.inject).toBeUndefined();
+  });
+
+  test('still accepts a legacy policy that carries an injection slot', () => {
+    const parsed = SecretEgressPolicySchema.safeParse({
+      ...hosts,
+      inject: { kind: 'header', name: 'authorization', template: 'Bearer {{secret}}' },
+    });
+    expect(parsed.success).toBe(true);
+    expect(parsed.success && parsed.data.inject).toEqual({
+      kind: 'header',
+      name: 'authorization',
+      template: 'Bearer {{secret}}',
+    });
+  });
+
+  test('a malformed slot is still rejected — optional is not "anything goes"', () => {
+    expect(
+      SecretEgressPolicySchema.safeParse({ ...hosts, inject: { kind: 'cookie', name: 'x' } }).success,
     ).toBe(false);
   });
 });

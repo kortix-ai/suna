@@ -26,8 +26,9 @@ three ways a session can start.
 3. The sandbox boots. Its daemon, `kortix-agent`, clones the repo to
    `/workspace`. It starts OpenCode REST.
    Session status becomes `running`.
-4. The agent works. It reads [secrets](/docs/project/secrets) as environment
-   variables, then commits and pushes to the session branch.
+4. The agent works. It uses [secrets](/docs/project/secrets) through the
+   environment variables Kortix sets, then commits and pushes to the session
+   branch.
 5. The agent opens a [change request](/docs/work/change-requests). You review
    it and merge it — the only way work reaches the default branch.
 

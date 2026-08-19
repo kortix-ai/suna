@@ -633,8 +633,15 @@ export interface SessionPrompt {
   /** The host's own stable submission name — the same value re-POSTing is a
    *  no-op on, and the key an optimistic row is matched by. */
   client_message_id: string;
-  /** The OpenCode wire id this prompt will be delivered under. */
+  /** The OpenCode wire id this prompt will be delivered under. Moves to the
+   *  server's re-minted id the moment the drain places the prompt — BEFORE
+   *  the runtime echoes it. */
   message_id: string;
+  /** The wire id the HOST painted its bubble under (the one it minted and
+   *  POSTed). Together with `message_id` these are every id this prompt has
+   *  ever had; a host hides the row when the transcript shows EITHER. Absent
+   *  from servers older than this field. */
+  wire_message_id?: string;
   state: SessionPromptState;
   /** Why the prompt is `waiting`: `older_prompt_pending` (its own queue is
    *  ahead of it) or `held` (the user pressed Stop — only an explicit send or
@@ -644,6 +651,8 @@ export interface SessionPrompt {
   reason: string | null;
   /** Flattened text preview, capped server-side. */
   text: string;
+  /** The sender tab's clock at Enter, when the producer supplied it. */
+  client_sent_at_ms?: number | null;
   attempts: number;
   last_error: string | null;
   created_at: string;
@@ -679,6 +688,13 @@ export interface CreateSessionPromptInput {
    * the delivery path of every message.
    */
   remintOnDelivery?: boolean;
+  /**
+   * The tab's own clock at the moment the user pressed Enter. The server
+   * preserves SEND order with it when several prompts race in over different
+   * surfaces (the boot shell and the chat both send during the crossfade, and
+   * their POSTs finish in either order). Milliseconds since epoch.
+   */
+  clientSentAtMs?: number;
 }
 
 /** Put one prompt in the session's server-side inbox (`POST .../prompts`).
@@ -697,6 +713,9 @@ export async function createSessionPrompt(
         parts: input.parts,
         ...(input.overrides ? { overrides: input.overrides } : {}),
         ...(input.remintOnDelivery ? { remint_on_delivery: true } : {}),
+        ...(typeof input.clientSentAtMs === 'number'
+          ? { client_sent_at_ms: Math.trunc(input.clientSentAtMs) }
+          : {}),
       },
     ),
   );
@@ -727,13 +746,18 @@ export interface RemovedSessionPrompt {
   prompt_id: string;
   client_message_id: string;
   message_id: string;
+  /** Every wire id this prompt ever travelled under — for clearing the
+   *  transcript husk a cancel leaves at the runtime. */
+  removed_message_ids?: string[];
   parts: SessionPromptPart[];
   overrides: SessionPromptOverrides | null;
 }
 
 /**
- * Drop a prompt that has not gone out yet. A prompt already on the wire cannot
- * be cancelled and the server answers 409.
+ * Drop a prompt — queued, or already on the wire but not yet read by a model
+ * step (the server takes the runtime's copy back out; only "already being
+ * answered" refuses with 409). `promptId` may be the row id or, once the row
+ * has left the list, the message's own `msg_…` wire id.
  *
  * Returns the removed prompt, because the row is HARD-deleted: re-POSTing this
  * result with its original `client_message_id` is the only lossless undo.

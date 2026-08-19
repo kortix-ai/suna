@@ -6,9 +6,7 @@
  * respawned opencode, but the respawn spread `egressShimEnv()` — still empty,
  * because nothing had started a listener. The secret saved, the catalog landed,
  * the box reported success, and every request still left uncredentialed until
- * someone restarted the session. A provider that injects at its own credential
- * edge has no such gap, so the two mechanisms disagreed on whether a
- * mid-session add works at all.
+ * someone restarted the session.
  *
  * The route therefore re-resolves the rules and arms/stops the listener BEFORE
  * `writeAgentEnvFile`, the same ordering boot and fork adoption use, because

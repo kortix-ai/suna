@@ -117,6 +117,15 @@ export interface LlmProviderEntry {
   authRequirement: ProviderAuthRequirement;
   /** Where the user gets their credentials — opens in a new tab. */
   helpUrl: string | null;
+  /**
+   * Hostname of the provider's API base URL, lowercased — `api.openai.com`
+   * from `https://api.openai.com/v1`. Null when models.dev declares no `api`
+   * for the provider (24 of 167 today, Anthropic and OpenAI among them), and
+   * null for a malformed URL. Never guessed: the Secrets page prefills this as
+   * an approved host for a recognized model key, and a wrong host would send
+   * the credential nowhere or, worse, somewhere else.
+   */
+  apiHost: string | null;
   /** Short one-line tag shown in the catalog row. */
   hint: string;
   /** Catalog of models for this provider. */
@@ -136,6 +145,9 @@ export interface RawProvider {
   name: string;
   env?: string[];
   doc?: string | null;
+  /** Base URL of the provider's API, verbatim from models.dev. Absent for the
+   *  providers whose SDK hardcodes it (Anthropic, OpenAI, Google, …). */
+  api?: string | null;
   models: LlmProviderModel[];
 }
 
@@ -196,6 +208,16 @@ function deriveHint(raw: RawProvider): string {
   return remaining > 0 ? `${names.join(', ')} +${remaining} more` : names.join(', ');
 }
 
+/** The hostname of `raw.api`, or null when it is absent or unparseable. */
+function deriveApiHost(raw: RawProvider): string | null {
+  if (!raw.api) return null;
+  try {
+    return new URL(raw.api).hostname.toLowerCase() || null;
+  } catch {
+    return null;
+  }
+}
+
 function toEntry(raw: RawProvider): LlmProviderEntry {
   const featured = FEATURED_IDS.has(raw.id);
   const hint = deriveHint(raw);
@@ -210,6 +232,7 @@ function toEntry(raw: RawProvider): LlmProviderEntry {
     envVars: primaryAuthEnvVars(raw),
     authRequirement: providerAuthRequirement(raw),
     helpUrl: raw.doc ?? null,
+    apiHost: deriveApiHost(raw),
     hint,
     models: raw.models,
     featured,

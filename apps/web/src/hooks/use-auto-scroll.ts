@@ -193,6 +193,13 @@ export function useAutoScroll({ hasContent = false }: UseAutoScrollOptions = {})
 
   /** THE RULE's one bit. Starts true: a session opens at its end. */
   const followRef = useRef(true);
+  /** The anchor turn `sizeRoom` last measured against, so a CHANGE of anchor
+   *  (the agent reached a queued prompt; a send opened a turn) is known. */
+  const lastAnchorIdRef = useRef<string | null>(null);
+  /** While a smooth glide to the end is in flight, instant settles stand
+   *  down so they do not cut it short; the glide is followed by one instant
+   *  settle for whatever streamed in the meantime. */
+  const smoothUntilRef = useRef(0);
   /** The one bit, with its reason, mirrored onto the scroll element as
    *  `data-follow` / `data-follow-why` — readable by e2e assertions and by a
    *  human in devtools, so "why did it stop following?" is never a guess. */
@@ -214,11 +221,11 @@ export function useAutoScroll({ hasContent = false }: UseAutoScrollOptions = {})
    * take some of that room; the moment the agent reaches one (its pending
    * mark drops) it becomes the anchor and the viewport shifts to it.
    */
-  const sizeRoom = useCallback((): number => {
+  const sizeRoom = useCallback((): { room: number; anchorChanged: boolean } => {
     const el = scrollRef.current;
     const content = contentRef.current;
     const spacer = spacerElRef.current;
-    if (!el || !content || !spacer) return 0;
+    if (!el || !content || !spacer) return { room: 0, anchorChanged: false };
     const turns = content.querySelectorAll<HTMLElement>('[data-turn-id]');
     let anchor: HTMLElement | null = null;
     for (let i = turns.length - 1; i >= 0; i--) {
@@ -237,18 +244,41 @@ export function useAutoScroll({ hasContent = false }: UseAutoScrollOptions = {})
       : null;
     const h = roomUnderNewestTurn(el.clientHeight, span);
     if (spacer.style.height !== `${h}px`) spacer.style.height = `${h}px`;
-    return h;
+    const anchorId = anchor?.getAttribute('data-turn-id') ?? null;
+    const anchorChanged = lastAnchorIdRef.current !== null && anchorId !== lastAnchorIdRef.current;
+    lastAnchorIdRef.current = anchorId;
+    return { room: h, anchorChanged };
   }, []);
 
   /** FACT 2 + THE RULE: after any layout change, a following viewport is at the end. */
+  const SMOOTH_GLIDE_MS = 420;
   const settle = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
-    sizeRoom();
+    const { anchorChanged } = sizeRoom();
     if (!followRef.current) return;
     const end = el.scrollHeight - el.clientHeight;
-    if (Math.abs(el.scrollTop - end) > 0.5) el.scrollTop = end;
+    const now = performance.now();
+    if (now < smoothUntilRef.current) return; // a glide is in flight — let it land
+    const distance = Math.abs(el.scrollTop - end);
+    // A NEW ANCHOR is a jump of a whole turn: the viewport moves from the
+    // answer that just ended to the prompt the agent reached. Glide it, once;
+    // a cut is what read as "the transcript got wiped" in review. Every other
+    // settle (text streaming in under the anchor) stays instant — that is the
+    // follow, and a glide there would lag the text.
+    if (anchorChanged && distance > 80) {
+      smoothUntilRef.current = now + SMOOTH_GLIDE_MS;
+      el.scrollTo({ top: end, behavior: 'smooth' });
+      window.setTimeout(() => {
+        smoothUntilRef.current = 0;
+        settleRef.current?.();
+      }, SMOOTH_GLIDE_MS + 40);
+      return;
+    }
+    if (distance > 0.5) el.scrollTop = end;
   }, [sizeRoom]);
+  const settleRef = useRef<(() => void) | null>(null);
+  settleRef.current = settle;
 
   const goToEnd = useCallback(
     (behavior: ScrollBehavior) => {
@@ -258,8 +288,14 @@ export function useAutoScroll({ hasContent = false }: UseAutoScrollOptions = {})
       setShowScrollButton(false);
       sizeRoom();
       const end = el.scrollHeight - el.clientHeight;
-      if (behavior === 'smooth') el.scrollTo({ top: end, behavior: 'smooth' });
-      else el.scrollTop = end;
+      if (behavior === 'smooth') {
+        smoothUntilRef.current = performance.now() + SMOOTH_GLIDE_MS;
+        el.scrollTo({ top: end, behavior: 'smooth' });
+        window.setTimeout(() => {
+          smoothUntilRef.current = 0;
+          settleRef.current?.();
+        }, SMOOTH_GLIDE_MS + 40);
+      } else el.scrollTop = end;
     },
     [sizeRoom, setFollow],
   );

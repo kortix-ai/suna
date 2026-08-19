@@ -7,17 +7,12 @@ import { config } from '../../config';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { resolveLlmGatewayBaseUrl } from '../../llm-gateway/sandbox-base-url';
 import { nativeProviderEnvNames } from '../../llm-gateway/sandbox-credentials';
-import {
-  getProvider,
-  shouldSyncProviderNetworkBoundary,
-  type ProviderName,
-} from '../../platform/providers';
+import type { ProviderName } from '../../platform/providers';
 import {
   intersectSecretGrants,
   listProjectSecretsSnapshotForUser,
   projectSecretsRevision,
 } from '../secrets';
-import { projectFeatureFlagEnabled } from '../../feature-flags/for-project';
 import { DEFAULT_AGENT_SENTINEL } from '../agents';
 import { resolveSessionSecretGrant } from './secret-grant';
 import { sanitizeSandboxEnv } from './sandbox-env-names';
@@ -57,13 +52,14 @@ const BOUNDARY_ARM_TTL_MS = 10 * 60_000;
  *  long-lived and external ids are never reused, so the map must be bounded. */
 const BOUNDARY_ARM_CACHE_MAX = 2_000;
 /**
- * The longest a user's turn blocks on the provider edge confirming an arm.
+ * The longest a user's turn blocks on the binding record landing.
  *
- * The arm is NOT abandoned at this deadline — it keeps running and records its
- * result — we just stop making the person wait for it. Blocking a turn for the
- * provider's full arm budget (see `waitUntilArmed` in
- * secrets/platinum-network-boundary.ts) is what pushed
+ * The update is NOT abandoned at this deadline — it keeps running and records
+ * its result — we just stop making the person wait for it. Blocking a turn for
+ * a provider's full credential-arm budget is what pushed
  * `POST /session/{id}/prompt_async` past the proxy budget and returned 502.
+ * That provider edge is gone, so the wait is now a formality; the budget stays
+ * so no future work on this path can reintroduce the stall.
  */
 const PROMPT_BOUNDARY_ARM_WAIT_MS = 1_500;
 
@@ -199,16 +195,16 @@ function rememberPromptModelSignature(externalId: string, signature: string): vo
 }
 
 /**
- * Identity AND material of the binding set, as the provider edge sees it.
+ * Identity of the binding set this sandbox carries.
  *
- * Keyed on everything a re-arm would change at the edge — the replica identity
- * (`secretId`), the attachment (`alias`), the policy (`hosts`, `header`,
- * `onEcho`) and the credential itself (`value`). A rotated value or a widened
- * host list therefore produces a different digest and DOES re-arm; only a
- * byte-identical desired state is skipped. Order-independent, because binding
- * order carries no meaning at the edge.
+ * Keyed on everything that changes what a session may spend — the secret
+ * (`secretId`), its stable alias, and the policy (`hosts`, and the legacy
+ * `header` when a row still injects). A widened host list therefore produces a
+ * different digest and IS recorded again; only a byte-identical desired state
+ * is skipped. Order-independent, because binding order carries no meaning.
  *
- * The secret value is hashed, never retained: only this hex digest is stored.
+ * No credential material is hashed, because none reaches here: the value is
+ * fetched by the broker route per request and never enters a binding.
  */
 function networkBoundaryDigest(
   providerName: ProviderName,
@@ -220,9 +216,7 @@ function networkBoundaryDigest(
         binding.secretId,
         binding.alias,
         [...binding.hosts].map((host) => host.toLowerCase()).sort(),
-        binding.header.toLowerCase(),
-        binding.onEcho,
-        binding.value,
+        binding.header?.toLowerCase() ?? null,
       ]),
     )
     .sort()
@@ -249,56 +243,37 @@ function rememberNetworkBoundaryArm(externalId: string, digest: string, secretId
   armedNetworkBoundaries.set(externalId, { digest, armedAt: Date.now(), secretIds: [...secretIds] });
 }
 
+/**
+ * Record the binding set this sandbox is serving.
+ *
+ * There is nothing to register with a provider any more. One mechanism serves
+ * every provider (docs/specs/2026-08-19-secrets-exposure-usage-model.md §4):
+ * the guest holds a HANDLE, the broker route substitutes the real value
+ * server-side on an approved host, and the value never enters the sandbox on
+ * daytona, e2b or platinum alike. The Platinum credential edge is gone, so this
+ * is bookkeeping — it keeps the digest/skip and revocation accounting the
+ * callers below still read, and it is async because it is awaited as a promise
+ * everywhere.
+ */
 function startNetworkBoundaryArm(
-  projectId: string,
-  providerName: ProviderName,
-  replicaOwnerId: string,
   externalId: string,
   bindings: NetworkBoundarySecretBinding[],
   digest: string,
 ): Promise<void> {
   const previous = inFlightNetworkBoundaries.get(externalId);
   if (previous?.digest === digest) return previous.done;
-  // A different desired set must not race the one already in flight: the
-  // provider PUT is last-write-wins, so two overlapping arms could leave the
-  // edge on the older set. Queue instead.
+  // A different desired set must not race the one already in flight: the record
+  // is last-write-wins, so two overlapping updates could leave the memo on the
+  // older set. Queue instead.
   const done = (previous?.done ?? Promise.resolve())
     .catch(() => {})
-    .then(async () => {
-      const provider = getProvider(providerName);
-      if (!provider.syncNetworkBoundary) {
-        // No provider edge to arm. That is not a failure when the shim path is
-        // available: on those providers the credential is injected by the
-        // broker route at request time, so there is nothing to register ahead
-        // of time and nothing to wait for. The binding still reaches the guest
-        // — as host->identifier rules in the sandbox env, carrying no value.
-        //
-        // Until the shim existed this threw, which is why creating a session on
-        // Daytona with a boundary secret failed provisioning outright.
-        if (await projectFeatureFlagEnabled(projectId, 'network_boundary_shim')) {
-          rememberNetworkBoundaryArm(
-            externalId,
-            digest,
-            bindings.map((binding) => binding.secretId),
-          );
-          return;
-        }
-        throw new Error(
-          `Sandbox provider ${providerName} does not support network-boundary secret delivery`,
-        );
-      }
+    .then(() => {
       try {
-        await provider.syncNetworkBoundary(externalId, bindings, { replicaOwnerId });
         rememberNetworkBoundaryArm(
           externalId,
           digest,
           bindings.map((binding) => binding.secretId),
         );
-      } catch (err) {
-        // Never leave a record claiming an arm that did not land — the next
-        // caller must retry it.
-        armedNetworkBoundaries.delete(externalId);
-        throw err;
       } finally {
         if (inFlightNetworkBoundaries.get(externalId)?.done === done) {
           inFlightNetworkBoundaries.delete(externalId);
@@ -310,39 +285,29 @@ function startNetworkBoundaryArm(
 }
 
 /**
- * Apply this session's network-boundary bindings at the provider edge.
+ * Record this session's network-boundary binding set.
  *
- * Returns `'skipped'` when there is nothing to do (provider does not need the
- * call, or this sandbox is already armed with this exact set), `'armed'` when
- * the provider confirmed, and `'pending'` when the caller's wait budget expired
- * while the arm was still running in the background.
+ * Returns `'skipped'` when there is nothing to do (no bindings, or this sandbox
+ * already carries this exact set), `'armed'` when the record landed, and
+ * `'pending'` when the caller's wait budget expired first.
  *
- * `maxWaitMs` is the CALLER's patience, not the arm's deadline. Omit it — as
+ * `maxWaitMs` is the CALLER's patience, not the update's deadline. Omit it — as
  * the secret fan-out does — to wait for the real result and report a failure.
  */
 async function syncProviderNetworkBoundary(
-  projectId: string,
   providerName: ProviderName,
-  replicaOwnerId: string,
   externalId: string,
   bindings: NetworkBoundarySecretBinding[],
   opts?: { maxWaitMs?: number },
 ): Promise<'skipped' | 'armed' | 'pending'> {
-  if (!shouldSyncProviderNetworkBoundary(providerName, bindings.length)) return 'skipped';
+  if (bindings.length === 0) return 'skipped';
   const digest = networkBoundaryDigest(providerName, bindings);
   const armed = armedNetworkBoundaries.get(externalId);
   if (armed?.digest === digest && Date.now() - armed.armedAt < BOUNDARY_ARM_TTL_MS) {
     return 'skipped';
   }
 
-  const attempt = startNetworkBoundaryArm(
-    projectId,
-    providerName,
-    replicaOwnerId,
-    externalId,
-    bindings,
-    digest,
-  );
+  const attempt = startNetworkBoundaryArm(externalId, bindings, digest);
   const maxWaitMs = opts?.maxWaitMs;
   if (!maxWaitMs) {
     await attempt;
@@ -688,36 +653,31 @@ export async function syncSandboxEnvForPrompt(args: {
   // credential injectable at the edge — still never readable in the guest —
   // until the next successful arm. It is logged so it is greppable.
   // A REVOCATION must not fail soft. When the desired set drops a binding this
-  // process already armed, the arm IS the revocation (the provider PUT shrinks
-  // the attachment and DELETEs the dropped replica). Swallowing that leaves the
-  // edge injecting a credential for an agent that no longer holds the grant —
-  // the value still never enters the guest, but the agent keeps making
-  // authenticated calls, which is a widening, not a broken feature. So a shrink
-  // that fails is raised, exactly as before this change. A widening or a
-  // rotation that fails still forwards the turn.
+  // process already recorded, that shrink is the revocation. It is now cheap —
+  // the value is fetched per request by the broker route and the guest's handle
+  // stops being spendable the moment the grant changes — but the accounting
+  // stays raised rather than swallowed: a shrink that does not land is the one
+  // direction that can widen what an agent may spend. A widening or a rotation
+  // that fails still forwards the turn.
   const priorArm = armedNetworkBoundaries.get(args.externalId);
   const hadPriorArm = priorArm !== undefined;
   const nextSecretIds = new Set(networkBoundary.map((binding) => binding.secretId));
   const revokesArmedBinding = (priorArm?.secretIds ?? []).some((id) => !nextSecretIds.has(id));
   try {
-    // ARMING, by contrast, fails SOFT — a failed or late arm cannot leak.
-    // A network-boundary secret's value never enters the sandbox: the provider
-    // injects it at its own egress edge and the guest receives no value, alias
-    // or placeholder. So skipping the arm cannot disclose anything; the only
-    // consequence is that the agent's outbound request goes without the header
-    // and the upstream answers 401. That is a broken feature, not an exposure —
-    // and it beats the alternative we shipped, where one egress secret made
-    // EVERY turn in the project 502 and the agent could not run at all.
+    // A WIDENING, by contrast, fails SOFT — a failed or late record cannot leak.
+    // An egress-enforced secret's value never enters the sandbox: the guest gets
+    // a handle and the broker route substitutes the value server-side. So
+    // skipping this cannot disclose anything; the only consequence is bookkeeping
+    // the next call redoes. Failing the turn on it is what made one egress secret
+    // 502 EVERY prompt in the project, with the agent unable to run at all.
     //
-    // SCOPE: this fail-soft covers the provider-arming call and nothing else.
-    // It does not extend to the grant resolution above (failing open there would
-    // widen what the agent may read), and it must not be copied into the
-    // provision path in platform/services/session-sandbox.ts — a session that
-    // cannot arm its boundary should still fail to provision, loudly.
+    // SCOPE: this fail-soft covers the binding record and nothing else. It does
+    // not extend to the grant resolution above (failing open there would widen
+    // what the agent may read), and it must not be copied into the provision
+    // path in platform/services/session-sandbox.ts — a session whose boundary
+    // policy is unusable should still fail to provision, loudly.
     const armState = await syncProviderNetworkBoundary(
-      args.projectId,
       args.providerName,
-      args.sessionId,
       args.externalId,
       networkBoundary,
       { maxWaitMs: PROMPT_BOUNDARY_ARM_WAIT_MS },
@@ -900,13 +860,7 @@ export async function propagateProjectSecretsToActiveSandboxes(
         // caller reports the per-sandbox outcome to the author who just saved the
         // secret. An arming failure has to be visible there, so it stays a
         // `status: 'failed'` row rather than a warning nobody reads.
-        await syncProviderNetworkBoundary(
-          projectId,
-          providerName,
-          row.sessionId,
-          row.externalId,
-          networkBoundary,
-        );
+        await syncProviderNetworkBoundary(providerName, row.externalId, networkBoundary);
         const { url, headers } = await resolveSandboxIngress(row.externalId, { port: SANDBOX_SERVICE_PORT, transport: 'http' });
         const proof = await postEnvToDaemon({
           previewUrl: url,

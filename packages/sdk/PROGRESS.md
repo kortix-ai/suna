@@ -12,6 +12,37 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-19 — session `secrets-exposure` — the secrets exposure/usage model reaches the SDK types — DONE
+
+**Files:** `core/rest/projects-client/secrets.ts` (`SecretEgressPolicy.inject`),
+`core/rest/projects-client/secrets.test.ts` (+2 tests),
+`core/rest/projects-client/projects.ts` (`FeatureFlagKey` union +
+`FEATURE_FLAG_KEYS`), `core/rest/projects-client/projects.test.ts` (key list).
+
+**What.** The API replaced two secret-delivery mechanisms with one
+(`docs/specs/2026-08-19-secrets-exposure-usage-model.md`). Two SDK-visible
+consequences:
+
+1. **`SecretEgressPolicy.inject` is now OPTIONAL.** An egress-enforced secret is
+   delivered to the sandbox as a HANDLE and the relay substitutes the real value
+   server-side on an approved host, so the policy is a HOST LIST with no slot to
+   name. Rows stored with a slot keep injecting exactly as before, so this is a
+   widening: every policy that typechecked before still typechecks. Two tests
+   pin it — a host-list-only policy reaching the wire unchanged, and a legacy
+   `inject` policy still carrying its slot.
+2. **`network_boundary_shim` is removed from `FeatureFlagKey` and
+   `FEATURE_FLAG_KEYS`.** The flag is deleted from the API registry and the
+   contract; `apps/api/src/__tests__/unit-feature-flag-drift.test.ts` compares
+   all three lists, so the SDK list has to lose it in the same change. This
+   NARROWS an exported union — a consumer that hardcoded that key stops
+   compiling, which is the intended signal: the flag no longer exists on any
+   server.
+
+No exported NAME changed. `version` untouched.
+
+**Gates.** `bun run typecheck` clean. `bun run test` 2309 pass / 0 fail / 2 skip
+(158 files). `bun run smoke:install` passed. **Shippable: YES.**
+
 ### 2026-08-19 — session `sandbox-waking` — additive: `isSandboxNotReadyError` classifier + `formatOpenCodeRuntimeError` covers every readiness phrase — DONE
 
 **Files:** `core/http/opencode-errors.ts` + `opencode-errors.test.ts`, surface snapshots

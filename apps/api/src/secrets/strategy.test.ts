@@ -11,6 +11,7 @@ import {
   type SecretStrategy,
   deliversPlaintextToSandbox,
   emitsValue,
+  findHandleCandidates,
   isFullyWithheld,
   looksLikeHandle,
   matchRule,
@@ -273,6 +274,26 @@ describe('handles', () => {
   test('looksLikeHandle is a cheap pre-filter, never an authorization check', () => {
     expect(looksLikeHandle(mintHandle({ lookupId: lookup(), rootSecret: ROOT }))).toBe(true);
     expect(looksLikeHandle('ordinary-value')).toBe(false);
+  });
+
+  test('findHandleCandidates pulls handles out of arbitrary request text', () => {
+    const handle = mintHandle({ lookupId: lookup(), prefix: 'sk-ant-api03-', rootSecret: ROOT });
+    const found = findHandleCandidates(
+      `POST /v1?key=${handle} HTTP/1.1\nx-other: ${handle}\n\n{"a":1}`,
+    );
+    // One entry, prefix stripped: `parseHandle` authenticates from the marker
+    // on, so the prefix is not part of what a scanner has to agree about.
+    expect(found).toHaveLength(1);
+    expect(parseHandle(found[0], ROOT).ok).toBe(true);
+    expect(handle.endsWith(found[0])).toBe(true);
+  });
+
+  test('findHandleCandidates ignores text that merely looks handle-ish', () => {
+    // Marker with a wrong-width body, and a longer base32 run that must not be
+    // chopped into a shape whose tag then fails and reads as a forgery.
+    expect(findHandleCandidates(`KXS1${'a'.repeat(35)}`)).toEqual([]);
+    expect(findHandleCandidates(`KXS1${'a'.repeat(37)}`)).toEqual([]);
+    expect(findHandleCandidates(DEFAULT_HANDLE_PREFIX)).toEqual([]);
   });
 
   test('two mints of the same lookup id are stable — the box sees one value per session', () => {

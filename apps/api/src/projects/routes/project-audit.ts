@@ -24,6 +24,7 @@ import {
   parseAuditSessionCursor,
   serializeAuditEvent,
 } from '../../shared/audit-query';
+import { flushAuditEvents } from '../../shared/audit';
 import { AuditEventSchema, AuditListSchema } from '../../shared/audit-schema';
 import { parseOpenCodeAuditBatch } from '../../shared/opencode-audit-ingestion';
 import { applyOpenCodeAuditRateLimit } from '../../shared/opencode-audit-rate-guard';
@@ -117,6 +118,10 @@ projectsApp.openapi(
         buildAuditCursorCondition(cursor, loaded.row.accountId, 'descending'),
       );
     }
+    // Audit writes are buffered off the request path (shared/audit-queue.ts).
+    // A reader must observe every event already emitted, so drain the queue
+    // before querying.
+    await flushAuditEvents();
     const fetched = await db
       .select()
       .from(auditEvents)
@@ -389,6 +394,10 @@ projectsApp.openapi(
       );
       if (cursorCondition) eventConditions.push(cursorCondition);
     }
+    // Audit writes are buffered off the request path (shared/audit-queue.ts).
+    // A reader must observe every event already emitted, so drain the queue
+    // before querying.
+    await flushAuditEvents();
     const fetchedEvents = audited && includeEvents
       ? await db
           .select()

@@ -136,6 +136,9 @@ export interface QueuedContinueSessionPayload {
    * mints at page load for a message typed before the last reload.
    */
   remintOnDelivery?: boolean;
+  /** The sender tab's clock at Enter — the SEND order across surfaces whose
+   *  POSTs race (boot shell vs chat during the crossfade). */
+  clientSentAtMs?: number;
   parts?: PromptPartWire[];
   overrides?: PromptOverridesWire;
 }
@@ -164,6 +167,9 @@ export interface EnqueueContinueSessionCommandInput {
   /** The producer already knows its wire id is stale — see
    *  `QueuedContinueSessionPayload.remintOnDelivery`. */
   remintOnDelivery?: boolean;
+  /** The sender tab's clock at Enter — the SEND order across surfaces whose
+   *  POSTs race (boot shell vs chat during the crossfade). */
+  clientSentAtMs?: number;
   parts?: PromptPartWire[];
   overrides?: PromptOverridesWire;
 }
@@ -181,6 +187,7 @@ export function buildContinueSessionCommandValues(input: EnqueueContinueSessionC
     ...(input.clientMessageId ? { clientMessageId: input.clientMessageId } : {}),
     ...(input.wireMessageId ? { wireMessageId: input.wireMessageId } : {}),
     ...(input.remintOnDelivery ? { remintOnDelivery: true } : {}),
+    ...(typeof input.clientSentAtMs === 'number' ? { clientSentAtMs: input.clientSentAtMs } : {}),
     ...(input.parts ? { parts: input.parts } : {}),
     ...(input.overrides ? { overrides: input.overrides } : {}),
   };

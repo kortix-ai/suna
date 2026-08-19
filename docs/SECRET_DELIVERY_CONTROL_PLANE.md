@@ -1,8 +1,11 @@
 # Secret delivery control plane
 
 **Status:** Implemented for runtime, managed consumers, policy-bound HTTPS calls,
-and network-boundary delivery through both of its mechanisms — the Platinum
-provider edge, and the in-guest shim behind the `network_boundary_shim` flag
+and egress-enforced delivery through ONE mechanism on every provider — the
+in-guest shim plus server-side handle substitution. The Platinum provider edge
+and the `network_boundary_shim` flag are deleted.
+**User-facing model:** `docs/specs/2026-08-19-secrets-exposure-usage-model.md`
+(exposure/usage). This document stays the mechanism reference.
 
 ## Problem and contract
 
@@ -34,29 +37,33 @@ The product term is **Secret**. An environment variable is one delivery form.
 | `broker` | `connector` | Nothing | Kortix resolves automation and channel credentials server-side |
 | `broker` | `http_broker` | Opaque session handle | Kortix makes one policy-bound HTTPS request |
 | `broker` | `git_proxy` | Nothing | Git uses its separate encrypted credential path |
-| `egress` | `network` | Nothing | Kortix injects one header for exact approved HTTPS hosts, outside the guest |
+| `egress` | `network` | A self-describing handle | Kortix substitutes the real value for the handle outside the guest, on exact approved HTTPS hosts |
 | `denied` | none | Nothing | Stored but disabled |
 
 `runtime` is the only strategy that sends plaintext to a sandbox. No managed
-strategy silently falls back to `runtime`.
+strategy silently falls back to `runtime`. An `egress` row does put a value
+under its env key, but that value is a HANDLE: an `[A-Za-z0-9_-]`-safe,
+self-describing string with an HMAC tag, worth nothing off an approved host.
+
+The user-facing model maps onto this table: `runtime`/`sandbox` is **environment**
+exposure, `egress`/`network` is **egress-enforced** exposure, every `broker`
+consumer and `denied` is **none**. See the spec, §3.
 
 Generic `git_proxy` policy updates remain unavailable. Git authorization uses a
 separate typed API and credential store. It applies the same server-only and
 audit requirements.
 
-Transparent `egress` is capability based, not provider-name based, and two
-mechanisms satisfy it. Platinum stores a write-only replica, attaches the exact
-authorized set to each sandbox, and injects one header for exact HTTPS hosts at
-its own egress edge. A provider with no credential edge — daytona, e2b — runs
-the in-guest shim instead, behind the `network_boundary_shim` project flag: the
-shim terminates the guest's TLS and relays to the broker route, which injects
-server-side. Without Platinum AND without the flag, the strategy is rejected
-with `409`. See [Network boundary](#network-boundary) for both paths and where
-they behave differently.
+Transparent `egress` has ONE mechanism on every provider. The in-guest shim
+terminates the guest's TLS for approved hosts and relays to the broker route,
+which substitutes the real value for the handle server-side. Daytona, E2B and
+Platinum behave identically. There is no provider requirement and no feature
+flag, so the strategy is never rejected for unavailability. See
+[Egress-enforced delivery](#egress-enforced-delivery).
 
-The transparent path does not support wildcard hosts, method or path filters,
-query parameters, or body injection. These controls require the explicit HTTPS
-broker. Kortix rejects an unenforceable transparent policy with `400`.
+An `egress` policy is a HOST LIST. It does not support wildcard hosts. A legacy
+row that still carries `inject` additionally rejects method filters, path
+filters, and non-header injection slots. Kortix rejects an unenforceable policy
+with `400`.
 
 ## Access flow
 
@@ -78,7 +85,7 @@ stored strategy AND configured consumer
     |
     +-- broker/http_broker ---> session handle + outbound policy
     |
-    +-- egress/network --------> provider-owned exact-host header transform
+    +-- egress/network -------> handle in env; exact-host server-side substitution
     |
     +-- denied/unsupported ---> no value and a failed or denied result
 ```
@@ -187,97 +194,109 @@ kortix secrets call API_KEY https://api.example.com/v1/resource \
   --data '{"input":"value"}'
 ```
 
-## Network boundary
+## Egress-enforced delivery
 
-Network-boundary delivery serves ordinary sandbox HTTP clients that cannot call
-the explicit broker API. Two mechanisms deliver it and a session uses exactly
-one, chosen by `networkBoundaryMode`
-(`apps/api/src/secrets/network-boundary-availability.ts`) — the only place in
-the whole path that reads a provider name:
+Egress-enforced delivery serves ordinary sandbox HTTP clients that cannot call
+the explicit broker API. ONE mechanism serves it on every provider:
 
-- **provider edge.** Kortix registers the value with Platinum, and Platinum
-  injects one header at its own egress edge. Nothing runs in the guest.
-- **in-guest shim.** On a provider with no credential edge — daytona, e2b — the
-  daemon's shim terminates the guest's TLS and relays to the broker route, which
-  injects server-side. Per-project, behind the `network_boundary_shim` flag.
+```text
+agent's ordinary HTTP client
+  └─▶ in-guest shim (terminates TLS for approved hosts ONLY; holds NO secret)
+       └─▶ broker route  (apps/api/src/projects/routes/secret-broker.ts)
+            host gate → grant ∩ session allowlist → decrypt
+            → substitute handle → call upstream → redact echoes
+            → per-request audit → return response
+```
 
-Either way it is narrower than the HTTPS broker:
+The sandbox env holds `IDENTIFIER=<handle>`. The agent uses that variable
+wherever it would have used the credential; the relay swaps it for the real
+value on an approved host. Compared with the explicit HTTPS broker:
 
-- the session runs on Platinum, OR the project carries `network_boundary_shim`;
 - the agent grant and session allowlist must name the secret explicitly;
 - every destination must be an exact HTTPS host;
-- one configured header is injected, always outside the guest;
-- the sandbox receives no value, alias, handle, or placeholder;
-- an upstream response that echoes the credential is BLOCKED at the provider
-  edge and REDACTED on the shim path — the same secret, two symptoms;
-- rotation needs no sandbox restart: the edge replica is updated in place, and
-  the shim path keeps no replica at all;
-- revocation detaches the binding before deleting the provider replica.
+- the sandbox holds a handle, never the value, an alias, or a rendered header;
+- an upstream response that echoes the credential comes back with `[REDACTED]`
+  in its place — one mechanism, one symptom;
+- rotation needs no sandbox restart: the relay reads the current value on the
+  next request;
+- every relayed request writes an audit record.
 
-Configuration fails closed. A session with an authorized network secret cannot
-start on a provider that has no credential edge unless the project carries the
-flag — the check runs twice, in `startNetworkBoundaryArm`
-(`apps/api/src/projects/lib/sandbox-env-sync.ts`) and in
-`platform/services/session-sandbox.ts`.
+There is no provider gate and no feature flag. `startNetworkBoundaryArm`
+(`apps/api/src/projects/lib/sandbox-env-sync.ts`) no longer calls a provider
+adapter; it keeps the digest/skip and revocation accounting only.
 
 ```bash
 kortix secrets delivery ANTHROPIC_API_KEY egress \
-  --allow-host api.anthropic.com \
-  --inject-header x-api-key \
-  --template '{{secret}}'
+  --allow-host api.anthropic.com
 ```
+
+### The handle
+
+`mintHandle` / `parseHandle` (`apps/api/src/secrets/strategy.ts`) produce a
+self-describing, `[A-Za-z0-9_-]`-safe string: a marker, a random lookup id, and
+an HMAC tag verified statelessly before any database work. A known model key can
+carry a vendor-shaped prefix (`sk_live_…`) for format-validating SDKs; the
+prefix comes from the known-key catalog and is NEVER derived from the real
+value.
+
+`resolveSecretDelivery` returns `emit: 'handle'` for an `egress` row, so
+`emitsValue` is true and the env builder emits the key. An `egress` identifier
+therefore DOES appear in `KORTIX_PROJECT_SECRET_NAMES` — the value under it is
+the handle.
+
+### Substitution
+
+In the relay, for destination host H:
+
+1. Resolve the session's spendable handles — the agent grant intersected with
+   the session allowlist, then each handle's FROZEN policy snapshot matched
+   against the request shape. Substitution never widens who may spend.
+2. Scan header values, URL path and query, and the body for each handle in four
+   representations: raw, URL-encoded, base64, JSON-escaped — the dual of
+   `redactSecretFromResponse` (`apps/api/src/secrets/http-broker.ts`), sharing
+   the same encoding machinery.
+3. Replace handle with the real value and recompute `content-length`. The relay
+   is fully buffered.
+4. `classifyPresentedHandles` (`apps/api/src/secrets/handle-substitution.ts`)
+   runs BEFORE substitution, on the bytes the guest sent, and classifies every
+   handle that was not honored:
+
+   | Reason | Meaning |
+   | --- | --- |
+   | `forged` | The HMAC tag does not verify. Nobody minted this handle. |
+   | `stolen` | The tag verifies, but the handle is not one of this session's active handles. |
+   | `host_denied` | The session may spend it, but its frozen policy does not admit this destination. |
+
+   Refusals are written as `secret.handle.refused` with outcome `denied`, and
+   summarized again on `secret.broker.completed`. Collapsing the three into
+   "not substituted" would make a credential-theft attempt look like a typo in a
+   host list.
 
 ### What the guest holds
 
-Nothing. The value, the rendered header, and the binding alias all stay outside
-the sandbox:
+A handle, and nothing else. The real value, and the rendered header of a legacy
+`inject` row, stay outside the sandbox:
 
 - `resolveNetworkBoundaryBindings` (`apps/api/src/secrets/network-boundary.ts`)
-  renders the header value on the API and returns it to the provider adapter.
-- `syncPlatinumNetworkBoundary`
-  (`apps/api/src/secrets/platinum-network-boundary.ts`) writes the write-only
-  replica and attaches it to the sandbox by id. The `alias` field is provider
-  bookkeeping and is sent only to Platinum.
-- The env builder emits no name for an `egress` row, so
-  `KORTIX_PROJECT_SECRET_NAMES` never lists it.
-- On the shim path there is no replica and no adapter: the guest receives only
-  host->identifier rules, as the `delivery:'network'` entries of
-  `KORTIX_SECRET_CAPABILITIES`. The shim relays to the broker route and the
-  header is rendered there, so the value never crosses into the sandbox either.
+  resolves the binding set on the API. No provider adapter receives it.
+- The catalog entry the agent reads (`delivery: 'network'` in
+  `KORTIX_SECRET_CAPABILITIES`) carries the env var name, the exact hosts,
+  `scheme: 'https'`, `readable_in_sandbox: false`, and `on_echo: 'redact'`. It
+  never carries a value.
+- A handle sent to a host outside the list arrives as a literal string. The
+  upstream rejects it.
 
-Verified on dev 2026-08-10. Inside a live Platinum session,
-`env | grep -c <IDENTIFIER>` returns `0` while injection works. A policy host
-presents the per-sandbox MITM certificate
-`issuer: O=Platinum; CN=Platinum egress proxy (sandbox sbx_...)`, which the box
-already trusts. A host outside the policy passes through untouched with its own
-origin certificate.
+### The two prerequisites
 
-### The three prerequisites
-
-All three must hold. Each one used to fail silently.
+Both must hold. There is no third: the provider/flag prerequisite is deleted,
+and the header-template prerequisite does not exist for a substitution row.
 
 | # | Requirement | Where it is set | Result when wrong |
 | --- | --- | --- | --- |
-| 1 | The session runs on Platinum, OR the project has the `network_boundary_shim` flag | Customize -> Feature flags (Sandbox provider, or Experimental -> "Network boundary in-guest shim") | No binding is attached. The request leaves without the header. |
-| 2 | An agent `secrets:` list NAMES the identifier | `kortix.yaml`, by hand or through the grant route below | `resolveSecretDelivery` withholds the row. No binding. |
-| 3 | The header value template renders what the API expects | Secret editor -> Header value template | The header carries the bare value with no scheme. Upstream returns `401`. |
+| 1 | An agent `secrets:` list NAMES the identifier | `kortix.yaml`, by hand or through the grant route below | `resolveSecretDelivery` withholds the row. No handle in the env. |
+| 2 | The request's destination host is on the policy list | Secret editor -> hosts, or `--allow-host` | The handle travels as a literal string. Upstream returns `401`. |
 
-Requirement 1 is project scope, not deployment scope, and it is satisfied two
-independent ways. `networkBoundaryDeliveryAvailable(projectMetadata)` returns
-true when the DEPLOYMENT enables Platinum, or when the PROJECT has the
-`network_boundary_shim` experimental flag — the in-guest shim path, which needs
-no provider edge and so no particular provider. The web editor mirrors that in
-`networkBoundaryAvailability(project)`
-(`apps/web/src/features/workspace/customize/sections/view/secret-delivery.ts`):
-the flag short-circuits the provider question, and without it the old rule still
-applies (`default_sandbox_provider === 'platinum'`).
-
-This paragraph previously said the availability check "reports only that the
-deployment enables Platinum" and that the web editor "requires
-`default_sandbox_provider === 'platinum'`". Both were true before the flag
-existed. See docs/NETWORK_BOUNDARY_WITHOUT_PLATINUM.md §7.5.
-
-Requirement 2 is stricter than every other strategy. `resolveSecretDelivery`
+Requirement 1 is stricter than every other strategy. `resolveSecretDelivery`
 (`apps/api/src/secrets/strategy.ts`) delivers a non-`runtime` row only when
 `agentGrantEnv` is a `string[]` that contains the identifier:
 
@@ -296,6 +315,10 @@ no `agents:` block resolves to a null grant and can never deliver an egress
 secret. Membership is by IDENTIFIER, case-insensitive. It is never by env-var
 key: one key can carry several identifiers.
 
+A non-`runtime` row also needs a session id, because a handle is minted per
+(session, secret). Without one the row emits nothing (`no_session`) rather than
+falling back to plaintext.
+
 `SecretSchema.delivery_blocked_reason` reports only the certain case. It is
 `'no_agent_grant'` when the manifest loaded and no agent's explicit list names
 the identifier. It is `null` when the row is granted, when the strategy needs no
@@ -306,34 +329,39 @@ unreadable manifest is worse than no warning, so uncertainty always renders as
 ### Policy shape
 
 `networkBoundaryPolicyError` (`apps/api/src/secrets/network-boundary.ts`)
-accepts only the controls the boundary can enforce — the set Platinum's edge
-supports, re-checked on the shim path at relay time
-(`apps/api/src/projects/routes/secret-broker.ts`) rather than trusted from the
-stored row. A stored policy must never look narrower than the data path that
-applies it.
+accepts only the controls this path can actually enforce, and it validates two
+shapes:
 
-| Rejected input | Message |
-| --- | --- |
-| A broker `backend` | `Network-boundary delivery does not accept a broker backend` |
-| `on_no_match` other than `deny` | `Network-boundary delivery must deny unmatched requests` |
-| `tls` other than `terminate` | `Network-boundary delivery requires TLS termination` |
-| A query or JSON-body injection | `Network-boundary delivery supports header injection only` |
-| A wildcard host such as `*.example.com` | `Network-boundary delivery requires exact hosts` |
-| Any `methods` entry | `Network-boundary delivery cannot enforce HTTP method restrictions` |
-| Any `path` | `Network-boundary delivery cannot enforce path restrictions` |
-| A per-rule header or template that differs from the policy default | `Every network-boundary rule must use the same header and template` |
+- **Substitution row** — no `inject`. The default since the exposure/usage
+  model. The policy is a host list; the agent's own client decides where the
+  credential goes, so there is no header, template, method or path to have an
+  opinion about.
+- **Legacy injection row** — `inject` present. Served exactly as before, and it
+  keeps every prohibition it ever had.
+
+| Rejected input | Applies to | Message |
+| --- | --- | --- |
+| A broker `backend` | both | `Network-boundary delivery does not accept a broker backend` |
+| `on_no_match` other than `deny` | both | `Network-boundary delivery must deny unmatched requests` |
+| `tls` other than `terminate` | both | `Network-boundary delivery requires TLS termination` |
+| A wildcard host such as `*.example.com` | both | `Network-boundary delivery requires exact hosts` |
+| A rule-level `inject` with no policy-level slot | legacy | `Network-boundary delivery cannot inject without a policy-level slot` |
+| A query or JSON-body injection | legacy | `Network-boundary delivery supports header injection only` |
+| Any `methods` entry | legacy | `Network-boundary delivery cannot enforce HTTP method restrictions` |
+| Any `path` | legacy | `Network-boundary delivery cannot enforce path restrictions` |
+| A per-rule header or template that differs from the policy default | legacy | `Every network-boundary rule must use the same header and template` |
 
 Host matching is exact. `api.example.com` never covers
 `uploads.api.example.com`. List every host explicitly. The API returns `400`
 with `code: 'secret_delivery_policy_invalid'`.
 
-### Destination uniqueness
+### Destination uniqueness — legacy injection rows only
 
-One `(host, header)` pair per project. `findBoundaryDestinationConflict`
-(`apps/api/src/secrets/network-boundary.ts`) compares a candidate against every
-other egress row. Host and header compare lowercased. The same identifier never
-conflicts with itself. A row with a null policy, or a non-header injection, is
-skipped.
+One `(host, header)` pair per project, for rows that carry `inject`.
+`findBoundaryDestinationConflict` (`apps/api/src/secrets/network-boundary.ts`)
+returns `null` immediately for a substitution row, because a substitution row
+claims no header: each handle maps to its own value, so two substitution rows on
+one host are legal and both substitute in the same request.
 
 The check runs at save time on `POST /:projectId/secrets` and on
 `PUT /:projectId/secrets/:identifier/strategy`. A collision returns `409`:
@@ -349,65 +377,30 @@ The check runs at save time on `POST /:projectId/secrets` and on
 `conflict.identifier` is the secret that already holds the destination. The
 sentence names both: the incumbent first, then the secret being saved.
 
-Two secrets on the same host with DIFFERENT headers are legal. Both are
-injected. `resolveNetworkBoundaryBindings` keeps its start-time throw as the last
-line of defense. The save-time check exists so the failure reaches the person
-who caused it, not a session that starts hours later.
-
 ### HTTPS only
 
-The proxy needs to terminate TLS to rewrite a header. Plain HTTP to a policy
-host is refused:
+The shim terminates TLS to substitute, so a policy host must be called over
+HTTPS. The shim answers only HTTPS `CONNECT` and is advertised through the HTTPS
+proxy variables alone. An `http://` call to a policy host bypasses it entirely:
+the request leaves carrying the handle, and the upstream answers `401`.
 
-```text
-egress to "<host>" is blocked: this sandbox's policy puts a secret in a request
-header for this host, and that requires HTTPS
-```
+### One symptom set: redact
 
-A test that uses `http://` reads as a network fault. It is a policy refusal.
+The relay redacts a credential the upstream echoes back
+(`redactSecretFromResponse`, `apps/api/src/secrets/http-broker.ts`). There is no
+second mechanism and no second symptom table. `NETWORK_BOUNDARY_NOTES`
+(`apps/api/src/projects/secret-capabilities.ts`) is a single list, and every
+surface describes this one set.
 
-### Echo blocking is the verification trap — at the provider edge
+| Observation on a policy host | Meaning |
+| --- | --- |
+| `200`, the echoed credential reads `[REDACTED]` | Working. The real value went upstream; the echo was redacted on the way back. |
+| `200`, the echoed credential reads as the handle | The swap did not run. Check the agent grant and the host list. |
+| `401` | The swap did not run. Same two checks. |
+| An empty reply, or a connection error | A REAL failure. The relay did not complete. |
 
-Everything in this section is the PROVIDER EDGE. The shim path inverts it, so
-read the next section before running any of these probes.
-
-`onEcho` is hardcoded `'block'` in `NetworkBoundarySecretBinding`. When an
-upstream response would return the secret to the guest, the proxy kills the
-connection. The guest sees `curl: (52) Empty reply from server`.
-
-An echo service is therefore the worst possible test target. Success there is a
-dead connection, which is exactly what a broken boundary also produces. One
-probe cannot separate the two. Use two.
-
-| Probe | Target | Correct result | Meaning |
-| --- | --- | --- | --- |
-| Reachability | A policy host endpoint that does NOT echo request headers | `200` | The host is reachable and the proxy passes traffic. |
-| Injection | An endpoint on the same host that DOES echo request headers | `curl: (52) Empty reply from server` | The header was present and the echo guard killed the response. |
-
-A `200` with the secret visible in the body would mean the guard failed. A
-`curl: (52)` on the non-echoing probe means the policy host is unreachable, not
-that injection worked.
-
-### The shim path inverts every symptom above
-
-The broker redacts where the edge blocks (`redactSecretFromResponse`,
-`apps/api/src/secrets/http-broker.ts`), so a shim-backed session returns an
-ordinary `200` whose body carries `[REDACTED]` where the credential would have
-been. On that path an empty reply is a REAL failure, and an echo endpoint is the
-clearest probe there is rather than the worst one.
-
-Telling a shim user to expect the edge's symptom makes a working feature look
-broken, and the reverse reads a dead host as success. The catalog the agent
-reads already branches on this: `NETWORK_BOUNDARY_NOTES_BLOCK` versus
-`NETWORK_BOUNDARY_NOTES_REDACT` in `apps/api/src/projects/secret-capabilities.ts`,
-selected from `networkBoundaryMode`. Any surface that describes the symptom must
-branch the same way.
-
-| | provider edge | in-guest shim |
-| --- | --- | --- |
-| working request, upstream echoes the credential | connection cut, `curl: (52) Empty reply from server` | `200` with `[REDACTED]` in the body |
-| empty reply on a policy host | the boundary working | a genuine failure |
-| `401` on a policy host | the header did not arrive | the header did not arrive |
+An echo endpoint is the clearest probe there is. Pair it with a non-echoing
+endpoint on the same host, which is the only probe that proves reachability.
 
 ### Save-time sync
 
@@ -436,21 +429,23 @@ is the source of truth and the next session start reapplies it.
 | --- | --- |
 | Delivery decision for one row | `apps/api/src/secrets/strategy.ts` |
 | Policy validation, bindings, destination conflicts | `apps/api/src/secrets/network-boundary.ts` |
-| Provider replica, attach, arm, erase | `apps/api/src/secrets/platinum-network-boundary.ts` |
-| Which mechanism, or none, serves a project | `apps/api/src/secrets/network-boundary-availability.ts` |
+| Handle mint, parse, scan | `apps/api/src/secrets/strategy.ts` |
+| Refused-handle classification (`forged` / `stolen` / `host_denied`) | `apps/api/src/secrets/handle-substitution.ts` |
+| Substitution and response redaction | `apps/api/src/secrets/http-broker.ts` |
 | Shim relay (`egress`/`network` through the broker engine) | `apps/api/src/projects/routes/secret-broker.ts` |
+| Agent-facing catalog text | `apps/api/src/projects/secret-capabilities.ts` |
 | In-guest shim | `apps/kortix-sandbox-agent-server/src/egress-shim/` |
 | Session grant + allowlist resolution | `apps/api/src/projects/lib/network-secret-boundary.ts` |
 | Agents-map merge and upsert behind the grant | `apps/api/src/projects/lib/agent-config-v2.ts` |
 | Default-deny for an agent the manifest omits | `apps/api/src/projects/agents.ts` |
-| Provider adapter and teardown | `apps/api/src/platform/providers/platinum.ts` |
 | Save routes | `apps/api/src/projects/routes/r3.ts` |
 | Web editor | `apps/web/src/features/workspace/customize/sections/view/secrets-view.tsx` |
 | CLI | `apps/cli/src/commands/secrets.ts` |
 
 ## Repairing a missing agent grant
 
-Requirement 2 was the one prerequisite the Secrets page could not satisfy: it
+Requirement 1 — the agent grant — is the one prerequisite the Secrets page
+cannot satisfy with a secret write: it
 needs a manifest commit, not a secret write. `delivery_blocked_reason` named the
 problem and stopped there. The API now performs the edit as well, so a surface
 that renders the warning can also clear it.
@@ -565,23 +560,18 @@ omits.
 `POST /:projectId/secrets` and `PUT /:projectId/secrets/:identifier/strategy`
 additionally return `delivery_sync`. No other route returns it.
 
-The web editor provides these choices:
+The web editor presents ONE control — "Can your code read this value?" — over
+the two orthogonal settings of the spec's §3:
 
-- **Readable in sandbox** for `runtime` and `sandbox`;
-- **LLM gateway** for provider requests;
-- **Connector** for connector authorization;
-- **Automation** for Connector actions and channels;
-- **HTTPS broker** for a policy-bound request;
-- **Network boundary** for exact-host header injection outside the guest;
-- **Stored but disabled** for `denied`.
+- **No, enforce it at the network** (default) writes `egress`/`network` with a
+  hosts-only policy;
+- **Yes, put it in the environment** writes `runtime`/`sandbox`, in a warning
+  tone;
+- **Disabled** writes `denied`.
 
-The UI enables network delivery when the project is pinned to Platinum or
-carries the `network_boundary_shim` flag. `networkBoundaryAvailability`
-(`apps/web/src/features/workspace/customize/sections/view/secret-delivery.ts`)
-mirrors the API rule: the flag short-circuits the provider question, because the
-shim runs nowhere near a provider edge. Neither blocked state says the feature
-is unavailable in this deployment — both are one opt-in away, so both name the
-opt-in. The editor also labels the controls the boundary can enforce.
+LLM gateway, Connector and Git are USAGES, assigned by their own flows and
+rendered as read-only labels. Egress-enforced delivery is available on every
+project, so the editor has no availability gate and no header/template fields.
 
 The CLI supports the same available consumers through `kortix secrets
 delivery`. `kortix connectors secret` manages connector bindings. `kortix
@@ -631,6 +621,7 @@ Managed access writes:
 - `secret.consumer.refreshed`
 - `secret.consumer.refresh_failed`
 - `secret.handle.issued`
+- `secret.handle.refused`
 - `secret.broker.requested`
 - `secret.broker.completed`
 - `secret.broker.failed`
@@ -652,19 +643,20 @@ without returning the new value to a client.
 - A reused identifier with a different key returns `409`.
 - A broker policy without a host or injection slot returns `400`.
 - A generic unsupported broker backend returns `409`.
-- Transparent `egress` returns `409` with
-  `code: 'secret_delivery_unavailable'` when the deployment has no Platinum and
-  the project has no `network_boundary_shim` flag.
-- An unenforceable transparent policy returns `400`.
-- Two egress secrets that claim one `(host, header)` pair return `409` with
-  `code: 'secret_boundary_destination_conflict'`.
-- Two egress secrets on one host with different headers are accepted. Both are
-  injected.
-- A granted transparent secret blocks session startup on a provider with no
-  credential edge, unless the project carries `network_boundary_shim`.
-- Plain HTTP to a policy host is refused by the proxy, not by Kortix.
-- A response that would echo an egress secret is killed by the provider edge,
-  and returned with `[REDACTED]` in its place on the shim path.
+- An unenforceable egress policy returns `400`.
+- Two LEGACY injection rows that claim one `(host, header)` pair return `409`
+  with `code: 'secret_boundary_destination_conflict'`.
+- Two substitution rows on one host are accepted. Both substitute in one
+  request.
+- An egress secret never blocks session startup for provider reasons. Every
+  provider runs the same mechanism.
+- Plain HTTP to a policy host is not intercepted. The handle leaves as a literal
+  string.
+- A response that would echo an egress secret is returned with `[REDACTED]` in
+  its place.
+- A handle with an invalid HMAC tag is not substituted and is audited as
+  `forged`. A valid handle this session may not spend is audited as `stolen`. A
+  spendable handle on an unlisted host is audited as `host_denied`.
 - A failed push to a running sandbox returns `delivery_sync.ok === false`. The
   save still succeeds.
 - A grant for an identifier the agent already admits returns `200` with
@@ -702,18 +694,26 @@ Every change to this control plane must prove these paths:
 9. A grant writes the identifier into the named agent, clears
    `delivery_blocked_reason`, and preserves that agent's other governance
    fields. Repeating it commits nothing.
+10. An egress row puts a HANDLE in the sandbox env, the relay substitutes the
+    real value on a listed host, an echo comes back `[REDACTED]`, and the raw
+    value appears nowhere in the guest.
+11. A handle sent to an unlisted host arrives as a literal string, a forged-tag
+    handle is audited as `forged`, and a handle this session may not spend is
+    audited as `stolen`.
 
-Network substitution also requires a live test, once per mechanism, because the
-two paths share no code below the policy. Each must prove injection, sandbox
-non-disclosure, rotation, revocation, and echo handling. At the provider edge,
-prove injection with the two-probe recipe above: a single probe against an echo
-endpoint cannot distinguish a working boundary from a dead one. On the shim path
-one probe is enough and it is the echo endpoint — a `200` carrying `[REDACTED]`
-proves injection and echo scrubbing in the same response.
+Egress-enforced delivery still requires a live test, on a real session. It must
+prove substitution, sandbox non-disclosure, rotation, revocation, and echo
+handling. One mechanism means one live test per provider rather than one per
+mechanism, and the probe is the echo endpoint: a `200` carrying `[REDACTED]`
+proves substitution and echo scrubbing in the same response. Pair it with a
+non-echoing endpoint on the same host, which is the only probe that proves
+reachability.
 
 ## Related specifications
 
 - [`2026-07-26-agent-scoped-secret-injection.md`](./specs/2026-07-26-agent-scoped-secret-injection.md)
 - [`2026-07-26-secret-delivery-policy.md`](./specs/2026-07-26-secret-delivery-policy.md)
+- [`specs/2026-08-19-secrets-exposure-usage-model.md`](./specs/2026-08-19-secrets-exposure-usage-model.md)
+  — the approved exposure/usage model this document implements
 - [`NETWORK_BOUNDARY_WITHOUT_PLATINUM.md`](./NETWORK_BOUNDARY_WITHOUT_PLATINUM.md) — why the
-  shim exists, and the live proof of the mechanism
+  shim exists, and the live proof of the mechanism (design history)

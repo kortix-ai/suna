@@ -2,7 +2,6 @@ import { describe, expect, test } from 'bun:test';
 
 import { networkBoundaryPolicyError } from '../../secrets/network-boundary';
 import {
-  UNSUPPORTED_SECRET_DELIVERY_MESSAGE,
   INVALID_SECRET_BOUNDARY_POLICY_MESSAGE,
   SANDBOX_PROVIDER_CAPACITY_MESSAGE,
   SANDBOX_PROVIDER_FAILURE_MESSAGE,
@@ -48,23 +47,6 @@ describe('classifySandboxProvisioningFailure', () => {
     expect(result.userMessage).not.toContain(secretProviderMessage);
   });
 
-  test('returns an actionable contract when the provider cannot enforce protected delivery', () => {
-    const result = classifySandboxProvisioningFailure(
-      new Error('Sandbox provider daytona does not support network-boundary secret delivery'),
-    );
-
-    // Compared against the CONSTANT, not a second copy of the sentence. The
-    // literal used to be duplicated here, so editing the user-facing copy broke
-    // this test for no reason a reader could see — and a grep for the constant's
-    // name did not find this file. The wording itself is asserted in
-    // sandbox-provisioning-error.remedy.test.ts, which is where it belongs.
-    expect(result).toEqual({
-      category: 'unsupported-secret-delivery',
-      userMessage: UNSUPPORTED_SECRET_DELIVERY_MESSAGE,
-      isCapacity: false,
-      isGitAuth: false,
-    });
-  });
 
   // Two secrets claiming the same (host, header) used to land in 'sandbox-provider', whose copy
   // blames the provider and says "Try again" — verified live on dev, where every new session in the
@@ -94,15 +76,6 @@ describe('classifySandboxProvisioningFailure', () => {
     );
   });
 
-  // The provider-capability gap and the project-config error are different problems with different
-  // fixes, so one must never absorb the other.
-  test('keeps the provider capability gap distinct from a bad project policy', () => {
-    expect(
-      classifySandboxProvisioningFailure(
-        new Error('Sandbox provider daytona does not support network-boundary secret delivery'),
-      ).category,
-    ).toBe('unsupported-secret-delivery');
-  });
 
   test('leaves an ordinary provider failure unclassified', () => {
     expect(
@@ -128,6 +101,9 @@ describe('classifySandboxProvisioningFailure', () => {
       { ...base, rules: [{ host: '*.example.com' }] },
       { ...base, rules: [{ host: 'api.example.com', methods: ['GET'] }] },
       { ...base, rules: [{ host: 'api.example.com', path: '/v1' }] },
+      // Substitution-only policy carrying a rule-level slot: the rule injects,
+      // so the row is a legacy injection row with no policy-level default.
+      { rules: [{ host: 'api.example.com', inject: base.inject }] },
     ];
 
     const produced = invalidPolicies

@@ -95,6 +95,8 @@ export function useConnectedProviders(projectId: string, enabled: boolean) {
       envVars: [],
       authRequirement: { methods: [] },
       helpUrl: null,
+      // Synthetic entry: no models.dev row, so no vendor API host.
+      apiHost: null,
       hint: 'Included with your plan',
       models,
       featured: true,

@@ -106,6 +106,7 @@ import { db } from '../../shared/db';
 import { isUniqueViolation } from '../../shared/postgres-errors';
 import { continueSession, drainSessionLifecycleQueue } from '../session-lifecycle';
 import { promoteNextInboxRow } from '../session-lifecycle/store';
+import { reconcileForwardedTurnsAtEnd } from '../session-lifecycle/forwarded-strand-reconcile';
 import {
   getOpenQuestion,
   recordPendingQuestion,
@@ -2541,6 +2542,24 @@ projectsApp.openapi(
         errorInfo,
         childSession ? childIdleGraceMs() : undefined,
       );
+      // Prompts forwarded INTO the turn that just ended: close the ones the
+      // step answered (older than the ended message), and re-queue any that
+      // the loop stranded below a newer assistant — see
+      // forwarded-strand-reconcile.ts. Fire-and-forget: it reads the box once
+      // and must not hold the daemon's relay.
+      if (!childSession) {
+        void reconcileForwardedTurnsAtEnd({
+          sessionId,
+          opencodeSessionId:
+            typeof body.opencode_session_id === 'string' ? body.opencode_session_id : null,
+          endedMessageId: typeof body.turn_message_id === 'string' ? body.turn_message_id : null,
+        }).catch((err) =>
+          console.warn(
+            `[forwarded-turns] reconcile failed for session ${sessionId}:`,
+            err instanceof Error ? err.message : err,
+          ),
+        );
+      }
       // THE TURN ENDED — the session's next queued prompt is admissible NOW.
       // Fire-and-forget: the drain re-runs admission itself, and a lost kick
       // falls back to the scheduler tick (bounded by the admission backoff).

@@ -19,7 +19,7 @@ import { ACCOUNT_ACTIONS, assertAuthorized } from '../iam';
 import { actorOf } from '../iam/actor';
 import { assertAllowedSourceAddress } from '../marketplace/catalog';
 import { ErrorSchema, auth, errors, json, makeOpenApiApp } from '../openapi';
-import { recordAuditEvent } from '../shared/audit';
+import { flushAuditEvents, recordAuditEvent } from '../shared/audit';
 import {
   deliverTestEvent,
   generateWebhookSecret,
@@ -145,6 +145,11 @@ auditRouter.openapi(
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.AUDIT_READ);
     const denied = await requireEntitlement(c, accountId, 'auditAccess');
     if (denied) return denied;
+    // Audit writes are buffered off the request path (shared/audit-queue.ts).
+    // A reader must observe every event already emitted, so drain the queue
+    // before querying. Readers are rare; this keeps the write path fast without
+    // making the log eventually-consistent for API consumers.
+    await flushAuditEvents();
 
     const actionPrefix = c.req.query('action')?.trim() || null;
     const actor = c.req.query('actor')?.trim() || null;
@@ -329,6 +334,11 @@ auditRouter.openapi(
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.AUDIT_READ);
     const denied = await requireEntitlement(c, accountId, 'auditAccess');
     if (denied) return denied;
+    // Audit writes are buffered off the request path (shared/audit-queue.ts).
+    // A reader must observe every event already emitted, so drain the queue
+    // before querying. Readers are rare; this keeps the write path fast without
+    // making the log eventually-consistent for API consumers.
+    await flushAuditEvents();
 
     const format = (c.req.query('format') || 'csv').toLowerCase();
     if (format !== 'csv' && format !== 'jsonl') {
@@ -453,6 +463,11 @@ auditRouter.openapi(
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
     const denied = await requireEntitlement(c, accountId, 'auditAccess');
     if (denied) return denied;
+    // Audit writes are buffered off the request path (shared/audit-queue.ts).
+    // A reader must observe every event already emitted, so drain the queue
+    // before querying. Readers are rare; this keeps the write path fast without
+    // making the log eventually-consistent for API consumers.
+    await flushAuditEvents();
     let limit: number;
     try {
       limit = parseAuditLimit(c.req.query('limit')?.trim() || null, 1_000, 5_000);
@@ -727,6 +742,11 @@ auditRouter.openapi(
     const accountId = c.req.param('accountId');
     const webhookId = c.req.param('webhookId');
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+    // Audit writes are buffered off the request path (shared/audit-queue.ts).
+    // A reader must observe every event already emitted, so drain the queue
+    // before querying. Readers are rare; this keeps the write path fast without
+    // making the log eventually-consistent for API consumers.
+    await flushAuditEvents();
     let limit: number;
     try {
       limit = parseAuditLimit(c.req.query('limit')?.trim() || null, 100, 500);

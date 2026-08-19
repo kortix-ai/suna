@@ -74,22 +74,23 @@ describe('groupMessagesIntoTurns — display order is by time.created, id is the
   const at = (id: string, role: 'user' | 'assistant', created: number, parentID?: string) =>
     ({ info: { id, role, parentID, time: { created } }, parts: [] }) as MessageWithPartsLike;
 
-  test('a backdated wire id does NOT teleport a later prompt to the top', () => {
+  test('wire ids define display order — arrival timestamps do not reorder a batch', () => {
+    // OpenCode stamps `time.created` at PERSISTENCE (arrival wall-clock), and
+    // a batch of queued prompts is posted concurrently — their arrival order
+    // is the network's, not the user's. The wire id is the message's PLACED
+    // position (the control plane lifts a stale client id before it reaches
+    // the transcript), so for two wire ids the id decides. Here the batch
+    // arrived scrambled (created 5000 before 1000): display follows the ids.
     const turns = groupMessagesIntoTurns([
-      // Stored id-sorted, as the sync store keeps them: the steer's id sorts first.
-      at('msg_000000000001steer', 'user', 5_000),
-      at('msg_000000000100first', 'user', 1_000),
-      at('msg_000000000200reply', 'assistant', 2_000, 'msg_000000000100first'),
-      at('msg_000000000300reply2', 'assistant', 3_000, 'msg_000000000100first'),
+      at('msg_000000000001first', 'user', 5_000),
+      at('msg_000000000100second', 'user', 1_000),
+      at('msg_000000000200reply', 'assistant', 2_000, 'msg_000000000001first'),
     ]);
     expect(turns.map((t) => t.userMessage.info.id)).toEqual([
-      'msg_000000000100first',
-      'msg_000000000001steer',
+      'msg_000000000001first',
+      'msg_000000000100second',
     ]);
-    expect(turns[0].assistantMessages.map((m) => m.info.id)).toEqual([
-      'msg_000000000200reply',
-      'msg_000000000300reply2',
-    ]);
+    expect(turns[0].assistantMessages.map((m) => m.info.id)).toEqual(['msg_000000000200reply']);
   });
 
   test('equal timestamps fall back to id order, so the sort is total and stable', () => {

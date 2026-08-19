@@ -331,3 +331,35 @@ describe('link-bot accepts what an operator will actually type', () => {
     expect(verify).toBeLessThan(write);
   });
 });
+
+// ── users.* must be form-encoded ────────────────────────────────────────────
+//
+// Slack's older read methods do not parse a JSON body: the params are dropped
+// and the call is answered as if they were never sent. users.info replies
+// `user_not_found` for an id Slack itself just returned from users.list and
+// renders fine as <@ID>. Measured on dev 2026-08-19, /ecs/kortix-dev:
+//
+//   [slack-api] users.info failed { error: "user_not_found" }
+//
+// It reads as bad data rather than a bad request, which is why it survived
+// review and a live test.
+
+describe('slack-api sends users.* as form-encoded, not JSON', () => {
+  const api = readFileSync(join(import.meta.dir, '..', 'channels', 'slack-api.ts'), 'utf8');
+
+  test('users.info passes form:true', () => {
+    expect(api, 'users.info with a JSON body silently drops `user` and answers user_not_found')
+      .toContain("slackApiCall(token, 'users.info', { user: userId }, { form: true })");
+  });
+
+  test('users.list passes form:true', () => {
+    expect(api).toContain("slackApiCall(token, 'users.list', { limit: 1000 }, { form: true })");
+  });
+
+  test('the form branch actually changes the Content-Type and the body', () => {
+    // A `form` option that only sets a header would encode nothing.
+    expect(api).toContain('application/x-www-form-urlencoded');
+    expect(api, 'form mode must URL-encode the params, not JSON.stringify them')
+      .toContain('new URLSearchParams(');
+  });
+});

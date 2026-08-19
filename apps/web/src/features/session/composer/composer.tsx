@@ -68,6 +68,13 @@ import { useComposerFocus } from './hooks/use-composer-focus';
 import { useMenuRevalidation } from './hooks/use-file-search';
 import { controlToOpenFor, SLASH_ACTIONS, type SlashAction } from './menus/slash-actions';
 import { createSubmitLatch } from './submit-latch';
+
+/** A draft captured out of the editor at Enter time — see `createSubmitLatch`. */
+interface StashedDraft {
+  content: ReturnType<ComposerEditorHandle['getContent']>;
+  doc: JSONContent | null;
+  files: AttachedFile[];
+}
 import type { AttachedFile, TrackedMention } from './types';
 
 export interface SessionChatInputProps {
@@ -394,6 +401,12 @@ function ComposerImpl({
   const dockId = `composer-slash-dock-${useId().replace(/[^a-zA-Z0-9]/g, '')}`;
 
   const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
+  // Synchronous mirror of `attachedFiles`, for the one reader that cannot
+  // wait for a React flush: the submit latch's stash (see `handleSubmit`).
+  const attachedFilesRef = useRef<AttachedFile[]>([]);
+  useEffect(() => {
+    attachedFilesRef.current = attachedFiles;
+  }, [attachedFiles]);
   const [isDragOver, setIsDragOver] = useState(false);
   const [isEmpty, setIsEmpty] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -882,7 +895,7 @@ function ComposerImpl({
     [cycleAgent],
   );
 
-  const dispatchSubmission = useCallback(async () => {
+  const dispatchSubmission = useCallback(async (stash?: StashedDraft) => {
     // Ahead of the model check: with no agent to run it, the model this prompt
     // would have used is not the user's problem.
     if (agentUnavailable) {
@@ -913,7 +926,12 @@ function ComposerImpl({
       return;
     }
 
-    const draft = editorRef.current?.getContent();
+    // A stashed draft was captured out of the editor (and the editor cleared)
+    // when its Enter arrived mid-send — see `createSubmitLatch`. It is
+    // submitted as captured; the live editor belongs to whatever the user
+    // typed since.
+    const draft = stash ? stash.content : editorRef.current?.getContent();
+    const filesNow = stash ? stash.files : attachedFiles;
     const plan = planDraftSubmission({
       commandName: draft?.commandName,
       text: draft?.text ?? '',
@@ -929,7 +947,7 @@ function ComposerImpl({
       // covers the keyboard path, which no disabled button can gate.
       const guard = planCommandAttachments({
         isCommand: true,
-        attachmentCount: attachedFiles.length,
+        attachmentCount: filesNow.length,
       });
       if (guard.kind === 'refuse') {
         toast.error(guard.message, { description: guard.description });
@@ -969,7 +987,7 @@ function ComposerImpl({
         return;
       }
       onCommand?.(plan.command, plan.args, draft?.commandSplit);
-      if (clearOnSend) {
+      if (clearOnSend && !stash) {
         editorRef.current?.clear();
         setAttachedFiles((prev) => {
           for (const file of prev) {
@@ -982,10 +1000,10 @@ function ComposerImpl({
     }
 
     if (lockForQuestion) {
-      const trimmed = (editorRef.current?.getContent().text ?? '').trim();
+      const trimmed = (draft?.text ?? '').trim();
       if (trimmed && onCustomAnswer) {
         onCustomAnswer(trimmed);
-        editorRef.current?.clear();
+        if (!stash) editorRef.current?.clear();
         return;
       }
       if (onQuestionAction) {
@@ -997,16 +1015,17 @@ function ComposerImpl({
 
     const content = draft ?? { text: '', mentions: [] };
     const trimmed = plan.text;
-    if ((!trimmed && attachedFiles.length === 0) || submitDisabled) return;
+    if ((!trimmed && filesNow.length === 0) || submitDisabled) return;
 
-    const filesToSend = attachedFiles.length > 0 ? [...attachedFiles] : undefined;
+    const filesToSend = filesNow.length > 0 ? [...filesNow] : undefined;
     const mentionsToSend = content.mentions.length > 0 ? [...content.mentions] : undefined;
-    const submittedDoc = editorRef.current?.getDocument() ?? null;
-    const submittedIsEmpty = editorRef.current?.isEmpty() ?? true;
+    const submittedDoc = stash ? stash.doc : (editorRef.current?.getDocument() ?? null);
+    const submittedIsEmpty = stash ? false : (editorRef.current?.isEmpty() ?? true);
 
-    const reset = resolveComposerResetOnSend(clearOnSend, attachedFiles);
-    if (reset.clear) {
+    const reset = resolveComposerResetOnSend(clearOnSend, filesNow);
+    if (reset.clear && !stash) {
       editorRef.current?.clear();
+      attachedFilesRef.current = [];
       setAttachedFiles([]);
     }
 
@@ -1084,12 +1103,26 @@ function ComposerImpl({
   const handleSubmit = useCallback(() => {
     // Lazy-created at the first submit (never during render, which the
     // compiler's ref rules forbid) and reused forever after.
-    submitLatchRef.current ??= createSubmitLatch(
-      () => dispatchSubmissionRef.current(),
+    submitLatchRef.current ??= createSubmitLatch<StashedDraft>(
+      (stash) => dispatchSubmissionRef.current(stash),
       // Typed text is what marks a re-entrant submit as a distinct message
-      // worth deferring; a double-fire arrives with the editor already
-      // cleared.
-      () => Boolean(editorRef.current?.getContent().text.trim()),
+      // worth stashing; a double-fire arrives with the editor already
+      // cleared. The stash takes the draft OUT of the editor right now — the
+      // user sees the message leave on Enter, exactly as a direct send — and
+      // submits it unchanged once the in-flight send settles. Files ride
+      // along from the synchronous mirror, not from React state that may not
+      // have flushed.
+      () => {
+        const editor = editorRef.current;
+        const content = editor?.getContent();
+        if (!editor || !content || !content.text.trim()) return null;
+        const doc = editor.getDocument() ?? null;
+        const files = attachedFilesRef.current;
+        editor.clear();
+        attachedFilesRef.current = [];
+        setAttachedFiles([]);
+        return { content, doc, files };
+      },
     );
     return submitLatchRef.current();
   }, []);

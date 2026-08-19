@@ -2,7 +2,6 @@ import { createHash, createCipheriv, createDecipheriv, hkdfSync, randomBytes } f
 import { SESSION_SECRETS_ALLOWLIST_MAX_KEYS } from '@kortix/api-contract';
 import { and, desc, eq, isNull, or, sql } from 'drizzle-orm';
 import { projectSecrets, projectSessionSecretHandles, projectSessions, projects } from '@kortix/db';
-import { networkBoundaryMode } from '../secrets/network-boundary-availability';
 import { config } from '../config';
 import { recordAuditEvent } from '../shared/audit';
 import { db } from '../shared/db';
@@ -594,22 +593,33 @@ export async function materializeSecretDelivery(
       env[row.key] = await input.mintHandleFor(row);
       continue;
     }
-    // Network boundary: mint the handle ROW, put NOTHING in the guest env.
+    // Egress-enforced: the KEY holds the HANDLE, never the value.
     //
-    // The broker route requires an active handle row for the secret — it looks
-    // it up by secretId and reads its policy snapshot; it never validates a
-    // token the caller presents. Boundary secrets never got one (the branch
-    // above is broker-only), so a boundary relay died on
-    // `session_secret_handle_required` even after the strategy gate was
-    // relaxed. That was the second gate behind the first.
+    // This used to mint the handle row and export nothing, on the theory that
+    // an empty env is the strongest possible boundary. It is also a boundary
+    // the agent cannot use: an ordinary HTTP client has nothing to send, so
+    // every SDK that reads `os.environ[...]` fails with an unset variable and
+    // the model's only way forward is to ask a human for the real value.
     //
-    // The row is minted, the value is not exported. Assigning the handle to
-    // `env[row.key]` the way the broker branch does would put a credential
-    // reference in the sandbox, and "the guest receives nothing — no value, no
-    // alias, no placeholder" is the entire property that distinguishes a
-    // boundary secret. A test pins the env staying empty.
-    if (delivery.emit === 'handle' && delivery.strategy === 'egress' && consumer === 'network') {
-      await input.mintHandleFor(row);
+    // The handle is what makes the mechanism transparent (docs/specs/
+    // 2026-08-19-secrets-exposure-usage-model.md §5): the client sends it, the
+    // relay swaps it for the value server-side on an approved host, and a
+    // handle that leaks anywhere else is a self-describing string worth
+    // nothing. Same per-session rotation and same revocation as a broker
+    // handle — it is the same minting path.
+    //
+    // A row with no policy is dropped rather than minted: there is nothing to
+    // freeze into the handle's snapshot, so the mint would throw and take the
+    // whole env snapshot — and with it the session boot — down with it. The
+    // broker branch above already fails closed the same way.
+    if (
+      delivery.emit === 'handle' &&
+      delivery.strategy === 'egress' &&
+      consumer === 'network' &&
+      row.egressPolicy
+    ) {
+      env[row.key] = await input.mintHandleFor(row);
+      continue;
     }
     delete env[row.key];
   }
@@ -713,8 +723,13 @@ async function mintSessionSecretHandle(
       resourceId: row.secretId,
       metadata: {
         identifier: row.identifier,
-        consumer: 'http_broker',
-        strategy: 'broker',
+        // Derived, not hardcoded: this path now mints for egress-enforced rows
+        // as well as broker rows, and an audit record that calls every handle
+        // `http_broker` misattributes the delivery mode in the one record
+        // anybody reads after an incident. Mirrors the same derivation in
+        // routes/secret-broker.ts.
+        consumer: row.consumer ?? (row.strategy === 'egress' ? 'network' : 'http_broker'),
+        strategy: row.strategy ?? 'broker',
         revision: result.revision,
       },
     });
@@ -722,37 +737,6 @@ async function mintSessionSecretHandle(
   return result.handle;
 }
 
-
-/**
- * Which mechanism will serve this session's network-boundary secrets.
- *
- * Reads the session's own provider and the project's flag, because the answer
- * is per-SESSION: the same project can run one session on Platinum (edge) and
- * the next on Daytona (shim), and `provider` is chosen per session create.
- *
- * Returns null when there is no session (a monitor box, or a snapshot built
- * outside any session). Null withholds the echo guidance rather than guessing —
- * the guidance is only useful if it is right, and each mechanism's symptom is
- * the other's failure signal.
- */
-async function resolveSessionBoundaryMode(
-  projectId: string,
-  sessionId: string | null,
-): Promise<'provider-edge' | 'in-guest-shim' | null> {
-  if (!sessionId) return null;
-  const [session] = await db
-    .select({ provider: projectSessions.sandboxProvider })
-    .from(projectSessions)
-    .where(and(eq(projectSessions.sessionId, sessionId), eq(projectSessions.projectId, projectId)))
-    .limit(1);
-  if (!session?.provider) return null;
-  const [project] = await db
-    .select({ metadata: projects.metadata })
-    .from(projects)
-    .where(eq(projects.projectId, projectId))
-    .limit(1);
-  return networkBoundaryMode(session.provider, project?.metadata);
-}
 
 export async function listProjectSecretsSnapshotForUser(
   projectId: string,
@@ -778,25 +762,9 @@ export async function listProjectSecretsSnapshotForUser(
   });
 
   const names = Object.keys(env).sort();
-  // Which mechanism will serve this session's boundary secrets — resolved
-  // HERE rather than threaded in.
-  //
-  // It decides the guest-facing echo wording, and the two mechanisms produce
-  // OPPOSITE symptoms for the same working request: the provider edge CUTS an
-  // echoing response (an empty reply means it worked) while the in-guest shim
-  // REDACTS it (a 200 containing `[REDACTED]` means it worked). Tell an agent
-  // the wrong one and it reads a dead host as success, or success as failure.
-  //
-  // Threading it from the callers was the first attempt and it was worse: four
-  // layers, and the two that build the catalog (session boot and the mid-session
-  // hot push) sit behind different call chains, so one of them would have kept
-  // today's edge-only wording while the other got the truth. One lookup, in the
-  // one function that builds the catalog, cannot disagree with itself.
-  const boundaryMode = await resolveSessionBoundaryMode(projectId, sessionId ?? null);
   const capabilities = buildSecretCapabilities(selected, {
     grantEnv,
     sessionId: sessionId ?? null,
-    boundaryMode,
   });
   return {
     env,

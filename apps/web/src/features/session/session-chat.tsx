@@ -45,9 +45,12 @@ import { stabilizeTurns } from './turn/stable-turns';
 import { ThrottledMarkdown } from './turn/throttled-markdown';
 import { TurnViewport } from './turn/turn-viewport';
 import { UserMessage } from './turn/user-message';
+import { isOptimisticSessionPrompt } from '@kortix/sdk/react';
 import {
+  QueuedPromptActions,
   QueuedPromptBubbles,
-  QueuedPromptControls,
+  QueuedPromptStatus,
+  RemoveFromQueueButton,
   QUEUED_BUBBLE_OPACITY_CLASS,
   type QueuedPromptState,
 } from './turn/queued-prompt-bubbles';
@@ -828,6 +831,17 @@ function SessionTurnImpl({
       : interruptedBeforeRun
         ? 'interrupted'
         : null;
+  // The word under the bubble. A PENDING bubble says "Queued" even when its
+  // inbox row is already closed (the runtime holds the message, the agent has
+  // not reached it): the dim alone reads as "something is wrong".
+  const statusState: QueuedPromptState | null = queueState ?? (pending ? 'queued' : null);
+  // What the X removes: the row while it is listed, the message's own wire id
+  // after the row left the list (the DELETE route resolves `msg_…` handles) —
+  // for any bubble the agent has not reached.
+  const queueRemovalId =
+    onQueueRemove && statusState && statusState !== 'interrupted' && statusState !== 'failed'
+      ? (queueRow?.prompt_id ?? turn.userMessage.info.id)
+      : null;
 
   const activeAssistantMessage = useMemo(() => {
     if (turn.assistantMessages.length === 0) return undefined;
@@ -1469,8 +1483,18 @@ function SessionTurnImpl({
           className={cn(
             'transition-opacity duration-500',
             (pending || interruptedBeforeRun) && QUEUED_BUBBLE_OPACITY_CLASS,
+            // A removable queued bubble reserves a slim column at its right
+            // for the X, so the control has ONE fixed home — the meta row
+            // reflows as timestamps and copy appear, and an X living there
+            // jumped out from under the pointer.
+            queueRemovalId && 'relative pr-7',
           )}
         >
+          {queueRemovalId && (
+            <div className="absolute top-2 right-0 opacity-0 transition-opacity duration-150 group-hover/turn:opacity-100 focus-within:opacity-100">
+              <RemoveFromQueueButton id={queueRemovalId} onRemove={onQueueRemove!} />
+            </div>
+          )}
           <UserMessage
             message={turn.userMessage}
             agentNames={agentNames}
@@ -1480,15 +1504,21 @@ function SessionTurnImpl({
             ownsPlan={ownsPlan}
             onRewind={onRewind}
             rewindDisabled={rewindDisabled}
+            leadingStatus={
+              statusState ? (
+                <QueuedPromptStatus
+                  state={statusState}
+                  lastError={queueRow?.last_error ?? undefined}
+                />
+              ) : undefined
+            }
             leadingActions={
-              queueState === 'interrupted' ? (
-                <QueuedPromptControls id={turn.userMessage.info.id} state="interrupted" />
-              ) : queueRow && queueState ? (
-                <QueuedPromptControls
+              queueRow && queueState && queueState !== 'interrupted' ? (
+                // Send-now / Retry stay in the meta row; the X lives beside
+                // the bubble (see `queueRemovalId`).
+                <QueuedPromptActions
                   id={queueRow.prompt_id}
                   state={queueState}
-                  lastError={queueRow.last_error ?? undefined}
-                  onRemove={onQueueRemove}
                   onSendNow={onQueueSendNow}
                   onRetry={onQueueRetry}
                 />
@@ -2558,9 +2588,21 @@ export function SessionChat({
     const byId = new Map<string, SessionPrompt>();
     for (const prompt of promptInbox.prompts) {
       if (!prompt.message_id) continue;
+      // The row names the re-minted id BEFORE the runtime echoes it: register
+      // the alias so the echo supersedes ITS OWN optimistic bubble instead of
+      // the ordinal fallback consuming the oldest one in flight.
+      if (prompt.wire_message_id && prompt.wire_message_id !== prompt.message_id) {
+        store.registerOptimisticEcho(sessionId, prompt.wire_message_id, prompt.message_id);
+      }
       byId.set(prompt.message_id, prompt);
       const echo = store.optimisticEchoOf(sessionId, prompt.message_id);
       if (echo) byId.set(echo, prompt);
+      // The id this tab painted under, when the drain already re-minted.
+      if (prompt.wire_message_id && prompt.wire_message_id !== prompt.message_id) {
+        byId.set(prompt.wire_message_id, prompt);
+        const wireEcho = store.optimisticEchoOf(sessionId, prompt.wire_message_id);
+        if (wireEcho) byId.set(wireEcho, prompt);
+      }
     }
     return byId;
   }, [promptInbox.prompts, sessionId]);
@@ -2599,16 +2641,21 @@ export function SessionChat({
         // answers 409 rather than lying about it.
         errorToast(
           error instanceof Error && /409/.test(error.message)
-            ? 'That prompt is already being delivered'
+            ? 'The agent is already answering that prompt'
             : 'Could not remove that prompt',
         );
         return;
       }
       if (!removed) return;
-      // The bubble IS the queue entry: the row is gone, so its optimistic
-      // bubble goes with it. A no-op for a message the runtime already
-      // confirmed — that one is the transcript's now, not the queue's.
-      useSessionStateStore.getState().optimisticRemove(sessionId, removed.message_id);
+      // The bubble IS the queue entry: the row is gone, so every copy of the
+      // message goes with it — the optimistic bubble, a confirmed echo, and
+      // the ownership marks that would otherwise resurrect it when the
+      // runtime relays the deletion.
+      const store = useSessionStateStore.getState();
+      store.optimisticRemove(sessionId, removed.message_id);
+      for (const id of removed.removed_message_ids ?? [removed.message_id]) {
+        store.forgetControlPlaneMessage(sessionId, id);
+      }
 
       // Undo rather than a confirm dialog. A queue is something you curate —
       // gating every removal behind a modal would make it unusable, and the
@@ -2826,7 +2873,70 @@ export function SessionChat({
       }
     };
   }, []);
-  const rawTurns = useMemo(() => (messages ? groupMessagesIntoTurns(messages) : []), [messages]);
+  /**
+   * Queue rows the transcript does not hold yet, as SYNTHETIC user messages —
+   * fed into the SAME turn list as everything else, sorted by their creation
+   * time, so a queued prompt never renders in a second container below newer
+   * turns. The strip used to draw them after the turns; a send painted as an
+   * optimistic TURN while an older row was still a strip ROW then displayed
+   * newest-first (measured on the shell→chat handoff: Boot 4 above Boot 1–3).
+   * The echo arrives under the same `message_id`, so the synthetic turn
+   * becomes the real one in place — same element, same key.
+   */
+  const queuedSyntheticMessages = useMemo(() => {
+    const out: NonNullable<typeof messages> = [];
+    // A queued row is by definition newer than everything the transcript
+    // already holds — but its clock is the SENDER TAB's, and the box stamps
+    // real messages from its own. A box running ~1 s ahead sorted a fresh
+    // queued row ABOVE the previous turn (measured). Floor every synthetic
+    // time just past the newest real stamp, keeping the rows' own relative
+    // order.
+    let floor = 0;
+    for (const message of messages ?? []) {
+      const created = (message.info as { time?: { created?: number } }).time?.created;
+      if (typeof created === 'number' && created > floor) floor = created;
+    }
+    let previous = floor;
+    for (const prompt of promptInbox.prompts) {
+      if (prompt.state === 'failed') continue;
+      if (!prompt.text.trim()) continue;
+      if (prompt.message_id && transcriptUserMessageIds.has(prompt.message_id)) continue;
+      if (prompt.wire_message_id && transcriptUserMessageIds.has(prompt.wire_message_id)) continue;
+      if (isOptimisticSessionPrompt(prompt)) continue; // painted by this tab already
+      const id = prompt.message_id || `queued-${prompt.prompt_id}`;
+      const sentAt =
+        typeof prompt.client_sent_at_ms === 'number'
+          ? prompt.client_sent_at_ms
+          : Date.parse(prompt.created_at);
+      const createdMs = Math.max(sentAt, previous + 1);
+      previous = createdMs;
+      out.push({
+        info: {
+          id,
+          sessionID: sessionId,
+          role: 'user',
+          time: Number.isFinite(createdMs) ? { created: createdMs } : {},
+        },
+        parts: [
+          {
+            id: `syn-${prompt.prompt_id}`,
+            messageID: id,
+            sessionID: sessionId,
+            type: 'text',
+            text: prompt.text,
+          },
+        ],
+      } as unknown as NonNullable<typeof messages>[number]);
+    }
+    return out;
+  }, [promptInbox.prompts, transcriptUserMessageIds, sessionId]);
+  const rawTurns = useMemo(
+    () =>
+      messages || queuedSyntheticMessages.length > 0
+        ? groupMessagesIntoTurns([...(messages ?? []), ...queuedSyntheticMessages])
+        : [],
+    [messages, queuedSyntheticMessages],
+  );
   /**
    * `groupMessagesIntoTurns` allocates a fresh object per turn on every call, and
    * `messages` is rebuilt on every SSE frame — so a fifty-turn session handed
@@ -2893,6 +3003,30 @@ export function SessionChat({
     [turns, working.turnId],
   );
   const pendingTurnIds = useMemo(() => new Set(workingTurn.pendingTurnIds), [workingTurn]);
+  /**
+   * ONE render key per turn. A turn keeps the id its bubble was FIRST painted
+   * under (the optimistic origin), so a re-minted echo re-renders the same
+   * element instead of mounting a new one. But an origin can transiently be
+   * claimed by TWO turns — an old echo still on screen while its re-placed
+   * copy arrives — and duplicate React keys corrupt the whole list (measured:
+   * 1.5k "two children with the same key" errors in one churn). The origin
+   * key goes to the FIRST claimant; any other turn falls back to its own id.
+   */
+  const turnRenderKeys = useMemo(() => {
+    const keys = new Map<string, string>();
+    const used = new Set<string>();
+    for (const turn of turns) {
+      const id = turn.userMessage.info.id;
+      const origin = optimisticOriginOf(sessionId, id);
+      let key = origin && !used.has(origin) ? origin : id;
+      // Belt and braces: whatever aliasing produced a collision, NEVER hand
+      // React two children with one key — that corrupts the whole list.
+      while (used.has(key)) key = `${key}~`;
+      keys.set(id, key);
+      used.add(key);
+    }
+    return keys;
+  }, [turns, sessionId, optimisticOriginOf]);
   // User messages a Stop stranded: the session is idle, the newest turn with
   // content ended by abort, and these came after it with nothing under them.
   // The runtime holds them; nothing runs them until the next send.
@@ -3226,6 +3360,7 @@ export function SessionChat({
       // hand-off between them was a frame where the message doubled, blinked
       // or jumped.
       const clientMessageId = overrides?.clientMessageId ?? ascendingId('msg');
+      const sentAtMs = Date.now();
       const messageID = mintSessionWireMessageId(sessionId, clientMessageId);
 
       // Generate part IDs upfront so the optimistic message and the server
@@ -3303,11 +3438,14 @@ export function SessionChat({
 
       // A send follows from here: the new bubble lands at the top of the
       // screen the frame it commits (use-auto-scroll.ts, FACT 2 + THE RULE).
-      // Not while a turn runs: a reader who scrolled up to read the streaming
-      // answer must not be pulled to the queued bubble; one who is at the end
-      // sees it appear anyway (the room is measured from the working turn, so
-      // the queued bubble does not shift the answer out of view either).
+      // While a turn runs the queued bubble is not anchored at the top (that
+      // would shift the streaming answer out of view); one who is at the end
+      // sees it appear anyway. One who had scrolled UP is brought to it,
+      // smoothly: pressing Enter is intent to see the message land, and a
+      // queued bubble that appears off-screen with no feedback reads as
+      // "nothing happened" (queue-lab `scroll_up_queue`, 2026-08-19).
       if (!sendingIntoRunningTurn) anchorTurn(messageID);
+      else if (scrollRef.current?.dataset.follow === 'false') smoothScrollToAbsoluteBottom();
 
       const options: Record<string, unknown> = {};
       const overrideAgent = overrides?.agent;
@@ -3482,6 +3620,9 @@ export function SessionChat({
             clientMessageId,
             messageId: messageID,
             parts: mappedParts,
+            // Enter time, not POST time: uploads and a busy API sit between
+            // the two, and the server orders racing sends by THIS.
+            clientSentAtMs: sentAtMs,
             overrides: {
               // Pass the session's directory so opencode resolves project-scoped
               // agents (.opencode/agent/*.md under the project) and applies them
@@ -3545,6 +3686,8 @@ export function SessionChat({
       local.model.sendKey,
       local.model.variant.current,
       anchorTurn,
+      smoothScrollToAbsoluteBottom,
+      scrollRef,
       replyTo,
       messages,
       sessionState,
@@ -4377,12 +4520,21 @@ export function SessionChat({
                             // re-minted echo id re-renders this node instead
                             // of mounting a new one (opacity keeps animating,
                             // hover state survives, nothing jumps).
-                            key={
-                              optimisticOriginOf(sessionId, turn.userMessage.info.id) ??
-                              turn.userMessage.info.id
-                            }
+                            key={turnRenderKeys.get(turn.userMessage.info.id)}
                             turnId={turn.userMessage.info.id}
-                            className={turnIndex === 0 ? '' : 'mt-12'}
+                            // Queued bubbles STACK: a pending turn right after
+                            // another pending turn sits close to it, like a
+                            // list of what is waiting — not a turn's width
+                            // apart as if each had been answered in between.
+                            className={
+                              turnIndex === 0
+                                ? ''
+                                : lastTurnWorking &&
+                                    pendingTurnIds.has(turn.userMessage.info.id) &&
+                                    pendingTurnIds.has(turns[turnIndex - 1].userMessage.info.id)
+                                  ? 'mt-3'
+                                  : 'mt-12'
+                            }
                           >
                             {/* Compaction divider — shown before the first turn after compaction */}
                             {hasCompaction && (
@@ -4426,7 +4578,15 @@ export function SessionChat({
                               onPermissionReply={handlePermissionReply}
                               onRewind={handleRewind}
                               rewindDisabled={
-                                !!readOnly || !sessionState || isBusy || sessionState.rewindPending
+                                !!readOnly ||
+                                !sessionState ||
+                                isBusy ||
+                                sessionState.rewindPending ||
+                                // The runtime is not idle while queued prompts
+                                // are still on their way to it — a rewind mid-
+                                // delivery fails downstream with "Session is
+                                // busy" (measured); refuse it up front instead.
+                                promptInbox.prompts.length > 0
                               }
                             />
                           </TurnViewport>
@@ -4489,9 +4649,20 @@ export function SessionChat({
                         stands in until either the row or the transcript has it,
                         so the bubble the boot shell drew never blinks out in the
                         crossfade. */}
+                    {/* Unpainted queue rows render as synthetic turns in the
+                        list above (`queuedSyntheticMessages`); only FAILED
+                        rows remain here — a failure is not a turn-to-be and
+                        must not dim like one. */}
                     <QueuedPromptBubbles
-                      className={turns.length > 0 ? 'mt-12' : undefined}
-                      queued={queuedMessages}
+                      className={
+                        turns.length === 0
+                          ? undefined
+                          : lastTurnWorking &&
+                              pendingTurnIds.has(turns[turns.length - 1].userMessage.info.id)
+                            ? 'mt-3'
+                            : 'mt-12'
+                      }
+                      queued={[]}
                       inFlightIds={queueInFlightIds}
                       failed={failedQueuedMessages}
                       held={queueRows.held}

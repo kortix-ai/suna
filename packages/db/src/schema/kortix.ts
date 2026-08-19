@@ -604,12 +604,17 @@ export interface SecretEgressPolicy {
    */
   rules: SecretEgressRule[];
   /**
-   * REQUIRED. Where the credential is attached when a rule does not override it.
-   * "First match wins, no match denies" only means something if a matched rule
-   * has a defined slot to inject into; an absent default would leave a matched
-   * request with nowhere to put the secret and no principled answer.
+   * LEGACY. Where the credential is attached when a rule does not override it.
+   *
+   * Optional since the exposure/usage model (docs/specs/
+   * 2026-08-19-secrets-exposure-usage-model.md §6). An egress-enforced secret
+   * is delivered as a HANDLE in the sandbox env and the relay substitutes the
+   * real value for that handle, so the policy is a HOST LIST and there is no
+   * slot to name. "First match wins, no match denies" still decides WHETHER the
+   * value may be spent on a request; the slot only decides where a legacy row
+   * writes it. A stored row that carries `inject` keeps injecting as before.
    */
-  inject: SecretInjectionSlot;
+  inject?: SecretInjectionSlot;
   /** `observe` tunnels and audits undeclared hosts so a project can discover its
    *  real egress footprint before committing to `deny`. */
   on_no_match?: 'deny' | 'observe';

@@ -252,36 +252,6 @@ const FLAGS: readonly FeatureFlagDef[] = [
     enforcement: 'routes',
   },
   {
-    key: 'network_boundary_shim',
-    name: 'Network boundary in-guest shim',
-    description:
-      'Use network-boundary secrets on a project that does not run on Platinum. The credential is injected by Kortix at request time instead of by a provider edge, so the sandbox still never receives the value. Requires a sandbox image that runs the in-guest shim; without it a boundary secret saves but nothing in the sandbox can spend it.',
-    stability: 'experimental',
-    // No operator env gates it — the delivery path is ordinary API code that
-    // ships with the app. What it needs is a sandbox image new enough to run
-    // the shim, which is a per-deployment fact the API cannot introspect, so
-    // the decision is left to whoever turns it on for a project.
-    available: () => true,
-    // Explicit opt-in. Defaulting this on would advertise boundary delivery to
-    // every non-Platinum project, and on an older sandbox image the secret
-    // would save and then silently never reach anything — the failure mode this
-    // whole feature exists to remove.
-    platformDefault: () => false,
-    enforcement: 'behavioral',
-    // Exactly two effects. An earlier version of this note also claimed the
-    // flag governs whether the broker route serves egress/network secrets — it
-    // does not. That route accepts them unconditionally and holds no reference
-    // to any flag; it was widened separately. Overstating what a flag governs
-    // is how someone later flips it expecting the wrong thing to change.
-    enforcementNote:
-      'On ⇒ networkBoundaryDeliveryAvailable() accepts this project without ' +
-      'Platinum, and provisioning stops treating a missing provider edge as ' +
-      'fatal (secrets/network-boundary-availability.ts, projects/lib/' +
-      'sandbox-env-sync.ts, platform/services/session-sandbox.ts). ' +
-      'OFF again with a boundary secret still saved ⇒ new sessions fail to ' +
-      'provision until the secret changes delivery.',
-  },
-  {
     key: 'warm_sessions',
     name: 'Warm Sessions',
     description:

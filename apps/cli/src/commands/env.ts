@@ -28,8 +28,10 @@ Global options:
   -h, --help         Show this help.
 
 Heads-up: cloud secrets are encrypted at rest with no read API — the
-plaintext only flows into session sandboxes, never back to a client.
-\`env pull\` therefore exports a SKELETON (names only), not values.
+plaintext never comes back to a client, and it reaches a sandbox only for a
+secret whose exposure is \`environment\`. \`env pull\` therefore exports a
+SKELETON (names only), not values. \`env push\` sets values; it does not
+change any secret's exposure — use \`kortix secrets delivery\` for that.
 `;
 
 export async function runEnv(argv: string[]): Promise<number> {
