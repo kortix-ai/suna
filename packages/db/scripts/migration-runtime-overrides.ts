@@ -27,10 +27,42 @@ DROP VIEW IF EXISTS kortix.workspace_sessions;--> statement-breakpoint
 
 `;
 
+const RBAC_CUTOVER_VIEWS_MIGRATION = '20260819160100000_rbac_cutover_views.sql';
+const RBAC_CUTOVER_VIEWS_SHA256 = '81fd7a986fe0039c12656c4f3b70a356651d6492da457c6ca07f17b64f0c3f87';
+const RBAC_CUTOVER_VIEWS_INSERTION_POINT = `ALTER TABLE kortix.role_permissions
+  VALIDATE CONSTRAINT role_permissions_action_permissions_fk;`;
+const RBAC_CUTOVER_VIEWS_RUNTIME_CLEANUP = `-- Runtime correction: long-lived databases (dev was the first) hold
+-- role_permissions rows whose action string was RETIRED from the catalog —
+-- the pre-#6554 spellings project.cr.open / project.cr.merge (folded into the
+-- gitops leaves) and the dead trigger.* family. The local DB this migration
+-- was proved on had zero such rows, so the VALIDATE below 23503'd on dev and
+-- blocked every deploy. Map the renamed pair onto the surviving leaves
+-- (dedup-aware), then drop anything else the catalog no longer names. Bounded
+-- DML: role_permissions is a per-custom-role action list (hundreds of rows),
+-- not a data table.
+UPDATE kortix.role_permissions rp
+   SET action = m.new_action
+  FROM (VALUES ('project.cr.open',  'project.gitops.push'),
+               ('project.cr.merge', 'project.gitops.merge')) AS m(old_action, new_action)
+ WHERE rp.action = m.old_action
+   AND NOT EXISTS (
+     SELECT 1 FROM kortix.role_permissions d
+      WHERE d.role_id = rp.role_id AND d.action = m.new_action
+   );
+
+DELETE FROM kortix.role_permissions rp
+ WHERE NOT EXISTS (
+   SELECT 1 FROM kortix.permissions p WHERE p.action = rp.action
+ );
+
+ALTER TABLE kortix.role_permissions
+  VALIDATE CONSTRAINT role_permissions_action_permissions_fk;`;
+
 interface RuntimeOverrideOptions {
   /** Test seam. Production always uses the committed migration checksum above. */
   expectedSha256?: string;
   removeLocalDockerExpectedSha256?: string;
+  rbacCutoverViewsExpectedSha256?: string;
 }
 
 export interface MigrationRuntimeDirectory {
@@ -55,15 +87,20 @@ export function materializeMigrationRuntimeDirectory(
 ): MigrationRuntimeDirectory {
   const auditPath = join(sourceDirectory, AUDIT_V2_MIGRATION);
   const removeLocalDockerPath = join(sourceDirectory, REMOVE_LOCAL_DOCKER_MIGRATION);
+  const rbacCutoverViewsPath = join(sourceDirectory, RBAC_CUTOVER_VIEWS_MIGRATION);
   const hasAuditOverride = existsSync(auditPath);
   const hasRemoveLocalDockerOverride = existsSync(removeLocalDockerPath);
-  if (!hasAuditOverride && !hasRemoveLocalDockerOverride) {
+  const hasRbacCutoverViewsOverride = existsSync(rbacCutoverViewsPath);
+  if (!hasAuditOverride && !hasRemoveLocalDockerOverride && !hasRbacCutoverViewsOverride) {
     return { path: sourceDirectory, appliedOverrides: [], cleanup: () => {} };
   }
 
   const auditSource = hasAuditOverride ? readFileSync(auditPath, 'utf8') : null;
   const removeLocalDockerSource = hasRemoveLocalDockerOverride
     ? readFileSync(removeLocalDockerPath, 'utf8')
+    : null;
+  const rbacCutoverViewsSource = hasRbacCutoverViewsOverride
+    ? readFileSync(rbacCutoverViewsPath, 'utf8')
     : null;
   if (auditSource) {
     const expectedSha256 = options.expectedSha256 ?? AUDIT_V2_SHA256;
@@ -96,6 +133,22 @@ export function materializeMigrationRuntimeDirectory(
     }
   }
 
+  if (rbacCutoverViewsSource) {
+    const expectedSha256 = options.rbacCutoverViewsExpectedSha256 ?? RBAC_CUTOVER_VIEWS_SHA256;
+    const actualSha256 = sha256(rbacCutoverViewsSource);
+    if (actualSha256 !== expectedSha256) {
+      throw new Error(
+        `${RBAC_CUTOVER_VIEWS_MIGRATION} checksum mismatch: expected ${expectedSha256}, received ${actualSha256}`,
+      );
+    }
+    const occurrenceCount =
+      rbacCutoverViewsSource.split(RBAC_CUTOVER_VIEWS_INSERTION_POINT).length - 1;
+    if (occurrenceCount !== 1) {
+      throw new Error(
+        `${RBAC_CUTOVER_VIEWS_MIGRATION} expected exactly one role_permissions VALIDATE statement; found ${occurrenceCount}`,
+      );
+    }
+  }
   const runtimeRoot = mkdtempSync(join(tmpdir(), 'kortix-migrations-'));
   const runtimeDirectory = join(runtimeRoot, 'migrations');
   const appliedOverrides: string[] = [];
@@ -120,6 +173,18 @@ export function materializeMigrationRuntimeDirectory(
       );
       appliedOverrides.push(
         `${REMOVE_LOCAL_DOCKER_MIGRATION}: drop historical workspace_sessions view (${REMOVE_LOCAL_DOCKER_SHA256})`,
+      );
+    }
+    if (rbacCutoverViewsSource) {
+      writeFileSync(
+        join(runtimeDirectory, RBAC_CUTOVER_VIEWS_MIGRATION),
+        rbacCutoverViewsSource.replace(
+          RBAC_CUTOVER_VIEWS_INSERTION_POINT,
+          RBAC_CUTOVER_VIEWS_RUNTIME_CLEANUP,
+        ),
+      );
+      appliedOverrides.push(
+        `${RBAC_CUTOVER_VIEWS_MIGRATION}: retire project.cr.*/trigger.* role_permissions rows before the catalog-FK VALIDATE (${RBAC_CUTOVER_VIEWS_SHA256})`,
       );
     }
   } catch (error) {

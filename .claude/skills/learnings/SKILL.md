@@ -21,6 +21,23 @@ linked, not inlined.
 
 ## Register
 
+### A VALIDATE ships only with a reconciliation the TARGET data has passed (2026-08-19)
+
+**When:** writing `VALIDATE CONSTRAINT` for an FK/CHECK added `NOT VALID`.
+Zero violating rows on the local DB is not evidence — local data is young.
+Long-lived envs hold rows written before the catalog/constraint existed (dev:
+`iam_role_actions` rows with retired `project.cr.*`/`trigger.*` actions).
+Either probe every target env for violators first, or — better — precede the
+VALIDATE with idempotent reconciliation DML in the same migration so it cannot
+fail on data the constraint predates. A merged migration that VALIDATE-fails
+blocks EVERY deploy of that env; the only sanctioned fix is a checksum-guarded
+runtime override (`packages/db/scripts/migration-runtime-overrides.ts`).
+*Incident:* RBAC cutover #6594 — `role_permissions_action_permissions_fk`
+VALIDATE 23503'd on dev; Deploy Dev blocked ~1h; fixed by the third runtime
+override (map `cr.*`→`gitops.*` dedup-aware, purge uncataloged, then VALIDATE).
+*Enforcer:* `migration-runtime-overrides.test.ts` pins the override; nothing
+yet lints "VALIDATE without reconciliation" — prose only.
+
 ### `drizzle-kit generate` reports a TTY prompt as "no schema changes" (2026-08-19)
 
 **When:** running `bun packages/db/scripts/generate.ts <slug>` from any

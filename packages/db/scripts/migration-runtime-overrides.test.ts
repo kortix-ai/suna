@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
+import { createHash } from 'node:crypto';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -28,6 +29,57 @@ function removeLocalDockerFixture(sql: string): string {
   roots.push(root);
   return migrations;
 }
+
+describe('rbac cutover views runtime cleanup', () => {
+  test('prepends the retired-action cleanup before the catalog-FK VALIDATE, only in the runtime copy', () => {
+    const root = mkdtempSync(join(tmpdir(), 'rbac-views-override-'));
+    roots.push(root);
+    const dir = join(root, 'migrations');
+    mkdirSync(dir, { recursive: true });
+    const source = [
+      'set lock_timeout = \'3s\';',
+      'ALTER TABLE kortix.role_permissions',
+      '  VALIDATE CONSTRAINT role_permissions_action_permissions_fk;',
+    ].join('\n');
+    writeFileSync(join(dir, '20260819160100000_rbac_cutover_views.sql'), source);
+    const runtime = materializeMigrationRuntimeDirectory(dir, {
+      rbacCutoverViewsExpectedSha256: createHash('sha256').update(source).digest('hex'),
+    });
+    roots.push(runtime.path);
+    const rewritten = readFileSync(
+      join(runtime.path, '20260819160100000_rbac_cutover_views.sql'),
+      'utf8',
+    );
+    // The cleanup lands BEFORE the VALIDATE, and the VALIDATE survives once.
+    expect(rewritten).toContain("DELETE FROM kortix.role_permissions rp");
+    expect(rewritten).toContain("('project.cr.open',  'project.gitops.push')");
+    expect(rewritten.indexOf('DELETE FROM kortix.role_permissions')).toBeLessThan(
+      rewritten.indexOf('VALIDATE CONSTRAINT role_permissions_action_permissions_fk'),
+    );
+    expect(
+      rewritten.split('VALIDATE CONSTRAINT role_permissions_action_permissions_fk').length - 1,
+    ).toBe(1);
+    // The immutable source is untouched.
+    expect(readFileSync(join(dir, '20260819160100000_rbac_cutover_views.sql'), 'utf8')).toBe(source);
+    expect(runtime.appliedOverrides.some((o) => o.includes('rbac_cutover_views'))).toBe(true);
+  });
+
+  test('fails closed on a checksum mismatch for the views migration', () => {
+    const root = mkdtempSync(join(tmpdir(), 'rbac-views-override-'));
+    roots.push(root);
+    const dir = join(root, 'migrations');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, '20260819160100000_rbac_cutover_views.sql'),
+      'ALTER TABLE kortix.role_permissions\n  VALIDATE CONSTRAINT role_permissions_action_permissions_fk;',
+    );
+    expect(() =>
+      materializeMigrationRuntimeDirectory(dir, {
+        rbacCutoverViewsExpectedSha256: '0'.repeat(64),
+      }),
+    ).toThrow(/checksum mismatch/);
+  });
+});
 
 describe('materializeMigrationRuntimeDirectory', () => {
   test('changes only the known audit-v2 timeout and keeps the immutable source untouched', () => {
