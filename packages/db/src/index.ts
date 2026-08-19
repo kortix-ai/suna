@@ -224,6 +224,7 @@ export {
   connectorProjectSettingsRelations,
 } from './schema/kortix';
 export type { AgentGrant } from './schema/kortix';
+export type { SessionTurnError } from './schema/kortix';
 export type { SecretEgressPolicy, SecretEgressRule, SecretInjectionSlot } from './schema/kortix';
 
 export type {

@@ -59,6 +59,7 @@ function ledgerRow(overrides: {
   accepted_at?: Date | null;
   end_reason?: string | null;
   ended_at?: Date | null;
+  error?: Record<string, unknown> | null;
 }): Record<string, unknown> {
   return {
     session_id: SESSION_ID,
@@ -69,6 +70,7 @@ function ledgerRow(overrides: {
     accepted_at: null,
     end_reason: null,
     ended_at: null,
+    error: null,
     ...overrides,
   };
 }
@@ -269,6 +271,10 @@ function buildApp(caller: { authType: string; sessionId?: string } = { authType:
 
 function getTurn(sessionId = SESSION_ID, caller?: { authType: string; sessionId?: string }) {
   return buildApp(caller).request(`/v1/projects/${PROJECT_ID}/sessions/${sessionId}/turn`);
+}
+
+function getTurns(query = '', sessionId = SESSION_ID) {
+  return buildApp().request(`/v1/projects/${PROJECT_ID}/sessions/${sessionId}/turns${query}`);
 }
 
 /** A running box holding the given `activeTurns` entries. */
@@ -598,9 +604,45 @@ describe('GET /v1/projects/:projectId/sessions/:sessionId/turn', () => {
       turns: [],
       last_ended: {
         turn_token: 't-newest',
+        message_id: null,
         end_reason: 'runtime_gone',
         ended_at: '2026-08-17T00:00:09.000Z',
+        error: null,
       },
+    });
+  });
+
+  // THE POINT OF THE COLUMN. `end_reason` is a five-value enum; it cannot say
+  // WHICH model was missing, and when OpenCode raises session.error before any
+  // assistant message it persists nothing for the turn but the user message —
+  // so the transcript cannot say it either. Both fields must reach the client
+  // off the SAME poll, keyed by the message the failure belongs to.
+  test('serves the terminal error and its message id on last_ended', async () => {
+    const error = {
+      name: 'ModelNotFound',
+      message: 'Model kortix/grok-4.6 not found',
+      status_code: 404,
+      is_retryable: false,
+      provider_id: 'kortix',
+      recorded_at: '2026-08-17T00:00:09.000Z',
+    };
+    turnTable = [
+      ledgerRow({
+        turn_token: 't-failed',
+        state: 'ended',
+        message_id: 'msg_0000000000012345678901234',
+        end_reason: 'failed',
+        ended_at: new Date('2026-08-17T00:00:09.000Z'),
+        error,
+      }),
+    ];
+    const body = await (await getTurn()).json();
+    expect(body.last_ended).toEqual({
+      turn_token: 't-failed',
+      message_id: 'msg_0000000000012345678901234',
+      end_reason: 'failed',
+      ended_at: '2026-08-17T00:00:09.000Z',
+      error,
     });
   });
 
@@ -685,7 +727,143 @@ describe('GET /v1/projects/:projectId/sessions/:sessionId/turn', () => {
     const body = await (await getTurn()).json();
     expect(body).toEqual({
       turns: [],
-      last_ended: { turn_token: 't-unsettled', end_reason: null, ended_at: null },
+      last_ended: {
+        turn_token: 't-unsettled',
+        message_id: null,
+        end_reason: null,
+        ended_at: null,
+        error: null,
+      },
     });
+  });
+});
+
+/**
+ * GET /v1/projects/:projectId/sessions/:sessionId/turns — the RETAINED HISTORY.
+ *
+ * `/turn` answers "what is running, and how did the LAST one end". After a
+ * reload a client holds a whole transcript and needs to know which of its user
+ * messages a turn failed on — every failure but the newest is invisible there.
+ * This route is that history, keyed by `message_id`, carrying each turn's
+ * error.
+ */
+describe('GET /v1/projects/:projectId/sessions/:sessionId/turns', () => {
+  const ERROR = {
+    name: 'ModelNotFound',
+    message: 'Model kortix/grok-4.6 not found',
+    status_code: 404,
+    is_retryable: false,
+    provider_id: 'kortix',
+    recorded_at: '2026-08-17T00:00:09.000Z',
+  };
+
+  beforeEach(() => {
+    sandboxTable = [];
+    turnTable = [];
+    queries = [];
+    loadProjectCalls = [];
+    capabilityCalls = [];
+    visibleSessionCallerIds = [];
+    loadedProject = { row: { accountId: ACCOUNT_ID, projectId: PROJECT_ID }, userId: USER_ID };
+    visibleSession = { row: { sessionId: SESSION_ID } };
+  });
+
+  test('rejects a non-UUID session id with 400 before any DB read', async () => {
+    const response = await getTurns('', 'not-a-uuid');
+    expect(response.status).toBe(400);
+    expect(queries).toHaveLength(0);
+  });
+
+  test('404s a project the caller cannot read, and never touches the ledger', async () => {
+    loadedProject = null;
+    expect((await getTurns()).status).toBe(404);
+    expect(queries).toHaveLength(0);
+  });
+
+  test('404s a session that is not visible to the caller', async () => {
+    visibleSession = null;
+    expect((await getTurns()).status).toBe(404);
+    expect(queries).toHaveLength(0);
+  });
+
+  test('gates on the session-read leaf, at the read tier', async () => {
+    await getTurns();
+    expect(loadProjectCalls).toEqual([{ projectId: PROJECT_ID, action: 'read' }]);
+    expect(capabilityCalls).toEqual([
+      { accountId: ACCOUNT_ID, projectId: PROJECT_ID, action: 'project.session.read' },
+    ]);
+  });
+
+  test('serves each turn with its error, newest START first', async () => {
+    turnTable = [
+      ledgerRow({
+        turn_token: 't-old',
+        state: 'ended',
+        message_id: 'msg_old',
+        end_reason: 'completed',
+        started_at: new Date('2026-08-17T00:00:01.000Z'),
+        ended_at: new Date('2026-08-17T00:00:02.000Z'),
+      }),
+      ledgerRow({
+        turn_token: 't-new',
+        state: 'ended',
+        message_id: 'msg_new',
+        opencode_session_id: 'ses_root',
+        end_reason: 'failed',
+        started_at: new Date('2026-08-17T00:00:08.000Z'),
+        ended_at: new Date('2026-08-17T00:00:09.000Z'),
+        error: ERROR,
+      }),
+    ];
+    const body = await (await getTurns()).json();
+    expect(body.turns.map((turn: { turn_token: string }) => turn.turn_token)).toEqual([
+      't-new',
+      't-old',
+    ]);
+    expect(body.turns[0]).toEqual({
+      turn_token: 't-new',
+      message_id: 'msg_new',
+      opencode_session_id: 'ses_root',
+      state: 'ended',
+      end_reason: 'failed',
+      started_at: '2026-08-17T00:00:08.000Z',
+      ended_at: '2026-08-17T00:00:09.000Z',
+      error: ERROR,
+    });
+    // A completed turn carries no error. `null` is the answer, not an omission:
+    // a client renders "this one failed" off the presence of this object.
+    expect(body.turns[1].error).toBeNull();
+  });
+
+  test('returns running turns too — history is not only the settled rows', async () => {
+    turnTable = [ledgerRow({ turn_token: 't-live', state: 'active', ended_at: null })];
+    const body = await (await getTurns()).json();
+    expect(body.turns[0].state).toBe('active');
+    expect(body.turns[0].ended_at).toBeNull();
+  });
+
+  test('honours ?limit=, and CLAMPS it', async () => {
+    turnTable = [
+      ledgerRow({ turn_token: 't-1', started_at: new Date('2026-08-17T00:00:01.000Z') }),
+      ledgerRow({ turn_token: 't-2', started_at: new Date('2026-08-17T00:00:02.000Z') }),
+      ledgerRow({ turn_token: 't-3', started_at: new Date('2026-08-17T00:00:03.000Z') }),
+    ];
+    expect(((await (await getTurns('?limit=2')).json()) as any).turns).toHaveLength(2);
+    // An unbounded limit turns one poll into a scan of a whole session history.
+    expect(((await (await getTurns('?limit=100000')).json()) as any).turns).toHaveLength(3);
+    // Junk is not a limit: fall back to the default rather than to zero rows.
+    expect(((await (await getTurns('?limit=nonsense')).json()) as any).turns).toHaveLength(3);
+    // A number below the floor clamps UP to one row, never down to an empty
+    // answer that would read as "this session never ran a turn".
+    expect(((await (await getTurns('?limit=0')).json()) as any).turns).toHaveLength(1);
+    expect(((await (await getTurns('?limit=-9')).json()) as any).turns).toHaveLength(1);
+  });
+
+  test('reads ONLY the rows of this session', async () => {
+    await getTurns();
+    expect(queries).toHaveLength(1);
+    expect(queries[0].table).toBe('turns');
+    expect(queries[0].where).toContain(`col:session_id = $${JSON.stringify(SESSION_ID)}`);
+    expect(queries[0].orderBy).toEqual(['col:started_at desc']);
   });
 });

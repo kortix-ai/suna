@@ -22,9 +22,10 @@ import {
   projectSessions,
   type sessionLifecycleCommands,
   sessionSandboxes,
+  type SessionTurnError,
   sessionTurns,
 } from '@kortix/db';
-import { and, asc, desc, eq, inArray, ne } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNotNull, ne } from 'drizzle-orm';
 import {
   assertAgentSessionWorkspaceAllowsRepository,
   assertProjectCapability,
@@ -293,10 +294,53 @@ const SessionTurnSchema = z.object({
   accepted_at: z.string().nullable(),
 });
 
+/**
+ * WHY a turn failed, in the words the user is shown.
+ *
+ * `end_reason` is a five-value enum and cannot carry "ModelNotFound:
+ * kortix/grok-4.6". Neither can the transcript: when OpenCode raises
+ * `session.error` before any assistant message exists, it persists nothing for
+ * the turn but the user message. This object is the ONLY durable record of the
+ * failure, which is why it is served from every turn read.
+ *
+ * Present on a failed turn, absent on a completed one — see
+ * `syntheticTurnError` for the sentences the never-ran reasons carry.
+ */
+const SessionTurnErrorSchema = z.object({
+  name: z.string(),
+  message: z.string(),
+  status_code: z.number().optional(),
+  is_retryable: z.boolean().optional(),
+  provider_id: z.string().optional(),
+  recorded_at: z.string(),
+});
+
 const SessionTurnLastEndedSchema = z.object({
   turn_token: z.string(),
+  // The OpenCode user message this turn answered. It is what a client keys the
+  // error onto: the message is in the transcript, and the failure is not.
+  message_id: z.string().nullable(),
   end_reason: z.string().nullable(),
   ended_at: z.string().nullable(),
+  error: SessionTurnErrorSchema.nullable(),
+});
+
+/** How many history rows `GET .../turns` returns by default, and the ceiling a
+ *  caller may ask for. A session's retained history is unbounded; a read of it
+ *  is not. */
+const SESSION_TURN_HISTORY_DEFAULT = 50;
+const SESSION_TURN_HISTORY_MAX = 200;
+
+/** One row of `GET .../turns` — the retained history, newest first. */
+const SessionTurnHistorySchema = z.object({
+  turn_token: z.string(),
+  message_id: z.string().nullable(),
+  opencode_session_id: z.string().nullable(),
+  state: z.string(),
+  end_reason: z.string().nullable(),
+  started_at: z.string().nullable(),
+  ended_at: z.string().nullable(),
+  error: SessionTurnErrorSchema.nullable(),
 });
 
 const SessionTurnResponseSchema = z.object({
@@ -466,8 +510,10 @@ projectsApp.openapi(
     const [ended] = await db
       .select({
         turnToken: sessionTurns.turnToken,
+        messageId: sessionTurns.messageId,
         endReason: sessionTurns.endReason,
         endedAt: sessionTurns.endedAt,
+        error: sessionTurns.error,
       })
       .from(sessionTurns)
       .where(and(eq(sessionTurns.sessionId, sessionId), eq(sessionTurns.state, 'ended')))
@@ -490,11 +536,106 @@ projectsApp.openapi(
         ? {
             last_ended: {
               turn_token: ended.turnToken,
+              // Keyed by the OpenCode user message, because that is what a
+              // client can put the failure NEXT TO. `error` rides this same
+              // read on purpose: the common case — "the last turn failed" —
+              // must cost the poller no extra round trip.
+              message_id: ended.messageId ?? null,
               end_reason: ended.endReason,
               ended_at: ended.endedAt ? ended.endedAt.toISOString() : null,
+              error: ended.error ?? null,
             },
           }
         : {}),
+    });
+  },
+);
+
+// GET /v1/projects/:projectId/sessions/:sessionId/turns?limit=
+// The session's RETAINED TURN HISTORY, newest first — one row per turn the
+// ledger settled, each carrying the error that ended it.
+//
+// `GET .../turn` answers "what is happening now, and how did the last one
+// end?", which is what a live client polls. It cannot answer the question a
+// client has after a RELOAD: the transcript it just fetched holds N user
+// messages, and it needs to know which of them a turn failed on. Only the
+// newest failure is on `last_ended`; every older one is invisible there.
+//
+// So: liveness and the newest end from `/turn`, the whole history from here.
+// The client keys rows onto its transcript by `message_id`. Bounded by `limit`
+// (default 50, max 200) and served by `session_turns_session_idx`, the same
+// index the terminal read above uses.
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/sessions/{sessionId}/turns',
+    tags: ['sessions'],
+    summary: 'GET /:projectId/sessions/:sessionId/turns',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string(), sessionId: z.string() }),
+      query: z.object({ limit: z.string().optional() }).passthrough(),
+    },
+    responses: {
+      200: json(z.object({ turns: z.array(SessionTurnHistorySchema) }), 'Recent turns'),
+      ...errors(400, 404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const sessionId = c.req.param('sessionId');
+    if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+
+    // The same gate as `GET .../turn`: this is session content, read-tier.
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_SESSION_READ,
+    );
+    const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c), callerKortixSessionId(c));
+    if (!visible) return c.json({ error: 'Not found' }, 404);
+
+    // CLAMPED, never trusted: an unbounded `limit` turns one poll into a scan
+    // of a long-lived session's entire retained history.
+    const requested = Number.parseInt(normalizeString(c.req.query('limit')) ?? '', 10);
+    const limit = Number.isFinite(requested)
+      ? Math.min(Math.max(requested, 1), SESSION_TURN_HISTORY_MAX)
+      : SESSION_TURN_HISTORY_DEFAULT;
+
+    const rows = await db
+      .select({
+        turnToken: sessionTurns.turnToken,
+        messageId: sessionTurns.messageId,
+        opencodeSessionId: sessionTurns.opencodeSessionId,
+        state: sessionTurns.state,
+        endReason: sessionTurns.endReason,
+        startedAt: sessionTurns.startedAt,
+        endedAt: sessionTurns.endedAt,
+        error: sessionTurns.error,
+      })
+      .from(sessionTurns)
+      .where(eq(sessionTurns.sessionId, sessionId))
+      // `started_at` is NOT NULL and is the index's own ordering, so this is a
+      // plain backwards index scan. Ordering by `ended_at` instead would sort,
+      // and would order a still-open row above every settled one.
+      .orderBy(desc(sessionTurns.startedAt))
+      .limit(limit);
+
+    return c.json({
+      turns: rows.map((row) => ({
+        turn_token: row.turnToken,
+        message_id: row.messageId ?? null,
+        opencode_session_id: row.opencodeSessionId ?? null,
+        state: row.state,
+        end_reason: row.endReason ?? null,
+        started_at: row.startedAt ? row.startedAt.toISOString() : null,
+        ended_at: row.endedAt ? row.endedAt.toISOString() : null,
+        error: row.error ?? null,
+      })),
     });
   },
 );
@@ -530,7 +671,11 @@ const SessionPromptSchema = z.object({
   reason: z.string().nullable(),
   text: z.string(),
   attempts: z.number(),
+  /** Why the control plane could not DELIVER this row. */
   last_error: z.string().nullable(),
+  /** Why the model run that carried this row FAILED. A different fact from
+   *  `last_error`, and the only one that can say "ModelNotFound". */
+  error: SessionTurnErrorSchema.nullable(),
   created_at: z.string(),
   available_at: z.string(),
 });
@@ -589,10 +734,18 @@ function promptState(row: Pick<PromptRow, 'status' | 'result'>): {
   return { state: 'queued', reason: null };
 }
 
-function serializePrompt(row: PromptRow) {
+function serializePrompt(row: PromptRow, errors?: Map<string, SessionTurnError>) {
   const payload = (row.payload ?? {}) as Record<string, unknown>;
   const result = (row.result ?? {}) as Record<string, unknown>;
   const { state, reason } = promptState(row);
+  // Every id this row has ever been sent under, because the drain re-mints one
+  // on redelivery and the ledger keys its rows by whichever id the turn
+  // actually carried.
+  const wireIds = [
+    result.forwarded_message_id,
+    payload.redeliveredMessageId,
+    payload.wireMessageId,
+  ].filter((id): id is string => typeof id === 'string' && id.length > 0);
   return {
     prompt_id: row.commandId,
     client_message_id: typeof payload.clientMessageId === 'string' ? payload.clientMessageId : '',
@@ -616,9 +769,59 @@ function serializePrompt(row: PromptRow) {
     ),
     attempts: row.attempts,
     last_error: row.lastError ?? null,
+    // The TURN's error, not the queue's. `last_error` is why the control plane
+    // could not DELIVER this row; this is why the model run that carried it
+    // failed — "ModelNotFound: kortix/grok-4.6" is only ever the second kind,
+    // and it is invisible to the inbox on its own.
+    error: wireIds.map((id) => errors?.get(id)).find((error) => error !== undefined) ?? null,
     created_at: row.createdAt.toISOString(),
     available_at: row.availableAt.toISOString(),
   };
+}
+
+/**
+ * The failure of the turn that carried each of these prompts, keyed by wire id.
+ *
+ * ONE extra query, and only when the inbox is non-empty — the steady state of
+ * every session is an empty queue, which costs nothing. Scoped to this session
+ * and to rows that actually carry an error, so an ordinary completed turn adds
+ * no rows to carry back.
+ */
+async function promptTurnErrors(
+  sessionId: string,
+  rows: PromptRow[],
+): Promise<Map<string, SessionTurnError>> {
+  const errors = new Map<string, SessionTurnError>();
+  const ids = [
+    ...new Set(
+      rows.flatMap((row) => {
+        const payload = (row.payload ?? {}) as Record<string, unknown>;
+        const result = (row.result ?? {}) as Record<string, unknown>;
+        return [
+          result.forwarded_message_id,
+          payload.redeliveredMessageId,
+          payload.wireMessageId,
+        ].filter((id): id is string => typeof id === 'string' && id.length > 0);
+      }),
+    ),
+  ];
+  if (ids.length === 0) return errors;
+  const turns = await db
+    .select({ messageId: sessionTurns.messageId, error: sessionTurns.error })
+    .from(sessionTurns)
+    .where(
+      and(
+        eq(sessionTurns.sessionId, sessionId),
+        inArray(sessionTurns.messageId, ids),
+        isNotNull(sessionTurns.error),
+      ),
+    )
+    // Oldest first, so the newest attempt on a redelivered id overwrites it.
+    .orderBy(asc(sessionTurns.startedAt));
+  for (const turn of turns) {
+    if (turn.messageId && turn.error) errors.set(turn.messageId, turn.error);
+  }
+  return errors;
 }
 
 function serializeRemovedPrompt(row: PromptRow) {
@@ -842,7 +1045,8 @@ projectsApp.openapi(
     // automation's internal prompt in the user's own queue.
     const rows = await listInboxPrompts(sessionId, PROMPT_LIST_LIMIT);
 
-    return c.json({ prompts: rows.map(serializePrompt) });
+    const errors = await promptTurnErrors(sessionId, rows);
+    return c.json({ prompts: rows.map((row) => serializePrompt(row, errors)) });
   },
 );
 
@@ -956,7 +1160,7 @@ projectsApp.openapi(
     if (!requeued) return c.json({ error: 'Not found' }, 404);
 
     void drainSessionLifecycleQueue({ limit: 1 }).catch(() => undefined);
-    return c.json(serializePrompt(requeued), 200);
+    return c.json(serializePrompt(requeued, await promptTurnErrors(sessionId, [requeued])), 200);
   },
 );
 
@@ -1013,7 +1217,8 @@ projectsApp.openapi(
     await holdInboxPrompts(sessionId, body.held);
     const rows = await listInboxPrompts(sessionId, PROMPT_LIST_LIMIT);
     if (!body.held) void drainSessionLifecycleQueue({ limit: 1 }).catch(() => undefined);
-    return c.json({ prompts: rows.map(serializePrompt) });
+    const errors = await promptTurnErrors(sessionId, rows);
+    return c.json({ prompts: rows.map((row) => serializePrompt(row, errors)) });
   },
 );
 

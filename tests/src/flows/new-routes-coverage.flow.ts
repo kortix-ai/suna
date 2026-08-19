@@ -190,6 +190,7 @@ flow(
     routes: [
       'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
       'GET /v1/projects/:projectId/sessions/:sessionId/turn',
+      'GET /v1/projects/:projectId/sessions/:sessionId/turns',
     ],
   },
   async (ctx) => {
@@ -231,6 +232,43 @@ flow(
           params: { projectId: project.id, sessionId: ZERO_UUID },
         });
       response.status(404);
+    });
+
+    await ctx.step('Turn history is an empty list for a session that never ran', async () => {
+      // The RETAINED history, the read a client uses after a reload to learn
+      // which of its transcript messages a turn failed on. An empty list, not
+      // a 404: "this session has run no turns" is an answer.
+      const session = await ctx.fixtures.session(project);
+      const response = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/projects/:projectId/sessions/:sessionId/turns', {
+          params: { projectId: project.id, sessionId: session.id },
+        });
+      response.status(200);
+      const body = response.json<{ turns: unknown[] }>();
+      if (!Array.isArray(body.turns) || body.turns.length !== 0) {
+        throw new Error(`expected an empty turns list, got ${JSON.stringify(body.turns)}`);
+      }
+    });
+
+    await ctx.step('Turn history returns 404 for an unknown session', async () => {
+      const response = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/projects/:projectId/sessions/:sessionId/turns', {
+          params: { projectId: project.id, sessionId: ZERO_UUID },
+        });
+      response.status(404);
+    });
+
+    await ctx.step('Turn history refuses an anonymous caller', async () => {
+      // Same argument as the turn read: the ledger carries the OpenCode session
+      // id, the client-minted message id, and now the failure text.
+      const response = await ctx.client
+        .as(ctx.P.ANON)
+        .get('/v1/projects/:projectId/sessions/:sessionId/turns', {
+          params: { projectId: project.id, sessionId: ZERO_UUID },
+        });
+      response.status([401, 403, 404]);
     });
 
     await ctx.step('Session turn read refuses an anonymous caller', async () => {

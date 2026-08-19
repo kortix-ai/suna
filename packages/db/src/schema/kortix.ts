@@ -1856,6 +1856,23 @@ export const sessionSandboxes = kortixSchema.table(
  * No foreign keys — `session_sandboxes` has none either, and a ledger row must
  * survive the session row it describes.
  */
+/**
+ * The terminal error of one turn, as `session_turns.error` stores it and every
+ * read route serves it. Snake_case because it crosses the wire verbatim.
+ */
+export interface SessionTurnError {
+  /** OpenCode's error class, e.g. `ModelNotFound`, `ProviderAuthError`. */
+  name: string;
+  /** One user-readable sentence. Capped at 4 KB, secrets redacted. */
+  message: string;
+  /** Upstream HTTP status when the provider gave one. */
+  status_code?: number;
+  is_retryable?: boolean;
+  provider_id?: string;
+  /** When the control plane recorded it (ISO-8601). */
+  recorded_at: string;
+}
+
 export const sessionTurns = kortixSchema.table(
   'session_turns',
   {
@@ -1873,6 +1890,25 @@ export const sessionTurns = kortixSchema.table(
     messageId: text('message_id'),
     state: varchar('state', { length: 16 }).default('delivering').notNull(),
     endReason: text('end_reason'),
+    // WHY the turn ended, in the words a user can be shown.
+    //
+    // `end_reason` is a five-value enum. It cannot carry "ModelNotFound:
+    // kortix/grok-4.6", which is the only thing that explains the failure —
+    // and when OpenCode raises `session.error` before any assistant message
+    // exists, the runtime persists NOTHING for the turn but the user message,
+    // so the transcript cannot carry it either. Without this column the text
+    // reached the API on the daemon's turn-end relay and was dropped there:
+    // reload the session in another browser and the failed prompt showed
+    // nothing at all.
+    //
+    // Written only by a terminal finalizer, always beside `end_reason`, and
+    // never overwritten once set (`coalesce`, everywhere). Null is legitimate
+    // and means "this turn did not fail" — every `completed` row has it.
+    // Shape: `{name, message, status_code, is_retryable, provider_id,
+    // recorded_at}`; `message` is capped and secret-redacted by
+    // `normalizeTurnError` (apps/api/src/projects/sandbox-turn-lifecycle.ts),
+    // which is the ONLY writer allowed to build one.
+    error: jsonb('error').$type<SessionTurnError>(),
     startedAt: timestamp('started_at', { withTimezone: true }).defaultNow().notNull(),
     acceptedAt: timestamp('accepted_at', { withTimezone: true }),
     endedAt: timestamp('ended_at', { withTimezone: true }),

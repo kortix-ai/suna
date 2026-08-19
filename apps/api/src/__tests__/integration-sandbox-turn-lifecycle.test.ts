@@ -728,6 +728,93 @@ describe('session_turns ledger', () => {
     expect(await readTurn(t('ledger-failed'))).toMatchObject({
       state: 'ended',
       end_reason: 'failed',
+      // A failure with no reported text still says SOMETHING. "Nothing
+      // happened" must never be the whole record of a turn that failed.
+      error: { name: 'TurnFailed' },
+    });
+  });
+
+  test('a relayed session.error is stored verbatim on the row', async () => {
+    // THE INCIDENT THIS COLUMN EXISTS FOR. `end_reason` is a five-value enum;
+    // it cannot say WHICH model was missing. OpenCode raises session.error
+    // before any assistant message exists and persists nothing for the turn but
+    // the user message, so the relay is the only carrier of this text and the
+    // row is the only place it can live.
+    await beginSandboxTurn(
+      { sandboxId: SANDBOX_ID },
+      { token: t('ledger-error'), opencodeSessionId: 'ses_root', messageId: 'msg_ledger_error' },
+      60_000,
+    );
+
+    await completeSandboxTurn(
+      SESSION_ID,
+      'error',
+      { opencodeSessionId: 'ses_root', messageId: 'msg_ledger_error' },
+      {
+        name: 'ModelNotFound',
+        message: 'Model kortix/grok-4.6 not found',
+        statusCode: 404,
+        isRetryable: false,
+        providerID: 'kortix',
+      },
+      60_000,
+    );
+
+    const turn = await readTurn(t('ledger-error'));
+    expect(turn?.end_reason).toBe('failed');
+    expect(turn?.error).toMatchObject({
+      name: 'ModelNotFound',
+      message: 'Model kortix/grok-4.6 not found',
+      status_code: 404,
+      is_retryable: false,
+      provider_id: 'kortix',
+    });
+    // Recorded by the control plane, so it is an instant a reader can trust.
+    expect(
+      Date.parse(String((turn?.error as Record<string, unknown>).recorded_at)),
+    ).toBeGreaterThan(0);
+  });
+
+  test('a RETRYABLE error is not terminal and writes nothing', async () => {
+    // A 429 backoff fires session.error while the turn keeps running. Storing
+    // an error there would show the user a failure for a turn that then
+    // succeeded.
+    await beginSandboxTurn(
+      { sandboxId: SANDBOX_ID },
+      { token: t('ledger-retry'), opencodeSessionId: 'ses_root', messageId: 'msg_ledger_retry' },
+      60_000,
+    );
+
+    expect(
+      await completeSandboxTurn(
+        SESSION_ID,
+        'error',
+        { opencodeSessionId: 'ses_root', messageId: 'msg_ledger_retry' },
+        { name: 'RateLimited', message: 'slow down', statusCode: 429, isRetryable: true },
+        60_000,
+      ),
+    ).toBe(false);
+    expect(await readTurn(t('ledger-retry'))).toMatchObject({ state: 'delivering', error: null });
+  });
+
+  test('an idle end stores no error at all', async () => {
+    await beginSandboxTurn(
+      { sandboxId: SANDBOX_ID },
+      { token: t('ledger-idle'), opencodeSessionId: 'ses_root', messageId: 'msg_ledger_idle' },
+      60_000,
+    );
+
+    await completeSandboxTurn(
+      SESSION_ID,
+      'idle',
+      { opencodeSessionId: 'ses_root', messageId: 'msg_ledger_idle' },
+      undefined,
+      60_000,
+    );
+
+    expect(await readTurn(t('ledger-idle'))).toMatchObject({
+      end_reason: 'completed',
+      error: null,
     });
   });
 
@@ -744,6 +831,7 @@ describe('session_turns ledger', () => {
     expect(await readTurn(t('ledger-clear'))).toMatchObject({
       state: 'ended',
       end_reason: 'runtime_gone',
+      error: { name: 'RuntimeGone' },
     });
   });
 
@@ -769,6 +857,9 @@ describe('session_turns ledger', () => {
       end_reason: 'abandoned',
       opencode_session_id: 'ses_root',
       message_id: 'msg_ledger_abandon',
+      // The prompt the runtime never took is exactly the case a user reads as
+      // "nothing happened". It gets a sentence too.
+      error: { name: 'TurnAbandoned', message: 'The runtime did not accept this prompt.' },
     });
   });
 
@@ -982,11 +1073,15 @@ describe('session_turns ledger', () => {
     expect(await readTurn(t('ledger-stop-open'))).toMatchObject({
       state: 'ended',
       end_reason: 'runtime_gone',
+      // A turn the stop swept up ended because the runtime went away. Saying
+      // so is what stops it reading as an empty success.
+      error: { name: 'RuntimeGone' },
     });
     // An already-settled row keeps the reason it ended with.
     expect(await readTurn(t('ledger-stop-done'))).toMatchObject({
       state: 'ended',
       end_reason: 'completed',
+      error: null,
     });
   });
 
