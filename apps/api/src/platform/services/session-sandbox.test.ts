@@ -84,6 +84,8 @@ let accountTokenCreateCalls: Array<Record<string, unknown>> = [];
 let serviceAccountCreateCalls: Array<Record<string, unknown>> = [];
 let networkBoundaryBindings: Array<Record<string, unknown>> = [];
 let providerSyncCalls: Array<{ externalId: string; bindings: Array<Record<string, unknown>> }> = [];
+// GATEWAY_AI_SDK_NATIVE — toggled per test via the config mock's getter below.
+let aiSdkNativeFlag = false;
 
 function compile(condition: unknown): { sql: string; params: unknown[] } {
   try {
@@ -111,6 +113,11 @@ mock.module('../../config', () => ({
     LLM_GATEWAY_PROXY_PORT: undefined,
     LLM_GATEWAY_PROXY_TARGET: undefined,
     LLM_GATEWAY_BASE_URL: undefined,
+    // Read live from the toggle so a single test can flip the flag and assert
+    // the session env-injection branch on either side.
+    get aiSdkNative() {
+      return aiSdkNativeFlag;
+    },
   },
 }));
 
@@ -377,6 +384,7 @@ beforeEach(() => {
   serviceAccountCreateCalls = [];
   networkBoundaryBindings = [];
   providerSyncCalls = [];
+  aiSdkNativeFlag = false;
 });
 
 afterEach(() => {
@@ -432,6 +440,36 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
 
     expect(imageRequests[0]).toMatchObject({ source: 'session-start' });
     expect(imageRequests[0]).not.toHaveProperty('requireCurrentRuntime');
+  });
+
+  test('GATEWAY_AI_SDK_NATIVE on injects KORTIX_LLM_AI_SDK_NATIVE=true into the sandbox env', async () => {
+    aiSdkNativeFlag = true;
+    const opened = waitFor((resolve) => {
+      onComputeOpened = resolve;
+    });
+
+    await provisionSessionSandbox(baseOpts());
+    await opened;
+
+    expect(providerCreateOpts).toHaveLength(1);
+    const envVars = providerCreateOpts[0]?.envVars as Record<string, string>;
+    // The daemon's env route allowlists this name (OPENCODE_RUNTIME_ENV_NAMES);
+    // buildKortixProvider reads it to select @ai-sdk/gateway.
+    expect(envVars.KORTIX_LLM_AI_SDK_NATIVE).toBe('true');
+  });
+
+  test('GATEWAY_AI_SDK_NATIVE off leaves KORTIX_LLM_AI_SDK_NATIVE absent (byte-identical to today)', async () => {
+    // aiSdkNativeFlag stays false (reset in beforeEach).
+    const opened = waitFor((resolve) => {
+      onComputeOpened = resolve;
+    });
+
+    await provisionSessionSandbox(baseOpts());
+    await opened;
+
+    expect(providerCreateOpts).toHaveLength(1);
+    const envVars = providerCreateOpts[0]?.envVars as Record<string, string>;
+    expect(envVars).not.toHaveProperty('KORTIX_LLM_AI_SDK_NATIVE');
   });
 
   test('the fast flag keeps the standard image so the edge optimization stays isolated', async () => {

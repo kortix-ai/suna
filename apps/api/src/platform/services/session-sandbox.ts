@@ -535,6 +535,16 @@ export async function provisionSessionSandbox(opts: {
             KORTIX_LLM_BASE_URL: llmBaseUrl,
           }
         : {}),
+      // AI-SDK-native transport toggle. When the operator enables the native
+      // gateway path (`GATEWAY_AI_SDK_NATIVE`, one switch for both the gateway
+      // mount and this injection), tell the daemon's `buildKortixProvider` to
+      // select `@ai-sdk/gateway` (native `/language-model`) instead of
+      // `@ai-sdk/openai-compatible`. Allowlisted in the daemon's env route
+      // (OPENCODE_RUNTIME_ENV_NAMES). Inert without the KORTIX_LLM_* pair above:
+      // `buildKortixProvider` runs only when the gateway provider is mounted, so
+      // a session on native BYOK ignores it. When the flag is OFF this key is
+      // absent — byte-identical to the pre-flag env.
+      ...(config.aiSdkNative ? { KORTIX_LLM_AI_SDK_NATIVE: 'true' } : {}),
     },
     // Idle lifecycle: we pass NO explicit autoStopInterval for a normal session,
     // so each provider gets its native idle timer set from
