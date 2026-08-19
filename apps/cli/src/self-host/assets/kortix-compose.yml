@@ -297,6 +297,11 @@ services:
       KORTIX_DOMAIN: ${KORTIX_DOMAIN}
       KORTIX_API_DOMAIN: ${KORTIX_API_DOMAIN}
       KORTIX_ACME_EMAIL: ${KORTIX_ACME_EMAIL}
+      # The wildcard base domain the *.<apps base domain> site block serves.
+      # Empty unless Apps hosting is configured; the App-serving block + its
+      # on_demand_tls `ask` are only written into the Caddyfile in that case
+      # (see renderCaddyfile() in compose-assets.ts).
+      KORTIX_APPS_BASE_DOMAIN: ${KORTIX_APPS_BASE_DOMAIN}
     depends_on:
       kortix-api:
         condition: service_healthy

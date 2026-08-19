@@ -10,8 +10,36 @@
  *   - the agent port (8000) is reached through Platinum's edge via a PUBLIC
  *     expose URL; the sandbox itself is gated by the KORTIX serviceKey bearer
  *     (added as a header in resolveEndpoint, same effective auth as Daytona).
+ *
+ * S1 (idempotent create): a retry after an AMBIGUOUS transport failure
+ * (timeout / dropped response) on the create POST must never blindly
+ * re-POST — Platinum's CP could have already committed the box, and a second
+ * POST would double the VM + its billing stream. Two layers close this,
+ * both derived from the FULL 36-char `session_sandboxes.sandboxId` (never
+ * `opts.name`, session-sandbox.ts's truncated `session-<8 chars>` display
+ * name) plus a MONOTONIC `attempt` counter session-sandbox.ts persists +
+ * restores across process restarts (see restorePlatinumCreateAttempt in
+ * session-sandbox.ts):
+ *   - PRIMARY: a deterministic `Idempotency-Key` header. Platinum's CP
+ *     implements it (8-255 chars, scoped per actor+key): the SAME key with a
+ *     semantically-identical body replays the already-committed sandbox
+ *     (200, `replayed: true`); the SAME key with a genuinely different body
+ *     is a 422 `idempotency_key_reused`; a key pointing at a terminal/deleted
+ *     box is auto-skipped for a fresh create. retrySandboxProvisionCreate's
+ *     own internal retry loop already re-calls create() on any transient
+ *     failure — since the key (and the rest of the request body) stays
+ *     IDENTICAL across those retries for one attempt, the CP's replay makes
+ *     them safe with no special handling here.
+ *   - SECONDARY/backstop: a deterministic `name` in the create body.
+ *     Platinum's CP separately enforces per-org NAME uniqueness (409
+ *     `name_taken`) — a human-debuggable belt-and-suspenders in case an
+ *     idempotency record ever expires while the name index hasn't; see the
+ *     409 handling in provisionFromTemplate.
+ * Gated by KORTIX_PLATINUM_CREATE_DEDUP (default ON) for instant rollback —
+ * off means the legacy body (no `name`, no header), unchanged from before.
  */
 
+import { createHash } from 'node:crypto';
 import { SANDBOX_VERSION, config } from '../../config';
 import type { NetworkBoundarySecretBinding } from '../../secrets/network-boundary';
 import { syncPlatinumNetworkBoundary } from '../../secrets/platinum-network-boundary';
@@ -47,6 +75,10 @@ const START_CONFLICT_POLL_MS = 250;
 interface PlatinumSandbox {
   id: string;
   state?: string;
+  name?: string;
+  /** Set true by Platinum's CP when an Idempotency-Key replay resolved this
+   *  response to an already-committed sandbox rather than a fresh create. */
+  replayed?: boolean;
   backupState?: string | null;
   backup_state?: string | null;
   metadata?: Record<string, unknown>;
@@ -102,6 +134,65 @@ function isMissingSandboxError(error: unknown): boolean {
     message.includes('no such sandbox') ||
     message.includes('sandbox does not exist')
   );
+}
+
+/**
+ * S1 kill-switch — the create-dedup name + Idempotency-Key. Default ON. Set
+ * KORTIX_PLATINUM_CREATE_DEDUP=0/off/false/no to instantly revert to the
+ * legacy create body (no `name`, no `Idempotency-Key` header) if the CP-side
+ * idempotency behavior ever needs to be ruled out during an incident.
+ */
+export function platinumCreateDedupEnabled(): boolean {
+  const raw = (process.env.KORTIX_PLATINUM_CREATE_DEDUP ?? '').trim().toLowerCase();
+  if (raw === '') return true; // default ON
+  return !(raw === '0' || raw === 'off' || raw === 'false' || raw === 'no');
+}
+
+const SANDBOX_NAME_MAX_LEN = 63;
+const SANDBOX_NAME_CHARSET = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/;
+
+/**
+ * Deterministic per-(sandboxId, attempt) sandbox name — the SECONDARY,
+ * human-debuggable dedup layer (see module doc). `kortix-` (7) + a 36-char
+ * UUID + `-a<n>` is always well under the 63-char limit for any realistic
+ * attempt count, and every character UUIDs/`-`/`a`/digits produce is already
+ * legal, so the fallback below is defensive rather than reachable today —
+ * kept so create() can never send an invalid name if either shape changes.
+ * The fallback hashes the FULL raw identity (never truncates it) so two
+ * different (sandboxId, attempt) pairs can't collide onto the same name.
+ */
+function buildDeterministicSandboxName(sandboxId: string, attempt: number): string {
+  const raw = `kortix-${sandboxId}-a${attempt}`;
+  if (raw.length <= SANDBOX_NAME_MAX_LEN && SANDBOX_NAME_CHARSET.test(raw)) return raw;
+  const hash = createHash('sha256').update(raw).digest('hex').slice(0, 32);
+  return `kortix-${hash}`;
+}
+
+/**
+ * Deterministic Idempotency-Key — the PRIMARY dedup layer (see module doc).
+ * `|`-joined so the three components can never accidentally concatenate into
+ * an ambiguous value (e.g. a template id ending in a digit run into the
+ * attempt number). Always a 64-char hex string, comfortably inside Platinum's
+ * 8-255 char bound.
+ */
+function buildIdempotencyKey(sandboxId: string, templateId: string, attempt: number): string {
+  return createHash('sha256').update(`${sandboxId}|${templateId}|a${attempt}`).digest('hex');
+}
+
+/**
+ * A definitive 409 whose body signals the deterministic NAME is already
+ * taken. Because the name is derived solely from (sandboxId, attempt) and
+ * never reused across sandboxes/attempts, the only way Platinum can already
+ * have it is that OUR OWN earlier POST for this exact attempt already
+ * committed — normally after an ambiguous transport failure on that earlier
+ * POST that also left the Idempotency-Key record unresolved on our side (see
+ * provisionFromTemplate's handling: re-POST the SAME body under the SAME
+ * key, which the CP replays to the already-committed box).
+ */
+function isNameTakenConflict(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error ?? '');
+  if (!/ -> 409\b/.test(message)) return false;
+  return /name_taken|name[_ ]?already|name.{0,24}(exists|conflict|taken)/i.test(message);
 }
 
 export class PlatinumProvider implements SandboxProvider {
@@ -199,35 +290,82 @@ export class PlatinumProvider implements SandboxProvider {
     // policy alone and no longer doubles as the billing clamp's grace.
     const autoStop = opts.autoStopInterval ?? providerAutoStopBackstopMinutes();
 
-    const _t0 = Date.now();
+    // ── S1: create-side dedup identity (see module doc for the full design) ──
+    // `attempt` is session-sandbox.ts's MONOTONIC, persisted counter — stable
+    // across retrySandboxProvisionCreate's own internal retry loop (an
+    // "ambiguous retry" of THIS attempt), advancing only when session-sandbox
+    // decides this is a genuinely new attempt. Defaults to 1 for any caller
+    // that doesn't thread it (keeps this safe/inert for direct callers).
+    const dedupAttempt = opts.createAttempt ?? 1;
+    const dedup =
+      platinumCreateDedupEnabled() && opts.sandboxId
+        ? {
+            name: buildDeterministicSandboxName(opts.sandboxId, dedupAttempt),
+            idempotencyKey: buildIdempotencyKey(opts.sandboxId, template, dedupAttempt),
+          }
+        : null;
+
+    const createBody: Record<string, unknown> = {
+      template,
+      envVars,
+      type: autoStop === 0 ? 'persistent' : 'ephemeral',
+      auto_stop_minutes: autoStop,
+      // OWNERSHIP MARKER, not decoration. The Platinum org is shared across
+      // prod/dev/local, and `listManagedRunningSandboxes` (the orphan-box
+      // reaper's input) filters on exactly these two keys. Without them the
+      // reaper would enumerate every environment's boxes and stop them.
+      // Boxes created before this landed carry no metadata and are
+      // therefore never reaped — the safe fail direction.
+      //
+      // S1 adds `kortix.sandbox_id` alongside them when the dedup identity is
+      // on — the logical sandbox id behind the deterministic name, so an
+      // operator can map a box back to its session without parsing the name.
+      // The reaper's filter is unaffected (it reads the two keys above only).
+      metadata: {
+        'kortix.managed': 'true',
+        'kortix.env': config.INTERNAL_KORTIX_ENV,
+        'kortix.workload': workloadType,
+        ...(opts.sandboxId ? { 'kortix.sandbox_id': opts.sandboxId } : {}),
+      },
+    };
+    if (dedup) {
+      createBody.name = dedup.name;
+    }
+    const createBodyJson = JSON.stringify(createBody);
+    const CREATE_PATH = '/v1/sandboxes?wait_for_state=running&wait_timeout_ms=60000';
     // This asks Platinum to long-poll server-side for up to 60s
     // (wait_timeout_ms) — platinumJson's default 20s client-side abort budget
     // would cut that off early, so pass an explicit signal comfortably longer
     // than the server-side wait instead of relying on the default.
-    const sandbox = await platinumJson<PlatinumSandbox>(
-      '/v1/sandboxes?wait_for_state=running&wait_timeout_ms=60000',
-      {
+    const postCreate = () =>
+      platinumJson<PlatinumSandbox>(CREATE_PATH, {
         method: 'POST',
         signal: AbortSignal.timeout(70_000),
-        body: JSON.stringify({
-          template,
-          envVars,
-          type: autoStop === 0 ? 'persistent' : 'ephemeral',
-          auto_stop_minutes: autoStop,
-          // OWNERSHIP MARKER, not decoration. The Platinum org is shared across
-          // prod/dev/local, and `listManagedRunningSandboxes` (the orphan-box
-          // reaper's input) filters on exactly these two keys. Without them the
-          // reaper would enumerate every environment's boxes and stop them.
-          // Boxes created before this landed carry no metadata and are
-          // therefore never reaped — the safe fail direction.
-          metadata: {
-            'kortix.managed': 'true',
-            'kortix.env': config.INTERNAL_KORTIX_ENV,
-            'kortix.workload': workloadType,
-          },
-        }),
-      },
-    );
+        body: createBodyJson,
+        ...(dedup ? { headers: { 'Idempotency-Key': dedup.idempotencyKey } } : {}),
+      });
+
+    const _t0 = Date.now();
+    let sandbox: PlatinumSandbox;
+    try {
+      sandbox = await postCreate();
+    } catch (err) {
+      if (dedup && isNameTakenConflict(err)) {
+        // See isNameTakenConflict + the module doc: the name is exclusively
+        // ours, so this can only be our own prior commit under this same
+        // attempt. Re-issue the IDENTICAL body under the SAME key once — the
+        // CP resolves it to a replay of the already-committed box rather than
+        // a second create.
+        console.warn(
+          `[platinum] name_taken for ${dedup.name} (sandboxId=${opts.sandboxId}, attempt=${dedupAttempt}) — ` +
+          `retrying under the SAME Idempotency-Key to replay the committed box instead of a fresh create:`,
+          err,
+        );
+        sandbox = await postCreate();
+      } else {
+        throw err;
+      }
+    }
     const _vmMs = Date.now() - _t0;
 
     const externalId = sandbox.id;
@@ -304,7 +442,8 @@ export class PlatinumProvider implements SandboxProvider {
     // becomes usable without any create-path hang.
     console.log(
       `[platinum-timing] ${externalId} vm-running=${_vmMs}ms expose=${_exposeMs}ms ` +
-        `edge=${exposedUrl ? 'ready' : 'lazy'} total=${Date.now() - _t0}ms (runtime-ready deferred to FE poll, like daytona)`,
+        `edge=${exposedUrl ? 'ready' : 'lazy'} total=${Date.now() - _t0}ms (runtime-ready deferred to FE poll, like daytona)` +
+        (sandbox.replayed ? ' [S1: Idempotency-Key replay — adopted an already-committed box]' : ''),
     );
 
     return {

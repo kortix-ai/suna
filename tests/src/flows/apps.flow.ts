@@ -609,3 +609,96 @@ flow(
     });
   },
 );
+
+flow(
+  "APP-5",
+  {
+    domain: "apps",
+    routes: [
+      "PATCH /v1/projects/:projectId/features",
+      "POST /v1/projects/:projectId/apps",
+      "DELETE /v1/projects/:projectId/apps/:appId",
+      "GET /v1/apps/edge/tls-check",
+    ],
+  },
+  async (ctx) => {
+    // The on-demand-TLS gate a self-host reverse proxy calls before it issues a
+    // certificate for an App hostname. Unauthenticated by design (Caddy cannot
+    // present a bearer token), so the contract that matters is: 200 ONLY for a
+    // real App host, and no certificate for anything else.
+    const project = await ctx.fixtures.project();
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const anon = ctx.client.as(ctx.P.ANON);
+    const projectParams = { projectId: project.id };
+    let appId = "";
+    let appHost = "";
+
+    await ctx.step("enable the apps flag", async () => {
+      const response = await owner.patch(
+        "/v1/projects/:projectId/features",
+        { feature: "apps", enabled: true },
+        { params: projectParams },
+      );
+      response.status(200);
+    });
+
+    await ctx.step("create an App and take its public hostname", async () => {
+      const slug = ctx.fixtures
+        .name("edge")
+        .toLowerCase()
+        .replace(/[^a-z0-9-]/g, "-")
+        .slice(0, 63);
+      const response = await owner.post(
+        "/v1/projects/:projectId/apps",
+        { slug, name: "ke2e edge App" },
+        { params: projectParams },
+      );
+      response.status(201).body().exists("$.url");
+      const created = response.json<any>();
+      appId = created.app_id;
+      appHost = new URL(created.url as string).hostname;
+    });
+
+    await ctx.step("the App's own hostname is allowed to get a certificate", async () => {
+      const response = await anon.get("/v1/apps/edge/tls-check", {
+        query: { domain: appHost },
+      });
+      response.status(200).body().has("$.ok", true);
+    });
+
+    await ctx.step("a hostname that is not an App host is refused", async () => {
+      // Not the App base domain at all, and the bare route with no domain.
+      const foreign = await anon.get("/v1/apps/edge/tls-check", {
+        query: { domain: "totally-unrelated.example.com" },
+      });
+      foreign.status(403);
+
+      const missing = await anon.get("/v1/apps/edge/tls-check");
+      missing.status(403);
+    });
+
+    await ctx.step("an App-shaped hostname for no such App is refused", async () => {
+      // Same shape, different (nonexistent) immutable route key. On a real
+      // domain that is a 404 — App-shaped but no App row, so no certificate.
+      // A local `*.apps.localhost` box never issues certificates and short-
+      // circuits the DB round-trip, so there it answers 200 by design; the
+      // 404 branch itself is pinned in apps/api/src/apps/edge.test.ts.
+      const local = appHost.endsWith(".apps.localhost");
+      const unknownHost = appHost.replace(/[0-9a-f]{16}/, "0123456789abcdef");
+      if (unknownHost === appHost) {
+        throw new Error(`could not derive an unknown App host from ${appHost}`);
+      }
+      const response = await anon.get("/v1/apps/edge/tls-check", {
+        query: { domain: unknownHost },
+      });
+      response.status(local ? 200 : 404);
+    });
+
+    await ctx.step("delete the test App", async () => {
+      const response = await owner.del("/v1/projects/:projectId/apps/:appId", {
+        params: { ...projectParams, appId },
+      });
+      response.status(200).body().has("$.ok", true);
+    });
+  },
+);

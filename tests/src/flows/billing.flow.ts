@@ -284,6 +284,9 @@ flow(
       'POST /v1/billing/create-per-seat-checkout',
       'POST /v1/billing/cancel-subscription',
       'POST /v1/billing/purchase-credits',
+      'POST /v1/billing/sync-seat-quantity',
+      'POST /v1/billing/sync-subscription',
+      'POST /v1/billing/confirm-checkout-session',
     ],
   },
   async (ctx) => {
@@ -307,6 +310,21 @@ flow(
       const r = await asMember.post('/v1/billing/purchase-credits', {
         account_id: team.id,
         amount: 10,
+      });
+      r.status(403);
+    });
+    await ctx.step('MEMBER cannot reconcile the seat quantity → 403', async () => {
+      const r = await asMember.post('/v1/billing/sync-seat-quantity', { account_id: team.id });
+      r.status(403);
+    });
+    await ctx.step('MEMBER cannot reconcile the subscription → 403', async () => {
+      const r = await asMember.post('/v1/billing/sync-subscription', { account_id: team.id });
+      r.status(403);
+    });
+    await ctx.step('MEMBER cannot confirm a checkout session → 403', async () => {
+      const r = await asMember.post('/v1/billing/confirm-checkout-session', {
+        account_id: team.id,
+        session_id: 'cs_test_member_blocked',
       });
       r.status(403);
     });

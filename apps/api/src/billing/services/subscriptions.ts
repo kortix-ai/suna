@@ -869,7 +869,14 @@ export async function confirmCheckoutSession(params: {
         'tier_grant',
         `${tier.displayName} subscription activated: ${tier.monthlyCredits} credits`,
         true,
-        session.id,
+        // ONE activation, ONE idempotency key. The Stripe webhook path grants
+        // the same tier credits for the same subscription under
+        // `subscription_activation:<subId>` (webhooks.ts). This endpoint used
+        // to key on the CHECKOUT SESSION id, so a client calling confirm while
+        // `checkout.session.completed` was in flight deduped against nothing
+        // and the account was granted the tier credits twice. Key on the
+        // subscription, exactly as the webhook does.
+        `subscription_activation:${subscriptionId}`,
       );
     } catch (err) {
       console.error('[Billing] Failed to grant initial plan credits during checkout confirm:', err);

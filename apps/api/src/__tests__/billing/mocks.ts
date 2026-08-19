@@ -30,7 +30,8 @@ export const mockRegistry = {
   upsertCustomer: null as ((data: any) => Promise<void>) | null,
   listAccountStripeCustomerIds: null as ((id: string) => Promise<string[]>) | null,
   deleteCustomerByStripeId: null as ((id: string) => Promise<void>) | null,
-  recordWebhookEvent: null as (() => Promise<boolean>) | null,
+  recordWebhookEvent: null as ((eventId: string, eventType: string) => Promise<boolean>) | null,
+  forgetWebhookEvent: null as ((eventId: string) => Promise<void>) | null,
 
   grantCredits: null as ((...args: any[]) => Promise<void>) | null,
   resetExpiringCredits: null as ((...args: any[]) => Promise<void>) | null,
@@ -135,9 +136,13 @@ export function registerGlobalMocks() {
   // Webhook dedup + per-account advisory lock use the raw db (no DATABASE_URL in
   // tests). Default: every event is new; the lock is a pass-through.
   mock.module('../../billing/services/webhook-concurrency', () => ({
-    recordWebhookEvent: async () =>
-      mockRegistry.recordWebhookEvent ? mockRegistry.recordWebhookEvent() : true,
-    forgetWebhookEvent: async () => undefined,
+    // Forward the real arguments: the dedupe key is what the RevenueCat/Stripe
+    // paths actually vary, so a stub that swallows it makes duplicate-event
+    // tests pass on a constant `undefined` key instead of the real one.
+    recordWebhookEvent: async (eventId: string, eventType: string) =>
+      mockRegistry.recordWebhookEvent ? mockRegistry.recordWebhookEvent(eventId, eventType) : true,
+    forgetWebhookEvent: async (eventId: string) =>
+      mockRegistry.forgetWebhookEvent ? mockRegistry.forgetWebhookEvent(eventId) : undefined,
     withAccountLock: async (_accountId: string, fn: () => Promise<any>) => fn(),
   }));
 

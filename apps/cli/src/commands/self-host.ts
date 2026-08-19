@@ -1774,12 +1774,14 @@ async function configureConnections(env: SelfHostEnv, flags: GlobalFlags): Promi
     env.PLATINUM_TEMPLATE = await prompt('Platinum template (optional — leave blank for the platform default)', env.PLATINUM_TEMPLATE);
   }
   // Kortix Apps (optional, default skip): Apps publish on a wildcard domain
-  // this instance serves. Left unconfigured, the API derives `apps.<your API
-  // domain>` — correct only once DNS and a wildcard certificate exist, so the
-  // operator is asked rather than surprised. Kortix Cloud fronts Apps with a
-  // Cloudflare Worker that signs each request; a self-host has no such Worker,
-  // so its own reverse proxy is the trust boundary and direct edge traffic is
-  // accepted.
+  // this instance serves. When configured, the bundled Caddy proxy adds a
+  // `*.<apps base domain>` site block that reverse-proxies to kortix-api and
+  // issues a certificate PER-APP on first request via ACME HTTP-01 (on_demand)
+  // — so only a `*.<domain>` DNS record is needed, NOT a wildcard certificate,
+  // and no reverse proxy has to be hand-wired. Requires a domain (Caddy only
+  // runs in domain mode). Kortix Cloud fronts Apps with a Cloudflare Worker
+  // that signs each request; a self-host has no such Worker, so its own reverse
+  // proxy is the trust boundary and direct edge traffic is accepted.
   if (shouldPrompt(flags)) {
     const appsMode = await selectFrom(
       'Kortix Apps hosting (optional, serves deployed Apps on their own domain): configure/skip',
@@ -1788,7 +1790,7 @@ async function configureConnections(env: SelfHostEnv, flags: GlobalFlags): Promi
     );
     if (appsMode === 'configure') {
       env.KORTIX_APPS_BASE_DOMAIN = await prompt(
-        'Apps base domain (needs a *.<domain> DNS record and certificate pointing at this instance)',
+        'Apps base domain (needs a *.<domain> DNS record pointing at this instance; Caddy issues per-App certificates on demand)',
         env.KORTIX_APPS_BASE_DOMAIN,
       );
       env.KORTIX_APPS_ALLOW_DIRECT_EDGE = 'true';
@@ -2329,7 +2331,13 @@ function defaultEnv(flags: GlobalFlags): SelfHostEnv {
 function writeCompose(instance: string, env: SelfHostEnv): void {
   const root = instanceDir(instance);
   writeSupabaseVendorAssets(root);
-  writeKortixRuntimeAssets(root);
+  // Apps hosting (optional) adds a wildcard *.<apps base domain> App-serving
+  // site block to the Caddyfile. Gated on KORTIX_APPS_BASE_DOMAIN, the single
+  // signal that turns it on; Caddy itself only runs in domain mode, so the
+  // block is inert without a domain.
+  writeKortixRuntimeAssets(root, {
+    appsHostingConfigured: Boolean(env.KORTIX_APPS_BASE_DOMAIN?.trim()),
+  });
   writeFileSync(
     composePath(instance),
     renderFullDockerCompose(composeProject(instance), {
