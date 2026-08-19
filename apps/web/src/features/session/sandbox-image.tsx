@@ -3,6 +3,7 @@
 import { useTranslations } from 'next-intl';
 
 import { useFileContent } from '@/features/files/hooks/use-file-content';
+import { isSandboxNotReadyError } from '@kortix/sdk';
 import { ImagePreview } from '@/features/session/image-preview';
 import { cn } from '@/lib/utils';
 import { useEffect, useMemo, useState } from 'react';
@@ -39,7 +40,11 @@ export function useSandboxImageSrc(src: string): {
     return src.replace(/^\/workspace\//, '');
   }, [isLocalPath, src]);
 
-  const { data: fileContentData, isLoading } = useFileContent(fileContentPath, {
+  const {
+    data: fileContentData,
+    isLoading,
+    error,
+  } = useFileContent(fileContentPath, {
     enabled: !!fileContentPath,
   });
 
@@ -64,7 +69,12 @@ export function useSandboxImageSrc(src: string): {
 
   return {
     resolvedSrc: isLocalPath ? blobUrl : src,
-    isLoading: isLocalPath && (isLoading || (hasBase64 && !blobUrl)),
+    // A readiness 503 (parked/booting sandbox) counts as loading, not failure:
+    // useFileContent keeps polling while it lasts, so the image resolves on
+    // its own once the box is up — meanwhile show the skeleton, never the
+    // "Image unavailable" box.
+    isLoading:
+      isLocalPath && (isLoading || (hasBase64 && !blobUrl) || isSandboxNotReadyError(error)),
   };
 }
 

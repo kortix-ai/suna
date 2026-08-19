@@ -303,6 +303,23 @@ describe('portUnreachableResponse carries hop attribution', () => {
     });
   });
 
+  test('a readiness 503 carries the stable machine code and retry flag', async () => {
+    // Clients branch on `code`, not on the human-readable `reason` — and
+    // `retry: true` says the same request succeeds once the box is up.
+    const res = portUnreachableResponse({
+      port: 8000,
+      status: 503,
+      origin: 'https://app.kortix.test',
+      incomingHeaders: jsonHeaders,
+      reason: 'sandbox not ready (status: stopped)',
+      hop: 'control_plane',
+      code: 'sandbox_not_ready',
+      retry: true,
+    });
+    expect(res.status).toBe(503);
+    expect(await res.json()).toMatchObject({ code: 'sandbox_not_ready', retry: true });
+  });
+
   test('a dead daemon reports the upstream status it actually saw', async () => {
     const res = portUnreachableResponse({
       port: 8000,

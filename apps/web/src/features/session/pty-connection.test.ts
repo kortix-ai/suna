@@ -61,6 +61,17 @@ describe('deriveTerminalPanelState', () => {
     expect(deriveTerminalPanelState({ ...readyInput, isCreateError: true })).toBe('error');
   });
 
+  test('holds the connecting state while the failure is a sandbox readiness 503', () => {
+    // A parked/booting box answers list/create with "sandbox not ready" — a
+    // pending state, never a terminal error card.
+    expect(
+      deriveTerminalPanelState({ ...readyInput, isListError: true, isSandboxWaking: true }),
+    ).toBe('connecting');
+    expect(
+      deriveTerminalPanelState({ ...readyInput, isCreateError: true, isSandboxWaking: true }),
+    ).toBe('connecting');
+  });
+
   test('keeps an existing terminal visible during background query failures', () => {
     expect(deriveTerminalPanelState({ ...readyInput, hasPty: true, isListError: true })).toBe(
       'terminal',

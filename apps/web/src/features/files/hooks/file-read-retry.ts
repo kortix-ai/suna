@@ -1,3 +1,5 @@
+import { isSandboxNotReadyError } from '@kortix/sdk';
+
 export const UPLOADED_FILE_READ_RETRY_DELAY_MS = 2_000;
 export const UPLOADED_FILE_READ_RETRY_WINDOW_MS = 60_000;
 export const UPLOADED_FILE_READ_MAX_RETRIES = Math.ceil(
@@ -74,11 +76,23 @@ function isMissingFileReadFailure(error: unknown): boolean {
   );
 }
 
+// How often a file query re-polls while the sandbox reports a readiness 503
+// ("sandbox not ready (status: …)"). The control plane answers these without
+// dialling the box, so the poll is cheap; the query keeps polling until the
+// box is active and the file loads on its own.
+export const SANDBOX_WAKING_REFETCH_INTERVAL_MS = 3_000;
+
 export function shouldRetryFileRead(
   filePath: string | null | undefined,
   failureCount: number,
   error: unknown,
 ): boolean {
+  // A parked/booting sandbox is not a failed read. Fail fast out of the inline
+  // retry loop so the viewer can render its "waking up" state immediately; the
+  // query-level poll (SANDBOX_WAKING_REFETCH_INTERVAL_MS) re-reads until the
+  // sandbox is back.
+  if (isSandboxNotReadyError(error)) return false;
+
   if (isUploadedWorkspacePath(filePath)) {
     if (isPermanentFileReadFailure(error) && !isMissingFileReadFailure(error)) return false;
     return failureCount < UPLOADED_FILE_READ_MAX_RETRIES;

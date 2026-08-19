@@ -75,6 +75,19 @@ describe('file read retry policy', () => {
     expect(shouldRetryFileRead('/workspace/src/x.ts', 0, rateLimited)).toBe(true);
   });
 
+  test('fails fast on a sandbox readiness 503 — the waking state owns the retry', () => {
+    // The viewer renders "waking up" and the query-level poll re-reads; the
+    // inline loop must not sit on the error burning its retry budget first.
+    const parked = Object.assign(new Error('sandbox not ready (status: stopped)'), {
+      status: 503,
+    });
+    expect(shouldRetryFileRead('/workspace/src/x.ts', 0, parked)).toBe(false);
+    expect(shouldRetryFileRead('/workspace/uploads/report.pdf', 0, parked)).toBe(false);
+    expect(shouldRetryFileRead('/workspace/src/x.ts', 0, new Error('Sandbox is not ready'))).toBe(
+      false,
+    );
+  });
+
   test('uses a fixed uploaded-file retry delay without changing normal backoff', () => {
     expect(fileReadRetryDelayMs(4, '/workspace/uploads/report.pdf')).toBe(
       UPLOADED_FILE_READ_RETRY_DELAY_MS,

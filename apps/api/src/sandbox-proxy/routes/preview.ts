@@ -313,8 +313,14 @@ export function portUnreachableResponse(opts: {
   reason: string;
   hop: ProxyHop;
   upstreamStatus?: number | null;
+  // Stable machine code for the failure class (e.g. 'sandbox_not_ready'), so
+  // clients branch on a code instead of matching the human-readable `reason`.
+  code?: string;
+  // True when the failure is transient by design (a parked/booting box) and a
+  // retry of the same request is expected to succeed once the box is up.
+  retry?: boolean;
 }): Response {
-  const { port, status, origin, incomingHeaders, reason, hop } = opts;
+  const { port, status, origin, incomingHeaders, reason, hop, code, retry } = opts;
   const upstreamStatus = opts.upstreamStatus ?? null;
   const headers = new Headers({ 'Cache-Control': 'no-store' });
   // Set on EVERY variant, HTML included: a `fetch` probe that lands on the
@@ -340,7 +346,15 @@ export function portUnreachableResponse(opts: {
   }
   headers.set('Content-Type', 'application/json');
   return new Response(
-    JSON.stringify({ error: reason, port, status, hop, upstream_status: upstreamStatus }),
+    JSON.stringify({
+      error: reason,
+      port,
+      status,
+      hop,
+      upstream_status: upstreamStatus,
+      ...(code ? { code } : {}),
+      ...(retry !== undefined ? { retry } : {}),
+    }),
     {
       status,
       headers,
@@ -941,6 +955,8 @@ export async function forwardToSandbox(
         // nothing about whether the runtime is reachable — a probe that counts
         // it as evidence of a dead box is counting our own answer.
         hop: 'control_plane',
+        code: 'sandbox_not_ready',
+        retry: true,
       });
     }
   }
