@@ -48,6 +48,7 @@ const NEWER_TRANSCRIPT_ID = mintWireMessageId({ nowMs: NOW_MS - 60_000, random: 
  */
 const OPENCODE_MINTED_ID = `msg_${(((BigInt(NOW_MS - 40_000) * BigInt(0x1000)) & BigInt(0xffffffffffff)).toString(16).padStart(12, '0'))}AbCdEfGhIjKlMn`;
 
+let requeues: Array<{ commandId: string; reason: string; availableAt: Date }> = [];
 let sessionRow: Record<string, unknown> | null = null;
 /** The session's one box, as the turn-authority read sees it. Null = no box. */
 let boxRow: { status: string; metadata: Record<string, unknown> | null } | null = null;
@@ -149,8 +150,9 @@ mock.module('../backpressure', () => ({
   sessionBackpressureState: async () => ({ shouldQueue: false, reason: null }),
 }));
 mock.module('../store', () => ({
-  requeueForAdmission: async () => {
-    throw new Error('not expected: this test never refuses admission');
+  promoteNextInboxRow: async () => null,
+  requeueForAdmission: async (commandId: string, reason: string, availableAt: Date) => {
+    requeues.push({ commandId, reason, availableAt });
   },
   claimCreateSessionCommand: async () => {
     throw new Error('not expected');
@@ -405,16 +407,12 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
   });
 
   test('a prompt delivered INTO A LIVE TURN is re-minted on its FIRST claim', async () => {
-    // The mid-turn path no longer waits, so it no longer gets re-minted by
-    // having waited — and the id it carries is the user's browser clock at the
-    // moment they pressed Enter, with no lift against anything. The turn in
-    // flight has been writing higher ids ever since it started, so a browser
-    // running even slightly behind the sandbox delivers an id that sorts BELOW
-    // them, and OpenCode reads that as already answered: accepted, never run,
-    // no assistant message, nothing to redeliver from.
-    //
-    // A live turn is exactly the condition that used to refuse admission, so
-    // re-minting on it restores what the refusal guaranteed without the wait.
+    // The mid-turn path does not wait, so it is not re-minted by having waited
+    // — and the id it carries is the browser clock at Enter, with no lift. The
+    // turn in flight has been writing higher ids ever since it started, so a
+    // browser even slightly behind the sandbox delivers an id that sorts BELOW
+    // them, and OpenCode reads that as already answered. A live turn is exactly
+    // the condition to re-mint on.
     boxRow = {
       status: 'active',
       metadata: {

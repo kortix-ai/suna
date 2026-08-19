@@ -59,6 +59,7 @@ export {
   useSessionSend,
   beginOptimisticSend,
   markOptimisticSendDispatched,
+  markOptimisticSendInboxBacked,
   abandonOptimisticSend,
   recoverFromSendFailure,
   sendAndRecover,

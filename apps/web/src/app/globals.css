@@ -788,8 +788,7 @@
 
   html {
     scroll-behavior: smooth;
-    /* Base UI scale: 110% of the 16px default. Tailwind v4 spacing/text/radius tokens are rem-based off this root, so this one value scales nearly the whole app, same mechanism as browser zoom, baked in as the default. */
-    font-size: 110%;
+    font-size: 100%;
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;

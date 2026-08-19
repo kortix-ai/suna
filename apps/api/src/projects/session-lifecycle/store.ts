@@ -284,6 +284,49 @@ export async function requeueForAdmission(
     .where(eq(sessionLifecycleCommands.commandId, commandId));
 }
 
+/**
+ * Make the session's NEXT queued inbox row due now.
+ *
+ * Called the instant a delivery lands (forwarded or delivered). Without it the
+ * next row waited out whatever `requeueForAdmission` backoff it had accrued
+ * while its sibling was in flight — visible dead air between two messages the
+ * user typed one after the other. Only rows the admission gate put back
+ * (`admission_reason` set) or plain queued rows; never a HELD row (Stop parked
+ * it) and never a row whose `available_at` is a deliberate future schedule
+ * without a refusal marker. Returns the promoted row's idempotency key so the
+ * caller can drain exactly it.
+ */
+export async function promoteNextInboxRow(sessionId: string): Promise<string | null> {
+  const [next] = await db
+    .select({
+      commandId: sessionLifecycleCommands.commandId,
+      idempotencyKey: sessionLifecycleCommands.idempotencyKey,
+    })
+    .from(sessionLifecycleCommands)
+    .where(
+      and(
+        eq(sessionLifecycleCommands.sessionId, sessionId),
+        eq(sessionLifecycleCommands.commandType, 'continue_session'),
+        eq(sessionLifecycleCommands.status, 'queued'),
+        sql`COALESCE(${sessionLifecycleCommands.result}->>'held', '') <> 'true'`,
+        sql`(${sessionLifecycleCommands.result} ? 'admission_reason' OR ${sessionLifecycleCommands.availableAt} <= now())`,
+      ),
+    )
+    .orderBy(asc(sessionLifecycleCommands.createdAt))
+    .limit(1);
+  if (!next) return null;
+  await db
+    .update(sessionLifecycleCommands)
+    .set({ availableAt: new Date(), updatedAt: new Date() })
+    .where(
+      and(
+        eq(sessionLifecycleCommands.commandId, next.commandId),
+        eq(sessionLifecycleCommands.status, 'queued'),
+      ),
+    );
+  return next.idempotencyKey ?? null;
+}
+
 export async function claimCreateSessionCommand(
   command: CreateSessionCommand,
   opts: { initialStatus: 'queued' | 'running'; reason?: string | null },

@@ -278,7 +278,7 @@ describe('COMPOSER_SHELL_CLASS — no viewport width can zero the gutter', () =>
 
   test('the base gutter matches the transcript so the card aligns with the messages', () => {
     // `session-chat.tsx` renders the message column as
-    // `mx-auto w-full max-w-3xl min-w-0 px-4 py-6 pb-32`. Whenever the chat
+    // `mx-auto w-full max-w-3xl min-w-0 px-4 pt-6`. Whenever the chat
     // column is narrower than either max-width — every panel-open case — both
     // are column-width, so equal gutters put them on the same rails.
     expect(classes).toContain('px-4');

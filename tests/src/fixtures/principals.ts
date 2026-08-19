@@ -15,7 +15,7 @@ import type { Env } from '../core/env';
 import { log } from '../core/log';
 import type { Principal, Principals } from '../core/types';
 import { subscribe } from './billing';
-import { adminCreateUser, passwordGrant, type AdminUser } from './supabase';
+import { adminCreateUser, adminDeleteUser, passwordGrant, type AdminUser } from './supabase';
 
 export interface Provisioned {
   principals: Partial<Principals>;
@@ -64,12 +64,43 @@ export async function synthUserWithEmail(
   return { user, jwt, principal };
 }
 
-export async function provisionMatrix(env: Env, runId: string): Promise<Provisioned> {
-  const supabaseUserIds: string[] = [];
+/**
+ * Decide whether a Stripe funding failure sinks the run.
+ *
+ * When `stripe` is a declared capability the run EXPECTS funding to work, and
+ * every flow requiring `funded` (the largest capability group in the suite)
+ * silently degrades to `skip` if it does not. Under `--require-all` that is a
+ * red reported ~75 minutes later by a run that was doomed in its first minute.
+ * So: fatal by default on a Stripe-capable target, soft on a local profile
+ * without Stripe, and `KE2E_FUNDING_OPTIONAL=1` restores the old soft-fail.
+ */
+export function fundingFailureIsFatal(
+  env: Pick<Env, 'capabilities'>,
+  vars: Record<string, string | undefined> = process.env,
+): boolean {
+  if (!env.capabilities.stripe) return false;
+  const optional = vars.KE2E_FUNDING_OPTIONAL;
+  return !(optional === '1' || optional === 'true');
+}
 
+/** The exact message a fatal funding failure raises. */
+export function fundingFailureMessage(cause: unknown): string {
+  return (
+    'OWNER funding failed — every flow requiring the `funded` capability cannot run. ' +
+    'Failing fast now instead of reporting the skips at the end of the run. ' +
+    'Set KE2E_FUNDING_OPTIONAL=1 to downgrade this to a warning. ' +
+    `Cause: ${(cause as Error)?.message ?? cause}`
+  );
+}
+
+async function provisionOwner(
+  env: Env,
+  runId: string,
+): Promise<{ owner: SynthUser; patAcctSecret: string | undefined }> {
   const owner = await synthUser(env, 'OWNER', runId);
-  supabaseUserIds.push(owner.user.id);
   // Force the personal account into existence + capture its id (== userId).
+  // Funding must follow this call, not race it: the account row is created
+  // lazily on the first token/project call.
   const ownerClient = new Client(env.apiUrl).as(owner.principal);
   const tok = await ownerClient.post('/v1/accounts/tokens', {
     name: `e2e-${runId}-owner-bootstrap`,
@@ -78,22 +109,47 @@ export async function provisionMatrix(env: Env, runId: string): Promise<Provisio
 
   // Fund the OWNER's personal account so flows aren't blocked by the free-tier
   // 1-project / 402 limits — real Stripe test-mode subscribe → paid tier + credits.
-  // Non-fatal: a funding failure degrades to the unfunded behaviour with a clear
-  // warning rather than sinking the whole run.
   if (env.capabilities.stripe) {
     try {
       await subscribe(env, ownerClient, owner.principal.accountId!);
       env.capabilities.funded = true;
       log.step(`provision: OWNER ${owner.principal.accountId} funded (pro tier + credits)`);
     } catch (err) {
+      if (fundingFailureIsFatal(env)) throw new Error(fundingFailureMessage(err));
       log.warn(
         `provision: OWNER funding failed — paid-tier flows will hit project_limit/402: ${(err as Error)?.message ?? err}`,
       );
     }
   }
+  return { owner, patAcctSecret };
+}
 
-  const nonmember = await synthUser(env, 'NONMEMBER', runId);
-  supabaseUserIds.push(nonmember.user.id);
+export async function provisionMatrix(env: Env, runId: string): Promise<Provisioned> {
+  const supabaseUserIds: string[] = [];
+
+  // NONMEMBER depends on nothing in the OWNER chain (create → bootstrap PAT →
+  // Stripe subscribe), so it runs beside it instead of after it. allSettled,
+  // not Promise.all: a rejected OWNER chain must not strand a created
+  // NONMEMBER as an unreclaimed Supabase user.
+  const [ownerSettled, nonmemberSettled] = await Promise.allSettled([
+    provisionOwner(env, runId),
+    synthUser(env, 'NONMEMBER', runId),
+  ]);
+
+  if (ownerSettled.status === 'rejected') {
+    if (nonmemberSettled.status === 'fulfilled') {
+      await adminDeleteUser(env, nonmemberSettled.value.user.id).catch(() => undefined);
+    }
+    throw ownerSettled.reason;
+  }
+  if (nonmemberSettled.status === 'rejected') {
+    await adminDeleteUser(env, ownerSettled.value.owner.user.id).catch(() => undefined);
+    throw nonmemberSettled.reason;
+  }
+
+  const { owner, patAcctSecret } = ownerSettled.value;
+  const nonmember = nonmemberSettled.value;
+  supabaseUserIds.push(owner.user.id, nonmember.user.id);
 
   const principals: Partial<Principals> = {
     OWNER: owner.principal,

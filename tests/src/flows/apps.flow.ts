@@ -458,7 +458,7 @@ flow(
     const projectParams = { projectId: project.id };
 
     const editor = await team.addMember("member");
-    await team.grantProjectRole(project.id, editor.userId!, "manager");
+    await team.grantProjectRole(project.id, editor.userId!, "member");
     const teammate = ctx.client.as(editor);
 
     await ctx.step("enable the apps flag", async () => {
@@ -507,12 +507,17 @@ flow(
         });
         read.status(404);
 
+        // A project member holds `project.app.read` but not `project.app.write`,
+        // so EVERY App PATCH is 403 for them — visible or not — which discloses
+        // nothing about this App's existence. (Before the editor role was
+        // removed, the teammate here was an editor with write, and the privacy
+        // check answered 404 first.)
         const resize = await teammate.patch(
           "/v1/projects/:projectId/apps/:appId",
           { cpu: 4 },
           { params: { ...projectParams, appId } },
         );
-        resize.status(404);
+        resize.status(403);
       },
     );
 

@@ -756,6 +756,17 @@ flow(
   },
 );
 
+// GET /v1/projects/:projectId/sessions returns a BARE ARRAY of sessions
+// (project-sessions.ts declares `json(z.array(SessionSchema))` and returns
+// `c.json(items.map(...))`). Read it the same way run-session-backlog.flow.ts
+// does, so an envelope change cannot silently break the flow.
+function sessionRows(response: { json<T>(): T }): any[] {
+  const body = response.json<any>();
+  const rows = Array.isArray(body) ? body : (body?.sessions ?? []);
+  if (!Array.isArray(rows)) throw new Error('session list body is neither an array nor {sessions:[…]}');
+  return rows;
+}
+
 flow(
   'SESS-18',
   {
@@ -805,7 +816,7 @@ flow(
         query: { scope: 'visible' },
       });
       visible.status(200);
-      const visibleIds = visible.json<any>().sessions.map((s: any) => s.session_id);
+      const visibleIds = sessionRows(visible).map((s: any) => s.session_id);
       if (visibleIds.includes(warmSessionId)) {
         throw new Error('An unused warm session appeared in the visible session list');
       }
@@ -817,7 +828,7 @@ flow(
         query: { scope: 'project' },
       });
       all.status(200);
-      const ids = all.json<any>().sessions.map((s: any) => s.session_id);
+      const ids = sessionRows(all).map((s: any) => s.session_id);
       if (!ids.includes(warmSessionId)) {
         throw new Error('A warm session is missing from the manager inventory');
       }
@@ -841,7 +852,7 @@ flow(
         query: { scope: 'visible' },
       });
       visible.status(200);
-      const visibleIds = visible.json<any>().sessions.map((s: any) => s.session_id);
+      const visibleIds = sessionRows(visible).map((s: any) => s.session_id);
       if (!visibleIds.includes(warmSessionId)) {
         throw new Error('A used session is still hidden from the visible session list');
       }
@@ -887,9 +898,7 @@ flow(
         query: { scope: 'visible' },
       });
       visible.status(200);
-      const row = visible
-        .json<any>()
-        .sessions.find((s: any) => s.session_id === replacementId);
+      const row = sessionRows(visible).find((s: any) => s.session_id === replacementId);
       if (!row) {
         throw new Error('An adopted warm session is still hidden from the visible session list');
       }
@@ -904,7 +913,7 @@ flow(
       // see the adopted session as newest. Deterministic even in the shared
       // project: both rows belong to THIS flow, and the /claim of the first
       // session happened strictly before this adoption.
-      const ids = visible.json<any>().sessions.map((s: any) => s.session_id);
+      const ids = sessionRows(visible).map((s: any) => s.session_id);
       if (ids.indexOf(replacementId) > ids.indexOf(warmSessionId)) {
         throw new Error(
           'The adopted session sorts below a session used earlier — adoption did not bump updated_at',

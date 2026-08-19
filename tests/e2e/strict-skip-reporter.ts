@@ -1,3 +1,14 @@
+/**
+ * Fails the deployed lane when a journey was excluded.
+ *
+ * This reporter and the specs' conditional `test.skip(...)` guards used to
+ * contradict each other: the guards degrade gracefully on a missing capability,
+ * this reporter turns that same degradation into a lane failure — after the
+ * whole suite had run. `e2e/global-setup.ts` resolves it by asserting every
+ * required capability up front, so on the strict lane a missing capability now
+ * fails in seconds and never reaches a skip. What remains here is the genuine
+ * case: a journey excluded for a reason the setup could not predict.
+ */
 import type { FullResult, Reporter, TestCase, TestResult } from '@playwright/test/reporter';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';

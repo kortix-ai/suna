@@ -98,6 +98,7 @@ function buildHandler(
     getImpl?: () => Promise<{ data?: unknown }>;
     projectId?: string;
     reconcileSessionTail?: Parameters<typeof createEventHandler>[0]['reconcileSessionTail'];
+    userPartsGraceMs?: number;
   } = {},
 ) {
   const queryClient = new QueryClient();
@@ -143,6 +144,7 @@ function buildHandler(
     fetchLspDiagnosticsDebounced: { current: fetchLspDiagnosticsDebounced.fn },
     projectId: overrides.projectId,
     reconcileSessionTail: overrides.reconcileSessionTail,
+    userPartsGraceMs: overrides.userPartsGraceMs,
   });
 
   return {
@@ -1118,6 +1120,51 @@ describe('remaining event kinds — smoke coverage', () => {
       properties: { serverID: 'srv_1', path: 'src/app.ts' },
     });
     expect(fetchLspDiagnosticsDebounced.calls.length).toBe(1);
+  });
+});
+
+describe('a USER message.updated whose parts never arrive is re-read from the server', () => {
+  // Seen live: the runtime persists a user message and emits `message.updated`
+  // (info only) then `message.part.updated` (the text). When the part frame is
+  // lost — a stream reconnect during the boot hand-off — the transcript holds
+  // a user message with NO parts: an empty bubble, forever, until a reload.
+  // The tail is re-read after a short grace when that happens.
+  test('no parts after the grace → one tail reconcile with reason sse-gap', async () => {
+    const calls: Array<[string, string]> = [];
+    const { handleEvent } = buildHandler({
+      reconcileSessionTail: async (sessionID, reason) => {
+        calls.push([sessionID, reason]);
+      },
+      userPartsGraceMs: 0,
+    });
+    // `applySyncEvent` is a spy here; the message lands in the store as it
+    // would have via the real one.
+    useSyncStore.getState().upsertMessage('ses_up', { id: 'msg_user_np', sessionID: 'ses_up', role: 'user', time: { created: 1 } } as never);
+    handleEvent({
+      id: 'evt_u',
+      type: 'message.updated',
+      properties: { sessionID: 'ses_up', info: { id: 'msg_user_np', sessionID: 'ses_up', role: 'user', time: { created: 1 } } },
+    } as never);
+    await new Promise((r) => setTimeout(r, 5));
+    expect(calls).toEqual([['ses_up', 'sse-gap']]);
+  });
+
+  test('parts present by then → nothing is fetched', async () => {
+    const calls: Array<[string, string]> = [];
+    const { handleEvent } = buildHandler({
+      reconcileSessionTail: async (sessionID, reason) => {
+        calls.push([sessionID, reason]);
+      },
+      userPartsGraceMs: 0,
+    });
+    useSyncStore.getState().upsertPart('msg_user_p', { id: 'prt_1', messageID: 'msg_user_p', sessionID: 'ses_up2', type: 'text', text: 'hi' } as never, 'ses_up2');
+    handleEvent({
+      id: 'evt_u2',
+      type: 'message.updated',
+      properties: { sessionID: 'ses_up2', info: { id: 'msg_user_p', sessionID: 'ses_up2', role: 'user', time: { created: 1 } } },
+    } as never);
+    await new Promise((r) => setTimeout(r, 5));
+    expect(calls).toEqual([]);
   });
 });
 

@@ -125,6 +125,21 @@ export function markOptimisticSendDispatched(sessionId: string, messageId: strin
 }
 
 /**
+ * The prompt is going to the durable inbox (`POST .../prompts`): from here the
+ * host's own send path owns the bubble's life — the POST's failure path
+ * removes it explicitly, the runtime's echo confirms it in place (same id) or
+ * supersedes it (re-minted id, aliased by the store) — and the local idle
+ * sweep must leave it alone. Call it next to `markOptimisticSendDispatched`,
+ * BEFORE the POST: the enqueue promise settles after its cache work, and a
+ * session that goes idle or aborts in that window (a Stop, an asleep box) is
+ * not evidence the prompt was lost. Only for a host that painted the bubble
+ * with the WIRE id it hands the inbox.
+ */
+export function markOptimisticSendInboxBacked(sessionId: string, messageId: string): void {
+  useSyncStore.getState().markOptimisticInboxBacked(sessionId, messageId);
+}
+
+/**
  * A send that never reached the network at all (e.g. building the outgoing
  * parts — file uploads — threw before `promptOpenCodeMessage` was even
  * called). There is nothing to rehydrate from the server since it never saw

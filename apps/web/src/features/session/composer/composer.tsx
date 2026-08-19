@@ -67,7 +67,6 @@ import type { ComposerEditorHandle } from './editor/composer-editor';
 import { useComposerFocus } from './hooks/use-composer-focus';
 import { useMenuRevalidation } from './hooks/use-file-search';
 import { controlToOpenFor, SLASH_ACTIONS, type SlashAction } from './menus/slash-actions';
-import { QueuedMessages, type QueuedMessageView } from './queued-messages';
 import { createSubmitLatch } from './submit-latch';
 import type { AttachedFile, TrackedMention } from './types';
 
@@ -103,34 +102,6 @@ export interface SessionChatInputProps {
    * value.
    */
   runtimeReady?: boolean;
-  queuedMessages?: QueuedMessageView[];
-  failedQueuedMessages?: QueuedMessageView[];
-  /** The queued messages currently on the wire. Cannot be edited, moved or
-   *  removed. Plural: the server can hold more than one row `delivering`. */
-  queueInFlightIds?: string[];
-  /**
-   * The queue is held by a stop. Dims the list — never silent.
-   *
-   * Ported from `session-chat-input.tsx` during the main merge: that file is
-   * now a re-export barrel, and its old implementation (which main had grown
-   * these two props on) is gone. `session-chat.tsx` still passes them, and
-   * `QueuedMessages` still reads them, so without this the paused state would
-   * have been dropped on the floor by the merge rather than by a decision.
-   */
-  queuePaused?: boolean;
-  /** The agent is mid-turn, so the per-row send must stop it first. */
-  queueIsRunning?: boolean;
-  onRemoveQueuedMessage?: (id: string) => void;
-  onEditQueuedMessage?: (id: string, text: string) => void;
-  /**
-   * Move a queued message to `toIndex` — a position in `queuedMessages`,
-   * in-flight rows included. Unwired since the server owns delivery order;
-   * kept because `QueuedMessages` still renders the affordance when a host
-   * supplies a handler.
-   */
-  onReorderQueuedMessage?: (id: string, toIndex: number) => void;
-  onSendQueuedMessageNow?: (id: string) => void;
-  onRetryQueuedMessage?: (id: string) => void;
   onStop?: () => void;
   stopDisabled?: boolean;
   isSending?: boolean;
@@ -301,7 +272,7 @@ export interface SessionChatInputProps {
  * the only thing keeping the card off the edge.
  *
  * 16px is not arbitrary — it is the transcript's own gutter (`session-chat.tsx`:
- * `mx-auto w-full max-w-3xl min-w-0 px-4 py-6 pb-32`). Whenever the column is
+ * `mx-auto w-full max-w-3xl min-w-0 px-4 pt-6`). Whenever the column is
  * narrower than either max-width — every panel-open case — the card's edges
  * land on exactly the same rails as the messages above it.
  *
@@ -327,9 +298,6 @@ export interface SessionChatInputProps {
  */
 export const COMPOSER_SHELL_CLASS = 'relative z-10 mx-auto w-full max-w-210 shrink-0 px-4 md:pr-1';
 
-const EMPTY_QUEUE: QueuedMessageView[] = [];
-/** Same, for the in-flight ids. */
-const EMPTY_QUEUE_IN_FLIGHT: string[] = [];
 
 /** Stable empty defaults so a fresh `[]` per render never breaks memoization. */
 const EMPTY_AGENTS: Agent[] = [];
@@ -370,16 +338,6 @@ function ComposerImpl({
   isBusy = false,
   sessionWorking,
   runtimeReady = true,
-  failedQueuedMessages,
-  queuedMessages,
-  queueInFlightIds = EMPTY_QUEUE_IN_FLIGHT,
-  queuePaused = false,
-  queueIsRunning = false,
-  onRemoveQueuedMessage,
-  onEditQueuedMessage,
-  onReorderQueuedMessage,
-  onSendQueuedMessageNow,
-  onRetryQueuedMessage,
   onStop,
   stopDisabled = false,
   isSending = false,
@@ -1157,11 +1115,11 @@ function ComposerImpl({
    * Whether the inset strip above the card has anything to show. Gated on
    * actual CONTENT, never on `sessionId`: that was truthy in every session, so
    * the strip's padded, bordered shell rendered as an empty rounded sliver
-   * floating above the notice bar whenever the queue was empty.
+   * floating above the notice bar whenever it was empty. The prompt queue no
+   * longer lives here — queued prompts are drawn in the transcript
+   * (`turn/queued-prompt-bubbles.tsx`).
    */
-  const queueHasRows =
-    (queuedMessages?.length ?? 0) > 0 || (failedQueuedMessages?.length ?? 0) > 0;
-  const showQueueStrip = Boolean(threadContext || inputSlot || queueHasRows);
+  const showQueueStrip = Boolean(threadContext || inputSlot);
 
   return (
     <div
@@ -1217,19 +1175,6 @@ function ComposerImpl({
           */}
           {showQueueStrip && (
             <div className="bg-sidebar border-border flex w-[96%] flex-col items-center gap-2 rounded-t-xl border border-b-0 p-[0.3rem]  empty:hidden">
-              <QueuedMessages
-                  messages={queuedMessages ?? EMPTY_QUEUE}
-                  failed={failedQueuedMessages}
-                  inFlightIds={queueInFlightIds}
-                  paused={queuePaused}
-                  isRunning={queueIsRunning}
-                  onRemove={onRemoveQueuedMessage}
-                  onEdit={onEditQueuedMessage}
-                  onReorder={onReorderQueuedMessage}
-                  onSendNow={onSendQueuedMessageNow}
-                  onRetry={onRetryQueuedMessage}
-                />
-
               {threadContext && (
                 <button
                   onClick={threadContext.onBackToParent}

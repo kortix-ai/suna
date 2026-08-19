@@ -64,17 +64,18 @@ describe('projectQueueRows', () => {
     expect(projection.inFlightIds).toEqual(['unpainted']);
   });
 
-  test('a HELD row stays even once its message is in the transcript', () => {
-    // A stop-paused prompt IS in the transcript — OpenCode persisted it before
-    // the user pressed Stop — and it is unanswered and parked. The strip is the
-    // only place its remove and "send now" controls exist, so dropping it would
-    // leave the user with an unanswered message and no way to act on it.
+  test('a HELD row in the transcript is NOT a queue row — the bubble carries its controls, but the hold is still reported', () => {
+    // A stop-paused prompt IS in the transcript, unanswered and parked. Its
+    // remove and "send now" live in the bubble's own meta row now
+    // (`QueuedPromptControls`), so drawing it here too would be the same
+    // message twice. `held` still surfaces so the pending bubble can offer
+    // "send now".
     const projection = projectQueueRows({
       prompts: [prompt({ state: 'waiting', reason: 'held', message_id: 'msg_a' })],
       transcriptMessageIds: new Set(['msg_a']),
     });
 
-    expect(projection.queued).toHaveLength(1);
+    expect(projection.queued).toHaveLength(0);
     expect(projection.held).toBe(true);
   });
 

@@ -9,41 +9,36 @@ import type { SessionLifecycleCommandRow } from './store';
  *
  * A prompt sits in `session_lifecycle_commands` only until it is this session's
  * TURN TO BE SENT — not until the session is idle. A live turn does NOT hold a
- * prompt back: OpenCode persists a mid-turn prompt and runs it in ARRIVAL order
- * once the turn in flight ends (proven against a real sandbox in
- * `src/__tests__/integration-inbox-midturn-forward.test.ts`), so waiting bought
- * nothing and cost up to 10s of dead air on every send.
+ * prompt back: it is forwarded at once, OpenCode persists it (the bubble lands
+ * in the transcript within seconds) and answers everything queued behind the
+ * turn in flight as soon as that turn ends. That is what "the queue sends in
+ * between" means to the user: whatever was typed while the agent worked is
+ * already WITH the agent, and it picks all of it up together.
  *
- * What is left is ORDER, and only order: `claimDueLifecycleCommands` claims
- * globally by `available_at, created_at`, which does not order the rows of ONE
- * session against each other under retries and backoffs. Because OpenCode
- * queues by arrival, two concurrent forwards of one session would put the
- * user's own messages on the wire out of the order they typed them. A younger
- * row that wins the claim simply refuses admission and puts itself back — which
- * is cheaper and safer than a per-session claim lock.
+ * What is left is ORDER, and only order: one prompt of a session on the wire at
+ * a time, oldest first, so the user's own messages reach OpenCode in the order
+ * they were typed.
+ *
+ * WAITING IS NOT POLLING. A refused row does not sit out a backoff clock: the
+ * instant the blocking delivery lands (engine) or a turn ends (turn-stream),
+ * `promoteNextInboxRow` makes the session's next row due and drains it. The
+ * backoff below only covers the gap a lost kick would leave, so it stays cheap
+ * and capped — 30s here compounded to 27s / 45s / 75s of dead air behind ~1s
+ * deliveries (dev, 2026-08-18).
  *
  * A refusal is NOT a failure: see `requeueForAdmission`, which gives the claim's
  * attempt increment back so waiting cannot burn the 5-attempt dead-letter budget.
  */
+export const INBOX_ORDER_BACKOFF_MS = 300;
 /**
- * How long a row that lost the ordering race waits before trying again.
- *
- * With the turn-active refusal gone this backoff is the ONLY dead air left in a
- * send, so the first refusals are deliberately cheap: the sibling this row is
- * waiting for is a `running` row, and on an awake box that row completes in
- * milliseconds — four free refusals at 500ms cover it without a visible pause.
- *
- * It still GROWS, because a refusal costs a claim from a SHARED budget.
- * `drainSessionLifecycleQueue({ limit: 10 })` on the scheduler tick is the only
- * unbounded drain, and it also carries `create_session`, trigger callbacks and
- * approval-resume. The sibling can legitimately hold the wire for a whole
- * READY_DEADLINE_MS cold boot (5 min), and a row re-claiming a slot twice a
- * second for that long starves the lane — the claim orders by `available_at
- * ASC`, so the overdue refusals then sort AHEAD of the fresh work they starved.
- * The exponential reaches the 30s ceiling well inside that boot.
+ * The ceiling is LOW on purpose. A refused row is not polling for a whole cold
+ * boot any more: the moment its sibling lands, `promoteNextInboxRow` (engine)
+ * makes the session's next queued row due NOW and kicks a targeted drain, so
+ * this backoff only ever covers the gap a lost kick would leave. 30s here was
+ * the entire "queue does not send between turns" experience: three quick
+ * messages compounded to 27s / 45s / 75s of dead air behind ~1s deliveries.
  */
-export const INBOX_ORDER_BACKOFF_MS = 500;
-export const INBOX_ORDER_MAX_BACKOFF_MS = 30_000;
+export const INBOX_ORDER_MAX_BACKOFF_MS = 2_000;
 export const INBOX_BACKOFF_FREE_REFUSALS = 4;
 
 /** `base * 2^(refusals - free)`, capped. Pure, so the curve is testable. */
@@ -113,6 +108,11 @@ export async function sessionHoldsLiveTurn(sessionId: string): Promise<boolean> 
 }
 
 export interface InboxAdmissionDeps {
+  /** The session's one sandbox row — its `metadata.activeTurns` is the turn
+   *  authority `sessionHoldsTurnAuthority` reads. */
+  readSandbox: (
+    sessionId: string,
+  ) => Promise<{ status: string; metadata: Record<string, unknown> | null } | null>;
   hasOlderPendingPrompt: (
     sessionId: string,
     before: Date,
@@ -124,6 +124,14 @@ export interface InboxAdmissionDeps {
 }
 
 const liveDeps: InboxAdmissionDeps = {
+  async readSandbox(sessionId) {
+    const [box] = await db
+      .select({ status: sessionSandboxes.status, metadata: sessionSandboxes.metadata })
+      .from(sessionSandboxes)
+      .where(eq(sessionSandboxes.sessionId, sessionId))
+      .limit(1);
+    return box ?? null;
+  },
   async hasOlderPendingPrompt(sessionId, before, exceptCommandId) {
     const [older] = await db
       .select({ commandId: sessionLifecycleCommands.commandId })

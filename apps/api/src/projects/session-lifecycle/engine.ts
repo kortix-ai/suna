@@ -8,6 +8,8 @@ import {
 } from '@kortix/db';
 import { type SQL, and, desc, eq, gte, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
+import { ProvisionTimeline } from '../../platform/services/provision-timeline';
+import { WIRE_ID_PLACED_HEADER } from '../../sandbox-proxy/prompt-wire-id-repair';
 import { bindChatThread } from '../../channels/slack/binding';
 import { config } from '../../config';
 import { logger } from '../../lib/logger';
@@ -41,6 +43,7 @@ import {
   enqueueContinueSessionCommand,
   markCommandFailed,
   markCommandForwarded,
+  promoteNextInboxRow,
   markCommandQueued,
   markCommandSucceeded,
   requeueForAdmission,
@@ -364,6 +367,7 @@ export async function continueSession(
   // loop), just not across separate invocations, which those callers never
   // rely on for dedupe.
   commandId?: string,
+  tl?: ProvisionTimeline,
 ): Promise<SessionDeliveryOutcome> {
   const { sessionId, text } = command;
   const idempotencyKey = commandId ?? randomUUID();
@@ -439,12 +443,49 @@ export async function continueSession(
     });
   };
 
+  tl?.mark('session-read');
+
+  // FAST PATH — the box is already awake. `openSession` is /start: a provider
+  // status call plus a daemon health probe, ~0.5–0.9s per delivery even when
+  // nothing needs waking, and it ran on EVERY queued message. When the session
+  // row is running, its sandbox row is active and the OpenCode pin exists, the
+  // delivery target is fully known from the DB; the POST goes through the
+  // proxy, whose own wake-and-retry loop and `deliverWithRetry.reopen` (the
+  // full open) cover a box that turns out to be asleep after all. A cold or
+  // stopping session takes the slow path below exactly as before.
+  const awake = await awakeDeliveryTarget(sessionId);
+  if (awake && !command.opencodeEnv) {
+    tl?.mark('open-ready-fast');
+    return deliverWithRetry({
+      sessionId,
+      opened: awake,
+      reopen: async () => {
+        const healed = await openOnce();
+        if (!healed) return null;
+        return {
+          stage: healed.stage,
+          externalId: sandboxExternalId(healed),
+          opencodeSessionId: healed.opencode_session_id,
+        };
+      },
+      send: (externalId, runtimeId) =>
+        postPrompt(externalId, runtimeId, text, userId, sessionId, idempotencyKey, {
+          parts: command.parts,
+          overrides: command.overrides,
+          wireMessageId: command.wireMessageId,
+        }),
+    });
+  }
+
   const deadline = Date.now() + READY_DEADLINE_MS;
   let opened: Awaited<ReturnType<typeof openOnce>>;
   for (;;) {
     opened = await openOnce();
     if (!opened) return 'no-session';
-    if (opened.stage === 'ready') break;
+    if (opened.stage === 'ready') {
+      tl?.mark('open-ready');
+      break;
+    }
     if (opened.stage === 'failed' || opened.stage === 'stopped') return 'failed';
     if (Date.now() >= deadline) {
       console.warn('[session-lifecycle] runtime not ready before delivery deadline', {
@@ -507,6 +548,7 @@ export async function continueSession(
     opencodeSessionId: o.opencode_session_id,
   });
 
+  tl?.mark('env-sync');
   return deliverWithRetry({
     sessionId,
     opened: toTarget(opened),
@@ -779,15 +821,26 @@ interface InboxTranscriptState {
  * no new client. Fails OPEN (`read: false`) on every error: a transient read
  * failure must never block a prompt, and every caller has its own safe default.
  */
+/** Newest-N read for placement. Only the tip decides where a re-mint lands,
+ *  and a first delivery has no delivered id an `answered` check could match. */
+const INBOX_TRANSCRIPT_TIP_LIMIT = 8;
+
 async function readInboxTranscriptState(
   row: SessionLifecycleCommandRow,
   deliveredIds: string[],
+  opts: { full?: boolean } = {},
 ): Promise<InboxTranscriptState> {
   const empty: InboxTranscriptState = { newest: null, answered: false, read: false };
   try {
     const resolved = await queuedContinueOpencodeEndpoint(row);
     if (!resolved) return empty;
-    const url = `${resolved.endpoint.url}/session/${encodeURIComponent(resolved.opencodeSessionId)}/message?directory=${encodeURIComponent(WORKSPACE)}`;
+    // A FULL read only when this row has already been posted once (a
+    // redelivery / re-POST), where the `answered` guard needs the reply that
+    // may sit anywhere in the transcript. The ordinary case — a first delivery
+    // placing its id above a live turn — needs the tip only, and the full read
+    // of a long session was ~1s of dead air on every queued message.
+    const limit = opts.full ? '' : `&limit=${INBOX_TRANSCRIPT_TIP_LIMIT}`;
+    const url = `${resolved.endpoint.url}/session/${encodeURIComponent(resolved.opencodeSessionId)}/message?directory=${encodeURIComponent(WORKSPACE)}${limit}`;
     const res = await fetch(url, {
       method: 'GET',
       headers: sandboxRuntimeRequestHeaders(resolved.endpoint.headers),
@@ -1035,9 +1088,14 @@ export async function executeQueuedContinue(
   // here would strand it there — where nothing reclaims it until its lock
   // expires, while `older_prompt_pending` blocks every later prompt of the
   // session behind it. A failed read is a retryable failure, not a wedge.
+  // Delivery timeline: one structured line per row (`[provision-timeline]
+  // deliver <commandId>`), so "how long did a send take, and where" is a log
+  // read instead of a guess. Same shape as the provision timeline.
+  const tl = new ProvisionTimeline(row.commandId, 'deliver');
   let admission: Awaited<ReturnType<typeof admitInboxPrompt>>;
   try {
     admission = await admitInboxPrompt(row);
+    tl.mark('admission');
   } catch (err) {
     await markCommandFailed(
       row.commandId,
@@ -1126,7 +1184,14 @@ export async function executeQueuedContinue(
   // refused row could never be retried, because retrying re-stamps the very
   // marker the refusal reads.
   const mayCommitStagedRevert = !!payload.clientMessageId && (promoted || !waited);
-  if (!mayCommitStagedRevert && (await queuedContinueHasStagedRevert(row))) {
+  // Two independent reads of the same box — the staged-revert flag and the
+  // transcript tip (below) — used to run one after the other. Started here,
+  // awaited together: they cost one round-trip instead of two.
+  const stagedRevertPromise = mayCommitStagedRevert
+    ? Promise.resolve(false)
+    : queuedContinueHasStagedRevert(row);
+  /** The row is behind a staged revert: fail or skip it, per the producer. */
+  const settleStagedRevert = async (): Promise<'succeeded' | 'failed' | null> => {
     // A COMPOSER prompt is failed, never dropped. `listInboxPrompts` keeps
     // `failed`/`dead_lettered` rows, so the user's text stays on screen with
     // its reason and a retry button that promotes it past this guard. Silently
@@ -1150,7 +1215,7 @@ export async function executeQueuedContinue(
       row.sessionId,
     );
     return 'succeeded';
-  }
+  };
 
   // WHICH WIRE ID THIS ATTEMPT DELIVERS WITH.
   //
@@ -1205,7 +1270,17 @@ export async function executeQueuedContinue(
     const deliveredIds = [payload.wireMessageId, payload.redeliveredMessageId].filter(
       (id): id is string => typeof id === 'string' && id.length > 0,
     );
-    const transcript = await readInboxTranscriptState(row, deliveredIds);
+    const transcriptPromise = readInboxTranscriptState(row, deliveredIds, {
+      full: deliveryAttempt > 0 || redeliveries > 0,
+    });
+    // The staged-revert answer lands while the tip read is in flight.
+    const stagedRevertEarly = await stagedRevertPromise;
+    if (stagedRevertEarly) {
+      const settled = await settleStagedRevert();
+      if (settled) return settled;
+    }
+    const transcript = await transcriptPromise;
+    tl.mark('transcript-read');
     // The already-answered guard is not redelivery-only. Every re-mint path
     // re-reads the transcript, and an assistant reply parented on one of THIS
     // prompt's delivered ids proves the same thing on all of them: the turn
@@ -1228,6 +1303,16 @@ export async function executeQueuedContinue(
       return 'succeeded';
     }
     wireMessageId = await remintWireMessageId(row, payload, transcript);
+    tl.mark('remint');
+  }
+
+  {
+    const stagedRevertLate = await stagedRevertPromise;
+    tl.mark('staged-revert');
+    if (stagedRevertLate) {
+      const settled = await settleStagedRevert();
+      if (settled) return settled;
+    }
   }
 
   try {
@@ -1257,7 +1342,9 @@ export async function executeQueuedContinue(
       // on a stop-paused row are re-POSTs too, and neither is a reaper
       // redelivery. See `withNextDeliveryAttempt`.
       deliveryAttempt > 0 ? `${row.commandId}:r${deliveryAttempt}` : row.commandId,
+      tl,
     );
+    tl.mark('delivered');
     if (delivery === 'delivered') {
       // DELIVERED IS NOT CONSUMED. OpenCode persists the prompt and queues it
       // behind the turn in flight, so the row stays OPEN — see
@@ -1273,8 +1360,19 @@ export async function executeQueuedContinue(
       } else {
         await markCommandSucceeded(row.commandId, { status: 'delivered' }, row.sessionId);
       }
+      tl.mark('marked');
+      // CHAIN. This row is on the wire, so the session's next queued row is
+      // admissible NOW — do not leave it to the scheduler tick or to whatever
+      // `requeueForAdmission` backoff it accrued while waiting on this one.
+      // Fire-and-forget: the drain re-runs admission itself, so a kick that
+      // loses a race is a no-op, and a lost kick falls back to the tick.
+      void promoteNextInboxRow(row.sessionId)
+        .then((key) => (key ? drainSessionLifecycleQueue({ idempotencyKey: key }) : null))
+        .catch(() => undefined);
+      tl.log({ sessionId: row.sessionId, source: row.source, outcome: delivery });
       return 'succeeded';
     }
+    tl.log({ sessionId: row.sessionId, source: row.source, outcome: delivery });
     // 'pending' = runtime not ready in time — worth another pass. 'no-session'
     // and 'failed' are terminal for this command.
     const retryable = delivery === 'pending';
@@ -1475,6 +1573,34 @@ function isRetryableCreateError(status?: number): boolean {
   return status === 429 || status === 500 || status === 502 || status === 503 || status === 504;
 }
 
+/**
+ * The delivery target for a session whose box is ALREADY awake, from the DB
+ * alone — or null, which means "take the full open path". Cheap: two indexed
+ * reads, no provider or daemon round-trip.
+ */
+async function awakeDeliveryTarget(sessionId: string): Promise<DeliveryTarget | null> {
+  const [session] = await db
+    .select({
+      status: projectSessions.status,
+      opencodeSessionId: projectSessions.opencodeSessionId,
+    })
+    .from(projectSessions)
+    .where(eq(projectSessions.sessionId, sessionId))
+    .limit(1);
+  if (!session || session.status !== 'running' || !session.opencodeSessionId) return null;
+  const [box] = await db
+    .select({ status: sessionSandboxes.status, externalId: sessionSandboxes.externalId })
+    .from(sessionSandboxes)
+    .where(eq(sessionSandboxes.sessionId, sessionId))
+    .limit(1);
+  if (!box || box.status !== 'active' || !box.externalId) return null;
+  return {
+    stage: 'ready',
+    externalId: box.externalId,
+    opencodeSessionId: session.opencodeSessionId,
+  };
+}
+
 function sandboxExternalId(
   result: NonNullable<Awaited<ReturnType<typeof openSession>>>,
 ): string | null {
@@ -1551,7 +1677,15 @@ async function postPrompt(
       // The producer's own directory when it named one, so a project-scoped
       // agent resolves the same way it does on a direct browser send.
       `?directory=${encodeURIComponent(overrides?.directory || WORKSPACE)}`,
-      new Headers({ 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey }),
+      new Headers({
+        'Content-Type': 'application/json',
+        'Idempotency-Key': idempotencyKey,
+        // The inbox placed this wire id against the transcript itself (see
+        // `remintWireMessageId`), so the proxy's own placement read
+        // (`prompt-wire-id-repair.ts`) has nothing to add — one fewer sandbox
+        // round-trip per queued message. Direct clients never send this.
+        ...(prompt?.wireMessageId ? { [WIRE_ID_PLACED_HEADER]: '1' } : {}),
+      }),
       body.buffer as ArrayBuffer,
       config.KORTIX_URL ?? '',
     );

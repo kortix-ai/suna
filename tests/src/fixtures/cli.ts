@@ -35,6 +35,14 @@ const REPO_ROOT = resolve(import.meta.dir, '../../..');
 /** CLI source entry — invoked via `bun run` so a stale binary can't mislead. */
 const CLI_ENTRY = resolve(REPO_ROOT, 'apps/cli/src/index.ts');
 
+/**
+ * How long any CLI subprocess this fixture starts may run before it is killed.
+ * ONE constant, because every path here starts the same binary against the same
+ * target: a budget that fits a local API but not deployed staging turns a slow
+ * network into a fake product failure (exit 143, not the CLI's own exit code).
+ */
+const CLI_PROCESS_BUDGET_MS = 60_000;
+
 /** ke2e target origin without a trailing `/v1` (the CLI re-adds it). */
 function targetApiBase(): string {
   return loadEnv().apiUrl.replace(/\/v1$/, '');
@@ -160,7 +168,7 @@ export class CliSandbox {
       stderr: 'pipe',
     });
 
-    const timeoutMs = opts.timeoutMs ?? 60_000;
+    const timeoutMs = opts.timeoutMs ?? CLI_PROCESS_BUDGET_MS;
     const killer = setTimeout(() => {
       try {
         proc.kill();
@@ -302,8 +310,10 @@ export async function browserLogin(
   }
 
   // A rejected state leaves the real CLI waiting for another callback. The
-  // 403 already proves rejection, so stop the process instead of spending 15s
-  // on a timeout that adds no contract coverage.
+  // 403 already proves rejection, so stop the process immediately instead of
+  // spending the full CLI_PROCESS_BUDGET_MS on a timeout that adds no contract
+  // coverage. This explicit kill is why raising that budget does not slow the
+  // state-mismatch path.
   if (opts.badState && callbackStatus === 403) {
     try {
       proc.kill();
@@ -312,13 +322,19 @@ export async function browserLogin(
     }
   }
 
+  // After the callback lands, the real CLI still verifies the PAT via
+  // GET /accounts/me and writes its config. Against DEPLOYED staging that
+  // round trip regularly exceeds the old hardcoded 15s, so the killer fired
+  // mid-verify and `login` exited 143 (SIGTERM) instead of 0 — the LOGIN-2
+  // release-gate failure. Use the same budget CliSandbox.run() already gives
+  // every other CLI process.
   const killer = setTimeout(() => {
     try {
       proc.kill();
     } catch {
       /* gone */
     }
-  }, 15_000);
+  }, CLI_PROCESS_BUDGET_MS);
   // Drain the rest of stdout from the SAME reader — the stream is already
   // locked by getReader() above, so re-wrapping proc.stdout would throw
   // "ReadableStream has already been used".

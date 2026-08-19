@@ -12,7 +12,10 @@ import {
   resolveCreateFailure,
 } from '@/hooks/projects/new-session-failure';
 import { useProjectCanRun } from '@/hooks/projects/use-project-can-run';
-import { takeWarmSessionEntry } from '@/hooks/projects/use-warm-project-session';
+import {
+  primeTakenWarmSession,
+  takeWarmSessionEntry,
+} from '@/hooks/projects/use-warm-project-session';
 import {
   reconcileSessionsAfterCreate,
   seedAdoptedWarmSession,
@@ -176,9 +179,33 @@ export function useNewProjectSession(projectId: string | undefined) {
       const takeOrCreateSession = async () => {
         const warm = takeWarmSessionEntry(projectId, { create: opts?.create });
         if (warm) {
-          adoptedWarmSession = warm.session;
-          router.prefetch(`/projects/${projectId}/sessions/${warm.sessionId}`);
-          return warm.sessionId;
+          // The first prompt is a DURABLE inbox row, never a client-side
+          // replay (the start stash carries picks only — see the producers).
+          // The ordinary path gets that row from `create.pending_prompt` in
+          // the create transaction; an adopted warm session was created
+          // seconds ago with an EMPTY body, so its prompt has to land now,
+          // through the server's claim (`primeTakenWarmSession`): one
+          // transaction that inserts the row, drops the warm marker, and kicks
+          // the drain. Without this the local take navigated into a session
+          // that had never heard the prompt — the "my first message
+          // disappears" bug, on the warm path.
+          //
+          // A refused claim (another tab took it, marker already gone) is not
+          // an error the user should see: fall through to the ordinary create,
+          // which carries the same prompt.
+          const pending = opts?.create?.pending_prompt;
+          const primed = pending
+            ? await primeTakenWarmSession(projectId, warm, {
+                pending_prompt: pending,
+                ...(opts?.create?.agent_name ? { agent_name: opts.create.agent_name } : {}),
+                ...(opts?.create?.sandbox_slug ? { sandbox_slug: opts.create.sandbox_slug } : {}),
+              })
+            : true;
+          if (primed) {
+            adoptedWarmSession = warm.session;
+            router.prefetch(`/projects/${projectId}/sessions/${warm.sessionId}`);
+            return warm.sessionId;
+          }
         }
 
         const sessionId = crypto.randomUUID();

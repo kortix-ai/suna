@@ -383,12 +383,30 @@ flow(
     await ctx.step(
       "stop the session's sandbox via the session stop route (aborts the turn first) → 200 stopped",
       async () => {
-        const r = await ctx.client.as(ctx.P.OWNER).post(
-          '/v1/projects/:projectId/sessions/:sessionId/stop',
-          {},
-          { params: { projectId, sessionId } },
+        // `stop` 409s ("Session is not running") whenever the session_sandboxes
+        // row is not yet `active` (apps/api/src/projects/session-lifecycle/stop.ts).
+        // `/start` reporting stage `ready` proves the RUNTIME answers, not that
+        // the sandbox row has already settled to `active`, and this step lands
+        // only ~3s after the prompt above — so on a slow deployed target the stop
+        // can arrive during that window. Retry the stop across the settle window
+        // instead of failing the whole flow on it; a 409 that never clears still
+        // fails, and names the status the API actually reported.
+        const stopped = await waitFor(
+          async () =>
+            ctx.client.as(ctx.P.OWNER).post(
+              '/v1/projects/:projectId/sessions/:sessionId/stop',
+              {},
+              { params: { projectId, sessionId } },
+            ),
+          {
+            until: (r) => r.statusCode !== 409,
+            timeoutMs: 60_000,
+            intervalMs: 3_000,
+            description: `session ${sessionId} to become stoppable (stop returns 409 until the sandbox row is active)`,
+            retryOnError: isKe2eRetryableError,
+          },
         );
-        r.status(200).body().has('$.status', 'stopped');
+        stopped.status(200).body().has('$.status', 'stopped');
       },
     );
 
@@ -761,8 +779,24 @@ flow(
         },
         { params },
       );
-      r.status(202).body().has('$.deduped', false).has('$.message_id', wireMessageId);
-      promptId = String(r.json<any>().prompt_id);
+      // BOTH outcomes are correct here, and the test must not pick only one.
+      // The ke2e HTTP client retries any request — POST included — on a fetch
+      // throw, a timeout, or an edge 502/503/504 (core/client.ts). It carries
+      // no test-side idempotency guard, so against deployed staging the FIRST
+      // POST is sometimes delivered twice. The server's durable idempotency key
+      // then answers the retry with `200 {deduped:true}` naming the SAME row —
+      // which is the contract working, not a failure. spec §SESS-25 defines
+      // exactly this split: 202 = new row, 200 = idempotent replay.
+      r.status([200, 202]).body().has('$.message_id', wireMessageId);
+      const posted = r.json<any>();
+      const mustBeDeduped = r.statusCode === 200;
+      if (posted.deduped !== mustBeDeduped) {
+        throw new Error(
+          `POST /prompts answered ${r.statusCode} with deduped=${String(posted.deduped)}; ` +
+            '202 must carry deduped:false (new row) and 200 must carry deduped:true (replay)',
+        );
+      }
+      promptId = String(posted.prompt_id);
       if (!promptId) throw new Error('POST /prompts returned no prompt_id');
     });
 

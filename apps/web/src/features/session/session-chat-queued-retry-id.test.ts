@@ -61,10 +61,10 @@ describe('a queue retry re-sends ONE delivery, not two', () => {
     expect(send).toContain('promptInbox.enqueue({');
     expect(send).not.toContain('sessionState.sendParts(');
     expect(send).not.toContain('sendAndRecover({');
-    // The wire id is minted HERE, by the SDK, and carried with the submission —
-    // the control plane cannot place one, and `messageID` above is the
-    // optimistic-render id, which encodes the wrong bits for the wire.
-    expect(send).toContain('mintSessionWireMessageId(sessionId, clientMessageId)');
+    // The wire id is minted by the SDK (`mintSessionWireMessageId`, above the
+    // POST) and is ALSO the optimistic bubble's id — one id per prompt — so
+    // the row carries `messageID` itself.
+    expect(send).toContain('messageId: messageID,');
     // Recovery on a failed enqueue is unchanged.
     expect(send).toContain('recoverFromSendFailure(sessionId, messageID, cause');
   });

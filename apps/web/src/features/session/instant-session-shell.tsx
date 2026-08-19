@@ -28,7 +28,10 @@ import { errorToast } from '@/components/ui/toast';
 import { playSound } from '@/lib/sounds';
 import { cn } from '@/lib/utils';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
-import { usePendingFilesStore } from '@/stores/session-composer-handoff-store';
+import {
+  useFirstPromptPreviewStore,
+  usePendingFilesStore,
+} from '@/stores/session-composer-handoff-store';
 import type { SessionStartStage } from '@kortix/sdk';
 
 const subscribeToNothing = () => () => {};
@@ -129,7 +132,14 @@ export function InstantSessionShell({
     if (!row) return null;
     return { text: row.text, files: [] as AttachedFile[] };
   }, [promptInbox.prompts]);
-  const effectiveSubmission = submission ?? pendingRowSubmission ?? stashedSubmission;
+  // The producer's own copy of the first prompt, drawn from the first frame —
+  // the row read above can miss it entirely when a warm box delivers between
+  // navigation and the fetch. See `useFirstPromptPreviewStore`.
+  const previewSubmission = useFirstPromptPreviewStore(
+    (s) => s.previewBySession[sessionId] ?? null,
+  );
+  const effectiveSubmission =
+    submission ?? previewSubmission ?? pendingRowSubmission ?? stashedSubmission;
   const submitted = effectiveSubmission?.text ?? null;
 
   // Starter-prompt → composer prefill, identical to the project-home composer.

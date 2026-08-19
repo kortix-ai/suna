@@ -60,16 +60,6 @@ export function ComposerChatInput({
   parentClassName,
   boundAgentName,
   clearOnSend,
-  queuedMessages,
-  failedQueuedMessages,
-  queueInFlightIds,
-  queuePaused,
-  queueIsRunning,
-  onSendQueuedMessageNow,
-  onRemoveQueuedMessage,
-  onEditQueuedMessage,
-  onReorderQueuedMessage,
-  onRetryQueuedMessage,
   onAgentSelectionChange,
   sandboxSlot,
 }: {
@@ -109,17 +99,6 @@ export function ComposerChatInput({
   parentClassName?: string;
   /** Immutable project-session agent. When set, sends are locked to this agent. */
   boundAgentName?: string | null;
-  /** Queued-while-busy support, passed straight through to SessionChatInput. */
-  queuedMessages?: SessionChatInputProps['queuedMessages'];
-  failedQueuedMessages?: SessionChatInputProps['failedQueuedMessages'];
-  queueInFlightIds?: SessionChatInputProps['queueInFlightIds'];
-  queuePaused?: SessionChatInputProps['queuePaused'];
-  queueIsRunning?: SessionChatInputProps['queueIsRunning'];
-  onSendQueuedMessageNow?: SessionChatInputProps['onSendQueuedMessageNow'];
-  onRemoveQueuedMessage?: (id: string) => void;
-  onEditQueuedMessage?: (id: string, text: string) => void;
-  onReorderQueuedMessage?: (id: string, toIndex: number) => void;
-  onRetryQueuedMessage?: (id: string) => void;
   /** Reports the effective agent to parent controls such as the sandbox picker. */
   onAgentSelectionChange?: (agentName: string | null) => void;
   /** Pre-create sandbox-template chooser, rendered inside the overrides panel. */
@@ -226,16 +205,6 @@ export function ComposerChatInput({
       onSend={(text, files) => onSend(text, files, options())}
       onCommand={onCommand ? (cmd, args) => onCommand(cmd, args, options()) : undefined}
       clearOnSend={clearOnSend}
-      queuedMessages={queuedMessages}
-      failedQueuedMessages={failedQueuedMessages}
-      queueInFlightIds={queueInFlightIds}
-      queuePaused={queuePaused}
-      queueIsRunning={queueIsRunning}
-      onSendQueuedMessageNow={onSendQueuedMessageNow}
-      onRemoveQueuedMessage={onRemoveQueuedMessage}
-      onEditQueuedMessage={onEditQueuedMessage}
-      onReorderQueuedMessage={onReorderQueuedMessage}
-      onRetryQueuedMessage={onRetryQueuedMessage}
       isBusy={isBusy}
       sessionWorking={sessionWorking}
       runtimeReady={runtimeReady}

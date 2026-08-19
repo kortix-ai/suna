@@ -7,9 +7,24 @@
 import { type Client, isKe2eRetryableError } from '../core/client';
 import { sleep } from '../core/poll';
 
-const MAX = Number(process.env.KE2E_PROVISION_CONCURRENCY ?? 2);
+/**
+ * Global cap on concurrent project provisions (KE2E_PROVISION_CONCURRENCY).
+ *
+ * This — not KE2E_API_WORKERS — was the binding constraint on suite
+ * parallelism: most flows start by provisioning, so 2 concurrent provisions
+ * held measured speedup at 1.43x with 6 flow workers. 4 doubles the ceiling.
+ * The next constraint is GitHub's SECONDARY rate limit on repo creation, which
+ * is why raising this is paired with a jittered backoff below: 4 provisions
+ * that hit a 403 together must not retry in lockstep.
+ */
+const MAX = Number(process.env.KE2E_PROVISION_CONCURRENCY ?? 4);
 const MIN_REQUEST_INTERVAL_MS = Number(process.env.KE2E_PROVISION_MIN_INTERVAL_MS ?? 0);
+/** Ceiling for a rate-limited retry (KE2E_PROVISION_RATE_LIMIT_DELAY_MS). */
 const RATE_LIMIT_DELAY_MS = Number(process.env.KE2E_PROVISION_RATE_LIMIT_DELAY_MS ?? 120_000);
+/** First rate-limited retry delay; doubles per attempt up to the ceiling. */
+const RATE_LIMIT_BASE_DELAY_MS = Number(
+  process.env.KE2E_PROVISION_RATE_LIMIT_BASE_DELAY_MS ?? 15_000,
+);
 let active = 0;
 const waiters: Array<() => void> = [];
 let nextRequestAt = 0;
@@ -36,9 +51,27 @@ function isRetryableProvisionStatus(status: number): boolean {
   return status >= 500 && status <= 599;
 }
 
-function retryDelayMs(attempt: number, rateLimited: boolean): number {
-  if (rateLimited) return RATE_LIMIT_DELAY_MS;
-  return Math.min(5_000 * 2 ** attempt, 30_000);
+/**
+ * Exponential backoff with equal jitter for a failed provision.
+ *
+ * Rate-limited retries were a FIXED 120s, so 5 attempts spent up to 8 minutes
+ * holding a semaphore slot even when GitHub's block cleared in seconds. They
+ * now start at 15s and double to the 120s ceiling. Both paths carry equal
+ * jitter (half fixed, half random) so concurrent provisions that trip the same
+ * secondary rate limit do not retry in lockstep and re-trip it. Equal jitter,
+ * not full jitter: a near-zero retry against a secondary rate limit extends
+ * the block instead of clearing it.
+ */
+export function retryDelayMs(
+  attempt: number,
+  rateLimited: boolean,
+  random: () => number = Math.random,
+): number {
+  const ceiling = rateLimited
+    ? Math.min(RATE_LIMIT_BASE_DELAY_MS * 2 ** attempt, RATE_LIMIT_DELAY_MS)
+    : Math.min(5_000 * 2 ** attempt, 30_000);
+  const half = ceiling / 2;
+  return Math.round(half + random() * half);
 }
 
 export async function paceProvisionRequest(

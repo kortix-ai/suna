@@ -170,8 +170,85 @@ describe('local test runner', () => {
     }
   });
 
+  it('raises the deployed API lane to six workers, still overridable by env', () => {
+    const previous = process.env.KE2E_API_WORKERS;
+    delete process.env.KE2E_API_WORKERS;
+    try {
+      // 3 workers left measured parallelism at 1.43x because the real ceiling is
+      // provision.ts's global semaphore, not the worker count.
+      expect(buildLocalTestPlan(['--target-full']).lanes[0]?.env).toEqual({
+        KE2E_API_WORKERS: '6',
+        KE2E_SANDBOX_WORKERS: '3',
+      });
+      process.env.KE2E_API_WORKERS = '3';
+      expect(buildLocalTestPlan(['--target-full']).lanes[0]?.env?.KE2E_API_WORKERS).toBe('3');
+    } finally {
+      if (previous === undefined) delete process.env.KE2E_API_WORKERS;
+      else process.env.KE2E_API_WORKERS = previous;
+    }
+  });
+
+  it('runs one deployed API shard through the release gate command', () => {
+    const plan = buildLocalTestPlan(['--target-api-full', '--api-shard=2/4']);
+
+    expect(plan.mode).toBe('target-api-full');
+    expect(plan.lanes.map((lane) => lane.name)).toEqual(['target-api-full']);
+    expect(plan.lanes[0]?.command).toEqual([
+      'bun',
+      'tests/bin/ke2e.ts',
+      'run',
+      '--require-all',
+      '--shard',
+      '2/4',
+    ]);
+  });
+
+  it('runs one deployed browser shard through the release gate command', () => {
+    const plan = buildLocalTestPlan(['--target-browser-full', '--browser-shard=3/3']);
+
+    expect(plan.mode).toBe('target-browser-full');
+    expect(plan.lanes.map((lane) => lane.name)).toEqual(['target-browser-full']);
+    expect(plan.lanes[0]?.command).toEqual([
+      'bun',
+      'run',
+      'test:browser',
+      '--',
+      '--shard=3/3',
+    ]);
+    expect(plan.lanes[0]?.env?.E2E_REQUIRE_ALL_BROWSER).toBe('1');
+  });
+
+  it('runs each deployed lane unsharded when no shard is given', () => {
+    expect(buildLocalTestPlan(['--target-api-full']).lanes[0]?.command).toEqual([
+      'bun',
+      'tests/bin/ke2e.ts',
+      'run',
+      '--require-all',
+    ]);
+    expect(buildLocalTestPlan(['--target-browser-full']).lanes[0]?.command).toEqual([
+      'bun',
+      'run',
+      'test:browser',
+    ]);
+  });
+
+  it('rejects a shard flag that has no lane to shard', () => {
+    expect(() => buildLocalTestPlan(['--api-shard=1/2'])).toThrow(
+      '--api-shard requires --target-api-full',
+    );
+    expect(() => buildLocalTestPlan(['--target-api-full', '--browser-shard=1/2'])).toThrow(
+      '--browser-shard requires --browser-only or --target-browser-full',
+    );
+    expect(() => buildLocalTestPlan(['--target-api-full', '--api-shard=3/2'])).toThrow(
+      '--api-shard must use CURRENT/TOTAL',
+    );
+  });
+
   it('rejects conflicting modes', () => {
     expect(() => buildLocalTestPlan(['--full', '--sdk-only'])).toThrow('choose only one');
+    expect(() => buildLocalTestPlan(['--target-full', '--target-api-full'])).toThrow(
+      'choose only one',
+    );
   });
 
   it('retries a cold local web route until it is ready', async () => {

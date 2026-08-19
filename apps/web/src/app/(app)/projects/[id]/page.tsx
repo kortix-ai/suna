@@ -22,6 +22,7 @@ import { useComposerPrefillStore } from '@/stores/composer-prefill-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import { getProjectDetail } from '@kortix/sdk';
 import { contract, qk, writeStartStash } from '@kortix/sdk/react';
+import { useFirstPromptPreviewStore } from '@/stores/session-composer-handoff-store';
 import { useQuery } from '@tanstack/react-query';
 import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -162,6 +163,9 @@ export default function ProjectIndexPage() {
             model: options?.model ?? null,
             variant: options?.variant ?? null,
           });
+          // RENDER-only copy for the boot shell, so the bubble is on screen
+          // from the session page's first frame — see `useFirstPromptPreviewStore`.
+          useFirstPromptPreviewStore.getState().setFirstPromptPreview(sessionId, text, files ?? []);
         },
       });
     },

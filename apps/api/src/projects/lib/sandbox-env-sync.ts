@@ -111,6 +111,18 @@ export function __resetNetworkBoundaryArmCacheForTests(): void {
  * comparison on the daemon.
  */
 const lastPromptModelSignature = new Map<string, string>();
+/**
+ * When each box last had its env pushed successfully. Together with the
+ * signature above this is the "nothing to say" short-circuit: a prompt whose
+ * whole env set is byte-identical to what THIS process pushed to THIS box
+ * within `PROMPT_ENV_PUSH_TTL_MS` skips the daemon round-trip entirely. That
+ * round-trip was ~1s of dead air on every send in a queue burst and every
+ * back-to-back turn, for a push the daemon itself would no-op. Bounded by a
+ * TTL because the box can respawn its daemon underneath us; the next prompt
+ * past the TTL re-pushes, and any signature change re-pushes at once.
+ */
+const lastPromptEnvPushAt = new Map<string, number>();
+export const PROMPT_ENV_PUSH_TTL_MS = 2 * 60_000;
 /** Entries are ~200 bytes; the process is long-lived and external ids are
  *  never reused, so this must be bounded the same way `armedNetworkBoundaries`
  *  is. No TTL: unlike the boundary arm this is not self-healing drift, it is a
@@ -121,6 +133,7 @@ const PROMPT_MODEL_SIGNATURE_CACHE_MAX = 2_000;
 /** Test seam: drop every remembered per-prompt signature. */
 export function __resetPromptModelSignatureCacheForTests(): void {
   lastPromptModelSignature.clear();
+  lastPromptEnvPushAt.clear();
 }
 
 /**
@@ -172,6 +185,11 @@ function promptModelSignature(input: {
 }
 
 function rememberPromptModelSignature(externalId: string, signature: string): void {
+  lastPromptEnvPushAt.set(externalId, Date.now());
+  if (lastPromptEnvPushAt.size > PROMPT_MODEL_SIGNATURE_CACHE_MAX) {
+    const oldest = lastPromptEnvPushAt.keys().next();
+    if (!oldest.done) lastPromptEnvPushAt.delete(oldest.value);
+  }
   lastPromptModelSignature.delete(externalId);
   if (lastPromptModelSignature.size >= PROMPT_MODEL_SIGNATURE_CACHE_MAX) {
     const oldest = lastPromptModelSignature.keys().next();
@@ -624,11 +642,17 @@ export async function syncSandboxEnvForPrompt(args: {
   opencodeEnv?: Record<string, string | null>;
 }): Promise<void> {
   if (!args.serviceKey) return;
+  const t0 = performance.now();
+  const timing: Record<string, number> = {};
+  const lap = (label: string) => {
+    timing[label] = Math.round(performance.now() - t0 - Object.values(timing).reduce((a, b) => a + b, 0));
+  };
   const snapshot = await resolveSandboxEnvSnapshot(
     args.projectId,
     args.sessionId,
     args.requestedAgent,
   );
+  lap('snapshot');
   if (!snapshot) return;
   // Resolving the bindings stays FAIL-CLOSED: it re-reads the agent's grant, and
   // an unresolvable grant must refuse the prompt (the caller maps
@@ -646,6 +670,7 @@ export async function syncSandboxEnvForPrompt(args: {
     args.sessionId,
     args.requestedAgent,
   );
+  lap('boundary');
   // Sampled BEFORE the attempt, because a failed arm forgets its record. `true`
   // means this process already armed a DIFFERENT set on this sandbox (an
   // unchanged set never reaches the provider at all), so a failure below leaves
@@ -711,7 +736,9 @@ export async function syncSandboxEnvForPrompt(args: {
         `${err instanceof Error ? err.message : String(err)}`,
     );
   }
+  lap('arm');
   const llmGatewayEnabled = await resolveProjectLlmGatewayEnabled(args.projectId);
+  lap('gateway-flag');
   const llmGatewayBaseUrl = llmGatewayEnabled
     ? llmGatewayBaseUrlForProvider(args.providerName)
     : undefined;
@@ -734,6 +761,19 @@ export async function syncSandboxEnvForPrompt(args: {
     opencodeEnv: args.opencodeEnv,
   });
   const refreshModels = lastPromptModelSignature.get(args.externalId) !== signature;
+  const pushedAt = lastPromptEnvPushAt.get(args.externalId);
+  if (
+    !refreshModels &&
+    pushedAt !== undefined &&
+    Date.now() - pushedAt < PROMPT_ENV_PUSH_TTL_MS
+  ) {
+    // Byte-identical to what this process pushed to this box moments ago:
+    // nothing to say, and the daemon would no-op it. Skip the round-trip.
+    await markSandboxLlmGatewayMode(args.sessionId, llmGatewayEnabled);
+    lap('mark');
+    console.log(`[env-sync] timing sandbox=${args.externalId} push=skipped ${JSON.stringify(timing)}`);
+    return;
+  }
   const { opencodeState } = await postEnvToDaemon({
     previewUrl: args.previewUrl,
     providerHeaders: args.providerHeaders,
@@ -749,6 +789,7 @@ export async function syncSandboxEnvForPrompt(args: {
   // failure) must leave the memo alone so the next prompt retries with
   // `refreshModels: true` again instead of assuming the failed attempt landed.
   rememberPromptModelSignature(args.externalId, signature);
+  lap('push');
   // A model-affecting change just restarted opencode (state !== 'ok'). The prompt
   // is forwarded the instant this returns, so block until opencode is serving —
   // otherwise the forward hits the restart window and 503s "opencode not ready",
@@ -766,6 +807,8 @@ export async function syncSandboxEnvForPrompt(args: {
     );
   }
   await markSandboxLlmGatewayMode(args.sessionId, llmGatewayEnabled);
+  lap('mark');
+  console.log(`[env-sync] timing sandbox=${args.externalId} push=sent refreshModels=${refreshModels} ${JSON.stringify(timing)}`);
 }
 
 export async function propagateProjectSecretsToActiveSandboxes(

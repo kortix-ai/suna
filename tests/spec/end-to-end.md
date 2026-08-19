@@ -255,8 +255,11 @@ DB `project_sessions` (`status queued|branching|provisioning|running|stopped|fai
 
 `SNAP-1` `GET /projects/:id/snapshots` → `read` → list `kortix-snap-…` images per baseRef. **Session boot requires a `ready` snapshot of baseRef** (no shared fallback → session `failed` if none).
 `SNAP-2` `POST /projects/:id/snapshots/rebuild` → **`manage` AND account `ACCOUNT_WRITE` (owner/admin)** → rebuild image. A project `manager` who is not owner/admin → 403; M_EDITOR → 403.
-`SBX-1` sandbox create/start = implicit on session create (`provisionSessionSandbox`); no standalone endpoint.
-`SBX-2` sandbox manual stop = `SESS-12` (pauses in place, resumable); destructive teardown = session `DELETE` (`SESS-7`); restart = `SESS-9`; status read = `SESS-8`.
+**No standalone sandbox create/stop routes exist.** Sandbox create/start is implicit
+on session create (`provisionSessionSandbox`), asserted transitively by `RUN-1` /
+`GOLD-1`. Manual stop = `SESS-12` (pauses in place, resumable); destructive teardown =
+session `DELETE` (`SESS-7`); restart = `SESS-9`; status read = `SESS-8`. These are
+documented boundaries, not flow ids: they carry no HTTP surface of their own.
 
 ---
 
@@ -334,15 +337,32 @@ Specs in `[[triggers]]`; CRUD commits the manifest; runtime state and account-lo
 `TRG-3` `PATCH /projects/:id/triggers/:slug` (e.g. `{enabled:false}`) → `manage`.
 `TRG-4` `DELETE /projects/:id/triggers/:slug` → `manage` (also drops runtime row).
 `TRG-5` `POST /projects/:id/triggers/:slug/fire` → `manage` → manual fire → 202 `{status:fired,session_id}`; under backpressure → 202 `{status:queued,reason}`.
-`TRG-6` cron scheduler — global `setInterval` (default 60s), sweeps ≤200 active projects; due = `nextCronRun(cron,lastFired,tz) ≤ now`; **marks fired BEFORE firing** (no double-spawn per slot). Disabled via `KORTIX_TRIGGER_SCHEDULER_ENABLED=false`.
 `TRG-7` webhook fire — `POST /webhooks/projects/:id/:slug` (**public, HMAC**). Sig header `X-Kortix-Signature` or `X-Hub-Signature-256` (`sha256=` stripped), HMAC-SHA256 over raw body vs `project_secrets[secret_env]`, constant-time. Valid → 202 fired/queued; malformed UUID/slug → 400; unknown project → 404; bad sig → 401; missing secret → 409; unknown/disabled/non-webhook trigger → 404; fire failure → 500.
-`TRG-8` fire→run — `fireGitTrigger` → provisioning actor = account owner, initial `visibility:'private'`, then durable post-create action resolves the trigger agent service account and current account-local policy. The action sets `created_by`, visibility, and member/group grants. Queued creates resolve the policy when the worker runs. Backpressure: provisioning sessions ≥3 OR account at tier cap → queued.
-`TRG-9` **No inbound GitHub event webhook exists.** Simulate "GitHub Actions"-style automation as a generic `webhook` trigger; a GitHub repo webhook can drive it if its secret == `secret_env` (via `X-Hub-Signature-256`).
 `TRG-10` `GET /projects/:id/triggers` leaf gate — a member bound to a custom (Enterprise) project role granting `project.read` but NOT `project.trigger.read` loads the project yet is rejected 403 at `GET /triggers` (the `assertProjectCapability(project.trigger.read)` fires after the read passes); a floor `user` member (built-in role carries `project.trigger.read`) still gets 200. Scoped-agent-token variant proven at the API layer in `integration-project-read-leaf-gates-http.test.ts`.
 `TRG-11` Triggers CRUD authz boundaries — `ANON → 401` on POST/PATCH/DELETE/fire/activation; a project `member` (floor role) holds `trigger.read` + `trigger.fire` but NOT `project.write` (the `manage` floor) nor `trigger.create/update/delete` → `GET 200`, `POST/PATCH/DELETE/activation 403`, `fire` unknown-slug `404` (NOT 403 — the fire leaf passes; the 404 is the slug lookup).
 `TRG-12` `POST /projects/:id/triggers` input validation — missing `name`/`type`/`prompt_template` → `400`; bad `type` (not cron/webhook) → `400`; invalid `session_mode` → `400`; `pinned` without `session_id` → `400`; `pinned` with a `session_id` from another project → `400`; webhook without `secret_env` → `400`; webhook with bad `secret_env` (lowercase / leading digit, not `^[A-Z_][A-Z0-9_]*$`) → `400`; cron without `cron` AND without `run_at` → `400`; cron with non-ISO `run_at` → `400`; explicit invalid slug (uppercase / leading dash, not `^[a-z0-9][a-z0-9_-]{0,127}$`) → `400`.
 `TRG-13` `PATCH`/`DELETE`/`activation` edge cases — PATCH unknown slug → `404`; PATCH no-op body `{}` → `200` (no manifest keys, no git commit); DELETE unknown slug → `404`; DELETE invalid slug format (uppercase / leading dash) → `400` (regex gate before manifest lookup); activation pause→resume round-trip persisted on readback (`triggers_paused`); activation non-boolean / missing `paused` → `400`.
 `TRG-14` trigger-created session access — omitted `session_access` defaults to `{mode:'private',memberIds:[],groupIds:[]}`. The trigger agent service account owns created sessions. Project managers, account owners, and account admins can open and discover trigger-created sessions in every mode. An ordinary member cannot open or discover a private trigger session without an explicit member/group grant. A project manager cannot open or discover an ordinary private human session. No session inventory returns a row the caller cannot open. The sidebar, sessions page, and command palette render `Shared` on every accessible session whose `is_owner` value is false. They leave the viewer's own sessions unmarked. The ownership marker remains visible beside the session source. Session POST and PATCH reject client-supplied `source`, `trigger_kind`, and `trigger_slug` metadata, so a human session cannot forge trigger attribution. `PATCH {session_access}` accepts `private`, selected `members`, or `project`. Selected member/group ids must belong to the trigger account. Unknown or cross-account ids → `400`. Duplicate ids are removed. Empty selected access normalizes to private. Policy-only PATCH does not commit `kortix.yaml`. Saving a policy also updates prior sessions created by that trigger. Pinned sessions retain their own session sharing policy. Trigger deletion cascades its access grants.
+
+**Trigger behavior with no black-box HTTP surface.** These are documented
+boundaries, not flow ids.
+
+- *Cron scheduler* — global `setInterval` (default 60s), sweeps ≤200 active
+  projects; due = `nextCronRun(cron,lastFired,tz) ≤ now`; **marks fired BEFORE
+  firing** (no double-spawn per slot). Disabled via
+  `KORTIX_TRIGGER_SCHEDULER_ENABLED=false`. It is a background sweep, not a
+  route; `apps/api/scripts/e2e-triggers-live.sh` drives it against wall-clock.
+- *fire→run* — `fireGitTrigger` → provisioning actor = account owner, initial
+  `visibility:'private'`, then a durable post-create action resolves the trigger
+  agent service account and current account-local policy. The action sets
+  `created_by`, visibility, and member/group grants. Queued creates resolve the
+  policy when the worker runs. Backpressure: provisioning sessions ≥3 OR account
+  at tier cap → queued. The fire entrypoints are asserted by `TRG-5` / `TRG-7`;
+  the run itself needs the `funded` capability.
+- *No inbound GitHub event webhook exists.* Simulate "GitHub Actions"-style
+  automation as a generic `webhook` trigger; a GitHub repo webhook can drive it
+  if its secret == `secret_env` (via `X-Hub-Signature-256`). The generic webhook
+  fire boundary is covered by `TRG-7`.
 
 ---
 
@@ -587,7 +607,8 @@ Run these against representative endpoints from each domain.
 
 - No account-level vault — secrets are project-scoped, all-or-nothing per project (the `vault_items`/per-member-scope design was reversed).
 - Granular IAM actions `project.trigger.*`, `channel.*`, `trigger.*` exist in the catalog but those project routes only enforce coarse `read|write|manage` — test the coarse gate, not the fine actions. **Exception:** session lifecycle routes (create/PATCH/DELETE/restart) now enforce `project.session.start` via the `session` access tier, which every project role (viewer included) holds — so a viewer CAN run sessions but still can't `write`/`manage`.
-- No inbound GitHub event webhook (no push/PR receiver) — see `TRG-9`.
+- No inbound GitHub event webhook (no push/PR receiver) — see the trigger
+  boundary notes at the end of section 12.
 - CLI `providers`, `doctor`, `proxy`, `sessions-chat` source files exist but are **not wired** into the dispatcher and not in the reserved list — so `kortix providers …` is **treated as a new-project name** (`runCreate`), not an "unknown command" error. Don't test for an error here.
 - Cron scheduler scans only first 200 active projects/tick.
 
@@ -816,9 +837,11 @@ charge for compute the provider never allocated.
 
 `APP-4` Team scoping — an App's access policy governs who on the TEAM sees it,
 not only who reaches its hostname, using the model sessions use. A new App is
-`private`: a project manager who did not create it does not receive it in
-`GET …/apps`, and gets **404** (never 403 — the status must not disclose that a
-teammate's private App exists) from `GET` and `PATCH …/:appId`. Switching the
+`private`: a project member who did not create it does not receive it in
+`GET …/apps`, and gets **404** from `GET …/:appId` (never 403 — the status must
+not disclose that a teammate's private App exists); their `PATCH …/:appId` is
+**403** because a member holds no `project.app.write` at all, which discloses
+nothing either. Switching the
 policy to `project` puts the App in that teammate's list and makes it readable;
 `restricted` with their `member_ids` keeps them in; returning to `private` puts
 them back out. `password` is a PUBLIC-traffic control and stays team-visible.

@@ -19,6 +19,7 @@ import { runWithContext } from '../lib/request-context';
 import { classifyPtyWebSocketPath } from '../platform/providers/pty-ingress';
 import * as realProviders from '../platform/providers';
 import * as realPreviewOwnership from '../shared/preview-ownership';
+import { __resetPromptModelSignatureCacheForTests } from '../projects/lib/sandbox-env-sync';
 
 // ─── Mock state ──────────────────────────────────────────────────────────────
 
@@ -528,6 +529,10 @@ beforeEach(() => {
   mockResolvedPreviewPorts = [];
   mockSnapshotSyncCalls = [];
   mockTitleCalls = [];
+  // The per-sandbox env-push memo (`PROMPT_ENV_PUSH_TTL_MS`) would otherwise
+  // carry over from the previous test on the same TEST_SANDBOX_ID and skip the
+  // env-sync fetch each case queues first.
+  __resetPromptModelSignatureCacheForTests();
 
   // Install mock fetch
   globalThis.fetch = mockFetch as any;

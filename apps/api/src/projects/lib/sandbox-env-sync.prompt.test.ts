@@ -125,6 +125,7 @@ const ORIGINAL_FETCH = globalThis.fetch;
 
 const {
   __resetNetworkBoundaryArmCacheForTests,
+  __resetPromptModelSignatureCacheForTests,
   propagateProjectSecretsToActiveSandboxes,
   syncSandboxEnvForPrompt,
 } = await import('./sandbox-env-sync');
@@ -160,6 +161,7 @@ afterAll(() => {
 
 beforeEach(() => {
   __resetNetworkBoundaryArmCacheForTests();
+  __resetPromptModelSignatureCacheForTests();
   events = [];
   armCalls = [];
   envPushes = [];
@@ -178,7 +180,9 @@ describe('syncSandboxEnvForPrompt — network boundary', () => {
     await prompt();
 
     expect(armCalls).toHaveLength(1);
-    expect(envPushes).toHaveLength(3);
+    // Identical env, same box, inside the push TTL: only the first prompt
+    // reaches the daemon at all (see `PROMPT_ENV_PUSH_TTL_MS`).
+    expect(envPushes).toHaveLength(1);
   });
 
   test('a rotated credential re-arms — the new value must reach the edge', async () => {
@@ -271,7 +275,8 @@ describe('syncSandboxEnvForPrompt — network boundary', () => {
     await prompt();
 
     expect(armCalls).toHaveLength(2);
-    expect(events).toEqual(['boundary', 'env-push', 'boundary', 'env-push']);
+    // The boundary re-arms; the daemon push is byte-identical and skipped.
+    expect(events).toEqual(['boundary', 'env-push', 'boundary']);
   });
 
   test('a slow arm does not hold the turn, and its result still lands', async () => {
@@ -300,7 +305,9 @@ describe('syncSandboxEnvForPrompt — network boundary', () => {
     bindings = [binding({ value: 'Bearer rotated-value' })];
     await prompt();
 
-    expect(events).toEqual(['boundary', 'env-push', 'boundary', 'env-push']);
+    // A rotated EDGE credential re-arms the boundary; it is not part of the
+    // daemon env, so that push stays skipped as byte-identical.
+    expect(events).toEqual(['boundary', 'env-push', 'boundary']);
   });
 
   test('an unresolvable binding set still fails the prompt closed', async () => {

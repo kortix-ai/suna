@@ -17,11 +17,13 @@ import { resolve } from 'node:path';
  * `takeWarmSession`. A second file reaching for the SDK surface directly is the
  * regression this test exists to catch.
  *
- * `claimWarmProjectSession` is no longer part of the rule, and no longer part of
- * the app: a warm session is an ordinary session, so the send path navigates to
- * it and prompts it rather than claiming it. The SDK still exports the call
- * (published since v0.11.0) and the API still serves the route, both deprecated
- * — but no `apps/web` module may reach for either, which the ban below enforces.
+ * `claimWarmProjectSession` is GOVERNED, not banned: the first prompt of a
+ * session is a durable server-side inbox row (never a client-side replay), and
+ * for an adopted warm session — created seconds ago with an empty body — the
+ * server's claim is the one call that inserts that row, drops the warm marker
+ * and kicks the drain in a single transaction (`primeTakenWarmSession`). It
+ * lives in the same one module; a second file reaching for it is the
+ * regression this test catches.
  *
  * `WARM_PROJECT_SESSIONS_ENABLED` stays banned outright — it is a dead flag
  * from the removed client implementation and there is no correct use of it.
@@ -34,13 +36,10 @@ const THIS_FILE = resolve(import.meta.path);
 const WARM_SESSION_MODULES = ['hooks/projects/use-warm-project-session.ts'] as const;
 
 /** Allowed in `WARM_SESSION_MODULES`, banned everywhere else. */
-const GOVERNED_WARM_SESSION_CALLS = ['ensureWarmProjectSession'] as const;
+const GOVERNED_WARM_SESSION_CALLS = ['ensureWarmProjectSession', 'claimWarmProjectSession'] as const;
 
 /** Banned everywhere, with no exception. */
-const FORBIDDEN_WARM_SESSION_REFERENCES = [
-  'WARM_PROJECT_SESSIONS_ENABLED',
-  'claimWarmProjectSession',
-] as const;
+const FORBIDDEN_WARM_SESSION_REFERENCES = ['WARM_PROJECT_SESSIONS_ENABLED'] as const;
 
 function sourceFiles(directory: string): string[] {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {

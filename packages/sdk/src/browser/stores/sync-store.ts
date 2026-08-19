@@ -246,7 +246,28 @@ interface SyncState {
 	 * part-id correlation still supersedes their messages normally.
 	 */
 	markOptimisticDispatched: (sessionID: string, messageID: string) => void;
+	/**
+	 * Mark an optimistic message as held DURABLY by the control plane — its
+	 * prompt-inbox row landed (the POST returned). From here the message is not
+	 * "unconfirmed": the server has it and will deliver it, so the local idle
+	 * sweep ({@link SyncState.clearOptimisticMessages}) must not delete it. It
+	 * leaves the transcript only by the runtime's echo (same id, or a re-minted
+	 * one — see {@link SyncState.optimisticEchoOf}), by
+	 * {@link SyncState.optimisticRemove}, or with the session.
+	 */
+	markOptimisticInboxBacked: (sessionID: string, messageID: string) => void;
 	clearOptimisticMessages: (sessionID: string) => void;
+	/**
+	 * The runtime's id for an optimistic message that was superseded under a
+	 * DIFFERENT id (the control plane re-mints a wire id that would sort below
+	 * the transcript tip). Lets a host keep ONE identity for the prompt across
+	 * the swap — a React key, an inbox row's `message_id` — instead of seeing
+	 * two. Undefined for a message confirmed under its own id or never
+	 * superseded.
+	 */
+	optimisticEchoOf: (sessionID: string, optimisticID: string) => string | undefined;
+	/** The inverse of {@link SyncState.optimisticEchoOf}. */
+	optimisticOriginOf: (sessionID: string, echoID: string) => string | undefined;
 	/** True when the session's message list still holds an unconfirmed optimistic
 	 *  message — lets the SSE reconciler avoid idling+clearing a brand-new session
 	 *  whose first prompt the server hasn't registered yet. */
@@ -339,6 +360,34 @@ const optimisticIds = new Map<string, Set<string>>();
 // match: the server has not been told it exists, so nothing the server returns
 // can be a copy of it.
 const dispatchedOptimisticIds = new Map<string, Set<string>>();
+// Optimistic ids whose prompt-inbox row LANDED (see `markOptimisticInboxBacked`).
+// The idle sweep skips these: the control plane holds the message durably and
+// will deliver it, so "the session went idle and this was never echoed" is
+// not evidence it was lost.
+const inboxBackedOptimisticIds = new Map<string, Set<string>>();
+// optimistic id → the runtime id that superseded it, and the inverse. Written
+// at supersede time (SSE and hydrate), so a host can keep one identity for a
+// prompt across the swap. Bounded by the number of prompts sent from this tab
+// per session; released with the session.
+const optimisticEchoes = new Map<string, Map<string, string>>();
+const optimisticOrigins = new Map<string, Map<string, string>>();
+
+function recordOptimisticEcho(sessionID: string, optimisticID: string, echoID: string): void {
+	if (optimisticID === echoID) return;
+	let fwd = optimisticEchoes.get(sessionID);
+	if (!fwd) optimisticEchoes.set(sessionID, (fwd = new Map()));
+	fwd.set(optimisticID, echoID);
+	let rev = optimisticOrigins.get(sessionID);
+	if (!rev) optimisticOrigins.set(sessionID, (rev = new Map()));
+	rev.set(echoID, optimisticID);
+}
+
+/** Forget every optimistic mark for one id — confirmed, superseded, or removed. */
+function releaseOptimisticId(sessionID: string, id: string): void {
+	untrackId(optimisticIds, sessionID, id);
+	untrackId(dispatchedOptimisticIds, sessionID, id);
+	untrackId(inboxBackedOptimisticIds, sessionID, id);
+}
 
 function trackId(store: Map<string, Set<string>>, sessionID: string, id: string): void {
 	const bucket = store.get(sessionID);
@@ -366,6 +415,9 @@ function hasTrackedId(
 function forgetSessionIds(sessionID: string): void {
 	optimisticIds.delete(sessionID);
 	dispatchedOptimisticIds.delete(sessionID);
+	inboxBackedOptimisticIds.delete(sessionID);
+	optimisticEchoes.delete(sessionID);
+	optimisticOrigins.delete(sessionID);
 	// The joined rows hold the very message and part arrays this session's
 	// data is being dropped from. Left behind, they keep the transcript
 	// reachable and the drop achieves nothing.
@@ -1058,9 +1110,23 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			trackId(dispatchedOptimisticIds, sessionID, messageID);
 	},
 
+	markOptimisticInboxBacked: (sessionID, messageID) => {
+		if (isOptimistic(sessionID, messageID))
+			trackId(inboxBackedOptimisticIds, sessionID, messageID);
+	},
+
+	optimisticEchoOf: (sessionID, optimisticID) =>
+		optimisticEchoes.get(sessionID)?.get(optimisticID),
+
+	optimisticOriginOf: (sessionID, echoID) => optimisticOrigins.get(sessionID)?.get(echoID),
+
 	optimisticRemove: (sessionID, messageID) => {
-		untrackId(optimisticIds, sessionID, messageID);
-		untrackId(dispatchedOptimisticIds, sessionID, messageID);
+		// Only an OPTIMISTIC message can be removed this way. One the runtime has
+		// confirmed (same-id echo, or the store never tracked it) is the
+		// transcript's; a host that removes its inbox row must not take the
+		// persisted message with it.
+		if (!isOptimistic(sessionID, messageID)) return;
+		releaseOptimisticId(sessionID, messageID);
 		set((s) => {
 			const list = s.messages[sessionID];
 			if (!list) return s;
@@ -1082,14 +1148,17 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 		set((s) => {
 			const list = s.messages[sessionID];
 			if (!list) return s;
+			// An inbox-backed message is held by the control plane and will be
+			// delivered; a local idle is not evidence it was lost. It stays.
 			const optIds = list
-				.filter((m) => isOptimistic(sessionID, m.id))
+				.filter(
+					(m) =>
+						isOptimistic(sessionID, m.id) &&
+						!hasTrackedId(inboxBackedOptimisticIds, sessionID, m.id),
+				)
 				.map((m) => m.id);
 			if (optIds.length === 0) return s;
-			for (const id of optIds) {
-				untrackId(optimisticIds, sessionID, id);
-				untrackId(dispatchedOptimisticIds, sessionID, id);
-			}
+			for (const id of optIds) releaseOptimisticId(sessionID, id);
 			const filtered = list.filter((m) => !optIds.includes(m.id));
 			const newParts = { ...s.parts };
 			for (const id of optIds) delete newParts[id];
@@ -1252,6 +1321,21 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			// The rule is now identity-based, in two passes.
 			const existingIds = new Set(existing.map((m) => m.id));
 
+			// The echo may arrive under the optimistic message's OWN id: the host
+			// minted the wire id and painted the bubble with it. That is a
+			// confirmation, not a duplicate — release the marks so the message is
+			// ordinary from here (the sweep leaves it alone, real parts win), and
+			// bridge its optimistic parts until real ones land.
+			for (const m of incoming) {
+				if (m.role !== "user" || !isOptimistic(sessionID, m.id)) continue;
+				releaseOptimisticId(sessionID, m.id);
+				const optimisticParts = s.parts[m.id];
+				const entry = msgs.find((x) => x.info.id === m.id);
+				if ((entry?.parts?.length ?? 0) === 0 && optimisticParts?.length) {
+					trackId(bridgedPartIds, sessionID, m.id);
+				}
+			}
+
 			// Pass 0 — candidate echoes. A real user message we have NEVER seen
 			// before may be the server's copy of something still in flight. One we
 			// already held is history, and history cannot supersede the present.
@@ -1342,10 +1426,12 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 				}
 			}
 
-			// Clean up superseded optimistic IDs
+			// Clean up superseded optimistic IDs, remembering which runtime id
+			// each one became.
 			for (const id of supersededOptimistic) {
-				untrackId(optimisticIds, sessionID, id);
-				untrackId(dispatchedOptimisticIds, sessionID, id);
+				releaseOptimisticId(sessionID, id);
+				const echoId = supersededBy.get(id);
+				if (echoId) recordOptimisticEcho(sessionID, id, echoId);
 			}
 			// Append surviving optimistic messages at the end
 			for (const m of deferredOptimistic) {
@@ -1470,6 +1556,9 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 	reset: () => {
 		optimisticIds.clear();
 		dispatchedOptimisticIds.clear();
+		inboxBackedOptimisticIds.clear();
+		optimisticEchoes.clear();
+		optimisticOrigins.clear();
 		bridgedPartIds.clear();
 		deltaActiveParts.clear();
 		deltaEventTails.clear();
@@ -1521,6 +1610,19 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 				// optimistic message(s) in a SINGLE atomic set() call.
 				// This prevents the intermediate render where the user bubble
 				// vanishes (optimistic removed) before the real one appears.
+				if (info.role === "user" && isOptimistic(info.sessionID, info.id)) {
+					// The echo under the optimistic message's OWN id (the host minted
+					// the wire id and painted with it): confirmed in place. Release the
+					// marks — it is an ordinary message from here — and bridge the
+					// optimistic parts until the real ones arrive, so the bubble never
+					// blinks empty and never shows both.
+					releaseOptimisticId(info.sessionID, info.id);
+					if (get().parts[info.id]?.length) {
+						trackId(bridgedPartIds, info.sessionID, info.id);
+					}
+					store.upsertMessage(info.sessionID, info);
+					return;
+				}
 				if (info.role === "user" && !isOptimistic(info.sessionID, info.id)) {
 					const msgs = get().messages[info.sessionID];
 					if (msgs) {
@@ -1576,10 +1678,11 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 							byPartId ?? optimisticUsers.find((m) => isDispatched(info.sessionID, m.id));
 						const optIds = matched ? [matched.id] : [];
 						if (optIds.length > 0) {
-							// Clean up optimistic tracking
+							// Clean up optimistic tracking, remembering the runtime id
+							// each superseded message became.
 							for (const id of optIds) {
-								untrackId(optimisticIds, info.sessionID, id);
-								untrackId(dispatchedOptimisticIds, info.sessionID, id);
+								releaseOptimisticId(info.sessionID, id);
+								recordOptimisticEcho(info.sessionID, id, info.id);
 							}
 							// Atomic: remove optimistic + insert real in one set()
 							set((s) => {

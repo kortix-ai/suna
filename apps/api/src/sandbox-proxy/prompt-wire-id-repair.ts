@@ -35,6 +35,9 @@ import { WIRE_MESSAGE_ID, mintWireMessageId, newestWireIdTime, wireIdTime } from
 export const PROMPT_TRANSCRIPT_READ_LIMIT = 8;
 export const PROMPT_TRANSCRIPT_READ_TIMEOUT_MS = 4_000;
 export const EFFECTIVE_MESSAGE_ID_HEADER = 'X-Kortix-Effective-Message-Id';
+/** Sent by the inbox drain when it already placed the id against the
+ *  transcript; the proxy then skips its own read. Stripped from the forward. */
+export const WIRE_ID_PLACED_HEADER = 'X-Kortix-Wire-Id-Placed';
 
 const PROMPT_PATH = /^(\/proxy\/\d+)?\/session\/([^/?#]+)\/(?:prompt_async|message)$/;
 

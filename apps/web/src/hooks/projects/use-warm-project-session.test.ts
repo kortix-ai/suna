@@ -4,6 +4,7 @@ import type { ProjectSession } from '@kortix/sdk';
 
 import {
   createWarmSession,
+  primeTakenWarmSession,
   recordSessionNavigation,
   revalidateHeldWarmSession,
   takeWarmSession,
@@ -579,5 +580,41 @@ describe('takeWarmSessionEntry', () => {
 
   test('returns null with no network call when nothing is held', () => {
     expect(takeWarmSessionEntry(P, { replenish: false })).toBeNull();
+  });
+});
+
+
+describe('primeTakenWarmSession — the first prompt lands as a durable row on the warm session', () => {
+  const warmEntry = (): WarmSession => ({
+    sessionId: WARM,
+    agentName: 'kortix',
+    sandboxSlug: 'default',
+    session: serverRow(WARM),
+  });
+
+  test('claims THIS session with the pending prompt and the create-time picks', async () => {
+    const calls: Array<[string, unknown]> = [];
+    const claim = mock(async (projectId: string, input: unknown) => {
+      calls.push([projectId, input]);
+      return serverRow(WARM);
+    });
+    const ok = await primeTakenWarmSession(
+      P,
+      warmEntry(),
+      { pending_prompt: { text: 'hello' }, agent_name: 'kortix' },
+      claim as never,
+    );
+    expect(ok).toBe(true);
+    expect(calls).toEqual([
+      [P, { session_id: WARM, agent_name: 'kortix', pending_prompt: { text: 'hello' } }],
+    ]);
+  });
+
+  test('a refused claim is false, never a throw — the caller falls back to create', async () => {
+    const claim = mock(async () => {
+      throw Object.assign(new Error('gone'), { code: 'WARM_SESSION_ALREADY_CLAIMED' });
+    });
+    const ok = await primeTakenWarmSession(P, warmEntry(), { pending_prompt: { text: 'hi' } }, claim as never);
+    expect(ok).toBe(false);
   });
 });

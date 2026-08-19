@@ -346,6 +346,16 @@ projectsApp.openapi(
 
   const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null);
   if (!visible) return c.json({ error: 'Not found' }, 404);
+  // A soft-deleted session is gone for a read-by-id, exactly as it is for the
+  // default list. `deleteSession` only stamps `metadata.deletedAt`
+  // (session-lifecycle/actions.ts), and this loader never looked at it, so a
+  // deleted session stayed readable by id — and `serializeSession` reported it
+  // as `deleted_at: null` here, because only the list passes that context. Use
+  // the same predicate the list uses (session-inventory.ts: a STRING deletedAt
+  // hides the row). `scope=project` on the LIST deliberately keeps tombstones
+  // for managers; that path is untouched.
+  const deletedAt = (visible.row.metadata ?? {}) as Record<string, unknown>;
+  if (typeof deletedAt.deletedAt === 'string') return c.json({ error: 'Not found' }, 404);
   const ownerEmail = visible.row.createdBy && !visible.isOwner
     ? (await lookupEmailsByUserIds([visible.row.createdBy])).get(visible.row.createdBy) ?? null
     : null;

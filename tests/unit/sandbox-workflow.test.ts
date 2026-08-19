@@ -72,8 +72,19 @@ describe('sandbox test workflow', () => {
   test('release tests prove every deployed staging flow and browser journey', () => {
     const release = readFileSync(resolve(root, '.github/workflows/tests-release.yml'), 'utf8');
 
+    // The gate is sharded into parallel api/browser matrix jobs. Branch
+    // protection on `prod` requires exactly one context — this job name — so an
+    // aggregator job keeps it while the shards do the work. Renaming it breaks
+    // the required check silently.
     expect(release).toContain('name: full suite + quality gates');
-    expect(release).toContain('pnpm test -- --target-full');
+    expect(release).toContain('needs: [api, browser]');
+    expect(release).toContain('pnpm test -- --target-api-full --api-shard=');
+    expect(release).toContain('pnpm test -- --target-browser-full --browser-shard=');
+    expect(release).toContain('fail-fast: false');
+    // Cleanup-on-cancel: a cancelled job never reaches the runner's `finally`
+    // teardown, so the sweep must be wired pre-run and `if: always()` post-run.
+    expect(release).toContain('bun tests/bin/ke2e.ts gc --older-than 2h');
+    expect(release).toContain('bun tests/bin/ke2e.ts gc --run-id');
     expect(release).toContain('RELEASE_SOURCE_SHA');
     expect(release).toContain('WEB_PROTECTION_PASSWORD');
     // Staging sits behind Vercel SSO deployment protection, which Basic-auth
@@ -121,12 +132,19 @@ describe('sandbox test workflow', () => {
         source.includes('uses: ./.github/workflows/tests.yml'),
       ),
     ).toHaveLength(1);
+    // deploy-preview drives ONE sandbox origin from one job, so it keeps the
+    // combined `--target-full` command. The release gate splits the same two
+    // lanes across parallel GitHub jobs, so it calls the per-lane commands.
     const targetFullCallers = workflows.filter(({ source }) =>
       source.includes('pnpm test -- --target-full'),
     );
-    expect(targetFullCallers.map(({ name }) => name).sort()).toEqual([
-      'deploy-preview.yml',
-      'tests-release.yml',
-    ]);
+    expect(targetFullCallers.map(({ name }) => name).sort()).toEqual(['deploy-preview.yml']);
+
+    const shardedTargetCallers = workflows.filter(
+      ({ source }) =>
+        source.includes('pnpm test -- --target-api-full') &&
+        source.includes('pnpm test -- --target-browser-full'),
+    );
+    expect(shardedTargetCallers.map(({ name }) => name).sort()).toEqual(['tests-release.yml']);
   });
 });

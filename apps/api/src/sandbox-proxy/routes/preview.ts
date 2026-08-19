@@ -1,3 +1,4 @@
+import { ProvisionTimeline } from '../../platform/services/provision-timeline';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { PROJECT_ACTIONS, authorize } from '../../iam';
@@ -52,6 +53,7 @@ import {
 import {
   EFFECTIVE_MESSAGE_ID_HEADER,
   PROMPT_TRANSCRIPT_READ_LIMIT,
+  WIRE_ID_PLACED_HEADER,
   isPromptWireIdRepairPath,
   promptBodyMessageId,
   promptTranscriptReadPath,
@@ -110,6 +112,7 @@ const preview = new Hono<{
 // it for the same reason we strip `authorization` — a caller must not be able to
 // hand themselves platform authority by naming a header.
 export const STRIP_FORWARD_HEADERS = new Set([
+  'x-kortix-wire-id-placed',
   'host',
   'authorization',
   'cookie',
@@ -773,7 +776,9 @@ export async function forwardToSandbox(
   // 1. One row fetch — enforces the v1 session-sandbox contract, ownership, and
   // active state, and yields the service key for upstream auth. (Previously two
   // separate queries for the same row.)
+  const ptl = new ProvisionTimeline(sandboxId, 'proxy');
   let record = await loadSandbox(sandboxId);
+  ptl.mark('load-sandbox');
   if (!record) {
     return jsonProxyError({ error: 'sandbox not found' }, 404, origin);
   }
@@ -888,6 +893,7 @@ export async function forwardToSandbox(
     // and its refusal names the connectors that agent requires — not something a
     // caller who may not run it should be able to enumerate by asking.
     const unauthorized = await agentSwitchRefusal(record, promptAgent, userId, sandboxId, origin);
+    ptl.mark('agent-switch');
     if (unauthorized) return unauthorized;
     const refusal = await connectorGateRefusal(record, promptAgent, origin);
     if (refusal) return refusal;
@@ -1089,6 +1095,7 @@ export async function forwardToSandbox(
     try {
       lastAttemptHop = 'provider_ingress';
       const ingress = await resolveSandboxIngress(record, ingressRequest);
+      ptl.mark('ingress');
       lastAttemptHop = portFailureHop(upstreamPort);
       const previewUrl = ingress.url;
       const targetUrl = previewUrl.replace(/\/$/, '') + remainingPath + queryString;
@@ -1150,6 +1157,7 @@ export async function forwardToSandbox(
       // identity encoding, regenerate trace headers, then apply the sandbox
       // auth/identity headers (service key, preview token, signed user-context)
       // last so they always win.
+      ptl.mark('env-sync');
       const authHeaders = await buildSandboxUpstreamHeaders({
         sandboxId,
         userId,
@@ -1168,6 +1176,8 @@ export async function forwardToSandbox(
         !sandboxAuthored &&
         effectiveMessageId === null &&
         isPromptWireIdRepairPath(remainingPath) &&
+        // The inbox drain already placed it — one fewer round-trip.
+        incomingHeaders.get(WIRE_ID_PLACED_HEADER) !== '1' &&
         // No client id, nothing to place — OpenCode mints, and the read is
         // skipped entirely so a plain body pays nothing.
         promptBodyMessageId(requestBody) !== null
@@ -1176,6 +1186,7 @@ export async function forwardToSandbox(
           previewUrl.replace(/\/$/, '') +
           promptTranscriptReadPath(remainingPath, PROMPT_TRANSCRIPT_READ_LIMIT);
         const newestKnownTime = await readNewestWireIdTime({ url: readUrl, headers: authHeaders });
+        ptl.mark('wire-id-read');
         const placed = repairPromptWireId({
           body: requestBody,
           newestKnownTime,
@@ -1283,6 +1294,7 @@ export async function forwardToSandbox(
         // the success path below promotes it with a token CAS and cannot revive
         // a turn that already ended.
         const turnLifecycleStart = await beginTurnLifecycle();
+        ptl.mark('turn-begin');
         if (turnLifecycleStart !== 'granted') {
           if (promptDedupeKey) releasePromptDelivery(promptDedupeKey);
           return jsonProxyError(
@@ -1311,6 +1323,7 @@ export async function forwardToSandbox(
       } finally {
         clearTimeout(connectTimer);
       }
+      ptl.mark('upstream');
 
       if (upstream.status >= 300 && upstream.status < 400) {
         await abandonTurnLifecycle();
@@ -1448,6 +1461,10 @@ export async function forwardToSandbox(
         await acceptTurnLifecycle();
       } else {
         await abandonTurnLifecycle();
+      }
+      if (promptDelivery) {
+        ptl.mark('turn-accept');
+        ptl.log({ path: remainingPath, status: upstream.status });
       }
       // A HUMAN IS USING THIS BOX'S PREVIEW. The turn-start observation already
       // happened before the forward (see above); this is the other

@@ -8,6 +8,7 @@
  */
 import { currentRecorder } from './context';
 import { assert, BodyAssert } from './expect';
+import { log } from './log';
 import type { Captured } from './result';
 
 export type Auth =
@@ -146,10 +147,14 @@ export class Res {
   status(code: number | number[]): this {
     const codes = Array.isArray(code) ? code : [code];
     if (!codes.includes(this.statusCode) && isKe2eTransientGatewayResponse(this)) {
+      const breakerOpen = transientBreaker.isOpen();
       const error = new Error(
-        `transient gateway status ${this.statusCode}; expected [${codes.join(', ')}]`,
+        `transient gateway status ${this.statusCode}; expected [${codes.join(', ')}] ` +
+          `${describeEdgeResponse(this.statusCode, this.captured.res.headers)}` +
+          (breakerOpen ? ` — ${transientBreaker.describe()}` : ''),
       );
-      (error as any).ke2eRetryable = true;
+      // With the breaker open the flow-level budget must not re-amplify this.
+      (error as any).ke2eRetryable = !breakerOpen;
       (error as any).ke2eRetryAfterMs = retryAfterMs(this.header('retry-after'));
       throw error;
     }
@@ -220,7 +225,149 @@ function retryAfterMs(value: string | undefined): number | undefined {
   return Math.max(0, at - Date.now());
 }
 
-const TRANSIENT_GATEWAY_RETRY_DELAY_MS = 2_000;
+/**
+ * Describe WHERE a response came from, terse enough for an error message.
+ *
+ * The Cloudflare worker replaces any origin throw or 502/503/504 with a
+ * synthetic maintenance 503 that carries `X-Maintenance-Mode` and drops the
+ * origin's `x-request-id`. Printing both facts lets a log reader tell an edge
+ * laundering apart from a genuine application 5xx without guessing.
+ */
+export function describeEdgeResponse(
+  status: number,
+  headers: Record<string, string>,
+): string {
+  const maintenance = headers['x-maintenance-mode'];
+  const requestId = headers['x-request-id'];
+  const origin = requestId ? 'origin' : maintenance ? 'edge-laundered' : 'edge';
+  return (
+    `[${origin} status=${status} ` +
+    `x-maintenance-mode=${maintenance ?? 'absent'} ` +
+    `x-request-id=${requestId ? 'present' : 'absent'}]`
+  );
+}
+
+const RETRY_BASE_DELAY_MS = Number(process.env.KE2E_RETRY_BASE_DELAY_MS ?? 500);
+const RETRY_MAX_DELAY_MS = Number(process.env.KE2E_RETRY_MAX_DELAY_MS ?? 8_000);
+
+/**
+ * Exponential backoff with FULL jitter for the in-request transient retry.
+ *
+ * The old policy was a fixed 2s × 4 attempts. Layered under 3 flow attempts one
+ * request could hit the origin 12 times, and every client backed off in
+ * lockstep — a textbook metastable failure that turns a staging blip into a
+ * run-ending cascade. Full jitter spreads the retries; the cap bounds the
+ * worst case. A `Retry-After` from the edge raises the floor but never parks
+ * longer than the cap.
+ */
+export function transientRetryDelayMs(
+  attempt: number,
+  opts: {
+    baseMs?: number;
+    capMs?: number;
+    retryAfterMs?: number;
+    random?: () => number;
+  } = {},
+): number {
+  const base = opts.baseMs ?? RETRY_BASE_DELAY_MS;
+  const cap = opts.capMs ?? RETRY_MAX_DELAY_MS;
+  const random = opts.random ?? Math.random;
+  const ceiling = Math.min(cap, base * 2 ** Math.max(0, attempt - 1));
+  const jittered = Math.round(random() * ceiling);
+  const floor =
+    typeof opts.retryAfterMs === 'number' && Number.isFinite(opts.retryAfterMs)
+      ? Math.max(0, opts.retryAfterMs)
+      : 0;
+  return Math.min(cap, Math.max(jittered, floor));
+}
+
+export interface BreakerOptions {
+  /** Transient edge failures within the window that trip the breaker. 0 disables. */
+  threshold: number;
+  windowMs: number;
+  now?: () => number;
+}
+
+/**
+ * Process-wide circuit breaker over laundered-503 / network-failure events.
+ *
+ * Once the deployment is observably overloaded, more retries are the problem,
+ * not the remedy. When the breaker is open the client stops retrying and stops
+ * marking the failure retryable, so the flow-level budget cannot re-amplify it
+ * either. The window is rolling: the breaker closes on its own once the
+ * failures age out.
+ */
+export class TransientCircuitBreaker {
+  private events: number[] = [];
+  private openSince: number | null = null;
+  private readonly now: () => number;
+
+  constructor(private readonly opts: BreakerOptions) {
+    this.now = opts.now ?? Date.now;
+  }
+
+  private prune(at: number): void {
+    const cutoff = at - this.opts.windowMs;
+    while (this.events.length > 0 && this.events[0] <= cutoff) this.events.shift();
+  }
+
+  record(): void {
+    const at = this.now();
+    this.prune(at);
+    this.events.push(at);
+  }
+
+  failuresInWindow(): number {
+    this.prune(this.now());
+    return this.events.length;
+  }
+
+  isOpen(): boolean {
+    if (this.opts.threshold <= 0) return false;
+    const open = this.failuresInWindow() >= this.opts.threshold;
+    if (!open) this.openSince = null;
+    return open;
+  }
+
+  /** True exactly once per open transition, so callers log one line, not thousands. */
+  shouldAnnounce(): boolean {
+    if (!this.isOpen()) return false;
+    if (this.openSince !== null) return false;
+    this.openSince = this.now();
+    return true;
+  }
+
+  describe(): string {
+    return (
+      `circuit open: ${this.failuresInWindow()} transient edge failures in ` +
+      `${this.opts.windowMs}ms (threshold ${this.opts.threshold}) — the deployment is ` +
+      'overloaded; not retrying'
+    );
+  }
+
+  reset(): void {
+    this.events = [];
+    this.openSince = null;
+  }
+}
+
+export function readBreakerOptions(
+  vars: Record<string, string | undefined> = process.env,
+): BreakerOptions {
+  const threshold = Number(vars.KE2E_BREAKER_THRESHOLD ?? 20);
+  const windowMs = Number(vars.KE2E_BREAKER_WINDOW_MS ?? 60_000);
+  return {
+    threshold: Number.isFinite(threshold) ? Math.trunc(threshold) : 20,
+    windowMs: Number.isFinite(windowMs) && windowMs > 0 ? Math.trunc(windowMs) : 60_000,
+  };
+}
+
+/** The one breaker every Client in the process shares. */
+export const transientBreaker = new TransientCircuitBreaker(readBreakerOptions());
+
+function announceBreaker(): void {
+  if (transientBreaker.shouldAnnounce()) log.warn(`ke2e ${transientBreaker.describe()}`);
+}
 
 export class Client {
   private readonly origin: string;
@@ -353,12 +500,21 @@ export class Client {
           ms,
         };
         record(captured);
-        if (attempt < maxAttempts) {
-          await new Promise((resolve) => setTimeout(resolve, TRANSIENT_GATEWAY_RETRY_DELAY_MS));
+        transientBreaker.record();
+        const breakerOpen = transientBreaker.isOpen();
+        if (breakerOpen) announceBreaker();
+        if (attempt < maxAttempts && !breakerOpen) {
+          await new Promise((resolve) =>
+            setTimeout(resolve, transientRetryDelayMs(attempt)),
+          );
           continue;
         }
-        const e = new Error(`network error ${method} ${url}: ${err?.message ?? err}`);
-        (e as any).ke2eRetryable = true;
+        const e = new Error(
+          `network error ${method} ${url} after ${attempt}/${maxAttempts} attempt(s): ` +
+            `${err?.message ?? err}` +
+            (breakerOpen ? ` — ${transientBreaker.describe()}` : ''),
+        );
+        (e as any).ke2eRetryable = !breakerOpen;
         throw e;
       }
 
@@ -394,9 +550,27 @@ export class Client {
       };
       record(captured);
       const response = new Res(captured);
-      if (attempt < maxAttempts && isKe2eTransientGatewayResponse(response)) {
-        await new Promise((resolve) => setTimeout(resolve, TRANSIENT_GATEWAY_RETRY_DELAY_MS));
-        continue;
+      if (isKe2eTransientGatewayResponse(response)) {
+        transientBreaker.record();
+        const breakerOpen = transientBreaker.isOpen();
+        if (breakerOpen) announceBreaker();
+        if (attempt < maxAttempts && !breakerOpen) {
+          log.warn(
+            `ke2e retry ${attempt}/${maxAttempts} ${routeTemplate} ` +
+              `${describeEdgeResponse(res.status, resHeaders)}`,
+          );
+          await new Promise((resolve) =>
+            setTimeout(resolve, transientRetryDelayMs(attempt, {
+              retryAfterMs: retryAfterMs(resHeaders['retry-after']),
+            })),
+          );
+          continue;
+        }
+        log.warn(
+          `ke2e giving up ${routeTemplate} after ${attempt}/${maxAttempts} attempt(s) ` +
+            `${describeEdgeResponse(res.status, resHeaders)}` +
+            (breakerOpen ? ` — ${transientBreaker.describe()}` : ''),
+        );
       }
       return response;
     }

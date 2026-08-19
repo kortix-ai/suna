@@ -4,6 +4,8 @@ import { useEffect } from 'react';
 import { create as createStore } from 'zustand';
 
 import {
+  claimWarmProjectSession,
+  type PendingSessionPrompt,
   ensureWarmProjectSession,
   getProjectSession,
   type ProjectSession,
@@ -506,4 +508,48 @@ export function useWarmProjectSession(
       void createWarmSession(droppedProject, undefined, { excludeSessionId: activeSessionId });
     }
   }, [activeSessionId]);
+}
+
+/**
+ * Hand a TAKEN warm session its first prompt, durably, before navigating.
+ *
+ * The first prompt of a session is a server-side inbox row, never a
+ * client-side replay. The ordinary path gets that row from
+ * `create.pending_prompt` inside the create transaction; a warm session was
+ * created seconds ago with an EMPTY body, so the local `takeWarmSessionEntry`
+ * alone navigates into a session that has never heard the prompt — the "my
+ * first message disappears" bug, on the warm path. The server's claim route
+ * is the one call that does the whole hand-off in one transaction: inserts
+ * the row (`convertPendingPromptToInboxRow`, re-minted at delivery), drops the
+ * warm marker, and kicks the drain so the box answers now.
+ *
+ * Returns false when the claim was REFUSED (another tab took the session, the
+ * marker is already gone) — the caller falls back to the ordinary create,
+ * which carries the same prompt. Never throws.
+ *
+ * This is the ONE place in `apps/web` that calls the SDK's claim; see
+ * `warm-session-boundary.test.ts`.
+ */
+export async function primeTakenWarmSession(
+  projectId: string,
+  warm: WarmSession,
+  input: {
+    pending_prompt: PendingSessionPrompt;
+    agent_name?: string;
+    sandbox_slug?: string;
+  },
+  /** Injected in tests; the SDK's claim otherwise. */
+  claim: typeof claimWarmProjectSession = claimWarmProjectSession,
+): Promise<boolean> {
+  try {
+    await claim(projectId, {
+      session_id: warm.sessionId,
+      ...(input.agent_name ? { agent_name: input.agent_name } : {}),
+      ...(input.sandbox_slug ? { sandbox_slug: input.sandbox_slug } : {}),
+      pending_prompt: input.pending_prompt,
+    });
+    return true;
+  } catch {
+    return false;
+  }
 }

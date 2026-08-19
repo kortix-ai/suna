@@ -37,14 +37,28 @@ const workers = resolveBrowserWorkers(process.env.E2E_BROWSER_WORKERS, Boolean(p
 // deployed lanes.
 const deployedTarget = Boolean(process.env.KE2E_TARGET);
 
+// A deployed journey used to get 300s × 4 attempts, so ONE bad journey could eat
+// 20 minutes of a worker — enough to explain the whole 40-58 min browser lane by
+// itself. The gate is sharded now, so a shard's wall clock is set by its slowest
+// journey: cap a deployed attempt at 120s and retry once. Journeys that
+// legitimately need longer already declare their own `test.setTimeout(...)`
+// (10-billing 300s, 13-sdk-only 12m, 01-account-auth 180s), which overrides this.
+// Local and non-deployed CI keep the old 300s/2-retry budget.
+const deployedTimeoutMs = Number(process.env.E2E_DEPLOYED_TIMEOUT_MS ?? 120_000);
+const deployedRetries = Number(process.env.E2E_DEPLOYED_RETRIES ?? 1);
+
 export default defineConfig({
   testDir: './e2e/specs',
-  timeout: 300_000,
+  // Fails the strict deployed lane in seconds when a required capability is
+  // missing, instead of skipping mid-run and reporting it ~50 min later. No-op
+  // when E2E_REQUIRE_ALL_BROWSER is unset. See e2e/global-setup.ts.
+  globalSetup: './e2e/global-setup.ts',
+  timeout: deployedTarget ? deployedTimeoutMs : 300_000,
   expect: {
     timeout: deployedTarget ? 45_000 : 30_000,
   },
   fullyParallel: true,
-  retries: deployedTarget ? 3 : process.env.CI ? 2 : 0,
+  retries: deployedTarget ? deployedRetries : process.env.CI ? 2 : 0,
   workers,
   reporter: [
     ['list'],

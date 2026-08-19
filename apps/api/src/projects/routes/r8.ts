@@ -579,16 +579,23 @@ function promptState(row: Pick<PromptRow, 'status' | 'result'>): {
 
 function serializePrompt(row: PromptRow) {
   const payload = (row.payload ?? {}) as Record<string, unknown>;
+  const result = (row.result ?? {}) as Record<string, unknown>;
   const { state, reason } = promptState(row);
   return {
     prompt_id: row.commandId,
     client_message_id: typeof payload.clientMessageId === 'string' ? payload.clientMessageId : '',
+    // The id the message ACTUALLY carries in the transcript, when known: the
+    // drain re-mints a mid-turn prompt above the live turn's ids, and the strip
+    // hides a row the moment the transcript shows its message — a client-minted
+    // id here left the row on screen beside its own bubble until the next poll.
     message_id:
-      typeof payload.redeliveredMessageId === 'string'
-        ? payload.redeliveredMessageId
-        : typeof payload.wireMessageId === 'string'
-          ? payload.wireMessageId
-          : '',
+      typeof result.forwarded_message_id === 'string'
+        ? result.forwarded_message_id
+        : typeof payload.redeliveredMessageId === 'string'
+          ? payload.redeliveredMessageId
+          : typeof payload.wireMessageId === 'string'
+            ? payload.wireMessageId
+            : '',
     state,
     reason,
     text: (typeof payload.text === 'string' ? payload.text : '').slice(
