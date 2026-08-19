@@ -451,6 +451,11 @@ unencrypted connection unless `?tls=off` is set explicitly.
 `kortix self-host doctor` parses `EMAIL_URL` and reports the resolved provider
 chain, so a typo surfaces there instead of as a missing invite.
 
+> Managed Kortix (dev/staging/prod) uses the same transport but reaches it
+> differently: auth email goes through the Supabase send-email hook, which is
+> per-environment configuration rather than a self-host `EMAIL_URL`. See
+> [auth-email-hook-rollout.md](./auth-email-hook-rollout.md).
+
 ## SAML SSO + SCIM (Enterprise)
 
 GoTrue SAML is enabled on every self-host instance by default: `init`
