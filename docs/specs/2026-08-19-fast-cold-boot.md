@@ -1,60 +1,54 @@
-# Platinum create-time secret arming
+# Fast cold boot experiment
 
 Status: enabled on dev behind `KORTIX_FAST_COLD_BOOT_ENABLED`.
 
 ## Problem
 
-Platinum used two sequential API operations for every session:
+A five-session dev sample on 2026-08-20 measured repository materialization at
+7,983 ms p50 and 17,251 ms p90. The sandbox image already contains the canonical
+starter repository at `/opt/kortix/scaffold.git`, but the API did not send the
+fresh-session or base-tip hints that activate its local fast path.
 
-1. Create the sandbox.
-2. Attach and arm the network-boundary secrets.
+The daemon therefore performed two avoidable network operations:
 
-The second operation cost 18,261 ms at p50 across five measured boots.
-The sandbox could not become active during this operation.
+1. It fetched clone credentials from the API.
+2. It fetched the fresh session branch after repository materialization.
+
+For a project whose base tip equals the baked scaffold, it also performed an
+unnecessary Git negotiation for zero objects.
 
 ## Design
 
-When `KORTIX_FAST_COLD_BOOT_ENABLED=true`, the API prepares the secret replicas first.
-It includes their IDs in Platinum's sandbox-create request.
-Platinum creates the VM and arms its network boundary in the same operation.
+When `KORTIX_FAST_COLD_BOOT_ENABLED=true`, the API sends these hints for a new
+branch workspace:
 
-The API still waits for the returned secret state to become `armed`.
-It deletes the sandbox when arming fails.
-Raw secret values never enter the sandbox.
+- `KORTIX_SESSION_FRESH=1`
+- `KORTIX_BASE_SHA=<server-resolved base tip>` when SHA resolution completes
+  within its existing two-second deadline
 
-The flag does not change the sandbox image.
-It does not create or retain a sandbox pool.
-It does not change Daytona or E2B behavior.
+The daemon uses the hints as follows:
 
-Set `KORTIX_FAST_COLD_BOOT_ENABLED=false` and redeploy to restore post-create arming.
-This rollback does not require a database migration or sandbox cleanup.
+- A matching scaffold and base tip materialize from local disk.
+- A new session branch is created locally from base.
+- Clone credentials resolve only if a network fetch is required.
+- A missing SHA, a different base tip, an imported repository, or a local
+  scaffold failure uses the existing shallow-clone fallback.
+- Restarted sessions keep the existing remote-branch fetch behavior.
 
-## Local A/B result
+This design creates no sandbox pool. It adds no database state. It changes no
+Git history or push behavior.
 
-Both groups used the same API, Platinum account, project, standard image code, and Cloudflare tunnel.
-Each group contains five successful boots from 2026-08-19.
+## Rollback
 
-| Milestone | Flag off p50 | Flag on p50 | Change |
-|---|---:|---:|---:|
-| Network secret phase | 18,261 ms | 0 ms | -18,261 ms |
-| Sandbox row active | 36,183 ms | 21,315 ms | -14,868 ms |
-| Provider create | 3,096 ms | 3,735 ms | +639 ms |
+Set `KORTIX_FAST_COLD_BOOT_ENABLED=false` and redeploy the API. The API then
+omits both hints, and the daemon uses the previous network path.
 
-The row-active result includes normal provider and API variance.
-The measured p50 improvement is 41.1%.
+## Verification
 
-The two groups used different per-project cache states after the first group triggered a warm-image bake.
-Runtime-ready time is therefore not a valid direct A/B metric in this sample.
-The host-side secret phase and row-active milestones remain directly measured.
+The sandbox regression test materialized a matching scaffold in 44-47 ms. It
+observed zero clone-credential requests and verified the resulting branch and
+commit. The previous implementation made one clone-credential request before
+the local SHA comparison.
 
-## Next bottleneck
-
-The flag-on cold-image sample measured these p50 guest stages:
-
-| Stage | p50 |
-|---|---:|
-| Repository materialized | 12,265 ms |
-| OpenCode answering | 5,259 ms |
-| Configuration dependencies | 553 ms |
-
-Git clone is the next isolated optimization target.
+The deployed dev benchmark must compare at least five cold sessions after the
+API and sandbox image contain the same merged commit.
