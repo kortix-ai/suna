@@ -2,10 +2,11 @@
 
 import { Reveal } from '@/components/home/reveal';
 import { Separator } from '@/components/ui/separator';
+import SectionHeader from '@/features/marketing/component/section-header';
 import { cn } from '@/lib/utils';
 import { ArrowRightIcon, LockKeyIcon, ProhibitIcon } from '@phosphor-icons/react';
 import { broker } from './content';
-import { Eyebrow, Section, SectionHeader } from './shared';
+import { Eyebrow, Section } from './shared';
 
 /**
  * One env-var panel. `before` renders its keys struck through and dimmed, so a
@@ -147,7 +148,7 @@ function FlowDiagram() {
 export function BrokerSection() {
   return (
     <Section id="broker">
-      <SectionHeader eyebrow={broker.eyebrow} title={broker.title} sub={broker.sub} />
+      <SectionHeader eyebrow={broker.eyebrow} title={broker.title} description={broker.sub} />
 
       <Reveal delay={0.06}>
         <div className="border-border mt-10 grid overflow-hidden rounded-sm border md:grid-cols-2">

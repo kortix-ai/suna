@@ -57,6 +57,13 @@ function union(sources: string[]): RegExp | undefined {
 }
 
 /**
+ * The tag a journey carries when it cannot be made deterministic. It is escaped
+ * on the way in like any other entry, and `@quarantine` has no regex
+ * metacharacters, so the literal and its escaped form are identical.
+ */
+const QUARANTINE_TAG = '@quarantine';
+
+/**
  * Tag and title filters for the browser lane, read from the environment.
  *
  * A journey that cannot be made deterministic against a deployed target is
@@ -87,6 +94,19 @@ export function resolveGrepFilters(env: NodeJS.ProcessEnv = process.env): GrepFi
     ...splitList(env.E2E_EXCLUDE_TAGS).map(escapeForRegExp),
     ...splitList(env.E2E_GREP_INVERT),
   ];
+  // Quarantine excludes BY DEFAULT. `tests-release.yml` named the tag itself,
+  // but `tests.yml` — the PR gate — names no filter at all, so every
+  // quarantined journey ran there and blocked the build: the exact outcome the
+  // tag exists to prevent. Defaulting here fixes every gate at once and keeps
+  // the promise the tag makes, rather than repeating the tag in each workflow
+  // and waiting for the next one to forget it.
+  //
+  // An explicit include wins: `tests-browser-nightly.yml` sets
+  // `E2E_INCLUDE_TAGS=@quarantine` precisely to run these, and injecting the
+  // exclusion there would select and reject the same journeys, running nothing.
+  if (includes.length === 0 && !excludes.includes(QUARANTINE_TAG)) {
+    excludes.unshift(QUARANTINE_TAG);
+  }
   const filters: GrepFilters = {};
   const grep = union(includes);
   const grepInvert = union(excludes);

@@ -4227,7 +4227,15 @@
       "line301JsxTextRequestDemo": "申请演示",
       "line312JsxTextGetStarted": "开始使用",
       "line322JsxAttrAriaLabelOpenMenu": "打开菜单",
-      "line348JsxAttrAriaLabelCloseMenu": "关闭菜单"
+      "line348JsxAttrAriaLabelCloseMenu": "关闭菜单",
+      "copySymbolSvg": "复制符号 SVG",
+      "copyWordmarkSvg": "复制字标 SVG",
+      "downloadBrandAssets": "下载品牌素材",
+      "svgCopied": "SVG 已复制到剪贴板",
+      "copyFailed": "复制失败",
+      "home": "首页",
+      "logIn": "登录",
+      "back": "返回"
     },
     "componentsHomeSimpleFooter": {
       "line50JsxAttrAriaLabelToggleTheme": "切换主题"

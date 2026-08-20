@@ -45,7 +45,11 @@ const LINK_SITES: LinkSite[] = [
   },
   {
     file: 'app/(public)/(marketing)/support/page.tsx',
-    expectPresent: [`href="/legal/terms"`, `href="/legal?tab=privacy"`, `href="/legal?tab=imprint"`],
+    expectPresent: [
+      `href="/legal/terms"`,
+      `href="/legal?tab=privacy"`,
+      `href="/legal?tab=imprint"`,
+    ],
     expectAbsent: [`href="/legal?tab=terms"`],
   },
   {
@@ -64,16 +68,32 @@ for (const site of LINK_SITES) {
       expect(src.includes(needle), `expected to find ${needle} in ${site.file}`).toBe(true);
     }
     for (const forbidden of site.expectAbsent) {
-      expect(src.includes(forbidden), `legacy Terms link still present in ${site.file}: ${forbidden}`).toBe(false);
+      expect(
+        src.includes(forbidden),
+        `legacy Terms link still present in ${site.file}: ${forbidden}`,
+      ).toBe(false);
     }
   });
 }
 
 test('the legal page no longer renders a terms tab', () => {
   const src = readFileSync(join(WEB_ROOT, 'app/(public)/(seo)/legal/page.tsx'), 'utf8');
+
+  // The tab union is the contract: it names every tab the page can render, so
+  // it fails whether a terms tab comes back as a branch, a button, or a rail
+  // entry. Asserting individual call sites does not survive a rail rewrite.
+  expect(
+    src.includes(`type LegalTab = 'privacy' | 'imprint';`),
+    'legal tab union changed — the trailing semicolon is part of the match, so an added member fails here',
+  ).toBe(true);
   expect(src.includes(`activeTab === 'terms'`), 'terms branch still in legal page').toBe(false);
-  expect(src.includes(`handleTabChange('terms')`), 'terms tab button still in legal page').toBe(false);
-  // privacy + imprint remain.
-  expect(src.includes(`handleTabChange('privacy')`)).toBe(true);
-  expect(src.includes(`handleTabChange('imprint')`)).toBe(true);
+  expect(src.includes(`handleTabChange('terms')`), 'terms tab button still in legal page').toBe(
+    false,
+  );
+
+  // privacy + imprint remain reachable as tabs...
+  expect(src.includes(`{ id: 'imprint'`), 'imprint tab missing from the rail').toBe(true);
+  expect(src.includes(`{ id: 'privacy'`), 'privacy tab missing from the rail').toBe(true);
+  // ...and Terms is a link out of the page, not a tab.
+  expect(src.includes(`href="/legal/terms"`), 'legal page lost its Terms link').toBe(true);
 });

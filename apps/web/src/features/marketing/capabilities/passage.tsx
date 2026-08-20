@@ -89,7 +89,7 @@ function withMono(text: string): ReactNode[] {
  */
 export function Passage({ passage }: { passage: PassageContent }): ReactNode {
   return (
-    <section id={passage.id} className="mx-auto max-w-7xl px-6 py-16 sm:py-24">
+    <section id={passage.id} className="mx-auto max-w-7xl px-6 py-24 sm:py-30">
       <Reveal className="mx-auto max-w-[45rem]">
         <div className="grid gap-x-12 gap-y-4 md:grid-cols-[10rem_minmax(0,1fr)]">
           {/* rail · what this one is about */}

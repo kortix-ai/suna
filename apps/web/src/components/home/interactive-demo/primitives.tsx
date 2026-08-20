@@ -16,7 +16,7 @@ export function PageHead({
   action?: ReactNode;
 }) {
   return (
-    <div className="mb-5 flex items-start justify-between gap-4">
+    <div className="flex items-start justify-between gap-4">
       <div>
         <h3 className="text-foreground text-lg font-semibold tracking-tight">{title}</h3>
         {sub && <p className="text-muted-foreground mt-0.5 text-sm">{sub}</p>}
@@ -40,7 +40,7 @@ export function Panel({
   className?: string;
 }) {
   return (
-    <div className={cn('border-border bg-card overflow-hidden rounded-md border', className)}>
+    <div className={cn('border-border bg-card overflow-hidden rounded-[calc(var(--radius-xl)-4px)] border', className)}>
       {title && (
         <div className="border-border flex items-center justify-between border-b px-4 py-2.5">
           <span className="text-foreground text-sm font-semibold">

@@ -3,7 +3,13 @@ import { type Ports, computePorts, repoRoot, runMigrate, sh } from '../../script
 
 const dockerOk = sh(['docker', 'info']).ok;
 const CONTAINER = 'kortix-credit-rpc-overloads-test';
-const PORT = Number(process.env.CREDIT_RPC_OVERLOADS_TEST_PORT || 55444);
+// Host port for the throwaway container. MUST stay BELOW 32768: Linux's default
+// ephemeral range is 32768-60999 (`/proc/sys/net/ipv4/ip_local_port_range`), and
+// an outbound socket from the suite can transiently own a port in it — Docker
+// then fails the run with `bind: address already in use`. The previous 554xx
+// defaults sat inside that range and flaked CI on two different ports in a
+// single run.
+const PORT = Number(process.env.CREDIT_RPC_OVERLOADS_TEST_PORT || 5444);
 const ROOT = repoRoot();
 const ports: Ports = { ...computePorts(0), sbDb: PORT };
 const url = `postgresql://postgres:postgres@127.0.0.1:${PORT}/postgres`;

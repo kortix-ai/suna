@@ -31,10 +31,10 @@ export const hero = {
   microline: 'Two types · Declared in kortix.yaml · Reviewed like everything else',
   /** Four mono facts under the fold. Every value has to be defensible. */
   specs: [
-    { k: 'Types', v: 'cron and webhook' },
-    { k: 'Schedule', v: '6-field cron, any IANA timezone' },
-    { k: 'Webhook auth', v: 'HMAC-SHA256, no unsigned path' },
-    { k: 'Runs as', v: 'An agent you name' },
+    { k: 'Types', v: 'cron and webhook', visual: 'lanes' },
+    { k: 'Schedule', v: '6-field cron, any IANA timezone', visual: 'cron' },
+    { k: 'Webhook auth', v: 'HMAC-SHA256, no unsigned path', visual: 'signature' },
+    { k: 'Runs as', v: 'An agent you name', visual: 'identity' },
   ],
 } as const;
 
@@ -189,11 +189,20 @@ export const webhook = {
   headerNote:
     'HMAC-SHA256 over the raw request body, compared in constant time. The GitHub-compatible X-Hub-Signature-256 header works too, so a repo webhook needs no adapter.',
   rows: [
-    { code: '202', v: 'Signature valid. The session fired, queued behind the concurrency limit, or deduped against a delivery Kortix already saw.' },
-    { code: '200', v: 'Valid, and deliberately skipped — the project is paused, or the payload did not match the trigger’s filter.' },
+    {
+      code: '202',
+      v: 'Signature valid. The session fired, queued behind the concurrency limit, or deduped against a delivery Kortix already saw.',
+    },
+    {
+      code: '200',
+      v: 'Valid, and deliberately skipped — the project is paused, or the payload did not match the trigger’s filter.',
+    },
     { code: '401', v: 'Signature and token both missing or wrong. Nothing runs.' },
     { code: '404', v: 'No such trigger, or it is disabled, or it is not a webhook trigger.' },
-    { code: '409', v: 'The secret named by secret_env has no value set. Fails loudly rather than firing unprotected.' },
+    {
+      code: '409',
+      v: 'The secret named by secret_env has no value set. Fails loudly rather than firing unprotected.',
+    },
   ],
   footnote:
     'A filter is a dotted path matched against the same payload the prompt sees. It exists to break loops: a source that reports both sides of a conversation would otherwise fire the agent on its own reply.',

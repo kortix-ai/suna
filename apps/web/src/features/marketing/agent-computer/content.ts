@@ -26,7 +26,7 @@
 export const hero = {
   eyebrow: 'Agent computer',
   title: 'Every session gets its own computer.',
-  sub: 'Start a session and its own isolated Linux machine boots, clones your project repo, and cuts a fresh branch named after that session. The agent gets the whole machine. Only what it commits survives.',
+  sub: 'Your project and tools are ready from the start, so the agent can work without using your laptop.',
   ctaPrimary: 'Start a session',
   ctaPrimaryHref: '/auth',
   ctaSecondary: 'Read the docs',
@@ -34,17 +34,17 @@ export const hero = {
   microline: 'One machine per session · Pre-configured · Nothing runs on your laptop',
   /** Four mono facts under the fold. Every value has to be defensible. */
   specs: [
-    { k: 'Isolation', v: 'One machine per session' },
-    { k: 'Boots with', v: 'Your repo, tools, dependencies' },
-    { k: 'Agent harness', v: 'OpenCode' },
-    { k: 'Work lands via', v: 'Change request to main' },
+    { k: 'Isolation', v: 'One machine per session', visual: 'isolation' },
+    { k: 'Boots with', v: 'Your repo, tools, dependencies', visual: 'boot' },
+    { k: 'Agent harness', v: 'OpenCode', visual: 'terminal' },
+    { k: 'Work lands via', v: 'Change request to main', visual: 'diff' },
   ],
 } as const;
 
 export const boot = {
   eyebrow: 'Boot sequence',
   title: 'A session starts. A machine boots.',
-  sub: 'Four things happen before the agent writes its first token. None of them happen on your laptop, and none of them are a setup step you own.',
+  sub: 'Your project, tools, and setup are ready before the agent begins.',
   steps: [
     {
       n: '00',
@@ -72,7 +72,7 @@ export const boot = {
 export const control = {
   eyebrow: 'Full control',
   title: 'Install anything. Run anything. Break anything.',
-  sub: 'The agent has the whole computer — a shell, a package manager, a filesystem, the network. Not a list of permitted actions with a machine somewhere behind it.',
+  sub: 'Your agent can use the tools it needs, just as it would on a regular computer.',
   cards: [
     {
       id: 'disposable',
@@ -95,7 +95,7 @@ export const control = {
 export const parallel = {
   eyebrow: 'Parallelism',
   title: 'Hundreds of thousands of computers. One main.',
-  sub: 'Each session is its own machine on its own branch, so no two sessions can touch each other. Run one, or run hundreds of thousands at once — each one a different version of the company, working at the same time.',
+  sub: 'Run many agents at once without mixing up their work. You review every result before it joins your main project.',
   /** The mono equation under the headline. Keep it three terms. */
   equation: '1 session  =  1 computer  =  1 branch',
   base: 'main',
@@ -118,7 +118,7 @@ export const parallel = {
 export const declared = {
   eyebrow: 'Declared in the repo',
   title: 'The machine is a file in your project.',
-  sub: 'The sandbox image, its CPU and memory, and which agent gets which machine are declared in kortix.yaml. Change the file, open a change request, and every session started after it boots the new machine.',
+  sub: 'Choose the tools and resources each agent needs once. Every new session uses that setup automatically.',
   yaml: {
     title: 'kortix.yaml',
     lines: [
@@ -173,10 +173,14 @@ export const declared = {
 export const files = {
   eyebrow: 'Everything is files',
   title: 'grep your whole company.',
-  sub: 'Agents, skills, memory, connectors and triggers are not rows in a database you cannot see. They are files and config in the repo the machine cloned — readable by a person, editable by an agent, versioned like code.',
+  sub: 'Your agents, instructions, and shared knowledge stay in files you can read, change, and track.',
   tree: [
     { path: 'your-company/', note: '', depth: 0 },
-    { path: 'kortix.yaml', note: 'sandbox image, triggers, channels, connectors, secrets', depth: 1 },
+    {
+      path: 'kortix.yaml',
+      note: 'sandbox image, triggers, channels, connectors, secrets',
+      depth: 1,
+    },
     { path: '.kortix/opencode/', note: 'the runtime your agents think in', depth: 1 },
     { path: 'agents/', note: 'one OpenCode agent per file', depth: 2 },
     { path: 'skills/', note: 'how this company does a specific job', depth: 2 },
@@ -200,7 +204,7 @@ export const files = {
 export const isolation = {
   eyebrow: 'Isolation',
   title: 'Walled off by default.',
-  sub: 'A machine an agent can do anything on is only safe if the walls are real. They are enforced below the agent, not asked of it.',
+  sub: 'Each agent works separately, so one session cannot interfere with another.',
   rows: [
     {
       id: 'machine',
@@ -228,7 +232,7 @@ export const isolation = {
 export const closing = {
   eyebrow: 'Get a computer',
   title: 'Start a session. Get a computer.',
-  sub: 'Open source and self-hostable. Any model, your keys. Kortix Cloud, your own VPC, or fully on-prem.',
+  sub: 'Open source, with support for any AI model. Use Kortix Cloud or run it on your own systems.',
   ctaPrimary: 'Start a session',
   ctaPrimaryHref: '/auth',
   ctaSecondary: 'Talk to us about enterprise',

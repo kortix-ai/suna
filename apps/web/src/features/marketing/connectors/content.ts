@@ -33,11 +33,16 @@ export const hero = {
   title: 'Every tool your company runs on. None of the keys.',
   sub: 'Connect a tool once, for the whole company. Agents reach it through one scoped token that Kortix brokers server-side — so the raw credential never lands in the machine the model is driving.',
   ctaPrimary: 'Get started',
+  ctaPrimaryHref: '/auth',
   ctaSecondary: 'Talk to sales',
   ctaSecondaryHref: '/contact',
   microline: '3,000+ apps · MCP · OpenAPI · GraphQL · raw HTTP',
-  /** Keys map to `features/icon`. Logos only — no invented customer marks. */
-  logos: ['Slack', 'Notion', 'Linear', 'Github', 'Gmail', 'MicrosoftTeams'],
+  specs: [
+    { k: 'Apps', v: '3,000+ connected', visual: 'apps' },
+    { k: 'Keys', v: 'Never enter the machine', visual: 'vault' },
+    { k: 'Policy', v: 'Allow, ask, or block', visual: 'policy' },
+    { k: 'Custom APIs', v: 'MCP · OpenAPI · GraphQL · HTTP', visual: 'protocols' },
+  ],
 } as const;
 
 /* ── 1 · connect once ─────────────────────────────────────────────────────── */
@@ -222,7 +227,13 @@ export const policy = {
       body: 'The action is not available, and no approval can lift it in the moment. Deleting a customer stays off the table.',
       example: 'stripe.delete_customer',
     },
-  ] satisfies readonly { id: PolicyStateId; label: string; verb: string; body: string; example: string }[],
+  ] satisfies readonly {
+    id: PolicyStateId;
+    label: string;
+    verb: string;
+    body: string;
+    example: string;
+  }[],
 
   /**
    * The fourth state in the screenshot, and the honest default.
@@ -251,8 +262,16 @@ export const policy = {
     body: 'A gate that errors out teaches an agent to retry around it. A Kortix gate holds the call open, so the agent is still mid-task when you answer — and picks up exactly where it stopped.',
     steps: [
       { id: 'run', mono: 'running', label: 'The agent drafts the reply and reaches send_email.' },
-      { id: 'hold', mono: 'waiting', label: 'The call is held. You see the action and its arguments.' },
-      { id: 'go', mono: 'approved', label: 'You approve. The same call completes and the run continues.' },
+      {
+        id: 'hold',
+        mono: 'waiting',
+        label: 'The call is held. You see the action and its arguments.',
+      },
+      {
+        id: 'go',
+        mono: 'approved',
+        label: 'You approve. The same call completes and the run continues.',
+      },
     ],
   },
 
@@ -297,11 +316,19 @@ export const audit = {
   /** Column names below are the real ledger fields. Do not invent more. */
   fields: [
     { id: 'action', label: 'Action', body: 'The connector and the exact action called.' },
-    { id: 'who', label: 'Acted by', body: 'The agent and the person or trigger behind the session.' },
+    {
+      id: 'who',
+      label: 'Acted by',
+      body: 'The agent and the person or trigger behind the session.',
+    },
     { id: 'status', label: 'Outcome', body: 'Ran, denied, waiting on approval, or errored.' },
     { id: 'risk', label: 'Risk', body: 'Whether the action reads, writes, or destroys.' },
     { id: 'approver', label: 'Approved by', body: 'Who released a held call, and when.' },
-    { id: 'digest', label: 'Inputs', body: 'A hash of the arguments, and a redacted result — never a raw secret.' },
+    {
+      id: 'digest',
+      label: 'Inputs',
+      body: 'A hash of the arguments, and a redacted result — never a raw secret.',
+    },
   ],
   note: 'Read the trail for any session inside the app. Audit access is part of Enterprise.',
 } as const;

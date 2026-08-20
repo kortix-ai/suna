@@ -39,7 +39,7 @@ export function CloseSection() {
                 <Button size="lg" className="w-full" asChild>
                   <Link href="/auth">{close.ctaPrimary}</Link>
                 </Button>
-                <Button size="lg" variant="accent" className="w-full" asChild>
+                <Button size="lg" variant="secondary" className="w-full" asChild>
                   <Link href={close.ctaSecondaryHref}>{close.ctaSecondary}</Link>
                 </Button>
               </div>

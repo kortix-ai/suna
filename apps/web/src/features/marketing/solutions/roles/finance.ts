@@ -11,7 +11,7 @@ export const finance: RoleContent = {
 
   hero: {
     title: 'The close, with the working shown.',
-    sub: 'Reconciliation, variance, the schedules that sit behind the number. An agent does the assembly on its own machine, writes down where every figure came from, and hands you a workbook you can check — not a number you have to believe.',
+    sub: 'Reconciliation, variance, the schedules behind the number. The agent does the assembly on its own machine and records where every figure came from. You get a workbook you can check.',
     microline: 'Every figure traces to a source · nothing posts without approval',
     specs: [
       { k: 'Runs on', v: 'A real machine with a shell' },
@@ -23,7 +23,7 @@ export const finance: RoleContent = {
 
   handoff: {
     title: 'The assembly, not the judgement.',
-    sub: 'The month-end problem has never been the accounting. It is the four days of pulling, matching, chasing and formatting before anyone qualified gets to look at anything. That is exactly the shape of work a session is good at, and exactly the shape a spreadsheet macro never quite fit.',
+    sub: 'Month-end is not slow because of the accounting. It is slow because of four days of pulling, matching, chasing and formatting before anyone qualified sees a number.',
     jobs: [
       {
         id: 'recon',
@@ -60,7 +60,7 @@ export const finance: RoleContent = {
 
   output: {
     title: 'A workbook, and a note explaining every line in it.',
-    sub: 'Finance is the one function where "the AI said so" is not an answer. So the output is built to be checked: every figure carries the source it was derived from, and the arithmetic is in a file you can open rather than inside a model.',
+    sub: 'In finance, "the AI said so" is not an answer. So every figure carries the source it came from, and the arithmetic sits in a file you can open.',
     artifact: {
       kind: 'table',
       file: 'close/2026-07/variance-by-cost-centre.xlsx',
@@ -119,7 +119,7 @@ export const finance: RoleContent = {
 
   reach: {
     title: 'The ledger, the bank feed, the spreadsheet everyone actually uses.',
-    sub: 'Finance systems are the ones where read and write are genuinely different risks. Connect each once for the project; every credential is decrypted on our side and attached to the outbound call, never placed in the machine.',
+    sub: 'In finance, reading and writing are different risks. Connect each system once for the project. Credentials are decrypted on our side and never enter the machine.',
     rows: [
       {
         k: 'Stripe',
@@ -148,7 +148,7 @@ export const finance: RoleContent = {
 
   cadence: {
     title: 'Ask on the fifteenth. Run it on the first.',
-    sub: 'Finance work is the most naturally scheduled work in the company, which makes it the most natural fit for a trigger — and the most important place to be exact about what a trigger is allowed to do.',
+    sub: 'Finance work is already scheduled work, which makes it the natural fit for a trigger, and the most important place to say what a trigger may do.',
     modes: [
       {
         id: 'on-demand',
@@ -173,7 +173,7 @@ export const finance: RoleContent = {
 
   control: {
     title: 'What it may read, what it may post, what it may never do.',
-    sub: 'The controls that matter in finance are not about the model. They are about which outbound calls are allowed, who approved them, and whether you can prove it afterwards.',
+    sub: 'The controls that matter here are not about the model. They are about which outbound calls are allowed, who approved them, and what you can prove afterwards.',
     rows: [
       {
         id: 'gates',
