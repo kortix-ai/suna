@@ -208,7 +208,7 @@ export function serializeProject(
     default_branch: row.defaultBranch,
     manifest_path: row.manifestPath,
     status: row.status,
-    metadata: row.metadata ?? {},
+    metadata: publicProjectMetadata(row.metadata),
     // Per-project emoji, stored in metadata (no migration — same mechanism as
     // default_sandbox_provider below and metadata.onboarding_completed_at).
     // Re-validated on read so a value written before the validator existed, or
@@ -254,6 +254,16 @@ export function serializeProject(
       config.isProviderEnabled(p),
     ),
   };
+}
+
+export function publicProjectMetadata(metadata: unknown): Record<string, unknown> {
+  if (!metadata || typeof metadata !== 'object') return {};
+  const source = metadata as Record<string, unknown>;
+  if (!source.git || typeof source.git !== 'object') return source;
+  const git = source.git as Record<string, unknown>;
+  if (!Object.hasOwn(git, 'fast_boot')) return source;
+  const { fast_boot: _fastBoot, ...publicGit } = git;
+  return { ...source, git: publicGit };
 }
 
 export function serializeProjectGitConnection(row: ProjectGitConnectionRow | null) {

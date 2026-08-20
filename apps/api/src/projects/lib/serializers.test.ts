@@ -53,6 +53,28 @@ describe('serializeProject icon', () => {
   test('metadata defaults to {} on the serialized project when the row is null', () => {
     expect(serializeProject(projectRow(null)).metadata).toEqual({});
   });
+
+  test('metadata omits the internal fast boot bundle without mutating stored metadata', () => {
+    const metadata = {
+      icon: '🚀',
+      git: {
+        provider: 'code-storage',
+        fast_boot: {
+          version: 1,
+          ref: 'main',
+          base_sha: 'a'.repeat(40),
+          bundle_base64: 'R0lUIEJVTkRMRQ==',
+          cached_at: '2026-08-20T00:00:00.000Z',
+        },
+      },
+    };
+    const serialized = serializeProject(projectRow(metadata));
+    expect(serialized.metadata).toEqual({
+      icon: '🚀',
+      git: { provider: 'code-storage' },
+    });
+    expect(metadata.git).toHaveProperty('fast_boot');
+  });
 });
 
 describe('serializeProject — icon_glyph', () => {
