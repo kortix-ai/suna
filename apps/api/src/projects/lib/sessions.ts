@@ -308,6 +308,10 @@ export async function buildSessionSandboxEnvVars(input: {
   /** Bounded exact commit delta from the API mirror. The daemon imports it on
    *  top of the baked scaffold and verifies `baseSha` before use. */
   gitDeltaBundleBase64?: string;
+  /** Parent commit SHA required by the thin delta bundle. */
+  gitDeltaParentSha?: string;
+  /** Raw parent commit object used when the provider changed only commit metadata. */
+  gitDeltaParentCommitBase64?: string;
   /** Project git context, so the running agent's `secrets` grant in `agents:`
    *  can be resolved and applied by IDENTIFIER — secrets the agent isn't
    *  granted are dropped from the injected env (a prompt-injected agent then
@@ -531,6 +535,8 @@ export async function buildSessionSandboxEnvVars(input: {
       freshSession: input.freshSession,
       baseSha: input.baseSha,
       gitDeltaBundleBase64: input.gitDeltaBundleBase64,
+      gitDeltaParentSha: input.gitDeltaParentSha,
+      gitDeltaParentCommitBase64: input.gitDeltaParentCommitBase64,
     }),
     // The platform coordinator uses API-level delegation and never receives a
     // project checkout. Keep this override after buildSessionRuntimeEnv so the
@@ -1530,6 +1536,8 @@ export async function createProjectSession(input: {
             freshSession: true,
             baseSha: fastBootGitHint?.baseSha,
             gitDeltaBundleBase64: fastBootGitHint?.gitDeltaBundleBase64,
+            gitDeltaParentSha: fastBootGitHint?.gitDeltaParentSha,
+            gitDeltaParentCommitBase64: fastBootGitHint?.gitDeltaParentCommitBase64,
             defaultBranch: project.defaultBranch,
             manifestPath: project.manifestPath,
             workspaceMode,

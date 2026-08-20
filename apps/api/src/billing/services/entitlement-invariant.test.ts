@@ -12,8 +12,12 @@ describe('expectedMonthlyEntitlementUsd', () => {
     expect(expectedMonthlyEntitlementUsd({ tier: 'free' })).toBe(2);
   });
 
-  test('pro tier is $0 — its $5 is a one-time machine bonus, not a monthly allowance', () => {
-    expect(expectedMonthlyEntitlementUsd({ tier: 'pro' })).toBe(0);
+  // REVERSED 2026-08-20 (PR #6662). `pro` granting $0 per cycle was not a
+  // design, it was the defect: those customers paid monthly and their renewal
+  // granted nothing. A renewal now grants `amount_paid × ratio`, so the ceiling
+  // a legitimate cycle can reach is the dearest machine at that ratio.
+  test('a paid tier with no catalog grant expects the amount-based ceiling, not $0', () => {
+    expect(expectedMonthlyEntitlementUsd({ tier: 'pro' })).toBe(50); // $80 × 0.625
   });
 
   test('per-seat is $25 per seat, never the $40 price', () => {
@@ -115,10 +119,17 @@ describe('expiringCreditExceedsEntitlement — the drift this makes visible', ()
     ).toBeNull();
   });
 
-  test('a pro account holding monthly expiring credit is drift — pro grants none', () => {
-    const breach = expiringCreditExceedsEntitlement({ tier: 'pro', expiringCredits: '5' });
-    expect(breach?.expectedUsd).toBe(0);
-    expect(breach?.excessUsd).toBe(5);
+  test('a pro account holding a normal cycle grant is NOT drift any more', () => {
+    // $25 is exactly what a $40 machine renewal now grants. Flagging it was
+    // what made this guard red for every correctly-granted account — and a
+    // guard that is red by construction gets ignored.
+    expect(expiringCreditExceedsEntitlement({ tier: 'pro', expiringCredits: '25' })).toBeNull();
+  });
+
+  test('a pro account above the dearest-machine ceiling is still caught', () => {
+    const breach = expiringCreditExceedsEntitlement({ tier: 'pro', expiringCredits: '500' });
+    expect(breach?.expectedUsd).toBe(50);
+    expect(breach?.excessUsd).toBe(450);
   });
 
   test('a free account left holding a paid allowance after downgrade is caught', () => {

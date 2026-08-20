@@ -38,3 +38,43 @@ describe('Loading spokes variant', () => {
     expect(source).toContain("variant = 'orbit'");
   });
 });
+
+describe('Loading ring variant', () => {
+  /**
+   * Same class of hazard as the spokes/steps pair above: a number in the CSS
+   * that a second file has to agree with, where drift typechecks and renders
+   * and just looks wrong.
+   *
+   * `.animate-spinner-dash` hard-codes `stroke-dasharray: 62.83` — 2*pi*r for
+   * orbit's r=10 — and its keyframes step the offset through 58 -> 14 -> 58
+   * against it. The ring is a different circle (r=6.3, real circumference
+   * 39.58), so it declares `pathLength` to re-scale its own length to 62.83.
+   * Every dash number in the CSS then means the same FRACTION of the ring it
+   * meant on orbit. Change one side without the other and the arc either
+   * vanishes or stops breathing.
+   */
+  test('the ring re-scales itself to the dasharray the CSS animates', () => {
+    const declared = Number(source.match(/const RING_PATH_LENGTH = ([\d.]+)/)?.[1]);
+    const animated = Number(css.match(/stroke-dasharray: ([\d.]+);/)?.[1]);
+
+    expect(declared).toBeGreaterThan(0);
+    expect(declared).toBe(animated);
+  });
+
+  test('the ring is drawn on the shared status geometry, not its own circle', () => {
+    // The whole point of the variant: a todo that starts running must not swap
+    // to a fatter, larger disc than the `pending` glyph it replaces.
+    expect(source).toContain("import { STATUS_RING } from '@/components/ui/status-ring'");
+    // Slice from AFTER the ring guard to the next variant guard — searching
+    // from 0 would find the ring guard itself and yield an empty body, i.e. an
+    // assertion that can never pass.
+    const ringBlock = source.slice(source.indexOf("if (variant === 'ring')"));
+    const body = ringBlock.slice(0, ringBlock.indexOf('if (variant ===', 1));
+    expect(body.length).toBeGreaterThan(200);
+    expect(body).toContain('r={STATUS_RING.RADIUS}');
+    expect(body).toContain('strokeWidth={STATUS_RING.STROKE}');
+    // No literal geometry smuggled in beside the shared constants.
+    expect(body).not.toMatch(/r="\d/);
+    expect(body).not.toMatch(/strokeWidth="\d/);
+  });
+});

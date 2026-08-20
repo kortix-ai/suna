@@ -1,17 +1,10 @@
 'use client';
 
-import { CopyOverlay } from '@/components/markdown/code';
-import {
-  MarkdownFrontmatterCard,
-  parseFrontmatter,
-} from '@/components/markdown/markdown-frontmatter';
-import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
 import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
 import {
   BasicTool,
   InlineDiffView,
   isErrorOutput,
-  MD_FLUSH_CLASSES,
   partInput,
   partOutput,
   partStatus,
@@ -19,11 +12,9 @@ import {
   ToolCode,
   ToolCodeCard,
   ToolEmptyState,
+  ToolMarkdownCard,
   ToolOutputFallback,
   ToolRunningContext,
-  useToolCardFrame,
-  useToolCardPad,
-  useToolIndent,
 } from '@/features/session/tool/shared/infrastructure';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import { ToolResultCard } from '@/features/session/tool/shared/result-card';
@@ -111,56 +102,6 @@ export function memoryRowTarget(
  */
 export function isMemoryMarkdown(ext: string): boolean {
   return ext === 'md' || ext === 'mdx';
-}
-
-/**
- * The markdown counterpart to `ToolCodeCard`: identical chrome — the
- * trigger-aligned indent, the `border`/`bg-popover` card, a copy affordance
- * over the raw text — with prose in place of a highlighted-source pane.
- *
- * A memory file can open with its own YAML frontmatter block, same as any
- * other markdown file (agent/skill definitions, notes with metadata headers).
- * `parseFrontmatter` passes content with none straight through unchanged, so
- * the common case — a plain note — pays nothing for the check; content that
- * does carry one gets the same small metadata card `file-viewer.tsx` renders
- * for it, instead of the parser reading the `---` fences as a stray rule and a
- * giant bold heading.
- *
- * `allowHtml={false}`: this reads as a stored FILE, not chat prose — embedded
- * markup shows as escaped text rather than becoming live DOM, matching the
- * file viewer's own markdown pane.
- */
-function MemoryMarkdownCard({ code }: { code: string }) {
-  const indent = useToolIndent();
-  const frame = useToolCardFrame();
-  const pad = useToolCardPad();
-  if (!code) return null;
-  const { frontmatter, body } = parseFrontmatter(code);
-  return (
-    // Seam and indent gated together, exactly as `ToolCodeCard` gates them.
-    <div className={cn(indent && 'mt-1.5', indent)}>
-      {/* Frame and pad gated the same way, and for the same reason: on the
-          panel the row card is the frame and its body is the inset. */}
-      <div className={cn('relative', frame)}>
-        <CopyOverlay code={code}>
-          {/* `MD_FLUSH_CLASSES` strips the nested code-block chrome (border,
-              background, padding) a fenced code block would otherwise draw
-              inside this already-bordered card; the fence's own `pre` keeps
-              its `overflow-auto`, so a long line inside it scrolls instead of
-              clipping or blowing out the panel's width. */}
-          {/* `pr-11` mirrors `ToolCodeCard`: the same `CopyOverlay` button is
-              pinned at `top-3 right-3`, and prose is what runs under it. */}
-          <div
-            data-scrollable
-            className={cn('max-h-96 overflow-auto', pad, 'pr-11', MD_FLUSH_CLASSES)}
-          >
-            {frontmatter && <MarkdownFrontmatterCard data={frontmatter} />}
-            <UnifiedMarkdown content={body} isStreaming={false} allowHtml={false} />
-          </div>
-        </CopyOverlay>
-      </div>
-    </div>
-  );
 }
 
 export function MemoryTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
@@ -261,7 +202,7 @@ export function MemoryTool({ part, defaultOpen, forceOpen, locked }: ToolProps) 
         );
     } else if (view?.type === 'file' && view.content) {
       body = isMemoryMarkdown(ext) ? (
-        <MemoryMarkdownCard code={view.content} />
+        <ToolMarkdownCard code={view.content} />
       ) : (
         <ToolCodeCard code={view.content} language={ext} />
       );
@@ -277,7 +218,7 @@ export function MemoryTool({ part, defaultOpen, forceOpen, locked }: ToolProps) 
   } else if (command === 'create') {
     body = fileText ? (
       isMemoryMarkdown(ext) ? (
-        <MemoryMarkdownCard code={fileText} />
+        <ToolMarkdownCard code={fileText} />
       ) : (
         <ToolCodeCard code={fileText} language={ext} />
       )

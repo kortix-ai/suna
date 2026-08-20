@@ -7,13 +7,15 @@ import { MAX_FAST_BOOT_GIT_BUNDLE_BASE64_BYTES, resolveFastBootGitHint } from '.
 import type { GitBackedProject } from '../git/types';
 import { metadataMergeSubtree } from './metadata-merge';
 
-export const FAST_BOOT_GIT_HINT_CACHE_VERSION = 1;
+export const FAST_BOOT_GIT_HINT_CACHE_VERSION = 2;
 
 export interface CachedFastBootGitHint {
   version: typeof FAST_BOOT_GIT_HINT_CACHE_VERSION;
   ref: string;
   base_sha: string;
   bundle_base64: string;
+  parent_sha: string;
+  parent_commit_base64: string;
   cached_at: string;
 }
 
@@ -24,11 +26,18 @@ export function buildCachedFastBootGitHint(
 ): CachedFastBootGitHint | null {
   if (!/^[0-9a-f]{40}$/.test(hint.baseSha)) return null;
   const bundle = hint.gitDeltaBundleBase64;
+  const parentSha = hint.gitDeltaParentSha;
+  const parentCommit = hint.gitDeltaParentCommitBase64;
   if (
     !bundle ||
+    !parentSha ||
+    !/^[0-9a-f]{40}$/.test(parentSha) ||
+    !parentCommit ||
     bundle.length % 4 !== 0 ||
     !/^[A-Za-z0-9+/]+={0,2}$/.test(bundle) ||
-    Buffer.byteLength(bundle, 'utf8') > MAX_FAST_BOOT_GIT_BUNDLE_BASE64_BYTES
+    parentCommit.length % 4 !== 0 ||
+    !/^[A-Za-z0-9+/]+={0,2}$/.test(parentCommit) ||
+    Buffer.byteLength(bundle + parentCommit, 'utf8') > MAX_FAST_BOOT_GIT_BUNDLE_BASE64_BYTES
   ) {
     return null;
   }
@@ -37,6 +46,8 @@ export function buildCachedFastBootGitHint(
     ref,
     base_sha: hint.baseSha,
     bundle_base64: bundle,
+    parent_sha: parentSha,
+    parent_commit_base64: parentCommit,
     cached_at: cachedAt,
   };
 }
@@ -54,6 +65,10 @@ export function readCachedFastBootGitHint(metadata: unknown, ref: string): FastB
       baseSha: typeof entry.base_sha === 'string' ? entry.base_sha : '',
       gitDeltaBundleBase64:
         typeof entry.bundle_base64 === 'string' ? entry.bundle_base64 : undefined,
+      gitDeltaParentSha:
+        typeof entry.parent_sha === 'string' ? entry.parent_sha : undefined,
+      gitDeltaParentCommitBase64:
+        typeof entry.parent_commit_base64 === 'string' ? entry.parent_commit_base64 : undefined,
     },
     typeof entry.cached_at === 'string' ? entry.cached_at : '',
   );
@@ -68,6 +83,8 @@ export function readCachedFastBootGitHint(metadata: unknown, ref: string): FastB
   return {
     baseSha: candidate.base_sha,
     gitDeltaBundleBase64: candidate.bundle_base64,
+    gitDeltaParentSha: candidate.parent_sha,
+    gitDeltaParentCommitBase64: candidate.parent_commit_base64,
   };
 }
 

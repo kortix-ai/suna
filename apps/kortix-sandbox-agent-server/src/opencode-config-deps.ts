@@ -24,7 +24,8 @@ const execFileAsync = promisify(execFile)
  * Produced by the snapshot Dockerfile (see `dockerfile-layer.ts`) so we can
  * satisfy the config dir's node_modules at boot with zero network work.
  */
-const BAKED_DEPS_DIR = '/opt/kortix/opencode-config-deps'
+export const OPENCODE_CONFIG_DEPS_DIR = '/opt/kortix/opencode-config-deps'
+const BAKED_DEPS_DIR = OPENCODE_CONFIG_DEPS_DIR
 const BUN_CACHE_DIR = `${OPENCODE_HOME}/.bun/install/cache`
 const LOCAL_TOOL_ABI = 1
 const INSTALL_SENTINEL_VERSION = 1

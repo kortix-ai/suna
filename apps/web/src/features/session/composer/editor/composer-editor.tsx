@@ -526,7 +526,7 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
            * curve is now monotonic: 45vh below 640px (a phone keyboard eats the
            * rest of the screen anyway), 40vh above it.
            */
-          class: 'outline-none min-h-[3.5em] max-h-[45vh] sm:max-h-[40vh] overflow-y-auto',
+          class: 'outline-none min-h-[1.7em] max-h-[45vh] sm:max-h-[40vh] overflow-y-auto',
         },
         handleKeyDown,
       },

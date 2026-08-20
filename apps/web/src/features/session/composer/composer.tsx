@@ -28,8 +28,6 @@ import {
 import { extractClipboardFiles } from '../clipboard-files';
 import { mergeFailedSubmissionFiles } from '../composer-draft-recovery';
 import { resolveComposerResetOnSend } from '../composer-reset';
-import { NO_AGENT_ACCESS_HINT, NO_AGENT_ACCESS_LABEL } from './composer-agent-access';
-import { commandBlocker, sendBlocker, sendBlockerMessage } from './send-blockers';
 import {
   isModelRequiredButUnavailable,
   NO_MODEL_AVAILABLE_ACTION_MESSAGE,
@@ -40,6 +38,8 @@ import { ModelConnectionBar } from '../model-connection-gate';
 import type { FlatModel } from '../model-flatten';
 import { type ModelDefaultControls } from '../model-selector';
 import { useModelConnectionGate } from '../use-model-connection-gate';
+import { NO_AGENT_ACCESS_HINT, NO_AGENT_ACCESS_LABEL } from './composer-agent-access';
+import { commandBlocker, sendBlocker, sendBlockerMessage } from './send-blockers';
 
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
@@ -68,6 +68,7 @@ import { useComposerFocus } from './hooks/use-composer-focus';
 import { useMenuRevalidation } from './hooks/use-file-search';
 import { controlToOpenFor, SLASH_ACTIONS, type SlashAction } from './menus/slash-actions';
 import { createSubmitLatch } from './submit-latch';
+import type { AttachedFile, TrackedMention } from './types';
 
 /** A draft captured out of the editor at Enter time — see `createSubmitLatch`. */
 interface StashedDraft {
@@ -75,7 +76,6 @@ interface StashedDraft {
   doc: JSONContent | null;
   files: AttachedFile[];
 }
-import type { AttachedFile, TrackedMention } from './types';
 
 export interface SessionChatInputProps {
   onSend: (
@@ -304,7 +304,6 @@ export interface SessionChatInputProps {
  * media query cannot see the panel, which is the whole reason it broke before.
  */
 export const COMPOSER_SHELL_CLASS = 'relative z-10 mx-auto w-full max-w-210 shrink-0 px-4 md:pr-1';
-
 
 /** Stable empty defaults so a fresh `[]` per render never breaks memoization. */
 const EMPTY_AGENTS: Agent[] = [];
@@ -899,193 +898,199 @@ function ComposerImpl({
     [cycleAgent],
   );
 
-  const dispatchSubmission = useCallback(async (stash?: StashedDraft) => {
-    // Ahead of the model check: with no agent to run it, the model this prompt
-    // would have used is not the user's problem.
-    if (agentUnavailable) {
-      errorToast(NO_AGENT_ACCESS_LABEL, { description: NO_AGENT_ACCESS_HINT });
-      return;
-    }
-    if (modelUnavailable) {
-      errorToast(NO_MODEL_AVAILABLE_MESSAGE, {
-        description: NO_MODEL_AVAILABLE_ACTION_MESSAGE,
-      });
-      return;
-    }
-
-    // What refuses EVERY submission — a prompt, a `/` command, and a custom
-    // answer alike. `hasActiveQuestion` is deliberately not consulted here: an
-    // open question does not refuse a submission, it REROUTES it to
-    // `onCustomAnswer` further down. The command branch passes it for real,
-    // because a command is not an answer.
-    const submissionBlocker = sendBlocker({
-      hasActiveQuestion: false,
-      // The composer only knows "something is pending", not how many.
-      pendingPermissionCount: lockForApproval ? 1 : 0,
-      readOnly: disabled,
-    });
-    if (submissionBlocker) {
-      const copy = sendBlockerMessage(submissionBlocker);
-      errorToast(copy.message, copy.description ? { description: copy.description } : undefined);
-      return;
-    }
-
-    // A stashed draft was captured out of the editor (and the editor cleared)
-    // when its Enter arrived mid-send — see `createSubmitLatch`. It is
-    // submitted as captured; the live editor belongs to whatever the user
-    // typed since.
-    const draft = stash ? stash.content : editorRef.current?.getContent();
-    const filesNow = stash ? stash.files : attachedFiles;
-    const plan = planDraftSubmission({
-      commandName: draft?.commandName,
-      text: draft?.text ?? '',
-      commands: commands ?? [],
-    });
-    if (plan.kind === 'command') {
-      // A command cannot deliver the attached files, and the code below is
-      // about to clear them and revoke their object URLs. Refuse the whole
-      // submission instead — before either dispatch path and before the clear,
-      // so the direct call and the queued entry are guarded by one check
-      // rather than two that can drift. Nothing is sent, nothing is cleared,
-      // and the reason is already on screen next to the send button; the toast
-      // covers the keyboard path, which no disabled button can gate.
-      const guard = planCommandAttachments({
-        isCommand: true,
-        attachmentCount: filesNow.length,
-      });
-      if (guard.kind === 'refuse') {
-        errorToast(guard.message, { description: guard.description });
+  const dispatchSubmission = useCallback(
+    async (stash?: StashedDraft) => {
+      // Ahead of the model check: with no agent to run it, the model this prompt
+      // would have used is not the user's problem.
+      if (agentUnavailable) {
+        errorToast(NO_AGENT_ACCESS_LABEL, { description: NO_AGENT_ACCESS_HINT });
+        return;
+      }
+      if (modelUnavailable) {
+        errorToast(NO_MODEL_AVAILABLE_MESSAGE, {
+          description: NO_MODEL_AVAILABLE_ACTION_MESSAGE,
+        });
         return;
       }
 
-      // A command is REFUSED while the session is working — or while its
-      // sandbox is still waking — not queued.
-      //
-      // A PROMPT is never held here: it goes to the server-side inbox, which
-      // admits it only when the session can take it, so ordering is decided by
-      // server truth rather than by this component's read of `isBusy`, and a
-      // sleeping box just means the row is delivered a little later. A COMMAND
-      // has no such row — it is dispatched by `runCommand`, never by
-      // `POST .../prompts` — so no admission gate ever sees it, putting one on
-      // the wire mid-turn aborts the answer in progress, and dispatching one at
-      // a box that is not up is swallowed by `runCommand`'s own
-      // `runtimeActionReady` guard with no request and no error.
-      //
-      // It used to wait in a browser-local queue for that reason. That queue is
-      // gone: it lived in this tab's localStorage, so a closed tab lost it, a
-      // second tab could not see it, and its release timing was a guess at a
-      // turn boundary made from a debounced `isBusy`. A refusal keeps the draft
-      // in the editor and says when the command can run — nothing is stored,
-      // and nothing can be lost.
-      const blocker = commandBlocker({
-        hasActiveQuestion: lockForQuestion,
+      // What refuses EVERY submission — a prompt, a `/` command, and a custom
+      // answer alike. `hasActiveQuestion` is deliberately not consulted here: an
+      // open question does not refuse a submission, it REROUTES it to
+      // `onCustomAnswer` further down. The command branch passes it for real,
+      // because a command is not an answer.
+      const submissionBlocker = sendBlocker({
+        hasActiveQuestion: false,
         // The composer only knows "something is pending", not how many.
         pendingPermissionCount: lockForApproval ? 1 : 0,
         readOnly: disabled,
-        isWorking: sessionWorking ?? isBusy,
-        runtimeReady,
       });
-      if (blocker) {
-        const copy = sendBlockerMessage(blocker);
+      if (submissionBlocker) {
+        const copy = sendBlockerMessage(submissionBlocker);
         errorToast(copy.message, copy.description ? { description: copy.description } : undefined);
         return;
       }
-      onCommand?.(plan.command, plan.args, draft?.commandSplit);
-      if (clearOnSend && !stash) {
-        editorRef.current?.clear();
-        setAttachedFiles((prev) => {
-          for (const file of prev) {
-            if (file.kind === 'local') URL.revokeObjectURL(file.localUrl);
-          }
-          return [];
-        });
-      }
-      return;
-    }
 
-    if (lockForQuestion) {
-      const trimmed = (draft?.text ?? '').trim();
-      if (trimmed && onCustomAnswer) {
-        onCustomAnswer(trimmed);
-        if (!stash) editorRef.current?.clear();
-        return;
-      }
-      if (onQuestionAction) {
-        onQuestionAction();
-        return;
-      }
-      return;
-    }
-
-    const content = draft ?? { text: '', mentions: [] };
-    const trimmed = plan.text;
-    if ((!trimmed && filesNow.length === 0) || submitDisabled) return;
-
-    const filesToSend = filesNow.length > 0 ? [...filesNow] : undefined;
-    const mentionsToSend = content.mentions.length > 0 ? [...content.mentions] : undefined;
-    const submittedDoc = stash ? stash.doc : (editorRef.current?.getDocument() ?? null);
-    const submittedIsEmpty = stash ? false : (editorRef.current?.isEmpty() ?? true);
-
-    const reset = resolveComposerResetOnSend(clearOnSend, filesNow);
-    if (reset.clear && !stash) {
-      editorRef.current?.clear();
-      attachedFilesRef.current = [];
-      setAttachedFiles([]);
-    }
-
-    try {
-      await onSend(trimmed, filesToSend, mentionsToSend);
-      for (const url of reset.urlsToRevoke) URL.revokeObjectURL(url);
-    } catch {
-      const currentDoc = editorRef.current?.getDocument() ?? null;
-      const currentIsEmpty = editorRef.current?.isEmpty() ?? true;
-      const sentFiles = filesToSend ?? [];
-
-      const plan = planFailedSendRecovery({
-        clearOnSend,
-        submittedDoc,
-        submittedIsEmpty,
-        currentDoc,
-        currentIsEmpty,
-        currentAttachedFiles: attachedFiles,
-        sentFiles,
+      // A stashed draft was captured out of the editor (and the editor cleared)
+      // when its Enter arrived mid-send — see `createSubmitLatch`. It is
+      // submitted as captured; the live editor belongs to whatever the user
+      // typed since.
+      const draft = stash ? stash.content : editorRef.current?.getContent();
+      const filesNow = stash ? stash.files : attachedFiles;
+      const plan = planDraftSubmission({
+        commandName: draft?.commandName,
+        text: draft?.text ?? '',
+        commands: commands ?? [],
       });
-      if (plan?.restoreDoc) {
-        setDocumentWithoutStealingFocus(editorRef.current, plan.restoreDoc);
+      if (plan.kind === 'command') {
+        // A command cannot deliver the attached files, and the code below is
+        // about to clear them and revoke their object URLs. Refuse the whole
+        // submission instead — before either dispatch path and before the clear,
+        // so the direct call and the queued entry are guarded by one check
+        // rather than two that can drift. Nothing is sent, nothing is cleared,
+        // and the reason is already on screen next to the send button; the toast
+        // covers the keyboard path, which no disabled button can gate.
+        const guard = planCommandAttachments({
+          isCommand: true,
+          attachmentCount: filesNow.length,
+        });
+        if (guard.kind === 'refuse') {
+          errorToast(guard.message, { description: guard.description });
+          return;
+        }
+
+        // A command is REFUSED while the session is working — or while its
+        // sandbox is still waking — not queued.
+        //
+        // A PROMPT is never held here: it goes to the server-side inbox, which
+        // admits it only when the session can take it, so ordering is decided by
+        // server truth rather than by this component's read of `isBusy`, and a
+        // sleeping box just means the row is delivered a little later. A COMMAND
+        // has no such row — it is dispatched by `runCommand`, never by
+        // `POST .../prompts` — so no admission gate ever sees it, putting one on
+        // the wire mid-turn aborts the answer in progress, and dispatching one at
+        // a box that is not up is swallowed by `runCommand`'s own
+        // `runtimeActionReady` guard with no request and no error.
+        //
+        // It used to wait in a browser-local queue for that reason. That queue is
+        // gone: it lived in this tab's localStorage, so a closed tab lost it, a
+        // second tab could not see it, and its release timing was a guess at a
+        // turn boundary made from a debounced `isBusy`. A refusal keeps the draft
+        // in the editor and says when the command can run — nothing is stored,
+        // and nothing can be lost.
+        const blocker = commandBlocker({
+          hasActiveQuestion: lockForQuestion,
+          // The composer only knows "something is pending", not how many.
+          pendingPermissionCount: lockForApproval ? 1 : 0,
+          readOnly: disabled,
+          isWorking: sessionWorking ?? isBusy,
+          runtimeReady,
+        });
+        if (blocker) {
+          const copy = sendBlockerMessage(blocker);
+          errorToast(
+            copy.message,
+            copy.description ? { description: copy.description } : undefined,
+          );
+          return;
+        }
+        onCommand?.(plan.command, plan.args, draft?.commandSplit);
+        if (clearOnSend && !stash) {
+          editorRef.current?.clear();
+          setAttachedFiles((prev) => {
+            for (const file of prev) {
+              if (file.kind === 'local') URL.revokeObjectURL(file.localUrl);
+            }
+            return [];
+          });
+        }
+        return;
       }
-      if (plan) {
-        setAttachedFiles(
-          (current) =>
-            planFailedSendRecovery({
-              clearOnSend,
-              submittedDoc,
-              submittedIsEmpty,
-              currentDoc,
-              currentIsEmpty,
-              currentAttachedFiles: current,
-              sentFiles,
-            })?.attachedFiles ?? current,
-        );
+
+      if (lockForQuestion) {
+        const trimmed = (draft?.text ?? '').trim();
+        if (trimmed && onCustomAnswer) {
+          onCustomAnswer(trimmed);
+          if (!stash) editorRef.current?.clear();
+          return;
+        }
+        if (onQuestionAction) {
+          onQuestionAction();
+          return;
+        }
+        return;
       }
-    }
-  }, [
-    submitDisabled,
-    modelUnavailable,
-    agentUnavailable,
-    clearOnSend,
-    onSend,
-    isBusy,
-    sessionWorking,
-    runtimeReady,
-    disabled,
-    onCommand,
-    commands,
-    attachedFiles,
-    lockForQuestion,
-    lockForApproval,
-    onCustomAnswer,
-    onQuestionAction,
-  ]);
+
+      const content = draft ?? { text: '', mentions: [] };
+      const trimmed = plan.text;
+      if ((!trimmed && filesNow.length === 0) || submitDisabled) return;
+
+      const filesToSend = filesNow.length > 0 ? [...filesNow] : undefined;
+      const mentionsToSend = content.mentions.length > 0 ? [...content.mentions] : undefined;
+      const submittedDoc = stash ? stash.doc : (editorRef.current?.getDocument() ?? null);
+      const submittedIsEmpty = stash ? false : (editorRef.current?.isEmpty() ?? true);
+
+      const reset = resolveComposerResetOnSend(clearOnSend, filesNow);
+      if (reset.clear && !stash) {
+        editorRef.current?.clear();
+        attachedFilesRef.current = [];
+        setAttachedFiles([]);
+      }
+
+      try {
+        await onSend(trimmed, filesToSend, mentionsToSend);
+        for (const url of reset.urlsToRevoke) URL.revokeObjectURL(url);
+      } catch {
+        const currentDoc = editorRef.current?.getDocument() ?? null;
+        const currentIsEmpty = editorRef.current?.isEmpty() ?? true;
+        const sentFiles = filesToSend ?? [];
+
+        const plan = planFailedSendRecovery({
+          clearOnSend,
+          submittedDoc,
+          submittedIsEmpty,
+          currentDoc,
+          currentIsEmpty,
+          currentAttachedFiles: attachedFiles,
+          sentFiles,
+        });
+        if (plan?.restoreDoc) {
+          setDocumentWithoutStealingFocus(editorRef.current, plan.restoreDoc);
+        }
+        if (plan) {
+          setAttachedFiles(
+            (current) =>
+              planFailedSendRecovery({
+                clearOnSend,
+                submittedDoc,
+                submittedIsEmpty,
+                currentDoc,
+                currentIsEmpty,
+                currentAttachedFiles: current,
+                sentFiles,
+              })?.attachedFiles ?? current,
+          );
+        }
+      }
+    },
+    [
+      submitDisabled,
+      modelUnavailable,
+      agentUnavailable,
+      clearOnSend,
+      onSend,
+      isBusy,
+      sessionWorking,
+      runtimeReady,
+      disabled,
+      onCommand,
+      commands,
+      attachedFiles,
+      lockForQuestion,
+      lockForApproval,
+      onCustomAnswer,
+      onQuestionAction,
+    ],
+  );
 
   /**
    * One user action = one submission — without eating the next one. The whole
@@ -1307,7 +1312,7 @@ function ComposerImpl({
           // arbitrary `shadow-[…oklch…]` that followed, which was the only
           // raw colour left in the composer.
           'bg-sidebar border-border relative isolate z-10 w-full rounded-xl border',
-          'pt-3 shadow-sm',
+          'pt-3',
           'transition-[border-color] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)]',
           'motion-reduce:transition-none',
           cardClassName,
@@ -1543,7 +1548,7 @@ function ComposerImpl({
         would cover the menu again — they must stay unstacked.
       */}
       {slashMenuPlacement === 'below' && (
-        <div id={dockId} className="absolute top-full left-4 right-4 md:right-1 mt-3.5 z-99" />
+        <div id={dockId} className="absolute top-full right-4 left-4 z-99 mt-3.5 md:right-1" />
       )}
     </div>
   );

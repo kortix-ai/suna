@@ -3,6 +3,10 @@
 import { DiffView } from '@/components/diff/diff-view';
 import { CopyOverlay, HighlightedCode } from '@/components/markdown/code';
 import { CopyButton } from '@/components/markdown/copy-button';
+import {
+  MarkdownFrontmatterCard,
+  parseFrontmatter,
+} from '@/components/markdown/markdown-frontmatter';
 import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
@@ -1456,6 +1460,40 @@ export function ToolCodeCard({
         <CopyOverlay code={code}>
           <div data-scrollable className={cn('max-h-96 overflow-auto', pad, 'pr-11')}>
             <HighlightedCode code={code} language={language} />
+          </div>
+        </CopyOverlay>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The markdown counterpart to {@link ToolCodeCard}: same chrome — trigger-aligned
+ * indent, `border`/`bg-popover` card, copy overlay — with rendered prose instead
+ * of a highlighted-source pane.
+ *
+ * YAML frontmatter (agent/skill headers, notes with metadata) goes through
+ * `parseFrontmatter` so the `---` fences do not become a stray rule and a giant
+ * heading. Content with none passes through unchanged.
+ *
+ * `allowHtml={false}`: this reads as a stored file, not chat prose.
+ */
+export function ToolMarkdownCard({ code, className }: { code: string; className?: string }) {
+  const indent = useToolIndent();
+  const frame = useToolCardFrame();
+  const pad = useToolCardPad();
+  if (!code) return null;
+  const { frontmatter, body } = parseFrontmatter(code);
+  return (
+    <div className={cn(indent && 'mt-1.5', indent, className)}>
+      <div className={cn('relative', frame)}>
+        <CopyOverlay code={code}>
+          <div
+            data-scrollable
+            className={cn('max-h-96 overflow-auto', pad, 'pr-11', MD_FLUSH_CLASSES)}
+          >
+            {frontmatter && <MarkdownFrontmatterCard data={frontmatter} />}
+            <UnifiedMarkdown content={body} isStreaming={false} allowHtml={false} />
           </div>
         </CopyOverlay>
       </div>

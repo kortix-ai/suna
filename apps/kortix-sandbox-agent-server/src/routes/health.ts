@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 
 import type { Config } from '../config'
 import { readRepoInfo } from '../git'
+import { runtimeConvergenceReport } from '../runtime-assets'
 import type { Opencode } from '../opencode'
 import {
   type OpencodeDeliveryObservation,
@@ -225,6 +226,13 @@ export function createHealthRouter(
       // the newest commit and still be running config compiled days ago. Read
       // from the live process env, so it tracks a hot push as well as a boot.
       agent_config_etag: process.env.KORTIX_COMPILED_AGENT_CONFIG_ETAG || null,
+      // What this box last converged its own runtime to. Auto-update without
+      // reporting only moves the uncertainty — this makes "is the fleet
+      // current?" a query instead of a hope, and it is the signal that tells us
+      // a fleet-drain gate has actually cleared. `pinned: true` means an update
+      // crash-looped and the supervisor latched it off: that box will not
+      // self-heal and needs a human.
+      runtime: await runtimeConvergenceReport(),
       // Opt-in (`?turn=1`) because it costs a call into opencode, and health is
       // polled as a liveness check every few seconds on every idle box. Two
       // callers ask: the reload gate, which must not restart the runtime out

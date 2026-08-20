@@ -23,7 +23,14 @@
  * first seat addition.
  */
 
-import { getTier, grantForSeats, isPerSeatAccount } from './tiers';
+import {
+  COMPUTE_TIERS,
+  INCLUDED_CREDITS_RATIO,
+  getTier,
+  grantForSeats,
+  isPaidTier,
+  isPerSeatAccount,
+} from './tiers';
 
 /**
  * Dollars of slack before a breach is reported. Covers the 4-decimal precise
@@ -82,9 +89,22 @@ export interface EntitlementBreach {
  * The expiring-credit allowance one billing cycle may grant this account.
  *
  * per-seat: $25 x seats (INCLUDED_CREDITS_PER_SEAT_USD, never the $40 price).
- * free: $2. pro: $0 by design — its $5 is a one-time non-expiring machine bonus,
- * not a monthly allowance. legacy tier_N_M: the tier's monthlyCredits, 1:1 with
- * the price the customer pays.
+ * free: $2. legacy tier_N_M: the tier's monthlyCredits, 1:1 with the price the
+ * customer pays.
+ *
+ * A PAID tier whose catalog grant is 0 (legacy `pro`) is the interesting case,
+ * and it changed. It used to be 0 "by design" — and that was the bug: those
+ * customers paid every month and their renewal granted nothing, which is what
+ * PR #6662 fixed. A renewal now grants `amount_paid x INCLUDED_CREDITS_RATIO`
+ * (see `resolveRenewalGrant`), so an expectation of 0 makes every one of them a
+ * permanent false breach — and this check exits non-zero, so a guard that is red
+ * by construction gets ignored, which is the only way this one can fail.
+ *
+ * The row alone cannot say what the customer actually paid, so the expectation
+ * is the CEILING a single legitimate cycle can reach: the dearest machine we
+ * sell, at the included-credits ratio. That keeps the check meaningful — a
+ * grant-sizing error still has to clear the most expensive real plan to hide —
+ * while no longer flagging correctly-granted accounts.
  */
 export function expectedMonthlyEntitlementUsd(subject: EntitlementSubject): number {
   const tierName = subject.tier ?? 'none';
@@ -97,7 +117,28 @@ export function expectedMonthlyEntitlementUsd(subject: EntitlementSubject): numb
     return grantForSeats(Math.max(1, subject.seatCount ?? 1));
   }
 
-  return getTier(tierName).monthlyCredits;
+  const tier = getTier(tierName);
+  // `getTier` falls back to `none` for anything it does not know, so an unknown
+  // or garbage tier reaches here looking exactly like a zero-grant paid tier.
+  // Requiring the name to round-trip keeps the ceiling below FAIL-CLOSED: a tier
+  // nobody has heard of gets an allowance of 0 and stays visible to the audit,
+  // rather than quietly inheriting the most generous plan we sell.
+  const isKnownTier = tier.name === tierName;
+  if (isKnownTier && tier.monthlyCredits === 0 && isPaidTier(tierName)) {
+    return maxAmountBasedCycleGrantUsd();
+  }
+  return tier.monthlyCredits;
+}
+
+/**
+ * The largest grant one amount-based renewal can legitimately produce: the
+ * priciest machine in the catalog at the included-credits ratio. Derived, not
+ * typed as a literal, so adding a dearer compute tier cannot silently turn a
+ * real over-grant into an accepted one.
+ */
+function maxAmountBasedCycleGrantUsd(): number {
+  const dearest = Math.max(...Object.values(COMPUTE_TIERS).map((t) => t.priceUsd));
+  return Math.round(dearest * INCLUDED_CREDITS_RATIO * 100) / 100;
 }
 
 /**

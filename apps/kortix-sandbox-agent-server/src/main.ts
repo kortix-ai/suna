@@ -39,7 +39,7 @@ import { ensureInjectedManagedSkills } from './injected-skills'
 // `startSessionRuntime` — so every way a session comes up reconciles once.
 // Strictly AFTER `bootMark('opencode-ready')` and never awaited: it adds zero
 // milliseconds to the readiness the API and the frontend poll for.
-import { scheduleRuntimeAssetsReconcile } from './runtime-assets'
+import { configureRuntimeConvergence, scheduleRuntimeAssetsReconcile } from './runtime-assets'
 import { isSharedSeedBakedRoot, OPENCODE_SEED_BAKED_PIN_PATH } from './opencode-fork-root'
 import { startOpencodeEventLoop, flattenOpencodeError, type QuestionRequest, type OpencodeTurnError } from './opencode-events'
 import { auditRelayToken, createAuditRelay } from './opencode-audit-relay'
@@ -205,7 +205,26 @@ async function main() {
     },
   })
   const server = startProxy(cfg, opencode, bootTime, bootState, projectEnv, staticWeb.port)
-  installShutdownHandlers(opencode, server, staticWeb)
+  const shutdown = installShutdownHandlers(opencode, server, staticWeb)
+  // Hand the convergence machinery this session's live runtime, once.
+  //
+  // Two things need it. opencode convergence restarts opencode, so it goes
+  // through the supervisor that owns spawn/respawn/dispose — never behind its
+  // back. And a staged daemon update exits `75` through the SAME clean shutdown
+  // a SIGTERM takes: opencode is a child of this process, so a bare
+  // `process.exit` would leave the relaunched daemon fighting an orphan for the
+  // opencode port.
+  configureRuntimeConvergence({
+    seam: {
+      // Re-read per pass: a verified reload promotes the replacement on the
+      // other half of the port pair, so the live URL moves.
+      opencodeBaseUrl: () => opencode.getInternalUrl(),
+      workspace: cfg.workspace,
+      restartOpencode: () => opencode.restart(),
+    },
+    turnInFlight: () => opencodeTurnInFlight(opencode.getInternalUrl(), cfg.workspace),
+    exit: (code) => shutdown({ reason: 'agent-swap', exitCode: code }),
+  })
   bootMark('proxy-up')
 
   // Learn the CURRENT managed lineup from the gateway this session bills

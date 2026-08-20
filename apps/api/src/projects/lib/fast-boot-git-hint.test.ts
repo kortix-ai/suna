@@ -18,6 +18,8 @@ const project: GitBackedProject = {
 const cachedHint: FastBootGitHint = {
   baseSha: 'a'.repeat(40),
   gitDeltaBundleBase64: Buffer.from('bundle').toString('base64'),
+  gitDeltaParentSha: 'b'.repeat(40),
+  gitDeltaParentCommitBase64: Buffer.from('tree deadbeef\n').toString('base64'),
 };
 
 function metadataFor(hint: FastBootGitHint = cachedHint, ref = 'main') {
@@ -30,6 +32,7 @@ function metadataFor(hint: FastBootGitHint = cachedHint, ref = 'main') {
 
 describe('fast boot Git hint cache', () => {
   test('reads a bounded cache entry for the requested ref', () => {
+    expect(metadataFor().git.fast_boot?.version).toBe(2);
     expect(readCachedFastBootGitHint(metadataFor(), 'main')).toEqual(cachedHint);
     expect(readCachedFastBootGitHint(metadataFor(cachedHint, 'dev'), 'main')).toBeNull();
   });
@@ -45,6 +48,14 @@ describe('fast boot Git hint cache', () => {
       buildCachedFastBootGitHint('main', {
         baseSha: 'a'.repeat(40),
         gitDeltaBundleBase64: Buffer.alloc(24 * 1024 + 1).toString('base64'),
+        gitDeltaParentSha: 'b'.repeat(40),
+        gitDeltaParentCommitBase64: Buffer.from('tree deadbeef\n').toString('base64'),
+      }),
+    ).toBeNull();
+    expect(
+      buildCachedFastBootGitHint('main', {
+        baseSha: 'a'.repeat(40),
+        gitDeltaBundleBase64: cachedHint.gitDeltaBundleBase64,
       }),
     ).toBeNull();
   });
@@ -71,6 +82,8 @@ describe('fast boot Git hint cache', () => {
     const freshHint = {
       baseSha: 'b'.repeat(40),
       gitDeltaBundleBase64: Buffer.from('fresh').toString('base64'),
+      gitDeltaParentSha: 'c'.repeat(40),
+      gitDeltaParentCommitBase64: Buffer.from('tree cafe\n').toString('base64'),
     };
     const forceRefreshes: boolean[] = [];
     const persisted: FastBootGitHint[] = [];

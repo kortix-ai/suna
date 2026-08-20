@@ -772,8 +772,11 @@ async function enforceTokenProjectScope(c: Context, tokenProjectId: string): Pro
   // authorization.
   if (path === '/v1/skills' || path.startsWith('/v1/skills/')) return;
 
-  // `/v1/runtime-assets` — the CLI binary + managed-skill overlay this deploy
-  // bakes into sandboxes. Same situation and same reasoning as `/v1/skills`
+  // `/v1/runtime-assets` — the `kortix-agent` daemon binary, the CLI binary, and
+  // the managed-skill overlay this deploy bakes into sandboxes. The prefix test
+  // covers every payload route including `/agent`, which is deliberate: the
+  // daemon converging ITSELF is the same caller with the same token as the
+  // daemon converging its CLI. Same reasoning as `/v1/skills`
   // above, and for the same single caller: the in-sandbox daemon reconciles
   // against these on every session start/restart/resume holding exactly a
   // project+session-scoped `KORTIX_CLI_TOKEN`. A 403 here means a sandbox can

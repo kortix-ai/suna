@@ -995,7 +995,14 @@ async function tryScaffoldDeltaFetch(
       cfg.sessionFresh &&
       cfg.baseSha &&
       cfg.gitDeltaBundleBase64 &&
-      await applyFastBootDeltaBundle(tmp, base, cfg.baseSha, cfg.gitDeltaBundleBase64)
+      await applyFastBootDeltaBundle(
+        tmp,
+        base,
+        cfg.baseSha,
+        cfg.gitDeltaBundleBase64,
+        cfg.gitDeltaParentSha,
+        cfg.gitDeltaParentCommitBase64,
+      )
     ) {
       await swapStageIntoTarget(tmp, target)
       logger.info('[git] repo materialized via scaffold (zero-network: API delta bundle)', {
@@ -1034,11 +1041,14 @@ async function applyFastBootDeltaBundle(
   base: string,
   baseSha: string,
   bundleBase64: string,
+  parentSha?: string,
+  parentCommitBase64?: string,
 ): Promise<boolean> {
   if (!/^[0-9a-f]{40}$/i.test(baseSha)) return false
   if (
     bundleBase64.length === 0 ||
     bundleBase64.length > MAX_FAST_BOOT_GIT_BUNDLE_BASE64_BYTES ||
+    bundleBase64.length + (parentCommitBase64?.length ?? 0) > MAX_FAST_BOOT_GIT_BUNDLE_BASE64_BYTES ||
     bundleBase64.length % 4 !== 0 ||
     !/^[A-Za-z0-9+/]+={0,2}$/.test(bundleBase64)
   ) return false
@@ -1046,7 +1056,34 @@ async function applyFastBootDeltaBundle(
   const bytes = Buffer.from(bundleBase64, 'base64')
   if (bytes.toString('base64') !== bundleBase64) return false
   const bundlePath = join(repoPath, '.kortix-fast-boot.bundle')
+  const parentCommitPath = join(repoPath, '.kortix-fast-boot-parent.commit')
   try {
+    if (parentSha || parentCommitBase64) {
+      if (
+        !parentSha ||
+        !/^[0-9a-f]{40}$/i.test(parentSha) ||
+        !parentCommitBase64 ||
+        parentCommitBase64.length % 4 !== 0 ||
+        !/^[A-Za-z0-9+/]+={0,2}$/.test(parentCommitBase64)
+      ) {
+        throw new Error('incomplete or malformed parent commit payload')
+      }
+      const parentBytes = Buffer.from(parentCommitBase64, 'base64')
+      if (parentBytes.toString('base64') !== parentCommitBase64) {
+        throw new Error('non-canonical parent commit payload')
+      }
+      await writeFile(parentCommitPath, parentBytes, { mode: 0o600 })
+      const importedParent = await execGit([
+        '-C', repoPath, 'hash-object', '-t', 'commit', '-w', parentCommitPath,
+      ])
+      if (importedParent.code !== 0 || importedParent.stdout.trim() !== parentSha) {
+        throw new Error('parent commit payload does not match the expected SHA')
+      }
+      const parentTree = await execGit(['-C', repoPath, 'cat-file', '-e', `${parentSha}^{tree}`])
+      if (parentTree.code !== 0) {
+        throw new Error('parent commit tree is not present in the baked scaffold')
+      }
+    }
     await writeFile(bundlePath, bytes, { mode: 0o600 })
     const verified = await execGit(['-C', repoPath, 'bundle', 'verify', bundlePath])
     if (verified.code !== 0) throw new Error(`bundle verify: ${verified.stderr}`)
@@ -1064,6 +1101,7 @@ async function applyFastBootDeltaBundle(
     return false
   } finally {
     await rm(bundlePath, { force: true }).catch(() => {})
+    await rm(parentCommitPath, { force: true }).catch(() => {})
   }
 }
 

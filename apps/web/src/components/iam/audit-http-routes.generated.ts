@@ -539,6 +539,8 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "GET|v1|router|models",
   "GET|v1|router|models|:model",
   "POST|v1|router|web-search",
+  "GET|v1|runtime-assets|agent",
+  "HEAD|v1|runtime-assets|agent",
   "GET|v1|runtime-assets|cli",
   "HEAD|v1|runtime-assets|cli",
   "GET|v1|runtime-assets|managed-skills",

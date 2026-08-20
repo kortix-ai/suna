@@ -7,12 +7,12 @@ import Hint from '@/components/ui/hint';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { BrowserPanel } from '@/features/session/action-panel/browser-panel';
-import { SessionDetailPanel } from '@/features/session/action-panel/session-detail-panel';
-import { SessionPanelProvider } from '@/features/session/action-panel/session-panel-provider';
 import {
   aspectChangedWidth,
   resolveSideSize,
 } from '@/features/session/action-panel/easy/easy-panel-logic';
+import { SessionDetailPanel } from '@/features/session/action-panel/session-detail-panel';
+import { SessionPanelProvider } from '@/features/session/action-panel/session-panel-provider';
 import { useDeliverableReadiness } from '@/features/session/action-panel/shared/use-deliverable-readiness';
 import { MobileToolDrawer } from '@/features/session/mobile-tool-drawer';
 import { SessionAuditPanel } from '@/features/session/session-audit-panel';
@@ -576,7 +576,7 @@ export const SessionLayout = memo(function SessionLayout({
               maxSize={shouldShowPanel ? (isAnimating ? 100 : isExpanded ? 0 : 65) : 100}
               collapsible={isExpanded || isAnimating}
               className={cn(
-                'relative flex flex-col overflow-hidden bg-transparent transition-[padding] duration-300 ease-out',
+                'relative flex w-full flex-col overflow-hidden bg-transparent transition-[padding] duration-300 ease-out',
                 isExpanded && !isAnimating && 'pointer-events-none opacity-0',
               )}
             >
@@ -661,7 +661,11 @@ function PanelHeaderSwitcher({
       delayDuration={300}
       // No ⌘I hint here: that shortcut toggles the right side as a whole, and
       // this Advanced-mode button is a narrower thing — the detail panel only.
-      label={<span className="flex items-center gap-1.5">{isSidePanelOpen ? 'Close' : 'Open'} panel</span>}
+      label={
+        <span className="flex items-center gap-1.5">
+          {isSidePanelOpen ? 'Close' : 'Open'} panel
+        </span>
+      }
     >
       <Button
         variant="ghost"

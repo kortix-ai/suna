@@ -64,6 +64,7 @@ import {
 
 import { messageCreatedAt } from './message-time';
 import { MessageTimeLabel } from './message-time-label';
+import { PlanCard, useHasPlan } from './plan-card';
 
 // ============================================================================
 // Fixed channel brand colors + DCP (dynamic context pruning) notifications —
@@ -426,7 +427,7 @@ export const BUBBLE_TEXT = cn(
 );
 
 export const BUBBLE_SURFACE = cn(
-  'bg-sidebar dark:bg-muted text-foreground flex max-w-full flex-col px-4.5 py-3.5 select-none rounded-xl',
+  'bg-sidebar dark:bg-muted text-foreground flex max-w-full flex-col px-3.5 py-2.5 select-none rounded-lg',
 );
 
 export interface NormalizedAttachment {
@@ -848,9 +849,10 @@ export function UserMessageActions({
   onRewind?: (messageId: string, text: string) => void;
   rewindDisabled?: boolean;
   /**
-   * Rendered FIRST in the row: a queued prompt's status + controls
-   * (`QueuedPromptControls`) — the same row, so a pending bubble does not
-   * grow a second strip under it.
+   * Rendered FIRST in the fade group: a queued prompt's controls
+   * (`QueuedPromptActions`) — remove, send-now, retry. Same row as copy /
+   * rewind so a pending bubble does not grow a second strip, and so the X
+   * does not reserve a column beside the bubble.
    */
   leading?: React.ReactNode;
   /**
@@ -1027,11 +1029,24 @@ export function UserMessage({
     [attachments, uploadedFiles],
   );
 
-  // The bubble ALWAYS hugs its text. It used to take the full column when the
-  // turn "owned the plan" (`ownsPlan && useHasPlan`) — a claim from when the
-  // todo checklist rendered inside the bubble. The plan card lives under the
-  // turn now, and the anchor's fallback made a one-word message stretch across
-  // the whole column whenever any earlier turn had written todos.
+  /**
+   * Whether THIS turn draws the plan.
+   *
+   * `ownsPlan` alone is not the answer: `planAnchorMessageId` falls back to the
+   * last turn when no turn ever wrote todos, so a session with zero todos still
+   * nominates an owner. `useHasPlan` is the second half — it asks the runtime
+   * whether a plan exists at all, on the same query key the `todo.updated` SSE
+   * event writes, so the card appears the moment the agent writes its first
+   * todo and never appears for a session that has none.
+   *
+   * The bubble itself hugs its text either way; only the column cap moves.
+   */
+  // Called UNCONDITIONALLY. `ownsPlan && useHasPlan(...)` short-circuits, so
+  // the hook would go uncalled whenever `ownsPlan` is false — and the anchor
+  // moves between turns as the agent re-plans, so React would see the hook
+  // count change on a live component. Read first, combine second.
+  const hasPlan = useHasPlan(sessionId);
+  const showPlan = ownsPlan && hasPlan;
 
   // Resolve effective command info: use runtime-tracked info or fall back to template matching
   const effectiveCommandInfo = useMemo(
@@ -1363,8 +1378,9 @@ export function UserMessage({
     <div
       className={cn(
         'ml-auto flex w-full flex-col items-end gap-2 self-end',
-        // showPlan ? 'max-w-full' : 'max-w-[80%]',
-        'max-w-[80%]',
+        // The bubble hugs its own text (`w-fit`), so lifting the cap widens
+        // ONLY the plan card — the message itself does not stretch.
+        showPlan ? 'max-w-full' : 'max-w-[80%]',
       )}
     >
       {allAttachments.length > 0 && <MessageAttachments attachments={allAttachments} />}
@@ -1445,6 +1461,18 @@ export function UserMessage({
           under the bubble they describe — notification cards below are separate
           objects and must not come between a message and its own meta. */}
       {actions}
+
+      {/* The plan, last — closest to the assistant work it governs.
+          `session-chat` drops every `todowrite` part before segmentation, so
+          this card is the ONLY surface session todos have. Without it the
+          agent's plan renders nowhere and reads as "no plan was made".
+          `w-full` because the column is `items-end`: a checklist is a panel
+          across the column, not something trailing off a sentence. */}
+      {showPlan && (
+        <div className="w-full">
+          <PlanCard sessionId={sessionId} />
+        </div>
+      )}
     </div>
   );
 }

@@ -35,7 +35,12 @@ flow(
   {
     domain: 'runtime-assets',
     tags: ['smoke'],
-    routes: ['GET /v1/runtime-assets/manifest', 'POST /v1/projects/:projectId/cli-token'],
+    routes: [
+      'GET /v1/runtime-assets/manifest',
+      'GET /v1/runtime-assets/agent',
+      'HEAD /v1/runtime-assets/agent',
+      'POST /v1/projects/:projectId/cli-token',
+    ],
   },
   async (ctx) => {
     const projectPat = await createProjectPat(ctx, 'runtime-assets-manifest-pat');
@@ -82,6 +87,55 @@ flow(
         }
       } else if (body.cli_size !== null) {
         throw new Error('cli_size must be null when cli_sha256 is null');
+      }
+    });
+
+    await ctx.step('the v2 component block describes the whole runtime, not just the CLI', async () => {
+      // A box converges its daemon and its opencode off this block. If the
+      // component list regresses to CLI-only, every sandbox silently stops
+      // self-healing and nothing else in the system notices.
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/runtime-assets/manifest');
+      r.status(200);
+      const body = r.json<{
+        build: number;
+        components: Record<string, { sha256?: string; size?: number; version?: string | null; source?: string }>;
+        policy: { agent_self_update: boolean };
+      }>();
+      if (typeof body.build !== 'number') {
+        throw new Error('build must be a number — a sandbox uses it to refuse going backwards');
+      }
+      if (typeof body.policy?.agent_self_update !== 'boolean') {
+        throw new Error('policy.agent_self_update must be a boolean kill switch');
+      }
+      const opencode = body.components?.opencode;
+      if (!opencode?.version) {
+        throw new Error('components.opencode.version is what a stale box converges onto');
+      }
+      const agent = body.components?.agent;
+      // Nullable by design, exactly like the CLI half: a checkout that never
+      // built the daemon must omit it rather than fail the manifest.
+      if (agent && agent.sha256 && !SHA256.test(agent.sha256)) {
+        throw new Error(`components.agent.sha256 must be a sha256 hex digest, got ${agent.sha256}`);
+      }
+    });
+
+    await ctx.step('the agent binary is downloadable and matches its advertised digest', async () => {
+      const manifest = await ctx.client.as(ctx.P.OWNER).get('/v1/runtime-assets/manifest');
+      manifest.status(200);
+      const agent = manifest.json<{ components?: { agent?: { sha256?: string; size?: number } } }>()
+        .components?.agent;
+      if (!agent?.sha256) return; // no daemon built in this profile — nothing to serve
+
+      const anon = await ctx.client.as(ctx.P.ANON).get('/v1/runtime-assets/agent');
+      anon.status(401);
+
+      // HEAD via the generic request seam — the client exposes no `head()`
+      // helper, and HEAD is the call a daemon makes to check the digest without
+      // pulling ~95 MB it may already have.
+      const head = await ctx.client.as(ctx.P.OWNER).request('HEAD', '/v1/runtime-assets/agent');
+      head.status(200);
+      if (head.header('x-kortix-agent-sha256') !== agent.sha256) {
+        throw new Error('the agent route must advertise the same digest the manifest promises');
       }
     });
 

@@ -132,12 +132,7 @@ export function SlashMenu({
   const active = rows.find(({ row }) => row.index === selectedIndex) ?? rows[0];
 
   return (
-    // `max-h-96` and no fixed height: `h-88` pinned the card to 352px whether
-    // it held one row or thirty, so a single match rendered a mostly-empty
-    // panel taller than the composer under it. `MenuCard`'s own `shadow-md`
-    // is kept — `shadow-none` erased the only thing separating this card from
-    // the transcript behind it.
-    <MenuCard className={cn('mb-2.5 flex max-h-96 w-full overflow-hidden rounded-lg')}>
+    <MenuCard className={cn('mb-2.5 flex max-h-96 w-full overflow-hidden rounded-lg shadow-xs')}>
       <div
         role="listbox"
         aria-label="Commands and actions"

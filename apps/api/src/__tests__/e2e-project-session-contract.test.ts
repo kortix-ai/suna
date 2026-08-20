@@ -286,6 +286,8 @@ mock.module('../projects/git', () => ({
   resolveFastBootGitHint: async () => ({
     baseSha: 'a'.repeat(40),
     gitDeltaBundleBase64: 'R0lUIEJVTkRMRQ==',
+    gitDeltaParentSha: 'b'.repeat(40),
+    gitDeltaParentCommitBase64: 'dHJlZSBkZWFkYmVlZgo=',
   }),
   resolveBranchTip: async () => 'a'.repeat(40),
   resolveBranchAheadState: async () => ({ ahead: 0, behind: 0 }),

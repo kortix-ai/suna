@@ -62,6 +62,77 @@ describe('buildSingleParentDeltaBundle', () => {
     }
   });
 
+  test('imports when the provider gives the matching scaffold tree a different commit SHA', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'kortix-provider-fast-boot-bundle-'));
+    try {
+      const bakedSource = join(root, 'baked-source');
+      const providerSource = join(root, 'provider-source');
+      const scaffoldRepo = join(root, 'scaffold.git');
+      const checkout = join(root, 'checkout');
+      mkdirSync(bakedSource);
+      mkdirSync(providerSource);
+
+      const identity = {
+        GIT_AUTHOR_NAME: 'Kortix',
+        GIT_AUTHOR_EMAIL: 'noreply@kortix.ai',
+        GIT_COMMITTER_NAME: 'Kortix',
+        GIT_COMMITTER_EMAIL: 'noreply@kortix.ai',
+      };
+      git(['init', '-b', 'main'], bakedSource);
+      writeFileSync(join(bakedSource, 'README.md'), 'generic scaffold\n');
+      git(['add', 'README.md'], bakedSource);
+      git(['commit', '-m', 'chore: scaffold Kortix project'], bakedSource, {
+        ...identity,
+        GIT_AUTHOR_DATE: '2026-01-01T00:00:00Z',
+        GIT_COMMITTER_DATE: '2026-01-01T00:00:00Z',
+      });
+      const bakedSha = git(['rev-parse', 'HEAD'], bakedSource);
+      const bakedTree = git(['rev-parse', 'HEAD^{tree}'], bakedSource);
+      git(['clone', '--bare', bakedSource, scaffoldRepo], root);
+
+      git(['init', '-b', 'main'], providerSource);
+      writeFileSync(join(providerSource, 'README.md'), 'generic scaffold\n');
+      git(['add', 'README.md'], providerSource);
+      git(['commit', '-m', 'chore: scaffold Kortix project'], providerSource, {
+        ...identity,
+        GIT_AUTHOR_DATE: '2026-01-02T00:00:00Z',
+        GIT_COMMITTER_DATE: '2026-01-02T00:00:00Z',
+      });
+      const providerParentSha = git(['rev-parse', 'HEAD'], providerSource);
+      expect(providerParentSha).not.toBe(bakedSha);
+      expect(git(['rev-parse', 'HEAD^{tree}'], providerSource)).toBe(bakedTree);
+
+      writeFileSync(join(providerSource, 'README.md'), 'customer project\n');
+      git(['add', 'README.md'], providerSource);
+      git(['commit', '-m', 'chore: project setup'], providerSource, {
+        ...identity,
+        GIT_AUTHOR_DATE: '2026-01-03T00:00:00Z',
+        GIT_COMMITTER_DATE: '2026-01-03T00:00:00Z',
+      });
+      const baseSha = git(['rev-parse', 'HEAD'], providerSource);
+      const bundle = await buildSingleParentDeltaBundle(providerSource, 'main');
+      expect(bundle?.baseSha).toBe(baseSha);
+      expect(bundle?.parentSha).toBe(providerParentSha);
+      expect(bundle?.parentCommitBase64).toBeTruthy();
+
+      git(['clone', '-q', scaffoldRepo, checkout], root);
+      const bundlePath = join(root, 'provider.bundle');
+      const parentCommitPath = join(root, 'provider-parent.commit');
+      writeFileSync(bundlePath, Buffer.from(bundle!.bundleBase64, 'base64'));
+      writeFileSync(parentCommitPath, Buffer.from(bundle!.parentCommitBase64, 'base64'));
+      expect(git(['hash-object', '-t', 'commit', '-w', parentCommitPath], checkout)).toBe(
+        providerParentSha,
+      );
+      git(['bundle', 'unbundle', bundlePath], checkout);
+      git(['checkout', '-q', '-B', 'main', baseSha], checkout);
+
+      expect(git(['rev-parse', 'HEAD'], checkout)).toBe(baseSha);
+      expect(readFileSync(join(checkout, 'README.md'), 'utf8')).toBe('customer project\n');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   test('keeps the current managed starter delta below the sandbox env limit', async () => {
     const root = mkdtempSync(join(tmpdir(), 'kortix-starter-fast-boot-bundle-'));
     try {
@@ -102,7 +173,9 @@ describe('buildSingleParentDeltaBundle', () => {
 
       const bundle = await buildSingleParentDeltaBundle(source, 'main');
       expect(bundle).not.toBeNull();
-      expect(bundle!.bundleBase64.length).toBeLessThanOrEqual(24 * 1024);
+      expect(
+        Buffer.byteLength(bundle!.bundleBase64 + bundle!.parentCommitBase64, 'utf8'),
+      ).toBeLessThanOrEqual(24 * 1024);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
