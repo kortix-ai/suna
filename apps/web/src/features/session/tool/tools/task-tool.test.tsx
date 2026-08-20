@@ -245,8 +245,9 @@ describe('TaskTool — the row expands in place', () => {
     // button inside another is invalid HTML.
     expect(markup).toContain('aria-label="Open full view"');
     expect(markup).not.toContain('<button aria-label="Open full view"');
-    // Visible label is the short form; the accessible name contains it.
-    expect(markup).toContain('Full view');
+    // Visible label is the short form; the accessible name contains it, so
+    // WCAG 2.5.3 (Label in Name) holds.
+    expect(markup).toContain('>View</span>');
 
     // What the action opens: the modal is wired to THIS call's child session
     // and carries the row's own title, and it starts closed.
@@ -255,25 +256,58 @@ describe('TaskTool — the row expands in place', () => {
     expect(markup).toContain('data-open="false"');
   });
 
-  test('a child session with no steps yet offers the full view and opens onto nothing', () => {
-    // A sub-agent that has just started has nothing to list, and the modal is
-    // then the only way to watch it — the row must not become a dead end.
+  test('the sub-agent list draws NO rail of its own — the chain owns the line', () => {
+    // A rail's lane is the icon column of the row it hangs from; that is what
+    // `left-2` means in `ChainOfThoughtStep`. A hairline down the left of this
+    // list would sit in the CONTENT lane, anchored to nothing — and with a
+    // single sub-agent it drew a second bar 20px inside a chain rail that
+    // already said the same thing.
+    //
+    // The line that binds these steps to their agent is drawn by the chain, in
+    // the agent row's own icon lane. See `a group draws one rail per member` in
+    // `turn/activity-burst.test.tsx` for the several-agents half.
+    childMessages = CHILD_MESSAGES;
+    const markup = render(taskPart({}), { open: true });
+    expect(markup).not.toContain('bg-muted-foreground/15');
+    // The indent stays: it is what keeps the rows out of the rail's lane.
+    expect(markup).toContain('space-y-1 ml-[var(--tool-indent,1.375rem)]');
+  });
+
+  test('a child session with no steps is a plain button onto the full view, not a dead disclosure', () => {
+    // The reported bug: clicking `Agent · general` did nothing. A child
+    // session's transcript is only resident while the parent streamed it, and
+    // `pruneDetachedSessions` evicts the older ones — so in a turn with three
+    // agents the first two rows had no body, yet still rendered as a
+    // disclosure that answered a click by toggling nothing.
     childMessages = [];
     const markup = render(taskPart({ status: 'running' }), { open: true });
+
+    // No open state to report: this is `ClickableToolRow`, not a disclosure.
+    expect(markup).not.toContain('aria-expanded');
+    // But the ROW itself is still activatable. Anchored to the row element,
+    // never to a bare `role="button"` — the `View` action is a
+    // `span role="button"` in this same markup, so the loose form passes with
+    // the row's own handler deleted.
+    expect(markup).toContain('<div data-component="tool-trigger" role="button"');
     expect(markup).toContain('aria-label="Open full view"');
-    // And with the action off the body, an empty body is passed as no body at
-    // all: a caret that promises content and opens onto blank space is the same
-    // defect `ActivityBurst` refuses for a burst that merges to zero rows.
+    // Nothing inline to show, so no list and no rail.
     expect(markup).not.toContain('ml-[var(--tool-indent,1.375rem)]');
   });
 
-  test('no child session — no body, no action, no modal', () => {
+  test('no child session — no body, no action, no modal, and no button role at all', () => {
     childMessages = undefined;
     const markup = render(taskPart({ childSessionId: null }), { open: true });
     expect(markup).toContain('Agent · explorer');
     expect(markup).not.toContain('Open full view');
-    expect(markup).not.toContain('Full view');
+    expect(markup).not.toContain('>View</span>');
     expect(markup).not.toContain('data-sub-session-modal');
+    // Nothing to open and nowhere to go, so the row makes no promise: no
+    // trigger, no `role="button"`, no `aria-expanded`, no tab stop. It used to
+    // carry all four and do nothing with them.
+    expect(markup).toContain('<div data-component="tool-trigger" class=');
+    expect(markup).not.toContain('role="button"');
+    expect(markup).not.toContain('aria-expanded');
+    expect(markup).not.toContain('tabindex');
   });
 
   test('forceOpen and locked reach the shell — a pending prompt keeps the row open', () => {

@@ -136,6 +136,20 @@ export function TaskTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
 
   const subtitle = isRunning ? (lastActivity ?? description) : description || undefined;
 
+  /**
+   * Whether this row can show the sub-agent's work WITHOUT leaving the
+   * transcript.
+   *
+   * It is not the same question as "does this call have a sub-agent". A child
+   * session's transcript is only resident while the parent streamed it:
+   * `useOpenCodeMessages` reads the sync store, and `pruneDetachedSessions`
+   * evicts detached sessions past `DETACHED_SESSION_LIMIT`. A turn that
+   * dispatches three agents therefore ends up with the last one's steps in
+   * memory and the first two gone — which is exactly the "clicking the row does
+   * nothing" report: two of the three rows had no body to open.
+   */
+  const hasInlineSteps = Boolean(childSessionId) && childToolParts.length > 0;
+
   return (
     <>
       <BasicTool
@@ -151,8 +165,15 @@ export function TaskTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
           isCompleted && childToolParts.length > 0 ? `${childToolParts.length} steps` : undefined
         }
         triggerAction={childSessionId ? <FullViewAction onOpen={openModal} /> : undefined}
+        // A click on an agent row always leads somewhere. With steps in hand
+        // the row is a disclosure and opens them in place; with the child
+        // session evicted there is nothing to disclose, so the row becomes a
+        // plain button onto the full view — the same destination the `View`
+        // action carries, so the row and its action never disagree. Without
+        // this the reader met a row that looked openable and was not.
+        onClick={childSessionId && !hasInlineSteps ? openModal : undefined}
       >
-        {childSessionId && childToolParts.length > 0 ? (
+        {hasInlineSteps ? (
           <SubAgentActivity childSessionId={childSessionId} parts={childToolParts} />
         ) : undefined}
       </BasicTool>

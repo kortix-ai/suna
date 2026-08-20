@@ -34,6 +34,20 @@ import { useEffect, useMemo, useState } from 'react';
  * The offset a nested list needs belongs to the row it hangs under, and that
  * row's surface is the outer one — on the panel there is no icon gutter and no
  * rail, so `useToolIndent` correctly returns nothing there.
+ *
+ * The list draws NO rail of its own, and that is deliberate. A rail's lane is
+ * the icon column of the row it hangs from — that is what `left-2` means in
+ * `ChainOfThoughtStep`: the centre of a 16px glyph. A hairline down the left of
+ * THIS container would sit in the content lane instead, anchored to nothing,
+ * and with a single sub-agent it drew a second bar 20px inside a chain rail
+ * that already said the same thing.
+ *
+ * The line that binds these steps to their agent is therefore drawn by the
+ * chain, in the agent row's own icon lane. With one agent that is the burst's
+ * own `ChainOfThoughtStep`. With several — `groupSteps` folds them into one
+ * "Worked with N helper agents" row — it is the per-member `ChainOfThoughtStep`
+ * that `ActivityGroupStep` wraps each agent in. Same component, same mark, one
+ * bar per level of nesting that actually exists.
  */
 export function SubAgentActivity({
   childSessionId,
