@@ -70,12 +70,14 @@ import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useStat
 ModuleRegistry.registerModules([AllCommunityModule]);
 
 // AG Grid theme
+// AG Grid theme params are fixed px and don't inherit the CSS root font-size
+// scale — bumped by the same 1.1x factor to match.
 const gridTheme = themeQuartz.withParams({
-  spacing: 6,
-  headerFontSize: 12,
-  fontSize: 12,
-  rowHeight: 36,
-  headerHeight: 38,
+  spacing: 6.6,
+  headerFontSize: 13,
+  fontSize: 13,
+  rowHeight: 40,
+  headerHeight: 42,
   wrapperBorderRadius: 0,
   borderRadius: 0,
   cellHorizontalPaddingScale: 1,
