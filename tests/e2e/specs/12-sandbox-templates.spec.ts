@@ -224,16 +224,26 @@ test.describe("12 — Sandbox templates UI", () => {
     await openSandboxSection(page, projectId);
     pageErrors.length = 0;
 
+    // The template list nests list items, so `getByRole('listitem')` filtered by
+    // the slug matches every ANCESTOR row as well as the real one. The old
+    // `templateRow.getByText(customSlug, { exact: true })` then resolved to 3
+    // elements against staging and failed on strict mode. Pinning the row to the
+    // innermost list item that actually owns a Rebuild button makes the row —
+    // and the button inside it — unique, and `filter({ hasText })` already
+    // proves the slug is on screen, so the extra text lookup bought nothing.
     const templateRow = page
       .getByRole("listitem")
-      .filter({ hasText: customSlug });
+      .filter({ hasText: customSlug })
+      .filter({ has: page.getByRole("button", { name: /^Rebuild$/i }) })
+      .last();
     const rebuildButton = templateRow.getByRole("button", {
       name: /^Rebuild$/i,
     });
-    await expect(templateRow.getByText(customSlug, { exact: true })).toBeVisible({
-      timeout: 15_000,
-    });
-    await expect(rebuildButton).toBeEnabled({ timeout: 15_000 });
+    // No explicit timeout: the deployed lane's 45s expect budget covers the
+    // panel's template fetch, which does not fit in 15s against a cross-region
+    // database. Local keeps its own 30s default.
+    await expect(templateRow).toBeVisible();
+    await expect(rebuildButton).toBeEnabled();
     await rebuildButton.click();
 
     // Wait up to 30s for the template build POST to land — toast feedback gives the

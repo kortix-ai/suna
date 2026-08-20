@@ -153,6 +153,15 @@ test.describe.serial('13 — SDK-only web session', () => {
   let sessionId = '';
 
   test.beforeAll(async () => {
+    // `test.setTimeout(12 min)` above applies to the TESTS, not to this hook —
+    // a hook keeps the config timeout, which the deployed lane caps at 120s
+    // (`playwright.config.ts` deployedTimeoutMs). This hook creates a user,
+    // provisions a starter project, and boots a real cloud sandbox against a
+    // deployed API whose database sits in another region, which does not fit in
+    // 120s: release runs 32306385663 and 32310893789 both died here with
+    // `"beforeAll" hook timeout of 120000ms exceeded` and skipped the two tests
+    // behind it. Calling setTimeout INSIDE the hook is what re-times the hook.
+    test.setTimeout(12 * 60_000);
     const email = `sdk-only-${Date.now()}-${randomUUID().slice(0, 8)}@example.test`;
     user = await createAuthUser(email, authOptions);
     auth = await signIn(email, authOptions);

@@ -202,16 +202,41 @@ describe('web ECS migration', () => {
     // Two different protections guard two different deployed targets, so the
     // config carries both. Basic auth covers password-protected environments.
     // Staging/preview use Vercel SSO protection instead, which httpCredentials
-    // cannot satisfy — only `x-vercel-protection-bypass` gets past it, and
-    // `x-vercel-set-bypass-cookie` keeps the bypass alive across the app's
-    // client-side navigations and fetches. Both headers are no-ops locally.
-    // Dropping either one silently 302s the browser lane to vercel.com/sso-api.
-    expect(config).toContain('VERCEL_AUTOMATION_BYPASS_SECRET');
-    expect(config).toContain("'x-vercel-protection-bypass': vercelBypass");
-    expect(config).toContain("'x-vercel-set-bypass-cookie': 'samesitenone'");
-    expect(config).toContain('extraHTTPHeaders: vercelBypassHeaders');
+    // cannot satisfy — only the bypass secret gets past it.
+    expect(config).toContain('deploymentBypassSecret()');
+    expect(config).toContain('storageState: vercelBypass ? DEPLOYMENT_BYPASS_STATE_PATH');
     expect(existsSync(resolve(root, 'tests/visual/playwright.config.ts'))).toBe(false);
     expect(existsSync(resolve(root, 'tests/accessibility/playwright.config.ts'))).toBe(false);
     expect(existsSync(resolve(root, 'tests/e2e/examples/playwright.config.ts'))).toBe(false);
+  });
+
+  /**
+   * The bypass secret must never ride on `use.extraHTTPHeaders`.
+   *
+   * Chromium applies those headers to EVERY request the context makes, so the
+   * release gate sent `x-vercel-protection-bypass` to 16 hosts — including
+   * googletagmanager.com, connect.facebook.net and doubleclick.net — and, worse
+   * for the gate, attached it to cross-origin XHR against staging-api. That put
+   * the two header names into `Access-Control-Request-Headers`, which the API's
+   * fixed `Access-Control-Allow-Headers` list (apps/api/src/middleware/cors.ts)
+   * does not contain, so Chromium killed every browser API call with
+   * `net::ERR_FAILED`. Nine of the eleven specs red in release runs
+   * 32306385663 and 32310893789 died that way. The bypass is a cookie now.
+   */
+  it('never broadcasts the Vercel bypass secret as a blanket request header', () => {
+    const config = read('tests/playwright.config.ts');
+    expect(config).not.toContain('extraHTTPHeaders:');
+    expect(config).not.toContain("'x-vercel-protection-bypass':");
+    const helper = read('tests/e2e/helpers/deployment-bypass.ts');
+    // The header is sent exactly once, to the origin that issues the cookie.
+    expect(helper).toContain("'x-vercel-protection-bypass': secret");
+    expect(helper).toContain('_vercel_jwt');
+    // A plain clearCookies() drops the bypass cookie and 302s the next
+    // navigation to vercel.com/sso-api, so the app-session resets go through
+    // the preserving helper instead.
+    expect(read('tests/e2e/helpers/session-auth.ts')).toContain('clearCookiesPreservingBypass');
+    expect(read('tests/e2e/specs/01-account-auth.spec.ts')).toContain(
+      'clearCookiesPreservingBypass',
+    );
   });
 });

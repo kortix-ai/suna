@@ -16,6 +16,7 @@
  * unreachable, because this setup fails first — which is what removes the old
  * contradiction between the strict reporter and the conditional skips.
  */
+import { writeDeploymentBypassState } from './helpers/deployment-bypass';
 import { emailProviderStatus } from './helpers/inbox';
 
 interface Requirement {
@@ -111,4 +112,9 @@ export async function assertBrowserLaneCapabilities(
 
 export default async function globalSetup(): Promise<void> {
   await assertBrowserLaneCapabilities();
+  // Exchange the bypass secret for the deployment cookie ONCE, against the
+  // deployment origin only. `playwright.config.ts` points `use.storageState` at
+  // the file this writes. No secret (local, unprotected target) means no file
+  // and no `storageState`.
+  await writeDeploymentBypassState(process.env.E2E_BASE_URL || 'http://localhost:3000');
 }

@@ -10,6 +10,7 @@ import {
   createDisposableInbox,
   emailProviderStatus,
 } from "../helpers/inbox";
+import { clearCookiesPreservingBypass } from "../helpers/deployment-bypass";
 import { deleteAuthUser } from "../helpers/session-auth";
 
 const supabaseUrl = process.env.E2E_SUPABASE_URL || "http://127.0.0.1:54321";
@@ -126,13 +127,16 @@ test.describe("01 - Account authentication", () => {
       });
 
       await test.step("The test clears the browser session", async () => {
-        await page.context().clearCookies();
+        // Clears the APP session. The deployment-protection cookie is
+        // infrastructure, not session state — dropping it would 302 every later
+        // navigation to vercel.com/sso-api instead of logging the user out.
+        await clearCookiesPreservingBypass(page.context());
         await page.goto("/favicon.png", { waitUntil: "domcontentloaded" });
         await page.evaluate(() => {
           window.localStorage.clear();
           window.sessionStorage.clear();
         });
-        await page.context().clearCookies();
+        await clearCookiesPreservingBypass(page.context());
       });
 
       await test.step("The existing user receives a second email and logs in again", async () => {

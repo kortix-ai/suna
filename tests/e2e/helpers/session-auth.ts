@@ -1,5 +1,6 @@
 import type { Page } from "@playwright/test";
 
+import { clearCookiesPreservingBypass } from "./deployment-bypass";
 import { optionalEnvValue, requireEnvValue } from "./env";
 import { json } from "./http";
 
@@ -168,7 +169,9 @@ export async function installBrowserSessionDirect(
   returnUrl: string,
   options: AuthOptions,
 ): Promise<void> {
-  await page.context().clearCookies();
+  // Drops any previous app session but keeps the deployment-protection cookie:
+  // a plain clearCookies() sends the next navigation to vercel.com/sso-api.
+  await clearCookiesPreservingBypass(page.context());
   await page.goto("/favicon.png", { waitUntil: "domcontentloaded" });
 
   const origin = new URL(page.url()).origin;
