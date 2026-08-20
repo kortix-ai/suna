@@ -22,6 +22,7 @@ const environmentProtectionPassword = process.env.WEB_PROTECTION_PASSWORD;
 // once against the deployment origin by `global-setup.ts`. See
 // `e2e/helpers/deployment-bypass.ts` for the full incident.
 const vercelBypass = deploymentBypassSecret();
+
 export function resolveBrowserWorkers(value: string | undefined, ci: boolean): number {
   const configuredWorkers = Number.parseInt(value ?? '', 10);
   if (Number.isFinite(configuredWorkers) && configuredWorkers > 0) return configuredWorkers;

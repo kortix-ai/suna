@@ -21,6 +21,39 @@ linked, not inlined.
 
 ## Register
 
+### A per-host credential never goes in a client-wide header bag (2026-08-20)
+
+**When:** giving any browser/HTTP client a token that authorises ONE origin —
+Playwright `use.extraHTTPHeaders`, an axios/fetch default-headers object, a
+`RequestInit` you reuse. These apply to EVERY request the client makes, so the
+secret goes to every third party the page touches, and any extra header forces
+the cross-origin preflight to list it — which a fixed
+`Access-Control-Allow-Headers` then rejects, killing the real request with
+`net::ERR_FAILED` (the 204 preflight makes it look like CORS passed). Prefer the
+cookie/session form of the credential, scoped to its host; if a header is the
+only option, attach it per-request to that origin. **Enforcer:**
+`tests/unit/web-ecs-workflow.test.ts` fails if the bypass secret returns to
+`extraHTTPHeaders`.
+
+*Incident:* `VERCEL_AUTOMATION_BYPASS_SECRET` in `playwright.config.ts`
+`extraHTTPHeaders` blocked EVERY browser API call on staging — the same 11 specs
+red on every release-gate run (32306385663, 32310893789) — and shipped the
+secret to 16 hosts incl. Google/Facebook/DoubleClick, in plaintext inside public
+workflow-run trace artifacts. Fixed in PR #6632; secret required rotation.
+
+### A deployed API cannot read the test runner's filesystem (2026-08-20)
+
+**When:** writing any e2e fixture that hands the API a path — `repo_url`, a file
+URI, a callback host. It works locally because the API is the same machine, and
+fails only against a deployed target, where the origin 5xx arrives laundered as
+`503 MAINTENANCE_MODE` and looks like an outage. Branch the fixture on the
+target (`src/fixtures/world.ts` and `tests/e2e/helpers/manifest-project.ts` are
+the pattern: local bare repo on `local`, provisioned managed-git otherwise).
+
+*Incident:* specs 21/22 pointed staging at `/tmp/ke2e-git-*/remote.git` on the
+GitHub runner; trigger writes 502'd and the resource-grants agent list came back
+silently EMPTY. PR #6632.
+
 ### Rewiring writers and converting their table to a view must be TWO releases (2026-08-19)
 
 **When:** an expand/contract store swap (table -> compatibility view). The
