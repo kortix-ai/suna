@@ -9,13 +9,13 @@ import {
   NavigationMenuList,
   NavigationMenuTrigger,
 } from '@/components/ui/navigation-menu';
+import { Slack } from '@/features/icon/icons/slack';
 import type { NavMenu } from '@/lib/site-config';
 import { cn } from '@/lib/utils';
 import type { Icon } from '@phosphor-icons/react';
 import {
   ArrowUpRightIcon,
   BuildingsIcon,
-  ChatsCircleIcon,
   ClockClockwiseIcon,
   DesktopIcon,
   GitBranchIcon,
@@ -32,7 +32,7 @@ import { useEffect, useRef, useState } from 'react';
  * config stays a plain data module (it is imported by server code), so the
  * client-only icon components are looked up here instead of stored there.
  */
-const LINK_ICONS: Record<string, Icon> = {
+const LINK_ICONS: Record<string, Icon | typeof Slack> = {
   desktop: DesktopIcon,
   'git-branch': GitBranchIcon,
   'hard-drives': HardDrivesIcon,
@@ -40,7 +40,7 @@ const LINK_ICONS: Record<string, Icon> = {
   buildings: BuildingsIcon,
   plugs: PlugsConnectedIcon,
   clock: ClockClockwiseIcon,
-  chats: ChatsCircleIcon,
+  chats: Slack,
   users: UsersThreeIcon,
 };
 

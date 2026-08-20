@@ -11,19 +11,22 @@ import { StarCount } from './star-count';
 
 export function OpenSourceSection(): ReactNode {
   return (
-    <main className="relative h-full w-full py-14">
-      <div className="from-background absolute inset-0 -bottom-3 mt-auto h-30 bg-linear-to-t to-transparent" />
+    <div className="relative w-full overflow-hidden py-12 sm:py-14">
+      <div className="from-background absolute inset-0 -bottom-3 mt-auto h-24 bg-linear-to-t to-transparent sm:h-30" />
 
       <StarChart className="absolute inset-0 bottom-0 h-full mask-y-from-70% mask-r-from-95%" />
-      <section id="open-source" className="relative mx-auto max-w-7xl px-6 pb-32 sm:pb-48">
-        <Reveal className="relative mr-auto flex max-w-xl flex-col items-start">
+      <section
+        id="open-source"
+        className="relative mx-auto max-w-7xl scroll-mt-24 px-6 pb-20 sm:pb-32 md:pb-48"
+      >
+        <Reveal className="relative mr-auto flex w-full min-w-0 max-w-xl flex-col items-start">
           <StarCount caption={openSource.stars.caption} />
 
-          <h2 className="text-foreground mt-8 max-w-lg text-lg font-medium tracking-tight text-pretty sm:text-xl">
+          <h2 className="text-foreground mt-6 max-w-lg text-base font-medium tracking-tight text-pretty sm:mt-8 sm:text-xl">
             {openSource.title}
           </h2>
 
-          <nav className="mt-8 flex flex-wrap items-center gap-x-5">
+          <nav className="mt-6 flex flex-col items-start gap-1 sm:mt-8 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-5 sm:gap-y-0">
             <Link
               href={openSource.aboutHref}
               className={cn(
@@ -33,7 +36,10 @@ export function OpenSourceSection(): ReactNode {
             >
               {openSource.aboutLabel}
             </Link>
-            <span aria-hidden className="text-muted-foreground/30 font-mono text-[10px]">
+            <span
+              aria-hidden
+              className="text-muted-foreground/30 hidden font-mono text-[10px] sm:inline"
+            >
               /
             </span>
             <a
@@ -51,6 +57,6 @@ export function OpenSourceSection(): ReactNode {
           </nav>
         </Reveal>
       </section>
-    </main>
+    </div>
   );
 }

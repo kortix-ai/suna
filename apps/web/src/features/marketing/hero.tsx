@@ -39,6 +39,7 @@ function RivalProof() {
   );
 }
 
+
 const Hero = () => {
   const { user } = useAuth();
   const openDemo = useRequestDemo();
@@ -90,8 +91,10 @@ const Hero = () => {
         {/* The headline opens the page — nothing above it. At lg it steps up to
             6xl so it carries the fold the way the navbar carries the chrome. */}
         <div className="mx-auto w-full max-w-7xl px-6">
+
+        <RivalProof />
           {/* <RivalProof /> */}
-          <h1 className="kx-hero-text text-foreground max-w-3xl text-4xl font-medium tracking-tight text-balance [--kx-enter:70ms] sm:text-5xl">
+          <h1 className="kx-hero-text mt-4 text-foreground max-w-3xl text-4xl font-medium tracking-tight text-balance [--kx-enter:70ms] sm:text-5xl">
             {hero.title}
           </h1>
         </div>

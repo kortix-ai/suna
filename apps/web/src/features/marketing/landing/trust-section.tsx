@@ -14,10 +14,12 @@ import { trust } from './content';
 
 function TrustSeal({ children, label }: { children: ReactNode; label?: string }) {
   return (
-    <li className="flex flex-col items-center justify-start space-y-2 px-4 text-center lg:px-8">
-      {children}
+    <li className="border-border flex w-full min-w-0 flex-col items-center justify-start gap-2 border-b px-2 pb-6 text-center last:border-b-0 last:pb-0 sm:border-b-0 sm:border-l sm:px-4 sm:pb-0 sm:first:border-l-0 lg:px-6">
+      <div className="aspect-square w-full max-w-36 sm:max-w-32 lg:max-w-40 [&_svg]:size-full [&_svg]:scale-90">
+        {children}
+      </div>
       {label ? (
-        <span className="text-muted-foreground font-mono text-[10px] leading-none tracking-wide uppercase">
+        <span className="text-muted-foreground max-w-full font-mono text-[10px] leading-none tracking-wide uppercase">
           {label}
         </span>
       ) : null}
@@ -60,21 +62,21 @@ export function TrustSection(): ReactNode {
       <Reveal>
         <div className="border-border relative isolate overflow-hidden rounded-xl border">
           {/* upper: headline + CTA on the left, badge shields on the right */}
-          <div className="relative grid gap-10 px-6 py-12 sm:px-8 lg:grid-cols-12 lg:gap-14 lg:px-10">
-            <div className="space-y-28 lg:col-span-7">
-              <div className="flex flex-col gap-4 select-none">
+          <div className="relative grid gap-8 px-5 py-10 sm:gap-10 sm:px-8 sm:py-12 lg:grid-cols-12 lg:gap-14 lg:px-10">
+            <div className="flex min-w-0 flex-col gap-8 sm:gap-16 lg:col-span-7 lg:gap-28">
+              <div className="flex min-w-0 flex-col gap-4 select-none">
                 <p className="text-muted-foreground font-mono text-[0.75rem] leading-none font-normal uppercase select-none">
                   {trust.eyebrow}
                 </p>
 
-                <h2 className="text-foreground max-w-125 font-sans text-3xl font-medium text-balance sm:text-4xl">
-                  Giving agents real access is the easy part. <br />
+                <h2 className="text-foreground max-w-full font-sans text-2xl leading-snug font-medium text-pretty sm:max-w-125 sm:text-3xl sm:leading-tight sm:text-balance md:text-4xl">
+                  Giving agents real access is the easy part. <br className="hidden sm:block" />
                   Trusting them with it is the work.
                 </h2>
                 {/* <p className="mt-5 max-w-md text-base leading-relaxed text-white/55">{trust.sub}</p> */}
               </div>
 
-              <Button size="lg" variant="secondary" className="group/arrow-right" asChild>
+              <Button size="lg" variant="secondary" className="group/arrow-right w-fit" asChild>
                 <Link href={trust.ctaHref}>
                   {trust.ctaLabel}
                   <ArrowRightIcon />
@@ -82,8 +84,8 @@ export function TrustSection(): ReactNode {
               </Button>
             </div>
 
-            <div className="lg:col-span-5 lg:justify-self-end">
-              <ul className="divide-border flex items-stretch divide-x">
+            <div className="w-full min-w-0 lg:col-span-5 lg:justify-self-end">
+              <ul className="grid w-full grid-cols-3 items-start">
                 <TrustSeal label="In progress">
                   <Soc2Type1 />
                 </TrustSeal>

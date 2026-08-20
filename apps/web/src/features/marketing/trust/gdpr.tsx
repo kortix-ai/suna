@@ -9,7 +9,7 @@ const GDPR = (props: Props) => {
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
       xmlnsXlink="http://www.w3.org/1999/xlink"
-      className="text-foreground size-40 scale-90"
+      className="text-foreground size-full"
     >
       <g clip-path="url(#clip0_4003_182)">
         <path

@@ -7,6 +7,7 @@ import { CheckCircleIcon, CheckIcon, GitPullRequestIcon, XCircleIcon } from '@ph
 import { AnimatePresence, m, useReducedMotion, type Transition } from 'motion/react';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useStepShowcaseStart } from '../use-step-showcase';
+import { AppleCursor } from '@/features/icon/icons/apple-cursor';
 
 type Outcome = 'pending' | 'merged' | 'changes-requested';
 
@@ -254,9 +255,9 @@ function ReviewGate({
                     onAnimationComplete={() => {
                       if (cursorActive) onApprove();
                     }}
-                    className="bg-foreground text-background pointer-events-none absolute -top-2 -right-2 z-20 flex size-7 items-center justify-center rounded-md shadow-md"
+                    className=" pointer-events-none absolute -top-2 -right-2 z-20 flex size-32 items-center justify-center rounded-md shadow-md"
                   >
-                    <Cursor className="size-4.5" />
+                    <AppleCursor className="size-30" />
                   </m.span>
                 )}
               </m.div>
