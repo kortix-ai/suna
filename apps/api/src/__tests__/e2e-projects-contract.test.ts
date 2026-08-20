@@ -267,6 +267,7 @@ mock.module('../projects/git', () => ({
   getFileHistory: async () => ({ entries: [], nextCursor: null }),
   invalidateProjectMirror: () => {},
   resolveCommitSha: async () => 'a'.repeat(40),
+  resolveFastBootGitHint: async () => ({ baseSha: 'a'.repeat(40) }),
   resolveBranchTip: async () => 'a'.repeat(40),
   getBranchDiff: async () => ({ files: [], diff: '' }),
   getDiffBetweenShas: async () => ({ files: [], diff: '' }),

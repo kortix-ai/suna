@@ -94,6 +94,7 @@ mock.module('../projects/git', () => ({
   getFileHistory: async () => ({ entries: [], nextCursor: null }),
   getFileAtRef: async () => null,
   resolveCommitSha: async () => 'a'.repeat(40),
+  resolveFastBootGitHint: async () => ({ baseSha: 'a'.repeat(40) }),
   resolveTreeOid: async () => 'b'.repeat(40),
   materializeRepoContext: async () => '/tmp/fake-snapshot-context',
   resolveBranchTip: async () => 'a'.repeat(40),

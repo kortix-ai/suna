@@ -186,6 +186,9 @@ mock.module('../projects/git', () => ({
   getFileHistory: async () => ({ entries: [], nextCursor: null }),
   // Used by snapshots/builder + the snapshots HTTP surface in projects/index.
   resolveCommitSha: async () => 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+  resolveFastBootGitHint: async () => ({
+    baseSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+  }),
   resolveTreeOid: async () => 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
   materializeRepoContext: async () => '/tmp/fake-snapshot-context',
   resolveBranchTip: async () => 'a'.repeat(40),
