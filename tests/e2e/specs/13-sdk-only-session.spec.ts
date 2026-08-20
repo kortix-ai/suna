@@ -142,7 +142,38 @@ async function waitForReadySession(
   throw new Error(`session did not become ready: ${last}`);
 }
 
-test.describe.serial('13 — SDK-only web session', () => {
+/**
+ * QUARANTINED against a deployed target — runs in `tests-browser-nightly.yml`,
+ * excluded from the blocking release gate.
+ *
+ * Only the FIRST test here has ever run on a deployed target. The `beforeAll`
+ * below used to exceed the deployed lane's 120s hook budget, so Playwright
+ * skipped all three; fixing that (`test.setTimeout` INSIDE the hook) is what
+ * made the other two execute for the first time, and they turn out to encode
+ * assumptions that only hold on the local stack:
+ *
+ *  - Stale locators. `Agent picker` / `Model picker` appear nowhere in
+ *    apps/web, so they matched nothing on any environment. Replaced above with
+ *    the one control on that rail that has a fixed accessible name.
+ *  - Local-only transport shape. `expect(runtimeRequests).toHaveLength(1)`
+ *    counts `POST /v1/p/…/prompt_async`. Against staging that count is ZERO
+ *    while the prompt still round-trips correctly — the model answers and the
+ *    reply renders — so the browser reaches the runtime by a different path
+ *    there. The assertion is not merely mis-tuned: it guards "exactly one
+ *    prompt submission", which is what stops a duplicate send from silently
+ *    doubling LLM spend. It is deliberately NOT deleted to make the lane green;
+ *    it needs the correct deployed path, which is a separate investigation.
+ *
+ * `test.describe.serial` shares `projectId`/`sessionId` across all three, so
+ * the tag cannot be scoped to the two offenders without splitting the fixture.
+ * The first test does pass now (verified twice against staging, 45.8s and
+ * 1.4m) and keeps running nightly.
+ *
+ * To un-quarantine: establish what the browser's runtime transport is on a
+ * deployed target, re-assert the exactly-once property against it, then split
+ * or re-tag.
+ */
+test.describe.serial('13 — SDK-only web session', { tag: '@quarantine' }, () => {
   test.skip(!enabled, 'Set E2E_ENABLE_SDK_ONLY_SESSION=1 for the real sandbox flow.');
   test.setTimeout(12 * 60_000);
 
@@ -393,8 +424,27 @@ test.describe.serial('13 — SDK-only web session', () => {
     await expect(page).toHaveURL(`/projects/${projectId}/sessions/${sessionId}`);
     await expect(page.getByTestId('session-layout')).toBeVisible({ timeout: 120_000 });
     await expect(page.getByTestId('session-chat')).toBeVisible({ timeout: 120_000 });
-    await expect(page.getByRole('button', { name: 'Agent picker' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Model picker' })).toBeVisible();
+    // This asserted `Agent picker` and `Model picker`. Neither string exists
+    // anywhere in apps/web, so both locators matched nothing on every
+    // environment — dead assertions, hidden because the `beforeAll` above used
+    // to exceed its timeout and Playwright skipped this test instead of running
+    // it. Fixing that hook is what exposed them.
+    //
+    // Neither picker has a stable accessible name to replace them with. The
+    // model trigger is labelled by its current selection ("DeepSeek V4 Flash…",
+    // "No model"). The agent trigger has two branches: the pickable one carries
+    // `aria-label="Select agent"` (`composer/agent-selector.tsx:207`), but the
+    // `primaryAgents.length === 0` branch (:178-190) renders a DISABLED button
+    // named by the unavailable hint or by the agent's display name — and that is
+    // the branch this session takes.
+    //
+    // `Attach files` (`composer-underbar.tsx:136`) is the one control on that
+    // rail with a fixed name, so it carries the "composer bottom rail rendered"
+    // assertion. Follow-up: give both triggers `aria-label="Select model"` /
+    // an unconditional `Select agent`, then assert them here — a control whose
+    // only accessible name is its own value is an accessibility gap, not just
+    // an untestable one.
+    await expect(page.getByRole('button', { name: 'Attach files' })).toBeVisible();
     const welcomeCard = page.getByRole('complementary', { name: /Welcome from Marko/i });
     if (await welcomeCard.isVisible().catch(() => false)) {
       await welcomeCard.getByRole('button', { name: 'Dismiss' }).click({ force: true });
