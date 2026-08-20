@@ -138,9 +138,8 @@ export async function createManifestProject(
     };
   }
 
-  let repository: LocalGitRepository | null = null;
   const env = loadEnv();
-  repository = await createLocalGitRepository(name);
+  const repository: LocalGitRepository = await createLocalGitRepository(name);
   const project = await createDatabaseProject(env, {
     accountId,
     userId,
@@ -151,7 +150,7 @@ export async function createManifestProject(
     id: project.id,
     dispose: async () => {
       await deleteDatabaseProject(env, project.id).catch(() => undefined);
-      await repository?.dispose();
+      await repository.dispose();
     },
   };
 }
