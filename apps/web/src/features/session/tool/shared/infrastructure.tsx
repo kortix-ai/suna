@@ -3,6 +3,10 @@
 import { DiffView } from '@/components/diff/diff-view';
 import { CopyOverlay, HighlightedCode } from '@/components/markdown/code';
 import { CopyButton } from '@/components/markdown/copy-button';
+import {
+  MarkdownFrontmatterCard,
+  parseFrontmatter,
+} from '@/components/markdown/markdown-frontmatter';
 import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
@@ -33,12 +37,12 @@ import { getActivePanelSessionId, sessionPreviewTabId } from '@/stores/session-b
 import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
 import {
   WarningIcon as AlertTriangle,
+  ArrowClockwiseIcon,
   ArrowSquareOutIcon,
   CaretRightIcon,
   CheckIcon as Check,
   WarningCircleIcon as CircleAlert,
   GlobeIcon as Globe,
-  ArrowClockwiseIcon as GrRefresh,
   SidebarSimpleIcon as PanelRight,
   MagnifyingGlassIcon as Search,
 } from '@phosphor-icons/react';
@@ -223,7 +227,7 @@ export function ServicePreviewActions({ preview }: { preview: ServicePreviewStat
     <div className="flex shrink-0 items-center gap-1">
       <Hint label="Refresh" side="top">
         <Button variant="ghost" size="icon-sm" type="button" onClick={handleRefresh}>
-          <GrRefresh className={cn('size-4', isLoading && 'animate-spinner-spin')} />
+          <ArrowClockwiseIcon className={cn('size-4', isLoading && 'animate-spinner-spin')} />
         </Button>
       </Hint>
       <Hint
@@ -297,7 +301,7 @@ export function ServicePreviewUrlFallback({ preview }: { preview: ServicePreview
             onClick={handleRefresh}
             className="text-muted-foreground gap-1.5"
           >
-            <GrRefresh className={cn('size-3.5', isLoading && 'animate-spinner-spin')} />
+            <ArrowClockwiseIcon className={cn('size-3.5', isLoading && 'animate-spinner-spin')} />
             Retry preview
           </Button>
         </Hint>
@@ -933,13 +937,31 @@ function InlineTriggerTitle({
             (running ? (
               <TextShimmer className="min-w-0 truncate text-sm">{trigger.subtitle}</TextShimmer>
             ) : (
+              // Painted as a link, so it must behave like one for the keyboard
+              // too. Kept as a <span role="button"> rather than a real <button>
+              // because this content is cloned into the disclosure's own trigger
+              // button — nesting one button in another is invalid HTML.
               <span
                 className={cn(
                   'text-muted-foreground min-w-0 truncate text-sm',
                   onSubtitleClick &&
                     'hover:text-foreground cursor-pointer underline-offset-2 hover:underline',
                 )}
+                role={onSubtitleClick ? 'button' : undefined}
+                tabIndex={onSubtitleClick ? 0 : undefined}
+                // Last, so the rendered markup keeps `title="…">…</span>` — the
+                // shape the memory-tool trigger tests pin.
                 title={trigger.subtitle}
+                onKeyDown={
+                  onSubtitleClick
+                    ? (e) => {
+                        if (e.key !== 'Enter' && e.key !== ' ') return;
+                        e.preventDefault();
+                        e.stopPropagation();
+                        onSubtitleClick();
+                      }
+                    : undefined
+                }
                 onClick={
                   onSubtitleClick
                     ? (e) => {
@@ -1438,6 +1460,40 @@ export function ToolCodeCard({
         <CopyOverlay code={code}>
           <div data-scrollable className={cn('max-h-96 overflow-auto', pad, 'pr-11')}>
             <HighlightedCode code={code} language={language} />
+          </div>
+        </CopyOverlay>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The markdown counterpart to {@link ToolCodeCard}: same chrome — trigger-aligned
+ * indent, `border`/`bg-popover` card, copy overlay — with rendered prose instead
+ * of a highlighted-source pane.
+ *
+ * YAML frontmatter (agent/skill headers, notes with metadata) goes through
+ * `parseFrontmatter` so the `---` fences do not become a stray rule and a giant
+ * heading. Content with none passes through unchanged.
+ *
+ * `allowHtml={false}`: this reads as a stored file, not chat prose.
+ */
+export function ToolMarkdownCard({ code, className }: { code: string; className?: string }) {
+  const indent = useToolIndent();
+  const frame = useToolCardFrame();
+  const pad = useToolCardPad();
+  if (!code) return null;
+  const { frontmatter, body } = parseFrontmatter(code);
+  return (
+    <div className={cn(indent && 'mt-1.5', indent, className)}>
+      <div className={cn('relative', frame)}>
+        <CopyOverlay code={code}>
+          <div
+            data-scrollable
+            className={cn('max-h-96 overflow-auto', pad, 'pr-11', MD_FLUSH_CLASSES)}
+          >
+            {frontmatter && <MarkdownFrontmatterCard data={frontmatter} />}
+            <UnifiedMarkdown content={body} isStreaming={false} allowHtml={false} />
           </div>
         </CopyOverlay>
       </div>

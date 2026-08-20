@@ -10,10 +10,11 @@ import {
 import { getSessionFilesStore } from '@/features/session/session-files-store-registry';
 import {
   SessionVersionHeader,
+  sessionVersionTabId,
   type SessionPanelMode,
 } from '@/features/session/session-version-header';
 import { useSessionBrowserStore } from '@/stores/session-browser-store';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 
 /**
  * Session side-panel "Files" surface.
@@ -140,10 +141,24 @@ function SessionFilesExplorerInner({
 
   const showDiff = mode === 'changes' && !!chatSessionId;
 
+  // One id per mount: two explorers (Advanced's tab + Easy's drill-in) can be
+  // in the DOM at once, so the tab/panel wiring must not collide.
+  const panelId = useId();
+
   return (
     <div className="flex h-full flex-col">
-      <SessionVersionHeader chatSessionId={chatSessionId} mode={mode} onModeChange={onModeChange} />
-      <div className="min-h-0 flex-1">
+      <SessionVersionHeader
+        chatSessionId={chatSessionId}
+        mode={mode}
+        onModeChange={onModeChange}
+        panelId={panelId}
+      />
+      <div
+        id={panelId}
+        role="tabpanel"
+        aria-labelledby={sessionVersionTabId(panelId, mode)}
+        className="min-h-0 flex-1"
+      >
         {showDiff ? (
           <SessionDiffViewer sessionId={chatSessionId!} />
         ) : (

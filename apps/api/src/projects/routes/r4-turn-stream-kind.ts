@@ -24,6 +24,7 @@ export function turnStreamKindField(kind: unknown): string {
 export const TURN_STREAM_LIFECYCLE_KINDS: ReadonlySet<string> = new Set([
   'end',
   'turn_end',
+  'turn_begin',
   'turn_accepted',
   'turn_abandoned',
   'opencode_session',

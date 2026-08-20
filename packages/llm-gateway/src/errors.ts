@@ -79,6 +79,14 @@ export class UpstreamHttpError extends Error {
     readonly status: number,
     readonly body: string,
     readonly provider?: string,
+    /**
+     * The upstream response headers, lower-cased, when the transport captured
+     * them (`APICallError.responseHeaders`). Only `retry-after` is read today —
+     * the pipeline relays it to the client CLAMPED (see
+     * `clampRetryAfterSeconds`), because OpenCode >= 1.18.17 obeys a
+     * `Retry-After` verbatim up to 24.8 days.
+     */
+    readonly headers?: Record<string, string>,
   ) {
     super(`upstream HTTP ${status}`);
     this.name = 'UpstreamHttpError';

@@ -1,6 +1,5 @@
 'use client';
 
-import { Button } from '@/components/ui/marketing/button';
 import { WallpaperBackground } from '@/components/ui/wallpaper-background';
 import { useRequestDemo } from '@/features/contact/request-demo-provider';
 import { Claude } from '@/features/icon/icons/claude';
@@ -18,12 +17,13 @@ import { type ReactNode, useCallback } from 'react';
 const RIVAL_ICONS = { Claude, OpenAI } as const;
 
 /** Anchors the product against the two things a reader already knows, with
- *  their marks. It used to sit ABOVE the H1, which made a competitor comparison
- *  the first thing on the page; it now renders as a proof line under the sub —
- *  the headline states what Kortix is, the sub defines it, and this backs it. */
-function RivalProof() {
+ *  their marks, so "AI Management System" lands without a paragraph first. */
+function RivalEyebrow() {
   return (
-    <div className="kx-hero-text text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-1.5 text-sm">
+    /* `justify-center` centres the wrapped rows as a unit; each rival stays its
+       own inline `flex items-center` span, so the logo and its label never
+       separate when the row wraps on a phone. */
+    <div className="kx-hero-text text-muted-foreground flex flex-wrap items-center justify-center gap-x-2 gap-y-1.5 text-center text-sm">
       <span>{heroEyebrow.lead}</span>
       {heroEyebrow.rivals.map((r, i) => {
         const Glyph = RIVAL_ICONS[r.icon] as ((p: { className?: string }) => ReactNode) | undefined;
@@ -38,7 +38,6 @@ function RivalProof() {
     </div>
   );
 }
-
 
 const Hero = () => {
   const { user } = useAuth();
@@ -60,10 +59,10 @@ const Hero = () => {
   return (
     /* The hero owns a full viewport and centres inside it. Before this it was
        simply padded from the top, so on a tall display the block finished with
-       ~300px of dead space under it while the headline still sat ~30px below the
+       ~300px of dead space under it while the eyebrow still sat ~30px below the
        navbar — top-heavy and cramped at the same time. `min-h-svh` plus
        `justify-center` splits the slack above and below instead, and the top
-       padding is the floor that keeps the headline clear of the fixed navbar
+       padding is the floor that keeps the eyebrow clear of the fixed navbar
        (67px) at every height. */
     <section
       id="hero"
@@ -77,10 +76,11 @@ const Hero = () => {
         <WallpaperBackground wallpaperId="brandmark" />
       </div>
 
-      {/* Six bands enter in reading order — proof → headline → sub → actions →
+      {/* Six bands enter in reading order — eyebrow → headline → sub → actions →
           product → trust — each with its own delay and its own distance. The
-          whole fold settles by ~1.1s: the frame starts last but runs longest,
-          so it lands with the trust line rather than after it.
+          whole fold settles at ~1.11s: the frame starts before the trust line
+          but runs 820ms to its 620ms, so the two land together rather than the
+          frame landing after.
 
           Delays are Tailwind arbitrary properties, not inline styles. Both the
           keyframes and the reduced-motion fallback live in globals.css, and an
@@ -88,43 +88,62 @@ const Hero = () => {
           staged reveal alive after prefers-reduced-motion removed the travel.
           Setting only `--kx-enter` leaves the stylesheet free to zero it. */}
       <div className="relative z-20">
-        {/* The headline opens the page — nothing above it. At lg it steps up to
-            6xl so it carries the fold the way the navbar carries the chrome. */}
         <div className="mx-auto w-full max-w-7xl px-6">
+          <RivalEyebrow />
 
-        <RivalProof />
-          {/* <RivalProof /> */}
-          <h1 className="kx-hero-text mt-4 text-foreground max-w-3xl text-4xl font-medium tracking-tight text-balance [--kx-enter:70ms] sm:text-5xl">
+          {/* `mx-auto` on the measure is what actually centres the block: without
+              it `max-w-3xl` stays flush left inside max-w-7xl and only the glyphs
+              inside it centre, which leaves the headline off-axis on desktop. */}
+          <h1 className="kx-hero-text text-foreground mx-auto mt-5 max-w-3xl text-center text-4xl font-medium tracking-tight text-balance [--kx-enter:70ms] sm:text-5xl">
             {hero.title}
           </h1>
-        </div>
 
-        {/* sub + proof on the left, actions on the right — keeps the fold short */}
-        <div className="mx-auto mt-6 w-full max-w-7xl px-6">
-          <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between lg:gap-10">
-            <div className="max-w-xl">
-              <p className="kx-hero-text text-muted-foreground text-base leading-relaxed text-pretty [--kx-enter:150ms] sm:text-lg">
-                {hero.sub}
-              </p>
-            </div>
+          {/* One centred column under the headline. It was a left sub / right
+              actions row while the hero owned CTAs; with those gone the row had
+              nothing to justify against. */}
+          <div className="mt-6 flex flex-col items-center gap-5">
+            <p className="kx-hero-text text-muted-foreground mx-auto max-w-xl text-center text-base leading-relaxed text-pretty [--kx-enter:150ms] sm:text-lg">
+              {hero.sub}
+            </p>
 
-            <div className="kx-hero-text flex w-full shrink-0 flex-wrap gap-3 [--kx-enter:210ms] sm:w-auto">
-              <Button
-                size="lg"
-                onClick={handleLaunch}
-                className="flex-1 active:scale-[0.97] sm:flex-none"
-              >
-                {hero.ctaPrimary}
-              </Button>
+            {/* The two CTAs split the full width on a phone and shrink to their
+                labels from sm up. Left at their intrinsic width they came to 139
+                and 123 of the 346 available, which is both a small target and an
+                odd ragged pair under a full-bleed headline.
+
+                h-12 on phones only. This theme sets --spacing to 0.23rem, so the
+                shared size="lg" resolves to 36.8px, under the 44px touch target
+                every mobile platform asks for; h-12 is 44.2px. The override is
+                local because sm and up keeps the 36.8px the rest of the site is
+                drawn to. */}
+            {/* Hero CTAs (Request demo / Get started) hidden on request. The
+                navbar still carries both at every scroll position, so the page
+                keeps its calls to action.
+
+                To restore: uncomment the block AND re-add the two imports it
+                needs, which were dropped so the file stays lint-clean while it
+                is dead —
+                  import { Button } from '@/components/ui/marketing/button';
+                  import { ArrowRightIcon } from '@phosphor-icons/react';
+                `openDemo` and `handleLaunch` above are kept for the same
+                restore, and are otherwise unused. The wrapper keeps its
+                `kx-hero-text [--kx-enter:210ms]` band so restoring it puts the
+                pair back in the staged reveal at its old slot, between the sub
+                (150ms) and the frame (290ms). */}
+            {/* <div className="kx-hero-text flex w-full shrink-0 flex-wrap gap-3 [--kx-enter:210ms] sm:w-auto">
               <Button
                 size="lg"
                 variant="secondary"
                 onClick={() => openDemo()}
-                className="flex-1 active:scale-[0.97] sm:flex-none"
+                className="h-12 flex-1 sm:h-10 sm:flex-none"
               >
                 {hero.ctaSecondary}
               </Button>
-            </div>
+              <Button size="lg" onClick={handleLaunch} className="h-12 flex-1 sm:h-10 sm:flex-none">
+                {hero.ctaPrimary}
+                <ArrowRightIcon className="size-4" />
+              </Button>
+            </div> */}
           </div>
         </div>
 
@@ -134,6 +153,12 @@ const Hero = () => {
         >
           <HeroSurfaces />
         </div>
+
+        {/* 490ms + the 620ms text ramp lands this at 1110ms — the exact moment
+            the frame (290ms + 820ms) finishes, so the fold closes on one beat. */}
+        <p className="kx-hero-text text-muted-foreground/60 mx-auto mt-6 max-w-7xl px-6 text-center font-mono text-[11px] tracking-wide [--kx-enter:490ms]">
+          {hero.trust}
+        </p>
       </div>
     </section>
   );

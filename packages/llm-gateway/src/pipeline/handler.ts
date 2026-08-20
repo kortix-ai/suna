@@ -362,7 +362,12 @@ export async function handleChatCompletions(
       errorMessage: `Request body ${requestBytes} bytes exceeds limit ${config.maxRequestBytes}`,
     });
     return gatewayErrorResponse(413, {
-      message: `Request body of ${requestBytes} bytes exceeds the ${config.maxRequestBytes}-byte limit`,
+      // Digit-free on purpose. 413 is terminal, but OpenCode 1.18.14+ decides
+      // retryability by running /429|500|502|503|504|524/i over the WHOLE
+      // response body — so a byte count that merely contains "500" makes it
+      // re-upload an over-limit body five times. The exact sizes are in the
+      // gateway log line above; the client only needs to know to send less.
+      message: 'Request body exceeds the configured maximum request size',
       code: 'request_too_large',
       provider: '',
       requestedModel: '',
@@ -681,12 +686,17 @@ export async function handleChatCompletions(
       // filter) that a candidate reported over the generic "empty" message that
       // would otherwise bury it.
       const errorCode = exhaustedRouteErrorCode(attemptFailures);
+      // Status first: it decides whether the composed message may name each
+      // attempt's HTTP status. A sub-500 body that says "HTTP 500" anywhere
+      // matches OpenCode >= 1.18.14's retry regex and costs five full-prompt
+      // replays — see the note at the top of pipeline/error-response.ts.
+      const status = lastErrorFrame ? statusForErrorFrame(lastErrorFrame) : 502;
       const message = failureChainMessage(
         attemptFailures,
         'All upstream candidates returned an empty completion',
         requestId,
+        { includeStatus: status >= 500 },
       );
-      const status = lastErrorFrame ? statusForErrorFrame(lastErrorFrame) : 502;
       const failedCandidate = [...candidates].reverse().find((candidate) =>
         exhaustedCandidates.has(candidateKey(candidate)),
       );
@@ -717,8 +727,12 @@ export async function handleChatCompletions(
           message,
           code: errorCode,
           // Keep both code locations canonical for OpenAI-compatible clients.
-          // OpenCode 1.17.11 reads nested `error.code` from responseBody to
-          // decide whether it must compact after a provider rejection.
+          // OpenCode reads nested `error.code` from responseBody to decide
+          // whether it must compact after a provider rejection. Verified
+          // unchanged through 1.18.19: `provider/error.ts` (parseAPICallError →
+          // ContextOverflowError) is byte-identical to 1.17.11, and
+          // `SessionRetry.retryable()` short-circuits on ContextOverflowError
+          // before any retry classification runs.
           upstreamCode:
             errorCode === 'context_length_exceeded' ? errorCode : lastErrorFrame?.code,
           provider: failedDescriptor?.provider ?? tried.at(-1) ?? '',
@@ -730,6 +744,7 @@ export async function handleChatCompletions(
               ? 'Check the provider credentials, or switch to another model.'
               : 'Retry the request. If the error continues, switch to another model.',
           attemptFailures,
+          responseStatus: status,
         }),
         status,
       );

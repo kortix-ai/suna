@@ -83,7 +83,7 @@ export function TodoWriteTool({ part, defaultOpen, forceOpen, locked }: ToolProp
                   className="items-center"
                 >
                   <StepperTrigger asChild>
-                    <span className="mt-px flex shrink-0">
+                    <span className="mt-px flex shrink-0 items-center justify-center">
                       <TodoStatusIcon status={todo.status} />
                     </span>
                   </StepperTrigger>

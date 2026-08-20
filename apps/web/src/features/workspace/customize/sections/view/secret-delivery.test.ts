@@ -136,19 +136,23 @@ describe('secretDeliveryTarget', () => {
 });
 
 describe('classifyNewSecret', () => {
-  test('an ordinary key defaults to enforced with an empty host list', () => {
+  test('an ordinary key defaults to the environment with an empty host list', () => {
+    // Environment is ALWAYS the default now: enforcement is experimental and
+    // behind the `secrets_egress` flag, so a new secret is never pointed at it.
     const classification = classifyNewSecret({ key: 'STRIPE_API_KEY', value: 'sk_live_abc' });
     expect(classification).toEqual({
-      exposure: 'enforced',
+      exposure: 'environment',
       hosts: [],
       modelProvider: null,
       signingNote: null,
     });
   });
 
-  test('a known model key is recognized and prefills the vendor host from the catalog', () => {
+  test('a known model key still prefills the vendor host, ready for an opt-in to enforce', () => {
+    // The default stays environment; the host waits prefilled so a project on
+    // the experimental flag that switches to enforced does not retype it.
     const classification = classifyNewSecret({ key: 'DEEPSEEK_API_KEY', value: 'sk-abc' });
-    expect(classification.exposure).toBe('enforced');
+    expect(classification.exposure).toBe('environment');
     expect(classification.modelProvider).toEqual({ id: 'deepseek', label: 'DeepSeek' });
     expect(classification.hosts).toEqual(['api.deepseek.com']);
   });
@@ -156,13 +160,12 @@ describe('classifyNewSecret', () => {
   test('a recognized provider whose SDK hardcodes the host prefills the curated fallback', () => {
     // models.dev declares no `api` for Anthropic — the SDK hardcodes it, so the
     // catalog `apiHost` is null. Without the curated `WELL_KNOWN_API_HOSTS`
-    // fallback the hosts field stays empty and Save is disabled until the user
-    // types the host by hand (spec §7). The fallback is a stable documented
-    // constant, not a value guessed from a catalog URL.
+    // fallback the hosts field stays empty (spec §7). The fallback is a stable
+    // documented constant, not a value guessed from a catalog URL.
     const classification = classifyNewSecret({ key: 'ANTHROPIC_API_KEY', value: 'sk-ant-abc' });
     expect(classification.modelProvider?.id).toBe('anthropic');
     expect(classification.hosts).toEqual(['api.anthropic.com']);
-    expect(classification.exposure).toBe('enforced');
+    expect(classification.exposure).toBe('environment');
   });
 
   test('OpenAI, whose SDK also hardcodes its host, prefills the curated fallback', () => {
@@ -236,29 +239,34 @@ describe('classifyNewSecret', () => {
     // The prefix alone is not the shape: AWS ids are exactly 16 more
     // uppercase alphanumerics, and a looser test would push ordinary API keys
     // into the environment.
-    expect(classifyNewSecret({ key: 'API_KEY', value: 'AKIAshort' }).exposure).toBe('enforced');
-    expect(classifyNewSecret({ key: 'API_KEY', value: '' }).exposure).toBe('enforced');
+    expect(classifyNewSecret({ key: 'API_KEY', value: 'AKIAshort' }).exposure).toBe('environment');
+    expect(classifyNewSecret({ key: 'API_KEY', value: '' }).exposure).toBe('environment');
   });
 });
 
 describe('defaultSecretExposure', () => {
-  const enforced = classifyNewSecret({ key: 'API_KEY', value: 'plain' });
+  const ordinary = classifyNewSecret({ key: 'API_KEY', value: 'plain' });
   const signing = classifyNewSecret({ key: 'DEPLOY_KEY', value: 'AKIAIOSFODNN7EXAMPLE' });
 
   test('an existing row opens on the exposure it has, including one the picker cannot write', () => {
-    expect(defaultSecretExposure({ strategy: 'broker', consumer: 'git_proxy' }, enforced)).toBe(
+    expect(defaultSecretExposure({ strategy: 'broker', consumer: 'git_proxy' }, ordinary)).toBe(
       'disabled',
     );
-    expect(defaultSecretExposure({ strategy: 'runtime', consumer: 'sandbox' }, enforced)).toBe(
+    expect(defaultSecretExposure({ strategy: 'runtime', consumer: 'sandbox' }, ordinary)).toBe(
       'environment',
     );
-    expect(defaultSecretExposure({ strategy: 'broker', consumer: 'http_broker' }, enforced)).toBe(
+    // A legacy enforced row still opens on enforced so it stays readable and can
+    // be moved off enforcement even when the flag is off.
+    expect(defaultSecretExposure({ strategy: 'broker', consumer: 'http_broker' }, ordinary)).toBe(
+      'enforced',
+    );
+    expect(defaultSecretExposure({ strategy: 'egress', consumer: 'network' }, ordinary)).toBe(
       'enforced',
     );
   });
 
-  test('a new secret opens on whatever the classification decided', () => {
-    expect(defaultSecretExposure(null, enforced)).toBe('enforced');
+  test('a new secret always opens on environment — enforcement is never a default', () => {
+    expect(defaultSecretExposure(null, ordinary)).toBe('environment');
     expect(defaultSecretExposure(undefined, signing)).toBe('environment');
   });
 });
@@ -266,7 +274,19 @@ describe('defaultSecretExposure', () => {
 describe('secretDeliveryLegend', () => {
   test('lists the three exposures first, then the three assigned usages', () => {
     expect(secretDeliveryLegend().map((entry) => [entry.kind, entry.key])).toEqual([
+      ['exposure', 'environment'],
       ['exposure', 'enforced'],
+      ['exposure', 'disabled'],
+      ['usage', 'llm_gateway'],
+      ['usage', 'connector'],
+      ['usage', 'git'],
+    ]);
+  });
+
+  test('drops the experimental enforced definition when it is not shown', () => {
+    // With the `secrets_egress` flag off and no enforced row, the legend must
+    // not explain a value the picker never offers.
+    expect(secretDeliveryLegend(false).map((entry) => [entry.kind, entry.key])).toEqual([
       ['exposure', 'environment'],
       ['exposure', 'disabled'],
       ['usage', 'llm_gateway'],
@@ -347,18 +367,25 @@ describe('secretDeliveryPresentation', () => {
 });
 
 describe('secretExposureOptions', () => {
-  test('offers exactly three values, always enabled, in picker order', () => {
-    // Nothing gates them any more: one mechanism serves every sandbox
-    // provider (§4), so there is no deployment where enforcement is missing.
-    expect(secretExposureOptions().map((option) => option.exposure)).toEqual([
-      'enforced',
+  test('with egress available, offers all three in picker order (environment first)', () => {
+    expect(secretExposureOptions(true).map((option) => option.exposure)).toEqual([
       'environment',
+      'enforced',
       'disabled',
     ]);
-    for (const option of secretExposureOptions()) {
+    for (const option of secretExposureOptions(true)) {
       expect(option.label.length).toBeGreaterThan(0);
       expect(option.description.length).toBeGreaterThan(0);
     }
+  });
+
+  test('without egress, hides the experimental enforced option', () => {
+    // The `secrets_egress` flag is off: a new secret can only load into the
+    // sandbox environment, or be disabled.
+    expect(secretExposureOptions(false).map((option) => option.exposure)).toEqual([
+      'environment',
+      'disabled',
+    ]);
   });
 });
 

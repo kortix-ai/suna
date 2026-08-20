@@ -16,7 +16,7 @@ describe('buildMetaSandboxDockerfile', () => {
     expect(dockerfile).toContain('https://get.pnpm.io/install.sh');
     expect(dockerfile).toContain('PNPM_VERSION=11.15.1');
     expect(dockerfile).toContain('pnpm runtime set node 22.23.1 --global');
-    expect(dockerfile).toContain('opencode-ai@1.17.11');
+    expect(dockerfile).toContain('opencode-ai@1.18.19');
     expect(dockerfile).toContain('PNPM_HOME=/home/kortix/.local/share/pnpm');
     expect(dockerfile).toContain('PATH="/home/kortix/.local/share/pnpm/bin:${PATH}"');
     expect(dockerfile).toContain('/usr/local/bin/kortix-agent');

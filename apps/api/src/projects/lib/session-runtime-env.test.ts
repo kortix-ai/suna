@@ -119,17 +119,23 @@ describe('buildSessionRuntimeEnv — fast Git boot hints', () => {
   test('sends fresh-session and base-tip hints when the experiment is enabled', () => {
     const baseSha = 'a'.repeat(40);
     const gitDeltaBundleBase64 = 'R0lUIEJVTkRMRQ==';
+    const gitDeltaParentSha = 'b'.repeat(40);
+    const gitDeltaParentCommitBase64 = 'dHJlZSBkZWFkYmVlZgo=';
     const env = buildSessionRuntimeEnv({
       ...BASE_INPUT,
       fastColdBootEnabled: true,
       freshSession: true,
       baseSha,
       gitDeltaBundleBase64,
+      gitDeltaParentSha,
+      gitDeltaParentCommitBase64,
     });
 
     expect(env.KORTIX_SESSION_FRESH).toBe('1');
     expect(env.KORTIX_BASE_SHA).toBe(baseSha);
     expect(env.KORTIX_GIT_DELTA_BUNDLE_BASE64).toBe(gitDeltaBundleBase64);
+    expect(env.KORTIX_GIT_DELTA_PARENT_SHA).toBe(gitDeltaParentSha);
+    expect(env.KORTIX_GIT_DELTA_PARENT_COMMIT_BASE64).toBe(gitDeltaParentCommitBase64);
   });
 
   test('omits both hints when the experiment is disabled', () => {
@@ -139,11 +145,15 @@ describe('buildSessionRuntimeEnv — fast Git boot hints', () => {
       freshSession: true,
       baseSha: 'a'.repeat(40),
       gitDeltaBundleBase64: 'R0lUIEJVTkRMRQ==',
+      gitDeltaParentSha: 'b'.repeat(40),
+      gitDeltaParentCommitBase64: 'dHJlZSBkZWFkYmVlZgo=',
     });
 
     expect(env).not.toHaveProperty('KORTIX_SESSION_FRESH');
     expect(env).not.toHaveProperty('KORTIX_BASE_SHA');
     expect(env).not.toHaveProperty('KORTIX_GIT_DELTA_BUNDLE_BASE64');
+    expect(env).not.toHaveProperty('KORTIX_GIT_DELTA_PARENT_SHA');
+    expect(env).not.toHaveProperty('KORTIX_GIT_DELTA_PARENT_COMMIT_BASE64');
   });
 
   test('omits both hints for resumed and non-repository sessions', () => {
@@ -154,6 +164,8 @@ describe('buildSessionRuntimeEnv — fast Git boot hints', () => {
         freshSession: false,
         baseSha: 'a'.repeat(40),
         gitDeltaBundleBase64: 'R0lUIEJVTkRMRQ==',
+        gitDeltaParentSha: 'b'.repeat(40),
+        gitDeltaParentCommitBase64: 'dHJlZSBkZWFkYmVlZgo=',
       }),
       buildSessionRuntimeEnv({
         ...BASE_INPUT,
@@ -162,11 +174,15 @@ describe('buildSessionRuntimeEnv — fast Git boot hints', () => {
         freshSession: true,
         baseSha: 'a'.repeat(40),
         gitDeltaBundleBase64: 'R0lUIEJVTkRMRQ==',
+        gitDeltaParentSha: 'b'.repeat(40),
+        gitDeltaParentCommitBase64: 'dHJlZSBkZWFkYmVlZgo=',
       }),
     ]) {
       expect(env).not.toHaveProperty('KORTIX_SESSION_FRESH');
       expect(env).not.toHaveProperty('KORTIX_BASE_SHA');
       expect(env).not.toHaveProperty('KORTIX_GIT_DELTA_BUNDLE_BASE64');
+      expect(env).not.toHaveProperty('KORTIX_GIT_DELTA_PARENT_SHA');
+      expect(env).not.toHaveProperty('KORTIX_GIT_DELTA_PARENT_COMMIT_BASE64');
     }
   });
 });

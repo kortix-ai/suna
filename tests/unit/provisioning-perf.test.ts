@@ -153,7 +153,13 @@ async function loadProvisionMatrix(opts: {
       }
       async post() {
         await new Promise((resolve) => setTimeout(resolve, delay));
-        return { json: () => ({ secret_key: 'pat-secret' }), text: () => '' };
+        return {
+          status() {
+            return this;
+          },
+          json: () => ({ secret_key: 'pat-secret' }),
+          text: () => '',
+        };
       }
     },
   }));
@@ -239,7 +245,13 @@ describe('provisionMatrix parallelism (P1.7)', () => {
           return this;
         }
         async post() {
-          return { json: () => ({ secret_key: 's' }), text: () => '' };
+          return {
+            status() {
+              return this;
+            },
+            json: () => ({ secret_key: 's' }),
+            text: () => '',
+          };
         }
       },
     }));

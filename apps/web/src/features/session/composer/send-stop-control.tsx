@@ -5,11 +5,24 @@ import Hint from '@/components/ui/hint';
 import { Kbd } from '@/components/ui/kbd';
 import Loading from '@/components/ui/loading';
 import { ArrowUpIcon as ArrowUp, SquareIcon } from '@phosphor-icons/react';
+import { AnimatePresence, m } from 'motion/react';
 import { NO_MODEL_AVAILABLE_ACTION_MESSAGE } from '../model-availability';
 import { NO_AGENT_ACCESS_MESSAGE } from './composer-agent-access';
 
 const ICON_BUTTON =
-  'shrink-0 rounded-full p-0 hit-area-1 transition-[color,background-color,opacity,scale] active:scale-[0.96] active:duration-150 duration-300 ease-out ';
+  'shrink-0 rounded-full p-0 hit-area-1 transition-[color,background-color,opacity,scale] active:scale-[0.96] active:duration-150 duration-300 ease-out';
+
+/**
+ * Send ⇄ stop ⇄ pending cross-fade. The three states used to be three separate
+ * `return`s, so the glyph hard-cut between them on every turn boundary — the
+ * most-watched control in the app changing identity with no transition.
+ */
+const ICON_SWAP = {
+  initial: { scale: 0.25, opacity: 0, filter: 'blur(4px)' },
+  animate: { scale: 1, opacity: 1, filter: 'blur(0px)' },
+  exit: { scale: 0.25, opacity: 0, filter: 'blur(4px)' },
+  transition: { type: 'spring', duration: 0.3, bounce: 0 },
+} as const;
 
 export interface SendStopControlProps {
   isSending: boolean;
@@ -58,15 +71,26 @@ export function SendStopControl({
     : modelUnavailable
       ? NO_MODEL_AVAILABLE_ACTION_MESSAGE
       : null;
+
   if (isSending && !lockForQuestion) {
     return (
-      <Button size="icon-base" disabled className={ICON_BUTTON}>
-        <Loading className="size-4" />
+      <Button size="icon-base" aria-label="Sending" disabled className={ICON_BUTTON}>
+        <AnimatePresence mode="popLayout" initial={false}>
+          <m.span key="pending" className="flex items-center" {...ICON_SWAP}>
+            <Loading className="size-4" />
+          </m.span>
+        </AnimatePresence>
       </Button>
     );
   }
 
-  if (!isSending && isBusy && (onStop || stopDisabled) && !lockForQuestion) {
+  // The session is working, so STOP is the only honest control here — even
+  // while the host has not handed one down yet. It used to require
+  // `onStop || stopDisabled`, and with neither the whole component fell
+  // through to `return null` and the button VANISHED mid-turn. A disabled stop
+  // says "working, cannot cancel yet"; nothing at all says "broken", and
+  // `project-home.tsx:249` had to pass a dummy `stopDisabled` to work around it.
+  if (!isSending && isBusy && !lockForQuestion) {
     return (
       <div className="relative flex items-center">
         {escCount > 0 && (
@@ -92,55 +116,64 @@ export function SendStopControl({
             disabled={stopDisabled || !onStop}
             className={ICON_BUTTON}
           >
-            <SquareIcon weight="fill" className="size-4 shrink-0" />
+            <AnimatePresence mode="popLayout" initial={false}>
+              <m.span key="stop" className="flex items-center" {...ICON_SWAP}>
+                <SquareIcon weight="fill" className="size-4 shrink-0" />
+              </m.span>
+            </AnimatePresence>
           </Button>
         </Hint>
       </div>
     );
   }
 
-  if (!isSending && (!isBusy || lockForQuestion)) {
+  if (lockForQuestion && questionButtonLabel && !hasText) {
     return (
-      <div className="opacity-100">
-        {lockForQuestion && questionButtonLabel && !hasText ? (
-          <Button
-            size="sm"
-            disabled={!questionCanAct || disabled}
-            onClick={onSubmit}
-            className="hit-area-1 shrink-0 rounded-lg transition-[color,background-color,opacity,scale] duration-300 ease-out active:scale-[0.96] active:duration-150"
-          >
-            {questionButtonLabel}
-          </Button>
-        ) : (
-          <Hint side="top" label={refusal ?? 'Send message'}>
-            {/* The span, not the button, carries the tooltip trigger: a
-                disabled button takes no pointer events, so the reason the send
-                is off would never open — which is exactly the state where the
-                reason matters most. */}
-            <span className="inline-flex">
-              <Button
-                size="icon-base"
-                disabled={
-                  lockForQuestion
-                    ? (!canSubmit && !questionCanAct) || disabled
-                    : !canSubmit || submitDisabled
-                }
-                onClick={onSubmit}
-                aria-label={refusal ?? 'Send message'}
-                className={ICON_BUTTON}
-              >
-                {disabled ? (
-                  <div className="size-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                ) : (
-                  <ArrowUp className="size-4" />
-                )}
-              </Button>
-            </span>
-          </Hint>
-        )}
-      </div>
+      <Button
+        size="sm"
+        disabled={!questionCanAct || disabled}
+        onClick={onSubmit}
+        className="hit-area-1 shrink-0 rounded-lg transition-[color,background-color,opacity,scale] duration-300 ease-out active:scale-[0.96] active:duration-150"
+      >
+        {questionButtonLabel}
+      </Button>
     );
   }
 
-  return null;
+  return (
+    <Hint side="top" label={refusal ?? 'Send message'}>
+      {/* The span, not the button, carries the tooltip trigger: a disabled
+          button takes no pointer events, so the reason the send is off would
+          never open — which is exactly the state where the reason matters
+          most. */}
+      <span className="inline-flex">
+        <Button
+          size="icon-base"
+          disabled={
+            lockForQuestion
+              ? (!canSubmit && !questionCanAct) || disabled
+              : !canSubmit || submitDisabled
+          }
+          onClick={onSubmit}
+          // The control's NAME stays "Send message" in every state. The
+          // refusal is a `aria-describedby`-style detail, not an identity —
+          // swapping the name for it made a screen reader announce the button
+          // as "No agent available", with nothing left saying what it does.
+          aria-label="Send message"
+          title={refusal ?? undefined}
+          className={ICON_BUTTON}
+        >
+          <AnimatePresence mode="popLayout" initial={false}>
+            <m.span key={disabled ? 'busy' : 'send'} className="flex items-center" {...ICON_SWAP}>
+              {disabled ? (
+                <Loading className="size-3.5 shrink-0" />
+              ) : (
+                <ArrowUp className="size-4" />
+              )}
+            </m.span>
+          </AnimatePresence>
+        </Button>
+      </span>
+    </Hint>
+  );
 }

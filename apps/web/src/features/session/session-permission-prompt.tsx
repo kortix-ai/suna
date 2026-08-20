@@ -36,7 +36,7 @@ import {
   ShieldWarningIcon as ShieldAlert,
 } from '@phosphor-icons/react';
 import { useParams } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
 /** Full-text review is only worth an extra click for a detail that won't fit
  * on one line — short commands stay flat, no chevron. */
@@ -60,6 +60,57 @@ function permissionDetail(p: PermissionRequest): string | null {
   if (p.patterns?.length) return p.patterns.join('  ');
   const title = (p.metadata as Record<string, unknown> | undefined)?.title;
   return typeof title === 'string' ? title : null;
+}
+
+/** Wraps a permission detail: a real toggle when there is more to reveal,
+ *  inert markup when the detail already fits on one line. */
+function DetailShell({
+  expandable,
+  expanded,
+  onToggle,
+  children,
+}: {
+  expandable: boolean;
+  expanded: boolean;
+  onToggle: () => void;
+  children: ReactNode;
+}) {
+  if (!expandable) {
+    return <div className="mt-0.5 flex w-full items-start gap-1 text-left">{children}</div>;
+  }
+  return (
+    <button
+      type="button"
+      aria-expanded={expanded}
+      onClick={onToggle}
+      className="mt-0.5 flex w-full cursor-pointer items-start gap-1 text-left"
+    >
+      {children}
+    </button>
+  );
+}
+
+/**
+ * A button label that swaps to a spinner IN PLACE.
+ *
+ * Inserting a spinner alongside the label widens the button mid-press. On this
+ * card the three decision buttons sit shoulder to shoulder, so a widening
+ * "Deny" slides "Allow once" under a cursor that is still on its way down — a
+ * mis-click here grants access. Keeping the label in flow (`invisible`, not
+ * unmounted) holds the button at exactly its resting width while the reply is
+ * in flight.
+ */
+function PendingLabel({ pending, children }: { pending: boolean; children: ReactNode }) {
+  return (
+    <span className="relative inline-flex items-center justify-center">
+      <span className={cn('inline-flex items-center', pending && 'invisible')}>{children}</span>
+      {pending ? (
+        <span className="absolute inset-0 inline-flex items-center justify-center">
+          <Loading className="size-3 shrink-0" />
+        </span>
+      ) : null}
+    </span>
+  );
 }
 
 export function SessionPermissionPrompt({
@@ -236,13 +287,13 @@ export function SessionPermissionPrompt({
                   <span className="text-foreground text-xs font-medium">{permissionLabel(p)}</span>
                 </div>
                 {detail ? (
-                  <button
-                    type="button"
-                    onClick={expandable ? () => toggleExpanded(p.id) : undefined}
-                    className={cn(
-                      'mt-0.5 flex w-full items-start gap-1 text-left',
-                      expandable ? 'cursor-pointer' : 'cursor-default',
-                    )}
+                  // Only a detail that actually expands is a control. Rendering
+                  // the flat case as a `<button>` too put a dead stop in the tab
+                  // order of every permission row.
+                  <DetailShell
+                    expandable={expandable}
+                    expanded={expanded}
+                    onToggle={() => toggleExpanded(p.id)}
                   >
                     <code
                       title={expandable ? undefined : detail}
@@ -261,7 +312,7 @@ export function SessionPermissionPrompt({
                         )}
                       />
                     ) : null}
-                  </button>
+                  </DetailShell>
                 ) : null}
               </div>
               <div className="flex shrink-0 items-center gap-1.5">
@@ -271,8 +322,7 @@ export function SessionPermissionPrompt({
                   disabled={!!busy}
                   onClick={() => void reply(p.id, 'reject')}
                 >
-                  {busy === `${p.id}:reject` ? <Loading className="size-3 animate-spin" /> : null}
-                  Deny
+                  <PendingLabel pending={busy === `${p.id}:reject`}>Deny</PendingLabel>
                 </Button>
                 <Button
                   size="xs"
@@ -281,8 +331,9 @@ export function SessionPermissionPrompt({
                   disabled={!!busy}
                   onClick={() => void reply(p.id, 'always')}
                 >
-                  {busy === `${p.id}:always` ? <Loading className="size-3 animate-spin" /> : null}
-                  Allow for session
+                  <PendingLabel pending={busy === `${p.id}:always`}>
+                    Allow for session
+                  </PendingLabel>
                 </Button>
                 <Button
                   size="xs"
@@ -290,8 +341,7 @@ export function SessionPermissionPrompt({
                   disabled={!!busy}
                   onClick={() => void reply(p.id, 'once')}
                 >
-                  {busy === `${p.id}:once` ? <Loading className="size-3 animate-spin" /> : null}
-                  Allow once
+                  <PendingLabel pending={busy === `${p.id}:once`}>Allow once</PendingLabel>
                 </Button>
               </div>
             </li>
@@ -308,8 +358,7 @@ export function SessionPermissionPrompt({
           disabled={!!busy}
           onClick={() => void allowAllForSession()}
         >
-          {busy === 'session-all' ? <Loading className="size-3 animate-spin" /> : null}
-          Allow everything
+          <PendingLabel pending={busy === 'session-all'}>Allow everything</PendingLabel>
         </Button>
       </div>
       {canWriteConfig.allowed ? (
@@ -328,8 +377,9 @@ export function SessionPermissionPrompt({
               disabled={!!busy}
               onClick={() => void allowInConfig(type)}
             >
-              {busy === `config:${type}` ? <Loading className="size-3 animate-spin" /> : null}
-              Always allow "{PERMISSION_LABELS[type] || type}"
+              <PendingLabel pending={busy === `config:${type}`}>
+                Always allow "{PERMISSION_LABELS[type] || type}"
+              </PendingLabel>
             </Button>
           ))}
           <Button
@@ -339,8 +389,7 @@ export function SessionPermissionPrompt({
             disabled={!!busy}
             onClick={() => void allowInConfig('*')}
           >
-            {busy === 'config:*' ? <Loading className="size-3 animate-spin" /> : null}
-            Always allow everything
+            <PendingLabel pending={busy === 'config:*'}>Always allow everything</PendingLabel>
           </Button>
         </div>
       ) : null}

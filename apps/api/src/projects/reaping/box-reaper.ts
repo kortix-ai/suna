@@ -402,6 +402,27 @@ export async function reapAndReconcileSandboxes(
               } else if (observation === 'active') {
                 observedActiveTokens.push(turn.token);
               } else if (observation === 'terminal') {
+                // A YOUNG orphaned prompt DEFERS the clear instead of paying
+                // for it with the prompt's life. Clearing deletes the record,
+                // and the record is the ONLY thing that can ever trigger the
+                // orphan redelivery below — so a terminal observation landing
+                // inside ORPHANED_PROMPT_MIN_AGE_MS was a one-shot race that
+                // silently swallowed the prompt: observed live 2026-08-20
+                // (Essentia session d1b74954, prompt cleared `unknown` at age
+                // 27s, 3s under the floor, never answered). The next pass runs
+                // ~20s later; by then the age check passes and the redelivery
+                // fires, or the prompt got answered and the observation says
+                // so. The deferral is bounded by the floor itself.
+                const orphanAgeMs =
+                  turn.startedAtMs === null ? null : now.getTime() - turn.startedAtMs;
+                if (
+                  orphanedPrompt &&
+                  !huskFinalized &&
+                  orphanAgeMs !== null &&
+                  orphanAgeMs < ORPHANED_PROMPT_MIN_AGE_MS
+                ) {
+                  continue;
+                }
                 // Terminal evidence removes the record, whatever the finalizer
                 // managed to close. Holding the record to retry an unreadable
                 // finalize would keep the box's four-hour turn grant instead of

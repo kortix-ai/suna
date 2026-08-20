@@ -142,7 +142,7 @@ describe('resolveEditorPlaceholder', () => {
         lockForQuestion: true,
         questionButtonLabel: null,
       }),
-    ).toBe('Type your answer...');
+    ).toBe('Type your answer…');
   });
 
   test('lockForQuestion with a questionButtonLabel offers the custom-answer hint instead', () => {
@@ -152,7 +152,7 @@ describe('resolveEditorPlaceholder', () => {
         lockForQuestion: true,
         questionButtonLabel: 'Next',
       }),
-    ).toBe('Or type your own answer...');
+    ).toBe('Or type your own answer…');
   });
 
   test('an empty-string questionButtonLabel is falsy, same as null', () => {
@@ -162,7 +162,7 @@ describe('resolveEditorPlaceholder', () => {
         lockForQuestion: true,
         questionButtonLabel: '',
       }),
-    ).toBe('Type your answer...');
+    ).toBe('Type your answer…');
   });
 });
 

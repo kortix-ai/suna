@@ -12,6 +12,165 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-20 — session `session-ux` — a session with no project never reads a project-scoped inbox — DONE
+
+**Files:** `react/use-session-prompts.ts` (+`readSessionPromptsInbox`, gated
+`refetch`) + `use-session-prompts.test.ts` (+3 tests). No barrel export, so no
+public-surface snapshot change.
+
+**What.** Opening a sub-session (`SubSessionModal` → `SessionChat` with a
+`sessionId` and no project ids) fired
+`GET /projects/undefined/sessions/undefined/prompts` → 400 `Invalid session id`
+→ a red toast beside a sub-agent that was streaming correctly.
+
+`useSessionPrompts`'s `enabled` was already `!!projectId && !!sessionId`, but
+`enabled` governs react-query's SCHEDULING only — `QueryObserver.refetch()`
+calls `query.fetch()` with no `enabled` check (verified against
+`@tanstack/query-core@5.101.2` `queryObserver.js:158`). `session-chat.tsx:2331`
+refetches the inbox on every new user bubble, which is exactly what a streaming
+sub-agent produces. The two `undefined`s then went into `listSessionPrompts`'s
+template literal and came back out as the literal text `undefined`.
+
+Fixed on both paths: the read itself (`readSessionPromptsInbox`) refuses when
+either id is missing and hands back the cached rows, and the hook's `refetch`
+now honours the same gate.
+
+**Gates:** `typecheck` clean (both projects) · `bun test --isolate src` 2354
+pass / 2 skip / 0 fail · `smoke:install` passed.
+
+---
+
+### 2026-08-20 — session `legacy-billing-truth` — the admin console reads billing truth, not the stored tier — DONE
+
+**Files:** `react/use-admin-accounts.ts` (+`AdminAccountSubscription`,
+`adminAccountSubscriptionPath`, `useAdminAccountSubscription`,
+`AdminAccount.displayName`) + `use-admin-accounts.test.ts` (+6 tests), both
+surface snapshots.
+
+**What.** Additive only — no rename, no breaking change. Two facts the admin
+console could not read:
+
+1. **`useAdminAccountSubscription`** over
+   `GET /admin/api/accounts/:id/subscription` — the account's LIVE Stripe
+   subscription (product, unit amount, quantity, interval, status, period end).
+   The console rendered only the resolved plan badge, which describes the
+   STORED tier: a legacy `pro` row reads "Team · $20/mo · grandfathered" while
+   the customer's real subscription is a $40/mo "Kortix Computer" machine sub.
+   `subscription` is null when none is on file.
+2. **`AdminAccount.displayName`** — the name the PRODUCT shows. `name` is the
+   raw column, a migration placeholder ('Personal' / 'User') for old rows that
+   every customer-facing surface maps to "<owner email>'s Account". Optional,
+   so a console on an older API still type-checks and falls back to `name`.
+
+**Gates:** `typecheck` clean · `bun test --isolate src` 2313 pass / 0 fail ·
+`smoke:install` passed.
+
+---
+
+||||||| bd5aae39c4
+
+||||||| 0c247496b6
+
+### 2026-08-20 — session `oc-simplify` — ids are not a chronology: the id re-sorts and the id range come out — DONE
+
+OpenCode 1.18.19 (bumped from 1.17.11) retired the invariant that message ids
+ascend with time. 1.18.15 changed turn exit to `lastAssistant.parentID ===
+lastUser.id`, and `MessageV2.latest()` now orders by `time.created` with the id
+only as a tie-break. `MessageV2.page()` — the endpoint every transcript read
+comes from — has ALWAYS ordered by `time_created` in both versions, so code
+that re-sorted the server page by id was inventing an order the server never
+sent.
+
+**Changed**
+
+1. **The id re-sorts are gone.** The server page IS the order.
+   - `src/browser/stores/sync-store.ts` `hydrate` — dropped `.sort(cmp(a.id, b.id))`.
+   - `src/core/session-sync/session-sync-controller.ts` `loadCompleteSessionHistory`
+     — dropped `info.id.localeCompare(...)`; the transcript is now the pages in
+     reverse fetch order (paging walks backwards from the newest tail), each
+     page untouched, first-seen-wins dedupe across overlapping pages.
+   - `apps/mobile/lib/opencode/sync-store.ts` `hydrate` — dropped the same
+     `localeCompare` sort. `localeCompare` is not byte order, so mobile and web
+     produced DIFFERENT transcripts from identical data.
+2. **`hasAssistantForTurn` reads `parentID`, then time.** The
+   `(!m.parentID && m.id > parentId)` descendance test is replaced by
+   `time.created` for parentless wire messages, via a new
+   `findAssistantForTurn` that `hydrate` also uses to locate the real reply.
+   Undatable candidates are NOT matched — keeping a redundant stub is
+   recoverable, deleting the only evidence of a failed turn is not.
+3. **Message inserts are placed by `time.created`, id as tie-break** (the same
+   order `MessageV2.latest()` uses) — `insertIndexByTime`, applied at
+   `upsertMessage`, `hydrate`'s existing-message merge, `hydrate`'s stub
+   placement, and the `message.updated` echo insert. The echo insert and the
+   stub placement also gained a linear fallback (`indexOfId`) so a false binary
+   miss can no longer splice a duplicate of a message already in the transcript.
+   The dead `Binary.search` beside the `.some()` in `message.part.updated` is
+   deleted.
+4. **Rewind is a captured SET, not a lexical range.** `SessionRewindState`
+   gains `hiddenIds?: readonly string[]` (additive, optional for legacy
+   states), captured at stage time as the boundary message plus everything
+   after it in the transcript. `isWithinRewindWindow` tests membership.
+   `applyCommittedRevert` gains an optional trailing `hiddenIds` parameter
+   (additive), passed by the `.committed` wire handler only when the tracked
+   record names the same boundary. Fixes both directions: a reverted assistant
+   with a lower id used to survive and be orphaned, and one in-flight
+   `ascendingId` optimistic message (~2.8e13 above every real id) used to push
+   the watermark to effectively infinity and swallow the replacement prompt.
+   `newestMessageId` now orders by `time.created` with the id as tie-break.
+
+**NOT changed, deliberately**
+
+- `core/turns/grouping.ts` `compareMessagesForDisplay` — out of scope; needs a
+  product decision (a concurrent-prompt batch legitimately sorts wrong under
+  `time.created` because the box stamps time at arrival).
+- **`upsertPart` / `removePart` / `applyPartDelta` were reported as needing a
+  linear `Binary.search` fallback. They do not.** Verified: every writer of a
+  `parts[…]` array sorts it by id first (`optimisticAdd`'s `messageParts`,
+  `hydrate`'s `inParts` — the only two `.sort` calls left in the file), and
+  every later insert goes in at the position `Binary.search` computed over an
+  already-sorted list. Parts arrays are id-sorted BY CONSTRUCTION, so the
+  binary search is exact and a fallback would be an untestable dead branch. The
+  invariant and what depends on it are now documented at the call sites. The
+  unsortedness is real for the MESSAGES array only, which is where the
+  fallbacks were added.
+- **`onParked` was reported as having zero consumers. It is published API** —
+  `OpenEventStreamOptions.onParked`, `StreamSubscriber.onParked` and
+  `EventStreamParkedInfo` are all in
+  `src/public-type-surface.snapshot.json`, and 12 references in
+  `event-stream.test.ts` cover it. No host consumes it (grep over apps/web,
+  apps/mobile, apps/whitelabel-demo, examples: zero hits), but removing it is a
+  breaking change to a published type and would mean deleting passing tests.
+  NOT removed.
+
+**Evidence**
+
+- Baseline measured on the pristine tree, deps at 1.18.19:
+  `2334 pass, 2 skip, 0 fail, Ran 2336 tests across 158 files`.
+- After: `pnpm run typecheck` clean (no output);
+  `bun test --isolate src` → `2347 pass, 2 skip, 0 fail, Ran 2349 tests across
+  158 files` (+13 tests, +13 passes, 0 regressions).
+- `apps/mobile` `npx tsc --noEmit` → 51 errors, and 51 with my two files
+  stashed. Pre-existing noise in unrelated files; my change adds zero.
+- `apps/mobile` `bun test lib/opencode/sync-store.test.ts` → `4 pass, 0 fail`
+  (was 1 test).
+
+**Tests changed rather than added** (shape/expectation changes, stated openly):
+
+- 8 `toEqual` assertions on the staged-rewind record gained `hiddenIds` — the
+  state object grew a field; no assertion was weakened.
+- `upsertMessage` "inserts messages sorted by id, not by call order" is now
+  "inserts messages by time.created, not by call order and not by id", with
+  distinct timestamps. The old expectation encoded the ordering key that
+  1.18.15 retired.
+- The cache-phantom test's intermediate assertion expected `hydrate`'s removed
+  id re-sort; it now expects the page order it was given.
+
+**Backlog note (not done):** `hydrate`'s phantom-drop still compares id strings
+(`id >= oldestIncoming`) to decide whether a runtime page "covers" a
+cache-sourced message. That is the same bug class, but its two tests express
+"older" through ids alone and the fix needs a fixture rewrite. Left exactly as
+it behaved before — the bound is now derived by min-value scan rather than by
+`incoming[0]`, since the array is no longer id-sorted.
 ### 2026-08-19 — session `secrets-exposure` — the secrets exposure/usage model reaches the SDK types — DONE
 
 **Files:** `core/rest/projects-client/secrets.ts` (`SecretEgressPolicy.inject`),
@@ -116,7 +275,6 @@ pnpm --filter @kortix/sdk smoke:install   → ✔ install smoke test passed
 ```
 
 ---
-
 ### 2026-08-19 — session `rbac-canonical` (P5) — BREAKING: the canonical assignment surface lands, the sandbox-member surface is deleted — DONE
 
 **Files:** `core/rest/projects-client/assignments.ts` + `assignments.test.ts`

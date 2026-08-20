@@ -66,6 +66,70 @@ function isTextLikePart(part: Part): part is TextLikePart {
 }
 
 // ============================================================================
+// Locating things in a list that is NOT id-sorted.
+//
+// `Binary.search` requires ascending ids. None of this store's lists are
+// reliably ascending, for two independent reasons:
+//
+//  1. optimistic messages are appended out of order on purpose (see
+//     `optimisticRemove`, which says so), and
+//  2. OpenCode 1.18.15 retired the invariant that ids ascend with time
+//     altogether — `MessageV2.latest()` orders by `time.created`, with the id
+//     only as a tie-break, and `MessageV2.page()` (every transcript read this
+//     store performs) has ALWAYS ordered by `time_created`.
+//
+// A binary HIT is still trustworthy: `Binary.search` reports `found` only on an
+// exact id match. A binary MISS is not — on an unsorted list it is a coin
+// flip, and treating it as proof of absence is how `upsertPart` spliced a
+// duplicate part (restarting the visible stream), `removePart` no-opped (a
+// cancelled tool call stayed on screen), and `applyPartDelta` dropped deltas
+// (the assistant appeared to hang mid-sentence).
+// ============================================================================
+
+/** The index of `id` in `list`, or `-1`. Binary first, linear on a miss. */
+function indexOfId<T>(list: readonly T[], id: string, idOf: (item: T) => string): number {
+	const result = Binary.search(list as T[], id, idOf);
+	if (result.found && list[result.index] !== undefined && idOf(list[result.index]) === id) {
+		return result.index;
+	}
+	return list.findIndex((item) => idOf(item) === id);
+}
+
+/**
+ * Where a message the current snapshot did not contain belongs: the first
+ * position holding a strictly newer message, or the end.
+ *
+ * Ordered by `time.created` with the id as the ONLY tie-break — the same order
+ * the server's own `MessageV2.latest()` uses, and the key `MessageV2.page()`
+ * pages by. That keeps a locally-known message (an SSE arrival, a re-keyed
+ * stub) in the sequence the next page read will produce. A message with no
+ * readable `time` — every `session.error` stub this store mints — cannot be
+ * dated and goes last, which is where the newest thing we know about belongs.
+ */
+function insertIndexByTime(list: readonly Message[], message: Message): number {
+	const created = message.time?.created;
+	if (created === undefined) return list.length;
+	for (let index = 0; index < list.length; index++) {
+		const other = list[index].time?.created;
+		if (other === undefined) continue;
+		if (other > created) return index;
+		if (other === created && list[index].id > message.id) return index;
+	}
+	return list.length;
+}
+
+/**
+ * PARTS are the exception, and deliberately so: every writer of a `parts[…]`
+ * array sorts it by id first (`optimisticAdd`'s `messageParts`, `hydrate`'s
+ * `inParts`), and every later insert goes in at the position `Binary.search`
+ * computed over an already-sorted list. That array is therefore id-sorted BY
+ * CONSTRUCTION — not by any assumption about ids and time — so a binary search
+ * over it is exact, and `upsertPart`/`removePart`/`applyPartDelta` need no
+ * fallback. Delete either of those two sorts and that stops being true; the
+ * three call sites would then need `indexOfId` exactly as the message paths do.
+ */
+
+// ============================================================================
 // Store State
 // ============================================================================
 
@@ -190,7 +254,12 @@ interface SyncState {
 	 * invariant. A session with no local messages (or nothing in range)
 	 * safely clears the record and does nothing else.
 	 */
-	applyCommittedRevert: (sessionId: string, boundaryId: string, watermark: string) => void;
+	applyCommittedRevert: (
+		sessionId: string,
+		boundaryId: string,
+		watermark: string,
+		hiddenIds?: readonly string[],
+	) => void;
 	/**
 	 * F2 — mark `sessionId` as owing a tail reconcile: a
 	 * `session.next.revert.committed` event arrived with no tracked local
@@ -624,34 +693,64 @@ function untrackStub(sessionID: string, stubId: string): void {
 
 /** The stub id for the turn `userId` opened.
  *
- *  Derived from the user message's own id, for two reasons. It is IDEMPOTENT —
- *  a second `session.error` for the same turn finds the stub it already made
- *  instead of appending another. And it SORTS immediately after that user
- *  message: every id the store handles has the same length, so an id that
- *  extends `userId` byte for byte precedes every id greater than `userId` and
- *  follows `userId` itself. Position and `parentID` therefore agree, whichever
- *  of the two a reader uses. */
+ *  Derived from the user message's own id so it is IDEMPOTENT — a second
+ *  `session.error` for the same turn finds the stub it already made instead of
+ *  appending another. The stub is always PLACED directly after its user
+ *  message (see `rekeyStubParent` and `hydrate`), and carries `parentID`;
+ *  neither its position nor its linkage is inferred from the id. */
 const stubIdFor = (userId: string) => `${userId}_error`;
 
 /** A stub id as seen from a list that has no tracking map to hand (`hydrate`'s
  *  incoming server snapshot, which can never legitimately contain one). */
 const isStubShaped = (id: string) => id.endsWith("_error");
 
+/** The index in `messages` of the assistant message answering the turn
+ *  `parentId` opened, or `-1`.
+ *
+ *  `parentID` is the linkage `groupMessagesIntoTurns` reads and the only
+ *  authoritative one. A wire assistant message that carries none is matched by
+ *  TIME instead — `time.created` at or after the prompt's. It used to be
+ *  matched by `m.id > parentId`, on the rationale "ids ascend, so a greater id
+ *  is a later message". OpenCode 1.18.15 retired that invariant (turn exit now
+ *  reads `lastAssistant.parentID === lastUser.id`, and `MessageV2.latest()`
+ *  orders by `time.created`), and the comparison failed both ways: a real
+ *  reply with a lower id left a stale `session.error` stub beside it, and an
+ *  EARLIER turn's parentless reply with a higher id deleted the only record
+ *  that this turn failed (the 2026-08-19 `ModelNotFound` report).
+ *
+ *  A parentless candidate that cannot be dated — because it carries no `time`,
+ *  or because the prompt itself is not in `messages` — is not a match: keeping
+ *  a stub that turns out to be redundant is recoverable on the next snapshot;
+ *  deleting the only evidence of a failed turn is not.
+ *
+ *  With no parent turn to speak of, any assistant message answers. */
+function findAssistantForTurn(
+	messages: readonly Message[],
+	parentId: string | null,
+): number {
+	const parentCreated = parentId
+		? messages.find((m) => m.id === parentId)?.time?.created
+		: undefined;
+	return messages.findIndex(
+		(m) =>
+			m.role === "assistant" &&
+			!isStubShaped(m.id) &&
+			(!parentId ||
+				m.parentID === parentId ||
+				(!m.parentID &&
+					parentCreated !== undefined &&
+					m.time?.created !== undefined &&
+					m.time.created >= parentCreated)),
+	);
+}
+
 /** Does `messages` hold an assistant message answering the turn `parentId`
- *  opened? `parentID` is the linkage `groupMessagesIntoTurns` reads; the id
- *  comparison covers a wire assistant message that carries none (ids ascend,
- *  so a greater id is a later message). With no parent turn to speak of, any
- *  assistant message answers. */
+ *  opened? See {@link findAssistantForTurn}. */
 function hasAssistantForTurn(
 	messages: readonly Message[],
 	parentId: string | null,
 ): boolean {
-	return messages.some(
-		(m) =>
-			m.role === "assistant" &&
-			!isStubShaped(m.id) &&
-			(!parentId || m.parentID === parentId || (!m.parentID && m.id > parentId)),
-	);
+	return findAssistantForTurn(messages, parentId) !== -1;
 }
 
 /** Move this session's `session.error` stubs from the optimistic user message
@@ -961,9 +1060,15 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 				next[linearIdx] = message;
 				return { messages: { ...s.messages, [sessionID]: next } };
 			}
-			// New message — insert at sorted position via binary search.
+			// New message — placed by `time.created`, the key the server's own
+			// `MessageV2.page()` orders by. It used to go in at the binary index,
+			// which was only ever meaningful while `hydrate` re-sorted the
+			// transcript by id. It no longer does (the page order IS the order),
+			// and ids stopped ascending with time in OpenCode 1.18.15 — so an
+			// id-sorted insert dropped a brand-new SSE message into the MIDDLE of
+			// the transcript. See `insertIndexByTime`.
 			const next = [...list];
-			next.splice(result.index, 0, message);
+			next.splice(insertIndexByTime(next, message), 0, message);
 			return { messages: { ...s.messages, [sessionID]: next } };
 		}),
 
@@ -1180,13 +1285,21 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			return { sessionRevert: { ...s.sessionRevert, [sessionId]: null } };
 		}),
 
-	applyCommittedRevert: (sessionId, boundaryId, watermark) =>
+	applyCommittedRevert: (sessionId, boundaryId, watermark, hiddenIds) =>
 		set((s) => {
 			const list = s.messages[sessionId];
 			if (!list || list.length === 0) {
 				return { sessionRevert: { ...s.sessionRevert, [sessionId]: null } };
 			}
-			const rewind: SessionRewindState = { messageId: boundaryId, watermark, staged: false };
+			// `hiddenIds` is the set captured when the rewind was staged, and it
+			// is what decides. `watermark` only still answers for a caller that
+			// has no captured set — see `isWithinRewindWindow`.
+			const rewind: SessionRewindState = {
+				messageId: boundaryId,
+				watermark,
+				...(hiddenIds ? { hiddenIds } : {}),
+				staged: false,
+			};
 			const removedIds: string[] = [];
 			const kept = list.filter((m) => {
 				if (isWithinRewindWindow(m.id, rewind)) {
@@ -1470,13 +1583,16 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			// An authoritative load — the disk repaint itself, or a reconcile —
 			// re-establishes the session, so its entry is no longer a fragment.
 			evictedSessions.delete(sessionID);
-			const cmp = (a: string, b: string) =>
-				a < b ? -1 : a > b ? 1 : 0;
 			const tombstones = cancelledMessageIds.get(sessionID);
+			// NOT re-sorted. `MessageV2.page()` orders by `time_created`
+			// server-side and always has, so the snapshot arrives in the only
+			// order that is true. Re-deriving one from id strings was wrong the
+			// moment OpenCode 1.18.15 retired "ids ascend with time" — and the
+			// mobile store did the same re-sort with `localeCompare`, which is
+			// not even byte order, so the two hosts disagreed on identical data.
 			const incoming = msgs
 				.filter((m) => !!m?.info?.id && !tombstones?.has(m.info.id))
-				.map((m) => m.info)
-				.sort((a, b) => cmp(a.id, b.id));
+				.map((m) => m.info);
 			const fromCache = opts?.source === "cache";
 			if (fromCache) {
 				for (const m of incoming) trackId(cacheSourcedIds, sessionID, m.id);
@@ -1486,17 +1602,24 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			// COVERS (at or above the oldest message it returned) never existed
 			// there and are dropped. Older ones are history the bounded tail did
 			// not reach — kept, still provisional.
+			//
+			// The bound is derived by VALUE, not by position: `incoming` is now the
+			// server's own page order, which is not an id order, so `incoming[0].id`
+			// is no longer the smallest id in the page. (That this comparison is an
+			// id comparison at all is a separate open question — see B-note in
+			// PROGRESS.md — deliberately left as-is here.)
 			let droppedPhantoms: Set<string> | null = null;
 			const provisional = fromCache ? undefined : cacheSourcedIds.get(sessionID);
 			if (provisional && provisional.size > 0 && incoming.length > 0) {
-				const oldestIncoming = incoming[0].id;
+				let oldestIncoming = incoming[0].id;
+				for (const m of incoming) if (m.id < oldestIncoming) oldestIncoming = m.id;
 				const incomingIds = new Set(incoming.map((m) => m.id));
 				for (const id of [...provisional]) {
 					if (incomingIds.has(id)) {
 						untrackId(cacheSourcedIds, sessionID, id);
 						continue;
 					}
-					if (cmp(id, oldestIncoming) >= 0 && !isOptimistic(sessionID, id)) {
+					if (id >= oldestIncoming && !isOptimistic(sessionID, id)) {
 						untrackId(cacheSourcedIds, sessionID, id);
 						(droppedPhantoms ??= new Set()).add(id);
 					}
@@ -1634,8 +1757,9 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 							unmatchedOptimisticUsers.push(m);
 						}
 					} else {
-						const r = Binary.search(merged, m.id, (x) => x.id);
-						merged.splice(r.index, 0, m);
+						// By TIME, not by a binary index over ids the snapshot never
+						// ordered that way — see `insertIndexByTime`.
+						merged.splice(insertIndexByTime(merged, m), 0, m);
 					}
 				}
 			}
@@ -1719,12 +1843,7 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 				// stub against an error-free server copy would erase the only
 				// evidence the turn failed.
 				if (hasAssistantForTurn(incoming, parentId)) {
-					const replyIdx = merged.findIndex(
-						(m) =>
-							m.role === "assistant" &&
-							!isStubShaped(m.id) &&
-							(!parentId || m.parentID === parentId || (!m.parentID && m.id > parentId)),
-					);
+					const replyIdx = findAssistantForTurn(merged, parentId);
 					const reply = replyIdx === -1 ? undefined : merged[replyIdx];
 					const stubError = (stub as { error?: unknown }).error;
 					if (reply && !(reply as { error?: unknown }).error && stubError) {
@@ -1743,8 +1862,13 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 					merged.splice(parentIdx + 1, 0, placed);
 					continue;
 				}
-				const r = Binary.search(merged, placed.id, (x) => x.id);
-				if (!r.found) merged.splice(r.index, 0, placed);
+				// Its user message is not in the transcript at all. Linear on a
+				// miss so a re-keyed stub never lands twice (`stubIdFor(parentId)`
+				// can name a stub already merged), and by time otherwise — a stub
+				// carries no `time`, so it goes last.
+				if (indexOfId(merged, placed.id, (x) => x.id) === -1) {
+					merged.splice(insertIndexByTime(merged, placed), 0, placed);
+				}
 			}
 
 			// Merge parts: for each message, reconcile by part ID.
@@ -1780,9 +1904,11 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 				const mid = m.info.id;
 				if (isOptimistic(sessionID, mid)) continue; // Don't touch optimistic parts
 
+				// Parts, not messages: this sort is untouched by the message-order
+				// work and keeps its own byte-order comparison.
 				const inParts = m.parts
 					.filter((p) => !!p?.id)
-					.sort((a, b) => cmp(a.id, b.id));
+					.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 				// If this message still carries bridged optimistic parts, a hydrate
 				// snapshot with real parts should replace them immediately. Otherwise
 				// reconcile-by-extras can keep both copies and duplicate user text.
@@ -2021,13 +2147,16 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 								const list = s.messages[info.sessionID] ?? [];
 								// Remove all optimistic user messages
 								const without = list.filter((m) => !optIds.includes(m.id));
-								// Insert the real message at sorted position
-								const r = Binary.search(without, info.id, (m) => m.id);
+								// Place the real message. Linear on a miss, then by TIME: a
+								// false miss spliced a SECOND copy of a message already in
+								// the transcript, at a binary index that means nothing on a
+								// list the server never ordered by id.
+								const at = indexOfId(without, info.id, (m) => m.id);
 								let next = [...without];
-								if (r.found) {
-									next[r.index] = info;
+								if (at !== -1) {
+									next[at] = info;
 								} else {
-									next.splice(r.index, 0, info);
+									next.splice(insertIndexByTime(next, info), 0, info);
 								}
 								// A turn that failed before this confirmation arrived
 								// has a `session.error` stub keyed to the optimistic id
@@ -2095,11 +2224,10 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 				const existingMsgs = resolvedSessionID
 					? get().messages[resolvedSessionID]
 					: undefined;
-				const bsResult = existingMsgs && Binary.search(existingMsgs, part.messageID, (m) => m.id);
-				const exists = existingMsgs && (
-					(bsResult && bsResult.found && existingMsgs[bsResult.index]?.id === part.messageID) ||
-					existingMsgs.some((m) => m.id === part.messageID)
-				);
+				// The `.some()` alone is authoritative; the binary search that used
+				// to sit beside it as a first disjunct could only agree with it or
+				// miss on a list that is not id-sorted.
+				const exists = existingMsgs?.some((m) => m.id === part.messageID);
 				if (!exists && resolvedSessionID) {
 					store.upsertMessage(resolvedSessionID, {
 						id: part.messageID,
@@ -2344,7 +2472,15 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 				if (props.sessionID && props.messageID) {
 					const tracked = get().sessionRevert[props.sessionID];
 					if (tracked) {
-						store.applyCommittedRevert(props.sessionID, props.messageID, tracked.watermark);
+						// The captured set only describes the boundary it was staged for.
+					// A `.committed` naming a different one falls back to the legacy
+					// range rather than deleting the wrong trajectory.
+					store.applyCommittedRevert(
+						props.sessionID,
+						props.messageID,
+						tracked.watermark,
+						tracked.messageId === props.messageID ? tracked.hiddenIds : undefined,
+					);
 					} else {
 						// F2 — no tracked local record (fresh mount / second tab that
 						// never saw `.staged`). The REMOVED fallback guessed a

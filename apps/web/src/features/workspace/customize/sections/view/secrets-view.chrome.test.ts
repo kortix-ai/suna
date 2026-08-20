@@ -79,9 +79,9 @@ describe('SecretsView page chrome', () => {
    * presentation table: a legend restated in JSX drifts from the badge.
    */
   test('the Access legend is the filters row, and reads the shared table', () => {
-    expect(shellHeader).toContain('filters={<SecretsAccessExplainer />}');
-    expect(shellChildren).not.toContain('<SecretsAccessExplainer />');
-    expect(code).toContain('secretDeliveryLegend()');
+    expect(shellHeader).toContain('filters={<SecretsAccessExplainer showEnforced={showEnforced} />}');
+    expect(shellChildren).not.toContain('<SecretsAccessExplainer');
+    expect(code).toContain('secretDeliveryLegend(showEnforced)');
     expect(code).toContain('What each Access value means');
     expect(code).toContain('<Collapsible open={open} onOpenChange={setOpen}');
     expect(code).toContain('<CollapsibleTrigger');

@@ -261,3 +261,111 @@ describe('usage mapping helpers', () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Keep-alive parity with the OpenAI byte path (pipeline/streaming.ts).
+//
+// Cloudflare on the kortix.com zone gives up at `proxy_read_timeout = 125`s and
+// serves a 524; OpenCode >= 1.18.14 matches "524" with its retry regex and
+// replays the whole prompt five times. The byte path has emitted a 10s
+// keep-alive for exactly this reason since it shipped — this path had none.
+//
+// The keep-alive MUST be an SSE comment, never a data frame:
+// `eventsource-parser` (reached by every AI SDK client through
+// `parseJsonEventStream` → `new EventSourceParserStream()`) returns early on a
+// leading ':' and only surfaces the line when an `onComment` callback is
+// supplied — the AI SDK supplies none.
+// ---------------------------------------------------------------------------
+describe('aiGatewaySseFromFullStream — keep-alive', () => {
+  // A fullStream that stalls before yielding, exactly like an upstream that has
+  // accepted the request and is still prefilling.
+  async function* stalling(gapMs: number, ...items: Array<Record<string, unknown>>) {
+    await new Promise((resolve) => setTimeout(resolve, gapMs));
+    for (const item of items) yield item as { type: string; [k: string]: unknown };
+  }
+
+  it('emits an SSE COMMENT while the upstream is silent, and no extra data frames', async () => {
+    const sse = await readAll(
+      aiGatewaySseFromFullStream(
+        stalling(
+          55,
+          { type: 'text-start', id: 't1' },
+          { type: 'text-delta', id: 't1', text: 'hello' },
+          { type: 'finish', finishReason: 'stop', totalUsage: fullUsage },
+        ),
+        CTX,
+        { heartbeatMs: 10 },
+      ),
+    );
+
+    const comments = sse.split('\n').filter((line) => line.startsWith(':'));
+    expect(comments.length).toBeGreaterThan(0);
+    for (const comment of comments) expect(comment).toBe(': keep-alive');
+
+    // The PROTOCOL is unchanged: exactly the frames the parts produce.
+    expect(frames(sse).map((f) => f.type)).toEqual([
+      'stream-start',
+      'text-start',
+      'text-delta',
+      'finish',
+    ]);
+    expect(sse.endsWith('data: [DONE]\n\n')).toBe(true);
+  });
+
+  it('emits no keep-alive at all when the stream never stalls', async () => {
+    const sse = await readAll(
+      aiGatewaySseFromFullStream(
+        parts(
+          { type: 'text-start', id: 't1' },
+          { type: 'text-delta', id: 't1', text: 'hello' },
+          { type: 'finish', finishReason: 'stop', totalUsage: fullUsage },
+        ),
+        CTX,
+        { heartbeatMs: 10_000 },
+      ),
+    );
+    expect(sse.split('\n').filter((line) => line.startsWith(':'))).toEqual([]);
+  });
+
+  it('a keep-alive comment is invisible to the AI SDK SSE parser', async () => {
+    // The EXACT parser instance an AI SDK client ends up with: resolve
+    // `eventsource-parser` through `ai` → `@ai-sdk/provider-utils`, which is
+    // what `parseJsonEventStream` constructs (`new EventSourceParserStream()`,
+    // no `onComment`). Resolved through the dependency graph rather than
+    // imported by bare specifier because this package does not depend on the
+    // parser directly.
+    const { dirname } = await import('node:path');
+    const aiDir = dirname(Bun.resolveSync('ai', import.meta.dir));
+    const utilsDir = dirname(Bun.resolveSync('@ai-sdk/provider-utils', aiDir));
+    const { EventSourceParserStream } = (await import(
+      Bun.resolveSync('eventsource-parser/stream', utilsDir)
+    )) as { EventSourceParserStream: new () => TransformStream<string, { data: string }> };
+    const sse = await readAll(
+      aiGatewaySseFromFullStream(
+        stalling(55, { type: 'text-delta', id: 't1', text: 'hello' }),
+        CTX,
+        { heartbeatMs: 10 },
+      ),
+    );
+    expect(sse).toContain(': keep-alive');
+
+    // Drive the REAL parser the AI SDK uses (@ai-sdk/provider-utils'
+    // parseJsonEventStream constructs it with no onComment) over the emitted
+    // bytes: every surfaced event must be a data frame, never the comment.
+    const events: string[] = [];
+    const parsed = new ReadableStream<string>({
+      start(controller) {
+        controller.enqueue(sse);
+        controller.close();
+      },
+    }).pipeThrough(new EventSourceParserStream());
+    const reader = parsed.getReader();
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value) events.push(value.data);
+    }
+    expect(events.some((data) => data.includes('keep-alive'))).toBe(false);
+    expect(events.at(-1)).toBe('[DONE]');
+  });
+});

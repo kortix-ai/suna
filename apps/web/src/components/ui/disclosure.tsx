@@ -8,6 +8,13 @@ import { createContext, useCallback, useContext, useId, useMemo, useState } from
 export type DisclosureContextType = {
   open: boolean;
   toggle: () => void;
+  /**
+   * Minted once per disclosure so the trigger can point `aria-controls` at the
+   * region it expands. `DisclosureContent` stamps the same id on its element —
+   * a locally-minted id there could not be reached by the trigger, which is why
+   * the attribute was missing entirely.
+   */
+  contentId: string;
   variants?: { expanded: Variant; collapsed: Variant };
 };
 
@@ -78,6 +85,7 @@ function DisclosureProvider({
   variants,
 }: DisclosureProviderProps) {
   const isControlled = openProp !== undefined;
+  const contentId = useId();
   const [uncontrolledOpen, setUncontrolledOpen] = useState<boolean>(defaultOpen);
   const open = isControlled ? openProp : uncontrolledOpen;
 
@@ -95,7 +103,10 @@ function DisclosureProvider({
    * tool's own collapsible, sometimes a group), so the churn multiplied by every
    * row on screen.
    */
-  const value = useMemo(() => ({ open, toggle, variants }), [open, toggle, variants]);
+  const value = useMemo(
+    () => ({ open, toggle, contentId, variants }),
+    [open, toggle, contentId, variants],
+  );
 
   return <DisclosureContext.Provider value={value}>{children}</DisclosureContext.Provider>;
 }
@@ -181,7 +192,7 @@ export function DisclosureTrigger({
   className?: string;
   variant?: 'default' | 'outline';
 }) {
-  const { toggle, open } = useDisclosure();
+  const { toggle, open, contentId } = useDisclosure();
 
   return (
     <>
@@ -193,6 +204,7 @@ export function DisclosureTrigger({
           onClick?: React.MouseEventHandler;
           role?: string;
           'aria-expanded'?: boolean;
+          'aria-controls'?: string;
           tabIndex?: number;
           onKeyDown?: React.KeyboardEventHandler;
           className?: string;
@@ -205,6 +217,9 @@ export function DisclosureTrigger({
           onClick: toggle,
           role: 'button',
           'aria-expanded': open,
+          // The region is unmounted while collapsed, so only promise an id that
+          // is actually in the document.
+          'aria-controls': open ? contentId : undefined,
           tabIndex: 0,
           onKeyDown: (e: React.KeyboardEvent) => {
             if (e.key === 'Enter' || e.key === ' ') {
@@ -236,8 +251,7 @@ export function DisclosureContent({
   contentClassName?: string;
   variant?: 'default' | 'outline';
 }) {
-  const { open, variants } = useDisclosure();
-  const uniqueId = useId();
+  const { open, variants, contentId } = useDisclosure();
 
   const BASE_VARIANTS: Variants = {
     expanded: {
@@ -266,7 +280,7 @@ export function DisclosureContent({
       <AnimatePresence initial={false}>
         {open && (
           <m.div
-            id={uniqueId}
+            id={contentId}
             initial="collapsed"
             animate="expanded"
             exit="collapsed"

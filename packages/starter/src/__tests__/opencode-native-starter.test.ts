@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { validateManifest } from '@kortix/manifest-schema';
 
@@ -11,6 +11,15 @@ import {
 } from '../index';
 
 const REPO_ROOT = join(import.meta.dir, '..', '..', '..', '..');
+const OPENCODE_ROOT = join(
+  REPO_ROOT,
+  'packages',
+  'starter',
+  'templates',
+  'base',
+  '.kortix',
+  'opencode',
+);
 
 const NATIVE_HARNESS_CONFIG_PATHS = [
   '.claude/CLAUDE.md',
@@ -108,6 +117,57 @@ describe('the starter is OpenCode-native', () => {
 
     expect(paths).toContain('.kortix/opencode/skills/pdf/SKILL.md');
     expect(paths).toContain('.kortix/opencode/agents/kortix.md');
+  });
+
+  test('keeps the fast starter tool ABI independent of the full plugin SDK', () => {
+    const packageJson = JSON.parse(readFileSync(join(OPENCODE_ROOT, 'package.json'), 'utf8')) as {
+      kortixToolAbi?: number;
+      dependencies?: Record<string, string>;
+    };
+    const lock = readFileSync(join(OPENCODE_ROOT, 'bun.lock'), 'utf8');
+
+    expect(packageJson.kortixToolAbi).toBe(1);
+    expect(packageJson.dependencies?.zod).toBe('4.1.8');
+    expect(packageJson.dependencies?.['@opencode-ai/plugin']).toBeUndefined();
+    expect(lock).not.toContain('"@opencode-ai/plugin"');
+    expect(lock).not.toContain('"effect"');
+    expect(readFileSync(join(OPENCODE_ROOT, '..', '..', '.gitignore'), 'utf8')).toContain(
+      '.kortix/opencode/package-lock.json',
+    );
+
+    for (const file of [
+      'image_search.ts',
+      'memory.ts',
+      'scrape_webpage.ts',
+      'show.ts',
+      'web_search.ts',
+    ]) {
+      expect(readFileSync(join(OPENCODE_ROOT, 'tools', file), 'utf8')).toContain(
+        'from "./lib/tool"',
+      );
+    }
+    expect(readFileSync(join(OPENCODE_ROOT, 'plugins', 'pty.ts'), 'utf8')).toContain(
+      "from '../tools/lib/tool'",
+    );
+  });
+
+  test('keeps optional tools independent of provider SDKs', () => {
+    const packageJson = JSON.parse(readFileSync(join(OPENCODE_ROOT, 'package.json'), 'utf8')) as {
+      dependencies?: Record<string, string>;
+    };
+    const lock = readFileSync(join(OPENCODE_ROOT, 'bun.lock'), 'utf8');
+
+    expect(packageJson.dependencies).toEqual({ zod: '4.1.8' });
+    for (const dependency of ['@mendable/firecrawl-js', '@tavily/core', 'replicate']) {
+      expect(lock).not.toContain(`\"${dependency}\"`);
+    }
+
+    for (const file of ['image_search.ts', 'scrape_webpage.ts', 'web_search.ts']) {
+      const source = readFileSync(join(OPENCODE_ROOT, 'tools', file), 'utf8');
+      expect(source).not.toMatch(
+        /import\(["'](?:@mendable\/firecrawl-js|@tavily\/core|replicate)["']\)/,
+      );
+    }
   });
 });
 

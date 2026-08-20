@@ -30,6 +30,9 @@ branch workspace:
   within its existing two-second deadline
 - `KORTIX_GIT_DELTA_BUNDLE_BASE64=<bounded exact commit bundle>` when the base
   tip is one commit above its parent and the encoded bundle is at most 24 KiB
+- `KORTIX_GIT_DELTA_PARENT_SHA=<bundle prerequisite commit>` and
+  `KORTIX_GIT_DELTA_PARENT_COMMIT_BASE64=<raw prerequisite commit>` when the
+  storage provider rewrites the scaffold commit metadata
 
 After a managed project seed completes, the API stores the verified bundle in
 `projects.metadata.git.fast_boot`. A later session validates the cached SHA
@@ -39,6 +42,17 @@ network fallback.
 
 The cache is available to every API instance. The project serializer removes
 the internal `fast_boot` field from provision, list, and detail responses.
+
+The provider-specific parent payload makes the thin bundle portable across
+identical scaffold trees with different commit metadata. The bundle and parent
+payload share the existing 24 KiB limit. Cache version 2 invalidates earlier
+entries that do not contain the parent payload.
+
+Sessions continue to use the standard sandbox image. The standard image
+fingerprint includes `packages/starter`, because that directory produces the
+baked `/opt/kortix/scaffold.git`. A starter change therefore forces a full image
+rebuild. It cannot use the agent-only image swap. This keeps the baked scaffold
+tree equal to the bundle prerequisite tree.
 
 The daemon uses the hints as follows:
 
@@ -52,7 +66,9 @@ The daemon uses the hints as follows:
 - Restarted sessions keep the existing remote-branch fetch behavior.
 
 The bundle is transported with the sandbox creation environment. The daemon
-validates its encoding, size, prerequisite commit, and resulting SHA. Any
+recomputes the parent commit SHA before it writes the object. It also verifies
+that the parent tree already exists in the baked scaffold. The daemon then
+validates the bundle, imports it, and verifies the resulting base SHA. Any
 validation failure uses the authenticated fetch path.
 
 This design creates no sandbox pool. It requires no schema migration. It changes
@@ -61,7 +77,7 @@ no Git history or push behavior.
 ## Rollback
 
 Set `KORTIX_FAST_COLD_BOOT_ENABLED=false` and redeploy the API. The API then
-omits all three hints, and the daemon uses the previous network path.
+omits all fast-boot Git hints, and the daemon uses the previous network path.
 
 ## Verification
 
@@ -102,5 +118,24 @@ All five sessions imported the bundle. Repository materialization measured
 255-260 ms. A separate managed-project provision completed in 10,487 ms. Its
 `201` provision response and `200` detail response did not expose `fast_boot`.
 
-Git is no longer the largest in-guest phase for this project type. OpenCode
-readiness measured 6,161-8,738 ms after daemon start in the five-session sample.
+PR #6674 fixed a later regression in the standard image fingerprint. The
+non-agent fingerprint excluded `packages/starter`, so an agent-only image swap
+could reuse a stale `/opt/kortix/scaffold.git`. The API delivered the correct
+provider parent commit, but its tree was absent from that stale scaffold. The
+daemon correctly used the authenticated network fallback.
+
+The API deploy job in Deploy Dev run `32398509102` deployed merge commit
+`53bc3d24cec692a38226feb3cbda2f28dd918938`. Dev health reported that exact
+commit. One image warm-up was excluded. Five new Platinum sessions then ran
+with `warm_sessions=false` against a new `general-knowledge-worker` project.
+
+| Milestone | Stale standard image | Corrected standard image | Change |
+| --- | ---: | ---: | ---: |
+| Repository materialized, p50 | 6,514 ms | 264 ms | -96.0% |
+| Repository materialized, max | 10,239 ms | 266 ms | -97.4% |
+| OpenCode ready, p50 | 17,034 ms | 10,077 ms | -40.8% |
+| Runtime ready, p50 | 27,831 ms | 23,471 ms | -15.7% |
+
+All five sessions used the local bundle path. Repository materialization
+measured 261-266 ms. Runtime readiness measured 18,995-33,147 ms. OpenCode is
+now the largest in-guest phase at 9,854-10,222 ms after daemon start.

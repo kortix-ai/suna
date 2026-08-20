@@ -1,5 +1,6 @@
 'use client';
 
+import { Badge } from '@/components/ui/badge';
 import { parseErrorContent } from '@/features/session/tool/shared/error-and-connector';
 import { ToolResultCard } from '@/features/session/tool/shared/result-card';
 import { StructuredOutput } from '@/features/session/tool/shared/structured-output';
@@ -66,9 +67,9 @@ export function ToolError({ error, toolName }: { error: string; toolName?: strin
                 <CircleAlert className="text-muted-foreground/60 mt-0.5 size-3.5 shrink-0" />
                 <div className="min-w-0 flex-1">
                   {issue.path.length > 0 && (
-                    <span className="bg-muted/60 text-muted-foreground/70 mr-1.5 rounded-sm px-1.5 py-0.5 font-mono text-xs">
+                    <Badge variant="muted" size="xs" className="mr-1.5 font-mono">
                       {issue.path.join('.')}
-                    </span>
+                    </Badge>
                   )}
                   <span className="text-foreground/80 text-xs">{issue.message}</span>
                 </div>
@@ -83,12 +84,9 @@ export function ToolError({ error, toolName }: { error: string; toolName?: strin
                   </div>
                   <div className="flex flex-wrap gap-1">
                     {issue.values.map((val, vi) => (
-                      <span
-                        key={vi}
-                        className="bg-muted/40 text-muted-foreground/70 rounded-sm px-1.5 py-0.5 font-mono text-xs"
-                      >
+                      <Badge key={vi} variant="muted" size="xs" className="font-mono">
                         {val}
-                      </span>
+                      </Badge>
                     ))}
                   </div>
                 </div>

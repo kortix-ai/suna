@@ -81,6 +81,11 @@ fast, cheap model is fine. Pass it `{{project_path}}` (absolute path) and
 data — "public marketing page, no user data" vs "small-team task tracker backed
 by Supabase") so it can calibrate severity.
 
+If you are already running as a subagent, do not try to spawn one — the runtime
+rejects nested spawns with "Subagent depth limit reached". Run the checks in
+`references/security-review-prompt.md` yourself, inline, and apply the same
+BLOCK/WARN rules below. The review is never optional; only the delegation is.
+
 - **BLOCK** (exposed secrets, leaked credentials, critical exploitable
   vulnerabilities): fix what you can automatically — pull hardcoded keys into
   env vars, add `.env` to `.gitignore`. If a fix needs the user, surface it and

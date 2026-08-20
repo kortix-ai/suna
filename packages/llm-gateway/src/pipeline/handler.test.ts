@@ -461,18 +461,22 @@ describe("gateway.chatCompletions", () => {
       },
       attempt_failures: [
         expect.objectContaining({
-          status: 400,
           code: "context_length_exceeded",
           message,
         }),
       ],
     });
+    // Sub-500 body: NO per-attempt HTTP status is serialized. OpenCode >=
+    // 1.18.14 regex-matches /429|500|502|503|504|524/ against the raw body and
+    // retries five times on a hit, whatever the status line says.
+    expect(body.attempt_failures[0].status).toBeUndefined();
     await flush();
+    // The trace keeps the FULL chain — redaction is a wire-only concern.
     expect(traces[0]).toMatchObject({
       status: 400,
       errorCode: "context_length_exceeded",
       attemptFailures: [
-        expect.objectContaining({ code: "context_length_exceeded", message }),
+        expect.objectContaining({ status: 400, code: "context_length_exceeded", message }),
       ],
     });
   });
@@ -1928,9 +1932,12 @@ describe("gateway.chatCompletions — empty-completion failover", () => {
     // for this chain — the request really was rejected for its size.
     expect(res.status).toBe(400);
     const body = await res.json();
-    // OpenCode 1.17.11 parseAPICallError() recognizes this exact nested code
-    // and converts the failed turn into ContextOverflowError. The processor
-    // then requests automatic compaction instead of applying ordinary retry.
+    // OpenCode's parseAPICallError() recognizes this exact nested code and
+    // converts the failed turn into ContextOverflowError. The processor then
+    // requests automatic compaction instead of applying ordinary retry.
+    // Verified unchanged through 1.18.19: provider/error.ts is byte-identical
+    // to 1.17.11, and SessionRetry.retryable() short-circuits on
+    // ContextOverflowError before any retry classification runs.
     expect(body.code).toBe('context_length_exceeded');
     expect(body.error).toMatchObject({
       type: 'context_length_exceeded',
@@ -1939,17 +1946,19 @@ describe("gateway.chatCompletions — empty-completion failover", () => {
     expect(body.upstream_code).toBe('context_length_exceeded');
     expect(body.message).toContain('openai-codex');
     expect(body.message).toContain(body.request_id);
-    expect(body.message).toContain('HTTP 400');
     expect(body.message).toContain('context_length_exceeded');
     expect(body.message).toContain('aster');
     expect(body.message).toContain('empty_completion');
+    // The composed message names every candidate and its code, but NOT its HTTP
+    // status: this body is served with 400, and any "HTTP 500"-shaped segment in
+    // a sub-500 body matches OpenCode >= 1.18.14's retry regex.
+    expect(body.message).not.toContain('HTTP ');
     expect(body.attempt_failures[0]).toEqual({
       attempt: 1,
       provider: 'openai-codex',
       route_model: 'codex/gpt-5.6-sol',
       resolved_model: 'gpt-5.6-sol',
       stage: 'stream_error',
-      status: 400,
       code: 'context_length_exceeded',
       message: 'Your input exceeds the context window of this model.',
     });

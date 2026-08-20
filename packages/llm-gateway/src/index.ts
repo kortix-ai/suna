@@ -1,7 +1,12 @@
 export { createGateway } from './create-gateway';
 export { DEFAULT_MAX_REQUEST_BYTES } from './domain/config';
 export type { ChatCompletionRequest, GatewayDeps } from './pipeline';
-export { gatewayErrorBody, gatewayErrorResponse } from './pipeline/error-response';
+export {
+  MAX_RELAYED_RETRY_AFTER_SECONDS,
+  clampRetryAfterSeconds,
+  gatewayErrorBody,
+  gatewayErrorResponse,
+} from './pipeline/error-response';
 export type { GatewayErrorContext } from './pipeline/error-response';
 
 export { callUpstream } from './http';

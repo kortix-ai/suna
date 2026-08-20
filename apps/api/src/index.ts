@@ -103,7 +103,7 @@ import {
 import { sandboxWebhooksApp } from './platform/webhooks/routes';
 import { marketplaceApp } from './marketplace';
 import { skillsApp } from './skills';
-import { runtimeAssetsApp } from './runtime-assets';
+import { runtimeAssetsApp, runtimeAssetsManifest } from './runtime-assets';
 import { oauthApp } from './oauth';
 import { nativeOAuth2CallbackApp } from './connectors/oauth2-callback';
 import {
@@ -874,13 +874,16 @@ app.use('/v1/skills/*', combinedAuth);
 app.route('/v1/skills', skillsApp); // GET /v1/skills, /v1/skills/:name[?full=1], /v1/skills/:name/file?path=
 
 // /v1/runtime-assets — the sandbox runtime assets THIS deploy was built with:
-// the `kortix` CLI binary it bakes into snapshots and the managed-skill overlay.
-// A live sandbox reconciles against these on every session start/restart/resume,
-// which is what stops an old box from running a CLI that predates the routes it
-// calls. combinedAuth for the same reason as /v1/skills above: the callers are a
-// `kortix_pat_` CLI and the in-sandbox KORTIX_CLI_TOKEN.
+// the `kortix-agent` daemon and `kortix` CLI binaries it bakes into snapshots,
+// and the managed-skill overlay. A live sandbox reconciles against these on
+// every session start/restart/resume, which is what stops an old box from
+// running a daemon or CLI that predates the routes it calls. combinedAuth for
+// the same reason as /v1/skills above: the callers are a `kortix_pat_` CLI and
+// the in-sandbox KORTIX_CLI_TOKEN. The `/*` wildcard is what puts every payload
+// route behind auth — a new one must be added to runtimeAssetsApp, never mounted
+// beside it.
 app.use('/v1/runtime-assets/*', combinedAuth);
-app.route('/v1/runtime-assets', runtimeAssetsApp); // GET /manifest, /cli, /managed-skills
+app.route('/v1/runtime-assets', runtimeAssetsApp); // GET /manifest, /cli, /agent, /managed-skills
 
 // Universal git smart-HTTP proxy — every git-backed project's client origin.
 // Auth is handled inside (git sends Basic/Bearer, not combinedAuth's Bearer),
@@ -1451,6 +1454,22 @@ async function bootServices() {
   // paged API (`indexReady: false`), so a cold pod serves correct results the
   // whole time — just without category facets.
   warmPipedreamCatalog();
+  // Hash the sandbox runtime binaries off the request path.
+  //
+  // `/v1/runtime-assets/manifest` sha256s the CLI (~104 MB) and the agent
+  // (~95.6 MB) on its first call and memoizes. Every sandbox polls this route
+  // at boot, and a deploy sends the whole fleet at cold replicas at once — so
+  // the first caller per replica was paying ~200 MB of hashing inside the 25s
+  // request deadline. Measured on dev: the very first post-deploy call returned
+  // `503 request_deadline`, and a daemon that gets a 503 skips convergence for
+  // that boot entirely (it never throws, by design).
+  //
+  // Deliberately NOT awaited: readiness must not wait on it, and a request that
+  // arrives first simply shares the same in-flight promise.
+  void runtimeAssetsManifest().catch(() => {
+    // Absent binaries are a legitimate state (a checkout that never built one);
+    // the route reports that per component. Nothing to do here.
+  });
 }
 
 // Graceful shutdown

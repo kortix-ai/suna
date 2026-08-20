@@ -76,6 +76,7 @@ import {
   useAdminRevokeTrial,
   useAdminSetEnterpriseDemo,
   useAdminAccount,
+  useAdminAccountSubscription,
   useAdminSetEnterpriseEntitled,
   useAdminSetMemberRole,
   useAdminSetOverrides,
@@ -181,6 +182,19 @@ function stripeUrl(kind: 'customer' | 'subscription', id: string): string {
 function revenuecatSearchUrl(email: string | null): string {
   if (!email) return 'https://app.revenuecat.com/customers';
   return `https://app.revenuecat.com/customers?search=${encodeURIComponent(email)}`;
+}
+
+/**
+ * The name to show for an account — the same one the customer sees.
+ *
+ * `account.name` is the raw stored column; for rows created before named
+ * accounts it is a migration placeholder ('Personal' / 'User') that every
+ * customer-facing surface maps to "<owner email>'s Account". The server now
+ * ships that resolved name as `displayName`; this falls back to the raw column
+ * for a console pointed at an older API.
+ */
+function accountLabelFor(account: AdminAccount): string {
+  return account.displayName || account.name || 'Unnamed account';
 }
 
 interface BillingAction {
@@ -305,6 +319,48 @@ function PlanBadge({
       {planLabel(account)}
       {sublabel ? <span className="ml-1 font-normal opacity-70">· {sublabel}</span> : null}
     </Badge>
+  );
+}
+
+/**
+ * What Stripe ACTUALLY charges, next to the plan badge.
+ *
+ * The badge describes the STORED tier: a grandfathered `pro` row renders
+ * "Team · $20/mo · grandfathered" even when the live subscription is a $40/mo
+ * "Kortix Computer" machine sub. An operator reading only the badge mis-priced
+ * the customer. Renders nothing while loading, and nothing when the account has
+ * no subscription on file — the badge alone is correct in that case.
+ */
+function LiveSubscriptionLine({ accountId }: { accountId: string }) {
+  const { data, error } = useAdminAccountSubscription(accountId);
+  const sub = data?.subscription;
+  // A lookup that FAILS is itself the finding: the account row carries a
+  // subscription id Stripe does not know (stale/rotated/wrong Stripe account).
+  // Swallowing it would render the same blank line as "no subscription".
+  if (error) {
+    return (
+      <span className="text-destructive flex items-center gap-1.5 text-xs">
+        <CreditCard className="h-3 w-3 shrink-0" />
+        <span className="truncate">Stripe lookup failed: {error.message}</span>
+      </span>
+    );
+  }
+  if (!sub) return null;
+  const amount =
+    sub.totalAmountUsd != null
+      ? `${money(sub.totalAmountUsd)}${sub.interval ? `/${sub.interval}` : ''}`
+      : null;
+  const label = sub.description || sub.productName;
+  return (
+    <span className="text-muted-foreground flex items-center gap-1.5 text-xs">
+      <CreditCard className="h-3 w-3 shrink-0" />
+      <span className="truncate">
+        Stripe charges {amount ?? 'an unknown amount'}
+        {sub.quantity > 1 ? ` (${sub.quantity}×)` : ''}
+        {label ? ` · ${label}` : ''}
+        {sub.status !== 'active' ? ` · ${sub.status.replace(/_/g, ' ')}` : ''}
+      </span>
+    </span>
   );
 }
 
@@ -626,7 +682,7 @@ export default function AdminAccountsPage() {
                   <TableCell>
                     <div className="max-w-[320px] min-w-0">
                       <div className="truncate text-sm font-medium">
-                        {account.name || 'Unnamed account'}
+                        {accountLabelFor(account)}
                       </div>
                       <div className="text-muted-foreground truncate text-xs">
                         {account.ownerEmail || 'No owner email'}
@@ -1227,7 +1283,7 @@ function OpenAsAccountButton({ account }: { account: AdminAccount }) {
       <ConfirmDialog
         open={open}
         onOpenChange={setOpen}
-        title={`Act as ${account.name || 'this account'}?`}
+        title={`Act as ${accountLabelFor(account)}?`}
         description={
           <span className="space-y-3">
             <span className="block">
@@ -1260,7 +1316,7 @@ function AccountDetail({ account }: { account: AdminAccount }) {
     <div className="flex flex-col">
       <SheetHeader className="border-border/60 border-b p-6">
         <SheetTitle className="flex items-center gap-2 text-lg">
-          {account.name || 'Unnamed account'}
+          {accountLabelFor(account)}
           <PlanBadge account={account} />
           {account.paymentStatus && account.paymentStatus !== 'active' && (
             <Badge
@@ -1278,6 +1334,7 @@ function AccountDetail({ account }: { account: AdminAccount }) {
             {account.ownerEmail || 'No owner email'}
           </span>
           <span className="font-mono text-xs">{account.accountId}</span>
+          <LiveSubscriptionLine accountId={account.accountId} />
         </SheetDescription>
         <div className="pt-3">
           <OpenAsAccountButton account={account} />
@@ -1401,7 +1458,7 @@ function CreditsTab({ account }: { account: AdminAccount }) {
         isExpiring,
       });
       toast.success('Credits granted', {
-        description: `${money(parsed)} added to ${account.name || account.accountId}`,
+        description: `${money(parsed)} added to ${accountLabelFor(account)}`,
       });
       setAmount('');
     } catch (error) {
@@ -1420,7 +1477,7 @@ function CreditsTab({ account }: { account: AdminAccount }) {
         description: description.trim() || 'Admin debit',
       });
       toast.success('Credits debited', {
-        description: `${money(parsed)} removed from ${account.name || account.accountId}`,
+        description: `${money(parsed)} removed from ${accountLabelFor(account)}`,
       });
       setAmount('');
     } catch (error) {
@@ -1436,7 +1493,7 @@ function CreditsTab({ account }: { account: AdminAccount }) {
     try {
       await setEnterpriseEntitled.mutateAsync({ accountId: account.accountId, enabled });
       toast.success(enabled ? 'Enterprise activated' : 'Enterprise entitlement revoked', {
-        description: `${account.name || account.accountId} ${enabled ? 'now has' : 'no longer has'} SSO, SCIM, RBAC and audit entitlements.`,
+        description: `${accountLabelFor(account)} ${enabled ? 'now has' : 'no longer has'} SSO, SCIM, RBAC and audit entitlements.`,
       });
     } catch (error) {
       toast.error('Failed to update Enterprise entitlement', {
@@ -1564,7 +1621,7 @@ function CreditsTab({ account }: { account: AdminAccount }) {
             <p>
               Deduct{' '}
               <span className="text-foreground font-mono">{isValid ? money(parsed) : '—'}</span>{' '}
-              from <span className="font-medium">{account.name || account.accountId}</span>.
+              from <span className="font-medium">{accountLabelFor(account)}</span>.
             </p>
             <p className="text-muted-foreground text-xs">
               {'Will fail if the account has insufficient credits. Action is recorded in the ledger.'}
@@ -1869,7 +1926,7 @@ function EntitlementsTab({ account }: { account: AdminAccount }) {
     (Number.isFinite(parsedCredit) && parsedCredit >= 0 && parsedCredit <= MAX_TRIAL_CREDIT_GRANT);
   const formValid = seatsValid && durationValid && creditValid;
 
-  const accountLabel = account.name || account.accountId;
+  const accountLabel = accountLabelFor(account);
 
   async function handleGrantTrial() {
     if (!formValid) return;

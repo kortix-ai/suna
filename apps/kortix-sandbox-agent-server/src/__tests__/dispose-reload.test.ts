@@ -1,9 +1,9 @@
 /**
  * The measured facts `tryDisposeReload` is built on.
  *
- * All three were established on 2026-08-03 by running the pinned opencode
- * (opencode-ai@1.17.11, the exact build the sandbox image installs) locally and
- * probing it:
+ * All three were established on 2026-08-03 against opencode-ai@1.17.11 and
+ * re-probed on 2026-08-20 against opencode-ai@1.18.19 (the exact build the
+ * sandbox image installs) locally:
  *
  *   1. `POST /global/dispose` re-reads the config FILE from disk, in-process —
  *      same pid, ~51ms. A respawn is ~8s.

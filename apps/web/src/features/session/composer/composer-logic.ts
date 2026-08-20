@@ -318,7 +318,7 @@ export function resolveEditorPlaceholder({
 }: ResolveEditorPlaceholderInput): string {
   if (lockForApproval) return 'Approve or deny the action above to continue…';
   if (lockForQuestion) {
-    return questionButtonLabel ? 'Or type your own answer...' : 'Type your answer...';
+    return questionButtonLabel ? 'Or type your own answer…' : 'Type your answer…';
   }
   return placeholder;
 }

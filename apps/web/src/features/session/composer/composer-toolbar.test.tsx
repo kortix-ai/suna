@@ -76,6 +76,18 @@ describe('ComposerToolbar toolbarSlot', () => {
   });
 });
 
+describe('ComposerToolbar voice input', () => {
+  // Exactly the `toolbarSlot` failure above, one prop over: `onTranscription`
+  // and `voiceDisabled` were declared, threaded from `composer.tsx`, and
+  // destructured here — and `VoiceRecorder` was never placed in the JSX. The
+  // whole dictation feature was unreachable from every composer in the app,
+  // with nothing type-checking wrong.
+  test('renders the microphone control', () => {
+    const html = render(undefined);
+    expect(html).toContain('aria-label="Start voice input"');
+  });
+});
+
 describe('ComposerToolbar rewound-path control', () => {
   // The "Session rewound" notice moved off the input strip and onto this bar,
   // beside send/stop — send is the action that commits the rewound path. These
@@ -125,12 +137,16 @@ describe('ComposerToolbar — send is refused with no accessible agent', () => {
       submitDisabled: true,
       agentUnavailable: true,
     });
-    const button = /<button[^>]*aria-label="No agents available to you[^"]*"[^>]*>/.exec(html)?.[0];
+    // The control's NAME stays "Send message" in every state — a screen reader
+    // that hears "No agents available to you" and nothing else has lost what
+    // the button DOES. The reason rides `title` (and the tooltip) instead.
+    const button = /<button[^>]*aria-label="Send message"[^>]*>/.exec(html)?.[0];
 
     expect(button).toBeDefined();
     expect(button).toMatch(/\sdisabled=""/);
     // The exact line the agent picker's tooltip carries — one reason, one
     // wording, on both controls.
+    expect(button).toContain('No agents available to you');
     expect(html).toContain('No agents available to you — ask a manager for access');
   });
 });

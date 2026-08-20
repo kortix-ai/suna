@@ -283,6 +283,15 @@ export function buildServer(): GatewayServer {
   // Prefix-tolerant: `@ai-sdk/gateway` derives the path from its baseURL, which
   // in opencode carries a `/v{N}/ai` segment (e.g. `/v3/ai/language-model`).
   app.post('/:version/ai/language-model', languageModel);
+  // Proxy mode (`LLM_GATEWAY_PROXY_PORT`/`LLM_GATEWAY_PROXY_TARGET`) hands the
+  // sandbox `KORTIX_LLM_BASE_URL=<origin>/v1/llm-gateway/v1`
+  // (llm-gateway/sandbox-base-url.ts), and wire.ts:494 strips `/v1/llm-gateway`
+  // — so this server sees `/v1/language-model` with NO `/ai` or `/llm` segment.
+  // The in-API mount already carries this alias (wire.ts:461); omitting it here
+  // made every native-transport turn 404 into a bare text/plain body, which
+  // `@ai-sdk/gateway` reports as `Invalid error response format: Gateway request
+  // failed` — the same opaque string the api-router Worker fix chased (#6639).
+  app.post('/v1/language-model', languageModel);
   app.post('/v1/llm/language-model', languageModel);
   app.post('/v1/openai/language-model', languageModel);
 

@@ -57,6 +57,8 @@ const Schema = z.object({
   KORTIX_SESSION_FRESH: z.string().optional(),
   KORTIX_BASE_SHA: z.string().optional(),
   KORTIX_GIT_DELTA_BUNDLE_BASE64: z.string().optional(),
+  KORTIX_GIT_DELTA_PARENT_SHA: z.string().optional(),
+  KORTIX_GIT_DELTA_PARENT_COMMIT_BASE64: z.string().optional(),
   // The sandbox credential. KORTIX_SANDBOX_TOKEN is canonical; KORTIX_TOKEN is
   // the legacy alias (resolved with a fallback below).
   KORTIX_SANDBOX_TOKEN: z.string().optional(),
@@ -122,6 +124,8 @@ export type Config = {
   sessionFresh: boolean
   baseSha: string | undefined
   gitDeltaBundleBase64?: string
+  gitDeltaParentSha?: string
+  gitDeltaParentCommitBase64?: string
   /** The sandbox credential (HMAC key + sandbox-identity route bearer). NOT the
    *  session/user token — see the module doc. */
   sandboxToken: string | undefined
@@ -157,6 +161,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     KORTIX_SESSION_FRESH: env.KORTIX_SESSION_FRESH,
     KORTIX_BASE_SHA: env.KORTIX_BASE_SHA,
     KORTIX_GIT_DELTA_BUNDLE_BASE64: env.KORTIX_GIT_DELTA_BUNDLE_BASE64,
+    KORTIX_GIT_DELTA_PARENT_SHA: env.KORTIX_GIT_DELTA_PARENT_SHA,
+    KORTIX_GIT_DELTA_PARENT_COMMIT_BASE64: env.KORTIX_GIT_DELTA_PARENT_COMMIT_BASE64,
     KORTIX_SANDBOX_TOKEN: env.KORTIX_SANDBOX_TOKEN,
     KORTIX_TOKEN: env.KORTIX_TOKEN,
     KORTIX_GIT_USER_NAME: env.KORTIX_GIT_USER_NAME,
@@ -187,6 +193,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     sessionFresh: parsed.KORTIX_SESSION_FRESH === '1',
     baseSha: parsed.KORTIX_BASE_SHA,
     gitDeltaBundleBase64: parsed.KORTIX_GIT_DELTA_BUNDLE_BASE64,
+    gitDeltaParentSha: parsed.KORTIX_GIT_DELTA_PARENT_SHA,
+    gitDeltaParentCommitBase64: parsed.KORTIX_GIT_DELTA_PARENT_COMMIT_BASE64,
     // Canonical name wins; fall back to the legacy alias so daemons running in
     // older-API sandboxes (which only inject KORTIX_TOKEN) still resolve it.
     sandboxToken: parsed.KORTIX_SANDBOX_TOKEN ?? parsed.KORTIX_TOKEN,

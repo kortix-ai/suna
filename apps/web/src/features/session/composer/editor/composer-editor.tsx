@@ -518,15 +518,15 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
            * looks right instead. It still grows with the text past this
            * floor.
            *
-           * The `vh` caps are the reference's, verbatim, including the fact
-           * that the middle band is the SHORTEST. Tailwind emits base → sm →
-           * lg in that order, so the effective ladder is: below 640px 45vh,
-           * 640–1023px 25vh, 1024px and up 40vh. That is a strange curve, and
-           * it is deliberate to keep it here rather than "fix" it silently —
-           * change the `sm:` step if the tablet cap turns out to be wrong.
+           * The `vh` cap ladder used to be 45vh / **25vh** / 40vh — the middle
+           * band, 640–1023px, was the SHORTEST of the three, so a tablet or a
+           * narrow desktop window capped the draft at barely a quarter of the
+           * viewport while a phone got 45%. That was carried over verbatim from
+           * a reference and left in place with a note inviting this change. The
+           * curve is now monotonic: 45vh below 640px (a phone keyboard eats the
+           * rest of the screen anyway), 40vh above it.
            */
-          class:
-            'outline-none min-h-[3.5em] max-h-[45vh] sm:max-h-[25vh] lg:max-h-[40vh] overflow-y-auto',
+          class: 'outline-none min-h-[1.7em] max-h-[45vh] sm:max-h-[40vh] overflow-y-auto',
         },
         handleKeyDown,
       },
@@ -568,7 +568,11 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
       <EditorContent
         editor={editor}
         className={cn(
-          'kortix-composer-editor w-full text-[15px] sm:text-[14px]',
+          // `text-base` (16px) on mobile, NOT 15px: iOS Safari force-zooms the
+          // page on focus for any input under 16px, and the composer is the one
+          // field on the screen. `sm:text-sm` above 640px, which is the size
+          // `globals.css`'s slash-trigger rule already documents.
+          'kortix-composer-editor w-full text-base sm:text-sm',
           disabled && 'opacity-50',
         )}
       />

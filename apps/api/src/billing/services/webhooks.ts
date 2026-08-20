@@ -18,6 +18,7 @@ import {
   getRevenueCatPeriodType,
   isRevenueCatAnonymous,
   isPerSeatAccount,
+  resolveRenewalGrant,
   resolvePerSeatPriceId,
   INCLUDED_CREDITS_PER_SEAT_USD,
   defaultAutoTopupForSeats,
@@ -853,14 +854,15 @@ async function handleInvoicePaid(invoice: Stripe.Invoice) {
 
   const tierName = account.scheduledTierChange ?? account.tier ?? 'free';
 
-  // Per-seat accounts: credit grant scales with seat count.
-  // Legacy tiers: grant the flat tier credit.
-  const isPerSeatTier = tierName === 'per_seat' || account.billingModel === 'per_seat';
-  const seatCount = isPerSeatTier ? Math.max(1, account.seatCount ?? 1) : 1;
-  const credits = isPerSeatTier ? grantForSeats(seatCount) : getMonthlyCredits(tierName);
-  const renewalDesc = isPerSeatTier
-    ? `Monthly renewal: ${credits} credits (${seatCount} ${seatCount === 1 ? 'seat' : 'seats'})`
-    : `Monthly renewal: ${credits} credits`;
+  // ONE renewal-grant rule, resolved from the subscription that was billed —
+  // per-seat by seats, configured tiers by their grant, and every other PAID
+  // legacy subscription by the invoice amount (see resolveRenewalGrant).
+  const { credits, description: renewalDesc } = resolveRenewalGrant({
+    tierName,
+    billingModel: account.billingModel,
+    seatCount: account.seatCount,
+    amountPaidUsd: (invoice.amount_paid ?? 0) / 100,
+  });
 
   if (credits > 0) {
     await resetExpiringCredits(accountId, credits, renewalDesc, invoice.id);

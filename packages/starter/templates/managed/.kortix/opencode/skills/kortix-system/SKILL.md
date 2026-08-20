@@ -168,11 +168,15 @@ that's intentional. Use `kortix projects info` to inspect **this** project.
 **Secret capability discovery.** `$KORTIX_SECRET_CAPABILITIES` contains a
 value-free JSON catalog for this session. Check it before asking for a
 credential. It lists only secrets allowed by both the agent grant and session
-scope. Four entry kinds:
+scope. Four entry kinds — `sandbox` is the common, default case; `network` and
+`https_broker` appear only when the project has enabled the experimental network
+enforcement feature:
 
-- `sandbox` — the named environment variable holds the REAL value. Treat it as
-  radioactive: never print it, never echo it, never write it to a file.
-- `network` — the named environment variable holds a HANDLE, not the value. Use
+- `sandbox` — the named environment variable holds the REAL value. This is the
+  default kind. Treat it as radioactive: never print it, never echo it, never
+  write it to a file.
+- `network` — appears only under the experimental network enforcement feature.
+  The named environment variable holds a HANDLE, not the value. Use
   the variable exactly as you would use the real credential (header, query
   string, body). Kortix swaps the handle for the real value OUTSIDE the sandbox,
   and only on the `hosts` the entry lists, over HTTPS. Sent anywhere else the
@@ -181,9 +185,10 @@ scope. Four entry kinds:
   it worked. An empty reply or a connection error on a listed host is a REAL
   failure. The value is not in this sandbox in any form: do not search for it,
   do not ask the user for it. The entry's `notes` carry the full rules.
-- `https_broker` — use `kortix secrets call IDENTIFIER URL [options]`; Kortix
-  adds the value server-side only after the request matches the stored policy.
-  This is also the fallback when a request cannot be relayed transparently.
+- `https_broker` — appears only under the experimental network enforcement
+  feature. Use `kortix secrets call IDENTIFIER URL [options]`; Kortix adds the
+  value server-side only after the request matches the stored policy. This is
+  also the fallback when a request cannot be relayed transparently.
 - `kortix_service` — spent only by its named service, such as a connector or
   the LLM gateway. It has no sandbox presence at all.
 

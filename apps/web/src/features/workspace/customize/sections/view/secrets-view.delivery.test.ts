@@ -40,7 +40,9 @@ describe('SecretsView asks ONE question and writes the three pairs the model nam
   test('the picker is the exposure list, flat and ungrouped', () => {
     // Three values, one question. The five-mechanism list, its two-axis
     // confusion, and the SelectGroup headings it needed are all gone.
-    expect(code).toContain('const exposureOptions = secretExposureOptions();');
+    expect(code).toContain(
+      'const exposureOptions = secretExposureOptions(egressEnabled || rowIsEnforced);',
+    );
     expect(code).toContain('Can your code read this value?');
     expect(code).not.toContain('SelectGroup');
     expect(code).not.toContain('SelectLabel');
@@ -91,14 +93,17 @@ describe('SecretsView asks ONE question and writes the three pairs the model nam
     expect(code).toContain('legacyInject,');
   });
 
-  test('the availability gate and its feature flag are gone from the page', () => {
-    // One mechanism serves every provider, so nothing disables an option and
-    // nothing reads the project detail to decide.
+  test('the old provider-availability gate is gone; enforcement is gated by one flag', () => {
+    // The old gate keyed the enforced option off the project's sandbox
+    // providers. That is gone. Enforcement is now an experimental opt-in behind
+    // exactly one flag, `secrets_egress`, read once through the SDK hook.
     expect(code).not.toContain('networkBoundaryAvailability');
     expect(code).not.toContain('networkBoundaryMode');
     expect(code).not.toContain('networkBoundaryBlockedReason');
     expect(code).not.toContain('available_sandbox_providers');
     expect(code).not.toContain('disabledReason');
+    expect(code).toContain("useFeatureFlag(projectId, 'secrets_egress').enabled");
+    expect(code).toContain('secretExposureOptions(egressEnabled || rowIsEnforced)');
   });
 });
 

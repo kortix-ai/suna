@@ -273,6 +273,26 @@ const FLAGS: readonly FeatureFlagDef[] = [
     // turns this off.
     enforcement: 'routes',
   },
+  {
+    key: 'secrets_egress',
+    name: 'Network-Enforced Secrets',
+    description:
+      'Let a secret be enforced at the network instead of loaded into the sandbox: the sandbox holds a handle and Kortix substitutes the real value only on requests to approved hosts. Off ⇒ every secret loads into the sandbox environment. Still in testing — enable it to try handle substitution across providers.',
+    stability: 'experimental',
+    available: () => true,
+    // Off by default. Until a project opts in, a new secret can only be an
+    // environment variable (the value loads into the sandbox) or disabled — the
+    // "Enforce at the network" option is hidden and the write routes refuse to
+    // move a secret into egress delivery.
+    platformDefault: () => false,
+    enforcement: 'behavioral',
+    enforcementNote:
+      'No dedicated routes. The secret write paths (POST /secrets and PUT ' +
+      '/secrets/:id/strategy in projects/routes/r3.ts) reject a request that ' +
+      'moves a secret INTO egress delivery when the flag is off. A secret that ' +
+      'is already egress keeps serving and stays editable, so turning the flag ' +
+      'off never strands an existing enforced secret.',
+  },
 ];
 
 const FLAG_BY_KEY: Record<FeatureFlagKey, FeatureFlagDef> = Object.fromEntries(

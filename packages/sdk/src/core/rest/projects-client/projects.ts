@@ -34,7 +34,8 @@ export type FeatureFlagKey =
   | 'meta_agent'
   | 'apps'
   | 'monitors'
-  | 'warm_sessions';
+  | 'warm_sessions'
+  | 'secrets_egress';
 
 /**
  * Every {@link FeatureFlagKey}, at runtime. Kept in the same order as the
@@ -54,6 +55,7 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'apps',
   'monitors',
   'warm_sessions',
+  'secrets_egress',
 ] as const;
 
 /**

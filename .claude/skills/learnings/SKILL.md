@@ -21,6 +21,63 @@ linked, not inlined.
 
 ## Register
 
+### Entitlement is a property of the subscription, and "has an active subscription" is not "pays us" (2026-08-20)
+
+**When:** writing any rule that decides what an account may DO — the wallet
+floor, a renewal grant, a feature gate. Do not read `credit_accounts.tier` or
+`billing_model` as the authority. Both are stale by design: `tier` stays `free`
+for paying accounts, `billing_model` stays `per_seat` long after cancellation,
+and legacy paid tiers grant no monthly credits at all. Resolve from the
+subscription Stripe is collecting on.
+
+The trap on the other side, which is why this is one rule and not two: **the
+free tier carries a REAL $0 Stripe subscription whose status is `active`** —
+226,931 such rows on prod. So "has a paying subscription" alone is not
+"is a paying customer" either. A bypass needs BOTH a collecting subscription
+AND a plan that is actually paid for. Widening the paid-plan half from
+`per_seat`-only to any paid tier is the fix; dropping it is an uncapped
+free-tier hole.
+
+*Incident:* a customer paying $40/mo for "Kortix Computer · Pro" could not run
+a single turn. Legacy `pro` grants 0 monthly credits, so the wallet sat at $0
+and `checkBillingActive`'s one-cent admission hold 402'd every run; the paid
+renewal had granted nothing since April (`getMonthlyCredits('pro') === 0`).
+36 accounts in that exact shape on prod, 29 of them at a zero balance.
+Fixed in PR #6662.
+
+*Method note — the rule that actually caught the second bug:* the free-tier
+hole was not found by 7,538 green API tests, by typecheck, or by driving the
+real API with a seeded account. It was found by running one read-only
+`GROUP BY tier, billing_model, subscription_status` against **production** to
+size the affected population. **Before changing a predicate that gates money or
+access, count the rows it will newly admit, per class, on prod.** A local
+fixture only proves the class you thought to seed.
+
+*Enforcer:* `billing-state.test.ts` sweeps every Stripe status × plan class,
+including a free-tier + `active` $0-subscription case modeled on the real prod
+row; `per-seat-pricing.test.ts` pins `resolveRenewalGrant` for per-seat,
+configured-grant and paid-by-amount branches.
+
+||||||| bd5aae39c4
+
+||||||| 0c247496b6
+
+### A URL that carries a credential must never reach a log line (2026-08-20)
+
+**When:** logging any URL you did not build literally on that line —
+WebSocket connect URLs, presigned links, proxy targets, redirect targets.
+Browser WebSockets cannot send headers, so auth is smuggled in the query
+string (`?token=`), which turns "log the URL you are dialing" into "print the
+user's session JWT". Log `url.split('?')[0]`, or the origin + path, never the
+whole thing. Reconnect backoffs make it worse: one flapping sandbox reprints
+the credential every 1-15s for as long as it flaps.
+*Incident:* `pty-terminal.tsx` logged the full PTY WebSocket URL from
+`getKortixPtyWebSocketUrl`, which appends the live Supabase access token, on
+every connect AND every reconnect. The same file already carried a comment
+saying never to echo the token-bearing URL into the visible buffer — the rule
+existed, the enforcement did not. Found by audit, not by an incident; fixed in
+PR #6663. **No enforcer yet** — a lint rule banning bare `wsUrl`/`url`
+identifiers as console arguments is the TODO.
 ### A per-host credential never goes in a client-wide header bag (2026-08-20)
 
 **When:** giving any browser/HTTP client a token that authorises ONE origin —
@@ -208,7 +265,6 @@ with a temp instance's secrets; restored in ~4 min, all 16 healthy after.
 *Enforcer:* none — the CLI should either namespace the Compose project by the
 config dir or refuse when the resolved project already exists under a different
 instance directory. Until then this rule is the only guard.
-
 ### A request/response log must never cap what it captures (2026-08-18)
 
 **When:** persisting or rendering a captured request/response body (gateway
@@ -1076,3 +1132,121 @@ strictly (dynamic registration, stateful sessions) as the one you test against.
 *Incident:* found and fixed while building one-click OAuth 2.1 for MCP
 connectors, PR #6579. No production outage — the surface had never been used
 against a real provider, which is precisely why all three shipped unnoticed.
+
+## Transcript shape alone may never end a turn — and every turn needs a record, whoever started it
+
+Session/turn truth rules paid for on Essentia, 2026-08-20 (session `d1b74954`:
+composer flapped "not running" over a visibly streaming session; a user prompt
+delivered mid-turn was silently swallowed; PR #6657):
+
+**1. A verdict that a turn is DEAD must be gated on the runtime's own busy
+signal, not inferred from the transcript.** "A newer user message follows it"
+and "its latest assistant message is completed" both read as terminal and both
+occur mid-turn (prompts forwarded into a live turn; the step boundary while
+tools run). The reaper cleared a streaming turn's authority at 12:48:51Z; its
+step completed at 12:48:54Z. Rule: no terminal verdict while the root reports
+`busy`/`retry`; an unreadable status is `unknown`, never terminal.
+
+**2. Every runtime-initiated turn must be announced to the control plane.**
+OpenCode starts turns nobody delivered (synthetic `<pty_exited>` wake-ups).
+Anything keyed on "a control-plane prompt opened this turn" — `GET .../turn`,
+the deadline grant, Stop — silently misses them. The daemon's `turn_begin`
+relay + `adoptRuntimeSandboxTurn` close this; the general rule: when a new way
+for work to START appears, audit every consumer of "is work running".
+
+**3. A safety floor that DELETES its own retry state is a one-shot race.** The
+orphan-redelivery age floor (30s) was checked once, and losing the check
+cleared the record that was the only possible trigger — the user's prompt died
+at age 27s. A guard that defers must leave the state it will need standing.
+
+**4. An unnamed lifecycle event breaks every consumer keyed on the name.**
+`readRootTurnState` bailed on a trailing user message, so turn-end relays
+carried no `turn_message_id`: dedup vanished (double finalizes) and the strand
+reconciler lost its key. When an identity read has a "give up" branch, list
+what downstream keys on the identity before taking it.
+
+*Automation:* flipped-expectation tests in `orphaned-turn-finalize.test.ts` and
+`sandbox-reaper.test.ts` pin the incident timeline; `turn-begin-relay.test.ts`
+and `integration-sandbox-turn-lifecycle.test.ts` pin the adoption contract.
+
+## A release pipeline is only as green as its quietest dependency
+
+Rules paid for during the v0.13.1 release-gate campaign, 2026-08-19/20 (the
+gate had passed 0 of 18 runs in its history; 13 instrumented staging dry-runs
+converted every hidden cause into a named fix; v0.13.1 then shipped through
+the genuinely green gate — PRs #6622–#6648, release PR #6654):
+
+**1. A failing job in a `needs:` chain silently freezes every dependent
+deploy — probe credentials, and never let a janitor gate the payload.** The
+`wire-cloudflare` job's Cloudflare key died on 2026-08-18 (403). Three jobs
+`needs:`-depended on it, so every staging WEB deploy was skipped for a week —
+the release gate drove an Aug-12 frontend against the current API, and the
+resulting browser failures read as product bugs. Fix (#6626, #6639): the
+non-essential job is `continue-on-error`, and the deploy step probes each
+credential with a cheap authenticated read and uses the first one that works.
+Rule: when a job fails REPEATEDLY and everything still "works", find out what
+its `needs:` dependents silently stopped doing.
+
+**2. Never replay a non-idempotent POST through an edge-laundered 5xx — the
+origin may have committed.** The edge Worker turns any origin 5xx into a
+synthetic 503 with no `x-request-id`. The ke2e client retried creates through
+it, and the second send collided with the first send's committed row: 10
+distinct gate failures reading `409 already exists` were the client fighting
+itself (run 32306385663). Fix (#6628): POST is never replayed through an
+ambiguous 5xx; bounded retries stay for reads; world-bootstrap creates retry
+only with per-attempt-fresh identities (#6636, attempt-scoped run ids #6638).
+*Automation:* `tests/unit/create-replay-safety.test.ts` injects the exact
+laundered 503 and pins POST to one send while GET still retries.
+
+**3. Never put a credential in a browser's global header set.** The Vercel
+deployment-protection bypass secret sat in Playwright `use.extraHTTPHeaders`,
+which Chromium attaches to EVERY request: it was transmitted to 16 third-party
+hosts (Google, Facebook, DoubleClick…) on every run, persisted inside public
+workflow trace artifacts, AND its presence in cross-origin preflights made the
+API's CORS allow-list reject every browser API call — one line caused both a
+credential leak and the entire 11-spec browser failure class (#6632). Fix: the
+bypass is exchanged ONCE for a scoped `_vercel_jwt` cookie against the
+deployment origin. Rule: scope every credential to the one origin that needs
+it; treat `extraHTTPHeaders`/default-header config as a broadcast channel.
+
+*Incident:* no production outage — the cost was ~22 hours of release paralysis
+and one leaked secret (rotated). The meta-rule: a gate that has NEVER been
+green is not protecting anything; each red must convert one hidden cause into
+a named, enforced fix until green is the steady state.
+
+## A relay that authenticates with the wrong credential fails silently, forever
+
+Follow-up rule from the same 2026-08-20 turn-truth work (PR #6664), found only
+because the merged fix was verified on deployed dev:
+
+**A non-2xx that the caller merely retries-and-gives-up is indistinguishable
+from a feature that was never built.** The new `turn_begin` relay used the
+daemon's default token chain (`sandboxRelayContext()`), which prefers
+`KORTIX_CLI_TOKEN` — a user/agent PAT — while the route it calls is
+sandbox-identity-only. Every relay 403'd, twice, then gave up. On dev the
+symptoms were a perfect alibi: opencode emitted the frames, the deployed
+binary carried the new symbols, the env was complete, the root check passed,
+and a hand-made POST with the sandbox credential returned
+`{ok:true,outcome:'adopted'}` — while the ledger held zero rows. This is the
+same failure class as the Essentia turn-end 403s that `r4.ts`'s kind-gate
+comment already records; the sibling relay (`relayInitialTurnAcceptedToApi`)
+had already established the correct pattern.
+
+**Rules.**
+1. When adding a sandbox→API relay, copy the CREDENTIAL choice from the
+   nearest sibling of the same kind class, not the generic context helper.
+   Sandbox-identity kinds (`turn_accepted`, `turn_abandoned`, `turn_begin`)
+   resolve `KORTIX_SANDBOX_TOKEN || KORTIX_TOKEN` explicitly.
+2. Never relay a credential you know the route will refuse — skip instead. A
+   guaranteed 403 loop is worse than an absent feature: it looks like traffic.
+3. **Test the wire, not the call count.** The tests that shipped this asserted
+   "a POST happened" against a stubbed server. The test that catches it asserts
+   the `Authorization` header. Any test that stubs HTTP must assert the
+   credential and the URL, or it is only testing itself.
+4. Pin the EVENT WIRING separately from the handler's behavior. A unit test
+   that calls the relay directly proves nothing about whether the event that
+   should trigger it is dispatched — capture a real frame from the deployed
+   runtime and feed it through the real dispatcher.
+
+*Incident:* no outage — the fix was simply inert in production for ~25 minutes
+between merge and detection, which is exactly what dev verification is for.

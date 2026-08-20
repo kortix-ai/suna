@@ -165,6 +165,7 @@ import { turnStreamKindField, turnStreamKindNeedsConnectorWrite } from './r4-tur
 import {
   abandonSandboxTurn,
   acceptSandboxTurn,
+  adoptRuntimeSandboxTurn,
   completeSandboxTurn,
 } from '../sandbox-turn-lifecycle';
 
@@ -2493,6 +2494,28 @@ projectsApp.openapi(
         messageId,
       });
       return c.json({ ok });
+    }
+
+    // A BOX-INITIATED turn: the daemon observed the root go busy on a user
+    // message the control plane never delivered (OpenCode's synthetic
+    // `<pty_exited>` wake-ups). Adopt it into the ledger so `GET .../turn`
+    // reports the running turn and the deadline grant covers it. Idempotent —
+    // see adoptRuntimeSandboxTurn; requires the sandbox credential like every
+    // upward lifecycle transition.
+    if (body.kind === 'turn_begin') {
+      if (!authenticatedSandboxId) {
+        return c.json({ error: 'turn_begin requires a sandbox token' }, 403);
+      }
+      const opencodeSessionId = body.opencode_session_id?.trim();
+      const messageId = body.turn_message_id?.trim();
+      if (!opencodeSessionId || !messageId) {
+        return c.json({ error: 'opencode_session_id and turn_message_id are required' }, 400);
+      }
+      const outcome = await adoptRuntimeSandboxTurn(authenticatedSandboxId, {
+        opencodeSessionId,
+        messageId,
+      });
+      return c.json({ ok: outcome === 'adopted' || outcome === 'open_turn_exists', outcome });
     }
 
     // `end` / `turn_end` carry no text — the sandbox observed the opencode turn

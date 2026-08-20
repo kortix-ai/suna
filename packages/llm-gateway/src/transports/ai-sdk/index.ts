@@ -143,9 +143,10 @@ export function toTransportError(err: unknown, provider: string): Error {
   const e = err as {
     statusCode?: number;
     responseBody?: string;
+    responseHeaders?: Record<string, string>;
     message?: string;
     url?: string;
-    cause?: { statusCode?: number };
+    cause?: { statusCode?: number; responseHeaders?: Record<string, string> };
   };
   // A `cause`-wrapped statusCode (some AI-SDK error classes nest the original
   // API-call error there) counts the same as a top-level one.
@@ -168,7 +169,11 @@ export function toTransportError(err: unknown, provider: string): Error {
       typeof e.responseBody === 'string' && e.responseBody.trim().length > 0
         ? e.responseBody
         : (e.message ?? '');
-    return new UpstreamHttpError(statusCode, body, provider);
+    // `responseHeaders` carries the upstream's `Retry-After` on a 429/503. The
+    // pipeline relays it CLAMPED (failover.ts) — never verbatim, because
+    // OpenCode >= 1.18.17 sleeps for whatever it is told, up to 24.8 days.
+    const headers = e.responseHeaders ?? e.cause?.responseHeaders;
+    return new UpstreamHttpError(statusCode, body, provider, headers);
   }
   const message = e?.message ?? (err instanceof Error ? err.message : String(err));
   if (looksLikeTerminalAuthFailure(message)) {

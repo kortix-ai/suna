@@ -119,6 +119,7 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
       apps: false,
       monitors: false,
       warm_sessions: false,
+      secrets_egress: false,
     },
     experimental_features: [],
     default_sandbox_provider: null,
@@ -694,6 +695,7 @@ describe('envelopes', () => {
       'apps',
       'monitors',
       'warm_sessions',
+      'secrets_egress',
     ]);
   });
 

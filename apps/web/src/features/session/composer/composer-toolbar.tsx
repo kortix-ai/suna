@@ -10,6 +10,7 @@ import type { FlatModel } from '../model-flatten';
 import type { ModelDefaultControls } from '../model-selector';
 import { ModelSelector } from '../model-selector';
 import { ReasoningEffortSelector } from '../reasoning-effort-selector';
+import { VoiceRecorder } from '../voice-recorder';
 import { SendStopControl } from './send-stop-control';
 
 /**
@@ -101,6 +102,8 @@ export interface ComposerToolbarProps {
 
   onTranscription: (text: string) => void;
   voiceDisabled: boolean;
+  /** Counter that starts a recording from the `/` palette — see `VoiceRecorder`. */
+  voiceStartRequestId?: number | null;
 
   isSending: boolean;
   isBusy: boolean;
@@ -141,6 +144,7 @@ export function ComposerToolbar({
   leading,
   onTranscription,
   voiceDisabled,
+  voiceStartRequestId,
   isSending,
   isBusy,
   onStop,
@@ -218,6 +222,16 @@ export function ComposerToolbar({
         )}
 
         {toolbarSlot}
+
+        {/* Voice, then send — the order the header comment above describes.
+            This render is the whole feature: the props were threaded here and
+            destructured, but `VoiceRecorder` was never placed in the JSX, so
+            dictation was unreachable from every composer in the app. */}
+        <VoiceRecorder
+          onTranscription={onTranscription}
+          disabled={voiceDisabled}
+          startRequestId={voiceStartRequestId}
+        />
 
         <SendStopControl
           isSending={isSending}

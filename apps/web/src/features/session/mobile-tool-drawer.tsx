@@ -56,10 +56,7 @@ export function MobileToolDrawer({
 
   return (
     <Drawer open={view !== null} onOpenChange={(next) => !next && closeMobileTool()}>
-      <DrawerContent
-        bar={false}
-        className="flex h-[95dvh] max-h-[95dvh] min-h-[95dvh] flex-col overflow-hidden p-0"
-      >
+      <DrawerContent className="flex h-[95dvh] max-h-[95dvh] min-h-[95dvh] flex-col overflow-hidden p-0">
         <DrawerHeader className="shrink-0 px-4 py-3 text-left">
           <DrawerTitle className="flex items-center justify-between gap-2 text-base">
             <span className="flex items-center gap-2.5">

@@ -29,21 +29,23 @@ second credential profile under the same key.
 
 Each secret has one EXPOSURE — can agent code read the value?
 
-  environment  The real value is in the sandbox env. Required for a credential
-               the code must COMPUTE with (AWS SigV4, HMAC webhook signing, JWT
-               assertions, SSH/PEM keys) and for anything that is not HTTPS.
-               Use it as little as possible.
-  enforced     The env var holds a HANDLE, not the value. Kortix substitutes
-               the real value outside the sandbox, only on the approved hosts,
-               and rewrites any echo of it to [REDACTED]. The default for any
-               credential that only has to travel on the wire.
+  environment  THE DEFAULT. The real value loads into the sandbox env. Required
+               for a credential the code must COMPUTE with (AWS SigV4, HMAC
+               webhook signing, JWT assertions, SSH/PEM keys) and for anything
+               that is not HTTPS.
+  enforced     EXPERIMENTAL — requires the project's \`secrets_egress\` feature
+               flag (Settings → Feature flags), off by default. The env var
+               holds a HANDLE, not the value. Kortix substitutes the real value
+               outside the sandbox, only on the approved hosts, and rewrites any
+               echo of it to [REDACTED].
   none         No sandbox presence. A Kortix service spends the value (LLM
                gateway, connector, Git), or the secret is stored and disabled.
 
-Enforcement is ONE mechanism on every sandbox provider, not a menu. Agent code
-sends the handle with its ordinary HTTP client. \`kortix secrets call\` is the
-explicit door to the same hosts and the same policy, for a request that cannot
-be intercepted in the sandbox.
+Enforcement (enforced exposure) is EXPERIMENTAL and gated behind the
+\`secrets_egress\` feature flag. When it is enabled it is ONE mechanism on every
+sandbox provider, not a menu. Agent code sends the handle with its ordinary HTTP
+client. \`kortix secrets call\` is the explicit door to the same hosts and the
+same policy, for a request that cannot be intercepted in the sandbox.
 
 Subcommands:
   ls                                List secrets (by identifier, → key when it
@@ -68,9 +70,12 @@ Subcommands:
                                     this session's sandbox. Use after setting
                                     a secret via the intake link or after a
                                     secret was updated mid-session.
-  delivery IDENTIFIER EXPOSURE      Set environment, enforced, or none. The
-                                    stored names runtime|egress|broker|denied
-                                    are accepted as aliases.
+  delivery IDENTIFIER EXPOSURE      Set environment (default), enforced, or
+                                    none. \`enforced\` is EXPERIMENTAL and needs
+                                    the project's \`secrets_egress\` feature flag
+                                    (Settings → Feature flags). The stored names
+                                    runtime|egress|broker|denied are accepted as
+                                    aliases.
     --allow-host <host>              Approved host for enforced exposure.
                                     Exact host, HTTPS. Repeat for more hosts.
                                     The host list IS the policy.
@@ -94,7 +99,8 @@ Subcommands:
                                     [REDACTED] on an echoed value. The explicit
                                     fallback for a request the sandbox cannot
                                     intercept, not a second way to configure a
-                                    secret.
+                                    secret. Applies to enforced exposure, which
+                                    is EXPERIMENTAL (\`secrets_egress\` flag).
     --method <method>                Default: GET.
     --header <name:value>            Request header. Repeat as needed.
     --data <value>                   Inline request body.
@@ -462,6 +468,25 @@ function takeFlagValues(args: string[], names: string[]): string[] {
   return values;
 }
 
+/**
+ * True when the error is the `secrets_egress` feature-flag gate — the 403
+ * `{ error, code: 'feature_disabled', feature: 'secrets_egress' }` the API
+ * returns when enforced exposure is entered with the flag off. Read the body
+ * structurally (CLI `ApiError` keeps it in `.body`; an SDK `ApiError` in
+ * `.details`/`.data` and lifts `code`), so a good hint rides alongside the
+ * server's own verbatim message.
+ */
+function isSecretsEgressDisabled(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const carrier = err as { code?: unknown; body?: unknown; details?: unknown; data?: unknown };
+  const body = [carrier.body, carrier.details, carrier.data].find(
+    (candidate): candidate is Record<string, unknown> =>
+      !!candidate && typeof candidate === 'object' && !Array.isArray(candidate),
+  );
+  const code = typeof carrier.code === 'string' ? carrier.code : body?.code;
+  return code === 'feature_disabled' && body?.feature === 'secrets_egress';
+}
+
 /** The one-line confirmation, in the exposure the user just chose. */
 function deliveryLabel(strategy: SecretStrategy, consumer?: string): string {
   if (strategy === 'runtime') return 'Exposed in the sandbox environment';
@@ -720,6 +745,18 @@ async function secretsDelivery(args: string[], opts: CtxOpts, json = false): Pro
     }
     return 0;
   } catch (err) {
+    // Entering enforced exposure with the `secrets_egress` flag off returns the
+    // gate 403. `surfaceApiError` prints the server's verbatim message
+    // ("Network-Enforced Secrets is not enabled for this project. Enable it in
+    // Settings → Feature flags."); add the actionable alternative so the user
+    // does not have to enable the flag to make progress.
+    if (strategy === 'egress' && isSecretsEgressDisabled(err)) {
+      const code = surfaceApiError(err);
+      process.stderr.write(
+        `  ${C.dim}Or use \`environment\` exposure to load the value into the sandbox: kortix secrets delivery ${identifier} environment${C.reset}\n`,
+      );
+      return code;
+    }
     return surfaceApiError(err);
   }
 }

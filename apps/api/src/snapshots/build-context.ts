@@ -40,6 +40,7 @@ import { appCaddyBinaryPath, appdBinaryPath } from '../apps/runtime-artifacts';
 import { buildStarterFiles, DEFAULT_STARTER_TEMPLATE_ID } from '../projects/starter';
 import { assertCliArtifactAttested } from './cli-artifact-attestation';
 import { buildLayeredDockerfile, buildPerProjectWarmFromBaseDockerfile } from './dockerfile-layer';
+import { stageOpencodeConfigTree } from './opencode-config-stage';
 import { stagingTarArgs, stagingTarEnv } from './staging-tar';
 
 const execFileAsyncBC = promisify(execFile);
@@ -269,7 +270,10 @@ export async function stageFastBuildContext(): Promise<StagedContext> {
     await copyFile(runtimeVersionsPath, join(contextDir, 'runtime-versions.json'));
     await cp(slackPath, join(contextDir, 'kortix-slack-cli'), { recursive: true });
     await cp(lazyToolsPath, join(contextDir, 'lazy-tools'), { recursive: true });
-    await cp(opencodeConfigPath, join(contextDir, 'kortix-opencode-config'), { recursive: true });
+    await stageOpencodeConfigTree(
+      opencodeConfigPath,
+      join(contextDir, 'kortix-opencode-config'),
+    );
     await stageManagedSkills(join(contextDir, 'managed-skills'));
     await writeFileFs(
       join(contextDir, 'kortix-llm-catalog.json'),

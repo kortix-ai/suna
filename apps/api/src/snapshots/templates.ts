@@ -87,10 +87,15 @@ const SLACK_CLI_SRC_PATH = process.env.KORTIX_SNAPSHOT_SLACK_CLI_PATH
 // This closure is asserted complete by snapshots/__tests__/cli-connector-closure
 // .test.ts, which re-derives it from the `kortix connectors` entrypoints and fails
 // if a new import escapes the hashed set — so scoping can never silently ship a
-// stale in-sandbox connector. packages/starter (scaffolding) and packages/
-// manifest-schema (only reached by laptop-side `ship`/`validate`) are likewise
-// never in the sandbox and are deliberately not fingerprinted.
+// stale in-sandbox connector. packages/manifest-schema is only reached by
+// laptop-side `ship`/`validate` and is deliberately not fingerprinted.
 const CLI_ROOT = resolve(REPO_ROOT, 'apps/cli');
+// The standard image bakes the canonical starter repository at
+// /opt/kortix/scaffold.git. A starter change must invalidate the non-agent
+// fingerprint. Otherwise the agent-swap path can copy a new agent onto an old
+// image while preserving a stale scaffold, which makes every fresh session
+// reject its local Git bundle and fall back to the network clone.
+const STARTER_ROOT = resolve(REPO_ROOT, 'packages/starter');
 const FINGERPRINT_EXCLUDES = ['node_modules', '.bin', 'dist', '.turbo', '.cache'] as const;
 
 // Bump when the rendered Kortix Dockerfile layer changes (the Dockerfile text
@@ -911,6 +916,7 @@ const NON_AGENT_RUNTIME_ARTIFACTS = [
   { label: 'kortix-opencode-warmup', path: OPENCODE_WARMUP_PATH },
   { label: 'kortix-machine-doc', path: MACHINE_DOC_PATH },
   { label: 'kortix-slack-cli', path: SLACK_CLI_SRC_PATH, excludeNames: FINGERPRINT_EXCLUDES },
+  { label: 'kortix-starter', path: STARTER_ROOT, excludeNames: FINGERPRINT_EXCLUDES },
   // Only the in-sandbox `kortix connectors` closure (NOT the whole apps/cli/src) —
   // see CLI_CONNECTOR_RUNTIME_FILES in @kortix/shared. This artifact set also
   // includes @kortix/sdk because the compiled CLI owns the Connector client.
@@ -980,7 +986,7 @@ export async function currentRuntimeArtifactFingerprint(): Promise<string> {
 /**
  * Fingerprint of the runtime layer EXCLUDING the kortix-agent binary. Changes iff
  * a NON-agent runtime input moved — opencode/entrypoint/CLI/slack-cli/SDK/
- * manifest-schema source, or the layer/browser/sandbox version constants. The
+ * starter source, or the layer/browser/sandbox version constants. The
  * agent-swap fast path is sound ONLY when this is byte-identical between the
  * predecessor and the new identity (i.e. the agent binary is the SOLE runtime
  * delta). Folded into the template's swapKey so the builder can compare against the

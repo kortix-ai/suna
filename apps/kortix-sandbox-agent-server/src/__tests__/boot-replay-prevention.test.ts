@@ -306,3 +306,70 @@ describe('reusedRootAlreadyDelivered — F1: bare pin is no longer proof of deli
     ).toBe(false)
   })
 })
+
+/**
+ * The root list is asked for ROOTS, server-side.
+ *
+ * `GET /session` declares `roots`, `limit`, `start`, `search` and `scope` on
+ * BOTH opencode 1.17.11 and 1.18.19 — probed against the real binaries on
+ * 2026-08-20, where `?roots=true&limit=1` returned exactly the
+ * most-recently-updated ROOT out of three roots plus one newer child. Boxes
+ * provisioned before today still run 1.17.11, which is why this can be one
+ * call with no version fork.
+ *
+ * The client-side `!parentID` filter is kept anyway: an opencode that does not
+ * know a query parameter ignores it silently, and adopting a Task-tool CHILD as
+ * the canonical root would orphan the conversation.
+ */
+describe('listOpencodeRoots — server-side root filter', () => {
+  function recordingServer(sessions: Array<Record<string, unknown>>) {
+    const queries: string[] = []
+    const server = Bun.serve({
+      port: 0,
+      async fetch(req) {
+        const url = new URL(req.url)
+        if (req.method === 'GET' && /\/session$/.test(url.pathname)) {
+          queries.push(url.search)
+          return Response.json(sessions)
+        }
+        if (req.method === 'GET' && url.pathname.endsWith('/message')) return Response.json([])
+        return new Response('not found', { status: 404 })
+      },
+    })
+    servers.push(server)
+    return { baseUrl: `http://127.0.0.1:${server.port}`, queries: () => queries }
+  }
+
+  test('asks opencode for roots=true instead of paging every session', async () => {
+    const s = recordingServer([{ id: 'ses_root', time: { created: 1, updated: 1 } }])
+    const result = await resolveExistingRoot(s.baseUrl, '/workspace', null)
+    expect(result.status).toBe('found')
+    expect(s.queries()[0]).toContain('roots=true')
+    expect(s.queries()[0]).toContain('directory=%2Fworkspace')
+  })
+
+  test('a CHILD that leaks through is still never adopted as the root', async () => {
+    // Defence in depth: an opencode that ignored `roots` would answer with
+    // children too. The newest row here is a child; the root must still win.
+    const s = recordingServer([
+      { id: 'ses_child', parentID: 'ses_root', time: { created: 9, updated: 9 } },
+      { id: 'ses_root', time: { created: 1, updated: 1 } },
+    ])
+    const result = await resolveExistingRoot(s.baseUrl, '/workspace', null)
+    expect(result.status).toBe('found')
+    if (result.status !== 'found') return
+    expect(result.root.id).toBe('ses_root')
+  })
+
+  test('the PINNED root still wins over a more recently updated one', async () => {
+    // Why `limit=1` is not used: the pin must remain findable in this list.
+    const s = recordingServer([
+      { id: 'ses_newer', time: { created: 5, updated: 9 } },
+      { id: 'ses_pinned', time: { created: 1, updated: 2 } },
+    ])
+    const result = await resolveExistingRoot(s.baseUrl, '/workspace', 'ses_pinned')
+    expect(result.status).toBe('found')
+    if (result.status !== 'found') return
+    expect(result.root.id).toBe('ses_pinned')
+  })
+})

@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import {
+  type PlacementTipMessage,
   boxClockSkewMs,
+  isLaterTipMessage,
   reachedPlacement,
   tipIsBusy,
   mintLivePlacement,
@@ -15,6 +17,25 @@ import { WIRE_ID_TIME_SCALE, wireIdTime } from '../wire-message-id';
 const id = (ms: number, n = 1, tail = 'AAAAAAAAAAAAAA') =>
   `msg_${((BigInt(ms) * WIRE_ID_TIME_SCALE + BigInt(n)) & BigInt(0xffffffffffff)).toString(16).padStart(12, '0')}${tail}`;
 
+/** The millisecond an id's clock encodes — what the box would have stamped as
+ *  `time.created` if it had minted that id itself. */
+const at = (messageId: string): number => Number(wireIdTime(messageId)! / WIRE_ID_TIME_SCALE);
+
+/**
+ * Fill in `time.created` for every fixture message that does not set one.
+ *
+ * These fixtures were written before the functions under test read
+ * `time.created` at all, so each one describes ORDER through the id clock
+ * only — which means an id-ordered implementation and a `time.created`-ordered
+ * one pass them identically and neither can be caught regressing. Stamping
+ * each message with the millisecond its own id already encodes keeps every
+ * existing assertion exactly as it was (the two orders agree by construction)
+ * while making the fixtures able to express a DISAGREEMENT. The tests that
+ * need one pass `created` explicitly; it wins over the fill.
+ */
+const tipOf = (messages: PlacementTipMessage[]): PlacementTipMessage[] =>
+  messages.map((m) => ({ created: at(m.id), ...m }));
+
 const T = 1_800_000_000_000;
 
 describe('strandedPlacement', () => {
@@ -24,12 +45,12 @@ describe('strandedPlacement', () => {
 
   test('answered when an assistant is parented on the wire id', () => {
     const v = strandedPlacement(
-      [
+      tipOf([
         { id: user1, role: 'user' },
         { id: asst1, role: 'assistant', parentID: user1 },
         { id: user2, role: 'user', created: T + 20 },
         { id: id(T + 30, 1, 'ASST2ASST2ASST'), role: 'assistant', parentID: user2 },
-      ],
+      ]),
       user2,
     );
     expect(v.answered).toBe(true);
@@ -42,12 +63,12 @@ describe('strandedPlacement', () => {
     // step that read the transcript before user2 existed).
     const asst2 = id(T + 25, 1, 'ASST2ASST2ASST');
     const v = strandedPlacement(
-      [
+      tipOf([
         { id: user1, role: 'user' },
         { id: asst1, role: 'assistant', parentID: user1 },
         { id: id(T + 22, 1, 'LATEUSERLATEUS'), role: 'user' },
         { id: asst2, role: 'assistant', parentID: user1 },
-      ],
+      ]),
       id(T + 22, 1, 'LATEUSERLATEUS'),
     );
     expect(v.stranded).toBe(true);
@@ -61,11 +82,11 @@ describe('strandedPlacement', () => {
     const user3 = id(T + 40, 1, 'USER3USER3USER');
     const asst3 = id(T + 41, 1, 'ASST3ASST3ASST');
     const v = strandedPlacement(
-      [
+      tipOf([
         { id: user2, role: 'user' },
         { id: user3, role: 'user' },
         { id: asst3, role: 'assistant', parentID: user3 },
-      ],
+      ]),
       user2,
     );
     expect(v.stranded).toBe(false);
@@ -74,11 +95,11 @@ describe('strandedPlacement', () => {
 
   test('not reached yet: no assistant above it', () => {
     const v = strandedPlacement(
-      [
+      tipOf([
         { id: user1, role: 'user' },
         { id: asst1, role: 'assistant', parentID: user1 },
         { id: user2, role: 'user' },
-      ],
+      ]),
       user2,
     );
     expect(v.stranded).toBe(false);
@@ -87,10 +108,10 @@ describe('strandedPlacement', () => {
 
   test('an assistant with no parent proves nothing', () => {
     const v = strandedPlacement(
-      [
+      tipOf([
         { id: user2, role: 'user' },
         { id: id(T + 30, 1, 'ORPHANORPHANOR'), role: 'assistant' },
-      ],
+      ]),
       user2,
     );
     expect(v.stranded).toBe(false);
@@ -104,13 +125,13 @@ describe('reachedPlacement + tipIsBusy', () => {
   const u3 = id(T + 30, 1, 'USER3USER3USER');
   const a3 = id(T + 31, 1, 'ASST3ASST3ASST');
   test('unreached: nothing above it read it', () => {
-    expect(reachedPlacement([{ id: u1, role: 'user' }, { id: a1, role: 'assistant', parentID: u1 }, { id: u2, role: 'user' }], u2)).toBe(false);
+    expect(reachedPlacement(tipOf([{ id: u1, role: 'user' }, { id: a1, role: 'assistant', parentID: u1 }, { id: u2, role: 'user' }]), u2)).toBe(false);
   });
   test('reached via a step parented on a newer user message', () => {
-    expect(reachedPlacement([{ id: u2, role: 'user' }, { id: u3, role: 'user' }, { id: a3, role: 'assistant', parentID: u3 }], u2)).toBe(true);
+    expect(reachedPlacement(tipOf([{ id: u2, role: 'user' }, { id: u3, role: 'user' }, { id: a3, role: 'assistant', parentID: u3 }]), u2)).toBe(true);
   });
   test('a stranded message is NOT reached (higher assistant, older parent)', () => {
-    expect(reachedPlacement([{ id: u1, role: 'user' }, { id: u2, role: 'user' }, { id: id(T + 25, 1, 'ASSTXASSTXASST'), role: 'assistant', parentID: u1 }], u2)).toBe(false);
+    expect(reachedPlacement(tipOf([{ id: u1, role: 'user' }, { id: u2, role: 'user' }, { id: id(T + 25, 1, 'ASSTXASSTXASST'), role: 'assistant', parentID: u1 }]), u2)).toBe(false);
   });
   test('an assistant whose step STARTED before the message was persisted has not read it', () => {
     // Under-placement gives the message a LOW id on purpose; the running
@@ -133,9 +154,70 @@ describe('reachedPlacement + tipIsBusy', () => {
   });
 
   test('tipIsBusy reads the newest assistant', () => {
-    expect(tipIsBusy([{ id: a1, role: 'assistant', parentID: u1, completed: null }])).toBe(true);
-    expect(tipIsBusy([{ id: a1, role: 'assistant', parentID: u1, completed: 5 }])).toBe(false);
-    expect(tipIsBusy([{ id: u1, role: 'user' }])).toBe(false);
+    expect(tipIsBusy(tipOf([{ id: a1, role: 'assistant', parentID: u1, completed: null }]))).toBe(true);
+    expect(tipIsBusy(tipOf([{ id: a1, role: 'assistant', parentID: u1, completed: 5 }]))).toBe(false);
+    expect(tipIsBusy(tipOf([{ id: u1, role: 'user' }]))).toBe(false);
+  });
+
+  // FAILS on the pre-2026-08-20 `m.id > newest.id` string compare. The two
+  // assistants are ordered one way by id and the OTHER way by the box's own
+  // `time.created` stamp — which is the order `MessageV2.page()` returns them
+  // in, and the only order that is chronology.
+  test('tipIsBusy picks the newest by time.created, not by id string order', () => {
+    const lowIdLateStamp = id(T + 10, 1, 'ASSTLASSTLASST');
+    const highIdEarlyStamp = id(T + 900, 1, 'ASSTHASSTHASST');
+    const tip: PlacementTipMessage[] = [
+      // Persisted SECOND (the box stamped it at T+950) but placed under a low
+      // id — exactly what an under-placed / lifted mint produces.
+      { id: lowIdLateStamp, role: 'assistant', parentID: u1, created: T + 950, completed: null },
+      // Persisted FIRST and already finished, but carries the higher id.
+      { id: highIdEarlyStamp, role: 'assistant', parentID: u1, created: T + 900, completed: T + 920 },
+    ];
+    // id order would pick `highIdEarlyStamp` (completed) -> "not busy".
+    // time order picks `lowIdLateStamp` (still open) -> busy.
+    expect(tipIsBusy(tip)).toBe(true);
+  });
+});
+
+describe('isLaterTipMessage', () => {
+  const older = id(T, 1, 'OLDEROLDEROLDE');
+  const newer = id(T + 1_000, 1, 'NEWERNEWERNEWE');
+
+  test('nothing is later than nothing', () => {
+    expect(isLaterTipMessage({ id: older, role: 'user' }, null)).toBe(true);
+    expect(isLaterTipMessage({ id: older, role: 'user' }, undefined)).toBe(true);
+  });
+
+  test('time.created decides, and it OUTRANKS the id clock', () => {
+    // FAILS under any id-order comparison: `newer` sorts above `older` by id
+    // but the box stamped it first.
+    const a = { id: older, role: 'assistant', created: T + 5_000 };
+    const b = { id: newer, role: 'assistant', created: T + 1_000 };
+    expect(isLaterTipMessage(a, b)).toBe(true);
+    expect(isLaterTipMessage(b, a)).toBe(false);
+  });
+
+  test("same millisecond falls back to the id clock — page()'s own tiebreak", () => {
+    const a = { id: id(T, 2, 'SAMEMSAMEMSAME'), role: 'assistant', created: T };
+    const b = { id: id(T, 1, 'SAMEMSAMEMSAMF'), role: 'assistant', created: T };
+    expect(isLaterTipMessage(a, b)).toBe(true);
+    expect(isLaterTipMessage(b, a)).toBe(false);
+  });
+
+  test('a missing or unusable stamp on either side falls back to the id clock', () => {
+    expect(isLaterTipMessage({ id: newer, role: 'user' }, { id: older, role: 'user', created: T })).toBe(true);
+    expect(isLaterTipMessage({ id: older, role: 'user', created: T }, { id: newer, role: 'user' })).toBe(false);
+    expect(
+      isLaterTipMessage(
+        { id: newer, role: 'user', created: Number.NaN },
+        { id: older, role: 'user', created: Number.NaN },
+      ),
+    ).toBe(true);
+  });
+
+  test('an id with no decodable clock falls back to the raw string, last', () => {
+    expect(isLaterTipMessage({ id: 'msg_zz', role: 'user' }, { id: 'msg_aa', role: 'user' })).toBe(true);
+    expect(isLaterTipMessage({ id: 'msg_aa', role: 'user' }, { id: 'msg_zz', role: 'user' })).toBe(false);
   });
 });
 

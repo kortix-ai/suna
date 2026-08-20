@@ -53,7 +53,21 @@ export const config = {
   // override. See PROBE_COMMIT_DEADLINE_MS in @kortix/llm-gateway.
   streamProbeTimeoutMs: optionalInt('GATEWAY_STREAM_PROBE_TIMEOUT_MS', 0),
   retry: {
-    maxAttempts: optionalInt('GATEWAY_RETRY_MAX_ATTEMPTS', 3),
+    // ONE in-request transport attempt — no gateway-side replay of a failed
+    // dispatch. OpenCode 1.18.17 owns transport retry now and does it strictly
+    // better: 5 attempts, 2s→30s exponential backoff with 25% jitter, and it
+    // honours `Retry-After`. This layer used to add 3 attempts at 300ms→8s on
+    // top, so a rate-limited or 5xx upstream got 15 total replays of the full
+    // prompt with the first three effectively un-backed-off.
+    //
+    // This does NOT weaken the two retry behaviours that are not transport
+    // retries and do not read this value:
+    //   - 402/403/429 quota failover onto the next candidate — failover.ts's
+    //     LIMIT_STATUSES loop, driven by the candidate list.
+    //   - empty-200-completion retry — handler.ts's
+    //     MAX_INVALID_COMPLETION_ATTEMPTS_PER_CANDIDATE (3 per candidate).
+    // Both are covered by tests in packages/llm-gateway.
+    maxAttempts: optionalInt('GATEWAY_RETRY_MAX_ATTEMPTS', 1),
     baseDelayMs: optionalInt('GATEWAY_RETRY_BASE_MS', 300),
     maxDelayMs: optionalInt('GATEWAY_RETRY_MAX_MS', 8_000),
     // 90 minutes. Bounds time-to-headers when streaming, and the full

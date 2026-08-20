@@ -1063,9 +1063,15 @@ async function readDeliveredWireIdFloor(
  * Mint the wire id this attempt delivers with, placed above the root's newest
  * message, and persist it before the POST.
  *
- * TWO callers need this, for one reason. OpenCode resolves "has this prompt
- * already been answered?" by ID ORDER, so an id that sorts below what is on
- * record is accepted and then silently never runs:
+ * TWO callers need this, for one reason. On a box running opencode <= 1.18.14
+ * (the baked 1.17.11 on every image built before 2026-08-20) the loop resolves
+ * "has this prompt already been answered?" by ID ORDER, so an id that sorts
+ * below what is on record is accepted and then silently never runs. From
+ * 1.18.15 the exit test is `lastAssistant.parentID === lastUser.id` and a low
+ * id no longer drops the prompt — but it still places the message BELOW the
+ * answer on screen, because `MessageV2.page()` orders by `time_created` then
+ * `id` in both versions. Re-minting is required on the old boxes and is
+ * cosmetic-but-still-wanted on the new ones:
  *
  *  - a REDELIVERY: the abandoned attempt may already have persisted its user
  *    message, and repeating that id reads as already answered;
@@ -1126,10 +1132,21 @@ async function remintWireMessageId(
   if (newest !== null && minted.time <= newest) {
     // The lift refused: `MAX_WIRE_ID_CLOCK_CORRECTION` (1h) caps how far a
     // transcript may drag an id, and past that cap the id we are about to send
-    // sorts BELOW what is on record — OpenCode will read it as answered and the
-    // turn will never run. Nothing here can repair it, so it is reported loudly
-    // rather than dropped quietly.
-    logger.error('[session-lifecycle] re-minted wire id could not clear the transcript', {
+    // sorts BELOW what is on record.
+    //
+    // WHAT THAT COSTS DEPENDS ON THE BOX'S OPENCODE VERSION, so this is a WARN
+    // and not an ERROR, and it no longer claims the turn is lost:
+    //  - opencode <= 1.18.14 (baked 1.17.11): the loop's exit check is an id
+    //    compare, so the prompt is read as already answered and the turn does
+    //    not run. Nothing here can repair that; `forwarded-strand-reconcile`
+    //    picks it up at turn end.
+    //  - opencode >= 1.18.15: the exit check is
+    //    `lastAssistant.parentID === lastUser.id`. The turn RUNS. The only
+    //    damage is transcript position — the message renders below the answer
+    //    that precedes it, because `MessageV2.page()` orders by `time_created`.
+    // Reported either way, because a refused lift always means the clock
+    // estimate is wrong by more than an hour.
+    logger.warn('[session-lifecycle] re-minted wire id could not clear the transcript', {
       session_id: row.sessionId,
       command_id: row.commandId,
       minted_time: minted.time.toString(),
@@ -2019,10 +2036,15 @@ function isProviderName(value: string | null): value is ProviderName {
 /**
  * The wire `messageID` is SUPPLIED, never minted here.
  *
- * OpenCode orders its transcript by the id's clock prefix and decides "has this
- * prompt already been answered?" from that order, so an id has to be placed
- * above everything already on record. The process holding the transcript is the
- * one that can do that: the browser/CLI for a first delivery, and the
+ * OpenCode orders its transcript by `time_created` then by the id's clock
+ * prefix (`MessageV2.page()`, unchanged across 1.17.11 and 1.18.19), so an id
+ * has to be placed above everything already on record. On a box running
+ * opencode <= 1.18.14 that placement is also what decides "has this prompt
+ * already been answered?" — the loop's exit check is an id compare there, and
+ * a badly placed id means the turn never runs. From 1.18.15 the exit check is
+ * `lastAssistant.parentID === lastUser.id`, so a bad id costs display order
+ * rather than the turn. The process holding the transcript is the
+ * one that can place it: the browser/CLI for a first delivery, and the
  * redelivery path here — which re-reads the transcript before it re-mints (see
  * `remintWireMessageId`). Every other producer (triggers, Slack, approval
  * resume) still sends no `messageID`, exactly as before, and gets a

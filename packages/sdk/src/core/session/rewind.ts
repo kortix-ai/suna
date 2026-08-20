@@ -9,16 +9,27 @@
  *   1. Which locally-known messages does a staged rewind hide?
  *   2. When is a message id inside the range a committed rewind must delete?
  *
- * `watermark` exists to fix a real bug: hiding used to be "everything at-or-
- * after the boundary id", recomputed on every render off the CURRENT message
- * list. A message minted AFTER staging — the user's replacement prompt, its
- * answer — sorts above the boundary by id exactly like every OTHER later
- * message, so it fell inside "everything after the boundary" too and never
- * rendered until an unrelated remount flooded the whole transcript back,
- * interleaved. `watermark` freezes the upper edge of the hide window at the
- * newest message id known AT STAGE TIME, so only messages that were already
- * part of the abandoned trajectory are ever hidden — anything newer always
- * renders.
+ * The window is a SET of message ids, captured at stage time. It used to be a
+ * lexical id RANGE — `id >= messageId && id <= watermark` — which assumed ids
+ * ascend with time. OpenCode 1.18.15 retired that invariant outright (turn
+ * exit now reads `lastAssistant.parentID === lastUser.id`, and
+ * `MessageV2.latest()` orders by `time.created` with the id only as a
+ * tie-break), and the range failed in both directions:
+ *
+ *   - **under-delete** — a reverted assistant message whose id happens to sort
+ *     BELOW the boundary falls outside the interval, survives the commit,
+ *     is orphaned, and reappears at the top of the chat;
+ *   - **over-delete** — `ascendingId` stubs sit ~2.8e13 above every real id, so
+ *     a single in-flight optimistic message pushed the watermark to
+ *     effectively infinity and the interval swallowed the user's replacement
+ *     prompt and its answer.
+ *
+ * Membership has neither failure. `hiddenIds` is the exact list of messages
+ * that were part of the abandoned trajectory at the moment the rewind was
+ * staged: nothing minted afterwards can enter it, and nothing inside it can
+ * escape on an id comparison. `watermark` is retained as a published field —
+ * it names the newest message known at stage time — and still answers
+ * {@link isWithinRewindWindow} for a legacy state that carries no `hiddenIds`.
  */
 
 export interface SessionRewindState {
@@ -27,10 +38,25 @@ export interface SessionRewindState {
   messageId: string;
   /**
    * The newest message id known locally at the moment this rewind was staged
-   * (or first observed). The upper bound of the hide window — fixed once,
-   * never recomputed against a later, larger message list.
+   * (or first observed) — see {@link newestMessageId}.
+   *
+   * No longer the upper bound of anything: {@link hiddenIds} is the window.
+   * Retained because it is a published field, and because it is the only
+   * bound available to a legacy state that carries no `hiddenIds`.
    */
   watermark: string;
+  /**
+   * The exact messages this rewind abandons — the boundary message and
+   * everything that followed it in the transcript, captured ONCE at stage
+   * time and never recomputed. Membership in this list is the whole of the
+   * hide/delete test; see the module comment for the two failures the lexical
+   * range it replaced produced.
+   *
+   * Optional only for backward compatibility: a `SessionRewindState` built by
+   * an older consumer (or restored from one) has none, and falls back to the
+   * legacy range. Everything in this SDK populates it.
+   */
+  hiddenIds?: readonly string[];
   /**
    * False once the replacement prompt has been sent (or a
    * `session.next.revert.committed` wire event says the server has). The
@@ -42,44 +68,81 @@ export interface SessionRewindState {
   staged: boolean;
 }
 
-/** Whether `id` falls inside the [messageId, watermark] hide range — both
- *  bounds inclusive: the boundary message itself is part of what an edit
- *  replaces, and the watermark is the last message known at stage time. */
+/** Whether `id` is one of the messages this rewind abandons.
+ *
+ *  Membership in the set captured at stage time — never a comparison between
+ *  two id strings, which say nothing about which message came first. The
+ *  legacy `[messageId, watermark]` range answers only for a state that
+ *  carries no captured set. */
 export function isWithinRewindWindow(id: string, rewind: SessionRewindState): boolean {
+  if (rewind.hiddenIds) return rewind.hiddenIds.includes(id);
   return id >= rewind.messageId && id <= rewind.watermark;
 }
 
 /**
- * The newest (highest sort-order) message id in `messages`, or `null` for an
- * empty list. Deliberately a max-scan, not "the last element" — most callers
- * pass an ascending-sorted list, but an optimistic entry appended out of
- * order must never win the max by position alone.
+ * The newest message in `messages`, by `time.created` with the id as the only
+ * tie-break — the same order the server's own `MessageV2.latest()` uses.
+ * `null` for an empty list.
+ *
+ * Deliberately a max-scan, not "the last element": most callers pass an
+ * ordered list, but an optimistic entry appended out of order must never win
+ * by position alone. A message with no `time` cannot be dated, so it competes
+ * on its id only.
  */
-export function newestMessageId<T extends { info: { id: string } }>(
-  messages: T[],
-): string | null {
-  let max: string | null = null;
+export function newestMessageId<
+  T extends { info: { id: string; time?: { created?: number } } },
+>(messages: T[]): string | null {
+  let bestId: string | null = null;
+  let bestCreated: number | undefined;
   for (const message of messages) {
-    if (max === null || message.info.id > max) max = message.info.id;
+    const { id } = message.info;
+    const created = message.info.time?.created;
+    if (bestId === null) {
+      bestId = id;
+      bestCreated = created;
+      continue;
+    }
+    if (created !== undefined && bestCreated !== undefined) {
+      if (created > bestCreated || (created === bestCreated && id > bestId)) {
+        bestId = id;
+        bestCreated = created;
+      }
+      continue;
+    }
+    if (created !== undefined && bestCreated === undefined) {
+      bestId = id;
+      bestCreated = created;
+      continue;
+    }
+    if (created === undefined && bestCreated === undefined && id > bestId) {
+      bestId = id;
+    }
   }
-  return max;
+  return bestId;
 }
 
 /**
  * Build the state for a freshly staged (or freshly discovered) rewind.
- * `watermark` is captured HERE, from the message list at this exact moment —
- * never recomputed later. Falls back to `messageId` itself when nothing is
- * known locally yet (a cross-tab or reload discovery with no synced messages
- * for this session), which hides only the boundary message and nothing
- * else — the narrowest correct answer with no other information available.
+ *
+ * The window is captured HERE and never recomputed: `hiddenIds` is the
+ * boundary message plus every message that follows it in `messages`, taken in
+ * the order the caller holds them — which is the server's own
+ * `time.created` page order, not an id order. Falls back to `messageId`
+ * itself when the boundary is not in the list (a cross-tab or reload
+ * discovery with no synced messages for this session), which hides only the
+ * boundary message — the narrowest correct answer with no other information
+ * available.
  */
-export function stageSessionRewind<T extends { info: { id: string } }>(
-  messages: T[],
-  messageId: string,
-): SessionRewindState {
+export function stageSessionRewind<
+  T extends { info: { id: string; time?: { created?: number } } },
+>(messages: T[], messageId: string): SessionRewindState {
+  const boundary = messages.findIndex((message) => message.info.id === messageId);
+  const hiddenIds =
+    boundary === -1 ? [messageId] : messages.slice(boundary).map((message) => message.info.id);
   return {
     messageId,
     watermark: newestMessageId(messages) ?? messageId,
+    hiddenIds,
     staged: true,
   };
 }

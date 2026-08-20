@@ -573,6 +573,54 @@ export async function beginSandboxTurn(
   return 'granted';
 }
 
+export type RuntimeTurnAdoption = 'adopted' | 'open_turn_exists' | 'known_message' | 'no_box';
+
+/**
+ * Give a BOX-INITIATED turn the same durable authority a delivered prompt gets.
+ *
+ * Not every turn starts with `POST .../prompts`. OpenCode starts turns of its
+ * own — most commonly the synthetic `<pty_exited>` user message it injects when
+ * a background pty finishes — and those turns had NO `session_turns` row, no
+ * `activeTurns` record, and therefore no deadline grant: `GET .../turn`
+ * reported idle for minutes of live streaming, the composer read "not
+ * running" over a working session, and a long pty-driven work phase ran on
+ * the 15-minute idle tail (live incident 2026-08-20, Essentia session
+ * d1b74954). The daemon now relays `turn_begin` when it observes the root go
+ * busy; this is that relay's write.
+ *
+ * Idempotent by construction, so the daemon may relay freely:
+ * - a message id the ledger has EVER seen is refused — a late `turn_begin`
+ *   must not resurrect a turn the reaper or a turn-end already closed;
+ * - any still-open row for this sandbox means authority is already held —
+ *   including the normal case where the control plane wrote the record before
+ *   delivering the prompt — and nothing is written.
+ */
+export async function adoptRuntimeSandboxTurn(
+  sandboxId: string,
+  identity: { opencodeSessionId: string; messageId: string },
+): Promise<RuntimeTurnAdoption> {
+  const guard = await execute(sql`
+    SELECT
+      EXISTS(
+        SELECT 1 FROM kortix.session_turns t
+         WHERE t.sandbox_id = ${sandboxId}::uuid
+           AND t.message_id = ${identity.messageId}) AS known,
+      EXISTS(
+        SELECT 1 FROM kortix.session_turns t
+         WHERE t.sandbox_id = ${sandboxId}::uuid
+           AND t.state <> 'ended') AS open`);
+  const rows = normalizeRows(guard);
+  const known = rows?.[0]?.known === true;
+  const open = rows?.[0]?.open === true;
+  if (known) return 'known_message';
+  if (open) return 'open_turn_exists';
+  const token = randomUUID();
+  const started = await beginSandboxTurn({ sandboxId }, { token, ...identity });
+  if (started !== 'granted') return 'no_box';
+  const accepted = await acceptSandboxTurn({ sandboxId }, token, identity);
+  return accepted ? 'adopted' : 'no_box';
+}
+
 /** Promote only the delivery record created by this request. */
 export async function acceptSandboxTurn(
   target: DeadlineTarget,

@@ -18,7 +18,11 @@ import {
 import { type FetchImpl, callUpstream } from '../http';
 import { parseUpstreamErrorBody } from '../http/parse-upstream-error';
 import type { CircuitBreaker } from '../resilience';
-import { gatewayErrorBody } from './error-response';
+import {
+  MAX_RELAYED_RETRY_AFTER_SECONDS,
+  clampRetryAfterSeconds,
+  gatewayErrorBody,
+} from './error-response';
 import { appendAttemptFailure, failureChainMessage } from './failure-chain';
 import { applyGenerationDefaults } from './generation-defaults';
 import type { TraceEmitter, TraceFields } from './trace';
@@ -31,11 +35,40 @@ import type { TraceEmitter, TraceFields } from './trace';
 // this byte path — one source of truth for "which 4xx fails over".
 export const LIMIT_STATUSES = new Set([402, 403, 429]);
 
-function json(data: unknown, status = 200): Response {
+function json(data: unknown, status = 200, retryAfterSeconds?: number): Response {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { 'content-type': 'application/json' },
+    headers: {
+      'content-type': 'application/json',
+      // Relayed only when the upstream sent one, and only ever clamped — see
+      // `clampRetryAfterSeconds`. Without a clamp an upstream `Retry-After:
+      // 2147483` would park OpenCode >= 1.18.17 for 24.8 days.
+      ...(retryAfterSeconds !== undefined
+        ? {
+            'retry-after': String(
+              Math.min(MAX_RELAYED_RETRY_AFTER_SECONDS, Math.max(1, Math.ceil(retryAfterSeconds))),
+            ),
+          }
+        : {}),
+    },
   });
+}
+
+/**
+ * The upstream's `Retry-After` for a back-pressure status (429 / 503), clamped
+ * to at most 60s. Any other status — and any absent, malformed, or non-positive
+ * header — relays nothing, so the client falls back to its own backoff.
+ */
+function relayedRetryAfterSeconds(err: unknown, status: number): number | undefined {
+  if (status !== 429 && status !== 503) return undefined;
+  if (!(err instanceof UpstreamHttpError)) return undefined;
+  const headers = err.headers;
+  if (!headers) return undefined;
+  for (const [name, value] of Object.entries(headers)) {
+    if (name.toLowerCase() !== 'retry-after') continue;
+    return clampRetryAfterSeconds(value);
+  }
+  return undefined;
 }
 
 function errorMessage(err: unknown): string {
@@ -280,6 +313,7 @@ export async function runFailover(ctx: FailoverContext): Promise<FailoverResult>
               requestId,
               suggestion: 'No action needed — the client already disconnected.',
               attemptFailures,
+              responseStatus: 499,
             }),
             499,
           ),
@@ -361,8 +395,14 @@ export async function runFailover(ctx: FailoverContext): Promise<FailoverResult>
                   ? 'Compact the conversation or reduce the input, then retry.'
                   : suggestionFor(err.status),
               attemptFailures,
+              // Below 500 this drops every per-attempt HTTP status from the
+              // body. A permanent 400/401/403 that carried a prior candidate's
+              // `status: 500` matched OpenCode >= 1.18.14's retry regex and was
+              // replayed five times, re-sending the whole prompt each time.
+              responseStatus: err.status,
             }),
             err.status,
+            relayedRetryAfterSeconds(err, err.status),
           ),
         };
       }
@@ -422,8 +462,10 @@ export async function runFailover(ctx: FailoverContext): Promise<FailoverResult>
             lastError instanceof UpstreamHttpError ? lastError.status : status,
           ),
           attemptFailures,
+          responseStatus: status,
         }),
         status,
+        relayedRetryAfterSeconds(lastError, status),
       ),
     };
   }

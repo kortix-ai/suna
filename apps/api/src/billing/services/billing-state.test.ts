@@ -251,19 +251,42 @@ describe('only a PAYING subscription bypasses the wallet floor', () => {
     expect(billingStateAllowsRun(resolveBillingState(snap))).toBe(false);
   });
 
-  test('a LEGACY account never bypasses the floor, whatever its subscription status', () => {
+  test('a FREE account with an active $0 Stripe subscription NEVER bypasses the floor', () => {
+    // The trap that makes the paid-plan half of the rule load-bearing: the free
+    // tier carries a real Stripe subscription whose status is `active`
+    // (226,931 such rows on production, 2026-08-20). Bypassing on "has a
+    // paying subscription" alone would hand every free account an unmetered
+    // wallet. Modeled on the real row shape.
+    for (const tier of ['free', 'none', null]) {
+      const snap = snapshot({
+        billingModel: 'legacy',
+        tier,
+        balance: 0,
+        subscriptionId: 'sub_free_tier',
+        subscriptionStatus: 'active',
+      });
+      expect(subscriptionBypassesWalletFloor(snap)).toBe(false);
+      expect(billingStateAllowsRun(resolveBillingState(snap))).toBe(false);
+    }
+  });
+
+  test('the bypass is resolved by the SUBSCRIPTION, not the billing model: a paying legacy sub bypasses too', () => {
+    // Deliberate reversal (2026-08-20). The old `isPerSeatAccount && paying`
+    // rule 402'd every paying legacy customer: legacy tiers grant no monthly
+    // credits, so a $40/mo machine-subscription account sat at a $0 wallet and
+    // blocked on the one-cent admission hold — paying monthly for an account
+    // that could not run. Same allow-list, same fail-closed behavior; only the
+    // billing-model condition is gone.
     for (const status of EVERY_STRIPE_STATUS) {
-      expect(
-        subscriptionBypassesWalletFloor(
-          snapshot({
-            billingModel: 'legacy',
-            tier: 'tier_2_20',
-            balance: 0,
-            subscriptionId: 'sub_x',
-            subscriptionStatus: status,
-          }),
-        ),
-      ).toBe(false);
+      const snap = snapshot({
+        billingModel: 'legacy',
+        tier: 'tier_2_20',
+        balance: 0,
+        subscriptionId: 'sub_x',
+        subscriptionStatus: status,
+      });
+      expect(subscriptionBypassesWalletFloor(snap)).toBe(BYPASSES.has(status));
+      expect(billingStateAllowsRun(resolveBillingState(snap))).toBe(BYPASSES.has(status));
     }
   });
 

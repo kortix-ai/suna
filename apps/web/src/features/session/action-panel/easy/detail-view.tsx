@@ -146,7 +146,7 @@ export function DetailSidebarToggle({ className }: { className?: string }) {
  * own sidebar instead of a view inside this shell. Shared, the two cannot drift.
  */
 const CARD_FRAME =
-  'bg-popover border-border absolute inset-y-3 right-3 left-3 flex min-w-0 flex-col overflow-hidden rounded-md border shadow';
+  'bg-popover border-border absolute inset-y-3 right-3 left-3 flex min-w-0 flex-col overflow-hidden rounded-md border shadow-md';
 
 /**
  * A layer that lives inside the detail card frame but must NEVER unmount.

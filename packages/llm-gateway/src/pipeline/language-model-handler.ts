@@ -16,7 +16,7 @@ import {
 } from '../transports/ai-sdk/language-model-request';
 import type { NativeBillingUsage } from '../transports/ai-sdk/sse-native';
 import { calculateCost } from '../usage';
-import { gatewayErrorResponse } from './error-response';
+import { clampRetryAfterSeconds, gatewayErrorResponse } from './error-response';
 import { MAX_INVALID_COMPLETION_ATTEMPTS_PER_CANDIDATE, admit } from './handler';
 import type { HandlerRuntime } from './handler';
 import { type NativeFailure, runNativeFailover } from './native-failover';
@@ -204,8 +204,16 @@ export async function handleLanguageModel(
   // silently drops an over-limit request into an immediate, actionable 413.
   const requestBytes = new TextEncoder().encode(req.rawBody).byteLength;
   if (runtime.config.maxRequestBytes && requestBytes > runtime.config.maxRequestBytes) {
+    logger.warn('[llm-gateway] request body over limit', {
+      requestId,
+      requestBytes,
+      maxRequestBytes: runtime.config.maxRequestBytes,
+    });
     return gatewayErrorResponse(413, {
-      message: `Request body of ${requestBytes} bytes exceeds the ${runtime.config.maxRequestBytes}-byte limit`,
+      // Digit-free — see the same guard in handler.ts. A byte count containing
+      // "500"/"429"/… would make OpenCode retry this terminal 413 five times,
+      // re-uploading the oversized body each attempt.
+      message: 'Request body exceeds the configured maximum request size',
       code: 'request_too_large',
       provider: '',
       requestedModel: '',
@@ -365,7 +373,7 @@ export async function handleLanguageModel(
     // the failure as an HTTP error response (mirrors the chat path, which
     // returns a non-200 JSON body when no candidate ever served).
     refundBillingHold(runtime, principal, requestId);
-    const { status, code, message } = describeNativeFailure(failover);
+    const { status, code, message, retryAfterSeconds } = describeNativeFailure(failover);
     logger.warn(`[llm-gateway] native failover exhausted for ${requestId}: ${message}`);
     return gatewayErrorResponse(status, {
       message,
@@ -374,6 +382,7 @@ export async function handleLanguageModel(
       requestedModel: decoded.headers.modelId,
       resolvedModel: routedModel,
       requestId,
+      ...(retryAfterSeconds !== undefined ? { retryAfterSeconds } : {}),
       suggestion:
         status === 401 || status === 402 || status === 403
           ? 'Check the provider credentials, billing, and model access, or switch to another model.'
@@ -454,6 +463,15 @@ export async function handleLanguageModel(
   return sseResponse(stream);
 }
 
+/** Case-insensitive `retry-after` lookup over captured upstream headers. */
+function retryAfterHeader(headers: Record<string, string> | undefined): string | undefined {
+  if (!headers) return undefined;
+  for (const [name, value] of Object.entries(headers)) {
+    if (name.toLowerCase() === 'retry-after') return value;
+  }
+  return undefined;
+}
+
 // Map a `runNativeFailover` failure into the HTTP status/code/message the client
 // sees. Mirrors runFailover's terminal-4xx vs unreachable-5xx split and pulls
 // the real upstream message out of an `UpstreamHttpError` body via the SAME
@@ -462,6 +480,8 @@ function describeNativeFailure(failure: NativeFailure): {
   status: number;
   code: string;
   message: string;
+  /** Clamped upstream `Retry-After`, relayed as a header on a 429/503. */
+  retryAfterSeconds?: number;
 } {
   const err = failure.transportError;
   if (err instanceof UpstreamHttpError) {
@@ -471,7 +491,16 @@ function describeNativeFailure(failure: NativeFailure): {
         parsed.code === 'context_length_exceeded'
           ? 'context_length_exceeded'
           : 'upstream_client_error';
-      return { status: err.status, code, message: parsed.message };
+      // Never verbatim: OpenCode >= 1.18.17 sleeps for whatever `Retry-After`
+      // says, capped only at 24.8 days. See clampRetryAfterSeconds.
+      const retryAfterSeconds =
+        err.status === 429 ? clampRetryAfterSeconds(retryAfterHeader(err.headers)) : undefined;
+      return {
+        status: err.status,
+        code,
+        message: parsed.message,
+        ...(retryAfterSeconds !== undefined ? { retryAfterSeconds } : {}),
+      };
     }
     return { status: 502, code: 'upstream_unreachable', message: parsed.message };
   }

@@ -23,6 +23,7 @@ import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
 import { Input } from '@/components/ui/input';
 import Loading from '@/components/ui/loading';
+import { ErrorState } from '@/features/layout/section/error-state';
 import { useAuthenticatedPreviewUrl } from '@/hooks/use-authenticated-preview-url';
 import { usePublicShareLink } from '@/hooks/use-public-share-link';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
@@ -37,7 +38,6 @@ import { useIsExpanded, useToggleExpanded } from '@/stores/kortix-computer-store
 import { type CreateSessionPublicShareInput, probePreviewPort } from '@kortix/sdk';
 import { useRuntimeConnectionStore } from '@kortix/sdk/react';
 import {
-  WarningIcon as AlertTriangle,
   ArrowLeftIcon as ArrowLeft,
   ArrowRightIcon as ArrowRight,
   ArrowSquareOutIcon,
@@ -526,34 +526,30 @@ export function AppPreview({
         )}
 
         {hasError && !noApp && (
-          <div className="bg-background absolute inset-0 z-10 flex items-center justify-center">
-            <div className="flex max-w-sm flex-col items-center gap-4 px-4 text-center">
-              <span className="bg-kortix-yellow/15 flex size-9 items-center justify-center rounded-md">
-                <WarningIcon className="text-kortix-yellow size-5" />
-              </span>
-              <div>
-                <p className="text-sm font-medium">Couldn&apos;t load {name}</p>
-                {/* The single most common cause, said plainly: the agent started
-                    the server a moment ago and it isn't listening yet. Only a
-                    SETTLED `dead` verdict earns the stopped-workspace wording —
-                    see `previewErrorReason`. */}
-                <p className="text-muted-foreground mt-1 text-xs">
-                  {previewErrorReason({ sandbox: sandboxHealth, port })}
-                </p>
-              </div>
-              <div className="flex items-center justify-center gap-2">
-                <Button variant="outline" size="sm" className="gap-1.5" onClick={reload}>
-                  Retry
+          <ErrorState
+            icon={WarningIcon}
+            size="sm"
+            className="bg-background absolute inset-0 z-10"
+            title={`Couldn't load ${name}`}
+            /* The single most common cause, said plainly: the agent started the
+               server a moment ago and it isn't listening yet. Only a SETTLED
+               `dead` verdict earns the stopped-workspace wording — see
+               `previewErrorReason`. */
+            description={previewErrorReason({ sandbox: sandboxHealth, port })}
+            action={
+              <Button variant="outline" size="sm" className="gap-1.5" onClick={reload}>
+                Retry
+              </Button>
+            }
+            secondaryAction={
+              onSendToAgent ? (
+                <Button size="sm" className="gap-1.5" onClick={onSendToAgent}>
+                  <SparklesSolid weight="fill" className="size-3.5 shrink-0" />
+                  Send to agent
                 </Button>
-                {onSendToAgent && (
-                  <Button size="sm" className="gap-1.5" onClick={onSendToAgent}>
-                    <SparklesSolid weight="fill" className="size-3.5 shrink-0" />
-                    Send to agent
-                  </Button>
-                )}
-              </div>
-            </div>
-          </div>
+              ) : null
+            }
+          />
         )}
 
         {noApp ? (

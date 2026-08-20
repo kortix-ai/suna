@@ -109,6 +109,8 @@ export async function resolveCommitSha(project: GitBackedProject, ref?: string):
 export interface FastBootGitHint {
   baseSha: string;
   gitDeltaBundleBase64?: string;
+  gitDeltaParentSha?: string;
+  gitDeltaParentCommitBase64?: string;
 }
 
 /**
@@ -119,7 +121,12 @@ export interface FastBootGitHint {
 export async function buildSingleParentDeltaBundle(
   repoPath: string,
   ref: string,
-): Promise<{ baseSha: string; parentSha: string; bundleBase64: string } | null> {
+): Promise<{
+  baseSha: string;
+  parentSha: string;
+  parentCommitBase64: string;
+  bundleBase64: string;
+} | null> {
   const treeRef = validateRef(ref);
   const revision = await runGit(
     ['rev-list', '--parents', '-n', '1', treeRef],
@@ -129,6 +136,9 @@ export async function buildSingleParentDeltaBundle(
   const [baseSha, ...parents] = revision.stdout.trim().split(/\s+/);
   if (!baseSha || !/^[0-9a-f]{40}$/.test(baseSha) || parents.length !== 1) return null;
   const parentSha = parents[0]!;
+  const parentCommitBase64 = Buffer.from(
+    (await runGit(['cat-file', 'commit', parentSha], repoPath, false)).stdout,
+  ).toString('base64');
   const temp = await mkdtemp(join(tmpdir(), 'kortix-fast-boot-bundle-'));
   const bundlePath = join(temp, 'delta.bundle');
   try {
@@ -138,10 +148,13 @@ export async function buildSingleParentDeltaBundle(
       false,
     );
     const bundleBase64 = (await readFile(bundlePath)).toString('base64');
-    if (Buffer.byteLength(bundleBase64, 'utf8') > MAX_FAST_BOOT_GIT_BUNDLE_BASE64_BYTES) {
+    if (
+      Buffer.byteLength(bundleBase64 + parentCommitBase64, 'utf8') >
+      MAX_FAST_BOOT_GIT_BUNDLE_BASE64_BYTES
+    ) {
       return null;
     }
-    return { baseSha, parentSha, bundleBase64 };
+    return { baseSha, parentSha, parentCommitBase64, bundleBase64 };
   } finally {
     await rm(temp, { recursive: true, force: true });
   }
@@ -164,7 +177,12 @@ export async function resolveFastBootGitHint(
   try {
     const delta = await buildSingleParentDeltaBundle(repoPath, treeRef);
     return delta?.baseSha === baseSha
-      ? { baseSha, gitDeltaBundleBase64: delta.bundleBase64 }
+      ? {
+          baseSha,
+          gitDeltaBundleBase64: delta.bundleBase64,
+          gitDeltaParentSha: delta.parentSha,
+          gitDeltaParentCommitBase64: delta.parentCommitBase64,
+        }
       : { baseSha };
   } catch (error) {
     console.warn('[git] fast-boot delta bundle unavailable', {

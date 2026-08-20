@@ -20,7 +20,7 @@
  */
 
 import { sessionLifecycleCommands } from '@kortix/db';
-import { and, desc, eq, or, sql } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
 import { sandboxRuntimeRequestHeaders } from '../sandbox-fetch';
@@ -28,6 +28,7 @@ import { closeSandboxTurnByMessageId } from '../sandbox-turn-lifecycle';
 import { resolveSessionOpencodeEndpoint } from './engine';
 import { reachedPlacement, strandedPlacement } from './forwarded-placement';
 import { inboxScope } from './inbox-rows';
+import { wireMessageIdMatches } from './wire-id-match';
 
 function isOnWire(result: unknown): boolean {
   const status = (result as { status?: unknown } | null)?.status;
@@ -62,16 +63,7 @@ export async function findInboxRowIdByMessageId(
   const [row] = await db
     .select({ commandId: sessionLifecycleCommands.commandId })
     .from(sessionLifecycleCommands)
-    .where(
-      and(
-        inboxScope(sessionId),
-        or(
-          sql`${sessionLifecycleCommands.payload}->>'wireMessageId' = ${messageId}`,
-          sql`${sessionLifecycleCommands.payload}->>'redeliveredMessageId' = ${messageId}`,
-          sql`${sessionLifecycleCommands.result}->>'forwarded_message_id' = ${messageId}`,
-        ),
-      ),
-    )
+    .where(and(inboxScope(sessionId), wireMessageIdMatches(messageId)))
     .orderBy(desc(sessionLifecycleCommands.createdAt))
     .limit(1);
   return row?.commandId ?? null;

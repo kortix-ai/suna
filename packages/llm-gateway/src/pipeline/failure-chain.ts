@@ -76,11 +76,28 @@ export function errorFrameCode(frame: SseErrorFrame): string | number {
   );
 }
 
+export interface FailureChainMessageOptions {
+  /**
+   * Render each attempt's `HTTP <status>` segment. MUST be false whenever the
+   * composed message is served with a status below 500: OpenCode >= 1.18.14
+   * regex-matches `/429|500|502|503|504|524/` against the whole response body
+   * and retries five times on a hit, whatever the HTTP status says — a prior
+   * attempt's "HTTP 500" inside a terminal 400's message is enough to trigger
+   * it. See the note at the top of pipeline/error-response.ts.
+   *
+   * Defaults to true so a 5xx body (which OpenCode retries on the status alone)
+   * keeps the full diagnostic chain.
+   */
+  includeStatus?: boolean;
+}
+
 export function failureChainMessage(
   chain: readonly GatewayAttemptFailure[],
   fallback: string,
   requestId?: string,
+  opts: FailureChainMessageOptions = {},
 ): string {
+  const includeStatus = opts.includeStatus ?? true;
   const requestPrefix = requestId ? `${requestId}: ` : '';
   if (chain.length === 0) return boundedCompositeMessage(`${requestPrefix}${fallback}`);
   const unique = chain.filter(
@@ -97,8 +114,12 @@ export function failureChainMessage(
     .map(
       (failure) =>
         `${failure.provider}/${failure.resolvedModel} [${[
-          failure.status !== undefined ? `HTTP ${failure.status}` : undefined,
-          String(failure.code),
+          failure.status !== undefined && includeStatus ? `HTTP ${failure.status}` : undefined,
+          // A numeric code is the bare HTTP status again — same gate as the
+          // `status` segment above (see FailureChainMessageOptions).
+          includeStatus || typeof failure.code !== 'number'
+            ? String(failure.code)
+            : 'upstream_error',
         ]
           .filter(Boolean)
           .join(', ')}]: ${failure.message}`,

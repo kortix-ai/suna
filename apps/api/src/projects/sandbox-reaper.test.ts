@@ -1181,10 +1181,19 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
     ]);
   });
 
-  test('a JUST-ACCEPTED record is not orphaned yet, whatever the daemon says', async () => {
+  test('a JUST-ACCEPTED record is not orphaned yet — and its clear DEFERS, never swallows', async () => {
     // "User message on record, no assistant message, root idle" is also what
     // the moments between OpenCode ACKing a prompt and starting it look like.
     // Redelivering into that window runs the user's prompt twice.
+    //
+    // EXPECTATION CHANGED 2026-08-20 (live incident, Essentia session
+    // d1b74954): this used to CLEAR the record while skipping the redelivery.
+    // Clearing deletes the record — the only thing that can ever trigger the
+    // redelivery — so a terminal observation landing inside the age floor was
+    // a one-shot race that swallowed the prompt for good (cleared `unknown` at
+    // age 27s, 3s under the floor, never answered). Now the young orphan
+    // DEFERS: nothing is cleared, nothing is redelivered, and the next pass
+    // (~20s later) decides with the age check satisfied.
     candidates = [
       candidate({
         deadlineAt: new Date(NOW.getTime() + HOUR),
@@ -1205,7 +1214,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
 
     await reapAndReconcileSandboxes(NOW);
 
-    expect(clearedTurnCalls).toEqual([{ sandboxId: 'sb-1', token: 'active-token' }]);
+    expect(clearedTurnCalls).toEqual([]);
     expect(promptRedeliveries).toEqual([]);
   });
 

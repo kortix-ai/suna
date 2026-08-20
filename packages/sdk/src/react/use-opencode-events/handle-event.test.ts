@@ -536,6 +536,7 @@ describe('session.created / session.updated — revert mirror (T22)', () => {
     expect(useSyncStore.getState().sessionRevert.ses_new).toEqual({
       messageId: 'msg_2',
       watermark: 'msg_2',
+      hiddenIds: ['msg_2'],
       staged: true,
     });
   });
@@ -555,6 +556,7 @@ describe('session.created / session.updated — revert mirror (T22)', () => {
     expect(useSyncStore.getState().sessionRevert.ses_a).toEqual({
       messageId: 'msg_1',
       watermark: 'msg_1',
+      hiddenIds: ['msg_1'],
       staged: true,
     });
   });

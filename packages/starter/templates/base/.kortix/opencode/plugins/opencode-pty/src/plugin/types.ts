@@ -1,4 +1,4 @@
-import type { Plugin } from '@opencode-ai/plugin'
+import type { Plugin } from '../../../../tools/lib/tool'
 
 export type PluginClient = Parameters<Plugin>[0]['client']
 

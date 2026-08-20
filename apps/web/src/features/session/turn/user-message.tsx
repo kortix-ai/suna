@@ -64,6 +64,7 @@ import {
 
 import { messageCreatedAt } from './message-time';
 import { MessageTimeLabel } from './message-time-label';
+import { PlanCard, useHasPlan } from './plan-card';
 
 // ============================================================================
 // Fixed channel brand colors + DCP (dynamic context pruning) notifications —
@@ -293,8 +294,14 @@ function DCPNotificationCard({ notification }: { notification: DCPNotification }
     <div className="border-border/60 bg-card/50 overflow-hidden rounded-lg border">
       {/* Header */}
       <Button
+        type="button"
         onClick={() => hasDetails && setExpanded(!expanded)}
         variant="ghost"
+        // `pointer-events-none` only stops the mouse. Without these, a card with
+        // nothing to reveal was still a tab stop that announced itself as a
+        // collapsed control.
+        tabIndex={hasDetails ? undefined : -1}
+        aria-expanded={hasDetails ? expanded : undefined}
         className={cn(
           'border-border/40 bg-muted/30 flex h-auto w-full items-center justify-start gap-2 rounded-none border-b px-3 py-2',
           !hasDetails && 'pointer-events-none',
@@ -420,7 +427,7 @@ export const BUBBLE_TEXT = cn(
 );
 
 export const BUBBLE_SURFACE = cn(
-  'bg-sidebar dark:bg-muted text-foreground flex max-w-full flex-col px-4.5 py-3.5 select-none rounded-xl',
+  'bg-sidebar dark:bg-muted text-foreground flex max-w-full flex-col px-3.5 py-2.5 select-none rounded-lg',
 );
 
 export interface NormalizedAttachment {
@@ -842,9 +849,10 @@ export function UserMessageActions({
   onRewind?: (messageId: string, text: string) => void;
   rewindDisabled?: boolean;
   /**
-   * Rendered FIRST in the row: a queued prompt's status + controls
-   * (`QueuedPromptControls`) — the same row, so a pending bubble does not
-   * grow a second strip under it.
+   * Rendered FIRST in the fade group: a queued prompt's controls
+   * (`QueuedPromptActions`) — remove, send-now, retry. Same row as copy /
+   * rewind so a pending bubble does not grow a second strip, and so the X
+   * does not reserve a column beside the bubble.
    */
   leading?: React.ReactNode;
   /**
@@ -901,6 +909,9 @@ export function UserMessageActions({
                 type="button"
                 variant="ghost"
                 size="icon-xs"
+                // 24px visible, 40px target — grown with a pseudo-element so the
+                // dense action row keeps its rhythm.
+                className="hit-area-2"
                 aria-label="Edit message and rewind session"
                 onClick={() => onRewind?.(messageId as string, rewindPromptText ?? '')}
               >
@@ -1018,11 +1029,24 @@ export function UserMessage({
     [attachments, uploadedFiles],
   );
 
-  // The bubble ALWAYS hugs its text. It used to take the full column when the
-  // turn "owned the plan" (`ownsPlan && useHasPlan`) — a claim from when the
-  // todo checklist rendered inside the bubble. The plan card lives under the
-  // turn now, and the anchor's fallback made a one-word message stretch across
-  // the whole column whenever any earlier turn had written todos.
+  /**
+   * Whether THIS turn draws the plan.
+   *
+   * `ownsPlan` alone is not the answer: `planAnchorMessageId` falls back to the
+   * last turn when no turn ever wrote todos, so a session with zero todos still
+   * nominates an owner. `useHasPlan` is the second half — it asks the runtime
+   * whether a plan exists at all, on the same query key the `todo.updated` SSE
+   * event writes, so the card appears the moment the agent writes its first
+   * todo and never appears for a session that has none.
+   *
+   * The bubble itself hugs its text either way; only the column cap moves.
+   */
+  // Called UNCONDITIONALLY. `ownsPlan && useHasPlan(...)` short-circuits, so
+  // the hook would go uncalled whenever `ownsPlan` is false — and the anchor
+  // moves between turns as the agent re-plans, so React would see the hook
+  // count change on a live component. Read first, combine second.
+  const hasPlan = useHasPlan(sessionId);
+  const showPlan = ownsPlan && hasPlan;
 
   // Resolve effective command info: use runtime-tracked info or fall back to template matching
   const effectiveCommandInfo = useMemo(
@@ -1150,7 +1174,6 @@ export function UserMessage({
 
   const [expanded, setExpanded] = useState(false);
   const [canExpand, setCanExpand] = useState(false);
-  const [copied, setCopied] = useState(false);
   const textRef = useRef<HTMLDivElement>(null);
 
   // Use ResizeObserver + rAF to reliably detect overflow after layout settles
@@ -1174,13 +1197,6 @@ export function UserMessage({
       ro.disconnect();
     };
   }, [bodyText, expanded]);
-
-  const handleCopy = async () => {
-    if (!text) return;
-    await navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
 
   /**
    * Server-located mention spans. Deliberately dropped for a command message:
@@ -1282,9 +1298,14 @@ export function UserMessage({
     const brandColor = isTelegram ? CHANNEL_BRAND_COLOR.Telegram : CHANNEL_BRAND_COLOR.Slack;
     return (
       <div className="flex flex-col items-end gap-1">
-        <div className="border-border/60 bg-muted/40 inline-flex max-w-[85%] flex-col gap-1.5 rounded-lg border px-4 py-2.5">
+        <div className="border-border/60 bg-muted/40 inline-flex max-w-[80%] flex-col gap-1.5 rounded-lg border px-4 py-2.5">
           <div className="flex items-center gap-2">
-            <svg className="size-3.5 shrink-0" viewBox="0 0 24 24" fill={brandColor}>
+            <svg
+              className="size-3.5 shrink-0"
+              viewBox="0 0 24 24"
+              fill={brandColor}
+              aria-hidden="true"
+            >
               {isTelegram ? (
                 <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8c-.15 1.58-.8 5.42-1.13 7.19-.14.75-.42 1-.68 1.03-.58.05-1.02-.38-1.58-.75-.88-.58-1.38-.94-2.23-1.5-.99-.65-.35-1.01.22-1.59.15-.15 2.71-2.48 2.76-2.69a.2.2 0 00-.05-.18c-.06-.05-.14-.03-.21-.02-.09.02-1.49.95-4.22 2.79-.4.27-.76.41-1.08.4-.36-.01-1.04-.2-1.55-.37-.63-.2-1.12-.31-1.08-.66.02-.18.27-.36.74-.55 2.92-1.27 4.86-2.11 5.83-2.51 2.78-1.16 3.35-1.36 3.73-1.36.08 0 .27.02.39.12.1.08.13.19.14.27-.01.06.01.24 0 .38z" />
               ) : (
@@ -1321,16 +1342,13 @@ export function UserMessage({
               {triggerEventInfo.data?.trigger || 'Scheduled Task'}
             </span>
             {triggerEventInfo.data?.data?.manual && (
-              <span className="text-muted-foreground bg-muted rounded px-1.5 py-0.5 text-xs font-medium">
+              <Badge variant="muted" size="sm">
                 Manual
-              </span>
+              </Badge>
             )}
           </div>
           {triggerEventInfo.prompt && (
-            <div
-              className="text-muted-foreground max-w-[400px] pl-5.5 text-xs wrap-break-word"
-              style={{ paddingLeft: '1.375rem' }}
-            >
+            <div className="text-muted-foreground max-w-[400px] pl-5.5 text-xs wrap-break-word">
               {triggerEventInfo.prompt}
             </div>
           )}
@@ -1360,8 +1378,9 @@ export function UserMessage({
     <div
       className={cn(
         'ml-auto flex w-full flex-col items-end gap-2 self-end',
-        // showPlan ? 'max-w-full' : 'max-w-[80%]',
-        'max-w-[80%]',
+        // The bubble hugs its own text (`w-fit`), so lifting the cap widens
+        // ONLY the plan card — the message itself does not stretch.
+        showPlan ? 'max-w-full' : 'max-w-[80%]',
       )}
     >
       {allAttachments.length > 0 && <MessageAttachments attachments={allAttachments} />}
@@ -1442,6 +1461,18 @@ export function UserMessage({
           under the bubble they describe — notification cards below are separate
           objects and must not come between a message and its own meta. */}
       {actions}
+
+      {/* The plan, last — closest to the assistant work it governs.
+          `session-chat` drops every `todowrite` part before segmentation, so
+          this card is the ONLY surface session todos have. Without it the
+          agent's plan renders nowhere and reads as "no plan was made".
+          `w-full` because the column is `items-end`: a checklist is a panel
+          across the column, not something trailing off a sentence. */}
+      {showPlan && (
+        <div className="w-full">
+          <PlanCard sessionId={sessionId} />
+        </div>
+      )}
     </div>
   );
 }

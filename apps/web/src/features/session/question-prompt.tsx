@@ -12,7 +12,7 @@
 
 import { cn } from '@/lib/utils';
 import type { QuestionAnswer, QuestionInfo, QuestionRequest } from '@/ui';
-import { ChatCircleIcon as MessageCircle } from '@phosphor-icons/react';
+import { CheckIcon, ChatCircleIcon as MessageCircle } from '@phosphor-icons/react';
 import React, { useCallback, useEffect, useImperativeHandle, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -290,36 +290,42 @@ export const QuestionPrompt = React.forwardRef<QuestionPromptHandle, QuestionPro
             {isSingle ? '' : `${questions.length} questions \u00B7 `}
             <span className="text-foreground/80 truncate font-medium">{headerSummary}</span>
           </span>
-          <span
-            role="button"
-            tabIndex={0}
+          {/* A real <button>: Enter AND Space activate it natively, and Space no
+              longer scrolls the transcript out from under the question. */}
+          <button
+            type="button"
             onClick={reject}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                reject();
-              }
-            }}
-            className="text-muted-foreground/40 hover:text-foreground hover:bg-muted inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors"
+            aria-label="Dismiss question"
+            className="text-muted-foreground/40 hover:text-foreground hover:bg-muted hit-area-2 inline-flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors"
           >
             <Close className="size-3" />
-          </span>
+          </button>
         </div>
 
         {/* Body — scrollable so long option lists don't blow up the card */}
         <div className="border-border/30 max-h-[420px] overflow-y-auto border-t">
           {/* Tab bar (multi-question only) */}
           {!isSingle && (
-            <div className="scrollbar-hide border-border/30 bg-muted/20 flex items-center gap-0.5 overflow-x-auto border-b px-2 py-1">
+            <div
+              role="tablist"
+              aria-label="Questions"
+              className="scrollbar-hide border-border/30 bg-muted/20 flex items-center gap-0.5 overflow-x-auto border-b px-2 py-1"
+            >
               {questions.map((q, i) => {
                 const isAnswered = (answers[i]?.length ?? 0) > 0;
                 return (
                   <button
                     key={q.question}
+                    type="button"
+                    role="tab"
+                    id={`${request.id}-tab-${i}`}
+                    aria-selected={tab === i}
+                    aria-controls={`${request.id}-panel`}
                     onClick={() => {
                       setTab(i);
                     }}
                     className={cn(
-                      'flex cursor-pointer items-center gap-1 rounded-2xl border px-2 py-0.5 text-sm font-medium whitespace-nowrap transition-colors duration-150',
+                      'flex cursor-pointer items-center gap-1 rounded-full border px-2 py-0.5 text-sm font-medium whitespace-nowrap transition-colors duration-150',
                       tab === i
                         ? 'bg-background/80 text-foreground border-border/70'
                         : 'text-muted-foreground hover:text-foreground hover:bg-muted/70 border-transparent',
@@ -335,17 +341,7 @@ export const QuestionPrompt = React.forwardRef<QuestionPromptHandle, QuestionPro
                             : 'border-border',
                       )}
                     >
-                      {isAnswered && (
-                        <svg viewBox="0 0 12 12" fill="none" width="7" height="7">
-                          <path
-                            d="M3 7.18L5.03 8.85L9 3.5"
-                            stroke="currentColor"
-                            strokeWidth="1.5"
-                            strokeLinecap="square"
-                            className="text-foreground"
-                          />
-                        </svg>
-                      )}
+                      {isAnswered && <CheckIcon className="text-foreground size-2" />}
                       {!isAnswered && tab === i && (
                         <div className="bg-foreground size-0.5 rounded-full" />
                       )}
@@ -355,11 +351,16 @@ export const QuestionPrompt = React.forwardRef<QuestionPromptHandle, QuestionPro
                 );
               })}
               <button
+                type="button"
+                role="tab"
+                id={`${request.id}-tab-confirm`}
+                aria-selected={isConfirm}
+                aria-controls={`${request.id}-panel`}
                 onClick={() => {
                   setTab(questions.length);
                 }}
                 className={cn(
-                  'cursor-pointer rounded-2xl border px-2 py-0.5 text-sm font-medium transition-colors duration-150',
+                  'cursor-pointer rounded-full border px-2 py-0.5 text-sm font-medium transition-colors duration-150',
                   isConfirm
                     ? 'bg-background/80 text-foreground border-border/70'
                     : 'text-muted-foreground hover:text-foreground hover:bg-muted/70 border-transparent',
@@ -370,7 +371,18 @@ export const QuestionPrompt = React.forwardRef<QuestionPromptHandle, QuestionPro
             </div>
           )}
 
-          <div className="px-3 py-2">
+          <div
+            id={`${request.id}-panel`}
+            role={isSingle ? undefined : 'tabpanel'}
+            aria-labelledby={
+              isSingle
+                ? undefined
+                : isConfirm
+                  ? `${request.id}-tab-confirm`
+                  : `${request.id}-tab-${tab}`
+            }
+            className="px-3 py-2"
+          >
             {/* Confirm / review tab */}
             {isConfirm ? (
               <div className="space-y-0.5">
@@ -388,17 +400,7 @@ export const QuestionPrompt = React.forwardRef<QuestionPromptHandle, QuestionPro
                           done ? 'border-border bg-muted' : 'border-border',
                         )}
                       >
-                        {done && (
-                          <svg viewBox="0 0 12 12" fill="none" width="7" height="7">
-                            <path
-                              d="M3 7.18L5.03 8.85L9 3.5"
-                              stroke="currentColor"
-                              strokeWidth="1.5"
-                              strokeLinecap="square"
-                              className="text-foreground"
-                            />
-                          </svg>
-                        )}
+                        {done && <CheckIcon className="text-foreground size-2" />}
                       </span>
                       <span
                         className={cn(
@@ -431,9 +433,11 @@ export const QuestionPrompt = React.forwardRef<QuestionPromptHandle, QuestionPro
                     return (
                       <button
                         key={opt.label}
+                        type="button"
+                        aria-pressed={isMulti ? isPicked : undefined}
                         onClick={() => selectOption(i)}
                         className={cn(
-                          'group flex w-full cursor-pointer items-center gap-2 rounded-2xl border px-2 py-1.5 text-left transition-colors duration-150 ease-out active:scale-[0.998]',
+                          'group flex w-full cursor-pointer items-center gap-2 rounded-md border px-2 py-1.5 text-left transition-[color,background-color,border-color,scale] duration-150 ease-out active:scale-[0.998]',
                           isPicked
                             ? 'bg-primary/10 border-primary/30'
                             : 'hover:bg-muted/40 border-transparent',
@@ -447,17 +451,7 @@ export const QuestionPrompt = React.forwardRef<QuestionPromptHandle, QuestionPro
                               : 'border-border group-hover:border-foreground/30',
                           )}
                         >
-                          {isPicked && (
-                            <svg viewBox="0 0 12 12" fill="none" width="8" height="8">
-                              <path
-                                d="M3 7.18L5.03 8.85L9 3.5"
-                                stroke="currentColor"
-                                strokeWidth="1.5"
-                                strokeLinecap="square"
-                                className="text-foreground"
-                              />
-                            </svg>
-                          )}
+                          {isPicked && <CheckIcon className="text-foreground size-2.5" />}
                         </span>
                         <span className="min-w-0 text-xs leading-tight">
                           <span

@@ -88,8 +88,8 @@ describe('sandbox test workflow', () => {
     // A cap is a hang detector, not a throttle. 40 minutes throttled: it killed
     // shards that were passing 76/87 and 68/77 of what they had run.
     expect(release).toMatch(/^ {4}timeout-minutes: 60$/m);
-    // The load each shard offers staging is unchanged by the extra shards.
-    expect(release).toContain("KE2E_API_WORKERS: '2'");
+    // Keep each shard below staging's proven concurrency ceiling.
+    expect(release).toContain("KE2E_API_WORKERS: '1'");
     expect(release).toContain("KE2E_SANDBOX_WORKERS: '1'");
     expect(release).toContain("KE2E_TIMEOUT_ATTEMPTS: '2'");
     // Dry run against staging without a release PR. `RELEASE_SOURCE_SHA` only

@@ -7,6 +7,7 @@ describe('turnStreamKindField', () => {
     expect(turnStreamKindField('answer')).toBe('answer');
     expect(turnStreamKindField('end')).toBe('end');
     expect(turnStreamKindField('turn_end')).toBe('turn_end');
+    expect(turnStreamKindField('turn_begin')).toBe('turn_begin');
     expect(turnStreamKindField('turn_accepted')).toBe('turn_accepted');
     expect(turnStreamKindField('turn_abandoned')).toBe('turn_abandoned');
     expect(turnStreamKindField('opencode_session')).toBe('opencode_session');
@@ -30,6 +31,7 @@ describe('turnStreamKindNeedsConnectorWrite', () => {
     // no connector.write) must be allowed to report them.
     expect(turnStreamKindNeedsConnectorWrite('end')).toBe(false);
     expect(turnStreamKindNeedsConnectorWrite('turn_end')).toBe(false);
+    expect(turnStreamKindNeedsConnectorWrite('turn_begin')).toBe(false);
     expect(turnStreamKindNeedsConnectorWrite('turn_accepted')).toBe(false);
     expect(turnStreamKindNeedsConnectorWrite('turn_abandoned')).toBe(false);
     expect(turnStreamKindNeedsConnectorWrite('opencode_session')).toBe(false);

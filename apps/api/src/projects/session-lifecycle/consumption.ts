@@ -1,9 +1,10 @@
 import { sessionLifecycleCommands, sessionTurns } from '@kortix/db';
-import { and, asc, eq, inArray, lte, or, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, lte, sql } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
 import { DEDUPE_TTL_MS } from '../../sandbox-proxy/prompt-dedupe';
 import { db } from '../../shared/db';
 import { PROMPT_NEVER_RAN_END_REASONS } from './redelivery';
+import { wireMessageIdMatches } from './wire-id-match';
 
 /**
  * The other end of a FORWARDED prompt.
@@ -96,12 +97,13 @@ const liveDeps: ConsumptionDeps = {
           // which is what makes the call idempotent under two witnesses.
           eq(sessionLifecycleCommands.status, 'succeeded'),
           sql`${sessionLifecycleCommands.result}->>'status' = 'forwarded'`,
-          // The SAME id predicate `redelivery.ts` matches on, so the two can
-          // never disagree about which row a wire id names.
-          or(
-            sql`${sessionLifecycleCommands.payload}->>'wireMessageId' = ${wireMessageId}`,
-            sql`${sessionLifecycleCommands.payload}->>'redeliveredMessageId' = ${wireMessageId}`,
-          ),
+          // The SAME id predicate every other reader matches on
+          // (`wire-id-match.ts`), so none of them can disagree about which row
+          // a wire id names. It was NOT the same until 2026-08-20: this one
+          // read the payload only, so a row whose `result.forwarded_message_id`
+          // differed from both payload ids was never closed here and read
+          // `delivering` for ever.
+          wireMessageIdMatches(wireMessageId),
         ),
       )
       .returning({ commandId: sessionLifecycleCommands.commandId });
@@ -123,10 +125,14 @@ const liveDeps: ConsumptionDeps = {
           // ONLY a claimed row. A `queued` row has not been POSTed, so no
           // acceptance can name its id; a `succeeded` one is `confirm`'s.
           eq(sessionLifecycleCommands.status, 'running'),
-          or(
-            sql`${sessionLifecycleCommands.payload}->>'wireMessageId' = ${wireMessageId}`,
-            sql`${sessionLifecycleCommands.payload}->>'redeliveredMessageId' = ${wireMessageId}`,
-          ),
+          // Same shared predicate as every other reader. Its
+          // `result.forwarded_message_id` branch cannot widen THIS query: a
+          // row only reaches `running` from `queued` (`store.ts:683`,
+          // `inbox-rows.ts:489`), and both requeue paths replace `result`
+          // wholesale (`redelivery.ts`'s `requeue`,
+          // `forwarded-strand-reconcile.ts`'s `requeueStranded`), so a
+          // `running` row never carries a stale `forwarded_message_id`.
+          wireMessageIdMatches(wireMessageId),
         ),
       )
       .returning({ commandId: sessionLifecycleCommands.commandId });

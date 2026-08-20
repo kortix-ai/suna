@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 595,
+  "count": 598,
   "routes": [
     {
       "method": "GET",
@@ -549,6 +549,10 @@
     {
       "method": "POST",
       "path": "/v1/admin/api/accounts/:id/session-limit"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/admin/api/accounts/:id/subscription"
     },
     {
       "method": "POST",
@@ -2145,6 +2149,14 @@
     {
       "method": "POST",
       "path": "/v1/router/web-search"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/runtime-assets/agent"
+    },
+    {
+      "method": "HEAD",
+      "path": "/v1/runtime-assets/agent"
     },
     {
       "method": "GET",

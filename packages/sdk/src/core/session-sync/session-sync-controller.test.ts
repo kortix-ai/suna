@@ -123,6 +123,35 @@ describe('SessionSyncController', () => {
     ]);
   });
 
+  // `MessageV2.page()` orders by `time_created` on the server, and it always
+  // did. Ids do NOT ascend with time any more (OpenCode 1.18.15 retired that
+  // invariant), so re-sorting the pages by id — `localeCompare`, no less,
+  // which is not even byte order — invented an order the server never sent.
+  // The transcript is the pages, oldest page first, each page untouched.
+  test('reassembles pages in page order, never by id — the server page IS the order', async () => {
+    const messages = await loadCompleteSessionHistory(async (request) => {
+      // Page 1 is the NEWEST tail; `before` walks backwards into history.
+      if (!request.before) return page(['msg_aa', 'msg_ab'], 'cursor-older');
+      return page(['msg_zy', 'msg_zz']);
+    });
+
+    expect(messages.map((message) => message.info.id)).toEqual([
+      'msg_zy',
+      'msg_zz',
+      'msg_aa',
+      'msg_ab',
+    ]);
+  });
+
+  test('an id repeated across overlapping pages appears exactly once, at its oldest position', async () => {
+    const messages = await loadCompleteSessionHistory(async (request) => {
+      if (!request.before) return page(['msg_b', 'msg_a'], 'cursor-older');
+      return page(['msg_c', 'msg_b']);
+    });
+
+    expect(messages.map((message) => message.info.id)).toEqual(['msg_c', 'msg_b', 'msg_a']);
+  });
+
   test('loads only the newest page and exposes older pagination', async () => {
     const requests: Array<{ limit: number; before?: string }> = [];
     const hydrated: MessageWithParts[][] = [];

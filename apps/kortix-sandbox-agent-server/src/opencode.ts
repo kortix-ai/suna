@@ -1899,7 +1899,9 @@ export function createOpencodeSupervisor(
    * Rewrite the config file and ask opencode to re-read it in place. True when
    * it did.
    *
-   * Measured against the pinned opencode (1.17.11) on 2026-08-03:
+   * Measured against opencode 1.17.11 on 2026-08-03, re-verified on the
+   * pinned 1.18.19 on 2026-08-20 (same pid after dispose, JSON `true` body,
+   * phantom route still answers 200 text/html):
    *   - `POST /global/dispose` re-reads the config file from disk, in-process,
    *     same pid, in ~51ms. A respawn is ~8s.
    *   - There is NO config file watcher. Rewriting the file alone changes

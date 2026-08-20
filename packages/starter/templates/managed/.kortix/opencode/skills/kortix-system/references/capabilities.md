@@ -117,14 +117,16 @@ than telling the user to dig through settings or paste a secret into chat
 agent's grant, and the session allowlist. Each secret has an **exposure** that
 says whether agent code can read the real value:
 
-- **egress-enforced** (the default) — the sandbox env holds a handle. Kortix
-  swaps it for the real value outside the sandbox, only on the exact HTTPS hosts
-  the policy lists, and redacts the credential out of any response that echoes
-  it. The value never enters the sandbox.
-- **environment** — the sandbox env holds the real value, so any command the
-  agent runs can read it. Required for credentials that are COMPUTED with rather
-  than sent (SigV4, HMAC signing, JWT assertions, SSH keys) and for non-HTTPS
-  protocols. Grant these deliberately.
+- **environment** (the default) — the sandbox env holds the real value, so any
+  command the agent runs can read it. This is the default for every secret, and
+  the required mode for credentials that are COMPUTED with rather than sent
+  (SigV4, HMAC signing, JWT assertions, SSH keys) and for non-HTTPS protocols.
+- **egress-enforced** (experimental, opt-in per project) — the sandbox env holds
+  a handle instead of the value. Kortix swaps it for the real value outside the
+  sandbox, only on the exact HTTPS hosts the policy lists, and redacts the
+  credential out of any response that echoes it. The value never enters the
+  sandbox. It appears only when the project has enabled network enforcement;
+  otherwise no secret is served this way.
 - **none** — no sandbox presence. A **connector** credential and an LLM-gateway
   key sit here: they are spent server-side through one scoped token.
 

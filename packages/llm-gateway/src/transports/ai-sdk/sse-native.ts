@@ -24,6 +24,26 @@ function frame(part: unknown): Uint8Array {
   return enc.encode(`data: ${JSON.stringify(part)}\n\n`);
 }
 
+// How long the upstream may go silent before this serializer emits a keep-alive
+// — the same 10s the OpenAI byte path uses (pipeline/streaming.ts's
+// HEARTBEAT_MS). The native path had NO keep-alive at all, so a long prefill or
+// a slow thinking block between parts left the connection byte-silent; the
+// kortix.com Cloudflare zone gives up at `proxy_read_timeout = 125` seconds and
+// serves a 524, which OpenCode >= 1.18.14 then matches with
+// /429|500|502|503|504|524/ and retries FIVE times, re-sending the whole prompt
+// each time.
+const HEARTBEAT_MS = 10_000;
+// An SSE COMMENT line, not a frame. `eventsource-parser` (which every AI SDK
+// client reaches through `parseJsonEventStream` →
+// `new EventSourceParserStream()`) returns early on a leading ':' and only
+// surfaces the line when an `onComment` callback was supplied — the AI SDK
+// supplies none. So this is invisible to the client parser and can never be
+// mistaken for content, while still resetting every intermediate hop's idle
+// timer. A fresh array per emit: enqueued buffers belong to the stream.
+function heartbeatFrame(): Uint8Array {
+  return enc.encode(': keep-alive\n\n');
+}
+
 // A streamText `fullStream` part (TextStreamPart union). The parts are typed at
 // the SDK, but this gateway only depends on `.type` + a few string fields, so it
 // carries the minimal open shape the serializer/probe read.
@@ -188,6 +208,8 @@ export function aiGatewaySseFromFullStream(
     // refunds and a completed turn bills, never both.
     onCancelWithoutUsage?: () => void;
     includeRawChunks?: boolean;
+    /** Keep-alive interval in ms. `0` disables it. Overridable for tests. */
+    heartbeatMs?: number;
   } = {},
 ): ReadableStream<Uint8Array> {
   const iterator = fullStream[Symbol.asyncIterator]();
@@ -207,6 +229,23 @@ export function aiGatewaySseFromFullStream(
     async start(controller) {
       const emit = (bytes: Uint8Array): void => {
         if (!cancelled) controller.enqueue(bytes);
+      };
+
+      // Pull the next part, emitting an SSE keep-alive comment for every
+      // `heartbeatMs` the upstream stays silent. Purely additive to the wire:
+      // comments carry no event and no data, so the emitted PROTOCOL is
+      // unchanged (see heartbeatFrame). The timer is always cleared before the
+      // part is handled, so a fast stream emits none at all.
+      const heartbeatMs = opts.heartbeatMs ?? HEARTBEAT_MS;
+      const nextPart = async (): Promise<IteratorResult<FullStreamPart>> => {
+        const pending = iterator.next();
+        if (heartbeatMs <= 0) return pending;
+        const timer = setInterval(() => emit(heartbeatFrame()), heartbeatMs);
+        try {
+          return await pending;
+        } finally {
+          clearInterval(timer);
+        }
       };
 
       // `stream-start` opens every AI-gateway stream — the client waits for it
@@ -229,7 +268,7 @@ export function aiGatewaySseFromFullStream(
 
       try {
         for (;;) {
-          const next = await iterator.next();
+          const next = await nextPart();
           if (next.done) break;
           const part = next.value;
           const pm = part.providerMetadata as ProviderMetadata | undefined;

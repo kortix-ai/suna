@@ -393,6 +393,11 @@ export function TokenProgress({
             variant="transparent"
             size="icon"
             type="button"
+            // `hit-area-1`: the ring is a 28px control and, on a phone, the
+            // ONLY way into the context modal — the hover card that carries
+            // the same detail never opens on touch. The glyph keeps its size;
+            // the pressable box reaches 40px.
+            className="hit-area-1"
             aria-label={ariaLabel}
             onPointerDown={(e) => {
               e.stopPropagation();

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { mkdir, mkdtemp, readlink, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readlink, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -34,6 +34,96 @@ describe('ensureOpencodeConfigDeps', () => {
       expect(await exists(join(configDir, 'node_modules', 'replicate'))).toBe(true)
       // The matching project lock remains in place for OpenCode's verification.
       expect(await exists(join(configDir, 'bun.lock'))).toBe(true)
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('suppresses OpenCode plugin installation for the baked local tool ABI', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'oc-deps-'))
+    try {
+      const configDir = join(root, 'config')
+      const bakedDir = join(root, 'baked')
+      await mkdir(configDir, { recursive: true })
+      await mkdir(join(bakedDir, 'node_modules', 'zod'), { recursive: true })
+      await writeFile(
+        join(configDir, 'package.json'),
+        JSON.stringify({
+          name: 'kortix-opencode-config',
+          private: true,
+          kortixToolAbi: 1,
+          dependencies: { zod: '4.1.8' },
+        }),
+      )
+      await writeFile(join(configDir, 'bun.lock'), '{"lockfileVersion":1}')
+      await writeFile(join(bakedDir, 'bun.lock'), '{"lockfileVersion":1}')
+
+      await ensureOpencodeConfigDeps(configDir, { bakedDir })
+
+      const packageLock = JSON.parse(await readFile(join(configDir, 'package-lock.json'), 'utf8'))
+      expect(packageLock.kortixOpenCodeInstallSentinel).toBe(1)
+      expect(packageLock.packages[''].dependencies).toEqual({
+        '@opencode-ai/plugin': '*',
+        zod: '4.1.8',
+      })
+      const packageJson = JSON.parse(await readFile(join(configDir, 'package.json'), 'utf8'))
+      expect(packageJson.dependencies).toEqual({ zod: '4.1.8' })
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('does not replace a user package lock for a customized config', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'oc-deps-'))
+    try {
+      const configDir = join(root, 'config')
+      const bakedDir = join(root, 'baked')
+      const userLock = '{"lockfileVersion":3,"packages":{"":{"dependencies":{"zod":"4.1.8"}}}}'
+      await mkdir(configDir, { recursive: true })
+      await mkdir(join(bakedDir, 'node_modules', 'zod'), { recursive: true })
+      await writeFile(
+        join(configDir, 'package.json'),
+        JSON.stringify({
+          name: 'custom-config',
+          private: true,
+          kortixToolAbi: 1,
+          dependencies: { zod: '4.1.8' },
+        }),
+      )
+      await writeFile(join(configDir, 'bun.lock'), '{"lockfileVersion":1}')
+      await writeFile(join(bakedDir, 'bun.lock'), '{"lockfileVersion":1}')
+      await writeFile(join(configDir, 'package-lock.json'), userLock)
+
+      await ensureOpencodeConfigDeps(configDir, { bakedDir })
+
+      expect(await readFile(join(configDir, 'package-lock.json'), 'utf8')).toBe(userLock)
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('does not suppress installation when the local ABI declares another dependency', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'oc-deps-'))
+    try {
+      const configDir = join(root, 'config')
+      const bakedDir = join(root, 'baked')
+      await mkdir(configDir, { recursive: true })
+      await mkdir(join(bakedDir, 'node_modules', 'zod'), { recursive: true })
+      await writeFile(
+        join(configDir, 'package.json'),
+        JSON.stringify({
+          name: 'custom-config',
+          private: true,
+          kortixToolAbi: 1,
+          dependencies: { zod: '4.1.8', custom: '1.0.0' },
+        }),
+      )
+      await writeFile(join(configDir, 'bun.lock'), '{"lockfileVersion":1}')
+      await writeFile(join(bakedDir, 'bun.lock'), '{"lockfileVersion":1}')
+
+      await ensureOpencodeConfigDeps(configDir, { bakedDir })
+
+      expect(await exists(join(configDir, 'package-lock.json'))).toBe(false)
     } finally {
       await rm(root, { recursive: true, force: true })
     }

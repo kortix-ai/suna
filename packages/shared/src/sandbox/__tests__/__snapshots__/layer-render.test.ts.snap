@@ -105,7 +105,7 @@ RUN pnpm add -g --allow-build=agent-browser "agent-browser@0.27.0" \\
     && chromium --version \\
     && env -u AGENT_BROWSER_EXECUTABLE_PATH agent-browser doctor 2>&1 | grep -qE 'pass.+chrome-linux64/chrome'
 
-RUN pnpm add -g --allow-build=opencode-ai "opencode-ai@1.17.11" \\
+RUN pnpm add -g --allow-build=opencode-ai "opencode-ai@1.18.19" \\
     && command -v opencode \\
     && opencode --version
 
@@ -132,7 +132,7 @@ RUN pnpm add -g "@firecrawl/anydoc@0.1.6" \\
 
 RUN mkdir -p /opt/kortix/opencode-config-deps \\
     && cd /opt/kortix/opencode-config-deps \\
-    && printf '{"name":"kortix-opencode-config","private":true,"dependencies":{"@mendable/firecrawl-js":"^4.25.1","@opencode-ai/plugin":"1.17.11","@tavily/core":"^0.7.3","replicate":"^1.4.0"},"overrides":{"axios":"1.16.0","form-data":"4.0.6"}}' > package.json \\
+    && printf '{"name":"kortix-opencode-config","private":true,"dependencies":{"@mendable/firecrawl-js":"^4.25.1","@opencode-ai/plugin":"1.18.19","@tavily/core":"^0.7.3","replicate":"^1.4.0"},"overrides":{"axios":"1.18.0","form-data":"4.0.6"}}' > package.json \\
     && bun install
 
 RUN cd /opt/kortix/opencode-config-deps \\
@@ -282,7 +282,7 @@ RUN pnpm add -g --allow-build=agent-browser "agent-browser@0.27.0" \\
     && chromium --version \\
     && env -u AGENT_BROWSER_EXECUTABLE_PATH agent-browser doctor 2>&1 | grep -qE 'pass.+chrome-linux64/chrome'
 
-RUN pnpm add -g --allow-build=opencode-ai "opencode-ai@1.17.11" \\
+RUN pnpm add -g --allow-build=opencode-ai "opencode-ai@1.18.19" \\
     && command -v opencode \\
     && opencode --version
 
@@ -309,7 +309,7 @@ RUN pnpm add -g "@firecrawl/anydoc@0.1.6" \\
 
 RUN mkdir -p /opt/kortix/opencode-config-deps \\
     && cd /opt/kortix/opencode-config-deps \\
-    && printf '{"name":"kortix-opencode-config","private":true,"dependencies":{"@mendable/firecrawl-js":"^4.25.1","@opencode-ai/plugin":"1.17.11","@tavily/core":"^0.7.3","replicate":"^1.4.0"},"overrides":{"axios":"1.16.0","form-data":"4.0.6"}}' > package.json \\
+    && printf '{"name":"kortix-opencode-config","private":true,"dependencies":{"@mendable/firecrawl-js":"^4.25.1","@opencode-ai/plugin":"1.18.19","@tavily/core":"^0.7.3","replicate":"^1.4.0"},"overrides":{"axios":"1.18.0","form-data":"4.0.6"}}' > package.json \\
     && bun install
 
 RUN cd /opt/kortix/opencode-config-deps \\
@@ -460,7 +460,7 @@ RUN pnpm add -g --allow-build=agent-browser "agent-browser@0.27.0" \\
     && chromium --version \\
     && env -u AGENT_BROWSER_EXECUTABLE_PATH agent-browser doctor 2>&1 | grep -qE 'pass.+chrome-linux64/chrome'
 
-RUN pnpm add -g --allow-build=opencode-ai "opencode-ai@1.17.11" \\
+RUN pnpm add -g --allow-build=opencode-ai "opencode-ai@1.18.19" \\
     && command -v opencode \\
     && opencode --version
 
@@ -487,7 +487,7 @@ RUN pnpm add -g "@firecrawl/anydoc@0.1.6" \\
 
 RUN mkdir -p /opt/kortix/opencode-config-deps \\
     && cd /opt/kortix/opencode-config-deps \\
-    && printf '{"name":"kortix-opencode-config","private":true,"dependencies":{"@mendable/firecrawl-js":"^4.25.1","@opencode-ai/plugin":"1.17.11","@tavily/core":"^0.7.3","replicate":"^1.4.0"},"overrides":{"axios":"1.16.0","form-data":"4.0.6"}}' > package.json \\
+    && printf '{"name":"kortix-opencode-config","private":true,"dependencies":{"@mendable/firecrawl-js":"^4.25.1","@opencode-ai/plugin":"1.18.19","@tavily/core":"^0.7.3","replicate":"^1.4.0"},"overrides":{"axios":"1.18.0","form-data":"4.0.6"}}' > package.json \\
     && bun install
 
 RUN cd /opt/kortix/opencode-config-deps \\

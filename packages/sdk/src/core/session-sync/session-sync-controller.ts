@@ -150,10 +150,25 @@ export function createHttpSessionSyncController(
   });
 }
 
+/**
+ * Every message in the session, oldest first.
+ *
+ * The order is the SERVER's: `MessageV2.page()` orders by `time_created`, so
+ * each page arrives already ordered and is concatenated untouched. Paging
+ * walks BACKWARDS (page 1 is the newest tail, `before` steps into history), so
+ * the transcript is the pages in reverse fetch order.
+ *
+ * This used to re-sort the union by `info.id.localeCompare(...)`. That was
+ * wrong twice over: message ids no longer ascend with time at all (OpenCode
+ * 1.18.15 retired that invariant — turn exit reads
+ * `lastAssistant.parentID === lastUser.id`, and `MessageV2.latest()` orders by
+ * `time.created`), and `localeCompare` is not byte order, so it disagreed with
+ * every other id comparison in the product on the same data.
+ */
 export async function loadCompleteSessionHistory(
   loadPage: SessionSyncControllerOptions['loadPage'],
 ): Promise<SessionSyncMessage[]> {
-  const messages = new Map<string, SessionSyncMessage>();
+  const pages: SessionSyncMessage[][] = [];
   const cursors = new Set<string>();
   let before: string | undefined;
   do {
@@ -161,16 +176,27 @@ export async function loadCompleteSessionHistory(
       limit: SESSION_SYNC_PAGE_SIZE,
       ...(before ? { before } : {}),
     });
-    for (const message of page.messages) {
-      messages.set(message.info.id, message);
-    }
+    pages.push(page.messages);
     before = page.nextCursor;
     if (before && cursors.has(before)) {
       throw new Error(`Session history cursor repeated: ${before}`);
     }
     if (before) cursors.add(before);
   } while (before);
-  return [...messages.values()].sort((a, b) => a.info.id.localeCompare(b.info.id));
+
+  // Oldest page last out of the loop, so walk the pages backwards. A message
+  // repeated across two overlapping pages keeps the OLDER page's copy and its
+  // older position — the same copy the id-keyed Map used to end up holding.
+  const ordered: SessionSyncMessage[] = [];
+  const seen = new Set<string>();
+  for (let index = pages.length - 1; index >= 0; index--) {
+    for (const message of pages[index]) {
+      if (seen.has(message.info.id)) continue;
+      seen.add(message.info.id);
+      ordered.push(message);
+    }
+  }
+  return ordered;
 }
 
 const defaultScheduler: SessionSyncScheduler = {

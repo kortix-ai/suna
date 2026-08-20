@@ -51,6 +51,7 @@ const BASE_STARTER_PATHS = [
   '.kortix/opencode/skills/kortix-cli/SKILL.md',
   '.kortix/opencode/tools/image_search.ts',
   '.kortix/opencode/tools/lib/get-env.ts',
+  '.kortix/opencode/tools/lib/tool.ts',
   '.kortix/opencode/tools/memory.ts',
   '.kortix/opencode/tools/scrape_webpage.ts',
   '.kortix/opencode/tools/show.ts',
