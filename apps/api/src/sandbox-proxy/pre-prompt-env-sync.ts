@@ -304,10 +304,14 @@ export async function runPrePromptEnvSync(
       modelHint: prompt.model ?? undefined,
     });
   }
+  // `userId` is load-bearing, not decorative: without it the snapshot's daemon
+  // call carries no X-Kortix-User-Context header and the daemon answers 401,
+  // so the refresh silently never lands. See scheduleOpencodeSnapshotSync.
   deps.scheduleSnapshot({
     sessionId: record.sessionId,
     projectId: record.projectId,
     externalId: record.externalId,
+    userId,
   });
   try {
     await deps.syncEnv({
