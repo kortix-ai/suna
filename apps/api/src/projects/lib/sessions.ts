@@ -49,7 +49,7 @@ import {
   sandboxFromLoadedAgents,
   workspaceFromLoadedAgents,
 } from '../agents';
-import { createRemoteSessionBranch, resolveFastBootGitHint } from '../git';
+import { createRemoteSessionBranch } from '../git';
 import { convertPendingPromptToInboxRow } from '../session-lifecycle/pending-prompt';
 import { resolveSessionSecretGrant } from './secret-grant';
 import {
@@ -67,6 +67,7 @@ import {
 } from './compile-agent-config';
 import type { WorkspaceModeV2 } from '@kortix/manifest-schema';
 import { withProjectGitAuth } from './git';
+import { resolveFastBootGitHintWithCache } from './fast-boot-git-hint';
 import { resolveSessionProvider } from './provider-precedence';
 import { RESERVED_SANDBOX_ENV_NAMES, isReservedSandboxEnvName } from './sandbox-env-names';
 import {
@@ -1492,10 +1493,25 @@ export async function createProjectSession(input: {
       // Best-effort + timeout-guarded (never block create): on failure/timeout
       // the hint is omitted → daemon delta-fetches as before. Runs CONCURRENTLY
       // with gitAuth (folded into the env-build chain, not awaited inline).
-      const fastBootGitHintPromise = Promise.race([
-        resolveFastBootGitHint(project, baseRef).catch(() => undefined),
-        new Promise<undefined>((r) => setTimeout(() => r(undefined), 2000)),
-      ]);
+      let fastBootHintTimeout: ReturnType<typeof setTimeout> | undefined;
+      const fastBootGitHintPromise = config.KORTIX_FAST_COLD_BOOT_ENABLED
+        ? Promise.race([
+            projectWithGitAuthPromise
+              .then((projectWithGitAuth) =>
+                resolveFastBootGitHintWithCache(
+                  projectWithGitAuth,
+                  baseRef,
+                  project.metadata,
+                ),
+              )
+              .catch(() => undefined),
+            new Promise<undefined>((resolve) => {
+              fastBootHintTimeout = setTimeout(() => resolve(undefined), 2_000);
+            }),
+          ]).finally(() => {
+            if (fastBootHintTimeout) clearTimeout(fastBootHintTimeout);
+          })
+        : Promise.resolve(undefined);
       const envPromise = fastBootGitHintPromise
         .then((fastBootGitHint) =>
           buildSessionSandboxEnvVars({
