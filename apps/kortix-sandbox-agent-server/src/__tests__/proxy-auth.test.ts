@@ -369,7 +369,7 @@ describe('daemon proxy auth gate', () => {
         defaultBranch: 'main',
         branchName: 'session-branch',
         sessionFresh: false,
-    baseSha: undefined,
+        baseSha: undefined,
       }))
 
       // Baked checkout means no clone-credential fetch should happen.
@@ -405,6 +405,7 @@ describe('daemon proxy auth gate', () => {
       git(['-c', 'user.email=test@kortix.dev', '-c', 'user.name=Kortix Test', 'commit', '-m', 'seed'], seed)
       git(['remote', 'add', 'origin', remote], seed)
       git(['push', '-u', 'origin', 'main'], seed)
+      git(['symbolic-ref', 'HEAD', 'refs/heads/main'], remote)
       const baseSha = gitOutput(['-C', seed, 'rev-parse', 'HEAD'])
 
       __setScaffoldRepoPathForTests(remote)
