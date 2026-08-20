@@ -49,7 +49,7 @@ import {
   sandboxFromLoadedAgents,
   workspaceFromLoadedAgents,
 } from '../agents';
-import { createRemoteSessionBranch, resolveCommitSha } from '../git';
+import { createRemoteSessionBranch, resolveFastBootGitHint } from '../git';
 import { convertPendingPromptToInboxRow } from '../session-lifecycle/pending-prompt';
 import { resolveSessionSecretGrant } from './secret-grant';
 import {
@@ -302,14 +302,11 @@ export async function buildSessionSandboxEnvVars(input: {
    *  through the dev tunnel (2026-06-13). Restart/resume omit it (their branch
    *  may carry the agent's pushed commits → real fetch needed). */
   freshSession?: boolean;
-  /** The project's base-branch tip SHA, resolved server-side (no tunnel). When
-   *  it equals the image-baked scaffold's root SHA — true for a fresh project
-   *  seeded from the starter with no per-project commit — the daemon skips the
-   *  in-guest `git fetch` ENTIRELY (the baked scaffold already IS base), turning
-   *  repo materialization into a pure-local op. That fetch is a zero-object
-   *  negotiation round-trip that still hung for 34s through the flaky dev tunnel
-   *  (2026-06-13). Omitted → daemon delta-fetches as before. */
+  /** The project's base-branch tip SHA, resolved from the API's Git mirror. */
   baseSha?: string;
+  /** Bounded exact commit delta from the API mirror. The daemon imports it on
+   *  top of the baked scaffold and verifies `baseSha` before use. */
+  gitDeltaBundleBase64?: string;
   /** Project git context, so the running agent's `secrets` grant in `agents:`
    *  can be resolved and applied by IDENTIFIER — secrets the agent isn't
    *  granted are dropped from the injected env (a prompt-injected agent then
@@ -532,6 +529,7 @@ export async function buildSessionSandboxEnvVars(input: {
       fastColdBootEnabled: config.KORTIX_FAST_COLD_BOOT_ENABLED,
       freshSession: input.freshSession,
       baseSha: input.baseSha,
+      gitDeltaBundleBase64: input.gitDeltaBundleBase64,
     }),
     // The platform coordinator uses API-level delegation and never receives a
     // project checkout. Keep this override after buildSessionRuntimeEnv so the
@@ -1488,17 +1486,18 @@ export async function createProjectSession(input: {
         tl.mark('git-auth');
         return gitProject;
       });
-      // Resolve the base-branch tip SHA server-side (no tunnel) so the daemon
-      // can skip the in-guest fetch when the baked scaffold already IS base.
+      // Resolve the base tip from the API's existing mirror and package its
+      // one-commit scaffold delta. This moves the small object transfer into
+      // sandbox creation and removes the slow in-guest Git negotiation.
       // Best-effort + timeout-guarded (never block create): on failure/timeout
       // the hint is omitted → daemon delta-fetches as before. Runs CONCURRENTLY
       // with gitAuth (folded into the env-build chain, not awaited inline).
-      const baseShaPromise = Promise.race([
-        resolveCommitSha(project, baseRef).catch(() => undefined),
+      const fastBootGitHintPromise = Promise.race([
+        resolveFastBootGitHint(project, baseRef).catch(() => undefined),
         new Promise<undefined>((r) => setTimeout(() => r(undefined), 2000)),
       ]);
-      const envPromise = baseShaPromise
-        .then((baseSha) =>
+      const envPromise = fastBootGitHintPromise
+        .then((fastBootGitHint) =>
           buildSessionSandboxEnvVars({
             accountId,
             projectId,
@@ -1513,7 +1512,8 @@ export async function createProjectSession(input: {
             llmGatewayEnabled,
             platformMetaAgent,
             freshSession: true,
-            baseSha,
+            baseSha: fastBootGitHint?.baseSha,
+            gitDeltaBundleBase64: fastBootGitHint?.gitDeltaBundleBase64,
             defaultBranch: project.defaultBranch,
             manifestPath: project.manifestPath,
             workspaceMode,

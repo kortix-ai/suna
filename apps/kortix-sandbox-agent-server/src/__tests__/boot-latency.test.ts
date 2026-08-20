@@ -42,6 +42,14 @@ afterEach(async () => {
 })
 
 describe('clone depth configuration', () => {
+  test('loads the API-provided fast-boot Git delta bundle', () => {
+    const cfg = loadConfig({
+      ...BASE_ENV,
+      KORTIX_GIT_DELTA_BUNDLE_BASE64: 'R0lUIEJVTkRMRQ==',
+    } as NodeJS.ProcessEnv)
+    expect(cfg.gitDeltaBundleBase64).toBe('R0lUIEJVTkRMRQ==')
+  })
+
   test('defaults to a shallow depth-1 clone', () => {
     expect(loadConfig(BASE_ENV as NodeJS.ProcessEnv).cloneDepth).toBe(1)
   })

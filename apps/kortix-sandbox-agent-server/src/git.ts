@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { mkdir, readdir, rename, rm, stat } from 'node:fs/promises'
+import { mkdir, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
 
 import type { Config } from './config'
@@ -990,6 +990,20 @@ async function tryScaffoldDeltaFetch(
       logger.info('[git] repo materialized via scaffold (zero-network: baked scaffold == base tip)', { ms: Date.now() - t0, base, head: localHead })
       return true
     }
+    if (
+      cfg.sessionFresh &&
+      cfg.baseSha &&
+      cfg.gitDeltaBundleBase64 &&
+      await applyFastBootDeltaBundle(tmp, base, cfg.baseSha, cfg.gitDeltaBundleBase64)
+    ) {
+      await swapStageIntoTarget(tmp, target)
+      logger.info('[git] repo materialized via scaffold (zero-network: API delta bundle)', {
+        ms: Date.now() - t0,
+        base,
+        head: cfg.baseSha,
+      })
+      return true
+    }
     const cloneCredential = await resolveCloneCredential(cfg)
     const fetched = await gitWithAuth(cloneCredential, cfg.repoUrl, [
       '-C', tmp,
@@ -1008,6 +1022,47 @@ async function tryScaffoldDeltaFetch(
     })
     await rm(tmp, { recursive: true, force: true }).catch(() => {})
     return false
+  }
+}
+
+const MAX_FAST_BOOT_GIT_BUNDLE_BASE64_BYTES = 24 * 1024
+
+/** Import a bounded API-generated Git bundle only when it resolves to baseSha. */
+async function applyFastBootDeltaBundle(
+  repoPath: string,
+  base: string,
+  baseSha: string,
+  bundleBase64: string,
+): Promise<boolean> {
+  if (!/^[0-9a-f]{40}$/i.test(baseSha)) return false
+  if (
+    bundleBase64.length === 0 ||
+    bundleBase64.length > MAX_FAST_BOOT_GIT_BUNDLE_BASE64_BYTES ||
+    bundleBase64.length % 4 !== 0 ||
+    !/^[A-Za-z0-9+/]+={0,2}$/.test(bundleBase64)
+  ) return false
+
+  const bytes = Buffer.from(bundleBase64, 'base64')
+  if (bytes.toString('base64') !== bundleBase64) return false
+  const bundlePath = join(repoPath, '.kortix-fast-boot.bundle')
+  try {
+    await writeFile(bundlePath, bytes, { mode: 0o600 })
+    const verified = await execGit(['-C', repoPath, 'bundle', 'verify', bundlePath])
+    if (verified.code !== 0) throw new Error(`bundle verify: ${verified.stderr}`)
+    const imported = await execGit(['-C', repoPath, 'bundle', 'unbundle', bundlePath])
+    if (imported.code !== 0) throw new Error(`bundle unbundle: ${imported.stderr}`)
+    const exists = await execGit(['-C', repoPath, 'cat-file', '-e', `${baseSha}^{commit}`])
+    if (exists.code !== 0) throw new Error('bundle does not contain the expected base commit')
+    const checkout = await execGit(['-C', repoPath, 'checkout', '-q', '-B', base, baseSha])
+    if (checkout.code !== 0) throw new Error(`checkout bundled base: ${checkout.stderr}`)
+    return true
+  } catch (error) {
+    logger.info('[git] API delta bundle unavailable; using authenticated fetch', {
+      error: error instanceof Error ? error.message.slice(0, 200) : String(error),
+    })
+    return false
+  } finally {
+    await rm(bundlePath, { force: true }).catch(() => {})
   }
 }
 

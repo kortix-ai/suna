@@ -51,6 +51,7 @@ function baseConfig(over: Partial<Config> = {}): Config {
     branchName: undefined,
     sessionFresh: false,
     baseSha: undefined,
+    gitDeltaBundleBase64: undefined,
     sandboxToken: TEST_TOKEN,
     gitUserName: 'Kortix Agent',
     gitUserEmail: 'agent@kortix.ai',
@@ -433,6 +434,113 @@ describe('daemon proxy auth gate', () => {
       expect(readFileSync(join(target, 'README.md'), 'utf8')).toBe('shared scaffold\n')
       expect(gitOutput(['-C', target, 'rev-parse', 'HEAD'])).toBe(baseSha)
       expect(gitOutput(['-C', target, 'rev-parse', '--abbrev-ref', 'HEAD'])).toBe('session-fresh')
+    } finally {
+      globalThis.fetch = originalFetch
+      __setScaffoldRepoPathForTests()
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('materializes an exact fresh-project delta bundle without fetching clone credentials', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'kortix-delta-bundle-scaffold-'))
+    const originalFetch = globalThis.fetch
+    const requests: string[] = []
+    try {
+      const source = join(root, 'source')
+      const scaffold = join(root, 'scaffold.git')
+      const target = join(root, 'workspace')
+      const bundlePath = join(root, 'delta.bundle')
+      mkdirSync(source)
+      git(['init', '-b', 'main'], source)
+      writeFileSync(join(source, 'README.md'), 'generic scaffold\n')
+      git(['add', 'README.md'], source)
+      git(['-c', 'user.email=noreply@kortix.ai', '-c', 'user.name=Kortix', 'commit', '-m', 'scaffold'], source)
+      const scaffoldSha = gitOutput(['-C', source, 'rev-parse', 'HEAD'])
+      git(['clone', '--bare', source, scaffold])
+
+      writeFileSync(join(source, 'README.md'), 'customer project\n')
+      git(['add', 'README.md'], source)
+      git(['-c', 'user.email=noreply@kortix.ai', '-c', 'user.name=Kortix', 'commit', '-m', 'project setup'], source)
+      const baseSha = gitOutput(['-C', source, 'rev-parse', 'HEAD'])
+      git(['bundle', 'create', bundlePath, 'refs/heads/main', `^${scaffoldSha}`], source)
+
+      __setScaffoldRepoPathForTests(scaffold)
+      globalThis.fetch = (async (url: string | URL | Request) => {
+        const href = typeof url === 'string' || url instanceof URL ? String(url) : url.url
+        requests.push(href)
+        return new Response(JSON.stringify({ auth: { token: 'clone-token' } }), {
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }) as unknown as typeof fetch
+
+      await materializeRepo(baseConfig({
+        autoClone: true,
+        projectId: 'project-123',
+        apiUrl: 'http://api.local/v1',
+        projectTarget: target,
+        repoUrl: source,
+        defaultBranch: 'main',
+        branchName: 'session-fresh',
+        sessionFresh: true,
+        baseSha,
+        gitDeltaBundleBase64: readFileSync(bundlePath).toString('base64'),
+      }))
+
+      expect(requests.filter((url) => url.includes('/git/clone-credential'))).toHaveLength(0)
+      expect(readFileSync(join(target, 'README.md'), 'utf8')).toBe('customer project\n')
+      expect(gitOutput(['-C', target, 'rev-parse', 'HEAD'])).toBe(baseSha)
+      expect(gitOutput(['-C', target, 'rev-parse', '--abbrev-ref', 'HEAD'])).toBe('session-fresh')
+    } finally {
+      globalThis.fetch = originalFetch
+      __setScaffoldRepoPathForTests()
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('falls back to the authenticated fetch when a delta bundle is invalid', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'kortix-invalid-delta-bundle-'))
+    const originalFetch = globalThis.fetch
+    const requests: string[] = []
+    try {
+      const source = join(root, 'source')
+      const scaffold = join(root, 'scaffold.git')
+      const target = join(root, 'workspace')
+      mkdirSync(source)
+      git(['init', '-b', 'main'], source)
+      writeFileSync(join(source, 'README.md'), 'generic scaffold\n')
+      git(['add', 'README.md'], source)
+      git(['-c', 'user.email=noreply@kortix.ai', '-c', 'user.name=Kortix', 'commit', '-m', 'scaffold'], source)
+      git(['clone', '--bare', source, scaffold])
+      writeFileSync(join(source, 'README.md'), 'remote truth\n')
+      git(['add', 'README.md'], source)
+      git(['-c', 'user.email=noreply@kortix.ai', '-c', 'user.name=Kortix', 'commit', '-m', 'project setup'], source)
+      const baseSha = gitOutput(['-C', source, 'rev-parse', 'HEAD'])
+
+      __setScaffoldRepoPathForTests(scaffold)
+      globalThis.fetch = (async (url: string | URL | Request) => {
+        const href = typeof url === 'string' || url instanceof URL ? String(url) : url.url
+        requests.push(href)
+        return new Response(JSON.stringify({ auth: { token: 'clone-token' } }), {
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }) as unknown as typeof fetch
+
+      await materializeRepo(baseConfig({
+        autoClone: true,
+        projectId: 'project-123',
+        apiUrl: 'http://api.local/v1',
+        projectTarget: target,
+        repoUrl: source,
+        defaultBranch: 'main',
+        branchName: 'session-fresh',
+        sessionFresh: true,
+        baseSha,
+        gitDeltaBundleBase64: Buffer.from('not a git bundle').toString('base64'),
+      }))
+
+      expect(requests.filter((url) => url.includes('/git/clone-credential'))).toHaveLength(1)
+      expect(readFileSync(join(target, 'README.md'), 'utf8')).toBe('remote truth\n')
+      expect(gitOutput(['-C', target, 'rev-parse', 'HEAD'])).toBe(baseSha)
     } finally {
       globalThis.fetch = originalFetch
       __setScaffoldRepoPathForTests()

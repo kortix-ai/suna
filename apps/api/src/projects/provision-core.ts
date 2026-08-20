@@ -546,14 +546,10 @@ export async function runProvision(ctx: ProvisionContext, emit: ProvisionEmit): 
             marketplaceItems,
             now: now.toISOString(),
           });
-      // Seed the project tip == the deterministic scaffold root (the constant
-      // 'kortix-project' render), byte-identical to the image-baked scaffold
-      // (snapshots/build-context.ts). This lets a fresh session's fork REUSE
-      // the warm-seed's already-opencode-initialized /workspace with ZERO
-      // network (git.ts baked-checkout reuse fires when baseSha == scaffold
-      // root) — the single biggest spawn-latency win. The per-project name
-      // customization is applied in-sandbox at fork (not committed to the
-      // shared remote root) so the warm reuse is never broken by a divergent tip.
+      // Seed a deterministic scaffold root followed by the project's small
+      // customization commit. Fresh-session boot can import that exact second
+      // commit from the API mirror as a bounded Git bundle, on top of the
+      // image-baked root, without an in-sandbox network fetch.
       await pushVerifiedSeed({
         projectId: row.projectId,
         branch: provisioned.defaultBranch,

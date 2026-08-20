@@ -283,6 +283,10 @@ mock.module('../projects/git', () => ({
   getFileHistory: async () => ({ entries: [], nextCursor: null }),
   getFileAtRef: async () => null,
   resolveCommitSha: async () => 'a'.repeat(40),
+  resolveFastBootGitHint: async () => ({
+    baseSha: 'a'.repeat(40),
+    gitDeltaBundleBase64: 'R0lUIEJVTkRMRQ==',
+  }),
   resolveBranchTip: async () => 'a'.repeat(40),
   resolveBranchAheadState: async () => ({ ahead: 0, behind: 0 }),
   getBranchDiff: async () => ({ files: [], diff: '' }),

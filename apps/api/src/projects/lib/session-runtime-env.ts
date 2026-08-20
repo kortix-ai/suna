@@ -22,6 +22,8 @@ export interface SessionRuntimeEnvInput {
   freshSession?: boolean;
   /** Server-resolved base tip used to validate the image-baked scaffold. */
   baseSha?: string;
+  /** Bounded Git bundle containing the exact base-tip commit above the baked scaffold. */
+  gitDeltaBundleBase64?: string;
   /** Server-compiled OpenCode agent config (JSON string) for a `kortix_version:
    *  2` project — see `compile-agent-config.ts`. `null`/omitted for a v1
    *  project: no key is emitted, so v1 sandbox env is byte-for-byte unchanged. */
@@ -43,6 +45,9 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
       ? {
           KORTIX_SESSION_FRESH: '1',
           ...(input.baseSha ? { KORTIX_BASE_SHA: input.baseSha } : {}),
+          ...(input.gitDeltaBundleBase64
+            ? { KORTIX_GIT_DELTA_BUNDLE_BASE64: input.gitDeltaBundleBase64 }
+            : {}),
         }
       : {};
   return {

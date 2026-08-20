@@ -58,6 +58,8 @@ export {
 
 export {
   resolveCommitSha,
+  resolveFastBootGitHint,
+  buildSingleParentDeltaBundle,
   listCommits,
   getCommit,
   getCommitDiff,
