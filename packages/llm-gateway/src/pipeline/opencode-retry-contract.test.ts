@@ -429,18 +429,13 @@ describe('413 request_too_large is not retryable by OpenCode', () => {
     }
   });
 
-  test('both 413 sites emit that exact digit-free message', async () => {
+  test('the 413 site emits that exact digit-free message', async () => {
     const chat = await Bun.file(
       new URL('./handler.ts', import.meta.url).pathname,
     ).text();
-    const native = await Bun.file(
-      new URL('./language-model-handler.ts', import.meta.url).pathname,
-    ).text();
     const DIGIT_FREE = "message: 'Request body exceeds the configured maximum request size'";
     expect(chat).toContain(DIGIT_FREE);
-    expect(native).toContain(DIGIT_FREE);
     // The old interpolated form must not come back.
     expect(chat).not.toContain('bytes exceeds the ${');
-    expect(native).not.toContain('bytes exceeds the ${');
   });
 });
