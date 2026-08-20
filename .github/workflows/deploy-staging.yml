@@ -238,7 +238,7 @@ jobs:
               # true origin failure: "Request exceeded the 25s server
               # processing deadline". 55s stays under the 60s ALB idle
               # timeout; browsers still abort at 30s so UX is unchanged; the
-              # release gate's API client budgets are far larger. Prod keeps
+              # release-gate API client budgets are far larger. Prod keeps
               # the 25s default (co-regional DB).
               REQUEST_DEADLINE_MS: "55000"
             }')"
