@@ -156,7 +156,22 @@ function maintenanceResponse(config, active, isGateway, request, originFailure) 
   return addSecurityHeaders(
     new Response(
       JSON.stringify({
-        error: 'MAINTENANCE_MODE',
+        // `error` is an OBJECT, not a string: the AI-SDK gateway client
+        // (@ai-sdk/gateway, the default sandbox LLM path since #6631) parses
+        // non-2xx bodies against `{ error: { message, type, code } }`. The old
+        // string shape failed that schema, so every laundered origin 5xx
+        // surfaced in a session as the information-free "Invalid error
+        // response format: Gateway request failed" instead of a retryable
+        // maintenance signal (SESS-23, run 32330628092). The MAINTENANCE_MODE
+        // token stays in `type`/`code`, so every substring detector still
+        // fires; header detection (`x-maintenance-mode`) is unchanged.
+        error: {
+          message:
+            config.message ||
+            'Kortix is temporarily unavailable for maintenance.',
+          type: 'MAINTENANCE_MODE',
+          code: 'MAINTENANCE_MODE',
+        },
         message:
           config.message ||
           'Kortix is temporarily unavailable for maintenance.',
