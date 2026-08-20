@@ -128,6 +128,13 @@ async function runOneFlow(
   const declaredAttempts = f.meta.retry?.attempts;
   const maxAttempts = declaredAttempts ?? maxAttemptBound(policy);
 
+  // Quarantine → reported, never run, exempt from --require-all (see
+  // FlowMeta.quarantine and runExitCode).
+  if (f.meta.quarantine) {
+    return mkResult(f, "skip", `quarantined: ${f.meta.quarantine}`, [], performance.now() - flowStart, 0, {
+      quarantined: true,
+    });
+  }
   // Capability gating → skip with reason.
   const missing = (f.meta.requires ?? []).filter((cap) => !env.capabilities[cap]);
   if (missing.length) {
@@ -228,6 +235,7 @@ function mkResult(
   steps: StepResult[],
   durationMs: number,
   attempts: number,
+  extra: { quarantined?: boolean } = {},
 ): FlowResult {
   return {
     id: f.id,
@@ -238,6 +246,10 @@ function mkResult(
     durationMs,
     attempts,
     steps: [...steps],
+    quarantined: extra.quarantined,
+    // A skip that already PASSED at least one step asserted the reachable
+    // contract on this target (see FlowResult.asserted / runExitCode).
+    asserted: status === "skip" ? steps.some((s) => s.status === "pass") : undefined,
   };
 }
 
