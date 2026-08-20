@@ -998,12 +998,14 @@ function ToolHeaderRow({
   running,
   onSubtitleClick,
   outcome = 'ok',
+  action,
 }: {
   icon?: React.ReactNode;
   trigger: TriggerTitle | React.ReactNode;
   running: boolean;
   onSubtitleClick?: () => void;
   outcome?: ToolOutcome;
+  action?: React.ReactNode;
 }) {
   const triggerIsEmpty = isTriggerTitle(trigger) ? !trigger.title && !trigger.subtitle : false;
 
@@ -1026,6 +1028,11 @@ function ToolHeaderRow({
           trigger
         )}
       </div>
+      {/* Outside the `flex-1` wrapper, so it is the row's far right edge and
+          the title/subtitle inside that wrapper take the truncation. `ml-auto`
+          is the belt to the flex-1 braces: a trigger with no subtitle and no
+          args renders a title that does not fill the wrapper. */}
+      {action && <span className="ml-auto flex shrink-0 items-center">{action}</span>}
     </>
   );
 }
@@ -1152,6 +1159,7 @@ function PanelToolRow({
   open,
   onOpenChange,
   className,
+  action,
 }: {
   icon?: React.ReactNode;
   trigger: TriggerTitle | React.ReactNode;
@@ -1164,6 +1172,7 @@ function PanelToolRow({
   open: boolean;
   onOpenChange: (value: boolean) => void;
   className?: string;
+  action?: React.ReactNode;
 }) {
   const hasBody = Boolean(children);
   // Same substitution the inline header makes, from the same context — a failed
@@ -1201,6 +1210,10 @@ function PanelToolRow({
           {badge}
         </span>
       )}
+      {/* After the badge, before the chevron: the badge counts what the row
+          holds, the chevron opens it, and the action leaves for somewhere else
+          — so the two that concern THIS row stay adjacent to it. */}
+      {action && <span className="flex shrink-0 items-center">{action}</span>}
       {hasBody && (
         <CaretRightIcon
           aria-hidden
@@ -1335,6 +1348,7 @@ export function BasicTool({
   onClick,
   className,
   durationMs: durationMsProp,
+  triggerAction,
 }: BasicToolProps) {
   const running = useContext(ToolRunningContext);
   const contextDuration = useContext(ToolDurationContext);
@@ -1385,6 +1399,7 @@ export function BasicTool({
         open={open}
         onOpenChange={handleOpenChange}
         className={className}
+        action={triggerAction}
       >
         {children}
       </PanelToolRow>
@@ -1398,6 +1413,7 @@ export function BasicTool({
       running={running}
       onSubtitleClick={onSubtitleClick}
       outcome={outcome}
+      action={triggerAction}
     />
   );
 

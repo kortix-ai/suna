@@ -1,5 +1,4 @@
 'use client';
-import { Button } from '@/components/ui/button';
 import { SubSessionModal } from '@/features/session/sub-session-modal';
 import {
   BasicTool,
@@ -10,18 +9,70 @@ import {
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import { SubAgentActivity, SubAgentStatusBanner } from '@/features/session/tool/shared/sub-agent';
 import type { ToolProps } from '@/features/session/tool/shared/types';
-import { useRuntimeMessages } from '@kortix/sdk/react';
+import { cn } from '@/lib/utils';
 import {
   getChildSessionId,
   getChildSessionToolParts,
   getToolInfo,
   type MessageWithParts,
 } from '@/ui';
-import {
-  ArrowSquareOutIcon as ExternalLink,
-  KanbanIcon as SquareKanban,
-} from '@phosphor-icons/react';
+import { useRuntimeMessages } from '@kortix/sdk/react';
+import { KanbanIcon as SquareKanban } from '@phosphor-icons/react';
 import { useCallback, useMemo, useState } from 'react';
+
+/**
+ * The way into the sub-agent's own session, pinned to the right edge of the row.
+ *
+ * It used to be a ghost `Button` at the BOTTOM of the disclosure body, and that
+ * was wrong twice over. It sat at the body's left margin — the chain's icon
+ * gutter — so it read as one more step in the sub-agent's list rather than as
+ * an action on the agent. And it was reachable only by expanding the row, which
+ * is backwards for a sub-agent that has not produced a step yet: that is the
+ * one moment the full view is the ONLY thing there is to look at.
+ *
+ * A `span role="button"`, not a `<button>`. This node renders inside the
+ * disclosure's trigger, and `DisclosureTrigger` clones that trigger into its own
+ * `role="button"` element — a button nested in a button is invalid HTML. The
+ * subtitle link in `InlineTriggerTitle` is the same shape for the same reason.
+ * Both activation paths `stopPropagation` so reaching the full view does not
+ * also toggle the row underneath it.
+ *
+ * Visible label "Full view", accessible name "Open full view". The row already
+ * carries a title plus a live subtitle that has to truncate, so the right edge
+ * gets the two words that matter; the longer name rides on `aria-label` and
+ * `title`, and it CONTAINS the visible text, so WCAG 2.5.3 (Label in Name)
+ * holds.
+ *
+ * Always visible, never hover-revealed: a hover-only affordance does not exist
+ * on touch, and this is the only route to a running sub-agent's full transcript.
+ */
+function FullViewAction({ onOpen }: { onOpen: () => void }) {
+  return (
+    <span
+      role="button"
+      tabIndex={0}
+      aria-label="Open full view"
+      title="Open full view"
+      onClick={(e) => {
+        e.stopPropagation();
+        onOpen();
+      }}
+      onKeyDown={(e) => {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        e.preventDefault();
+        e.stopPropagation();
+        onOpen();
+      }}
+      className={cn(
+        'text-muted-foreground/60 hover:text-foreground',
+        'flex cursor-pointer items-center gap-1 whitespace-nowrap',
+        'underline-offset-2 transition-colors hover:underline',
+      )}
+    >
+      View
+    </span>
+  );
+}
 
 /**
  * A task call is a disclosure row: what the sub-agent is doing, in place.
@@ -32,11 +83,18 @@ import { useCallback, useMemo, useState } from 'react';
  * dispatched was up to, and had to close it again to get back — while the
  * `SubAgentActivity` list this component already assembled was unreachable dead
  * code on that path. The steps are the answer to the question the row raises,
- * so they belong under the row, and the modal is now an explicit action inside
- * the body rather than the row's whole behaviour.
+ * so they belong under the row, and the modal is now an explicit action on the
+ * row rather than the row's whole behaviour.
  *
  * The trigger is unchanged: while the sub-agent runs its subtitle is that
  * agent's LAST step, so a collapsed row still reports live progress.
+ *
+ * The body is the sub-agent's steps and NOTHING else, so it is passed only when
+ * there are steps. A disclosure whose body is empty is a caret that promises a
+ * body and opens onto nothing — the same verdict `ActivityBurst` reaches for a
+ * burst that merges to zero rows. Before the full view moved to the trigger,
+ * that button was the sole occupant of the body of a just-started sub-agent,
+ * which is what kept the empty case from being empty.
  */
 export function TaskTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const input = partInput(part);
@@ -92,26 +150,10 @@ export function TaskTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
         badge={
           isCompleted && childToolParts.length > 0 ? `${childToolParts.length} steps` : undefined
         }
+        triggerAction={childSessionId ? <FullViewAction onOpen={openModal} /> : undefined}
       >
-        {childSessionId ? (
-          <div className="flex flex-col gap-2">
-            <SubAgentActivity childSessionId={childSessionId} parts={childToolParts} />
-            {/* Rendered even before the first step arrives: a sub-agent that has
-                only just started has nothing to list, and the full view is then
-                the only way to watch it — the body must not be a dead end. */}
-            <div className="px-1">
-              <Button
-                type="button"
-                variant="ghost"
-                size="xs"
-                onClick={openModal}
-                className="text-muted-foreground hover:text-foreground -ml-1.5 h-6 gap-1.5 px-1.5 text-xs"
-              >
-                <ExternalLink className="size-3" />
-                Open full view
-              </Button>
-            </div>
-          </div>
+        {childSessionId && childToolParts.length > 0 ? (
+          <SubAgentActivity childSessionId={childSessionId} parts={childToolParts} />
         ) : undefined}
       </BasicTool>
       <SubAgentStatusBanner childSessionId={childSessionId} childMessages={childMessages} />

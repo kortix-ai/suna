@@ -159,12 +159,14 @@ describe('TaskTool — the row expands in place', () => {
 
     // The discriminator: only the disclosure reports an open state.
     expect(markup).toContain('aria-expanded="false"');
-    // Collapsed: the sub-agent's steps and the action are both off screen.
+    // Collapsed: the sub-agent's steps are off screen.
     // (`Searched` / `pattern=TODO` is how the child grep step draws itself —
     // see the expanded test below, which asserts the same strings present.)
     expect(markup).not.toContain('Searched');
     expect(markup).not.toContain('pattern=TODO');
-    expect(markup).not.toContain('Open full view');
+    // The full-view action is NOT off screen: it lives on the trigger now, so a
+    // collapsed row still offers it. See the trigger-action test below.
+    expect(markup).toContain('aria-label="Open full view"');
     // The modal is mounted but closed — nothing opens itself.
     expect(markup).toContain('data-open="false"');
   });
@@ -207,10 +209,45 @@ describe('TaskTool — the row expands in place', () => {
     expect(markup).toContain('pattern: **/*.ts');
   });
 
-  test('the body carries the explicit way into the full session view', () => {
+  test('the sub-agent list clears the chain rail by taking the tool indent', () => {
+    // The break this pins: the list rendered flush at the body's left margin,
+    // so its child rows sat in the SAME 16px icon gutter the parent row uses —
+    // and `ChainOfThoughtStep` draws its hairline down the centre of that
+    // gutter (`left-2`). The rail struck through every child glyph, and a
+    // child row landed at the exact x of the `Agent · …` row that owns it.
+    //
+    // `useToolIndent()` is the repo-wide answer for "a payload under a tool
+    // row", and this list is the one payload that never took it. Asserted as
+    // the class, not as a pixel: the value travels in `--tool-indent`, which
+    // the chain overrides to 1.75rem (`turn/activity-step.tsx`).
     childMessages = CHILD_MESSAGES;
     const markup = render(taskPart({}), { open: true });
-    expect(markup).toContain('Open full view');
+    expect(markup).toContain('ml-[var(--tool-indent,1.375rem)]');
+
+    // Panel surface has no icon gutter and no rail, so it takes no indent —
+    // `useToolIndent` returns nothing there and the row body's own inset is the
+    // only offset.
+    const panelMarkup = render(taskPart({}), { panel: true, open: true });
+    expect(panelMarkup).not.toContain('ml-[var(--tool-indent,1.375rem)]');
+  });
+
+  test('the full view is an action on the trigger, not a row at the foot of the body', () => {
+    // It used to be a ghost button at the BOTTOM of the disclosure body, which
+    // put it in the chain's icon gutter (so it read as one more sub-agent step)
+    // and behind a click (so a just-started agent's only view was hidden).
+    // Now it is pinned to the right edge of the trigger and is present whether
+    // or not the row is open — the collapsed assertion lives in the first test.
+    childMessages = CHILD_MESSAGES;
+    const markup = render(taskPart({}), { open: true });
+
+    // A span with a button role, never a real <button>: this node is cloned
+    // into `DisclosureTrigger`'s own role="button" element, and nesting one
+    // button inside another is invalid HTML.
+    expect(markup).toContain('aria-label="Open full view"');
+    expect(markup).not.toContain('<button aria-label="Open full view"');
+    // Visible label is the short form; the accessible name contains it.
+    expect(markup).toContain('Full view');
+
     // What the action opens: the modal is wired to THIS call's child session
     // and carries the row's own title, and it starts closed.
     expect(markup).toContain(`data-session-id="${CHILD_SESSION_ID}"`);
@@ -218,12 +255,16 @@ describe('TaskTool — the row expands in place', () => {
     expect(markup).toContain('data-open="false"');
   });
 
-  test('a child session with no steps yet still offers the full view', () => {
+  test('a child session with no steps yet offers the full view and opens onto nothing', () => {
     // A sub-agent that has just started has nothing to list, and the modal is
     // then the only way to watch it — the row must not become a dead end.
     childMessages = [];
     const markup = render(taskPart({ status: 'running' }), { open: true });
-    expect(markup).toContain('Open full view');
+    expect(markup).toContain('aria-label="Open full view"');
+    // And with the action off the body, an empty body is passed as no body at
+    // all: a caret that promises content and opens onto blank space is the same
+    // defect `ActivityBurst` refuses for a burst that merges to zero rows.
+    expect(markup).not.toContain('ml-[var(--tool-indent,1.375rem)]');
   });
 
   test('no child session — no body, no action, no modal', () => {
@@ -231,6 +272,7 @@ describe('TaskTool — the row expands in place', () => {
     const markup = render(taskPart({ childSessionId: null }), { open: true });
     expect(markup).toContain('Agent · explorer');
     expect(markup).not.toContain('Open full view');
+    expect(markup).not.toContain('Full view');
     expect(markup).not.toContain('data-sub-session-modal');
   });
 
@@ -262,13 +304,15 @@ describe('TaskTool — the row expands in place', () => {
     const closed = render(taskPart({}), { panel: true });
     expect(closed).toContain('aria-expanded="false"');
     expect(closed).not.toContain('pattern=TODO');
-    expect(closed).not.toContain('Open full view');
+    // The full-view action rides the trigger on BOTH surfaces, so a closed
+    // panel row keeps it — same as the closed inline row.
+    expect(closed).toContain('aria-label="Open full view"');
 
     const open = render(taskPart({}), { panel: true, open: true });
     expect(open).toContain('aria-expanded="true"');
     expect(open).toContain('Searched');
     expect(open).toContain('pattern=TODO');
-    expect(open).toContain('Open full view');
+    expect(open).toContain('aria-label="Open full view"');
   });
 });
 
