@@ -133,6 +133,32 @@ describe('ActivityGroupStep', () => {
     expect(markup).toContain('beta.ts');
   });
 
+  test('members are chain steps, so each one can own the rail over its own thread', () => {
+    // Several `task` calls fold into ONE "Worked with N helper agents" row, so
+    // the burst's own rail belongs to the GROUP. A member that opens a thread
+    // of its own — a sub-agent's twenty steps — then had no line tying those
+    // rows to THAT agent rather than to the group or to the agent below it, and
+    // the list ran off the bottom unbounded.
+    //
+    // Answered with the component that already exists rather than a second rail
+    // implementation: one rail for the group's step, one per member's, each
+    // drawn only while it is open and each in ITS row's icon lane — the
+    // member's 28px right of the group's, because `pl-7` is where the member's
+    // glyph starts.
+    const agents: Part[] = [
+      tool('1', 'task', { status: 'completed', input: { description: 'Research Mars' } }),
+      tool('2', 'task', { status: 'completed', input: { description: 'Research Jupiter' } }),
+      tool('3', 'task', { status: 'completed', input: { description: 'Research galaxies' } }),
+    ];
+    const markup = render(true, agents);
+    expect(markup).toContain('helper agents');
+    // 1 for the group's own step + 1 per member.
+    expect(markup.split('bg-muted-foreground/15').length - 1).toBe(1 + 3);
+    // `ChainOfThought` owns the gap between members now, so the hand-rolled
+    // list spacing is gone rather than doubled up with it.
+    expect(markup).not.toContain('mt-3 space-y-3 pl-7');
+  });
+
   test('the group row outweighs the rows it opens, so the two levels read apart', () => {
     // Tool titles one level down are regular weight (`InlineTriggerTitle`), so
     // the parent carrying `font-medium` is the non-colour cue that says these
@@ -525,6 +551,32 @@ describe('ActivityBurst', () => {
     expect(markup).not.toContain('&gt;span:first-child]:hidden');
     expect(markup).toContain('data-tone="failed"');
     expect(markup).toContain('aria-label="This step failed"');
+  });
+
+  test('one sub-agent draws exactly ONE rail — not a second bar in the content lane', () => {
+    // The reported regression. `SubAgentActivity` used to draw a hairline down
+    // the left of its own list, which is the CONTENT lane — anchored to no
+    // icon, 20px inside the burst's own chain rail, and saying the same thing
+    // that rail already said. Two bars for one level of nesting.
+    const markup = renderBurst([
+      done('1', 'task', { subagent_type: 'general', description: 'Research nearby galaxies' }),
+    ]);
+    expect(markup.split('bg-muted-foreground/15').length - 1).toBe(1);
+  });
+
+  test('a bare DELEGATE row keeps its glyph — it anchors a thread of its own', () => {
+    // "A single row has no rail and no thread" is true of a read or a command
+    // and false of a sub-agent: `task` opens the child agent's whole step list
+    // under itself, with its own hairline (`tool/shared/sub-agent.tsx`). So the
+    // row IS a parent and the icon is that thread's anchor — stripping it left
+    // twenty rows hanging off a line of bare text.
+    const markup = renderBurst([
+      done('1', 'task', { subagent_type: 'general', description: 'Research Mars overview' }),
+    ]);
+    // Bare in every other respect: no summary line over one call.
+    expect(markup).not.toContain('Completed 1 step');
+    expect(markup).toContain('Agent · general');
+    expect(markup).not.toContain('&gt;span:first-child]:hidden');
   });
 
   test('a bare FAILED read is the tool row, not a door onto nothing', () => {
