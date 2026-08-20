@@ -30,6 +30,7 @@ import {
 } from './seed-files';
 import { getCatalogItemDetail } from '../marketplace/catalog';
 import { remoteBranchExists } from './git';
+import { config } from '../config';
 import { db } from '../shared/db';
 import { projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
@@ -48,6 +49,10 @@ import {
   upsertProjectGitConnection,
 } from './lib/git';
 import { metadataMerge } from './lib/metadata-merge';
+import {
+  buildCachedFastBootGitHint,
+  resolveFastBootGitHintWithCache,
+} from './lib/fast-boot-git-hint';
 import {
   classifyProvisionReplay,
   findIdempotentProvision,
@@ -72,6 +77,8 @@ export const PROVISION_PHASES = [
 
 export type ProvisionPhase = (typeof PROVISION_PHASES)[number];
 export type ProvisionEmit = (phase: ProvisionPhase) => void;
+
+const FAST_BOOT_SEED_HINT_TIMEOUT_MS = 8_000;
 
 /**
  * The exact status codes `runProvision` can produce, matching both routes'
@@ -615,6 +622,51 @@ export async function runProvision(ctx: ProvisionContext, emit: ProvisionEmit): 
         })
         .where(eq(projects.projectId, row.projectId))
         .catch(() => {}); // best-effort — a mirror-write hiccup must not fail project creation
+
+      if (config.KORTIX_FAST_COLD_BOOT_ENABLED && writeUpstream) {
+        const hintTask = resolveFastBootGitHintWithCache(
+          {
+            projectId: row.projectId,
+            repoUrl: writeUpstream.url,
+            defaultBranch: provisioned.defaultBranch,
+            manifestPath: row.manifestPath,
+            gitAuthToken: null,
+            gitAuthHeaders: writeUpstream.headers,
+          },
+          provisioned.defaultBranch,
+          null,
+        )
+          .then((hint) =>
+            buildCachedFastBootGitHint(provisioned.defaultBranch, hint),
+          )
+          .catch((error) => {
+            console.warn('[projects] fast-boot seed hint unavailable', {
+              projectId: row.projectId,
+              error: error instanceof Error ? error.message : String(error),
+            });
+            return null;
+          });
+        let timeout: ReturnType<typeof setTimeout> | undefined;
+        const cachedHint = await Promise.race([
+          hintTask,
+          new Promise<null>((resolve) => {
+            timeout = setTimeout(() => resolve(null), FAST_BOOT_SEED_HINT_TIMEOUT_MS);
+          }),
+        ]).finally(() => {
+          if (timeout) clearTimeout(timeout);
+        });
+        if (cachedHint) {
+          const currentMetadata = (row.metadata as Record<string, unknown> | null) ?? {};
+          const currentGit =
+            currentMetadata.git && typeof currentMetadata.git === 'object'
+              ? (currentMetadata.git as Record<string, unknown>)
+              : {};
+          row.metadata = {
+            ...currentMetadata,
+            git: { ...currentGit, fast_boot: cachedHint },
+          };
+        }
+      }
     } catch (error) {
       const stage = error instanceof ManagedRepoSeedError ? error.stage : 'push';
       console.error(
