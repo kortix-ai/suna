@@ -393,16 +393,31 @@ flow('IAM-12', { domain: 'iam', routes: [R_EFFECTIVE_BATCH, R_EFFECTIVE] }, asyn
   await ctx.step(
     'plain member: account.read allowed, account.write + project.create denied',
     async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).post(
-        EFFECTIVE_BATCH,
+      // The IAM verdict cache is process-local with a 15s TTL and staging runs
+      // 6 API tasks: a probe served by a task that loaded this account's
+      // assignment snapshot BEFORE addMember committed answers allowed=false
+      // for up to one TTL window (runs 32353592362 attempts 2-3; steady-state
+      // probes are correct on every task). Poll until the grant is visible on
+      // the task answering THIS request, then assert the full verdict strictly.
+      const r = await waitFor(
+        () =>
+          ctx.client.as(ctx.P.OWNER).post(
+            EFFECTIVE_BATCH,
+            {
+              probes: [
+                { action: 'account.read' },
+                { action: 'account.write' },
+                { action: 'project.create' },
+              ],
+            },
+            { params: { accountId: team.id, userId: member.userId! } },
+          ),
         {
-          probes: [
-            { action: 'account.read' },
-            { action: 'account.write' },
-            { action: 'project.create' },
-          ],
+          until: (res) => res.statusCode === 200 && res.json<any>()?.results?.[0]?.allowed === true,
+          timeoutMs: 30_000,
+          intervalMs: 2_500,
+          description: 'member account.read verdict visible on the serving task',
         },
-        { params: { accountId: team.id, userId: member.userId! } },
       );
       r.status(200)
         .body()
@@ -415,10 +430,20 @@ flow('IAM-12', { domain: 'iam', routes: [R_EFFECTIVE_BATCH, R_EFFECTIVE] }, asyn
   );
 
   await ctx.step('admin bridges to Administrator-level set: account.write allowed', async () => {
-    const r = await ctx.client.as(ctx.P.OWNER).get(EFFECTIVE, {
-      params: { accountId: team.id, userId: admin.userId! },
-      query: { action: 'account.write' },
-    });
+    // Same cross-task cache window as the member probe above.
+    const r = await waitFor(
+      () =>
+        ctx.client.as(ctx.P.OWNER).get(EFFECTIVE, {
+          params: { accountId: team.id, userId: admin.userId! },
+          query: { action: 'account.write' },
+        }),
+      {
+        until: (res) => res.statusCode === 200 && res.json<any>()?.allowed === true,
+        timeoutMs: 30_000,
+        intervalMs: 2_500,
+        description: 'admin account.write verdict visible on the serving task',
+      },
+    );
     r.status(200).body().has('$.allowed', true).has('$.reason', 'role');
   });
 
@@ -426,10 +451,20 @@ flow('IAM-12', { domain: 'iam', routes: [R_EFFECTIVE_BATCH, R_EFFECTIVE] }, asyn
     'a project-scope assignment gives the project role: direct Manager → project.write allowed',
     async () => {
       await team.grantProjectRole(project.id, member.userId!, 'manager');
-      const r = await ctx.client.as(ctx.P.OWNER).get(EFFECTIVE, {
-        params: { accountId: team.id, userId: member.userId! },
-        query: { action: 'project.write', resourceType: 'project', resourceId: project.id },
-      });
+      // Same cross-task cache window: the grant busts only the serving task.
+      const r = await waitFor(
+        () =>
+          ctx.client.as(ctx.P.OWNER).get(EFFECTIVE, {
+            params: { accountId: team.id, userId: member.userId! },
+            query: { action: 'project.write', resourceType: 'project', resourceId: project.id },
+          }),
+        {
+          until: (res) => res.statusCode === 200 && res.json<any>()?.allowed === true,
+          timeoutMs: 30_000,
+          intervalMs: 2_500,
+          description: 'project manager verdict visible on the serving task',
+        },
+      );
       r.status(200).body().has('$.allowed', true).has('$.reason', 'role');
     },
   );
