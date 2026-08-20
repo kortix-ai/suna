@@ -160,7 +160,13 @@ jobs:
       # its flows are serial by definition). 19 sits nearer the 15 that held
       # than the 26 that collapsed. Lower these first if MAINTENANCE_MODE 503s
       # reappear; dropping KE2E_API_WORKERS to 1 returns the fleet to 13.
-      KE2E_API_WORKERS: '2'
+      # 2026-08-20: dropped to 1 — dry-run 32323656671 saw sustained origin
+      # 5xx on the team-create/addMember write paths at 19 concurrent workers
+      # (POST /v1/accounts costs 2-15s even idle over the cross-region DB, and
+      # under load it crosses the origin timeout). Staging API also scaled
+      # 3 -> 6 tasks. Shards finish in 25-40m at 2 workers; 1 worker stays
+      # under the 60m cap.
+      KE2E_API_WORKERS: '1'
       KE2E_SANDBOX_WORKERS: '1'
       KE2E_TIMEOUT_ATTEMPTS: '2'
     steps:
