@@ -283,7 +283,7 @@ export function BashTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
                 </TextShimmer>
               </>
             ) : (
-              <span className="flex min-w-0 items-center gap-2 text-xs" title={command}>
+              <span className="flex min-w-0 items-center gap-2 text-xs shrink-0" title={command}>
                 {/* `truncate`, not `shrink-0`: a description title is a
                     sentence, and on a narrow row a rigid one would be clipped
                     mid-word by the trigger's `overflow-hidden` instead of
