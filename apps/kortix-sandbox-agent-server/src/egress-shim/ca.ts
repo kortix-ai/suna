@@ -45,10 +45,48 @@ const DEFAULT_CA_TTL_MS = 12 * 60 * 60 * 1000
 const CLOCK_SKEW_MS = 5 * 60 * 1000
 const KEY_BITS = 2048
 
+/** Bytes of randomness behind a serial. 16 keeps ~127 bits after clamping,
+ *  far past the 64 bits the CA/Browser Forum asks of a serial. */
+const SERIAL_BYTES = 16
+
+/**
+ * Random bytes → a serial number that is a valid DER INTEGER.
+ *
+ * DER asks two things of an INTEGER and the old rule only answered one. It
+ * returned `'00' + randomBytes(16)`, where the leading zero kept the value
+ * POSITIVE — a first byte >= 0x80 is otherwise read as two's-complement
+ * negative. True, and not sufficient: a DER INTEGER must also be MINIMAL, and a
+ * `0x00` prefix is only legal when the byte after it is >= 0x80. Whenever the
+ * first random byte came in below that, the zero was redundant and the
+ * certificate was malformed.
+ *
+ * It failed roughly once in 256 — the odds of `randomBytes()[0] === 0x00`, the
+ * case where even forge's own normalization leaves a redundant zero behind. The
+ * symptom was `BoringSSL ... ASN.1 ... INVALID_INTEGER` on the handshake, and
+ * `openssl x509` refusing to load the certificate at all. Every sandbox mints
+ * its own CA and a leaf per terminated host, so that is a real and regular
+ * share of agents whose egress TLS simply did not work.
+ *
+ * Clamping the leading byte into `0x01..0x7f` answers both requirements by
+ * construction rather than by case analysis: never >= 0x80, so no prefix byte
+ * is ever needed; never `0x00`, so no leading zero is ever redundant. It costs
+ * one bit of entropy out of 128.
+ *
+ * Exported for the tests: a 1-in-256 fault sampled probabilistically is a test
+ * that passes while the bug ships, so the rule is pinned directly.
+ */
+export function serialFromBytes(bytes: Uint8Array): string {
+  // A zero-length INTEGER is not valid DER either, so an empty input still has
+  // to yield a byte. The only caller passes 16 bytes of randomness; this keeps
+  // the function total instead of leaving a second invalid encoding reachable.
+  const out = Buffer.from(bytes.length > 0 ? bytes : Uint8Array.of(0x01))
+  const first = out[0] ?? 0x01
+  out[0] = (first & 0x7f) || 0x01
+  return out.toString('hex')
+}
+
 function serial(): string {
-  // Positive integer: a leading byte >= 0x80 is read as negative by some
-  // parsers and the certificate is then rejected outright.
-  return `00${randomBytes(16).toString('hex')}`
+  return serialFromBytes(randomBytes(SERIAL_BYTES))
 }
 
 function fingerprintOf(cert: forge.pki.Certificate): string {
