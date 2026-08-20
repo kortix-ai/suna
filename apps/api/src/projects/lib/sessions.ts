@@ -529,6 +529,9 @@ export async function buildSessionSandboxEnvVars(input: {
       opencodeModel: input.opencodeModel,
       compiledAgentConfig,
       workspaceMode: input.workspaceMode,
+      fastColdBootEnabled: config.KORTIX_FAST_COLD_BOOT_ENABLED,
+      freshSession: input.freshSession,
+      baseSha: input.baseSha,
     }),
     // The platform coordinator uses API-level delegation and never receives a
     // project checkout. Keep this override after buildSessionRuntimeEnv so the

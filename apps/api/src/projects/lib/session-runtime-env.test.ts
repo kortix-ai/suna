@@ -114,3 +114,51 @@ describe('buildSessionRuntimeEnv — workspace mode', () => {
     }
   });
 });
+
+describe('buildSessionRuntimeEnv — fast Git boot hints', () => {
+  test('sends fresh-session and base-tip hints when the experiment is enabled', () => {
+    const baseSha = 'a'.repeat(40);
+    const env = buildSessionRuntimeEnv({
+      ...BASE_INPUT,
+      fastColdBootEnabled: true,
+      freshSession: true,
+      baseSha,
+    });
+
+    expect(env.KORTIX_SESSION_FRESH).toBe('1');
+    expect(env.KORTIX_BASE_SHA).toBe(baseSha);
+  });
+
+  test('omits both hints when the experiment is disabled', () => {
+    const env = buildSessionRuntimeEnv({
+      ...BASE_INPUT,
+      fastColdBootEnabled: false,
+      freshSession: true,
+      baseSha: 'a'.repeat(40),
+    });
+
+    expect(env).not.toHaveProperty('KORTIX_SESSION_FRESH');
+    expect(env).not.toHaveProperty('KORTIX_BASE_SHA');
+  });
+
+  test('omits both hints for resumed and non-repository sessions', () => {
+    for (const env of [
+      buildSessionRuntimeEnv({
+        ...BASE_INPUT,
+        fastColdBootEnabled: true,
+        freshSession: false,
+        baseSha: 'a'.repeat(40),
+      }),
+      buildSessionRuntimeEnv({
+        ...BASE_INPUT,
+        workspaceMode: 'runtime',
+        fastColdBootEnabled: true,
+        freshSession: true,
+        baseSha: 'a'.repeat(40),
+      }),
+    ]) {
+      expect(env).not.toHaveProperty('KORTIX_SESSION_FRESH');
+      expect(env).not.toHaveProperty('KORTIX_BASE_SHA');
+    }
+  });
+});
