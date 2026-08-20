@@ -349,6 +349,16 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   // lifecycle, so nothing under it remounts as the boot advances.
   const [chatReady, setChatReady] = useState(false);
   const [loaderMounted, setLoaderMounted] = useState(true);
+  // Belt and braces for the `onTransitionEnd` unmount below: `transitionend`
+  // never fires when the tab is backgrounded mid-fade, nor under
+  // `prefers-reduced-motion` where the duration is 0. Without this the loader
+  // subtree — including its 1s boot-clock interval — stays mounted behind
+  // `opacity-0` for the rest of the session.
+  useEffect(() => {
+    if (!chatReady || !loaderMounted) return;
+    const t = setTimeout(() => setLoaderMounted(false), 350);
+    return () => clearTimeout(t);
+  }, [chatReady, loaderMounted]);
   // Seeded ONCE, on mount, in a single initializer — both halves of the hand-off
   // are read in the same pass and land in the same commit, so they cannot come
   // apart the way the old render-phase ref/setState pair could. There is no
