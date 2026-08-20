@@ -69,6 +69,7 @@ export {
 export {
   listBranches,
   remoteBranchExists,
+  resolveRemoteBranchTip,
   createRemoteSessionBranch,
   deleteRemoteSessionBranch,
   commitFileToBranch,

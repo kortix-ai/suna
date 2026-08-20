@@ -151,9 +151,10 @@ export async function buildSingleParentDeltaBundle(
 export async function resolveFastBootGitHint(
   project: GitBackedProject,
   ref?: string,
+  forceRefresh = false,
 ): Promise<FastBootGitHint> {
   const treeRef = validateRef(ref || project.defaultBranch);
-  const repoPath = await refreshMirror(project);
+  const repoPath = await refreshMirror(project, forceRefresh);
   const baseSha = (
     await runGit(['rev-parse', '--verify', `${treeRef}^{commit}`], repoPath, false)
   ).stdout.trim();
