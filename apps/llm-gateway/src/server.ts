@@ -64,7 +64,6 @@ export function buildServer(): GatewayServer {
       maxRequestBytes: config.maxRequestBytes > 0 ? config.maxRequestBytes : undefined,
       streamProbeTimeoutMs:
         config.streamProbeTimeoutMs > 0 ? config.streamProbeTimeoutMs : undefined,
-      aiSdkNative: config.aiSdkNative,
     },
     { logger },
   );
@@ -240,60 +239,6 @@ export function buildServer(): GatewayServer {
   app.post('/v1/messages', messages);
   app.post('/v1/llm/messages', messages);
   app.post('/v1/openai/messages', messages);
-
-  // AI-SDK-native ingress (Vercel "AI Gateway" protocol): opencode's
-  // `@ai-sdk/gateway` provider POSTs `LanguageModelV{3,4}CallOptions` here. The
-  // model id + spec version + streaming flag are in HEADERS, not the path/body.
-  // Inert (404) until `GATEWAY_AI_SDK_NATIVE` is on — `gateway.languageModel`
-  // enforces the flag. The base URL opencode is configured with may carry a
-  // `/v{N}/ai` prefix, so mount the tolerant aliases too.
-  const languageModel = async (c: {
-    req: {
-      header: (k: string) => string | undefined;
-      text: () => Promise<string>;
-      raw?: { signal?: AbortSignal };
-    };
-  }) => {
-    const requestId = `req_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
-    try {
-      const res = await gateway.languageModel({
-        authorization: c.req.header('authorization'),
-        header: (name: string) => c.req.header(name),
-        rawBody: await c.req.text(),
-        signal: c.req.raw?.signal,
-      });
-      recordOutcome(res.status);
-      return res;
-    } catch (err) {
-      console.error('[gateway] language-model request failed', err);
-      recordOutcome(503);
-      return gatewayErrorResponse(503, {
-        message: 'Gateway unavailable',
-        code: 'gateway_error',
-        provider: '',
-        requestedModel: '',
-        resolvedModel: '',
-        requestId,
-        suggestion: 'Retry the request. If the error continues, switch to another model.',
-      });
-    }
-  };
-
-  app.post('/language-model', languageModel);
-  // Prefix-tolerant: `@ai-sdk/gateway` derives the path from its baseURL, which
-  // in opencode carries a `/v{N}/ai` segment (e.g. `/v3/ai/language-model`).
-  app.post('/:version/ai/language-model', languageModel);
-  // Proxy mode (`LLM_GATEWAY_PROXY_PORT`/`LLM_GATEWAY_PROXY_TARGET`) hands the
-  // sandbox `KORTIX_LLM_BASE_URL=<origin>/v1/llm-gateway/v1`
-  // (llm-gateway/sandbox-base-url.ts), and wire.ts:494 strips `/v1/llm-gateway`
-  // — so this server sees `/v1/language-model` with NO `/ai` or `/llm` segment.
-  // The in-API mount already carries this alias (wire.ts:461); omitting it here
-  // made every native-transport turn 404 into a bare text/plain body, which
-  // `@ai-sdk/gateway` reports as `Invalid error response format: Gateway request
-  // failed` — the same opaque string the api-router Worker fix chased (#6639).
-  app.post('/v1/language-model', languageModel);
-  app.post('/v1/llm/language-model', languageModel);
-  app.post('/v1/openai/language-model', languageModel);
 
   // `?scope=managed` → managed lineup only (~3KB). Sandboxes call it on every
   // boot to learn the live managed set; see wire.ts for the full rationale.

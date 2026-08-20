@@ -378,11 +378,6 @@ export function mountLlmGateway(app: OpenAPIHono): void {
     const gateway = createGateway(createInProcessGatewayHooks(), {
       captureBodies: true,
       maxRequestBytes: DEFAULT_MAX_REQUEST_BYTES,
-      // AI-SDK-native ingress (`/language-model`). Mirrors the standalone
-      // gateway's `aiSdkNative: config.aiSdkNative` (apps/llm-gateway server.ts).
-      // OFF (default) → `gateway.languageModel` returns 404, so the route
-      // mounted below is inert; ON → it serves the Vercel AI-Gateway protocol.
-      aiSdkNative: config.aiSdkNative,
     });
     // OpenAPIHono (not a plain Hono) so the inference surface below registers
     // in the shared OpenAPI registry — `.route()` merges a child OpenAPIHono's
@@ -416,21 +411,6 @@ export function mountLlmGateway(app: OpenAPIHono): void {
         authorization: c.req.header('authorization'),
         rawBody: await c.req.text(),
       });
-    // AI-SDK-native ingress (Vercel "AI Gateway" protocol): opencode's
-    // `@ai-sdk/gateway` provider POSTs `LanguageModelV{3,4}CallOptions` here. The
-    // model id + spec version + streaming flag are in HEADERS (read via `header`),
-    // NOT the path/body — mirrors the standalone server's `languageModel` handler
-    // (apps/llm-gateway/src/server.ts). Inert (404) until `GATEWAY_AI_SDK_NATIVE`
-    // is on, because `gateway.languageModel` enforces the `aiSdkNative` flag.
-    const languageModel = async (c: import('hono').Context) =>
-      gateway.languageModel({
-        authorization: c.req.header('authorization'),
-        header: (name: string) => c.req.header(name),
-        rawBody: await c.req.text(),
-        // `c.req.raw.signal` fires on client disconnect, so the gateway stops
-        // reading (and billing for) upstream tokens no one is listening for.
-        signal: c.req.raw.signal,
-      });
     // Runtime routes are unchanged plain Hono mounts — same handlers, same
     // signatures, same streaming behavior as before this OpenAPI registration.
     llm.post('/chat/completions', chat);
@@ -450,16 +430,6 @@ export function mountLlmGateway(app: OpenAPIHono): void {
     llm.post('/v1/chat/completions', chat);
     llm.get('/v1/models', models);
     llm.post('/v1/messages', messages);
-    // AI-SDK-native mounts. opencode's `@ai-sdk/gateway` provider is configured
-    // with the `${KORTIX_URL}/v1/llm` baseURL, so it POSTs to
-    // `/v1/llm/language-model` → this sub-app path `/language-model` (the primary
-    // target). `/v1/language-model` is the belt-and-suspenders `/v1/...`-prefixed
-    // variant, exactly like `/v1/chat/completions` above. `@ai-sdk/gateway` may
-    // also derive a `/v{N}/ai/language-model` path from its baseURL, so mount the
-    // prefix-tolerant alias too — mirrors the standalone server.
-    llm.post('/language-model', languageModel);
-    llm.post('/v1/language-model', languageModel);
-    llm.post('/:version/ai/language-model', languageModel);
 
     // OpenAPI documentation ONLY — see the big comment above for why these are
     // `registerPath()` (registry-only) instead of `llm.openapi(route, handler)`.

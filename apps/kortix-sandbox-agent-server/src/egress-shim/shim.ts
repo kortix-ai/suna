@@ -66,23 +66,26 @@ export interface EgressShimOptions {
 const BROKER_TIMEOUT_MS = 30_000
 
 /**
- * Headers the broker REJECTS with a 400 rather than stripping
- * (apps/api/src/secrets/http-broker.ts BLOCKED_REQUEST_HEADERS).
+ * FRAMING / hop-by-hop headers the broker REJECTS with a 400
+ * (apps/api/src/secrets/http-broker.ts BLOCKED_REQUEST_HEADERS). The shim drops
+ * them before relaying so an ordinary request does not turn into
+ * `400 request header is managed by Kortix: <name>`.
  *
- * Mirrored here so the shim drops them before relaying. Forwarding them turns
- * an ordinary request into `400 request header is managed by Kortix: cookie` —
- * and a cookie-bearing client, or any `curl -H 'Authorization: ...'`, is an
- * entirely reasonable thing for an agent to run.
+ * `authorization` and `cookie` are DELIBERATELY NOT dropped. They are the
+ * credential-carrying headers, and the whole point of this mode is that the
+ * agent puts a HANDLE where it would put the real credential — `curl -H
+ * 'Authorization: Bearer <handle>'`. Dropping them here stripped the handle
+ * before the broker could substitute it, so a Bearer/token/cookie request left
+ * carrying nothing and the upstream answered 401. They are forwarded now; the
+ * broker swaps the handle for the real value server-side.
  *
  * Kept as a literal copy rather than an import: this binary must not drag
  * apps/api's http-broker (and its DB and config dependencies) into the sandbox.
  * The `blocked-headers` test asserts the two lists still agree.
  */
 export const BLOCKED_REQUEST_HEADERS = new Set([
-  'authorization',
   'connection',
   'content-length',
-  'cookie',
   'host',
   'keep-alive',
   'proxy-authenticate',

@@ -15,11 +15,25 @@ const MAX_REDIRECTS = 3;
 const REQUEST_TIMEOUT_MS = 30_000;
 const REDACTED = Buffer.from('[REDACTED]');
 
+// FRAMING / hop-by-hop headers only. These are rejected with a 400 because the
+// broker manages them itself (it sets `host` and `content-length`, forces
+// `accept-encoding: identity`) or because they describe THIS connection, not the
+// upstream one (`connection`, `keep-alive`, `te`, `trailer`, `transfer-encoding`,
+// `upgrade`, `proxy-*`). A caller must not set them.
+//
+// `authorization` and `cookie` are DELIBERATELY NOT here. They are the two
+// credential-carrying request headers, and the whole substitution feature exists
+// so an agent can put a HANDLE where it would put the real credential — i.e.
+// `Authorization: Bearer <handle>`, the single most common auth pattern. The
+// substitution pass below replaces the handle with the real value inside these
+// headers; blocking them (as the pre-substitution broker did, 59c1f74bf8) left
+// the new substitution-only default with no working path to Bearer/token/cookie
+// auth. A legacy `inject` slot that names one of them still overwrites it, so the
+// old broker behaviour is unchanged. The shim keeps an identical copy of this
+// set (`blocked-headers.test.ts` pins the two together).
 const BLOCKED_REQUEST_HEADERS = new Set([
-  'authorization',
   'connection',
   'content-length',
-  'cookie',
   'host',
   'keep-alive',
   'proxy-authenticate',

@@ -12,10 +12,6 @@ import {
   handleChatCompletions,
 } from './pipeline';
 import { gatewayErrorResponse } from './pipeline/error-response';
-import {
-  type LanguageModelRequest,
-  handleLanguageModel,
-} from './pipeline/language-model-handler';
 import { CircuitBreaker } from './resilience';
 
 // Anthropic Messages API error `type` values by HTTP status — used only to
@@ -206,30 +202,10 @@ export function createGateway(
     return jsonResponse(chatJsonToAnthropicMessage(data as Record<string, unknown>));
   };
 
-  // AI-SDK-native ingress (`POST /language-model`). Inert unless the
-  // `aiSdkNative` flag is on — returns 404 so an accidentally-mounted route is a
-  // clean not-found rather than a live surface. The OpenAI-compat path is never
-  // affected by this flag.
-  const languageModel = async (req: LanguageModelRequest): Promise<Response> => {
-    if (!config.aiSdkNative) {
-      return gatewayErrorResponse(404, {
-        message: 'AI-SDK-native gateway ingress is not enabled',
-        code: 'not_found',
-        provider: '',
-        requestedModel: '',
-        resolvedModel: '',
-        requestId: `req_${Date.now().toString(36)}`,
-        suggestion: 'Enable GATEWAY_AI_SDK_NATIVE to use the /language-model endpoint.',
-      });
-    }
-    return handleLanguageModel(runtime, req);
-  };
-
   return {
     chatCompletions: (req: ChatCompletionRequest): Promise<Response> =>
       handleChatCompletions(runtime, req),
     messages,
-    languageModel,
     listModels,
     breakerHealth,
   };

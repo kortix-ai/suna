@@ -177,11 +177,22 @@ describe('headers the broker would reject or that would defeat redaction', () =>
     expect(headers['accept-encoding']).toBe('identity')
   })
 
+  // authorization and cookie are the credential-carrying headers: an agent puts
+  // a HANDLE in them and the broker substitutes it server-side, so the shim must
+  // FORWARD them. Dropping them (as before) left a Bearer/cookie request carrying
+  // nothing, and the upstream answered 401.
   test.each([
-    ['cookie', 'Cookie: sid=abc'],
-    ['authorization', 'Authorization: Bearer guess'],
+    ['authorization', 'Authorization: Bearer guess', 'Bearer guess'],
+    ['cookie', 'Cookie: sid=abc', 'sid=abc'],
+  ])('%s is forwarded so the broker can substitute a handle in it', async (name, line, value) => {
+    const headers = await relayedHeaders(`${line}\r\n`)
+    expect(headers[name]).toBe(value)
+  })
+
+  test.each([
     ['te', 'TE: trailers'],
-  ])('%s is dropped, because the broker 400s on it rather than stripping it', async (name, line) => {
+    ['keep-alive', 'Keep-Alive: timeout=5'],
+  ])('%s is dropped, because the broker manages or 400s it', async (name, line) => {
     const headers = await relayedHeaders(`${line}\r\n`)
     expect(headers[name]).toBeUndefined()
   })

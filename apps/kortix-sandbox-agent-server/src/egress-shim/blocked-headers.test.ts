@@ -42,4 +42,14 @@ describe('shim/broker blocked-header agreement', () => {
     expect(BLOCKED_REQUEST_HEADERS.has('accept-encoding')).toBe(false)
     expect(brokerBlockedHeaders().has('accept-encoding')).toBe(false)
   })
+
+  // The credential-carrying headers must NOT be blocked: they are the
+  // substitution surfaces (`Authorization: Bearer <handle>`, `Cookie: …=<handle>`).
+  // Blocking them left the substitution-only default with no working Bearer path.
+  test('neither list blocks authorization or cookie', () => {
+    for (const header of ['authorization', 'cookie']) {
+      expect(BLOCKED_REQUEST_HEADERS.has(header)).toBe(false)
+      expect(brokerBlockedHeaders().has(header)).toBe(false)
+    }
+  })
 })
