@@ -369,8 +369,9 @@ const envSchema = z.object({
   // (1) the in-process gateway is created with `aiSdkNative` so
   // `gateway.languageModel` serves instead of 404ing, and (2) every session gets
   // `KORTIX_LLM_AI_SDK_NATIVE=true` injected so the daemon's `buildKortixProvider`
-  // selects `@ai-sdk/gateway`. Default OFF — the whole native path stays inert.
-  GATEWAY_AI_SDK_NATIVE: optBoolFalse,
+  // selects `@ai-sdk/gateway`. Default ON — native is the default everywhere;
+  // set GATEWAY_AI_SDK_NATIVE=0 to fall back to the OpenAI-compatible path.
+  GATEWAY_AI_SDK_NATIVE: optBoolTrue,
   // CLOUD-ONLY. Whether KORTIX's own managed model lineup exists on this
   // deployment. The lineup routes through Kortix's shared Bedrock, AsterLab,
   // and OpenRouter credentials. Kortix bills each route as platform credits.
