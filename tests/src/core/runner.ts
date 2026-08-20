@@ -179,7 +179,16 @@ async function runOneFlow(
           steps.push(stepResult(name, "pass", start, collector));
           return out;
         } catch (err) {
-          steps.push(stepResult(name, "fail", start, collector, err));
+          // A ctx.skip() fired inside this step: the step did not FAIL — it
+          // asserted what it could (its passing assertions are recorded) and
+          // then declared the rest unreachable on this target. Recording it
+          // as "fail" made every one-step assert-then-skip flow (CHN-6) count
+          // as an unasserted skip under --require-all (run 32344222963
+          // shard 1: 34/35 passed, 0 failed, exit 1).
+          steps.push(
+            stepResult(name, err instanceof SkipSignal ? "skip" : "fail", start, collector,
+              err instanceof SkipSignal ? undefined : err),
+          );
           throw err;
         }
       },
@@ -249,7 +258,13 @@ function mkResult(
     quarantined: extra.quarantined,
     // A skip that already PASSED at least one step asserted the reachable
     // contract on this target (see FlowResult.asserted / runExitCode).
-    asserted: status === "skip" ? steps.some((s) => s.status === "pass") : undefined,
+    // Asserted = the flow proved SOMETHING before skipping: a fully passed
+    // step, or at least one passing assertion inside the step the skip fired
+    // from (the one-step assert-then-skip shape).
+    asserted:
+      status === "skip"
+        ? steps.some((s) => s.status === "pass" || s.assertions.some((a) => a.pass))
+        : undefined,
   };
 }
 
