@@ -31,6 +31,15 @@ branch workspace:
 - `KORTIX_GIT_DELTA_BUNDLE_BASE64=<bounded exact commit bundle>` when the base
   tip is one commit above its parent and the encoded bundle is at most 24 KiB
 
+After a managed project seed completes, the API stores the verified bundle in
+`projects.metadata.git.fast_boot`. A later session validates the cached SHA
+against the authoritative remote branch tip before it reuses the bundle. A
+missing or stale entry starts a mirror refresh and preserves the authenticated
+network fallback.
+
+The cache is available to every API instance. The project serializer removes
+the internal `fast_boot` field from provision, list, and detail responses.
+
 The daemon uses the hints as follows:
 
 - A matching scaffold and base tip materialize from local disk.
@@ -46,8 +55,8 @@ The bundle is transported with the sandbox creation environment. The daemon
 validates its encoding, size, prerequisite commit, and resulting SHA. Any
 validation failure uses the authenticated fetch path.
 
-This design creates no sandbox pool. It adds no database state. It changes no
-Git history or push behavior.
+This design creates no sandbox pool. It requires no schema migration. It changes
+no Git history or push behavior.
 
 ## Rollback
 
@@ -74,5 +83,24 @@ then five new Platinum sessions ran with `warm_sessions=false` against a new
 Three of five sessions imported the bundle and materialized the repository in
 257-265 ms. Two sessions exceeded the API's two-second mirror deadline and used
 the existing network fallback in 4,910-5,313 ms. The fallback preserved
-correctness, but making the bundle available before the first session remains
-the next Git-startup improvement.
+correctness.
+
+PR #6652 persisted the verified bundle before the first session. Deploy Dev run
+`32366930298` deployed merge commit
+`9865b3bd6604e26e99acdda9f63f821c71906d88`. Dev health reported that exact
+commit. One image warm-up was excluded, then five new Platinum sessions ran with
+`warm_sessions=false` against a new `general-knowledge-worker` project.
+
+| Milestone | Before durable cache | After durable cache | Change |
+| --- | ---: | ---: | ---: |
+| Repository materialized, p50 | 265 ms | 258 ms | -2.6% |
+| Repository materialized, max | 5,313 ms | 260 ms | -95.1% |
+| Runtime ready, p50 | 18,348 ms | 17,813 ms | -2.9% |
+| Runtime ready, max | 24,382 ms | 20,618 ms | -15.4% |
+
+All five sessions imported the bundle. Repository materialization measured
+255-260 ms. A separate managed-project provision completed in 10,487 ms. Its
+`201` provision response and `200` detail response did not expose `fast_boot`.
+
+Git is no longer the largest in-guest phase for this project type. OpenCode
+readiness measured 6,161-8,738 ms after daemon start in the five-session sample.
