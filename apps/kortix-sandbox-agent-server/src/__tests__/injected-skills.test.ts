@@ -70,6 +70,43 @@ describe('ensureInjectedManagedSkills', () => {
     }
   })
 
+  // A repository controls `opencode.config_dir`, so `git rev-parse --show-prefix`
+  // is repository-controlled input. `.git/info/exclude` is newline-delimited, so a
+  // config dir whose name carries a newline could append EXTRA rules — and an
+  // exclude rule hides a file from `git status --porcelain -uall`, the exact
+  // command the product uses to show the user what changed. Hiding a file there
+  // hides it from the human review step.
+  it('refuses to write an exclude entry for a config dir that could inject rules', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'inj-skills-'))
+    try {
+      const repo = await makeRepo(root)
+      // A real directory whose name embeds a newline plus a rule of its own.
+      const hostile = 'opencode\nsecret.txt\nmask'
+      const configDir = join(repo, '.kortix', hostile)
+      const bakedDir = join(root, 'baked')
+      await mkdir(join(bakedDir, 'kortix-system'), { recursive: true })
+      await writeFile(join(bakedDir, 'kortix-system', 'SKILL.md'), 'managed')
+
+      // A file the repo would love to hide from the user's change review.
+      await writeFile(join(repo, 'secret.txt'), 'exfiltrated')
+
+      await ensureInjectedManagedSkills(configDir, { bakedDir })
+
+      let exclude = ''
+      try {
+        exclude = await readFile(join(repo, '.git', 'info', 'exclude'), 'utf8')
+      } catch {
+        exclude = '' // never created — also a pass
+      }
+      // No rule for the smuggled path, however it was spelled.
+      expect(exclude.split(/\r?\n/).some((line) => line.trim() === 'secret.txt')).toBe(false)
+      // And the file the attacker wanted hidden is still reported to the user.
+      expect(await git(repo, 'status', '--porcelain', '-uall')).toContain('secret.txt')
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
   it('hides the injected skills from git status instead of dirtying the working tree', async () => {
     const root = await mkdtemp(join(tmpdir(), 'inj-skills-'))
     try {

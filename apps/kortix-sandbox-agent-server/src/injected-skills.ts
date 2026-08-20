@@ -46,6 +46,33 @@ const BAKED_MANAGED_SKILLS_DIR = '/opt/kortix/managed-skills'
  * Never throws: a failure just leaves the noise in place, which is the state
  * this function inherited.
  */
+/**
+ * One exclude line, or nothing.
+ *
+ * `.git/info/exclude` is newline-delimited and gives `#` and `!` their own
+ * meaning, so a value is only safe to write if every segment is an ordinary
+ * path segment. That matters because `prefix` here comes from
+ * `git rev-parse --show-prefix`, which follows the repository's own
+ * `opencode.config_dir` — repository-controlled input. A crafted value carrying
+ * a newline would append EXTRA rules of the attacker's choosing, and an exclude
+ * rule hides a file from `git status --porcelain -uall` — the exact command the
+ * product uses to show a user what changed in their session. Hiding a file
+ * there is hiding it from the human review step.
+ *
+ * Anything that is not a plain segment is DROPPED, not escaped: this is
+ * boot-time hygiene, and a skill directory that cannot be named safely is one
+ * we simply do not exclude. The cost of dropping is cosmetic (the row shows up
+ * as a change); the cost of writing it blind is a hidden file.
+ */
+const SAFE_PATH_SEGMENT = /^[\w .-]+$/
+
+function toExcludeEntry(relativePath: string): string | null {
+  const segments = relativePath.replace(/\/+$/, '').split('/').filter(Boolean)
+  if (segments.length === 0) return null
+  if (!segments.every((segment) => SAFE_PATH_SEGMENT.test(segment))) return null
+  return `/${segments.join('/')}/`
+}
+
 async function excludeInjectedSkillsFromGit(
   skillsDir: string,
   names: readonly string[],
@@ -74,7 +101,11 @@ async function excludeInjectedSkillsFromGit(
   if (!excludeRelative) return
   const excludePath = resolve(skillsDir, excludeRelative)
 
-  const wanted = [...names].sort().map((name) => `/${prefix}${name}/`)
+  const wanted = [...names]
+    .sort()
+    .map((name) => toExcludeEntry(`${prefix}${name}`))
+    .filter((entry): entry is string => entry !== null)
+  if (wanted.length === 0) return
   let existing = ''
   try {
     existing = await readFile(excludePath, 'utf8')
