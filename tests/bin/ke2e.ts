@@ -246,7 +246,8 @@ async function main(): Promise<number> {
     const s = result.summary;
     log.info('');
     log.info(
-      `${log.bold('results')}: ${s.passed}/${s.total} passed · ${s.failed} failed · ${s.skipped} skipped · ${s.todo} todo · ${(s.durationMs / 1000).toFixed(1)}s`,
+      `${log.bold('results')}: ${s.passed}/${s.total} passed · ${s.failed} failed · ${s.skipped} skipped` +
+        `${s.quarantined ? ` (${s.quarantined} QUARANTINED)` : ''} · ${s.todo} todo · ${(s.durationMs / 1000).toFixed(1)}s`,
     );
     log.info(log.dim(`report → ${htmlPath}`));
 
