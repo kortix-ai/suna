@@ -3,14 +3,17 @@ import { eq } from 'drizzle-orm';
 import { json, errors, auth } from '../../openapi';
 import { accountMembers, accounts } from '@kortix/db';
 import { db } from '../../shared/db';
+import { accountRolesForUser } from '../../iam/read-models';
 import { resolveAccountId } from '../../shared/resolve-account';
 import {
   PatPolicyError,
   createAccountToken,
   listAccountTokens,
+  listPersonalAccountTokens,
   revokeAccountToken,
 } from '../../repositories/account-tokens';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
+import { actorOf } from '../../iam/actor';
 import { loadProjectForUser } from '../../projects/lib/access';
 import {
   accountsRouter,
@@ -24,6 +27,17 @@ import {
   resolveAccountDisplayNames,
   lookupEmailsByUserIds,
 } from './app';
+
+/**
+ * A query flag arrives as a string or not at all. `?mine`, `?mine=true` and
+ * `?mine=1` all mean yes; anything else — including `?mine=false` — means no,
+ * so a caller that spells the negative out gets the unnarrowed list rather
+ * than a surprising narrowing on the truthiness of the string "false".
+ */
+export function isTruthyFlag(raw: string | undefined): boolean {
+  if (raw === undefined) return false;
+  return raw === '' || raw === 'true' || raw === '1';
+}
 
 // Routes are registered via this function (called by the orchestrator AFTER
 // middleware + mounts) so the registration order stays byte-identical to the
@@ -59,15 +73,20 @@ accountsRouter.openapi(
     name: string;
   }>> => {
     try {
-      return await db
-        .select({
-          accountId: accountMembers.accountId,
-          accountRole: accountMembers.accountRole,
-          name: accounts.name,
-        })
-        .from(accountMembers)
-        .innerJoin(accounts, eq(accountMembers.accountId, accounts.accountId))
-        .where(eq(accountMembers.userId, userId));
+      // `account_members` says WHICH accounts; `role_assignments` says at what
+      // role — the same split GET /accounts uses.
+      const [rows, rolesByAccount] = await Promise.all([
+        db
+          .select({
+            accountId: accountMembers.accountId,
+            name: accounts.name,
+          })
+          .from(accountMembers)
+          .innerJoin(accounts, eq(accountMembers.accountId, accounts.accountId))
+          .where(eq(accountMembers.userId, userId)),
+        accountRolesForUser(userId),
+      ]);
+      return rows.map((r) => ({ ...r, accountRole: rolesByAccount.get(r.accountId) ?? 'member' }));
     } catch {
       /* table may not exist yet */
       return [];
@@ -118,7 +137,21 @@ accountsRouter.openapi(
     tags: ['accounts'],
     summary: 'List CLI PATs for the active account',
     ...auth,
-    request: { query: z.object({ account_id: z.string() }).partial() },
+    request: {
+      query: z
+        .object({
+          account_id: z.string(),
+          // `mine=true` narrows the list to the CALLER'S OWN hand-minted API
+          // keys — no other member's keys, no session connector tokens, no
+          // service-account bearers. That is what a person's own settings page
+          // shows (`/settings/tokens`); the account hub's Tokens tab is the
+          // automation surface and reads service accounts instead. Any other
+          // value is the unnarrowed account-wide list this route always
+          // returned, so no existing caller changes behaviour.
+          mine: z.string(),
+        })
+        .partial(),
+    },
     responses: {
       200: json(z.array(AccountTokenSchema), 'Personal access tokens'),
       ...errors(401, 403),
@@ -135,9 +168,12 @@ accountsRouter.openapi(
     return c.json({ error: (err as Error).message }, 403);
   }
 
-  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.TOKEN_READ);
+  await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.TOKEN_READ);
 
-  const tokens = await listAccountTokens(accountId);
+  const onlyMine = isTruthyFlag(c.req.query('mine'));
+  const tokens = onlyMine
+    ? await listPersonalAccountTokens(accountId, userId)
+    : await listAccountTokens(accountId);
   return c.json(
     tokens.map((t) => ({
       token_id: t.tokenId,
@@ -201,7 +237,7 @@ accountsRouter.openapi(
     return c.json({ error: (err as Error).message }, 403);
   }
 
-  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.TOKEN_CREATE);
+  await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.TOKEN_CREATE);
 
   const expiresAtRaw = typeof body.expires_at === 'string' ? body.expires_at.trim() : '';
   const expiresAt = expiresAtRaw ? new Date(expiresAtRaw) : undefined;
@@ -217,7 +253,7 @@ accountsRouter.openapi(
       : undefined;
 
   if (projectId) {
-    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    const loaded = await loadProjectForUser(c, projectId, 'credentials');
     if (!loaded?.row || loaded.row.accountId !== accountId) {
       return c.json({ error: 'Project not found in account' }, 403);
     }
@@ -277,7 +313,7 @@ accountsRouter.openapi(
     return c.json({ error: (err as Error).message }, 403);
   }
 
-  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.TOKEN_REVOKE);
+  await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.TOKEN_REVOKE);
 
   const ok = await revokeAccountToken(tokenId, accountId);
   if (!ok) {

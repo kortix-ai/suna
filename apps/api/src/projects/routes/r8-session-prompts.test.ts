@@ -264,6 +264,32 @@ mock.module('../lib/access', () => ({
   loadVisibleSession: async () => visibleSession,
 }));
 
+// The prompt route re-authorizes the AGENT on every send (agents are
+// deny-by-default for a project member — see lib/agent-access.ts). That gate
+// reads the resource-grant map from Postgres, which this suite mocks away, so
+// stub it here exactly as the access layer above is stubbed. Without it the
+// handler throws before enqueueing and every assertion below sees an empty
+// queue. `agentCalls` keeps the gate observable: it must still RUN.
+const agentAccessCalls: Array<{ requested: unknown; sessionAgent: unknown }> = [];
+mock.module('../lib/agent-access', () => ({
+  resolveAndAuthorizeAgent: async (
+    _c: unknown,
+    _loaded: unknown,
+    _projectId: string,
+    requested?: unknown,
+    sessionAgent?: unknown,
+  ) => {
+    agentAccessCalls.push({ requested, sessionAgent });
+    return { agentName: 'kortix', accessible: ['kortix'], memberTier: false };
+  },
+  // Declared even though this suite never calls it: `warm-sessions.ts` imports
+  // it, and that module is pulled in with the rest of the app. A `mock.module`
+  // REPLACES the module, so any exported name an importer expects and the stub
+  // omits fails the whole isolate with
+  // `SyntaxError: Export named '…' not found`.
+  canUseAnyAgent: async () => true,
+}));
+
 const { projectsApp } = await import('../lib/app');
 await import('./r8');
 
@@ -304,6 +330,7 @@ beforeEach(() => {
   billingOk = true;
   loadProjectCalls = [];
   capabilityCalls = [];
+  agentAccessCalls.length = 0;
   loadedProject = { row: { accountId: ACCOUNT_ID, projectId: PROJECT_ID }, userId: USER_ID };
   visibleSession = { row: { sessionId: SESSION_ID, metadata: {} } };
 });
@@ -377,6 +404,21 @@ describe('POST .../prompts', () => {
     expect(drains).toEqual([{ idempotencyKey: `prompt:${SESSION_ID}:q_1` }]);
   });
 
+  test('re-authorizes the agent on EVERY send, not just at session create', async () => {
+    // A prompt can switch agent mid-session via `overrides.agent`. Gating only
+    // at create would let a member send their first message as the agent they
+    // hold and every one after it as any other agent in the manifest.
+    visibleSession = { row: { sessionId: SESSION_ID, metadata: {}, agentName: 'kortix' } };
+    await post(validBody);
+    expect(agentAccessCalls).toEqual([{ requested: null, sessionAgent: 'kortix' }]);
+
+    agentAccessCalls.length = 0;
+    await post({ ...validBody, overrides: { agent: 'other-agent' } });
+    // The REQUESTED agent is what gets checked; the session's own agent is only
+    // the fallback for a send that names none.
+    expect(agentAccessCalls).toEqual([{ requested: 'other-agent', sessionAgent: 'kortix' }]);
+  });
+
   test('rejects a message id OpenCode cannot order', async () => {
     // A badly-shaped id sorts below the transcript and OpenCode reads the
     // prompt as already answered — the turn silently never runs.
@@ -434,6 +476,9 @@ describe('GET .../prompts', () => {
         prompt_id: PROMPT_ID,
         client_message_id: 'q_1',
         message_id: WIRE_ID,
+        // The id the client painted under — the same while nothing re-minted.
+        wire_message_id: WIRE_ID,
+        client_sent_at_ms: null,
         state: 'queued',
         reason: null,
         text: 'say hi',
@@ -553,6 +598,7 @@ describe('DELETE .../prompts/:promptId', () => {
     expect(await response.json()).toEqual({
       removed: {
         prompt_id: PROMPT_ID,
+        removed_message_ids: [WIRE_ID],
         client_message_id: 'q_1',
         message_id: WIRE_ID,
         parts: [

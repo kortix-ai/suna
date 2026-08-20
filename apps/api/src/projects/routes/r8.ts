@@ -31,6 +31,7 @@ import {
   loadProjectForUser,
   loadVisibleSession,
 } from '../lib/access';
+import { resolveAndAuthorizeAgent } from '../lib/agent-access';
 import { assertAgentScope } from '../../iam/agent-scope';
 import { PROJECT_ACTIONS } from '../../iam';
 import { callerKortixSessionId } from '../lib/caller-session';
@@ -52,6 +53,8 @@ import {
   startSession,
   stopSession,
 } from '../session-lifecycle';
+import { settleInboxHoldAfterStopInBackground } from '../session-lifecycle/inbox-hold-settle';
+import { cancelForwardedPrompt, findInboxRowIdByMessageId } from '../session-lifecycle/cancel-forwarded';
 import {
   PROMPT_TEXT_PREVIEW_CHARS,
   flattenPromptText,
@@ -60,6 +63,7 @@ import {
 import { isWarmProjectSession } from '../lib/warm-sessions';
 import { dropWarmSessionMarkerOnAdopt } from './warm-sessions';
 import { refreshCrTips } from './shared';
+import { ProvisionTimeline } from '../../platform/services/provision-timeline';
 
 // POST /v1/projects/:projectId/sessions/:sessionId/start
 // THE unified session-open endpoint. One idempotent call that provisions a
@@ -90,13 +94,26 @@ projectsApp.openapi(
     // Floor 'session' (= project.session.start) so the human gate matches
     // restart/stop and a custom role that withholds session.start is denied here
     // (was 'read', which let any project-reader start sessions).
+    // Every millisecond here is in front of the provider call, so a resume can
+    // never be faster than this prologue. Instrumented for the same reason
+    // provisioning is: without per-step marks, "start is slow" is unactionable.
+    const stl = new ProvisionTimeline(sessionId, 'session-start');
     const loaded = await loadProjectForUser(c, projectId, 'session');
+    stl.mark('project-loaded');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     // Per-agent gate: resuming a session provisions compute. A scoped agent
     // token must hold project.session.start (no-op for human/PAT tokens).
     assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
-    const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null);
+    const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
+    stl.mark('session-loaded');
     if (!visible) return c.json({ error: 'Not found' }, 404);
+    // The agent this session will actually run has to still be one the caller
+    // may run — grants change after a session is created, and `/start` is what
+    // resumes a hibernated box days later. The session's stored `agent_name`
+    // may also be the `default` sentinel, which resolves here to the manifest
+    // default rather than being waved through unchecked.
+    await resolveAndAuthorizeAgent(c, loaded, projectId, null, visible.row.agentName);
+    stl.mark('agent-authorized');
 
     // Adoption (JAY-599/T21): a still-warm row (pre-created, never prompted)
     // stops being speculative the instant a user's tab calls /start on it —
@@ -106,10 +123,12 @@ projectsApp.openapi(
     // resume that follows.
     if (isWarmProjectSession(visible.row.metadata)) {
       await dropWarmSessionMarkerOnAdopt(sessionId);
+      stl.mark('warm-adopted');
     }
 
     // Same gate as wake/create: resuming or provisioning spends compute.
     const billing = await checkBillingActive(loaded.row.accountId);
+    stl.mark('billing-checked');
     if (!billing.ok) {
       return c.json(
         {
@@ -141,6 +160,8 @@ projectsApp.openapi(
       sessionId,
       waitMs,
     });
+    stl.mark(`open-session:${result.start.stage}`);
+    stl.log({ waitMs });
     return c.json(
       {
         ...result.start,
@@ -184,9 +205,9 @@ projectsApp.openapi(
     assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
 
     // Restart is reserved for the session owner or an account owner/admin.
-    const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null);
+    const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
     if (!visible) return c.json({ error: 'Not found' }, 404);
-    if (!visible.canManageSharing) {
+    if (!visible.canManageLifecycle) {
       return c.json(
         {
           error: 'Only the session owner or an account owner/admin can restart this session',
@@ -235,7 +256,7 @@ projectsApp.openapi(
     assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
     // Human gate: stopping has its own leaf (project.session.stop), distinct from
     // start, so a custom role can allow one and withhold the other. Every
-    // built-in role holds it, so member/editor/manager are unaffected.
+    // built-in role holds it, so member/manager are unaffected.
     await assertProjectCapability(
       c,
       loaded.userId,
@@ -246,9 +267,9 @@ projectsApp.openapi(
 
     // Stop is reserved for the session owner or an account owner/admin, same policy
     // as restart.
-    const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null);
+    const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
     if (!visible) return c.json({ error: 'Not found' }, 404);
-    if (!visible.canManageSharing) {
+    if (!visible.canManageLifecycle) {
       return c.json(
         { error: 'Only the session owner or an account owner/admin can stop this session' },
         403,
@@ -336,7 +357,7 @@ projectsApp.openapi(
 
     // A read, not a mutation: the 'read' tier plus the session-content leaf,
     // exactly like GET /sessions/:sessionId. No agent-scope assert and no
-    // canManageSharing check — an agent may ask whether its own turn is live,
+    // canManageLifecycle check — an agent may ask whether its own turn is live,
     // and a shared viewer may see that the session is busy.
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -354,7 +375,7 @@ projectsApp.openapi(
     // one end-user, narrow it". Passing it raw 404s a signed-in human on any
     // sibling `origin='backend'` session — one the same user's GET /sessions
     // list returns, because project-sessions.ts goes through the helper.
-    const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c));
+    const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c), callerKortixSessionId(c));
     if (!visible) return c.json({ error: 'Not found' }, 404);
 
     // `session_sandboxes.session_id` is UNIQUE, so this is the session's one
@@ -507,6 +528,8 @@ const SessionPromptSchema = z.object({
   prompt_id: z.string(),
   client_message_id: z.string(),
   message_id: z.string(),
+  wire_message_id: z.string(),
+  client_sent_at_ms: z.number().nullable(),
   state: z.enum(['queued', 'delivering', 'waiting', 'failed']),
   reason: z.string().nullable(),
   text: z.string(),
@@ -523,6 +546,7 @@ const SessionPromptSchema = z.object({
 const RemovedSessionPromptSchema = z.object({
   prompt_id: z.string(),
   client_message_id: z.string(),
+  removed_message_ids: z.array(z.string()).optional(),
   message_id: z.string(),
   parts: z.array(z.any()),
   overrides: z.any().nullable(),
@@ -572,16 +596,31 @@ function promptState(row: Pick<PromptRow, 'status' | 'result'>): {
 
 function serializePrompt(row: PromptRow) {
   const payload = (row.payload ?? {}) as Record<string, unknown>;
+  const result = (row.result ?? {}) as Record<string, unknown>;
   const { state, reason } = promptState(row);
   return {
     prompt_id: row.commandId,
     client_message_id: typeof payload.clientMessageId === 'string' ? payload.clientMessageId : '',
+    // The id the message ACTUALLY carries in the transcript, when known: the
+    // drain re-mints a mid-turn prompt above the live turn's ids, and the strip
+    // hides a row the moment the transcript shows its message — a client-minted
+    // id here left the row on screen beside its own bubble until the next poll.
     message_id:
-      typeof payload.redeliveredMessageId === 'string'
-        ? payload.redeliveredMessageId
-        : typeof payload.wireMessageId === 'string'
-          ? payload.wireMessageId
-          : '',
+      typeof result.forwarded_message_id === 'string'
+        ? result.forwarded_message_id
+        : typeof payload.redeliveredMessageId === 'string'
+          ? payload.redeliveredMessageId
+          : typeof payload.wireMessageId === 'string'
+            ? payload.wireMessageId
+            : '',
+    // The id the CLIENT painted its bubble under. `message_id` above moves to
+    // the re-minted id the moment the drain places the prompt — before the
+    // runtime echoes it — and a client that only knew `message_id` drew the
+    // row beside its own bubble for that window (a second dimmed copy for
+    // ~0.4 s on every mid-turn send). Both ids name one prompt.
+    wire_message_id: typeof payload.wireMessageId === 'string' ? payload.wireMessageId : '',
+    client_sent_at_ms:
+      typeof payload.clientSentAtMs === 'number' ? payload.clientSentAtMs : null,
     state,
     reason,
     text: (typeof payload.text === 'string' ? payload.text : '').slice(
@@ -604,6 +643,14 @@ function serializeRemovedPrompt(row: PromptRow) {
     // The ORIGINAL wire id, never the re-minted one: an undo re-creates the
     // submission, and `POST .../prompts` places it again from there.
     message_id: typeof payload.wireMessageId === 'string' ? payload.wireMessageId : '',
+    // EVERY id this prompt ever travelled under, so the client can clear the
+    // transcript husk a cancel leaves behind (the copy at the runtime is
+    // emptied, not necessarily deleted, while a step runs).
+    removed_message_ids: [
+      payload.wireMessageId,
+      payload.redeliveredMessageId,
+      (row.result as Record<string, unknown> | null)?.forwarded_message_id,
+    ].filter((id, i, all): id is string => typeof id === 'string' && !!id && all.indexOf(id) === i),
     // The full body, untruncated, with every file/agent part — see the DELETE
     // handler for why the display shape cannot stand in for this.
     parts: parts.length > 0 ? parts : [{ type: 'text', text: payload.text ?? '' }],
@@ -635,7 +682,22 @@ projectsApp.openapi(
     const sessionId = c.req.param('sessionId');
     if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
-    const loaded = await loadProjectForUser(c, projectId, 'write');
+    // FLOOR 'session', NOT 'write'. Sending a prompt is running the session,
+    // not editing the project — it must pass exactly the check `/start` and
+    // `POST /sessions` pass, because those are how the SAME message gets in.
+    //
+    // It didn't. A built-in project `member` (project.read + project.session.*,
+    // no project.write) could open a session and have its first prompt answered
+    // — that one rides `POST /sessions`'s `pending_prompt` stash, gated
+    // 'session' — and then got 403 "Your role on this project doesn't let you
+    // change this project" on EVERY follow-up, which lands here. Two gates for
+    // one action: allowed to start the conversation, refused to continue it.
+    //
+    // The real authorization is the pair below (project.session.start, per-agent
+    // + per-capability). This coarse floor only ever added a second, stricter,
+    // contradictory tier on top. Same reasoning for delete/retry/hold below:
+    // they manage the queue of a session the caller is already allowed to run.
+    const loaded = await loadProjectForUser(c, projectId, 'session');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     // Same per-agent gate as `/start`: a prompt is what spends the compute a
     // session start provisions.
@@ -648,7 +710,7 @@ projectsApp.openapi(
       PROJECT_ACTIONS.PROJECT_SESSION_START,
     );
 
-    const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c));
+    const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c), callerKortixSessionId(c));
     if (!visible) return c.json({ error: 'Not found' }, 404);
     // `deleteSession()` stamps metadata.deletedAt and leaves the row 'stopped'.
     // Accepting a prompt for it would revive a session the user removed.
@@ -686,6 +748,13 @@ projectsApp.openapi(
       variant: typeof overridesInput.variant === 'string' ? overridesInput.variant : null,
       directory: typeof overridesInput.directory === 'string' ? overridesInput.directory : null,
     };
+
+    // Every prompt re-asks, because a prompt is what spends the money and a
+    // prompt can SWITCH agent mid-session via `overrides.agent`. Checking only
+    // at create would let a member send the first message as their granted
+    // agent and every one after it as any other agent in the manifest. Falls
+    // back to the session's own agent when the prompt names none.
+    await resolveAndAuthorizeAgent(c, loaded, projectId, overrides.agent, visible.row.agentName);
 
     // Same gate as start/wake: a prompt spends compute.
     const billing = await checkBillingActive(loaded.row.accountId);
@@ -725,6 +794,13 @@ projectsApp.openapi(
       // The drain re-mints against the live root before delivering, which is
       // the only place that can place the id correctly.
       ...(body.remint_on_delivery === true ? { remintOnDelivery: true } : {}),
+      // SEND order across surfaces whose POSTs race — see the batch sort in
+      // the drain. Bounded to the near past/future so a wrong client clock
+      // cannot pin its prompts to the head or tail of every future batch.
+      ...(typeof body.client_sent_at_ms === 'number' &&
+      Math.abs(Date.now() - body.client_sent_at_ms) < 10 * 60_000
+        ? { clientSentAtMs: Math.trunc(body.client_sent_at_ms) }
+        : {}),
       parts,
       overrides,
     });
@@ -786,7 +862,7 @@ projectsApp.openapi(
       projectId,
       PROJECT_ACTIONS.PROJECT_SESSION_READ,
     );
-    const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c));
+    const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c), callerKortixSessionId(c));
     if (!visible) return c.json({ error: 'Not found' }, 404);
 
     // Scoped to INBOX rows — see `listInboxPrompts`. `continue_session` is also
@@ -822,9 +898,15 @@ projectsApp.openapi(
     const sessionId = c.req.param('sessionId');
     const promptId = c.req.param('promptId');
     if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
-    if (!UUID_V4_REGEX.test(promptId)) return c.json({ error: 'Invalid prompt id' }, 400);
+    // A prompt is named by its row id (uuid) OR by its wire message id — the
+    // handle the bubble still has after the row leaves the list.
+    if (!UUID_V4_REGEX.test(promptId) && !/^msg_[A-Za-z0-9]{6,40}$/.test(promptId)) {
+      return c.json({ error: 'Invalid prompt id' }, 400);
+    }
 
-    const loaded = await loadProjectForUser(c, projectId, 'write');
+    // Floor 'session' — see the POST /prompts gate comment. Un-queuing your own
+    // pending message is running the session, not editing the project.
+    const loaded = await loadProjectForUser(c, projectId, 'session');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
     await assertProjectCapability(
@@ -834,13 +916,24 @@ projectsApp.openapi(
       projectId,
       PROJECT_ACTIONS.PROJECT_SESSION_START,
     );
-    const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c));
+    const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c), callerKortixSessionId(c));
     if (!visible) return c.json({ error: 'Not found' }, 404);
 
     // The session AND inbox scopes are in the DELETE's own predicate, so
     // neither a prompt id from another session nor an automation's
     // `continue_session` row can be removed by naming it here.
-    const outcome = await deleteInboxPrompt(sessionId, promptId);
+    //
+    // A `msg_…` id names the prompt by its MESSAGE instead: the row leaves
+    // `GET .../prompts` the moment the daemon confirms persistence (~1 s),
+    // but the bubble on screen still knows its wire id — and the prompt is
+    // still cancellable until a model step reads it.
+    let effectivePromptId = promptId;
+    if (promptId.startsWith('msg_')) {
+      const found = await findInboxRowIdByMessageId(sessionId, promptId);
+      if (!found) return c.json({ error: 'Not found' }, 404);
+      effectivePromptId = found;
+    }
+    const outcome = await deleteInboxPrompt(sessionId, effectivePromptId);
     // The response CARRIES THE PROMPT IT REMOVED. A removal is offered with an
     // undo, and the row is hard-deleted, so this response is the only place the
     // full body still exists. Undoing from `GET /prompts`'s view instead
@@ -850,7 +943,30 @@ projectsApp.openapi(
       return c.json({ removed: serializeRemovedPrompt(outcome.row) }, 200);
     }
     if (outcome.outcome === 'delivering') {
-      return c.json({ error: 'Prompt is already being delivered' }, 409);
+      // On the wire is no longer the point of no return: a forwarded prompt
+      // the loop has not READ is taken back out of the runtime — whole
+      // message when idle, part by part when busy (an empty user message is
+      // invisible to the model). Only "a step is answering it" still refuses.
+      const cancelled = await cancelForwardedPrompt(sessionId, effectivePromptId);
+      if (cancelled.outcome === 'cancelled') {
+        return c.json({ removed: serializeRemovedPrompt(cancelled.row) }, 200);
+      }
+      if (cancelled.outcome === 'not_forwarded') {
+        // The row fell back into the queue while the cancel watched it.
+        const retried = await deleteInboxPrompt(sessionId, effectivePromptId);
+        if (retried.outcome === 'deleted') {
+          return c.json({ removed: serializeRemovedPrompt(retried.row) }, 200);
+        }
+      }
+      return c.json(
+        {
+          error:
+            cancelled.outcome === 'answered'
+              ? 'Prompt is already being answered'
+              : 'Prompt is being delivered and the runtime could not be reached to cancel it',
+        },
+        409,
+      );
     }
     return c.json({ error: 'Not found' }, 404);
   },
@@ -882,7 +998,9 @@ projectsApp.openapi(
     if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
     if (!UUID_V4_REGEX.test(promptId)) return c.json({ error: 'Invalid prompt id' }, 400);
 
-    const loaded = await loadProjectForUser(c, projectId, 'write');
+    // Floor 'session' — see the POST /prompts gate comment. "Retry"/"send now"
+    // on your own queued message is running the session, not editing the project.
+    const loaded = await loadProjectForUser(c, projectId, 'session');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
     await assertProjectCapability(
@@ -892,7 +1010,7 @@ projectsApp.openapi(
       projectId,
       PROJECT_ACTIONS.PROJECT_SESSION_START,
     );
-    const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c));
+    const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c), callerKortixSessionId(c));
     if (!visible) return c.json({ error: 'Not found' }, 404);
 
     // ONE primitive for "retry" and for "send now": both are the user pointing
@@ -938,7 +1056,9 @@ projectsApp.openapi(
     const sessionId = c.req.param('sessionId');
     if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
-    const loaded = await loadProjectForUser(c, projectId, 'write');
+    // Floor 'session' — see the POST /prompts gate comment. Stop/hold is the
+    // counterpart of send; a member who can send must be able to hold.
+    const loaded = await loadProjectForUser(c, projectId, 'session');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
     await assertProjectCapability(
@@ -948,7 +1068,7 @@ projectsApp.openapi(
       projectId,
       PROJECT_ACTIONS.PROJECT_SESSION_START,
     );
-    const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c));
+    const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c), callerKortixSessionId(c));
     if (!visible) return c.json({ error: 'Not found' }, 404);
 
     const body = await readBody(c);
@@ -958,7 +1078,14 @@ projectsApp.openapi(
 
     await holdInboxPrompts(sessionId, body.held);
     const rows = await listInboxPrompts(sessionId, PROMPT_LIST_LIMIT);
-    if (!body.held) void drainSessionLifecycleQueue({ limit: 1 }).catch(() => undefined);
+    if (body.held) {
+      // The instant marking above is what the client waits for; what a Stop
+      // means for prompts already on the wire needs the box and happens behind
+      // this response — see inbox-hold-settle.ts.
+      settleInboxHoldAfterStopInBackground(sessionId);
+    } else {
+      void drainSessionLifecycleQueue({ limit: 1 }).catch(() => undefined);
+    }
     return c.json({ prompts: rows.map(serializePrompt) });
   },
 );
@@ -1045,7 +1172,7 @@ projectsApp.openapi(
     const body = await readBody(c);
     const loaded = await loadProjectForUser(c, projectId, 'write');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    // Human-side capability gate (Git Ops). Editors hold it; a custom
+    // Human-side capability gate (Git Ops). Managers hold it; a custom
     // role omits project.gitops.push to take Git-Ops away from a department.
     await assertProjectCapability(
       c,
@@ -1056,8 +1183,12 @@ projectsApp.openapi(
     );
 
     // Per-agent gate: opening a CR is the agent's intended path to propose work.
-    // Default-deny — a scoped agent must be granted project.cr.open.
-    assertAgentScope(c, 'project.cr.open');
+    // Default-deny — a scoped agent must be granted the leaf this route already
+    // gates the underlying commit on. `project.cr.open` was the SAME capability
+    // under a second name and is gone from the catalog (spec §2.4); a manifest
+    // still spelling it that way is rewritten on input by
+    // `canonicalizeGrantActions`, so the grant reaching here is always the leaf.
+    assertAgentScope(c, PROJECT_ACTIONS.PROJECT_GITOPS_PUSH);
 
     const title = normalizeString(body.title);
     if (!title) return c.json({ error: 'title is required' }, 400);
@@ -1363,8 +1494,9 @@ projectsApp.openapi(
     const body = await readBody(c);
     const loaded = await loadProjectForUser(c, projectId, 'write');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    // Per-agent gate: editing a CR is part of the change-request capability.
-    assertAgentScope(c, 'project.cr.open');
+    // Per-agent gate: editing a CR is part of the change-request capability,
+    // which is `project.gitops.push` (see the create route above).
+    assertAgentScope(c, PROJECT_ACTIONS.PROJECT_GITOPS_PUSH);
 
     const cr = await getCrById(crId, projectId);
     if (!cr) return c.json({ error: 'Change request not found' }, 404);
@@ -1418,7 +1550,7 @@ projectsApp.openapi(
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     // request-changes is a human review decision on a CR, not a code push —
     // gate it on project.review.act (the same leaf as /review/items/{id}/act),
-    // not gitops.push. Editor/manager hold both; a custom reviewer role with
+    // not gitops.push. Manager holds both; a custom reviewer role with
     // review.act but no gitops.push can now request changes.
     await assertProjectCapability(
       c,

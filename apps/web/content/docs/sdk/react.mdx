@@ -42,7 +42,7 @@ Readiness is server truth. The runtime is ready when `POST /start` returns
 | `messages` | `{ info, parts }[]` | The message list. Parts stream in live. |
 | `status` | `SessionStatus` | The session status. |
 | `isBusy` | `boolean` | The agent is generating a reply. |
-| `questions`, `permissions` | array | Pending agent questions and permission requests. |
+| `questions`, `permissions` | array | Pending agent questions and tool-approval requests. A `permission` here is one runtime tool approval, not an IAM permission. |
 | `diffs`, `todos` | array | Live file diffs and todo items. |
 | `sendError` | `KortixSendError \| null` | The last `send` failure: `billing`, `runtime-not-ready`, or `runtime-error`. |
 | `rewindMessageId` | `string \| null` | The selected user message while a reversible rewind is staged. |
@@ -63,7 +63,7 @@ Readiness is server truth. The runtime is ready when `POST /start` returns
 | `runCommand(command, args)` | Run a project slash command. |
 | `answerQuestion(id, answers)` | Answer a pending agent question. |
 | `rejectQuestion(id)` | Reject a pending agent question. |
-| `answerPermission(id, reply, message?)` | Answer a permission request. `reply` is `'once'`, `'always'`, or `'reject'`. |
+| `answerPermission(id, reply, message?)` | Answer a tool-approval request. `reply` is `'once'`, `'always'`, or `'reject'`. |
 
 `useSession` also returns `removeQuestion` and `removePermission`. Do not use
 them. They clear the prompt from local state but never notify the agent, so

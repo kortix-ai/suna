@@ -10,12 +10,13 @@ import { resolveAccountId } from '../../shared/resolve-account';
 import { makeOpenApiApp, json, auth } from '../../openapi';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
 
+import { actorOf } from '../../iam/actor';
 export const accountDeletionRouter = makeOpenApiApp<AppEnv>();
 
 async function resolveDeletionContext(c: any) {
   const userId = c.get('userId') as string;
   const accountId = await resolveAccountId(userId);
-  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_DELETE);
+  await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_DELETE);
   return { userId, accountId };
 }
 
@@ -98,8 +99,11 @@ accountDeletionRouter.openapi(
     },
   }),
   async (c: any) => {
-    const { accountId } = await resolveDeletionContext(c);
-    const result = await deleteAccountImmediately(accountId);
+    const { accountId, userId } = await resolveDeletionContext(c);
+    // Pass `userId`: `resolveAccountId` above returns only the earliest-joined
+    // account, so without it every sandbox in a team account this user owns
+    // survives the deletion, still running and still billing.
+    const result = await deleteAccountImmediately(accountId, userId);
     return c.json(result);
   },
 );

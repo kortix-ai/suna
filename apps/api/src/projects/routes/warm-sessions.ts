@@ -12,6 +12,7 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { projectSessions, sessionLifecycleCommands } from '@kortix/db';
 import { and, desc, eq, inArray, ne, or, sql } from 'drizzle-orm';
 import { loadProjectForUser } from '../lib/access';
+import { canUseAnyAgent } from '../lib/agent-access';
 import { ClaimWarmProjectSessionInputSchema, SessionSchema, WarmProjectSessionResultSchema, projectsApp } from '../lib/app';
 import { UUID_V4_REGEX, normalizeString, readBody, requestAuditContext, serializeSession } from '../lib/serializers';
 import { createProjectSession } from '../lib/sessions';
@@ -199,6 +200,17 @@ projectsApp.openapi(
     const loaded = await loadProjectForUser(c, projectId, 'session');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
+    // Same reason the feature flag is checked here rather than in the UI: a warm
+    // session is billed compute. A member with no usable agent can never prompt
+    // one (`/start` and `/prompts` both refuse), so provisioning it spends money
+    // on a sandbox that is dead on arrival.
+    //
+    // Answered as UNAVAILABLE, not 403. Warming is speculative and unrequested —
+    // the browser fires it on project open and ignores every failure. "You are
+    // forbidden" is the wrong word for "there is no warm session for you": it
+    // put a red 403 in the network panel of a member who did nothing wrong, on
+    // every single page load. The spend is still blocked, which is the point.
+    if (!(await canUseAnyAgent(c, loaded, projectId))) return warmSessionUnavailable(c);
     // After membership authz, so a non-member learns nothing. A warm session is
     // billed compute, so the switch has to stop the SPEND, not just the UI.
     const gate = requireFeatureFlag(c, loaded.row.metadata, 'warm_sessions');
@@ -308,6 +320,10 @@ projectsApp.openapi(
     const loaded = await loadProjectForUser(c, projectId, 'session');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
+    // Claiming turns a warm box into this user's session — the same agent gate
+    // an ordinary create passes (see the /warm route above), and the same
+    // unavailable-not-forbidden wording.
+    if (!(await canUseAnyAgent(c, loaded, projectId))) return warmSessionUnavailable(c);
     const gate = requireFeatureFlag(c, loaded.row.metadata, 'warm_sessions');
     if (gate) return gate;
 

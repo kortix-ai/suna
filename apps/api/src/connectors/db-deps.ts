@@ -43,6 +43,7 @@ import { kortixSay } from '../channels/voice/utterance';
 import { config } from '../config';
 import { projectFeatureFlagEnabled } from '../feature-flags/for-project';
 import { authorize, PROJECT_ACTIONS } from '../iam';
+import { actorOf } from '../iam/actor';
 import { agentMayUseConnector } from '../iam/agent-scope';
 import type { ChannelPlatform } from '../projects/connectors';
 import { invalidateProjectMirror } from '../projects/git';
@@ -492,7 +493,10 @@ const nodeFetch: FetchImpl = async (url, init) => {
     body: init.body,
     ...(init.tls ? { tls: init.tls } : {}),
   } as RequestInit);
-  return { status: res.status, ok: res.ok, text: () => res.text() };
+  // `headers` is what carries `Mcp-Session-Id` back to the MCP session
+  // handshake in call.ts. Without it every MCP call to a stateful server
+  // re-initializes.
+  return { status: res.status, ok: res.ok, text: () => res.text(), headers: res.headers };
 };
 
 export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
@@ -1093,17 +1097,13 @@ async function resolveProjectUserWith(
     .where(eq(projects.projectId, projectId))
     .limit(1);
   if (!proj) return null;
-  // Thread the acting token (iamTokenId) so the agent-grant fold fires: a
-  // scoped agent-session token must actually hold the leaf, and a custom role
-  // can withhold it from humans too.
-  const actingTokenId = (c.get('iamTokenId') as string | undefined) ?? undefined;
-  const decision = await authorize(
-    userId,
-    proj.accountId,
-    action,
-    { type: 'project', id: projectId },
-    actingTokenId,
-  );
+  // The acting credential comes with the Actor, so the agent-grant fold and the
+  // token project-scope check fire by construction: a scoped agent-session token
+  // must actually hold the leaf, and a custom role can withhold it from humans.
+  const decision = await authorize(await actorOf(c, proj.accountId), action, {
+    type: 'project',
+    id: projectId,
+  });
   if (!decision.allowed) return null;
   return { accountId: proj.accountId, userId };
 }

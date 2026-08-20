@@ -67,6 +67,7 @@ export type {
   GatewayTrace,
   GatewayAttemptFailure,
   GatewayAttemptFailureStage,
+  ListModelsOptions,
   ModelFallbackCondition,
   ModelFallbackPolicy,
   ModelFallbackPolicyMatch,

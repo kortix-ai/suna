@@ -27,13 +27,90 @@
  */
 import { mkdtempSync, rmSync, mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { resolve, join } from 'node:path';
+import { dirname, resolve, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { loadEnv } from '../core/env';
 
+/**
+ * This file's directory, resolved portably.
+ *
+ * `import.meta.dir` is Bun-only and is `undefined` under vitest, which threw at
+ * MODULE LOAD ("paths[0] must be of type string") and made this fixture
+ * impossible to unit-test at all. The classifiers below (`throwIfCliInfraFailure`
+ * and friends) are pure and must be testable, so derive the path from
+ * `import.meta.url`, which both runtimes provide.
+ */
+const MODULE_DIR = dirname(fileURLToPath(import.meta.url));
 /** Repo root resolved from this file (tests/src/fixtures → ../../..). */
-const REPO_ROOT = resolve(import.meta.dir, '../../..');
+const REPO_ROOT = resolve(MODULE_DIR, '../../..');
 /** CLI source entry — invoked via `bun run` so a stale binary can't mislead. */
 const CLI_ENTRY = resolve(REPO_ROOT, 'apps/cli/src/index.ts');
+
+/**
+ * How long any CLI subprocess this fixture starts may run before it is killed.
+ * ONE constant, because every path here starts the same binary against the same
+ * target: a budget that fits a local API but not deployed staging turns a slow
+ * network into a fake product failure (exit 143, not the CLI's own exit code).
+ *
+ * 60 s was that fake failure. Deployed staging runs its API in us-west-2 against
+ * a eu-west-2 database, so every query carries ~140 ms of round trip, and run
+ * 32306385663 recorded single origin requests stalling ~25 s under six parallel
+ * shards. A CLI command makes several sequential calls, so `kortix secrets ls`
+ * hit this killer and reported exit 143 (SIGTERM) — CLI-SEC's whole failure was
+ * this constant, not the product. 120 s covers the measured worst case with
+ * headroom; `KE2E_CLI_PROCESS_BUDGET_MS` overrides it per profile.
+ */
+const CLI_PROCESS_BUDGET_MS = Number(process.env.KE2E_CLI_PROCESS_BUDGET_MS ?? 120_000);
+
+/** Exit codes that mean OUR killer, not the CLI, ended the process. */
+const SIGTERM_EXIT = 143;
+const SIGKILL_EXIT = 137;
+
+/**
+ * How the CLI renders the edge's synthetic maintenance 503.
+ *
+ * The Cloudflare worker launders any origin 5xx into
+ * `{"error":"MAINTENANCE_MODE",…}`, which the CLI prints as
+ * `✗  HTTP 503: Kortix is temporarily unavailable.` That is an infrastructure
+ * blip, not a CLI contract failure — CLI-SESS and CR-9 both died on it in run
+ * 32306385663, on their FIRST attempt, because the plain Error their assertion
+ * helpers threw classified as `fatal` and was never retried.
+ */
+const CLI_EDGE_MAINTENANCE_RE =
+  /HTTP 50[234]\b|MAINTENANCE_MODE|temporarily unavailable\. Service will resume/i;
+
+export function isCliEdgeMaintenanceFailure(result: CliResult): boolean {
+  return result.exitCode !== 0 && CLI_EDGE_MAINTENANCE_RE.test(result.all);
+}
+
+export function isCliProcessKilled(result: CliResult): boolean {
+  return result.exitCode === SIGTERM_EXIT || result.exitCode === SIGKILL_EXIT;
+}
+
+/**
+ * Raise a marked-retryable error when a CLI invocation failed on infrastructure.
+ *
+ * Deliberately NOT an in-place re-run of the command: `kortix sessions new` and
+ * `kortix cr open` CREATE, and replaying a create through a laundered 503 is the
+ * exact bug that cost run 32306385663 seven flows (see REPLAY_SAFE_METHODS in
+ * core/client.ts). Marking the error retryable hands it to the FLOW-level infra
+ * budget, which re-runs the flow against fresh fixtures instead.
+ *
+ * Every CLI assertion helper must call this BEFORE asserting the exit code.
+ */
+export function throwIfCliInfraFailure(result: CliResult, action: string): void {
+  const killed = isCliProcessKilled(result);
+  if (!killed && !isCliEdgeMaintenanceFailure(result)) return;
+  const why = killed
+    ? `the ke2e process budget (${CLI_PROCESS_BUDGET_MS}ms) killed it — exit ${result.exitCode}`
+    : 'the edge returned a synthetic maintenance 5xx';
+  const error = new Error(
+    `${action} failed on infrastructure, not on contract: ${why}. ` +
+      `Output: ${result.all.slice(0, 1_000)}`,
+  );
+  (error as any).ke2eRetryable = true;
+  throw error;
+}
 
 /** ke2e target origin without a trailing `/v1` (the CLI re-adds it). */
 function targetApiBase(): string {
@@ -160,7 +237,7 @@ export class CliSandbox {
       stderr: 'pipe',
     });
 
-    const timeoutMs = opts.timeoutMs ?? 60_000;
+    const timeoutMs = opts.timeoutMs ?? CLI_PROCESS_BUDGET_MS;
     const killer = setTimeout(() => {
       try {
         proc.kill();
@@ -302,8 +379,10 @@ export async function browserLogin(
   }
 
   // A rejected state leaves the real CLI waiting for another callback. The
-  // 403 already proves rejection, so stop the process instead of spending 15s
-  // on a timeout that adds no contract coverage.
+  // 403 already proves rejection, so stop the process immediately instead of
+  // spending the full CLI_PROCESS_BUDGET_MS on a timeout that adds no contract
+  // coverage. This explicit kill is why raising that budget does not slow the
+  // state-mismatch path.
   if (opts.badState && callbackStatus === 403) {
     try {
       proc.kill();
@@ -312,13 +391,19 @@ export async function browserLogin(
     }
   }
 
+  // After the callback lands, the real CLI still verifies the PAT via
+  // GET /accounts/me and writes its config. Against DEPLOYED staging that
+  // round trip regularly exceeds the old hardcoded 15s, so the killer fired
+  // mid-verify and `login` exited 143 (SIGTERM) instead of 0 — the LOGIN-2
+  // release-gate failure. Use the same budget CliSandbox.run() already gives
+  // every other CLI process.
   const killer = setTimeout(() => {
     try {
       proc.kill();
     } catch {
       /* gone */
     }
-  }, 15_000);
+  }, CLI_PROCESS_BUDGET_MS);
   // Drain the rest of stdout from the SAME reader — the stream is already
   // locked by getReader() above, so re-wrapping proc.stdout would throw
   // "ReadableStream has already been used".

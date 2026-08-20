@@ -3,14 +3,14 @@
  *
  * Everything the wizard decides that does not need to render lives here so it
  * can be asserted directly instead of through a mounted component. Keeping it
- * dependency-free is what makes the seven-step flow cheap to test.
+ * dependency-free is what makes the five-step flow cheap to test.
  */
 
 import { emailDomain, isWorkEmail } from '@/lib/personal-email';
-import type { OnboardingCompanySize, OnboardingUseCase } from '@kortix/sdk';
+import type { OnboardingUseCase } from '@kortix/sdk';
 import type { IconWeight } from '@phosphor-icons/react';
 
-export type StepId = 'use-case' | 'company' | 'tools' | 'slack' | 'plan' | 'done';
+export type StepId = 'company' | 'tools' | 'slack' | 'plan' | 'done';
 
 export interface UseCaseOption {
   value: OnboardingUseCase;
@@ -20,6 +20,13 @@ export interface UseCaseOption {
 }
 
 /**
+ * No longer collected by any step — the survey used to force a single-bucket
+ * choice ("what will you use Kortix for?") even though a real team plausibly
+ * uses it for several of these at once. The picker is gone; this table
+ * survives only as the key set `STARTER_PROMPTS` and `starterPromptsFor` are
+ * built from, and as the option list `starterPromptsFor`'s tests iterate to
+ * prove every value still has a complete prompt set.
+ *
  * Ordered by how often the matching department appears across
  * `apps/web/content/use-cases/` — Sales (11 posts), Engineering (9), Finance
  * (7), Support/CS (7), Ops (5), Marketing (5), HR/Recruiting (4).
@@ -45,42 +52,52 @@ export const USE_CASE_OPTIONS: readonly UseCaseOption[] = [
 ] as const;
 
 /**
- * Mirrors `features/contact/demo-qualifier-modal.tsx`.
- *
- * That modal hides `1-10` for personal-email signups. Onboarding deliberately
- * does NOT replicate the filter: it is a lead-qualification rule, not a data
- * model rule, and hiding a truthful option here would corrupt the answer.
- */
-export const COMPANY_SIZES: readonly OnboardingCompanySize[] = [
-  '1-10',
-  '11-50',
-  '51-200',
-  '201-1000',
-  '1000+',
-] as const;
-
-/**
  * No welcome step. A screen that asks nothing and tells nothing is a screen
  * the user pays for and gets nothing back from — Alan, Brilliant, and Headspace
  * all open directly on their first real question. The founder-concierge CTA
  * that used to live on the welcome screen moves to the finish step.
+ *
+ * No use-case step either, for the same reason from the other direction: a
+ * forced single-bucket pick ("Sales" *or* "Engineering" *or* …) asks a
+ * question that does not have one right answer for a real team, so the
+ * question itself was wrong, not just its styling.
  */
-const ALL_STEPS: readonly StepId[] = ['use-case', 'company', 'tools', 'slack', 'plan', 'done'];
+const ALL_STEPS: readonly StepId[] = ['company', 'tools', 'slack', 'plan', 'done'];
+
+/** Steps that need the caller to be able to reach the connector surface. */
+const CONNECTOR_STEPS: readonly StepId[] = ['tools', 'slack'];
 
 /**
- * Self-host without Pipedream configured (`isConnectorsEnabled()` false) has no
- * catalogue to offer, so the tools step is dropped rather than landing the user
- * on a dead 501.
+ * Two reasons a step is dropped, and they are different questions:
+ *
+ *  - `connectorsEnabled` — is there a catalogue at all? A self-host without
+ *    Pipedream configured (`isConnectorsEnabled()` false) has nothing to offer,
+ *    so the tools step goes rather than landing the user on a dead 501.
+ *  - `canReadConnectors` — may THIS caller reach it? `project.connector.read`
+ *    left the member floor role in #6522, so a plain project member invited
+ *    into someone else's project gets this wizard on first open and used to
+ *    hit "Connect your tools", whose `listConnectors` 403s and raises a bare
+ *    "forbidden" toast over the whole flow. Slack goes with it: Channels is a
+ *    scope of Connectors and rides the same leaf.
+ *
+ * Pass `canReadConnectors` false only on a RECEIVED denial — an in-flight probe
+ * must not silently shorten the wizard for someone who does hold the leaf.
  */
-export function buildSteps(connectorsEnabled: boolean): StepId[] {
-  return ALL_STEPS.filter((id) => connectorsEnabled || id !== 'tools');
+export function buildSteps(connectorsEnabled: boolean, canReadConnectors = true): StepId[] {
+  return ALL_STEPS.filter((id) => {
+    if (!connectorsEnabled && id === 'tools') return false;
+    if (!canReadConnectors && CONNECTOR_STEPS.includes(id)) return false;
+    return true;
+  });
 }
 
-const SURVEY_STEPS: readonly StepId[] = ['use-case', 'company'];
+const SURVEY_STEPS: readonly StepId[] = ['company'];
 
 /**
  * The eyebrow counts SURVEY questions, not wizard steps — so dropping the tools
- * step never renumbers it.
+ * step never renumbers it. There is only one survey question left (company);
+ * `surveyPosition` still returns `{ index, total }` rather than a bare boolean
+ * so a second survey step can slot back in without changing this shape again.
  */
 export function surveyPosition(stepId: StepId): { index: number; total: number } | null {
   const i = SURVEY_STEPS.indexOf(stepId);
@@ -287,4 +304,33 @@ const STARTER_PROMPTS: Record<OnboardingUseCase, StarterPrompt[]> = {
 /** `null` means the user skipped the survey — they still get useful prompts. */
 export function starterPromptsFor(useCase: OnboardingUseCase | null): StarterPrompt[] {
   return STARTER_PROMPTS[useCase ?? 'other'];
+}
+
+/**
+ * The message auto-sent as the first user turn the moment onboarding
+ * finishes — the finish step's "Open project" button both completes
+ * onboarding AND fires this as the session's opening prompt, so the user
+ * lands in a live conversation instead of an empty composer.
+ *
+ * There is no backend primitive for a session to open with an
+ * agent-authored turn (every session starts on a user message), so this is
+ * written in the user's voice, asking Kortix to do the thing the
+ * company-step promised ("Your agent uses the domain to research your own
+ * company"). The agent's real, live-researched reply is what actually reads
+ * as Kortix talking — far better than any hardcoded greeting could.
+ */
+export function buildOnboardingKickoffPrompt(domain: string, connectedTools: number): string {
+  const trimmedDomain = domain.trim();
+  const toolsClause =
+    connectedTools > 0
+      ? ` I also connected ${connectedTools} ${connectedTools === 1 ? 'tool' : 'tools'} — use ${
+          connectedTools === 1 ? 'it' : 'them'
+        } if it helps.`
+      : '';
+
+  if (!trimmedDomain) {
+    return `I just finished setting up my workspace.${toolsClause} Introduce yourself, tell me what you can do, and ask me what I'd like help with first.`;
+  }
+
+  return `I just finished setting up my workspace for ${trimmedDomain}. Take a look at the company and tell me what you find.${toolsClause} Then ask me what I'd like help with first.`;
 }

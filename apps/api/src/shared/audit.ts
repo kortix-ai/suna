@@ -4,6 +4,7 @@ import type { Context, Next } from 'hono';
 import { getRequestContext } from '../lib/request-context';
 import type { AppEnv } from '../types';
 import { normalizeAuditClientSource } from './audit-client-source';
+import { type AuditRow, getAuditQueue } from './audit-queue';
 import { db } from './db';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -292,7 +293,15 @@ function sanitizeAuditRecord(
 type AuditInsertClient = Pick<Database, 'insert'>;
 type AuditTransaction = Parameters<Parameters<Database['transaction']>[0]>[0];
 
-async function insertAuditEvent(client: AuditInsertClient, input: AuditEventInput): Promise<void> {
+/**
+ * Build the row synchronously, at emit time.
+ *
+ * This MUST stay separate from the write: `recordAuditEvent` enqueues and the
+ * flusher writes hundreds of milliseconds later, by which point the request's
+ * AsyncLocalStorage scope (`getRequestContext()`) has ended and the caller may
+ * have mutated `input`. Everything context- or caller-derived is resolved here.
+ */
+function buildAuditRow(input: AuditEventInput): AuditRow {
   const request = getRequestContext();
   const authoritativeSource = input.authoritativeSource ?? input.source ?? 'api';
   const inputSummary = sanitizeAuditRecord(input.inputSummary);
@@ -300,72 +309,123 @@ async function insertAuditEvent(client: AuditInsertClient, input: AuditEventInpu
   const before = sanitizeAuditRecord(input.before);
   const after = sanitizeAuditRecord(input.after);
   const metadata = sanitizeAuditRecord(input.metadata) ?? {};
+  return {
+    accountId: uuidOrNull(input.accountId || request?.accountId),
+    projectId: uuidOrNull(input.projectId || request?.projectId),
+    sessionId: input.sessionId || request?.sessionId || null,
+    opencodeSessionId: input.opencodeSessionId ?? null,
+    turnId: input.turnId ?? null,
+    messageId: input.messageId ?? null,
+    toolCallId: input.toolCallId ?? null,
+    executionId: input.executionId ?? null,
+    actorUserId: uuidOrNull(input.actorUserId),
+    actorType: input.actorType ?? (input.actorUserId ? 'human' : 'system'),
+    agentId: input.agentId ?? null,
+    agentName: input.agentName ?? null,
+    initiatorActorType: input.initiatorActorType ?? null,
+    initiatorActorId: input.initiatorActorId ?? null,
+    parentEventId: uuidOrNull(input.parentEventId),
+    delegationDepth: input.delegationDepth ?? 0,
+    source: authoritativeSource,
+    authoritativeSource,
+    clientReportedSource: input.clientReportedSource ?? null,
+    outcome: input.outcome ?? 'success',
+    action: input.action,
+    phase: input.phase ?? 'completed',
+    resourceType: input.resourceType,
+    resourceId: input.resourceId || null,
+    httpStatus: input.httpStatus ?? null,
+    durationMs: input.durationMs ?? null,
+    requestId: input.requestId || request?.requestId || null,
+    traceId: input.traceId || request?.traceId || null,
+    correlationId: input.correlationId || null,
+    causationId: input.causationId ?? null,
+    sourceLedger: input.sourceLedger ?? null,
+    sourceRecordId: input.sourceRecordId ?? null,
+    sourceRevision: input.sourceRevision ?? null,
+    inputSummary,
+    outputSummary,
+    inputSha256: input.inputSha256 ?? (input.inputSummary ? sha256(input.inputSummary) : null),
+    outputSha256:
+      input.outputSha256 ??
+      (input.outputSummary
+        ? sha256(input.outputSummary)
+        : input.errorMessage
+          ? sha256(input.errorMessage)
+          : null),
+    errorCode: input.errorCode ?? null,
+    // Provider and runtime errors can echo prompts, credentials, or response
+    // bodies. Preserve `errorCode` and a SHA-256 fingerprint only.
+    errorMessage: null,
+    before,
+    after,
+    ip: input.ip || null,
+    userAgent:
+      typeof input.userAgent === 'string' && SECRET_VALUE_RE.test(input.userAgent)
+        ? '[REDACTED]'
+        : input.userAgent || null,
+    metadata,
+  };
+}
+
+/**
+ * Single-row, synchronous insert. Still used by `runAuditedTransaction` (which
+ * must write inside the caller's transaction) and by the synchronous test mode.
+ * The `.returning()` is what makes the statement awaited by the transaction, so
+ * a failed audit write still rolls the mutation back.
+ */
+async function insertAuditEvent(client: AuditInsertClient, input: AuditEventInput): Promise<void> {
   await client
     .insert(auditEvents)
-    .values({
-      accountId: uuidOrNull(input.accountId || request?.accountId),
-      projectId: uuidOrNull(input.projectId || request?.projectId),
-      sessionId: input.sessionId || request?.sessionId || null,
-      opencodeSessionId: input.opencodeSessionId ?? null,
-      turnId: input.turnId ?? null,
-      messageId: input.messageId ?? null,
-      toolCallId: input.toolCallId ?? null,
-      executionId: input.executionId ?? null,
-      actorUserId: uuidOrNull(input.actorUserId),
-      actorType: input.actorType ?? (input.actorUserId ? 'human' : 'system'),
-      agentId: input.agentId ?? null,
-      agentName: input.agentName ?? null,
-      initiatorActorType: input.initiatorActorType ?? null,
-      initiatorActorId: input.initiatorActorId ?? null,
-      parentEventId: uuidOrNull(input.parentEventId),
-      delegationDepth: input.delegationDepth ?? 0,
-      source: authoritativeSource,
-      authoritativeSource,
-      clientReportedSource: input.clientReportedSource ?? null,
-      outcome: input.outcome ?? 'success',
-      action: input.action,
-      phase: input.phase ?? 'completed',
-      resourceType: input.resourceType,
-      resourceId: input.resourceId || null,
-      httpStatus: input.httpStatus ?? null,
-      durationMs: input.durationMs ?? null,
-      requestId: input.requestId || request?.requestId || null,
-      traceId: input.traceId || request?.traceId || null,
-      correlationId: input.correlationId || null,
-      causationId: input.causationId ?? null,
-      sourceLedger: input.sourceLedger ?? null,
-      sourceRecordId: input.sourceRecordId ?? null,
-      sourceRevision: input.sourceRevision ?? null,
-      inputSummary,
-      outputSummary,
-      inputSha256: input.inputSha256 ?? (input.inputSummary ? sha256(input.inputSummary) : null),
-      outputSha256:
-        input.outputSha256 ??
-        (input.outputSummary
-          ? sha256(input.outputSummary)
-          : input.errorMessage
-            ? sha256(input.errorMessage)
-            : null),
-      errorCode: input.errorCode ?? null,
-      // Provider and runtime errors can echo prompts, credentials, or response
-      // bodies. Preserve `errorCode` and a SHA-256 fingerprint only.
-      errorMessage: null,
-      before,
-      after,
-      ip: input.ip || null,
-      userAgent:
-        typeof input.userAgent === 'string' && SECRET_VALUE_RE.test(input.userAgent)
-          ? '[REDACTED]'
-          : input.userAgent || null,
-      metadata,
-    })
+    .values(buildAuditRow(input))
     .returning({ eventId: auditEvents.eventId });
 }
 
-export async function recordAuditEvent(input: AuditEventInput): Promise<void> {
-  await insertAuditEvent(db, input);
+/**
+ * Synchronous emission is kept for tests, which read the row back immediately
+ * after the action that produced it. `KORTIX_AUDIT_SYNC=1` forces it anywhere;
+ * `KORTIX_AUDIT_SYNC=0` forces the queue on under a test runner.
+ */
+function auditWritesAreSynchronous(): boolean {
+  const flag = process.env.KORTIX_AUDIT_SYNC;
+  if (flag === '1') return true;
+  if (flag === '0') return false;
+  return process.env.NODE_ENV === 'test';
 }
 
+/**
+ * Emit one audit event.
+ *
+ * Returns as soon as the row is buffered — the INSERT happens on the flusher,
+ * off the request path. The signature stays `Promise<void>` so the ~74 existing
+ * call sites are unchanged, and a write failure can no longer surface as a
+ * rejected promise in a request handler.
+ */
+export async function recordAuditEvent(input: AuditEventInput): Promise<void> {
+  if (auditWritesAreSynchronous()) {
+    await insertAuditEvent(db, input);
+    return;
+  }
+  getAuditQueue(db).enqueue(buildAuditRow(input));
+}
+
+/** Drain buffered audit events. Called on shutdown and by tests. */
+export async function flushAuditEvents(): Promise<void> {
+  if (auditWritesAreSynchronous()) return;
+  await getAuditQueue(db).flush();
+}
+
+/** Flush and stop the flush timer. Shutdown path only. */
+export async function shutdownAuditEvents(): Promise<void> {
+  if (auditWritesAreSynchronous()) return;
+  await getAuditQueue(db).shutdown();
+}
+
+/**
+ * Deliberately NOT queued. The whole point of this helper is that the audit row
+ * commits atomically with the operation it describes, so it must stay inside the
+ * transaction. Only 5 call sites use it and none are on a hot path.
+ */
 export async function runAuditedTransaction<T>(
   operation: (tx: AuditTransaction) => Promise<T>,
   event: (result: T) => AuditEventInput,

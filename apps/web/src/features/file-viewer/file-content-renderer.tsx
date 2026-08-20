@@ -21,7 +21,7 @@ import { getIframeSandbox } from '@/lib/security/iframe-sandbox';
 import { cn } from '@/lib/utils';
 import { isHeicFile } from '@/lib/utils/heic-convert';
 import { findDiagnosticsForFile, useDiagnosticsStore } from '@/stores/diagnostics-store';
-import { toSandboxAbsolutePath } from '@kortix/sdk';
+import { isSandboxNotReadyError, toSandboxAbsolutePath } from '@kortix/sdk';
 import { getActiveStaticFileHealthUrl, getActiveStaticFilePreviewUrl } from '@kortix/sdk/react';
 import {
   WarningIcon as AlertTriangle,
@@ -630,6 +630,12 @@ export function FileContentRenderer({
         : null;
   const showLoadingState = needsBlob ? blobLoading : isLoading;
 
+  // A readiness 503 means the sandbox is parked or still booting — a pending
+  // state, never a failure. The file hooks keep polling while this is true
+  // (SANDBOX_WAKING_REFETCH_INTERVAL_MS), so the content appears on its own
+  // once the box is up.
+  const isSandboxWaking = !!contentError && isSandboxNotReadyError(contentError);
+
   // Detect "file not found" — either via explicit error or empty resolution
   const isNotFound = useMemo(() => {
     if (contentError) return isNotFoundError(contentError);
@@ -655,9 +661,9 @@ export function FileContentRenderer({
   useEffect(() => {
     if (!onStatusChange) return;
     if (isNotFound) onStatusChange('error');
-    else if (showLoadingState) onStatusChange('loading');
+    else if (showLoadingState || isSandboxWaking) onStatusChange('loading');
     else onStatusChange('ready');
-  }, [onStatusChange, isNotFound, showLoadingState]);
+  }, [onStatusChange, isNotFound, showLoadingState, isSandboxWaking]);
 
   // An `image` that settled without an image to show: bytes whose mime is not
   // `image/*` (so `imageDataUrl` stayed null and the binary/text fallback ran
@@ -892,9 +898,29 @@ export function FileContentRenderer({
             </div>
           )}
 
+          {/* Sandbox waking — the workspace is parked or booting; the file
+              hooks keep polling and the content replaces this on its own.
+              Takes precedence over errorFallback: a waking box is not an
+              error, so no surface gets to render it as one. */}
+          {contentError && !showLoadingState && isSandboxWaking && (
+            <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
+              <Loading className="text-muted-foreground/40 h-4 w-4" />
+              <p className="text-muted-foreground text-sm font-medium">
+                Waking up the workspace…
+              </p>
+              <p className="text-muted-foreground/50 max-w-sm font-mono text-xs break-all">
+                {filePath}
+              </p>
+              <p className="text-muted-foreground/40 max-w-xs text-xs">
+                The sandbox is starting. This file will load automatically.
+              </p>
+            </div>
+          )}
+
           {/* Error */}
           {contentError &&
             !showLoadingState &&
+            !isSandboxWaking &&
             (errorFallback ? (
               errorFallback(contentError, filePath)
             ) : isNotFound ? (

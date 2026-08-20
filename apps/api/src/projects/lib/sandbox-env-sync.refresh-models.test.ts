@@ -154,13 +154,16 @@ describe('syncSandboxEnvForPrompt — refreshModels gating', () => {
     expect(posted[0]!.refreshModels).toBe(true);
   });
 
-  test('two identical prompts in a row post refreshModels exactly once', async () => {
+  test('two identical prompts in a row push ONCE — the byte-identical follow-ups skip the daemon', async () => {
+    // The daemon would no-op an identical push; the round-trip itself was ~1s
+    // of dead air on every queued message. Within PROMPT_ENV_PUSH_TTL_MS an
+    // unchanged signature does not reach the box at all.
     await prompt();
     await prompt();
     await prompt();
 
-    expect(posted).toHaveLength(3);
-    expect(posted.map((p) => p.refreshModels)).toEqual([true, false, false]);
+    expect(posted).toHaveLength(1);
+    expect(posted[0]!.refreshModels).toBe(true);
   });
 
   test('a project-secret value change still asks for a reload', async () => {
@@ -239,7 +242,8 @@ describe('syncSandboxEnvForPrompt — refreshModels gating', () => {
     await prompt('ext-1');
     await prompt('ext-2');
 
-    expect(posted.map((p) => p.refreshModels)).toEqual([true, true, false, false]);
+    // One push per box; the repeats are skipped entirely.
+    expect(posted.map((p) => p.refreshModels)).toEqual([true, true]);
   });
 
   test('a failed push is not remembered — the retry still asks for a reload', async () => {

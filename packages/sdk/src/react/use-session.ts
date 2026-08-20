@@ -498,8 +498,12 @@ export function beginOptimisticPlainTextSend(
     id: messageId,
     sessionID: sessionId,
     role: 'user',
-    time: { created: Date.now() },
-  } as Message;
+    // No `time.created`: display order is by the BOX's `time.created`
+    // (`compareMessagesForDisplay`), and a stub stamped from the browser's
+    // clock sorted ABOVE real messages whenever the box ran behind it. An
+    // untimed stub is "the newest thing the user did", on every clock.
+    time: {},
+  } as unknown as Message;
   useSyncStore.getState().optimisticAdd(sessionId, info, optimisticParts);
   // No status write. `sessionStatus` is where the runtime's own SSE frames
   // land, and a fabricated `busy` there outranked a real `GET .../turn` read
@@ -1434,6 +1438,17 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     phase,
     /** Raw /start stage (provisioning|starting|ready|stopped|failed), for boot UI. */
     stage,
+    /**
+     * The immutable agent this project session was created with, from /start
+     * (`agent_name`). Known from the FIRST /start response — long before the
+     * sandbox is ready — so composers can render the session's real agent
+     * while it boots instead of guessing from the roster. The server
+     * serializes `'default'` when no agent was bound; that is not a real
+     * roster agent, so it surfaces as `null` here.
+     */
+    agentName: startData?.agent_name && startData.agent_name !== 'default'
+      ? startData.agent_name
+      : null,
     /** The serialized session_sandboxes row from /start (status, metadata, ids), or null. */
     sandbox,
     /** True once the runtime is switched in and ready (equivalent to phase==='ready'). */

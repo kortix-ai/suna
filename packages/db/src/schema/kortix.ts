@@ -115,11 +115,17 @@ export const providerTransitionStatusEnum = kortixSchema.enum('provider_transiti
   'cancelled',
 ]);
 
-// `member` is the floor project role (renamed from `user`, see the
-// project_role_member_rename migration). `user` and the older `viewer` are
-// DEPRECATED — both fold into `member` via parseProjectRole/normalizeProjectRole
-// and are no longer assignable. `viewer` lingers because Postgres can't drop an
-// enum member; `user` was renamed in place. Nothing reads or writes either.
+// TWO assignable project roles: `member` (read + run) and `manager`
+// (everything). Every other value in this enum is a retired tier Postgres
+// cannot drop:
+//   - `viewer` / `user` → fold into `member` (`user` was renamed in place by
+//     the project_role_member_rename migration).
+//   - `editor` → REMOVED 2026-08-18; every row was rewritten to `manager` by
+//     `20260818120000000_project_role_editor_to_manager.concurrent.ts`. It
+//     still folds to `manager` on read (see normalizeProjectRole) so a row
+//     written by a pre-removal replica mid-rollout keeps working, and it is
+//     rejected on write (parseAssignableProjectRole → 400).
+// Nothing writes any retired value.
 export const projectRoleEnum = kortixSchema.enum('project_role', [
   'manager',
   'editor',
@@ -210,6 +216,32 @@ export const accountMembers = kortixSchema.table(
   ],
 );
 
+/**
+ * The IDENTITY half of account membership, and the only physical one.
+ *
+ * `20260819160100000_rbac_cutover_views.sql` renamed the `account_members`
+ * TABLE to `account_memberships` and republished `account_members` as a view
+ * whose `account_role` is derived from `kortix.role_assignments`. Use THIS
+ * object to write identity (a new membership row, `is_super_admin`,
+ * `scim_external_id`); use `assignRole()` to write the ROLE. `accountMembers`
+ * above still reads and writes correctly through the view's INSTEAD OF
+ * triggers, which is what keeps a straggler writer correct — but a production
+ * write that goes through it skips the audit event and the cache bust.
+ */
+export const accountMemberships = kortixSchema.table(
+  'account_memberships',
+  {
+    userId: uuid('user_id').notNull(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    isSuperAdmin: boolean('is_super_admin').default(false).notNull(),
+    scimExternalId: text('scim_external_id'),
+    joinedAt: timestamp('joined_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.userId, table.accountId] })],
+);
+
 // Pending invitations for users not yet members (or not yet signed up). On
 // signup or first /v1/accounts call we auto-claim invites matching the user's
 // email and convert them into account_members rows.
@@ -225,16 +257,16 @@ export const accountInvitations = kortixSchema.table(
     initialRole: accountRoleEnum('initial_role').default('member').notNull(),
     /** Optional list of project grants to apply when the invite is
      *  accepted. Lets a project admin invite a non-Kortix user "into
-     *  project X as Editor" in one step — the system creates an
+     *  project X as Manager" in one step — the system creates an
      *  account invite + records the project grant here; on accept,
      *  the user joins the org as a member AND gets the project role
      *  in the same transaction. Shape:
-     *    [{ project_id: uuid, role: 'manager'|'editor'|'member',
+     *    [{ project_id: uuid, role: 'manager'|'member',
      *       expires_at?: iso }]
      *  Multiple grants are allowed — the same email could be invited
      *  to several projects at once via repeated calls (they upsert).
-     *  Legacy rows may carry the retired 'user'/'viewer' role; readers
-     *  fold both into 'member' via parseProjectRole.
+     *  Legacy rows may carry a retired role: 'user'/'viewer' fold into
+     *  'member' and 'editor' folds into 'manager' via normalizeProjectRole.
      *  Also carries `{ group_id }` entries: a SCIM Group membership pushed for a
      *  user who hasn't logged in yet (a pending invite, no user row) is parked
      *  here and materialized into account_group_members on acceptance — same
@@ -244,7 +276,7 @@ export const accountInvitations = kortixSchema.table(
         Array<
           | {
               project_id: string;
-              role: 'manager' | 'editor' | 'member';
+              role: 'manager' | 'member';
               expires_at?: string | null;
             }
           | { group_id: string }
@@ -462,6 +494,12 @@ export const projectMembers = kortixSchema.table(
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
+    // Real PRIMARY KEY (canonical-RBAC PR2). The table shipped with only
+    // `idx_project_members_project_user UNIQUE` — which is also every upsert's
+    // ON CONFLICT target, so dropping it in the wrong order 42P10s every write
+    // path (the failure account_members already hit). The PK builds its own
+    // index (`project_members_pkey`) and leaves that unique index untouched.
+    primaryKey({ columns: [table.projectId, table.userId] }),
     index('idx_project_members_account_user').on(table.accountId, table.userId),
     index('idx_project_members_project').on(table.projectId),
     uniqueIndex('idx_project_members_project_user').on(table.projectId, table.userId),
@@ -566,12 +604,17 @@ export interface SecretEgressPolicy {
    */
   rules: SecretEgressRule[];
   /**
-   * REQUIRED. Where the credential is attached when a rule does not override it.
-   * "First match wins, no match denies" only means something if a matched rule
-   * has a defined slot to inject into; an absent default would leave a matched
-   * request with nowhere to put the secret and no principled answer.
+   * LEGACY. Where the credential is attached when a rule does not override it.
+   *
+   * Optional since the exposure/usage model (docs/specs/
+   * 2026-08-19-secrets-exposure-usage-model.md §6). An egress-enforced secret
+   * is delivered as a HANDLE in the sandbox env and the relay substitutes the
+   * real value for that handle, so the policy is a HOST LIST and there is no
+   * slot to name. "First match wins, no match denies" still decides WHETHER the
+   * value may be spent on a request; the slot only decides where a legacy row
+   * writes it. A stored row that carries `inject` keeps injecting as before.
    */
-  inject: SecretInjectionSlot;
+  inject?: SecretInjectionSlot;
   /** `observe` tunnels and audits undeclared hosts so a project can discover its
    *  real egress footprint before committing to `deny`. */
   on_no_match?: 'deny' | 'observe';
@@ -2150,7 +2193,6 @@ export const sandboxes = kortixSchema.table(
   ],
 );
 
-export const scopeEffectEnum = kortixSchema.enum('scope_effect', ['grant', 'revoke']);
 
 export const sandboxMembers = kortixSchema.table(
   'sandbox_members',
@@ -2169,48 +2211,6 @@ export const sandboxMembers = kortixSchema.table(
     uniqueIndex('idx_sandbox_members_unique').on(table.sandboxId, table.userId),
     index('idx_sandbox_members_user').on(table.userId),
     index('idx_sandbox_members_sandbox').on(table.sandboxId),
-  ],
-);
-
-export const sandboxMemberScopes = kortixSchema.table(
-  'sandbox_member_scopes',
-  {
-    sandboxId: uuid('sandbox_id')
-      .notNull()
-      .references(() => sandboxes.sandboxId, { onDelete: 'cascade' }),
-    userId: uuid('user_id').notNull(),
-    scope: text('scope').notNull(),
-    effect: scopeEffectEnum('effect').notNull(),
-    grantedBy: uuid('granted_by'),
-    grantedAt: timestamp('granted_at', { withTimezone: true }).defaultNow().notNull(),
-  },
-  (table) => [
-    uniqueIndex('idx_sandbox_member_scopes_unique').on(table.sandboxId, table.userId, table.scope),
-    index('idx_sandbox_member_scopes_lookup').on(table.sandboxId, table.userId),
-  ],
-);
-
-export const sandboxInvites = kortixSchema.table(
-  'sandbox_invites',
-  {
-    inviteId: uuid('invite_id').defaultRandom().primaryKey(),
-    sandboxId: uuid('sandbox_id')
-      .notNull()
-      .references(() => sandboxes.sandboxId, { onDelete: 'cascade' }),
-    accountId: uuid('account_id').notNull(),
-    email: varchar('email', { length: 255 }).notNull(),
-    invitedBy: uuid('invited_by'),
-    initialRole: accountRoleEnum('initial_role').default('member').notNull(),
-    acceptedAt: timestamp('accepted_at', { withTimezone: true }),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-    expiresAt: timestamp('expires_at', { withTimezone: true })
-      .default(sql`now() + interval '14 days'`)
-      .notNull(),
-  },
-  (table) => [
-    index('idx_sandbox_invites_email').on(table.email),
-    index('idx_sandbox_invites_sandbox').on(table.sandboxId),
-    index('idx_sandbox_invites_expires_at').on(table.expiresAt),
   ],
 );
 
@@ -2576,13 +2576,6 @@ export const sandboxMembersRelations = relations(sandboxMembers, ({ one }) => ({
   }),
 }));
 
-export const sandboxInvitesRelations = relations(sandboxInvites, ({ one }) => ({
-  sandbox: one(sandboxes, {
-    fields: [sandboxInvites.sandboxId],
-    references: [sandboxes.sandboxId],
-  }),
-}));
-
 export const kortixApiKeysRelations = relations(kortixApiKeys, ({ one }) => ({
   sandbox: one(sandboxes, {
     fields: [kortixApiKeys.sandboxId],
@@ -2903,6 +2896,29 @@ export const gatewayBudgets = kortixSchema.table(
     index('idx_gateway_budgets_lookup').on(table.projectId, table.scope),
   ],
 );
+
+/**
+ * Per-project OTLP trace-export config — "connect any tool" for the gateway's
+ * gen_ai.* spans (Langfuse/Datadog/Honeycomb/Braintrust/etc, anything OTLP).
+ * One row per project (PK = project_id, upsert-only, mirrors
+ * project_llm_routing_policies). `headersEnc` holds the auth header(s) in the
+ * same `key1=value1,key2=value2` shape as OTEL_EXPORTER_OTLP_HEADERS, AES-GCM
+ * encrypted with the project's derived key (see projects/secrets.ts) — never
+ * stored or returned in plaintext. `endpoint` is a destination URL, not a
+ * secret, so it stays plaintext (consistent with how webhook URLs are stored
+ * elsewhere).
+ */
+export const gatewayOtelConfigs = kortixSchema.table('gateway_otel_configs', {
+  projectId: uuid('project_id')
+    .primaryKey()
+    .references(() => projects.projectId, { onDelete: 'cascade' }),
+  enabled: boolean('enabled').default(false).notNull(),
+  endpoint: text('endpoint'),
+  headersEnc: text('headers_enc'),
+  createdBy: uuid('created_by'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
 
 // ─── Billing / Credits ─────────────────────────────────────────────────────
 
@@ -4208,7 +4224,7 @@ export const accountGroupMembersRelations = relations(accountGroupMembers, ({ on
 }));
 
 // ─── IAM v1 — DB-driven custom roles + policies ────────────────────────────
-// The built-in roles (owner/admin/member, manager/editor/user) stay as
+// The built-in roles (owner/admin/member, manager/member) stay as
 // frozen Sets in apps/api/src/iam/role-perms.ts and keep their in-memory fast
 // path. These tables add ACCOUNT-scoped CUSTOM roles and the policies that bind
 // a principal (member/group/token) to a custom role at a scope. The engine
@@ -4221,17 +4237,27 @@ export const iamRoles = kortixSchema.table(
   'iam_roles',
   {
     roleId: uuid('role_id').defaultRandom().primaryKey(),
-    accountId: uuid('account_id')
-      .notNull()
-      .references(() => accounts.accountId, { onDelete: 'cascade' }),
-    /** Machine key, unique per account (e.g. 'marketing_operator'). */
+    /**
+     * NULL = a SYSTEM role (owner/admin/member, manager/member, agent-user),
+     * seeded once by the canonical-RBAC migration and shared by every account.
+     * Non-null = an account's own custom role, exactly as before. Every legacy
+     * read filters `account_id = :id`, so system rows are invisible to them.
+     */
+    accountId: uuid('account_id').references(() => accounts.accountId, { onDelete: 'cascade' }),
+    /** Machine key, unique per account (e.g. 'marketing_operator'). System roles
+     *  are unique on (key, scope_type) — see uq_roles_system_key (SQL-only,
+     *  partial index on account_id IS NULL). */
     key: varchar('key', { length: 64 }).notNull(),
     name: varchar('name', { length: 128 }).notNull(),
     description: text('description'),
     /** Where the role's actions apply: 'account' | 'project'. Plain text +
      *  app-level validation (mirrors resourceTypeForAction's vocabulary). */
     scopeType: varchar('scope_type', { length: 16 }).default('project').notNull(),
-    /** Reserved: v1 only creates custom roles; built-ins remain code-defined. */
+    /** `is_system` in the canonical model: true for the seeded built-in roles
+     *  (account_id IS NULL), false for every account-authored custom role. The
+     *  physical column keeps its `is_builtin` name for one release so no live
+     *  table is renamed mid-rollout; the `kortix.roles` view exposes it as
+     *  `is_system`. */
     isBuiltin: boolean('is_builtin').default(false).notNull(),
     createdBy: uuid('created_by'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
@@ -4372,6 +4398,156 @@ export const iamResourceGrants = kortixSchema.table(
     index('idx_iam_resource_grants_account').on(table.accountId),
   ],
 );
+
+// ─── Canonical RBAC (NIST RBAC1 + object scoping) ──────────────────────────
+//
+// Three new tables replace five encodings of the same idea. They are ADDITIVE
+// in this release: every legacy store keeps its rows and its writers, the
+// backfill copies them into `role_assignments`, and the canonical NAMES
+// (`kortix.roles`, `kortix.role_permissions`, `kortix.group_members`) are
+// write-through views over the legacy tables until the cutover PR swaps which
+// side is physical. Nothing here renames a live table mid-rollout.
+//
+//   permissions       the action catalog, in data instead of actions.ts
+//   role_assignments  ONE table for account_members.account_role,
+//                     project_members.project_role, project_group_grants,
+//                     iam_policies, iam_resource_grants and an invite's
+//                     bootstrap_grants
+//   object_policies   what "nobody scoped this object" means, per object TYPE
+
+/**
+ * The permission catalog. Previously `apps/api/src/iam/actions.ts` +
+ * `role-perms.ts` + `role-presets.ts NON_DELEGABLE_ACTIONS`, i.e. three code
+ * constants with no database representation and no foreign key.
+ *
+ * `scope_type` is the ONE classifier (it replaces both `scopeForActionV2` and
+ * `resourceTypeForAction`). `delegable=false` is the escalation ceiling that
+ * `NON_DELEGABLE_ACTIONS` used to hold. `area` / `level` / `implies` are the
+ * display + implication model the role-capability matrix hard-codes in the
+ * browser today, moved server-side so the two cannot drift.
+ */
+export const permissions = kortixSchema.table(
+  'permissions',
+  {
+    /** Dotted leaf, e.g. `project.gitops.push`. Primary key: the catalog IS
+     *  the set of legal action strings, and role_permissions.action FKs to it. */
+    action: varchar('action', { length: 96 }).primaryKey(),
+    /** 'account' | 'project' — the scope a role must be assigned at to grant it. */
+    scopeType: varchar('scope_type', { length: 16 }).notNull(),
+    /** 'account' | 'project' — the object type the action is performed on. */
+    resourceType: varchar('resource_type', { length: 16 }).notNull(),
+    /** false = may NEVER appear in an account-authored custom role (privilege
+     *  escalation). Replaces NON_DELEGABLE_ACTIONS. */
+    delegable: boolean('delegable').default(true).notNull(),
+    description: text('description').default('').notNull(),
+    /** UI grouping key: `project`, `sessions`, `files`, `customize`, … */
+    area: varchar('area', { length: 32 }).notNull(),
+    /** 'view' | 'edit' | 'admin'. view/edit are the two matrix columns; `admin`
+     *  leaves have no cell and render in the matrix's Advanced disclosure. */
+    level: varchar('level', { length: 16 }).notNull(),
+    /** DIRECT implications: holding this action requires holding these. The
+     *  client takes the transitive closure. */
+    implies: text('implies').array().default(sql`'{}'::text[]`).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index('idx_permissions_scope_area').on(table.scopeType, table.area)],
+);
+
+/**
+ * What "no object grant exists for this object at all" means, per OBJECT TYPE.
+ *
+ * The deny-by-default rule for agents used to be a property of the CALLER
+ * (`isProjectResourceUsableByMember`'s `managerTier` argument). It is a
+ * property of the object type: an unscoped AGENT is closed to the member tier,
+ * an unscoped skill/secret/app/trigger is open. One row per type, so adding a
+ * new scopable object type is data, not a branch.
+ */
+export const objectPolicies = kortixSchema.table('object_policies', {
+  /** 'agent' | 'skill' | 'secret' | 'app' | 'trigger'. */
+  objectType: varchar('object_type', { length: 16 }).primaryKey(),
+  /** 'closed' | 'open' — what a member-tier caller gets when the object has NO
+   *  grant rows at all. Manager tier always gets the open default. */
+  unscopedDefaultForMember: varchar('unscoped_default_for_member', { length: 8 }).notNull(),
+  description: text('description').default('').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+/**
+ * THE assignment table. One row = "this principal holds this role at this
+ * scope (optionally narrowed to one object) until this time".
+ *
+ * Replaces, in one shape:
+ *   account_members.account_role        → (user, owner|admin|member, account)
+ *   project_members.project_role        → (user, manager|member, project:id)
+ *   project_group_grants.role           → (group, manager|member, project:id)
+ *   iam_policies                        → (user|group|service_account, custom
+ *                                          role, account|project)
+ *   iam_resource_grants                 → (user|group, agent-user, project:id,
+ *                                          object=(agent, name))
+ *   account_invitations.bootstrap_grants → (pending, …) keyed by invitee email
+ *
+ * `expires_at` is filtered in SQL by every read, so a revoke is instant and the
+ * sweeper stays audit-only — the contract engine-v2 already had.
+ */
+export const roleAssignments = kortixSchema.table(
+  'role_assignments',
+  {
+    assignmentId: uuid('assignment_id').defaultRandom().primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    /** 'user' (auth uid) | 'group' (account_groups.group_id) |
+     *  'service_account' (service_accounts.service_account_id) |
+     *  'pending' (uuid5 of the lower-cased invitee email). */
+    principalType: varchar('principal_type', { length: 16 }).notNull(),
+    /** Untyped uuid — polymorphic across the four principal kinds, same choice
+     *  the legacy iam_policies.principal_id made. */
+    principalId: uuid('principal_id').notNull(),
+    roleId: uuid('role_id')
+      .notNull()
+      .references(() => iamRoles.roleId, { onDelete: 'cascade' }),
+    /** 'account' (every project in the account) | 'project' (scope_id only). */
+    scopeType: varchar('scope_type', { length: 16 }).notNull(),
+    /** project_id when scope_type='project'; NULL at account scope. No FK — a
+     *  project delete is handled by the cascade on account_id plus the engine's
+     *  own project lookup, and the column is polymorphic by design. */
+    scopeId: uuid('scope_id'),
+    /** NULL = the whole scope. Otherwise the object TYPE this assignment is
+     *  narrowed to ('agent' | 'skill' | 'secret' | 'app' | 'trigger'). */
+    objectType: varchar('object_type', { length: 16 }),
+    /** TEXT, not uuid: an agent name / skill slug from the git manifest, or an
+     *  uppercased secret identifier. */
+    objectId: text('object_id'),
+    /** Optional auto-revoke. Filtered in SQL on every read. */
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+    grantedBy: uuid('granted_by'),
+    /** 'manual' | 'scim' | 'sso' | 'invite' | 'system' — who wrote the row.
+     *  SCIM and SSO JIT keep bypassing user-authz by design, but no longer
+     *  bypass the store or the audit event. */
+    source: varchar('source', { length: 16 }).default('manual').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_role_assignments_principal').on(table.principalType, table.principalId),
+    index('idx_role_assignments_scope').on(table.scopeType, table.scopeId),
+    index('idx_role_assignments_role').on(table.roleId),
+    index('idx_role_assignments_account').on(table.accountId),
+  ],
+);
+
+export const roleAssignmentsRelations = relations(roleAssignments, ({ one }) => ({
+  account: one(accounts, {
+    fields: [roleAssignments.accountId],
+    references: [accounts.accountId],
+  }),
+  role: one(iamRoles, {
+    fields: [roleAssignments.roleId],
+    references: [iamRoles.roleId],
+  }),
+}));
 
 // ─── SCIM 2.0 provisioning tokens ──────────────────────────────────────────
 // Long-lived bearer tokens used by external IdPs (Okta, Azure AD, etc.) to
@@ -4951,32 +5127,6 @@ export const projectSessionConnectorBindings = kortixSchema.table(
     }).onDelete('restrict'),
     index('idx_project_session_connector_bindings_connection').on(table.connectionId),
     index('idx_project_session_connector_bindings_project').on(table.projectId),
-  ],
-);
-
-/** ORPHANED 2026-07-06 — the per-connector member/department "who can access"
- *  allow-list was retired (connectors are project-wide now); the retirement
- *  migration deleted every row and nothing in the app writes to this table
- *  anymore. Kept (empty) rather than dropped — see the shareScope/agentScope
- *  comments on connectors. */
-export const connectorGrants = kortixSchema.table(
-  'connector_grants',
-  {
-    grantId: uuid('grant_id').defaultRandom().primaryKey(),
-    connectorId: uuid('connector_id')
-      .notNull()
-      .references(() => connectors.connectorId, { onDelete: 'cascade' }),
-    principalType: secretGrantPrincipalEnum('principal_type').notNull(),
-    principalId: uuid('principal_id').notNull(),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-  },
-  (table) => [
-    index('idx_connector_grants_connector').on(table.connectorId),
-    uniqueIndex('idx_connector_grants_unique').on(
-      table.connectorId,
-      table.principalType,
-      table.principalId,
-    ),
   ],
 );
 

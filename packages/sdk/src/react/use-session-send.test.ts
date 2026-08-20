@@ -69,6 +69,7 @@ import {
   applyOptimisticAbort,
   beginOptimisticSend,
   markOptimisticSendDispatched,
+  markOptimisticSendInboxBacked,
   recoverFromSendFailure,
   replayStartStash,
   sendAndRecover,
@@ -98,9 +99,46 @@ describe('beginOptimisticSend', () => {
     expect('sess-1' in useSyncStore.getState().sessionStatus).toBe(false);
   });
 
+  test('the stub carries NO time.created — display order puts it newest, whatever the box clock says', () => {
+    // `compareMessagesForDisplay` orders by `time.created`, which the BOX
+    // stamps on real messages. A stub stamped from the browser clock sorted
+    // ABOVE real messages whenever the box ran behind the browser (measured:
+    // ~1 s locally) — "Held B" drawn above "Held A", rapid sends 2..5 drawn
+    // above 1. An untimed stub is "the newest thing the user did" by the
+    // comparator's own rule, which is the only order that is right on every
+    // clock.
+    beginOptimisticSend('sess-1', 'msg-1', 'hello there', ['prt-1']);
+    const info = useSyncStore.getState().messages['sess-1']?.[0] as { time?: { created?: number } };
+    expect(info.time?.created).toBeUndefined();
+  });
+
   test('adds no parts for empty/whitespace-only text', () => {
     beginOptimisticSend('sess-1', 'msg-1', '   ');
     expect(useSyncStore.getState().parts['msg-1'] ?? []).toHaveLength(0);
+  });
+});
+
+describe('markOptimisticSendInboxBacked', () => {
+  test('a message whose inbox row landed survives the idle sweep until its echo', () => {
+    // A prompt queued at a sleeping box: the POST returned, the row is durable,
+    // the box will answer in a while. The session may see a local idle in
+    // between — that used to sweep the bubble and it came back seconds later
+    // under the echo. The message stays; the echo confirms it in place.
+    beginOptimisticSend('sess-1', 'msg-wire', 'hello there', ['prt-1']);
+    markOptimisticSendDispatched('sess-1', 'msg-wire');
+    markOptimisticSendInboxBacked('sess-1', 'msg-wire');
+
+    useSyncStore.getState().clearOptimisticMessages('sess-1');
+    expect(useSyncStore.getState().messages['sess-1']?.map((m) => m.id)).toEqual(['msg-wire']);
+
+    useSyncStore.getState().hydrate('sess-1', [
+      {
+        info: { id: 'msg-wire', sessionID: 'sess-1', role: 'user', time: { created: 1 } } as never,
+        parts: [],
+      },
+    ]);
+    expect(useSyncStore.getState().messages['sess-1']?.map((m) => m.id)).toEqual(['msg-wire']);
+    expect(useSyncStore.getState().hasOptimisticMessages('sess-1')).toBe(false);
   });
 });
 

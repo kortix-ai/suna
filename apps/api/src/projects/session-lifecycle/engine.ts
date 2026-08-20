@@ -6,8 +6,10 @@ import {
   sessionLifecycleCommands,
   sessionSandboxes,
 } from '@kortix/db';
-import { type SQL, and, desc, eq, gte, sql } from 'drizzle-orm';
+import { type SQL, and, desc, eq, gte, inArray, or, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
+import { ProvisionTimeline } from '../../platform/services/provision-timeline';
+import { WIRE_ID_PLACED_HEADER } from '../../sandbox-proxy/prompt-wire-id-repair';
 import { bindChatThread } from '../../channels/slack/binding';
 import { config } from '../../config';
 import { logger } from '../../lib/logger';
@@ -41,10 +43,12 @@ import {
   enqueueContinueSessionCommand,
   markCommandFailed,
   markCommandForwarded,
+  promoteNextInboxRow,
   markCommandQueued,
   markCommandSucceeded,
   requeueForAdmission,
   resultFromExistingCommand,
+  withNextDeliveryAttempt,
 } from './store';
 import type {
   PromptOverridesWire,
@@ -52,6 +56,16 @@ import type {
   QueuedContinueSessionPayload,
 } from './store';
 import { admitInboxPrompt, sessionHoldsLiveTurn } from './inbox-admission';
+import { claimDueSessionInboxSiblings } from './inbox-rows';
+import {
+  type PlacementTipMessage,
+  boxClockSkewMs,
+  mintLivePlacement,
+  noteBoxClockSample,
+  openUserAbove,
+  parsePlacementTip,
+  strandedPlacement,
+} from './forwarded-placement';
 import {
   MAX_WIRE_ID_CLOCK_CORRECTION,
   WIRE_ID_TIME_MASK,
@@ -364,6 +378,7 @@ export async function continueSession(
   // loop), just not across separate invocations, which those callers never
   // rely on for dedupe.
   commandId?: string,
+  tl?: ProvisionTimeline,
 ): Promise<SessionDeliveryOutcome> {
   const { sessionId, text } = command;
   const idempotencyKey = commandId ?? randomUUID();
@@ -439,12 +454,49 @@ export async function continueSession(
     });
   };
 
+  tl?.mark('session-read');
+
+  // FAST PATH — the box is already awake. `openSession` is /start: a provider
+  // status call plus a daemon health probe, ~0.5–0.9s per delivery even when
+  // nothing needs waking, and it ran on EVERY queued message. When the session
+  // row is running, its sandbox row is active and the OpenCode pin exists, the
+  // delivery target is fully known from the DB; the POST goes through the
+  // proxy, whose own wake-and-retry loop and `deliverWithRetry.reopen` (the
+  // full open) cover a box that turns out to be asleep after all. A cold or
+  // stopping session takes the slow path below exactly as before.
+  const awake = await awakeDeliveryTarget(sessionId);
+  if (awake && !command.opencodeEnv) {
+    tl?.mark('open-ready-fast');
+    return deliverWithRetry({
+      sessionId,
+      opened: awake,
+      reopen: async () => {
+        const healed = await openOnce();
+        if (!healed) return null;
+        return {
+          stage: healed.stage,
+          externalId: sandboxExternalId(healed),
+          opencodeSessionId: healed.opencode_session_id,
+        };
+      },
+      send: (externalId, runtimeId) =>
+        postPrompt(externalId, runtimeId, text, userId, sessionId, idempotencyKey, {
+          parts: command.parts,
+          overrides: command.overrides,
+          wireMessageId: command.wireMessageId,
+        }),
+    });
+  }
+
   const deadline = Date.now() + READY_DEADLINE_MS;
   let opened: Awaited<ReturnType<typeof openOnce>>;
   for (;;) {
     opened = await openOnce();
     if (!opened) return 'no-session';
-    if (opened.stage === 'ready') break;
+    if (opened.stage === 'ready') {
+      tl?.mark('open-ready');
+      break;
+    }
     if (opened.stage === 'failed' || opened.stage === 'stopped') return 'failed';
     if (Date.now() >= deadline) {
       console.warn('[session-lifecycle] runtime not ready before delivery deadline', {
@@ -507,6 +559,7 @@ export async function continueSession(
     opencodeSessionId: o.opencode_session_id,
   });
 
+  tl?.mark('env-sync');
   return deliverWithRetry({
     sessionId,
     opened: toTarget(opened),
@@ -534,12 +587,33 @@ export async function drainSessionLifecycleQueue(
   } = {},
 ): Promise<{ claimed: number; succeeded: number; failed: number; queued: number }> {
   const workerId = input.workerId ?? `session-lifecycle:${process.pid}:${Date.now()}`;
+  // COALESCE a burst before claiming. A targeted kick fires per POST, and the
+  // composer sends a burst's POSTs concurrently — their arrival order is the
+  // network's. Claiming instantly let the first arrival's batch close before
+  // the rest of the burst was even durable (measured: one of four boot sends
+  // delivered a step behind, out of order). A quarter second collects the
+  // stragglers and is invisible next to the ~1.3 s delivery itself.
+  if (input.idempotencyKey) {
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
   const rows = await claimDueLifecycleCommands({
     workerId,
     limit: input.limit ?? 10,
     idempotencyKey: input.idempotencyKey,
     availableBefore: input.availableBefore,
   });
+  // A targeted claim (one POST's kick) takes exactly its own row — but the
+  // rows already queued for the SAME session are this delivery's batch, and
+  // leaving them to their own kicks is what delivered a burst of sends one
+  // ~1.5 s round-trip at a time (and let a step boundary split the answers).
+  // Sweep them in so the lane batches them below.
+  if (input.idempotencyKey && rows.length > 0) {
+    const sessions = [...new Set(rows.map((r) => r.sessionId).filter((v): v is string => !!v))];
+    for (const sessionId of sessions) {
+      const siblings = await claimDueSessionInboxSiblings({ workerId, sessionId });
+      rows.push(...siblings.filter((sib) => !rows.some((r) => r.commandId === sib.commandId)));
+    }
+  }
   const out = { claimed: rows.length, succeeded: 0, failed: 0, queued: 0 };
 
   // ONE LANE PER SESSION, and the lanes run concurrently.
@@ -559,13 +633,16 @@ export async function drainSessionLifecycleQueue(
     else lanes.set(lane, [row]);
   }
 
-  const runRow = async (row: SessionLifecycleCommandRow): Promise<void> => {
+  const runRow = async (
+    row: SessionLifecycleCommandRow,
+    opts: ExecuteQueuedContinueOptions = {},
+  ): Promise<void> => {
     if (row.commandType === 'continue_session') {
       // Contained per row. Every row in this batch is CLAIMED (`running`), and
       // one throw escaping the loop would leave the rest of them there — a
       // state nothing reclaims until the lock expires, and one that blocks
       // every later prompt of the same session behind it.
-      const outcome = await executeQueuedContinue(row).catch(async (err) => {
+      const outcome = await executeQueuedContinue(row, opts).catch(async (err) => {
         await markCommandFailed(
           row.commandId,
           `drain failed: ${err instanceof Error ? err.message : String(err)}`,
@@ -627,10 +704,72 @@ export async function drainSessionLifecycleQueue(
 
   await Promise.all(
     [...lanes.values()].map(async (lane) => {
-      for (const row of lane) await runRow(row);
+      // Same-session INBOX rows go as ONE batch: the head lands first (it may
+      // open the turn), then the rest mint in queue order and POST together
+      // — so everything queued reaches OpenCode within one proxy round-trip
+      // of the head instead of ~1.5 s apiece, and the step after the current
+      // one answers all of them at once. Measured before: 4 prompts queued
+      // during boot ran as 3 + 1 across two steps.
+      let i = 0;
+      while (i < lane.length) {
+        const row = lane[i];
+        if (!isInboxRow(row)) {
+          await runRow(row);
+          i += 1;
+          continue;
+        }
+        let j = i + 1;
+        while (j < lane.length && isInboxRow(lane[j])) j += 1;
+        const sendOrder = (row: SessionLifecycleCommandRow): number => {
+          const at = (row.payload as { clientSentAtMs?: unknown } | null)?.clientSentAtMs;
+          // The sender tab's Enter instant when it was supplied: the POSTs of
+          // two surfaces race across the boot-shell crossfade, and row
+          // creation order is the race's outcome, not the user's.
+          return typeof at === 'number' ? at : row.createdAt.getTime();
+        };
+        const batch = lane.slice(i, j).sort((a, b) => sendOrder(a) - sendOrder(b));
+        i = j;
+        const headDone = runRow(batch[0]);
+        if (batch.length === 1) {
+          await headDone;
+          continue;
+        }
+        const rest = batch.slice(1);
+        // One gate per member: the FIRST waits for the HEAD (its id is not
+        // final until its delivery placed it — minting before that inverted
+        // head and member on the wire), each next waits for the previous
+        // member's mint; the POSTs then run concurrently.
+        const gates: BatchPlacementGate[] = [];
+        let previous: Promise<bigint | null> = headDone.then(
+          () => null,
+          () => null,
+        );
+        for (let k = 0; k < rest.length; k += 1) {
+          let release!: (mintedTime?: bigint | null) => void;
+          const mine = new Promise<bigint | null>((resolve) => {
+            release = (mintedTime) => resolve(mintedTime ?? null);
+          });
+          gates.push({ waitTurn: previous, release });
+          previous = mine;
+        }
+        await Promise.all([
+          headDone,
+          ...rest.map((member, k) =>
+            runRow(member, { batch: gates[k] }).finally(() => gates[k].release()),
+          ),
+        ]);
+      }
     }),
   );
   return out;
+}
+
+/** An inbox prompt row: a `continue_session` with the client's own
+ *  submission id — what the queue strip lists and what batches. */
+function isInboxRow(row: SessionLifecycleCommandRow): boolean {
+  if (row.commandType !== 'continue_session') return false;
+  const payload = row.payload as { clientMessageId?: unknown } | null;
+  return typeof payload?.clientMessageId === 'string' && payload.clientMessageId.length > 0;
 }
 
 /**
@@ -725,16 +864,33 @@ async function queuedContinueOpencodeEndpoint(row: SessionLifecycleCommandRow): 
   endpoint: { url: string; headers: Record<string, string> };
   opencodeSessionId: string;
 } | null> {
-  if (!row.sessionId) return null;
+  return resolveSessionOpencodeEndpoint(row.sessionId, row.actorUserId);
+}
+
+/**
+ * The signed proxy endpoint + OpenCode root id for one session — the same
+ * resolution every drain-side transcript read uses. Exported for the turn-end
+ * reconciliation (`forwarded-strand-reconcile.ts`), which has a session, not a
+ * row.
+ */
+export async function resolveSessionOpencodeEndpoint(
+  sessionId: string | null | undefined,
+  actorUserId?: string | null,
+): Promise<{
+  endpoint: { url: string; headers: Record<string, string> };
+  opencodeSessionId: string;
+} | null> {
+  if (!sessionId) return null;
   const [session] = await db
     .select({
       opencodeSessionId: projectSessions.opencodeSessionId,
       sandboxUrl: projectSessions.sandboxUrl,
       accountId: projectSessions.accountId,
       projectId: projectSessions.projectId,
+      createdBy: projectSessions.createdBy,
     })
     .from(projectSessions)
-    .where(eq(projectSessions.sessionId, row.sessionId))
+    .where(eq(projectSessions.sessionId, sessionId))
     .limit(1);
   if (!session?.opencodeSessionId) return null;
 
@@ -745,7 +901,7 @@ async function queuedContinueOpencodeEndpoint(row: SessionLifecycleCommandRow): 
       .from(sessionSandboxes)
       .where(
         and(
-          eq(sessionSandboxes.sessionId, row.sessionId),
+          eq(sessionSandboxes.sessionId, sessionId),
           eq(sessionSandboxes.projectId, session.projectId),
           eq(sessionSandboxes.accountId, session.accountId),
         ),
@@ -756,7 +912,14 @@ async function queuedContinueOpencodeEndpoint(row: SessionLifecycleCommandRow): 
   }
   if (!externalId) return null;
 
-  const endpoint = await sandboxOpencodeEndpoint(externalId, row.actorUserId ?? undefined);
+  // The signed user context is what the daemon admits a runtime read on
+  // (`verifyKortixUserContext`); with no actor the call is refused as
+  // `malformed`. A caller with no row of its own (turn-end reconciliation,
+  // the stop settle) reads as the session's creator.
+  const endpoint = await sandboxOpencodeEndpoint(
+    externalId,
+    actorUserId ?? session.createdBy ?? undefined,
+  );
   if (!endpoint) return null;
   return { endpoint, opencodeSessionId: session.opencodeSessionId };
 }
@@ -770,6 +933,8 @@ interface InboxTranscriptState {
   answered: boolean;
   /** The transcript was actually read. A failed read answers nothing. */
   read: boolean;
+  /** The messages the read returned (newest tail), for placement proofs. */
+  tip: PlacementTipMessage[] | null;
 }
 
 /**
@@ -779,38 +944,45 @@ interface InboxTranscriptState {
  * no new client. Fails OPEN (`read: false`) on every error: a transient read
  * failure must never block a prompt, and every caller has its own safe default.
  */
+/** Newest-N read for placement. Only the tip decides where a re-mint lands,
+ *  and a first delivery has no delivered id an `answered` check could match. */
+const INBOX_TRANSCRIPT_TIP_LIMIT = 8;
+
 async function readInboxTranscriptState(
   row: SessionLifecycleCommandRow,
   deliveredIds: string[],
+  opts: { full?: boolean } = {},
 ): Promise<InboxTranscriptState> {
-  const empty: InboxTranscriptState = { newest: null, answered: false, read: false };
+  const empty: InboxTranscriptState = { newest: null, answered: false, read: false, tip: null };
   try {
     const resolved = await queuedContinueOpencodeEndpoint(row);
     if (!resolved) return empty;
-    const url = `${resolved.endpoint.url}/session/${encodeURIComponent(resolved.opencodeSessionId)}/message?directory=${encodeURIComponent(WORKSPACE)}`;
+    // A FULL read only when this row has already been posted once (a
+    // redelivery / re-POST), where the `answered` guard needs the reply that
+    // may sit anywhere in the transcript. The ordinary case — a first delivery
+    // placing its id above a live turn — needs the tip only, and the full read
+    // of a long session was ~1s of dead air on every queued message.
+    const limit = opts.full ? '' : `&limit=${INBOX_TRANSCRIPT_TIP_LIMIT}`;
+    const url = `${resolved.endpoint.url}/session/${encodeURIComponent(resolved.opencodeSessionId)}/message?directory=${encodeURIComponent(WORKSPACE)}${limit}`;
     const res = await fetch(url, {
       method: 'GET',
       headers: sandboxRuntimeRequestHeaders(resolved.endpoint.headers),
       signal: AbortSignal.timeout(5_000),
     });
     if (!res.ok) return empty;
-    const messages = (await res.json().catch(() => null)) as Array<{
-      info?: { id?: unknown; role?: unknown; parentID?: unknown };
-    }> | null;
-    if (!Array.isArray(messages)) return empty;
+    const tip = parsePlacementTip(await res.json().catch(() => null));
+    if (!tip) return empty;
 
-    const newest = newestWireIdTime(
-      messages.map((message) => (typeof message?.info?.id === 'string' ? message.info.id : null)),
-    );
+    const newest = newestWireIdTime(tip.map((message) => message.id));
     // Same rule the daemon's `observeOpencodeDelivery` uses: an assistant
     // message parented on the prompt is the turn having run.
-    const answered = messages.some(
+    const answered = tip.some(
       (message) =>
-        message?.info?.role === 'assistant' &&
-        typeof message.info.parentID === 'string' &&
-        deliveredIds.includes(message.info.parentID),
+        message.role === 'assistant' &&
+        typeof message.parentID === 'string' &&
+        deliveredIds.includes(message.parentID),
     );
-    return { newest, answered, read: true };
+    return { newest, answered, read: true, tip };
   } catch (err) {
     console.warn('[session-lifecycle] inbox transcript read failed — proceeding without it', {
       sessionId: row.sessionId,
@@ -919,6 +1091,10 @@ async function remintWireMessageId(
   row: SessionLifecycleCommandRow,
   payload: QueuedContinueSessionPayload,
   transcript: InboxTranscriptState,
+  /** A batch member's hard floor: the PREVIOUS member's minted clock, so the
+   *  batch's ids are strictly ascending in send order — a skew sample landing
+   *  mid-batch made two members mint on different rules and swap. */
+  batchFloor: bigint | null = null,
 ): Promise<string> {
   const submitted = wireIdTime(payload.wireMessageId ?? '');
   const floor = transcript.read
@@ -935,10 +1111,18 @@ async function remintWireMessageId(
   // and OpenCode reads it as already answered and never runs it. The inbox
   // already knows every id it put on the wire; that is the missing floor.
   const delivered = await readDeliveredWireIdFloor(row);
-  const known = delivered !== null && (floor === null || delivered > floor) ? delivered : floor;
+  let known = delivered !== null && (floor === null || delivered > floor) ? delivered : floor;
+  if (batchFloor !== null && (known === null || batchFloor > known)) known = batchFloor;
   const newest = known !== null && (submitted === null || known > submitted) ? known : submitted;
 
-  const minted = mintWireMessageId({ nowMs: Date.now(), newestKnownTime: newest });
+  // Placed at the BOX's clock "now" when it is known (see forwarded-placement
+  // .ts): newest+1 is only safe while nothing else is minting, and a live turn
+  // mints an assistant id at every step boundary.
+  const minted = mintLivePlacement({
+    nowMs: Date.now(),
+    newestKnownTime: newest,
+    boxSkewMs: row.sessionId ? boxClockSkewMs(row.sessionId) : null,
+  });
   if (newest !== null && minted.time <= newest) {
     // The lift refused: `MAX_WIRE_ID_CLOCK_CORRECTION` (1h) caps how far a
     // transcript may drag an id, and past that cap the id we are about to send
@@ -966,6 +1150,137 @@ async function remintWireMessageId(
     // Throwing here would abandon a CLAIMED row in `running`, where nothing
     // reclaims it until its lock expires.
     console.warn('[session-lifecycle] could not persist the re-minted wire id', {
+      sessionId: row.sessionId,
+      commandId: row.commandId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+  return minted.id;
+}
+
+/** How many times one delivery re-places itself before leaving the rest to
+ *  turn-end reconciliation. Each round is one tip read + one DELETE + one POST
+ *  — a second strand in a row means step boundaries are landing inside every
+ *  window, and the turn-end net is the cheaper place to catch it. */
+const MAX_LIVE_PLACEMENT_REPAIRS = 2;
+
+/**
+ * Read the tip once after a live-turn delivery and say whether the prompt
+ * landed where the loop will run it — see `strandedPlacement`. Also takes the
+ * box-clock sample the next placement for this session mints from.
+ *
+ * Fails OPEN as "not stranded": an unreadable tip proves nothing, and the
+ * turn-end reconciliation re-asks the question with the same predicate.
+ */
+async function verifyLivePlacement(
+  row: SessionLifecycleCommandRow,
+  wireMessageId: string,
+  postedAtMs: number,
+): Promise<{ stranded: boolean; strandedBy: string | null; newest: bigint | null }> {
+  const ackAtMs = Date.now();
+  const transcript = await readInboxTranscriptState(row, [wireMessageId]);
+  if (!transcript.read || !transcript.tip) return { stranded: false, strandedBy: null, newest: null };
+  const verdict = strandedPlacement(transcript.tip, wireMessageId);
+  if (row.sessionId && verdict.createdMs !== null && verdict.createdMs >= postedAtMs - 60_000) {
+    // The box stamped `created` somewhere between our POST and its ack; the
+    // ack is the conservative pairing (see `noteBoxClockSample`).
+    noteBoxClockSample(row.sessionId, verdict.createdMs, ackAtMs);
+  }
+  return { stranded: verdict.stranded, strandedBy: verdict.strandedBy, newest: verdict.newest };
+}
+
+/** Is a forwarded/queued inbox row of this session NEWER than `row` already
+ *  on the wire (or in line)? Then `row`'s send order is pinned by it. */
+async function hasLaterForwardedSibling(row: SessionLifecycleCommandRow): Promise<boolean> {
+  if (!row.sessionId) return false;
+  try {
+    const [later] = await db
+      .select({ commandId: sessionLifecycleCommands.commandId })
+      .from(sessionLifecycleCommands)
+      .where(
+        and(
+          eq(sessionLifecycleCommands.sessionId, row.sessionId),
+          eq(sessionLifecycleCommands.commandType, 'continue_session'),
+          sql`${sessionLifecycleCommands.payload}->>'clientMessageId' IS NOT NULL`,
+          sql`${sessionLifecycleCommands.createdAt} > ${row.createdAt.toISOString()}::timestamptz`,
+          or(
+            inArray(sessionLifecycleCommands.status, ['queued', 'running']),
+            sql`${sessionLifecycleCommands.result}->>'status' = 'forwarded'`,
+          ),
+        ),
+      )
+      .limit(1);
+    return !!later;
+  } catch {
+    return false; // fail open: a solo repair is better than none
+  }
+}
+
+/**
+ * Delete a stranded user message from the root transcript, so the re-placed
+ * copy is the only one OpenCode — and the model — holds. `true` only on a
+ * confirmed 2xx (or a 404: already gone).
+ */
+async function removeStrandedOpencodeMessage(
+  row: SessionLifecycleCommandRow,
+  wireMessageId: string,
+): Promise<boolean> {
+  try {
+    const resolved = await queuedContinueOpencodeEndpoint(row);
+    if (!resolved) return false;
+    const url = `${resolved.endpoint.url}/session/${encodeURIComponent(resolved.opencodeSessionId)}/message/${encodeURIComponent(wireMessageId)}?directory=${encodeURIComponent(WORKSPACE)}`;
+    const res = await fetch(url, {
+      method: 'DELETE',
+      headers: sandboxRuntimeRequestHeaders(resolved.endpoint.headers),
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (res.ok || res.status === 404) return true;
+    // 409 = the loop is running (`assertNotBusy`); expected mid-turn.
+    if (res.status !== 409) {
+      console.warn('[session-lifecycle] stranded message delete refused', {
+        sessionId: row.sessionId,
+        commandId: row.commandId,
+        status: res.status,
+        body: (await res.text().catch(() => '')).slice(0, 200),
+      });
+    }
+    return false;
+  } catch (err) {
+    console.warn('[session-lifecycle] stranded message delete threw', {
+      sessionId: row.sessionId,
+      commandId: row.commandId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return false;
+  }
+}
+
+/**
+ * Mint the id a REPAIR goes out under — above the assistant that proved the
+ * strand — and persist it with the next delivery attempt BEFORE the POST, for
+ * the same crash-safety reason `remintWireMessageId` persists first.
+ */
+async function remintForRepair(
+  row: SessionLifecycleCommandRow,
+  newestKnownTime: bigint | null,
+): Promise<string> {
+  const minted = mintLivePlacement({
+    nowMs: Date.now(),
+    newestKnownTime,
+    boxSkewMs: row.sessionId ? boxClockSkewMs(row.sessionId) : null,
+  });
+  try {
+    await db
+      .update(sessionLifecycleCommands)
+      .set({
+        payload: withNextDeliveryAttempt(
+          sql`${sessionLifecycleCommands.payload} || ${JSON.stringify({ redeliveredMessageId: minted.id })}::jsonb`,
+        ),
+        updatedAt: new Date(),
+      })
+      .where(eq(sessionLifecycleCommands.commandId, row.commandId));
+  } catch (err) {
+    console.warn('[session-lifecycle] could not persist the re-placed wire id', {
       sessionId: row.sessionId,
       commandId: row.commandId,
       error: err instanceof Error ? err.message : String(err),
@@ -1007,8 +1322,30 @@ function externalIdFromSandboxUrlField(url: string | null): string | null {
   return match?.[1] ?? null;
 }
 
+/**
+ * How one row of a same-session BATCH (see the drain's lane runner)
+ * coordinates with the rows before it: it waits its turn to MINT (so ids come
+ * out in queue order), releases the next row the moment its id is final, and
+ * then POSTs concurrently with everyone else.
+ */
+export interface BatchPlacementGate {
+  /** Resolves with the previous member's minted id clock (null for the first
+   *  member after the head) — this member's mint floor, so batch ids are
+   *  strictly ascending in send order whatever the skew cache says. */
+  waitTurn: Promise<bigint | null>;
+  release: (mintedTime?: bigint | null) => void;
+}
+
+export interface ExecuteQueuedContinueOptions {
+  /** A member of a same-session batch after the head: admission is the
+   *  batch's own ordering, and the id is placed as into a LIVE turn (the head
+   *  opened one) and proven afterwards. */
+  batch?: BatchPlacementGate;
+}
+
 export async function executeQueuedContinue(
   row: SessionLifecycleCommandRow,
+  opts: ExecuteQueuedContinueOptions = {},
 ): Promise<'succeeded' | 'queued' | 'failed'> {
   const payload = row.payload as unknown as QueuedContinueSessionPayload;
   const text = typeof payload.text === 'string' ? payload.text : '';
@@ -1035,9 +1372,18 @@ export async function executeQueuedContinue(
   // here would strand it there — where nothing reclaims it until its lock
   // expires, while `older_prompt_pending` blocks every later prompt of the
   // session behind it. A failed read is a retryable failure, not a wedge.
+  // Delivery timeline: one structured line per row (`[provision-timeline]
+  // deliver <commandId>`), so "how long did a send take, and where" is a log
+  // read instead of a guess. Same shape as the provision timeline.
+  const tl = new ProvisionTimeline(row.commandId, 'deliver');
   let admission: Awaited<ReturnType<typeof admitInboxPrompt>>;
   try {
-    admission = await admitInboxPrompt(row);
+    // A batch member's ordering IS the batch: the lane minted the rows before
+    // it first (see the gate below), so the admission read — "is an older
+    // prompt of this session in flight?" — would only ever refuse it for the
+    // siblings it is being delivered with.
+    admission = opts.batch ? { admit: true } : await admitInboxPrompt(row);
+    tl.mark('admission');
   } catch (err) {
     await markCommandFailed(
       row.commandId,
@@ -1126,7 +1472,14 @@ export async function executeQueuedContinue(
   // refused row could never be retried, because retrying re-stamps the very
   // marker the refusal reads.
   const mayCommitStagedRevert = !!payload.clientMessageId && (promoted || !waited);
-  if (!mayCommitStagedRevert && (await queuedContinueHasStagedRevert(row))) {
+  // Two independent reads of the same box — the staged-revert flag and the
+  // transcript tip (below) — used to run one after the other. Started here,
+  // awaited together: they cost one round-trip instead of two.
+  const stagedRevertPromise = mayCommitStagedRevert
+    ? Promise.resolve(false)
+    : queuedContinueHasStagedRevert(row);
+  /** The row is behind a staged revert: fail or skip it, per the producer. */
+  const settleStagedRevert = async (): Promise<'succeeded' | 'failed' | null> => {
     // A COMPOSER prompt is failed, never dropped. `listInboxPrompts` keeps
     // `failed`/`dead_lettered` rows, so the user's text stays on screen with
     // its reason and a retry button that promotes it past this guard. Silently
@@ -1150,7 +1503,7 @@ export async function executeQueuedContinue(
       row.sessionId,
     );
     return 'succeeded';
-  }
+  };
 
   // WHICH WIRE ID THIS ATTEMPT DELIVERS WITH.
   //
@@ -1188,7 +1541,15 @@ export async function executeQueuedContinue(
   // none, and every id-less producer would pay for this read for nothing.
   const remintKnown = deliveryAttempt > 0 || redeliveries > 0 || waited;
   let turnLive = false;
-  if (payload.wireMessageId && !remintKnown) {
+  // The head of the batch landed and opened a turn (or joined the live one);
+  // every row after it is placed as into a live turn, by definition.
+  let batchFloor: bigint | null = null;
+  if (opts.batch) {
+    batchFloor = await opts.batch.waitTurn;
+    tl.mark('batch-turn');
+    turnLive = true;
+  }
+  if (payload.wireMessageId && !remintKnown && !opts.batch) {
     try {
       turnLive = await sessionHoldsLiveTurn(row.sessionId);
     } catch (err) {
@@ -1201,11 +1562,27 @@ export async function executeQueuedContinue(
     }
   }
   let wireMessageId = payload.wireMessageId;
+  /** Deliberately placed BELOW an open sibling — the sibling's step answers
+   *  it, and the post-insert strand proof must not "repair" it to the top. */
+  let underPlaced = false;
   if (payload.wireMessageId && (remintKnown || turnLive)) {
     const deliveredIds = [payload.wireMessageId, payload.redeliveredMessageId].filter(
       (id): id is string => typeof id === 'string' && id.length > 0,
     );
-    const transcript = await readInboxTranscriptState(row, deliveredIds);
+    const transcriptPromise = readInboxTranscriptState(row, deliveredIds, {
+      full: deliveryAttempt > 0 || redeliveries > 0,
+    });
+    // The staged-revert answer lands while the tip read is in flight.
+    const stagedRevertEarly = await stagedRevertPromise;
+    if (stagedRevertEarly) {
+      const settled = await settleStagedRevert();
+      if (settled) {
+        opts.batch?.release();
+        return settled;
+      }
+    }
+    const transcript = await transcriptPromise;
+    tl.mark('transcript-read');
     // The already-answered guard is not redelivery-only. Every re-mint path
     // re-reads the transcript, and an assistant reply parented on one of THIS
     // prompt's delivered ids proves the same thing on all of them: the turn
@@ -1225,40 +1602,84 @@ export async function executeQueuedContinue(
         { status: 'skipped', reason: 'already_answered' },
         row.sessionId,
       );
+      opts.batch?.release();
       return 'succeeded';
     }
-    wireMessageId = await remintWireMessageId(row, payload, transcript);
+    // A LATE delivery does not always go to the top. When the transcript
+    // still holds an OPEN sibling above this prompt's original id — placed,
+    // unanswered — the original id slots the prompt into its SEND position,
+    // and that sibling's step answers both (OpenCode hands the model the
+    // whole transcript). Re-minting was what put a delayed message below its
+    // answer— and a re-mint here put it visually LAST when it was sent
+    // first. Only a first delivery may do this: a re-POST's original id may
+    // already be persisted.
+    if (
+      !opts.batch &&
+      deliveryAttempt === 0 &&
+      redeliveries === 0 &&
+      payload.wireMessageId &&
+      transcript.read &&
+      transcript.tip &&
+      openUserAbove(transcript.tip, payload.wireMessageId)
+    ) {
+      wireMessageId = payload.wireMessageId;
+      underPlaced = true;
+      tl.mark('under-placed');
+    } else {
+      wireMessageId = await remintWireMessageId(row, payload, transcript, batchFloor);
+      tl.mark('remint');
+    }
+  }
+  // The id is final: the next batch member may mint above it.
+  opts.batch?.release(wireMessageId ? wireIdTime(wireMessageId) : null);
+
+  {
+    const stagedRevertLate = await stagedRevertPromise;
+    tl.mark('staged-revert');
+    if (stagedRevertLate) {
+      const settled = await settleStagedRevert();
+      if (settled) return settled;
+    }
   }
 
+  // Did this delivery go into a turn that was LIVE when it left? Then the
+  // placement has to be PROVEN, not assumed — see forwarded-placement.ts.
+  const placedIntoLiveTurn = !!wireMessageId && (turnLive || remintKnown);
   try {
-    const delivery = await continueSession(
-      {
-        source: row.source as SessionInvocationSource,
-        sessionId: row.sessionId,
-        text,
-        userId: row.actorUserId,
-        ...(payload.parts?.length ? { parts: payload.parts } : {}),
-        ...(payload.overrides ? { overrides: payload.overrides } : {}),
-        ...(wireMessageId ? { wireMessageId } : {}),
-      },
-      // F2: stable across every drain-and-retry of THIS row — see
-      // `postPrompt`'s F2 note. Two DIFFERENT queued commands (distinct
-      // `commandId`s) with identical text now deliver independently instead
-      // of the second silently deduping against the first.
-      //
-      // A ROW THAT ALREADY WENT OUT suffixes it: the previous attempt's
-      // 10-minute dedupe claim is still live in the proxy, and reusing the key
-      // would let that claim swallow the delivery meant to replace it — a
-      // `200 {"deduplicated": true}` that `postPrompt` reads as delivered.
-      // Still stable across `deliverWithRetry`'s inner retries, which is what
-      // the claim is for.
-      //
-      // `deliveryAttempt`, not `redeliveries`: a released Stop and a "send now"
-      // on a stop-paused row are re-POSTs too, and neither is a reaper
-      // redelivery. See `withNextDeliveryAttempt`.
-      deliveryAttempt > 0 ? `${row.commandId}:r${deliveryAttempt}` : row.commandId,
-    );
-    if (delivery === 'delivered') {
+    let attempt = deliveryAttempt;
+    let delivery: SessionDeliveryOutcome = 'pending';
+    for (let round = 0; ; round += 1) {
+      const postedAt = Date.now();
+      delivery = await continueSession(
+        {
+          source: row.source as SessionInvocationSource,
+          sessionId: row.sessionId,
+          text,
+          userId: row.actorUserId,
+          ...(payload.parts?.length ? { parts: payload.parts } : {}),
+          ...(payload.overrides ? { overrides: payload.overrides } : {}),
+          ...(wireMessageId ? { wireMessageId } : {}),
+        },
+        // F2: stable across every drain-and-retry of THIS row — see
+        // `postPrompt`'s F2 note. Two DIFFERENT queued commands (distinct
+        // `commandId`s) with identical text now deliver independently instead
+        // of the second silently deduping against the first.
+        //
+        // A ROW THAT ALREADY WENT OUT suffixes it: the previous attempt's
+        // 10-minute dedupe claim is still live in the proxy, and reusing the key
+        // would let that claim swallow the delivery meant to replace it — a
+        // `200 {"deduplicated": true}` that `postPrompt` reads as delivered.
+        // Still stable across `deliverWithRetry`'s inner retries, which is what
+        // the claim is for.
+        //
+        // `deliveryAttempt`, not `redeliveries`: a released Stop and a "send now"
+        // on a stop-paused row are re-POSTs too, and neither is a reaper
+        // redelivery. See `withNextDeliveryAttempt`.
+        attempt > 0 ? `${row.commandId}:r${attempt}` : row.commandId,
+        tl,
+      );
+      tl.mark('delivered');
+      if (delivery !== 'delivered') break;
       // DELIVERED IS NOT CONSUMED. OpenCode persists the prompt and queues it
       // behind the turn in flight, so the row stays OPEN — see
       // `markCommandForwarded` — until `session_turns` names this wire id.
@@ -1273,8 +1694,90 @@ export async function executeQueuedContinue(
       } else {
         await markCommandSucceeded(row.commandId, { status: 'delivered' }, row.sessionId);
       }
+      tl.mark('marked');
+      if (!placedIntoLiveTurn || !wireMessageId) break;
+      // PROOF. One tip read after the insert answers exactly whether the box
+      // created a newer assistant BEFORE this prompt landed (the strand
+      // signature). It also hands back the box's own `time.created` for the
+      // message, which calibrates the next placement for this session.
+      const proof = await verifyLivePlacement(row, wireMessageId, postedAt);
+      tl.mark('placement-proof');
+      if (underPlaced) break; // below an open sibling by design — its step answers this
+      if (!proof.stranded) break;
+      // A later sibling already on the wire pins this row's ORDER: repairing
+      // solo would re-mint it above the sibling and OpenCode would answer them
+      // inverted. The turn-end reconciliation re-places the whole tail in
+      // send order instead.
+      if (await hasLaterForwardedSibling(row)) {
+        logger.info(
+          '[session-lifecycle] stranded prompt has later siblings — turn-end reconciliation will re-place the tail in order',
+          { session_id: row.sessionId, command_id: row.commandId, wire_message_id: wireMessageId },
+        );
+        break;
+      }
+      if (round >= MAX_LIVE_PLACEMENT_REPAIRS) {
+        logger.error(
+          '[session-lifecycle] forwarded prompt still stranded after repairs — leaving it to turn-end reconciliation',
+          {
+            session_id: row.sessionId,
+            command_id: row.commandId,
+            wire_message_id: wireMessageId,
+            stranded_by: proof.strandedBy,
+          },
+        );
+        break;
+      }
+      // REPAIR: take the stranded copy out of the transcript, place again
+      // above the assistant that proves the strand, and go round once more.
+      // The stale message must go first: OpenCode would otherwise hold the
+      // prompt twice, and the model would read it twice.
+      //
+      // OpenCode refuses a message delete WHILE THE LOOP RUNS
+      // (`deleteMessage` → `assertNotBusy`), and a strand is, almost by
+      // definition, detected while it runs. So this repair fires only when
+      // the step already ended between the insert and the proof; the
+      // ordinary case is handed to turn-end reconciliation
+      // (forwarded-strand-reconcile.ts), which runs the same repair the
+      // moment the daemon relays the turn's end — before the box is idle
+      // long enough for anyone to notice.
+      const removed = await removeStrandedOpencodeMessage(row, wireMessageId);
+      if (!removed) {
+        logger.info(
+          '[session-lifecycle] stranded prompt detected mid-turn — turn-end reconciliation will re-place it',
+          {
+            session_id: row.sessionId,
+            command_id: row.commandId,
+            wire_message_id: wireMessageId,
+            stranded_by: proof.strandedBy,
+          },
+        );
+        break;
+      }
+      const replaced = await remintForRepair(row, proof.newest);
+      attempt += 1;
+      logger.warn('[session-lifecycle] forwarded prompt landed below a newer assistant — re-placed', {
+        session_id: row.sessionId,
+        command_id: row.commandId,
+        stranded_wire_id: wireMessageId,
+        stranded_by: proof.strandedBy,
+        replaced_wire_id: replaced,
+        round: round + 1,
+      });
+      wireMessageId = replaced;
+    }
+    if (delivery === 'delivered') {
+      // CHAIN. This row is on the wire, so the session's next queued row is
+      // admissible NOW — do not leave it to the scheduler tick or to whatever
+      // `requeueForAdmission` backoff it accrued while waiting on this one.
+      // Fire-and-forget: the drain re-runs admission itself, so a kick that
+      // loses a race is a no-op, and a lost kick falls back to the tick.
+      void promoteNextInboxRow(row.sessionId)
+        .then((key) => (key ? drainSessionLifecycleQueue({ idempotencyKey: key }) : null))
+        .catch(() => undefined);
+      tl.log({ sessionId: row.sessionId, source: row.source, outcome: delivery });
       return 'succeeded';
     }
+    tl.log({ sessionId: row.sessionId, source: row.source, outcome: delivery });
     // 'pending' = runtime not ready in time — worth another pass. 'no-session'
     // and 'failed' are terminal for this command.
     const retryable = delivery === 'pending';
@@ -1475,6 +1978,34 @@ function isRetryableCreateError(status?: number): boolean {
   return status === 429 || status === 500 || status === 502 || status === 503 || status === 504;
 }
 
+/**
+ * The delivery target for a session whose box is ALREADY awake, from the DB
+ * alone — or null, which means "take the full open path". Cheap: two indexed
+ * reads, no provider or daemon round-trip.
+ */
+async function awakeDeliveryTarget(sessionId: string): Promise<DeliveryTarget | null> {
+  const [session] = await db
+    .select({
+      status: projectSessions.status,
+      opencodeSessionId: projectSessions.opencodeSessionId,
+    })
+    .from(projectSessions)
+    .where(eq(projectSessions.sessionId, sessionId))
+    .limit(1);
+  if (!session || session.status !== 'running' || !session.opencodeSessionId) return null;
+  const [box] = await db
+    .select({ status: sessionSandboxes.status, externalId: sessionSandboxes.externalId })
+    .from(sessionSandboxes)
+    .where(eq(sessionSandboxes.sessionId, sessionId))
+    .limit(1);
+  if (!box || box.status !== 'active' || !box.externalId) return null;
+  return {
+    stage: 'ready',
+    externalId: box.externalId,
+    opencodeSessionId: session.opencodeSessionId,
+  };
+}
+
 function sandboxExternalId(
   result: NonNullable<Awaited<ReturnType<typeof openSession>>>,
 ): string | null {
@@ -1545,13 +2076,29 @@ async function postPrompt(
     const res = await forwardToSandbox(
       externalId,
       DAEMON_PORT,
-      { kind: 'principal', userId, callerSessionId, sandboxAuthored: false },
+      {
+        kind: 'principal',
+        userId,
+        callerSessionId,
+        // A real Kortix session id (the session this prompt is FOR), so it is
+        // also the correct agent binding.
+        boundCredentialSessionId: callerSessionId,
+        sandboxAuthored: false,
+      },
       'POST',
       `/session/${encodeURIComponent(opencodeSessionId)}/prompt_async`,
       // The producer's own directory when it named one, so a project-scoped
       // agent resolves the same way it does on a direct browser send.
       `?directory=${encodeURIComponent(overrides?.directory || WORKSPACE)}`,
-      new Headers({ 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey }),
+      new Headers({
+        'Content-Type': 'application/json',
+        'Idempotency-Key': idempotencyKey,
+        // The inbox placed this wire id against the transcript itself (see
+        // `remintWireMessageId`), so the proxy's own placement read
+        // (`prompt-wire-id-repair.ts`) has nothing to add — one fewer sandbox
+        // round-trip per queued message. Direct clients never send this.
+        ...(prompt?.wireMessageId ? { [WIRE_ID_PLACED_HEADER]: '1' } : {}),
+      }),
       body.buffer as ArrayBuffer,
       config.KORTIX_URL ?? '',
     );

@@ -1,8 +1,9 @@
+import { isOptimisticSessionPrompt } from '@kortix/sdk/react';
 import type { SessionPrompt } from '@kortix/sdk';
 
 /**
- * What the composer's queue strip renders, from the ONE thing that holds a
- * pending message.
+ * What the transcript's queued bubbles (`turn/queued-prompt-bubbles.tsx`)
+ * render, from the ONE thing that holds a pending message.
  *
  * The server inbox (`GET .../prompts`) is the queue: durable, shared across
  * tabs and devices, ordered and admitted by the control plane. Every prompt
@@ -63,21 +64,20 @@ export function projectQueueRows(input: {
       failed.push(row);
       continue;
     }
-    // ALREADY ON SCREEN AS A MESSAGE. Rendering `delivering` rows fixed one
-    // half of the problem — a mid-turn prompt with nothing else holding it —
-    // and opened the other: an idle send paints its optimistic bubble at once,
-    // and a mid-turn one arrives over SSE the moment OpenCode persists it, so
-    // from then on the same text is both a streaming answer and a pending queue
-    // row. The transcript wins; the strip is for what is NOT in it yet.
-    //
-    // A HELD row is the exception, and it is the whole reason this is not a
-    // blanket filter: a stop-paused prompt IS in the transcript, unanswered and
-    // parked, and the strip is the only place its remove and "send now"
-    // controls exist.
+    // ALREADY ON SCREEN AS A MESSAGE. Every prompt this tab sends is painted
+    // into the transcript on Enter under its wire id (and the store aliases a
+    // re-minted echo back to it), and a foreign row lands there when the
+    // runtime echoes it. The transcript wins; this list is for what is NOT in
+    // it yet. A HELD row in the transcript is no exception any more: its
+    // controls live in the bubble's own meta row (`QueuedPromptControls`).
+    // EITHER of the prompt's ids counts: `message_id` moves to the server's
+    // re-minted id the moment the drain places the prompt — before the
+    // runtime echoes it and before the store can alias the echo back — while
+    // the bubble this tab painted still carries `wire_message_id`. Matching
+    // only `message_id` drew the row beside its own bubble for that window.
     if (
-      prompt.reason !== 'held' &&
-      prompt.message_id &&
-      input.transcriptMessageIds?.has(prompt.message_id)
+      (prompt.message_id && input.transcriptMessageIds?.has(prompt.message_id)) ||
+      (prompt.wire_message_id && input.transcriptMessageIds?.has(prompt.wire_message_id))
     ) {
       continue;
     }
@@ -90,6 +90,10 @@ export function projectQueueRows(input: {
     // every action the strip offers is refused by the server for a row it has
     // already handed to OpenCode.
     if (prompt.state === 'delivering') inFlightIds.push(prompt.prompt_id);
+    // This tab's own echo, painted on Enter before `POST .../prompts` returned:
+    // there is no server id to remove or promote yet, so it renders inert for
+    // the round-trip and becomes an ordinary row on the response.
+    if (isOptimisticSessionPrompt(prompt)) inFlightIds.push(prompt.prompt_id);
     // `waiting` is WHY a row has not gone out, not a lane of its own — it
     // renders beside `queued`, with the hold reported separately.
     queued.push(row);

@@ -49,17 +49,17 @@ const TABS_DIR = join(import.meta.dir, 'tabs');
  * mounted directly above it wherever `sandbox` renders, owns the one shared
  * heading for both now. `members-tab.tsx` graduated the same second way
  * `models-tab.tsx` did — off `/projects/[id]/config` and onto its own
- * top-level Customize tab (`/projects/[id]/members`) — and took the same fix:
- * a hardcoded heading instead of a registry lookup that would now
- * resolve to nothing — since 2026-08-17 that heading is
- * `CapabilityPageShell`'s own `title`/`description`, the shell its sibling
- * Customize tabs render, which also gives the page its scroll container and
- * its gap below the tab bar. The `every tab file on disk is classified` case
- * below is what keeps this table honest: a file that still renders
- * `SettingsTabHeader` and is missing here fails immediately — swap that
- * assertion's message if you touch it, since three files (`models-tab.tsx`,
- * `snapshots-tab.tsx`, `members-tab.tsx`) are now deliberately absent despite
- * being on disk.
+ * top-level Customize tab (`/projects/[id]/members`) — then graduated a THIRD
+ * time and a FOURTH: first to a hardcoded `CapabilityPageShell` heading (same
+ * fix as `models-tab.tsx`), then off the project entirely, onto the account
+ * hub's Access tab (`/accounts/[id]?tab=access-projects`).
+ * `/projects/[id]/members` is a bare redirect now and `members-tab.tsx` is
+ * deleted, so it is gone from this file rather than listed as an absent
+ * heading. The `every tab file on disk is classified` case below is what
+ * keeps this table honest: a file that still renders `SettingsTabHeader` and
+ * is missing here fails immediately — swap that assertion's message if you
+ * touch it, since two files (`models-tab.tsx`, `snapshots-tab.tsx`) are now
+ * deliberately absent despite being on disk.
  */
 const TAB_ID_FOR_FILE: Record<string, string> = {
   'connected-tab.tsx': 'connected',
@@ -72,12 +72,14 @@ const TAB_ID_FOR_FILE: Record<string, string> = {
   'preferences-tab.tsx': 'preferences',
   'profile-tab.tsx': 'profile',
   'sandbox-tab.tsx': 'sandbox',
+  'tokens-tab.tsx': 'tokens',
 };
 
 /** Files on disk that deliberately do NOT render `SettingsTabHeader` any
  *  more — see the table's header comment for why each one is here instead of
- *  in `TAB_ID_FOR_FILE`. */
-const FILES_WITHOUT_REGISTRY_HEADING = ['models-tab.tsx', 'snapshots-tab.tsx', 'members-tab.tsx'];
+ *  in `TAB_ID_FOR_FILE`. `members-tab.tsx` is not here: it is deleted, not
+ *  present-but-headingless — see the table's header comment. */
+const FILES_WITHOUT_REGISTRY_HEADING = ['models-tab.tsx', 'snapshots-tab.tsx'];
 
 /**
  * Strip block comments, line comments, and JSX comment blocks before

@@ -17,7 +17,7 @@ import { and, desc, eq, isNull, or } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { normalizeAuditClientSource } from '../../shared/audit-client-source';
 import { type SandboxProviderName, config } from '../../config';
-import { type SecretGrant, visibilityToIntent } from '../../connectors/share';
+import { mayManageSessionSharing, type SecretGrant, visibilityToIntent } from '../../connectors/share';
 import { buildFeatureFlagCatalog, resolveFeatureFlags } from '../../feature-flags/registry';
 import { db } from '../../shared/db';
 import type { listSandboxTemplates, listSnapshotBuilds } from '../../snapshots/builder';
@@ -35,7 +35,6 @@ import { isPlaceholderOpencodeTitle, runtimeRootTitleFromSnapshot } from './open
 import { normalizeProjectGlyph } from './project-glyph';
 import { normalizeProjectIcon } from './project-icon';
 import { proxyGitUrl } from './sessions';
-import { networkBoundaryDeliveryAvailable } from '../../secrets/network-boundary-availability';
 
 export const CODEX_AUTH_JSON_SECRET_NAME = 'CODEX_AUTH_JSON';
 
@@ -69,10 +68,16 @@ export function serializeSession(
   ctx?: {
     /** The grants on this session (for restricted visibility). */
     grants?: SecretGrant[];
-    /** The viewing user, to compute is_owner / can_manage_sharing. */
+    /** The viewing user, to compute is_owner / can_manage_*. */
     viewerId?: string;
-    /** Viewer can manage the project (account owner/admin, or a project editor). */
+    /** Viewer can manage the project (account owner/admin, or a project manager). */
     canManageProject?: boolean;
+    /**
+     * True when `created_by` names a service account (a trigger/agent run) or
+     * nobody at all — the one case where a project manager, not the owner,
+     * governs sharing. See mayManageSessionSharing.
+     */
+    ownerIsMachine?: boolean;
     /** Resolved email of the session owner, for "shared by X" display. */
     ownerEmail?: string | null;
     /** Resolved human or service-account display name. */
@@ -149,7 +154,16 @@ export function serializeSession(
       ctx?.grants ?? [],
     ),
     is_owner: isOwner,
-    can_manage_sharing: isOwner || Boolean(ctx?.canManageProject),
+    // Two different questions, deliberately not one flag: changing WHO CAN OPEN
+    // a session is the owner's call, while stopping/restarting/deleting it
+    // stays manager-tier. Collapsing them let a manager rewrite the visibility
+    // of a private session they could not read.
+    can_manage_sharing: mayManageSessionSharing({
+      isOwner,
+      canManageProject: Boolean(ctx?.canManageProject),
+      ownerIsMachine: ctx?.ownerIsMachine ?? !row.createdBy,
+    }),
+    can_manage_lifecycle: isOwner || Boolean(ctx?.canManageProject),
     can_access: canAccess,
     runtime_status: ctx?.runtimeStatus ?? null,
     deleted_at: ctx?.deletedAt ?? null,
@@ -163,7 +177,7 @@ export function serializeSession(
  * Load a session and enforce that the viewer can SEE it (owner, project-wide,
  * or in the allow-list). Returns null for both not-found and not-visible so we
  * never reveal the existence of a private session. Also reports whether the
- * viewer may manage its sharing (account owner/admin, or a project editor).
+ * viewer may manage its sharing (account owner/admin, or a project manager).
  */
 
 function dashboardBaseUrl(): string {
@@ -194,7 +208,7 @@ export function serializeProject(
     default_branch: row.defaultBranch,
     manifest_path: row.manifestPath,
     status: row.status,
-    metadata: row.metadata ?? {},
+    metadata: publicProjectMetadata(row.metadata),
     // Per-project emoji, stored in metadata (no migration — same mechanism as
     // default_sandbox_provider below and metadata.onboarding_completed_at).
     // Re-validated on read so a value written before the validator existed, or
@@ -240,6 +254,16 @@ export function serializeProject(
       config.isProviderEnabled(p),
     ),
   };
+}
+
+export function publicProjectMetadata(metadata: unknown): Record<string, unknown> {
+  if (!metadata || typeof metadata !== 'object') return {};
+  const source = metadata as Record<string, unknown>;
+  if (!source.git || typeof source.git !== 'object') return source;
+  const git = source.git as Record<string, unknown>;
+  if (!Object.hasOwn(git, 'fast_boot')) return source;
+  const { fast_boot: _fastBoot, ...publicGit } = git;
+  return { ...source, git: publicGit };
 }
 
 export function serializeProjectGitConnection(row: ProjectGitConnectionRow | null) {
@@ -384,19 +408,6 @@ export function buildSecretView(input: {
   /** The project's loaded config, for the agent-grant axis. Omit it and every
    *  pre-existing field is unchanged; `delivery_blocked_reason` reports null. */
   agentGrants?: SecretAgentGrantConfig | null;
-  /**
-   * The project's `metadata` column, for the per-project boundary flag.
-   *
-   * REQUIRED, and deliberately so. It feeds `network_boundary_available` and
-   * `delivery_status`, which the web control and the CLI read to decide whether
-   * this delivery mode can be offered at all. As an optional parameter a caller
-   * that simply forgot it still typechecked and silently reported the old
-   * Platinum-only answer — a wrong feature verdict, invisible to tsc and to
-   * every test that did not happen to look. Required turns that into a compile
-   * error. Pass `undefined` explicitly for a caller that genuinely has no
-   * project; that reads as closed, never as "unset".
-   */
-  projectMetadata: unknown;
 }): Secret {
   const { identifier, name, shared, personal, canManageShared } = input;
   const system = isSystemProjectSecretName(name);
@@ -454,7 +465,7 @@ export function buildSecretView(input: {
       : null,
     // What actually gets injected into my sessions for this identifier.
     effective_source: effectiveSource,
-    // Members manage only their own override; editors also manage the shared row.
+    // Members manage only their own override; managers also manage the shared row.
     can_manage_shared: canManageShared && !system,
     strategy,
     consumer,
@@ -463,9 +474,7 @@ export function buildSecretView(input: {
       (strategy === 'broker' && consumer === 'llm_gateway') ||
       (strategy === 'broker' && consumer === 'git_proxy') ||
       (strategy === 'broker' && consumer === 'http_broker' && backend === 'kortix_fetch') ||
-      (strategy === 'egress' &&
-        consumer === 'network' &&
-        networkBoundaryDeliveryAvailable(input.projectMetadata)) ||
+      (strategy === 'egress' && consumer === 'network') ||
       consumer === 'connector'
         ? 'available'
         : strategy === 'denied'
@@ -476,7 +485,12 @@ export function buildSecretView(input: {
     // grant, because the CLI, the SDK and the web chip all key off that meaning.
     // The grant axis is per-project and lives here.
     delivery_blocked_reason: secretDeliveryBlockedReason(identifier, strategy, input.agentGrants),
-    network_boundary_available: networkBoundaryDeliveryAvailable(input.projectMetadata),
+    // Always true since the exposure/usage model: one mechanism serves every
+    // provider (docs/specs/2026-08-19-secrets-exposure-usage-model.md §4), so
+    // there is no deployment where egress-enforced delivery is missing. Kept on
+    // the wire because published SDK and CLI versions still read it — an absent
+    // field reads as "unknown" to them, a `false` would falsely disable the UI.
+    network_boundary_available: true,
     egress_policy: deliveryRow?.egressPolicy ?? null,
     strategy_locked: deliveryRow?.strategyLocked ?? false,
     last_rotated_at: deliveryRow?.rotatedAt?.toISOString() ?? null,
@@ -493,18 +507,14 @@ export async function loadSecretViewsForUser(input: {
   projectId: string;
   userId: string;
   canManageShared: boolean;
-  /** The loaded project's `metadata` column — see `buildSecretView`. */
-  projectMetadata: unknown;
   /** The project's loaded config. Callers that have already read it pass it so
    *  every row reports the agent-grant axis; omitting it reports null. */
   agentGrants?: SecretAgentGrantConfig | null;
 }): Promise<ReturnType<typeof buildSecretView>[]> {
-  // NAMED, not positional. `projectMetadata` is `unknown`, so it accepts any
-  // argument — as a positional parameter it silently swallowed the `agentGrants`
-  // that a call site passed in that slot, and typechecked while doing it. That
-  // is the same class of invisible failure the required flag exists to prevent,
-  // so the whole signature is by name.
-  const { projectId, userId, canManageShared, projectMetadata, agentGrants } = input;
+  // NAMED, not positional: an `unknown`-typed argument in a positional slot
+  // silently swallowed the `agentGrants` a call site passed there, and
+  // typechecked while doing it.
+  const { projectId, userId, canManageShared, agentGrants } = input;
   const rows = await db
     .select()
     .from(projectSecrets)
@@ -532,7 +542,6 @@ export async function loadSecretViewsForUser(input: {
       personal: slot.personal,
       canManageShared,
       agentGrants,
-      projectMetadata,
     }),
   );
 }
@@ -766,7 +775,7 @@ export function serializeTemplate(t: Awaited<ReturnType<typeof listSandboxTempla
   };
 }
 
-const PROJECT_ROLES = ['editor', 'member'] as const;
+const PROJECT_ROLES = ['manager', 'member'] as const;
 
 export type ProjectGroupGrantRole = (typeof PROJECT_ROLES)[number];
 

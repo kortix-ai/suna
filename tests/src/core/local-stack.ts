@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import {
+  LOCAL_AUTH_EMAIL_HOOK_SECRET,
   LOCAL_FLOW_INTERNAL_SERVICE_KEY,
   localWebUrl,
   type LocalSupabaseEnvironment,
@@ -477,10 +478,15 @@ export async function ensureLocalStack(
           GATEWAY_INTERNAL_TOKEN: gatewayToken,
           TUNNEL_ENABLED: "false",
           TUNNEL_SIGNING_SECRET: "local-flow-runner-tunnel-signing-secret",
-          EMAIL_PROVIDER_ORDER: "mailpit",
+          // One connection string configures delivery, exactly as an operator
+          // sets it — so the local suite exercises the EMAIL_URL path itself.
           ...(options.supabase.MAILPIT_URL
-            ? { MAILPIT_API_URL: options.supabase.MAILPIT_URL }
+            ? {
+                EMAIL_URL: `mailpit://${options.supabase.MAILPIT_URL.replace(/^https?:\/\//, "")}`,
+              }
             : {}),
+          EMAIL_FROM: "Kortix Local <noreply@kortix.local>",
+          AUTH_EMAIL_HOOK_SECRET: LOCAL_AUTH_EMAIL_HOOK_SECRET,
           KORTIX_MARKETPLACE_EXTERNAL_ENABLED: "0",
           KORTIX_MODEL_CATALOG_LIVE_ENABLED: "0",
           KORTIX_MODEL_PRICING_LIVE_ENABLED: "0",

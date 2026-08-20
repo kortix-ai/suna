@@ -131,7 +131,12 @@ describe('scopeToIntent — round-trip for the dashboard', () => {
 
 const WRAPPER = 'wrapper-service-account';
 // Non-KaaB default: an interactive session, caller not session-bound.
-const INTERACTIVE = { origin: 'interactive', sessionId: 's1', callerSessionId: null };
+const INTERACTIVE = {
+  origin: 'interactive',
+  sessionId: 's1',
+  callerSessionId: null,
+  boundCredentialSessionId: null,
+};
 
 describe('session sharing — default private; team-wide or select-members', () => {
   test('owner always sees their own session, regardless of visibility', () => {
@@ -152,6 +157,7 @@ describe('session sharing — default private; team-wide or select-members', () 
         origin: 'backend',
         sessionId: 'session-of-end-user-b',
         callerSessionId: 'session-of-end-user-a',
+        boundCredentialSessionId: 'session-of-end-user-a',
       }),
     ).toBe(false);
   });
@@ -162,6 +168,7 @@ describe('session sharing — default private; team-wide or select-members', () 
         origin: 'backend',
         sessionId: 'session-a',
         callerSessionId: 'session-a',
+        boundCredentialSessionId: 'session-a',
       }),
     ).toBe(true);
   });
@@ -174,6 +181,7 @@ describe('session sharing — default private; team-wide or select-members', () 
         origin: 'backend',
         sessionId: 'session-b',
         callerSessionId: null,
+        boundCredentialSessionId: null,
       }),
     ).toBe(true);
   });
@@ -186,6 +194,7 @@ describe('session sharing — default private; team-wide or select-members', () 
         origin: 'interactive',
         sessionId: 'other-session',
         callerSessionId: 'my-session',
+        boundCredentialSessionId: 'my-session',
       }),
     ).toBe(true);
   });
@@ -329,10 +338,84 @@ describe('trigger-created session visibility', () => {
     }
   });
 
+  /*
+   * The override belongs to the HUMAN, not to a token bound to one session.
+   *
+   * Two failure modes are pinned here, and they pull in opposite directions.
+   * The hole: a session-bound AGENT token whose launching user holds `manage`
+   * read every other trigger-created private session in the project — the
+   * interactive origin sails past `isSessionTargetVisibleToCaller`, which only
+   * narrows `backend`-origin targets. The regression: gating that on
+   * `callerSessionId` instead 403s ordinary dashboard users, because
+   * `resolveSupabaseAuth` puts the SUPABASE LOGIN session id in that field for
+   * every signed-in human. Hence the separate `boundCredentialSessionId`.
+   */
+  const BOUND_AGENT = {
+    origin: 'interactive',
+    sessionId: 'trigger-session-b',
+    callerSessionId: 'agent-session-a',
+    boundCredentialSessionId: 'agent-session-a',
+  };
+  /** A signed-in human. `callerSessionId` is their Supabase LOGIN session id —
+   *  non-null — while the agent binding is null. */
+  const BROWSER_MANAGER = {
+    origin: 'interactive',
+    sessionId: 'trigger-session-b',
+    callerSessionId: 'supabase-login-session-id',
+    boundCredentialSessionId: null,
+  };
+
+  test('a session-bound agent token does NOT get the manager override', () => {
+    expect(isProjectSessionVisibleTo(
+      'private', serviceAccount, [], { userId: ALICE, groupIds: [] }, BOUND_AGENT,
+      { metadata, canManageProject: true },
+    )).toBe(false);
+  });
+
+  test('an unbound browser manager STILL gets the override, Supabase session id and all', () => {
+    // The case Strix's suggested diff broke. A non-null `callerSessionId` is
+    // the normal state for a logged-in human, so it can never mean "an agent".
+    expect(isProjectSessionVisibleTo(
+      'private', serviceAccount, [], { userId: ALICE, groupIds: [] }, BROWSER_MANAGER,
+      { metadata, canManageProject: true },
+    )).toBe(true);
+  });
+
+  test('the owner still sees their own session, bound or not', () => {
+    expect(isProjectSessionVisibleTo(
+      'private', ALICE, [], { userId: ALICE, groupIds: [] }, BOUND_AGENT,
+      { metadata, canManageProject: false },
+    )).toBe(true);
+    expect(isProjectSessionVisibleTo(
+      'private', ALICE, [], { userId: ALICE, groupIds: [] }, BROWSER_MANAGER,
+      { metadata, canManageProject: false },
+    )).toBe(true);
+  });
+
+  test('a bound agent keeps what stored visibility already granted it', () => {
+    // Losing the override must not cost it project-wide sessions or an
+    // explicit grant — it only stops the manager shortcut.
+    expect(isProjectSessionVisibleTo(
+      'project', serviceAccount, [], { userId: ALICE, groupIds: [] }, BOUND_AGENT,
+      { metadata, canManageProject: true },
+    )).toBe(true);
+    expect(isProjectSessionVisibleTo(
+      'restricted', serviceAccount,
+      [{ principalType: 'member', principalId: ALICE }],
+      { userId: ALICE, groupIds: [] }, BOUND_AGENT,
+      { metadata, canManageProject: true },
+    )).toBe(true);
+  });
+
   test('manager access never bypasses backend sibling-session isolation', () => {
     expect(isProjectSessionVisibleTo(
       'private', serviceAccount, [], { userId: ALICE, groupIds: [] },
-      { origin: 'backend', sessionId: 'trigger-session-b', callerSessionId: 'trigger-session-a' },
+      {
+        origin: 'backend',
+        sessionId: 'trigger-session-b',
+        callerSessionId: 'trigger-session-a',
+        boundCredentialSessionId: 'trigger-session-a',
+      },
       { metadata, canManageProject: true },
     )).toBe(false);
   });
@@ -359,6 +442,7 @@ describe('KaaB: sharing is not exempt from the isolation narrowing', () => {
         origin: 'backend',
         sessionId: 'session-of-end-user-b',
         callerSessionId: 'session-of-end-user-a',
+        boundCredentialSessionId: 'session-of-end-user-a',
       }),
     ).toBe(false);
   });
@@ -369,6 +453,7 @@ describe('KaaB: sharing is not exempt from the isolation narrowing', () => {
         origin: 'backend',
         sessionId: 'session-a',
         callerSessionId: 'session-a',
+        boundCredentialSessionId: 'session-a',
       }),
     ).toBe(true);
   });
@@ -379,6 +464,7 @@ describe('KaaB: sharing is not exempt from the isolation narrowing', () => {
         origin: 'user',
         sessionId: 'private-session',
         callerSessionId: null,
+        boundCredentialSessionId: null,
       }),
     ).toBe(true);
   });
@@ -389,6 +475,7 @@ describe('KaaB: sharing is not exempt from the isolation narrowing', () => {
         origin: 'backend',
         sessionId: 'session-of-end-user-b',
         callerSessionId: 'session-of-end-user-a',
+        boundCredentialSessionId: 'session-of-end-user-a',
       }),
     ).toBe(false);
   });

@@ -1,5 +1,9 @@
 import { createHash } from 'node:crypto';
-import type { OAuth2ApplicationInput } from '@kortix/api-contract';
+import type {
+  OAuth2ApplicationInput,
+  OAuth2ClientRegistrationInput,
+  OAuth2ResourceDiscovery,
+} from '@kortix/api-contract';
 import {
   connectorConnections,
   connectors,
@@ -15,12 +19,15 @@ import {
 import { decryptProjectSecret, encryptProjectSecret } from '../projects/secrets';
 import { db } from '../shared/db';
 import { isUniqueViolation } from '../shared/postgres-errors';
+import { config } from '../config';
 import { upsertConnectionCredential } from './credentials';
+import { nativeOAuth2CallbackUrl } from './oauth2-callback-url';
 import {
   createStoredDelegatedCredential,
   parseDelegatedCredential,
 } from './oauth2-delegated';
 import {
+  type OAuth2LifecycleRuntime,
   buildOAuth2AuthorizationRequest,
   discoverOAuth2Metadata,
   exchangeOAuth2AuthorizationCode,
@@ -28,6 +35,13 @@ import {
   revokeOAuth2Token,
   startOAuth2DeviceAuthorization,
 } from './oauth2-lifecycle';
+import { validateAuthorizationIssuer } from './oauth2-issuer';
+import { oauthCompletionRematerializeInput } from './oauth2-rematerialize';
+import { registerOAuth2Client } from './oauth2-registration';
+import {
+  type ProtectedResourceProvider,
+  discoverProtectedResourceOAuth2,
+} from './oauth2-resource-discovery';
 
 interface ConnectionIdentity {
   accountId: string;
@@ -80,6 +94,42 @@ async function authorizationCanCompleteOAuth(
   });
 }
 
+/**
+ * Re-fetch the connector catalog now that this connection HAS a credential.
+ * Fire-and-forget: the OAuth flow has already succeeded, and a catalog refetch
+ * that fails must not turn a completed authorization into an error. The row's
+ * own `status` still records whatever the refetch found.
+ */
+async function rematerializeAfterOAuthCompletion(connectionId: string): Promise<void> {
+  try {
+    const [row] = await db
+      .select({
+        accountId: connectorConnections.accountId,
+        projectId: connectorConnections.projectId,
+        connectorId: connectorConnections.connectorId,
+        ownerType: connectorConnections.ownerType,
+        isDefault: connectorConnections.isDefault,
+        providerType: connectors.providerType,
+      })
+      .from(connectorConnections)
+      .innerJoin(connectors, eq(connectors.connectorId, connectorConnections.connectorId))
+      .where(eq(connectorConnections.connectionId, connectionId))
+      .limit(1);
+    if (!row) return;
+    const input = oauthCompletionRematerializeInput(row);
+    if (!input) return;
+    // Imported lazily: sync.ts pulls in the whole materialization graph, and
+    // this module is on the OAuth request path.
+    const { rematerializeCatalogAfterCredentialUpdate } = await import('./sync');
+    await rematerializeCatalogAfterCredentialUpdate(input);
+  } catch (error) {
+    console.warn('[connector] OAuth catalog rematerialize failed', {
+      connectionId,
+      err: (error as Error).message,
+    });
+  }
+}
+
 export async function saveOAuth2Application(
   identity: ConnectionIdentity,
   application: OAuth2ApplicationInput,
@@ -130,12 +180,128 @@ export async function loadOAuth2Application(connectionId: string): Promise<{
 }
 
 export function redactOAuth2Application(application: OAuth2ApplicationInput) {
-  const { client_secret, private_key, ...view } = application;
+  const { client_secret, private_key, registration_access_token, ...view } = application;
   return {
     ...view,
     has_client_secret: !!client_secret,
     has_private_key: !!private_key,
   };
+}
+
+/**
+ * The URL a connector exposes as its protected resource: the MCP server URL,
+ * an HTTP connector's base URL, a GraphQL endpoint. Null for providers with no
+ * single URL (pipedream, channel, computer, openapi without a server).
+ */
+export function connectorProtectedResource(
+  providerType: string,
+  config: Record<string, unknown>,
+): { url: string; provider: ProtectedResourceProvider } | null {
+  const pick = (key: string) =>
+    typeof config[key] === 'string' && (config[key] as string).trim()
+      ? (config[key] as string).trim()
+      : null;
+  switch (providerType) {
+    case 'mcp': {
+      const url = pick('url');
+      return url ? { url, provider: 'mcp' } : null;
+    }
+    case 'http': {
+      const url = pick('baseUrl') ?? pick('base_url');
+      return url ? { url, provider: 'http' } : null;
+    }
+    case 'graphql': {
+      const url = pick('endpoint');
+      return url ? { url, provider: 'graphql' } : null;
+    }
+    case 'openapi': {
+      const url = pick('server');
+      return url ? { url, provider: 'http' } : null;
+    }
+    default:
+      return null;
+  }
+}
+
+/** Run the MCP authorization discovery chain for one connection's connector. */
+export async function discoverConnectionOAuth2Resource(
+  input: { connectionId: string; resourceUrl?: string },
+  runtime: OAuth2LifecycleRuntime = {},
+): Promise<OAuth2ResourceDiscovery> {
+  const [row] = await db
+    .select({ providerType: connectors.providerType, config: connectors.config })
+    .from(connectorConnections)
+    .innerJoin(connectors, eq(connectors.connectorId, connectorConnections.connectorId))
+    .where(eq(connectorConnections.connectionId, input.connectionId))
+    .limit(1);
+  if (!row) throw new Error('Connection not found');
+  const own = connectorProtectedResource(
+    row.providerType,
+    (row.config ?? {}) as Record<string, unknown>,
+  );
+  const target = input.resourceUrl
+    ? { url: input.resourceUrl, provider: own?.provider ?? ('http' as const) }
+    : own;
+  if (!target) {
+    throw new Error('This connector has no server URL to discover authorization from');
+  }
+  return discoverProtectedResourceOAuth2(
+    { resourceUrl: target.url, provider: target.provider },
+    runtime,
+  );
+}
+
+/**
+ * Register Kortix as an OAuth2 client (RFC 7591) at the discovered
+ * registration endpoint and save the issued client as the connection's
+ * application. The callback URL is the one public redirect URI Kortix owns.
+ */
+export async function registerConnectionOAuth2Client(
+  input: {
+    identity: ConnectionIdentity;
+    registration: OAuth2ClientRegistrationInput;
+    callbackUrl: string;
+    createdBy: string;
+  },
+  runtime: OAuth2LifecycleRuntime = {},
+): Promise<OAuth2ApplicationInput> {
+  const { registration } = input;
+  const issued = await registerOAuth2Client(
+    {
+      registrationEndpoint: registration.registration_endpoint,
+      redirectUri: input.callbackUrl,
+      scopes: registration.scopes,
+      tokenEndpointAuthMethodsSupported: registration.token_endpoint_auth_methods_supported,
+      clientName: registration.client_name,
+    },
+    runtime,
+  );
+  const application: OAuth2ApplicationInput = {
+    ...(registration.issuer ? { issuer: registration.issuer } : {}),
+    ...(registration.discovery_url ? { discovery_url: registration.discovery_url } : {}),
+    ...(registration.authorization_url
+      ? { authorization_url: registration.authorization_url }
+      : {}),
+    ...(registration.token_url ? { token_url: registration.token_url } : {}),
+    ...(registration.device_authorization_url
+      ? { device_authorization_url: registration.device_authorization_url }
+      : {}),
+    ...(registration.revocation_url ? { revocation_url: registration.revocation_url } : {}),
+    client_id: issued.client_id,
+    token_endpoint_auth_method: issued.token_endpoint_auth_method,
+    ...(issued.client_secret ? { client_secret: issued.client_secret } : {}),
+    ...(registration.scopes?.length ? { scopes: registration.scopes } : {}),
+    ...(registration.resource ? { resource: registration.resource } : {}),
+    ...(registration.audience ? { audience: registration.audience } : {}),
+    ...(issued.registration_client_uri
+      ? { registration_client_uri: issued.registration_client_uri }
+      : {}),
+    ...(issued.registration_access_token
+      ? { registration_access_token: issued.registration_access_token }
+      : {}),
+  };
+  await saveOAuth2Application(input.identity, application, input.createdBy);
+  return application;
 }
 
 export async function discoverConfiguredOAuth2Application(
@@ -180,6 +346,8 @@ export async function completeAuthorizationCodeSession(input: {
   code?: string;
   providerError?: string;
   callbackUrl: string;
+  /** RFC 9207 `iss` from the authorization response, when the server sent one. */
+  issuer?: string;
 }): Promise<{ redirectUri: string | null; ok: boolean; errorCode?: string }> {
   const claimed = await db.transaction(async (tx) => {
     const [row] = await tx
@@ -225,6 +393,24 @@ export async function completeAuthorizationCodeSession(input: {
   try {
     const loaded = await loadOAuth2Application(claimed.connectionId);
     if (!loaded || !claimed.pkceVerifierEnc) throw new Error('OAuth2 session is incomplete');
+    // RFC 9207 / SEP-2468: reject a code minted by a different authorization
+    // server BEFORE redeeming it. This is the authorization-code-injection
+    // defence and it has to happen ahead of the token request.
+    const issuerVerdict = validateAuthorizationIssuer({
+      received: input.issuer,
+      recorded: loaded.application.issuer,
+    });
+    if (!issuerVerdict.ok) {
+      await db
+        .update(connectorConnections)
+        .set({ status: 'error', updatedAt: new Date() })
+        .where(eq(connectorConnections.connectionId, claimed.connectionId));
+      return {
+        redirectUri: claimed.errorRedirectUri,
+        ok: false,
+        errorCode: issuerVerdict.errorCode,
+      };
+    }
     const token = await exchangeOAuth2AuthorizationCode(
       loaded.application,
       {
@@ -241,6 +427,9 @@ export async function completeAuthorizationCodeSession(input: {
       kind: 'oauth2_delegated',
       createdBy: claimed.initiatedBy,
     });
+    // The catalog was last fetched WITHOUT this credential, so the connector is
+    // very likely sitting on a 401. Refetch before the user sees the result.
+    await rematerializeAfterOAuthCompletion(loaded.connectionId);
     return { redirectUri: claimed.successRedirectUri, ok: true };
   } catch (error) {
     await db
@@ -360,6 +549,7 @@ export async function pollDeviceAuthorizationSession(input: {
       kind: 'oauth2_delegated',
       createdBy: session.initiatedBy,
     });
+    await rematerializeAfterOAuthCompletion(loaded.connectionId);
     await tx
       .update(connectionOAuthSessions)
       .set({ status: 'active', consumedAt: new Date(), updatedAt: new Date() })
@@ -446,12 +636,13 @@ export async function handleNativeOAuth2Callback(requestUrl: string) {
   if (!state || state.length > 1024) {
     return { status: 400 as const, body: 'Invalid OAuth2 state' };
   }
-  const callback = new URL('/v1/connectors/oauth2/callback', requestUrl).href;
+  const callback = nativeOAuth2CallbackUrl(requestUrl, config.KORTIX_URL);
   const result = await completeAuthorizationCodeSession({
     stateHash: createHash('sha256').update(state).digest('hex'),
     code: url.searchParams.get('code') ?? undefined,
     providerError: url.searchParams.get('error') ?? undefined,
     callbackUrl: callback,
+    issuer: url.searchParams.get('iss') ?? undefined,
   });
   if (!result.redirectUri) {
     return { status: 400 as const, body: 'OAuth2 authorization failed' };

@@ -34,6 +34,9 @@ import {
 } from './helpers';
 import type { NormalizeDiagnosticPaths, OpenCodeEvent } from './types';
 
+/** See `createEventHandler`'s `userPartsGraceMs`. */
+export const USER_PARTS_GRACE_MS = 1_500;
+
 /** Builds the SSE event handler; all closure dependencies are injected. */
 export function createEventHandler(deps: {
   queryClient: QueryClient;
@@ -48,6 +51,14 @@ export function createEventHandler(deps: {
   markSessionAbortedLocally: RefObject<(sessionID: string, message?: string) => void>;
   fetchLspDiagnosticsDebounced: RefObject<() => void>;
   reconcileSessionTail?: (sessionID: string, reason: SessionSyncReason) => Promise<void>;
+  /**
+   * How long a USER `message.updated` may sit with no parts before the tail is
+   * re-read. The runtime emits the info frame and the text part separately;
+   * lose the part (a stream reconnect during the boot hand-off) and the
+   * transcript shows an empty bubble until a reload. Injected so tests can
+   * make it immediate.
+   */
+  userPartsGraceMs?: number;
   /** The route-scoped project this SSE connection belongs to — see
    *  `refetchKortixSessionMirrors`'s doc comment for why this can't default
    *  to "every project". Optional only so existing test harnesses that don't
@@ -68,6 +79,7 @@ export function createEventHandler(deps: {
     markSessionAbortedLocally,
     fetchLspDiagnosticsDebounced,
     projectId = null,
+    userPartsGraceMs = USER_PARTS_GRACE_MS,
   } = deps;
   const reconcileTail =
     deps.reconcileSessionTail ??
@@ -103,7 +115,26 @@ export function createEventHandler(deps: {
 
     switch (event.type) {
       // ---- Message events — handled by sync store only ----
-      case 'message.updated':
+      case 'message.updated': {
+        // A user message is two frames — the info, then its text part. If the
+        // second never lands this tab renders an empty bubble for good; a
+        // tail re-read after a short grace repairs it from the server.
+        const info = (
+          event.properties as { info?: { id?: string; role?: string; sessionID?: string } }
+        ).info;
+        const sessionID = info?.sessionID ?? (event.properties as { sessionID?: string }).sessionID;
+        if (info?.role === 'user' && info.id && sessionID) {
+          const messageID = info.id;
+          setTimeout(() => {
+            const state = useSyncStore.getState();
+            const stillListed = state.messages[sessionID]?.some((m) => m.id === messageID);
+            if (stillListed && !(state.parts[messageID]?.length ?? 0)) {
+              void reconcileTail(sessionID, 'sse-gap');
+            }
+          }, userPartsGraceMs);
+        }
+        break;
+      }
       case 'message.removed':
         break;
 

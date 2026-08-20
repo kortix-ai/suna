@@ -2,6 +2,10 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 
 const accounts = { __table: 'accounts', accountId: 'accountId' };
 const accountMembers = { __table: 'accountMembers', accountId: 'accountId', userId: 'userId' };
+// The IDENTITY table `account_members` became a view over. `mock.module`
+// replaces `@kortix/db` WHOLESALE, so a missing name is a SyntaxError in every
+// importer — it has to be declared even where this suite never reads it.
+const accountMemberships = { __table: 'accountMemberships', userId: 'userId', accountId: 'accountId' };
 const billingCustomers = { __table: 'billingCustomers', accountId: 'accountId', id: 'id', email: 'email', active: 'active', provider: 'provider' };
 const creditAccounts = { __table: 'creditAccounts', accountId: 'accountId', tier: 'tier', stripeSubscriptionId: 'stripeSubscriptionId' };
 // Transitively imported by accounts/core/{app,members}.ts (pulled in via the app
@@ -67,6 +71,7 @@ mock.module('drizzle-orm', () => ({
   and: (...parts: unknown[]) => ({ op: 'and', parts }),
   or: (...parts: unknown[]) => ({ op: 'or', parts }),
   isNull: (column: string) => ({ op: 'isNull', column }),
+  isNotNull: (column: string) => ({ op: 'isNotNull', column }),
   inArray: (column: string, values: unknown[]) => ({ op: 'inArray', column, values }),
   gte: (column: string, value: unknown) => ({ op: 'gte', column, value }),
   lte: (column: string, value: unknown) => ({ op: 'lte', column, value }),
@@ -76,15 +81,28 @@ mock.module('drizzle-orm', () => ({
   sql: (...args: unknown[]) => ({ op: 'sql', args }),
 }));
 
+// `mock.module` replaces the module WHOLESALE, so every table this file's graph
+// touches has to be declared — `role_assignments` and `iam_roles` because the
+// account role is read from the canonical store now, `audit_events` because
+// `assignRole` writes one.
 mock.module('@kortix/db', () => ({
   accounts,
   accountMembers,
+  accountMemberships,
   billingCustomers,
   creditAccounts,
   accountInvitations,
   accountGroups,
   accountGroupMembers,
   projectMembers,
+  roleAssignments: {},
+  iamRoles: {},
+  iamRoleActions: {},
+  auditEvents: {},
+  serviceAccounts: {},
+  accountTokens: {},
+  objectPolicies: {},
+  permissions: {},
 }));
 
 mock.module('../shared/db', () => ({ db: fakeDb }));

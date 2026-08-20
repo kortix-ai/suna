@@ -56,7 +56,7 @@ projectsApp.openapi(
       projectId,
       PROJECT_ACTIONS.PROJECT_SESSION_READ,
     );
-    const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c));
+    const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c), callerKortixSessionId(c));
     if (!visible) return c.json({ error: 'Not found' }, 404);
     let grant: Awaited<ReturnType<typeof resolveSessionAgentGrant>>;
     try {
@@ -145,7 +145,7 @@ projectsApp.openapi(
       PROJECT_ACTIONS.PROJECT_SESSION_STOP,
     );
     assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_STOP);
-    const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c));
+    const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c), callerKortixSessionId(c));
     if (!visible) return c.json({ error: 'Not found' }, 404);
     // Seeing a session is not permission to re-scope it — same gate as the model
     // change, for the same reason.
@@ -624,7 +624,7 @@ projectsApp.openapi(
     // session's in-flight turn. Scoped agent tokens therefore need the same
     // destructive capability as the stop route (no-op for human/PAT tokens).
     assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_STOP);
-    const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null);
+    const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
     if (!visible) return c.json({ error: 'Not found' }, 404);
     // Seeing a session is not permission to mutate it: visibility 'project'
     // makes it readable by every member, but changing the model restarts

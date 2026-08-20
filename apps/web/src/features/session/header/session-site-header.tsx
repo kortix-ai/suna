@@ -134,7 +134,13 @@ export function SessionSiteHeader({
     ...contract('inventory'),
   });
   const projectSession = projectSessions?.find((s) => s.session_id === projectSessionId) ?? null;
-  const canShare = !!projectSession && projectSession.can_manage_sharing !== false;
+  // Two verdicts, deliberately not one flag. `can_manage_sharing` is the
+  // owner's right to change who can open the session; `can_manage_lifecycle`
+  // is the manager-tier right to stop/restart/reload it. Reading the first for
+  // a lifecycle control would hide Stop and Reload from every project manager
+  // who did not create the session.
+  const canManageSharing = !!projectSession && projectSession.can_manage_sharing !== false;
+  const canManageLifecycle = !!projectSession && projectSession.can_manage_lifecycle !== false;
 
   /**
    * The name shown in the header, matched to the sidebar row.
@@ -175,12 +181,12 @@ export function SessionSiteHeader({
       errorToast(err instanceof Error ? err.message : 'Failed to stop session');
     },
   });
-  const canStop = !!projectSession && projectSession.status === 'running' && canShare;
+  const canStop = !!projectSession && projectSession.status === 'running' && canManageLifecycle;
 
   // Hoisted so the chip and the ⋯ item share one pending state and one confirm
-  // dialog. `canShare` is the client mirror of the reload route's own gate
-  // (session owner or project manager) — the IAM leaf both member and editor
-  // hold would still 403 here.
+  // dialog. `canManageLifecycle` is the client mirror of the reload route's own
+  // gate (session owner or project manager) — the IAM leaf both member and
+  // editor hold would still 403 here.
   const reloadConfig = useReloadSessionConfig(projectId!, projectSessionId!);
 
   // Mobile-only action-panel toggle — see its render site below.
@@ -196,12 +202,14 @@ export function SessionSiteHeader({
             <PencilSimpleIcon />
             {tI18nHardcoded.raw('autoFeaturesSessionHeaderSessionSiteHeaderJsxTextRename41731a53')}
           </DropdownMenuItem>
-          {canShare && (
-            <DropdownMenuItem className="cursor-pointer" onClick={() => setShareOpen(true)}>
-              <Share />
-              {tI18nHardcoded.raw('autoFeaturesSessionHeaderSessionSiteHeaderJsxTextShared7d34d4f')}
-            </DropdownMenuItem>
-          )}
+          {/* Shown to everyone in the session: the owner changes access here,
+              everyone else reads who has it. */}
+          <DropdownMenuItem className="cursor-pointer" onClick={() => setShareOpen(true)}>
+            <Share />
+            {canManageSharing
+              ? tI18nHardcoded.raw('autoFeaturesSessionHeaderSessionSiteHeaderJsxTextShared7d34d4f')
+              : 'Who has access'}
+          </DropdownMenuItem>
 
           <DropdownMenuSeparator />
 
@@ -213,7 +221,7 @@ export function SessionSiteHeader({
             {restartMutation.isPending ? <Loading /> : <RotateCcw />}
             Restart
           </DropdownMenuItem>
-          {canShare && (
+          {canManageLifecycle && (
             <DropdownMenuItem
               className="cursor-pointer"
               disabled={reloadConfig.isPending}
@@ -358,7 +366,7 @@ export function SessionSiteHeader({
                 reload={reloadConfig.reload}
                 isPending={reloadConfig.isPending}
                 phase={reloadConfig.phase}
-                canReload={canShare}
+                canReload={canManageLifecycle}
               />
             )}
 

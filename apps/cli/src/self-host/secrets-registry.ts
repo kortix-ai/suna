@@ -89,6 +89,13 @@ export const SECRET_DEFS: SecretDef[] = [
   { key: 'LOGFLARE_PRIVATE_ACCESS_TOKEN', category: 'database', kind: 'generated', required: true, rotatable: false },
 
   // Auth / Email / SMTP
+  // EMAIL_URL is THE email setting: one connection string that configures both
+  // product email (kortix-api) and auth email (GoTrue, via the send-email
+  // hook). The SMTP_* quartet below is the pre-EMAIL_URL surface, still read by
+  // GoTrue directly when no EMAIL_URL is set.
+  { key: 'EMAIL_URL', category: 'auth_email', kind: 'operator', required: false },
+  { key: 'EMAIL_FROM', category: 'auth_email', kind: 'operator', required: false },
+  { key: 'AUTH_EMAIL_HOOK_SECRET', category: 'auth_email', kind: 'generated', required: false, rotatable: true },
   { key: 'SMTP_HOST', category: 'auth_email', kind: 'operator', required: false },
   { key: 'SMTP_PORT', category: 'auth_email', kind: 'operator', required: false },
   { key: 'SMTP_USER', category: 'auth_email', kind: 'operator', required: false },
@@ -241,7 +248,13 @@ export const KEY_SERVICE_MAP: Record<string, readonly string[]> = {
   LOGFLARE_PUBLIC_ACCESS_TOKEN: ['supabase-analytics', 'supabase-vector'],
   LOGFLARE_PRIVATE_ACCESS_TOKEN: ['supabase-studio', 'supabase-analytics'],
 
-  // Auth / Email / SMTP — all consumed by GoTrue only.
+  // Auth / Email / SMTP.
+  // EMAIL_URL / EMAIL_FROM reach BOTH halves: kortix-api sends with them, and
+  // GoTrue's send-email hook wiring is derived from them.
+  EMAIL_URL: ['kortix-api', 'supabase-auth'],
+  EMAIL_FROM: ['kortix-api'],
+  AUTH_EMAIL_HOOK_SECRET: ['kortix-api', 'supabase-auth'],
+  // The rest are consumed by GoTrue only.
   SMTP_HOST: ['supabase-auth'],
   SMTP_PORT: ['supabase-auth'],
   SMTP_USER: ['supabase-auth'],
@@ -290,6 +303,13 @@ export const KEY_SERVICE_MAP: Record<string, readonly string[]> = {
   // Reachability
   CLOUDFLARE_TUNNEL_TOKEN: ['cloudflared'],
   CLOUDFLARE_TUNNEL_HOSTNAME: ['cloudflared'],
+
+  // Apps hosting — kortix-api reads both to derive/serve App hostnames, and
+  // caddy must restart to reload the rewritten Caddyfile (the wildcard
+  // App-serving block is added/removed by KORTIX_APPS_BASE_DOMAIN; Caddy does
+  // not hot-reload a bind-mounted config on its own).
+  KORTIX_APPS_BASE_DOMAIN: ['kortix-api', 'caddy'],
+  KORTIX_APPS_ALLOW_DIRECT_EDGE: ['kortix-api'],
 
   // Internal tokens
   GATEWAY_INTERNAL_TOKEN: ['kortix-api', 'llm-gateway'],

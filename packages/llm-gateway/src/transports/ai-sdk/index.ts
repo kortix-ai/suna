@@ -12,6 +12,9 @@ import {
 import { buildAiSdkArgs } from './request';
 import { openAiJsonFromResult, openAiSseFromFullStream } from './sse';
 
+export { applyNativeGatewayShaping } from './request';
+export type { NativeShapableCall } from './request';
+
 export type { AiSdkFetch } from './model';
 export {
   aiSdkFamilyFor,
@@ -20,6 +23,27 @@ export {
   needsResponsesApi,
   resolveAiModel,
 } from './model';
+
+// AI-SDK-NATIVE (Vercel "AI Gateway" protocol) egress + ingress — Phase 1,
+// additive alongside the OpenAI-compat path. See sse-native.ts / index.ts flag.
+export {
+  aiGatewaySseFromFullStream,
+  billingUsageFromWire,
+  fullStreamPartHasContent,
+  wireUsageFromLanguageModelUsage,
+} from './sse-native';
+export type { FullStreamPart, NativeBillingUsage, NativeStreamCtx, WireUsage } from './sse-native';
+export {
+  AI_GATEWAY_PROTOCOL_VERSION,
+  LanguageModelRequestError,
+  decodeLanguageModelHeaders,
+  decodeLanguageModelRequest,
+} from './language-model-request';
+export type {
+  DecodedLanguageModelRequest,
+  LanguageModelHeaders,
+  LanguageModelSpecVersion,
+} from './language-model-request';
 
 function jsonResponse(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
@@ -266,6 +290,11 @@ export async function callUpstreamViaAiSdk(
     // it per-candidate from the catalog, so a failover onto a different upstream
     // carries ITS pin, not the previous candidate's.
     bodyExtras: descriptor.bodyExtras,
+    // The UPSTREAM model id — gates the bedrock adapter's Claude-Converse-only
+    // primitives (cachePoint, adaptive reasoningConfig). Same signal
+    // clampMaxOutputTokensForBedrock (below) keys the Nova clamp off of, so a
+    // non-Claude Bedrock model (global.openai.*, Nova) never gets Claude fields.
+    resolvedModel: descriptor.resolvedModel,
   });
   const clientWantsStream = body.stream === true;
   const ctx = {

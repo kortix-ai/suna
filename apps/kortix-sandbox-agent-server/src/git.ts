@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { mkdir, readdir, rename, rm, stat } from 'node:fs/promises'
+import { mkdir, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
 
 import type { Config } from './config'
@@ -579,12 +579,6 @@ async function checkoutLocalSessionBranch(target: string, branch: string): Promi
   // session made is force-reset away. `git checkout -B` exits 0 and prints only
   // "Switched to and reset branch", so nothing surfaces; the commits survive
   // solely in a reflog the user is never told about.
-  //
-  // The guard that was meant to prevent re-materializing the wrong content
-  // (`mismatched`, keyed on cfg.sessionFresh + cfg.baseSha) cannot help here:
-  // KORTIX_SESSION_FRESH and KORTIX_BASE_SHA have no producer left in apps/api,
-  // so it is always false and this line always runs.
-  //
   // So: only CREATE. If the ref already exists, a plain checkout moves HEAD to
   // it and cannot move the ref.
   const exists = await execGit([
@@ -714,7 +708,6 @@ export async function materializeRepo(cfg: Config): Promise<void> {
     await clearDirContents(target)
   }
   {
-    const cloneCredential = await resolveCloneCredential(cfg)
     // Scaffold fast path: the image bakes the canonical starter repo at
     // /opt/kortix/scaffold.git whose root commit is SHARED with every project
     // seeded from the starter (deterministic root — comp git-backends/seed.ts).
@@ -724,16 +717,24 @@ export async function materializeRepo(cfg: Config): Promise<void> {
     // dev tunnel, 2026-06-13). Imported repos / other starters share no
     // ancestor → the fetch degrades to a full pack (same as a clone); ANY
     // failure falls through to the battle-tested clone path below.
-    if (await tryScaffoldDeltaFetch(cfg, target, base, cloneCredential)) {
+    if (await tryScaffoldDeltaFetch(cfg, target, base)) {
       if (cfg.branchName) {
         // Fresh session → branch == base, create it LOCALLY (zero network).
         // Restart/resume → the remote branch may carry the agent's commits.
         if (cfg.sessionFresh) await checkoutLocalSessionBranch(target, cfg.branchName)
-        else await checkoutSessionBranch(cfg, target, cfg.branchName, cloneCredential)
+        else {
+          await checkoutSessionBranch(
+            cfg,
+            target,
+            cfg.branchName,
+            await resolveCloneCredential(cfg),
+          )
+        }
       }
       await configureRepoGitIdentity(cfg, target)
       return
     }
+    const cloneCredential = await resolveCloneCredential(cfg)
     const tmpTarget = await createStagePath(target, 'clone')
     await rm(tmpTarget, { recursive: true, force: true })
     logger.info('[git] cloning repo', {
@@ -884,7 +885,12 @@ export function scheduleHistoryBackfill(cfg: Config, target: string): void {
   })()
 }
 
-const SCAFFOLD_REPO_PATH = '/opt/kortix/scaffold.git'
+const DEFAULT_SCAFFOLD_REPO_PATH = '/opt/kortix/scaffold.git'
+let scaffoldRepoPath = DEFAULT_SCAFFOLD_REPO_PATH
+
+export function __setScaffoldRepoPathForTests(path?: string): void {
+  scaffoldRepoPath = path ?? DEFAULT_SCAFFOLD_REPO_PATH
+}
 
 /**
  * Seed-only: materialize the image-baked scaffold at `target` with ZERO network,
@@ -898,12 +904,12 @@ const SCAFFOLD_REPO_PATH = '/opt/kortix/scaffold.git'
  * working tree matches what a fresh session expects.
  */
 export async function materializeScaffoldSeed(target: string, base: string): Promise<boolean> {
-  if (!existsSync(SCAFFOLD_REPO_PATH)) return false
+  if (!existsSync(scaffoldRepoPath)) return false
   const tmp = await createStagePath(target, 'seed')
   const t0 = Date.now()
   try {
     await rm(tmp, { recursive: true, force: true })
-    const cloned = await execGit(['clone', '-q', SCAFFOLD_REPO_PATH, tmp])
+    const cloned = await execGit(['clone', '-q', scaffoldRepoPath, tmp])
     if (cloned.code !== 0) throw new Error(`seed scaffold clone: ${cloned.stderr}`)
     const co = await execGit(['-C', tmp, 'checkout', '-q', '-B', base, 'HEAD'])
     if (co.code !== 0) throw new Error(`seed checkout base: ${co.stderr}`)
@@ -959,14 +965,13 @@ async function tryScaffoldDeltaFetch(
   cfg: Config,
   target: string,
   base: string,
-  cloneCredential: CloneCredential | undefined,
 ): Promise<boolean> {
-  if (!existsSync(SCAFFOLD_REPO_PATH) || !cfg.repoUrl) return false
+  if (!existsSync(scaffoldRepoPath) || !cfg.repoUrl) return false
   const tmp = await createStagePath(target, 'scaffold')
   const t0 = Date.now()
   try {
     await rm(tmp, { recursive: true, force: true })
-    const local = await execGit(['clone', '-q', SCAFFOLD_REPO_PATH, tmp])
+    const local = await execGit(['clone', '-q', scaffoldRepoPath, tmp])
     if (local.code !== 0) throw new Error(`local scaffold clone: ${local.stderr}`)
     const su = await execGit(['-C', tmp, 'remote', 'set-url', 'origin', cfg.repoUrl])
     if (su.code !== 0) throw new Error(`set-url: ${su.stderr}`)
@@ -985,6 +990,21 @@ async function tryScaffoldDeltaFetch(
       logger.info('[git] repo materialized via scaffold (zero-network: baked scaffold == base tip)', { ms: Date.now() - t0, base, head: localHead })
       return true
     }
+    if (
+      cfg.sessionFresh &&
+      cfg.baseSha &&
+      cfg.gitDeltaBundleBase64 &&
+      await applyFastBootDeltaBundle(tmp, base, cfg.baseSha, cfg.gitDeltaBundleBase64)
+    ) {
+      await swapStageIntoTarget(tmp, target)
+      logger.info('[git] repo materialized via scaffold (zero-network: API delta bundle)', {
+        ms: Date.now() - t0,
+        base,
+        head: cfg.baseSha,
+      })
+      return true
+    }
+    const cloneCredential = await resolveCloneCredential(cfg)
     const fetched = await gitWithAuth(cloneCredential, cfg.repoUrl, [
       '-C', tmp,
       '-c', 'http.lowSpeedLimit=1000', '-c', 'http.lowSpeedTime=12',
@@ -1002,6 +1022,47 @@ async function tryScaffoldDeltaFetch(
     })
     await rm(tmp, { recursive: true, force: true }).catch(() => {})
     return false
+  }
+}
+
+const MAX_FAST_BOOT_GIT_BUNDLE_BASE64_BYTES = 24 * 1024
+
+/** Import a bounded API-generated Git bundle only when it resolves to baseSha. */
+async function applyFastBootDeltaBundle(
+  repoPath: string,
+  base: string,
+  baseSha: string,
+  bundleBase64: string,
+): Promise<boolean> {
+  if (!/^[0-9a-f]{40}$/i.test(baseSha)) return false
+  if (
+    bundleBase64.length === 0 ||
+    bundleBase64.length > MAX_FAST_BOOT_GIT_BUNDLE_BASE64_BYTES ||
+    bundleBase64.length % 4 !== 0 ||
+    !/^[A-Za-z0-9+/]+={0,2}$/.test(bundleBase64)
+  ) return false
+
+  const bytes = Buffer.from(bundleBase64, 'base64')
+  if (bytes.toString('base64') !== bundleBase64) return false
+  const bundlePath = join(repoPath, '.kortix-fast-boot.bundle')
+  try {
+    await writeFile(bundlePath, bytes, { mode: 0o600 })
+    const verified = await execGit(['-C', repoPath, 'bundle', 'verify', bundlePath])
+    if (verified.code !== 0) throw new Error(`bundle verify: ${verified.stderr}`)
+    const imported = await execGit(['-C', repoPath, 'bundle', 'unbundle', bundlePath])
+    if (imported.code !== 0) throw new Error(`bundle unbundle: ${imported.stderr}`)
+    const exists = await execGit(['-C', repoPath, 'cat-file', '-e', `${baseSha}^{commit}`])
+    if (exists.code !== 0) throw new Error('bundle does not contain the expected base commit')
+    const checkout = await execGit(['-C', repoPath, 'checkout', '-q', '-B', base, baseSha])
+    if (checkout.code !== 0) throw new Error(`checkout bundled base: ${checkout.stderr}`)
+    return true
+  } catch (error) {
+    logger.info('[git] API delta bundle unavailable; using authenticated fetch', {
+      error: error instanceof Error ? error.message.slice(0, 200) : String(error),
+    })
+    return false
+  } finally {
+    await rm(bundlePath, { force: true }).catch(() => {})
   }
 }
 

@@ -11,12 +11,14 @@ import {
   CommandPopoverContent,
   CommandPopoverTrigger,
 } from '@/components/ui/command';
+import Hint from '@/components/ui/hint';
 import { cn } from '@/lib/utils';
 import type { Agent } from '@kortix/sdk/react';
 import { capitalizeWords, isMetaAgentName } from '@kortix/shared';
 import { CaretDownIcon, CheckIcon, FolderSimpleIcon as MetaFolder } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useEffect, useMemo, useState } from 'react';
+import { composerSelectableAgents } from './composer-agent-access';
 
 /**
  * Agents on screen before the popover grows a search field.
@@ -35,21 +37,27 @@ export function AgentSelector({
   onSelect,
   disabled = false,
   triggerLabelClassName,
+  unavailableHint,
 }: {
   agents: Agent[];
   selectedAgent: string | null;
   onSelect: (agentName: string | null) => void;
   disabled?: boolean;
   triggerLabelClassName?: string;
+  /**
+   * Why there is nothing to pick — shown as the tooltip on the inert trigger.
+   *
+   * Set only for a roster that loaded EMPTY because this user holds no agent
+   * grant. An empty list with no hint is the ordinary not-loaded-yet state and
+   * says nothing, because there is nothing true to say yet.
+   */
+  unavailableHint?: string | null;
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
 
-  const primaryAgents = useMemo(
-    () => agents.filter((a) => !a.hidden && a.mode !== 'subagent'),
-    [agents],
-  );
+  const primaryAgents = useMemo(() => composerSelectableAgents(agents), [agents]);
 
   // A `flash` state, a `prevAgentRef` feeding it, two effects and a 400ms
   // timer used to live here. Nothing ever READ `flash` — it was written on
@@ -83,9 +91,16 @@ export function AgentSelector({
   // user's own query with it.
   const showSearch = primaryAgents.length >= SEARCH_MIN_AGENTS;
 
-  const currentAgent = primaryAgents.find((a) => a.name === selectedAgent) || primaryAgents[0];
-  const displayName = currentAgent?.name ? capitalizeWords(currentAgent.name) : 'Agent';
-  const metaSelected = isMetaAgentName(currentAgent?.name);
+  // The trigger names the agent that will RUN, which is `selectedAgent` even
+  // when the roster does not (yet) contain it: a session bound to `kortix`
+  // must read "Kortix" while the roster query is still in flight, not whatever
+  // happens to be first in someone else's list. The `primaryAgents[0]`
+  // fallback stays only for a truly unresolved selection (no name at all),
+  // matching the resolver's own first-accessible pre-selection.
+  const currentAgent = primaryAgents.find((a) => a.name === selectedAgent);
+  const displayedName = currentAgent?.name ?? selectedAgent ?? primaryAgents[0]?.name;
+  const displayName = displayedName ? capitalizeWords(displayedName) : 'Agent';
+  const metaSelected = isMetaAgentName(displayedName);
 
   /**
    * One agent: name, its type, its description, and a check when it is the
@@ -145,17 +160,60 @@ export function AgentSelector({
     );
   };
 
+  /**
+   * Nothing to pick from.
+   *
+   * The SAME trigger as the loaded state and as the model picker beside it —
+   * same variant, size, radius, label slot and caret — just inert and muted.
+   * It is deliberately not a wide pill, a banner, or an icon of its own: an
+   * empty picker is still a picker, and the composer's bottom rail is a row of
+   * sibling controls, not a place to put a notice. The reason lives in the
+   * tooltip, and on the send button's tooltip, which is where a user who wants
+   * it goes.
+   *
+   * The tooltip hangs off a `<span>` rather than the button: a disabled button
+   * takes no pointer events, so a `Hint` wrapped straight around it would never
+   * open — in exactly the state where its words matter.
+   */
+  if (primaryAgents.length === 0) {
+    const trigger = (
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        disabled
+        aria-label={unavailableHint ?? undefined}
+        className="text-muted-foreground rounded-lg"
+      >
+        <span className={cn('max-w-[100px] truncate', triggerLabelClassName)}>{displayName}</span>
+        <CaretDownIcon className="size-3" />
+      </Button>
+    );
+    if (!unavailableHint) return trigger;
+    return (
+      <Hint side="top" label={unavailableHint}>
+        <span className="inline-flex">{trigger}</span>
+      </Hint>
+    );
+  }
+
   return (
     <CommandPopover open={open} onOpenChange={(next) => setOpen(disabled ? false : next)}>
       <CommandPopoverTrigger>
-        <Button type="button" variant="ghost" size="sm" className="text-foreground/70 rounded-lg">
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          aria-label="Select agent"
+          className="text-foreground/70 rounded-lg"
+        >
           {metaSelected && <MetaFolder className="size-3.5 shrink-0" weight="fill" />}
           <span className={cn('max-w-[100px] truncate', triggerLabelClassName)}>{displayName}</span>
           <CaretDownIcon className={cn('size-3', open && 'rotate-180')} />
         </Button>
       </CommandPopoverTrigger>
 
-      <CommandPopoverContent side="top" align="start" sideOffset={8} className="w-[300px] ">
+      <CommandPopoverContent side="top" align="start" sideOffset={8} className="w-[300px]">
         {/*
           A search field over four agents is a control that costs a row of
           chrome to save nobody any time — the whole list is already on screen

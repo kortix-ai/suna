@@ -1,9 +1,7 @@
 import { expect, test } from '@playwright/test';
 
-import { loadEnv } from '../../src/core/env';
-import { createDatabaseProject, deleteDatabaseProject } from '../../src/fixtures/database-project';
-import { createLocalGitRepository, type LocalGitRepository } from '../../src/fixtures/local-git';
 import { createApiJsonClient } from '../helpers/http';
+import { type ManifestProject, createManifestProject } from '../helpers/manifest-project';
 import {
   createAuthUser,
   deleteAuthUser,
@@ -52,9 +50,11 @@ interface ResourceGrantsResponse {
  * fuller multi-agent case is the natural follow-up if that dimension ever
  * regresses independently.
  *
- * `createLocalGitRepository` seeds `kortix.yaml` with `agents:\n  kortix: {}`
- * (local-git.ts), so every project made through it already has a real
- * "kortix" agent to grant — no extra fixture needed.
+ * The project comes from `createManifestProject`, so its `kortix.yaml` really
+ * declares a "kortix" agent on both lanes: a local bare repo locally, a
+ * starter-seeded managed-git project against a deployed API. The agent
+ * checkboxes are read from that manifest, so a repo the API cannot fetch shows
+ * an empty picker instead of failing loudly.
  */
 test.describe('22 — Resource-grant multi-select', () => {
   test('granting one agent to two members in a single dialog creates two grants', async ({
@@ -72,11 +72,10 @@ test.describe('22 — Resource-grant multi-select', () => {
     const memberA = await createAuthUser(memberAEmail, authOptions);
     const memberB = await createAuthUser(memberBEmail, authOptions);
     const session = await signIn(ownerEmail, authOptions);
-    const env = loadEnv();
 
     let accountId: string | null = null;
     let projectId: string | null = null;
-    let repository: LocalGitRepository | null = null;
+    let project: ManifestProject | null = null;
 
     try {
       const accounts = await api<AccountSummary[]>(session.access_token, 'GET', '/accounts');
@@ -101,12 +100,17 @@ test.describe('22 — Resource-grant multi-select', () => {
         201,
       );
 
-      repository = await createLocalGitRepository(`Resource grant multiselect ${runId}`);
-      const project = await createDatabaseProject(env, {
+      // The agent checkboxes come from GET /projects/:id/resource-grants, which
+      // reads `agents:` out of the project's kortix.yaml. A repo the API cannot
+      // read yields an EMPTY picker rather than an error, so the project must
+      // carry a manifest the deployed API can actually fetch.
+      project = await createManifestProject({
+        api,
+        accessToken: session.access_token,
         accountId,
         userId: owner.id,
         name: `Resource grant multiselect ${runId}`,
-        repoUrl: repository.repoUrl,
+        databaseUrl: databaseUrl!,
       });
       projectId = project.id;
 
@@ -115,43 +119,70 @@ test.describe('22 — Resource-grant multi-select', () => {
       await page.reload({ waitUntil: 'domcontentloaded' });
       await dismissOnboarding(page);
 
-      await page.getByRole('tab', { name: 'Access', exact: true }).click();
-      await expect(page.getByText('No agents assigned', { exact: true })).toBeVisible();
-
+      // The per-project Members page is gone (2026-08-18/19): `/projects/:id/
+      // members` redirects into the account hub's Projects panel for this
+      // project, and agent access is a field of the ONE "Grant access" dialog
+      // (`features/workspace/shared/access/access-dialog.tsx`), not a separate
+      // "Assign an agent" flow. Members are deny-by-default for agents, so
+      // granting the two members with Agents = "Only these… → kortix" is what
+      // creates the two resource grants.
+      await expect(page).toHaveURL(
+        new RegExp(`/accounts/${accountId}\\?tab=access-projects&project=${projectId}`),
+      );
       await page.getByRole('button', { name: 'Grant access', exact: true }).click();
-      const dialog = page.getByRole('dialog', { name: 'Assign an agent', exact: true });
+      const dialog = page.getByRole('dialog', { name: 'Grant access', exact: true });
       await expect(dialog).toBeVisible();
 
-      // Multi-select on both sides: one agent, two members, one dialog, one
-      // submit. Both steps are Checkbox lists now (members-tab.tsx), not
-      // single-select dropdowns.
-      await dialog.getByRole('checkbox', { name: 'kortix', exact: true }).click();
+      // Multi-select principals in the shared picker (each row is a toggle
+      // button named by the member's email), then narrow Agents to kortix.
       await dialog.getByRole('button', { name: memberAEmail }).click();
       await dialog.getByRole('button', { name: memberBEmail }).click();
+      await dialog.getByRole('tab', { name: 'Only these…', exact: true }).click();
+      await dialog.getByRole('checkbox', { name: 'kortix', exact: true }).click();
 
-      const grantPostStatuses: number[] = [];
+      // Canonical RBAC: an agent grant is ONE role assignment — role
+      // `agent-user` on object (agent, kortix) — written through
+      // POST /accounts/:id/iam/assignments. The legacy POST /resource-grants
+      // must NOT be called by the dialog any more (it dual-writes only for
+      // pre-cutover clients); the legacy GET below still lists the grants
+      // because the dual-read window keeps both stores consistent.
+      const assignmentPosts: { status: number; objectType?: string; objectId?: string }[] = [];
+      const legacyGrantPosts: number[] = [];
       page.on('response', (r) => {
-        if (
-          r.request().method() === 'POST' &&
-          r.url().endsWith(`/v1/projects/${projectId}/resource-grants`)
-        ) {
-          grantPostStatuses.push(r.status());
+        const url = r.url();
+        const method = r.request().method();
+        if (method === 'POST' && /\/v1\/accounts\/[^/]+\/iam\/assignments$/.test(url)) {
+          let body: { object_type?: string; object_id?: string } = {};
+          try { body = JSON.parse(r.request().postData() ?? '{}'); } catch {}
+          assignmentPosts.push({ status: r.status(), objectType: body.object_type, objectId: body.object_id });
+        }
+        if (method === 'POST' && url.endsWith(`/v1/projects/${projectId}/resource-grants`)) {
+          legacyGrantPosts.push(r.status());
         }
       });
-      // 1 agent x 2 members = 2 total grants.
+      // 2 principals × 1 agent = 2 object assignments (plus one project-role
+      // write per principal, which is not what this contract counts).
       await dialog.getByRole('button', { name: 'Grant access (2)', exact: true }).click();
       await expect(dialog).toHaveCount(0, { timeout: 15_000 });
       await expect
-        .poll(() => grantPostStatuses.length, { timeout: 10_000 })
+        .poll(
+          () => assignmentPosts.filter((p) => p.objectType === 'agent' && p.objectId === 'kortix').length,
+          { timeout: 10_000 },
+        )
         .toBe(2);
-      // POST /resource-grants returns 201 (created), not 200.
-      expect(grantPostStatuses).toEqual([201, 201]);
+      expect(
+        assignmentPosts.filter((p) => p.objectType === 'agent').map((p) => p.status),
+      ).toEqual([201, 201]);
+      expect(legacyGrantPosts).toEqual([]);
 
-      // The list re-renders with both grants, each labeled by the member it
-      // went to — not just a count, the actual two people.
-      await expect(page.getByText('kortix', { exact: true }).first()).toBeVisible();
-      await expect(page.getByText(`Member: ${memberAEmail}`, { exact: true })).toBeVisible();
-      await expect(page.getByText(`Member: ${memberBEmail}`, { exact: true })).toBeVisible();
+      // The access list re-renders with both people, each row carrying the
+      // narrowed agent count — the actual two rows, not just a total.
+      const rowA = page.getByRole('listitem').filter({ hasText: memberAEmail });
+      const rowB = page.getByRole('listitem').filter({ hasText: memberBEmail });
+      await expect(rowA).toBeVisible();
+      await expect(rowB).toBeVisible();
+      await expect(rowA.getByText(/Agents: 1\b/)).toBeVisible();
+      await expect(rowB.getByText(/Agents: 1\b/)).toBeVisible();
 
       // API is the source of truth for persistence, not the optimistic re-render.
       const after = await api<ResourceGrantsResponse>(
@@ -167,8 +198,7 @@ test.describe('22 — Resource-grant multi-select', () => {
         [memberAEmail, memberBEmail].sort(),
       );
     } finally {
-      if (projectId) await deleteDatabaseProject(env, projectId).catch(() => {});
-      if (repository) await repository.dispose().catch(() => {});
+      if (project) await project.dispose().catch(() => {});
       await deleteAuthUser(memberB.id, authOptions).catch(() => {});
       await deleteAuthUser(memberA.id, authOptions).catch(() => {});
       await deleteAuthUser(owner.id, authOptions).catch(() => {});

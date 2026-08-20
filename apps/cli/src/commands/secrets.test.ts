@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { stripAnsi } from '../style.ts';
-import { deliveryCell, describeLinkValidity } from './secrets.ts';
+import { deliveryCell, describeLinkValidity, parseExposure } from './secrets.ts';
 
 describe('describeLinkValidity', () => {
   const now = Date.parse('2026-08-07T12:00:00.000Z');
@@ -32,20 +32,20 @@ describe('deliveryCell', () => {
       }),
     );
 
-  test('names where a healthy value goes', () => {
-    expect(cell()).toBe('sandbox');
+  test('names the exposure, or the service that spends the value', () => {
+    expect(cell()).toBe('environment');
     expect(cell({ strategy: 'broker', consumer: 'llm_gateway' })).toBe('llm_gateway');
-    expect(cell({ strategy: 'broker', consumer: null })).toBe('Kortix broker');
-    expect(cell({ strategy: 'egress', consumer: 'network' })).toBe('approved hosts');
+    expect(cell({ strategy: 'broker', consumer: null })).toBe('Kortix service');
+    expect(cell({ strategy: 'egress', consumer: 'network' })).toBe('enforced: approved hosts');
   });
 
   test('an undeliverable path is marked in text, not only in colour', () => {
     // The CLI runs unstyled under NO_COLOR and in pipes, where a red cell and a
     // healthy one are the same bytes — the marker has to survive stripAnsi.
     expect(cell({ strategy: 'egress', consumer: 'network', deliveryStatus: 'unavailable' })).toBe(
-      'approved hosts · unavailable',
+      'enforced: approved hosts · unavailable',
     );
-    expect(cell({ deliveryStatus: 'unavailable' })).toBe('sandbox · unavailable');
+    expect(cell({ deliveryStatus: 'unavailable' })).toBe('environment · unavailable');
   });
 
   test('denied delivery reports its own target and is never flagged', () => {
@@ -55,7 +55,7 @@ describe('deliveryCell', () => {
   });
 
   test('rotation and undeliverability are independent and both show', () => {
-    expect(cell({ requiresRotation: true })).toBe('sandbox · rotate');
+    expect(cell({ requiresRotation: true })).toBe('environment · rotate');
     expect(
       cell({
         strategy: 'egress',
@@ -63,6 +63,31 @@ describe('deliveryCell', () => {
         deliveryStatus: 'unavailable',
         requiresRotation: true,
       }),
-    ).toBe('approved hosts · unavailable · rotate');
+    ).toBe('enforced: approved hosts · unavailable · rotate');
+  });
+});
+
+describe('parseExposure', () => {
+  test('the model words map to the stored strategy names', () => {
+    expect(parseExposure('environment')).toBe('runtime');
+    expect(parseExposure('enforced')).toBe('egress');
+    expect(parseExposure('egress-enforced')).toBe('egress');
+    expect(parseExposure('none')).toBe('denied');
+  });
+
+  test('the stored names stay accepted, so no existing script breaks', () => {
+    // Deprecate, do not remove: `kortix secrets delivery X egress` is written
+    // down in scripts and in agent transcripts.
+    expect(parseExposure('runtime')).toBe('runtime');
+    expect(parseExposure('egress')).toBe('egress');
+    expect(parseExposure('broker')).toBe('broker');
+    expect(parseExposure('denied')).toBe('denied');
+  });
+
+  test('input is trimmed and case-insensitive; anything else is rejected', () => {
+    expect(parseExposure('  Enforced  ')).toBe('egress');
+    expect(parseExposure('plaintext')).toBeNull();
+    expect(parseExposure('')).toBeNull();
+    expect(parseExposure(undefined)).toBeNull();
   });
 });

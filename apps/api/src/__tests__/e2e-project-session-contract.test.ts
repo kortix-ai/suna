@@ -16,7 +16,7 @@ import { PgDialect } from 'drizzle-orm/pg-core';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import type { SandboxRuntimeHealth } from '../projects/runtime-inspection';
-import { mockIamEngineAllowAll, mockIamMembershipSyncNoop } from './helpers/iam-mocks';
+import { mockIamEngineAllowAll, mockIamReadModels } from './helpers/iam-mocks';
 
 const USER_ID = '00000000-0000-4000-a000-000000000001';
 const ACCOUNT_ID = '00000000-0000-4000-a000-000000000101';
@@ -283,6 +283,10 @@ mock.module('../projects/git', () => ({
   getFileHistory: async () => ({ entries: [], nextCursor: null }),
   getFileAtRef: async () => null,
   resolveCommitSha: async () => 'a'.repeat(40),
+  resolveFastBootGitHint: async () => ({
+    baseSha: 'a'.repeat(40),
+    gitDeltaBundleBase64: 'R0lUIEJVTkRMRQ==',
+  }),
   resolveBranchTip: async () => 'a'.repeat(40),
   resolveBranchAheadState: async () => ({ ahead: 0, behind: 0 }),
   getBranchDiff: async () => ({ files: [], diff: '' }),
@@ -299,6 +303,14 @@ mock.module('../snapshots/builder', () => ({
     contentHash: 'a'.repeat(64),
     built: false,
     isDefault: true,
+  }),
+  ensureFastSandboxImage: async () => ({
+    snapshotName: 'kortix-fast-test',
+    slug: 'default',
+    contentHash: 'f'.repeat(64),
+    built: false,
+    isDefault: true,
+    runtimeProfile: 'fast',
   }),
   ensureMetaSandboxImage: async () => ({
     snapshotName: 'kortix-meta-test',
@@ -522,7 +534,9 @@ mockIamEngineAllowAll((action) => {
   }
 });
 
-mockIamMembershipSyncNoop();
+// The hermetic db shim models the legacy tables; the read models project from
+// those rows rather than from `role_assignments`. See mockIamReadModels.
+mockIamReadModels();
 
 mock.module('../repositories/account-tokens', () => ({
   createAccountToken: async () => ({ secretKey: PROJECT_RUNTIME_PAT }),

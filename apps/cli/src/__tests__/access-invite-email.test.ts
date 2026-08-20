@@ -126,7 +126,7 @@ const invite = (extra: Record<string, unknown>) => ({
   status: 'invited',
   email: 'bob@corp.com',
   invite_id: 'inv_abc123',
-  project_role: 'editor',
+  project_role: 'manager',
   invite_url: INVITE_URL,
   ...extra,
 });
@@ -135,7 +135,7 @@ describe('kortix access invite — email honesty', () => {
   test('a SKIPPED email is reported as such, with the link that still works', async () => {
     inviteResponse = invite({ email_sent: false, email_skip_reason: 'email_not_configured' });
 
-    const code = await runAccess(['invite', 'bob@corp.com', '--project', PROJECT, '--role', 'editor']);
+    const code = await runAccess(['invite', 'bob@corp.com', '--project', PROJECT, '--role', 'manager']);
     const out = stripAnsi(stdout);
 
     expect(code).toBe(0);
@@ -150,7 +150,7 @@ describe('kortix access invite — email honesty', () => {
   test('a SENT email still reads as a plain success', async () => {
     inviteResponse = invite({ email_sent: true, email_skip_reason: null });
 
-    const code = await runAccess(['invite', 'bob@corp.com', '--project', PROJECT, '--role', 'editor']);
+    const code = await runAccess(['invite', 'bob@corp.com', '--project', PROJECT, '--role', 'manager']);
     const out = stripAnsi(stdout);
 
     expect(code).toBe(0);
@@ -167,7 +167,7 @@ describe('kortix access invite — email honesty', () => {
     // predates the field would cry wolf on every deployment that is fine.
     inviteResponse = { status: 'invited' };
 
-    const code = await runAccess(['invite', 'bob@corp.com', '--project', PROJECT, '--role', 'editor']);
+    const code = await runAccess(['invite', 'bob@corp.com', '--project', PROJECT, '--role', 'manager']);
     const out = stripAnsi(stdout);
 
     expect(code).toBe(0);
@@ -181,7 +181,7 @@ describe('kortix access invite — email honesty', () => {
     inviteResponse = invite({ email_sent: false, email_skip_reason: 'email_not_configured' });
 
     const code = await runAccess([
-      'invite', 'bob@corp.com', '--project', PROJECT, '--role', 'editor', '--json',
+      'invite', 'bob@corp.com', '--project', PROJECT, '--role', 'manager', '--json',
     ]);
 
     expect(code).toBe(0);
@@ -197,7 +197,7 @@ describe('kortix access invite — email honesty', () => {
         {
           invite_id: 'inv_abc123',
           email: 'pending@corp.com',
-          project_role: 'editor',
+          project_role: 'manager',
           invited_by_email: 'owner@corp.com',
           invite_expired: false,
         },

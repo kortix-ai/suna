@@ -7,6 +7,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import { accounts, accountSessionActivity } from '@kortix/db';
 import { db } from '../../shared/db';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
+import { actorOf } from '../../iam/actor';
 import { iamRouter, AccountIdParam } from './app';
 import { auditIam, readBody, HttpError } from './helpers';
 
@@ -32,7 +33,7 @@ iamRouter.openapi(
   async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
-  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_READ);
+  await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_READ);
 
   const [row] = await db
     .select({
@@ -67,7 +68,7 @@ iamRouter.openapi(
   async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
-  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+  await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
 
   const body = await readBody(c);
   // Accept null → clear, undefined → leave untouched, number → set.
@@ -165,7 +166,7 @@ iamRouter.openapi(
   async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
-  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.MEMBER_READ);
+  await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.MEMBER_READ);
 
   const rows = await db
     .select({
@@ -217,7 +218,7 @@ iamRouter.openapi(
   const sessionId = c.req.param('sessionId');
   // Gate on member.remove — force-logout is roughly "kick this user off
   // for now"; reuses the same capability admins already grant.
-  await assertAuthorized(actorUserId, accountId, ACCOUNT_ACTIONS.MEMBER_REMOVE);
+  await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.MEMBER_REMOVE);
 
   // Body optionally carries the target user (for safer audit). Either
   // way we just stamp revoked_at on the matching activity row.
@@ -277,7 +278,7 @@ iamRouter.openapi(
   async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
-  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_READ);
+  await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_READ);
 
   const [row] = await db
     .select({
@@ -314,7 +315,7 @@ iamRouter.openapi(
   async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
-  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+  await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
 
   const body = await readBody(c);
 

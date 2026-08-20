@@ -823,15 +823,15 @@ function ProjectSessionRow({
                   <PencilSimpleIcon />
                   Rename
                 </DropdownMenuItem>
-                {session.can_manage_sharing !== false && (
-                  <DropdownMenuItem
-                    className="cursor-pointer"
-                    onSelect={() => deferAfterClose(() => onShare(session))}
-                  >
-                    <Share />
-                    Share
-                  </DropdownMenuItem>
-                )}
+                {/* Shown to everyone who can open the session: the owner
+                    changes access here, everyone else reads who has it. */}
+                <DropdownMenuItem
+                  className="cursor-pointer"
+                  onSelect={() => deferAfterClose(() => onShare(session))}
+                >
+                  <Share />
+                  {session.can_manage_sharing !== false ? 'Share' : 'Who has access'}
+                </DropdownMenuItem>
                 <DropdownMenuItem
                   className="cursor-pointer"
                   disabled={isRestarting}
@@ -842,7 +842,9 @@ function ProjectSessionRow({
                   {isRestarting ? <Loading className="size-4 shrink-0" /> : <RotateCcw />}
                   Restart
                 </DropdownMenuItem>
-                {session.status === 'running' && session.can_manage_sharing !== false && (
+                {/* Lifecycle, not sharing: a project manager keeps Stop on a
+                    session they did not create. */}
+                {session.status === 'running' && session.can_manage_lifecycle !== false && (
                   <DropdownMenuItem
                     className="cursor-pointer"
                     disabled={isStopping}

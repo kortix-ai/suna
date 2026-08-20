@@ -29,7 +29,8 @@ mock.module('../../../config', () => ({
   ),
 }));
 
-// FIFO db mock: channelModelContext reads the project row, then the owner row.
+// FIFO db mock: channelModelContext reads the project row (the owner comes from
+// the read-model mock below).
 let dbResults: Array<unknown[]> = [];
 function makeChain(): any {
   const chain: any = {};
@@ -48,6 +49,13 @@ mock.module('../selection', () => ({
   currentChannelSelection: async () => ({ projectId: 'p1' }),
 }));
 
+// The account OWNER now comes from `role_assignments` via iam/read-models, not
+// from an `account_members.account_role` query — so it is mocked at that seam
+// rather than as a second FIFO db result.
+mock.module('../../../iam/read-models', () => ({
+  accountRoleMap: async () => new Map([['user-1', 'owner']]),
+}));
+
 let creditRow: Record<string, unknown> | null = null;
 mock.module('../../../billing/repositories/credit-accounts', () => ({
   getCreditAccount: async () => creditRow,
@@ -60,7 +68,7 @@ const ctx = {} as any;
 
 async function gateFor(row: Record<string, unknown> | null) {
   creditRow = row;
-  dbResults = [[{ accountId: 'acct-1' }], [{ userId: 'user-1' }]];
+  dbResults = [[{ accountId: 'acct-1' }]];
   const resolved = await channelModelContext(ctx);
   expect(resolved).not.toBeNull();
   return resolved as NonNullable<typeof resolved>;

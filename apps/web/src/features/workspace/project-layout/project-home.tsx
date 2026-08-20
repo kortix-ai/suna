@@ -47,11 +47,14 @@ import {
   projectSettingsSectionHref,
   type ProjectSettingsSectionKey,
 } from '@/features/workspace/capabilities/project-settings/project-settings-sections';
+import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { STARTER_PROMPTS } from '@/lib/starter-prompts';
+import { useProjectCan, useProjectCans } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import { useComposerPrefillStore } from '@/stores/composer-prefill-store';
 import {
   type SandboxTemplate,
+  getProjectDetail,
   listProjectAccessRequests,
   listProjectSandboxes,
 } from '@kortix/sdk';
@@ -110,23 +113,36 @@ export function ProjectHome({
 
   const showSandboxPicker = sandboxItems.length >= 1;
   const router = useRouter();
+  // `GET /projects/:id/access-requests` asserts project.members.manage
+  // (`apps/api/src/projects/routes/r6.ts`), so firing it for a plain member is
+  // a guaranteed 403 for a bell they could never act on anyway. Probe the leaf
+  // first and keep the query disabled until it says yes — `showErrors: false`
+  // only silenced the toast, the request still went out and still failed.
+  const canManageMembers =
+    useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE).allowed === true;
   const accessRequests = useQuery({
     queryKey: qk.project.accessRequests(projectId),
     queryFn: () => listProjectAccessRequests(projectId, { showErrors: false }),
     retry: false,
+    enabled: canManageMembers,
     ...contract('inventory'),
     refetchOnWindowFocus: false,
   });
   const pendingAccessCount = accessRequests.data?.requests.length ?? 0;
 
-  const pendingPrefill = useComposerPrefillStore((s) => s.prefillByProject[projectId]);
-  const consumePrefill = useComposerPrefillStore((s) => s.consume);
-
-  useEffect(() => {
-    if (!pendingPrefill) return;
-    consumePrefill(projectId);
-    setPrefill({ text: pendingPrefill, id: Date.now() });
-  }, [pendingPrefill, projectId, consumePrefill]);
+  // Same query key page.tsx (`ProjectIndexPage`) already fetches for this
+  // project — this dedupes against that cache entry rather than firing a
+  // second request. Needed here only to resolve `account_id` for the pending
+  // access requests bell below, which now routes into the account hub's
+  // Access tab (`/accounts/<id>?tab=access-projects`) instead of the deleted
+  // project Members capability tab.
+  const projectDetailQuery = useQuery({
+    queryKey: qk.project.detail(projectId),
+    queryFn: () => getProjectDetail(projectId),
+    enabled: !!projectId,
+    ...contract('config'),
+  });
+  const accountId = projectDetailQuery.data?.project?.account_id;
 
   const handleSend = useCallback(
     (text: string, files: AttachedFile[] | undefined, options: ComposerOptions) => {
@@ -141,6 +157,25 @@ export function ProjectHome({
     },
     [metaSelected, selectedSlug, onSend],
   );
+
+  const pendingPrefill = useComposerPrefillStore((s) => s.prefillByProject[projectId]);
+  const consumePrefill = useComposerPrefillStore((s) => s.consume);
+
+  useEffect(() => {
+    if (!pendingPrefill) return;
+    consumePrefill(projectId);
+    // The onboarding hand-off (`project-onboarding-wizard.tsx`) sets
+    // `autoSend: true` so the finish step's "Open project" click actually
+    // starts the first turn instead of just filling the box — see
+    // `composer-prefill-store.ts`. Every other caller (the `?q=` deep link,
+    // the command palette) omits the flag and keeps the old prefill-only
+    // behavior below.
+    if (pendingPrefill.autoSend) {
+      handleSend(pendingPrefill.text, undefined, {});
+      return;
+    }
+    setPrefill({ text: pendingPrefill.text, id: Date.now() });
+  }, [pendingPrefill, projectId, consumePrefill, handleSend]);
 
   const handleCommand = useCallback(
     (cmd: Command, args: string | undefined, options: ComposerOptions) => {
@@ -184,7 +219,10 @@ export function ProjectHome({
               variant="ghost"
               size="icon"
               className="bg-background/80 relative backdrop-blur-sm"
-              onClick={() => router.push(capabilityTabHref(projectId, 'members'))}
+              onClick={() =>
+                accountId &&
+                router.push(`/accounts/${accountId}?tab=access-projects&project=${projectId}`)
+              }
               aria-label={`${pendingAccessCount} pending access request${pendingAccessCount === 1 ? '' : 's'}`}
             >
               <Bell className="size-4" />
@@ -487,13 +525,35 @@ type SetupTile = {
   // tile's own destination.
   section: ProjectSettingsSectionKey | CapabilityTab['key'];
   /**
-   * The exact destination, for a tile whose target is not a bare route. Only
-   * Slack needs it: Channels is a SCOPE of the Connectors page now
-   * (`?scope=channels`), and neither route builder emits a query. Without it
-   * the tile would open the connector catalogue — the right page, the wrong
-   * half of it.
+   * The exact destination, for a tile whose target is not a bare route.
+   * Slack needs it because Channels is a SCOPE of the Connectors page now
+   * (`?scope=channels`), and neither route builder emits a query — the tile
+   * would otherwise open the connector catalogue, the right page but the
+   * wrong half of it. "Your team" needs it because Members graduated out of
+   * the project into the account hub's Access tab
+   * (`/accounts/<id>?tab=access-projects&project=<id>`), which needs the
+   * project's `account_id` — not a value either route builder below can
+   * produce. Returning `undefined` means "not ready yet" (account_id still
+   * loading): the tile does nothing rather than navigating to a broken URL.
    */
-  href?: (projectId: string) => string;
+  href?: (projectId: string, accountId?: string) => string | undefined;
+  /**
+   * Every IAM leaf the tile's destination asserts. ALL of them must be allowed
+   * or the tile is not rendered — hidden, never disabled, because a control a
+   * person can press and only then be told "forbidden" is worse than no
+   * control at all.
+   *
+   * Five of the six land inside the Customize surface, so they carry
+   * `project.customize.read` (the leaf the whole surface is gated on — see
+   * `project-sidebar/project-settings-nav.tsx`) PLUS the page's own read leaf,
+   * because a custom role can hold the surface and still have one capability
+   * deactivated. "Your team" is the exception: it leaves the project entirely
+   * for the account hub's Access tab, which renders read-only for anyone who
+   * can read the project's member list, so it gates on
+   * `project.members.read` alone (see `components/iam/access-projects-tab.tsx`,
+   * where every write control probes `project.members.manage` separately).
+   */
+  actions: readonly string[];
 };
 
 const isCapabilityTabKey = (section: SetupTile['section']): section is CapabilityTab['key'] =>
@@ -506,18 +566,21 @@ const PROJECT_SETUP_TILES: SetupTile[] = [
     title: 'Connectors',
     desc: 'Connect tools your agent can act in.',
     section: 'connectors',
+    actions: [PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ, PROJECT_ACTIONS.PROJECT_CONNECTOR_READ],
   },
   {
     icon: CalendarClock,
     title: 'Triggers',
     desc: 'Run work on a repeating schedule, or when another app sends a signal.',
     section: 'triggers',
+    actions: [PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ, PROJECT_ACTIONS.PROJECT_TRIGGER_READ],
   },
   {
     icon: SparklesSolid,
     title: 'Skills',
     desc: 'Repeatable workflows your agent reuses.',
     section: 'skills',
+    actions: [PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ, PROJECT_ACTIONS.PROJECT_SKILL_READ],
   },
   {
     icon: Slack,
@@ -525,12 +588,22 @@ const PROJECT_SETUP_TILES: SetupTile[] = [
     desc: 'Run this project right from chat.',
     section: 'connectors',
     href: channelsHref,
+    // Channels is a SCOPE of the Connectors page, so it asserts exactly what
+    // the Connectors tile above asserts — same page, same leaves.
+    actions: [PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ, PROJECT_ACTIONS.PROJECT_CONNECTOR_READ],
   },
   {
     icon: UsersGroupSolid,
     title: 'Your team',
     desc: 'Invite people to run and review work.',
-    section: 'members',
+    // Members graduated into the account hub's Access tab — this tile always
+    // routes through `href` (below), which needs the project's `account_id`.
+    // `section` is unused for this tile but still has to satisfy the type;
+    // 'general' is an arbitrary valid placeholder, never read.
+    section: 'general',
+    href: (projectId, accountId) =>
+      accountId ? `/accounts/${accountId}?tab=access-projects&project=${projectId}` : undefined,
+    actions: [PROJECT_ACTIONS.PROJECT_MEMBERS_READ],
   },
   {
     icon: Kortix,
@@ -541,12 +614,52 @@ const PROJECT_SETUP_TILES: SetupTile[] = [
     // silently fall through to the Settings tab and land on its default
     // section instead of Agents.
     section: 'agent',
+    actions: [PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ, PROJECT_ACTIONS.PROJECT_AGENT_READ],
   },
+];
+
+/**
+ * Every distinct leaf the tiles above name, deduped and module-level so its
+ * identity is stable — `useProjectCans` keys its query on the action list and
+ * would refetch on each render otherwise.
+ */
+export const PROJECT_SETUP_TILE_ACTIONS: readonly string[] = [
+  ...new Set(PROJECT_SETUP_TILES.flatMap((tile) => tile.actions)),
 ];
 
 function ProjectHomeSections({ projectId }: { projectId: string }) {
   const router = useRouter();
-  const tiles = PROJECT_SETUP_TILES;
+
+  // One batched probe for every leaf the six tiles name — not one hook per
+  // tile, which would fan out six `/effective` GETs on a page that already
+  // fires nine of them.
+  //
+  // Hide only on a denial we actually RECEIVED (`allowed === false`), the same
+  // optimistic-while-loading rule `CustomizeIndexPage` and the sidebar's
+  // Customize row use: a slow probe must never blink a tile away from someone
+  // who does have access.
+  const caps = useProjectCans(projectId, PROJECT_SETUP_TILE_ACTIONS);
+  const tiles = PROJECT_SETUP_TILES.filter((tile) =>
+    tile.actions.every((action) => caps[action]?.allowed !== false),
+  );
+
+  // Resolves the project's account_id for the "Your team" tile, which routes
+  // into the account hub's Access tab. Same queryKey the pending access
+  // requests bell in `ProjectHome` uses — React Query dedupes against that
+  // cache entry when both are mounted, and this is the only fetch when this
+  // component renders alone (e.g. inside the instant session shell, which has
+  // no project-detail query of its own).
+  const projectDetailQuery = useQuery({
+    queryKey: qk.project.detail(projectId),
+    queryFn: () => getProjectDetail(projectId),
+    enabled: !!projectId,
+    ...contract('config'),
+  });
+  const accountId = projectDetailQuery.data?.project?.account_id;
+
+  // Every tile denied — render nothing rather than an empty row that still
+  // reserves its gap and padding at the bottom of the hero.
+  if (tiles.length === 0) return null;
 
   return (
     <div className="flex w-full max-w-3xl flex-wrap items-center justify-center gap-2">
@@ -561,15 +674,14 @@ function ProjectHomeSections({ projectId }: { projectId: string }) {
             <Button
               variant="outline"
               size="sm"
-              onClick={() =>
-                router.push(
-                  href
-                    ? href(projectId)
-                    : isCapabilityTabKey(section)
-                      ? capabilityTabHref(projectId, section)
-                      : projectSettingsSectionHref(projectId, section),
-                )
-              }
+              onClick={() => {
+                const target = href
+                  ? href(projectId, accountId)
+                  : isCapabilityTabKey(section)
+                    ? capabilityTabHref(projectId, section)
+                    : projectSettingsSectionHref(projectId, section);
+                if (target) router.push(target);
+              }}
               className="bg-background/60 gap-1.5 rounded-md backdrop-blur-sm"
             >
               <TileIcon className="text-muted-foreground size-4.5 shrink-0" />

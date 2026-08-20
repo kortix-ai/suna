@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * Step 4 — connect the apps the team already lives in.
+ * Step 2 — connect the apps the team already lives in.
  *
  * Real Pipedream OAuth, inline. The whole step is skipped by the shell when
  * `isConnectorsEnabled()` is false (self-host without PIPEDREAM_*), so this

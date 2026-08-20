@@ -36,34 +36,95 @@ const sliceBetween = (start: string, end: string) => {
   return from < 0 || to < 0 ? '' : code.slice(from, to);
 };
 
-describe('SecretsView gates network-boundary delivery on the ACTIVE provider', () => {
-  test('the availability comes from the helper, not from the platform provider list', () => {
+describe('SecretsView asks ONE question and writes the three pairs the model names', () => {
+  test('the picker is the exposure list, flat and ungrouped', () => {
+    // Three values, one question. The five-mechanism list, its two-axis
+    // confusion, and the SelectGroup headings it needed are all gone.
+    expect(code).toContain('const exposureOptions = secretExposureOptions();');
+    expect(code).toContain('Can your code read this value?');
+    expect(code).not.toContain('SelectGroup');
+    expect(code).not.toContain('SelectLabel');
+    expect(code).not.toContain('secretDeliveryOptionGroups');
+  });
+
+  test('no user-facing copy names a mechanism as a choice', () => {
+    // The §8 release bar: "network boundary" and "HTTPS broker" must not
+    // appear as two things a user picks between, anywhere.
+    expect(code).not.toContain('Network boundary');
+    expect(code).not.toContain('HTTPS broker');
+    expect(code).not.toContain('network_boundary');
+  });
+
+  test('the stored pair comes from the shared target helper, never inline', () => {
     expect(code).toContain(
-      'const networkBoundary = networkBoundaryAvailability(projectDetailQuery.data?.project);',
+      'const { strategy, consumer: nextConsumer } = secretDeliveryTarget(exposure, row);',
     );
-    // The old gate read what the DEPLOYMENT offers. A project on Daytona
-    // injects nothing, so that check offered an impossible mode.
+  });
+
+  test('an assigned usage renders read-only and never opens the picker', () => {
+    expect(code).toContain('const usageAssigned = secretUsageIsAssigned(row?.consumer);');
+    expect(code).toContain('{usageAssigned ? (');
+    // The connector binding is the one control that stays live on an
+    // assigned row: WHICH connectors resolve the secret is a real choice.
+    expect(code).toContain("{row?.consumer === 'connector' && (");
+  });
+
+  test('the enforced panel is a host list — no header, template, method or path field', () => {
+    expect(code).toContain('const enforcedPolicy = buildEnforcedPolicy({');
+    expect(code).toContain('secret-dialog-hosts');
+    expect(code).not.toContain('secret-dialog-boundary-header');
+    expect(code).not.toContain('secret-dialog-boundary-template');
+    expect(code).not.toContain('secret-dialog-injection-kind');
+    expect(code).not.toContain('secret-dialog-injection-target');
+    expect(code).not.toContain('secret-dialog-injection-template');
+    expect(code).not.toContain('secret-dialog-broker-methods');
+    expect(code).not.toContain('secret-dialog-broker-path');
+    expect(code).not.toContain('Header value template');
+    expect(code).not.toContain('buildBrokerPolicy');
+  });
+
+  test('a legacy slot is shown read-only and removable, never edited in place', () => {
+    expect(code).toContain('const legacyDetail = legacyInjectionDetail(');
+    expect(code).toContain('{legacyDetail.lines.map((line) => (');
+    expect(code).toContain('onClick={() => setLegacyInject(null)}');
+    // It rides through the save unless the user removes it.
+    expect(code).toContain('legacyInject,');
+  });
+
+  test('the availability gate and its feature flag are gone from the page', () => {
+    // One mechanism serves every provider, so nothing disables an option and
+    // nothing reads the project detail to decide.
+    expect(code).not.toContain('networkBoundaryAvailability');
+    expect(code).not.toContain('networkBoundaryMode');
+    expect(code).not.toContain('networkBoundaryBlockedReason');
     expect(code).not.toContain('available_sandbox_providers');
+    expect(code).not.toContain('disabledReason');
   });
+});
 
-  test('the dialog receives the availability and forwards it to the option builder', () => {
-    expect(code).toContain('networkBoundary={networkBoundary}');
-    expect(code).toContain('networkBoundary: NetworkBoundaryAvailability;');
-    expect(sliceBetween('secretDeliveryOptions(', ');')).toContain('networkBoundary)');
-  });
-
-  test('the disabled option states its own reason instead of one fixed sentence', () => {
-    expect(code).toMatch(
-      /description=\{\s*option\.disabledReason\s*\?\s*`\$\{option\.description\} \$\{option\.disabledReason\}`/,
-    );
-    expect(code).not.toContain('Not available in this deployment.');
-  });
-
-  test('an already-egress secret on a non-Platinum project says so in the panel', () => {
+describe('SecretsView lets the system classify a new secret', () => {
+  test('the classification follows every keystroke, not a blur', () => {
+    // A pasted `AKIA…` has to move the default at the moment it is pasted.
     expect(code).toContain(
-      'const networkBoundaryNotice = networkBoundaryBlockedReason(networkBoundary);',
+      'const classification = useMemo(() => classifyNewSecret({ key, value }), [key, value]);',
     );
-    expect(code).toContain('{networkBoundaryNotice && (');
+    expect(code).toContain('const exposure = pickedExposure ?? defaultSecretExposure(row, classification);');
+  });
+
+  test('an explicit pick latches and is never overwritten by the next keystroke', () => {
+    expect(code).toContain('const [pickedExposure, setPickedExposure] = useState<SecretExposure | null>(null);');
+    expect(code).toContain('onValueChange={(next) => setPickedExposure(next as SecretExposure)}');
+  });
+
+  test('the prefilled hosts follow the classification until the user edits them', () => {
+    expect(code).toContain(
+      "const hosts = editedHosts ?? (row ? storedHosts : classification.hosts.join('\\n'));",
+    );
+  });
+
+  test('both recognitions are stated on screen, not silently applied', () => {
+    expect(code).toContain('{classification.signingNote}');
+    expect(code).toContain('{`Recognized: ${classification.modelProvider.label} key`}');
   });
 });
 
@@ -77,14 +138,14 @@ describe('SecretsView warns when no agent can receive the secret', () => {
 
   test('the table row shows the warning only for the modes that need a grant', () => {
     expect(code).toContain(
-      'shouldWarnMissingAgentGrant(row.deliveryBlockedReason, row.strategy) && (',
+      'shouldWarnMissingAgentGrant(row.deliveryBlockedReason, row.strategy, row.consumer) && (',
     );
     expect(code).toContain('>No agent grant</span>');
   });
 
   test('the dialog renders the notice and the kortix.yaml fix', () => {
     expect(code).toMatch(
-      /const grantNotice =\s*row && shouldWarnMissingAgentGrant\(row\.deliveryBlockedReason, strategy\) && !grant\.isSuccess\s*\?\s*missingAgentGrantNotice\(row\.identifier\)\s*:\s*null;/,
+      /const grantNotice =\s*row &&\s*shouldWarnMissingAgentGrant\(row\.deliveryBlockedReason, strategy, nextConsumer\) &&\s*!grant\.isSuccess\s*\?\s*missingAgentGrantNotice\(row\.identifier\)\s*:\s*null;/,
     );
     expect(code).toContain('{grantNotice.body}');
     expect(code).toContain('{grantManifest}');
@@ -93,7 +154,7 @@ describe('SecretsView warns when no agent can receive the secret', () => {
   test('a completed grant retires the warning the open dialog is still showing', () => {
     // `row` is the parent's snapshot from when the dialog opened. Refetching
     // the list cannot change it, so the notice has to stand down on its own.
-    expect(code).toContain('&& !grant.isSuccess');
+    expect(code).toContain('!grant.isSuccess');
   });
 });
 
@@ -183,35 +244,23 @@ describe('SecretsView reports a save that did not reach the running sessions', (
   });
 });
 
-describe('SecretsView states the cost of an empty header template', () => {
-  test('both template fields name the 401 consequence', () => {
-    expect(code.match(/reject with 401\./g)).toHaveLength(2);
-  });
-});
-
 /**
  * The panel is the last surface before someone tests the boundary by hand. The
  * text has to come from the helper, because a hardcoded copy here drifts from
  * the hosts the user typed and stops naming a host they can actually probe.
  */
-describe('SecretsView states the echo caveat in the boundary panel', () => {
-  const panel = sliceBetween(
-    "{strategy === 'egress' && (",
-    "{strategy === 'broker' && access !== 'llm_gateway' && (",
-  );
+describe('SecretsView states the echo caveat in the enforced panel', () => {
+  const panel = sliceBetween('{needsHosts && (', "{row?.consumer === 'connector' && (");
 
-  test('the scan found the network-boundary panel', () => {
+  test('the scan found the enforced-hosts panel', () => {
     expect(panel.length).toBeGreaterThan(0);
   });
 
-  test('the caveat is derived from the declared hosts and the live mechanism, not hardcoded', () => {
-    // The mechanism is an argument, not a default, because the two answer the
-    // same working request oppositely: the provider edge cuts an echoing
-    // response, the in-guest shim returns 200 with the value replaced. Passing
-    // a literal here would hand half the projects the other one's symptom.
-    expect(code).toContain(
-      "const echoNotice = networkBoundaryEchoNotice(brokerHosts, boundaryMode ?? 'in-guest-shim');",
-    );
+  test('the caveat is derived from the declared hosts, not hardcoded', () => {
+    // One symptom now: the relay returns 200 with `[REDACTED]` in place of the
+    // value, on every provider. A literal here would drift from the host the
+    // user typed and stop naming one they can actually probe.
+    expect(code).toContain('const echoNotice = enforcedEchoNotice(hosts);');
     expect(panel).toContain('title={echoNotice.title}');
     expect(panel).toContain('{echoNotice.body}');
     expect(panel).toContain('{echoNotice.probe}');

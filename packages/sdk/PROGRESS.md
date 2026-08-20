@@ -12,6 +12,328 @@ tracked, and it is not forgotten just because it isn't scheduled.
 
 ---
 
+### 2026-08-19 — session `secrets-exposure` — the secrets exposure/usage model reaches the SDK types — DONE
+
+**Files:** `core/rest/projects-client/secrets.ts` (`SecretEgressPolicy.inject`),
+`core/rest/projects-client/secrets.test.ts` (+2 tests),
+`core/rest/projects-client/projects.ts` (`FeatureFlagKey` union +
+`FEATURE_FLAG_KEYS`), `core/rest/projects-client/projects.test.ts` (key list).
+
+**What.** The API replaced two secret-delivery mechanisms with one
+(`docs/specs/2026-08-19-secrets-exposure-usage-model.md`). Two SDK-visible
+consequences:
+
+1. **`SecretEgressPolicy.inject` is now OPTIONAL.** An egress-enforced secret is
+   delivered to the sandbox as a HANDLE and the relay substitutes the real value
+   server-side on an approved host, so the policy is a HOST LIST with no slot to
+   name. Rows stored with a slot keep injecting exactly as before, so this is a
+   widening: every policy that typechecked before still typechecks. Two tests
+   pin it — a host-list-only policy reaching the wire unchanged, and a legacy
+   `inject` policy still carrying its slot.
+2. **`network_boundary_shim` is removed from `FeatureFlagKey` and
+   `FEATURE_FLAG_KEYS`.** The flag is deleted from the API registry and the
+   contract; `apps/api/src/__tests__/unit-feature-flag-drift.test.ts` compares
+   all three lists, so the SDK list has to lose it in the same change. This
+   NARROWS an exported union — a consumer that hardcoded that key stops
+   compiling, which is the intended signal: the flag no longer exists on any
+   server.
+
+No exported NAME changed. `version` untouched.
+
+**Gates.** `bun run typecheck` clean. `bun run test` 2309 pass / 0 fail / 2 skip
+(158 files). `bun run smoke:install` passed. **Shippable: YES.**
+
+### 2026-08-19 — session `sandbox-waking` — additive: `isSandboxNotReadyError` classifier + `formatOpenCodeRuntimeError` covers every readiness phrase — DONE
+
+**Files:** `core/http/opencode-errors.ts` + `opencode-errors.test.ts`, surface snapshots
+(additive: `isSandboxNotReadyError` on the root barrel via the existing
+`export * from './core/http/opencode-errors'`).
+
+**Why.** The web file viewer (and terminal panel, drive explorer, public share)
+render the proxy's `sandbox not ready (status: stopped)` 503 as a terminal red
+error. The proxy emits several readiness phrases (`sandbox not ready`,
+`Sandbox is not ready`, `Sandbox is not running`, `opencode not ready`,
+`sandbox_lifecycle_unavailable`); only the exact `(status: stopped)` string is
+classified today, and only by `formatOpenCodeRuntimeError`. Hosts need one
+boolean classifier so every surface can show "waking up" + retry instead of an
+error card.
+
+**What.** `isSandboxNotReadyError(error)` — accepts an `Error`, a raw message
+string, or a JSON body containing one; matches every readiness phrase listed
+above. `sandbox port unreachable` is deliberately excluded (emitted only after
+the box reported active — a genuine failure). `formatOpenCodeRuntimeError` now
+routes its waking branch through the classifier instead of the exact
+`(status: stopped)` regex. TDD: 4 new tests seen RED
+(`Export named 'isSandboxNotReadyError' not found`) before implementation.
+
+**Gates.**
+
+```
+pnpm --filter @kortix/sdk typecheck       → clean
+pnpm --filter @kortix/sdk test            → 2324 pass, 2 skip, 0 fail, 158 files
+                                            (baseline before this change: 2320 / 2 / 0, 158 files)
+pnpm --filter @kortix/sdk smoke:install   → ✔ install smoke test passed
+```
+
+---
+
+### 2026-08-19 — session `rbac-cutover-client-leftovers` — BREAKING (field): `AccountDetail.iam_v2_enabled` removed — DONE
+
+**Files:** `core/rest/projects-client/accounts.ts` (−1 field, −3 comment lines),
+`core/rest/projects-client/accounts.test.ts` (+1 test).
+
+**What.** `accounts.iam_v2_enabled` was the per-account rollout flag that routed
+a caller between the V1 and V2 IAM engines. The canonical-RBAC cutover made
+`kortix.role_assignments` the only authorization store and
+`apps/api/src/iam/authorize.ts` the only engine, so the API no longer emits the
+field: `grep -rn iam_v2 apps/api/src packages/db` returns nothing. Removed from
+`AccountDetail`.
+
+**Breaking?** Technically yes — a consumer reading `detail.iam_v2_enabled` stops
+compiling. Deliberately **no `@deprecated` alias**, on the same reasoning as the
+sandbox-member deletion below: an alias preserves a read that can only ever
+yield `undefined`. An optional field the server never sends is worse than no
+field — it reads as a live switch and invites a host to branch on it. A build
+error is the better failure. Nothing in this repo read it (only two
+declarations existed, this one and `apps/mobile/lib/accounts/accounts-client.ts`,
+both now gone).
+
+**Surface snapshots did NOT move.** Both snapshot the export *names*
+(`public-surface.snapshot.json` runtime, `public-type-surface.snapshot.json`
+type-level); neither records a type's *members*. `AccountDetail` is still
+exported, so the removal is invisible to them — worth knowing, because it means
+a field deletion has no snapshot tripwire. The new `accounts.test.ts` case is
+that tripwire for this one field: it reads `accounts.ts` and asserts no line
+declares `iam_v2_enabled`. Seen RED first (`+ ["  iam_v2_enabled?: boolean;"]`).
+
+**Gates.**
+
+```
+pnpm --filter @kortix/sdk typecheck       → clean
+pnpm --filter @kortix/sdk test            → 2308 pass, 2 skip, 0 fail, 158 files
+                                            (baseline before this change: 2307 / 2 / 0, 158 files)
+pnpm --filter @kortix/sdk smoke:install   → ✔ install smoke test passed
+```
+
+---
+
+### 2026-08-19 — session `rbac-canonical` (P5) — BREAKING: the canonical assignment surface lands, the sandbox-member surface is deleted — DONE
+
+**Files:** `core/rest/projects-client/assignments.ts` + `assignments.test.ts`
+(NEW), `core/rest/projects-client/index.ts` (barrel), `core/client/kortix.ts`
+(`kortix.iam` namespace) + `kortix.test.ts` (+4 tests),
+`react/use-can.ts` + `use-can.test.ts` (NEW), `react/index.ts` (barrel),
+`core/rest/platform-client/members.ts` (−9 functions, −8 types) +
+`members.test.ts` + `index.test.ts`, both surface snapshots.
+
+**What.** The API replaced five grant stores (`account_members.account_role`,
+`project_members.project_role`, `project_group_grants`, `iam_policies`,
+`iam_resource_grants`) with ONE table, `role_assignments`, and one write path.
+This is the SDK half.
+
+1. **`assignments.ts`** — `listAssignments` / `createAssignment` /
+   `revokeAssignment` / `listPermissions` over
+   `GET|POST|DELETE /accounts/:id/iam/assignments` and
+   `GET /accounts/:id/iam/permissions`. Types: `RoleAssignment`, `Permission`,
+   `AssignmentInput`, `PrincipalRef`, `AssignmentPrincipalType`,
+   `AssignmentScopeType`, `AssignmentObjectType`, `AssignmentSource`,
+   `ListAssignmentsFilter`. A custom role is now ONE row — the old client had to
+   write a built-in baseline row and then a policy row, a two-store sequence
+   only the browser enforced.
+2. **`kortix.iam`** — the facade had NO iam namespace at all: a `createKortix()`
+   consumer could read a project's files through the object API but could not
+   answer "who can touch this account". Now `kortix.iam.{assignments, permissions,
+   roles, groups, agentIdentities, can, canBatch}`.
+3. **`react/use-can.ts`** — `useCan` / `useCans` / `usePermissionsFor` /
+   `invalidatePermissionProbes`, relocated from `apps/web/src/lib/`
+   (`use-permission.ts`, `use-project-can.ts`). The entire client-side
+   authorization layer was host-local, against the repo's "logic lives in the
+   SDK" rule, so every other host had no probe and fell back to reading a role
+   literal off a row.
+
+   `invalidatePermissionProbes(queryClient, { accountId, userId? })` is a
+   **cache contract, not a convenience**: probe verdicts are cached 5 minutes and
+   before this exactly ONE site in the whole product busted them
+   (`mfa-required-card.tsx`). Every assignment write calls it. A stale verdict is
+   a revoke that has not happened yet.
+
+**BREAKING — removed exports.** Nine functions and eight types went away:
+`listSandboxMembers`, `addSandboxMember`, `removeSandboxMember`,
+`updateSandboxMemberRole`, `updateSandboxMemberSpendCap`,
+`getViewerSandboxScopes`, `getSandboxMemberScopes`, `updateSandboxMemberScope`,
+`revokeSandboxInvite`; `SandboxMemberRole`, `SandboxMember`,
+`SandboxPendingInvite`, `SandboxMembersResponse`, `AddSandboxMemberResult`,
+`SandboxScopeCatalogEntry`, `SandboxMemberScopes`, `SandboxViewerScopes`,
+`ScopeEffect`.
+
+Every one of those functions `throw`s on the first line and has since the
+`sandbox_members` store was retired (0 rows in every environment). They were
+kept only so the surface snapshot would not move. **No alias is possible and
+none is wanted:** an alias preserves a call that cannot succeed. A consumer
+calling one today gets a runtime `Error`; after this they get a build error,
+which is the better failure. This is the alias-never-replace rule's stated
+exception — the name has no working replacement because the capability does not
+exist. Project-session sandbox access is the project's own access
+(`createAssignment` / `listAssignments`).
+
+`listSandboxProjectMembers` / `grantSandboxProjectAccess` /
+`revokeSandboxProjectAccess` are untouched — those are the kortix-master
+in-sandbox ACL and they work.
+
+**Gates.**
+
+```
+pnpm --filter @kortix/sdk typecheck   → clean
+pnpm --filter @kortix/sdk test        → 2307 pass, 2 skip, 0 fail, 158 files
+                                        (baseline before this change: 2283 / 2 / 0, 156 files)
+```
+
+Both snapshots regenerated with `UPDATE_SURFACE_SNAPSHOT=1` /
+`UPDATE_TYPE_SURFACE_SNAPSHOT=1` and the diff read line by line: +13 value names
+and +13 type names (additive), −9 value names and −8 type names (the deletion
+above, deliberate).
+
+---
+
+### 2026-08-19 — session `member-model-picker` — the model picker is inert without an agent — DONE
+
+**Files:** `react/use-opencode-local.ts` (+ `use-opencode-local.test.ts`),
+`src/public-surface.snapshot.json` + `src/public-type-surface.snapshot.json`
+(+1 name each). The API half is a contract test only — no API change was needed.
+
+**The bug.** A project `member` opened the composer's model picker, saw every
+enabled model listed and selectable, clicked one — and nothing happened. The
+trigger snapped straight back to the server default. Reproduced end to end in
+Chromium against the local stack: `trigger BEFORE: DeepSeek V4 Flash` →
+`option count: 7` → `clicked: "Grok 4.6"` → `trigger AFTER: DeepSeek V4 Flash`.
+
+**Root cause.** `setModel` persisted the pick ONLY under
+`` `${providerMode}:${currentAgent.name}` ``, guarded by `if (currentAgent && next)`.
+Agents are deny-by-default for a member (`iam/resource-grants.ts`), so a member
+with no agent grant has an empty roster and `currentAgent === undefined`; the
+project-home composer carries no `sessionId`, so the per-session slot was absent
+too. BOTH writes were skipped and the pick was never stored. The READ side had
+already been made agent-independent — `currentModelKey`'s own comment says
+"Model selection must NOT depend on a loaded agent" — so this was a read/write
+asymmetry, not a policy.
+
+**Fix.** New exported `agentScopedModelSelectionKey(mode, agentName)` returns a
+stable agent-less slot (`` `${mode}:` ``) instead of nothing, and BOTH the read
+(`explicitModelKey`) and the write (`setModel`) now go through it. With an agent
+loaded the key is byte-identical to before, so nothing changes for anyone who
+already had one.
+
+**Not breaking.** One added export, additive. Snapshots regenerated with
+`UPDATE_SURFACE_SNAPSHOT=1` / `UPDATE_TYPE_SURFACE_SNAPSHOT=1`; that regeneration
+also absorbed the four `AccountResourceGrant*` / `ListAccountTokensOptions` names
+the two parallel sessions above had left un-snapshotted.
+
+TDD: test written and run RED first (`SyntaxError: Export named
+'agentScopedModelSelectionKey' not found`), then GREEN 16/16.
+
+**Gates.** SDK `tsc --noEmit` exit 0. SDK suite `bun test --isolate src`:
+2267 pass / 0 fail across 156 files. `smoke:install` passed. Browser re-run after
+the fix: `clicked: "Grok 4.6"` → `trigger AFTER: Grok 4.6`.
+
+**Shippable to production: YES.**
+
+---
+
+### 2026-08-18 — session `token-information-architecture` — `listAccountTokens` takes `{ mine: true }` — DONE
+
+**Files:** `core/rest/projects-client/tokens.ts` (+ new `tokens.test.ts`),
+`src/public-type-surface.snapshot.json` (+1 name, twice). The API half
+(`accounts/core/tokens.ts`, `repositories/account-tokens.ts`) and the web half
+(`/settings/tokens`) are outside this package.
+
+**What.** `listAccountTokens(accountId?)` gains an optional second argument,
+`{ mine?: boolean }`. With `mine`, the request carries `?mine=true` and the API
+answers with only the CALLER'S own hand-minted keys — not other members' keys,
+not the connector token the runtime mints per sandbox, not service-account
+bearers. Bare, it is the account-wide administrative list it has always been.
+
+**Why the SDK and not the caller.** The narrowing needs `user_id`, `session_id`
+and `service_account_id`; the list payload carries none of them, so it can only
+happen server-side. The browser previously guessed at the session tokens with
+`name.startsWith('Connector Session ')` and could not separate one member's
+keys from another's at all. The new personal API-keys page
+(`apps/web/.../settings/tabs/tokens-tab.tsx`) is the first caller.
+
+**Not breaking.** An added optional parameter and an added type name.
+`ListAccountTokensOptions` is new public API — recorded in the TYPE surface
+snapshot by hand (2 lines) rather than by regenerating, so the parallel
+`AccountResourceGrant*` session still owns re-snapshotting its own three names.
+
+TDD: test written and run RED first — 3 pass / 2 fail, both failures the exact
+URL assertion (`…?account_id=acc-1` where `…&mine=true` was expected) — then
+GREEN 5/5.
+
+**Gates.** `apps/web` `tsc --noEmit`: 15 lines, all the known `@types/bun`
+`test.each` noise in the 3 documented files. SDK suite: 2222 pass / 1 fail
+across 154 files — the one failure is `public-type-surface.test.ts` drifting on
+`AccountResourceGrant` / `ListAccountResourceGrantsFilter` /
+`listAccountResourceGrants`, exports added by a PARALLEL uncommitted session in
+`iam.ts` and documented as theirs in the entry below. `tokens.test.ts` 5 pass /
+0 fail.
+
+**Shippable to production: YES.**
+
+---
+
+### 2026-08-18 — session `project-role-editor-removed` — BREAKING: `ProjectRole` is now `'manager' | 'member'` — DONE
+
+**Files:** `core/rest/projects-client/shared.ts` (+ new `shared.test.ts`),
+`core/rest/projects-client/iam.ts` (`GroupProjectGrant.role`,
+`MemberProjectAccess.role`), `core/rest/projects-client/access.test.ts`,
+`core/client/kortix.test.ts`, comment-only in `files.ts` / `secrets.ts` and
+their tests (`editor-tier` → `manager-tier`). The API, DB, CLI, docs, mobile,
+whitelabel-demo and `@kortix/api-contract` halves are outside this package.
+
+**What.** Owner decision, 2026-08-18: the built-in project role `editor` is
+removed. Two project roles remain — `member` (read + run) and `manager`
+(everything). `editor` held exactly what `manager` holds minus
+`project.members.manage` and `project.delete`, so every stored assignment was
+folded UP to `manager` (`20260818120000000_project_role_editor_to_manager`
+rewrote 972 `project_members`, 4 `project_group_grants` and 204
+`account_invitations.bootstrap_grants` rows on the local data plane).
+
+**This is a BREAKING change to a published type.** `ProjectRole` narrows from
+`'manager' | 'editor' | 'member'` to `'manager' | 'member'`. Concretely:
+
+- An external consumer who writes `const r: ProjectRole = 'editor'` stops
+  compiling. That is the point — the API answers `400` for that value now, so
+  the old code was already broken at runtime; the narrowing moves the failure
+  from production to their build.
+- Consumers who only READ a `ProjectRole` off a response are unaffected: the
+  server never emits `editor` (it folds to `manager` on read), and a narrowed
+  union is assignable everywhere the wide one was in output position.
+- `role` in INPUT position (`updateProjectAccess`, `attachGroupGrant`,
+  `updateGroupGrant`, `approveProjectAccessRequest`, invite bodies) is where
+  the compile error lands, which is exactly the call the server would reject.
+
+No deprecation shim is offered. A `type ProjectRole = 'manager' | 'member' |
+('editor' & never)` style alias would keep the build green while the request
+still 400s — worse than a compile error, because it hides the only signal.
+
+**Both public-surface snapshots are unchanged by this**, and that is correct:
+they record exported NAMES, not shapes, and no name was added or removed here.
+
+**Gates.** `typecheck` clean. `smoke:install` passed. `test`: 2214 pass /
+2 skip / 2 fail across 153 files — both failures are
+`public-surface.test.ts` + `public-type-surface.test.ts` drifting on
+`listAccountResourceGrants` / `AccountResourceGrant` /
+`ListAccountResourceGrantsFilter`, exports added by a PARALLEL uncommitted
+session in `iam.ts`, not by this change (a union narrowing cannot move a name
+list). Whoever lands those exports owns re-snapshotting. The three files this
+change touches run 115 pass / 0 fail.
+
+**Shippable: YES** for this package's change, once the snapshot owner
+re-snapshots. The narrowing is intentional and documented above.
+
+||||||| df62a2beae
+
+---
+
 ### 2026-08-18 — session `server-truth-m15` — sub-session addendum (G1–G3) — DONE
 
 Essentia incident 2026-08-18 (child session looping; steer rendered at top).
@@ -186,6 +508,54 @@ fail.
 
 **Process deviation.** One commit for claim + work + log, per the step's explicit
 "One commit" instruction — not the usual separate claim commit.
+
+---
+
+### 2026-08-19 — session `session-error-turn` — a `session.error` belongs to the turn that failed — DONE
+
+**Files:** `browser/stores/sync-store.ts` (+`.test.ts`). The `apps/web` half (a
+turn that reports an error stops rendering the working indicator) is outside
+this package.
+
+**What.** A turn that fails BEFORE any assistant message exists (prod
+2026-08-19: `ModelNotFound: kortix/grok-4.6`, `session.error` ~2ms after the
+prompt) put its error in the wrong turn, three different ways. The handler
+patched `.error` onto "the last assistant message ANYWHERE" — an EARLIER turn's
+answer — and the `reconcileTail` hydrate that follows every `session.error`
+then overwrote that message with the server's error-free copy, so the first
+failure rendered NOTHING AT ALL. With no assistant message anywhere it appended
+a stub at the END of the list, which the next prompt's turn then adopted: the
+error moved out from under the prompt it belonged to and rode the bottom of the
+thread.
+
+`session.error` now resolves the failing turn (the last user message) and
+either patches an assistant message that already belongs to THAT turn, or
+inserts a stub directly after that user message, carrying `parentID` so
+`groupMessagesIntoTurns` keeps it there no matter what arrives later. The stub
+id is `${userMessageId}_error`: idempotent for a repeated error, and (all ids
+being equal length) it sorts immediately after its user message, so position
+and `parentID` agree.
+
+`stubAssistantIds` becomes `Map<sessionID, Map<stubId, parentUserId | null>>`
+and `hydrate` reconciles PER TURN instead of per session — an earlier turn's
+reply is not an answer to this one. When the server DOES hold a reply for the
+failing turn the stub's error moves onto it unless the server's copy carries
+one of its own; the stub is dropped only after that. An optimistic parent
+superseded by the server's echo re-keys the stub (both in `hydrate`'s
+correlation and in the `message.updated` echo path, via `rekeyStubParent`), and
+a stub restored from the IndexedDB transcript cache is re-adopted so it stays
+reconcilable across a reload.
+
+**Gates.** `bun test src` 2230 pass / 2 skip / 0 fail (baseline before this
+change: 2220 / 2 / 0); `tsc --noEmit` + examples clean; `smoke:install` passed.
+Public surface unchanged — every symbol touched is module-private.
+
+**Browser proof** (local stack, real Platinum sandbox, `POST .../prompts` with
+`model: kortix/does-not-exist-model`): before the change the second failure took
+the first turn's error with it (turn 1 left with no error at all) and, with an
+earlier turn present, the first failure rendered nothing; after, each error
+renders under its own prompt and survives a page reload. Screenshots in
+`output/session-error/`.
 
 ---
 

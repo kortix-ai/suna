@@ -27,12 +27,18 @@ import type { AccountToken, KortixProject } from '@kortix/sdk';
  * listing them turns this tab into a session log nobody asked for.
  *
  * Matching on the name is a heuristic, and it is deliberate: the list payload
- * carries no `session_id` today (`repositories/account-tokens.ts`'s
+ * carries no `session_id` (`repositories/account-tokens.ts`'s
  * `listAccountTokens` selects nine columns and `session_id` is not one of
  * them), so the name plus the project binding is the only signal the browser
- * has. When that field is added to the response, replace
- * `isRuntimeMintedKey` with a `session_id !== null` check and delete this
- * constant — the call sites do not change.
+ * has.
+ *
+ * Since 2026-08-18 the one surface that lists personal keys — a person's own
+ * settings (`features/workspace/settings/tabs/tokens-tab.tsx`) — reads
+ * `?mine=true`, and the SERVER excludes session tokens from that answer by
+ * `session_id IS NULL` (`listPersonalAccountTokens`). So this is now a second
+ * line of defence rather than the only one, and it still earns its place: it
+ * is what keeps a runtime key out of any OTHER caller's list, including the
+ * unnarrowed account-wide read.
  */
 export const RUNTIME_TOKEN_NAME_PREFIX = 'Connector Session ';
 

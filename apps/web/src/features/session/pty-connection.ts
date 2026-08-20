@@ -11,10 +11,16 @@ export function deriveTerminalPanelState(input: {
   isCreatePending: boolean;
   isCreateError: boolean;
   isEnsuring: boolean;
+  /** The list/create failure is a sandbox readiness 503 (parked or booting
+   *  box) — a pending state the panel must keep waiting through, never render
+   *  as a terminal error. */
+  isSandboxWaking?: boolean;
 }): TerminalPanelState {
   if (input.hasPty) return 'terminal';
   if (!input.hasServerUrl) return input.serverWaitExpired ? 'error' : 'connecting';
-  if (input.isListError || input.isCreateError) return 'error';
+  if (input.isListError || input.isCreateError) {
+    return input.isSandboxWaking ? 'connecting' : 'error';
+  }
   if (input.isListLoading || input.isCreatePending || input.isEnsuring) return 'connecting';
   return 'empty';
 }

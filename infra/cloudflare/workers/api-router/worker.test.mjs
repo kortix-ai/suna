@@ -80,9 +80,11 @@ describe('api-router worker', () => {
       'utf8',
     );
 
-    expect(ecsDeploy).toContain(
-      'select(.name != "KORTIX_VERSION" and .name != "KORTIX_COMMIT")',
-    );
+    // The select grew two more names (KORTIX_PUBLIC_VERSION,
+    // NEXT_PUBLIC_KORTIX_VERSION) and now spans several lines, so pinning its
+    // exact formatting went stale. Assert the two invariants instead.
+    expect(ecsDeploy).toContain('.name != "KORTIX_VERSION"');
+    expect(ecsDeploy).toContain('.name != "KORTIX_COMMIT"');
     expect(shadowWorkflow).toContain(
       'api_commit="$(jq -r \'.commit // empty\'',
     );
@@ -133,7 +135,9 @@ describe('api-router worker', () => {
     );
 
     expect(ecsDeploy).toContain('refusing live $ENV rollout without --database-migrated');
-    expect(prodWorkflow.match(/--database-migrated/g)?.length).toBe(2);
+    // Three live prod rolls now carry the gate: api, gateway, and the web
+    // service added at deploy-prod.yml:1238.
+    expect(prodWorkflow.match(/--database-migrated/g)?.length).toBe(3);
     expect(shadowWorkflow.match(/--database-migrated/g)?.length).toBe(2);
   });
 
@@ -152,6 +156,70 @@ describe('api-router worker', () => {
     expect(prodTerraform).toMatch(/module "api"[\s\S]*?min_capacity\s*=\s*3/);
     expect(shadowTerraform).toMatch(/module "api"[\s\S]*?task_memory\s*=\s*4096/);
     expect(shadowTerraform).toMatch(/module "api"[\s\S]*?secrets_blob_arn\s*=\s*var\.secret_arn/);
+  });
+
+  test('keeps staging sized for the release gate, with an on-demand floor', () => {
+    const stagingTerraform = readFileSync(
+      new URL('../../../terraform/environments/staging/main.tf', import.meta.url),
+      'utf8',
+    );
+    const devTerraform = readFileSync(
+      new URL('../../../terraform/environments/dev/main.tf', import.meta.url),
+      'utf8',
+    );
+
+    const stagingApi = stagingTerraform.match(
+      /module "api"[\s\S]*?\n}\n/,
+    )?.[0];
+    const devApi = devTerraform.match(/module "api"[\s\S]*?\n}\n/)?.[0];
+    expect(stagingApi).toBeDefined();
+    expect(devApi).toBeDefined();
+
+    // Staging absorbs the full release gate; dev absorbs nothing. Staging being
+    // SMALLER than dev is what let the v0.13.0 gate knock it over.
+    const num = (source, key) =>
+      Number(source.match(new RegExp(`${key}\\s*=\\s*(\\d+)`))?.[1]);
+    expect(num(stagingApi, 'task_cpu')).toBeGreaterThanOrEqual(
+      num(devApi, 'task_cpu'),
+    );
+    expect(num(stagingApi, 'task_memory')).toBeGreaterThanOrEqual(
+      num(devApi, 'task_memory'),
+    );
+    expect(num(stagingApi, 'min_capacity')).toBeGreaterThanOrEqual(
+      num(devApi, 'min_capacity'),
+    );
+
+    // A Spot-only service with no on-demand base goes to zero tasks on one
+    // reclaim, and the edge then reports that as MAINTENANCE_MODE.
+    expect(stagingApi).toMatch(/fargate_base_on_demand\s*=\s*1/);
+    expect(stagingTerraform).toMatch(
+      /module "gateway"[\s\S]*?fargate_base_on_demand\s*=\s*1/,
+    );
+    // Without this the module never creates the request-count scaling policy.
+    expect(stagingTerraform).toMatch(
+      /module "gateway"[\s\S]*?requests_per_target_target\s*=\s*600/,
+    );
+  });
+
+  test('the on-demand base is opt-in, so dev and prod strategies do not move', () => {
+    const module = readFileSync(
+      new URL('../../../terraform/modules/ecs-api/variables.tf', import.meta.url),
+      'utf8',
+    );
+    const devTerraform = readFileSync(
+      new URL('../../../terraform/environments/dev/main.tf', import.meta.url),
+      'utf8',
+    );
+    const prodTerraform = readFileSync(
+      new URL('../../../terraform/environments/prod/main.tf', import.meta.url),
+      'utf8',
+    );
+
+    expect(module).toMatch(
+      /variable "fargate_base_on_demand"[\s\S]*?default\s*=\s*0/,
+    );
+    expect(devTerraform).not.toContain('fargate_base_on_demand');
+    expect(prodTerraform).not.toContain('fargate_base_on_demand');
   });
 
   test('runs privileged US workflows only from the protected prod branch', () => {
@@ -430,7 +498,7 @@ describe('api-router worker', () => {
     );
     expect(gatewayResponse.status).toBe(503);
     expect(await gatewayResponse.json()).toMatchObject({
-      error: 'MAINTENANCE_MODE',
+      error: { code: 'MAINTENANCE_MODE' },
       message: 'Writes are paused.',
     });
   });
@@ -537,9 +605,157 @@ describe('api-router worker', () => {
     expect(response.status).toBe(503);
     expect(response.headers.get('Content-Type')).toBe('application/json');
     expect(await response.json()).toMatchObject({
-      error: 'MAINTENANCE_MODE',
+      error: { code: 'MAINTENANCE_MODE' },
       maintenance: { level: 'blocking' },
     });
+  });
+
+  // ── CI origin-status passthrough ───────────────────────────────────────────
+  // The laundering above is correct for public traffic and actively harmful for
+  // the release gate: it turns "staging ran out of capacity" into "scheduled
+  // maintenance". These pin the additive escape hatch — the public shape must
+  // not move, and the passthrough must be reachable ONLY with the exact secret.
+  const CI_SECRET = 'ci-passthrough-secret-value';
+  const ciEnv = { ...env, CI_PASSTHROUGH_SECRET: CI_SECRET };
+
+  function originFails(status, headers = {}) {
+    globalThis.fetch = async () =>
+      new Response('origin body', { status, headers });
+  }
+
+  test('without the CI header, an origin 503 is still laundered but names the origin status', async () => {
+    originFails(503, { 'x-request-id': 'req-abc123' });
+
+    const response = await worker.fetch(
+      new Request('https://api.kortix.com/v1/accounts'),
+      ciEnv,
+    );
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({ error: { code: 'MAINTENANCE_MODE' } });
+    expect(response.headers.get('X-Maintenance-Mode')).toBe('blocking');
+    expect(response.headers.get('X-Origin-Status')).toBe('503');
+    // The origin's own request id is restored, so an application 5xx is
+    // distinguishable from an unreachable origin.
+    expect(response.headers.get('X-Request-Id')).toBe('req-abc123');
+  });
+
+  test('with the correct CI header, the true origin status and body pass through', async () => {
+    originFails(502, { 'x-request-id': 'req-xyz789' });
+
+    const response = await worker.fetch(
+      new Request('https://api.kortix.com/v1/accounts', {
+        headers: { 'X-Kortix-CI-Passthrough': CI_SECRET },
+      }),
+      ciEnv,
+    );
+
+    expect(response.status).toBe(502);
+    expect(await response.text()).toBe('origin body');
+    expect(response.headers.get('X-Origin-Status')).toBe('502');
+    expect(response.headers.get('x-request-id')).toBe('req-xyz789');
+    // No maintenance fiction is layered on top of a real failure.
+    expect(response.headers.get('X-Maintenance-Mode')).toBeNull();
+    expect(response.headers.get('X-Backend')).toBe('ecs-fargate');
+    expect(response.headers.get('X-Content-Type-Options')).toBe('nosniff');
+  });
+
+  test('a wrong CI header gets the ordinary synthetic maintenance 503', async () => {
+    originFails(504);
+
+    const response = await worker.fetch(
+      new Request('https://api.kortix.com/v1/accounts', {
+        headers: { 'X-Kortix-CI-Passthrough': 'not-the-secret-value-at-all' },
+      }),
+      ciEnv,
+    );
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({ error: { code: 'MAINTENANCE_MODE' } });
+    expect(response.headers.get('X-Origin-Status')).toBe('504');
+  });
+
+  test('a prefix of the secret does not pass, and neither does an empty header', async () => {
+    for (const presented of [CI_SECRET.slice(0, -1), `${CI_SECRET}x`, '']) {
+      originFails(503);
+      const response = await worker.fetch(
+        new Request('https://api.kortix.com/v1/accounts', {
+          headers: { 'X-Kortix-CI-Passthrough': presented },
+        }),
+        ciEnv,
+      );
+      expect(response.status).toBe(503);
+      expect(await response.json()).toMatchObject({
+        error: { code: 'MAINTENANCE_MODE' },
+      });
+    }
+  });
+
+  test('an environment with no CI_PASSTHROUGH_SECRET binding cannot be opted out of laundering', async () => {
+    originFails(503);
+
+    const response = await worker.fetch(
+      new Request('https://api.kortix.com/v1/accounts', {
+        headers: { 'X-Kortix-CI-Passthrough': CI_SECRET },
+      }),
+      // `env` deliberately has no CI_PASSTHROUGH_SECRET.
+      env,
+    );
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({ error: { code: 'MAINTENANCE_MODE' } });
+  });
+
+  test('an unreachable origin reports fetch-error and stays retryable for the test client', async () => {
+    globalThis.fetch = async () => {
+      throw new Error('connection refused');
+    };
+
+    const response = await worker.fetch(
+      new Request('https://api.kortix.com/v1/accounts', {
+        headers: { 'X-Kortix-CI-Passthrough': CI_SECRET },
+      }),
+      ciEnv,
+    );
+
+    // There is no origin response to pass through, so CI gets the synthetic
+    // 503 too — but it now says why.
+    expect(response.status).toBe(503);
+    expect(response.headers.get('X-Origin-Status')).toBe('fetch-error');
+    // tests/src/core/client.ts isKe2eTransientGatewayResponse classifies a
+    // 502/503/504 as transient only when x-request-id is ABSENT and retry-after
+    // is present. An unreachable origin must keep matching that.
+    expect(response.headers.get('x-request-id')).toBeNull();
+    expect(response.headers.get('Retry-After')).toBe('30');
+  });
+
+  test('a healthy origin response carries no origin-status header', async () => {
+    globalThis.fetch = async () => Response.json({ ok: true }, { status: 200 });
+
+    const response = await worker.fetch(
+      new Request('https://api.kortix.com/v1/accounts'),
+      ciEnv,
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('X-Origin-Status')).toBeNull();
+  });
+
+  test('the staging Worker deploy binds CI_PASSTHROUGH_SECRET from the repository secret', () => {
+    const deployWorkflow = readFileSync(
+      new URL(
+        '../../../../.github/workflows/deploy-staging.yml',
+        import.meta.url,
+      ),
+      'utf8',
+    );
+
+    expect(deployWorkflow).toContain(
+      'CF_WORKER_CI_PASSTHROUGH_SECRET: ${{ secrets.CF_WORKER_CI_PASSTHROUGH_SECRET }}',
+    );
+    expect(deployWorkflow).toContain(
+      '[{type:"secret_text", name:"CI_PASSTHROUGH_SECRET", text:$secret}]',
+    );
   });
 
   test('gateway HTTPS redirect keeps the gateway hostname', async () => {

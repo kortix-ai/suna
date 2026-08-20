@@ -502,7 +502,11 @@ export function startStaticWebServer(port: number = DEFAULT_STATIC_PORT): Static
       hostname: '0.0.0.0',
       // Large media files (video/audio) over slow links can exceed Bun's
       // default 10s idle timeout mid-transfer; give downloads room to finish.
-      idleTimeout: 120,
+      // idleTimeout DISABLED (0): Bun's max is 255s and Bun does not reset the
+      // idle timer on server->client writes, so any fixed ceiling can still cut
+      // a slow large transfer mid-stream. 0 lets the transfer finish; a real
+      // client disconnect still aborts the request.
+      idleTimeout: 0,
       fetch: (req) => handleRequest(req, boundPort),
     })
     boundPort = server.port ?? port

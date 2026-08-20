@@ -100,6 +100,11 @@ Subcommands:
                                     <match> = tool name, glob (send_*) or /regex/.
   policy <slug> rm <match>          Remove a connector rule.
   policy <slug> clear               Remove all of a connector's rules.
+  authorize <slug> [--json]         OAuth 2.1 a connector end to end: discover
+                                    the server's authorization metadata,
+                                    register Kortix as a client (RFC 7591) when
+                                    the server supports it, and print the URL to
+                                    approve. --status reports the result.
   mcp                               Run the stdio MCP server.
 
 Add options (provider-specific):
@@ -114,6 +119,14 @@ Add options (provider-specific):
   --auth-type <t>          Manual override: none|bearer|basic|custom|oauth1.
                            Omit to auto-detect from the source; none opts out.
   --credential <mode>      shared (the only mode).
+
+Authorize options:
+  --status                 Report the connection's OAuth status instead.
+  --scope "<a b>"          Request these scopes instead of everything offered.
+  --client-id <id>         Use an existing OAuth app (servers without RFC 7591).
+  --client-secret <s>      Secret for that app. Omit for a public client.
+  --success-redirect <url> Where the browser lands after approval.
+  --error-redirect <url>   Where the browser lands after a denial.
 
 Global:
   --project <id>     Operate on this project id (default: linked).
@@ -182,6 +195,7 @@ export async function runConnectors(argv: string[]): Promise<number> {
   }
   let f: Record<string, string | undefined> = {};
   let asStdin = false;
+  let statusOnly = false;
   let json = false;
   let applyRemote = false;
   let clearSecretBinding = false;
@@ -211,9 +225,13 @@ export async function runConnectors(argv: string[]): Promise<number> {
     f.owner = takeFlagValue(rest, ['--owner']);
     f.ownerId = takeFlagValue(rest, ['--owner-id']);
     f.metadata = takeFlagValue(rest, ['--metadata']);
+    f.clientId = takeFlagValue(rest, ['--client-id']);
+    f.clientSecret = takeFlagValue(rest, ['--client-secret']);
+    f.scope = takeFlagValue(rest, ['--scope']);
     f.successRedirect = takeFlagValue(rest, ['--success-redirect']);
     f.errorRedirect = takeFlagValue(rest, ['--error-redirect']);
     asStdin = takeFlagBool(rest, ['--stdin']);
+    statusOnly = takeFlagBool(rest, ['--status']);
   } catch (err) {
     process.stderr.write(`${status.err((err as Error).message)}\n`);
     return 2;
@@ -386,6 +404,74 @@ export async function runConnectors(argv: string[]): Promise<number> {
           input.secretIdentifier
             ? `${status.ok(`Secret ${C.bold}${input.secretIdentifier}${C.reset} bound to ${C.bold}${input.slug}${C.reset}`)}\n`
             : `${status.ok(`Secret binding removed from ${C.bold}${input.slug}${C.reset}`)}\n`,
+        );
+        return 0;
+      }
+      /**
+       * OAuth 2.1 for one connector, start to finish, from a terminal.
+       *
+       * `kortix connectors authorize <slug>` discovers how the server
+       * authorizes, registers Kortix as a client when the server supports RFC
+       * 7591, and prints the URL a human opens to approve. An agent can run it
+       * unattended and hand the URL back in chat; `--json` makes that
+       * machine-readable. Nothing here is UI-only.
+       */
+      case 'authorize':
+      case 'auth': {
+        const slug = positional[0];
+        if (!slug) return missing('a connector slug');
+        const { connection_id: connectionId } = await ctx.client.post<{ connection_id: string }>(
+          `/projects/${ctx.projectId}/connectors/${encodeURIComponent(slug)}/oauth2/connection`,
+          {},
+        );
+        const oauth2 = `/projects/${ctx.projectId}/connections/${connectionId}/oauth2`;
+        if (statusOnly) {
+          const state = await ctx.client.get<Record<string, unknown>>(`${oauth2}/status`);
+          if (json) emitJson({ connection_id: connectionId, ...state });
+          else process.stdout.write(`  ${C.bold}${String(state.status)}${C.reset}\n`);
+          return state.status === 'error' ? 1 : 0;
+        }
+        const { discovery } = await ctx.client.post<{ discovery: OAuth2ResourceDiscoveryLike }>(
+          `${oauth2}/discover-resource`,
+          {},
+        );
+        const steps = oauth2AuthorizeSteps(discovery, {
+          ...(f.scope ? { scopes: f.scope.split(/[\s,]+/).filter(Boolean) } : {}),
+          ...(f.clientId ? { clientId: f.clientId } : {}),
+          ...(f.clientSecret ? { clientSecret: f.clientSecret } : {}),
+        });
+        if ('error' in steps) {
+          if (json) emitJson({ connection_id: connectionId, error: steps.error, discovery });
+          else process.stderr.write(`${status.err(steps.error)}\n`);
+          return 1;
+        }
+        if ('register' in steps) {
+          await ctx.client.post(`${oauth2}/register`, steps.register);
+        } else {
+          await ctx.client.put(`${oauth2}/application`, steps.application);
+        }
+        const started = await ctx.client.post<{ authorization_url: string; expires_at: string }>(
+          `${oauth2}/authorize`,
+          {
+            ...(steps.scopes.length ? { scopes: steps.scopes } : {}),
+            ...(f.successRedirect ? { success_redirect_uri: f.successRedirect } : {}),
+            ...(f.errorRedirect ? { error_redirect_uri: f.errorRedirect } : {}),
+          },
+        );
+        if (json) {
+          emitJson({
+            connection_id: connectionId,
+            registered: 'register' in steps,
+            scopes: steps.scopes,
+            ...started,
+          });
+          return 0;
+        }
+        process.stdout.write(
+          `\n  ${C.bold}Authorize ${discovery.resource_name ?? slug}${C.reset}\n` +
+            `  ${C.cyan}${started.authorization_url}${C.reset}\n\n` +
+            `  ${C.dim}${'register' in steps ? 'Kortix registered itself as an OAuth client. ' : ''}` +
+            `Open the URL, approve, then run: kortix connectors authorize ${slug} --status${C.reset}\n\n`,
         );
         return 0;
       }
@@ -816,6 +902,109 @@ function policySetLocal(mode: string | undefined): number {
     process.stderr.write(`${status.err((err as Error).message)}\n`);
     return 1;
   }
+}
+
+/**
+ * Plan the OAuth 2.1 authorization of one connector from what discovery found.
+ *
+ * The whole point is that an agent can run this unattended: when the server
+ * publishes a `registration_endpoint`, Kortix registers itself and NOTHING has
+ * to be supplied. Only a server without dynamic client registration needs a
+ * `--client-id`, and that requirement is reported as a sentence the agent can
+ * relay verbatim.
+ */
+export interface OAuth2ResourceDiscoveryLike {
+  resource_url: string;
+  requires_authorization: boolean;
+  resource?: string;
+  resource_name?: string;
+  authorization_server?: string;
+  metadata?: {
+    discovery_url?: string;
+    authorization_url?: string;
+    token_url?: string;
+    device_authorization_url?: string;
+    revocation_url?: string;
+    resource?: string;
+  };
+  registration_endpoint?: string;
+  token_endpoint_auth_methods_supported?: string[];
+  scopes: string[];
+  warnings: string[];
+}
+
+export function oauth2AuthorizeSteps(
+  discovery: OAuth2ResourceDiscoveryLike,
+  opts: { scopes?: string[]; clientId?: string; clientSecret?: string },
+):
+  | { register: Record<string, unknown>; scopes: string[] }
+  | { application: Record<string, unknown>; scopes: string[] }
+  | { error: string } {
+  if (!discovery.requires_authorization) {
+    return { error: 'This server accepted an unauthenticated request — no OAuth setup needed.' };
+  }
+  const metadata = discovery.metadata ?? {};
+  if (!metadata.token_url && !metadata.authorization_url) {
+    return {
+      error:
+        discovery.warnings.at(-1) ??
+        'No authorization server metadata could be discovered for this server.',
+    };
+  }
+  const scopes = opts.scopes?.length ? opts.scopes : discovery.scopes;
+  const endpoints = {
+    ...(metadata.discovery_url ? { discovery_url: metadata.discovery_url } : {}),
+    ...(metadata.authorization_url ? { authorization_url: metadata.authorization_url } : {}),
+    ...(metadata.token_url ? { token_url: metadata.token_url } : {}),
+    ...(metadata.device_authorization_url
+      ? { device_authorization_url: metadata.device_authorization_url }
+      : {}),
+    ...(metadata.revocation_url ? { revocation_url: metadata.revocation_url } : {}),
+  };
+  const resource = discovery.resource ?? metadata.resource;
+
+  if (discovery.registration_endpoint && !opts.clientId) {
+    return {
+      register: {
+        registration_endpoint: discovery.registration_endpoint,
+        ...(discovery.authorization_server ? { issuer: discovery.authorization_server } : {}),
+        ...endpoints,
+        ...(discovery.token_endpoint_auth_methods_supported?.length
+          ? {
+              token_endpoint_auth_methods_supported:
+                discovery.token_endpoint_auth_methods_supported,
+            }
+          : {}),
+        ...(scopes.length ? { scopes } : {}),
+        ...(resource ? { resource } : {}),
+      },
+      scopes,
+    };
+  }
+  if (!opts.clientId) {
+    return {
+      error: `${discovery.authorization_server ?? discovery.resource_url} does not support dynamic client registration — pass --client-id (and --client-secret).`,
+    };
+  }
+  // RFC 8414 §2: an unstated token_endpoint_auth_method means client_secret_basic.
+  const supported = discovery.token_endpoint_auth_methods_supported;
+  const authMethod = opts.clientSecret
+    ? supported?.includes('client_secret_basic') || !supported
+      ? 'client_secret_basic'
+      : 'client_secret_post'
+    : 'none';
+  return {
+    application: {
+      ...(discovery.authorization_server ? { issuer: discovery.authorization_server } : {}),
+      ...endpoints,
+      client_id: opts.clientId,
+      ...(opts.clientSecret ? { client_secret: opts.clientSecret } : {}),
+      token_endpoint_auth_method: authMethod,
+      ...(scopes.length ? { scopes } : {}),
+      ...(resource ? { resource } : {}),
+    },
+    scopes,
+  };
 }
 
 export function connectorSecretBindingInput(

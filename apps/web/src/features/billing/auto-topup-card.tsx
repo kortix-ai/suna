@@ -20,10 +20,29 @@ import {
   AUTO_TOPUP_DEFAULT_AMOUNT,
   AUTO_TOPUP_DEFAULT_THRESHOLD,
   AUTO_TOPUP_MIN_AMOUNT,
+  AUTO_TOPUP_MIN_BUFFER,
   AUTO_TOPUP_MIN_THRESHOLD,
 } from '@kortix/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence, m } from 'motion/react';
+
+/**
+ * Parse + clamp the raw string field values to the same integers the server
+ * receives. Shared by the configRef/onChange effects, `handleSave`, and the
+ * inline buffer-validation check below, so all four always agree on what
+ * "the current amount/threshold" is.
+ */
+function clampAutoTopupValues(thresholdInput: string, amountInput: string) {
+  const threshold = Math.max(
+    AUTO_TOPUP_MIN_THRESHOLD,
+    parseInt(thresholdInput, 10) || AUTO_TOPUP_DEFAULT_THRESHOLD,
+  );
+  const amount = Math.max(
+    AUTO_TOPUP_MIN_AMOUNT,
+    parseInt(amountInput, 10) || AUTO_TOPUP_DEFAULT_AMOUNT,
+  );
+  return { threshold, amount };
+}
 
 /**
  * Auto top-up: recharge the wallet automatically before it hits zero.
@@ -114,38 +133,29 @@ export function AutoTopupCard({
   // Expose current config via ref
   useEffect(() => {
     if (configRef) {
-      configRef.current = {
-        enabled,
-        threshold: Math.max(
-          AUTO_TOPUP_MIN_THRESHOLD,
-          parseInt(threshold, 10) || AUTO_TOPUP_DEFAULT_THRESHOLD,
-        ),
-        amount: Math.max(AUTO_TOPUP_MIN_AMOUNT, parseInt(amount, 10) || AUTO_TOPUP_DEFAULT_AMOUNT),
-      };
+      configRef.current = { enabled, ...clampAutoTopupValues(threshold, amount) };
     }
   }, [enabled, threshold, amount, configRef]);
 
   // Notify parent on change
   useEffect(() => {
-    onChange?.({
-      enabled,
-      threshold: Math.max(
-        AUTO_TOPUP_MIN_THRESHOLD,
-        parseInt(threshold, 10) || AUTO_TOPUP_DEFAULT_THRESHOLD,
-      ),
-      amount: Math.max(AUTO_TOPUP_MIN_AMOUNT, parseInt(amount, 10) || AUTO_TOPUP_DEFAULT_AMOUNT),
-    });
+    onChange?.({ enabled, ...clampAutoTopupValues(threshold, amount) });
   }, [enabled, threshold, amount, onChange]);
 
+  // Same rule the server enforces in `validateAutoTopupConfig`
+  // (apps/api/src/billing/services/auto-topup.ts) — kept in lockstep via the
+  // shared `AUTO_TOPUP_MIN_BUFFER` constant so client and server never
+  // disagree. Checked live (not just on Save) so the field can warn before a
+  // round trip to the server, instead of only after one fails.
+  const { threshold: thresholdNum, amount: amountNum } = clampAutoTopupValues(threshold, amount);
+  const bufferError =
+    enabled && amountNum < thresholdNum + AUTO_TOPUP_MIN_BUFFER
+      ? `Reload amount must be at least $${AUTO_TOPUP_MIN_BUFFER} above the threshold — enter $${thresholdNum + AUTO_TOPUP_MIN_BUFFER} or more.`
+      : null;
+
   const handleSave = useCallback(async () => {
-    const thresholdNum = Math.max(
-      AUTO_TOPUP_MIN_THRESHOLD,
-      parseInt(threshold, 10) || AUTO_TOPUP_DEFAULT_THRESHOLD,
-    );
-    const amountNum = Math.max(
-      AUTO_TOPUP_MIN_AMOUNT,
-      parseInt(amount, 10) || AUTO_TOPUP_DEFAULT_AMOUNT,
-    );
+    if (bufferError) return;
+    const { threshold: thresholdNum, amount: amountNum } = clampAutoTopupValues(threshold, amount);
     // Gate on "is there a chargeable method", NOT on "is one marked default".
     // A Stripe Link (or SEPA) checkout attaches the method to the SUBSCRIPTION
     // and leaves the customer-level invoice default null, so gating on the
@@ -175,7 +185,7 @@ export function AutoTopupCard({
     } finally {
       setSaving(false);
     }
-  }, [enabled, threshold, amount, setupStatus, queryClient, accountId]);
+  }, [enabled, threshold, amount, bufferError, setupStatus, queryClient, accountId]);
 
   const showMissingCardWarning = enabled && setupStatus && !setupStatus.has_payment_method;
 
@@ -264,7 +274,7 @@ export function AutoTopupCard({
                   >
                     <Button
                       size="sm"
-                      disabled={saving}
+                      disabled={saving || !!bufferError}
                       onClick={handleSave}
                       className="gap-1.5 transition-transform active:scale-[0.96]"
                     >
@@ -276,7 +286,9 @@ export function AutoTopupCard({
               </AnimatePresence>
             </div>
 
-            {showMissingCardWarning && (
+            {bufferError && <p className="text-destructive mt-2.5 text-xs">{bufferError}</p>}
+
+            {!bufferError && showMissingCardWarning && (
               <p className="text-kortix-orange mt-2.5 text-xs">
                 Add a payment method for auto top-up to run.
               </p>

@@ -77,20 +77,15 @@ export function parseShimRules(raw: string | undefined): ShimBrokerRule[] {
   for (const entry of value.capabilities) {
     if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue
     const item = entry as Record<string, unknown>
+    // `delivery: 'network'` is the WHOLE gate. e7d9bdad0c also skipped
+    // `on_echo: 'block'`, because a provider edge owned some destinations and
+    // arming here would have run a TLS-terminating proxy in a guest that was
+    // not supposed to have one. Nothing is edge-owned any more — the shim is
+    // the one mechanism on every provider (docs/specs/
+    // 2026-08-19-secrets-exposure-usage-model.md §4) — so honouring a stale
+    // `block` from an older API would leave the session with NO relay and
+    // every request leaving with a worthless handle.
     if (item.delivery !== 'network') continue
-    // `on_echo` is the API's statement of WHICH mechanism owns this
-    // destination, and it is the only one the guest gets: 'redact' means the
-    // shim relays and the broker injects, 'block' means the provider's own
-    // credential edge does it outside the sandbox.
-    //
-    // Skipping 'block' is not an optimisation. Measured on a Platinum session
-    // with the project flag OFF: the shim armed anyway (the flag gates the API
-    // half, never the daemon), so the guest ran a TLS-terminating proxy on a
-    // provider whose whole property is that nothing runs in the guest — and
-    // the agent, told `on_echo: 'block'`, got a 200 with [REDACTED] instead of
-    // the cut connection it was promised. Same credential either way; the
-    // wrong mechanism, and guidance that describes the other one.
-    if (item.on_echo === 'block') continue
     if (typeof item.identifier !== 'string' || !IDENTIFIER_RE.test(item.identifier)) continue
     if (!Array.isArray(item.hosts)) continue
 
@@ -99,10 +94,11 @@ export function parseShimRules(raw: string | undefined): ShimBrokerRule[] {
       if (typeof host !== 'string') continue
       const lower = host.trim().toLowerCase()
       if (!HOST_RE.test(lower)) continue
-      // First rule to claim a host wins. Two secrets on one host is already
-      // rejected at save time as a destination conflict; if one ever reaches
-      // the guest, terminating once and relaying to a single identifier beats
-      // picking nondeterministically per connection.
+      // First rule to claim a host wins, and that is enough: two secrets on
+      // one host is LEGAL now (spec §6), and substitution is server-side over
+      // every handle the session may spend on that host — not just the one the
+      // relay route names. So the identifier here only has to pick a door;
+      // terminating the host once beats terminating it per identifier.
       if (claimed.has(lower)) continue
       claimed.add(lower)
       hosts.push(lower)

@@ -151,6 +151,9 @@ export async function preparePreviewWsUpgrade(
       remainingPath,
       queryString,
       callerSessionId: principal.sessionId,
+      // A PreviewPrincipal's sessionId is the SANDBOX's own token binding, never
+      // a Supabase login id — so it is also the correct agent binding.
+      boundCredentialSessionId: principal.sessionId,
     });
     if (!upstream.ok) {
       return { ok: false, status: upstream.status, message: upstream.message };

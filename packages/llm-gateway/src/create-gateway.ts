@@ -1,4 +1,4 @@
-import type { GatewayConfig, GatewayHooks } from './domain';
+import type { GatewayConfig, GatewayHooks, ListModelsOptions } from './domain';
 import {
   type AnthropicMessagesRequest,
   anthropicMessagesToChat,
@@ -12,6 +12,10 @@ import {
   handleChatCompletions,
 } from './pipeline';
 import { gatewayErrorResponse } from './pipeline/error-response';
+import {
+  type LanguageModelRequest,
+  handleLanguageModel,
+} from './pipeline/language-model-handler';
 import { CircuitBreaker } from './resilience';
 
 // Anthropic Messages API error `type` values by HTTP status — used only to
@@ -93,7 +97,10 @@ export function createGateway(
     return match ? match[1].trim() : null;
   };
 
-  const listModels = async (authorization: string | undefined): Promise<Response> => {
+  const listModels = async (
+    authorization: string | undefined,
+    opts?: ListModelsOptions,
+  ): Promise<Response> => {
     const requestId = `req_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
     const token = bearer(authorization);
     if (!token)
@@ -119,9 +126,10 @@ export function createGateway(
           suggestion: 'Sign in again or provide a valid API token, then retry.',
         });
       if (!hooks.listModels) return jsonResponse({ models: {} });
-      const models = await hooks.listModels(principal);
+      const models = await hooks.listModels(principal, opts);
       logger.info(
-        `[gateway] models ${Object.keys(models).length} for acct=${principal.accountId.slice(0, 8)}`,
+        `[gateway] models ${Object.keys(models).length}${opts?.managedOnly ? ' (managed only)' : ''} ` +
+          `for acct=${principal.accountId.slice(0, 8)}`,
       );
       return jsonResponse({ models });
     } catch (err) {
@@ -198,10 +206,30 @@ export function createGateway(
     return jsonResponse(chatJsonToAnthropicMessage(data as Record<string, unknown>));
   };
 
+  // AI-SDK-native ingress (`POST /language-model`). Inert unless the
+  // `aiSdkNative` flag is on — returns 404 so an accidentally-mounted route is a
+  // clean not-found rather than a live surface. The OpenAI-compat path is never
+  // affected by this flag.
+  const languageModel = async (req: LanguageModelRequest): Promise<Response> => {
+    if (!config.aiSdkNative) {
+      return gatewayErrorResponse(404, {
+        message: 'AI-SDK-native gateway ingress is not enabled',
+        code: 'not_found',
+        provider: '',
+        requestedModel: '',
+        resolvedModel: '',
+        requestId: `req_${Date.now().toString(36)}`,
+        suggestion: 'Enable GATEWAY_AI_SDK_NATIVE to use the /language-model endpoint.',
+      });
+    }
+    return handleLanguageModel(runtime, req);
+  };
+
   return {
     chatCompletions: (req: ChatCompletionRequest): Promise<Response> =>
       handleChatCompletions(runtime, req),
     messages,
+    languageModel,
     listModels,
     breakerHealth,
   };

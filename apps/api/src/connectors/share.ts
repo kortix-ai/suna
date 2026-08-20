@@ -151,6 +151,38 @@ export interface SessionOwnershipContext {
    *  REQUIRED — never optional. An omitted binding would default to the
    *  permissive value and silently reopen the hole on any edge that forgets it. */
   callerSessionId: string | null;
+  /**
+   * The caller's AGENT/SANDBOX token binding — `callerKortixSessionId(c)`, i.e.
+   * `sessionId` for every credential kind EXCEPT a Supabase browser JWT, which
+   * is always null.
+   *
+   * Deliberately separate from `callerSessionId`. That field is fed the RAW
+   * `c.get('sessionId')` at 14 of its call sites, and `resolveSupabaseAuth`
+   * (middleware/auth.ts:285, :341) sets that to the SUPABASE LOGIN SESSION id
+   * for every signed-in human. So `callerSessionId != null` does NOT mean "an
+   * agent token" — it is true for ordinary dashboard users too, and using it to
+   * gate manager standing 403s them (see the trigger-override gate below).
+   *
+   * Only the trigger-session manager override reads this field. The
+   * sibling-session narrowing in `isSessionTargetVisibleToCaller` keeps using
+   * `callerSessionId`, unchanged.
+   *
+   * REQUIRED — never optional, for the same reason as `callerSessionId`.
+   */
+  boundCredentialSessionId: string | null;
+}
+
+/**
+ * What the sibling-session narrowing needs. `boundCredentialSessionId` is
+ * OPTIONAL here — only the trigger-session manager override reads it, so a
+ * caller doing narrowing alone is not forced to source it, while a full
+ * `SessionOwnershipContext` still passes unchanged.
+ */
+export interface SessionNarrowingContext {
+  origin: string | null;
+  sessionId: string;
+  callerSessionId: string | null;
+  boundCredentialSessionId?: string | null;
 }
 
 /**
@@ -159,7 +191,11 @@ export interface SessionOwnershipContext {
  * Human credentials and wrapper backend credentials have no session binding.
  * Interactive sessions keep their human ownership semantics.
  */
-export function isSessionTargetVisibleToCaller(ownership: SessionOwnershipContext): boolean {
+export function isSessionTargetVisibleToCaller(
+  /** Narrowing needs only the binding — not the override field, so callers that
+   *  do sibling-isolation alone stay unchanged. */
+  ownership: SessionNarrowingContext,
+): boolean {
   return !(
     ownership.origin === 'backend' &&
     ownership.callerSessionId != null &&
@@ -173,7 +209,7 @@ export function isSessionVisibleTo(
   ownerId: string | null,
   grants: SecretGrant[],
   subject: ShareSubject,
-  ownership: SessionOwnershipContext,
+  ownership: SessionNarrowingContext,
 ): boolean {
   // A sandbox token acts for ONE end-user. It must not reach a sibling backend
   // session just because the wrapper credential created them both. Interactive
@@ -222,7 +258,21 @@ export function isProjectSessionVisibleTo(
   context: { metadata: unknown; canManageProject: boolean },
 ): boolean {
   if (!isSessionTargetVisibleToCaller(ownership)) return false;
-  if (context.canManageProject && isTriggerCreatedSessionMetadata(context.metadata)) return true;
+  // The manager override is for callers that are NOT a session-bound agent
+  // credential. A sandbox/agent token whose launching user happens to hold
+  // `manage` would otherwise read every OTHER trigger-created private session
+  // in the project — the sibling reach the ownership gate exists to deny.
+  //
+  // Gated on `boundCredentialSessionId`, NOT `callerSessionId`: the latter is
+  // the Supabase login session id for ordinary humans, so gating on it would
+  // strip managers of the override in the dashboard. See the field docs above.
+  if (
+    ownership.boundCredentialSessionId === null &&
+    context.canManageProject &&
+    isTriggerCreatedSessionMetadata(context.metadata)
+  ) {
+    return true;
+  }
   return isSessionVisibleTo(visibility, ownerId, grants, subject, ownership);
 }
 
@@ -305,3 +355,88 @@ export async function setSessionSharing(sessionId: string, intent: SharingIntent
     );
   }
 }
+
+/**
+ * Who may CHANGE a session's sharing policy — a strictly narrower question than
+ * `canManageLifecycle` (stop / restart / delete / model), which stays
+ * manager-tier.
+ *
+ * Sharing is the owner's decision. Two distinct writes ask this, and each had
+ * its own defect:
+ *
+ *  1. `PUT .../sharing`. It runs behind the content-visibility gate, so a
+ *     manager never reaches another human's PRIVATE session (that 404s). What
+ *     they did reach is a session shared WITH them — project-wide or on the
+ *     allow-list — where they could rewrite the owner's policy wholesale and
+ *     revoke everyone, the owner included. Sharing something with a manager is
+ *     not handing them its access list.
+ *  2. `POST .../public-shares`. It deliberately runs in FRONT of the
+ *     visibility gate (see loadSessionForSharing), and a public link is
+ *     unauthenticated. A manager could therefore mint a link against a private
+ *     session they cannot read and open it anonymously — the read the
+ *     visibility gate had just refused. That one is a real escalation.
+ *
+ * `private` also means "the OWNER only", never "only the person editing", so a
+ * non-owner who saves it revokes their own access with no undo. That specific
+ * trap is `sharingChangeKeepsEditorAccess` below.
+ *
+ * The one exception is a session NOBODY owns: a trigger/agent run is stamped
+ * with the agent's service-account id, so there is no human owner to defend and
+ * an owner-only rule would make the policy permanently unchangeable. A project
+ * manager governs those. A `created_by` that is neither (a removed user) stays
+ * owner-only — fail closed; the manager's remedy is deleting the session.
+ */
+export function mayManageSessionSharing(input: {
+  isOwner: boolean;
+  canManageProject: boolean;
+  /** True when `created_by` names a service account, or names nobody at all. */
+  ownerIsMachine: boolean;
+}): boolean {
+  if (input.isOwner) return true;
+  return input.canManageProject && input.ownerIsMachine;
+}
+
+/**
+ * The denial wording for the two owner-governed sharing writes. Exported so the
+ * routes, the flow contracts and the spec quote ONE string each.
+ *
+ * Phrased "only the session owner" with no manager escape hatch, because that
+ * is true for every caller who can actually reach it: a manager is refused only
+ * on a session a human owns, and a machine-owned session admits the manager
+ * instead of producing this message.
+ */
+export const SESSION_SHARING_OWNER_ONLY_ERROR =
+  'Only the session owner can change who opens this session';
+export const PUBLIC_SHARE_OWNER_ONLY_ERROR =
+  'Only the session owner can create a public link to this session';
+
+/**
+ * A sharing change must never remove the editor's own access.
+ *
+ * The concrete bug: a manager opens someone else's session, picks "Only you",
+ * and is locked out on save — because `private` means "the OWNER only", and the
+ * owner is somebody else. The undo needs the read the save just revoked, so the
+ * session is gone for good. Owners are structurally safe (every mode keeps the
+ * owner), so after `mayManageSessionSharing` this only ever fires for a
+ * machine-owned session being edited by a project manager.
+ */
+export function sharingChangeKeepsEditorAccess(input: {
+  isOwner: boolean;
+  visibility: SessionVisibility;
+  grants: SecretGrant[];
+  subject: ShareSubject;
+}): boolean {
+  if (input.isOwner) return true;
+  if (input.visibility === 'project') return true;
+  if (input.visibility === 'restricted') {
+    return input.grants.some(
+      (grant) =>
+        (grant.principalType === 'member' && grant.principalId === input.subject.userId) ||
+        (grant.principalType === 'group' && input.subject.groupIds.includes(grant.principalId)),
+    );
+  }
+  return false;
+}
+
+export const SHARING_SELF_LOCKOUT_ERROR =
+  'That would remove your own access to this session. Add yourself, or share it with the whole project.';

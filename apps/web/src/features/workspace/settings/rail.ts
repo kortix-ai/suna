@@ -1,4 +1,5 @@
 import {
+  KeyIcon as Key,
   LinkIcon as Link,
   SlidersHorizontalIcon as SlidersHorizontal,
   UserIcon as User,
@@ -38,6 +39,18 @@ const STATIC_GROUPS: readonly RailGroup[] = [
         tab: 'connected',
         label: 'Connected accounts',
         icon: Link,
+      },
+      // Labelled "API keys", routed at `/settings/tokens`. The id has to be
+      // `tokens` — it is the URL segment, and the account page already spends
+      // `api-keys` on a legacy redirect (`RENAMED` in `settings-tabs.ts`) —
+      // but nothing in the product calls a person's own key a "token", so the
+      // row says what the thing is called. Same split as `connected`, whose id
+      // is one word and whose label is two.
+      {
+        tab: 'tokens',
+        label: 'API keys',
+        description: 'Keys that sign the CLI, a script, or a CI job in as you.',
+        icon: Key,
       },
     ],
   },

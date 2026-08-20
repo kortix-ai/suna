@@ -366,7 +366,7 @@ const META_TOOLS = [
   {
     name: 'secret_call',
     description:
-      'Make an HTTPS request that needs a project API key, WITHOUT ever holding the key. Kortix injects the credential outside this sandbox and returns only the upstream response. Use this for any secret listed as "HTTPS broker" in your secret capabilities — there is no environment variable for those and no value you can read, so this tool is the only way to use them. Pass the secret\'s identifier plus the full https:// URL; add the request\'s own non-secret headers if it needs them, and never add an Authorization header yourself.',
+      'Make an HTTPS request that needs a project API key, WITHOUT ever holding the key. Kortix adds the credential outside this sandbox and returns only the upstream response, with any echo of the value replaced by [REDACTED]. Use this for a secret whose capability lists delivery "https_broker" — it has no environment variable at all, so this is the only way to spend it — and as the fallback for a "network" secret when a request cannot be relayed the ordinary way (send its handle with your normal HTTP client first). Pass the secret\'s identifier plus the full https:// URL; add the request\'s own non-secret headers if it needs them, and never add an Authorization header yourself.',
     inputSchema: {
       type: 'object',
       properties: {

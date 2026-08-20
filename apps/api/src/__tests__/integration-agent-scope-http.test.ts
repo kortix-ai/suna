@@ -1,7 +1,7 @@
 /**
  * HTTP-level enforcement (in-process, real DB + real app): an agent-session
- * token whose grant lacks `project.cr.merge` is rejected with 403 by the actual
- * CR-merge route — exercising the full path: auth middleware (validates the
+ * token whose grant lacks `project.gitops.merge` is rejected with 403 by the
+ * actual CR-merge route — exercising the full path: auth middleware (validates the
  * token, sets agentGrant on context) → route (loadProjectForUser → assertAgentScope).
  * A token granted the scope (or no grant) passes the gate (and falls through to
  * the CR-not-found 404, which proves the scope check let it through).
@@ -58,20 +58,36 @@ function mergeReq(secret: string) {
 }
 
 describe('HTTP enforcement — CR merge gate via the real route', () => {
-  test('agent granted cr.open but NOT cr.merge → 403 at the route', async () => {
+  // `project.cr.open` / `project.cr.merge` collapsed into the gitops leaves
+  // (spec §2.4); the routes gate on the leaves, and a manifest still spelling it
+  // the old way is rewritten on input by `canonicalizeGrantActions`. The grant
+  // rows below are the POST-normalization shape, which is what a token minted
+  // from a manifest actually carries.
+  test('agent granted gitops.push but NOT gitops.merge → 403 at the route', async () => {
     if (!ctx) { console.warn('[http] no owner+project in local DB — skipping'); return; }
-    const secret = await mintToken({ agent: 'release-bot', kortixCli: ['project.cr.open'], connectors: [] });
+    const secret = await mintToken({ agent: 'release-bot', kortixCli: ['project.gitops.push'], connectors: [] });
     const res = await mergeReq(secret);
     expect(res.status).toBe(403);
     const body = await res.json().catch(() => ({}));
-    expect(JSON.stringify(body)).toContain('project.cr.merge');
+    expect(JSON.stringify(body)).toContain('project.gitops.merge');
   });
 
-  test('agent granted cr.merge → passes the scope gate (404 CR-not-found, not 403)', async () => {
+  test('agent granted gitops.merge → passes the scope gate (404 CR-not-found, not 403)', async () => {
     if (!ctx) return;
-    const secret = await mintToken({ agent: 'deployer', kortixCli: ['project.cr.merge'], connectors: [] });
+    const secret = await mintToken({ agent: 'deployer', kortixCli: ['project.gitops.merge'], connectors: [] });
     const res = await mergeReq(secret);
     expect(res.status).not.toBe(403);
+  });
+
+  test('a RETIRED cr.merge spelling that reached the token un-normalized is refused', async () => {
+    // The failure mode this pins: `agentMayPerform` is a plain membership test,
+    // so a grant that still says `project.cr.merge` grants nothing. That is
+    // correct — the spelling is corrected at manifest-parse time, and a token
+    // carrying it means the manifest never went through that path.
+    if (!ctx) return;
+    const secret = await mintToken({ agent: 'stale', kortixCli: ['project.cr.merge'], connectors: [] });
+    const res = await mergeReq(secret);
+    expect(res.status).toBe(403);
   });
 
   test('meta agent with all project actions → passes the scope gate', async () => {

@@ -992,6 +992,151 @@ export async function completeSandboxTurn(
 }
 
 /**
+ * Close ONE open turn by the user message it was opened for — exact match only,
+ * no fallback to an unkeyed record — and write its ledger end with `reason`.
+ *
+ * For prompts forwarded INTO a live turn: their records are opened per
+ * message and the daemon's `end` relay names only the message the FINAL
+ * assistant answered, so every other forwarded record of that turn would stay
+ * open until a reaper sweep gave up on it (~20 s of "working" after the last
+ * answer). `session-lifecycle/forwarded-strand-reconcile.ts` closes the ones
+ * the step answered with `completed`, and the ones it stranded with
+ * `abandoned` once they are re-queued; `inbox-hold-settle.ts` closes the ones
+ * a Stop took back out of the transcript with `abandoned` too.
+ *
+ * Does NOT confirm inbox consumption: the callers decide what the row becomes.
+ * Returns true when a record was closed.
+ */
+export async function closeSandboxTurnByMessageId(
+  sessionId: string,
+  messageId: string,
+  reason: SessionTurnEndReason,
+  graceMs = idleGraceMs(),
+): Promise<boolean> {
+  const metadata = jsonbObject(sql`s.metadata`);
+  const result = await execute(sql`
+    WITH target AS (
+      SELECT s.sandbox_id,
+             ${metadata} AS metadata
+        FROM kortix.session_sandboxes s
+       WHERE s.session_id = ${sessionId}
+         AND s.status IN ('active', 'provisioning')
+       FOR UPDATE OF s
+    ), selected AS (
+      SELECT target.sandbox_id,
+             'activeTurns'::text AS source,
+             entry.key,
+             entry.value->>'token' AS token,
+             entry.value
+        FROM target
+        CROSS JOIN LATERAL jsonb_each(CASE
+          WHEN jsonb_typeof(target.metadata->'activeTurns') = 'object'
+            THEN target.metadata->'activeTurns'
+          ELSE '{}'::jsonb
+        END) entry
+       WHERE entry.value->>'state' IN ('delivering', 'active')
+         AND entry.value->>'messageId' = ${messageId}
+      UNION ALL
+      SELECT target.sandbox_id,
+             'activeTurn'::text AS source,
+             'activeTurn'::text AS key,
+             target.metadata->'activeTurn'->>'token' AS token,
+             target.metadata->'activeTurn' AS value
+        FROM target
+       WHERE target.metadata->'activeTurn'->>'state' IN ('delivering', 'active')
+         AND target.metadata->'activeTurn'->>'messageId' = ${messageId}
+    ), next_state AS (
+      SELECT target.sandbox_id,
+             jsonb_set(
+               CASE
+                 WHEN EXISTS (
+                   SELECT 1 FROM selected
+                    WHERE selected.sandbox_id = target.sandbox_id
+                      AND selected.source = 'activeTurn')
+                 THEN target.metadata - 'activeTurn'
+                 ELSE target.metadata
+               END,
+               '{activeTurns}',
+               coalesce((
+                 SELECT jsonb_object_agg(entry.key, entry.value)
+                   FROM jsonb_each(CASE
+                     WHEN jsonb_typeof(target.metadata->'activeTurns') = 'object'
+                       THEN target.metadata->'activeTurns'
+                     ELSE '{}'::jsonb
+                   END) entry
+                  WHERE NOT EXISTS (
+                    SELECT 1 FROM selected
+                     WHERE selected.sandbox_id = target.sandbox_id
+                       AND selected.source = 'activeTurns'
+                       AND selected.key = entry.key)),
+                 '{}'::jsonb),
+               true) AS metadata,
+             (SELECT coalesce(
+                       jsonb_agg(jsonb_build_object(
+                         'token', selected.token,
+                         'opencodeSessionId', selected.value->>'opencodeSessionId',
+                         'messageId', selected.value->>'messageId',
+                         'startedAtMs', selected.value->>'startedAtMs'))
+                         FILTER (WHERE selected.token IS NOT NULL),
+                       '[]'::jsonb)
+                FROM selected
+               WHERE selected.sandbox_id = target.sandbox_id) AS ended_turns
+        FROM target
+       WHERE EXISTS (SELECT 1 FROM selected WHERE selected.sandbox_id = target.sandbox_id)
+    )
+    UPDATE kortix.session_sandboxes s
+       SET metadata = next_state.metadata,
+           deadline_at = CASE
+             WHEN next_state.metadata->'activeTurn'->>'state' IN ('delivering', 'active')
+               OR EXISTS (
+                 SELECT 1
+                   FROM jsonb_each(CASE
+                     WHEN jsonb_typeof(next_state.metadata->'activeTurns') = 'object'
+                       THEN next_state.metadata->'activeTurns'
+                     ELSE '{}'::jsonb
+                   END) remaining
+                  WHERE remaining.value->>'state' IN ('delivering', 'active'))
+             THEN s.deadline_at
+             ELSE LEAST(
+               s.deadline_at,
+               now() + make_interval(secs => ${secs(graceMs)}))
+           END,
+           updated_at = now()
+      FROM next_state
+     WHERE s.sandbox_id = next_state.sandbox_id
+    RETURNING next_state.ended_turns, s.session_id, s.sandbox_id, s.project_id, s.account_id`);
+  const rows = normalizeRows(result);
+  const owner = rows?.[0] ? ledgerIdentity(rows[0]) : null;
+  const turns = endedLedgerTurns(rows?.[0]?.ended_turns);
+  if (owner && turns.length > 0) {
+    await recordTurnLedger(
+      endedTurnLedger(owner, turns, reason),
+      `close-by-message ${turns.map((turn) => turn.token).join(',')} (${reason})`,
+    );
+  }
+  // The ledger row may still be open with its metadata entry already gone
+  // (settled by a renewal/acceptance pass that never named this message):
+  // close it directly, by the message it was opened for. Observation, never
+  // authority — a failed write is logged and the reaper's backstop closes it.
+  let closedLedger = false;
+  try {
+    const direct = await execute(sql`UPDATE kortix.session_turns
+         SET state = 'ended', end_reason = ${reason}, ended_at = now(), updated_at = now()
+       WHERE session_id = ${sessionId}
+         AND message_id = ${messageId}
+         AND state <> 'ended'
+       RETURNING turn_token`);
+    closedLedger = (normalizeRows(direct)?.length ?? 0) > 0;
+  } catch (error) {
+    console.warn(
+      `[turn-ledger] close-by-message ledger write failed for ${messageId}:`,
+      error instanceof Error ? error.message : error,
+    );
+  }
+  return turns.length > 0 || closedLedger;
+}
+
+/**
  * Renew one accepted turn after the reaper observes that exact OpenCode turn in
  * flight. The token CAS prevents stale evidence from renewing a newer turn.
  */

@@ -33,7 +33,7 @@ test('listProjectFiles GETs /projects/:id/files with ref/path query', async () =
 });
 
 test('listProjectFiles is a silent background read — a 403 never hits the global error sink', async () => {
-  // project.file.read is editor-tier: a member deep-linking to the files page
+  // project.file.read is manager-tier: a member deep-linking to the files page
   // legitimately 403s. The files view renders its own error state, no toast.
   const onError = mock(() => {});
   configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok', onError });
@@ -55,7 +55,7 @@ test('readProjectFile GETs /projects/:id/files/content with path/ref query', asy
 });
 
 test('readProjectFile is a silent background read — a 403 never hits the global error sink', async () => {
-  // Same editor-tier gate as listProjectFiles above, same reason: a project
+  // Same manager-tier gate as listProjectFiles above, same reason: a project
   // detail/skill/command modal reading one file legitimately 403s for a
   // plain member, and renders its own inline error state — never a toast.
   const onError = mock(() => {});

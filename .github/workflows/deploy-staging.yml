@@ -230,7 +230,17 @@ jobs:
               # run 3 API tasks. Four app connections plus one leader connection
               # per process
               # leaves 12 slots for Supabase services, migrations, and QA.
-              DB_POOL_MAX: "4"
+              DB_POOL_MAX: "4",
+              # Staging-only: the staging DB is in eu-west-2 while ECS is in
+              # us-west-2 (~140ms per round trip), so heavy IAM/team writes
+              # legitimately exceed the 25s default under gate load — with the
+              # edge CI passthrough live, dry-run 32335937697 surfaced the
+              # true origin failure: "Request exceeded the 25s server
+              # processing deadline". 55s stays under the 60s ALB idle
+              # timeout; browsers still abort at 30s so UX is unchanged; the
+              # release-gate API client budgets are far larger. Prod keeps
+              # the 25s default (co-regional DB).
+              REQUEST_DEADLINE_MS: "55000"
             }')"
 
           if [ "$staging_secret_exists" = true ]; then
@@ -316,10 +326,19 @@ jobs:
   wire-cloudflare:
     name: Wire Cloudflare staging DNS and Worker
     runs-on: ubuntu-latest
+    # Non-blocking: deploy-web-vercel, verify, and promote-staging-channel
+    # `needs:` this job, and a Cloudflare auth failure (403 since 2026-08-18)
+    # silently skipped every staging web deploy for a week — the suite then
+    # drove a frozen Aug-12 frontend against the current API. The Worker/DNS
+    # config this job manages already exists and rarely changes; when it
+    # fails, the failed step stays visible here but must not freeze the
+    # frontend. verify still curls the live staging hosts independently.
+    continue-on-error: true
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_EMAIL: ${{ secrets.CLOUDFLARE_EMAIL }}
       CLOUDFLARE_GLOBAL_API_KEY: ${{ secrets.CLOUDFLARE_GLOBAL_API_KEY }}
+      CLOUDFLARE_APPS_EDGE_API_TOKEN: ${{ secrets.CLOUDFLARE_APPS_EDGE_API_TOKEN }}
       CLOUDFLARE_ZONE_ID: ${{ vars.CLOUDFLARE_ZONE_ID || 'af378d3df4e4dd5052a1fcbf263b685d' }}
       CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || '9785405a992435bb0c7bd19f9b6d26d5' }}
     steps:
@@ -331,28 +350,60 @@ jobs:
         env:
           WORKER_NAME: staging-api-kortix-router
           WORKER_ROUTE: staging-api.kortix.com/*
+          CF_WORKER_CI_PASSTHROUGH_SECRET: ${{ secrets.CF_WORKER_CI_PASSTHROUGH_SECRET }}
         run: |
           set -euo pipefail
-          if [ -n "${CLOUDFLARE_GLOBAL_API_KEY:-}" ] && [ -n "${CLOUDFLARE_EMAIL:-}" ]; then
+          # Pick the first credential that actually AUTHENTICATES, probed with a
+          # cheap zone read — since 2026-08-18 the global key 403s and, because
+          # it was tried first and trusted blindly, every Worker deploy failed.
+          # CLOUDFLARE_APPS_EDGE_API_TOKEN is a legitimate same-account token
+          # (Apps edge) and serves as a fallback when it carries Workers scope.
+          zone_probe() {
+            curl -fsS -o /dev/null --max-time 15 \
+              "https://api.cloudflare.com/client/v4/zones/${CLOUDFLARE_ZONE_ID}" "$@"
+          }
+          auth_headers=()
+          if [ -n "${CLOUDFLARE_GLOBAL_API_KEY:-}" ] && [ -n "${CLOUDFLARE_EMAIL:-}" ] \
+            && zone_probe -H "X-Auth-Email: ${CLOUDFLARE_EMAIL}" -H "X-Auth-Key: ${CLOUDFLARE_GLOBAL_API_KEY}"; then
             auth_headers=(-H "X-Auth-Email: ${CLOUDFLARE_EMAIL}" -H "X-Auth-Key: ${CLOUDFLARE_GLOBAL_API_KEY}")
-          elif [ -n "${CLOUDFLARE_API_TOKEN:-}" ]; then
+            echo "Cloudflare auth: global API key"
+          elif [ -n "${CLOUDFLARE_API_TOKEN:-}" ] \
+            && zone_probe -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}"; then
             auth_headers=(-H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}")
+            echo "Cloudflare auth: scoped API token"
+          elif [ -n "${CLOUDFLARE_APPS_EDGE_API_TOKEN:-}" ] \
+            && zone_probe -H "Authorization: Bearer ${CLOUDFLARE_APPS_EDGE_API_TOKEN}"; then
+            auth_headers=(-H "Authorization: Bearer ${CLOUDFLARE_APPS_EDGE_API_TOKEN}")
+            echo "Cloudflare auth: apps-edge API token (fallback)"
           else
-            echo "::error::Cloudflare Worker deploy requires CLOUDFLARE_GLOBAL_API_KEY + CLOUDFLARE_EMAIL, or a scoped CLOUDFLARE_API_TOKEN with Workers permissions."
+            echo "::error::No Cloudflare credential authenticates (global key, scoped token, apps-edge token all absent or refused). Rotate CLOUDFLARE_GLOBAL_API_KEY or provide a CLOUDFLARE_API_TOKEN with Workers + zone permissions."
             exit 1
           fi
 
           # This REST deploy replaces all staging Worker bindings. The API
           # and gateway both use ECS Fargate. EKS was decommissioned 2026-08-02.
-          metadata="$(jq -cn '{
+          #
+          # CI_PASSTHROUGH_SECRET lets a trusted release-gate run see the TRUE
+          # origin status instead of the synthetic MAINTENANCE_MODE 503 (see
+          # worker.mjs isTrustedCiPassthrough). It is bound only when the
+          # repository secret exists; without it the Worker's passthrough branch
+          # is unreachable and staging behaves exactly as before.
+          ci_binding='[]'
+          if [ -n "${CF_WORKER_CI_PASSTHROUGH_SECRET:-}" ]; then
+            ci_binding="$(jq -cn --arg secret "${CF_WORKER_CI_PASSTHROUGH_SECRET}" \
+              '[{type:"secret_text", name:"CI_PASSTHROUGH_SECRET", text:$secret}]')"
+          else
+            echo "::notice::CF_WORKER_CI_PASSTHROUGH_SECRET unset — deploying staging Worker without the CI passthrough binding."
+          fi
+          metadata="$(jq -cn --argjson ci "$ci_binding" '{
             main_module: "worker.mjs",
             compatibility_date: "2026-06-01",
-            bindings: [
+            bindings: ([
               {type:"plain_text", name:"ACTIVE_BACKEND", text:"ecs-fargate"},
               {type:"plain_text", name:"BACKEND_ECS_FARGATE", text:"https://staging-api-ecs-fargate.kortix.com"},
               {type:"plain_text", name:"GATEWAY_ACTIVE_BACKEND", text:"ecs-fargate"},
               {type:"plain_text", name:"GATEWAY_BACKEND_ECS_FARGATE", text:"https://gateway-staging-ecs-fargate.kortix.com"}
-            ]
+            ] + $ci)
           }')"
           curl -fsS -X PUT \
             "${auth_headers[@]}" \

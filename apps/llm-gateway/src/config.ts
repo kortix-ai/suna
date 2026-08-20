@@ -38,6 +38,12 @@ export const config = {
     baseUrl: process.env.LANGFUSE_HOST,
   },
   captureBodies: flag('GATEWAY_CAPTURE_BODIES', true),
+  // AI-SDK-native ingress (`POST /language-model`, Vercel "AI Gateway"
+  // protocol). Default ON — opencode talks to the gateway losslessly (reasoning
+  // signatures, refusals, tools 1:1). Verified across every provider on real
+  // self-host traffic (codex, OpenAI-on-Bedrock, Bedrock-Claude, Anthropic).
+  // GATEWAY_AI_SDK_NATIVE=0 is the kill-switch to the OpenAI-compatible path.
+  aiSdkNative: flag('GATEWAY_AI_SDK_NATIVE', true),
   // Default: 8 MiB. This accepts the measured 2,023,225-byte Aster request and
   // rejects accidental/untrusted oversized payloads before upstream dispatch.
   maxRequestBytes: optionalInt('GATEWAY_MAX_REQUEST_BYTES', DEFAULT_MAX_REQUEST_BYTES),

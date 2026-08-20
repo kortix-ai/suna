@@ -120,7 +120,7 @@
  * `components/ui/settings-row.tsx`). Icon and Workspace name are one group;
  * Danger zone gets a plain section label above its own group. Delete
  * workspace is red TEXT, not a filled destructive button — the
- * `ConfirmDialog` behind it, and the manager-only `canDelete` gate in front of
+ * `ConfirmDialog` behind it, and the `project.delete` gate in front of
  * it, are both unchanged.
  */
 
@@ -149,7 +149,14 @@ import {
 import { useDebounce } from '@/hooks/use-debounce';
 import { suppressAutoProjectAfterDelete } from '@/lib/onboarding/ensure-first-project';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
-import { useProjectCan } from '@/lib/use-project-can';
+import { useProjectCans } from '@/lib/use-project-can';
+
+/** Asked for in ONE batched probe. `project.delete` and `project.write` are
+ *  separate permissions — see `ProjectSettingsGeneralProps.canDelete`. */
+const GENERAL_TAB_ACTIONS = [
+  PROJECT_ACTIONS.PROJECT_WRITE,
+  PROJECT_ACTIONS.PROJECT_DELETE,
+] as const;
 import {
   archiveProject,
   getProject,
@@ -224,11 +231,10 @@ export interface GeneralTabViewProps {
    *  `useQuery`/mutations, so it can't render under `renderToStaticMarkup`
    *  with no providers. */
   gitRepoSlot?: ReactNode;
-  /** Whether the Delete-workspace section shows at all — manager-only
-   *  (`effective_project_role === 'manager'`), NOT the broader `canEdit`
-   *  (manager OR `project.write`) gate `generalFieldsSlot`'s fields use.
-   *  Matches `settings-view.tsx`'s original raw `canManage` vs `canEdit`
-   *  split exactly (see this file's header comment). */
+  /** Whether the Delete-workspace section shows at all — gated on
+   *  `project.delete`, NOT the broader `project.write` gate
+   *  `generalFieldsSlot`'s fields use. Deleting and editing are separate
+   *  permissions, so a custom role can grant one without the other. */
   canDelete?: boolean;
   workspaceName?: string;
   archiveOpen?: boolean;
@@ -542,13 +548,13 @@ export function GeneralTab({ projectId }: { projectId: string }) {
   });
 
   const project = projectQuery.data;
-  // Raw, manager-only — gates ONLY the Delete-workspace section's visibility,
-  // matching `settings-view.tsx`'s original split (see this file's header
-  // comment). `canEdit` below (manager OR project.write) gates the fields
-  // themselves, same as the original `GeneralProjectCard`.
-  const canManage = project?.effective_project_role === 'manager';
-  const canWrite = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_WRITE).allowed === true;
-  const canEdit = canManage || canWrite;
+  // Two DIFFERENT permissions, asked for separately. `project.delete` gates the
+  // Delete-workspace section; `project.write` gates the fields. Reading a
+  // `manager` role label instead would have hidden Delete from a custom role
+  // that holds `project.delete`, and shown it to one that does not.
+  const caps = useProjectCans(projectId, GENERAL_TAB_ACTIONS);
+  const canDelete = caps[PROJECT_ACTIONS.PROJECT_DELETE]?.allowed === true;
+  const canEdit = caps[PROJECT_ACTIONS.PROJECT_WRITE]?.allowed === true;
 
   // Same `qk.projects.list(accountId)` cache entry the workspace switcher and
   // `/new` already fetch with, so this is warm (no extra request) for the
@@ -594,7 +600,7 @@ export function GeneralTab({ projectId }: { projectId: string }) {
         project ? <GeneralWorkspaceCard project={project} canManage={canEdit} /> : undefined
       }
       gitRepoSlot={<GitView projectId={projectId} />}
-      canDelete={canManage}
+      canDelete={canDelete}
       workspaceName={project?.name}
       archiveOpen={archiveOpen}
       onOpenArchiveDialog={() => setArchiveOpen(true)}

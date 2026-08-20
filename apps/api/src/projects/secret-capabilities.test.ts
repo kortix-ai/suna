@@ -160,13 +160,13 @@ describe('buildSecretCapabilities', () => {
 });
 
 /**
- * The boundary is invisible from inside the sandbox by design, and its one
- * observable symptom — a cut connection — reads as a dead host. An agent told
- * nothing invents an explanation for it (a real session concluded that an echo
+ * The substitution is invisible from inside the sandbox by design: the agent
+ * sends a handle and Kortix swaps it upstream. An agent told nothing invents an
+ * explanation for every symptom it meets (a real session concluded that an echo
  * service had "legacy HTTP/1.1 ALPN negotiation" problems). The catalog is the
  * only channel that can correct that before the guess happens.
  */
-describe('buildSecretCapabilities describes the network boundary', () => {
+describe('buildSecretCapabilities describes egress-enforced delivery', () => {
   const NEVER_LEAKS = 'sk_live_never_in_the_catalog';
 
   const policy = {
@@ -180,7 +180,7 @@ describe('buildSecretCapabilities describes the network boundary', () => {
     tls: 'terminate' as const,
   };
 
-  /** A full stored row, so the same object can drive the provider-edge check. */
+  /** A full stored row, so the same object can drive the session-binding check. */
   const row = {
     secretId: '00000000-0000-4000-8000-000000000001',
     identifier: 'STRIPE_API_KEY',
@@ -206,43 +206,51 @@ describe('buildSecretCapabilities describes the network boundary', () => {
       sessionId: 'session-1',
     });
 
-  test('names the allow-listed hosts and the injected header', () => {
+  test('names the env var holding the handle and the allow-listed hosts', () => {
     expect(built().capabilities).toEqual([
       {
         identifier: 'STRIPE_API_KEY',
         delivery: 'network',
+        environment_variable: 'STRIPE_API_KEY',
         hosts: ['api.stripe.test', 'uploads.stripe.test'],
-        header: 'authorization',
         scheme: 'https',
         readable_in_sandbox: false,
-        on_echo: 'block',
+        on_echo: 'redact',
       },
     ]);
   });
 
-  test('carries no value, no alias, and no header template', () => {
+  test('carries no value, no alias, no header name and no header template', () => {
     const json = JSON.stringify(built());
     expect(json).not.toContain(NEVER_LEAKS);
     expect(json).not.toContain('{{secret}}');
     expect(json).not.toContain('Bearer');
-    // `bindingAlias` in ../secrets/network-boundary.ts derives the provider-side
+    // The legacy injection slot is an implementation detail of the relay; an
+    // agent that can read the shape of the header starts assembling one.
+    expect(json).not.toContain('authorization');
+    // `bindingAlias` in ../secrets/network-boundary.ts derives a stable
     // attachment name from the secret id. The guest must not see that either.
     expect(json).not.toContain(row.secretId.replace(/-/g, ''));
   });
 
-  test('states the echo cut, the HTTPS requirement, and what to probe instead', () => {
+  test('states the handle, the substitution, the [REDACTED] echo and the fallback', () => {
     const notes = built().notes?.network ?? [];
     const text = notes.join('\n');
-    expect(text).toContain('curl: (52) Empty reply from server');
-    expect(text).toContain('The host is not down.');
-    expect(text).toContain('HTTPS is required.');
-    expect(text).toContain('never one that reflects request headers');
+    expect(text).toContain('holds a HANDLE, not the value');
+    expect(text).toContain('[REDACTED]');
+    expect(text).toContain('is a REAL failure');
+    expect(text).toContain('over HTTPS');
     expect(text).toContain('do not ask the user for it');
-    expect(text).toContain('do not build the header yourself');
+    expect(text).toContain('kortix secrets call');
+    // ONE symptom set now. The provider-edge story (an empty reply meaning
+    // success) is the exact inversion that would make an agent read a dead host
+    // as a working boundary, so it must not survive anywhere in the catalog.
+    expect(text).not.toContain('Empty reply from server');
+    expect(text).not.toContain('cut mid-flight');
     expect(notes).toEqual([...NETWORK_BOUNDARY_NOTES]);
   });
 
-  test('describes the same destination the provider edge arms', () => {
+  test('describes the same hosts the session binding carries', () => {
     const [binding] = resolveNetworkBoundaryBindings([row], {
       sessionId: 'session-1',
       agentGrantEnv: ['STRIPE_API_KEY'],
@@ -251,10 +259,9 @@ describe('buildSecretCapabilities describes the network boundary', () => {
     const capability = built().capabilities[0];
     if (capability?.delivery !== 'network') throw new Error('expected a network capability');
     expect(capability.hosts).toEqual(binding!.hosts);
-    expect(capability.header).toBe(binding!.header);
-    expect(capability.on_echo).toBe(binding!.onEcho);
-    // The armed binding carries the rendered credential. The catalog must not.
-    expect(binding!.value).toBe(`Bearer ${NEVER_LEAKS}`);
+    // Neither side carries credential material any more: the value is fetched
+    // by the broker route per request and never enters a binding.
+    expect(JSON.stringify(binding)).not.toContain(NEVER_LEAKS);
   });
 
   test('leaves a sandbox secret unchanged and states the rules once', () => {
@@ -271,10 +278,26 @@ describe('buildSecretCapabilities describes the network boundary', () => {
   test('omits the notes when no capability needs them', () => {
     const catalog = built([sandboxRow]);
     expect(catalog.notes).toBeUndefined();
-    expect(JSON.stringify(catalog)).not.toContain('Empty reply');
+    expect(JSON.stringify(catalog)).not.toContain('[REDACTED]');
   });
 
-  test('advertises nothing for a policy the boundary cannot enforce', () => {
+  // The default shape since the exposure/usage model §6: hosts only, no slot.
+  test('advertises a substitution-only policy that names no injection slot', () => {
+    const hostsOnly = { rules: policy.rules, on_no_match: 'deny' as const };
+    expect(built([{ ...row, egressPolicy: hostsOnly }]).capabilities).toEqual([
+      {
+        identifier: 'STRIPE_API_KEY',
+        delivery: 'network',
+        environment_variable: 'STRIPE_API_KEY',
+        hosts: ['api.stripe.test', 'uploads.stripe.test'],
+        scheme: 'https',
+        readable_in_sandbox: false,
+        on_echo: 'redact',
+      },
+    ]);
+  });
+
+  test('advertises nothing for a policy this path cannot enforce', () => {
     const unenforceable = [
       { ...policy, rules: [{ host: '*.stripe.test' }] },
       { ...policy, rules: [{ host: 'api.stripe.test', path: '/v1/*' }] },
@@ -317,17 +340,18 @@ describe('buildSecretCapabilities describes the network boundary', () => {
 });
 
 /**
- * The echo wording is mode-specific because the two mechanisms produce
- * OPPOSITE symptoms for the same working request.
+ * ONE symptom set, because there is ONE mechanism.
  *
- * Platinum's edge CUTS an echoing response, so `curl` reports an empty reply
- * and that means success. The in-guest shim relays through the broker, which
- * REDACTS instead, so success is a 200 containing `[REDACTED]` and an empty
- * reply is a genuine failure. Telling a shim-backed agent the edge's story
- * makes it read a dead host as a working boundary — which is why the catalog
- * cannot keep hardcoding one of them.
+ * There used to be two, and they produced OPPOSITE symptoms for the same
+ * working request: the Platinum edge CUT an echoing response (an empty reply
+ * meant success) while the relay REDACTS it (a 200 containing `[REDACTED]`
+ * means success). Telling an agent the wrong story made it read a dead host as
+ * a working boundary, or read success as failure. The edge is gone
+ * (docs/specs/2026-08-19-secrets-exposure-usage-model.md §4), so the catalog
+ * must state exactly one of them, unconditionally — no caller-supplied mode, no
+ * default, nothing to get wrong.
  */
-describe('network-boundary echo guidance follows the mechanism', () => {
+describe('echo guidance has one story and no mode to choose', () => {
   const boundaryRow = {
     secretId: '00000000-0000-4000-8000-0000000000ff',
     identifier: 'BOUNDARY_ONE',
@@ -337,53 +361,34 @@ describe('network-boundary echo guidance follows the mechanism', () => {
     consumer: 'network' as const,
     egressPolicy: {
       rules: [{ host: 'api.example.com' }],
-      inject: { kind: 'header' as const, name: 'x-demo', template: 'Bearer {{secret}}' },
       on_no_match: 'deny' as const,
       tls: 'terminate' as const,
     },
   };
-  const build = (boundaryMode: 'provider-edge' | 'in-guest-shim' | null) =>
+  const build = () =>
     buildSecretCapabilities([boundaryRow], {
       grantEnv: ['BOUNDARY_ONE'],
-      // Network delivery is handle-based, so it is withheld entirely without a
-      // session — without this the catalog is empty and every assertion below
-      // would vacuously pass on `undefined`.
+      // Egress-enforced delivery is handle-based, so it is withheld entirely
+      // without a session — without this the catalog is empty and every
+      // assertion below would vacuously pass on `undefined`.
       sessionId: 'session-1',
-      boundaryMode,
     });
 
-  test('the provider edge says an empty reply is success', () => {
-    const catalog = build('provider-edge');
-    expect(catalog.capabilities[0]).toMatchObject({ delivery: 'network', on_echo: 'block' });
-    const notes = (catalog.notes?.network ?? []).join(' ');
-    expect(notes).toContain('cut mid-flight');
-    expect(notes).toContain('Empty reply from server');
-    expect(notes).not.toContain('[REDACTED]');
-  });
-
-  test('the in-guest shim says [REDACTED] is success and an empty reply is NOT', () => {
-    const catalog = build('in-guest-shim');
+  test('says [REDACTED] is success and an empty reply is NOT', () => {
+    const catalog = build();
     expect(catalog.capabilities[0]).toMatchObject({ delivery: 'network', on_echo: 'redact' });
     const notes = (catalog.notes?.network ?? []).join(' ');
     expect(notes).toContain('[REDACTED]');
+    expect(notes).toContain('is a REAL failure');
     // The exact inversion that would mislead an agent.
-    expect(notes).toContain('is a REAL failure here');
     expect(notes).not.toContain('Empty reply from server');
+    expect(notes).not.toContain('cut mid-flight');
   });
 
-  test('both modes still forbid inventing a credential', () => {
-    for (const mode of ['provider-edge', 'in-guest-shim'] as const) {
-      const notes = (build(mode).notes?.network ?? []).join(' ');
-      expect(notes).toContain('do not invent a credential');
-      expect(notes).toContain('The value is not in this sandbox');
-    }
-  });
-
-  test('an unknown mechanism keeps the pre-shim wording rather than guessing', () => {
-    // Conservative: `block` is what every deployment did before the shim, so a
-    // caller that cannot name the mechanism gets the historical answer instead
-    // of a claim about a mechanism it never chose.
-    const catalog = build(null);
-    expect(catalog.capabilities[0]).toMatchObject({ on_echo: 'block' });
+  test('still forbids inventing a credential and names the explicit fallback', () => {
+    const notes = (build().notes?.network ?? []).join(' ');
+    expect(notes).toContain('do not invent a credential');
+    expect(notes).toContain('The value is not in this sandbox');
+    expect(notes).toContain('kortix secrets call <identifier> <https-url>');
   });
 });

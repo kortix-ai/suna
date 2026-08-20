@@ -432,8 +432,12 @@ export function createInProcessGatewayHooks(): GatewayHooks {
     assertBudget: assertGatewayBudget,
     recordUsage: recordGatewayUsage,
     recordTrace: persistGatewayTrace,
-    listModels: async (principal) =>
-      gatewayModelCatalog(principal.projectId, {
+    // `managedOnly` drops the projectId, which is exactly what selects
+    // MANAGED_ONLY in gatewayModelCatalog — BYOK/codex models are gated on a
+    // project. The free-tier rule is untouched: a free account still sees an
+    // empty managed set.
+    listModels: async (principal, opts) =>
+      gatewayModelCatalog(opts?.managedOnly ? undefined : principal.projectId, {
         freeManagedOnly: !!principal.freeModelsOnly,
       }),
   };

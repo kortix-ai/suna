@@ -9,7 +9,7 @@
  * route contracts are pinned by the audit. OWNER/ANON/PAT_ACCT/APIKEY + the run
  * account are wired here.
  */
-import { Client, type Identity } from '../core/client';
+import { Client, throwIfEdgeLaundered, type Identity } from '../core/client';
 import type { Env } from '../core/env';
 import { log } from '../core/log';
 import type {
@@ -41,9 +41,26 @@ const PUBLIC_DOMAINS = new Set(['system', 'access']);
 export interface World {
   principals: Principals;
   newStack(): ResourceStack;
-  makeFixtures(stack: ResourceStack): Fixtures;
+  /**
+   * Fixtures for ONE flow attempt. `attempt` (1-based) namespaces every
+   * user-chosen name the attempt derives, so a retry cannot collide with the
+   * rows its own previous attempt committed before failing.
+   */
+  makeFixtures(stack: ResourceStack, attempt?: number): Fixtures;
   fixtureStats(): FixtureStats;
   teardownAll(): Promise<void>;
+}
+
+/**
+ * The per-attempt suffix for every derived name.
+ *
+ * Attempt 1 gets NO suffix, so the 100+ existing `fixtures.name()` call sites,
+ * the `e2e-%` gc patterns, and every recorded fixture name keep the exact bytes
+ * they have today. Only a RETRY is renamed, which is the only case that can
+ * collide with itself.
+ */
+export function attemptSuffix(attempt: number): string {
+  return attempt > 1 ? `-r${attempt}` : '';
 }
 
 const ANON_PRINCIPAL: Principal = { label: 'ANON', auth: { mode: 'none' } };
@@ -59,6 +76,39 @@ function principalsProxy(provided: Partial<Principals>): Principals {
       );
     },
   }) as Principals;
+}
+
+interface EphemeralPlatformAdmin {
+  userId: string;
+  jwt: string;
+  /** Remove the granted role at teardown. */
+  revoke: () => Promise<void>;
+  /** Undo everything this fixture created, for an aborted buildWorld. */
+  release: () => Promise<void>;
+}
+
+/** Synthesize a user and grant it the run-scoped platform super-admin role. */
+async function provisionPlatformAdmin(
+  env: Env,
+  runId: string,
+): Promise<EphemeralPlatformAdmin> {
+  const platformAdmin = await synthUser(env, 'PLATFORM-ADMIN', runId);
+  let revoke: () => Promise<void>;
+  try {
+    revoke = await grantEphemeralPlatformAdmin(env, platformAdmin.user.id);
+  } catch (err) {
+    await adminDeleteUser(env, platformAdmin.user.id);
+    throw err;
+  }
+  return {
+    userId: platformAdmin.user.id,
+    jwt: platformAdmin.jwt,
+    revoke,
+    release: async () => {
+      await revoke().catch(() => undefined);
+      await adminDeleteUser(env, platformAdmin.user.id).catch(() => undefined);
+    },
+  };
 }
 
 export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<World> {
@@ -85,27 +135,42 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
   }
 
   const runId = (globalThis as any).__KE2E_RUN_ID__ ?? 'run';
-  const provisioned: Provisioned = await provisionMatrix(env, runId);
-  const owner = provisioned.principals.OWNER!;
-  let revokePlatformAdmin: (() => Promise<void>) | null = null;
 
   // Release QA needs a real, short-lived Supabase identity for the platform
   // admin success paths. A server API key is not a human identity and cannot
   // satisfy requireAdmin. Keep OWNER non-admin so every negative boundary
   // assertion remains honest; synthesize a dedicated principal instead.
-  if (env.capabilities.database && env.target !== 'prod') {
-    const platformAdmin = await synthUser(env, 'PLATFORM-ADMIN', runId);
-    provisioned.supabaseUserIds.push(platformAdmin.user.id);
-    try {
-      revokePlatformAdmin = await grantEphemeralPlatformAdmin(env, platformAdmin.user.id);
-    } catch (err) {
-      await adminDeleteUser(env, platformAdmin.user.id);
-      throw err;
+  //
+  // It depends on nothing in provisionMatrix, so both run at once. Nothing in
+  // the suite starts until this whole block finishes, so every second saved
+  // here is a second off the wall clock. allSettled keeps a rejection on one
+  // side from stranding the resources the other side already created.
+  const wantsPlatformAdmin = env.capabilities.database && env.target !== 'prod';
+  const [matrixSettled, adminSettled] = await Promise.allSettled([
+    provisionMatrix(env, runId),
+    wantsPlatformAdmin ? provisionPlatformAdmin(env, runId) : Promise.resolve(null),
+  ]);
+
+  if (matrixSettled.status === 'rejected') {
+    if (adminSettled.status === 'fulfilled' && adminSettled.value) {
+      await adminSettled.value.release().catch(() => undefined);
     }
+    throw matrixSettled.reason;
+  }
+  const provisioned: Provisioned = matrixSettled.value;
+  if (adminSettled.status === 'rejected') throw adminSettled.reason;
+
+  let revokePlatformAdmin: (() => Promise<void>) | null = null;
+  if (adminSettled.value) {
+    const platformAdmin = adminSettled.value;
+    provisioned.supabaseUserIds.push(platformAdmin.userId);
+    revokePlatformAdmin = platformAdmin.revoke;
     env.adminToken = platformAdmin.jwt;
     env.capabilities.admin = true;
-    log.step(`provision: run-scoped platform admin ${platformAdmin.user.id} active`);
+    log.step(`provision: run-scoped platform admin ${platformAdmin.userId} active`);
   }
+
+  const owner = provisioned.principals.OWNER!;
   const adminClient = new Client(env.apiUrl).as(owner as Identity);
   const canCreateDatabaseProject = env.capabilities.database && env.target !== 'prod';
   const deleteDatabaseProjectFixture = canCreateDatabaseProject
@@ -168,8 +233,10 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
     return { id, name } as CreatedProject;
   }
 
-  const fixturesFor = (stack: ResourceStack): Fixtures => ({
-    name: (slug) => `e2e-${runId}-${slug}`,
+  const fixturesFor = (stack: ResourceStack, attempt = 1): Fixtures => {
+    const suffix = attemptSuffix(attempt);
+    return {
+    name: (slug) => `e2e-${runId}-${slug}${suffix}`,
     sharedProject() {
       if (!sharedProjectPromise) {
         sharedProjectPromise = createProject(sharedStack, {
@@ -195,6 +262,10 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
       const res = await adminClient.post('/v1/accounts', {
         name: opts?.name ?? `e2e-${runId}-team-${rand()}`,
       });
+      // IAM-22 (run 32306385663) died here on ONE attempt: the edge laundered
+      // an origin blip into a MAINTENANCE_MODE 503, this read found no
+      // account_id, and the plain Error below classified as `fatal`.
+      throwIfEdgeLaundered(res, 'team account create');
       const accountId = res.json<any>()?.account_id;
       if (!accountId) throw new Error(`team account create returned no id: ${res.text()}`);
       stack.push('account', accountId);
@@ -221,19 +292,39 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
         async addMember(role) {
           const u = await synthUser(env, `MEM-${role}`, runId);
           extraUserIds.push(u.user.id);
-          await adminClient.post(
+          // This response used to be DISCARDED. A failed add then surfaced two
+          // steps later as someone else's bug: MEM-4 read `DELETE member → 404`
+          // and IAM-36 read `expected exactly one account-scope system
+          // assignment, got 0` — both of which mean only "the member was never
+          // added". Because addMember runs OUTSIDE ctx.step(), the request was
+          // not even in the step log. Fail here, where the cause is.
+          const added = await adminClient.post(
             '/v1/accounts/:accountId/members',
             { email: u.user.email, role },
             { params: { accountId } },
           );
+          throwIfEdgeLaundered(added, `team addMember(${role})`);
+          if (added.statusCode !== 201) {
+            throw new Error(
+              `team addMember(${role}) failed: ${added.statusCode} ${added.text()}`,
+            );
+          }
           return u.principal;
         },
         async grantProjectRole(projectId, userId, role) {
-          await adminClient.put(
+          const granted = await adminClient.put(
             '/v1/projects/:projectId/access/:userId',
             { role },
             { params: { projectId, userId } },
           );
+          // Same class as addMember above: a swallowed grant becomes a 403 in
+          // whichever later step relies on the role.
+          throwIfEdgeLaundered(granted, `team grantProjectRole(${role})`);
+          if (granted.statusCode !== 200 && granted.statusCode !== 201) {
+            throw new Error(
+              `team grantProjectRole(${role}) failed: ${granted.statusCode} ${granted.text()}`,
+            );
+          }
         },
         async project(o) {
           return createProject(stack, {
@@ -252,7 +343,8 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
       // team, which is exactly what account-deletion flows require.
       const bootstrap = await new Client(env.apiUrl)
         .as(u.principal)
-        .post('/v1/accounts/tokens', { name: `e2e-${runId}-user-bootstrap` });
+        .post('/v1/accounts/tokens', { name: `e2e-${runId}-user-bootstrap${suffix}` });
+      throwIfEdgeLaundered(bootstrap, 'standalone user bootstrap');
       if (bootstrap.statusCode !== 201) {
         throw new Error(`standalone user bootstrap failed: ${bootstrap.text()}`);
       }
@@ -266,7 +358,8 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
       // account-scoped reads (e.g. /v1/accounts/me) work for this identity.
       const bootstrap = await new Client(env.apiUrl)
         .as(u.principal)
-        .post('/v1/accounts/tokens', { name: `e2e-${runId}-user-email-bootstrap` });
+        .post('/v1/accounts/tokens', { name: `e2e-${runId}-user-email-bootstrap${suffix}` });
+      throwIfEdgeLaundered(bootstrap, 'standalone user-with-email bootstrap');
       if (bootstrap.statusCode !== 201) {
         throw new Error(`standalone user-with-email bootstrap failed: ${bootstrap.text()}`);
       }
@@ -292,6 +385,7 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
           params: { projectId: project.id },
         },
       );
+      throwIfEdgeLaundered(res, 'session create');
       const body = res.json<any>();
       const id = body?.session_id ?? body?.sessionId ?? body?.id;
       if (!id) throw new Error(`session create returned no id: ${res.text()}`);
@@ -302,6 +396,7 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
       const res = await adminClient.post('/v1/accounts/tokens', {
         name: opts?.name ?? `e2e-${runId}-pat-${rand()}`,
       });
+      throwIfEdgeLaundered(res, 'token mint');
       const body = res.json<any>();
       const secret = body?.secret_key ?? body?.token;
       const tokenId = body?.id ?? body?.token_id;
@@ -309,7 +404,8 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
       if (tokenId) stack.push('token', tokenId);
       return secret as string;
     },
-  });
+    };
+  };
 
   return {
     principals: principalsProxy(provisioned.principals),
@@ -340,7 +436,11 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
         }
       }
       const userIds = [...provisioned.supabaseUserIds, ...extraUserIds];
-      const cleanupWorkers = Number(process.env.KE2E_TEARDOWN_WORKERS ?? 2);
+      // A full run synthesizes hundreds of users. Deleting them 2 at a time
+      // added 2-5 min to the tail; 8 matches gc.ts's existing sweep default and
+      // is a Supabase admin call, not a provisioning call, so it does not touch
+      // the GitHub repo-creation budget. Override with KE2E_TEARDOWN_WORKERS.
+      const cleanupWorkers = Number(process.env.KE2E_TEARDOWN_WORKERS ?? 8);
       await mapWithConcurrency(userIds, cleanupWorkers, async (uid) => {
         try {
           await adminDeleteUser(env, uid);

@@ -83,6 +83,24 @@ import {
   stopLeaderElection,
   runsSingletonWorkers,
 } from './shared/leader-election';
+import { mountLlmGateway } from './llm-gateway/wire';
+// STATIC, not `await import(...)`. See the note at the mount site: a top-level
+// await anywhere above the last `app.route(...)` leaves the route table, the
+// error handler and the 404 handler unregistered for any importer that observes
+// `app` before it settles.
+import { gitProxyApp } from './git-proxy';
+import { connectorApp } from './connectors';
+import {
+  slackWebhookApp,
+  teamsWebhookApp,
+  teamsIdentityApp,
+  teamsOauthApp,
+  telegramWebhookApp,
+  slackOauthApp,
+  slackIdentityApp,
+  emailWebhookApp,
+} from './channels';
+import { sandboxWebhooksApp } from './platform/webhooks/routes';
 import { marketplaceApp } from './marketplace';
 import { skillsApp } from './skills';
 import { runtimeAssetsApp } from './runtime-assets';
@@ -100,6 +118,7 @@ import { startActiveTurnRenewal, stopActiveTurnRenewal } from './projects/active
 import { kickStartupPreBuild } from './snapshots/builder';
 import { registerSunaMigrationRoutes } from './projects/suna-migration/suna-migration-routes';
 import { handleAppPublicRequest, resolveAppRequest } from './apps/public-proxy';
+import { appEdgeApp } from './apps/edge';
 import { appWsHandlers, prepareAppWsUpgrade } from './apps/ws-proxy';
 import {
   startSunaMigrationWorker,
@@ -113,9 +132,11 @@ import {
 } from './projects/provider-transition/provider-transition-worker';
 import { accountsRouter } from './accounts';
 import { authRouter } from './auth';
+import { authEmailHookApp } from './auth/send-email-hook';
+import { describeEmailChain } from './lib/email/transport';
 import { scimRouter } from './scim';
 import { accountInvitesRouter } from './accounts/invites';
-import { auditApiRequest } from './shared/audit';
+import { auditApiRequest, shutdownAuditEvents } from './shared/audit';
 import { startAuditWebhookWorker, stopAuditWebhookWorker } from './shared/audit-webhooks';
 import {
   startAuditReconciliationWorker,
@@ -799,12 +820,17 @@ app.openapi(
 
 app.route('/v1/router', router); // /v1/router/chat/completions, /v1/router/models, /v1/router/web-search, /v1/router/tavily/*, etc.
 
-{
-  // LLM gateway surfaces: in-API /v1/llm (full pipeline), /internal/gateway
-  // control-plane RPC, and the /v1/llm-gateway reverse proxy. See ./llm-gateway/wire.
-  const { mountLlmGateway } = await import('./llm-gateway/wire');
-  mountLlmGateway(app);
-}
+// LLM gateway surfaces: in-API /v1/llm (full pipeline), /internal/gateway
+// control-plane RPC, and the /v1/llm-gateway reverse proxy. See ./llm-gateway/wire.
+//
+// STATIC, not `await import(...)`. A top-level await here suspends the rest of
+// this module — including `app.route('/v1/projects', projectsApp)` 30 lines
+// below — so any importer that observes `app` before the await settles gets a
+// PARTIALLY MOUNTED app and a 404 on every route registered after this point.
+// Under `bun test` that is exactly what happened: `import { app } from '../index'`
+// returned an app with 313 of 1,386 routes, and every project-route integration
+// test 404'd instead of exercising its gate.
+mountLlmGateway(app);
 
 // OpenRouter-parity read endpoints, scoped to the authenticated account.
 import { generationApp } from './router/routes/generation';
@@ -860,7 +886,6 @@ app.route('/v1/runtime-assets', runtimeAssetsApp); // GET /manifest, /cli, /mana
 // Auth is handled inside (git sends Basic/Bearer, not combinedAuth's Bearer),
 // so it is intentionally NOT wrapped in combinedAuth.
 {
-  const { gitProxyApp } = await import('./git-proxy');
   app.route('/v1/git', gitProxyApp); // /v1/git/:projectId(.git)/{info/refs,git-upload-pack,git-receive-pack}
 }
 
@@ -868,7 +893,6 @@ app.route('/v1/runtime-assets', runtimeAssetsApp); // GET /manifest, /cli, /mana
 // KORTIX_CLI_TOKEN (validated inside the router); admin routes
 // (/projects/:id/connectors*) need user auth, so combinedAuth runs first.
 {
-  const { connectorApp } = await import('./connectors');
   app.use('/v1/connectors/projects/*', combinedAuth);
   app.use('/v1/connectors/connect-status', combinedAuth); // deployment capability flag (authed)
   app.route('/v1/connectors', connectorApp);
@@ -876,16 +900,6 @@ app.route('/v1/runtime-assets', runtimeAssetsApp); // GET /manifest, /cli, /mana
 
 app.route('/v1/webhooks', projectWebhooksApp); // /v1/webhooks/:triggerId — signed project trigger fires
 
-const {
-  slackWebhookApp,
-  teamsWebhookApp,
-  teamsIdentityApp,
-  teamsOauthApp,
-  telegramWebhookApp,
-  slackOauthApp,
-  slackIdentityApp,
-  emailWebhookApp,
-} = await import('./channels');
 app.route('/v1/webhooks/slack/oauth', slackOauthApp); // /v1/webhooks/slack/oauth/callback — OAuth dance
 app.route('/v1/webhooks/slack', slackWebhookApp); // /v1/webhooks/slack/:projectId — raw Slack events (BYO mode)
 app.route('/v1/webhooks/teams/oauth', teamsOauthApp); // /v1/webhooks/teams/oauth/callback — admin-consent + catalog publish
@@ -894,12 +908,20 @@ app.route('/v1/channels/slack/identity', slackIdentityApp); // /v1/channels/slac
 app.route('/v1/channels/teams/identity', teamsIdentityApp); // /v1/channels/teams/identity/bind — authed login bind
 app.route('/v1/webhooks/telegram', telegramWebhookApp); // /v1/webhooks/telegram/:projectId — Telegram updates
 app.route('/v1/webhooks/email', emailWebhookApp); // /v1/webhooks/email/agentmail — AgentMail inbound email (Svix-signed)
+app.route('/v1/webhooks/auth', authEmailHookApp); // /v1/webhooks/auth/send-email — Supabase Auth send-email hook (Standard Webhooks-signed)
 
-const { sandboxWebhooksApp } = await import('./platform/webhooks/routes');
 app.route('/v1/webhooks/sandbox', sandboxWebhooksApp); // /v1/webhooks/sandbox/{daytona,platinum} — provider lifecycle → close billing
 
 // Access control — public endpoints for signup gating
 app.route('/v1/access', accessControlApp); // /v1/access/signup-status, /v1/access/check-email, /v1/access/request-access
+
+// Apps edge — UNAUTHENTICATED. The self-host reverse proxy calls
+// /v1/apps/edge/tls-check?domain=<host> as its on-demand-TLS `ask` before
+// issuing a per-App certificate; 200 only for a real App host. Public by design
+// (Caddy cannot present a bearer token); it discloses only whether a hostname
+// maps to an App. Not an App public host itself (Host = kortix-api), so it is
+// served by Hono, never intercepted by handleAppPublicRequest.
+app.route('/v1/apps/edge', appEdgeApp); // GET /v1/apps/edge/tls-check?domain=<host>
 
 // Setup links — PUBLIC, token-gated. An agent-minted (encrypted, short-lived,
 // value-only) token is the bearer capability, so a human can fill in a secret
@@ -971,6 +993,7 @@ app.route('/v1/p', sandboxProxyApp);
 // === Error Handling ===
 
 app.onError((err, c) => {
+
   const method = c.req.method;
   const path = c.req.path;
   const errName = err.constructor?.name || 'Error';
@@ -1141,7 +1164,7 @@ app.onError((err, c) => {
 
     // An HTTPException built with an explicit `res` carries a machine-readable
     // body its thrower needs the CLIENT to branch on — `code:'account_mfa_required'`
-    // (iam/dispatcher.ts's buildDenialError, which the web app's step-up dialog
+    // (iam/denial-message.ts's buildDenialError, which the web app's step-up dialog
     // keys on) and `code:'impersonation_invalid'` (middleware/impersonation.ts).
     // Rebuilding a generic `{error,message,status}` body here silently threw
     // that field away, so every typed 4xx arrived at the client untyped. Honour
@@ -1446,8 +1469,10 @@ async function shutdown(signal: string) {
   stopTunnelService();
   stopAccessControlCache();
   stopTmpReaper();
-  // Flush observability data before exit
-  await Promise.allSettled([appLogger.flush(), flushSentry()]);
+  // Flush observability data before exit. The audit queue is drained here
+  // because audit rows are buffered off the request path — without this, the
+  // last ~250 ms of events would be lost on every SIGTERM (i.e. every rollout).
+  await Promise.allSettled([shutdownAuditEvents(), appLogger.flush(), flushSentry()]);
   process.exit(0);
 }
 
@@ -1457,10 +1482,15 @@ async function shutdown(signal: string) {
 // route table without starting the DB schema check, background workers, or
 // signal handlers. Does NOT change production boot — there, import.meta.main is true.
 if (import.meta.main) {
+  // One line an operator can grep for when email "does not work": which
+  // providers EMAIL_URL resolved to, and the address mail is sent from. Never
+  // prints credentials.
+  console.log(`[email] ${describeEmailChain()}`);
+
   ensureSchema()
     .then(async () => {
       schemaReady = true;
-      // V2 IAM hard-codes role permissions in iam/role-perms.ts, so the
+      // Role permissions are rows (kortix.role_permissions), so the
       // boot-time system-role seed + membership-policy backfill from V1
       // are no longer needed. Permissions resolve directly from
       // account_members.account_role and project_members.project_role.
@@ -1489,19 +1519,17 @@ import {
 export default {
   port: config.PORT,
 
-  // Bun's default HTTP idleTimeout is 10s: a handler that hasn't written any
-  // bytes by then gets its socket closed with an EMPTY reply — no status, no
-  // body — which clients report as a bare network error and Better Stack as a
-  // URL-only timeout. Raise it above the 25s request deadline so a genuinely
-  // stuck request surfaces as the middleware's clean 503 (with Retry-After)
-  // instead of a socket kill. Long-poll/SSE surfaces opt out per-request via
-  // server.timeout(req, 0) below.
-  // Must stay comfortably ABOVE the 25s request deadline. When this equalled
-  // the client's own 30s timeout, whichever fired first was a coin flip, and
-  // the socket-kill path returns an empty reply that the load balancer turns
-  // into a 502 with no CORS headers — surfacing in browsers as a bogus CORS
-  // error rather than a timeout.
-  idleTimeout: 45,
+  // idleTimeout DISABLED (0). Bun's default is 10s and its MAX is 255s, and Bun
+  // does NOT reset idleTimeout on server->client writes — so ANY fixed ceiling
+  // can kill a legitimately long request (e.g. project provisioning runs ~90s
+  // and was being cut at the previous 45s; see provisionProjectWithToken) or a
+  // long-poll/SSE surface, returning an EMPTY reply that the LB turns into a
+  // 502 with no CORS headers (a bogus browser CORS error). The 25s request
+  // deadline middleware remains the PRIMARY guard: a genuinely stuck request
+  // still surfaces as a clean 503 (with Retry-After) well before any socket
+  // concern. So 0 removes only the redundant backstop while letting legitimate
+  // long requests and streams run to completion.
+  idleTimeout: 0,
 
   async fetch(req: Request, server: any): Promise<Response | undefined> {
     // Bun.serve sets `req.url` to a PATH-ONLY string (`"/"`,

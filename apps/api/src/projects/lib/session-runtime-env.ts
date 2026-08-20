@@ -16,6 +16,14 @@ export interface SessionRuntimeEnvInput {
   opencodeModel?: string | null;
   /** Project file delivery mode selected by the session's agent. */
   workspaceMode?: WorkspaceModeV2 | null;
+  /** Enables the rollback-safe fresh-session Git fast path. */
+  fastColdBootEnabled?: boolean;
+  /** True only for a newly-created session branch that still equals base. */
+  freshSession?: boolean;
+  /** Server-resolved base tip used to validate the image-baked scaffold. */
+  baseSha?: string;
+  /** Bounded Git bundle containing the exact base-tip commit above the baked scaffold. */
+  gitDeltaBundleBase64?: string;
   /** Server-compiled OpenCode agent config (JSON string) for a `kortix_version:
    *  2` project — see `compile-agent-config.ts`. `null`/omitted for a v1
    *  project: no key is emitted, so v1 sandbox env is byte-for-byte unchanged. */
@@ -24,17 +32,27 @@ export interface SessionRuntimeEnvInput {
 
 export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<string, string> {
   const allowsFullRepository = workspaceModeAllowsFullRepository(input.workspaceMode);
-  const projectGitEnv: Record<string, string> =
-    allowsFullRepository
+  const projectGitEnv: Record<string, string> = allowsFullRepository
+    ? {
+        KORTIX_REPO_URL: input.repoUrl,
+        KORTIX_DEFAULT_BRANCH: input.baseRef,
+        KORTIX_BASE_REF: input.baseRef,
+        KORTIX_BRANCH_NAME: input.sessionId,
+      }
+    : {};
+  const fastGitBootEnv: Record<string, string> =
+    allowsFullRepository && input.fastColdBootEnabled && input.freshSession
       ? {
-          KORTIX_REPO_URL: input.repoUrl,
-          KORTIX_DEFAULT_BRANCH: input.baseRef,
-          KORTIX_BASE_REF: input.baseRef,
-          KORTIX_BRANCH_NAME: input.sessionId,
+          KORTIX_SESSION_FRESH: '1',
+          ...(input.baseSha ? { KORTIX_BASE_SHA: input.baseSha } : {}),
+          ...(input.gitDeltaBundleBase64
+            ? { KORTIX_GIT_DELTA_BUNDLE_BASE64: input.gitDeltaBundleBase64 }
+            : {}),
         }
       : {};
   return {
     ...projectGitEnv,
+    ...fastGitBootEnv,
     KORTIX_PROJECT_ID: input.projectId,
     KORTIX_SESSION_ID: input.sessionId,
     KORTIX_SERVICE_PORT: '8000',

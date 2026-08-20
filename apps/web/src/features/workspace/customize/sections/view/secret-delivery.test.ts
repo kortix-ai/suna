@@ -1,97 +1,296 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
-  buildBrokerPolicy,
-  buildNetworkBoundaryPolicy,
+  SIGNING_CREDENTIAL_NOTE,
+  buildEnforcedPolicy,
   canSaveSecretDelivery,
+  classifyNewSecret,
   connectorBindingChanges,
   connectorBindingOptions,
-  defaultSecretAccess,
+  defaultSecretExposure,
+  enforcedEchoNotice,
+  legacyInjectionDetail,
   missingAgentGrantNotice,
-  networkBoundaryAvailability,
-  networkBoundaryBlockedReason,
-  networkBoundaryEchoNotice,
-  networkBoundaryMode,
-  parseBoundaryHosts,
+  parseEnforcedHosts,
   readSecretDeliverySync,
-  secretAccessChoice,
-  secretAccessIsSystemManaged,
-  secretAccessTarget,
   secretDeliveryBlockedReason,
   secretDeliveryLegend,
-  secretDeliveryOptionGroups,
-  secretDeliveryOptions,
   secretDeliveryPresentation,
   secretDeliverySyncWarning,
+  secretDeliveryTarget,
+  secretExposure,
+  secretExposureOptions,
+  secretExposureTarget,
+  secretUsage,
+  secretUsageIsAssigned,
   shouldWarnMissingAgentGrant,
 } from './secret-delivery';
 
-describe('secretAccessChoice / secretAccessTarget', () => {
-  test('round-trips every choice through its stored strategy+consumer pair', () => {
-    const choices = [
-      'sandbox',
-      'network_boundary',
-      'http_broker',
-      'llm_gateway',
-      'connector',
-      'disabled',
-    ] as const;
-    for (const choice of choices) {
-      const target = secretAccessTarget(choice);
-      expect(secretAccessChoice(target.strategy, target.consumer)).toBe(choice);
+describe('secretExposure / secretExposureTarget', () => {
+  test('round-trips every pickable exposure through its stored strategy+consumer pair', () => {
+    for (const exposure of ['enforced', 'environment', 'disabled'] as const) {
+      const target = secretExposureTarget(exposure);
+      expect(secretExposure(target.strategy, target.consumer)).toBe(exposure);
     }
   });
 
-  test('a git_proxy row resolves to http_broker as a fallback, never to a real choice', () => {
-    expect(secretAccessChoice('broker', 'git_proxy')).toBe('http_broker');
+  test('the picker writes exactly the three pairs the model names', () => {
+    // docs/specs/2026-08-19-secrets-exposure-usage-model.md §3. A fourth pair
+    // here would be a delivery mode the read side cannot name back.
+    expect(secretExposureTarget('enforced')).toEqual({ strategy: 'egress', consumer: 'network' });
+    expect(secretExposureTarget('environment')).toEqual({
+      strategy: 'runtime',
+      consumer: 'sandbox',
+    });
+    expect(secretExposureTarget('disabled')).toEqual({ strategy: 'denied', consumer: null });
+  });
+
+  test('a legacy HTTPS-broker row reads back as enforced, not as something else', () => {
+    // Same guarantee: the sandbox holds a handle and the value is added
+    // outside it. Presenting it as a fourth mode is what the model deletes.
+    expect(secretExposure('broker', 'http_broker')).toBe('enforced');
+  });
+
+  test('a row with no sandbox presence and no agent usage reads as disabled', () => {
+    expect(secretExposure('broker', 'llm_gateway')).toBe('disabled');
+    expect(secretExposure('broker', 'connector')).toBe('disabled');
+    expect(secretExposure('broker', 'git_proxy')).toBe('disabled');
   });
 });
 
-describe('secretAccessIsSystemManaged', () => {
-  test('is true only for a git-connection-assigned row', () => {
-    expect(secretAccessIsSystemManaged('git_proxy')).toBe(true);
-    expect(secretAccessIsSystemManaged('sandbox')).toBe(false);
-    expect(secretAccessIsSystemManaged(null)).toBe(false);
-    expect(secretAccessIsSystemManaged(undefined)).toBe(false);
+describe('secretUsage', () => {
+  test('every exposure other than disabled implies agent code', () => {
+    expect(secretUsage('runtime', 'sandbox')).toBe('agent');
+    expect(secretUsage('egress', 'network')).toBe('agent');
+    expect(secretUsage('broker', 'http_broker')).toBe('agent');
+  });
+
+  test('the three assigned usages are named by their consumer', () => {
+    expect(secretUsage('broker', 'llm_gateway')).toBe('llm_gateway');
+    expect(secretUsage('broker', 'connector')).toBe('connector');
+    expect(secretUsage('broker', 'git_proxy')).toBe('git');
+  });
+
+  test('a disabled secret has no spender', () => {
+    expect(secretUsage('denied', null)).toBeNull();
   });
 });
 
-describe('defaultSecretAccess', () => {
-  test('an existing row opens on the value it has, including one the picker does not offer', () => {
-    expect(defaultSecretAccess({ strategy: 'broker', consumer: 'git_proxy' }, 'available')).toBe(
-      'http_broker',
-    );
-    expect(defaultSecretAccess({ strategy: 'runtime', consumer: 'sandbox' }, 'unsupported')).toBe(
-      'sandbox',
+describe('secretUsageIsAssigned', () => {
+  test('covers every usage another flow writes, not just git', () => {
+    // This generalizes the old git-only lock. The picker writes three pairs
+    // and none of them is these, so opening it on such a row would move the
+    // secret off the consumer its owning flow reads.
+    expect(secretUsageIsAssigned('llm_gateway')).toBe(true);
+    expect(secretUsageIsAssigned('connector')).toBe(true);
+    expect(secretUsageIsAssigned('git_proxy')).toBe(true);
+  });
+
+  test('leaves the pickable consumers alone', () => {
+    expect(secretUsageIsAssigned('sandbox')).toBe(false);
+    expect(secretUsageIsAssigned('network')).toBe(false);
+    expect(secretUsageIsAssigned('http_broker')).toBe(false);
+    expect(secretUsageIsAssigned(null)).toBe(false);
+    expect(secretUsageIsAssigned(undefined)).toBe(false);
+  });
+});
+
+describe('secretDeliveryTarget', () => {
+  test('a new secret writes the pair its exposure names', () => {
+    expect(secretDeliveryTarget('enforced', null)).toEqual({
+      strategy: 'egress',
+      consumer: 'network',
+    });
+    expect(secretDeliveryTarget('environment', null)).toEqual({
+      strategy: 'runtime',
+      consumer: 'sandbox',
+    });
+  });
+
+  test('an assigned row keeps its stored pair whatever the exposure argument says', () => {
+    for (const consumer of ['llm_gateway', 'connector', 'git_proxy'] as const) {
+      expect(secretDeliveryTarget('environment', { strategy: 'broker', consumer })).toEqual({
+        strategy: 'broker',
+        consumer,
+      });
+    }
+  });
+
+  test('a legacy HTTPS-broker row that stays enforced keeps its pair', () => {
+    // `kortix secrets call` addresses it by that pair, and its stored policy
+    // carries a `kortix_fetch` backend the egress validator rejects — so
+    // rewriting the pair would 400 the save, not migrate the secret.
+    expect(secretDeliveryTarget('enforced', { strategy: 'broker', consumer: 'http_broker' })).toEqual(
+      { strategy: 'broker', consumer: 'http_broker' },
     );
   });
 
-  test('a new secret defaults to Network boundary where the project can deliver it', () => {
-    expect(defaultSecretAccess(null, 'available')).toBe('network_boundary');
+  test('the same legacy row moved off enforced writes the new pair', () => {
+    expect(
+      secretDeliveryTarget('environment', { strategy: 'broker', consumer: 'http_broker' }),
+    ).toEqual({ strategy: 'runtime', consumer: 'sandbox' });
+    expect(
+      secretDeliveryTarget('disabled', { strategy: 'broker', consumer: 'http_broker' }),
+    ).toEqual({ strategy: 'denied', consumer: null });
+  });
+});
+
+describe('classifyNewSecret', () => {
+  test('an ordinary key defaults to enforced with an empty host list', () => {
+    const classification = classifyNewSecret({ key: 'STRIPE_API_KEY', value: 'sk_live_abc' });
+    expect(classification).toEqual({
+      exposure: 'enforced',
+      hosts: [],
+      modelProvider: null,
+      signingNote: null,
+    });
   });
 
-  test('a new secret defaults to Sandbox everywhere else', () => {
-    expect(defaultSecretAccess(null, 'unsupported')).toBe('sandbox');
-    expect(defaultSecretAccess(null, 'project_not_pinned')).toBe('sandbox');
-    expect(defaultSecretAccess(undefined, 'unsupported')).toBe('sandbox');
+  test('a known model key is recognized and prefills the vendor host from the catalog', () => {
+    const classification = classifyNewSecret({ key: 'DEEPSEEK_API_KEY', value: 'sk-abc' });
+    expect(classification.exposure).toBe('enforced');
+    expect(classification.modelProvider).toEqual({ id: 'deepseek', label: 'DeepSeek' });
+    expect(classification.hosts).toEqual(['api.deepseek.com']);
+  });
+
+  test('a recognized provider whose SDK hardcodes the host prefills the curated fallback', () => {
+    // models.dev declares no `api` for Anthropic — the SDK hardcodes it, so the
+    // catalog `apiHost` is null. Without the curated `WELL_KNOWN_API_HOSTS`
+    // fallback the hosts field stays empty and Save is disabled until the user
+    // types the host by hand (spec §7). The fallback is a stable documented
+    // constant, not a value guessed from a catalog URL.
+    const classification = classifyNewSecret({ key: 'ANTHROPIC_API_KEY', value: 'sk-ant-abc' });
+    expect(classification.modelProvider?.id).toBe('anthropic');
+    expect(classification.hosts).toEqual(['api.anthropic.com']);
+    expect(classification.exposure).toBe('enforced');
+  });
+
+  test('OpenAI, whose SDK also hardcodes its host, prefills the curated fallback', () => {
+    const classification = classifyNewSecret({ key: 'OPENAI_API_KEY', value: 'sk-abc' });
+    expect(classification.modelProvider?.id).toBe('openai');
+    expect(classification.hosts).toEqual(['api.openai.com']);
+  });
+
+  test('an alias auth key is recognized too, not just the primary one', () => {
+    // `LLM_PROVIDER_BY_ENV_VAR` covers only the primary method, which would
+    // miss the key most Gemini users actually hold.
+    expect(classifyNewSecret({ key: 'GEMINI_API_KEY', value: 'abc' }).modelProvider?.id).toBe(
+      'google',
+    );
+  });
+
+  test('the key is matched case-insensitively, as typed', () => {
+    expect(classifyNewSecret({ key: 'deepseek_api_key', value: 'x' }).modelProvider?.id).toBe(
+      'deepseek',
+    );
+  });
+
+  test('an AWS access-key id defaults to the environment and says why', () => {
+    const classification = classifyNewSecret({
+      key: 'AWS_ACCESS_KEY_ID',
+      value: 'AKIAIOSFODNN7EXAMPLE',
+    });
+    expect(classification.exposure).toBe('environment');
+    expect(classification.signingNote).toBe(SIGNING_CREDENTIAL_NOTE);
+    expect(classification.hosts).toEqual([]);
+  });
+
+  test('an STS access-key id is signing material too', () => {
+    expect(
+      classifyNewSecret({ key: 'AWS_ACCESS_KEY_ID', value: 'ASIAIOSFODNN7EXAMPLE' }).exposure,
+    ).toBe('environment');
+  });
+
+  test('PEM and SSH private-key material defaults to the environment', () => {
+    // Build the PEM armor by interpolation so the literal marker never appears
+    // contiguously in source — otherwise gitleaks' `private-key` rule flags this
+    // fixture. The runtime value the classifier sees is identical.
+    const pem = (label: string, b64: string) =>
+      `-----BEGIN ${label}-----\n${b64}\n-----END ${label}-----`;
+    for (const value of [
+      pem('RSA PRIVATE KEY', 'MIIE…'),
+      pem('OPENSSH PRIVATE KEY', 'b3Bl…'),
+      pem('PRIVATE KEY', 'MIIE…'),
+      'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5 user@host',
+      'PuTTY-User-Key-File-3: ssh-ed25519',
+    ]) {
+      const classification = classifyNewSecret({ key: 'DEPLOY_KEY', value });
+      expect(classification.exposure).toBe('environment');
+      expect(classification.signingNote).toBe(SIGNING_CREDENTIAL_NOTE);
+    }
+  });
+
+  test('signing material outranks the key name, and the recognition still shows', () => {
+    // A property of the CREDENTIAL, not of the name: no boundary can enforce
+    // a value that is an ingredient in a local computation.
+    const classification = classifyNewSecret({
+      key: 'DEEPSEEK_API_KEY',
+      value: 'AKIAIOSFODNN7EXAMPLE',
+    });
+    expect(classification.exposure).toBe('environment');
+    expect(classification.hosts).toEqual([]);
+    expect(classification.modelProvider?.id).toBe('deepseek');
+  });
+
+  test('an ordinary key that merely starts with AKIA-ish text is not signing material', () => {
+    // The prefix alone is not the shape: AWS ids are exactly 16 more
+    // uppercase alphanumerics, and a looser test would push ordinary API keys
+    // into the environment.
+    expect(classifyNewSecret({ key: 'API_KEY', value: 'AKIAshort' }).exposure).toBe('enforced');
+    expect(classifyNewSecret({ key: 'API_KEY', value: '' }).exposure).toBe('enforced');
+  });
+});
+
+describe('defaultSecretExposure', () => {
+  const enforced = classifyNewSecret({ key: 'API_KEY', value: 'plain' });
+  const signing = classifyNewSecret({ key: 'DEPLOY_KEY', value: 'AKIAIOSFODNN7EXAMPLE' });
+
+  test('an existing row opens on the exposure it has, including one the picker cannot write', () => {
+    expect(defaultSecretExposure({ strategy: 'broker', consumer: 'git_proxy' }, enforced)).toBe(
+      'disabled',
+    );
+    expect(defaultSecretExposure({ strategy: 'runtime', consumer: 'sandbox' }, enforced)).toBe(
+      'environment',
+    );
+    expect(defaultSecretExposure({ strategy: 'broker', consumer: 'http_broker' }, enforced)).toBe(
+      'enforced',
+    );
+  });
+
+  test('a new secret opens on whatever the classification decided', () => {
+    expect(defaultSecretExposure(null, enforced)).toBe('enforced');
+    expect(defaultSecretExposure(undefined, signing)).toBe('environment');
   });
 });
 
 describe('secretDeliveryLegend', () => {
-  test('lists exactly the five pickable values, in picker order', () => {
-    expect(secretDeliveryLegend().map((entry) => entry.choice)).toEqual([
-      'sandbox',
-      'network_boundary',
-      'http_broker',
-      'llm_gateway',
-      'connector',
-      'disabled',
+  test('lists the three exposures first, then the three assigned usages', () => {
+    expect(secretDeliveryLegend().map((entry) => [entry.kind, entry.key])).toEqual([
+      ['exposure', 'enforced'],
+      ['exposure', 'environment'],
+      ['exposure', 'disabled'],
+      ['usage', 'llm_gateway'],
+      ['usage', 'connector'],
+      ['usage', 'git'],
     ]);
   });
 
-  test('the wording matches secretDeliveryPresentation exactly — one source of truth', () => {
+  test('never names a mechanism as a user-facing value', () => {
+    // The release bar in §8: a reader must never meet "network boundary" and
+    // "HTTPS broker" as two choices anywhere.
+    const text = secretDeliveryLegend()
+      .map((entry) => `${entry.label} ${entry.description}`)
+      .join(' ')
+      .toLowerCase();
+    expect(text).not.toContain('network boundary');
+    expect(text).not.toContain('https broker');
+    expect(text).not.toContain('sandbox handle');
+  });
+
+  test('the exposure wording matches secretDeliveryPresentation exactly — one source of truth', () => {
     for (const entry of secretDeliveryLegend()) {
-      const target = secretAccessTarget(entry.choice);
+      if (entry.kind !== 'exposure') continue;
+      const target = secretExposureTarget(entry.key as 'enforced' | 'environment' | 'disabled');
       expect(secretDeliveryPresentation(target.strategy, target.consumer)).toEqual({
         label: entry.label,
         description: entry.description,
@@ -102,295 +301,64 @@ describe('secretDeliveryLegend', () => {
 });
 
 describe('secretDeliveryPresentation', () => {
-  test('states that runtime secrets are readable inside the sandbox', () => {
+  test('an environment secret is warning-toned and says agent code can read it', () => {
     expect(secretDeliveryPresentation('runtime')).toEqual({
-      label: 'Sandbox',
-      description: 'Available to agent code and commands as an environment variable.',
+      label: 'Environment variable',
+      description: 'The real value is an environment variable agent code and commands can read.',
       tone: 'warning',
     });
   });
 
-  test('states that denied secrets are stored but unavailable', () => {
+  test('an enforced secret names the handle and the approved hosts', () => {
+    expect(secretDeliveryPresentation('egress', 'network')).toEqual({
+      label: 'Enforce at the network',
+      description:
+        'The sandbox holds a handle. Kortix substitutes the real value only on requests to the approved hosts.',
+      tone: 'secondary',
+    });
+    // A legacy HTTPS-broker row shows the same badge: same guarantee.
+    expect(secretDeliveryPresentation('broker', 'http_broker').label).toBe(
+      'Enforce at the network',
+    );
+  });
+
+  test('a disabled secret is stored and delivered nowhere', () => {
     expect(secretDeliveryPresentation('denied')).toEqual({
       label: 'Disabled',
-      description: 'Stored securely, but unavailable to sessions and Kortix services.',
-      tone: 'outline',
+      description: 'Stored securely, but delivered to no session and no Kortix service.',
+      // `info` is the design system's neutral filled pill, not the near-invisible
+      // `outline` (bg-accent sits one hairline off the page surface).
+      tone: 'info',
     });
   });
 
-  test('describes broker and egress without claiming sandbox access', () => {
-    // A 'broker' strategy with no recognized consumer falls back to the
-    // HTTPS broker presentation — see secretAccessChoice's default case.
-    expect(secretDeliveryPresentation('broker').description).toBe(
-      'Added only to an approved HTTPS request outside the sandbox.',
-    );
-    expect(secretDeliveryPresentation('egress').description).toBe(
-      'Added to approved outbound requests at the network boundary.',
-    );
-  });
-
-  test('labels each supported server consumer explicitly', () => {
+  test('an assigned usage wins over the exposure', () => {
+    // `broker`/`llm_gateway` is exposure `disabled`; rendering "Disabled"
+    // beside a working provider key would be a lie.
     expect(secretDeliveryPresentation('broker', 'llm_gateway')).toMatchObject({
       label: 'LLM gateway',
-      description: 'Used for model requests without entering the sandbox.',
-    });
-    expect(secretDeliveryPresentation('broker', 'http_broker')).toMatchObject({
-      label: 'HTTPS broker',
-      description: 'Added only to an approved HTTPS request outside the sandbox.',
+      description: 'Spent by the Kortix model gateway. It never enters the sandbox.',
     });
     expect(secretDeliveryPresentation('broker', 'connector')).toMatchObject({
       label: 'Connector',
-      description: 'Used by an authorized connector without entering the sandbox.',
     });
-    expect(secretDeliveryPresentation('broker', 'git_proxy')).toMatchObject({
-      label: 'Git service',
-      description: 'Used for repository access without entering the sandbox.',
-    });
+    expect(secretDeliveryPresentation('broker', 'git_proxy')).toMatchObject({ label: 'Git' });
   });
 });
 
-/** The two fix sentences, pinned once. They are user-facing copy, so the exact
- *  wording is the assertion — a helper that stopped naming the flag would still
- *  return a non-empty string. The flag name has to match the
- *  `network_boundary_shim` entry in the API's feature-flag registry, which is
- *  the label the Experimental screen renders. */
-const SHIM_FIX = 'Turn on "Network boundary in-guest shim" in Feature flags → Experimental.';
-const PIN_FIX =
-  'Turn on "Network boundary in-guest shim" in Feature flags → Experimental, or pin this project to Platinum in Feature flags → Runtime → Sandbox provider.';
-
-describe('networkBoundaryAvailability', () => {
-  test('requires the project itself to run on Platinum', () => {
-    expect(
-      networkBoundaryAvailability({
-        available_sandbox_providers: ['daytona', 'platinum'],
-        default_sandbox_provider: 'platinum',
-      }),
-    ).toBe('available');
-  });
-
-  test('reports a platform-capable but unpinned project separately', () => {
-    // The live dev state: Platinum is offered, the project runs on Daytona, so
-    // no header is injected.
-    expect(
-      networkBoundaryAvailability({
-        available_sandbox_providers: ['daytona', 'platinum'],
-        default_sandbox_provider: null,
-      }),
-    ).toBe('project_not_pinned');
-    expect(
-      networkBoundaryAvailability({
-        available_sandbox_providers: ['daytona', 'platinum'],
-        default_sandbox_provider: 'daytona',
-      }),
-    ).toBe('project_not_pinned');
-    expect(
-      networkBoundaryAvailability({
-        available_sandbox_providers: ['daytona', 'e2b', 'platinum'],
-        default_sandbox_provider: 'e2b',
-      }),
-    ).toBe('project_not_pinned');
-  });
-
-  test('reports a deployment without Platinum as unsupported', () => {
-    expect(
-      networkBoundaryAvailability({
-        available_sandbox_providers: ['daytona'],
-        default_sandbox_provider: 'daytona',
-      }),
-    ).toBe('unsupported');
-    expect(
-      networkBoundaryAvailability({
-        available_sandbox_providers: ['daytona', 'e2b'],
-        default_sandbox_provider: 'e2b',
-      }),
-    ).toBe('unsupported');
-    expect(networkBoundaryAvailability(undefined)).toBe('unsupported');
-    expect(networkBoundaryAvailability(null)).toBe('unsupported');
-  });
-
-  test('the shim flag makes it available on a project with no Platinum at all', () => {
-    // The second mechanism does not run at a provider edge, so the provider the
-    // project is pinned to stops mattering — the shim is guest-side code and is
-    // the same code on every provider that runs it.
-    expect(
-      networkBoundaryAvailability({
-        available_sandbox_providers: ['daytona'],
-        default_sandbox_provider: 'daytona',
-        experimental: { network_boundary_shim: true },
-      }),
-    ).toBe('available');
-    expect(
-      networkBoundaryAvailability({
-        available_sandbox_providers: ['e2b'],
-        default_sandbox_provider: 'e2b',
-        experimental: { network_boundary_shim: true },
-      }),
-    ).toBe('available');
-    expect(
-      networkBoundaryAvailability({
-        available_sandbox_providers: ['daytona', 'platinum'],
-        default_sandbox_provider: 'daytona',
-        experimental: { network_boundary_shim: true },
-      }),
-    ).toBe('available');
-  });
-
-  test('an off or absent flag leaves the provider verdict untouched', () => {
-    // The flag is opt-in only: it can grant availability, never remove it.
-    expect(
-      networkBoundaryAvailability({
-        available_sandbox_providers: ['daytona'],
-        default_sandbox_provider: 'daytona',
-        experimental: { network_boundary_shim: false },
-      }),
-    ).toBe('unsupported');
-    expect(
-      networkBoundaryAvailability({
-        available_sandbox_providers: ['daytona', 'platinum'],
-        default_sandbox_provider: 'platinum',
-        experimental: { network_boundary_shim: false },
-      }),
-    ).toBe('available');
-  });
-});
-
-describe('networkBoundaryMode', () => {
-  test('a project pinned to Platinum is served by the provider edge', () => {
-    expect(
-      networkBoundaryMode({
-        available_sandbox_providers: ['daytona', 'platinum'],
-        default_sandbox_provider: 'platinum',
-      }),
-    ).toBe('provider-edge');
-  });
-
-  test('the edge wins over the flag when both would serve', () => {
-    // Mirrors the API's precedence: the edge needs nothing in the guest and
-    // injects for every client, so it is what the session actually gets.
-    expect(
-      networkBoundaryMode({
-        available_sandbox_providers: ['daytona', 'platinum'],
-        default_sandbox_provider: 'platinum',
-        experimental: { network_boundary_shim: true },
-      }),
-    ).toBe('provider-edge');
-  });
-
-  test('every non-Platinum provider is served by the same in-guest shim', () => {
-    for (const provider of ['daytona', 'e2b']) {
-      expect(
-        networkBoundaryMode({
-          available_sandbox_providers: [provider, 'platinum'],
-          default_sandbox_provider: provider,
-          experimental: { network_boundary_shim: true },
-        }),
-      ).toBe('in-guest-shim');
+describe('secretExposureOptions', () => {
+  test('offers exactly three values, always enabled, in picker order', () => {
+    // Nothing gates them any more: one mechanism serves every sandbox
+    // provider (§4), so there is no deployment where enforcement is missing.
+    expect(secretExposureOptions().map((option) => option.exposure)).toEqual([
+      'enforced',
+      'environment',
+      'disabled',
+    ]);
+    for (const option of secretExposureOptions()) {
+      expect(option.label.length).toBeGreaterThan(0);
+      expect(option.description.length).toBeGreaterThan(0);
     }
-  });
-
-  test('reports no mechanism when neither half is in place', () => {
-    expect(
-      networkBoundaryMode({
-        available_sandbox_providers: ['e2b'],
-        default_sandbox_provider: 'e2b',
-      }),
-    ).toBeNull();
-    // Platinum offered but not pinned is the state that used to read as
-    // "available": nothing injects until a session actually runs there.
-    expect(
-      networkBoundaryMode({
-        available_sandbox_providers: ['daytona', 'platinum'],
-        default_sandbox_provider: 'daytona',
-      }),
-    ).toBeNull();
-    expect(networkBoundaryMode(undefined)).toBeNull();
-    expect(networkBoundaryMode(null)).toBeNull();
-  });
-});
-
-describe('networkBoundaryBlockedReason', () => {
-  test('leads with the flag on an unpinned project and keeps the pin as the alternative', () => {
-    const reason = networkBoundaryBlockedReason('project_not_pinned') ?? '';
-    expect(reason).toBe(PIN_FIX);
-    // The order is the assertion. Turning the flag on fixes this project;
-    // re-pinning moves every session in it onto another provider.
-    expect(reason.indexOf('Experimental')).toBeLessThan(reason.indexOf('Sandbox provider'));
-  });
-
-  test('a deployment without Platinum is now fixable, so it says how', () => {
-    // It used to read "Not available in this deployment.", which is no longer
-    // true — the shim needs no Platinum, so the state is an opt-in away.
-    expect(networkBoundaryBlockedReason('unsupported')).toBe(SHIM_FIX);
-    expect(networkBoundaryBlockedReason('unsupported')).not.toContain('Not available');
-    expect(networkBoundaryBlockedReason('available')).toBeNull();
-  });
-
-  test('names the flag by its mechanism, not by the provider it does without', () => {
-    expect(networkBoundaryBlockedReason('unsupported')).toContain('in-guest shim');
-    expect(networkBoundaryBlockedReason('project_not_pinned')).not.toContain('without Platinum');
-  });
-});
-
-describe('secretDeliveryOptions', () => {
-  test('offers all five values, network boundary enabled when the project runs on Platinum', () => {
-    const options = secretDeliveryOptions('sandbox', 'available', 'available');
-    expect(options.map(({ choice, disabled }) => ({ choice, disabled }))).toEqual([
-      { choice: 'sandbox', disabled: false },
-      { choice: 'network_boundary', disabled: false },
-      { choice: 'http_broker', disabled: false },
-      { choice: 'llm_gateway', disabled: false },
-      { choice: 'connector', disabled: false },
-      { choice: 'disabled', disabled: false },
-    ]);
-    expect(options[1]?.disabledReason).toBeNull();
-  });
-
-  test('keeps network boundary disabled when Platinum is unavailable', () => {
-    expect(secretDeliveryOptions('http_broker', 'available', 'unsupported')[2]?.disabled).toBe(
-      false,
-    );
-    expect(secretDeliveryOptions('sandbox', 'available', 'unsupported')[1]).toMatchObject({
-      disabled: true,
-      disabledReason: SHIM_FIX,
-    });
-  });
-
-  test('disables network boundary on an unpinned project and states the fix', () => {
-    expect(secretDeliveryOptions('sandbox', 'available', 'project_not_pinned')[1]).toMatchObject({
-      disabled: true,
-      disabledReason: PIN_FIX,
-    });
-  });
-
-  test('disables a selected broker value when the server marks it unavailable', () => {
-    expect(secretDeliveryOptions('http_broker', 'unavailable', 'available')[2]).toMatchObject({
-      disabled: true,
-      disabledReason: 'Not available in this deployment.',
-    });
-  });
-
-  test('leaves an unselected broker value enabled even when the server marks it unavailable', () => {
-    // `status` describes the SELECTED strategy's own deployment; it must not
-    // leak into a sibling broker value the dialog is not currently showing.
-    expect(secretDeliveryOptions('llm_gateway', 'unavailable', 'available')[2]).toMatchObject({
-      disabled: false,
-      disabledReason: null,
-    });
-  });
-});
-
-describe('secretDeliveryOptionGroups', () => {
-  test('buckets the flat list into "for your agent" then "for a Kortix service", in order', () => {
-    const groups = secretDeliveryOptionGroups(secretDeliveryOptions('sandbox', 'available', 'available'));
-    expect(groups.map((g) => ({ group: g.group, label: g.label, choices: g.options.map((o) => o.choice) }))).toEqual([
-      {
-        group: 'agent',
-        label: "For your agent's own code",
-        choices: ['sandbox', 'network_boundary', 'http_broker'],
-      },
-      { group: 'service', label: 'For a Kortix service', choices: ['llm_gateway', 'connector'] },
-      { group: 'none', label: null, choices: ['disabled'] },
-    ]);
   });
 });
 
@@ -398,7 +366,7 @@ describe('secretDeliveryBlockedReason', () => {
   test('reports the blocked verdict only on the exact reason', () => {
     expect(
       secretDeliveryBlockedReason({
-        identifier: 'BOUNDARY_TEST',
+        identifier: 'ENFORCED_TEST',
         delivery_blocked_reason: 'no_agent_grant',
       }),
     ).toBe('no_agent_grant');
@@ -408,12 +376,12 @@ describe('secretDeliveryBlockedReason', () => {
     // Tri-state: null covers "granted", "not applicable" AND "we could not
     // tell" — warning on uncertainty is worse than not warning.
     expect(
-      secretDeliveryBlockedReason({ identifier: 'BOUNDARY_TEST', delivery_blocked_reason: null }),
+      secretDeliveryBlockedReason({ identifier: 'ENFORCED_TEST', delivery_blocked_reason: null }),
     ).toBeNull();
-    expect(secretDeliveryBlockedReason({ identifier: 'BOUNDARY_TEST' })).toBeNull();
+    expect(secretDeliveryBlockedReason({ identifier: 'ENFORCED_TEST' })).toBeNull();
     expect(
       secretDeliveryBlockedReason({
-        identifier: 'BOUNDARY_TEST',
+        identifier: 'ENFORCED_TEST',
         delivery_blocked_reason: 'manifest_unreadable',
       }),
     ).toBeNull();
@@ -421,27 +389,38 @@ describe('secretDeliveryBlockedReason', () => {
 });
 
 describe('shouldWarnMissingAgentGrant', () => {
-  test('warns for the delivery modes that need a named agent grant', () => {
-    expect(shouldWarnMissingAgentGrant('no_agent_grant', 'egress')).toBe(true);
-    expect(shouldWarnMissingAgentGrant('no_agent_grant', 'broker')).toBe(true);
+  test('warns only for enforced rows, which hold a sandbox handle a grant delivers', () => {
+    // `egress`/`network` and the legacy `broker`/`http_broker` both read as
+    // `enforced` — the two delivery modes that reach a session only via a grant.
+    expect(shouldWarnMissingAgentGrant('no_agent_grant', 'egress', 'network')).toBe(true);
+    expect(shouldWarnMissingAgentGrant('no_agent_grant', 'broker', 'http_broker')).toBe(true);
+  });
+
+  test('stays silent for a none-exposure broker row (llm_gateway / connector / git)', () => {
+    // The defect: an `llm_gateway` row is `strategy: broker` too, but its
+    // exposure is `none` — no sandbox presence, so agent-grant guidance never
+    // applies. The consumer disambiguates it from a legacy http_broker row.
+    expect(shouldWarnMissingAgentGrant('no_agent_grant', 'broker', 'llm_gateway')).toBe(false);
+    expect(shouldWarnMissingAgentGrant('no_agent_grant', 'broker', 'connector')).toBe(false);
+    expect(shouldWarnMissingAgentGrant('no_agent_grant', 'broker', 'git_proxy')).toBe(false);
   });
 
   test('stays silent for runtime, disabled, and an unblocked secret', () => {
-    expect(shouldWarnMissingAgentGrant('no_agent_grant', 'runtime')).toBe(false);
-    expect(shouldWarnMissingAgentGrant('no_agent_grant', 'denied')).toBe(false);
-    expect(shouldWarnMissingAgentGrant(null, 'egress')).toBe(false);
+    expect(shouldWarnMissingAgentGrant('no_agent_grant', 'runtime', 'sandbox')).toBe(false);
+    expect(shouldWarnMissingAgentGrant('no_agent_grant', 'denied', null)).toBe(false);
+    expect(shouldWarnMissingAgentGrant(null, 'egress', 'network')).toBe(false);
   });
 });
 
 describe('missingAgentGrantNotice', () => {
   test('names the identifier, the manifest fix, and rejects the "all" shorthand', () => {
-    const notice = missingAgentGrantNotice('BOUNDARY_TEST');
+    const notice = missingAgentGrantNotice('ENFORCED_TEST');
     expect(notice.title).toBe('No agent can receive this secret');
-    expect(notice.body).toContain('BOUNDARY_TEST');
+    expect(notice.body).toContain('ENFORCED_TEST');
     expect(notice.body).toContain('kortix.yaml');
     expect(notice.body).toContain('"secrets: all" does not grant this delivery mode');
     expect(notice.manifest).toBe(
-      'kortix_version: 2\nagents:\n  my-agent:\n    secrets: [BOUNDARY_TEST]',
+      'kortix_version: 2\nagents:\n  my-agent:\n    secrets: [ENFORCED_TEST]',
     );
   });
 });
@@ -469,20 +448,20 @@ describe('secret delivery sync', () => {
   });
 
   test('reports nothing for an absent, null, or unrecognized block', () => {
-    expect(readSecretDeliverySync({ identifier: 'BOUNDARY_TEST' })).toBeNull();
+    expect(readSecretDeliverySync({ identifier: 'ENFORCED_TEST' })).toBeNull();
     expect(readSecretDeliverySync({ delivery_sync: null })).toBeNull();
     expect(readSecretDeliverySync({ delivery_sync: { targeted: 2 } })).toBeNull();
     expect(readSecretDeliverySync(null)).toBeNull();
   });
 
   test('warns with the session count and the first failure reason verbatim', () => {
-    expect(secretDeliverySyncWarning('BOUNDARY_TEST', sync())).toEqual({
-      message: 'Saved BOUNDARY_TEST, but it is not applied to 1 running session',
+    expect(secretDeliverySyncWarning('ENFORCED_TEST', sync())).toEqual({
+      message: 'Saved ENFORCED_TEST, but it is not applied to 1 running session',
       description: 'sandbox unreachable: 502',
     });
     expect(
       secretDeliverySyncWarning(
-        'BOUNDARY_TEST',
+        'ENFORCED_TEST',
         sync({
           failed: 2,
           failures: [
@@ -492,156 +471,119 @@ describe('secret delivery sync', () => {
         }),
       ),
     ).toEqual({
-      message: 'Saved BOUNDARY_TEST, but it is not applied to 2 running sessions',
+      message: 'Saved ENFORCED_TEST, but it is not applied to 2 running sessions',
       description: 'first reason',
     });
   });
 
   test('falls back to the targeted count and a plain reason when the block is thin', () => {
-    expect(secretDeliverySyncWarning('BOUNDARY_TEST', sync({ failed: 0, failures: [] }))).toEqual({
-      message: 'Saved BOUNDARY_TEST, but it is not applied to 2 running sessions',
+    expect(secretDeliverySyncWarning('ENFORCED_TEST', sync({ failed: 0, failures: [] }))).toEqual({
+      message: 'Saved ENFORCED_TEST, but it is not applied to 2 running sessions',
       description: 'No failure reason was reported.',
     });
     expect(
-      secretDeliverySyncWarning('BOUNDARY_TEST', sync({ targeted: 0, failed: 0, failures: [] })),
+      secretDeliverySyncWarning('ENFORCED_TEST', sync({ targeted: 0, failed: 0, failures: [] })),
     ).toEqual({
-      message: 'Saved BOUNDARY_TEST, but it is not applied to the running sessions',
+      message: 'Saved ENFORCED_TEST, but it is not applied to the running sessions',
       description: 'No failure reason was reported.',
     });
   });
 
   test('stays silent on a successful sync and on a response without the block', () => {
-    expect(secretDeliverySyncWarning('BOUNDARY_TEST', sync({ ok: true, failed: 0 }))).toBeNull();
-    expect(secretDeliverySyncWarning('BOUNDARY_TEST', { delivery_sync: null })).toBeNull();
-    expect(secretDeliverySyncWarning('BOUNDARY_TEST', { identifier: 'BOUNDARY_TEST' })).toBeNull();
+    expect(secretDeliverySyncWarning('ENFORCED_TEST', sync({ ok: true, failed: 0 }))).toBeNull();
+    expect(secretDeliverySyncWarning('ENFORCED_TEST', { delivery_sync: null })).toBeNull();
+    expect(secretDeliverySyncWarning('ENFORCED_TEST', { identifier: 'ENFORCED_TEST' })).toBeNull();
   });
 });
 
 describe('canSaveSecretDelivery', () => {
-  test('requires a replacement value before restoring sandbox access', () => {
+  const base = {
+    isEdit: true,
+    key: 'LOCAL_TEST_KEY',
+    value: '',
+    requiresValue: false,
+    requiresRotation: false,
+    currentStrategy: 'runtime' as const,
+    nextStrategy: 'runtime' as const,
+    nextConsumer: 'sandbox' as const,
+    enforcedPolicyValid: false,
+  };
+
+  test('requires a replacement value before restoring environment exposure', () => {
     expect(
       canSaveSecretDelivery({
-        isEdit: true,
-        key: 'LOCAL_TEST_KEY',
-        value: '',
-        requiresValue: false,
+        ...base,
         requiresRotation: true,
         currentStrategy: 'denied',
-        nextStrategy: 'runtime',
-        nextConsumer: 'sandbox',
-        brokerPolicyValid: false,
       }),
     ).toBe(false);
   });
 
-  test('allows sandbox access after a replacement value is entered', () => {
+  test('allows environment exposure after a replacement value is entered', () => {
     expect(
       canSaveSecretDelivery({
-        isEdit: true,
-        key: 'LOCAL_TEST_KEY',
+        ...base,
         value: 'replacement',
-        requiresValue: false,
         requiresRotation: true,
         currentStrategy: 'denied',
-        nextStrategy: 'runtime',
-        nextConsumer: 'sandbox',
-        brokerPolicyValid: false,
       }),
     ).toBe(true);
   });
 
-  test('requires a changed value or delivery strategy for an existing secret', () => {
-    expect(
-      canSaveSecretDelivery({
-        isEdit: true,
-        key: 'LOCAL_TEST_KEY',
-        value: '',
-        requiresValue: false,
-        requiresRotation: false,
-        currentStrategy: 'runtime',
-        nextStrategy: 'runtime',
-        nextConsumer: 'sandbox',
-        brokerPolicyValid: false,
-      }),
-    ).toBe(false);
+  test('requires a changed value or exposure for an existing secret', () => {
+    expect(canSaveSecretDelivery(base)).toBe(false);
   });
 
-  test('requires a complete broker policy', () => {
-    expect(
-      canSaveSecretDelivery({
-        isEdit: true,
-        key: 'LOCAL_TEST_KEY',
-        value: '',
-        requiresValue: false,
-        requiresRotation: false,
-        currentStrategy: 'runtime',
-        nextStrategy: 'broker',
-        nextConsumer: 'http_broker',
-        brokerPolicyValid: false,
-      }),
-    ).toBe(false);
-    expect(
-      canSaveSecretDelivery({
-        isEdit: true,
-        key: 'LOCAL_TEST_KEY',
-        value: '',
-        requiresValue: false,
-        requiresRotation: false,
-        currentStrategy: 'runtime',
-        nextStrategy: 'broker',
-        nextConsumer: 'http_broker',
-        brokerPolicyValid: true,
-      }),
-    ).toBe(true);
+  test('requires a valid host list for an enforced secret', () => {
+    const enforced = {
+      ...base,
+      nextStrategy: 'egress' as const,
+      nextConsumer: 'network' as const,
+    };
+    expect(canSaveSecretDelivery(enforced)).toBe(false);
+    expect(canSaveSecretDelivery({ ...enforced, enforcedPolicyValid: true })).toBe(true);
   });
 
-  test('allows the LLM gateway consumer without an HTTP policy', () => {
+  test('a legacy HTTPS-broker row needs the same host list', () => {
+    const legacy = {
+      ...base,
+      nextStrategy: 'broker' as const,
+      nextConsumer: 'http_broker' as const,
+    };
+    expect(canSaveSecretDelivery(legacy)).toBe(false);
+    expect(canSaveSecretDelivery({ ...legacy, enforcedPolicyValid: true })).toBe(true);
+  });
+
+  test('an assigned LLM-gateway row needs no host list', () => {
     expect(
       canSaveSecretDelivery({
-        isEdit: true,
+        ...base,
         key: 'OPENAI_API_KEY',
-        value: '',
-        requiresValue: false,
-        requiresRotation: false,
-        currentStrategy: 'runtime',
         nextStrategy: 'broker',
         nextConsumer: 'llm_gateway',
-        brokerPolicyValid: false,
       }),
     ).toBe(true);
   });
 
-  test('requires at least one connector for connector delivery', () => {
+  test('requires at least one connector for a connector-bound secret', () => {
     expect(
       canSaveSecretDelivery({
-        isEdit: true,
+        ...base,
         key: 'API_KEY',
-        value: '',
-        requiresValue: false,
-        requiresRotation: false,
-        currentStrategy: 'runtime',
         nextStrategy: 'broker',
         nextConsumer: 'connector',
-        brokerPolicyValid: false,
         selectedConnectorCount: 0,
       }),
     ).toBe(false);
-  });
-
-  test('requires a valid network-boundary policy for egress delivery', () => {
-    const input = {
-      isEdit: true,
-      key: 'API_KEY',
-      value: '',
-      requiresValue: false,
-      requiresRotation: false,
-      currentStrategy: 'runtime' as const,
-      nextStrategy: 'egress' as const,
-      nextConsumer: 'network' as const,
-      brokerPolicyValid: false,
-    };
-    expect(canSaveSecretDelivery(input)).toBe(false);
-    expect(canSaveSecretDelivery({ ...input, networkBoundaryPolicyValid: true })).toBe(true);
+    expect(
+      canSaveSecretDelivery({
+        ...base,
+        key: 'API_KEY',
+        nextStrategy: 'broker',
+        nextConsumer: 'connector',
+        selectedConnectorCount: 1,
+      }),
+    ).toBe(true);
   });
 });
 
@@ -716,83 +658,106 @@ describe('connector secret bindings', () => {
   });
 });
 
-describe('buildBrokerPolicy', () => {
-  test('normalizes hosts and methods into strict broker rules', () => {
+describe('buildEnforcedPolicy', () => {
+  test('builds a host allow-list and nothing else', () => {
+    // §6: the policy collapses to hosts. No header, no template, no method,
+    // no path — the agent's own client already carries the handle in place.
     expect(
-      buildBrokerPolicy({
-        hosts: ' api.example.com, *.example.com ',
-        methods: 'post, GET',
-        path: '/v1/*',
-        injectionKind: 'header',
-        injectionTarget: 'Authorization',
-        template: 'Bearer {{secret}}',
-      }),
-    ).toEqual({
-      backend: 'kortix_fetch',
-      rules: [
-        { host: 'api.example.com', methods: ['POST', 'GET'], path: '/v1/*' },
-        { host: '*.example.com', methods: ['POST', 'GET'], path: '/v1/*' },
-      ],
-      inject: { kind: 'header', name: 'Authorization', template: 'Bearer {{secret}}' },
-      on_no_match: 'deny',
-      tls: 'terminate',
-    });
-  });
-
-  test('rejects missing hosts, invalid methods, and an empty injection target', () => {
-    const base = {
-      hosts: 'api.example.com',
-      methods: 'POST',
-      path: '/v1/*',
-      injectionKind: 'header' as const,
-      injectionTarget: 'authorization',
-      template: '',
-    };
-    expect(buildBrokerPolicy({ ...base, hosts: '' })).toBeNull();
-    expect(buildBrokerPolicy({ ...base, methods: 'TRACE' })).toBeNull();
-    expect(buildBrokerPolicy({ ...base, injectionTarget: '' })).toBeNull();
-  });
-});
-
-describe('buildNetworkBoundaryPolicy', () => {
-  test('builds an exact-host header transform without a sandbox handle', () => {
-    expect(
-      buildNetworkBoundaryPolicy({
-        hosts: 'api.anthropic.com\napi.openai.com',
-        injectionTarget: 'Authorization',
-        template: 'Bearer {{secret}}',
-      }),
+      buildEnforcedPolicy({ hosts: 'api.anthropic.com\napi.openai.com' }),
     ).toEqual({
       rules: [{ host: 'api.anthropic.com' }, { host: 'api.openai.com' }],
-      inject: { kind: 'header', name: 'Authorization', template: 'Bearer {{secret}}' },
       on_no_match: 'deny',
       tls: 'terminate',
     });
   });
 
-  test('rejects wildcard hosts, URLs, invalid headers, and templates without the secret slot', () => {
-    const base = {
-      hosts: 'api.example.com',
-      injectionTarget: 'x-api-key',
-      template: '{{secret}}',
-    };
-    expect(buildNetworkBoundaryPolicy({ ...base, hosts: '*.example.com' })).toBeNull();
-    expect(buildNetworkBoundaryPolicy({ ...base, hosts: 'https://api.example.com' })).toBeNull();
-    expect(buildNetworkBoundaryPolicy({ ...base, injectionTarget: 'bad header' })).toBeNull();
-    expect(buildNetworkBoundaryPolicy({ ...base, template: 'Bearer token' })).toBeNull();
+  test('rejects wildcard hosts, URLs, and an empty list', () => {
+    expect(buildEnforcedPolicy({ hosts: '*.example.com' })).toBeNull();
+    expect(buildEnforcedPolicy({ hosts: 'https://api.example.com' })).toBeNull();
+    expect(buildEnforcedPolicy({ hosts: 'api.example.com:443' })).toBeNull();
+    expect(buildEnforcedPolicy({ hosts: '  \n , ' })).toBeNull();
+  });
+
+  test('a legacy slot rides through untouched', () => {
+    // Dropping it on an unrelated save — a value rotation, a host added —
+    // would silently stop a working injection.
+    expect(
+      buildEnforcedPolicy({
+        hosts: 'api.example.com',
+        legacyInject: { kind: 'header', name: 'authorization', template: 'Bearer {{secret}}' },
+      }),
+    ).toEqual({
+      rules: [{ host: 'api.example.com' }],
+      inject: { kind: 'header', name: 'authorization', template: 'Bearer {{secret}}' },
+      on_no_match: 'deny',
+      tls: 'terminate',
+    });
+  });
+
+  test('a legacy HTTPS-broker row keeps the backend its consumer requires', () => {
+    expect(
+      buildEnforcedPolicy({ hosts: 'api.example.com', backend: 'kortix_fetch' })?.backend,
+    ).toBe('kortix_fetch');
+    // And an ordinary enforced row states none: the egress validator rejects
+    // any backend at all.
+    expect(buildEnforcedPolicy({ hosts: 'api.example.com' })).not.toHaveProperty('backend');
   });
 });
 
-describe('parseBoundaryHosts', () => {
+describe('parseEnforcedHosts', () => {
   test('lowercases, splits on commas and newlines, and drops duplicates', () => {
-    expect(parseBoundaryHosts('API.Example.com, api.example.com\nuploads.example.com  ')).toEqual([
+    expect(parseEnforcedHosts('API.Example.com, api.example.com\nuploads.example.com  ')).toEqual([
       'api.example.com',
       'uploads.example.com',
     ]);
   });
 
   test('reads an empty field as no hosts', () => {
-    expect(parseBoundaryHosts('   \n , ')).toEqual([]);
+    expect(parseEnforcedHosts('   \n , ')).toEqual([]);
+  });
+});
+
+describe('legacyInjectionDetail', () => {
+  test('reports nothing for a substitution-only policy', () => {
+    expect(legacyInjectionDetail({ rules: [{ host: 'api.example.com' }] })).toBeNull();
+    expect(legacyInjectionDetail(null)).toBeNull();
+    expect(legacyInjectionDetail(undefined)).toBeNull();
+  });
+
+  test('spells out a stored header slot, template included', () => {
+    const detail = legacyInjectionDetail({
+      rules: [{ host: 'api.example.com' }],
+      inject: { kind: 'header', name: 'authorization', template: 'Bearer {{secret}}' },
+    });
+    expect(detail?.lines).toEqual(['Header: authorization', 'Value: Bearer {{secret}}']);
+    expect(detail?.body).toContain('Remove it');
+  });
+
+  test('an absent template is shown as the implicit bare value', () => {
+    // The stored default is `{{secret}}`; showing nothing would read as "no
+    // value", which is the opposite of what the broker does.
+    expect(
+      legacyInjectionDetail({
+        rules: [{ host: 'api.example.com' }],
+        inject: { kind: 'header', name: 'x-api-key' },
+      })?.lines,
+    ).toEqual(['Header: x-api-key', 'Value: {{secret}}']);
+  });
+
+  test('query and JSON-body slots, plus the method and path filters, are all reported', () => {
+    expect(
+      legacyInjectionDetail({
+        backend: 'kortix_fetch',
+        rules: [{ host: 'api.example.com', methods: ['POST'], path: '/v1/*' }],
+        inject: { kind: 'query', name: 'api_key' },
+      })?.lines,
+    ).toEqual(['Query parameter: api_key', 'Methods: POST', 'Path: /v1/*']);
+    expect(
+      legacyInjectionDetail({
+        rules: [{ host: 'api.example.com' }],
+        inject: { kind: 'json_body_field', path: 'auth.api_key' },
+      })?.lines,
+    ).toEqual(['JSON body field: auth.api_key']);
   });
 });
 
@@ -801,61 +766,47 @@ describe('parseBoundaryHosts', () => {
  * cut connection as a dead host, and invented a TLS explanation. Nothing in the
  * product said the boundary was there.
  *
- * The mode argument exists for the mirror-image failure. The shim never cuts a
- * response, so telling a shim-backed project to expect an empty reply describes
- * a working boundary as a broken one — and a genuinely dead host as success.
+ * There is ONE symptom now. The provider edge is gone (spec §4), so the
+ * empty-reply story it produced must not appear anywhere — telling a user to
+ * expect it makes a working request look broken.
  */
-describe('networkBoundaryEchoNotice', () => {
-  test('names the provider edge symptom and denies the wrong conclusion', () => {
-    const notice = networkBoundaryEchoNotice('api.stripe.com', 'provider-edge');
-    expect(notice.body).toContain('curl: (52) Empty reply from server');
-    expect(notice.body).toContain('the boundary working, not the host being down');
-  });
-
-  test('the shim returns a redacted 200, so its notice says that instead', () => {
-    const notice = networkBoundaryEchoNotice('api.stripe.com', 'in-guest-shim');
+describe('enforcedEchoNotice', () => {
+  test('names the redacted echo and denies the wrong conclusion', () => {
+    const notice = enforcedEchoNotice('api.stripe.com');
     expect(notice.title).toContain('[REDACTED]');
     expect(notice.body).toContain('[REDACTED]');
-    // The exact symptom the edge calls success is a real failure here, so the
-    // shim copy must not carry it.
-    expect(notice.body).not.toContain('curl: (52) Empty reply from server');
-    expect(notice.body).toContain('a real failure here');
+    expect(notice.body).toContain('a real failure');
+  });
+
+  test('the retired provider-edge symptom appears nowhere', () => {
+    const notice = enforcedEchoNotice('api.stripe.com');
+    const text = `${notice.title} ${notice.body} ${notice.probe}`;
+    expect(text).not.toContain('curl: (52) Empty reply from server');
+    expect(text.toLowerCase()).not.toContain('network boundary');
   });
 
   test('probes the first declared host with a credential-consuming request', () => {
-    const notice = networkBoundaryEchoNotice('API.Stripe.com\nuploads.stripe.com', 'provider-edge');
+    const notice = enforcedEchoNotice('API.Stripe.com\nuploads.stripe.com');
     expect(notice.probe).toContain('https://api.stripe.com/');
     expect(notice.probe).toContain('never one that echoes headers');
-    expect(notice.probe).toContain('200 = the header arrived. 401 = it did not.');
-  });
-
-  test('probes the same way under both mechanisms', () => {
-    // An endpoint that spends the credential answers 200 or 401 either way,
-    // which is why it is the probe worth pasting.
-    expect(networkBoundaryEchoNotice('api.stripe.com', 'in-guest-shim').probe).toBe(
-      networkBoundaryEchoNotice('api.stripe.com', 'provider-edge').probe,
-    );
+    expect(notice.probe).toContain('200 = the real value was substituted. 401 = it was not.');
   });
 
   test('falls back to a placeholder host before anything is typed', () => {
-    expect(networkBoundaryEchoNotice('', 'in-guest-shim').probe).toContain(
-      'https://api.example.com/',
-    );
+    expect(enforcedEchoNotice('').probe).toContain('https://api.example.com/');
   });
 
   test('points at the two-probe procedure in the docs', () => {
-    const notice = networkBoundaryEchoNotice('api.stripe.com', 'provider-edge');
+    const notice = enforcedEchoNotice('api.stripe.com');
     expect(notice.docsHref).toBe('/docs/project/secrets#verify-it-with-two-probes');
     expect(notice.docsLabel).toBe('Verify it with two probes');
   });
 
   test('never suggests looking for the value in the sandbox', () => {
-    for (const mode of ['provider-edge', 'in-guest-shim'] as const) {
-      const notice = networkBoundaryEchoNotice('api.stripe.com', mode);
-      const text = `${notice.title} ${notice.body} ${notice.probe}`;
-      expect(text).not.toContain('env ');
-      expect(text).not.toContain('{{secret}}');
-      expect(text.toLowerCase()).not.toContain('authorization:');
-    }
+    const notice = enforcedEchoNotice('api.stripe.com');
+    const text = `${notice.title} ${notice.body} ${notice.probe}`;
+    expect(text).not.toContain('env ');
+    expect(text).not.toContain('{{secret}}');
+    expect(text.toLowerCase()).not.toContain('authorization:');
   });
 });

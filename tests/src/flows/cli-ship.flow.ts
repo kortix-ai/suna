@@ -39,7 +39,7 @@ import { flow } from '../core/flow';
 import { isKe2eRetryableError } from '../core/client';
 import { assert } from '../core/expect';
 import { waitFor } from '../core/poll';
-import { CliSandbox } from '../fixtures/cli';
+import { CliSandbox, throwIfCliInfraFailure, type CliResult } from '../fixtures/cli';
 
 function check(description: string, pass: boolean, expected: unknown, actual: unknown): void {
   assert({ kind: 'cli', description, expected, actual, pass });
@@ -47,9 +47,12 @@ function check(description: string, pass: boolean, expected: unknown, actual: un
 
 function checkExit(
   description: string,
-  result: { exitCode: number; all: string },
+  result: CliResult,
   expected: number,
 ): void {
+  // CR-9 failed here in run 32306385663 with `HTTP 503: Kortix is temporarily
+  // unavailable` — an edge blip recorded as a CLI contract failure, unretried.
+  if (expected === 0) throwIfCliInfraFailure(result, description);
   check(description, result.exitCode === expected, expected, {
     exitCode: result.exitCode,
     output: result.all.slice(0, 3_000),
@@ -173,6 +176,12 @@ flow(
   {
     domain: 'cli',
     requires: ['managedGitPush'],
+    // Each `ship` is allotted its own 120s CLI budget below, and a real ship
+    // provisions a GitHub repo, commits, and pushes through the git proxy to a
+    // DEPLOYED target. Without a flow-level budget the runner default is 120s
+    // (core/runner.ts), so SHIP-1 could never fit one ship plus init/login — a timeout is NOT
+    // retryable, so it fails the gate outright rather than flaking.
+    timeoutMs: 300_000,
     routes: [
       'GET /v1/accounts/me',
       'POST /v1/projects/provision',
@@ -341,6 +350,12 @@ flow(
   {
     domain: 'cli',
     requires: ['managedGitPush'],
+    // Each `ship` is allotted its own 120s CLI budget below, and a real ship
+    // provisions a GitHub repo, commits, and pushes through the git proxy to a
+    // DEPLOYED target. Without a flow-level budget the runner default is 120s
+    // (core/runner.ts), so SHIP-4 could never fit one ship plus init/login — a timeout is NOT
+    // retryable, so it fails the gate outright rather than flaking.
+    timeoutMs: 300_000,
     routes: [
       'GET /v1/accounts/me',
       'POST /v1/projects/provision',
@@ -450,6 +465,12 @@ flow(
   {
     domain: 'cli',
     requires: ['managedGitPush'],
+    // Each `ship` is allotted its own 120s CLI budget below, and a real ship
+    // provisions a GitHub repo, commits, and pushes through the git proxy to a
+    // DEPLOYED target. Without a flow-level budget the runner default is 120s
+    // (core/runner.ts), so SHIP-6 could never fit its two ships — a timeout is NOT
+    // retryable, so it fails the gate outright rather than flaking.
+    timeoutMs: 600_000,
     routes: [
       'GET /v1/accounts/me',
       'POST /v1/projects/provision',
@@ -512,6 +533,12 @@ flow(
   {
     domain: 'cli',
     requires: ['managedGitPush'],
+    // Each `ship` is allotted its own 120s CLI budget below, and a real ship
+    // provisions a GitHub repo, commits, and pushes through the git proxy to a
+    // DEPLOYED target. Without a flow-level budget the runner default is 120s
+    // (core/runner.ts), so SHIP-9 could never fit its three ships — a timeout is NOT
+    // retryable, so it fails the gate outright rather than flaking.
+    timeoutMs: 900_000,
     routes: [
       'GET /v1/accounts/me',
       'POST /v1/projects/provision',
@@ -584,7 +611,7 @@ flow(
   'CR-9',
   {
     domain: 'cli',
-    requires: ['funded'],
+    requires: ['funded', 'daytona'],
     serial: true,
     timeoutMs: 1_200_000,
     routes: [

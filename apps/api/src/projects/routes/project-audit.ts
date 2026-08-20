@@ -24,8 +24,11 @@ import {
   parseAuditSessionCursor,
   serializeAuditEvent,
 } from '../../shared/audit-query';
+import { flushAuditEvents } from '../../shared/audit';
 import { AuditEventSchema, AuditListSchema } from '../../shared/audit-schema';
 import { parseOpenCodeAuditBatch } from '../../shared/opencode-audit-ingestion';
+import { applyOpenCodeAuditRateLimit } from '../../shared/opencode-audit-rate-guard';
+import { flagSessionAuditRateLimited } from '../lib/session-audit-rate-flag';
 import { callerKortixSessionId } from '../lib/caller-session';
 import { sandboxTokenMayActOnSession } from '../lib/sandbox-token-session';
 
@@ -115,6 +118,10 @@ projectsApp.openapi(
         buildAuditCursorCondition(cursor, loaded.row.accountId, 'descending'),
       );
     }
+    // Audit writes are buffered off the request path (shared/audit-queue.ts).
+    // A reader must observe every event already emitted, so drain the queue
+    // before querying.
+    await flushAuditEvents();
     const fetched = await db
       .select()
       .from(auditEvents)
@@ -239,15 +246,57 @@ projectsApp.openapi(
     } catch (error) {
       return c.json({ error: (error as Error).message }, 400);
     }
+    // Per-session ingest ceiling. A single runaway turn emitting ~1725
+    // `opencode.message.part.delta` rows/min took staging down through
+    // audit_events index contention (release-gate run 32151213430); this bounds
+    // the write rate before it reaches a 14-index table. It drops ONLY the
+    // per-token delta class and never blocks the request.
+    //
+    // Wrapped because a guard defect must never cost an audit write: any throw
+    // here falls back to persisting the batch exactly as parsed.
+    let toInsert = parsed.values;
+    let suppressed = 0;
+    try {
+      const decision = applyOpenCodeAuditRateLimit({
+        accountId,
+        projectId,
+        sessionId,
+        values: parsed.values,
+      });
+      toInsert = decision.values;
+      suppressed = decision.suppressed;
+      if (decision.flagForReaper) {
+        // Durable, best-effort marker for the maintenance sweep and for
+        // operators querying during an incident. Deliberately not awaited: the
+        // hot path must not gain a write it has to wait on.
+        void flagSessionAuditRateLimited({
+          accountId,
+          projectId,
+          sessionId,
+          consecutiveHotWindows: decision.consecutiveHotWindows,
+        });
+      }
+    } catch {
+      toInsert = parsed.values;
+      suppressed = 0;
+    }
+
+    if (toInsert.length === 0) {
+      return c.json({ accepted: parsed.accepted, inserted: 0, duplicates: 0, suppressed });
+    }
+
     const inserted = await db
       .insert(auditEvents)
-      .values(parsed.values)
+      .values(toInsert)
       .onConflictDoNothing()
       .returning({ eventId: auditEvents.eventId });
     return c.json({
       accepted: parsed.accepted,
       inserted: inserted.length,
-      duplicates: parsed.accepted - inserted.length,
+      // Rows the unique index rejected. Identical to the previous
+      // `accepted - inserted` whenever nothing was suppressed.
+      duplicates: Math.max(0, toInsert.length - inserted.length),
+      suppressed,
     });
   },
 );
@@ -314,7 +363,7 @@ projectsApp.openapi(
       projectId,
       PROJECT_ACTIONS.PROJECT_SESSION_READ,
     );
-    const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c));
+    const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c), callerKortixSessionId(c));
     if (!visible) return c.json({ error: 'Not found' }, 404);
     // The historical trail is Enterprise (`auditAccess`), but this endpoint is
     // also the approval CONTROL PLANE: write/destructive connector actions
@@ -345,6 +394,10 @@ projectsApp.openapi(
       );
       if (cursorCondition) eventConditions.push(cursorCondition);
     }
+    // Audit writes are buffered off the request path (shared/audit-queue.ts).
+    // A reader must observe every event already emitted, so drain the queue
+    // before querying.
+    await flushAuditEvents();
     const fetchedEvents = audited && includeEvents
       ? await db
           .select()

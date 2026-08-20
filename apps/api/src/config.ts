@@ -341,11 +341,6 @@ const envSchema = z.object({
   // Manager bundle. Self-host deployments leave it unset.
   ASTER_API_URL: optUrl('https://api.asterlab.ai/v1'),
   ASTER_API_KEY: optStr,
-  // Whether network-boundary secrets may be delivered by the IN-GUEST shim on
-  // providers that have no credential edge of their own (i.e. Daytona, which is
-  // production). The shim terminates the guest's TLS and relays to the broker
-  // route; the credential stays server-side either way.
-  //
   // Whether a session's sandbox gets the `kortix-connectors` OpenCode MCP
   // server (KORTIX_CONNECTORS_MCP_ENABLED in the guest). It exposes the
   // connector meta-tools plus `secret_call`, the only way to use an
@@ -367,6 +362,16 @@ const envSchema = z.object({
   // Managed LLM gateway (/v1/llm) — the `kortix` OpenCode provider routes every
   // sandbox model call here. Off by default.
   LLM_GATEWAY_ENABLED: optBoolFalse,
+  // AI-SDK-native gateway ingress (`POST /v1/llm/language-model`, Vercel "AI
+  // Gateway" protocol). SAME env name the standalone gateway reads
+  // (apps/llm-gateway config `GATEWAY_AI_SDK_NATIVE`), so one operator switch
+  // turns on BOTH the standalone gateway AND this in-process mount. When ON:
+  // (1) the in-process gateway is created with `aiSdkNative` so
+  // `gateway.languageModel` serves instead of 404ing, and (2) every session gets
+  // `KORTIX_LLM_AI_SDK_NATIVE=true` injected so the daemon's `buildKortixProvider`
+  // selects `@ai-sdk/gateway`. Default ON — native is the default everywhere;
+  // set GATEWAY_AI_SDK_NATIVE=0 to fall back to the OpenAI-compatible path.
+  GATEWAY_AI_SDK_NATIVE: optBoolTrue,
   // CLOUD-ONLY. Whether KORTIX's own managed model lineup exists on this
   // deployment. The lineup routes through Kortix's shared Bedrock, AsterLab,
   // and OpenRouter credentials. Kortix bills each route as platform credits.
@@ -484,6 +489,10 @@ const envSchema = z.object({
   // bakes. Provider transitions still prepare their target image explicitly.
   // Default OFF keeps the session path on one shared image per provider.
   KORTIX_WARM_SNAPSHOT_ENABLED: optBoolFalse,
+  // Experimental shared slim image. It keeps only the session-critical
+  // runtime in the cold image and installs browser/document tool packs on first
+  // use. Default OFF is the rollback path; no database state changes.
+  KORTIX_FAST_COLD_BOOT_ENABLED: optBoolFalse,
   // Per-provider allowlist for per-project warm images of CUSTOM (non-default-
   // slug) templates — see `perProjectWarmEligible` in builder.ts. Defaults to
   // 'platinum' only: Platinum's per-project templates warm-miss 100% of the
@@ -612,10 +621,38 @@ const envSchema = z.object({
   SANDBOX_VERSION: optStr, // dev override: skip npm registry lookup for latest version
   GITHUB_TOKEN: optStr, // optional: authenticated GitHub API calls for changelog
 
-  // ── Transactional email (provider chain: SES → Resend → Mailtrap) ─────────
-  // Every provider is optional; the transport tries each configured one in
-  // EMAIL_PROVIDER_ORDER and falls through on failure. See lib/email/transport.ts.
-  EMAIL_PROVIDER_ORDER: optStrDefault('ses,resend,mailtrap'),
+  // ── Transactional email ───────────────────────────────────────────────────
+  // ONE connection string configures delivery for every email the platform
+  // sends, product and auth alike. The scheme picks the transport:
+  //   smtp://user:pass@host:587 · smtps://user:pass@host:465
+  //   resend://<api-key> · ses://<key>:<secret>@<region> · ses://<region>
+  //   mailtrap://<token> · mailpit://host:8025
+  // Comma-separate for a fallback chain. See lib/email/dsn.ts.
+  EMAIL_URL: optStr,
+  // Sender identity: `Name <address>` or a bare address.
+  EMAIL_FROM: optStr,
+  // Shared secret for the Supabase send-email hook (`v1,whsec_<base64>`), which
+  // routes GoTrue's magic-link / confirmation / recovery mail through this API
+  // so auth email uses the same provider and templates as product email.
+  // See auth/send-email-hook/.
+  AUTH_EMAIL_HOOK_SECRET: optStr,
+
+  // ── Transactional email: pre-EMAIL_URL variables (still supported) ────────
+  // Deployed Kortix runs on these today. They are used whenever EMAIL_URL is
+  // unset; setting EMAIL_URL overrides all of them.
+  // `smtp` is last but present by default: an existing self-host that
+  // configured SMTP_* for GoTrue before EMAIL_URL shipped starts sending
+  // product email (invites, access requests) through that same relay on
+  // upgrade, with no new setting. Cloud sets no SMTP_*, so nothing changes
+  // there.
+  EMAIL_PROVIDER_ORDER: optStrDefault('ses,resend,mailtrap,smtp'),
+  // Discrete SMTP settings, as GoTrue consumes them. Shared with the API so a
+  // self-host that configures a relay for auth email also sends product email
+  // through it with no second setting.
+  SMTP_HOST: optStr,
+  SMTP_PORT: optStr,
+  SMTP_USER: optStr,
+  SMTP_PASS: optStr,
   // AWS SES (SigV4-signed SESv2 HTTP API). ECS uses its task role. Static
   // credentials remain optional for local and self-hosted deployments.
   AWS_SES_REGION: optStrDefault('us-east-2'),
@@ -1020,6 +1057,10 @@ export const config = {
   ASTER_API_KEY: env.ASTER_API_KEY,
   CONNECTORS_MCP_ENABLED: env.CONNECTORS_MCP_ENABLED,
   LLM_GATEWAY_ENABLED: env.LLM_GATEWAY_ENABLED,
+  // Single API-side switch for the AI-SDK-native gateway path — read from env
+  // `GATEWAY_AI_SDK_NATIVE`. Consumed by wire.ts (in-process gateway options +
+  // /language-model mount) and session-sandbox.ts (per-session env injection).
+  aiSdkNative: env.GATEWAY_AI_SDK_NATIVE,
   // Unset → follow billing (cloud keeps its revenue lineup even if the env
   // blob misses the var; self-host stays off). Explicit value always wins.
   KORTIX_MANAGED_PROVIDER_ENABLED:
@@ -1063,6 +1104,7 @@ export const config = {
   DAYTONA_WEBHOOK_SECRET: env.DAYTONA_WEBHOOK_SECRET,
   KORTIX_SNAPSHOT_REAP_PREDECESSOR: env.KORTIX_SNAPSHOT_REAP_PREDECESSOR,
   KORTIX_WARM_SNAPSHOT_ENABLED: env.KORTIX_WARM_SNAPSHOT_ENABLED,
+  KORTIX_FAST_COLD_BOOT_ENABLED: env.KORTIX_FAST_COLD_BOOT_ENABLED,
 
   // Sandbox lifecycle intervals (minutes) — see schema comment above.
   KORTIX_SANDBOX_AUTOSTOP_MINUTES: env.KORTIX_SANDBOX_AUTOSTOP_MINUTES,
@@ -1172,7 +1214,14 @@ export const config = {
   GITHUB_TOKEN: env.GITHUB_TOKEN,
 
   // ─── Transactional email (provider chain) ──────────────────────────────────
+  EMAIL_URL: env.EMAIL_URL,
+  EMAIL_FROM: env.EMAIL_FROM,
+  AUTH_EMAIL_HOOK_SECRET: env.AUTH_EMAIL_HOOK_SECRET,
   EMAIL_PROVIDER_ORDER: env.EMAIL_PROVIDER_ORDER,
+  SMTP_HOST: env.SMTP_HOST,
+  SMTP_PORT: env.SMTP_PORT,
+  SMTP_USER: env.SMTP_USER,
+  SMTP_PASS: env.SMTP_PASS,
   AWS_SES_REGION: env.AWS_SES_REGION,
   AWS_SES_ACCESS_KEY_ID: env.AWS_SES_ACCESS_KEY_ID,
   AWS_SES_SECRET_ACCESS_KEY: env.AWS_SES_SECRET_ACCESS_KEY,

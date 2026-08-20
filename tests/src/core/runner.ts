@@ -10,15 +10,19 @@ import { withRecorder, type StepRecorder } from "./context";
 import { AssertionError } from "./expect";
 import {
   allFlows,
+  attemptsFor,
+  classifyFlowError,
   clearRegistry,
-  DEFAULT_FLOW_ATTEMPTS,
+  KE2E_FLOW_TIMEOUT,
+  maxAttemptBound,
+  readAttemptPolicy,
+  resolveFlowTimeoutMs,
   type RegisteredFlow,
 } from "./flow";
 import { loadEnv, type Env } from "./env";
 import { log } from "./log";
 import { formatFlowProgress, redactSensitiveLogText } from "./progress";
-import { partitionParallelFlows } from "./lanes";
-import { mapWithConcurrency } from "./concurrency";
+import { partitionParallelFlows, runScheduled, type ConcurrentLane } from "./lanes";
 import { planLocalFlows } from "./local-profile";
 import { ke2eRetryDelayMs } from "./client";
 import {
@@ -52,13 +56,28 @@ export interface RunOptions {
 
 const FLOWS_DIR = resolve(import.meta.dir, "../flows");
 
+// Idempotent on purpose. `flow(...)` registers at module-evaluation time and
+// ES module imports are cached per process, so a SECOND discoverFlows() that
+// clears the registry and re-imports gets nothing back — the flow files never
+// re-execute — and the registry ends up empty. That is exactly what happened
+// on the first sharded release-gate run: `--shard` resolves its ids via
+// discoverFlows(), then runSuite() discovered again → "no flows matched the
+// selected filters" on every API shard (run 32222342409). Discover once.
+let discovered = false;
 export async function discoverFlows(): Promise<void> {
+  if (discovered) return;
   clearRegistry();
   const glob = new Glob("*.flow.ts");
   const files: string[] = [];
   for await (const f of glob.scan({ cwd: FLOWS_DIR, absolute: true })) files.push(f);
   files.sort();
   for (const f of files) await import(f);
+  discovered = true;
+}
+
+/** Test-only: allow a fresh discovery in a process that already discovered. */
+export function __resetDiscoveryForTest(): void {
+  discovered = false;
 }
 
 function selected(f: RegisteredFlow, o: RunOptions): boolean {
@@ -99,16 +118,23 @@ async function runOneFlow(
 ): Promise<FlowResult> {
   const steps: StepResult[] = [];
   const flowStart = performance.now();
-  // Every flow gets one clean retry for errors explicitly marked as
-  // infrastructure failures. Assertion failures never retry.
-  const configuredAttempts = Number(
-    process.env.KE2E_DEFAULT_FLOW_ATTEMPTS ?? DEFAULT_FLOW_ATTEMPTS,
-  );
-  const defaultAttempts = Number.isFinite(configuredAttempts)
-    ? Math.max(1, Math.trunc(configuredAttempts))
-    : DEFAULT_FLOW_ATTEMPTS;
-  const maxAttempts = f.meta.retry?.attempts ?? defaultAttempts;
+  // Retries are budgeted PER ERROR CLASS (see flow.ts):
+  //   assertion / unmarked   → 1 attempt, never retried
+  //   flow-level timeout     → KE2E_TIMEOUT_ATTEMPTS, default 1
+  //   session-runtime ready  → KE2E_SESSION_RUNTIME_ATTEMPTS, default 2
+  //   marked infra (network, laundered 503) → KE2E_FLOW_ATTEMPTS, default 3
+  // A per-flow `meta.retry.attempts` overrides every class explicitly.
+  const policy = readAttemptPolicy();
+  const declaredAttempts = f.meta.retry?.attempts;
+  const maxAttempts = declaredAttempts ?? maxAttemptBound(policy);
 
+  // Quarantine → reported, never run, exempt from --require-all (see
+  // FlowMeta.quarantine and runExitCode).
+  if (f.meta.quarantine) {
+    return mkResult(f, "skip", `quarantined: ${f.meta.quarantine}`, [], performance.now() - flowStart, 0, {
+      quarantined: true,
+    });
+  }
   // Capability gating → skip with reason.
   const missing = (f.meta.requires ?? []).filter((cap) => !env.capabilities[cap]);
   if (missing.length) {
@@ -142,7 +168,9 @@ async function runOneFlow(
       skip: (reason) => {
         throw new SkipSignal(reason);
       },
-      fixtures: world.makeFixtures(stack),
+      // Attempt-scoped: a retry must not re-derive the SAME names its failed
+      // predecessor already committed (see world.ts attemptSuffix).
+      fixtures: world.makeFixtures(stack, attempt),
       step: async (name, fn) => {
         const collector = new StepCollector(routesHit);
         const start = performance.now();
@@ -151,14 +179,23 @@ async function runOneFlow(
           steps.push(stepResult(name, "pass", start, collector));
           return out;
         } catch (err) {
-          steps.push(stepResult(name, "fail", start, collector, err));
+          // A ctx.skip() fired inside this step: the step did not FAIL — it
+          // asserted what it could (its passing assertions are recorded) and
+          // then declared the rest unreachable on this target. Recording it
+          // as "fail" made every one-step assert-then-skip flow (CHN-6) count
+          // as an unasserted skip under --require-all (run 32344222963
+          // shard 1: 34/35 passed, 0 failed, exit 1).
+          steps.push(
+            stepResult(name, err instanceof SkipSignal ? "skip" : "fail", start, collector,
+              err instanceof SkipSignal ? undefined : err),
+          );
           throw err;
         }
       },
     };
 
     try {
-      await withTimeout(f.fn(ctx), f.meta.timeoutMs ?? 120_000, f.id);
+      await withTimeout(f.fn(ctx), resolveFlowTimeoutMs(f.meta.timeoutMs), f.id);
       await stack.teardown();
       return mkResult(f, "pass", undefined, steps, performance.now() - flowStart, attempt);
     } catch (err) {
@@ -167,11 +204,13 @@ async function runOneFlow(
         return mkResult(f, "skip", err.reason, steps, performance.now() - flowStart, attempt);
       }
       lastError = err;
-      // Never retry assertion failures — only infra signals.
-      const retryable = !(err instanceof AssertionError) && (err as any)?.ke2eRetryable === true;
-      if (!retryable || attempt >= maxAttempts) break;
+      // Never retry assertion failures — only infra signals, and each class
+      // gets its own budget so a timeout can never triple the serial tail.
+      const retryClass = classifyFlowError(err, err instanceof AssertionError);
+      const allowed = declaredAttempts ?? attemptsFor(retryClass, policy);
+      if (attempt >= allowed || attempt >= maxAttempts) break;
       log.warn(
-        `retry ${f.id} after attempt ${attempt}/${maxAttempts}: ` +
+        `retry ${f.id} (${retryClass}) after attempt ${attempt}/${allowed}: ` +
           `${redactSensitiveLogText((err as Error)?.message ?? String(err))}`,
       );
       await new Promise((resolve) => setTimeout(resolve, ke2eRetryDelayMs(err)));
@@ -205,6 +244,7 @@ function mkResult(
   steps: StepResult[],
   durationMs: number,
   attempts: number,
+  extra: { quarantined?: boolean } = {},
 ): FlowResult {
   return {
     id: f.id,
@@ -215,14 +255,28 @@ function mkResult(
     durationMs,
     attempts,
     steps: [...steps],
+    quarantined: extra.quarantined,
+    // A skip that already PASSED at least one step asserted the reachable
+    // contract on this target (see FlowResult.asserted / runExitCode).
+    // Asserted = the flow proved SOMETHING before skipping: a fully passed
+    // step, or at least one passing assertion inside the step the skip fired
+    // from (the one-step assert-then-skip shape).
+    asserted:
+      status === "skip"
+        ? steps.some((s) => s.status === "pass" || s.assertions.some((a) => a.pass))
+        : undefined,
   };
 }
 
 function withTimeout<T>(p: Promise<T>, ms: number, id: string): Promise<T> {
   return new Promise<T>((res, rej) => {
     const t = setTimeout(() => {
+      // NOT ke2eRetryable. A flow that burned its whole declared timeout is
+      // hung, not blipping; retrying it spends the same timeout again on the
+      // most expensive flows in the suite. Tagged as its own class so
+      // KE2E_TIMEOUT_ATTEMPTS can re-enable retries deliberately.
       const e = new Error(`flow ${id} exceeded ${ms}ms`);
-      (e as any).ke2eRetryable = true;
+      (e as any)[KE2E_FLOW_TIMEOUT] = true;
       rej(e);
     }, ms);
     p.then(
@@ -299,14 +353,14 @@ export async function runSuite(opts: RunOptions): Promise<RunResult> {
         throw error;
       }
     };
+    let concurrent: ConcurrentLane[];
     if (opts.workers !== undefined) {
       const workers = positiveWorkerCount(opts.workers, 4);
-      log.info(`lanes: ${parallelLane.length} parallel flows · ${workers} explicit workers`);
-      out.push(
-        ...(await mapWithConcurrency(parallelLane, workers, (f) =>
-          runTrackedFlow(f),
-        )),
+      log.info(
+        `lanes: ${parallelLane.length} parallel flows × ${workers} explicit workers · ` +
+          `${serialLane.length} serial flows × 1 worker (overlapped)`,
       );
+      concurrent = [{ flows: parallelLane, workers }];
     } else {
       const { apiLane, sandboxLane } = partitionParallelFlows(parallelLane);
       const apiWorkers = positiveWorkerCount(
@@ -319,18 +373,21 @@ export async function runSuite(opts: RunOptions): Promise<RunResult> {
       );
       log.info(
         `lanes: ${apiLane.length} API flows × ${apiWorkers} workers · ` +
-          `${sandboxLane.length} sandbox flows × ${sandboxWorkers} workers`,
+          `${sandboxLane.length} sandbox flows × ${sandboxWorkers} workers · ` +
+          `${serialLane.length} serial flows × 1 worker (overlapped) · ` +
+          `${globalLane.length} global flows last`,
       );
-      const [apiResults, sandboxResults] = await Promise.all([
-        mapWithConcurrency(apiLane, apiWorkers, runTrackedFlow),
-        mapWithConcurrency(sandboxLane, sandboxWorkers, (f) =>
-          runTrackedFlow(f),
-        ),
-      ]);
-      out.push(...apiResults, ...sandboxResults);
+      concurrent = [
+        { flows: apiLane, workers: apiWorkers },
+        { flows: sandboxLane, workers: sandboxWorkers },
+      ];
     }
-    for (const f of serialLane) out.push(await runTrackedFlow(f));
-    for (const f of globalLane) out.push(await runTrackedFlow(f));
+    out.push(
+      ...(await runScheduled(
+        { concurrent, serial: serialLane, global: globalLane },
+        runTrackedFlow,
+      )),
+    );
 
     out.sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));
     const durationMs = performance.now() - start;

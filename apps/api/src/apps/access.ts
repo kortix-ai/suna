@@ -4,6 +4,7 @@ import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { resolveShareSubject, type SecretGrant, type ShareSubject } from '../connectors/share';
 import { config } from '../config';
 import { authorize, PROJECT_ACTIONS } from '../iam';
+import { actorForToken, actorForUser } from '../iam/actor';
 import { db } from '../shared/db';
 
 export type AppAccessMode = 'private' | 'project' | 'restricted' | 'public' | 'password';
@@ -231,10 +232,20 @@ export async function appAccessibleToUser(
     createdBy: string | null;
   },
   userId: string,
+  /**
+   * The bearer token the caller presented, when there is one. Supplying it is
+   * what makes `authorize` apply the credential's own limits — project binding
+   * and agent grant — on top of the user's permissions. Omitted for browser
+   * cookie/JWT callers, which carry no token scope.
+   */
+  actingTokenId?: string,
 ): Promise<boolean> {
+  // The credential is part of the Actor: with an acting token id the engine
+  // applies the token's own limits (project binding + agent grant) on top of
+  // the user's role; without one (browser cookie/JWT, or the public-app proxy
+  // with a resolved viewer id) the verdict is role-only.
   const projectAccess = await authorize(
-    userId,
-    app.accountId,
+    await actorForToken(userId, app.accountId, actingTokenId),
     PROJECT_ACTIONS.PROJECT_READ,
     { type: 'project', id: app.projectId },
   );
@@ -267,7 +278,7 @@ export async function appAccessibleToUser(
    * so those Apps were listed to managers and openable by NOBODY, forever,
    * answering 403 to the only people who could have fixed them.
    */
-  return projectManager(app.accountId, app.projectId, userId);
+  return projectManager(app.accountId, app.projectId, userId, actingTokenId);
 }
 
 /* ─── Team scoping — who on the team sees this App ────────────────────────────
@@ -351,10 +362,14 @@ interface TeamScopedApp {
   createdBy: string | null;
 }
 
-async function projectManager(accountId: string, projectId: string, userId: string): Promise<boolean> {
+async function projectManager(
+  accountId: string,
+  projectId: string,
+  userId: string,
+  actingTokenId?: string,
+): Promise<boolean> {
   const verdict = await authorize(
-    userId,
-    accountId,
+    await actorForToken(userId, accountId, actingTokenId),
     PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE,
     { type: 'project', id: projectId },
   );

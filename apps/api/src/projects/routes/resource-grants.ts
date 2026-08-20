@@ -202,7 +202,7 @@ projectsApp.openapi(
     const principalType = normalizeString(body.principal_type ?? body.principalType);
     const principalId = normalizeString(body.principal_id ?? body.principalId);
     // AGENT-ONLY resource model: agent is the only member/department-scoped
-    // resource. Skills and secrets are governed by the editor role (edit) +
+    // resource. Skills and secrets are governed by the manager role (edit) +
     // agent inheritance (use) — no NEW skill/secret grant may be created here.
     // Pre-existing skill/secret rows still read/list/revoke fine (see
     // resource-grants.ts's RESOURCE_GRANT_TYPES doc comment).
@@ -320,7 +320,7 @@ projectsApp.openapi(
 
     // The id belongs to an agent/skill grant (iam_resource_grants). Secrets no
     // longer have a resource grant to remove — secret sharing was retired.
-    const removed = await deleteResourceGrant(grantId, projectId);
+    const removed = await deleteResourceGrant(grantId, projectId, loaded.row.accountId);
     if (!removed) return c.json({ error: 'grant not found' }, 404);
     return c.json({ ok: true });
   },

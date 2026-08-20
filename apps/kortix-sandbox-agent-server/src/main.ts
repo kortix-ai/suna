@@ -20,8 +20,12 @@ import {
   createOpencodeSupervisor,
   hasKortixLlmGateway,
   OPENCODE_HOME,
+  missingManagedModelIds,
   refreshGatewayCatalogFile,
   scheduleCatalogWarm,
+  settleManagedModelsPrefetch,
+  startManagedModelsPrefetch,
+  writeManagedOverlayCatalogFile,
   waitForOpencodeReady,
   type Opencode,
 } from './opencode'
@@ -62,7 +66,7 @@ import {
 import type { SandboxBootState } from './routes/health'
 import { installShutdownHandlers } from './shutdown'
 import { startStaticWebServer } from './static-web'
-import { opencodeDeliveryInFlight } from './opencode-turn-state'
+import { opencodeDeliveryInFlight, opencodeTurnInFlight } from './opencode-turn-state'
 
 const LEGACY_OPENCODE_ZEN_FREE_MODELS = new Set([
   'deepseek-v4-flash-free',
@@ -152,7 +156,7 @@ async function main() {
   if (!agentEnvDirIsTmpfs()) {
     logger.error('[boot] /dev/shm is not tmpfs — agent secret file would persist to disk; check the sandbox runtime mount')
   }
-  // Network-boundary secrets on a provider with no credential edge. Started
+  // Egress-enforced secrets — the one mechanism, on every provider. Started
   // BEFORE the first writeAgentEnvFile below, because that file is how the
   // proxy + CA variables reach the agent's shells — and before opencode spawns,
   // because the shim's port has to be listening by the time anything can make a
@@ -203,6 +207,16 @@ async function main() {
   const server = startProxy(cfg, opencode, bootTime, bootState, projectEnv, staticWeb.port)
   installShutdownHandlers(opencode, server, staticWeb)
   bootMark('proxy-up')
+
+  // Learn the CURRENT managed lineup from the gateway this session bills
+  // against, concurrently with the repo clone. The managed set is deployment
+  // config and the image's baked catalog goes stale the moment it changes, so
+  // without this a managed model added after the last template build is absent
+  // from OpenCode's provider map and every turn on it dies with
+  // `ModelNotFound: kortix/<id>` (prod incident 2026-08-19). The result is
+  // consumed by buildOpencodeConfigContent at spawn; the clone is the boot
+  // long-pole, so the fetch costs no critical-path time.
+  startManagedModelsPrefetch(process.env.KORTIX_LLM_BASE_URL, process.env.KORTIX_LLM_API_KEY)
 
   const repoMaterializePromise: Promise<void> = cfg.autoClone
     ? materializeRepo(cfg).catch((err) => {
@@ -408,12 +422,122 @@ function armSeedAdoption(
 // prompt/bootstrap was requested) and start the question-relay event loop.
 // Shared post-boot session runtime: create the initial opencode session when
 // requested and wire the question/turn event relay.
+// Once per daemon process. A second call is a no-op even if a second runtime
+// start happens (seed boot then fork adoption), so a box can never restart
+// OpenCode twice for the same reason.
+let managedReconcileRan = false
+
+/**
+ * Post-spawn managed-model reconcile — the OFF-CRITICAL-PATH half of "the
+ * sandbox learns the managed set from the API it talks to".
+ *
+ * The config build (buildOpencodeConfigContent) is synchronous by rule: it uses
+ * only what is already known, because `opencode serve` cannot bind its port
+ * until that file is written — awaiting the fetch there cost 1.6s of a 6.5s dev
+ * boot. So the live answer is applied HERE instead, after the spawn and before
+ * the initial prompt is delivered:
+ *
+ *   - settle the prefetch started at proxy-up (its own ≤5s budget, started at
+ *     ~80ms — by the time OpenCode is spawning this is already resolved, so it
+ *     costs ~0ms and runs concurrently with OpenCode's own cold start);
+ *   - diff the live managed set against the provider map OpenCode actually
+ *     booted with;
+ *   - only a genuinely MISSING managed id — the model that would answer
+ *     `ModelNotFound` — buys one controlled restart. The bundled managed table
+ *     ships with every release, so the common case is a no-op.
+ *
+ * Never restarts across a live turn: `opencodeTurnInFlight` treats "cannot
+ * tell" as busy, and a cold box with no pin answers a definite `false` without
+ * a request.
+ */
+/** Test seam: re-arm the once-per-process guard. */
+export function resetManagedReconcileForTests(): void {
+  managedReconcileRan = false
+}
+
+export async function reconcileManagedModels(
+  opencode: ReturnType<typeof createOpencodeSupervisor>,
+  cfg: Config,
+  bootMark: (label: string) => void,
+  // Test seams only — production always uses these defaults. The session
+  // catalog file lives under the daemon's own home (never `env.HOME`, see
+  // KORTIX_OPENCODE_CONFIG_PATH), and the live-turn probe is the real one.
+  opts: {
+    catalogTargetFile?: string
+    turnProbe?: (baseUrl: string, workspace: string) => Promise<boolean | null>
+  } = {},
+): Promise<void> {
+  if (managedReconcileRan) return
+  managedReconcileRan = true
+  const startedAt = Date.now()
+  try {
+    // Free in wall-clock terms: OpenCode is cold-starting in its OWN process
+    // (4.7-12s spawn→answering) while this waits, and the very next boot step
+    // blocks on that anyway. The prefetch's own ≤5s budget started at proxy-up,
+    // so it is normally already settled when this runs.
+    const live = await settleManagedModelsPrefetch()
+    if (!live) {
+      logger.info('[boot] managed reconcile: no live managed set; bundled managed models stand', {
+        ms: Date.now() - startedAt,
+      })
+      return
+    }
+    const missing = missingManagedModelIds(live)
+    if (missing.length === 0) {
+      logger.info('[boot] managed reconcile: opencode already has every managed model', {
+        managed: Object.keys(live).length,
+        ms: Date.now() - startedAt,
+      })
+      return
+    }
+    const probe = opts.turnProbe ?? opencodeTurnInFlight
+    const turnInFlight = await probe(opencode.getInternalUrl(), cfg.workspace)
+    if (turnInFlight !== false) {
+      logger.warn('[boot] managed reconcile: skipping restart — a turn is live or unreadable', {
+        missing,
+        turnInFlight,
+        ms: Date.now() - startedAt,
+      })
+      return
+    }
+    const written = writeManagedOverlayCatalogFile({
+      currentCatalogFile: process.env.KORTIX_LLM_CATALOG_FILE ?? '/opt/kortix/llm-catalog.json',
+      targetCatalogFile:
+        opts.catalogTargetFile ?? `${OPENCODE_HOME}/.config/kortix-llm-catalog.session.json`,
+      managed: live,
+    })
+    if (written) process.env.KORTIX_LLM_CATALOG_FILE = written
+    // OpenCode materializes provider models at process start, so the file alone
+    // changes nothing for the process that is already running.
+    await opencode.restart()
+    const ready = await waitForOpencodeReady(opencode, cfg.projectTarget)
+    logger.info('[boot] managed reconcile: restarted opencode with the missing managed models', {
+      missing,
+      managed: Object.keys(live).length,
+      catalogFile: written,
+      ready,
+      ms: Date.now() - startedAt,
+    })
+  } catch (err) {
+    logger.warn('[boot] managed reconcile failed; boot continues on the configured catalog', {
+      err: err instanceof Error ? err.message : String(err),
+      ms: Date.now() - startedAt,
+    })
+  } finally {
+    bootMark('managed-reconcile')
+  }
+}
+
 async function startSessionRuntime(
   opencode: ReturnType<typeof createOpencodeSupervisor>,
   cfg: Config,
   bootState: SandboxBootState,
   bootMark: (label: string) => void,
 ): Promise<void> {
+  // BEFORE the event loop, the root resolution and any prompt delivery: a
+  // restart here strands nothing, and the first turn must run on a provider map
+  // that has every managed model the picker offers.
+  await reconcileManagedModels(opencode, cfg, bootMark)
   const auditRelay = createAuditRelay(
     async (events) => {
       const ctx = sandboxRelayContext(auditRelayToken(process.env))

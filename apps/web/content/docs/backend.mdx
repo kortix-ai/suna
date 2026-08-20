@@ -15,9 +15,11 @@ application database.
 
 ## 1. Get an API key
 
-Create a personal access token (`kortix_pat_…`) or service-account credential
-(`kortix_sa_…`). Both authenticate a programmatic session-create request. The
-API derives `origin: "backend"` from the credential type.
+Create a personal access token (`kortix_pat_…`) in your own settings, at
+**Settings → API keys** (`/settings/tokens`), or a service-account credential
+(`kortix_sa_…`) at **Account → Tokens**. Both authenticate a programmatic
+session-create request. The API derives `origin: "backend"` from the credential
+type.
 
 ```bash
 export KORTIX_API_URL="https://your-kortix-deployment.com/v1"
@@ -25,8 +27,10 @@ export KORTIX_API_KEY="kortix_pat_…"
 export KORTIX_PROJECT_ID="…"
 ```
 
-Use a service account when you need an independently managed principal. Grant
-that service account the required project actions before use.
+Use a service account when you need an independently managed principal. A
+service account is the `service_account` principal type. It has no membership,
+so it holds only the roles assigned to it directly. Assign it a project role
+before use — see [Accounts & access](/docs/accounts#one-access-model).
 
 ## 2. Start a session
 
@@ -111,8 +115,9 @@ The authorization strategy has two values:
 - `user` accepts only an active connection owned by the acting project
   member.
 
-A service account has no member identity, so it cannot use a member's `user`
-connection. Use `project` connectors for service-account sessions.
+A service account is a principal, but it is not a person, so it cannot use a
+member's `user` connection. Use `project` connectors for service-account
+sessions.
 A personal access token can use an eligible `user` connection owned by the
 token's member.
 
@@ -278,6 +283,9 @@ different secret allowlist, connector binding map, or runtime context returns
 - Connector policies apply to every connection under that connector.
 - Project guardrails apply above connector-connection policies.
 - Secret scope can narrow an agent grant. It cannot widen one.
+- A session can only do what the role verdict and the agent's manifest grant
+  both allow. Neither one widens the other. See
+  [One vocabulary, two bindings](/docs/accounts#one-vocabulary-two-bindings).
 - Session scope replacement cannot select a connection owned by another
   member.
 - Store application customer metadata outside Kortix.

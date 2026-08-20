@@ -193,11 +193,14 @@ non-trivial change through this full lifecycle:
    real inputs and outputs.
 3. Push the branch, open a PR against `main`, wait for required checks, and merge
    it. Do not leave finished work only on a branch or stop after opening the PR.
-4. Follow the resulting **Deploy Dev** workflow through completion. Confirm the
-   deployed artifact contains the merged SHA; a successful `/health` response
-   alone is not deployment proof. If a newer push cancels or supersedes the run,
-   verify its path filters still rebuild every affected artifact. Manually
-   dispatch the workflow when necessary to avoid a skipped component.
+4. Dev **auto-deploys on merge to `main`** — every push builds the surfaces that
+   changed vs dev's live SHA and cancels any superseded in-flight deploy. Follow
+   the resulting **Deploy Dev** run through completion. Confirm the deployed
+   artifact contains the merged SHA; a successful `/health` response alone is not
+   deployment proof. A newer push cancels an older run by design — if yours was
+   cancelled before it deployed, the next push re-picks-up your still-stale
+   surface, or force it with `gh workflow run deploy-dev.yml -f surface=all`.
+   Full procedure, surfaces, and verification: `docs/runbooks/deploy-dev.md`.
 5. Re-run the user-visible behavior against `https://dev.kortix.com` and/or
    `https://dev-api.kortix.com`. Prefer the real Kortix CLI configured for the
    dev API for CLI/project/session flows, and direct authenticated HTTP calls for

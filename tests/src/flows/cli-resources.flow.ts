@@ -5,9 +5,14 @@
  * assert exit status, JSON/stdout, local files, and API read-back state.
  */
 import { flow } from '../core/flow';
-import { CliSandbox, type CliResult } from '../fixtures/cli';
+import { waitFor } from '../core/poll';
+import { CliSandbox, throwIfCliInfraFailure, type CliResult } from '../fixtures/cli';
 
 function requireExit(result: CliResult, expected: number, action: string): void {
+  // An edge-laundered 5xx or a killed process is infrastructure, not contract.
+  // It must reach the flow-level infra budget as a RETRYABLE error — CLI-SEC
+  // (exit 143) and CLI-SESS (HTTP 503) both failed on their first attempt here.
+  if (expected === 0) throwIfCliInfraFailure(result, action);
   if (result.exitCode !== expected) {
     throw new Error(`${action} exited ${result.exitCode}, expected ${expected}: ${result.all}`);
   }
@@ -103,6 +108,13 @@ flow(
   'CLI-SEC',
   {
     domain: 'cli',
+    // CLI-SEC starts EIGHT sequential CLI subprocesses (login, set, ls, env
+    // pull, env push, ls, unset, ls). It was the only CLI flow left on the
+    // deployed 180_000ms floor while CLI-SESS declares 300_000 and CLI-SHIP
+    // 420_000. Eight deployed round trips do not fit in 180s, which is how run
+    // 32306385663 got `kortix secrets ls … exited 143` — the harness killer,
+    // not the CLI. Match CLI-SESS.
+    timeoutMs: 300_000,
     routes: [
       'GET /v1/accounts/me',
       'GET /v1/projects/:projectId/secrets',
@@ -286,7 +298,10 @@ flow(
   {
     domain: 'cli',
     serial: true,
-    timeoutMs: 180_000,
+    // Raised from 180_000 because THIS change added two bounded 75s mirror-TTL
+    // polls above; 180s could no longer contain them plus the 120s fire budget.
+    // Not a general timeout tuning pass — only the arithmetic this fix forces.
+    timeoutMs: 420_000,
     requires: ['daytona', 'funded'],
     routes: [
       'GET /v1/accounts/me',
@@ -315,16 +330,42 @@ flow(
     const sandbox = await authenticatedCli(ctx, 'triggers');
     try {
       await ctx.step('kortix triggers ls and info return the server trigger', async () => {
-        const list = parseJson<{ triggers: Array<{ slug: string }> }>(
-          await sandbox.run(['triggers', 'ls', '--project', project.id, '--json']),
-          'kortix triggers ls',
+        // Triggers are git-manifest-backed. Each API replica serves `triggers ls`
+        // from its own in-process mirror cache, refreshed at most every
+        // KORTIX_GIT_REFRESH_INTERVAL_MS (default 60_000 —
+        // apps/api/src/projects/git/mirror.ts refreshIntervalMs/lastRefreshAt).
+        // The POST above may be served by one replica and this GET by a sibling,
+        // so a just-created trigger is legitimately invisible for up to 60s on a
+        // multi-replica deployment. Poll past one full refresh window instead of
+        // asserting once.
+        await waitFor(
+          async () =>
+            parseJson<{ triggers: Array<{ slug: string }> }>(
+              await sandbox.run(['triggers', 'ls', '--project', project.id, '--json']),
+              'kortix triggers ls',
+            ),
+          {
+            until: (list) => list.triggers.some((item) => item.slug === slug),
+            timeoutMs: 75_000,
+            intervalMs: 3_000,
+            description: `trigger ${slug} to appear in \`kortix triggers ls\``,
+          },
         );
-        if (!list.triggers.some((item) => item.slug === slug)) {
-          throw new Error(`triggers ls omitted ${slug}`);
-        }
-        const info = parseJson<{ slug: string }>(
-          await sandbox.run(['triggers', 'info', slug, '--project', project.id, '--json']),
-          'kortix triggers info',
+        // `triggers info` reads the same per-replica mirror, so it can still be
+        // routed to a replica that has not refreshed yet. Same bounded wait.
+        const info = await waitFor(
+          async () =>
+            parseJson<{ slug: string }>(
+              await sandbox.run(['triggers', 'info', slug, '--project', project.id, '--json']),
+              'kortix triggers info',
+            ),
+          {
+            until: (row) => row.slug === slug,
+            timeoutMs: 75_000,
+            intervalMs: 3_000,
+            description: `\`kortix triggers info ${slug}\` to resolve the trigger`,
+            retryOnError: () => true,
+          },
         );
         if (info.slug !== slug) throw new Error(`triggers info returned ${info.slug}`);
       });
@@ -361,9 +402,31 @@ flow(
         );
         requireExit(await sandbox.run(['triggers', 'enable', 'daily']), 0, 'kortix triggers enable');
         requireExit(await sandbox.run(['triggers', 'disable', 'daily']), 0, 'kortix triggers disable');
+        // The CLI writes YAML, not TOML: `kortix init` scaffolds kortix.yaml and
+        // apps/cli/src/manifest-edit.ts mutates it through the `yaml` Document
+        // API. The real block `kortix triggers add`/`disable` produces is:
+        //     - slug: daily
+        //       type: cron
+        //       enabled: false
+        // The old assertions were TOML (`slug = "daily"`), which YAML never matches.
         const manifest = sandbox.readFile('kortix.yaml');
-        if (!/slug\s*=\s*["']daily["']/.test(manifest) || !/enabled\s*=\s*false/.test(manifest)) {
-          throw new Error(`local trigger mutation missing from manifest:\n${manifest}`);
+        const manifestLines = manifest.split(/\r?\n/);
+        const blockStart = manifestLines.findIndex((line) =>
+          /^\s*-\s+slug:\s*["']?daily["']?\s*$/.test(line),
+        );
+        if (blockStart === -1) {
+          throw new Error(`kortix triggers add did not write a \`- slug: daily\` block:\n${manifest}`);
+        }
+        // Scope `enabled` to the daily block. The scaffold ships another, ENABLED
+        // trigger (harness-reflector) plus commented-out examples, so an
+        // unscoped /enabled:\s*false/ would not prove which trigger got disabled.
+        const afterStart = manifestLines.slice(blockStart + 1);
+        const blockEnd = afterStart.findIndex((line) => /^\s*-\s+\S/.test(line));
+        const dailyBlock = (blockEnd === -1 ? afterStart : afterStart.slice(0, blockEnd)).join('\n');
+        if (!/^\s*enabled:\s*false\s*$/m.test(dailyBlock)) {
+          throw new Error(
+            `kortix triggers disable did not set \`enabled: false\` on the daily trigger:\n${dailyBlock}`,
+          );
         }
       });
     } finally {

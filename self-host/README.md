@@ -88,7 +88,7 @@ cd your-project && kortix ship
 
 See
 [`docs/runbooks/self-hosting.md`](../docs/runbooks/self-hosting.md) for the
-no-public-domain Cloudflare-tunnel evaluation path, SMTP, using the CLI
+no-public-domain Cloudflare-tunnel evaluation path, email, using the CLI
 from a different machine than the one you self-hosted on, uninstalling, and
 the full `kortix self-host` command reference.
 
@@ -184,7 +184,7 @@ exact command, no SSH key or open port required):
 ```sh
 kortix self-host update            # pull the newest image on your channel now, migrate, roll forward
 kortix self-host env ls            # list every value, grouped by service (secrets masked)
-kortix self-host env set KEY=VALUE ...   # set a value (sandbox key, GitHub token, SMTP, ...); restarts affected services only
+kortix self-host env set KEY=VALUE ...   # set a value (sandbox key, GitHub token, EMAIL_URL, ...); restarts affected services only
 kortix self-host env rotate KEY    # regenerate a rotatable generated secret (or --all-generated)
 kortix self-host logs [service]    # tail Compose logs
 kortix self-host status            # container status

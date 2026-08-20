@@ -3,9 +3,11 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { json, errors, auth } from '../../openapi';
 import { and, asc, eq } from 'drizzle-orm';
-import { projectGroupGrants, projects } from '@kortix/db';
+import { projects } from '@kortix/db';
+import { groupProjectGrants } from '../../iam/read-models';
 import { db } from '../../shared/db';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
+import { actorOf } from '../../iam/actor';
 import {
   invalidateIamCacheForGroup,
   invalidateIamCacheForUser,
@@ -78,7 +80,7 @@ iamRouter.openapi(
   async (c: any) => {
     const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
-    await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.GROUP_READ);
+    await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.GROUP_READ);
 
     const rows = await listGroups(accountId);
     return c.json({
@@ -122,7 +124,7 @@ iamRouter.openapi(
   async (c: any) => {
     const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
-    await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.GROUP_CREATE);
+    await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.GROUP_CREATE);
     const denied = await requireEntitlement(c, accountId, 'rbac');
     if (denied) return denied;
 
@@ -180,7 +182,7 @@ iamRouter.openapi(
     const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
     const groupId = c.req.param('groupId');
-    await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.GROUP_READ);
+    await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.GROUP_READ);
 
     const group = await getGroup(accountId, groupId);
     if (!group) return c.json({ error: 'group not found' }, 404);
@@ -223,10 +225,7 @@ iamRouter.openapi(
     const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
     const groupId = c.req.param('groupId');
-    await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.GROUP_UPDATE, {
-      type: 'group',
-      id: groupId,
-    });
+    await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.GROUP_UPDATE);
     const denied = await requireEntitlement(c, accountId, 'rbac');
     if (denied) return denied;
 
@@ -290,10 +289,7 @@ iamRouter.openapi(
     const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
     const groupId = c.req.param('groupId');
-    await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.GROUP_DELETE, {
-      type: 'group',
-      id: groupId,
-    });
+    await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.GROUP_DELETE);
     // No entitlement gate: deletion is cleanup, always allowed (see file header).
 
     const beforeGroup = await getGroup(accountId, groupId);
@@ -344,7 +340,7 @@ iamRouter.openapi(
     const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
     const groupId = c.req.param('groupId');
-    await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.GROUP_READ);
+    await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.GROUP_READ);
 
     const members = await listGroupMembers(accountId, groupId);
     return c.json({
@@ -386,10 +382,7 @@ iamRouter.openapi(
     const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
     const groupId = c.req.param('groupId');
-    await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.GROUP_MEMBERS_MANAGE, {
-      type: 'group',
-      id: groupId,
-    });
+    await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.GROUP_MEMBERS_MANAGE);
     const denied = await requireEntitlement(c, accountId, 'rbac');
     if (denied) return denied;
 
@@ -446,10 +439,7 @@ iamRouter.openapi(
     const accountId = c.req.param('accountId');
     const groupId = c.req.param('groupId');
     const targetUserId = c.req.param('userId');
-    await assertAuthorized(callerId, accountId, ACCOUNT_ACTIONS.GROUP_MEMBERS_MANAGE, {
-      type: 'group',
-      id: groupId,
-    });
+    await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.GROUP_MEMBERS_MANAGE);
     // No entitlement gate: removing a member is cleanup, always allowed.
 
     const group = await getGroup(accountId, groupId);
@@ -503,30 +493,38 @@ iamRouter.openapi(
     const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
     const groupId = c.req.param('groupId');
-    await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.GROUP_READ);
+    await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.GROUP_READ);
 
     const group = await getGroup(accountId, groupId);
     if (!group) return c.json({ error: 'group not found' }, 404);
 
-    const rows = await db
-      .select({
-        projectId: projectGroupGrants.projectId,
-        projectName: projects.name,
-        role: projectGroupGrants.role,
-        grantedBy: projectGroupGrants.grantedBy,
-        createdAt: projectGroupGrants.createdAt,
-        expiresAt: projectGroupGrants.expiresAt,
-      })
-      .from(projectGroupGrants)
-      .innerJoin(projects, eq(projects.projectId, projectGroupGrants.projectId))
-      .where(
-        and(eq(projectGroupGrants.groupId, groupId), eq(projectGroupGrants.accountId, accountId)),
-      )
-      // Deterministic order so the row position doesn't visibly shift after
-      // a role change. Without ORDER BY, Postgres can return rows in heap
-      // order, which moves UPDATEd rows around. See twin query in
-      // apps/api/src/projects/index.ts.
-      .orderBy(asc(projectGroupGrants.createdAt), asc(projectGroupGrants.projectId));
+    // From `role_assignments`, joined to the project the way the old
+    // `project_group_grants -> projects` query did: a grant whose project is
+    // gone is not listed.
+    const [assignments, projectRows] = await Promise.all([
+      groupProjectGrants({ accountId, groupIds: [groupId] }),
+      db
+        .select({ projectId: projects.projectId, name: projects.name })
+        .from(projects)
+        .where(eq(projects.accountId, accountId)),
+    ]);
+    const projectById = new Map(projectRows.map((p) => [p.projectId, p] as const));
+    const rows = assignments
+      .filter((g) => projectById.has(g.projectId))
+      .map((g) => ({
+        projectId: g.projectId,
+        projectName: projectById.get(g.projectId)!.name,
+        role: g.role,
+        grantedBy: g.grantedBy,
+        createdAt: g.createdAt,
+        expiresAt: g.expiresAt,
+      }))
+      // Deterministic order so the row position doesn't visibly shift after a
+      // role change.
+      .sort(
+        (a, b) =>
+          a.createdAt.getTime() - b.createdAt.getTime() || a.projectId.localeCompare(b.projectId),
+      );
 
     return c.json({
       grants: rows.map((r) => ({

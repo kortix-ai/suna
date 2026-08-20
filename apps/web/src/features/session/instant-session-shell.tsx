@@ -7,6 +7,7 @@ import { createPortal } from 'react-dom';
 import { ComposerChatInput, type ComposerOptions } from '@/features/session/composer-chat-input';
 import { SessionSiteHeader } from '@/features/session/header/session-site-header';
 import { OptimisticTurn } from '@/features/session/optimistic-turn';
+import { QueuedPromptBubbles } from '@/features/session/turn/queued-prompt-bubbles';
 import type { AttachedFile } from '@/features/session/session-chat-input';
 import { SessionLayout } from '@/features/session/session-layout';
 import { useSessionWallpaperLayer } from '@/features/session/session-wallpaper-layer';
@@ -28,7 +29,10 @@ import { errorToast } from '@/components/ui/toast';
 import { playSound } from '@/lib/sounds';
 import { cn } from '@/lib/utils';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
-import { usePendingFilesStore } from '@/stores/session-composer-handoff-store';
+import {
+  useFirstPromptPreviewStore,
+  usePendingFilesStore,
+} from '@/stores/session-composer-handoff-store';
 import type { SessionStartStage } from '@kortix/sdk';
 
 const subscribeToNothing = () => () => {};
@@ -103,6 +107,12 @@ export function InstantSessionShell({
     text: string;
     files: AttachedFile[];
   } | null>(null);
+  // Every send AFTER the first, painted the moment Enter lands — the durable
+  // row takes over on the next poll. Without this the shell drew only the
+  // first prompt, and anything typed while the box booted stayed invisible
+  // until the real chat mounted (measured: four prompts popping in at once,
+  // ~15 s later).
+  const [extraSends, setExtraSends] = useState<Array<{ id: string; text: string }>>([]);
   const stashedSubmission = useMemo(() => {
     if (!hydrated) return null;
     // `readStartStash` covers the canonical SDK stash (written under the route
@@ -129,7 +139,26 @@ export function InstantSessionShell({
     if (!row) return null;
     return { text: row.text, files: [] as AttachedFile[] };
   }, [promptInbox.prompts]);
-  const effectiveSubmission = submission ?? pendingRowSubmission ?? stashedSubmission;
+  // The queue behind the first prompt: every durable row after the first,
+  // plus the sends this shell has made that no row lists yet (matched by
+  // text, which is all the list view carries).
+  const queuedBehindFirst = useMemo(() => {
+    const rows = promptInbox.prompts.filter((p) => p.text.trim().length > 0);
+    const behind = rows.slice(1).map((p) => ({ id: p.prompt_id, text: p.text }));
+    const listed = new Set(rows.map((p) => p.text.trim()));
+    for (const extra of extraSends) {
+      if (!listed.has(extra.text.trim())) behind.push(extra);
+    }
+    return behind;
+  }, [promptInbox.prompts, extraSends]);
+  // The producer's own copy of the first prompt, drawn from the first frame —
+  // the row read above can miss it entirely when a warm box delivers between
+  // navigation and the fetch. See `useFirstPromptPreviewStore`.
+  const previewSubmission = useFirstPromptPreviewStore(
+    (s) => s.previewBySession[sessionId] ?? null,
+  );
+  const effectiveSubmission =
+    submission ?? previewSubmission ?? pendingRowSubmission ?? stashedSubmission;
   const submitted = effectiveSubmission?.text ?? null;
 
   // Starter-prompt → composer prefill, identical to the project-home composer.
@@ -180,6 +209,8 @@ export function InstantSessionShell({
       if (!submitted) {
         setSubmission({ text, files: files ?? [] });
         onSubmit?.();
+      } else {
+        setExtraSends((prev) => [...prev, { id: `shell-extra-${Date.now()}`, text }]);
       }
     },
     [projectId, sessionId, submitted, onSubmit],
@@ -285,6 +316,10 @@ export function InstantSessionShell({
                   deferPreview
                   sessionId={sessionId}
                 />
+                {/* What was typed while the box boots, as the dimmed queued
+                    bubbles they already are on the server — same component
+                    SessionChat draws, so the crossfade changes nothing. */}
+                <QueuedPromptBubbles className="mt-3" queued={queuedBehindFirst} />
               </div>
             )}
           </div>

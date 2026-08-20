@@ -255,17 +255,36 @@ describe('SessionConfigIndicator wiring', () => {
     expect(mount).toContain('baseRef={projectSession?.base_ref}');
   });
 
-  test('both reload entry points are gated on canShare', () => {
-    // The route requires session-owner-or-project-manager and 403s otherwise,
-    // so an ungated control is a button that only ever fails.
+  test('both reload entry points are gated on canManageLifecycle, NOT on sharing', () => {
+    // The route requires session-owner-or-project-manager (mayChangeSessionModel
+    // → canManageLifecycle) and 403s otherwise, so an ungated control is a
+    // button that only ever fails.
+    //
+    // The name is the assertion. `can_manage_sharing` is a NARROWER verdict —
+    // the owner's alone, since a manager who did not create a session must not
+    // rewrite who can read it. Gating reload on that one would silently strip
+    // Reload config and Stop from every project manager on a session they did
+    // not create, which is a lifecycle right they still hold.
     const mount = source.split('<SessionConfigIndicator')[1]?.split('/>')[0];
-    expect(mount).toContain('canReload={canShare}');
+    expect(mount).toContain('canReload={canManageLifecycle}');
+    expect(mount).not.toContain('canReload={canManageSharing}');
 
     const menuItem = source.slice(
-      source.lastIndexOf('{canShare && (', source.indexOf('Reload config')),
+      source.lastIndexOf('{canManageLifecycle && (', source.indexOf('Reload config')),
       source.indexOf('Reload config'),
     );
     expect(menuItem).toContain('reloadConfig.reload()');
+  });
+
+  test('the two verdicts are read from their own fields, never one from the other', () => {
+    // One flag used to answer both questions. Splitting it is the whole point;
+    // a future edit that collapses them again reintroduces either a manager
+    // rewriting another human's session sharing, or a manager who cannot stop
+    // a runaway session they did not start.
+    expect(source).toContain("projectSession.can_manage_sharing !== false");
+    expect(source).toContain("projectSession.can_manage_lifecycle !== false");
+    // Stop is lifecycle. It must not ride on the sharing verdict.
+    expect(source).toContain("projectSession.status === 'running' && canManageLifecycle");
   });
 
   test('the ⋯ item and the chip share ONE mutation, so pending state cannot disagree', () => {

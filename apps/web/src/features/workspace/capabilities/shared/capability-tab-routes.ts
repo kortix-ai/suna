@@ -22,8 +22,13 @@
  * something outside it", and splitting that question across two top-level tabs
  * made the answer depend on knowing which direction the bytes travel.
  *
- * No `icon` field on purpose: the bar renders labels only, and a shape carrying
- * an icon that nothing draws is a field that goes stale unnoticed.
+ * No `icon` field, on purpose. This module is pure data and is imported by
+ * SERVER components (`/projects/[id]/channels/page.tsx` needs `channelsHref`);
+ * a `@phosphor-icons/react` import here calls `createContext` at module load
+ * and fails `next build` ("Failed to collect page data" — Deploy Dev
+ * 2026-08-19). The tab bar is text-only anyway (Marko, 2026-08-19: eight mixed
+ * 16px glyphs in one row read as clutter); the sidebar Customize row and the
+ * index cards keep their own icons in their own client files.
  */
 export interface CapabilityTab {
   key:
@@ -33,7 +38,6 @@ export interface CapabilityTab {
     | 'triggers'
     | 'models'
     | 'secrets'
-    | 'members'
     | 'config';
   label: string;
 }
@@ -61,7 +65,6 @@ export const CAPABILITY_TABS: readonly CapabilityTab[] = [
   { key: 'skills', label: 'Skills' },
   { key: 'triggers', label: 'Triggers' },
   { key: 'secrets', label: 'Secrets' },
-  { key: 'members', label: 'Members' },
   { key: 'config', label: 'Settings' },
 ];
 

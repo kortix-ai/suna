@@ -1,5 +1,5 @@
 import { sessionLifecycleCommands } from '@kortix/db';
-import { and, asc, eq, inArray, isNotNull, ne, or, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNotNull, isNull, lte, ne, or, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import { type SessionLifecycleCommandRow, withNextDeliveryAttempt } from './store';
 
@@ -17,7 +17,7 @@ import { type SessionLifecycleCommandRow, withNextDeliveryAttempt } from './stor
  */
 
 /** A `continue_session` row the USER created through the composer. */
-function inboxScope(sessionId: string) {
+export function inboxScope(sessionId: string) {
   return and(
     eq(sessionLifecycleCommands.sessionId, sessionId),
     eq(sessionLifecycleCommands.commandType, 'continue_session'),
@@ -131,7 +131,14 @@ export async function deleteInboxPrompt(
     .limit(1);
   if (!existing) return { outcome: 'missing' };
   if (existing.status === 'running') return { outcome: 'delivering' };
-  return isForwardedInboxRow(existing.result) ? { outcome: 'delivering' } : { outcome: 'missing' };
+  // Forwarded, or confirmed `delivered` on persistence (the daemon's
+  // acceptance relay — which fires long before a model step reads the
+  // message): both are "on the wire", and the DELETE route's cancel arm
+  // decides from the transcript whether the prompt can still come back.
+  const status = (existing.result as { status?: unknown } | null)?.status;
+  return isForwardedInboxRow(existing.result) || status === 'delivered'
+    ? { outcome: 'delivering' }
+    : { outcome: 'missing' };
 }
 
 /**
@@ -435,3 +442,65 @@ export function isHeldInboxRow(result: unknown): boolean {
 export function isStopPausedInboxRow(result: unknown): boolean {
   return (result as { stop_paused?: unknown } | null)?.stop_paused === true;
 }
+
+/**
+ * Claim every DUE queued inbox prompt of one session — the siblings a targeted
+ * drain sweeps into its delivery batch (see `drainSessionLifecycleQueue`).
+ * Only rows with a `clientMessageId` (the composer's own submissions); an
+ * admission-backoff row is due later and is left to its backoff.
+ */
+export async function claimDueSessionInboxSiblings(input: {
+  workerId: string;
+  sessionId: string;
+  now?: Date;
+  limit?: number;
+}): Promise<SessionLifecycleCommandRow[]> {
+  const now = input.now ?? new Date();
+  const rows = await db
+    .select()
+    .from(sessionLifecycleCommands)
+    .where(
+      and(
+        eq(sessionLifecycleCommands.sessionId, input.sessionId),
+        eq(sessionLifecycleCommands.commandType, 'continue_session'),
+        eq(sessionLifecycleCommands.status, 'queued'),
+        sql`${sessionLifecycleCommands.payload}->>'clientMessageId' IS NOT NULL`,
+        sql`COALESCE(${sessionLifecycleCommands.result}->>'held', '') <> 'true'`,
+        or(
+          isNull(sessionLifecycleCommands.lockedUntil),
+          lte(sessionLifecycleCommands.lockedUntil, now),
+        ),
+        // NOT gated on availableAt: this sweep only runs while a delivery for
+        // this session is in hand, and a backoff written when the box was
+        // still booting (every attempt during a cold boot fails 'pending')
+        // is stale the moment one delivery gets through. Leaving those rows
+        // to their own timers is what split a boot burst into stragglers
+        // (measured: B1 redelivered minutes after B2–B4). Admission-refused
+        // rows are ordered by the batch itself; held rows stay excluded.
+      ),
+    )
+    .orderBy(asc(sessionLifecycleCommands.createdAt))
+    .limit(input.limit ?? 20);
+  const claimed: SessionLifecycleCommandRow[] = [];
+  for (const row of rows) {
+    const [locked] = await db
+      .update(sessionLifecycleCommands)
+      .set({
+        status: 'running',
+        attempts: row.attempts + 1,
+        lockedBy: input.workerId,
+        lockedUntil: new Date(now.getTime() + 5 * 60_000),
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(sessionLifecycleCommands.commandId, row.commandId),
+          eq(sessionLifecycleCommands.status, 'queued'),
+        ),
+      )
+      .returning();
+    if (locked) claimed.push(locked as SessionLifecycleCommandRow);
+  }
+  return claimed;
+}
+

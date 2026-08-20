@@ -8,6 +8,7 @@
  */
 import { currentRecorder } from './context';
 import { assert, BodyAssert } from './expect';
+import { log } from './log';
 import type { Captured } from './result';
 
 export type Auth =
@@ -146,10 +147,14 @@ export class Res {
   status(code: number | number[]): this {
     const codes = Array.isArray(code) ? code : [code];
     if (!codes.includes(this.statusCode) && isKe2eTransientGatewayResponse(this)) {
+      const breakerOpen = transientBreaker.isOpen();
       const error = new Error(
-        `transient gateway status ${this.statusCode}; expected [${codes.join(', ')}]`,
+        `transient gateway status ${this.statusCode}; expected [${codes.join(', ')}] ` +
+          `${describeEdgeResponse(this.statusCode, this.captured.res.headers)}` +
+          (breakerOpen ? ` — ${transientBreaker.describe()}` : ''),
       );
-      (error as any).ke2eRetryable = true;
+      // With the breaker open the flow-level budget must not re-amplify this.
+      (error as any).ke2eRetryable = !breakerOpen;
       (error as any).ke2eRetryAfterMs = retryAfterMs(this.header('retry-after'));
       throw error;
     }
@@ -211,6 +216,64 @@ export function isKe2eTransientGatewayResponse(response: Res): boolean {
   );
 }
 
+/**
+ * Methods this client may re-send after an edge-laundered 5xx or a network error.
+ *
+ * The Cloudflare worker launders an origin timeout into a synthetic 503 AFTER
+ * the origin has already COMMITTED the write. Run 32306385663 proved it six
+ * times over: TRG-2, TRG-10, TRG-14, TOK-5, MEM-7, IAM-26 and CLI-TRG each sent
+ * one POST that stalled ~25 s at the origin, took the synthetic 503, were
+ * re-sent by this client, and the second send hit the row the FIRST send had
+ * already written — `409 A trigger with slug "nightly" already exists`,
+ * `409 a role with this key already exists`, `409 Already a member`. Every one
+ * of those flows had provisioned a brand-new project or team microseconds
+ * earlier, so no other shard and no gc debris could have owned that name. The
+ * retry manufactured the collision.
+ *
+ * A retry is only transparent when re-sending cannot create a second resource.
+ * POST is the one method in this API that creates, so POST is never re-sent.
+ * Its laundered 503 is returned to the caller instead, where `.status()` (or
+ * `throwIfEdgeLaundered` for a body-only read) raises a marked-retryable error
+ * and the FLOW-level infra budget re-runs the flow against fresh fixtures — a
+ * fresh project, a fresh team, a fresh name, and therefore no collision.
+ *
+ * GET/HEAD/OPTIONS are safe by definition. PUT, PATCH and DELETE all address an
+ * EXISTING resource by id (upsert-by-key, partial-update-by-id, delete-by-id),
+ * so re-sending them cannot mint a second row; they keep the cheaper in-request
+ * retry. Narrowing the exclusion to POST alone also keeps this change to
+ * exactly the defect the run proved, instead of converting healthy in-request
+ * recoveries into whole-flow re-runs.
+ */
+const REPLAY_SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS', 'PUT', 'PATCH', 'DELETE']);
+
+/** True when re-sending this method cannot duplicate a server-side create. */
+export function isReplaySafeMethod(method: string): boolean {
+  return REPLAY_SAFE_METHODS.has(method.toUpperCase());
+}
+
+/**
+ * Raise a marked-retryable error when a response is an edge-laundered 5xx.
+ *
+ * `Res.status()` already does this, but fixtures and flows that read a body
+ * WITHOUT asserting a status never reach it: they throw their own plain Error
+ * ("team account create returned no id: …"), which `classifyFlowError` reads as
+ * `fatal` and never retries. IAM-22 died that way on a single attempt while the
+ * identical blip on an asserted route self-healed. Call this before any
+ * body-only read so the edge can never masquerade as a contract failure.
+ */
+export function throwIfEdgeLaundered(response: Res, what: string): void {
+  if (!isKe2eTransientGatewayResponse(response)) return;
+  const breakerOpen = transientBreaker.isOpen();
+  const error = new Error(
+    `${what}: transient gateway status ${response.statusCode} ` +
+      `${describeEdgeResponse(response.statusCode, response.captured.res.headers)}` +
+      (breakerOpen ? ` — ${transientBreaker.describe()}` : ''),
+  );
+  (error as any).ke2eRetryable = !breakerOpen;
+  (error as any).ke2eRetryAfterMs = retryAfterMs(response.header('retry-after'));
+  throw error;
+}
+
 function retryAfterMs(value: string | undefined): number | undefined {
   if (!value) return undefined;
   const seconds = Number(value);
@@ -220,7 +283,149 @@ function retryAfterMs(value: string | undefined): number | undefined {
   return Math.max(0, at - Date.now());
 }
 
-const TRANSIENT_GATEWAY_RETRY_DELAY_MS = 2_000;
+/**
+ * Describe WHERE a response came from, terse enough for an error message.
+ *
+ * The Cloudflare worker replaces any origin throw or 502/503/504 with a
+ * synthetic maintenance 503 that carries `X-Maintenance-Mode` and drops the
+ * origin's `x-request-id`. Printing both facts lets a log reader tell an edge
+ * laundering apart from a genuine application 5xx without guessing.
+ */
+export function describeEdgeResponse(
+  status: number,
+  headers: Record<string, string>,
+): string {
+  const maintenance = headers['x-maintenance-mode'];
+  const requestId = headers['x-request-id'];
+  const origin = requestId ? 'origin' : maintenance ? 'edge-laundered' : 'edge';
+  return (
+    `[${origin} status=${status} ` +
+    `x-maintenance-mode=${maintenance ?? 'absent'} ` +
+    `x-request-id=${requestId ? 'present' : 'absent'}]`
+  );
+}
+
+const RETRY_BASE_DELAY_MS = Number(process.env.KE2E_RETRY_BASE_DELAY_MS ?? 500);
+const RETRY_MAX_DELAY_MS = Number(process.env.KE2E_RETRY_MAX_DELAY_MS ?? 8_000);
+
+/**
+ * Exponential backoff with FULL jitter for the in-request transient retry.
+ *
+ * The old policy was a fixed 2s × 4 attempts. Layered under 3 flow attempts one
+ * request could hit the origin 12 times, and every client backed off in
+ * lockstep — a textbook metastable failure that turns a staging blip into a
+ * run-ending cascade. Full jitter spreads the retries; the cap bounds the
+ * worst case. A `Retry-After` from the edge raises the floor but never parks
+ * longer than the cap.
+ */
+export function transientRetryDelayMs(
+  attempt: number,
+  opts: {
+    baseMs?: number;
+    capMs?: number;
+    retryAfterMs?: number;
+    random?: () => number;
+  } = {},
+): number {
+  const base = opts.baseMs ?? RETRY_BASE_DELAY_MS;
+  const cap = opts.capMs ?? RETRY_MAX_DELAY_MS;
+  const random = opts.random ?? Math.random;
+  const ceiling = Math.min(cap, base * 2 ** Math.max(0, attempt - 1));
+  const jittered = Math.round(random() * ceiling);
+  const floor =
+    typeof opts.retryAfterMs === 'number' && Number.isFinite(opts.retryAfterMs)
+      ? Math.max(0, opts.retryAfterMs)
+      : 0;
+  return Math.min(cap, Math.max(jittered, floor));
+}
+
+export interface BreakerOptions {
+  /** Transient edge failures within the window that trip the breaker. 0 disables. */
+  threshold: number;
+  windowMs: number;
+  now?: () => number;
+}
+
+/**
+ * Process-wide circuit breaker over laundered-503 / network-failure events.
+ *
+ * Once the deployment is observably overloaded, more retries are the problem,
+ * not the remedy. When the breaker is open the client stops retrying and stops
+ * marking the failure retryable, so the flow-level budget cannot re-amplify it
+ * either. The window is rolling: the breaker closes on its own once the
+ * failures age out.
+ */
+export class TransientCircuitBreaker {
+  private events: number[] = [];
+  private openSince: number | null = null;
+  private readonly now: () => number;
+
+  constructor(private readonly opts: BreakerOptions) {
+    this.now = opts.now ?? Date.now;
+  }
+
+  private prune(at: number): void {
+    const cutoff = at - this.opts.windowMs;
+    while (this.events.length > 0 && this.events[0] <= cutoff) this.events.shift();
+  }
+
+  record(): void {
+    const at = this.now();
+    this.prune(at);
+    this.events.push(at);
+  }
+
+  failuresInWindow(): number {
+    this.prune(this.now());
+    return this.events.length;
+  }
+
+  isOpen(): boolean {
+    if (this.opts.threshold <= 0) return false;
+    const open = this.failuresInWindow() >= this.opts.threshold;
+    if (!open) this.openSince = null;
+    return open;
+  }
+
+  /** True exactly once per open transition, so callers log one line, not thousands. */
+  shouldAnnounce(): boolean {
+    if (!this.isOpen()) return false;
+    if (this.openSince !== null) return false;
+    this.openSince = this.now();
+    return true;
+  }
+
+  describe(): string {
+    return (
+      `circuit open: ${this.failuresInWindow()} transient edge failures in ` +
+      `${this.opts.windowMs}ms (threshold ${this.opts.threshold}) — the deployment is ` +
+      'overloaded; not retrying'
+    );
+  }
+
+  reset(): void {
+    this.events = [];
+    this.openSince = null;
+  }
+}
+
+export function readBreakerOptions(
+  vars: Record<string, string | undefined> = process.env,
+): BreakerOptions {
+  const threshold = Number(vars.KE2E_BREAKER_THRESHOLD ?? 20);
+  const windowMs = Number(vars.KE2E_BREAKER_WINDOW_MS ?? 60_000);
+  return {
+    threshold: Number.isFinite(threshold) ? Math.trunc(threshold) : 20,
+    windowMs: Number.isFinite(windowMs) && windowMs > 0 ? Math.trunc(windowMs) : 60_000,
+  };
+}
+
+/** The one breaker every Client in the process shares. */
+export const transientBreaker = new TransientCircuitBreaker(readBreakerOptions());
+
+function announceBreaker(): void {
+  if (transientBreaker.shouldAnnounce()) log.warn(`ke2e ${transientBreaker.describe()}`);
+}
 
 export class Client {
   private readonly origin: string;
@@ -327,10 +532,14 @@ export class Client {
     }
     for (const [k, v] of Object.entries(opts?.headers ?? {})) headers.set(k, v);
     this.applyAuth(headers, url);
+    applyCiPassthrough(headers);
 
     const routeTemplate = `${method} ${template}`;
     const timeoutMs = opts?.timeoutMs ?? this.defaultTimeoutMs;
-    const maxAttempts = this.transientGatewayRetries + 1;
+    // A create is never replayed — see REPLAY_SAFE_METHODS. One attempt, then
+    // the laundered response goes back to the caller for a FLOW-level retry.
+    const replaySafe = isReplaySafeMethod(method);
+    const maxAttempts = replaySafe ? this.transientGatewayRetries + 1 : 1;
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       const started = performance.now();
@@ -353,12 +562,21 @@ export class Client {
           ms,
         };
         record(captured);
-        if (attempt < maxAttempts) {
-          await new Promise((resolve) => setTimeout(resolve, TRANSIENT_GATEWAY_RETRY_DELAY_MS));
+        transientBreaker.record();
+        const breakerOpen = transientBreaker.isOpen();
+        if (breakerOpen) announceBreaker();
+        if (attempt < maxAttempts && !breakerOpen) {
+          await new Promise((resolve) =>
+            setTimeout(resolve, transientRetryDelayMs(attempt)),
+          );
           continue;
         }
-        const e = new Error(`network error ${method} ${url}: ${err?.message ?? err}`);
-        (e as any).ke2eRetryable = true;
+        const e = new Error(
+          `network error ${method} ${url} after ${attempt}/${maxAttempts} attempt(s): ` +
+            `${err?.message ?? err}` +
+            (breakerOpen ? ` — ${transientBreaker.describe()}` : ''),
+        );
+        (e as any).ke2eRetryable = !breakerOpen;
         throw e;
       }
 
@@ -394,15 +612,55 @@ export class Client {
       };
       record(captured);
       const response = new Res(captured);
-      if (attempt < maxAttempts && isKe2eTransientGatewayResponse(response)) {
-        await new Promise((resolve) => setTimeout(resolve, TRANSIENT_GATEWAY_RETRY_DELAY_MS));
-        continue;
+      if (isKe2eTransientGatewayResponse(response)) {
+        transientBreaker.record();
+        const breakerOpen = transientBreaker.isOpen();
+        if (breakerOpen) announceBreaker();
+        if (attempt < maxAttempts && !breakerOpen) {
+          log.warn(
+            `ke2e retry ${attempt}/${maxAttempts} ${routeTemplate} ` +
+              `${describeEdgeResponse(res.status, resHeaders)}`,
+          );
+          await new Promise((resolve) =>
+            setTimeout(resolve, transientRetryDelayMs(attempt, {
+              retryAfterMs: retryAfterMs(resHeaders['retry-after']),
+            })),
+          );
+          continue;
+        }
+        log.warn(
+          `ke2e giving up ${routeTemplate} after ${attempt}/${maxAttempts} attempt(s) ` +
+            `${describeEdgeResponse(res.status, resHeaders)}` +
+            (replaySafe
+              ? ''
+              : ' — not replayed: the origin may have committed this create; ' +
+                'the flow-level budget retries it against fresh fixtures') +
+            (breakerOpen ? ` — ${transientBreaker.describe()}` : ''),
+        );
       }
       return response;
     }
 
     throw new Error(`request attempt loop exhausted for ${method} ${url}`);
   }
+}
+
+/**
+ * The api-router edge Worker launders any origin 5xx / fetch failure into a
+ * synthetic MAINTENANCE_MODE 503 (worker.mjs, AUTOMATIC_MAINTENANCE). When the
+ * request carries `X-Kortix-CI-Passthrough` matching the Worker's
+ * CI_PASSTHROUGH_SECRET binding, the Worker returns the TRUE origin response
+ * instead, so a release-gate failure is diagnosable. Opt-in via env so local
+ * and unprivileged runs are unchanged. Exported for tests.
+ */
+export const CI_PASSTHROUGH_HEADER = 'x-kortix-ci-passthrough';
+export function applyCiPassthrough(
+  headers: Headers,
+  secret: string | undefined = process.env.KE2E_CI_PASSTHROUGH_SECRET,
+): void {
+  const value = secret?.trim();
+  if (!value) return;
+  if (!headers.has(CI_PASSTHROUGH_HEADER)) headers.set(CI_PASSTHROUGH_HEADER, value);
 }
 
 function record(c: Captured): void {

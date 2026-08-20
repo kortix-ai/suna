@@ -5,6 +5,7 @@ import {
   isKe2eRetryableError,
   isKe2eTransientGatewayResponse,
   ke2eRetryDelayMs,
+  transientBreaker,
 } from '../src/core/client';
 import { DEFAULT_FLOW_ATTEMPTS } from '../src/core/flow';
 import { waitFor } from '../src/core/poll';
@@ -49,6 +50,8 @@ describe('release gate transient failure resilience', () => {
     vi.stubEnv('KE2E_PROVISION_CONCURRENCY', '2');
     vi.stubEnv('KE2E_PROVISION_MIN_INTERVAL_MS', '0');
     vi.stubEnv('KE2E_PROVISION_RATE_LIMIT_DELAY_MS', '120000');
+    // The transient breaker is process-wide: keep it out of these assertions.
+    transientBreaker.reset();
     vi.resetModules();
     ({ paceProvisionRequest, provisionProject } = await import('../src/fixtures/provision'));
   });
@@ -120,7 +123,12 @@ describe('release gate transient failure resilience', () => {
     await expect(settleTimers(result)).resolves.toBe('project-3');
     expect(post).toHaveBeenCalledTimes(2);
     expect(attempts).toHaveLength(2);
-    expect((attempts.at(1) ?? 0) - (attempts.at(0) ?? 0)).toBeGreaterThanOrEqual(120_000);
+    // P1.5: the first rate-limited retry is exponential-with-equal-jitter from
+    // a 15s base, not a flat 120s. 120s is now only the CEILING (attempt 4+).
+    // The exact schedule is asserted in provisioning-perf.test.ts.
+    const delay = (attempts.at(1) ?? 0) - (attempts.at(0) ?? 0);
+    expect(delay).toBeGreaterThanOrEqual(7_500);
+    expect(delay).toBeLessThanOrEqual(15_000);
   });
 
   it('paces concurrent managed repository creation attempts', async () => {

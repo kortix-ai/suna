@@ -79,6 +79,8 @@ const FORM_TABS = [
   'profile-tab.tsx',
   'sandbox-tab.tsx',
   'snapshots-tab.tsx',
+  // API keys: `AccessRow` list rows, not a `<Table>`, so it is a form tab.
+  'tokens-tab.tsx',
 ];
 
 /**
@@ -87,25 +89,34 @@ const FORM_TABS = [
  * Empty since 2026-08-17, and deliberately kept rather than deleted: the tier
  * is still the rule, there is just nothing in the rail that qualifies today.
  * `members-tab.tsx` was its only member and left for `DELEGATING_TABS` when
- * Members graduated onto `CapabilityPageShell` — the shell's `max-w-5xl` is
- * that page's column now, so the tab declares no width at all. A new rail tab
- * that renders a real table belongs here, at `max-w-4xl`.
+ * Members graduated onto `CapabilityPageShell` — the shell's `max-w-5xl` was
+ * that page's column then, so the tab declared no width at all. Members has
+ * since graduated a FOURTH time, off the project entirely and onto the
+ * account hub's Access tab (`/accounts/[id]?tab=access-projects`);
+ * `/projects/[id]/members` is a bare redirect now and `members-tab.tsx` is
+ * deleted, so nothing stands in for it in either tier or `DELEGATING_TABS`
+ * below. A new rail tab that renders a real table belongs here, at
+ * `max-w-4xl`.
  */
 const TABLE_TABS: string[] = [];
 
 /**
- * Declare no width of their own, because something else supplies the column.
+ * Declares no width of its own, because something else supplies the column.
  *
- * Both entries render `CapabilityPageShell` as their outermost element — they
- * are routed Customize pages (`/projects/[id]/models`,
- * `/projects/[id]/members`) that happen to still live in `tabs/`, not panes in
- * the settings rail. Their column is the shell's `max-w-5xl`, shared with
- * Connectors / Agents / Skills / Triggers / Secrets / Channels, and it is
- * pinned beside each file (`models-tab.test.tsx`, `members-tab.test.tsx`) —
- * not here, because the panel's two-tier rule does not govern a page that is
- * no longer panel content.
+ * Renders `CapabilityPageShell` as its outermost element — it is a routed
+ * Customize page (`/projects/[id]/models`) that happens to still live in
+ * `tabs/`, not a pane in the settings rail. Its column is the shell's
+ * `max-w-5xl`, shared with Connectors / Agents / Skills / Triggers / Secrets /
+ * Channels, and it is pinned beside the file (`models-tab.test.tsx`) — not
+ * here, because the panel's two-tier rule does not govern a page that is no
+ * longer panel content.
+ *
+ * `members-tab.tsx` was the other entry until Members graduated a FOURTH
+ * time (see the `TABLE_TABS` comment above) — `/projects/[id]/members` is a
+ * bare redirect now, not a rendered pane, so there is nothing left here to
+ * delegate a column for.
  */
-const DELEGATING_TABS = ['members-tab.tsx', 'models-tab.tsx'];
+const DELEGATING_TABS = ['models-tab.tsx'];
 
 /** `<Table*>` markup — the ONLY thing that earns a tab the wide tier. */
 const TABLE_MARKUP = /<Table(>|Header|Row|Body|Cell|Head\b)/;

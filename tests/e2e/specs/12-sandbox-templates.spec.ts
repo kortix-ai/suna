@@ -20,6 +20,7 @@
 
 import { randomUUID } from "node:crypto";
 import { type Page, expect, test } from "@playwright/test";
+import { resolvePersonalAccountId } from "../helpers/accounts";
 import { seedDatabaseProject } from "../helpers/database";
 import { createApiResultClient } from "../helpers/http";
 import {
@@ -43,12 +44,6 @@ const password = "E2eSandboxTpl123!";
 const api = createApiResultClient(apiBase);
 const authOptions = { supabaseUrl, password };
 
-interface AccountSummary {
-  account_id: string;
-  personal_account?: boolean;
-  is_primary_owner?: boolean;
-  account_role?: "owner" | "admin" | "member";
-}
 interface TemplateCreateResult {
   template_id: string;
   slug: string;
@@ -86,20 +81,7 @@ test.describe("12 — Sandbox templates UI", () => {
     user = await createAuthUser(email, authOptions);
     session = await signIn(email, authOptions);
     const projectName = `e2e-ui-tpl-${runId}`;
-    const accounts = await api<AccountSummary[]>(
-      session.access_token,
-      "GET",
-      "/accounts",
-    );
-    const personalAccount = accounts.json?.find(
-      (account) =>
-        account.personal_account ||
-        account.is_primary_owner ||
-        account.account_role === "owner",
-    );
-    expect(personalAccount?.account_id).toBeTruthy();
-    if (!personalAccount) throw new Error("test user has no personal account");
-    accountId = personalAccount.account_id;
+    accountId = await resolvePersonalAccountId(api, session.access_token);
     projectId = await seedDatabaseProject({
       accountId,
       userId: user.id,
@@ -176,13 +158,16 @@ test.describe("12 — Sandbox templates UI", () => {
 
     // Every available provider reports its real launch state. A local stack can
     // legitimately report Not ready when no provider snapshot exists.
+    //
+    // The pinned provider renders `Daytona•Selected•Ready`, not `Daytona•Ready`
+    // (`sandbox-provider-coverage.tsx:119-126`), so the optional `Selected`
+    // segment is part of the contract — without it this assertion silently
+    // depends on the project never pinning a provider.
     const launchState = "Ready|Building|Failed|Not ready|Unavailable|Unknown";
-    await expect(platformRow).toContainText(
-      new RegExp(`Daytona[^A-Za-z]*(?:${launchState})`),
-    );
-    await expect(platformRow).toContainText(
-      new RegExp(`Platinum[^A-Za-z]*(?:${launchState})`),
-    );
+    const providerState = (provider: string) =>
+      new RegExp(`${provider}(?:[^A-Za-z]*Selected)?[^A-Za-z]*(?:${launchState})`);
+    await expect(platformRow).toContainText(providerState("Daytona"));
+    await expect(platformRow).toContainText(providerState("Platinum"));
 
     expect(pageErrors, `client errors: ${pageErrors.join(" | ")}`).toEqual([]);
   });
@@ -239,16 +224,26 @@ test.describe("12 — Sandbox templates UI", () => {
     await openSandboxSection(page, projectId);
     pageErrors.length = 0;
 
+    // The template list nests list items, so `getByRole('listitem')` filtered by
+    // the slug matches every ANCESTOR row as well as the real one. The old
+    // `templateRow.getByText(customSlug, { exact: true })` then resolved to 3
+    // elements against staging and failed on strict mode. Pinning the row to the
+    // innermost list item that actually owns a Rebuild button makes the row —
+    // and the button inside it — unique, and `filter({ hasText })` already
+    // proves the slug is on screen, so the extra text lookup bought nothing.
     const templateRow = page
       .getByRole("listitem")
-      .filter({ hasText: customSlug });
+      .filter({ hasText: customSlug })
+      .filter({ has: page.getByRole("button", { name: /^Rebuild$/i }) })
+      .last();
     const rebuildButton = templateRow.getByRole("button", {
       name: /^Rebuild$/i,
     });
-    await expect(templateRow.getByText(customSlug, { exact: true })).toBeVisible({
-      timeout: 15_000,
-    });
-    await expect(rebuildButton).toBeEnabled({ timeout: 15_000 });
+    // No explicit timeout: the deployed lane's 45s expect budget covers the
+    // panel's template fetch, which does not fit in 15s against a cross-region
+    // database. Local keeps its own 30s default.
+    await expect(templateRow).toBeVisible();
+    await expect(rebuildButton).toBeEnabled();
     await rebuildButton.click();
 
     // Wait up to 30s for the template build POST to land — toast feedback gives the

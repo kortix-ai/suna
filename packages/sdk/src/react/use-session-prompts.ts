@@ -40,7 +40,7 @@ import { mintSessionWireMessageId } from './use-opencode-sessions/messages';
  * they can SEE it. Not polling an empty list meant only a full page load ever
  * showed those rows — and the same gap hid a prompt queued from a second tab.
  */
-export const SESSION_PROMPTS_POLL_MS = 3_000;
+export const SESSION_PROMPTS_POLL_MS = 1_000;
 /** The floor for an EMPTY list. Slow enough to be free, fast enough that a
  *  prompt handed back by the server appears while the user is still looking. */
 export const SESSION_PROMPTS_IDLE_POLL_MS = 15_000;
@@ -66,6 +66,96 @@ export function noteInboxObservation(
   atMs: number,
 ): void {
   useSessionWorkingStore.getState().noteInboxPending(sessionId, countLiveInboxPrompts(prompts), atMs);
+}
+
+
+// ============================================================================
+// Optimistic queue rows — Enter paints the row in the SAME frame
+// ============================================================================
+
+export const OPTIMISTIC_PROMPT_PREFIX = 'optimistic:';
+
+/** Is this row the tab's own echo, not yet confirmed by the server? */
+export function isOptimisticSessionPrompt(prompt: Pick<SessionPrompt, 'prompt_id'>): boolean {
+  return prompt.prompt_id.startsWith(OPTIMISTIC_PROMPT_PREFIX);
+}
+
+/**
+ * The strip-shaped row for a submission that has left this tab but not yet
+ * come back from `POST .../prompts`. The queue is server-side; this is the
+ * one client-side thing a server queue cannot do — paint on the keypress.
+ * Replaced by the server's row on the response (`settleOptimisticPrompt`),
+ * or by the poll landing first (`reconcileOptimisticPrompts`), and removed
+ * on failure so a refused send never lingers.
+ */
+export function optimisticSessionPrompt(
+  input: CreateSessionPromptInput,
+  nowMs: number,
+): SessionPrompt {
+  const text = input.parts
+    .filter((part) => part.type === 'text' && typeof part.text === 'string')
+    .map((part) => part.text as string)
+    .join('\n')
+    .trim();
+  const at = new Date(nowMs).toISOString();
+  return {
+    prompt_id: `${OPTIMISTIC_PROMPT_PREFIX}${input.clientMessageId}`,
+    client_message_id: input.clientMessageId,
+    message_id: input.messageId,
+    state: 'queued',
+    reason: null,
+    text,
+    attempts: 0,
+    last_error: null,
+    created_at: at,
+    available_at: at,
+  };
+}
+
+export function applyOptimisticPrompt(
+  prompts: readonly SessionPrompt[],
+  input: CreateSessionPromptInput,
+  nowMs: number,
+): SessionPrompt[] {
+  if (prompts.some((p) => p.client_message_id === input.clientMessageId)) return [...prompts];
+  return [...prompts, optimisticSessionPrompt(input, nowMs)];
+}
+
+export function settleOptimisticPrompt(
+  prompts: readonly SessionPrompt[],
+  clientMessageId: string,
+  result: CreateSessionPromptResult,
+): SessionPrompt[] {
+  return prompts.map((p) =>
+    p.client_message_id === clientMessageId && isOptimisticSessionPrompt(p)
+      ? { ...p, prompt_id: result.prompt_id, state: result.state, message_id: result.message_id }
+      : p,
+  );
+}
+
+export function removeOptimisticPrompt(
+  prompts: readonly SessionPrompt[],
+  clientMessageId: string,
+): SessionPrompt[] {
+  return prompts.filter(
+    (p) => !(p.client_message_id === clientMessageId && isOptimisticSessionPrompt(p)),
+  );
+}
+
+/**
+ * Merge a fresh server list over the cached one: the server's rows are the
+ * truth, and an optimistic row survives only while the server has not listed
+ * its submission yet (the POST is still in flight).
+ */
+export function reconcileOptimisticPrompts(
+  cached: readonly SessionPrompt[] | undefined,
+  server: readonly SessionPrompt[],
+): SessionPrompt[] {
+  const listed = new Set(server.map((p) => p.client_message_id).filter(Boolean));
+  const pending = (cached ?? []).filter(
+    (p) => isOptimisticSessionPrompt(p) && !listed.has(p.client_message_id),
+  );
+  return pending.length ? [...server, ...pending] : [...server];
 }
 
 export interface UseSessionPromptsResult {
@@ -103,7 +193,9 @@ export function useSessionPrompts(
       const atMs = Date.now();
       const { prompts } = await listSessionPrompts(projectId!, sessionId!);
       noteInboxObservation(sessionId!, prompts, atMs);
-      return prompts;
+      // Keep this tab's not-yet-confirmed rows on screen across a poll that
+      // landed before their POST returned.
+      return reconcileOptimisticPrompts(queryClient.getQueryData<SessionPrompt[]>(key), prompts);
     },
     // Two cadences, never `false` — see the note above.
     refetchInterval: (q) => sessionPromptsPollMs(q.state.data?.length ?? 0, options?.pollMs),
@@ -120,29 +212,60 @@ export function useSessionPrompts(
   );
 
   const enqueueMutation = useMutation({
+    // Enter paints the row NOW. The queue is server-side; the only client-side
+    // job left is to not make the user wait a round-trip to see their own
+    // keypress. The optimistic row is swapped for the server's on the
+    // response, removed on failure, and never outlives a poll that lists its
+    // submission (`reconcileOptimisticPrompts`). The write is SYNCHRONOUS and
+    // comes before anything awaited, so the row is on screen in the same frame
+    // as the keypress.
+    onMutate: async (input: CreateSessionPromptInput) => {
+      queryClient.setQueryData<SessionPrompt[]>(key, (prev) =>
+        applyOptimisticPrompt(prev ?? [], input, Date.now()),
+      );
+      // The receipt-side floor: a `/turn` poll landing before the POST returns
+      // must not swap Stop back to Send with the row already on screen.
+      useSessionWorkingStore.getState().notePromptAccepted(sessionId!, Date.now());
+      await queryClient.cancelQueries({ queryKey: key });
+    },
     mutationFn: async (input: CreateSessionPromptInput) => {
       const result = await createSessionPrompt(projectId!, sessionId!, input);
-      // The server has the row. Say so immediately: `invalidate` below still
-      // has a round trip to run, and a `/turn` poll landing in that gap answers
-      // "no turns" honestly — which used to swap Stop back to Send with the
-      // user's prompt already queued.
       if (result.state !== 'failed') {
         useSessionWorkingStore.getState().notePromptAccepted(sessionId!, Date.now());
       }
       return result;
     },
+    onSuccess: (result, input) => {
+      queryClient.setQueryData<SessionPrompt[]>(key, (prev) =>
+        result.state === 'failed'
+          ? removeOptimisticPrompt(prev ?? [], input.clientMessageId)
+          : settleOptimisticPrompt(prev ?? [], input.clientMessageId, result),
+      );
+    },
+    onError: (_error, input) => {
+      queryClient.setQueryData<SessionPrompt[]>(key, (prev) =>
+        removeOptimisticPrompt(prev ?? [], input.clientMessageId),
+      );
+    },
     onSettled: invalidate,
   });
+  // No-op hook-level `onError`s: every caller shows its own specific toast,
+  // and without one TanStack falls back to the app-global default `onError`
+  // IN ADDITION — a second, generic "Failed to perform action: …" for every
+  // expected refusal (e.g. removing a prompt a step just started answering).
   const removeMutation = useMutation({
     mutationFn: (promptId: string) => deleteSessionPrompt(projectId!, sessionId!, promptId),
+    onError: () => {},
     onSettled: invalidate,
   });
   const retryMutation = useMutation({
     mutationFn: (promptId: string) => retrySessionPrompt(projectId!, sessionId!, promptId),
+    onError: () => {},
     onSettled: invalidate,
   });
   const holdMutation = useMutation({
     mutationFn: (held: boolean) => holdSessionPrompts(projectId!, sessionId!, held),
+    onError: () => {},
     onSettled: invalidate,
   });
 
@@ -211,6 +334,7 @@ export async function startSessionWithPrompt(
       clientMessageId,
       messageId: mintSessionWireMessageId(sessionId, clientMessageId),
       parts: input.parts,
+      clientSentAtMs: now(),
       ...(input.overrides ? { overrides: input.overrides } : {}),
       remintOnDelivery: true,
     });

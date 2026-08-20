@@ -4,7 +4,8 @@ import { buildAccountState, buildMinimalAccountState, buildLocalAccountState } f
 import { hasDatabase } from '../../shared/db';
 import { config } from '../../config';
 import { resolveScopedAccountId } from '../../shared/resolve-account';
-import { authorize } from '../../iam/dispatcher';
+import { authorize } from '../../iam/authorize';
+import { actorOf } from '../../iam/actor';
 import { ACCOUNT_ACTIONS } from '../../iam/actions';
 import { makeOpenApiApp, json, auth } from '../../openapi';
 
@@ -20,8 +21,10 @@ export const accountStateRouter = makeOpenApiApp<AppEnv>();
 // never hides the CTA from a legitimate owner.
 async function canManageBilling(c: any, accountId: string): Promise<boolean> {
   try {
-    const userId = c.get('userId') as string;
-    const { allowed } = await authorize(userId, accountId, ACCOUNT_ACTIONS.BILLING_WRITE);
+    const { allowed } = await authorize(
+      await actorOf(c, accountId),
+      ACCOUNT_ACTIONS.BILLING_WRITE,
+    );
     return allowed;
   } catch {
     return true;

@@ -36,6 +36,24 @@ describe('selectSessionTranscript', () => {
     expect(selectSessionTranscript(state, 's1')?.parts.m1).toEqual([]);
   });
 
+  test('leaves out messages the caller marks as not worth persisting (optimistic stubs)', () => {
+    // A stub persisted to disk came back after a reload as a PLAIN message
+    // the runtime had never heard of — a phantom bubble beside the real one,
+    // for ever (queue-lab `reload_midturn`, 2026-08-19).
+    const state = {
+      messages: { s1: [msg('m1'), msg('opt-1'), msg('m2', 'assistant')] },
+      parts: { m1: [part('p1', 'm1')], 'opt-1': [part('p9', 'opt-1')], m2: [] },
+    };
+    const transcript = selectSessionTranscript(state, 's1', (id) => id === 'opt-1');
+    expect(transcript?.messages.map((m) => m.id)).toEqual(['m1', 'm2']);
+    expect(Object.keys(transcript?.parts ?? {})).toEqual(['m1', 'm2']);
+  });
+
+  test('a session whose only messages are excluded is not worth caching', () => {
+    const state = { messages: { s1: [msg('opt-1')] }, parts: {} };
+    expect(selectSessionTranscript(state, 's1', () => true)).toBeNull();
+  });
+
   test('returns null when the session was never in the store', () => {
     expect(selectSessionTranscript({ messages: {}, parts: {} }, 's1')).toBeNull();
   });

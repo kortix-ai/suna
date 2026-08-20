@@ -17,7 +17,7 @@ import { PROJECT_ACTIONS } from '../iam';
 const ACCOUNT = crypto.randomUUID();
 const PROJECT = crypto.randomUUID();
 const MEMBER = crypto.randomUUID();
-const EDITOR = crypto.randomUUID();
+const MANAGER = crypto.randomUUID();
 
 const minted: string[] = [];
 
@@ -39,11 +39,11 @@ beforeAll(async () => {
   });
   await db.insert(accountMembers).values([
     { userId: MEMBER, accountId: ACCOUNT, accountRole: 'member', isSuperAdmin: false },
-    { userId: EDITOR, accountId: ACCOUNT, accountRole: 'member', isSuperAdmin: false },
+    { userId: MANAGER, accountId: ACCOUNT, accountRole: 'member', isSuperAdmin: false },
   ]);
   await db.insert(projectMembers).values([
     { accountId: ACCOUNT, projectId: PROJECT, userId: MEMBER, projectRole: 'member' },
-    { accountId: ACCOUNT, projectId: PROJECT, userId: EDITOR, projectRole: 'editor' },
+    { accountId: ACCOUNT, projectId: PROJECT, userId: MANAGER, projectRole: 'manager' },
   ]);
 });
 
@@ -96,8 +96,8 @@ interface WCase {
   path: () => string;
   body?: unknown;
   // 'member' = the floor role holds this leaf (so a plain member passes);
-  // 'editor' = editor-tier (a plain member is denied, an editor passes).
-  tier: 'member' | 'editor';
+  // 'manager' = manager-tier (a plain member is denied, a manager passes).
+  tier: 'member' | 'manager';
   // kortix_cli grants for the agent-grant fold. deny = a grant that should be
   // rejected by the leaf gate; allow = the exact grant that should pass it.
   denyGrant: string[];
@@ -148,7 +148,7 @@ const CASES: WCase[] = [
     name: 'CR request-changes (review.act, not gitops.push)',
     leaf: A.PROJECT_REVIEW_ACT, method: 'POST',
     path: () => `/v1/projects/${PROJECT}/change-requests/${sid()}/request-changes`, body: {},
-    tier: 'editor',
+    tier: 'manager',
     // deny with gitops.push (the OLD leaf) to prove the gate is now review.act.
     denyGrant: [A.PROJECT_GITOPS_PUSH], allowGrant: [A.PROJECT_REVIEW_ACT],
   },
@@ -173,19 +173,19 @@ const CASES: WCase[] = [
     name: 'email connect (connector.write)',
     leaf: A.PROJECT_CONNECTOR_WRITE, method: 'POST',
     path: () => `/v1/projects/${PROJECT}/channels/email/connect`, body: {},
-    tier: 'editor', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CONNECTOR_WRITE],
+    tier: 'manager', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CONNECTOR_WRITE],
   },
   {
     name: 'email installation PATCH (connector.write)',
     leaf: A.PROJECT_CONNECTOR_WRITE, method: 'PATCH',
     path: () => `/v1/projects/${PROJECT}/channels/email/installation`, body: {},
-    tier: 'editor', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CONNECTOR_WRITE],
+    tier: 'manager', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CONNECTOR_WRITE],
   },
   {
     name: 'email installation DELETE (connector.write)',
     leaf: A.PROJECT_CONNECTOR_WRITE, method: 'DELETE',
     path: () => `/v1/projects/${PROJECT}/channels/email/installation`,
-    tier: 'editor', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CONNECTOR_WRITE],
+    tier: 'manager', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CONNECTOR_WRITE],
   },
   {
     // Teams disconnect — twin of email installation DELETE; no feature-flag
@@ -193,7 +193,7 @@ const CASES: WCase[] = [
     name: 'teams installation DELETE (connector.write)',
     leaf: A.PROJECT_CONNECTOR_WRITE, method: 'DELETE',
     path: () => `/v1/projects/${PROJECT}/channels/teams/installation`,
-    tier: 'editor', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CONNECTOR_WRITE],
+    tier: 'manager', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CONNECTOR_WRITE],
   },
   {
     // Teams connect — the capability assert runs BEFORE the per-project `teams`
@@ -202,7 +202,7 @@ const CASES: WCase[] = [
     name: 'teams connect (connector.write)',
     leaf: A.PROJECT_CONNECTOR_WRITE, method: 'POST',
     path: () => `/v1/projects/${PROJECT}/channels/teams/connect`, body: {},
-    tier: 'editor', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CONNECTOR_WRITE],
+    tier: 'manager', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CONNECTOR_WRITE],
   },
   {
     // Binding a Slack thread wires inbound channel→session routing — a
@@ -210,33 +210,33 @@ const CASES: WCase[] = [
     name: 'slack bind-thread (connector.write)',
     leaf: A.PROJECT_CONNECTOR_WRITE, method: 'POST',
     path: () => `/v1/projects/${PROJECT}/channels/slack/bind-thread`, body: {},
-    tier: 'editor', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CONNECTOR_WRITE],
+    tier: 'manager', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CONNECTOR_WRITE],
   },
   {
     name: 'channel binding PATCH (connector.write)',
     leaf: A.PROJECT_CONNECTOR_WRITE, method: 'PATCH',
     path: () => `/v1/projects/${PROJECT}/channels/bindings/${sid()}`, body: {},
-    tier: 'editor', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CONNECTOR_WRITE],
+    tier: 'manager', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CONNECTOR_WRITE],
   },
   {
     name: 'connect-requests (connector.write)',
     leaf: A.PROJECT_CONNECTOR_WRITE, method: 'POST',
     path: () => `/v1/projects/${PROJECT}/connect-requests`, body: {},
-    tier: 'editor', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CONNECTOR_WRITE],
+    tier: 'manager', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CONNECTOR_WRITE],
   },
   // ── Connectors (read) ────────────────────────────────────────────────────
   {
     name: 'channel bindings list (connector.read)',
     leaf: A.PROJECT_CONNECTOR_READ, method: 'GET',
     path: () => `/v1/projects/${PROJECT}/channels/bindings`,
-    tier: 'editor', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CONNECTOR_READ],
+    tier: 'manager', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CONNECTOR_READ],
   },
   // ── Customize (write) ────────────────────────────────────────────────────
   {
     name: 'meet bot name (customize.write)',
     leaf: A.PROJECT_CUSTOMIZE_WRITE, method: 'PUT',
     path: () => `/v1/projects/${PROJECT}/channels/meet/name`, body: {},
-    tier: 'editor', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CUSTOMIZE_WRITE],
+    tier: 'manager', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CUSTOMIZE_WRITE],
   },
   {
     // Strict body (ModelDefaultBody) is validated at the OpenAPI layer BEFORE the
@@ -244,52 +244,52 @@ const CASES: WCase[] = [
     name: 'model-defaults PUT (customize.write)',
     leaf: A.PROJECT_CUSTOMIZE_WRITE, method: 'PUT',
     path: () => `/v1/projects/${PROJECT}/model-defaults`, body: { scope: 'project', model: 'openai/gpt-4o' },
-    tier: 'editor', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CUSTOMIZE_WRITE],
+    tier: 'manager', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CUSTOMIZE_WRITE],
   },
   {
     name: 'model-defaults DELETE (customize.write)',
     leaf: A.PROJECT_CUSTOMIZE_WRITE, method: 'DELETE',
     path: () => `/v1/projects/${PROJECT}/model-defaults?scope=project`,
-    tier: 'editor', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CUSTOMIZE_WRITE],
+    tier: 'manager', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CUSTOMIZE_WRITE],
   },
   {
     name: 'default-agent PUT (customize.write)',
     leaf: A.PROJECT_CUSTOMIZE_WRITE, method: 'PUT',
     path: () => `/v1/projects/${PROJECT}/default-agent`, body: { agent: 'support' },
-    tier: 'editor', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CUSTOMIZE_WRITE],
+    tier: 'manager', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CUSTOMIZE_WRITE],
   },
   {
     name: 'feature-flag toggle (customize.write)',
     leaf: A.PROJECT_CUSTOMIZE_WRITE, method: 'PATCH',
     path: () => `/v1/projects/${PROJECT}/features`, body: {},
-    tier: 'editor', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CUSTOMIZE_WRITE],
+    tier: 'manager', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CUSTOMIZE_WRITE],
   },
   {
     // The deprecated alias published SDKs still call must gate identically.
     name: 'feature-flag toggle via the /experimental alias (customize.write)',
     leaf: A.PROJECT_CUSTOMIZE_WRITE, method: 'PATCH',
     path: () => `/v1/projects/${PROJECT}/experimental`, body: {},
-    tier: 'editor', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CUSTOMIZE_WRITE],
+    tier: 'manager', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CUSTOMIZE_WRITE],
   },
   {
     name: 'sandbox-provider (customize.write)',
     leaf: A.PROJECT_CUSTOMIZE_WRITE, method: 'PATCH',
     path: () => `/v1/projects/${PROJECT}/sandbox-provider`, body: {},
-    tier: 'editor', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CUSTOMIZE_WRITE],
+    tier: 'manager', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CUSTOMIZE_WRITE],
   },
   // ── Agent scope (agent.write) ────────────────────────────────────────────
   {
     name: 'agent scope PUT (agent.write)',
     leaf: A.PROJECT_AGENT_WRITE, method: 'PUT',
     path: () => `/v1/projects/${PROJECT}/agents/scoped-bot/scope`, body: {},
-    tier: 'editor', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_AGENT_WRITE],
+    tier: 'manager', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_AGENT_WRITE],
   },
   // ── Secrets (write) ──────────────────────────────────────────────────────
   {
     name: 'secret-requests (secret.write)',
     leaf: A.PROJECT_SECRET_WRITE, method: 'POST',
     path: () => `/v1/projects/${PROJECT}/secret-requests`, body: {},
-    tier: 'editor', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_SECRET_WRITE],
+    tier: 'manager', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_SECRET_WRITE],
   },
 ];
 
@@ -297,25 +297,25 @@ describe('HTTP enforcement — project write/lifecycle leaf gates (every checkbo
   for (const c of CASES) {
     describe(c.name, () => {
       test('scoped agent with an UNRELATED grant → denied by the leaf gate', async () => {
-        const secret = await mint(EDITOR, c.denyGrant);
+        const secret = await mint(MANAGER, c.denyGrant);
         const res = await req(c.method, c.path(), secret, c.body);
         expect(await iamDenied(res)).toBe(true);
       });
 
       test('scoped agent granted the exact leaf → NOT denied by the leaf gate', async () => {
-        const secret = await mint(EDITOR, c.allowGrant);
+        const secret = await mint(MANAGER, c.allowGrant);
         const res = await req(c.method, c.path(), secret, c.body);
         expect(await iamDenied(res)).toBe(false);
       });
 
-      if (c.tier === 'editor') {
-        test('plain MEMBER (lacks the editor-tier leaf) → denied', async () => {
+      if (c.tier === 'manager') {
+        test('plain MEMBER (lacks the manager-tier leaf) → denied', async () => {
           const secret = await mint(MEMBER, null);
           const res = await req(c.method, c.path(), secret, c.body);
           expect(await iamDenied(res)).toBe(true);
         });
-        test('plain EDITOR (holds the leaf) → NOT denied', async () => {
-          const secret = await mint(EDITOR, null);
+        test('plain MANAGER (holds the leaf) → NOT denied', async () => {
+          const secret = await mint(MANAGER, null);
           const res = await req(c.method, c.path(), secret, c.body);
           expect(await iamDenied(res)).toBe(false);
         });

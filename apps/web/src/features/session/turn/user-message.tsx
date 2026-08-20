@@ -64,7 +64,6 @@ import {
 
 import { messageCreatedAt } from './message-time';
 import { MessageTimeLabel } from './message-time-label';
-import { useHasPlan } from './plan-card';
 
 // ============================================================================
 // Fixed channel brand colors + DCP (dynamic context pruning) notifications —
@@ -828,6 +827,9 @@ export function UserMessageActions({
   rewindPromptText,
   onRewind,
   rewindDisabled,
+  leading,
+  leadingStatus,
+  alwaysVisible = false,
 }: {
   /** Epoch milliseconds, or `null` when the backend never stamped one. */
   timestamp: number | null;
@@ -839,6 +841,21 @@ export function UserMessageActions({
   rewindPromptText?: string;
   onRewind?: (messageId: string, text: string) => void;
   rewindDisabled?: boolean;
+  /**
+   * Rendered FIRST in the row: a queued prompt's status + controls
+   * (`QueuedPromptControls`) — the same row, so a pending bubble does not
+   * grow a second strip under it.
+   */
+  leading?: React.ReactNode;
+  /**
+   * Rendered before `leading` and ALWAYS visible — a queued prompt's status
+   * word (`QueuedPromptStatus`). The dim is what marks a bubble as queued;
+   * the word is what makes the dim legible, so it does not wait for a hover.
+   */
+  leadingStatus?: React.ReactNode;
+  /** Keep the row visible without hover — a failed send must not be a thing
+   *  the user has to hunt for. */
+  alwaysVisible?: boolean;
 }) {
   // Copy stays available while the agent is busy / rewind is locked.
   // Only edit-from-here is gated — hiding the whole bar was wrong.
@@ -846,14 +863,26 @@ export function UserMessageActions({
   const hasMeta = timestamp !== null || Boolean(edited);
 
   // Nothing to say and nothing to do — don't leave an empty row behind.
-  if (!hasMeta && !copyText) return null;
+  if (!hasMeta && !copyText && !leading && !leadingStatus) return null;
 
   return (
     // The fade sits on the ROW, so the timestamp and the buttons reveal
     // together as one object rather than a label with controls growing out of
     // it. `opacity`, never mounting: the row holds its height whether or not
     // the pointer is over the turn, so nothing in the transcript reflows.
-    <div className="flex w-full items-center justify-end gap-2 opacity-0 transition-opacity duration-150 group-hover/turn:opacity-100 focus-within:opacity-100">
+    // The status word (when there is one) sits OUTSIDE the fade: it is the
+    // one thing on this row a user must not have to hover to learn.
+    <div className="flex w-full items-center justify-end gap-2">
+      {leadingStatus}
+      <div
+        className={cn(
+          'flex items-center gap-2 transition-opacity duration-150',
+          alwaysVisible
+            ? 'opacity-100'
+            : 'opacity-0 group-hover/turn:opacity-100 focus-within:opacity-100',
+        )}
+      >
+      {leading}
       {/* `InlineMeta` owns the `·` separator and drops absent children, so a
           message with no stamp never renders a leading bullet. Skipped
           entirely when there is no meta at all — the optimistic turn would
@@ -883,6 +912,7 @@ export function UserMessageActions({
           <CopyButton code={copyText} size="sm" hintSide="top" />
         </div>
       )}
+      </div>
     </div>
   );
 }
@@ -900,6 +930,9 @@ export function UserMessage({
   ownsPlan,
   onRewind,
   rewindDisabled = false,
+  leadingActions,
+  leadingStatus,
+  actionsAlwaysVisible = false,
 }: {
   message: MessageWithParts;
   agentNames?: string[];
@@ -918,6 +951,12 @@ export function UserMessage({
   ownsPlan: boolean;
   onRewind?: (messageId: string, text: string) => void;
   rewindDisabled?: boolean;
+  /** See `UserMessageActions.leading` — a queued prompt's status + controls. */
+  leadingActions?: React.ReactNode;
+  /** See `UserMessageActions.leadingStatus`. */
+  leadingStatus?: React.ReactNode;
+  /** See `UserMessageActions.alwaysVisible`. */
+  actionsAlwaysVisible?: boolean;
 }) {
   const openFileInComputer = useKortixComputerStore((s) => s.openFileInComputer);
   const { attachments, stickyParts } = useMemo(
@@ -979,12 +1018,11 @@ export function UserMessage({
     [attachments, uploadedFiles],
   );
 
-  // Full width is the PLAN's claim on the message, so it has to follow a plan
-  // that actually renders. `ownsPlan` alone doesn't: the anchor falls back to
-  // the last turn when nothing ever wrote todos, which stretched the bubble in
-  // sessions that have no plan at all.
-  const hasPlan = useHasPlan(sessionId);
-  const showPlan = ownsPlan && hasPlan;
+  // The bubble ALWAYS hugs its text. It used to take the full column when the
+  // turn "owned the plan" (`ownsPlan && useHasPlan`) — a claim from when the
+  // todo checklist rendered inside the bubble. The plan card lives under the
+  // turn now, and the anchor's fallback made a one-word message stretch across
+  // the whole column whenever any earlier turn had written todos.
 
   // Resolve effective command info: use runtime-tracked info or fall back to template matching
   const effectiveCommandInfo = useMemo(
@@ -1095,6 +1133,9 @@ export function UserMessage({
       rewindPromptText={rewindPromptText}
       onRewind={onRewind}
       rewindDisabled={rewindDisabled}
+      leading={leadingActions}
+      leadingStatus={leadingStatus}
+      alwaysVisible={actionsAlwaysVisible}
     />
   );
 
@@ -1351,7 +1392,6 @@ export function UserMessage({
           canExpand={canExpand}
           expanded={expanded}
           onToggle={() => setExpanded(!expanded)}
-          fullWidth={showPlan}
           textId={`${message.info.id}-text`}
           textRef={textRef}
           replyContext={replyContext}

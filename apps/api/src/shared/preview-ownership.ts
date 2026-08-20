@@ -21,6 +21,7 @@ import {
   resolveShareSubject,
 } from '../connectors/share';
 import { authorize } from '../iam';
+import { actorForUser } from '../iam/actor';
 import { accountMembers, projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, eq, or, sql } from 'drizzle-orm';
 import type { KortixUserContext } from './kortix-user-context';
@@ -56,13 +57,19 @@ export async function canAccessSandboxSession(input: {
   /** The caller's own session when the credential is bound to one, or null.
    *  REQUIRED — an omitted binding would fail open. */
   callerSessionId: string | null;
+  /** The caller's AGENT/SANDBOX token binding (`callerKortixSessionId(c)`).
+   *  Only the trigger-session manager override reads it — see share.ts. */
+  boundCredentialSessionId: string | null;
 }): Promise<boolean> {
   // callerSessionId MUST be in the key. In Kortix-as-a-Backend every end-user
   // shares one `userId` (the wrapper credential), so without it end-user A and
   // end-user B collide on one entry for the same target session — and the first
   // `true` would be served to everyone else for the whole TTL, silently
   // defeating the isolation check below.
-  const key = `${input.sessionId}|${input.userId}|${input.callerSessionId ?? '-'}`;
+  // boundCredentialSessionId is in the key for the same reason callerSessionId
+  // is: it changes the verdict (it gates the manager override), so two callers
+  // that differ only in it must not share one entry.
+  const key = `${input.sessionId}|${input.userId}|${input.callerSessionId ?? '-'}|${input.boundCredentialSessionId ?? '-'}`;
   const cached = sessionVisibilityCache.get(key);
   if (cached && cached.expiresAt > Date.now()) return cached.allowed;
 
@@ -90,8 +97,7 @@ export async function canAccessSandboxSession(input: {
       loadSessionGrants([input.sessionId]),
       isTriggerCreatedSessionMetadata(row.metadata)
         ? authorize(
-            input.userId,
-            input.accountId,
+            actorForUser(input.userId, input.accountId),
             'project.members.manage',
             { type: 'project', id: input.projectId },
           )
@@ -107,6 +113,7 @@ export async function canAccessSandboxSession(input: {
         origin: row.origin ?? null,
         sessionId: input.sessionId,
         callerSessionId: input.callerSessionId,
+        boundCredentialSessionId: input.boundCredentialSessionId,
       },
       { metadata: row.metadata, canManageProject: managerVerdict.allowed },
     );

@@ -122,8 +122,10 @@ App logs.
 
 The destination key cannot be a control key such as `PORT`, `PATH`,
 `KORTIX_*`, or `OPENCODE_*`. A missing identifier fails deployment with
-`invalid_environment`. Broker-only and connector-only secrets cannot be
-delivered as App environment values.
+`invalid_environment`. Only an **environment**-exposure secret (`strategy:
+runtime`) can become an App environment value. An egress-enforced, service-spent,
+or disabled secret is rejected with the same code — an App runtime is not behind
+the egress relay, so there is nothing to substitute its handle.
 
 ## Access
 

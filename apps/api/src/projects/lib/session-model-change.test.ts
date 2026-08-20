@@ -62,14 +62,15 @@ describe('modelChangeNeedsLivePush', () => {
 
 describe('mayChangeSessionModel — visibility is not mutability', () => {
   test('the session owner may change it', () => {
-    expect(mayChangeSessionModel({ canManageSharing: true })).toBe(true);
+    expect(mayChangeSessionModel({ canManageLifecycle: true })).toBe(true);
   });
 
   test('a project member who can merely SEE a shared session may not', () => {
     // visibility === 'project' makes a session readable by every member, but
     // changing its model restarts opencode and kills the owner's in-flight
-    // turn. The sharing route in routes/project-sessions.ts gate on exactly this.
-    expect(mayChangeSessionModel({ canManageSharing: false })).toBe(false);
+    // turn. It is a LIFECYCLE action, not a sharing one: a project manager keeps
+    // it on a session they did not create, while `canManageSharing` does not.
+    expect(mayChangeSessionModel({ canManageLifecycle: false })).toBe(false);
   });
 });
 

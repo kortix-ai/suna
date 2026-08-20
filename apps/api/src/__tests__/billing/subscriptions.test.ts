@@ -26,6 +26,7 @@ let upsertCreditAccountCalls: any[] = [];
 let updateCreditAccountCalls: any[] = [];
 let upsertCustomerCalls: any[] = [];
 let resetExpiringCreditsCalls: any[] = [];
+let grantCreditsCalls: any[] = [];
 let stripeCancelSubCalls: any[] = [];
 
 beforeEach(() => {
@@ -33,6 +34,7 @@ beforeEach(() => {
   updateCreditAccountCalls = [];
   upsertCustomerCalls = [];
   resetExpiringCreditsCalls = [];
+  grantCreditsCalls = [];
   stripeCancelSubCalls = [];
   resetMockRegistry();
 
@@ -76,7 +78,9 @@ beforeEach(() => {
   };
 
   // Credit service defaults
-  mockRegistry.grantCredits = async () => {};
+  mockRegistry.grantCredits = async (...args: any[]) => {
+    grantCreditsCalls.push(args);
+  };
   mockRegistry.resetExpiringCredits = async (...args: any[]) => {
     resetExpiringCreditsCalls.push(args);
   };
@@ -684,5 +688,43 @@ describe('confirmCheckoutSession: payment gate (client-callable fraud path)', ()
     });
 
     expect(result.success).toBe(true);
+  });
+});
+
+// ─── Activation grant idempotency (confirm path vs webhook path) ─────────────
+
+describe('confirmCheckoutSession: activation grant idempotency key', () => {
+  // One subscription activation must produce ONE grant key, whichever path
+  // observes it first. The Stripe webhook path (handleSubscriptionCheckout /
+  // syncSubscriptionState in billing/services/webhooks.ts) grants with
+  // `subscription_activation:<subId>`. This client-callable confirm endpoint
+  // used to pass the CHECKOUT SESSION id instead, so a confirm racing
+  // `checkout.session.completed` deduped against nothing and granted the tier
+  // credits twice. Same activation, same key.
+  test('uses subscription_activation:<subscriptionId>, matching the webhook path', async () => {
+    mockRegistry.stripeClient.checkout.sessions.retrieve = async () =>
+      createMockStripeCheckoutSession({
+        id: 'cs_confirm_race',
+        status: 'complete',
+        payment_status: 'paid',
+        subscription: 'sub_confirm_123',
+        metadata: {
+          account_id: 'acc_test_123',
+          tier_key: 'tier_2_20',
+          commitment_type: 'monthly',
+        },
+      });
+
+    const { confirmCheckoutSession } = await import('../../billing/services/subscriptions');
+    const result = await confirmCheckoutSession({
+      accountId: 'acc_test_123',
+      sessionId: 'cs_confirm_race',
+    });
+
+    expect(result.success).toBe(true);
+    const tierGrant = grantCreditsCalls.find((args: any[]) => args[2] === 'tier_grant');
+    expect(tierGrant).toBeDefined();
+    expect(tierGrant![5]).toBe('subscription_activation:sub_confirm_123');
+    expect(tierGrant![5]).not.toBe('cs_confirm_race');
   });
 });

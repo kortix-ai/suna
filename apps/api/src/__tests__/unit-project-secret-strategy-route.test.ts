@@ -219,10 +219,6 @@ mock.module('../projects/lib/sandbox-env-sync', () => ({
   },
 }));
 
-mock.module('../secrets/network-boundary-availability', () => ({
-  networkBoundaryDeliveryAvailable: () => true,
-}));
-
 mock.module('../shared/audit', () => ({
   inferAuditSource: (_context: unknown, actorType: string) =>
     actorType === 'service_account' ? 'automation' : 'api',
@@ -497,6 +493,56 @@ describe('PUT /v1/projects/:projectId/secrets/:identifier/strategy', () => {
     });
     expect(updates).toHaveLength(1);
     expect(audits).toHaveLength(1);
+  });
+
+  // The DEFAULT shape since docs/specs/2026-08-19-secrets-exposure-usage-model.md
+  // §6: an egress-enforced secret is served by handle substitution, so the
+  // policy is a HOST LIST and there is no injection slot to name. This route
+  // used to reject it with `policy.inject is invalid`.
+  test('stores a substitution-only policy that names no injection slot', async () => {
+    const egressPolicy = { rules: [{ host: 'api.example.com' }], on_no_match: 'deny' as const };
+    const response = await buildApp().request(
+      `/v1/projects/${PROJECT_ID}/secrets/SERVICE_API_KEY/strategy`,
+      {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ strategy: 'egress', egress_policy: egressPolicy }),
+      },
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      strategy: 'egress',
+      consumer: 'network',
+      delivery_status: 'available',
+    });
+    expect(updates).toHaveLength(1);
+    expect(updates[0]).toMatchObject({ egressPolicy });
+  });
+
+  // Two substitution rows on one host are LEGAL — each handle names its own
+  // value, so there is no destination to fight over. Only inject-carrying rows
+  // claim a (host, header) pair, and only those can collide (asserted below).
+  test('allows a second substitution-only secret on a host another one already uses', async () => {
+    boundarySecrets.push({
+      identifier: 'BOUNDARY_TEST',
+      egressPolicy: { rules: [{ host: 'postman-echo.com' }] } as SecretEgressPolicy,
+    });
+
+    const response = await buildApp().request(
+      `/v1/projects/${PROJECT_ID}/secrets/SERVICE_API_KEY/strategy`,
+      {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          strategy: 'egress',
+          egress_policy: { rules: [{ host: 'postman-echo.com' }], on_no_match: 'deny' },
+        }),
+      },
+    );
+
+    expect(response.status).toBe(200);
+    expect(updates).toHaveLength(1);
   });
 
   test('rejects a boundary policy that claims another secret host and header', async () => {

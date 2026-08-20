@@ -64,17 +64,40 @@ describe('projectQueueRows', () => {
     expect(projection.inFlightIds).toEqual(['unpainted']);
   });
 
-  test('a HELD row stays even once its message is in the transcript', () => {
-    // A stop-paused prompt IS in the transcript — OpenCode persisted it before
-    // the user pressed Stop — and it is unanswered and parked. The strip is the
-    // only place its remove and "send now" controls exist, so dropping it would
-    // leave the user with an unanswered message and no way to act on it.
+  test('a row whose WIRE id is in the transcript leaves the strip, even after the server re-minted it', () => {
+    // The drain re-mints a mid-turn prompt above the live turn's ids and the
+    // row's `message_id` moves to the new id BEFORE the runtime echoes it —
+    // the echo is what lets the store alias the new id back to the bubble.
+    // For that window (~0.4 s, every mid-turn send) the bubble this tab
+    // painted is on screen under the ORIGINAL wire id and the row, matched
+    // on `message_id` only, was drawn beside it: a second dimmed copy that
+    // then vanished.
+    const projection = projectQueueRows({
+      prompts: [
+        prompt({
+          prompt_id: 'reminted',
+          message_id: 'msg_reminted',
+          wire_message_id: 'msg_original',
+          state: 'delivering',
+        }),
+      ],
+      transcriptMessageIds: new Set(['msg_original']),
+    });
+    expect(projection.queued).toEqual([]);
+  });
+
+  test('a HELD row in the transcript is NOT a queue row — the bubble carries its controls, but the hold is still reported', () => {
+    // A stop-paused prompt IS in the transcript, unanswered and parked. Its
+    // remove and "send now" live in the bubble's own meta row now
+    // (`QueuedPromptControls`), so drawing it here too would be the same
+    // message twice. `held` still surfaces so the pending bubble can offer
+    // "send now".
     const projection = projectQueueRows({
       prompts: [prompt({ state: 'waiting', reason: 'held', message_id: 'msg_a' })],
       transcriptMessageIds: new Set(['msg_a']),
     });
 
-    expect(projection.queued).toHaveLength(1);
+    expect(projection.queued).toHaveLength(0);
     expect(projection.held).toBe(true);
   });
 

@@ -246,11 +246,61 @@ interface SyncState {
 	 * part-id correlation still supersedes their messages normally.
 	 */
 	markOptimisticDispatched: (sessionID: string, messageID: string) => void;
+	/**
+	 * Mark an optimistic message as held DURABLY by the control plane — its
+	 * prompt-inbox row landed (the POST returned). From here the message is not
+	 * "unconfirmed": the server has it and will deliver it, so the local idle
+	 * sweep ({@link SyncState.clearOptimisticMessages}) must not delete it. It
+	 * leaves the transcript only by the runtime's echo (same id, or a re-minted
+	 * one — see {@link SyncState.optimisticEchoOf}), by
+	 * {@link SyncState.optimisticRemove}, or with the session.
+	 */
+	markOptimisticInboxBacked: (sessionID: string, messageID: string) => void;
 	clearOptimisticMessages: (sessionID: string) => void;
+	/**
+	 * The runtime's id for an optimistic message that was superseded under a
+	 * DIFFERENT id (the control plane re-mints a wire id that would sort below
+	 * the transcript tip). Lets a host keep ONE identity for the prompt across
+	 * the swap — a React key, an inbox row's `message_id` — instead of seeing
+	 * two. Undefined for a message confirmed under its own id or never
+	 * superseded.
+	 */
+	optimisticEchoOf: (sessionID: string, optimisticID: string) => string | undefined;
+	/** The inverse of {@link SyncState.optimisticEchoOf}. */
+	optimisticOriginOf: (sessionID: string, echoID: string) => string | undefined;
+	/**
+	 * Announce, AHEAD of the echo, which runtime id an optimistic message will
+	 * come back under. The control plane re-mints a queued prompt's wire id at
+	 * delivery and lists BOTH ids on the row — so the pairing is known before
+	 * any `message.updated` arrives. With it recorded, the echo supersedes ITS
+	 * OWN bubble; without it, an echo whose parts had not landed yet fell back
+	 * to superseding the OLDEST in-flight optimistic message (measured: a
+	 * burst's first bubble vanished, replaced by the second's echo).
+	 */
+	registerOptimisticEcho: (sessionID: string, optimisticID: string, echoID: string) => void;
+	/**
+	 * The user CANCELLED this message (`DELETE .../prompts`): drop its bubble
+	 * and every claim on it — the reclaim that normally protects a
+	 * control-plane-owned message from `message.removed` must not resurrect
+	 * something the user explicitly removed.
+	 */
+	forgetControlPlaneMessage: (sessionID: string, messageID: string) => void;
 	/** True when the session's message list still holds an unconfirmed optimistic
 	 *  message — lets the SSE reconciler avoid idling+clearing a brand-new session
 	 *  whose first prompt the server hasn't registered yet. */
 	hasOptimisticMessages: (sessionID: string) => boolean;
+	/** Is this message still this tab's optimistic stub (not yet confirmed
+	 *  by the runtime)? Hosts use it to keep stubs out of anything that must
+	 *  only hold what the runtime holds — the disk transcript cache. */
+	isOptimisticMessage: (sessionID: string, messageID: string) => boolean;
+	/**
+	 * A `message.removed` for a user message the control plane still owns
+	 * (an inbox-backed send the runtime confirmed) is a RE-PLACEMENT in
+	 * progress — the server took the copy out to insert it again under a new
+	 * id. Keeps the bubble as an optimistic stub for the next echo to
+	 * supersede. Returns true when the removal was absorbed this way.
+	 */
+	reclaimRemovedMessage: (sessionID: string, messageID: string) => boolean;
 	clearSession: (sessionID: string) => void;
 	/**
 	 * Take a hold on `sessionID`'s transcript for one mounted consumer, and get
@@ -312,6 +362,13 @@ interface SyncState {
 	hydrate: (
 		sessionID: string,
 		msgs: Array<{ info: Message; parts: Part[] }>,
+		/**
+		 * Where this snapshot came from. `cache` (the disk transcript cache)
+		 * paints messages PROVISIONALLY: the next runtime hydrate whose tail
+		 * covers their position drops any it does not contain. Default:
+		 * the runtime.
+		 */
+		opts?: { source?: "cache" | "runtime" },
 	) => void;
 	reset: () => void;
 
@@ -339,6 +396,70 @@ const optimisticIds = new Map<string, Set<string>>();
 // match: the server has not been told it exists, so nothing the server returns
 // can be a copy of it.
 const dispatchedOptimisticIds = new Map<string, Set<string>>();
+// Optimistic ids whose prompt-inbox row LANDED (see `markOptimisticInboxBacked`).
+// The idle sweep skips these: the control plane holds the message durably and
+// will deliver it, so "the session went idle and this was never echoed" is
+// not evidence it was lost.
+const inboxBackedOptimisticIds = new Map<string, Set<string>>();
+// optimistic id → the runtime id that superseded it, and the inverse. Written
+// at supersede time (SSE and hydrate), so a host can keep one identity for a
+// prompt across the swap. Bounded by the number of prompts sent from this tab
+// per session; released with the session.
+const optimisticEchoes = new Map<string, Map<string, string>>();
+const optimisticOrigins = new Map<string, Map<string, string>>();
+// Message ids the CONTROL PLANE still owns after the runtime confirmed them:
+// the echo (same id or re-minted) of an inbox-backed optimistic send. The
+// server can take such a message back out of the runtime and place it again
+// under a new id — a stranded mid-turn prompt being re-placed, a Stop taking
+// an unread prompt back into the queue. A `message.removed` for one of these
+// is not "the message is gone", it is "the message is between two ids": the
+// bubble is re-marked optimistic (dispatched, inbox-backed) and the next echo
+// supersedes it, instead of the bubble blinking out and a new one appearing.
+// Released with the session.
+const controlPlaneOwnedIds = new Map<string, Set<string>>();
+// Message ids the user explicitly CANCELLED (`DELETE .../prompts`). The
+// runtime may keep a part-less husk of the message (a busy loop refuses the
+// whole-message delete; the parts are emptied instead), and every later
+// transcript read would resurrect it as an empty bubble. A tombstoned id is
+// dropped from incoming reads and events. Released with the session.
+const cancelledMessageIds = new Map<string, Set<string>>();
+// Message ids that came from the DISK CACHE and have not yet been seen in a
+// runtime read. The cache is a first-paint accelerator; a message it holds
+// that the runtime's own tail — covering that message's position — does not,
+// never existed there (an optimistic stub mirrored to disk before its echo)
+// and must not outlive the first authoritative read.
+const cacheSourcedIds = new Map<string, Set<string>>();
+
+function recordOptimisticEcho(sessionID: string, optimisticID: string, echoID: string): void {
+	if (optimisticID === echoID) return;
+	// Chain through an earlier swap: a message that itself superseded an
+	// optimistic id keeps pointing the host at that ORIGINAL id, so a second
+	// re-placement does not change the identity the host keyed its bubble on.
+	const origin = optimisticOrigins.get(sessionID)?.get(optimisticID) ?? optimisticID;
+	let fwd = optimisticEchoes.get(sessionID);
+	if (!fwd) optimisticEchoes.set(sessionID, (fwd = new Map()));
+	fwd.set(origin, echoID);
+	if (origin !== optimisticID) fwd.set(optimisticID, echoID);
+	let rev = optimisticOrigins.get(sessionID);
+	if (!rev) optimisticOrigins.set(sessionID, (rev = new Map()));
+	rev.set(echoID, origin);
+}
+
+/** Forget every optimistic mark for one id — confirmed, superseded, or removed. */
+function releaseOptimisticId(sessionID: string, id: string): void {
+	untrackId(optimisticIds, sessionID, id);
+	untrackId(dispatchedOptimisticIds, sessionID, id);
+	untrackId(inboxBackedOptimisticIds, sessionID, id);
+}
+
+/** The runtime confirmed an inbox-backed optimistic send under `echoID`
+ *  (same id, or re-minted): the control plane still owns that message. */
+function releaseConfirmedOptimisticId(sessionID: string, optimisticID: string, echoID: string): void {
+	if (hasTrackedId(inboxBackedOptimisticIds, sessionID, optimisticID)) {
+		trackId(controlPlaneOwnedIds, sessionID, echoID);
+	}
+	releaseOptimisticId(sessionID, optimisticID);
+}
 
 function trackId(store: Map<string, Set<string>>, sessionID: string, id: string): void {
 	const bucket = store.get(sessionID);
@@ -366,6 +487,12 @@ function hasTrackedId(
 function forgetSessionIds(sessionID: string): void {
 	optimisticIds.delete(sessionID);
 	dispatchedOptimisticIds.delete(sessionID);
+	inboxBackedOptimisticIds.delete(sessionID);
+	optimisticEchoes.delete(sessionID);
+	optimisticOrigins.delete(sessionID);
+	controlPlaneOwnedIds.delete(sessionID);
+	cacheSourcedIds.delete(sessionID);
+	cancelledMessageIds.delete(sessionID);
 	// The joined rows hold the very message and part arrays this session's
 	// data is being dropped from. Left behind, they keep the transcript
 	// reachable and the drop achieves nothing.
@@ -464,15 +591,103 @@ const deltaActiveParts = new Map<string, Set<string>>();
 const deltaEventTails = new Map<string, Map<string, Set<string>>>();
 
 /** Session-scoped tracking for `session.error`'s stub assistant message (see
- *  the handler below) — same shape/reason as the maps above. A stub only
- *  ever stands in for a real assistant message that has not arrived yet;
- *  `hydrate` reconciles (drops) it the moment the server's own transcript
- *  contains a real one for this session, which is the promise the stub's own
- *  creation comment made but that nothing previously fulfilled. Released
- *  wholesale by `forgetSessionIds`/`reset()`; NOT cleared on idle/error — the
- *  stub message it names still lives in `messages[sessionID]` until hydrate
- *  reconciles it or the session itself ends. */
-const stubAssistantIds = new Map<string, Set<string>>();
+ *  the handler below) — same shape/reason as the maps above, except the value
+ *  is a MAP: stub message id → the id of the user message whose turn failed
+ *  (`null` only when the session held no user message at all).
+ *
+ *  The parent is tracked, not merely implied, because every question asked
+ *  about a stub afterwards is a question about its TURN. A stub stands in for
+ *  the assistant message that turn never produced, so `hydrate` may drop it
+ *  only once the server's transcript answers THAT turn — a session-wide "any
+ *  assistant message exists" test deleted the only record of a failure the
+ *  moment an EARLIER turn's reply arrived (the 2026-08-19 report: the first
+ *  `ModelNotFound` rendered nothing at all).
+ *
+ *  Released wholesale by `forgetSessionIds`/`reset()`; NOT cleared on
+ *  idle/error — the stub message it names still lives in `messages[sessionID]`
+ *  until hydrate reconciles it or the session itself ends. */
+const stubAssistantIds = new Map<string, Map<string, string | null>>();
+
+/** Remember `stubId` as this session's stand-in for the turn `parentId` opened. */
+function trackStub(sessionID: string, stubId: string, parentId: string | null): void {
+	const bucket = stubAssistantIds.get(sessionID);
+	if (bucket) bucket.set(stubId, parentId);
+	else stubAssistantIds.set(sessionID, new Map([[stubId, parentId]]));
+}
+
+function untrackStub(sessionID: string, stubId: string): void {
+	const bucket = stubAssistantIds.get(sessionID);
+	if (!bucket) return;
+	bucket.delete(stubId);
+	if (bucket.size === 0) stubAssistantIds.delete(sessionID);
+}
+
+/** The stub id for the turn `userId` opened.
+ *
+ *  Derived from the user message's own id, for two reasons. It is IDEMPOTENT —
+ *  a second `session.error` for the same turn finds the stub it already made
+ *  instead of appending another. And it SORTS immediately after that user
+ *  message: every id the store handles has the same length, so an id that
+ *  extends `userId` byte for byte precedes every id greater than `userId` and
+ *  follows `userId` itself. Position and `parentID` therefore agree, whichever
+ *  of the two a reader uses. */
+const stubIdFor = (userId: string) => `${userId}_error`;
+
+/** A stub id as seen from a list that has no tracking map to hand (`hydrate`'s
+ *  incoming server snapshot, which can never legitimately contain one). */
+const isStubShaped = (id: string) => id.endsWith("_error");
+
+/** Does `messages` hold an assistant message answering the turn `parentId`
+ *  opened? `parentID` is the linkage `groupMessagesIntoTurns` reads; the id
+ *  comparison covers a wire assistant message that carries none (ids ascend,
+ *  so a greater id is a later message). With no parent turn to speak of, any
+ *  assistant message answers. */
+function hasAssistantForTurn(
+	messages: readonly Message[],
+	parentId: string | null,
+): boolean {
+	return messages.some(
+		(m) =>
+			m.role === "assistant" &&
+			!isStubShaped(m.id) &&
+			(!parentId || m.parentID === parentId || (!m.parentID && m.id > parentId)),
+	);
+}
+
+/** Move this session's `session.error` stubs from the optimistic user message
+ *  `fromId` onto the server's own copy of that prompt, `toId`.
+ *
+ *  Both paths that retire an optimistic user message call this — `hydrate`'s
+ *  correlation and the `message.updated` echo — because a stub whose parent id
+ *  no longer names a message in the list has lost the only link that says which
+ *  turn failed, and `groupMessagesIntoTurns` would fall back to "the last turn
+ *  seen", i.e. the bottom of the thread. Returns the list unchanged when this
+ *  session has no stub on `fromId`. */
+function rekeyStubParent(
+	sessionID: string,
+	list: readonly Message[],
+	fromId: string,
+	toId: string,
+): Message[] {
+	const bucket = stubAssistantIds.get(sessionID);
+	if (!bucket) return list as Message[];
+	const moved = [...bucket.entries()].filter(([, parentId]) => parentId === fromId);
+	if (moved.length === 0) return list as Message[];
+	let next = [...list];
+	for (const [stubId] of moved) {
+		untrackStub(sessionID, stubId);
+		const idx = next.findIndex((m) => m.id === stubId);
+		if (idx === -1) continue;
+		const nextId = stubIdFor(toId);
+		trackStub(sessionID, nextId, toId);
+		const rekeyed = { ...next[idx], id: nextId, parentID: toId } as Message;
+		next.splice(idx, 1);
+		const parentIdx = next.findIndex((m) => m.id === toId);
+		if (parentIdx === -1) next = [...next, rekeyed];
+		else next.splice(parentIdx + 1, 0, rekeyed);
+	}
+	return next;
+}
 
 // ---------------------------------------------------------------------------
 // Session retention — how a transcript ever LEAVES memory again.
@@ -1058,9 +1273,55 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			trackId(dispatchedOptimisticIds, sessionID, messageID);
 	},
 
+	markOptimisticInboxBacked: (sessionID, messageID) => {
+		if (isOptimistic(sessionID, messageID))
+			trackId(inboxBackedOptimisticIds, sessionID, messageID);
+	},
+
+	optimisticEchoOf: (sessionID, optimisticID) =>
+		optimisticEchoes.get(sessionID)?.get(optimisticID),
+
+	optimisticOriginOf: (sessionID, echoID) => optimisticOrigins.get(sessionID)?.get(echoID),
+
+	isOptimisticMessage: (sessionID, messageID) => isOptimistic(sessionID, messageID),
+
+	forgetControlPlaneMessage: (sessionID, messageID) => {
+		untrackId(controlPlaneOwnedIds, sessionID, messageID);
+		releaseOptimisticId(sessionID, messageID);
+		trackId(cancelledMessageIds, sessionID, messageID);
+		get().removeMessage(sessionID, messageID);
+	},
+
+	registerOptimisticEcho: (sessionID, optimisticID, echoID) => {
+		if (!isOptimistic(sessionID, optimisticID)) return;
+		if (optimisticID === echoID) return;
+		recordOptimisticEcho(sessionID, optimisticID, echoID);
+	},
+
+	reclaimRemovedMessage: (sessionID, messageID) => {
+		// See `controlPlaneOwnedIds`: a removal of a message the control plane
+		// still owns is a re-placement in progress, not a deletion. Keep the
+		// message and its parts; put the optimistic marks back (dispatched, so
+		// the ordinal echo match may claim it; inbox-backed, so the idle sweep
+		// leaves it) and let the next echo supersede it.
+		if (!hasTrackedId(controlPlaneOwnedIds, sessionID, messageID)) return false;
+		const list = get().messages[sessionID];
+		const message = list?.find((m) => m.id === messageID);
+		if (!message || message.role !== "user") return false;
+		untrackId(controlPlaneOwnedIds, sessionID, messageID);
+		trackId(optimisticIds, sessionID, messageID);
+		trackId(dispatchedOptimisticIds, sessionID, messageID);
+		trackId(inboxBackedOptimisticIds, sessionID, messageID);
+		return true;
+	},
+
 	optimisticRemove: (sessionID, messageID) => {
-		untrackId(optimisticIds, sessionID, messageID);
-		untrackId(dispatchedOptimisticIds, sessionID, messageID);
+		// Only an OPTIMISTIC message can be removed this way. One the runtime has
+		// confirmed (same-id echo, or the store never tracked it) is the
+		// transcript's; a host that removes its inbox row must not take the
+		// persisted message with it.
+		if (!isOptimistic(sessionID, messageID)) return;
+		releaseOptimisticId(sessionID, messageID);
 		set((s) => {
 			const list = s.messages[sessionID];
 			if (!list) return s;
@@ -1082,14 +1343,17 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 		set((s) => {
 			const list = s.messages[sessionID];
 			if (!list) return s;
+			// An inbox-backed message is held by the control plane and will be
+			// delivered; a local idle is not evidence it was lost. It stays.
 			const optIds = list
-				.filter((m) => isOptimistic(sessionID, m.id))
+				.filter(
+					(m) =>
+						isOptimistic(sessionID, m.id) &&
+						!hasTrackedId(inboxBackedOptimisticIds, sessionID, m.id),
+				)
 				.map((m) => m.id);
 			if (optIds.length === 0) return s;
-			for (const id of optIds) {
-				untrackId(optimisticIds, sessionID, id);
-				untrackId(dispatchedOptimisticIds, sessionID, id);
-			}
+			for (const id of optIds) releaseOptimisticId(sessionID, id);
 			const filtered = list.filter((m) => !optIds.includes(m.id));
 			const newParts = { ...s.parts };
 			for (const id of optIds) delete newParts[id];
@@ -1201,39 +1465,78 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 		return result;
 	},
 
-	hydrate: (sessionID, msgs) =>
+	hydrate: (sessionID, msgs, opts) =>
 		set((s) => {
 			// An authoritative load — the disk repaint itself, or a reconcile —
 			// re-establishes the session, so its entry is no longer a fragment.
 			evictedSessions.delete(sessionID);
 			const cmp = (a: string, b: string) =>
 				a < b ? -1 : a > b ? 1 : 0;
+			const tombstones = cancelledMessageIds.get(sessionID);
 			const incoming = msgs
-				.filter((m) => !!m?.info?.id)
+				.filter((m) => !!m?.info?.id && !tombstones?.has(m.info.id))
 				.map((m) => m.info)
 				.sort((a, b) => cmp(a.id, b.id));
+			const fromCache = opts?.source === "cache";
+			if (fromCache) {
+				for (const m of incoming) trackId(cacheSourcedIds, sessionID, m.id);
+			}
+			// A RUNTIME read settles the cache's provisional messages: the ones
+			// it contains are real; the ones it lacks but whose position it
+			// COVERS (at or above the oldest message it returned) never existed
+			// there and are dropped. Older ones are history the bounded tail did
+			// not reach — kept, still provisional.
+			let droppedPhantoms: Set<string> | null = null;
+			const provisional = fromCache ? undefined : cacheSourcedIds.get(sessionID);
+			if (provisional && provisional.size > 0 && incoming.length > 0) {
+				const oldestIncoming = incoming[0].id;
+				const incomingIds = new Set(incoming.map((m) => m.id));
+				for (const id of [...provisional]) {
+					if (incomingIds.has(id)) {
+						untrackId(cacheSourcedIds, sessionID, id);
+						continue;
+					}
+					if (cmp(id, oldestIncoming) >= 0 && !isOptimistic(sessionID, id)) {
+						untrackId(cacheSourcedIds, sessionID, id);
+						(droppedPhantoms ??= new Set()).add(id);
+					}
+				}
+			}
 
-			// T16 — reconcile a `session.error` stub assistant message
-			// (see `stubAssistantIds` and the `session.error` handler above). The
-			// stub only ever stood in for a real assistant message that had not
-			// arrived yet, sorted BELOW every server id (`ascendingId('msg')`) —
-			// wrong once real data exists. The moment the server's OWN transcript
-			// contains a real assistant message for this session, every
-			// currently-tracked stub for it is stale and is dropped below rather
-			// than kept alongside the real one at the wrong position. If the
-			// incoming snapshot has no assistant message at all yet, nothing has
-			// arrived to reconcile against, so the stub is left untouched.
+			// T16 — a `session.error` stub assistant message is reconciled
+			// PER TURN, after the optimistic correlation below has run (see
+			// `pendingStubs`). It only ever stood in for the assistant message
+			// its own turn never produced, so the question is not "does this
+			// session have an assistant message" — an earlier turn's answer is
+			// no answer at all — but "does the server now answer THAT turn".
+
+			// Re-adopt a stub that arrives IN the snapshot. The transcript cache
+			// mirrors `messages[sessionID]` to IndexedDB, stubs included, so the
+			// first paint after a reload brings one back — while
+			// `stubAssistantIds` (module state) did not survive the reload. An
+			// unadopted stub is unreconcilable: it would sit beside the server's
+			// own reply forever. Only the runtime ever produces these ids, so
+			// nothing else can be mistaken for one.
+			for (const info of incoming) {
+				if (info.role !== "assistant" || !isStubShaped(info.id)) continue;
+				if (!(info as { error?: unknown }).error) continue;
+				if (stubAssistantIds.get(sessionID)?.has(info.id)) continue;
+				trackStub(sessionID, info.id, info.parentID ?? null);
+			}
+
 			const trackedStubIds = stubAssistantIds.get(sessionID);
-			const reconcileStubs =
-				!!trackedStubIds &&
-				trackedStubIds.size > 0 &&
-				incoming.some((m) => m.role === "assistant");
-			if (reconcileStubs) stubAssistantIds.delete(sessionID);
+			/** Stubs held back from the merge below until their parent turn is
+			 *  known (an optimistic parent may be superseded by the server's own
+			 *  copy in this very snapshot). */
+			const pendingStubs: Message[] = [];
 
 			// Merge incoming messages with existing ones — never delete messages
 			// that exist in the sync store but are missing from the fetch (they may
 			// be from a newer turn that the server hasn't persisted yet).
-			const existing = s.messages[sessionID] ?? [];
+			const existingAll = s.messages[sessionID] ?? [];
+			const existing = droppedPhantoms
+				? existingAll.filter((m) => !droppedPhantoms!.has(m.id))
+				: existingAll;
 			const merged: typeof existing = [];
 			const seen = new Set<string>();
 
@@ -1251,6 +1554,21 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			//
 			// The rule is now identity-based, in two passes.
 			const existingIds = new Set(existing.map((m) => m.id));
+
+			// The echo may arrive under the optimistic message's OWN id: the host
+			// minted the wire id and painted the bubble with it. That is a
+			// confirmation, not a duplicate — release the marks so the message is
+			// ordinary from here (the sweep leaves it alone, real parts win), and
+			// bridge its optimistic parts until real ones land.
+			for (const m of incoming) {
+				if (m.role !== "user" || !isOptimistic(sessionID, m.id)) continue;
+				releaseConfirmedOptimisticId(sessionID, m.id, m.id);
+				const optimisticParts = s.parts[m.id];
+				const entry = msgs.find((x) => x.info.id === m.id);
+				if ((entry?.parts?.length ?? 0) === 0 && optimisticParts?.length) {
+					trackId(bridgedPartIds, sessionID, m.id);
+				}
+			}
 
 			// Pass 0 — candidate echoes. A real user message we have NEVER seen
 			// before may be the server's copy of something still in flight. One we
@@ -1291,10 +1609,11 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			const unmatchedOptimisticUsers: typeof existing = [];
 			for (const m of existing) {
 				if (!seen.has(m.id)) {
-					if (reconcileStubs && trackedStubIds!.has(m.id)) {
-						// Superseded by a real assistant message this same hydrate
-						// snapshot introduced — drop it, don't reinsert it below the
-						// real data at its stale `ascendingId` position.
+					if (trackedStubIds?.has(m.id)) {
+						// Placed (or dropped) after the correlation passes below,
+						// because where it belongs depends on what happened to the
+						// user message it is parented to.
+						pendingStubs.push(m);
 						continue;
 					}
 					if (isOptimistic(sessionID, m.id)) {
@@ -1327,12 +1646,28 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			// duplicate of anything the server holds, so it is never eligible.
 			// That restriction is what keeps a message sent from another tab from
 			// consuming this tab's in-flight bubble.
-			const claimable = candidateEchoes.filter((m) => unclaimedEchoes.has(m.id));
+			const claimed = new Set<string>();
+			for (const m of unmatchedOptimisticUsers) {
+				// Alias first: the inbox row announced this message's echo id.
+				const alias = optimisticEchoes.get(sessionID)?.get(m.id);
+				if (alias && unclaimedEchoes.has(alias) && !claimed.has(alias)) {
+					claimed.add(alias);
+					supersededOptimistic.push(m.id);
+					supersededBy.set(m.id, alias);
+				}
+			}
+			const claimable = candidateEchoes.filter(
+				(m) => unclaimedEchoes.has(m.id) && !claimed.has(m.id),
+			);
 			let next = 0;
 			for (const m of unmatchedOptimisticUsers) {
-				const echo = isDispatched(sessionID, m.id)
-					? claimable[next]
-					: undefined;
+				if (supersededBy.has(m.id)) continue;
+				const echo =
+					isDispatched(sessionID, m.id) &&
+					// Known-different echo → never consume someone else's.
+					!optimisticEchoes.get(sessionID)?.get(m.id)
+						? claimable[next]
+						: undefined;
 				if (echo) {
 					next += 1;
 					supersededOptimistic.push(m.id);
@@ -1342,14 +1677,74 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 				}
 			}
 
-			// Clean up superseded optimistic IDs
+			// Clean up superseded optimistic IDs, remembering which runtime id
+			// each one became.
 			for (const id of supersededOptimistic) {
-				untrackId(optimisticIds, sessionID, id);
-				untrackId(dispatchedOptimisticIds, sessionID, id);
+				const echoId = supersededBy.get(id);
+				if (echoId) {
+					releaseConfirmedOptimisticId(sessionID, id, echoId);
+					recordOptimisticEcho(sessionID, id, echoId);
+				} else {
+					releaseOptimisticId(sessionID, id);
+				}
 			}
 			// Append surviving optimistic messages at the end
 			for (const m of deferredOptimistic) {
 				merged.push(m);
+			}
+
+			// Now place (or retire) each `session.error` stub, with its turn
+			// finally settled. Three outcomes, in order:
+			//
+			//  - its user message was superseded by the server's own copy in this
+			//    snapshot → the stub follows it, re-keyed onto the real id;
+			//  - the server now holds a real assistant message for that turn →
+			//    the stub was a stand-in for exactly that message, so it goes;
+			//  - otherwise → it stays, directly after its user message. This is
+			//    the case the reported bug turned on: the `reconcileTail` that
+			//    every `session.error` triggers returns a transcript with NO
+			//    reply for the failed turn, and dropping the stub there left the
+			//    user staring at their own prompt and nothing else.
+			for (const stub of pendingStubs) {
+				const trackedParent = trackedStubIds?.get(stub.id) ?? null;
+				const parentId = (trackedParent && supersededBy.get(trackedParent)) || trackedParent;
+				untrackStub(sessionID, stub.id);
+				// The server DOES hold a reply for this turn — the stub stood in
+				// for exactly that message, so it goes. Its error moves onto the
+				// real message first, unless the server's copy carries one of its
+				// own: `session.error` is the runtime's report of THIS turn
+				// failing, and the transcript read that follows it does not always
+				// carry the failure back (the same race
+				// `use-opencode-events`'s cache patch exists for). Dropping the
+				// stub against an error-free server copy would erase the only
+				// evidence the turn failed.
+				if (hasAssistantForTurn(incoming, parentId)) {
+					const replyIdx = merged.findIndex(
+						(m) =>
+							m.role === "assistant" &&
+							!isStubShaped(m.id) &&
+							(!parentId || m.parentID === parentId || (!m.parentID && m.id > parentId)),
+					);
+					const reply = replyIdx === -1 ? undefined : merged[replyIdx];
+					const stubError = (stub as { error?: unknown }).error;
+					if (reply && !(reply as { error?: unknown }).error && stubError) {
+						merged[replyIdx] = { ...reply, error: stubError } as Message;
+					}
+					continue;
+				}
+				const stubId = parentId ? stubIdFor(parentId) : stub.id;
+				const placed =
+					stubId === stub.id && (stub as { parentID?: string }).parentID === (parentId ?? undefined)
+						? stub
+						: ({ ...stub, id: stubId, ...(parentId ? { parentID: parentId } : {}) } as Message);
+				trackStub(sessionID, stubId, parentId);
+				const parentIdx = parentId ? merged.findIndex((m) => m.id === parentId) : -1;
+				if (parentIdx !== -1) {
+					merged.splice(parentIdx + 1, 0, placed);
+					continue;
+				}
+				const r = Binary.search(merged, placed.id, (x) => x.id);
+				if (!r.found) merged.splice(r.index, 0, placed);
 			}
 
 			// Merge parts: for each message, reconcile by part ID.
@@ -1358,6 +1753,7 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			// Otherwise, incoming parts win (server is authoritative), but keep
 			// any extra parts from SSE that aren't in the fetch response.
 			const newParts = { ...s.parts };
+			if (droppedPhantoms) for (const id of droppedPhantoms) delete newParts[id];
 			// When superseding an optimistic user message, bridge its parts to
 			// the real user message ID if the server hasn't sent parts yet.
 			// Mirrors the message.updated SSE handler (see above) — without
@@ -1470,6 +1866,9 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 	reset: () => {
 		optimisticIds.clear();
 		dispatchedOptimisticIds.clear();
+		inboxBackedOptimisticIds.clear();
+		optimisticEchoes.clear();
+		optimisticOrigins.clear();
 		bridgedPartIds.clear();
 		deltaActiveParts.clear();
 		deltaEventTails.clear();
@@ -1517,10 +1916,25 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			case "message.updated": {
 				const info = (event.properties as { info: Message }).info;
 				if (!info?.sessionID) return;
+				// The user cancelled this message; the runtime's husk stays dead.
+				if (cancelledMessageIds.get(info.sessionID)?.has(info.id)) return;
 					// When a real user message arrives from the server, swap out the
 				// optimistic message(s) in a SINGLE atomic set() call.
 				// This prevents the intermediate render where the user bubble
 				// vanishes (optimistic removed) before the real one appears.
+				if (info.role === "user" && isOptimistic(info.sessionID, info.id)) {
+					// The echo under the optimistic message's OWN id (the host minted
+					// the wire id and painted with it): confirmed in place. Release the
+					// marks — it is an ordinary message from here — and bridge the
+					// optimistic parts until the real ones arrive, so the bubble never
+					// blinks empty and never shows both.
+					releaseOptimisticId(info.sessionID, info.id);
+					if (get().parts[info.id]?.length) {
+						trackId(bridgedPartIds, info.sessionID, info.id);
+					}
+					store.upsertMessage(info.sessionID, info);
+					return;
+				}
 				if (info.role === "user" && !isOptimistic(info.sessionID, info.id)) {
 					const msgs = get().messages[info.sessionID];
 					if (msgs) {
@@ -1572,14 +1986,35 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 						// matching: at `message.updated` time the confirmed message
 						// usually has no parts in the store yet (they arrive separately
 						// via `message.part.updated`).
+						// A pre-registered alias (`registerOptimisticEcho`) is an identity
+						// match: the row named this echo id before it arrived.
+						const byAlias = optimisticUsers.find(
+							(m) => optimisticEchoes.get(info.sessionID)?.get(m.id) === info.id,
+						);
+						// The ordinal guess is only safe when there is exactly ONE
+						// in-flight send it could be. With a burst in flight, a
+						// part-less echo that matches neither a part id nor a
+						// registered alias WAITS: the hydrate that follows carries
+						// the parts (identity match), and consuming the oldest
+						// bubble here handed one message's echo another message's
+						// text (measured: the first bubble of a burst vanished).
+						const eligible = optimisticUsers.filter(
+							(m) =>
+								isDispatched(info.sessionID, m.id) &&
+								// An optimistic message whose OWN echo is known to be a
+								// DIFFERENT id must not be consumed by someone else's.
+								!optimisticEchoes.get(info.sessionID)?.get(m.id),
+						);
 						const matched =
-							byPartId ?? optimisticUsers.find((m) => isDispatched(info.sessionID, m.id));
+							byPartId ?? byAlias ?? (eligible.length === 1 ? eligible[0] : undefined);
+						if (!matched && eligible.length > 1) return;
 						const optIds = matched ? [matched.id] : [];
 						if (optIds.length > 0) {
-							// Clean up optimistic tracking
+							// Clean up optimistic tracking, remembering the runtime id
+							// each superseded message became.
 							for (const id of optIds) {
-								untrackId(optimisticIds, info.sessionID, id);
-								untrackId(dispatchedOptimisticIds, info.sessionID, id);
+								releaseConfirmedOptimisticId(info.sessionID, id, info.id);
+								recordOptimisticEcho(info.sessionID, id, info.id);
 							}
 							// Atomic: remove optimistic + insert real in one set()
 							set((s) => {
@@ -1588,11 +2023,18 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 								const without = list.filter((m) => !optIds.includes(m.id));
 								// Insert the real message at sorted position
 								const r = Binary.search(without, info.id, (m) => m.id);
-								const next = [...without];
+								let next = [...without];
 								if (r.found) {
 									next[r.index] = info;
 								} else {
 									next.splice(r.index, 0, info);
+								}
+								// A turn that failed before this confirmation arrived
+								// has a `session.error` stub keyed to the optimistic id
+								// being retired here. Re-key it, or its error detaches
+								// from the turn and drifts to the bottom of the thread.
+								for (const id of optIds) {
+									next = rekeyStubParent(info.sessionID, next, id, info.id);
 								}
 								// Bridge optimistic parts to the real message ID so
 								// the user bubble never flickers empty while waiting
@@ -1627,6 +2069,7 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 					messageID: string;
 				};
 				if (!props.sessionID || !props.messageID) return;
+				if (store.reclaimRemovedMessage(props.sessionID, props.messageID)) return;
 				store.removeMessage(props.sessionID, props.messageID);
 				return;
 			}
@@ -1808,47 +2251,76 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			deltaActiveParts.delete(sid);
 			deltaEventTails.delete(sid);
 
-			// Patch the error onto the last assistant message in the sync store.
-			// If no assistant message exists yet, create a temporary one so the
-			// error is visible immediately. The event handler in
-			// use-opencode-events.ts will also fetch real messages from the
-			// server which will bring in the authoritative data via hydrate().
+			// Attach the error to the TURN THAT FAILED, which is the turn the
+			// last user message opened: `session.error` terminates the turn the
+			// runtime was running, and the runtime runs one at a time.
+			//
+			// When that turn already produced an assistant message the error is
+			// patched onto it, as before. When it produced none — the whole
+			// class of failures that die before generation starts, e.g.
+			// `ModelNotFound`, which arrives ~2ms after the prompt — a stub
+			// assistant message stands in for it, parented to that user message
+			// and positioned directly after it.
+			//
+			// It used to be "the last assistant message ANYWHERE, else append a
+			// stub at the end", and both halves put the error in the wrong turn:
+			// the patch landed on the previous turn's answer (where the
+			// `reconcileTail` hydrate that follows every `session.error` then
+			// overwrote it with the server's error-free copy, so the failure
+			// rendered NOTHING), and the appended stub rode the bottom of the
+			// thread, reappearing under whichever prompt came next.
+			//
+			// The event handler in use-opencode-events.ts also fetches real
+			// messages from the server, which brings in the authoritative data
+			// via hydrate().
 			set((s) => {
 				const msgs = s.messages[sid] ?? [];
-				// Find last assistant message and patch .error onto it
+				// The prompt this error answers.
+				let userIdx = -1;
 				for (let i = msgs.length - 1; i >= 0; i--) {
-					const msg = msgs[i];
-					if (msg.role === "assistant") {
-						if (msg.error) return s; // already has error
-						const next = [...msgs];
-						// `error` may be the client-synthesized `SyntheticAbortError`
-						// (see `MessageError`), which the SDK's own `AssistantMessage.error`
-						// union doesn't declare — the assertion is the documented, narrow
-						// exception for that one extra shape.
-						next[i] = { ...msg, error } as typeof msg;
-						return { messages: { ...s.messages, [sid]: next } };
+					if (msgs[i].role === "user") {
+						userIdx = i;
+						break;
 					}
 				}
+				const userId = userIdx === -1 ? null : msgs[userIdx].id;
 
-				// No assistant message yet — create a stub so the error shows.
-				// Tracked in `stubAssistantIds` (T16) so `hydrate` can
-				// reconcile it away once a real assistant message for this
-				// session lands — see that map's doc comment and the
-				// reconciliation in `hydrate` below. `ascendingId('msg')` sorts
-				// BELOW every server id, which is fine as a placeholder position
-				// but wrong once real data exists; that is exactly what the
-				// reconciliation fixes.
-				const stubId = ascendingId("msg");
-				trackId(stubAssistantIds, sid, stubId);
+				// An assistant message that already belongs to THAT turn takes
+				// the error. Scanning back only as far as the user message is
+				// what keeps an earlier turn's answer out of it.
+				for (let i = msgs.length - 1; i > userIdx; i--) {
+					const msg = msgs[i];
+					if (msg.role !== "assistant") continue;
+					if (userId && msg.parentID && msg.parentID !== userId) continue;
+					if (msg.error) return s; // already has error
+					const next = [...msgs];
+					// `error` may be the client-synthesized `SyntheticAbortError`
+					// (see `MessageError`), which the SDK's own `AssistantMessage.error`
+					// union doesn't declare — the assertion is the documented, narrow
+					// exception for that one extra shape.
+					next[i] = { ...msg, error } as typeof msg;
+					return { messages: { ...s.messages, [sid]: next } };
+				}
+
+				// No assistant message for this turn yet — stand one in so the
+				// error renders under the prompt it answers. Tracked in
+				// `stubAssistantIds` (T16) with its parent so `hydrate` can
+				// reconcile it away once the server's own transcript answers
+				// THAT turn — see that map's doc comment and the reconciliation
+				// in `hydrate` below.
+				const stubId = userId ? stubIdFor(userId) : ascendingId("msg");
+				if (msgs.some((m) => m.id === stubId)) return s;
+				trackStub(sid, stubId, userId);
 				const stubMsg: Message = {
 					id: stubId,
 					sessionID: sid,
 					role: "assistant",
+					...(userId ? { parentID: userId } : {}),
 					error,
 				} as Message;
-				return {
-					messages: { ...s.messages, [sid]: [...msgs, stubMsg] },
-				};
+				const next = [...msgs];
+				next.splice(userIdx === -1 ? next.length : userIdx + 1, 0, stubMsg);
+				return { messages: { ...s.messages, [sid]: next } };
 			});
 			return;
 		}

@@ -12,7 +12,8 @@ import { describe, expect, test, beforeAll, afterAll } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { accounts, iamPolicies, iamRoleActions, iamRoles, projects, serviceAccounts } from '@kortix/db';
 import { db } from '../shared/db';
-import { authorizeV2 } from '../iam/engine-v2';
+import { authorize } from '../iam/authorize';
+import { actorForServiceAccount } from '../iam/actor';
 import { ACCOUNT_ACTIONS, PROJECT_ACTIONS } from '../iam';
 
 const ACCOUNT = crypto.randomUUID();
@@ -37,7 +38,7 @@ async function bindRole(principalId: string, scopeType: 'account' | 'project', s
   await db.insert(iamPolicies).values({ accountId: ACCOUNT, principalType: 'token', principalId, roleId, scopeType, scopeId });
 }
 const can = async (saId: string, action: string, target: { type: 'project'; id: string } | undefined) =>
-  (await authorizeV2(saId, ACCOUNT, action, target)).allowed;
+  (await authorize(actorForServiceAccount(saId, ACCOUNT), action, target ?? { type: 'account' })).allowed;
 
 beforeAll(async () => {
   await db.insert(accounts).values({ accountId: ACCOUNT, name: 'sa-authz-test' });
@@ -64,7 +65,7 @@ describe('service-account authorization (standing identity)', () => {
   test('an SA with NO policy is fail-closed (denied everything)', async () => {
     const sa = await seedSA();
     expect(await can(sa, PROJECT_ACTIONS.PROJECT_READ, proj(PROJECT))).toBe(false);
-    expect((await authorizeV2(sa, ACCOUNT, PROJECT_ACTIONS.PROJECT_READ, proj(PROJECT))).reason).toBe(
+    expect((await authorize(actorForServiceAccount(sa, ACCOUNT), PROJECT_ACTIONS.PROJECT_READ, proj(PROJECT))).reason).toBe(
       'service_account_scope_insufficient',
     );
   });
@@ -73,14 +74,14 @@ describe('service-account authorization (standing identity)', () => {
     const sa = await seedSA('disabled');
     await bindRole(sa, 'project', PROJECT, [PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE]);
     expect(await can(sa, PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE, proj(PROJECT))).toBe(false);
-    expect((await authorizeV2(sa, ACCOUNT, PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE, proj(PROJECT))).reason).toBe('not_a_member');
+    expect((await authorize(actorForServiceAccount(sa, ACCOUNT), PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE, proj(PROJECT))).reason).toBe('not_a_member');
   });
 
   test('an account-scoped SA policy grants an account action (and reaches every project)', async () => {
     const sa = await seedSA();
     await bindRole(sa, 'account', null, [ACCOUNT_ACTIONS.MEMBER_READ, PROJECT_ACTIONS.PROJECT_READ]);
     // Account-scoped action allowed at account scope.
-    expect((await authorizeV2(sa, ACCOUNT, ACCOUNT_ACTIONS.MEMBER_READ)).allowed).toBe(true);
+    expect((await authorize(actorForServiceAccount(sa, ACCOUNT), ACCOUNT_ACTIONS.MEMBER_READ)).allowed).toBe(true);
     // An account-scoped policy also confers its project actions on EVERY project.
     expect(await can(sa, PROJECT_ACTIONS.PROJECT_READ, proj(PROJECT))).toBe(true);
     expect(await can(sa, PROJECT_ACTIONS.PROJECT_READ, proj(OTHER_PROJECT))).toBe(true);

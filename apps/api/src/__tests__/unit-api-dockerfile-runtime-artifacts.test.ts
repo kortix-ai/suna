@@ -12,6 +12,10 @@ describe('API image sandbox runtime artifacts', () => {
       'COPY apps/sandbox/opencode-warmup.sh ./apps/sandbox/opencode-warmup.sh',
     );
     expect(dockerfile).toContain('COPY apps/sandbox/MACHINE.md ./apps/sandbox/MACHINE.md');
+    expect(dockerfile).toContain(
+      'COPY apps/sandbox/MACHINE.fast.md ./apps/sandbox/MACHINE.fast.md',
+    );
+    expect(dockerfile).toContain('COPY apps/sandbox/lazy-tools ./apps/sandbox/lazy-tools');
   });
 
   test('refreshes the compiled agent time after the final source copy', () => {

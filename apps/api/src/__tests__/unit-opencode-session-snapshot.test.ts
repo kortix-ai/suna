@@ -119,9 +119,15 @@ describe('scheduleOpencodeSnapshotSync', () => {
         return r;
       },
     };
-    scheduleOpencodeSnapshotSync({ sessionId: 's', projectId: 'p', externalId: 'ext' }, opts);
+    scheduleOpencodeSnapshotSync(
+      { sessionId: 's', projectId: 'p', externalId: 'ext', userId: 'u1' },
+      opts,
+    );
     // A second schedule while the first is in flight is deduped.
-    scheduleOpencodeSnapshotSync({ sessionId: 's', projectId: 'p', externalId: 'ext' }, opts);
+    scheduleOpencodeSnapshotSync(
+      { sessionId: 's', projectId: 'p', externalId: 'ext', userId: 'u1' },
+      opts,
+    );
     expect(pendingSnapshotSyncs()).toBe(1);
     await waitFor(() => calls.length === 2 && pendingSnapshotSyncs() === 0);
     expect(calls).toEqual(['s', 's']);
@@ -132,7 +138,7 @@ describe('scheduleOpencodeSnapshotSync', () => {
     await expect(
       (async () => {
         scheduleOpencodeSnapshotSync(
-          { sessionId: 's2', projectId: 'p', externalId: 'ext' },
+          { sessionId: 's2', projectId: 'p', externalId: 'ext', userId: 'u1' },
           {
             firstMs: 0,
             retryMs: 0,
@@ -145,5 +151,32 @@ describe('scheduleOpencodeSnapshotSync', () => {
         await waitFor(() => pendingSnapshotSyncs() === 0);
       })(),
     ).resolves.toBeUndefined();
+  });
+
+  // REGRESSION (staging release gate, SESS-10). The scheduler used to drop the
+  // caller's `userId` on the floor. `sandboxOpencodeEndpoint` mints the
+  // X-Kortix-User-Context header only when a userId is present, and the daemon's
+  // auth gate 401s every non-`/kortix/*` path — `GET /session` included —
+  // without it (apps/kortix-sandbox-agent-server/src/proxy.ts). So the list
+  // degraded to `unreachable`, `syncOpencodeSessionSnapshot` returned the row
+  // untouched, and `metadata.opencode_sessions` was NEVER written: 0 of 2804
+  // staging sessions created in 2026-08 had a populated snapshot. Pin that the
+  // identity survives the whole hop from schedule to sync.
+  it('carries the caller userId through to the sync that talks to the daemon', async () => {
+    const seen: Array<string | undefined> = [];
+    scheduleOpencodeSnapshotSync(
+      { sessionId: 's3', projectId: 'p', externalId: 'ext', userId: 'user-42' },
+      {
+        firstMs: 0,
+        retryMs: 0,
+        loadRow: async () => row({ sessionId: 's3' }),
+        sync: async ({ row: r, userId }: { row: ProjectSessionRow; userId?: string }) => {
+          seen.push(userId);
+          return r;
+        },
+      },
+    );
+    await waitFor(() => seen.length === 2 && pendingSnapshotSyncs() === 0);
+    expect(seen).toEqual(['user-42', 'user-42']);
   });
 });

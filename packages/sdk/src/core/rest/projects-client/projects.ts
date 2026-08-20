@@ -34,7 +34,6 @@ export type FeatureFlagKey =
   | 'meta_agent'
   | 'apps'
   | 'monitors'
-  | 'network_boundary_shim'
   | 'warm_sessions';
 
 /**
@@ -54,7 +53,6 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'meta_agent',
   'apps',
   'monitors',
-  'network_boundary_shim',
   'warm_sessions',
 ] as const;
 

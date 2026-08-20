@@ -199,6 +199,12 @@ export const qk = {
     /** One connector's config — `getConnectorConfig(id, slug)`. */
     connectorConfig: (id: string, slug: string) =>
       [...qk.project.connectors(id), slug] as const,
+    /** One connector's OAuth2 authorization discovery —
+     *  `discoverConnectionOAuth2Resource(id, connectionId)`. Keyed by connector
+     *  slug, not connection id: the probe reads the connector's server, and the
+     *  connection is created on demand to scope it. */
+    connectorOAuth2Discovery: (id: string, slug: string) =>
+      [...qk.project.connectorConfig(id, slug), 'oauth2-discovery'] as const,
 
     access: (id: string) => [...qk.project.scope(id), 'access'] as const,
     accessRequests: (id: string) => [...qk.project.access(id), 'requests'] as const,

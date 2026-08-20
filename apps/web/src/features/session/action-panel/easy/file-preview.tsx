@@ -35,6 +35,7 @@ import {
   useKortixComputerStore,
   useToggleExpanded,
 } from '@/stores/kortix-computer-store';
+import { isSandboxNotReadyError } from '@kortix/sdk';
 import { useRuntimeConnectionStore } from '@kortix/sdk/react';
 import {
   CheckIcon as Check,
@@ -395,7 +396,12 @@ export function FilePreview({
 
   // The rich renderers fetch their own bytes (and stream the big ones), so
   // pulling the whole file into a string here first would be wasted work.
-  const { data, isLoading, isError } = useFileContent(path, { enabled: !rich });
+  const { data, isLoading, isError, error } = useFileContent(path, { enabled: !rich });
+
+  // A readiness 503 means the sandbox is parked or booting — a pending state,
+  // never a failure. `useFileContent` keeps polling while this is true, so the
+  // content replaces the waking notice on its own.
+  const sandboxWaking = isError && isSandboxNotReadyError(error);
 
   // A file that cannot be opened has no shape, and `openDetail` no longer
   // clears the ratio on the way in for anything that CAN measure (see
@@ -487,12 +493,21 @@ export function FilePreview({
         onPresent={onPresent}
       >
         <Centered>
-          <FileWarning className="size-5" />
-          <span>
-            {!sandboxAlive
-              ? "This session's workspace has ended, so its files can't be opened anymore."
-              : "This file couldn't be opened."}
-          </span>
+          {sandboxWaking ? (
+            <>
+              <Loading className="size-5" />
+              <span>Waking up the workspace… this file will load automatically.</span>
+            </>
+          ) : (
+            <>
+              <FileWarning className="size-5" />
+              <span>
+                {!sandboxAlive
+                  ? "This session's workspace has ended, so its files can't be opened anymore."
+                  : "This file couldn't be opened."}
+              </span>
+            </>
+          )}
         </Centered>
       </PreviewShell>
     );

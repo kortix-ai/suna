@@ -175,16 +175,12 @@ describe('materializeSecretDelivery', () => {
     expect(minted).toEqual(['secret-provider']);
   });
 
-  test('mints a handle ROW for a network-boundary secret but exports nothing', async () => {
-    // The broker route needs an active handle row (it looks the secret up by
-    // secretId and executes against the row's policy snapshot). Boundary
-    // secrets never got one, so a boundary relay died on
-    // `session_secret_handle_required` even once the strategy gate allowed it.
-    //
-    // The row is required; the export is forbidden. "The guest receives
-    // nothing — no value, no alias, no placeholder" is the property that makes
-    // a boundary secret a boundary secret, so the handle must NOT be assigned
-    // to env the way the broker branch does.
+  test('an egress-enforced secret delivers its HANDLE, never its value', async () => {
+    // docs/specs/2026-08-19-secrets-exposure-usage-model.md §5. This row used
+    // to mint the handle and export nothing at all, which left the agent with
+    // an unset variable and no way to spend the secret it had been granted.
+    // The handle is what makes the mechanism transparent: an ordinary HTTP
+    // client sends it and the relay substitutes the value server-side.
     const boundary = row('gh', 'GITHUB_TEST', {
       strategy: 'egress',
       consumer: 'network',
@@ -205,12 +201,29 @@ describe('materializeSecretDelivery', () => {
       },
     });
 
-    // The row was minted...
+    // The row was minted — the relay looks the secret up by it...
     expect(minted).toEqual(['secret-gh']);
-    // ...and the guest got nothing: not the value, not the handle, not the key.
-    expect(env).toEqual({});
-    expect(JSON.stringify(env)).not.toContain('kortix-handle');
+    // ...the KEY carries the handle, and the value never enters the box.
+    expect(env).toEqual({ GITHUB_TEST: 'kortix-handle' });
     expect(JSON.stringify(env)).not.toContain('value-of-gh');
+  });
+
+  test('an egress-enforced row with no policy still delivers nothing', async () => {
+    // There is nothing to freeze into the handle's snapshot, so the row is
+    // dropped instead of minted — a mint that throws here would take the whole
+    // env snapshot, and the session boot behind it, down with it.
+    const boundary = row('gh', 'GITHUB_TEST', { strategy: 'egress', consumer: 'network' });
+    const env = envFor([boundary]);
+
+    await materializeSecretDelivery([boundary], env, {
+      sessionId: 'session-1',
+      grantEnv: ['gh'],
+      mintHandleFor: async () => {
+        throw new Error('mintHandleFor must not be called without a policy');
+      },
+    });
+
+    expect(env).toEqual({});
   });
 
   test('mints no handle for a boundary secret the agent is not granted', async () => {

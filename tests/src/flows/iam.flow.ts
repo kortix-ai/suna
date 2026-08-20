@@ -1315,3 +1315,467 @@ flow(
     });
   },
 );
+
+// ─── Canonical assignments (the ONE grant store) ─────────────────────────
+
+flow(
+  'IAM-35',
+  {
+    domain: 'iam',
+    routes: [
+      'GET /v1/accounts/:accountId/iam/assignments',
+      'POST /v1/accounts/:accountId/iam/assignments',
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const member = await team.addMember('member');
+    const project = await team.project();
+    let assignmentId = '';
+
+    await ctx.step('the mirrored membership is visible as an account-scope assignment', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/accounts/:accountId/iam/assignments', { params: { accountId: team.id } });
+      r.status(200).body().exists('$.assignments');
+      const rows = r.json<any>().assignments as any[];
+      const own = rows.find((a) => a.principal_id === member.userId && a.scope_type === 'account');
+      if (!own || own.role_key !== 'member' || own.role_is_system !== true) {
+        throw new Error(`expected a system account-scope member assignment, got ${JSON.stringify(own)}`);
+      }
+    });
+
+    await ctx.step('half a principal filter is a 400 — it would widen the answer', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/iam/assignments', {
+        params: { accountId: team.id },
+        query: { principal_id: member.userId },
+      });
+      r.status(400);
+    });
+
+    await ctx.step('OWNER grants a project role → 201, and it is an upsert', async () => {
+      const grant = () =>
+        ctx.client.as(ctx.P.OWNER).post(
+          '/v1/accounts/:accountId/iam/assignments',
+          {
+            principal_type: 'user',
+            principal_id: member.userId,
+            role_key: 'manager',
+            scope_type: 'project',
+            scope_id: project.id,
+          },
+          { params: { accountId: team.id } },
+        );
+      const first = await grant();
+      first
+        .status(201)
+        .body()
+        .has('$.role_key', 'manager')
+        .has('$.scope_type', 'project')
+        .has('$.scope_id', project.id)
+        .has('$.role_is_system', true);
+      assignmentId = first.json<any>().assignment_id;
+
+      const second = await grant();
+      second.status(201).body().has('$.assignment_id', assignmentId);
+    });
+
+    await ctx.step('a plain MEMBER cannot grant a project role → 403', async () => {
+      // `member` is a project MANAGER by now (granted above), and a manager
+      // legitimately holds project.members.manage — so the denial has to be
+      // asserted with a principal who holds no project role at all.
+      const bystander = await team.addMember('member');
+      const r = await ctx.client.as(bystander).post(
+        '/v1/accounts/:accountId/iam/assignments',
+        {
+          principal_type: 'user',
+          principal_id: bystander.userId,
+          role_key: 'manager',
+          scope_type: 'project',
+          scope_id: project.id,
+        },
+        { params: { accountId: team.id } },
+      );
+      r.status(403);
+    });
+
+    await ctx.step('a malformed id is a 400 naming the field, never a 500', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).post(
+        '/v1/accounts/:accountId/iam/assignments',
+        {
+          principal_type: 'user',
+          principal_id: 'not-a-uuid',
+          role_key: 'member',
+          scope_type: 'project',
+          scope_id: project.id,
+        },
+        { params: { accountId: team.id } },
+      );
+      r.status(400);
+    });
+
+    await ctx.step('a principal that does not exist → 404 (user, group, service account)', async () => {
+      const ghost = '00000000-0000-4000-8000-0000000000ff';
+      for (const principalType of ['user', 'group', 'service_account']) {
+        const r = await ctx.client.as(ctx.P.OWNER).post(
+          '/v1/accounts/:accountId/iam/assignments',
+          {
+            principal_type: principalType,
+            principal_id: ghost,
+            role_key: 'member',
+            scope_type: 'project',
+            scope_id: project.id,
+          },
+          { params: { accountId: team.id } },
+        );
+        r.status(404);
+      }
+    });
+
+    await ctx.step('object_type and object_id must arrive together → 400', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).post(
+        '/v1/accounts/:accountId/iam/assignments',
+        {
+          principal_type: 'user',
+          principal_id: member.userId,
+          role_key: 'agent-user',
+          scope_type: 'project',
+          scope_id: project.id,
+          object_type: 'agent',
+        },
+        { params: { accountId: team.id } },
+      );
+      r.status(400);
+    });
+
+    await ctx.step('NONMEMBER cannot read assignments → 403', async () => {
+      const r = await ctx.client
+        .as(ctx.P.NONMEMBER)
+        .get('/v1/accounts/:accountId/iam/assignments', { params: { accountId: team.id } });
+      r.status(403);
+    });
+  },
+);
+
+flow(
+  'IAM-36',
+  {
+    domain: 'iam',
+    routes: ['DELETE /v1/accounts/:accountId/iam/assignments/:assignmentId'],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const member = await team.addMember('member');
+    const project = await team.project();
+    let assignmentId = '';
+
+    await ctx.step('grant a project role to revoke', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).post(
+        '/v1/accounts/:accountId/iam/assignments',
+        {
+          principal_type: 'user',
+          principal_id: member.userId,
+          role_key: 'manager',
+          scope_type: 'project',
+          scope_id: project.id,
+        },
+        { params: { accountId: team.id } },
+      );
+      r.status(201);
+      assignmentId = r.json<any>().assignment_id;
+    });
+
+    await ctx.step('the grant is visible on the project access read model', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/projects/:projectId/access', { params: { projectId: project.id } });
+      r.status(200);
+      const row = (r.json<any>().members as any[]).find((m) => m.user_id === member.userId);
+      if (!row || row.project_role !== 'manager') {
+        throw new Error(`expected a manager row for the granted member, got ${JSON.stringify(row)}`);
+      }
+    });
+
+    await ctx.step('DELETE revokes it, and a second DELETE is 404', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .del('/v1/accounts/:accountId/iam/assignments/:assignmentId', {
+          params: { accountId: team.id, assignmentId },
+        });
+      r.status(200).body().has('$.revoked', true);
+
+      const again = await ctx.client
+        .as(ctx.P.OWNER)
+        .del('/v1/accounts/:accountId/iam/assignments/:assignmentId', {
+          params: { accountId: team.id, assignmentId },
+        });
+      again.status(404);
+    });
+
+    await ctx.step('the revoke is gone from the read model too', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/projects/:projectId/access', { params: { projectId: project.id } });
+      r.status(200);
+      const row = (r.json<any>().members as any[]).find((m) => m.user_id === member.userId);
+      if (row && row.project_role !== null) {
+        throw new Error(`expected no project role after revoke, got ${JSON.stringify(row)}`);
+      }
+    });
+
+    await ctx.step("a principal's ONLY account role is not revocable here → 409", async () => {
+      const list = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/iam/assignments', {
+        params: { accountId: team.id },
+        query: { principal_type: 'user', principal_id: member.userId, scope_type: 'account' },
+      });
+      list.status(200);
+      const rows = (list.json<any>().assignments as any[]).filter((a) => a.role_is_system);
+      if (rows.length !== 1) {
+        throw new Error(`expected exactly one account-scope system assignment, got ${rows.length}`);
+      }
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .del('/v1/accounts/:accountId/iam/assignments/:assignmentId', {
+          params: { accountId: team.id, assignmentId: rows[0].assignment_id },
+        });
+      r.status(409);
+    });
+
+    await ctx.step('a malformed assignment id is a 404, never a 500', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .del('/v1/accounts/:accountId/iam/assignments/:assignmentId', {
+          params: { accountId: team.id, assignmentId: 'not-a-uuid' },
+        });
+      r.status(404);
+    });
+  },
+);
+
+flow(
+  'IAM-37',
+  { domain: 'iam', routes: ['GET /v1/accounts/:accountId/iam/permissions'] },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const member = await team.addMember('member');
+
+    await ctx.step('the catalog carries scope, delegability and a real description', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/accounts/:accountId/iam/permissions', { params: { accountId: team.id } });
+      r.status(200).body().exists('$.permissions');
+      const rows = r.json<any>().permissions as any[];
+      if (rows.length < 60) throw new Error(`expected the full catalog, got ${rows.length} rows`);
+
+      const write = rows.find((p) => p.action === 'project.write');
+      if (!write || write.scope_type !== 'project' || write.delegable !== true) {
+        throw new Error(`project.write is misclassified: ${JSON.stringify(write)}`);
+      }
+      const ceiling = rows.find((p) => p.action === 'member.super_admin.grant');
+      if (!ceiling || ceiling.delegable !== false) {
+        throw new Error('member.super_admin.grant must be non-delegable');
+      }
+      // Empty descriptions send the web back to humanizing the dotted action.
+      const blank = rows.filter((p) => !p.description || String(p.description).trim() === '');
+      if (blank.length > 0) {
+        throw new Error(`${blank.length} permission(s) have no description: ${blank.map((p) => p.action).join(', ')}`);
+      }
+      // The two spec §2.4 collapses stay collapsed.
+      if (rows.some((p) => p.action === 'project.cr.open' || String(p.action).startsWith('trigger.'))) {
+        throw new Error('a retired action is back in the catalog');
+      }
+    });
+
+    await ctx.step('scope_type narrows it', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/iam/permissions', {
+        params: { accountId: team.id },
+        query: { scope_type: 'account' },
+      });
+      r.status(200);
+      const rows = r.json<any>().permissions as any[];
+      if (rows.length === 0 || rows.some((p) => p.scope_type !== 'account')) {
+        throw new Error('scope_type=account returned the wrong set');
+      }
+    });
+
+    await ctx.step('a plain MEMBER cannot read the catalog → 403', async () => {
+      const r = await ctx.client
+        .as(member)
+        .get('/v1/accounts/:accountId/iam/permissions', { params: { accountId: team.id } });
+      r.status(403);
+    });
+  },
+);
+
+flow(
+  'IAM-38',
+  {
+    domain: 'iam',
+    routes: [
+      'GET /v1/accounts/:accountId/iam/roles',
+      'GET /v1/accounts/:accountId/iam/roles/:roleId/permissions',
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const member = await team.addMember('member');
+    const project = await team.project();
+
+    await ctx.step('system roles come from the seeded DB rows, all six of them', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/accounts/:accountId/iam/roles', { params: { accountId: team.id } });
+      r.status(200).body().exists('$.roles');
+      const system = (r.json<any>().roles as any[]).filter((role) => role.is_system);
+      const seen = system.map((role) => `${role.resource_type}:${role.key}`).sort().join(',');
+      const want = [
+        'account:admin',
+        'account:member',
+        'account:owner',
+        'project:agent-user',
+        'project:manager',
+        'project:member',
+      ].join(',');
+      if (seen !== want) throw new Error(`system roles are ${seen}, expected ${want}`);
+      const floor = system.find((role) => role.resource_type === 'project' && role.key === 'member');
+      if (floor.role_id !== 'builtin:user') {
+        throw new Error(`the project floor role kept id ${floor.role_id}, expected builtin:user`);
+      }
+      if (!floor.description) throw new Error('a system role has no description');
+    });
+
+    await ctx.step('the advertised key is the key POST /iam/assignments accepts', async () => {
+      const roles = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/accounts/:accountId/iam/roles', { params: { accountId: team.id } });
+      const key = (roles.json<any>().roles as any[]).find(
+        (role) => role.is_system && role.resource_type === 'project' && role.key === 'member',
+      ).key;
+      const r = await ctx.client.as(ctx.P.OWNER).post(
+        '/v1/accounts/:accountId/iam/assignments',
+        {
+          principal_type: 'user',
+          principal_id: member.userId,
+          role_key: key,
+          scope_type: 'project',
+          scope_id: project.id,
+        },
+        { params: { accountId: team.id } },
+      );
+      r.status(201).body().has('$.role_key', 'member');
+    });
+
+    await ctx.step("a system role's permissions come from role_permissions", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/accounts/:accountId/iam/roles/:roleId/permissions', {
+          params: { accountId: team.id, roleId: 'builtin:user' },
+        });
+      r.status(200).body().has('$.key', 'member');
+      const actions = r.json<any>().actions as string[];
+      if (!actions.includes('project.read') || actions.includes('project.delete')) {
+        throw new Error(`the project floor role's action set is wrong: ${actions.join(', ')}`);
+      }
+    });
+
+    await ctx.step('the object-grant marker is a system role and is not deletable', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .del('/v1/accounts/:accountId/iam/roles/:roleId', {
+          params: { accountId: team.id, roleId: 'builtin:agent-user' },
+        });
+      r.status(400);
+    });
+  },
+);
+
+flow(
+  'IAM-39',
+  {
+    domain: 'iam',
+    routes: [
+      'GET /v1/accounts/:accountId/iam/resource-grants',
+      'GET /v1/projects/:projectId/resource-grants',
+      'GET /v1/projects/:projectId/access',
+      'GET /v1/accounts/:accountId/iam/members/:userId/project-access',
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const member = await team.addMember('member');
+    const project = await team.project();
+
+    await ctx.step('grant a project role through the canonical write path', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).post(
+        '/v1/accounts/:accountId/iam/assignments',
+        {
+          principal_type: 'user',
+          principal_id: member.userId,
+          role_key: 'manager',
+          scope_type: 'project',
+          scope_id: project.id,
+        },
+        { params: { accountId: team.id } },
+      );
+      r.status(201);
+    });
+
+    await ctx.step('every read model reports the same grant', async () => {
+      const access = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/projects/:projectId/access', { params: { projectId: project.id } });
+      access.status(200).body().has('$.project_id', project.id).exists('$.group_access');
+      const row = (access.json<any>().members as any[]).find((m) => m.user_id === member.userId);
+      if (!row || row.project_role !== 'manager' || row.effective_project_role !== 'manager') {
+        throw new Error(`/access disagrees with the grant: ${JSON.stringify(row)}`);
+      }
+      if (row.effective_source !== 'direct') {
+        throw new Error(`expected effective_source "direct", got ${row.effective_source}`);
+      }
+
+      const projectAccess = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/accounts/:accountId/iam/members/:userId/project-access', {
+          params: { accountId: team.id, userId: member.userId! },
+        });
+      projectAccess.status(200);
+      const entry = (projectAccess.json<any>().projects as any[]).find(
+        (p) => p.project_id === project.id,
+      );
+      if (!entry || entry.role !== 'manager' || !entry.sources.includes('direct')) {
+        throw new Error(`project-access disagrees: ${JSON.stringify(entry)}`);
+      }
+
+      const directory = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/accounts/:accountId/members', { params: { accountId: team.id } });
+      directory.status(200);
+      const dirRow = (directory.json<any>() as any[]).find((m) => m.user_id === member.userId);
+      if (!dirRow || dirRow.account_role !== 'member' || dirRow.explicit_project_count !== 1) {
+        throw new Error(`the member directory disagrees: ${JSON.stringify(dirRow)}`);
+      }
+      if (!(dirRow.projects as any[]).some((p) => p.project_id === project.id && p.role === 'manager')) {
+        throw new Error('the member directory lists the wrong project grant');
+      }
+    });
+
+    await ctx.step('resource-grant read models answer for an unscoped project', async () => {
+      const perProject = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/projects/:projectId/resource-grants', { params: { projectId: project.id } });
+      perProject.status(200).body().exists('$.grants');
+
+      const accountWide = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/accounts/:accountId/iam/resource-grants', { params: { accountId: team.id } });
+      accountWide.status(200).body().exists('$.grants');
+    });
+
+    await ctx.step('NONMEMBER cannot read the account-wide footprint → 403', async () => {
+      const r = await ctx.client
+        .as(ctx.P.NONMEMBER)
+        .get('/v1/accounts/:accountId/iam/resource-grants', { params: { accountId: team.id } });
+      r.status(403);
+    });
+  },
+);

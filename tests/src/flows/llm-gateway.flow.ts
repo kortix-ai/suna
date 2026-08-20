@@ -5,7 +5,21 @@ flow('GW-1', { domain: 'llm-gateway', tags: ['smoke'], routes: ['GET /health'] }
   const gw = new Client(ctx.env.gatewayUrl);
   await ctx.step('gateway /health is public', async () => {
     const r = await gw.get('/health');
-    r.status(200).body().has('$.status', 'healthy').has('$.service', 'kortix-llm-gateway');
+    // `degraded` is a traffic metric (error-rate over the last 300s window),
+    // and the gate's own suite drives error traffic through this gateway. What
+    // this flow asserts is the health CONTRACT: the endpoint is public, the
+    // service names itself, and its API dependency is up. Same reasoning as
+    // the preflight in core/target-smoke.ts (#6582): serving-but-degraded is
+    // not an outage; `down`/`unhealthy` still fails.
+    r.status(200).body().has('$.service', 'kortix-llm-gateway');
+    const body = r.json<{ status?: string; checks?: { api?: { status?: string } } }>();
+    const status = body?.status;
+    const apiUp = body?.checks?.api?.status === 'up';
+    if (status !== 'healthy' && !(status === 'degraded' && apiUp)) {
+      throw new Error(
+        `gateway health contract failed: status=${status} api=${body?.checks?.api?.status}`,
+      );
+    }
   });
 });
 

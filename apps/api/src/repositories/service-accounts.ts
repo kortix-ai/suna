@@ -4,7 +4,7 @@
 // the existing IAM engine token-path handles authorisation unchanged.
 
 import { and, asc, eq, inArray, isNull, isNotNull } from 'drizzle-orm';
-import { serviceAccounts, iamPolicies } from '@kortix/db';
+import { serviceAccounts, roleAssignments } from '@kortix/db';
 import { db } from '../shared/db';
 import {
   generateServiceAccountSecret,
@@ -230,17 +230,19 @@ export async function deleteServiceAccount(
   accountId: string,
   serviceAccountId: string,
 ): Promise<boolean> {
-  // Atomically remove the SA and its standing-role bindings. iam_policies has no
-  // FK to service_accounts (principal_id is polymorphic across member/group/token),
-  // so without this a deleted SA leaves dangling token policies behind.
+  // Atomically remove the SA and its standing-role bindings.
+  // `role_assignments.principal_id` is polymorphic across user/group/
+  // service_account/pending, so it carries no FK to service_accounts; without
+  // this delete, a removed SA leaves dangling assignments behind that a re-used
+  // id would inherit.
   return db.transaction(async (tx) => {
     await tx
-      .delete(iamPolicies)
+      .delete(roleAssignments)
       .where(
         and(
-          eq(iamPolicies.accountId, accountId),
-          eq(iamPolicies.principalType, 'token'),
-          eq(iamPolicies.principalId, serviceAccountId),
+          eq(roleAssignments.accountId, accountId),
+          eq(roleAssignments.principalType, 'service_account'),
+          eq(roleAssignments.principalId, serviceAccountId),
         ),
       );
     const rows = await tx

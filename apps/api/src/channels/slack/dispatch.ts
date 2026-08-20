@@ -434,8 +434,8 @@ export async function classifyEvent(
     // Allow these user-generated subtypes through:
     //   file_share   — audio messages, images, documents, etc. (agent sees file info)
     //   me_message   — /me actions (e.g. "/me waves hello")
-    //   bot_message  — messages from OTHER bots (our own bot is blocked by the
-    //                  separate bot_id/user===botUserId gate in dispatchSlackEvent)
+    //   bot_message  — messages from OTHER bots (our own bot is blocked by
+    //                  isOwnBotEvent in dispatchSlackEvent)
     // All other subtypes (message_changed, message_deleted, thread_broadcast,
     // channel_join, etc.) remain ignored to avoid loops, redundancy, or system noise.
     if (event.subtype === 'file_share' && event.files?.length) {
@@ -443,7 +443,7 @@ export async function classifyEvent(
     } else if (event.subtype === 'me_message') {
       // pass through — user-generated /me action
     } else if (event.subtype === 'bot_message') {
-      // pass through — other bots' messages (our bot_id gate prevents self-loops)
+      // pass through — other bots' messages (isOwnBotEvent prevents self-loops)
     } else {
       return 'ignore';
     }
@@ -532,6 +532,42 @@ export async function maybePostChannelIntro(teamId: string, event: SlackEvent): 
   await postChannelIntro(install.projectId, event.channel);
 }
 
+/**
+ * Is this event OUR OWN bot talking? The self-loop guard, and nothing wider.
+ *
+ * The gate here used to be `(botUserId && event.user === botUserId) || event.bot_id`,
+ * which returns on ANY bot — so a message from another app could never reach
+ * classifyEvent. That made classifyEvent's `bot_message` branch dead code: it is
+ * written to pass other bots through, and says so ("our own bot is blocked by the
+ * separate gate in dispatchSlackEvent"), but nothing ever arrived. Three tests in
+ * unit-slack-classify-event.test.ts assert that branch works and pass today,
+ * because they call classifyEvent directly and never cross this gate.
+ *
+ * Only OUR messages can loop, and `event.user` identifies them: every Slack post
+ * this codebase makes goes out with a plain bot token — there is no `username`,
+ * `icon_emoji` or `icon_url` override anywhere under channels/slack — so Slack
+ * always stamps our bot user id on the resulting event. (That absence is pinned
+ * by a test; adding such an override strips `user` and would weaken this.)
+ *
+ * The second clause covers the one hole. `botUserId` comes from a secret read on
+ * every event, and if that read fails we cannot tell our own message from another
+ * app's — so we stay conservative with BOT traffic specifically. Humans are
+ * unaffected in that window, which a blanket fail-closed would not manage.
+ *
+ * Deliberately NOT keyed on a stored bot_id: `oauth.v2.access` does not return
+ * one, so that would mean an extra auth.test at install, a new secret, and a
+ * backfill for every existing install — to defend against a code change a test
+ * already catches. This works for every install that exists today with no
+ * migration, because botUserId is a REQUIRED field on both install paths
+ * (install-store.ts saveSlackInstall + saveSlackOauthInstall) and is written
+ * unconditionally by both.
+ */
+export function isOwnBotEvent(event: SlackEvent, botUserId: string | null): boolean {
+  if (botUserId && event.user === botUserId) return true;
+  if (event.bot_id && !botUserId) return true;
+  return false;
+}
+
 export async function dispatchSlackEvent(projectId: string, envelope: SlackEnvelope): Promise<void> {
   const event = envelope.event;
   if (!event) return;
@@ -552,7 +588,7 @@ export async function dispatchSlackEvent(projectId: string, envelope: SlackEnvel
     return;
   }
 
-  if ((botUserId && event.user === botUserId) || event.bot_id) return;
+  if (isOwnBotEvent(event, botUserId)) return;
 
   const eventClass = await classifyEvent(teamId, event, botUserId);
   if (eventClass === 'ignore') return;
@@ -583,14 +619,18 @@ export async function dispatchSlackEvent(projectId: string, envelope: SlackEnvel
       const slackUserId = event.user ?? '';
       const actor = await resolveSlackActor(teamId, slackUserId, project.accountId, projectId);
       if ('reason' in actor) {
-        await postIdentityPrompt({
-          projectId,
-          teamId,
-          channel: event.channel,
-          threadTs: event.thread_ts,
-          slackUserId,
-          reason: actor.reason,
-        });
+        // Same reason as the main path below: a bot cannot read a prompt
+        // addressed to it. See `<cmd> link-bot`.
+        if (!event.bot_id) {
+          await postIdentityPrompt({
+            projectId,
+            teamId,
+            channel: event.channel,
+            threadTs: event.thread_ts,
+            slackUserId,
+            reason: actor.reason,
+          });
+        }
         return;
       }
     }
@@ -635,18 +675,24 @@ export async function spawnAgentTurn(
     const slackUserId = event.user ?? '';
     const actor = await resolveSlackActor(teamId, slackUserId, project.accountId, projectId);
     if ('reason' in actor) {
-      await postIdentityPrompt({
-        projectId,
-        teamId,
-        channel: event.channel,
-        // Top-level ephemeral prompts should render beside the message. Passing
-        // the message ts as thread_ts hides the auth prompt in a new thread.
-        threadTs: event.thread_ts,
-        slackUserId,
-        reason: actor.reason,
-        envelope,
-        event,
-      });
+      // A BOT cannot act on this. postIdentityPrompt posts an ephemeral AND a DM
+      // to slackUserId, so for a bot sender both land where no human will ever
+      // see them, and the mention reads as "Kortix ignored it" — which is how
+      // this went undiagnosed. Link it with `<cmd> link-bot @TheBot` instead.
+      if (!event.bot_id) {
+        await postIdentityPrompt({
+          projectId,
+          teamId,
+          channel: event.channel,
+          // Top-level ephemeral prompts should render beside the message. Passing
+          // the message ts as thread_ts hides the auth prompt in a new thread.
+          threadTs: event.thread_ts,
+          slackUserId,
+          reason: actor.reason,
+          envelope,
+          event,
+        });
+      }
       return;
     }
     actorUserId = actor.userId;

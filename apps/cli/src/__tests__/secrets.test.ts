@@ -485,7 +485,7 @@ describe('kortix secrets ls — identifier-first', () => {
     expect(code).toBe(0);
     const out = stripAnsi(stdout);
     expect(out).toContain('DELIVERY');
-    expect(out).toContain('sandbox');
+    expect(out).toContain('environment');
     expect(out).toContain('disabled');
     expect(out).toContain('rotate');
   });
@@ -505,7 +505,7 @@ describe('kortix secrets ls — identifier-first', () => {
     const code = await runSecrets(['ls']);
     expect(code).toBe(0);
     const out = stripAnsi(stdout);
-    expect(out).toContain('approved hosts · unavailable');
+    expect(out).toContain('enforced: approved hosts · unavailable');
     expect(out).toContain('1 secret cannot be delivered');
   });
 
@@ -623,7 +623,9 @@ describe('kortix secrets delivery', () => {
     const code = await runSecrets(['delivery', 'ANTHROPIC_API_KEY', 'plaintext']);
     expect(code).toBe(2);
     expect(requests).toHaveLength(0);
-    expect(stripAnsi(stderr)).toContain('runtime, broker, egress, or denied');
+    expect(stripAnsi(stderr)).toContain(
+      'Exposure must be environment, enforced, or none',
+    );
   });
 
   test('configures an HTTPS broker policy from explicit allow and injection flags', async () => {
@@ -666,11 +668,85 @@ describe('kortix secrets delivery', () => {
     });
   });
 
-  test('configures transparent network delivery for exact hosts and one header', async () => {
+  test('enforced exposure writes a hosts-only policy with no injection slot', async () => {
+    // The whole policy is the host list (spec §6). No `--inject-header`, and
+    // the body carries no `inject` — the value is substituted for the handle
+    // wherever the agent's own client put it.
+    const code = await runSecrets([
+      'delivery',
+      'ANTHROPIC_API_KEY',
+      'enforced',
+      '--allow-host',
+      'api.anthropic.com',
+    ]);
+
+    expect(code).toBe(0);
+    const put = requests.find((request) => request.method === 'PUT');
+    expect(put?.url).toContain('/secrets/ANTHROPIC_API_KEY/strategy');
+    expect(put?.body).toEqual({
+      strategy: 'egress',
+      egress_policy: {
+        rules: [{ host: 'api.anthropic.com' }],
+        on_no_match: 'deny',
+        tls: 'terminate',
+      },
+    });
+    // One mechanism on every provider, so the confirmation says what it does
+    // instead of promising an outcome: handle, substitution, [REDACTED], and
+    // `call` as the fallback. It must not name a provider or offer a choice.
+    const confirmation = stripAnsi(stdout);
+    expect(confirmation).toContain('Enforced at the network');
+    expect(confirmation).toContain('The env var holds a handle');
+    expect(confirmation).toContain('[REDACTED]');
+    expect(confirmation).toContain('kortix secrets call ANTHROPIC_API_KEY <https-url>');
+    expect(confirmation).not.toMatch(/platinum|daytona|e2b/i);
+  });
+
+  test('the stored `egress` name stays an accepted alias for enforced', async () => {
     const code = await runSecrets([
       'delivery',
       'ANTHROPIC_API_KEY',
       'egress',
+      '--allow-host',
+      'api.anthropic.com',
+    ]);
+
+    expect(code).toBe(0);
+    const put = requests.find((request) => request.method === 'PUT');
+    expect(put?.body).toEqual({
+      strategy: 'egress',
+      egress_policy: {
+        rules: [{ host: 'api.anthropic.com' }],
+        on_no_match: 'deny',
+        tls: 'terminate',
+      },
+    });
+  });
+
+  test('`environment` and `none` map to the stored runtime and denied names', async () => {
+    const env = await runSecrets(['delivery', 'AWS_SECRET_ACCESS_KEY', 'environment']);
+    expect(env).toBe(0);
+    expect(requests.find((request) => request.method === 'PUT')?.body).toEqual({
+      strategy: 'runtime',
+    });
+    expect(stripAnsi(stdout)).toContain('Exposed in the sandbox environment');
+
+    requests = [];
+    captureOutput();
+    const none = await runSecrets(['delivery', 'RETIRED_KEY', 'none']);
+    expect(none).toBe(0);
+    expect(requests.find((request) => request.method === 'PUT')?.body).toEqual({
+      strategy: 'denied',
+    });
+  });
+
+  test('--inject-header still writes the legacy injection row it always did', async () => {
+    // Deprecated, not removed: a script or a stored row that names a header
+    // keeps working, and the server keeps serving it by injection.
+    const code = await runSecrets([
+      'delivery',
+      'ANTHROPIC_API_KEY',
+      'enforced',
       '--allow-host',
       'api.anthropic.com',
       '--inject-header',
@@ -690,13 +766,13 @@ describe('kortix secrets delivery', () => {
         tls: 'terminate',
       },
     });
-    // The provider edge and the in-guest shim both satisfy `egress` and the CLI
-    // cannot tell which one a project runs, so the confirmation states the
-    // promise the two share and names neither.
-    const confirmation = stripAnsi(stdout);
-    expect(confirmation).toContain('injected outside the sandbox');
-    expect(confirmation).toContain('agent code never sees it');
-    expect(confirmation).not.toMatch(/platinum|daytona|e2b/i);
+  });
+
+  test('enforced exposure without a host is refused before any network call', async () => {
+    const code = await runSecrets(['delivery', 'ANTHROPIC_API_KEY', 'enforced']);
+    expect(code).toBe(2);
+    expect(requests).toHaveLength(0);
+    expect(stripAnsi(stderr)).toContain('requires --allow-host');
   });
 
   test('warns when the project has no network boundary to inject at', async () => {
@@ -712,7 +788,7 @@ describe('kortix secrets delivery', () => {
     ]);
 
     expect(code).toBe(0);
-    expect(stripAnsi(stdout)).toContain('No network boundary is enabled on this project');
+    expect(stripAnsi(stdout)).toContain('This Kortix server reports no enforcement path');
   });
 
   test('stays quiet about the boundary when the server reports one, or reports nothing', async () => {
@@ -727,7 +803,7 @@ describe('kortix secrets delivery', () => {
       'x-api-key',
     ]);
     expect(enabled).toBe(0);
-    expect(stripAnsi(stdout)).not.toContain('No network boundary');
+    expect(stripAnsi(stdout)).not.toContain('no enforcement path');
 
     // An older server omits the field; absence is not evidence of absence.
     boundaryAvailable = undefined;
@@ -741,16 +817,19 @@ describe('kortix secrets delivery', () => {
       'x-api-key',
     ]);
     expect(legacy).toBe(0);
-    expect(stripAnsi(stdout)).not.toContain('No network boundary');
+    expect(stripAnsi(stdout)).not.toContain('no enforcement path');
   });
 
-  test('rejects boundary controls no injection point can enforce', async () => {
+  test('rejects legacy http-broker flags on an enforced secret, naming them', async () => {
+    // Method, path, query and JSON-body slots describe an injection an enforced
+    // secret does not perform. Naming the offending flags is the difference
+    // between a fixable error and a guess.
     const code = await runSecrets([
       'delivery',
       'ANTHROPIC_API_KEY',
-      'egress',
+      'enforced',
       '--allow-host',
-      '*.anthropic.com',
+      'api.anthropic.com',
       '--allow-method',
       'POST',
       '--inject-query',
@@ -759,7 +838,24 @@ describe('kortix secrets delivery', () => {
 
     expect(code).toBe(2);
     expect(requests).toHaveLength(0);
-    expect(stripAnsi(stderr)).toContain('exact hosts and header injection');
+    const message = stripAnsi(stderr);
+    expect(message).toContain('--allow-method');
+    expect(message).toContain('--inject-query');
+    expect(message).toContain('legacy http-broker row');
+  });
+
+  test('rejects a wildcard host — the agent must never choose the destination', async () => {
+    const code = await runSecrets([
+      'delivery',
+      'ANTHROPIC_API_KEY',
+      'enforced',
+      '--allow-host',
+      '*.anthropic.com',
+    ]);
+
+    expect(code).toBe(2);
+    expect(requests).toHaveLength(0);
+    expect(stripAnsi(stderr)).toContain('requires exact hosts');
   });
 
   test('configures an LLM gateway consumer without HTTP policy flags', async () => {
@@ -859,7 +955,9 @@ describe('kortix secrets delivery', () => {
     ]);
     expect(code).toBe(2);
     expect(requests).toHaveLength(0);
-    expect(stripAnsi(stderr)).toContain('only valid for broker or egress');
+    expect(stripAnsi(stderr)).toContain(
+      'Host and injection flags describe a policy, which only an enforced secret has.',
+    );
   });
 });
 

@@ -260,6 +260,13 @@ export async function remoteBranchExists(
   project: GitBackedProject,
   branch: string,
 ): Promise<boolean> {
+  return (await resolveRemoteBranchTip(project, branch)) !== null;
+}
+
+export async function resolveRemoteBranchTip(
+  project: GitBackedProject,
+  branch: string,
+): Promise<string | null> {
   const ref = validateRef(branch);
   const result = await runGit(
     ['ls-remote', '--heads', project.repoUrl, `refs/heads/${ref}`],
@@ -271,7 +278,8 @@ export async function remoteBranchExists(
     undefined,
     project.gitAuthHeaders,
   );
-  return result.stdout.trim().length > 0;
+  const [sha, remoteRef] = result.stdout.trim().split(/\s+/);
+  return /^[0-9a-f]{40}$/.test(sha) && remoteRef === `refs/heads/${ref}` ? sha : null;
 }
 
 export async function createRemoteSessionBranch(

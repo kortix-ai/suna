@@ -6,7 +6,7 @@
  * provider-neutral behaviour: create repo → mint push token → register project.
  */
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import { mockIamEngineAllowAll, mockIamMembershipSyncNoop } from './helpers/iam-mocks';
+import { mockIamAssignments, mockIamEngineAllowAll, mockIamReadModels } from './helpers/iam-mocks';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { accountMembers, projectGitConnections, projectMembers, projects } from '@kortix/db';
@@ -130,9 +130,29 @@ mock.module('../middleware/auth', () => ({
 // verifying provision/delete behavior, not the access-control engine itself.
 mockIamEngineAllowAll();
 
-// grantProjectRole syncs IAM policy rows; no-op those (they hit tables the
-// lightweight db mock doesn't model).
-mockIamMembershipSyncNoop();
+// The read models answer from the same `canonicalMembership` switch the db shim
+// uses for `account_members`, so the "no membership in that account" case still
+// reaches the 403 it asserts.
+mockIamReadModels({
+  members: () =>
+    canonicalMembership ? [{ userId: USER_ID, accountId: ACCOUNT_ID, accountRole: 'owner' }] : [],
+});
+// `grantProjectRole` IS one `assignRole` call now, and it is no longer
+// best-effort — it writes `role_assignments`, which this file's lightweight db
+// mock does not model. Bypass the write path; the provision behaviour under test
+// is unaffected by where the grant lands.
+mockIamAssignments({
+  onGrant: (input) => {
+    if (input.scope.type !== 'project') return;
+    grantedProjectRole = {
+      accountId: input.accountId,
+      projectId: input.scope.id,
+      userId: input.principal.id,
+      projectRole: input.roleKey,
+      grantedBy: (input as { grantedBy?: string | null }).grantedBy ?? null,
+    };
+  },
+});
 
 mock.module('../projects/git', () => ({
   MergeConflictError: class MergeConflictError extends Error {},
@@ -153,6 +173,7 @@ mock.module('../projects/git', () => ({
   getCommitDiff: async () => null,
   getFileHistory: async () => ({ entries: [], nextCursor: null }),
   resolveCommitSha: async () => 'a'.repeat(40),
+  resolveFastBootGitHint: async () => ({ baseSha: 'a'.repeat(40) }),
   resolveTreeOid: async () => 'b'.repeat(40),
   materializeRepoContext: async () => '/tmp/fake-snapshot-context',
   resolveBranchTip: async () => 'a'.repeat(40),
@@ -170,6 +191,7 @@ mock.module('../projects/git', () => ({
 
 mock.module("../snapshots/builder", () => ({
   ensureSandboxImage: async () => ({ snapshotName: "kortix-default-test", slug: "default", contentHash: "a".repeat(64), built: false, isDefault: true }),
+  ensureFastSandboxImage: async () => ({ snapshotName: "kortix-fast-test", slug: "default", contentHash: "f".repeat(64), built: false, isDefault: true, runtimeProfile: "fast" }),
   ensureMetaSandboxImage: async () => ({ snapshotName: "kortix-meta-test", slug: "meta", contentHash: "b".repeat(64), built: false, isDefault: false }),
   deleteSandboxImage: async () => ({ deleted: false, snapshotName: "kortix-default-test", slug: "default" }),
   listSnapshotBuilds: async () => [],

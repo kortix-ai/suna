@@ -139,6 +139,29 @@ variable "use_fargate_spot" {
   default     = false
 }
 
+variable "fargate_base_on_demand" {
+  description = <<-EOT
+    Number of tasks pinned to on-demand FARGATE when use_fargate_spot = true.
+    Ignored when use_fargate_spot = false (that service is already all
+    on-demand). 0 keeps the historic Spot-only strategy, so setting nothing
+    changes nothing. Use >= 1 on any Spot environment whose total unavailability
+    is a real cost: with base 0 a single Spot reclaim drops the service to zero
+    tasks, and deployment_minimum_healthy_percent = 100 blocks the replacement
+    until Spot capacity returns.
+  EOT
+  type        = number
+  default     = 0
+
+  # Must also be <= min_capacity. That is a cross-variable rule, which
+  # `validation` only supports from Terraform 1.9 while this module declares
+  # >= 1.5 — it is enforced as a precondition on aws_appautoscaling_target
+  # instead.
+  validation {
+    condition     = var.fargate_base_on_demand >= 0 && floor(var.fargate_base_on_demand) == var.fargate_base_on_demand
+    error_message = "fargate_base_on_demand must be a non-negative whole number."
+  }
+}
+
 variable "container_insights" {
   description = "Enable CloudWatch Container Insights."
   type        = bool

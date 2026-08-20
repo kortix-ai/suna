@@ -218,8 +218,17 @@ export function parseEgressPolicy(input: unknown): EgressPolicyParse {
     });
   }
 
-  const inject = parseInjectionSlot(raw.inject);
-  if (!inject) return { ok: false, error: 'policy.inject is invalid' };
+  // OPTIONAL since the exposure/usage model (docs/specs/
+  // 2026-08-19-secrets-exposure-usage-model.md §6). An egress-enforced secret is
+  // served by HANDLE SUBSTITUTION: the sandbox env holds a handle, the relay
+  // swaps it for the real value on an approved host, and the policy is a HOST
+  // LIST with no slot to name. A row that supplies `inject` still has to supply
+  // a VALID one — optional is not "anything goes".
+  let inject: SecretInjectionSlot | undefined;
+  if (raw.inject !== undefined) {
+    inject = parseInjectionSlot(raw.inject) ?? undefined;
+    if (!inject) return { ok: false, error: 'policy.inject is invalid' };
+  }
 
   const backend = raw.backend;
   if (
@@ -239,7 +248,7 @@ export function parseEgressPolicy(input: unknown): EgressPolicyParse {
     ok: true,
     policy: {
       rules,
-      inject,
+      ...(inject ? { inject } : {}),
       ...(backend ? { backend: backend as SecretEgressPolicy['backend'] } : {}),
       ...(typeof raw.base_url_env === 'string' ? { base_url_env: raw.base_url_env } : {}),
       ...(raw.on_no_match === 'deny' ? { on_no_match: 'deny' as const } : {}),
@@ -376,6 +385,34 @@ export function parseHandle(value: string, rootSecret: string): HandleParse {
  *  whether a value is worth parsing, never as an authorization check. */
 export function looksLikeHandle(value: string): boolean {
   return value.includes(HANDLE_MARKER);
+}
+
+/**
+ * The marker plus a body of exactly the right width, and NOT one character
+ * more: the trailing lookahead is what stops a longer base32 run from being
+ * chopped into a shape whose tag then fails and reads as a forgery.
+ *
+ * The prefix is deliberately excluded. `parseHandle` recovers the lookup id
+ * from the marker onwards and never authenticates the prefix, so a candidate
+ * that carries one is the same candidate — and a vendor prefix can contain
+ * characters no scanner should have to guess the boundary of.
+ */
+const HANDLE_CANDIDATE = new RegExp(
+  `${HANDLE_MARKER}[${BASE32}]{${LOOKUP_LEN + TAG_LEN}}(?![${BASE32}])`,
+  'g',
+);
+
+/**
+ * Every distinct handle-shaped substring of `text`.
+ *
+ * This is a SCANNER, not a check: what it returns is what someone put in a
+ * request, which is exactly why each result still has to go through
+ * `parseHandle` before it is honored. It lives here because this module owns
+ * the handle format — a second copy of the marker, the widths or the alphabet
+ * somewhere else is a copy that will disagree after the first format change.
+ */
+export function findHandleCandidates(text: string): string[] {
+  return [...new Set(text.match(HANDLE_CANDIDATE) ?? [])];
 }
 
 // ── The delivery decision ───────────────────────────────────────────────────

@@ -98,7 +98,7 @@ pnpm worktree create <n>        [flags]   # positional name also works
 | Flag | Default | Effect |
 | --- | --- | --- |
 | `--name <n>` / positional `<n>` | — (required) | Worktree name → branch name + slot identity. |
-| `--branch <b>` | `<n>` | Branch to use. If it already exists it's checked out; otherwise created from `--from`. |
+| `--branch <b>` | `<n>` | Branch to use. A local branch is checked out; a branch that exists only as `origin/<b>` (run `git fetch` first) is checked out tracking it; otherwise it is created from `--from`. |
 | `--from <ref>` | `HEAD` | Base ref for a newly created branch. Must carry current `packages/db/migrations` (see above). |
 | `--db` / `--with-db` / `--isolated-db` | off | Opt into the old full isolated Supabase project (`kortix-wt-<n>`) with its own containers/volumes/migrations. |
 | `--no-db` / `--shared-db` | on | Explicitly use the default shared primary Supabase DB. |
@@ -184,6 +184,34 @@ worktree project's Docker containers/volumes/network. By default the branch is
 deleted with `git branch -d` (safe — refuses if unmerged); `--force` uses
 `git worktree remove --force` **and** `git branch -D` (drops unmerged commits).
 Only `nuke` after the work is merged or pushed.
+
+### `nuke --all` — bulk teardown with time rules
+
+```sh
+pnpm worktree nuke --all [--older-than <dur>] [--idle <dur>] [--include-dirty] [--dry-run] [--yes]
+pnpm worktree nuke --all --older-than 2d --yes      # everything created >2 days ago
+pnpm worktree nuke --all --idle 12h --dry-run       # preview: nothing touched in 12h
+```
+
+Scans every registry slot, prints one `keep`/`nuke` line per worktree with the
+reason, then tears down the selected ones with the same per-worktree `nukeOne`
+path as `nuke <n>` (stack stop, isolated-DB Docker cleanup, `git worktree
+remove`, `git branch -d`, slot freed). Selection rules, in order:
+
+- a **running** stack (web or api port answering) is always kept;
+- a slot whose **directory is missing** is always freed;
+- **uncommitted tracked changes** keep the worktree unless `--include-dirty`;
+- `--older-than <dur>` compares the registry `createdAt`;
+- `--idle <dur>` compares last activity = max(HEAD commit time, worktree index
+  mtime); a slot with no readable activity falls back to `createdAt`.
+
+Durations are `<n>m|h|d|w` (`30m`, `12h`, `3d`, `2w`). Both time rules must
+pass when both are given. With no time rule every stopped, clean slot is
+selected. A TTY asks for one confirmation for the whole batch; `--yes` or a
+non-TTY stdin skips it. Local branches survive as with `nuke <n>` (`-d` only,
+`--force` for `-D`), so committed work is never lost — only the checkout and
+its `node_modules` go. `bun` reads stdin: when calling from a shell loop, pass
+`</dev/null`.
 
 ### `pr` — push the branch and open a pull request
 

@@ -81,6 +81,39 @@ export const useCarriedDraftStore = create<CarriedDraftState>((set) => ({
 export const useCarriedDraft = (sessionId: string): CarriedDraft | null =>
   useCarriedDraftStore((s) => s.draftBySession[sessionId] ?? null);
 
+interface FirstPromptPreviewState {
+  /** Kortix session id → the first prompt's text, for RENDER only. */
+  previewBySession: Record<string, { text: string; files: AttachedFile[] }>;
+  setFirstPromptPreview: (sessionId: string, text: string, files: AttachedFile[]) => void;
+  clearFirstPromptPreview: (sessionId: string) => void;
+}
+
+/**
+ * The first prompt, as the boot shell should draw it the instant the session
+ * page mounts.
+ *
+ * The prompt itself is DURABLE before navigation — a create-time
+ * `pending_prompt` row, or the warm claim's row — and nothing here is ever
+ * sent. But the shell learns about that row by fetching it, and a warm box
+ * can deliver it in the seconds between navigation and that fetch; the row is
+ * then gone, the transcript has not loaded yet, and the shell drew nothing
+ * for a few seconds after showing the bubble on the home page. This is the
+ * in-memory copy the producer leaves for the shell to draw meanwhile — the
+ * same text, keyed by the Kortix session id, gone with the tab (a reload has
+ * the row or the transcript to read from).
+ */
+export const useFirstPromptPreviewStore = create<FirstPromptPreviewState>((set) => ({
+  previewBySession: {},
+  setFirstPromptPreview: (sessionId, text, files) =>
+    set((s) => ({ previewBySession: { ...s.previewBySession, [sessionId]: { text, files } } })),
+  clearFirstPromptPreview: (sessionId) =>
+    set((s) => {
+      if (!(sessionId in s.previewBySession)) return s;
+      const { [sessionId]: _removed, ...rest } = s.previewBySession;
+      return { previewBySession: rest };
+    }),
+}));
+
 // `usePendingQueueStore` used to live here: a single global list of messages
 // typed in the instant shell, consumed once by whichever `SessionChat` mounted
 // first. It carried no session id, so a message queued for one session could

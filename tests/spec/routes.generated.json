@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 586,
+  "count": 595,
   "routes": [
     {
       "method": "GET",
@@ -224,6 +224,18 @@
     },
     {
       "method": "GET",
+      "path": "/v1/accounts/:accountId/iam/assignments"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/accounts/:accountId/iam/assignments"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/accounts/:accountId/iam/assignments/:assignmentId"
+    },
+    {
+      "method": "GET",
       "path": "/v1/accounts/:accountId/iam/enterprise-demo"
     },
     {
@@ -308,6 +320,10 @@
     },
     {
       "method": "GET",
+      "path": "/v1/accounts/:accountId/iam/permissions"
+    },
+    {
+      "method": "GET",
       "path": "/v1/accounts/:accountId/iam/policies"
     },
     {
@@ -329,6 +345,10 @@
     {
       "method": "PATCH",
       "path": "/v1/accounts/:accountId/iam/policies/:policyId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/iam/resource-grants"
     },
     {
       "method": "GET",
@@ -593,6 +613,10 @@
     {
       "method": "GET",
       "path": "/v1/approval-links/:token"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/apps/edge/tls-check"
     },
     {
       "method": "POST",
@@ -1487,6 +1511,14 @@
       "path": "/v1/projects/:projectId/connections/:connectionId/oauth2/discover"
     },
     {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/connections/:connectionId/oauth2/discover-resource"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/connections/:connectionId/oauth2/register"
+    },
+    {
       "method": "GET",
       "path": "/v1/projects/:projectId/connections/:connectionId/oauth2/status"
     },
@@ -2281,6 +2313,10 @@
     {
       "method": "GET",
       "path": "/v1/user-roles"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/webhooks/auth/send-email"
     },
     {
       "method": "POST",

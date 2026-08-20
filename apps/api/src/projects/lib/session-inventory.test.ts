@@ -62,6 +62,7 @@ describe('selectSessionRowsForViewer', () => {
       subject,
       grantsBySession: new Map(),
       callerSessionId: null,
+      boundCredentialSessionId: null,
       runtimeStatusBySession: new Map(),
     });
 
@@ -89,6 +90,7 @@ describe('selectSessionRowsForViewer', () => {
       subject,
       grantsBySession: new Map(),
       callerSessionId: null,
+      boundCredentialSessionId: null,
       runtimeStatusBySession: new Map(),
     });
 
@@ -113,6 +115,7 @@ describe('selectSessionRowsForViewer', () => {
       subject,
       grantsBySession: new Map(),
       callerSessionId: null,
+      boundCredentialSessionId: null,
       runtimeStatusBySession: new Map(),
     });
 
@@ -136,6 +139,7 @@ describe('selectSessionRowsForViewer', () => {
       subject,
       grantsBySession: new Map(),
       callerSessionId: null,
+      boundCredentialSessionId: null,
       runtimeStatusBySession: new Map(),
     });
 
@@ -158,6 +162,7 @@ describe('selectSessionRowsForViewer', () => {
       subject,
       grantsBySession: new Map(),
       callerSessionId: null,
+      boundCredentialSessionId: null,
       runtimeStatusBySession: new Map([['stopped-resumable', 'stopped']]),
     });
 
@@ -184,6 +189,7 @@ describe('selectSessionRowsForViewer — warm sessions', () => {
       subject,
       grantsBySession: new Map(),
       callerSessionId: null,
+      boundCredentialSessionId: null,
       runtimeStatusBySession: new Map(),
     }).items.map((item) => item.row.sessionId);
   }
@@ -206,6 +212,7 @@ describe('selectSessionRowsForViewer — warm sessions', () => {
       subject,
       grantsBySession: new Map(),
       callerSessionId: null,
+      boundCredentialSessionId: null,
       runtimeStatusBySession: new Map([['reaped-warm', 'stopped']]),
     });
 
@@ -222,6 +229,7 @@ describe('selectSessionRowsForViewer — warm sessions', () => {
       subject,
       grantsBySession: new Map(),
       callerSessionId: null,
+      boundCredentialSessionId: null,
       runtimeStatusBySession: new Map(),
     });
 
@@ -311,6 +319,7 @@ describe('backend credential session isolation', () => {
       subject: wrapperSubject,
       grantsBySession: new Map(),
       callerSessionId,
+      boundCredentialSessionId: callerSessionId,
       runtimeStatusBySession: new Map(),
     });
 
@@ -349,6 +358,7 @@ describe('backend credential session isolation', () => {
       subject,
       grantsBySession: new Map(),
       callerSessionId: mine.sessionId,
+      boundCredentialSessionId: mine.sessionId,
       runtimeStatusBySession: new Map(),
     });
     expect(selected.items.every((item) => item.canAccess)).toBe(true);

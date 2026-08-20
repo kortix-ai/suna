@@ -1,6 +1,7 @@
 import { and, eq } from 'drizzle-orm';
 import { accountMembers, projects } from '@kortix/db';
 import { db } from '../../shared/db';
+import { accountRoleMap } from '../../iam/read-models';
 import { accountMayUseManagedModels } from '../../billing/services/entitlements';
 import { type ChannelCtx, currentChannelSelection } from './selection';
 
@@ -32,11 +33,9 @@ export async function channelModelContext(ctx: ChannelCtx): Promise<ChannelModel
     .where(eq(projects.projectId, selection.projectId))
     .limit(1);
   if (!project) return null;
-  const [owner] = await db
-    .select({ userId: accountMembers.userId })
-    .from(accountMembers)
-    .where(and(eq(accountMembers.accountId, project.accountId), eq(accountMembers.accountRole, 'owner')))
-    .limit(1);
+  const [owner] = [...(await accountRoleMap(project.accountId)).entries()]
+    .filter(([, role]) => role === 'owner')
+    .map(([userId]) => ({ userId }));
   // THE single managed-models predicate (billing/services/entitlements.ts).
   // This channel used to derive the answer itself, as
   // `accountIsFreeTierForModels(getAccountTier(...))` — a tier-string check

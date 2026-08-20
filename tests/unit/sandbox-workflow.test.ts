@@ -72,8 +72,59 @@ describe('sandbox test workflow', () => {
   test('release tests prove every deployed staging flow and browser journey', () => {
     const release = readFileSync(resolve(root, '.github/workflows/tests-release.yml'), 'utf8');
 
+    // The gate is sharded into parallel api/browser matrix jobs. Branch
+    // protection on `prod` requires exactly one context — this job name — so an
+    // aggregator job keeps it while the shards do the work. Renaming it breaks
+    // the required check silently.
     expect(release).toContain('name: full suite + quality gates');
-    expect(release).toContain('pnpm test -- --target-full');
+    expect(release).toContain('needs: [api, browser]');
+    // Six API shards, and the workflow must ask for the same denominator that
+    // `unit/shard.test.ts` proves the partition against. On run 32240074477
+    // four shards of 137 flows were all killed by their cap ~60% through.
+    expect(release).toContain('shard: [1, 2, 3, 4, 5, 6]');
+    expect(release).toContain('pnpm test -- --target-api-full --api-shard=${{ matrix.shard }}/6');
+    expect(release).toContain('pnpm test -- --target-browser-full --browser-shard=${{ matrix.shard }}/3');
+    expect(release).toContain('fail-fast: false');
+    // A cap is a hang detector, not a throttle. 40 minutes throttled: it killed
+    // shards that were passing 76/87 and 68/77 of what they had run.
+    expect(release).toMatch(/^ {4}timeout-minutes: 60$/m);
+    // The load each shard offers staging is unchanged by the extra shards.
+    expect(release).toContain("KE2E_API_WORKERS: '2'");
+    expect(release).toContain("KE2E_SANDBOX_WORKERS: '1'");
+    expect(release).toContain("KE2E_TIMEOUT_ATTEMPTS: '2'");
+    // Dry run against staging without a release PR. `RELEASE_SOURCE_SHA` only
+    // exists on a `release/*` branch, so without this input the gate could
+    // never be rehearsed — which is how it stayed un-green. The input is read
+    // through env, never interpolated into the shell, and both jobs still
+    // enforce the same 40-hex-character check.
+    expect(release).toContain('expected_sha:');
+    expect(release).toContain('EXPECTED_SHA: ${{ inputs.expected_sha }}');
+    // Every reference to the input is an `env:` binding. A dispatch input
+    // interpolated straight into a `run:` script is arbitrary code execution,
+    // so the counts must match exactly — once per SHA-checking job.
+    const bindings = release.match(/^\s+EXPECTED_SHA: \$\{\{ inputs\.expected_sha \}\}$/gm) ?? [];
+    const references = release.match(/inputs\.expected_sha/g) ?? [];
+    expect(bindings).toHaveLength(2);
+    expect(references).toHaveLength(bindings.length);
+    expect(release.match(/\[\[ "\$source_sha" =~ \^\[0-9a-f\]\{40\}\$ \]\]/g)).toHaveLength(2);
+    // Cleanup-on-cancel: a cancelled job never reaches the runner's `finally`
+    // teardown, so the sweep must be wired pre-run and `if: always()` post-run.
+    expect(release).toContain('bun tests/bin/ke2e.ts gc --older-than 2h');
+    expect(release).toContain('bun tests/bin/ke2e.ts gc --run-id');
+    // The pre-run sweep is a janitor, never a gate. On run 32226539107 its
+    // 15-minute JOB cap fired mid-delete, GitHub recorded the job as
+    // `cancelled` (which continue-on-error does not absorb), and every
+    // dependent shard was skipped. Two guards, both required: the gc STEP is
+    // bounded (a step timeout is a job *failure*), and the shard jobs run
+    // unless the whole workflow was cancelled.
+    const sweepBefore = release.slice(release.indexOf('  sweep-before:'), release.indexOf('  api:'));
+    expect(sweepBefore).toContain('continue-on-error: true');
+    expect(sweepBefore).toMatch(/- name: Reclaim test accounts older than 2h\n\s+timeout-minutes: 12/);
+    for (const job of ['  api:', '  browser:']) {
+      const start = release.indexOf(job);
+      const block = release.slice(start, release.indexOf('runs-on:', start));
+      expect(block, `${job.trim()} must not depend on the janitor's result`).toContain('if: ${{ !cancelled() }}');
+    }
     expect(release).toContain('RELEASE_SOURCE_SHA');
     expect(release).toContain('WEB_PROTECTION_PASSWORD');
     // Staging sits behind Vercel SSO deployment protection, which Basic-auth
@@ -121,12 +172,19 @@ describe('sandbox test workflow', () => {
         source.includes('uses: ./.github/workflows/tests.yml'),
       ),
     ).toHaveLength(1);
+    // deploy-preview drives ONE sandbox origin from one job, so it keeps the
+    // combined `--target-full` command. The release gate splits the same two
+    // lanes across parallel GitHub jobs, so it calls the per-lane commands.
     const targetFullCallers = workflows.filter(({ source }) =>
       source.includes('pnpm test -- --target-full'),
     );
-    expect(targetFullCallers.map(({ name }) => name).sort()).toEqual([
-      'deploy-preview.yml',
-      'tests-release.yml',
-    ]);
+    expect(targetFullCallers.map(({ name }) => name).sort()).toEqual(['deploy-preview.yml']);
+
+    const shardedTargetCallers = workflows.filter(
+      ({ source }) =>
+        source.includes('pnpm test -- --target-api-full') &&
+        source.includes('pnpm test -- --target-browser-full'),
+    );
+    expect(shardedTargetCallers.map(({ name }) => name).sort()).toEqual(['tests-release.yml']);
   });
 });

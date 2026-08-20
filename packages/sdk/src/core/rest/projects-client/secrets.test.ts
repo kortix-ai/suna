@@ -1,6 +1,6 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
-import type { SecretDeliveryBlockedReason } from './secrets';
+import type { SecretDeliveryBlockedReason, SecretEgressPolicy } from './secrets';
 import {
   deletePersonalProjectSecret,
   deleteProjectProviderOAuth,
@@ -51,7 +51,7 @@ test('listProjectSecrets throws when the response is unsuccessful', async () => 
 });
 
 test('listProjectSecrets is a silent background read — a 403 never hits the global error sink', async () => {
-  // project.secret.read is editor-tier: plain members legitimately 403 from
+  // project.secret.read is manager-tier: plain members legitimately 403 from
   // member-visible surfaces (model picker, LLM providers). No global toast.
   const onError = mock(() => {});
   configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok', onError });
@@ -325,4 +325,49 @@ test('an older server that omits both fields still parses', async () => {
 
   expect(secret?.delivery_blocked_reason).toBeUndefined();
   expect(secret?.network_boundary_available).toBeUndefined();
+});
+
+// An egress-enforced secret is served by HANDLE SUBSTITUTION: the sandbox env
+// carries a handle, the relay swaps it for the real value on an approved host,
+// and the policy is nothing but a host list. `inject` names a slot only for
+// legacy rows, so a host-list-only policy has to typecheck and has to reach the
+// wire unchanged — see docs/specs/2026-08-19-secrets-exposure-usage-model.md §6.
+test('setProjectSecretStrategy sends a host-list-only egress policy (no inject slot)', async () => {
+  const egress_policy: SecretEgressPolicy = {
+    rules: [{ host: 'api.stripe.com' }],
+    on_no_match: 'deny',
+  };
+  expect(egress_policy.inject).toBeUndefined();
+
+  await setProjectSecretStrategy('P1', 'STRIPE_KEY', 'egress', {
+    consumer: 'network',
+    egress_policy,
+  });
+
+  expect(last().method).toBe('PUT');
+  expect(last().url).toContain('/projects/P1/secrets/STRIPE_KEY/strategy');
+  expect(last().body).toEqual({
+    strategy: 'egress',
+    consumer: 'network',
+    egress_policy: { rules: [{ host: 'api.stripe.com' }], on_no_match: 'deny' },
+  });
+});
+
+test('setProjectSecretStrategy still sends a legacy policy that carries an inject slot', async () => {
+  const egress_policy: SecretEgressPolicy = {
+    rules: [{ host: 'api.stripe.com' }],
+    inject: { kind: 'header', name: 'authorization', template: 'Bearer {{secret}}' },
+    on_no_match: 'deny',
+  };
+
+  await setProjectSecretStrategy('P1', 'STRIPE_KEY', 'egress', {
+    consumer: 'network',
+    egress_policy,
+  });
+
+  expect((last().body as { egress_policy: SecretEgressPolicy }).egress_policy.inject).toEqual({
+    kind: 'header',
+    name: 'authorization',
+    template: 'Bearer {{secret}}',
+  });
 });

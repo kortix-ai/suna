@@ -304,10 +304,14 @@ export async function runPrePromptEnvSync(
       modelHint: prompt.model ?? undefined,
     });
   }
+  // `userId` is load-bearing, not decorative: without it the snapshot's daemon
+  // call carries no X-Kortix-User-Context header and the daemon answers 401,
+  // so the refresh silently never lands. See scheduleOpencodeSnapshotSync.
   deps.scheduleSnapshot({
     sessionId: record.sessionId,
     projectId: record.projectId,
     externalId: record.externalId,
+    userId,
   });
   try {
     await deps.syncEnv({
@@ -325,9 +329,10 @@ export async function runPrePromptEnvSync(
     // The env sync above applied the running agent's secret grant, or refused it
     // when the optional strict lock is enabled. Re-point the token's
     // connector/CLI grant at the agent that will actually run — it was frozen at
-    // mint from the BOOT agent, and those gates read it at call time. Only on a
-    // real switch: an ordinary turn resolves to the session's own agent and
-    // skips the manifest read entirely.
+    // mint from the BOOT agent, and the CLI/API gates read it straight from
+    // the token row at call time. Synchronous, same-agent case included: a
+    // manifest that narrowed the grant in the previous turn must be enforced
+    // from the first call of this one (see `remintGrantForAgentSwitch`).
     await deps.remintGrant({
       projectId: record.projectId,
       sessionId: record.sessionId,

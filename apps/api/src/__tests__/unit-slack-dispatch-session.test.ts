@@ -58,7 +58,7 @@ mock.module('../iam', () => ({
   ...realIam,
   authorize: async () => ({ allowed: authorizeAllowed }),
   assertAuthorized: async () => {},
-  filterAccessibleProjectResources: async (_u: string, _a: string, _p: string, _t: string, ids: readonly string[]) => [...ids],
+  filterAccessibleObjects: async (_actor: unknown, _p: string, _t: string, ids: readonly string[]) => [...ids],
   unscopedResourceIds: async (_p: string, _t: string, ids: readonly string[]) => [...ids],
   hasAnyResourceGrants: async () => false,
 }));
@@ -138,6 +138,8 @@ mock.module('../channels/slack-api', () => ({
   appendStream: async () => {},
   deleteMessage: async () => {},
   getChannelName: async () => 'general',
+  isBotUser: async () => true,
+  findBotUserIdByName: async () => null,
   joinChannel: async () => true,
   openDmChannel: async () => 'D1',
   postBlocks: async () => 'ts',

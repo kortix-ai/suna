@@ -119,6 +119,7 @@ describe('local test runner', () => {
       'target-browser-smoke',
     ]);
     expect(plan.lanes[0]?.command).toEqual(['bun', 'tests/bin/ke2e.ts', 'run', '--smoke']);
+    expect(plan.lanes[0]?.env).toEqual({ KE2E_FLOW_TIMEOUT_MS: '180000' });
     expect(plan.lanes[1]?.command).toEqual([
       'bun',
       'run',
@@ -170,8 +171,115 @@ describe('local test runner', () => {
     }
   });
 
+  it('raises the deployed API lane to six workers, still overridable by env', () => {
+    const previous = process.env.KE2E_API_WORKERS;
+    delete process.env.KE2E_API_WORKERS;
+    try {
+      // 3 workers left measured parallelism at 1.43x because the real ceiling is
+      // provision.ts's global semaphore, not the worker count.
+      expect(buildLocalTestPlan(['--target-full']).lanes[0]?.env).toEqual({
+        KE2E_API_WORKERS: '6',
+        KE2E_SANDBOX_WORKERS: '3',
+        KE2E_FLOW_TIMEOUT_MS: '180000',
+      });
+      process.env.KE2E_API_WORKERS = '3';
+      expect(buildLocalTestPlan(['--target-full']).lanes[0]?.env?.KE2E_API_WORKERS).toBe('3');
+    } finally {
+      if (previous === undefined) delete process.env.KE2E_API_WORKERS;
+      else process.env.KE2E_API_WORKERS = previous;
+    }
+  });
+
+  it('gives every deployed lane a 180s flow budget, still overridable by env', () => {
+    // Run 32231251280 lost ~50% of its flows to `exceeded 120000ms` against live
+    // staging. The 120s runner default is a LOCAL-stack number.
+    const previous = process.env.KE2E_FLOW_TIMEOUT_MS;
+    delete process.env.KE2E_FLOW_TIMEOUT_MS;
+    try {
+      for (const args of [['--target-smoke'], ['--target-api-full'], ['--target-full']]) {
+        expect(buildLocalTestPlan(args).lanes[0]?.env?.KE2E_FLOW_TIMEOUT_MS).toBe('180000');
+      }
+      process.env.KE2E_FLOW_TIMEOUT_MS = '240000';
+      expect(buildLocalTestPlan(['--target-api-full']).lanes[0]?.env?.KE2E_FLOW_TIMEOUT_MS).toBe(
+        '240000',
+      );
+    } finally {
+      if (previous === undefined) delete process.env.KE2E_FLOW_TIMEOUT_MS;
+      else process.env.KE2E_FLOW_TIMEOUT_MS = previous;
+    }
+  });
+
+  it('never raises the flow budget on a local lane', () => {
+    // The local stack keeps the 120s default; only deployed targets pay the
+    // Cloudflare + real-cloud-sandbox tax.
+    for (const args of [[], ['--browser-only'], ['--full'], ['--id', 'ACC-4']]) {
+      for (const lane of buildLocalTestPlan(args).lanes) {
+        expect(lane.env?.KE2E_FLOW_TIMEOUT_MS).toBeUndefined();
+      }
+    }
+  });
+
+  it('runs one deployed API shard through the release gate command', () => {
+    const plan = buildLocalTestPlan(['--target-api-full', '--api-shard=2/4']);
+
+    expect(plan.mode).toBe('target-api-full');
+    expect(plan.lanes.map((lane) => lane.name)).toEqual(['target-api-full']);
+    expect(plan.lanes[0]?.command).toEqual([
+      'bun',
+      'tests/bin/ke2e.ts',
+      'run',
+      '--require-all',
+      '--shard',
+      '2/4',
+    ]);
+  });
+
+  it('runs one deployed browser shard through the release gate command', () => {
+    const plan = buildLocalTestPlan(['--target-browser-full', '--browser-shard=3/3']);
+
+    expect(plan.mode).toBe('target-browser-full');
+    expect(plan.lanes.map((lane) => lane.name)).toEqual(['target-browser-full']);
+    expect(plan.lanes[0]?.command).toEqual([
+      'bun',
+      'run',
+      'test:browser',
+      '--',
+      '--shard=3/3',
+    ]);
+    expect(plan.lanes[0]?.env?.E2E_REQUIRE_ALL_BROWSER).toBe('1');
+  });
+
+  it('runs each deployed lane unsharded when no shard is given', () => {
+    expect(buildLocalTestPlan(['--target-api-full']).lanes[0]?.command).toEqual([
+      'bun',
+      'tests/bin/ke2e.ts',
+      'run',
+      '--require-all',
+    ]);
+    expect(buildLocalTestPlan(['--target-browser-full']).lanes[0]?.command).toEqual([
+      'bun',
+      'run',
+      'test:browser',
+    ]);
+  });
+
+  it('rejects a shard flag that has no lane to shard', () => {
+    expect(() => buildLocalTestPlan(['--api-shard=1/2'])).toThrow(
+      '--api-shard requires --target-api-full',
+    );
+    expect(() => buildLocalTestPlan(['--target-api-full', '--browser-shard=1/2'])).toThrow(
+      '--browser-shard requires --browser-only or --target-browser-full',
+    );
+    expect(() => buildLocalTestPlan(['--target-api-full', '--api-shard=3/2'])).toThrow(
+      '--api-shard must use CURRENT/TOTAL',
+    );
+  });
+
   it('rejects conflicting modes', () => {
     expect(() => buildLocalTestPlan(['--full', '--sdk-only'])).toThrow('choose only one');
+    expect(() => buildLocalTestPlan(['--target-full', '--target-api-full'])).toThrow(
+      'choose only one',
+    );
   });
 
   it('retries a cold local web route until it is ready', async () => {

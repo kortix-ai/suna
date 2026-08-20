@@ -147,9 +147,14 @@ function SessionRowImpl({
   const SourceIcon = SOURCE_ICONS[source.kind];
   const access = sessionAccessMeta(session);
   const isDeleted = Boolean(session.deleted_at);
+  // `can_manage_sharing` answers ONE question — may this viewer change who can
+  // open the session — and it is the owner's call, not a manager's. It does not
+  // gate the entry itself: everyone who can open the session sees it, the owner
+  // to change access and everyone else to read who else has it.
   const canManageSharing = session.can_manage_sharing !== false && !isDeleted;
   const hasLifecycleActions = access.canOpen && !isDeleted;
-  const hasActions = canManageSharing || hasLifecycleActions;
+  const showAccessEntry = hasLifecycleActions;
+  const hasActions = hasLifecycleActions;
   const relativeLabel = time.relative ? shortRelative(time.relative) : '';
   const statusTile = sessionStatusTile(session.status, {
     deleted: isDeleted,
@@ -310,13 +315,13 @@ function SessionRowImpl({
                         Rename
                       </DropdownMenuItem>
                     ) : null}
-                    {canManageSharing ? (
+                    {showAccessEntry ? (
                       <DropdownMenuItem
                         className="cursor-pointer"
                         onSelect={() => deferAfterClose(() => actions.onShare(session))}
                       >
                         <ShareNetworkIcon />
-                        Share
+                        {canManageSharing ? 'Share' : 'Who has access'}
                       </DropdownMenuItem>
                     ) : null}
                     {hasLifecycleActions ? (

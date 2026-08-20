@@ -114,11 +114,19 @@ than telling the user to dig through settings or paste a secret into chat
 (see the `credentials-and-setup-links.md` reference).
 
 **Secrets.** Credentials are encrypted at rest and scoped to the project, the
-agent's grant, and the session allowlist. A **connector** credential is brokered
-server-side and never enters the sandbox — the agent calls the connector through
-one scoped token. A **runtime** secret is injected into the sandbox as a real
-environment value, so any command the agent runs can read it. Grant runtime
-secrets deliberately.
+agent's grant, and the session allowlist. Each secret has an **exposure** that
+says whether agent code can read the real value:
+
+- **egress-enforced** (the default) — the sandbox env holds a handle. Kortix
+  swaps it for the real value outside the sandbox, only on the exact HTTPS hosts
+  the policy lists, and redacts the credential out of any response that echoes
+  it. The value never enters the sandbox.
+- **environment** — the sandbox env holds the real value, so any command the
+  agent runs can read it. Required for credentials that are COMPUTED with rather
+  than sent (SigV4, HMAC signing, JWT assertions, SSH keys) and for non-HTTPS
+  protocols. Grant these deliberately.
+- **none** — no sandbox presence. A **connector** credential and an LLM-gateway
+  key sit here: they are spent server-side through one scoped token.
 
 **Memory.** Kortix builds a living, file-based "company brain" — context
 that compounds across sessions: projects, the people and orgs that come

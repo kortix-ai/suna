@@ -98,6 +98,7 @@ export interface EnsureSandboxImageResult {
   contentHash: string;
   built: boolean;
   isDefault: boolean;
+  runtimeProfile?: 'standard' | 'fast' | 'meta';
 }
 
 /**
@@ -1305,6 +1306,7 @@ function currentMetaRuntimeFingerprint(): Promise<string> {
       { label: 'cli', path: resolve(root, 'apps/cli/src') },
       { label: 'cli-package', path: resolve(root, 'apps/cli/package.json') },
       { label: 'entrypoint', path: resolve(root, 'apps/sandbox/entrypoint.sh') },
+      { label: 'opencode-warmup', path: resolve(root, 'apps/sandbox/opencode-warmup.sh') },
       { label: 'meta-renderer', path: resolve(root, 'packages/shared/src/sandbox/meta-dockerfile.ts') },
       { label: 'sdk', path: resolve(root, 'packages/sdk/src') },
       { label: 'llm-catalog', path: resolve(root, 'packages/llm-catalog/src') },
@@ -1327,7 +1329,7 @@ function currentMetaRuntimeFingerprint(): Promise<string> {
  * image is still the current one for whoever has not restarted yet. Deleting it
  * underneath them would break meta sandbox creation mid-rollout.
  */
-const META_REAP_PROTECT_MS = 60 * 60 * 1000;
+const RUNTIME_REAP_PROTECT_MS = 60 * 60 * 1000;
 
 /** Names are `kortix-meta-<env>-<hash16>`; see `metaSnapshotName`. */
 const META_SNAPSHOT_PREFIX = 'kortix-meta';
@@ -1401,8 +1403,24 @@ export async function reapSupersededMetaSnapshots(
   /** Test seam for the protection lookup; production uses the strict query. */
   recentLookup: (names: string[], withinMs: number) => Promise<Set<string>> = recentlyBuiltStrict,
 ): Promise<void> {
+  return reapSupersededEnvironmentRuntimeSnapshots(
+    provider,
+    META_SNAPSHOT_PREFIX,
+    'meta',
+    keepName,
+    recentLookup,
+  );
+}
+
+async function reapSupersededEnvironmentRuntimeSnapshots(
+  provider: Pick<SandboxProviderAdapter, 'listSnapshots' | 'deleteSnapshot'>,
+  snapshotPrefix: string,
+  logLabel: string,
+  keepName: string,
+  recentLookup: (names: string[], withinMs: number) => Promise<Set<string>>,
+): Promise<void> {
   try {
-    const mine = `${META_SNAPSHOT_PREFIX}-${config.INTERNAL_KORTIX_ENV}-`;
+    const mine = `${snapshotPrefix}-${config.INTERNAL_KORTIX_ENV}-`;
     const candidates = (await provider.listSnapshots())
       .map((snapshot: { name: string }) => snapshot.name)
       .filter((name: string) => name.startsWith(mine) && name !== keepName);
@@ -1414,20 +1432,121 @@ export async function reapSupersededMetaSnapshots(
     // throw here lands in the outer catch and skips the reap entirely, which is
     // the right trade: an extra stale image costs one snapshot slot, deleting a
     // live one breaks meta sandbox creation for the whole environment.
-    const recent = await recentLookup(candidates, META_REAP_PROTECT_MS);
+    const recent = await recentLookup(candidates, RUNTIME_REAP_PROTECT_MS);
     for (const name of candidates) {
       if (recent.has(name)) {
-        console.log(`[snapshots] meta: keeping ${name} (built recently — a replica may still boot it)`);
+        console.log(`[snapshots] ${logLabel}: keeping ${name} (built recently — a replica may still boot it)`);
         continue;
       }
       await provider.deleteSnapshot(name);
-      console.log(`[snapshots] meta: reaped superseded ${name}`);
+      console.log(`[snapshots] ${logLabel}: reaped superseded ${name}`);
     }
   } catch (err) {
     console.warn(
-      `[snapshots] meta: reap skipped: ${err instanceof Error ? err.message : String(err)}`,
+      `[snapshots] ${logLabel}: reap skipped: ${err instanceof Error ? err.message : String(err)}`,
     );
   }
+}
+
+const FAST_SNAPSHOT_PREFIX = 'kortix-fast';
+const fastImageBuilds = new Map<string, Promise<EnsureSandboxImageResult>>();
+let fastRuntimeFingerprint: Promise<string> | null = null;
+
+function currentFastRuntimeFingerprint(): Promise<string> {
+  if (fastRuntimeFingerprint) return fastRuntimeFingerprint;
+  const root = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..');
+  fastRuntimeFingerprint = buildRuntimeArtifactFingerprint({
+    sandboxVersion: `fast-v1:opencode:${OPENCODE_VERSION}`,
+    opencodeVersion: OPENCODE_VERSION,
+    artifacts: [
+      { label: 'agent', path: resolve(root, 'apps/kortix-sandbox-agent-server/src') },
+      { label: 'agent-package', path: resolve(root, 'apps/kortix-sandbox-agent-server/package.json') },
+      { label: 'cli', path: resolve(root, 'apps/cli/src') },
+      { label: 'cli-package', path: resolve(root, 'apps/cli/package.json') },
+      { label: 'entrypoint', path: resolve(root, 'apps/sandbox/entrypoint.sh') },
+      { label: 'machine', path: resolve(root, 'apps/sandbox/MACHINE.fast.md') },
+      { label: 'lazy-tools', path: resolve(root, 'apps/sandbox/lazy-tools') },
+      { label: 'fast-renderer', path: resolve(root, 'packages/shared/src/sandbox/fast-dockerfile.ts') },
+      { label: 'runtime-versions', path: resolve(root, 'packages/shared/src/runtime-versions.json') },
+      { label: 'sdk', path: resolve(root, 'packages/sdk/src') },
+      { label: 'llm-catalog', path: resolve(root, 'packages/llm-catalog/src') },
+      { label: 'manifest-schema', path: resolve(root, 'packages/manifest-schema/src') },
+      { label: 'registry', path: resolve(root, 'packages/registry/src') },
+      { label: 'shared', path: resolve(root, 'packages/shared/src') },
+      { label: 'starter', path: resolve(root, 'packages/starter/src') },
+      { label: 'starter-templates', path: resolve(root, 'packages/starter/templates') },
+    ],
+  });
+  return fastRuntimeFingerprint;
+}
+
+export function fastSnapshotName(contentHash: string): string {
+  return `${FAST_SNAPSHOT_PREFIX}-${config.INTERNAL_KORTIX_ENV}-${contentHash.slice(0, 16)}`;
+}
+
+export async function reapSupersededFastSnapshots(
+  provider: Pick<SandboxProviderAdapter, 'listSnapshots' | 'deleteSnapshot'>,
+  keepName: string,
+  recentLookup: (names: string[], withinMs: number) => Promise<Set<string>> = recentlyBuiltStrict,
+): Promise<void> {
+  return reapSupersededEnvironmentRuntimeSnapshots(
+    provider,
+    FAST_SNAPSHOT_PREFIX,
+    'fast',
+    keepName,
+    recentLookup,
+  );
+}
+
+export async function ensureFastSandboxImage(opts: {
+  source?: SnapshotBuildSource;
+  provider: string;
+}): Promise<EnsureSandboxImageResult> {
+  const provider = getSandboxProvider(opts.provider);
+  if (!provider.isConfigured()) {
+    throw new SnapshotBuildError(`Sandbox provider ${opts.provider} is not configured`);
+  }
+  const fingerprint = await currentFastRuntimeFingerprint();
+  const contentHash = createHash('sha256').update(`fast-runtime-v1\0${fingerprint}`).digest('hex');
+  const snapshotName = fastSnapshotName(contentHash);
+  const buildKey = `${opts.provider}:${snapshotName}`;
+  const existing = fastImageBuilds.get(buildKey);
+  if (existing) return existing;
+
+  const build = (async () => {
+    let state = await provider.getSnapshotState(snapshotName);
+    if (state === 'building') state = await waitForProviderBuild(provider, snapshotName);
+    if (state === 'active') {
+      return {
+        snapshotName,
+        slug: DEFAULT_SANDBOX_SLUG,
+        contentHash,
+        built: false,
+        isDefault: true,
+        runtimeProfile: 'fast' as const,
+      };
+    }
+    if (state === 'build_failed') await provider.deleteSnapshot(snapshotName);
+    await provider.buildSnapshot({
+      snapshotName,
+      userDockerfile: '# platform fast cold-boot runtime',
+      spec: {},
+      slug: DEFAULT_SANDBOX_SLUG,
+      isShared: true,
+      runtimeProfile: 'fast',
+    });
+    await reapSupersededFastSnapshots(provider, snapshotName);
+    return {
+      snapshotName,
+      slug: DEFAULT_SANDBOX_SLUG,
+      contentHash,
+      built: true,
+      isDefault: true,
+      runtimeProfile: 'fast' as const,
+    };
+  })().finally(() => fastImageBuilds.delete(buildKey));
+  fastImageBuilds.set(buildKey, build);
+  return build;
 }
 
 export async function ensureMetaSandboxImage(opts: {
@@ -1449,7 +1568,14 @@ export async function ensureMetaSandboxImage(opts: {
     let state = await provider.getSnapshotState(snapshotName);
     if (state === 'building') state = await waitForProviderBuild(provider, snapshotName);
     if (state === 'active') {
-      return { snapshotName, slug: 'meta', contentHash, built: false, isDefault: false };
+      return {
+        snapshotName,
+        slug: 'meta',
+        contentHash,
+        built: false,
+        isDefault: false,
+        runtimeProfile: 'meta' as const,
+      };
     }
     if (state === 'build_failed') await provider.deleteSnapshot(snapshotName);
     await provider.buildSnapshot({
@@ -1458,12 +1584,19 @@ export async function ensureMetaSandboxImage(opts: {
       spec: { cpu: 1, memoryGb: 2, diskGb: 8 },
       slug: 'meta',
       isShared: true,
-      runtimeProfile: 'meta',
+      runtimeProfile: 'meta' as const,
     });
     // Tidy only after the replacement is actually active, so a failed build
     // can never leave the environment with nothing to boot.
     await reapSupersededMetaSnapshots(provider, snapshotName);
-    return { snapshotName, slug: 'meta', contentHash, built: true, isDefault: false };
+    return {
+      snapshotName,
+      slug: 'meta',
+      contentHash,
+      built: true,
+      isDefault: false,
+      runtimeProfile: 'meta' as const,
+    };
   })().finally(() => metaImageBuilds.delete(buildKey));
   metaImageBuilds.set(buildKey, build);
   return build;

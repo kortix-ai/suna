@@ -43,5 +43,16 @@ export interface GatewayHooks {
   assertBudget?: (principal: AuthedPrincipal) => Promise<void>;
   recordUsage: (event: UsageEvent) => Promise<void>;
   recordTrace?: (trace: GatewayTrace) => Promise<void>;
-  listModels?: (principal: AuthedPrincipal) => Promise<ModelCatalog>;
+  listModels?: (principal: AuthedPrincipal, opts?: ListModelsOptions) => Promise<ModelCatalog>;
+}
+
+/** Options for the model-catalog listing.
+ *
+ * `managedOnly` serves ONLY the platform-managed lineup (~3KB) instead of the
+ * project's full catalog (~3.3MB). A sandbox fetches it on every boot to learn
+ * the current managed set, because the catalog baked into its image goes stale
+ * the moment the managed lineup changes. Free-tier semantics are unchanged: an
+ * account with no managed access still gets an empty managed set. */
+export interface ListModelsOptions {
+  managedOnly?: boolean;
 }

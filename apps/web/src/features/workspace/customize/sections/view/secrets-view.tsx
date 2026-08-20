@@ -15,6 +15,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { type FormEvent, useCallback, useMemo, useState } from 'react';
 
+import { PROJECT_ACTIONS } from '@/lib/project-actions';
+import { useProjectCan } from '@/lib/use-project-can';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -49,9 +51,7 @@ import {
 import {
   Select,
   SelectContent,
-  SelectGroup,
   SelectItem,
-  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
@@ -81,6 +81,7 @@ import {
   type SecretDeliveryStatus,
   type SecretDeliveryStrategy,
   type SecretEgressPolicy,
+  type SecretInjectionSlot,
   deleteProjectSecret,
   getProjectDetail,
   grantSecretToAgent,
@@ -98,10 +99,8 @@ import {
   TrashIcon,
 } from '@phosphor-icons/react';
 import {
-  type NetworkBoundaryAvailability,
-  type NetworkBoundaryMode,
-  type SecretAccessChoice,
   type SecretDeliveryBlockedReason,
+  type SecretExposure,
   agentGrantActionLabel,
   agentGrantCandidateHint,
   agentGrantConfirmation,
@@ -109,25 +108,22 @@ import {
   agentGrantOutcome,
   agentGrantPlan,
   agentGrantSnippet,
-  buildBrokerPolicy,
-  buildNetworkBoundaryPolicy,
+  buildEnforcedPolicy,
   canSaveSecretDelivery,
+  classifyNewSecret,
   connectorBindingChanges,
   connectorBindingOptions,
-  defaultSecretAccess,
+  defaultSecretExposure,
+  enforcedEchoNotice,
+  legacyInjectionDetail,
   missingAgentGrantNotice,
-  networkBoundaryAvailability,
-  networkBoundaryBlockedReason,
-  networkBoundaryEchoNotice,
-  networkBoundaryMode,
-  secretAccessIsSystemManaged,
-  secretAccessTarget,
   secretDeliveryBlockedReason,
   secretDeliveryLegend,
-  secretDeliveryOptionGroups,
-  secretDeliveryOptions,
   secretDeliveryPresentation,
   secretDeliverySyncWarning,
+  secretDeliveryTarget,
+  secretExposureOptions,
+  secretUsageIsAssigned,
   shouldWarnMissingAgentGrant,
 } from './secret-delivery';
 import {
@@ -193,8 +189,6 @@ export function SecretsView({ projectId }: { projectId: string }) {
     ...contract('config'),
   });
   const llmGatewayEnabled = isLlmGatewayEnabled(projectDetailQuery.data?.project);
-  const networkBoundary = networkBoundaryAvailability(projectDetailQuery.data?.project);
-  const boundaryMode = networkBoundaryMode(projectDetailQuery.data?.project);
 
   const secretsQuery = useQuery({
     queryKey,
@@ -208,7 +202,12 @@ export function SecretsView({ projectId }: { projectId: string }) {
   });
 
   const normalized = useMemo(() => normalizeResponse(secretsQuery.data), [secretsQuery.data]);
-  const canManage = normalized.can_manage ?? false;
+  // `project.secret.write` is the leaf every mutating secrets route asserts.
+  // The response's `can_manage` was the coarse project-manage flag, so a custom
+  // role that holds `project.secret.write` without the manager role saw a
+  // read-only page, and one denied the leaf saw editable controls that 403.
+  const canManage =
+    useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_SECRET_WRITE).allowed === true;
   const allRows = useMemo(() => buildRows(normalized), [normalized]);
 
   const missingRequired = allRows.filter((r) => r.requirement === 'required' && !r.configured);
@@ -259,14 +258,14 @@ export function SecretsView({ projectId }: { projectId: string }) {
   return (
     <CapabilityPageShell
       title="Secrets"
-      /* "the VALUE out of that machine" is exact, not hedged: an HTTPS
-         broker secret does put an env var in the sandbox — an opaque
-         handle under the same key (`apps/api/src/projects/secrets.ts`
+      /* "the real value" is exact, not hedged: an enforced secret DOES put an
+         env var in the sandbox — an opaque handle under the same key
+         (`apps/api/src/projects/secrets.ts`
          `env[row.key] = await input.mintHandleFor(row)`), never the
-         credential. "Sandbox is the only mode that puts a value in the
-         sandbox" is the claim the API actually guarantees
+         credential. "Environment variable is the only exposure that puts a
+         real value in the sandbox" is the claim the API actually guarantees
          (`deliversPlaintextToSandbox`, `apps/api/src/secrets/strategy.ts`). */
-      description="Encrypted credentials this project keeps out of its repository. Access decides where each value goes — Sandbox sets it as an environment variable inside the machine a session runs on, and every other mode keeps the value out of that machine."
+      description="Encrypted credentials this project keeps out of its repository. Access decides whether agent code can read each value — Environment variable is the only exposure that sets the real value as an environment variable in the sandbox; every other one keeps it outside."
       search={
         /* Hidden until there is a list to search, the same rule Triggers
            uses: a filter over nothing is a control that cannot do anything. */
@@ -402,8 +401,6 @@ export function SecretsView({ projectId }: { projectId: string }) {
               row={dialogRow}
               connectors={connectorsQuery.data?.connectors ?? []}
               connectorsLoading={connectorsQuery.isLoading}
-              networkBoundary={networkBoundary}
-              boundaryMode={boundaryMode}
               onSaved={refreshSecretsAndProviders}
             />
           </>
@@ -446,18 +443,18 @@ export function SecretsView({ projectId }: { projectId: string }) {
  * What the Access column actually means, folded away until asked for.
  *
  * The page shipped with a bare Identifier / Value / Access table and no words
- * at all, so `Sandbox` beside `STRIPE_API_KEY` was a label with nothing behind
- * it. The four values are four genuinely different places a value is allowed
- * to reach — that distinction is the whole feature, and it was invisible.
+ * at all, so a one-word badge beside `STRIPE_API_KEY` was a label with nothing
+ * behind it. Six values, and the split between them is the whole feature: the
+ * first three are the exposure you choose, the last three are usages another
+ * flow assigned.
  *
- * Collapsed by default, and one click from the badges it defines: four
+ * Collapsed by default, and one click from the badges it defines: six
  * definitions permanently expanded above a five-row table would be a wall of
  * text in front of the thing the page is for.
  *
- * The labels and sentences come from `secretDeliveryLegend()`, the same
- * `ACCESS_PRESENTATIONS` table that renders each row's badge and each option
- * in the dialog's Access picker. Restating them here in JSX is how the legend
- * and the badge start disagreeing.
+ * The labels and sentences come from `secretDeliveryLegend()`, the same tables
+ * that render each row's badge and each option in the dialog's picker.
+ * Restating them here in JSX is how the legend and the badge start disagreeing.
  */
 function SecretsAccessExplainer() {
   const [open, setOpen] = useState(false);
@@ -475,8 +472,8 @@ function SecretsAccessExplainer() {
       <CollapsibleContent>
         <dl className="border-border bg-sidebar mt-2 flex flex-col gap-2.5 rounded-md border p-3">
           {secretDeliveryLegend().map((mode) => (
-            <div key={mode.choice} className="flex flex-col gap-1 sm:flex-row sm:gap-3">
-              <dt className="shrink-0 sm:w-36">
+            <div key={mode.key} className="flex flex-col gap-1 sm:flex-row sm:gap-3">
+              <dt className="shrink-0 sm:w-44">
                 <Badge variant={mode.tone} size="sm">
                   {mode.label}
                 </Badge>
@@ -488,28 +485,31 @@ function SecretsAccessExplainer() {
           ))}
           {/* Two things the list above cannot say on its own.
 
-              First, the grant. This used to name "Network boundary and the
-              HTTPS broker", which was wrong: `resolveSecretDelivery`
+              First, the grant. `resolveSecretDelivery`
               (apps/api/src/secrets/strategy.ts) returns `agent_grant_unscoped`
-              for EVERY strategy other than `runtime`, so LLM gateway and
-              Connector are gated by the identical rule. Sandbox is the one
-              exception, and it has to stay one — a project with no `agents:`
-              block hands every Sandbox secret to every agent, so a blanket
-              "a grant is always required" would be false for the default value
-              on most projects. See `shouldWarnMissingAgentGrant`.
+              for EVERY strategy other than `runtime`, so the enforced,
+              LLM gateway and Connector values are gated by the identical rule.
+              Environment variable is the one exception, and it has to stay
+              one — a project with no `agents:` block hands every environment
+              secret to every agent, so a blanket "a grant is always required"
+              would be false for most projects. See
+              `shouldWarnMissingAgentGrant`.
 
-              Second, Git service: a value the picker does not offer, because
-              only the git-connection flow assigns it. A row can therefore show
-              a badge with no matching option, which reads as a bug unless the
-              page says who set it. */}
+              Second, the three assigned values. Their own flows write them,
+              which is why the picker does not offer them. A row can therefore
+              show a badge with no matching option, and that reads as a bug
+              unless the page says who set it. */}
           <p className="text-muted-foreground border-border mt-0.5 border-t pt-2.5 text-xs text-pretty">
-            Every value except <span className="text-foreground">Sandbox</span> reaches a session
-            only when its agent lists the identifier under{' '}
+            The first three are the exposure you choose. Every one of them except{' '}
+            <span className="text-foreground">Environment variable</span> reaches a session only
+            when its agent lists the identifier under{' '}
             <code className="font-mono">secrets</code> in{' '}
             <code className="font-mono">kortix.yaml</code>;{' '}
-            <code className="font-mono">secrets: all</code> does not count. A secret can also read{' '}
-            <span className="text-foreground">Git service</span>: Kortix assigns that one when you
-            connect a repository, and it cannot be chosen or changed here.
+            <code className="font-mono">secrets: all</code> does not count. The last three are
+            usages Kortix assigns — <span className="text-foreground">LLM gateway</span> when you
+            connect a model provider, <span className="text-foreground">Connector</span> when you
+            bind a connector, <span className="text-foreground">Git</span> when you connect a
+            repository — and none of them can be chosen or changed here.
           </p>
         </dl>
       </CollapsibleContent>
@@ -532,7 +532,6 @@ function normalizeResponse(
     items: Array.isArray(data?.items) ? data!.items : [],
     required: Array.isArray(data?.required) ? data!.required : [],
     optional: Array.isArray(data?.optional) ? data!.optional : [],
-    can_manage: data?.can_manage,
     manifest_status: data?.manifest_status,
     manifest_path: data?.manifest_path,
     manifest_error: data?.manifest_error,
@@ -703,7 +702,7 @@ function SecretTableRow({
           {row.requiresRotation && (
             <span className="text-kortix-orange text-[11px] font-medium">Rotation required</span>
           )}
-          {shouldWarnMissingAgentGrant(row.deliveryBlockedReason, row.strategy) && (
+          {shouldWarnMissingAgentGrant(row.deliveryBlockedReason, row.strategy, row.consumer) && (
             <span className="text-kortix-orange text-[11px] font-medium">No agent grant</span>
           )}
         </div>
@@ -754,8 +753,6 @@ function SecretDialog({
   row,
   connectors,
   connectorsLoading,
-  networkBoundary,
-  boundaryMode,
   onSaved,
 }: {
   open: boolean;
@@ -764,9 +761,6 @@ function SecretDialog({
   row: SecretRow | null;
   connectors: Awaited<ReturnType<typeof listConnectors>>['connectors'];
   connectorsLoading: boolean;
-  networkBoundary: NetworkBoundaryAvailability;
-  /** Which mechanism will carry the header, null while none is armed. */
-  boundaryMode: NetworkBoundaryMode | null;
   onSaved: () => void;
 }) {
   const queryClient = useQueryClient();
@@ -776,23 +770,29 @@ function SecretDialog({
   const [key, setKey] = useState(row?.key ?? '');
   const [value, setValue] = useState('');
   /**
-   * ONE control, one piece of state. The dialog used to hold `strategy` and
-   * `brokerConsumer` separately and render a picker for each, which made
-   * "LLM gateway" a two-step answer to a one-step question. `strategy` and
-   * `consumer` are still what gets STORED — they are derived here, not typed
-   * by the user.
+   * What the system makes of the name and value typed so far (spec §7). It is
+   * recomputed on every keystroke rather than latched on blur: a user who
+   * pastes an `AKIA…` value has to see the environment default and the signing
+   * sentence at the moment they paste it, not after they leave the field.
    */
-  const [access, setAccess] = useState<SecretAccessChoice>(() =>
-    defaultSecretAccess(row, networkBoundary),
-  );
-  const { strategy, consumer: accessConsumer } = secretAccessTarget(access);
+  const classification = useMemo(() => classifyNewSecret({ key, value }), [key, value]);
   /**
-   * The git connection owns this row's Access, so the picker must not be
-   * shown at all. It offers five values, none of them `git_proxy`; rendering
-   * it would silently move the secret off the consumer the git connection
-   * reads.
+   * ONE control, one piece of state: "can your code read this value?".
+   *
+   * `null` means the user has not answered, so the answer follows the
+   * classification as they type. Any explicit pick latches — a user who chose
+   * Environment variable must not be moved off it by their next keystroke.
    */
-  const accessLocked = secretAccessIsSystemManaged(row?.consumer);
+  const [pickedExposure, setPickedExposure] = useState<SecretExposure | null>(null);
+  const exposure = pickedExposure ?? defaultSecretExposure(row, classification);
+  const { strategy, consumer: nextConsumer } = secretDeliveryTarget(exposure, row);
+  /**
+   * The LLM gateway, a connector, or the git connection owns this row's
+   * usage, so the picker must not be shown at all. It writes three
+   * `(strategy, consumer)` pairs and none of them is the one this row has;
+   * rendering it would silently disconnect whatever assigned it.
+   */
+  const usageAssigned = secretUsageIsAssigned(row?.consumer);
   const [selectedConnectorSlugs, setSelectedConnectorSlugs] = useState<string[] | null>(null);
   const effectiveSelectedConnectorSlugs =
     selectedConnectorSlugs ??
@@ -801,65 +801,44 @@ function SecretDialog({
       .map((connector) => connector.slug);
   const effectiveSelectedConnectorSlugSet = new Set(effectiveSelectedConnectorSlugs);
   const currentPolicy = row?.egressPolicy;
-  const currentInjection = currentPolicy?.inject;
-  const [brokerHosts, setBrokerHosts] = useState(
-    () => currentPolicy?.rules.map((rule) => rule.host).join('\n') ?? '',
-  );
-  const [brokerMethods, setBrokerMethods] = useState(
-    () => currentPolicy?.rules[0]?.methods?.join(', ') ?? 'POST',
-  );
-  const [brokerPath, setBrokerPath] = useState(currentPolicy?.rules[0]?.path ?? '/');
-  const [injectionKind, setInjectionKind] = useState<'header' | 'query' | 'json_body_field'>(
-    currentInjection?.kind ?? 'header',
-  );
-  const [injectionTarget, setInjectionTarget] = useState(
-    currentInjection?.kind === 'json_body_field'
-      ? currentInjection.path
-      : (currentInjection?.name ?? 'authorization'),
-  );
-  const [injectionTemplate, setInjectionTemplate] = useState(
-    currentInjection?.kind === 'header' ? (currentInjection.template ?? '') : '',
+  const storedHosts = currentPolicy?.rules.map((rule) => rule.host).join('\n') ?? '';
+  /** `null` until the user edits it, so a new secret's host list follows the
+   *  classification's prefill while they are still typing the key. */
+  const [editedHosts, setEditedHosts] = useState<string | null>(null);
+  const hosts = editedHosts ?? (row ? storedHosts : classification.hosts.join('\n'));
+  /**
+   * A slot this row was created with, before Kortix substituted handles in
+   * place. It rides through every save untouched unless the user removes it —
+   * dropping it silently would stop a working injection on an unrelated edit
+   * such as a value rotation.
+   */
+  const [legacyInject, setLegacyInject] = useState<SecretInjectionSlot | null>(
+    currentPolicy?.inject ?? null,
   );
 
   const resetForm = () => {
     setIdentifier(row?.identifier ?? '');
     setKey(row?.key ?? '');
     setValue('');
-    setAccess(defaultSecretAccess(row, networkBoundary));
+    setPickedExposure(null);
     setSelectedConnectorSlugs(null);
-    setBrokerHosts(currentPolicy?.rules.map((rule) => rule.host).join('\n') ?? '');
-    setBrokerMethods(currentPolicy?.rules[0]?.methods?.join(', ') ?? 'POST');
-    setBrokerPath(currentPolicy?.rules[0]?.path ?? '/');
-    setInjectionKind(currentInjection?.kind ?? 'header');
-    setInjectionTarget(
-      currentInjection?.kind === 'json_body_field'
-        ? currentInjection.path
-        : (currentInjection?.name ?? 'authorization'),
-    );
-    setInjectionTemplate(
-      currentInjection?.kind === 'header' ? (currentInjection.template ?? '') : '',
-    );
+    setEditedHosts(null);
+    setLegacyInject(currentPolicy?.inject ?? null);
   };
 
   const requiresValue = !row?.configured;
-  const brokerPolicy = buildBrokerPolicy({
-    hosts: brokerHosts,
-    methods: brokerMethods,
-    path: brokerPath,
-    injectionKind,
-    injectionTarget,
-    template: injectionTemplate,
+  const enforcedPolicy = buildEnforcedPolicy({
+    hosts,
+    legacyInject,
+    backend: nextConsumer === 'http_broker' ? 'kortix_fetch' : undefined,
   });
-  const networkBoundaryPolicy = buildNetworkBoundaryPolicy({
-    hosts: brokerHosts,
-    injectionTarget,
-    template: injectionTemplate,
-  });
+  const needsHosts = strategy === 'egress' || nextConsumer === 'http_broker';
 
   const prepareSavePlan = (): SecretSavePlan => {
     const finalKey = (row?.key ?? key).trim().toUpperCase();
     const finalIdentifier = (row?.identifier ?? identifier).trim() || finalKey;
-    const nextConnectorSlugs = access === 'connector' ? effectiveSelectedConnectorSlugs : [];
+    const nextConnectorSlugs =
+      row?.consumer === 'connector' ? effectiveSelectedConnectorSlugs : [];
     const bindingChanges = connectorBindingChanges(connectors, finalIdentifier, nextConnectorSlugs);
     if (!SECRET_NAME_REGEX.test(finalKey)) {
       throw new Error('Key: use A-Z, 0-9, _ only. Must start with a letter or _. Max 64 chars.');
@@ -876,24 +855,15 @@ function SecretDialog({
     if (strategy === 'runtime' && row?.requiresRotation && !value.trim()) {
       throw new Error('Enter a new value before making this secret readable in the sandbox.');
     }
-    if (access === 'http_broker' && !brokerPolicy) {
-      throw new Error('Complete the broker destination and credential placement.');
+    if (needsHosts && !enforcedPolicy) {
+      throw new Error('Add at least one exact HTTPS host.');
     }
-    if (strategy === 'egress' && !networkBoundaryPolicy) {
-      throw new Error('Add an exact HTTPS host and a valid header placement.');
-    }
-    if (access === 'connector' && nextConnectorSlugs.length === 0) {
+    if (row?.consumer === 'connector' && nextConnectorSlugs.length === 0) {
       throw new Error('Select at least one connector.');
     }
 
-    const nextConsumer: SecretConsumer | null = accessConsumer;
     const hasValueChange = Boolean(value.trim()) || !row?.configured;
-    const egressPolicy =
-      strategy === 'egress'
-        ? (networkBoundaryPolicy ?? undefined)
-        : access === 'http_broker' && brokerPolicy
-          ? brokerPolicy
-          : undefined;
+    const egressPolicy = needsHosts ? (enforcedPolicy ?? undefined) : undefined;
     const shouldSetStrategy =
       strategy !== (row?.strategy ?? 'runtime') ||
       nextConsumer !== (row?.consumer ?? 'sandbox') ||
@@ -1070,21 +1040,18 @@ function SecretDialog({
     : row.configured
       ? `Edit ${row.identifier}`
       : `Set ${row.identifier}`;
-  const selectedDelivery = secretDeliveryPresentation(strategy, accessConsumer);
+  const selectedDelivery = secretDeliveryPresentation(strategy, nextConsumer);
   const bindingIdentifier = (row?.identifier ?? identifier).trim() || key.trim().toUpperCase();
   const connectorOptions = connectorBindingOptions(connectors, bindingIdentifier);
-  const deliveryGroups = secretDeliveryOptionGroups(
-    secretDeliveryOptions(access, row?.deliveryStatus ?? 'available', networkBoundary),
-  );
-  const networkBoundaryNotice = networkBoundaryBlockedReason(networkBoundary);
-  // A blocked project runs neither mechanism yet, and the fix above leads with
-  // the shim flag — so describe the symptom the user will actually meet after
-  // taking it, not the provider edge's opposite one.
-  const echoNotice = networkBoundaryEchoNotice(brokerHosts, boundaryMode ?? 'in-guest-shim');
+  const exposureOptions = secretExposureOptions();
+  const echoNotice = enforcedEchoNotice(hosts);
+  const legacyDetail = legacyInjectionDetail(legacyInject ? currentPolicy : null);
   // The dialog keeps the row it opened with, so a completed grant clears its own
   // warning — the refetch only reaches the table behind it.
   const grantNotice =
-    row && shouldWarnMissingAgentGrant(row.deliveryBlockedReason, strategy) && !grant.isSuccess
+    row &&
+    shouldWarnMissingAgentGrant(row.deliveryBlockedReason, strategy, nextConsumer) &&
+    !grant.isSuccess
       ? missingAgentGrantNotice(row.identifier)
       : null;
   const grantManifest = agentGrantSnippet(
@@ -1104,9 +1071,8 @@ function SecretDialog({
     requiresRotation: Boolean(row?.requiresRotation),
     currentStrategy: row?.strategy ?? 'runtime',
     nextStrategy: strategy,
-    nextConsumer: accessConsumer,
-    brokerPolicyValid: brokerPolicy !== null,
-    networkBoundaryPolicyValid: networkBoundaryPolicy !== null,
+    nextConsumer,
+    enforcedPolicyValid: enforcedPolicy !== null,
     selectedConnectorCount: effectiveSelectedConnectorSlugs.length,
   });
 
@@ -1124,8 +1090,8 @@ function SecretDialog({
           <ModalHeader>
             <ModalTitle>{title}</ModalTitle>
             <ModalDescription>
-              The identifier selects this credential. The delivery policy controls where its value
-              can be used.
+              The identifier selects this credential. Access decides whether agent code can read
+              the value, and who else may spend it.
             </ModalDescription>
           </ModalHeader>
           <form onSubmit={handleSubmit} autoComplete="off">
@@ -1196,9 +1162,37 @@ function SecretDialog({
                 </p>
               )}
 
+              {/* The two things the system recognized, said once, where the
+                  user can act on them. Both only ever change a DEFAULT — the
+                  picker below stays free. */}
+              {!isEdit && classification.signingNote && (
+                <InfoBanner tone="warning" title="This credential signs requests locally">
+                  {classification.signingNote} Keep it in the environment so the code that computes
+                  the signature can hold it.
+                </InfoBanner>
+              )}
+              {!isEdit && classification.modelProvider && exposure === 'enforced' && (
+                <InfoBanner
+                  tone="neutral"
+                  title={`Recognized: ${classification.modelProvider.label} key`}
+                >
+                  {classification.hosts.length > 0
+                    ? `The approved host is prefilled with ${classification.hosts[0]}, so agent code can call ${classification.modelProvider.label} directly without ever holding the key.`
+                    : `Add ${classification.modelProvider.label}'s API host below so agent code can call it directly without ever holding the key.`}{' '}
+                  If the Kortix model gateway should spend it for model requests instead, connect{' '}
+                  {classification.modelProvider.label} under LLM providers — one key is served by
+                  one of the two, not both.
+                </InfoBanner>
+              )}
+
               <Field>
-                <FieldLabel htmlFor="secret-dialog-delivery">Access</FieldLabel>
-                {accessLocked ? (
+                <FieldLabel htmlFor="secret-dialog-delivery">
+                  {usageAssigned ? 'Access' : 'Can your code read this value?'}
+                </FieldLabel>
+                {usageAssigned ? (
+                  /* Read-only, because another flow assigned it. Same treatment
+                     the git-connection secret always had, now covering the LLM
+                     gateway and connector rows it was always true of. */
                   <div
                     id="secret-dialog-delivery"
                     className="border-border bg-sidebar rounded-md border p-3"
@@ -1207,53 +1201,42 @@ function SecretDialog({
                       {selectedDelivery.label}
                     </Badge>
                     <p className="text-muted-foreground mt-2 text-xs text-pretty">
-                      {selectedDelivery.description}
+                      {selectedDelivery.description} Kortix assigned this — it cannot be changed
+                      here.
                     </p>
                   </div>
                 ) : (
                   <Select
-                    value={access}
-                    onValueChange={(next) => setAccess(next as SecretAccessChoice)}
+                    value={exposure}
+                    onValueChange={(next) => setPickedExposure(next as SecretExposure)}
                     disabled={save.isPending}
                   >
                     <SelectTrigger id="secret-dialog-delivery" className="min-h-10 w-full">
                       <SelectValue />
                     </SelectTrigger>
-                    {/* One list, five values, no second screen. The group label
-                        is a heading, not an option: it says who the value
-                        serves — the project's own code, or a Kortix service
-                        the code never touches — without asking the user to
-                        choose that first. */}
+                    {/* One list, three values, no second screen and no
+                        grouping: every item answers the label's question. */}
                     <SelectContent>
-                      {deliveryGroups.map((group) => (
-                        <SelectGroup key={group.group}>
-                          {group.label && <SelectLabel>{group.label}</SelectLabel>}
-                          {group.options.map((option) => (
-                            <SelectItem
-                              key={option.choice}
-                              value={option.choice}
-                              disabled={option.disabled}
-                              description={
-                                option.disabledReason
-                                  ? `${option.description} ${option.disabledReason}`
-                                  : option.description
-                              }
-                            >
-                              {option.label}
-                            </SelectItem>
-                          ))}
-                        </SelectGroup>
+                      {exposureOptions.map((option) => (
+                        <SelectItem
+                          key={option.exposure}
+                          value={option.exposure}
+                          description={option.description}
+                        >
+                          {option.label}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 )}
-                {!accessLocked && <FieldDescription>{selectedDelivery.description}</FieldDescription>}
+                {!usageAssigned && <FieldDescription>{selectedDelivery.description}</FieldDescription>}
               </Field>
 
               {strategy === 'runtime' && (
                 <InfoBanner tone="warning" title="Readable inside the sandbox">
                   Agent code and commands can read this value. Use this option only when the secret
-                  must be available to a local process.
+                  must be available to a local process — a credential that signs requests, or a
+                  protocol Kortix cannot enforce.
                 </InfoBanner>
               )}
 
@@ -1262,6 +1245,7 @@ function SecretDialog({
                   tone="warning"
                   icon={<DangerTriangleSolid weight="fill" />}
                   title={grantNotice.title}
+                  className="[&_[data-slot=alert-content]]:min-w-0"
                 >
                   <span className="block text-pretty">{grantNotice.body}</span>
                   {grantPlan.candidates.length > 0 && (
@@ -1323,31 +1307,25 @@ function SecretDialog({
                 </InfoBanner>
               )}
 
-              {strategy === 'egress' && (
+              {needsHosts && (
                 <div className="border-border bg-sidebar space-y-4 rounded-md border p-3">
                   <div className="space-y-1">
-                    <p className="text-sm font-medium">Network boundary</p>
+                    <p className="text-sm font-medium">Approved hosts</p>
                     <p className="text-muted-foreground text-xs text-pretty">
-                      Kortix adds this value to matching HTTPS requests outside the sandbox.
+                      The sandbox holds a handle under this key. Kortix swaps the real value in
+                      outside the sandbox, and only on a request to one of these hosts.
                     </p>
                   </div>
 
-                  {networkBoundaryNotice && (
-                    <InfoBanner
-                      tone="warning"
-                      icon={<DangerTriangleSolid weight="fill" />}
-                      title="Nothing injects this header today"
-                    >
-                      {networkBoundaryNotice}
-                    </InfoBanner>
-                  )}
-
-                  <InfoBanner tone="neutral" title="Not readable inside the sandbox">
-                    The sandbox receives no value, alias, or placeholder. The agent sends an
-                    ordinary request and the header appears in flight.
-                  </InfoBanner>
-
-                  <InfoBanner tone="neutral" title={echoNotice.title}>
+                  {/* `min-w-0` on the alert's content wrapper lets the flex
+                      child shrink below the <pre>'s intrinsic (white-space: pre)
+                      width, so the probe scrolls inside its own overflow-x-auto
+                      box instead of forcing the whole dialog to scroll. */}
+                  <InfoBanner
+                    tone="neutral"
+                    title={echoNotice.title}
+                    className="[&_[data-slot=alert-content]]:min-w-0"
+                  >
                     <span className="block text-pretty">{echoNotice.body}</span>
                     <pre className="border-border bg-muted mt-2 overflow-x-auto rounded-sm border p-2 font-mono text-xs leading-relaxed">
                       {echoNotice.probe}
@@ -1363,11 +1341,11 @@ function SecretDialog({
                   </InfoBanner>
 
                   <Field>
-                    <FieldLabel htmlFor="secret-dialog-boundary-hosts">Allowed hosts</FieldLabel>
+                    <FieldLabel htmlFor="secret-dialog-hosts">Hosts</FieldLabel>
                     <Textarea
-                      id="secret-dialog-boundary-hosts"
-                      value={brokerHosts}
-                      onChange={(event) => setBrokerHosts(event.target.value)}
+                      id="secret-dialog-hosts"
+                      value={hosts}
+                      onChange={(event) => setEditedHosts(event.target.value)}
                       placeholder={'api.example.com\nuploads.example.com'}
                       minHeight={56}
                       maxHeight={112}
@@ -1377,239 +1355,101 @@ function SecretDialog({
                     />
                     <FieldDescription>
                       One exact HTTPS host per line. Wildcards, paths, and ports are not accepted.
+                      Every other host is denied.
                     </FieldDescription>
                   </Field>
 
-                  <Field>
-                    <FieldLabel htmlFor="secret-dialog-boundary-header">Header name</FieldLabel>
-                    <Input
-                      id="secret-dialog-boundary-header"
-                      value={injectionTarget}
-                      onChange={(event) => setInjectionTarget(event.target.value)}
-                      placeholder="authorization"
-                      className="font-mono text-xs"
-                      disabled={save.isPending}
-                    />
-                    <FieldDescription>
-                      Kortix replaces this header only for the allowed hosts.
-                    </FieldDescription>
-                  </Field>
-
-                  <Field>
-                    <FieldLabel htmlFor="secret-dialog-boundary-template">
-                      Header value template
-                    </FieldLabel>
-                    <Input
-                      id="secret-dialog-boundary-template"
-                      value={injectionTemplate}
-                      onChange={(event) => setInjectionTemplate(event.target.value)}
-                      placeholder="Bearer {{secret}}"
-                      className="font-mono text-xs"
-                      disabled={save.isPending}
-                    />
-                    <FieldDescription>
-                      Optional. Include {'{{secret}}'} where Kortix inserts the value. Leave it
-                      blank and the header carries the bare value with no scheme, which most APIs
-                      reject with 401.
-                    </FieldDescription>
-                  </Field>
+                  {/* Legacy rows only. The slot is shown, never edited: it is
+                      not part of the shape a new secret can have, and hiding
+                      it would leave an author unable to see why their request
+                      carries a header they never configured here. */}
+                  {legacyDetail && (
+                    <div className="border-border bg-popover space-y-2 rounded-md border p-3">
+                      <p className="text-sm font-medium">{legacyDetail.title}</p>
+                      <p className="text-muted-foreground text-xs text-pretty">
+                        {legacyDetail.body}
+                      </p>
+                      <dl className="text-muted-foreground space-y-0.5 font-mono text-xs">
+                        {legacyDetail.lines.map((line) => (
+                          <dd key={line}>{line}</dd>
+                        ))}
+                      </dl>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setLegacyInject(null)}
+                        disabled={save.isPending}
+                      >
+                        Remove the slot
+                      </Button>
+                    </div>
+                  )}
                 </div>
               )}
 
-              {/* Only two of the three broker values configure anything: a
-                  Connector picks connectors, the HTTPS broker states a
-                  policy. LLM gateway needs nothing, so it renders no panel at
-                  all — which is exactly why "Used by" was never a step. */}
-              {strategy === 'broker' && access !== 'llm_gateway' && (
+              {/* The connector binding keeps its own control: the usage above
+                  is read-only, but WHICH connectors resolve this secret is a
+                  real choice and this is where it is made. */}
+              {row?.consumer === 'connector' && (
                 <div className="border-border bg-sidebar space-y-4 rounded-md border p-3">
-                  {access === 'connector' && (
-                    <Field>
-                      <FieldLabel>Connectors</FieldLabel>
-                      {connectorsLoading ? (
-                        <div className="space-y-2">
-                          <Skeleton className="h-12 rounded-md" />
-                          <Skeleton className="h-12 rounded-md" />
-                        </div>
-                      ) : connectorOptions.length === 0 ? (
-                        <InfoBanner tone="neutral" title="No connectors available">
-                          Add a connector that requires project-owned authentication first.
-                        </InfoBanner>
-                      ) : (
-                        <div className="bg-popover overflow-hidden rounded-md border">
-                          {connectorOptions.map((option, index) => (
-                            <label
-                              key={option.slug}
-                              className={cn(
-                                'flex min-h-12 items-center gap-3 px-3 py-2',
-                                index > 0 && 'border-t',
-                                option.disabled
-                                  ? 'cursor-not-allowed opacity-60'
-                                  : 'cursor-pointer',
-                              )}
-                            >
-                              <Checkbox
-                                checked={effectiveSelectedConnectorSlugSet.has(option.slug)}
-                                disabled={option.disabled || save.isPending}
-                                onCheckedChange={(checked) => {
-                                  setSelectedConnectorSlugs((current) =>
-                                    checked
-                                      ? [
-                                          ...new Set([
-                                            ...(current ?? effectiveSelectedConnectorSlugs),
-                                            option.slug,
-                                          ]),
-                                        ]
-                                      : (current ?? effectiveSelectedConnectorSlugs).filter(
-                                          (slug) => slug !== option.slug,
-                                        ),
-                                  );
-                                }}
-                              />
-                              <span className="min-w-0 flex-1">
-                                <span className="block truncate text-sm font-medium">
-                                  {option.name}
-                                </span>
-                                <span className="text-muted-foreground block text-xs text-pretty">
-                                  {option.description}
-                                </span>
-                              </span>
-                            </label>
-                          ))}
-                        </div>
-                      )}
-                      <FieldDescription>
-                        Selected connectors resolve this secret on the server. The sandbox receives
-                        no value.
-                      </FieldDescription>
-                    </Field>
-                  )}
-
-                  {access === 'http_broker' && (
-                    <>
-                      <InfoBanner tone="neutral" title="Opaque sandbox handle">
-                        The sandbox receives a session handle. Kortix adds the real value only to a
-                        matching HTTPS request.
+                  <Field>
+                    <FieldLabel>Connectors</FieldLabel>
+                    {connectorsLoading ? (
+                      <div className="space-y-2">
+                        <Skeleton className="h-12 rounded-md" />
+                        <Skeleton className="h-12 rounded-md" />
+                      </div>
+                    ) : connectorOptions.length === 0 ? (
+                      <InfoBanner tone="neutral" title="No connectors available">
+                        Add a connector that requires project-owned authentication first.
                       </InfoBanner>
-
-                      <Field>
-                        <FieldLabel htmlFor="secret-dialog-broker-hosts">Allowed hosts</FieldLabel>
-                        <Textarea
-                          id="secret-dialog-broker-hosts"
-                          value={brokerHosts}
-                          onChange={(event) => setBrokerHosts(event.target.value)}
-                          placeholder={'api.example.com\n*.service.example.com'}
-                          minHeight={56}
-                          maxHeight={112}
-                          variant="outline"
-                          className="font-mono text-xs"
-                          disabled={save.isPending}
-                        />
-                        <FieldDescription>
-                          One exact host or leading wildcard per line. Kortix denies every other
-                          host.
-                        </FieldDescription>
-                      </Field>
-
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        <Field>
-                          <FieldLabel htmlFor="secret-dialog-broker-methods">Methods</FieldLabel>
-                          <Input
-                            id="secret-dialog-broker-methods"
-                            value={brokerMethods}
-                            onChange={(event) => setBrokerMethods(event.target.value.toUpperCase())}
-                            placeholder="POST"
-                            className="font-mono text-xs"
-                            disabled={save.isPending}
-                          />
-                          <FieldDescription>
-                            Comma-separated. Blank allows any method.
-                          </FieldDescription>
-                        </Field>
-                        <Field>
-                          <FieldLabel htmlFor="secret-dialog-broker-path">Path</FieldLabel>
-                          <Input
-                            id="secret-dialog-broker-path"
-                            value={brokerPath}
-                            onChange={(event) => setBrokerPath(event.target.value)}
-                            placeholder="/v1/*"
-                            className="font-mono text-xs"
-                            disabled={save.isPending}
-                          />
-                          <FieldDescription>
-                            Exact path or one trailing /* wildcard.
-                          </FieldDescription>
-                        </Field>
-                      </div>
-
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        <Field>
-                          <FieldLabel htmlFor="secret-dialog-injection-kind">
-                            Credential location
-                          </FieldLabel>
-                          <Select
-                            value={injectionKind}
-                            onValueChange={(next) =>
-                              setInjectionKind(next as 'header' | 'query' | 'json_body_field')
-                            }
-                            disabled={save.isPending}
+                    ) : (
+                      <div className="bg-popover overflow-hidden rounded-md border">
+                        {connectorOptions.map((option, index) => (
+                          <label
+                            key={option.slug}
+                            className={cn(
+                              'flex min-h-12 items-center gap-3 px-3 py-2',
+                              index > 0 && 'border-t',
+                              option.disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer',
+                            )}
                           >
-                            <SelectTrigger id="secret-dialog-injection-kind" className="w-full">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="header">Header</SelectItem>
-                              <SelectItem value="query">Query parameter</SelectItem>
-                              <SelectItem value="json_body_field">JSON body field</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </Field>
-                        <Field>
-                          <FieldLabel htmlFor="secret-dialog-injection-target">
-                            {injectionKind === 'header'
-                              ? 'Header name'
-                              : injectionKind === 'query'
-                                ? 'Parameter name'
-                                : 'JSON field path'}
-                          </FieldLabel>
-                          <Input
-                            id="secret-dialog-injection-target"
-                            value={injectionTarget}
-                            onChange={(event) => setInjectionTarget(event.target.value)}
-                            placeholder={
-                              injectionKind === 'header'
-                                ? 'authorization'
-                                : injectionKind === 'query'
-                                  ? 'api_key'
-                                  : 'auth.api_key'
-                            }
-                            className="font-mono text-xs"
-                            disabled={save.isPending}
-                          />
-                        </Field>
+                            <Checkbox
+                              checked={effectiveSelectedConnectorSlugSet.has(option.slug)}
+                              disabled={option.disabled || save.isPending}
+                              onCheckedChange={(checked) => {
+                                setSelectedConnectorSlugs((current) =>
+                                  checked
+                                    ? [
+                                        ...new Set([
+                                          ...(current ?? effectiveSelectedConnectorSlugs),
+                                          option.slug,
+                                        ]),
+                                      ]
+                                    : (current ?? effectiveSelectedConnectorSlugs).filter(
+                                        (slug) => slug !== option.slug,
+                                      ),
+                                );
+                              }}
+                            />
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-sm font-medium">
+                                {option.name}
+                              </span>
+                              <span className="text-muted-foreground block text-xs text-pretty">
+                                {option.description}
+                              </span>
+                            </span>
+                          </label>
+                        ))}
                       </div>
-
-                      {injectionKind === 'header' && (
-                        <Field>
-                          <FieldLabel htmlFor="secret-dialog-injection-template">
-                            Header value template
-                          </FieldLabel>
-                          <Input
-                            id="secret-dialog-injection-template"
-                            value={injectionTemplate}
-                            onChange={(event) => setInjectionTemplate(event.target.value)}
-                            placeholder="Bearer {{secret}}"
-                            className="font-mono text-xs"
-                            disabled={save.isPending}
-                          />
-                          <FieldDescription>
-                            Optional. Include {'{{secret}}'} where Kortix inserts the value. Leave
-                            it blank and the header carries the bare value with no scheme, which
-                            most APIs reject with 401.
-                          </FieldDescription>
-                        </Field>
-                      )}
-                    </>
-                  )}
+                    )}
+                    <FieldDescription>
+                      Selected connectors resolve this secret on the server. The sandbox receives
+                      no value.
+                    </FieldDescription>
+                  </Field>
                 </div>
               )}
 

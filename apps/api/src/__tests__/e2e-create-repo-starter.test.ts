@@ -10,7 +10,7 @@ import {
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 
-import { mockIamEngineAllowAll, mockIamMembershipSyncNoop } from './helpers/iam-mocks';
+import { mockIamAssignments, mockIamEngineAllowAll, mockIamReadModels } from './helpers/iam-mocks';
 
 const USER_ID = '00000000-0000-4000-a000-000000000001';
 const ACCOUNT_ID = '00000000-0000-4000-a000-000000000101';
@@ -129,7 +129,25 @@ function resetState() {
 
 mockIamEngineAllowAll();
 
-mockIamMembershipSyncNoop();
+// The hermetic db shim models the legacy tables; the read models project from
+// those rows rather than from `role_assignments`. See mockIamReadModels.
+mockIamReadModels();
+// Every grant goes through `assignRole` now, and it IS the grant — a suite whose
+// db shim does not model `role_assignments` must bypass it.
+// …and capture the creator's Manager grant, which the assertion below pins.
+// It is one `assignRole` call now, not an INSERT into `project_members`.
+mockIamAssignments({
+  onGrant: (input) => {
+    if (input.scope.type !== 'project') return;
+    grantedProjectRole = {
+      accountId: input.accountId,
+      projectId: input.scope.id,
+      userId: input.principal.id,
+      projectRole: input.roleKey,
+      grantedBy: (input as { grantedBy?: string | null }).grantedBy ?? null,
+    };
+  },
+});
 
 const realPlatformRoles = await import('../shared/platform-roles');
 mock.module('../shared/platform-roles', () => ({
@@ -168,6 +186,9 @@ mock.module('../projects/git', () => ({
   getFileHistory: async () => ({ entries: [], nextCursor: null }),
   // Used by snapshots/builder + the snapshots HTTP surface in projects/index.
   resolveCommitSha: async () => 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+  resolveFastBootGitHint: async () => ({
+    baseSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+  }),
   resolveTreeOid: async () => 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
   materializeRepoContext: async () => '/tmp/fake-snapshot-context',
   resolveBranchTip: async () => 'a'.repeat(40),
@@ -197,6 +218,14 @@ mock.module('../snapshots/builder', () => ({
     contentHash: 'a'.repeat(64),
     built: false,
     isDefault: true,
+  }),
+  ensureFastSandboxImage: async () => ({
+    snapshotName: 'kortix-fast-test',
+    slug: 'default',
+    contentHash: 'f'.repeat(64),
+    built: false,
+    isDefault: true,
+    runtimeProfile: 'fast',
   }),
   ensureMetaSandboxImage: async () => ({
     snapshotName: 'kortix-meta-test',

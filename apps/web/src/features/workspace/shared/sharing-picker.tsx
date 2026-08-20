@@ -1,24 +1,13 @@
 'use client';
 
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { Skeleton } from '@/components/ui/skeleton';
-import { UserAvatar } from '@/components/ui/user-avatar';
-import { Close } from '@/features/icon/icons/close';
-import { listGroups } from '@/lib/iam-client';
-import { cn } from '@/lib/utils';
-import { listProjectAccess } from '@kortix/sdk';
-import { contract, qk } from '@kortix/sdk/react';
 import {
-  CheckCircleIcon as CheckCircleSolid,
-  MagnifyingGlassIcon as Search,
-  UsersIcon as Users,
-} from '@phosphor-icons/react';
-import { useQuery } from '@tanstack/react-query';
-import { useTranslations } from 'next-intl';
-import { useMemo, useState } from 'react';
+  EMPTY_PRINCIPAL_SELECTION,
+  PrincipalPicker,
+  type PrincipalKind,
+} from '@/features/workspace/shared/access';
+import { useMemo } from 'react';
 import {
   DEFAULT_COPY,
   type SharingCopy,
@@ -26,8 +15,16 @@ import {
   type SharingSelection,
 } from './sharing-intent';
 
-// Re-exported so existing callers can keep importing selection helpers + types
-// from the component module.
+// The member/group picker itself now lives in
+// `features/workspace/shared/access/principal-picker.tsx` as
+// `PrincipalPicker` — one component for every access surface. This module
+// keeps the project-sharing radio (`SharingPicker`) and a thin
+// `SubjectPicker` adapter so the one remaining non-access caller
+// (`features/apps/apps-view.tsx`) is untouched.
+export { PrincipalPicker } from '@/features/workspace/shared/access';
+
+// Re-exported so existing callers can keep importing selection helpers +
+// types from the component module.
 export {
   intentToSelection,
   isSharingComplete,
@@ -41,10 +38,12 @@ export function ShareOption({
   value,
   label,
   desc,
+  disabled = false,
 }: {
   value: string;
   label: string;
   desc: string;
+  disabled?: boolean;
   /** @deprecated Selection state comes from the parent `RadioGroup`. */
   current?: string;
 }) {
@@ -54,6 +53,7 @@ export function ShareOption({
       id={`share-option-${value}`}
       label={label}
       description={desc}
+      disabled={disabled}
       size="lg"
       variant="outline"
     />
@@ -67,12 +67,19 @@ export function SharingPicker({
   copy,
   showHeading = true,
   hideMembers = false,
+  disabledModes,
 }: {
   projectId: string;
   value: SharingSelection;
   onChange: (next: SharingSelection) => void;
   copy?: Partial<SharingCopy>;
   showHeading?: boolean;
+  /**
+   * Modes shown but not selectable. Used where one option would revoke the
+   * editor's own access — "Only you" on a session somebody else owns, where
+   * "you" names the owner and not the person editing.
+   */
+  disabledModes?: SharingMode[];
   /**
    * Pure-pyramid mode (secrets + connectors): drop the direct "specific
    * members/groups" option — targeted access comes ONLY through agent
@@ -91,6 +98,7 @@ export function SharingPicker({
   // (read-only-ish) so it isn't silently broken; the user migrates it to
   // Project-wide/Private or moves the people onto an agent.
   const legacyMembers = hideMembers && value.mode === 'members';
+  const isDisabled = (mode: SharingMode) => Boolean(disabledModes?.includes(mode));
 
   return (
     <div className="space-y-3">
@@ -100,10 +108,25 @@ export function SharingPicker({
         onValueChange={(v) => onChange({ ...value, mode: v as SharingMode })}
         className="space-y-2"
       >
-        <ShareOption value="project" label={c.project.label} desc={c.project.desc} />
-        <ShareOption value="private" label={c.private.label} desc={c.private.desc} />
+        <ShareOption
+          value="project"
+          label={c.project.label}
+          desc={c.project.desc}
+          disabled={isDisabled('project')}
+        />
+        <ShareOption
+          value="private"
+          label={c.private.label}
+          desc={c.private.desc}
+          disabled={isDisabled('private')}
+        />
         {!hideMembers && (
-          <ShareOption value="members" label={c.members.label} desc={c.members.desc} />
+          <ShareOption
+            value="members"
+            label={c.members.label}
+            desc={c.members.desc}
+            disabled={isDisabled('members')}
+          />
         )}
       </RadioGroup>
       {!hideMembers && value.mode === 'members' && (
@@ -132,207 +155,59 @@ export function SharingPicker({
 }
 
 /**
- * Searchable, multi-select allow-list of MEMBERS and GROUPS — the same
- * member+group subject model the IAM Resource-access dialog uses. Members
- * come from the project's access list; groups (account groups) from
- * listGroups, keyed off the account the project belongs to (derived from the
- * access response, so no extra prop plumbing).
+ * Legacy adapter over {@link PrincipalPicker}, kept ONLY for the
+ * non-access callers of this module (`features/apps/apps-view.tsx` and
+ * `SharingPicker` above). Every access surface imports `PrincipalPicker`
+ * directly and passes one `PrincipalSelection` value instead of three
+ * parallel arrays.
+ *
+ * @deprecated Use `PrincipalPicker` from
+ * `@/features/workspace/shared/access`.
  */
 export function SubjectPicker({
   projectId,
+  accountId,
   memberIds,
   groupIds,
+  inviteEmails = [],
   onChange,
+  allowInvite = false,
+  kinds = ['member', 'group'],
+  excludeUserIds,
+  emptyLabel = 'No members or groups in this project yet.',
+  allExcludedLabel = 'Everyone is already added.',
 }: {
-  projectId: string;
+  projectId?: string;
+  accountId?: string;
   memberIds: string[];
   groupIds: string[];
-  onChange: (memberIds: string[], groupIds: string[]) => void;
+  inviteEmails?: string[];
+  onChange: (memberIds: string[], groupIds: string[], inviteEmails: string[]) => void;
+  allowInvite?: boolean;
+  kinds?: PrincipalKind[];
+  excludeUserIds?: string[] | Set<string>;
+  emptyLabel?: string;
+  allExcludedLabel?: string;
 }) {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
-  const [query, setQuery] = useState('');
-  const { data, isLoading } = useQuery({
-    queryKey: qk.project.access(projectId),
-    queryFn: () => listProjectAccess(projectId),
-    ...contract('inventory'),
-  });
-
-  const accountId = data?.account_id;
-  const groupsQuery = useQuery({
-    queryKey: ['account-groups', accountId],
-    queryFn: () => listGroups(accountId as string),
-    enabled: !!accountId,
-    staleTime: 60_000,
-  });
-
-  const members = data?.members ?? [];
-  const groups = groupsQuery.data ?? [];
-  const viewerId = data?.viewer_user_id;
-  const memberSet = useMemo(() => new Set(memberIds), [memberIds]);
-  const groupSet = useMemo(() => new Set(groupIds), [groupIds]);
-  const selectedCount = memberIds.length + groupIds.length;
-
-  const q = query.trim().toLowerCase();
-  const filteredGroups = useMemo(() => {
-    const list = q ? groups.filter((g) => g.name.toLowerCase().includes(q)) : groups;
-    return [...list].sort((a, b) => {
-      const d = (groupSet.has(a.group_id) ? 0 : 1) - (groupSet.has(b.group_id) ? 0 : 1);
-      return d !== 0 ? d : a.name.localeCompare(b.name);
-    });
-  }, [groups, q, groupSet]);
-  const filteredMembers = useMemo(() => {
-    const list = q
-      ? members.filter((m) => (m.email ?? m.user_id).toLowerCase().includes(q))
-      : members;
-    // Selected first, then alphabetical — chosen people stay visible.
-    return [...list].sort((a, b) => {
-      const d = (memberSet.has(a.user_id) ? 0 : 1) - (memberSet.has(b.user_id) ? 0 : 1);
-      return d !== 0 ? d : (a.email ?? a.user_id).localeCompare(b.email ?? b.user_id);
-    });
-  }, [members, q, memberSet]);
-
-  const toggleMember = (id: string) =>
-    onChange(memberSet.has(id) ? memberIds.filter((x) => x !== id) : [...memberIds, id], groupIds);
-  const toggleGroup = (id: string) =>
-    onChange(memberIds, groupSet.has(id) ? groupIds.filter((x) => x !== id) : [...groupIds, id]);
-
-  const loading = isLoading || (!!accountId && groupsQuery.isLoading);
-  const nothing = members.length === 0 && groups.length === 0;
+  const value = useMemo(
+    () => ({ memberIds, groupIds, inviteEmails }),
+    [memberIds, groupIds, inviteEmails],
+  );
+  const scope = projectId
+    ? ({ kind: 'project', projectId } as const)
+    : ({ kind: 'account', accountId: accountId ?? '' } as const);
 
   return (
-    <div className="border-border overflow-hidden rounded-md border">
-      <div className="relative overflow-hidden border-b">
-        <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 h-3.5 w-3.5 -translate-y-1/2" />
-        <Input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder={tI18nHardcoded.raw(
-            'autoFeaturesCoWorkerSharedSharingPickerJsxAttrPlaceholderSearch5747dea4',
-          )}
-          className="rounded-b-none border-none pl-9"
-          variant="transparent"
-        />
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          className="absolute top-1/2 right-3 -translate-y-1/2"
-        >
-          <Close className="text-muted-foreground size-3.5" />
-        </Button>
-      </div>
-
-      {selectedCount > 0 && (
-        <div className="border-border flex items-center justify-between border-b px-3 py-1.5">
-          <span className="text-muted-foreground text-xs">{selectedCount} selected</span>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="h-6 px-2 text-xs"
-            onClick={() => onChange([], [])}
-          >
-            Clear
-          </Button>
-        </div>
-      )}
-
-      <div className="max-h-56 overflow-y-auto p-1">
-        {loading ? (
-          <div className="space-y-1 p-1">
-            {[0, 1, 2].map((i) => (
-              <div key={i} className="flex items-center gap-2.5 px-2 py-1.5">
-                <Skeleton className="size-6 rounded-full" />
-                <Skeleton className="h-3.5 w-40" />
-              </div>
-            ))}
-          </div>
-        ) : nothing ? (
-          <p className="text-muted-foreground px-3 py-6 text-center text-xs">
-            No members or groups in this project yet.
-          </p>
-        ) : filteredGroups.length === 0 && filteredMembers.length === 0 ? (
-          <p className="text-muted-foreground px-3 py-6 text-center text-xs">
-            No matches for your search.
-          </p>
-        ) : (
-          <>
-            {filteredGroups.length > 0 && (
-              <>
-                <p className="text-muted-foreground/70 px-2 pt-1.5 pb-1 text-[11px] font-medium tracking-wide uppercase">
-                  Groups
-                </p>
-                {filteredGroups.map((g) => {
-                  const isSelected = groupSet.has(g.group_id);
-                  return (
-                    <button
-                      key={g.group_id}
-                      type="button"
-                      aria-pressed={isSelected}
-                      onClick={() => toggleGroup(g.group_id)}
-                      className={cn(
-                        'flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors',
-                        isSelected ? 'bg-secondary' : 'hover:bg-muted/50',
-                      )}
-                    >
-                      <span className="bg-muted text-muted-foreground flex size-6 shrink-0 items-center justify-center rounded-full">
-                        <Users className="size-3.5" />
-                      </span>
-                      <span className="text-foreground min-w-0 flex-1 truncate text-sm">
-                        {g.name}
-                        <span className="text-muted-foreground ml-1 text-xs">· group</span>
-                      </span>
-                      {isSelected && (
-                        <span className="shrink-0 px-1">
-                          <CheckCircleSolid weight="fill" className="size-[1.1rem]" />
-                        </span>
-                      )}
-                    </button>
-                  );
-                })}
-              </>
-            )}
-
-            {filteredMembers.length > 0 && (
-              <>
-                {filteredGroups.length > 0 && (
-                  <p className="text-muted-foreground/70 px-2 pt-2 pb-1 text-[11px] font-medium tracking-wide uppercase">
-                    Members
-                  </p>
-                )}
-                {filteredMembers.map((m) => {
-                  const isSelected = memberSet.has(m.user_id);
-                  const email = m.email ?? m.user_id;
-                  return (
-                    <button
-                      key={m.user_id}
-                      type="button"
-                      aria-pressed={isSelected}
-                      onClick={() => toggleMember(m.user_id)}
-                      className={cn(
-                        'flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors',
-                        isSelected ? 'bg-secondary' : 'hover:bg-muted/50',
-                      )}
-                    >
-                      <UserAvatar email={email} size="sm" variant="primary" />
-                      <span className="text-foreground min-w-0 flex-1 truncate text-sm">
-                        {email}
-                        {m.user_id === viewerId && (
-                          <span className="text-muted-foreground ml-1 text-xs">(you)</span>
-                        )}
-                      </span>
-                      {isSelected && (
-                        <span className="shrink-0 px-1">
-                          <CheckCircleSolid weight="fill" className="size-[1.1rem]" />
-                        </span>
-                      )}
-                    </button>
-                  );
-                })}
-              </>
-            )}
-          </>
-        )}
-      </div>
-    </div>
+    <PrincipalPicker
+      scope={scope}
+      selection="multi"
+      kinds={kinds}
+      allowInvite={allowInvite}
+      excludeUserIds={excludeUserIds}
+      value={value ?? EMPTY_PRINCIPAL_SELECTION}
+      onChange={(next) => onChange(next.memberIds, next.groupIds, next.inviteEmails)}
+      emptyLabel={emptyLabel}
+      allExcludedLabel={allExcludedLabel}
+    />
   );
 }

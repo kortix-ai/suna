@@ -58,6 +58,8 @@ export {
 
 export {
   resolveCommitSha,
+  resolveFastBootGitHint,
+  buildSingleParentDeltaBundle,
   listCommits,
   getCommit,
   getCommitDiff,
@@ -67,6 +69,7 @@ export {
 export {
   listBranches,
   remoteBranchExists,
+  resolveRemoteBranchTip,
   createRemoteSessionBranch,
   deleteRemoteSessionBranch,
   commitFileToBranch,

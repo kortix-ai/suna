@@ -4,10 +4,14 @@
  */
 
 import {
+  SESSION_SHARING_OWNER_ONLY_ERROR,
+  SHARING_SELF_LOCKOUT_ERROR,
   loadSessionGrants,
   parseSharingIntent,
   resolveShareSubject,
+  sessionIntentToVisibility,
   setSessionSharing,
+  sharingChangeKeepsEditorAccess,
 } from '../../connectors/share';
 import { PROJECT_ACTIONS } from '../../iam';
 import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-scope';
@@ -27,6 +31,7 @@ import {
   requestAuditContext,
   serializeSession,
 } from '../lib/serializers';
+import { resolveAndAuthorizeAgent } from '../lib/agent-access';
 import { sendSessionCreateError } from '../lib/sessions';
 import { sessionHasMemberConnectorBinding } from '../lib/session-connector-bindings';
 import { createSession, deleteSession } from '../session-lifecycle';
@@ -104,6 +109,15 @@ projectsApp.openapi(
   // scoped to. No-op when the agent isn't scoped (unscoped = project-wide) and
   // for owner/admins. Mirrors the agent the session core resolves (sessions.ts).
   const launchAgent = normalizeString(body.agent_name ?? body.agentName);
+  // Covers BOTH the named agent and — the case that was missing — the unnamed
+  // one. No `agent_name` does not mean "no agent": the session core falls back
+  // to the manifest's `default_agent`, and that agent must clear the same gate.
+  // Skipping it is how a member with no grants still got the fully-privileged
+  // default to answer their prompts while the composer showed nothing selected.
+  //
+  // Runs BEFORE the leaf assert below so its message wins. Both refuse the same
+  // requests; only this one can say WHICH agents the caller could pick instead.
+  const agentAccess = await resolveAndAuthorizeAgent(c, loaded, projectId, launchAgent);
   if (launchAgent) {
     await assertProjectCapability(
       c,
@@ -113,6 +127,14 @@ projectsApp.openapi(
       PROJECT_ACTIONS.PROJECT_AGENT_READ,
       { type: 'agent', id: launchAgent },
     );
+  }
+  // When the caller named no agent and this gate could not read one off the
+  // request/session/mirror, it picked the first agent the caller may use. For a
+  // member that pick has to BIND, because `createSession` resolves the agent
+  // again from the manifest and would otherwise start an agent this gate never
+  // approved. Managers and owners keep the manifest default untouched.
+  if (!launchAgent && agentAccess.memberTier && agentAccess.agentName) {
+    body.agent_name = agentAccess.agentName;
   }
   // Bound the client-supplied idempotency key at intake. It's stored in a unique
   // btree (index entry limit ~2704 bytes), so an oversized header would surface
@@ -271,6 +293,7 @@ projectsApp.openapi(
     grantsBySession,
     runtimeStatusBySession,
     callerSessionId: callerKortixSessionId(c),
+    boundCredentialSessionId: callerKortixSessionId(c),
   });
   if (!selected.authorized) {
     return c.json({ error: 'Project manager access is required to list every session' }, 403);
@@ -289,6 +312,9 @@ projectsApp.openapi(
         grants: grantsBySession.get(row.sessionId) ?? [],
         viewerId: loaded.userId,
         canManageProject,
+        // Only a RESOLVED service account counts as machine-owned. 'unknown'
+        // (a stale principal) keeps the session owner-only — fail closed.
+        ownerIsMachine: !row.createdBy || owner?.type === 'service_account',
         ownerEmail: owner?.email ?? null,
         ownerName: owner?.name ?? null,
         ownerType: owner?.type ?? (row.createdBy ? 'unknown' : null),
@@ -326,8 +352,18 @@ projectsApp.openapi(
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_READ);
 
-  const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null);
+  const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
   if (!visible) return c.json({ error: 'Not found' }, 404);
+  // A soft-deleted session is gone for a read-by-id, exactly as it is for the
+  // default list. `deleteSession` only stamps `metadata.deletedAt`
+  // (session-lifecycle/actions.ts), and this loader never looked at it, so a
+  // deleted session stayed readable by id — and `serializeSession` reported it
+  // as `deleted_at: null` here, because only the list passes that context. Use
+  // the same predicate the list uses (session-inventory.ts: a STRING deletedAt
+  // hides the row). `scope=project` on the LIST deliberately keeps tombstones
+  // for managers; that path is untouched.
+  const deletedAt = (visible.row.metadata ?? {}) as Record<string, unknown>;
+  if (typeof deletedAt.deletedAt === 'string') return c.json({ error: 'Not found' }, 404);
   const ownerEmail = visible.row.createdBy && !visible.isOwner
     ? (await lookupEmailsByUserIds([visible.row.createdBy])).get(visible.row.createdBy) ?? null
     : null;
@@ -335,6 +371,7 @@ projectsApp.openapi(
     grants: visible.grants,
     viewerId: loaded.userId,
     canManageProject: visible.canManageProject,
+    ownerIsMachine: visible.ownerIsMachine,
     ownerEmail,
   }));
 },
@@ -365,18 +402,33 @@ projectsApp.openapi(
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
 
-  const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null);
+  const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
   if (!visible) return c.json({ error: 'Not found' }, 404);
+  // Owner-governed, NOT manager-tier — see mayManageSessionSharing. A manager
+  // cannot read another human's private session, so letting them rewrite its
+  // visibility would hand them the content the read gate just denied.
   if (!visible.canManageSharing) {
-      return c.json(
-        { error: 'Only the session owner or a project manager can change sharing' },
-        403,
-      );
+      return c.json({ error: SESSION_SHARING_OWNER_ONLY_ERROR }, 403);
   }
 
   const intent = parseSharingIntent(body, loaded.userId);
     if (!intent)
       return c.json({ error: 'invalid sharing — mode must be project|private|members' }, 400);
+
+  // Reachable only for a machine-owned session a manager is editing: `private`
+  // means "the OWNER only", so saving it here would lock the editor out of a
+  // session they can no longer re-open to undo it.
+  const next = sessionIntentToVisibility(intent);
+  if (
+    !sharingChangeKeepsEditorAccess({
+      isOwner: visible.isOwner,
+      visibility: next.visibility,
+      grants: next.grants,
+      subject: visible.subject,
+    })
+  ) {
+    return c.json({ error: SHARING_SELF_LOCKOUT_ERROR }, 400);
+  }
 
   if (
     intent.mode !== 'private' &&
@@ -397,13 +449,14 @@ projectsApp.openapi(
 
   await setSessionSharing(sessionId, intent);
 
-  const fresh = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null);
+  const fresh = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
     return c.json(
       fresh
         ? serializeSession(fresh.row, {
     grants: fresh.grants,
     viewerId: loaded.userId,
     canManageProject: fresh.canManageProject,
+    ownerIsMachine: fresh.ownerIsMachine,
           })
         : { ok: true },
     );
@@ -489,7 +542,7 @@ projectsApp.openapi(
       ? (body.metadata as Record<string, unknown>)
       : null;
 
-  const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null);
+  const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
   if (!visible) return c.json({ error: 'Not found' }, 404);
   const existing = visible.row;
 
@@ -533,6 +586,7 @@ projectsApp.openapi(
     grants: visible.grants,
     viewerId: loaded.userId,
     canManageProject: visible.canManageProject,
+    ownerIsMachine: visible.ownerIsMachine,
       }),
     );
 },
@@ -569,9 +623,9 @@ projectsApp.openapi(
   assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_STOP);
 
   // Stopping a session is reserved for its owner or a project manager.
-  const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null);
+  const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
   if (!visible) return c.json({ error: 'Not found' }, 404);
-  if (!visible.canManageSharing) {
+  if (!visible.canManageLifecycle) {
       return c.json(
         { error: 'Only the session owner or a project manager can stop this session' },
         403,

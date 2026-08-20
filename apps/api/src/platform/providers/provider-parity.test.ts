@@ -7,11 +7,14 @@
  * production (the exact gap this suite closes for every provider in the
  * canonical registry).
  *
- * Network boundary is the member that needed pinning most. The whole delivery
- * chain branches on a single question — does this provider expose a credential
- * edge? — and never on a provider's name, but nothing enforced that: dropping
- * `if (providerName === 'e2b') return null;` into networkBoundaryMode used to
- * leave the entire repo suite green while the feature disappeared for E2B.
+ * Network boundary is the member that needed pinning most. It used to branch on
+ * whether a provider exposed a credential edge, and nothing enforced that the
+ * branch stayed capability-based: dropping `if (providerName === 'e2b') return
+ * null;` into the mode resolver left the entire repo suite green while the
+ * feature disappeared for E2B. There is no branch left to corrupt — one
+ * mechanism serves every provider (docs/specs/
+ * 2026-08-19-secrets-exposure-usage-model.md §4) — so what is pinned now is the
+ * absence: no provider may grow a credential edge of its own again.
  */
 import { describe, expect, test } from 'bun:test';
 
@@ -27,17 +30,11 @@ process.env.INTERNAL_KORTIX_ENV = 'dev';
 process.env.FRONTEND_URL = 'https://app.example.com';
 
 const { KNOWN_PROVIDERS, config } = await import('../../config');
-const { getProvider, shouldSyncProviderNetworkBoundary } = await import('./index');
-const { networkBoundaryMode } = await import('../../secrets/network-boundary-availability');
+const { getProvider } = await import('./index');
 const { getProviderComputeRateCard } = await import('./compute-rates');
 const { effectiveAppMachine } = await import('./index');
 const { getSandboxProvider } = await import('../../snapshots/providers');
 const { SANDBOX_TEMPLATE_PROVIDERS } = await import('../../snapshots/provider-coverage');
-
-/** Project metadata, as the feature-flag registry reads it: the per-project
- *  override map lives at `projects.metadata.experimental`. */
-const shimOptedIn = { experimental: { network_boundary_shim: true } };
-const noOverrides = {};
 
 describe('sandbox provider parity across shared subsystems', () => {
   test('config.KNOWN_PROVIDERS is the single canonical provider list every other list must match', () => {
@@ -95,50 +92,45 @@ describe('sandbox provider parity across shared subsystems', () => {
       expect(typeof adapter.isConfigured).toBe('function');
     });
 
-    test(`${name}: can deliver a network-boundary secret by capability, not by name`, () => {
-      // A provider-edge verdict needs Platinum credentials to be configured;
-      // the env block at the top of this file supplies them, so the mode
-      // expectations below can be stated unconditionally.
+    test(`${name}: delivers an egress-enforced secret through the one shared mechanism`, () => {
+      // Platinum credentials are configured by the env block at the top of this
+      // file, so a lingering Platinum-only branch would still be reachable here
+      // — which is what makes the absence assertion below meaningful.
       expect(config.isPlatinumEnabled()).toBe(true);
 
       const provider = getProvider(name);
-      const hasEdge = typeof provider.syncNetworkBoundary === 'function';
-      expect(hasEdge).toBe(name === 'platinum');
-
-      // No edge is not "no boundary": the in-guest shim covers every other
-      // provider with the same code, which is why a new runtime gets the
-      // feature without a line of its own anywhere on the delivery path.
-      expect(networkBoundaryMode(name, shimOptedIn)).toBe(
-        hasEdge ? 'provider-edge' : 'in-guest-shim',
-      );
-      expect(networkBoundaryMode(name, noOverrides)).toBe(hasEdge ? 'provider-edge' : null);
-
-      // The edge is authoritative — it holds the whole credential set, so it is
-      // reconciled even with nothing to install (that is how a revoked binding
-      // gets removed). A shim provider keeps no server-side state to clear, so
-      // it syncs only when there are bindings.
-      expect(shouldSyncProviderNetworkBoundary(name, 0)).toBe(hasEdge);
-      expect(shouldSyncProviderNetworkBoundary(name, 1)).toBe(true);
+      // No provider registers credentials anywhere. The value is substituted by
+      // the broker route per request and never leaves the API, on daytona, e2b
+      // and platinum alike. A provider that grows a `syncNetworkBoundary` again
+      // reintroduces the split this test exists to prevent.
+      expect('syncNetworkBoundary' in provider).toBe(false);
     });
   }
 
-  test('providers with no credential edge are treated identically', () => {
-    // NETWORK_BOUNDARY_SYNC_MODE is an exhaustive Record<ProviderName, …>, so a
-    // new provider cannot compile without an entry there — that one line is the
-    // whole cost of joining. What the type cannot catch is an entry that
-    // disagrees with another provider running the very same shim path: a silent
-    // behaviour split rather than a build error.
-    for (const bindingCount of [0, 1]) {
-      expect(shouldSyncProviderNetworkBoundary('e2b', bindingCount)).toBe(
-        shouldSyncProviderNetworkBoundary('daytona', bindingCount),
-      );
+  test('no provider is special-cased on the egress-enforced path', () => {
+    // The guard the whole file exists for: the three runtime objects must be
+    // indistinguishable to the secrets path, so a new runtime gets the feature
+    // without a line of its own anywhere on it.
+    // Walks the prototype chain: these are classes, so the methods live on the
+    // prototype and `Object.keys` on the instance would report [] for anything
+    // and prove nothing.
+    const surface = (name: 'daytona' | 'platinum' | 'e2b', needle: string) => {
+      const keys = new Set<string>();
+      for (
+        let o: object | null = getProvider(name) as unknown as object;
+        o && o !== Object.prototype;
+        o = Object.getPrototypeOf(o) as object | null
+      ) {
+        for (const key of Object.getOwnPropertyNames(o)) keys.add(key);
+      }
+      return [...keys].filter((key) => key.toLowerCase().includes(needle)).sort();
+    };
+
+    // Positive control: the walk really does see prototype methods.
+    for (const name of ['daytona', 'platinum', 'e2b'] as const) {
+      expect(surface(name, 'resolveingress')).toEqual(['resolveIngress']);
+      expect(surface(name, 'networkboundary')).toEqual([]);
     }
-    expect(networkBoundaryMode('e2b', shimOptedIn)).toBe(
-      networkBoundaryMode('daytona', shimOptedIn),
-    );
-    expect(networkBoundaryMode('e2b', noOverrides)).toBe(
-      networkBoundaryMode('daytona', noOverrides),
-    );
   });
 
   test('E2B cannot size an App disk, so an App on E2B is not billed for one', () => {

@@ -14,7 +14,6 @@ import type { AccountRole } from '@/lib/projects/projects-client';
 export interface AccountDetail {
   account_id: string;
   name: string;
-  iam_v2_enabled?: boolean;
   member_count: number;
   project_count: number;
   role: AccountRole;

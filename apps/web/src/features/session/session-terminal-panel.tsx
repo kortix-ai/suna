@@ -8,6 +8,7 @@ import {
   deriveTerminalPanelState,
   shouldAutoReplaceTerminal,
 } from '@/features/session/pty-connection';
+import { isSandboxNotReadyError } from '@kortix/sdk';
 import { useCreatePty, useRuntimePtyList, type Pty } from '@kortix/sdk/react';
 import { useRuntimeStore } from '@kortix/sdk/react';
 import { useSessionBrowserStore } from '@/stores/session-browser-store';
@@ -25,6 +26,10 @@ const PtyTerminal = dynamic(
 
 const PTY_ENV = { TERM: 'xterm-256color', COLORTERM: 'truecolor' } as const;
 const SERVER_URL_WAIT_MS = 15_000;
+// How often to retry PTY list/create while the sandbox reports a readiness
+// 503 (parked or booting box). The control plane answers without dialling
+// the box, so the poll is cheap.
+const SANDBOX_WAKING_RETRY_INTERVAL_MS = 3_000;
 
 /**
  * Live terminal for the session side panel — a {@link PtyTerminal} bound to
@@ -53,6 +58,7 @@ export function SessionTerminalPanel({
     data: ptys,
     isLoading,
     isError: isListError,
+    error: listError,
     refetch: refetchPtys,
   } = useRuntimePtyList({ serverUrl, enabled: !!serverUrl });
   // Failures surface in the pane (retry button / reconnect flow) — keep them
@@ -149,6 +155,26 @@ export function SessionTerminalPanel({
     ensurePty();
   }, [createPty, ensurePty, isListError, refetchPtys, serverUrl]);
 
+  // A parked/booting sandbox answers PTY list/create with a readiness 503 —
+  // a pending state, never a terminal error. Keep the connecting spinner and
+  // retry on an interval until the box is up.
+  const sandboxWaking =
+    (isListError && isSandboxNotReadyError(listError)) ||
+    (createPty.isError && isSandboxNotReadyError(createPty.error));
+
+  const retryTerminalRef = useRef<() => void>(() => {});
+  useEffect(() => {
+    retryTerminalRef.current = retryTerminal;
+  }, [retryTerminal]);
+  useEffect(() => {
+    if (!sandboxWaking) return;
+    const interval = window.setInterval(
+      () => retryTerminalRef.current(),
+      SANDBOX_WAKING_RETRY_INTERVAL_MS,
+    );
+    return () => window.clearInterval(interval);
+  }, [sandboxWaking]);
+
   const panelState = deriveTerminalPanelState({
     hasServerUrl: !!serverUrl,
     serverWaitExpired,
@@ -158,6 +184,7 @@ export function SessionTerminalPanel({
     isCreatePending: createPty.isPending,
     isCreateError: createPty.isError,
     isEnsuring: ensuringRef.current,
+    isSandboxWaking: sandboxWaking,
   });
 
   let content: React.ReactNode;
@@ -166,7 +193,11 @@ export function SessionTerminalPanel({
       <div className="flex h-full w-full flex-col items-center justify-center">
         <Loading className="text-muted-foreground size-4" />
         <span className="text-muted-foreground mt-2 text-xs">
-          {tI18nHardcoded.raw('autoFeaturesSessionSessionTerminalPanelJsxTextConnecting80303e70')}
+          {sandboxWaking
+            ? 'Waking up the workspace…'
+            : tI18nHardcoded.raw(
+                'autoFeaturesSessionSessionTerminalPanelJsxTextConnecting80303e70',
+              )}
         </span>
       </div>
     );

@@ -146,12 +146,14 @@ const HUMAN = {
   kind: 'principal',
   userId: 'u1',
   callerSessionId: null,
+  boundCredentialSessionId: null,
   sandboxAuthored: false,
 } as const;
 const BOX_ITSELF = {
   kind: 'principal',
   userId: 'u1',
   callerSessionId: 'sess-1',
+  boundCredentialSessionId: 'sess-1',
   sandboxAuthored: true,
 } as const;
 const SHARE = { kind: 'public_share' } as const;

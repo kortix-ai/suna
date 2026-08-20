@@ -37,8 +37,12 @@ describe('stop reaches the queue that actually holds the messages', () => {
     expect(stop).not.toContain('queueDrain');
   });
 
-  test('the strip is dimmed by the SERVER hold, which every tab can see', () => {
-    expect(chat).toContain('queuePaused={queueRows.held}');
+  test('the queued bubbles read the SERVER hold, which every tab can see', () => {
+    // The queue is drawn IN the transcript, not in a composer strip.
+    expect(chat).toContain('held={queueRows.held}');
+    expect(chat).toContain('<QueuedPromptBubbles');
+    expect(chat).not.toContain('queuePaused=');
+    expect(chat).not.toContain('queuedMessages={queuedMessages}');
   });
 
   test('a rewind removes the queued rows instead of holding them', () => {
@@ -119,21 +123,42 @@ describe('"send now" addresses the thing that actually holds the row', () => {
   });
 });
 
-describe('a prompt that will WAIT is not painted into the transcript', () => {
-  test('the optimistic user message is only added when the prompt can run now', () => {
-    // Otherwise the same message is on screen twice — once as a transcript
-    // bubble under the still-streaming answer, once as a queue row — and the
-    // bubble then vanishes when the running turn ends and the optimistic sweep
-    // clears it, only to reappear when the drain finally delivers.
-    const send = between(chat, 'const willWaitInInbox =', 'anchorTurn(messageID);');
-    expect(send).toContain('beginOptimisticSend(');
-    expect(send).toContain('if (!willWaitInInbox)');
+describe('ONE prompt = ONE id = ONE bubble, from Enter', () => {
+  test('every send paints the transcript bubble under the WIRE id — no "will it wait?" branch', () => {
+    // The old rule painted nothing for a prompt that would wait, so the queue
+    // strip drew it instead, and the hand-off between the two surfaces was
+    // where it doubled, blinked and jumped. Now the bubble is in the
+    // transcript from the first frame under the id the inbox row carries;
+    // its turn renders dimmed until the agent reaches it (`pending`).
+    const send = between(chat, "playSound('send');", 'anchorTurn(messageID);');
+    expect(send).toContain('const messageID = mintSessionWireMessageId(sessionId, clientMessageId);');
+    expect(send).toContain('beginOptimisticSend(sessionId, messageID, optimisticText, [textPartId]);');
+    expect(send).not.toContain('willWaitInInbox');
+    expect(chat).not.toContain('willWaitInInbox');
   });
 
-  test('the failure path only rehydrates a message it actually painted', () => {
+  test('the row carries the SAME id, and the bubble is inbox-backed from dispatch (never swept)', () => {
     const send = between(chat, 'const result = await (async () => {', 'if (!result.ok) {');
-    expect(send).toContain('willWaitInInbox');
+    expect(send).toContain('messageId: messageID,');
     expect(send).toContain('recoverFromSendFailure(sessionId, messageID, cause');
+    // Marked in the SAME tick as the paint, before the first await: an idle
+    // frame from a short previous turn used to sweep the bubble mid-send.
+    const paint = between(chat, 'beginOptimisticSend(sessionId, messageID, optimisticText, [textPartId]);', 'const sendingIntoRunningTurn');
+    expect(paint).toContain('markOptimisticSendInboxBacked(sessionId, messageID);');
+  });
+
+  test('a row already on screen — by id or by re-mint alias — is never a queued bubble', () => {
+    expect(chat).toContain('store.optimisticOriginOf(sessionId, message.info.id)');
+    expect(chat).toContain('transcriptMessageIds: transcriptUserMessageIds');
+  });
+
+  test('the turn is keyed by the id the bubble was FIRST painted under — uniquely', () => {
+    // The origin key keeps one element across the re-mint swap; the
+    // uniqueness pass keeps React sane when an old echo and its re-placed
+    // copy transiently share an origin (duplicate keys corrupt the list).
+    expect(chat).toContain('key={turnRenderKeys.get(turn.userMessage.info.id)}');
+    expect(chat).toContain('const origin = optimisticOriginOf(sessionId, id);');
+    expect(chat).toContain('while (used.has(key)) key = `${key}~`;');
   });
 });
 

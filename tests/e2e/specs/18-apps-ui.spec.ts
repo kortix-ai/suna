@@ -177,14 +177,21 @@ test.describe('18 — Kortix Apps UI', () => {
         );
       }
 
+      // The page is ALREADY on /projects/:id/apps from the navigation above, so
+      // a `goto` to the same URL is a client-router no-op: Next serves it from
+      // the router cache and the query cache answers with the pre-seed list, so
+      // no second `GET /v1/projects/:id/apps` ever reaches the network. The
+      // trace of a failing staging run shows exactly one such request for two
+      // navigations, and the wait below then expired at its 30s default. A
+      // reload re-runs the document and the client fetch, which is what makes
+      // "the index re-reads the API after a deploy" an assertion instead of a
+      // race.
       const listResponse = page.waitForResponse(
         (response) =>
           response.request().method() === 'GET' &&
           response.url().endsWith(`/v1/projects/${project.id}/apps`),
       );
-      await page.goto(`/projects/${project.id}/apps`, {
-        waitUntil: 'domcontentloaded',
-      });
+      await page.reload({ waitUntil: 'domcontentloaded' });
       expect((await listResponse).status()).toBe(200);
 
       // First-run onboarding can remount after the feature mutation.

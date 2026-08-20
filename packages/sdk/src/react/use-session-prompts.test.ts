@@ -2,6 +2,11 @@ import { describe, expect, test } from 'bun:test';
 import { useSessionWorkingStore } from '../browser/stores/session-working-store';
 import type { SessionPrompt } from '../core/rest/projects-client/sessions';
 import {
+  applyOptimisticPrompt,
+  optimisticSessionPrompt,
+  reconcileOptimisticPrompts,
+  removeOptimisticPrompt,
+  settleOptimisticPrompt,
   SESSION_PROMPTS_IDLE_POLL_MS,
   SESSION_PROMPTS_POLL_MS,
   noteInboxObservation,
@@ -153,5 +158,73 @@ describe('startSessionWithPrompt', () => {
       ),
     ).rejects.toThrow('boom');
     expect(useSessionWorkingStore.getState().receipts['sess-3']).toBeFalsy();
+  });
+});
+
+/**
+ * Enter must paint the queue row IMMEDIATELY. The row is durable only once
+ * `POST .../prompts` returns, but the user pressed Enter now: the strip shows
+ * an optimistic row (`prompt_id` = `optimistic:<clientMessageId>`, state
+ * `queued`) in the same frame, and the server's row replaces it on the
+ * response — or it disappears on failure so a refused send never lingers.
+ */
+describe('optimistic queue rows', () => {
+  const input = {
+    clientMessageId: 'c1',
+    messageId: 'msg_0168552a2001AAAAAAAAAAAAAA',
+    parts: [{ type: 'text' as const, text: 'hello there' }, { type: 'file' as const, url: 'x', mime: 'image/png', filename: 'a.png' }],
+  };
+
+  test("optimisticSessionPrompt renders the text of the parts, in the strip's shape", () => {
+    const row = optimisticSessionPrompt(input, 1_000);
+    expect(row.prompt_id).toBe('optimistic:c1');
+    expect(row.client_message_id).toBe('c1');
+    expect(row.message_id).toBe(input.messageId);
+    expect(row.state).toBe('queued');
+    expect(row.text).toBe('hello there');
+    expect(row.attempts).toBe(0);
+    expect(row.created_at).toBe(new Date(1_000).toISOString());
+  });
+
+  test('applyOptimisticPrompt appends once and is idempotent for the same submission', () => {
+    const a = applyOptimisticPrompt([], input, 1_000);
+    const b = applyOptimisticPrompt(a, input, 2_000);
+    expect(a).toHaveLength(1);
+    expect(b).toHaveLength(1);
+    expect(b[0].prompt_id).toBe('optimistic:c1');
+  });
+
+  test('settleOptimisticPrompt swaps the optimistic row for the server row by client id', () => {
+    const rows = applyOptimisticPrompt([], input, 1_000);
+    const settled = settleOptimisticPrompt(rows, 'c1', {
+      prompt_id: 'p-real',
+      state: 'delivering',
+      message_id: input.messageId,
+      deduped: false,
+    });
+    expect(settled).toHaveLength(1);
+    expect(settled[0].prompt_id).toBe('p-real');
+    expect(settled[0].state).toBe('delivering');
+    expect(settled[0].text).toBe('hello there');
+  });
+
+  test('a failed submission removes the optimistic row', () => {
+    const rows = applyOptimisticPrompt([], input, 1_000);
+    expect(removeOptimisticPrompt(rows, 'c1')).toEqual([]);
+  });
+
+  test('a real row that already carries the client id wins over a stale optimistic one', () => {
+    // The poll can land the server's row before the mutation settles.
+    const rows = applyOptimisticPrompt([], input, 1_000);
+    const merged = reconcileOptimisticPrompts(rows, [
+      { prompt_id: 'p-real', client_message_id: 'c1', message_id: input.messageId, state: 'queued', reason: null, text: 'hello there', attempts: 0, last_error: null, created_at: 'x', available_at: 'x' },
+    ]);
+    expect(merged.map((r) => r.prompt_id)).toEqual(['p-real']);
+  });
+
+  test('reconcile keeps optimistic rows the server has not listed yet (POST still in flight)', () => {
+    const rows = applyOptimisticPrompt([], input, 1_000);
+    const merged = reconcileOptimisticPrompts(rows, []);
+    expect(merged.map((r) => r.prompt_id)).toEqual(['optimistic:c1']);
   });
 });

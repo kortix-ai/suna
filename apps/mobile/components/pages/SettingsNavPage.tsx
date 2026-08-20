@@ -396,7 +396,7 @@ export function SettingsNavPage({
   const c = useColors(isDark);
 
   const { data: project, isLoading, isError, error, refetch } = useProject(projectId);
-  const canManage = project?.effective_project_role === 'editor';
+  const canManage = project?.effective_project_role === 'manager';
   const bgColor = isDark ? '#090909' : '#FFFFFF';
 
   return (

@@ -2,13 +2,11 @@ import { type Page, expect, test } from '@playwright/test';
 
 import { loadEnv } from '../../src/core/env';
 import {
-  createDatabaseProject,
   createDatabaseSession,
-  deleteDatabaseProject,
   setDatabaseEnterpriseDemo,
 } from '../../src/fixtures/database-project';
-import { type LocalGitRepository, createLocalGitRepository } from '../../src/fixtures/local-git';
 import { createApiJsonClient } from '../helpers/http';
+import { type ManifestProject, createManifestProject } from '../helpers/manifest-project';
 import {
   createAuthUser,
   deleteAuthUser,
@@ -76,7 +74,7 @@ test.describe('21 — Trigger-created session access UI', () => {
     let projectId: string | null = null;
     let accountId: string | null = null;
     let groupId: string | null = null;
-    let repository: LocalGitRepository | null = null;
+    let project: ManifestProject | null = null;
     const pageErrors: string[] = [];
     page.on('pageerror', (error) => pageErrors.push(error.message));
 
@@ -89,12 +87,17 @@ test.describe('21 — Trigger-created session access UI', () => {
       accountId = account.account_id;
       await setDatabaseEnterpriseDemo(env, accountId, true);
 
-      repository = await createLocalGitRepository(`Trigger access UI ${runId}`);
-      const project = await createDatabaseProject(env, {
+      // POST /triggers commits the trigger into the project's kortix.yaml, so
+      // the API must be able to reach the repo. On a deployed target a local
+      // bare repo under the runner's /tmp is invisible to it and the write
+      // answers 502 (edge: 503 MAINTENANCE_MODE). See helpers/manifest-project.
+      project = await createManifestProject({
+        api,
+        accessToken: session.access_token,
         accountId,
         userId: user.id,
         name: `Trigger access UI ${runId}`,
-        repoUrl: repository.repoUrl,
+        databaseUrl: databaseUrl!,
       });
       projectId = project.id;
 
@@ -260,8 +263,7 @@ test.describe('21 — Trigger-created session access UI', () => {
           `/accounts/${accountId}/iam/groups/${groupId}`,
         ).catch(() => {});
       }
-      if (projectId) await deleteDatabaseProject(env, projectId).catch(() => {});
-      if (repository) await repository.dispose().catch(() => {});
+      if (project) await project.dispose().catch(() => {});
       await deleteAuthUser(user.id, authOptions).catch(() => {});
     }
   });

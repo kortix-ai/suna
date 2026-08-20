@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { mockIamAssignments } from './helpers/iam-mocks';
 
 // Unit-tests autoClaimPendingInvites in isolation. The whole point of the fix:
 // auto-claim silently joins the account + stamps accepted_at for PLAIN account
@@ -8,6 +9,10 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 
 const accounts = { __table: 'accounts', accountId: 'accountId' };
 const accountMembers = { __table: 'accountMembers', userId: 'userId', accountId: 'accountId' };
+// The IDENTITY table `account_members` became a view over. `mock.module`
+// replaces `@kortix/db` WHOLESALE, so a missing name is a SyntaxError in every
+// importer — it has to be declared even where this suite never reads it.
+const accountMemberships = { __table: 'accountMemberships', userId: 'userId', accountId: 'accountId' };
 const accountInvitations = {
   __table: 'accountInvitations',
   inviteId: 'inviteId',
@@ -30,6 +35,8 @@ type FakeInvite = {
 const state = { pending: [] as FakeInvite[] };
 const memberInserts: Array<Record<string, unknown>> = [];
 const inviteUpdates: Array<Record<string, unknown>> = [];
+/** The ROLE half of an auto-claim: one `assignRole` call, not a column. */
+const roleGrants: Array<{ accountId: string; userId: string; roleKey?: string }> = [];
 
 const fakeDb = {
   // autoClaim does: db.select().from(accountInvitations).where(and(...)) → rows
@@ -66,7 +73,35 @@ mock.module('drizzle-orm', () => ({
   count: (column?: unknown) => ({ op: 'count', column }),
 }));
 
-mock.module('@kortix/db', () => ({ accounts, accountMembers, accountInvitations }));
+// Wholesale replacement — declare every table this file's graph reaches, now
+// that membership is read from `role_assignments` and written through
+// `assignRole` (which also writes an audit event).
+// Claiming an invite is TWO writes since the cutover: the IDENTITY row
+// (`account_memberships`) and the account-scope ROLE (`assignRole`). The role
+// half writes `role_assignments`, which this suite's fake db does not model, so
+// it is bypassed and captured instead.
+mockIamAssignments({
+  onGrant: ({ accountId, principal, roleKey }) => {
+    roleGrants.push({ accountId, userId: principal.id, roleKey });
+  },
+});
+
+mock.module('@kortix/db', () => ({
+  accounts,
+  accountMembers,
+  accountMemberships,
+  accountInvitations,
+  roleAssignments: {},
+  iamRoles: {},
+  iamRoleActions: {},
+  auditEvents: {},
+  serviceAccounts: {},
+  accountTokens: {},
+  accountGroups: {},
+  accountGroupMembers: {},
+  objectPolicies: {},
+  permissions: {},
+}));
 mock.module('../shared/db', () => ({ db: fakeDb }));
 mock.module('../shared/supabase', () => ({
   getSupabase: () => ({
@@ -95,6 +130,7 @@ beforeEach(() => {
   state.pending = [];
   memberInserts.length = 0;
   inviteUpdates.length = 0;
+  roleGrants.length = 0;
 });
 
 describe('autoClaimPendingInvites', () => {
@@ -105,24 +141,27 @@ describe('autoClaimPendingInvites', () => {
 
     expect(memberInserts).toHaveLength(1);
     expect(memberInserts[0]).toMatchObject({
-      table: 'accountMembers',
+      table: 'accountMemberships',
       userId: 'user-1',
       accountId: 'acct-1',
-      accountRole: 'member',
     });
+    expect(roleGrants).toEqual([
+      { accountId: 'acct-1', userId: 'user-1', roleKey: 'member' },
+    ]);
     expect(inviteUpdates).toHaveLength(1);
     expect(inviteUpdates[0]).toMatchObject({ table: 'accountInvitations' });
     expect(inviteUpdates[0].acceptedAt).toBeInstanceOf(Date);
   });
 
   test('does NOT claim a project invite (carries bootstrap grants): stays pending', async () => {
-    state.pending = [makeInvite({ bootstrapGrants: [{ project_id: 'p1', role: 'editor' }] })];
+    state.pending = [makeInvite({ bootstrapGrants: [{ project_id: 'p1', role: 'manager' }] })];
 
     await autoClaimPendingInvites('user-1', 'invitee@example.com');
 
     // No membership row and no accepted_at stamp → the inviter keeps seeing
     // "pending" and the recipient still gets the accept/decline dialog.
     expect(memberInserts).toHaveLength(0);
+    expect(roleGrants).toHaveLength(0);
     expect(inviteUpdates).toHaveLength(0);
   });
 
@@ -140,6 +179,7 @@ describe('autoClaimPendingInvites', () => {
 
     expect(memberInserts).toHaveLength(1);
     expect(memberInserts[0]).toMatchObject({ accountId: 'acct-plain' });
+    expect(roleGrants.map((g) => g.accountId)).toEqual(['acct-plain']);
     expect(inviteUpdates).toHaveLength(1);
   });
 
@@ -149,6 +189,7 @@ describe('autoClaimPendingInvites', () => {
     await autoClaimPendingInvites('user-1', '');
 
     expect(memberInserts).toHaveLength(0);
+    expect(roleGrants).toHaveLength(0);
     expect(inviteUpdates).toHaveLength(0);
   });
 });

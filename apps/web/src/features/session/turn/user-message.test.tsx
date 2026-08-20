@@ -251,8 +251,9 @@ describe('UserMessage timestamp', () => {
 
   test('the timestamp reveals with the actions, inside the same hover row', () => {
     const markup = render(false, stamped);
-    const fade =
-      'opacity-0 transition-opacity duration-150 group-hover/turn:opacity-100 focus-within:opacity-100';
+    // The row's classes are composed (`cn`) since the queue controls joined
+    // it (`alwaysVisible` for a failed send); the fade tokens are what matter.
+    const fade = 'opacity-0 group-hover/turn:opacity-100 focus-within:opacity-100';
     const fadeAt = markup.indexOf(fade);
 
     // The fading row OPENS before both, so both are inside it and reveal

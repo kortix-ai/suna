@@ -254,10 +254,12 @@ A cron trigger needs `cron` or `run_at`, never both. A webhook trigger without `
 ## Session access
 
 Sessions a trigger creates use the private policy by default. The trigger
-agent's service account owns them. Project managers can always open them.
-Account owners and account admins receive the effective project-manager role.
-The person who configured or manually fired the trigger does not gain access
-through that action unless they have one of those roles.
+agent's service account owns them — an agent's identity is a `service_account`
+principal, so it can own a session and hold assignments like any other
+principal. A project manager can always open them. An account owner and an
+account admin hold manager-equivalent access on every project, so the same
+applies to them. The person who configured or manually fired the trigger does
+not gain access through that action unless they hold one of those roles.
 
 Trigger settings offer three policies:
 
@@ -265,8 +267,13 @@ Trigger settings offer three policies:
 - **Selected teammates** — the trigger agent, project managers, and selected project members or account groups.
 - **Whole project** — every project member.
 
+This policy is a per-resource visibility setting on top of the role model, not a
+role. It decides who can open one trigger's sessions. It grants no permission the
+role verdict denies. See
+[Accounts & access](/docs/accounts#per-feature-access-settings).
+
 The access policy is account-local runtime state. It does not enter the
-portable `kortix.yaml` manifest because member and group ids belong to one
+portable `kortix.yaml` manifest because principal ids belong to one
 account. Use the dashboard or SDK `session_access` field to configure it.
 Updating only this policy creates no Git commit. Saving a policy also updates
 prior sessions created by that trigger.
@@ -320,7 +327,7 @@ Fires on `POST /v1/webhooks/projects/{projectId}/{slug}`. Kortix checks the requ
 | `PATCH /v1/projects/{projectId}/triggers/{slug}` | `project.trigger.update` | Partial update, merged onto the current entry. |
 | `DELETE /v1/projects/{projectId}/triggers/{slug}` | `project.trigger.delete` | Also clears the trigger's runtime state. |
 | `PATCH /v1/projects/{projectId}/triggers/activation` | `project.trigger.update` | Body `{ paused: boolean }`. See [Pause and resume](#pause-and-resume). |
-| `POST /v1/projects/{projectId}/triggers/{slug}/fire` | `project.trigger.fire` | Manual fire. Any project member can fire a trigger — this permission does not require the editor or manager role. |
+| `POST /v1/projects/{projectId}/triggers/{slug}/fire` | `project.trigger.fire` | Manual fire. The built-in project `member` role holds `project.trigger.fire`, so an ordinary member can fire a trigger. |
 | `POST /v1/webhooks/projects/{projectId}/{slug}` | signature or token | Public URL, gated by the webhook secret. |
 
 ## Pause and resume

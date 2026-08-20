@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import {
   projectSecrets,
@@ -6,8 +7,10 @@ import {
   sessionSandboxes,
 } from '@kortix/db';
 import { Hono } from 'hono';
+import { config } from '../config';
 import * as realAccess from '../projects/lib/access';
 import * as realProjectSecrets from '../projects/secrets';
+import { mintHandle } from '../secrets/strategy';
 
 const PROJECT_ID = '33333333-3333-4333-8333-333333333333';
 const ACCOUNT_ID = '44444444-4444-4444-8444-444444444444';
@@ -19,6 +22,9 @@ const POLICY = {
   rules: [{ host: 'api.example.com', methods: ['POST'], path: '/v1/*' }],
   inject: { kind: 'header' as const, name: 'authorization', template: 'Bearer {{secret}}' },
 };
+const SECOND_SECRET_ID = '88888888-8888-4888-8888-888888888888';
+const PRIMARY_LOOKUP_ID = 'aaaaaaaaaaaaaaaaaaaa';
+const SECOND_LOOKUP_ID = 'bbbbbbbbbbbbbbbbbbbb';
 const FROZEN_POLICY = {
   backend: 'kortix_fetch' as const,
   rules: [{ host: 'api.example.com', methods: ['POST'], path: '/v1/*' }],
@@ -38,24 +44,44 @@ let sessionRow: Record<string, unknown> | null = {
   sessionId: SESSION_ID,
   secretsAllowlist: ['PRIMARY'],
 };
-let handleRow: Record<string, unknown> | null = {
-  policySnapshot: FROZEN_POLICY,
-  expiresAt: null,
-};
+/** The handle rows the SESSION holds — the route reads all of them now, so it
+ *  can substitute every secret this destination admits, not only its own. */
+function handleFor(overrides: Record<string, unknown> = {}) {
+  const lookupId = (overrides.lookupId as string) ?? PRIMARY_LOOKUP_ID;
+  const handle = mintHandle({ lookupId, prefix: null, rootSecret: config.API_KEY_SECRET });
+  return {
+    secretId: SECRET_ID,
+    identifier: 'PRIMARY',
+    lookupId,
+    handleHash: createHash('sha256').update(handle).digest('hex'),
+    policySnapshot: FROZEN_POLICY,
+    expiresAt: null,
+    ...overrides,
+  };
+}
+
+let handleRows: Array<Record<string, unknown>> = [];
 let secretRows: Array<Record<string, unknown>> = [];
 const audits: Array<Record<string, unknown>> = [];
 const decrypted: string[] = [];
-const brokerCalls: Array<{ policy: unknown; secret: string; input: unknown }> = [];
+const brokerCalls: Array<{
+  policy: unknown;
+  secret: string;
+  input: unknown;
+  substitutions: unknown[];
+}> = [];
 let brokerFailure: Error | null = null;
 
 function sharedSecret(overrides: Record<string, unknown> = {}) {
   return {
     secretId: SECRET_ID,
+    identifier: 'PRIMARY',
     ownerUserId: null,
     valueEnc: 'shared-encrypted-value',
     active: true,
     strategy: 'broker',
     egressPolicy: POLICY,
+    handlePrefix: null,
     ...overrides,
   };
 }
@@ -76,10 +102,10 @@ const databaseMock = {
           return { limit: async () => (sandboxRow ? [sandboxRow] : []) };
         }
         if (table === projectSecrets) return Promise.resolve(secretRows);
+        // The route reads EVERY active handle of the session (revision
+        // descending) instead of one row for one secret.
         if (table === projectSessionSecretHandles) {
-          return {
-            orderBy: () => ({ limit: async () => (handleRow ? [handleRow] : []) }),
-          };
+          return { orderBy: async () => handleRows };
         }
         throw new Error('unexpected table');
       },
@@ -99,7 +125,9 @@ mock.module('../projects/secrets', () => ({
   ...realProjectSecrets,
   decryptProjectSecret: (_projectId: string, value: string) => {
     decrypted.push(value);
-    return value === 'personal-encrypted-value' ? 'personal-secret-value' : 'shared-secret-value';
+    if (value === 'personal-encrypted-value') return 'personal-secret-value';
+    if (value === 'second-encrypted-value') return 'second-secret-value';
+    return 'shared-secret-value';
   },
 }));
 mock.module('../shared/audit', () => ({
@@ -120,8 +148,16 @@ class MockSecretBrokerError extends Error {
 
 mock.module('../secrets/http-broker', () => ({
   SecretBrokerError: MockSecretBrokerError,
-  executeSecretBrokerRequest: async (policy: unknown, secret: string, input: unknown) => {
-    brokerCalls.push({ policy, secret, input });
+  executeSecretBrokerRequest: async (
+    policy: unknown,
+    secret: string,
+    input: unknown,
+    options?: { substitutions?: unknown[]; applied?: Set<string> },
+  ) => {
+    brokerCalls.push({ policy, secret, input, substitutions: options?.substitutions ?? [] });
+    for (const entry of (options?.substitutions ?? []) as Array<{ identifier: string }>) {
+      options?.applied?.add(entry.identifier);
+    }
     if (brokerFailure) throw brokerFailure;
     return {
       status: 201,
@@ -156,7 +192,7 @@ function buildApp() {
   return app;
 }
 
-function brokerRequest(fromIp?: string) {
+function brokerRequest(fromIp?: string, relayed: Record<string, unknown> = {}) {
   return buildApp().request(`/v1/projects/${PROJECT_ID}/secrets/PRIMARY/broker`, {
     method: 'POST',
     headers: {
@@ -168,8 +204,35 @@ function brokerRequest(fromIp?: string) {
       url: 'https://api.example.com/v1/messages?trace=private',
       method: 'POST',
       body_base64: Buffer.from('{}').toString('base64'),
+      ...relayed,
     }),
   });
+}
+
+/** A second secret on the SAME host, with its own handle. */
+function secondSecret(overrides: Record<string, unknown> = {}) {
+  return sharedSecret({
+    secretId: SECOND_SECRET_ID,
+    identifier: 'SECOND',
+    valueEnc: 'second-encrypted-value',
+    strategy: 'egress',
+    egressPolicy: { rules: [{ host: 'api.example.com' }] },
+    ...overrides,
+  });
+}
+
+function secondHandle(overrides: Record<string, unknown> = {}) {
+  return handleFor({
+    secretId: SECOND_SECRET_ID,
+    identifier: 'SECOND',
+    lookupId: SECOND_LOOKUP_ID,
+    policySnapshot: { rules: [{ host: 'api.example.com' }] },
+    ...overrides,
+  });
+}
+
+function handleString(lookupId: string) {
+  return mintHandle({ lookupId, prefix: null, rootSecret: config.API_KEY_SECRET });
 }
 
 describe('POST /v1/projects/:projectId/secrets/:identifier/broker', () => {
@@ -184,7 +247,7 @@ describe('POST /v1/projects/:projectId/secrets/:identifier/broker', () => {
       env: ['PRIMARY'],
     };
     sessionRow = { sessionId: SESSION_ID, secretsAllowlist: ['PRIMARY'] };
-    handleRow = { policySnapshot: FROZEN_POLICY, expiresAt: null };
+    handleRows = [handleFor()];
     secretRows = [sharedSecret()];
     audits.length = 0;
     decrypted.length = 0;
@@ -341,7 +404,18 @@ describe('POST /v1/projects/:projectId/secrets/:identifier/broker', () => {
   });
 
   test('requires a materialized active handle before decryption', async () => {
-    handleRow = null;
+    handleRows = [];
+
+    const response = await brokerRequest();
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ code: 'session_secret_handle_required' });
+    expect(decrypted).toHaveLength(0);
+    expect(brokerCalls).toHaveLength(0);
+  });
+
+  test('an EXPIRED handle is not an active handle', async () => {
+    handleRows = [handleFor({ expiresAt: new Date(Date.now() - 1_000) })];
 
     const response = await brokerRequest();
 
@@ -359,6 +433,126 @@ describe('POST /v1/projects/:projectId/secrets/:identifier/broker', () => {
       expect.objectContaining({ policy: FROZEN_POLICY, secret: 'shared-secret-value' }),
     ]);
     expect(brokerCalls[0]?.policy).not.toEqual(POLICY);
+  });
+
+  describe('server-side substitution', () => {
+    // The egress-enforced path: the guest holds handles, the relay swaps them
+    // for the real values. See
+    // docs/specs/2026-08-19-secrets-exposure-usage-model.md §5.
+    beforeEach(() => {
+      agentGrant = {
+        agent: 'default',
+        kortixCli: 'all',
+        connectors: 'all',
+        env: ['PRIMARY', 'SECOND'],
+      };
+      sessionRow = { sessionId: SESSION_ID, secretsAllowlist: ['PRIMARY', 'SECOND'] };
+      secretRows = [sharedSecret(), secondSecret()];
+      handleRows = [handleFor(), secondHandle()];
+    });
+
+    test('two secrets on one host are both handed to the relay', async () => {
+      const response = await brokerRequest();
+
+      expect(response.status).toBe(200);
+      expect(brokerCalls[0]?.substitutions).toEqual([
+        {
+          identifier: 'PRIMARY',
+          handle: handleString(PRIMARY_LOOKUP_ID),
+          value: 'shared-secret-value',
+          policy: FROZEN_POLICY,
+        },
+        {
+          identifier: 'SECOND',
+          handle: handleString(SECOND_LOOKUP_ID),
+          value: 'second-secret-value',
+          policy: { rules: [{ host: 'api.example.com' }] },
+        },
+      ]);
+      const completed = audits.find((event) => event.action === 'secret.broker.completed');
+      expect(completed?.after).toMatchObject({ substituted: ['PRIMARY', 'SECOND'] });
+    });
+
+    test('a secret whose own policy denies this host is never decrypted', async () => {
+      // Substitution must not widen who may spend: the destination is admitted
+      // for the route's secret, not for this one.
+      handleRows = [handleFor(), secondHandle({ policySnapshot: { rules: [{ host: 'elsewhere.example' }] } })];
+
+      const response = await brokerRequest();
+
+      expect(response.status).toBe(200);
+      expect(
+        (brokerCalls[0]?.substitutions as Array<{ identifier: string }>).map((s) => s.identifier),
+      ).toEqual(['PRIMARY']);
+      expect(decrypted).not.toContain('second-encrypted-value');
+    });
+
+    test('a secret outside the agent grant is never decrypted', async () => {
+      agentGrant = { agent: 'default', kortixCli: 'all', connectors: 'all', env: ['PRIMARY'] };
+
+      const response = await brokerRequest();
+
+      expect(response.status).toBe(200);
+      expect(
+        (brokerCalls[0]?.substitutions as Array<{ identifier: string }>).map((s) => s.identifier),
+      ).toEqual(['PRIMARY']);
+      expect(decrypted).not.toContain('second-encrypted-value');
+    });
+
+    test('a FORGED handle in the request is audited as forged', async () => {
+      const real = handleString(SECOND_LOOKUP_ID);
+      const forged = `${real.slice(0, -1)}${real.endsWith('a') ? 'b' : 'a'}`;
+
+      const response = await brokerRequest(undefined, {
+        body_base64: Buffer.from(JSON.stringify({ key: forged })).toString('base64'),
+      });
+
+      expect(response.status).toBe(200);
+      const refused = audits.find((event) => event.action === 'secret.handle.refused');
+      expect(refused?.outcome).toBe('denied');
+      expect(refused?.after).toMatchObject({ refusals: { forged: 1, stolen: 0, host_denied: 0 } });
+    });
+
+    test("a VALID handle minted for another session is audited as stolen, not forged", async () => {
+      // The tag verifies — this deployment minted it — but the lookup id is not
+      // one of THIS session's active handles. Different incident, different
+      // reason, and the difference has to survive into the audit row.
+      const otherSession = handleString('cccccccccccccccccccc');
+
+      const response = await brokerRequest(undefined, {
+        headers: { 'x-carried': otherSession },
+      });
+
+      expect(response.status).toBe(200);
+      const refused = audits.find((event) => event.action === 'secret.handle.refused');
+      expect(refused?.after).toMatchObject({ refusals: { forged: 0, stolen: 1, host_denied: 0 } });
+      expect(JSON.stringify(refused?.after)).not.toContain('second-secret-value');
+    });
+
+    test('a request carrying only its own admitted handles refuses nothing', async () => {
+      const response = await brokerRequest(undefined, {
+        headers: { 'x-key': handleString(PRIMARY_LOOKUP_ID) },
+      });
+
+      expect(response.status).toBe(200);
+      expect(audits.map((event) => event.action)).toEqual([
+        'secret.broker.requested',
+        'secret.broker.completed',
+      ]);
+    });
+
+    test('an expired handle is not spendable', async () => {
+      handleRows = [
+        handleFor(),
+        secondHandle({ expiresAt: new Date(Date.now() - 60_000) }),
+      ];
+
+      await brokerRequest();
+
+      expect(
+        (brokerCalls[0]?.substitutions as Array<{ identifier: string }>).map((s) => s.identifier),
+      ).toEqual(['PRIMARY']);
+    });
   });
 
   test('records broker failures without recording the secret', async () => {

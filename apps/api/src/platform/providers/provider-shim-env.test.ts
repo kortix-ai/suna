@@ -1,6 +1,6 @@
 /**
- * The in-guest egress shim is the delivery mechanism for network-boundary
- * secrets on every provider that has no provider edge, and it arms itself
+ * The in-guest egress shim is the delivery mechanism for egress-enforced
+ * secrets on EVERY provider, and it arms itself
  * purely from what provisioning put in the sandbox environment. Four variables
  * decide it: three ride the caller's `opts.envVars` (the capability catalog,
  * the project id, the session credential) and the fourth — `KORTIX_API_URL` —

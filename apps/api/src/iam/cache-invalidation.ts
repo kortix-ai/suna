@@ -19,7 +19,7 @@
  */
 
 import { eq } from 'drizzle-orm';
-import { accountGroupMembers, accountMembers, iamPolicies } from '@kortix/db';
+import { accountGroupMembers, accountMemberships, roleAssignments } from '@kortix/db';
 import { db } from '../shared/db';
 
 interface PrincipalScopedMemo {
@@ -34,9 +34,12 @@ export function registerPrincipalScopedMemo(memo: PrincipalScopedMemo): void {
 }
 
 // ── Project-scoped memos (keyed `${projectId}|…`) ──────────────────────────
-// The per-resource grant memo (resource-grants.ts) is keyed by project, not
-// principal: a resource-grant change affects every principal of the project at
-// once, so it busts the whole project entry rather than fanning out to members.
+// The object-grant memo (`loadObjectGrants` in iam/authorize.ts) is keyed by
+// project, not principal: an object-grant change affects every principal of the
+// project at once, so it busts the whole project entry rather than fanning out
+// to members. It is also the ONE memo that caches a negative (an agent with no
+// grant rows is CLOSED to the member tier), which is why the bust has to be
+// synchronous on the writing replica.
 const projectScopedMemos: PrincipalScopedMemo[] = [];
 
 /** A memo keyed `${projectId}|…` registers so it can be busted per project. */
@@ -84,19 +87,24 @@ export async function invalidateIamCacheForGroup(groupId: string | null | undefi
 }
 
 /**
- * An account-wide setting the resolved actor caches (e.g. `accounts.mfaRequired`)
- * changed — bust every member of the account, since resolveActorV2 memoizes that
- * setting per `${userId}|${accountId}` alongside the member's role. Best-effort,
- * same contract as invalidateIamCacheForGroup: a lookup failure leaves the
+ * An account-wide setting the resolved principal caches (e.g.
+ * `accounts.mfaRequired`) changed — bust every member of the account, since
+ * `resolvePrincipal` (iam/authorize.ts) memoizes that setting per
+ * `${userId}|${accountId}` alongside the member's role. Best-effort, same
+ * contract as invalidateIamCacheForGroup: a lookup failure leaves the
  * pre-existing TTL fallback rather than failing the mutation.
+ *
+ * Reads `account_memberships` — the IDENTITY table — rather than the
+ * `account_members` compatibility view, whose `account_role` column is a
+ * per-row subquery this does not need.
  */
 export async function invalidateIamCacheForAccount(accountId: string | null | undefined): Promise<void> {
   if (!accountId) return;
   try {
     const rows = await db
-      .select({ userId: accountMembers.userId })
-      .from(accountMembers)
-      .where(eq(accountMembers.accountId, accountId));
+      .select({ userId: accountMemberships.userId })
+      .from(accountMemberships)
+      .where(eq(accountMemberships.accountId, accountId));
     invalidateIamCacheForUsers(rows.map((r) => r.userId));
   } catch (err) {
     console.warn('[iam-cache] account invalidation lookup failed', { accountId, err: (err as Error)?.message });
@@ -104,22 +112,27 @@ export async function invalidateIamCacheForAccount(accountId: string | null | un
 }
 
 /**
- * A custom role's action set changed — bust every principal that holds it via an
- * iam_policy. Member principals bust directly; group principals fan out to their
- * members. Best-effort. Call after editing iam_role_actions or deleting a role.
+ * A custom role's action set changed — bust every principal ASSIGNED it. Group
+ * principals fan out to their members; a user and a service account are each
+ * their own principal id. Best-effort. Call after editing a role's permissions
+ * or deleting a role.
+ *
+ * Reads `role_assignments`, the one grant store.
  */
 export async function invalidateIamCacheForRole(roleId: string | null | undefined): Promise<void> {
   if (!roleId) return;
   try {
-    const policies = await db
-      .select({ principalType: iamPolicies.principalType, principalId: iamPolicies.principalId })
-      .from(iamPolicies)
-      .where(eq(iamPolicies.roleId, roleId));
-    for (const p of policies) {
+    const holders = await db
+      .selectDistinct({
+        principalType: roleAssignments.principalType,
+        principalId: roleAssignments.principalId,
+      })
+      .from(roleAssignments)
+      .where(eq(roleAssignments.roleId, roleId));
+    for (const p of holders) {
       if (p.principalType === 'group') {
         await invalidateIamCacheForGroup(p.principalId);
       } else {
-        // 'member' (user) or 'token' (service account = its own principal id).
         invalidateIamCacheForUser(p.principalId);
       }
     }

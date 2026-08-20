@@ -1,7 +1,15 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import { accountInvitations, accountMembers, accounts, projectMembers, projects } from '@kortix/db';
+import { mockIamAssignments, mockIamReadModels } from './helpers/iam-mocks';
+import {
+  accountInvitations,
+  accountMembers,
+  accountMemberships,
+  accounts,
+  projectMembers,
+  projects,
+} from '@kortix/db';
 
 const OWNER_ID = '00000000-0000-4000-a000-000000000001';
 const MEMBER_ID = '00000000-0000-4000-a000-000000000002';
@@ -157,7 +165,9 @@ function selectRows(table: unknown, fields: Record<string, unknown> | undefined,
   const inviteId = values.invite_id as string | undefined;
   const accountRole = values.account_role as AccountRole | undefined;
 
-  if (table === accountMembers) {
+  // `accountMemberships` is the identity TABLE; `accountMembers` is the view over
+  // it plus role_assignments. This shim answers both from one row set.
+  if (table === accountMembers || table === accountMemberships) {
     if (fields && Object.keys(fields).length === 1 && Object.keys(fields)[0] === 'n') {
       return [{ n: accountRole === 'owner' ? ownerCount(accountId) : memberRows.filter((row) => row.accountId === accountId).length }];
     }
@@ -242,10 +252,33 @@ function upsertInvite(values: any, set?: Record<string, unknown>) {
   return invite;
 }
 
-// `authorize` / `assertAuthorized` / `listAccessibleResources` are re-exported
-// from `../iam` via `./dispatcher` (the V1 `./engine` was retired), so the role
-// gate must be mocked on the dispatcher.
-mock.module('../iam/dispatcher', () => {
+// The read models project from THIS suite's member rows — see mockIamReadModels.
+mockIamReadModels({
+  members: () => memberRows.map((m) => ({ userId: m.userId, accountId: m.accountId, accountRole: m.accountRole })),
+});
+
+// The ROLE half of membership is `assignRole` now, not a column on the row this
+// suite's db shim writes: `account_members` is a view whose `account_role` is
+// derived from `role_assignments`. Project the grant back into `memberRows` so
+// the read models and the engine mock above keep seeing one consistent picture.
+mockIamAssignments({
+  onGrant: ({ accountId, principal, roleKey, scope }) => {
+    if (scope.type !== 'account' || principal.type !== 'user' || !roleKey) return;
+    const existing = memberRows.find((r) => r.userId === principal.id && r.accountId === accountId);
+    if (existing) existing.accountRole = roleKey as AccountRole;
+    else
+      memberRows.push({
+        userId: principal.id,
+        accountId,
+        accountRole: roleKey as AccountRole,
+        joinedAt: baseDate,
+      });
+  },
+});
+
+// The engine module itself is the seam now — `../iam` re-exports it, and the
+// route layer calls it with the structured `Actor` the auth middleware built.
+mock.module('../iam/authorize', () => {
   // Mirror the legacy account-role gate against the test's mocked member rows so
   // owner/admin pass writes, plain members get reads only, non-members are denied.
   const decide = (userId: string, action: string): boolean => {
@@ -255,12 +288,28 @@ mock.module('../iam/dispatcher', () => {
     return action.endsWith('.read');
   };
   return {
-    authorize: async (userId: string, _a: unknown, action: string) => ({ allowed: decide(userId, action) }),
-    assertAuthorized: async (userId: string, _a: unknown, action: string) => {
-      if (!decide(userId, action)) throw new HTTPException(403, { message: `forbidden: ${action} (denied)` });
+    authorize: async (actor: { userId: string }, action: string) => ({
+      allowed: decide(actor.userId, action),
+      reason: 'role',
+    }),
+    assertAuthorized: async (actor: { userId: string }, action: string) => {
+      if (!decide(actor.userId, action)) {
+        throw new HTTPException(403, { message: `forbidden: ${action} (denied)` });
+      }
     },
-    listAccessibleResources: async () => ({ mode: 'all', ids: [] }),
-    filterAccessibleProjectResources: async (_u: string, _a: string, _p: string, _t: string, ids: readonly string[]) => [...ids],
+    listAccessible: async () => ({ mode: 'all' }),
+    filterAccessibleObjects: async (
+      _actor: unknown,
+      _p: string,
+      _t: string,
+      ids: readonly string[],
+    ) => [...ids],
+    // `mock.module` replaces the module wholesale: agent-access imports this
+    // memo for its candidate list, so a stub that omits it is a SyntaxError
+    // in every other importer. Empty = this project scopes no agent.
+    loadObjectGrants: Object.assign(async () => new Map(), { clear: () => {} }),
+    clearAuthorizeCaches: () => {},
+    isImplicitManager: (key: string | null) => key === 'owner' || key === 'admin',
   };
 });
 
@@ -369,7 +418,7 @@ mock.module('../shared/db', () => ({
           };
         }
 
-        if (table === accountMembers) {
+        if (table === accountMembers || table === accountMemberships) {
           const existing = membership(values.userId, values.accountId);
           if (!existing) {
             memberRows.push({
@@ -418,7 +467,7 @@ mock.module('../shared/db', () => ({
           },
           then: async (resolve: (value: unknown[]) => unknown) => {
             const values = collectConditionValues(condition);
-            if (table === accountMembers) {
+            if (table === accountMembers || table === accountMemberships) {
               const row = membership(values.user_id as string, values.account_id as string);
               if (row) Object.assign(row, updates);
             }
@@ -443,7 +492,7 @@ mock.module('../shared/db', () => ({
             values.invite_id && row.inviteId !== values.invite_id
           );
         }
-        if (table === accountMembers) {
+        if (table === accountMembers || table === accountMemberships) {
           memberRows = memberRows.filter((row) =>
             row.accountId !== values.account_id || row.userId !== values.user_id
           );

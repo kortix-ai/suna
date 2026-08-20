@@ -53,9 +53,20 @@ export type CustomizeSection =
 export const PROJECT_ACTIONS = {
   PROJECT_READ: 'project.read',
   PROJECT_WRITE: 'project.write',
+  /** Destroying the project. Manager-only, and NOT implied by `project.write` —
+   *  a custom role can grant editing without granting deletion. */
+  PROJECT_DELETE: 'project.delete',
 
   PROJECT_CR_OPEN: 'project.cr.open',
   PROJECT_CR_MERGE: 'project.cr.merge',
+
+  PROJECT_TRIGGER_UPDATE: 'project.trigger.update',
+  PROJECT_TRIGGER_DELETE: 'project.trigger.delete',
+  PROJECT_TRIGGER_FIRE: 'project.trigger.fire',
+
+  /** Minting a project CLI token or a project-scoped PAT. Its own leaf because
+   *  a credential OUTLIVES the request that minted it. Manager-only. */
+  PROJECT_CREDENTIALS_ISSUE: 'project.credentials.issue',
 
   PROJECT_MEMBERS_READ: 'project.members.read',
   PROJECT_MEMBERS_MANAGE: 'project.members.manage',

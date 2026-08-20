@@ -202,11 +202,12 @@ describe('auto-provision groups default', () => {
     expect(wizardSource).toContain('setAutoProvision] = useState(true)');
   });
 
-  test('the SSO card dialog defaults ON for new providers, stored value for existing', () => {
-    // Whitespace-tolerant: the formatter may wrap the useState initializer.
-    expect(cardSource.replace(/\s+/g, ' ')).toContain(
-      'useState( existing ? existing.auto_provision_groups : true',
-    );
+  test('the SSO card dialog is edit-only and seeds from the stored provider value', () => {
+    // The card dialog no longer has a create branch (new providers register
+    // through this wizard), so it seeds from the existing provider only.
+    const flat = cardSource.replace(/\s+/g, ' ');
+    expect(flat).toContain('useState(existing.auto_provision_groups)');
+    expect(flat).not.toContain('importSsoProviderFromMetadata');
   });
 });
 

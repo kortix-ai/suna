@@ -23,11 +23,12 @@ import { ModelSelector } from '@/features/session/model-selector';
 import { flattenModels } from '@/features/session/session-chat-input';
 import { AgentConfigEditor } from '@/features/workspace/customize/sections/view/agent-editor';
 import { toArray } from '@/features/workspace/customize/shared/utils';
+import { PROJECT_ACTIONS } from '@/lib/project-actions';
+import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import {
   type AgentGrantSet,
   listConnectors,
-  listProjectAccess,
   listProjectResourceGrants,
   listProjectSecrets,
   type ProjectConfigSummary,
@@ -79,19 +80,17 @@ export function AgentDetailAside({
 }
 
 /**
- * Who inherits this agent — the members/groups assigned to it (Members →
- * Resource access). Each inherits the agent's declared secrets & connectors as
- * their own. Manager-only data: gated on a LIVE can_manage capability so it never
- * fires the manager-only grants endpoint (no 403 / error toast) and never renders
- * stale cached assignments to someone whose manager role was just revoked.
+ * Who inherits this agent — the members/groups assigned to it. Each inherits the
+ * agent's declared secrets & connectors as their own.
+ *
+ * Gated on `project.members.manage`, the leaf the grants endpoint asserts. It
+ * used to read the roster's coarse `can_manage` flag, which is a role label by
+ * another name: a custom role granted exactly `project.members.manage` was
+ * denied this panel, and the flag also went stale with the roster cache.
  */
 function AgentAssignments({ projectId, agentName }: { projectId: string; agentName: string }) {
-  const accessQuery = useQuery({
-    queryKey: qk.project.access(projectId),
-    queryFn: () => listProjectAccess(projectId),
-    ...contract('inventory'),
-  });
-  const canManage = Boolean(accessQuery.data?.can_manage);
+  const canManage =
+    useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE).allowed === true;
   const grantsQuery = useQuery({
     queryKey: qk.project.resourceGrants(projectId),
     queryFn: () => listProjectResourceGrants(projectId),
@@ -100,7 +99,7 @@ function AgentAssignments({ projectId, agentName }: { projectId: string; agentNa
     ...contract('inventory'),
   });
   // Live capability gate: even if the grants cache still holds data from when the
-  // viewer was a manager, a now-non-manager never sees it.
+  // viewer held the leaf, someone who no longer holds it never sees it.
   if (!canManage) return null;
   const assigned = (grantsQuery.data?.grants ?? []).filter(
     (g) => g.resource_type === 'agent' && g.resource_id === agentName,
@@ -140,12 +139,10 @@ function AgentAssignments({ projectId, agentName }: { projectId: string; agentNa
  * read-only resolved model.
  */
 function AgentModel({ projectId, agentName }: { projectId: string; agentName: string }) {
-  const accessQuery = useQuery({
-    queryKey: qk.project.access(projectId),
-    queryFn: () => listProjectAccess(projectId),
-    ...contract('inventory'),
-  });
-  const canManage = Boolean(accessQuery.data?.can_manage);
+  // Pinning an agent's model is a customize write, which is what the route
+  // asserts — not "is this person a manager".
+  const canManage =
+    useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE).allowed === true;
   const { data: providers } = useRuntimeProviders();
   const models = useMemo(() => flattenModels(providers), [providers]);
   const defaults = useModelDefaults(projectId);
@@ -261,12 +258,10 @@ function AgentScopeCard({
   scope: NonNullable<Agent['scope']>;
 }) {
   const queryClient = useQueryClient();
-  const accessQuery = useQuery({
-    queryKey: qk.project.access(projectId),
-    queryFn: () => listProjectAccess(projectId),
-    ...contract('inventory'),
-  });
-  const canManage = Boolean(accessQuery.data?.can_manage);
+  // `PUT /projects/:id/agents/:name/scope` asserts `project.customize.write`
+  // (docs/sdk/reference: "the route answers 403 otherwise"). Ask for that.
+  const canManage =
+    useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE).allowed === true;
 
   const [env, setEnv] = useState<AgentGrantSet>(scope.env);
   const [connectors, setConnectors] = useState<AgentGrantSet>(scope.connectors);

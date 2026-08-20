@@ -6,13 +6,12 @@ import {
   CubeIcon as Boxes,
   GearSixIcon as Settings,
   KeyIcon as KeyRound,
+  LockKeyIcon as Lock,
   PlugIcon as Plug,
   SquaresFourIcon as Blocks,
-  UsersThreeIcon as UsersRound,
   type Icon,
 } from '@phosphor-icons/react';
 import Link from 'next/link';
-import { useMemo } from 'react';
 
 import { Skeleton } from '@/components/ui/skeleton';
 import {
@@ -20,7 +19,11 @@ import {
   capabilityTabHref,
   type CapabilityTab,
 } from '@/features/workspace/capabilities/shared/capability-tab-routes';
-import { TAB_PREFERENCE } from '@/features/workspace/project-sidebar/project-settings-nav';
+import {
+  CAPABILITY_TAB_GATE_ACTIONS,
+  visibleCapabilityTabs,
+} from '@/features/workspace/capabilities/shared/capability-tabs';
+import { EmptyState } from '@/features/layout/section/empty-state';
 import { useProjectCans } from '@/lib/use-project-can';
 
 /**
@@ -67,10 +70,6 @@ const CARD_COPY: Record<CapabilityTab['key'], { icon: Icon; description: string 
     icon: KeyRound,
     description: 'Store encrypted values and control where each value can be used.',
   },
-  members: {
-    icon: UsersRound,
-    description: 'Who can reach this workspace, and what each person can do.',
-  },
   config: {
     icon: Settings,
     description: 'General project settings, sandbox templates, feature flags, and upgrades.',
@@ -78,16 +77,22 @@ const CARD_COPY: Record<CapabilityTab['key'], { icon: Icon; description: string 
 };
 
 export function CustomizeIndexPage({ projectId }: { projectId: string }) {
-  const actions = useMemo(() => TAB_PREFERENCE.map((t) => t.action), []);
-  const caps = useProjectCans(projectId, actions);
+  // The SAME probe list and the SAME rule the tab bar applies
+  // (`capabilities/shared/capability-tabs.tsx`) — this page is that bar's
+  // index, so a card here and a tab there must never disagree about who may
+  // open a capability. In particular `project.customize.read` gates the whole
+  // surface: without it a plain project member would still see cards for the
+  // three leaves they DO hold (Models, Agents, Triggers) on a page they cannot
+  // use, reachable by URL.
+  const caps = useProjectCans(projectId, CAPABILITY_TAB_GATE_ACTIONS);
+  const visible = visibleCapabilityTabs(caps);
 
-  const cards = CAPABILITY_TABS.map((tab) => {
-    const pref = TAB_PREFERENCE.find((t) => t.key === tab.key);
-    const probe = pref ? caps[pref.action] : undefined;
-    return { tab, ...CARD_COPY[tab.key], denied: probe?.allowed === false };
-  }).filter((c) => !c.denied);
+  const cards = CAPABILITY_TABS.filter((tab) => visible.includes(tab)).map((tab) => ({
+    tab,
+    ...CARD_COPY[tab.key],
+  }));
 
-  const loading = actions.some((a) => caps[a]?.isLoading);
+  const loading = CAPABILITY_TAB_GATE_ACTIONS.some((a) => caps[a]?.isLoading);
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
@@ -106,6 +111,16 @@ export function CustomizeIndexPage({ projectId }: { projectId: string }) {
               <Skeleton key={i} className="h-24 rounded-md" />
             ))}
           </div>
+        ) : cards.length === 0 ? (
+          // Reached by URL only — every entry point into Customize is gated on
+          // the same leaf. Say so plainly instead of rendering a heading over
+          // an empty grid.
+          <EmptyState
+            icon={Lock}
+            size="sm"
+            title="You don't have access to this project's configuration"
+            description="Ask a project manager if you need to change how this project is set up."
+          />
         ) : (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             {cards.map(({ tab, icon: CardIcon, description }) => (

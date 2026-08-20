@@ -49,9 +49,28 @@ export interface CreatedAccountToken {
   created_at: string;
 }
 
+export interface ListAccountTokensOptions {
+  /**
+   * Narrow the list to the CALLER'S OWN hand-minted keys — no other member's
+   * keys, no session connector tokens, no service-account bearers. This is the
+   * read behind a person's own settings page; omit it for the administrative
+   * account-wide list.
+   *
+   * The narrowing is server-side on purpose: the response carries no
+   * `user_id`, `session_id` or `service_account_id`, so a client cannot do it.
+   */
+  mine?: boolean;
+}
+
 /** List CLI PATs for an account (defaults to the caller's resolved account). */
-export async function listAccountTokens(accountId?: string) {
-  const qs = accountId ? `?account_id=${encodeURIComponent(accountId)}` : '';
+export async function listAccountTokens(
+  accountId?: string,
+  options?: ListAccountTokensOptions,
+) {
+  const params = new URLSearchParams();
+  if (accountId) params.set('account_id', accountId);
+  if (options?.mine) params.set('mine', 'true');
+  const qs = params.size > 0 ? `?${params.toString()}` : '';
   return unwrap(await backendApi.get<AccountToken[]>(`/accounts/tokens${qs}`));
 }
 

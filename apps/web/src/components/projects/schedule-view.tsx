@@ -142,15 +142,12 @@ export function TriggerPauseSwitch({
  *
  * **Access gate — deliberately NOT `canWrite`, on purpose, do not merge
  * them.** `ScheduleView` below computes a `canWrite` from
- * `PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE` for its own create button — reusing
- * that here would be a real access-control WIDENING, not a refactor:
- * `PROJECT_TRIGGER_CREATE` sits in `EDITOR_EXTRAS`
- * (`apps/api/src/iam/role-perms.ts`), so an editor would gain visibility and
- * control of the project-wide kill switch, which the original code gated on
- * raw `effective_project_role === 'manager'` alone — manager-only, strictly
- * narrower than `canWrite`, and for a custom IAM role the two aren't even
- * equivalent in principle (independently grantable). This component keeps that
- * exact gate with its own `getProject` probe — see `schedule-view.test.tsx`.
+ * `PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE` for its own create button. This
+ * control is the project-wide kill switch, and the route behind it
+ * (`PATCH /projects/:id/triggers/activation`, `r4.ts`) asserts
+ * `project.trigger.update` — a DIFFERENT leaf, independently grantable. So this
+ * component probes that leaf directly instead of re-deriving it from a role
+ * label, which is what it used to do (`effective_project_role === 'manager'`).
  *
  * Reads `qk.project.triggers(projectId)` with its OWN `useQuery` — the SAME
  * key `ScheduleView` queries below. React Query dedupes both calls into one
@@ -167,14 +164,10 @@ function TriggerActivationMenu({ projectId }: { projectId: string }) {
   });
   const paused = triggersQuery.data?.triggers_paused ?? false;
 
-  // Raw manager-only gate — see this component's header comment for why this
-  // is its OWN probe rather than `ScheduleView`'s `canWrite`.
-  const projectQuery = useQuery({
-    queryKey: qk.project.summary(projectId),
-    queryFn: () => getProject(projectId),
-    ...contract('config'),
-  });
-  const canManage = projectQuery.data?.effective_project_role === 'manager';
+  // The exact leaf the activation route asserts — see this component's header
+  // comment for why this is its OWN probe rather than `ScheduleView`'s create gate.
+  const canManage =
+    useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_TRIGGER_UPDATE).allowed === true;
 
   const mutation = useMutation({
     mutationFn: (next: boolean) => setProjectTriggersActivation(projectId, next),
@@ -185,7 +178,7 @@ function TriggerActivationMenu({ projectId }: { projectId: string }) {
     onError: (error: Error) => errorToast(error.message || 'Could not update'),
   });
 
-  // The SAME manager-only gate, applied one level up as well: the trigger
+  // The SAME leaf, applied one level up as well: the trigger
   // button must not exist for a non-manager either, or the header would carry
   // a control that opens an empty popover.
   if (!canManage) return null;

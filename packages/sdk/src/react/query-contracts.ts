@@ -79,6 +79,8 @@ export const FRESHNESS = {
   messages: 'live',
   connectors: 'config',
   connectorConfig: 'config',
+  /** A provider metadata probe; it changes on the provider's schedule, not ours. */
+  connectorOAuth2Discovery: 'config',
   secrets: 'config',
   apps: 'inventory',
   appDeployments: 'inventory',

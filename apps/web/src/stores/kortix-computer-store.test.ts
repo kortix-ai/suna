@@ -838,3 +838,117 @@ describe('detailOpen never survives its content', () => {
     expect(state().detailOpen).toBe(false);
   });
 });
+
+describe('setActiveSession — boot handoff continuity', () => {
+  beforeEach(() => {
+    useKortixComputerStore.getState().reset();
+  });
+
+  test('transient shell → real chat for the SAME project session keeps the panel open', () => {
+    const s = useKortixComputerStore.getState();
+    // The boot shell activates under the Kortix session id…
+    s.setActiveSession('kortix-sess-1', { projectSessionId: 'kortix-sess-1', transient: true });
+    useKortixComputerStore.getState().setIsSidePanelOpen(true);
+    useKortixComputerStore.getState().setIsActionPanelOpen(true);
+    // …then the real chat mounts under the OpenCode id. Same session, same
+    // screen — the panel the user opened while booting must not slam shut.
+    useKortixComputerStore
+      .getState()
+      .setActiveSession('oc-abc', { projectSessionId: 'kortix-sess-1', transient: false });
+    const after = useKortixComputerStore.getState();
+    expect(after.isSidePanelOpen).toBe(true);
+    expect(after.isActionPanelOpen).toBe(true);
+    expect(after._activeSessionId).toBe('oc-abc');
+  });
+
+  test('transient shell → real chat of a DIFFERENT project session closes', () => {
+    const s = useKortixComputerStore.getState();
+    s.setActiveSession('kortix-sess-1', { projectSessionId: 'kortix-sess-1', transient: true });
+    useKortixComputerStore.getState().setIsSidePanelOpen(true);
+    useKortixComputerStore
+      .getState()
+      .setActiveSession('oc-other', { projectSessionId: 'kortix-sess-2', transient: false });
+    expect(useKortixComputerStore.getState().isSidePanelOpen).toBe(false);
+  });
+
+  test('real → real between sessions still closes, continuity or not', () => {
+    const s = useKortixComputerStore.getState();
+    s.setActiveSession('oc-a', { projectSessionId: 'kortix-sess-1', transient: false });
+    useKortixComputerStore.getState().setIsSidePanelOpen(true);
+    useKortixComputerStore
+      .getState()
+      .setActiveSession('oc-b', { projectSessionId: 'kortix-sess-1', transient: false });
+    expect(useKortixComputerStore.getState().isSidePanelOpen).toBe(false);
+  });
+
+  test('legacy callers without continuity behave exactly as before', () => {
+    const s = useKortixComputerStore.getState();
+    s.setActiveSession('s1');
+    useKortixComputerStore.getState().setIsSidePanelOpen(true);
+    useKortixComputerStore.getState().setActiveSession('s2');
+    expect(useKortixComputerStore.getState().isSidePanelOpen).toBe(false);
+  });
+
+  test('same-id re-activation refreshes the continuity bookkeeping without closing', () => {
+    const s = useKortixComputerStore.getState();
+    // The shell mounts transient, opens a panel, then the SAME layout id is
+    // re-activated as non-transient (never happens today, but the bookkeeping
+    // must not wedge on it).
+    s.setActiveSession('kortix-sess-1', { projectSessionId: 'kortix-sess-1', transient: true });
+    useKortixComputerStore.getState().setIsSidePanelOpen(true);
+    useKortixComputerStore
+      .getState()
+      .setActiveSession('kortix-sess-1', { projectSessionId: 'kortix-sess-1', transient: false });
+    const after = useKortixComputerStore.getState();
+    expect(after.isSidePanelOpen).toBe(true);
+    expect(after._activeIsTransient).toBe(false);
+  });
+});
+
+describe('setActiveSession — boot quick-view replant', () => {
+  beforeEach(() => {
+    useKortixComputerStore.getState().reset();
+  });
+
+  test('a Terminal consumed by the boot shell is replanted for the real layout', () => {
+    const s = useKortixComputerStore.getState();
+    s.setActiveSession('kortix-1', { projectSessionId: 'kortix-1', transient: true });
+    useKortixComputerStore.getState().requestQuickView('terminal');
+    // The shell's provider consumes it (opens the panel on the boot loader)…
+    expect(useKortixComputerStore.getState().consumeQuickView('kortix-1')?.view).toBe('terminal');
+    // …then the real layout mounts. Same project session → the intent is
+    // replanted for the new id, so the surviving panel opens the Terminal
+    // instead of a blank card.
+    useKortixComputerStore
+      .getState()
+      .setActiveSession('oc-1', { projectSessionId: 'kortix-1', transient: false });
+    const after = useKortixComputerStore.getState();
+    expect(after.isSidePanelOpen).toBe(true);
+    expect(after.pendingQuickView?.sessionId).toBe('oc-1');
+    expect(after.consumeQuickView('oc-1')?.view).toBe('terminal');
+    expect(after._bootQuickView).toBeNull();
+  });
+
+  test('the remembered boot view dies with a real session change', () => {
+    const s = useKortixComputerStore.getState();
+    s.setActiveSession('kortix-1', { projectSessionId: 'kortix-1', transient: true });
+    useKortixComputerStore.getState().requestQuickView('terminal');
+    useKortixComputerStore.getState().consumeQuickView('kortix-1');
+    // Navigate to a DIFFERENT session instead of handing off.
+    useKortixComputerStore
+      .getState()
+      .setActiveSession('oc-other', { projectSessionId: 'kortix-2', transient: false });
+    const after = useKortixComputerStore.getState();
+    expect(after.isSidePanelOpen).toBe(false);
+    expect(after.pendingQuickView).toBeNull();
+    expect(after._bootQuickView).toBeNull();
+  });
+
+  test('a quick-view consumed by a real layout is not remembered', () => {
+    const s = useKortixComputerStore.getState();
+    s.setActiveSession('oc-1', { projectSessionId: 'kortix-1', transient: false });
+    useKortixComputerStore.getState().requestQuickView('terminal');
+    useKortixComputerStore.getState().consumeQuickView('oc-1');
+    expect(useKortixComputerStore.getState()._bootQuickView).toBeNull();
+  });
+});

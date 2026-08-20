@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'bun:test';
 
-import { config } from '../../config';
 import {
   type SecretAgentGrantConfig,
   buildSecretView,
@@ -53,6 +52,28 @@ describe('serializeProject icon', () => {
 
   test('metadata defaults to {} on the serialized project when the row is null', () => {
     expect(serializeProject(projectRow(null)).metadata).toEqual({});
+  });
+
+  test('metadata omits the internal fast boot bundle without mutating stored metadata', () => {
+    const metadata = {
+      icon: '🚀',
+      git: {
+        provider: 'code-storage',
+        fast_boot: {
+          version: 1,
+          ref: 'main',
+          base_sha: 'a'.repeat(40),
+          bundle_base64: 'R0lUIEJVTkRMRQ==',
+          cached_at: '2026-08-20T00:00:00.000Z',
+        },
+      },
+    };
+    const serialized = serializeProject(projectRow(metadata));
+    expect(serialized.metadata).toEqual({
+      icon: '🚀',
+      git: { provider: 'code-storage' },
+    });
+    expect(metadata.git).toHaveProperty('fast_boot');
   });
 });
 
@@ -272,39 +293,28 @@ describe('secretDeliveryBlockedReason', () => {
 
 /**
  * `network_boundary_available` and `delivery_status` are what the web control
- * and the CLI read to decide whether this mode can be offered at all. Both are
- * computed from an OPTIONAL `projectMetadata` argument, so a caller that simply
- * forgot to pass the project still typechecks and silently reports the old
- * Platinum-only answer. That is exactly the regression these tests catch.
+ * and the CLI read to decide whether this mode can be offered at all.
+ *
+ * They used to be computed from a per-project in-guest-shim opt-in flag and
+ * `config.isPlatinumEnabled()`. Both are gone: one mechanism serves every
+ * provider (docs/specs/2026-08-19-secrets-exposure-usage-model.md §4), so the
+ * answer is unconditional — no project, no deployment and no operator env can
+ * make an egress-enforced secret undeliverable.
  */
-describe('buildSecretView — the per-project boundary flag reaches the view', () => {
-  const boundaryView = (projectMetadata: unknown) =>
+describe('buildSecretView — egress-enforced delivery is unconditionally available', () => {
+  const boundaryView = () =>
     buildSecretView({
       identifier: 'BOUNDARY_TEST',
       name: 'BOUNDARY_TEST',
       shared: secretRow(),
       canManageShared: true,
       agentGrants: declarative([['BOUNDARY_TEST']]),
-      projectMetadata,
     });
 
-  test('a project with the flag on reports boundary delivery available', () => {
-    const view = boundaryView({ experimental: { network_boundary_shim: true } });
+  test('an egress/network row reports the boundary available and deliverable', () => {
+    const view = boundaryView();
     expect(view.network_boundary_available).toBe(true);
     expect(view.delivery_status).toBe('available');
-  });
-
-  test('an explicitly absent project cannot widen the gate', () => {
-    // The argument is REQUIRED, so a caller with no project has to write
-    // `undefined` and say so. Without Platinum that reads as the closed answer,
-    // never as a default-open guess made on the caller's behalf.
-    const view = boundaryView(undefined);
-    expect(view.network_boundary_available).toBe(config.isPlatinumEnabled());
-  });
-
-  test('an explicit off is not read as "unset"', () => {
-    const view = boundaryView({ experimental: { network_boundary_shim: false } });
-    expect(view.network_boundary_available).toBe(config.isPlatinumEnabled());
   });
 });
 
@@ -315,7 +325,6 @@ describe('buildSecretView — delivery_blocked_reason', () => {
       name: 'BOUNDARY_TEST',
       shared: secretRow(),
       canManageShared: true,
-      projectMetadata: undefined,
       agentGrants: declarative([['OTHER_KEY']]),
     });
     expect(view.delivery_blocked_reason).toBe('no_agent_grant');
@@ -332,7 +341,6 @@ describe('buildSecretView — delivery_blocked_reason', () => {
       name: 'BOUNDARY_TEST',
       shared: secretRow(),
       canManageShared: true,
-      projectMetadata: undefined,
       agentGrants: declarative([['BOUNDARY_TEST']]),
     });
     expect(view.delivery_blocked_reason).toBeNull();
@@ -345,7 +353,6 @@ describe('buildSecretView — delivery_blocked_reason', () => {
       name: 'GOOGLE_MAPS_API_KEY',
       shared,
       canManageShared: true,
-      projectMetadata: undefined,
       agentGrants: declarative([['GMAPS-primary']]),
     });
     const byName = buildSecretView({
@@ -353,7 +360,6 @@ describe('buildSecretView — delivery_blocked_reason', () => {
       name: 'GOOGLE_MAPS_API_KEY',
       shared,
       canManageShared: true,
-      projectMetadata: undefined,
       agentGrants: declarative([['GOOGLE_MAPS_API_KEY']]),
     });
     expect(byIdentifier.delivery_blocked_reason).toBeNull();
@@ -367,14 +373,12 @@ describe('buildSecretView — delivery_blocked_reason', () => {
       name: 'BOUNDARY_TEST',
       shared,
       canManageShared: true,
-      projectMetadata: undefined,
     });
     const after = buildSecretView({
       identifier: 'BOUNDARY_TEST',
       name: 'BOUNDARY_TEST',
       shared,
       canManageShared: true,
-      projectMetadata: undefined,
       agentGrants: declarative([['OTHER_KEY']]),
     });
     expect(before.delivery_blocked_reason).toBeNull();
@@ -395,7 +399,6 @@ describe('buildSecretView — delivery_blocked_reason', () => {
         egressPolicy: null,
       }),
       canManageShared: true,
-      projectMetadata: undefined,
       agentGrants: declarative([['OTHER_KEY']]),
     });
     expect(view.delivery_blocked_reason).toBeNull();

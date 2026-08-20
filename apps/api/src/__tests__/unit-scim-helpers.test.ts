@@ -113,9 +113,9 @@ describe('SCIM deprovision releases the seat', () => {
   function deprovisionBody(): string {
     const body = SCIM_USERS_SRC.split('async function deprovisionMember(')[1]?.split('\n}\n')[0];
     expect(body).toBeTruthy();
-    // Guard the extraction: if this stops covering the member delete, every
+    // Guard the extraction: if this stops covering the identity-row delete, every
     // assertion below passes vacuously.
-    expect(body).toContain('delete(accountMembers)');
+    expect(body).toContain('delete(accountMemberships)');
     return body as string;
   }
 
@@ -131,7 +131,7 @@ describe('SCIM deprovision releases the seat', () => {
     // Ordering matters: syncSeatQuantity counts remaining members, so releasing
     // before the delete would recount the leaving member and change nothing.
     const body = deprovisionBody();
-    expect(body.indexOf('delete(accountMembers)')).toBeLessThan(body.indexOf('onMemberRemoved('));
+    expect(body.indexOf('delete(accountMemberships)')).toBeLessThan(body.indexOf('onMemberRemoved('));
   });
 
   test('the module actually imports it', () => {

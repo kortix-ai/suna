@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { localWebUrl } from './local-profile';
+import { LOCAL_AUTH_EMAIL_HOOK_SECRET, localWebUrl } from './local-profile';
 import {
   type LocalStackHandle,
   type LocalSupabaseHandle,
@@ -22,9 +22,49 @@ export interface LocalTestLane {
 }
 
 export interface LocalTestPlan {
-  mode: 'core' | 'flows' | 'sdk' | 'browser' | 'packages' | 'target' | 'target-full' | 'full';
+  mode:
+    | 'core'
+    | 'flows'
+    | 'sdk'
+    | 'browser'
+    | 'packages'
+    | 'target'
+    | 'target-full'
+    | 'target-api-full'
+    | 'target-browser-full'
+    | 'full';
   lanes: LocalTestLane[];
   stages: LocalTestLane[][];
+}
+
+/** Modes that assert the deployed target's health and SHA before running. */
+const DEPLOYED_TARGET_MODES = new Set<LocalTestPlan['mode']>([
+  'target',
+  'target-full',
+  'target-api-full',
+  'target-browser-full',
+]);
+
+/**
+ * Per-flow wall-clock floor for every lane that runs against a DEPLOYED target.
+ *
+ * The runner's own default is 120 s (`flow.ts:DEFAULT_FLOW_TIMEOUT_MS`), sized
+ * for the local stack. A deployed target is a different machine: every request
+ * crosses Cloudflare and a live ALB, and sandbox-backed flows provision real
+ * cloud VMs. Run 32231251280 lost roughly half its flows to
+ * `flow X exceeded 120000ms` on staging for that reason alone.
+ *
+ * 180 s is a FLOOR, not an override — `flow.ts:resolveFlowTimeoutMs` keeps any
+ * larger declared `meta.timeoutMs` (session and CLI flows declare 300 s–20 min).
+ * It lives here, not in `tests-release.yml`, so every caller of
+ * `--target-smoke` / `--target-api-full` / `--target-full` inherits it and no
+ * workflow has to know the number.
+ */
+export const DEPLOYED_FLOW_TIMEOUT_MS = '180000';
+
+function deployedFlowTimeoutMs(): string {
+  const override = process.env.KE2E_FLOW_TIMEOUT_MS;
+  return override === undefined || override === '' ? DEPLOYED_FLOW_TIMEOUT_MS : override;
 }
 
 const flowFilterFlags = new Set(['--domain', '--id', '--tag', '--smoke']);
@@ -36,6 +76,15 @@ function hasFlowFilter(args: string[]): boolean {
   });
 }
 
+function assertShardValue(value: string | undefined, flag: string): void {
+  const match = value?.match(/^(\d+)\/(\d+)$/);
+  const current = Number(match?.[1]);
+  const total = Number(match?.[2]);
+  if (!match || current < 1 || total < 2 || current > total) {
+    throw new Error(`${flag} must use CURRENT/TOTAL with 1 <= CURRENT <= TOTAL`);
+  }
+}
+
 export function buildLocalTestPlan(args: string[]): LocalTestPlan {
   const full = args.includes('--full');
   const flowsOnly = args.includes('--flows-only') || hasFlowFilter(args);
@@ -44,7 +93,14 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
   const packagesOnly = args.includes('--packages-only');
   const targetSmoke = args.includes('--target-smoke');
   const targetFull = args.includes('--target-full');
+  // The release gate runs the two deployed lanes as SEPARATE GitHub jobs, each
+  // sharded, so `max(api, browser)` replaces a contended sum on one 2-vCPU
+  // runner. `--target-full` still runs both lanes in one process for
+  // deploy-preview (one sandbox origin, one job by construction) and local use.
+  const targetApiFullOnly = args.includes('--target-api-full');
+  const targetBrowserFullOnly = args.includes('--target-browser-full');
   const browserShardArgs = args.filter((arg) => arg.startsWith('--browser-shard='));
+  const apiShardArgs = args.filter((arg) => arg.startsWith('--api-shard='));
   const modes = [
     full,
     flowsOnly,
@@ -53,25 +109,32 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
     packagesOnly,
     targetSmoke,
     targetFull,
+    targetApiFullOnly,
+    targetBrowserFullOnly,
   ].filter(Boolean).length;
   if (modes > 1) {
     throw new Error(
-      'choose only one of --full, --flows-only, --sdk-only, --browser-only, --packages-only, --target-smoke, or --target-full',
+      'choose only one of --full, --flows-only, --sdk-only, --browser-only, --packages-only, --target-smoke, --target-full, --target-api-full, or --target-browser-full',
     );
   }
   if (browserShardArgs.length > 1) {
     throw new Error('choose only one --browser-shard value');
   }
+  if (apiShardArgs.length > 1) {
+    throw new Error('choose only one --api-shard value');
+  }
   const browserShard = browserShardArgs[0]?.slice('--browser-shard='.length);
   if (browserShardArgs.length === 1) {
-    const match = browserShard.match(/^(\d+)\/(\d+)$/);
-    const current = Number(match?.[1]);
-    const total = Number(match?.[2]);
-    if (!match || current < 1 || total < 2 || current > total) {
-      throw new Error('--browser-shard must use CURRENT/TOTAL with 1 <= CURRENT <= TOTAL');
+    assertShardValue(browserShard, '--browser-shard');
+    if (!browserOnly && !targetBrowserFullOnly) {
+      throw new Error('--browser-shard requires --browser-only or --target-browser-full');
     }
-    if (!browserOnly) {
-      throw new Error('--browser-shard requires --browser-only');
+  }
+  const apiShard = apiShardArgs[0]?.slice('--api-shard='.length);
+  if (apiShardArgs.length === 1) {
+    assertShardValue(apiShard, '--api-shard');
+    if (!targetApiFullOnly) {
+      throw new Error('--api-shard requires --target-api-full');
     }
   }
 
@@ -84,7 +147,10 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
       arg !== '--packages-only' &&
       arg !== '--target-smoke' &&
       arg !== '--target-full' &&
-      !arg.startsWith('--browser-shard='),
+      arg !== '--target-api-full' &&
+      arg !== '--target-browser-full' &&
+      !arg.startsWith('--browser-shard=') &&
+      !arg.startsWith('--api-shard='),
   );
   const flows: LocalTestLane = {
     name: 'api-cli-flows',
@@ -123,6 +189,7 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
   const targetApi: LocalTestLane = {
     name: 'target-api-smoke',
     command: ['bun', 'tests/bin/ke2e.ts', 'run', '--smoke'],
+    env: { KE2E_FLOW_TIMEOUT_MS: deployedFlowTimeoutMs() },
   };
   const targetBrowser: LocalTestLane = {
     name: 'target-browser-smoke',
@@ -132,23 +199,37 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
   };
   const targetApiFull: LocalTestLane = {
     name: 'target-api-full',
-    command: ['bun', 'tests/bin/ke2e.ts', 'run', '--require-all'],
-    // Runs as its OWN stage (serialized before the browser lane — see below),
-    // so it has the staging Daytona provider to itself. 3 concurrent sandbox
-    // boots is proven to reach runtime-ready fine on its own; the API
-    // (non-sandbox) workers stay at 3 too since those flows are fast. Override
-    // via KE2E_API_WORKERS / KE2E_SANDBOX_WORKERS.
+    command: [
+      'bun',
+      'tests/bin/ke2e.ts',
+      'run',
+      '--require-all',
+      ...(apiShard ? ['--shard', apiShard] : []),
+    ],
+    // KE2E_API_WORKERS was 3. `provision.ts`'s global KE2E_PROVISION_CONCURRENCY
+    // semaphore — not the worker count — is the real ceiling, so 3 workers left
+    // measured parallelism at 1.43x. 6 is the paired half of raising provision
+    // concurrency to 4; raising either alone does almost nothing. Sandbox
+    // workers stay at 3 because those boot real cloud sandboxes.
+    // The release gate's shards override BOTH so the fleet total stays bounded
+    // — see the arithmetic in tests-release.yml.
     env: {
-      KE2E_API_WORKERS: process.env.KE2E_API_WORKERS ?? '3',
+      KE2E_API_WORKERS: process.env.KE2E_API_WORKERS ?? '6',
       KE2E_SANDBOX_WORKERS: process.env.KE2E_SANDBOX_WORKERS ?? '3',
+      KE2E_FLOW_TIMEOUT_MS: deployedFlowTimeoutMs(),
     },
   };
   const targetBrowserFull: LocalTestLane = {
     name: 'target-browser-full',
-    command: ['bun', 'run', 'test:browser'],
+    command: [
+      'bun',
+      'run',
+      'test:browser',
+      ...(browserShard ? ['--', `--shard=${browserShard}`] : []),
+    ],
     cwd: 'tests',
     env: {
-      E2E_BROWSER_WORKERS: '2',
+      E2E_BROWSER_WORKERS: process.env.E2E_BROWSER_WORKERS ?? '2',
       E2E_ENABLE_SDK_ONLY_SESSION: '1',
       E2E_ENABLE_SANDBOX_TEMPLATE_BUILD: '1',
       E2E_OAUTH_PROVIDER_INITIATION: process.env.KE2E_TARGET === 'preview' ? '0' : '1',
@@ -169,6 +250,16 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
   if (targetSmoke) {
     const lanes = [targetApi, targetBrowser];
     return { mode: 'target', lanes, stages: [lanes] };
+  }
+  if (targetApiFullOnly) {
+    return { mode: 'target-api-full', lanes: [targetApiFull], stages: [[targetApiFull]] };
+  }
+  if (targetBrowserFullOnly) {
+    return {
+      mode: 'target-browser-full',
+      lanes: [targetBrowserFull],
+      stages: [[targetBrowserFull]],
+    };
   }
   if (targetFull) {
     // Lanes run CONCURRENTLY (one stage). A serialize experiment was tried to
@@ -263,7 +354,29 @@ async function runLane(root: string, lane: LocalTestLane): Promise<LaneResult> {
   const startedAt = performance.now();
   console.log(`\n[test] START ${lane.name}: ${lane.command.join(' ')}`);
   try {
-    let env = { ...process.env, ...(lane.env ?? {}) };
+    // A LOCAL lane can sign a Supabase auth-hook request, because the local
+    // stack starts the API with this same fixed secret (see local-stack.ts).
+    //
+    // A `target-*` lane must NOT: it runs against DEPLOYED staging, which has
+    // its own AUTH_EMAIL_HOOK_SECRET. Injecting the local literal there made
+    // AUTH-2 sign staging with the wrong key and read the resulting
+    // `401 Invalid signature` as a product regression — it has never passed on
+    // a deployed target that has the secret set. On the deployed lane the
+    // secret comes from the environment (the release gate can supply
+    // `KE2E_AUTH_EMAIL_HOOK_SECRET` from the staging secret blob); when it is
+    // absent, AUTH-2's signed steps skip themselves and its unsigned
+    // `401 | 503` assertion still runs.
+    //
+    // Widened explicitly: lanes append their own E2E_*/KE2E_* keys below, and
+    // the inferred literal type would reject any key not present here (TS2353).
+    const deployedLane = lane.name.startsWith('target-');
+    let env: Record<string, string | undefined> = {
+      ...process.env,
+      ...(deployedLane
+        ? {}
+        : { KE2E_AUTH_EMAIL_HOOK_SECRET: LOCAL_AUTH_EMAIL_HOOK_SECRET }),
+      ...(lane.env ?? {}),
+    };
     if (lane.name === 'browser') {
       const topology = resolveLocalTopology(root);
       const supabase = await readLocalSupabaseEnvironment(topology);
@@ -356,7 +469,7 @@ export async function runLocalTests(root: string, args: string[]): Promise<numbe
   console.log(`[test] mode=${plan.mode} lanes=${plan.lanes.map((lane) => lane.name).join(',')}`);
   const results: LaneResult[] = [];
   try {
-    if (plan.mode === 'target' || plan.mode === 'target-full') {
+    if (DEPLOYED_TARGET_MODES.has(plan.mode)) {
       const target = resolveTargetSmokeConfig();
       await assertTargetSmokeHealth(target);
       console.log(

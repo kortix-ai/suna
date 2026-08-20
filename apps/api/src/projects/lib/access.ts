@@ -1,19 +1,25 @@
+import { normalizeProjectRole } from '../../iam/roles';
 import {
   isSessionTargetVisibleToCaller,
   isProjectSessionVisibleTo,
   isTriggerCreatedSessionMetadata,
   loadSessionGrants,
+  mayManageSessionSharing,
   resolveShareSubject,
   type SecretGrant,
   type ShareSubject,
 } from '../../connectors/share';
-import { authorize, assertAuthorized } from '../../iam';
-import { deriveRequestContext } from '../../iam/cache';
-// Straight from `iam/denial-message`, not the `iam` barrel or the dispatcher:
-// both of those are replaced wholesale by `mock.module` in several route tests,
-// so every name imported from them is a name those stubs must also declare.
-// These two are pure wording policy. Same reason `deriveRequestContext` above
-// comes from `iam/cache` directly.
+// Straight from the engine + the actor builder, not the barrel: the barrel is
+// replaced wholesale by `mock.module` in several route tests, so every name
+// imported from it is a name those stubs must also declare.
+import { authorize, assertAuthorized } from '../../iam/authorize';
+import { actorOf, type Actor } from '../../iam/actor';
+import { assignRole, SYSTEM_ACTOR } from '../../iam/assignments';
+import { projectRoleForUser } from '../../iam/read-models';
+// Straight from `iam/denial-message`, not the `iam` barrel: the barrel and the
+// engine are both replaced wholesale by `mock.module` in several route tests,
+// and these two names are pure wording policy with no reason to live behind
+// that.
 import { buildDenialError, denialReasonMessage } from '../../iam/denial-message';
 import { invalidateIamCacheForUser, registerPrincipalScopedMemo } from '../../iam/cache-invalidation';
 import { setContextField } from '../../lib/request-context';
@@ -29,7 +35,7 @@ import { resolveAccountId } from '../../shared/resolve-account';
 import { getSupabase } from '../../shared/supabase';
 import { ttlMemo } from '../../shared/ttl-memo';
 import { effectiveProjectRole, roleAllows, type AccountRole, type ProjectAccessAction, type ProjectRole } from '../access';
-import { accountMembers, projectMembers, projectSessions, projects, serviceAccounts } from '@kortix/db';
+import { accountMembers, accountMemberships, projectSessions, projects, serviceAccounts } from '@kortix/db';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
@@ -96,8 +102,99 @@ async function loadProjectSessionRow(
   return row ?? null;
 }
 
+// Memoized like the membership/role loaders above, and for the same reason:
+// every session read now asks this question, and the answer for one principal
+// is identical across a burst of parallel requests. Positive AND negative
+// results are cached — a service account never becomes a human, and a human
+// never becomes a service account, so neither direction can go stale.
+const loadPrincipalIsServiceAccount = ttlMemo({
+  ttlMs: 60_000,
+  keyFn: (accountId: string, principalId: string) => `${principalId}|${accountId}`,
+  loader: async (accountId: string, principalId: string): Promise<boolean> => {
+    const [row] = await db
+      .select({ id: serviceAccounts.serviceAccountId })
+      .from(serviceAccounts)
+      .where(
+        and(
+          eq(serviceAccounts.accountId, accountId),
+          eq(serviceAccounts.serviceAccountId, principalId),
+        ),
+      )
+      .limit(1);
+    return Boolean(row);
+  },
+});
+
+/**
+ * Is the machine-owner lookup capable of changing the verdict?
+ *
+ * `mayManageSessionSharing` is `isOwner || (canManageProject && ownerIsMachine)`.
+ * The owner short-circuits it, and a caller with no manage role can never reach
+ * the second term — so in both cases the answer is already decided and the
+ * query is pure cost. `loadVisibleSession` runs on most session routes, and the
+ * overwhelmingly common caller is a user reading their OWN session, so skipping
+ * it there keeps this change off the hot path entirely.
+ *
+ * The `false` reported in the skipped cases is never read as a fact about the
+ * session: its one consumer is the predicate above, which discards it.
+ */
+function ownerIsMachineCanMatter(isOwner: boolean, canManageProject: boolean): boolean {
+  return !isOwner && canManageProject;
+}
+
+/**
+ * Does this session have a MACHINE owner rather than a human one?
+ *
+ * True when `created_by` is empty, or names a service account of this account —
+ * the identity every trigger/agent run is stamped with. It is the one case
+ * where a project manager governs sharing, because no human is there to.
+ *
+ * Deliberately a POSITIVE test for "is a service account" and not a negative
+ * test for "is an account member": a lookup failure, a removed user, or a stale
+ * principal all answer `false` and keep the session owner-only. Denying a
+ * manager is recoverable; widening a private session is not.
+ */
+export async function sessionOwnerIsMachine(
+  accountId: string,
+  createdBy: string | null,
+): Promise<boolean> {
+  if (!createdBy) return true;
+  return loadPrincipalIsServiceAccount(accountId, createdBy);
+}
+
+/**
+ * Does this caller carry its user's project-management standing?
+ *
+ * A session-bound AGENT credential does not: it acts for one session, so it
+ * must not inherit the launching user's `manage` role and, through it, the
+ * trigger-session override that would expose sibling sessions.
+ *
+ * Keyed on the AGENT binding, never on `callerSessionId`. That field holds the
+ * SUPABASE LOGIN session id for every signed-in human (middleware/auth.ts:285,
+ * :341), so keying on it would strip managers of `canManageProject` — and with
+ * it `canManageLifecycle` — producing a 403 on stop, restart, delete and
+ * change-model for every manager who is not the owner.
+ *
+ * Pure and exported for unit tests, like shouldApplyAdminBypass above.
+ */
+export function callerHasManagerStanding(
+  effectiveRole: ProjectRole,
+  boundCredentialSessionId: string | null,
+): boolean {
+  return boundCredentialSessionId === null && roleAllows(effectiveRole, 'manage');
+}
+
 export async function loadVisibleSession(
-  loaded: { row: ProjectRow; userId: string; effectiveRole: ProjectRole; adminBypass?: boolean },
+  loaded: {
+    row: ProjectRow;
+    userId: string;
+    effectiveRole: ProjectRole;
+    adminBypass?: boolean;
+    /** The request's canonical principal. Absent only in tests that build a
+     *  `loaded` shape by hand; the members.manage probe below then declines
+     *  rather than widening. */
+    actor?: Actor | null;
+  },
   sessionId: string,
   /**
    * The CALLER's own session, when the credential is bound to one (a sandbox
@@ -107,33 +204,54 @@ export async function loadVisibleSession(
    * alone cannot separate them. See isSessionVisibleTo.
    */
   callerSessionId: string | null,
+  /**
+   * The caller's AGENT/SANDBOX token binding — always `callerKortixSessionId(c)`.
+   *
+   * Separate from `callerSessionId` on purpose. 14 of this function's call sites
+   * pass the RAW `c.get('sessionId')` for that one, and `resolveSupabaseAuth`
+   * (middleware/auth.ts:285, :341) sets it to the SUPABASE LOGIN session id for
+   * every signed-in human — so it cannot be read as "an agent token".
+   * ONLY the trigger-session manager override reads this field.
+   */
+  boundCredentialSessionId: string | null,
 ): Promise<{
   row: ProjectSessionRow;
   subject: ShareSubject;
   grants: SecretGrant[];
   isOwner: boolean;
   canManageProject: boolean;
+  /** Stop / restart / delete / model — manager-tier, unchanged. */
+  canManageLifecycle: boolean;
+  /** Who may open the session — owner-governed. See mayManageSessionSharing. */
   canManageSharing: boolean;
+  /** True when `created_by` names a service account (or nobody). */
+  ownerIsMachine: boolean;
 } | null> {
   const row = await loadProjectSessionRow(loaded, sessionId);
   if (!row) return null;
   const subject = await resolveShareSubject(loaded.userId);
   const grants = (await loadSessionGrants([sessionId])).get(sessionId) ?? [];
-  const ownership = { origin: row.origin ?? null, sessionId, callerSessionId };
-  let canManageProject = roleAllows(loaded.effectiveRole, 'manage');
+  const ownership = {
+    origin: row.origin ?? null,
+    sessionId,
+    callerSessionId,
+    boundCredentialSessionId,
+  };
+  let canManageProject = callerHasManagerStanding(loaded.effectiveRole, boundCredentialSessionId);
   if (
     !canManageProject &&
+    boundCredentialSessionId === null &&
     isSessionTargetVisibleToCaller(ownership) &&
     isTriggerCreatedSessionMetadata(row.metadata)
   ) {
-    canManageProject = (
-      await authorize(
-        loaded.userId,
-        loaded.row.accountId,
-        'project.members.manage',
-        { type: 'project', id: loaded.row.projectId },
-      )
-    ).allowed;
+    canManageProject = loaded.actor
+      ? (
+          await authorize(loaded.actor, 'project.members.manage', {
+            type: 'project',
+            id: loaded.row.projectId,
+          })
+        ).allowed
+      : false;
   }
   if (
     !isProjectSessionVisibleTo(
@@ -160,26 +278,41 @@ export async function loadVisibleSession(
     });
   }
   const isOwner = row.createdBy === loaded.userId;
-  return { row, subject, grants, isOwner, canManageProject, canManageSharing: isOwner || canManageProject };
+  const ownerIsMachine = ownerIsMachineCanMatter(isOwner, canManageProject)
+    ? await sessionOwnerIsMachine(loaded.row.accountId, row.createdBy)
+    : false;
+  return {
+    row,
+    subject,
+    grants,
+    isOwner,
+    canManageProject,
+    canManageLifecycle: isOwner || canManageProject,
+    canManageSharing: mayManageSessionSharing({ isOwner, canManageProject, ownerIsMachine }),
+    ownerIsMachine,
+  };
 }
 
 /**
- * Load a session for SHARING-MANAGEMENT purposes (the public-shares CRUD
- * routes) — a narrower, distinct question from `loadVisibleSession`'s "can
- * this user read the session's content/transcript".
+ * Load a session for PUBLIC-SHARE management — a distinct question from
+ * `loadVisibleSession`'s "can this user read the session's content".
  *
- * Managing a session's public share links is a project-management action:
- * the session's creator always can, and a project manager/owner/admin can
- * too, REGARDLESS of the session's private-content `visibility`. Reusing
- * `loadVisibleSession` here was a bug — a private session (the default)
- * is invisible to everyone but its creator under `isSessionVisibleTo`, so
- * the `canManageProject` half of `canManageSharing` could never be reached:
- * the route always 404'd on the visibility gate first, even for a real
- * project manager. A project member with no manage rights (e.g. an editor
- * who didn't create the session) still gets a truthful 403 (permission
- * denied) here, not a 404 (resource hidden) — they're a legitimate member of
- * the project the session lives in, not a stranger, so there's nothing to
- * hide about the session's mere existence.
+ * Deliberately skips the content-visibility gate. Reusing `loadVisibleSession`
+ * here was a bug: a private session (the default) is invisible to everyone but
+ * its creator, so the route 404'd before any permission check ran, even for a
+ * real project manager. A project member with no manage rights still gets a
+ * truthful 403 (permission denied) here, not a 404 (resource hidden) — they
+ * are a legitimate member of the project the session lives in, not a stranger.
+ *
+ * Two verdicts come back, and the routes must not confuse them:
+ *
+ *  - `canManageLifecycle` (owner OR manager) lists and REVOKES share links.
+ *    Revoking only ever removes access, so a manager killing a leak on a
+ *    session they cannot read is exactly the operation you want available.
+ *  - `canManageSharing` (see mayManageSessionSharing) MINTS them. A public
+ *    share link is unauthenticated, so a manager minting one against a private
+ *    session they cannot read would hand themselves the content the visibility
+ *    gate denied them — the same escalation the member-sharing rule closes.
  */
 export async function loadSessionForSharing(
   loaded: { row: ProjectRow; userId: string; effectiveRole: ProjectRole },
@@ -196,7 +329,11 @@ export async function loadSessionForSharing(
   row: ProjectSessionRow;
   isOwner: boolean;
   canManageProject: boolean;
+  /** List + revoke a public share — manager-tier: revoking only ever removes access. */
+  canManageLifecycle: boolean;
+  /** MINT a public share — owner-governed, same rule as member sharing. */
   canManageSharing: boolean;
+  ownerIsMachine: boolean;
 } | null> {
   const row = await loadProjectSessionRow(loaded, sessionId);
   if (!row) return null;
@@ -212,7 +349,17 @@ export async function loadSessionForSharing(
   }
   const isOwner = row.createdBy === loaded.userId;
   const canManageProject = roleAllows(loaded.effectiveRole, 'manage');
-  return { row, isOwner, canManageProject, canManageSharing: isOwner || canManageProject };
+  const ownerIsMachine = ownerIsMachineCanMatter(isOwner, canManageProject)
+    ? await sessionOwnerIsMachine(loaded.row.accountId, row.createdBy)
+    : false;
+  return {
+    row,
+    isOwner,
+    canManageProject,
+    canManageLifecycle: isOwner || canManageProject,
+    canManageSharing: mayManageSessionSharing({ isOwner, canManageProject, ownerIsMachine }),
+    ownerIsMachine,
+  };
 }
 
 
@@ -228,12 +375,11 @@ const loadProjectMemberRole = ttlMemo({
   // invalidateByPrefix(`${userId}|`) busts it alongside the engine memos.
   keyFn: (projectId: string, userId: string) => `${userId}|${projectId}`,
   loader: async (projectId: string, userId: string): Promise<ProjectRole | null> => {
-    const [row] = await db
-      .select({ projectRole: projectMembers.projectRole })
-      .from(projectMembers)
-      .where(and(eq(projectMembers.projectId, projectId), eq(projectMembers.userId, userId)))
-      .limit(1);
-    return (row?.projectRole as ProjectRole | undefined) ?? null;
+    // From `role_assignments`, the store the verdict beside this label comes
+    // from. `project_members` is no longer written by every path — an
+    // assignment made through `assignRole()` leaves it untouched on purpose —
+    // so a label read from it can disagree with the gate that just ran.
+    return (await projectRoleForUser(projectId, userId)) as ProjectRole | null;
   },
   shouldCache: (role) => role !== null,
 });
@@ -254,31 +400,38 @@ export async function grantProjectRole(input: {
    *  any existing expiry; Date = set/replace the expiry. */
   expiresAt?: Date | null | undefined;
 }) {
-  const now = new Date();
-  await db
-    .insert(projectMembers)
-    .values({
-      accountId: input.accountId,
-      projectId: input.projectId,
-      userId: input.userId,
-      projectRole: input.role,
-      grantedBy: input.grantedBy,
-      expiresAt: input.expiresAt ?? null,
-      updatedAt: now,
-    })
-    .onConflictDoUpdate({
-      target: [projectMembers.projectId, projectMembers.userId],
-      set: {
-        projectRole: input.role,
-        grantedBy: input.grantedBy,
-        updatedAt: now,
-        // Only overwrite expires_at when the caller explicitly supplied
-        // it (undefined preserves the existing value).
-        ...(input.expiresAt !== undefined ? { expiresAt: input.expiresAt } : {}),
-      },
-    });
+  // THE write. `kortix.project_members` is a view over `kortix.role_assignments`
+  // as of the cutover, so there is no second store to keep in step and no
+  // best-effort fallback: if this throws, no grant was made, and the caller must
+  // hear about it.
+  //
+  // `SYSTEM_ACTOR` because the CALLER was already authorized by the route that
+  // got here (`project.members.manage`, asserted before this function is
+  // reached) — re-authorizing a different action here would 403 the
+  // invite-acceptance and access-request-approval paths, where the writer is the
+  // invitee or an approver acting on someone else's behalf.
+  await assignRole(SYSTEM_ACTOR, input.accountId, {
+    principal: { type: 'user', id: input.userId },
+    roleKey: input.role,
+    scope: { type: 'project', id: input.projectId },
+    // undefined preserves nothing here: `assignRole` upserts expires_at
+    // unconditionally, and every caller that means "leave it alone" already
+    // reads the row first. null is "no expiry", which is the legacy INSERT's
+    // default and what the three callers that omit it intend.
+    expiresAt: input.expiresAt ?? null,
+    source: 'manual',
+    // The legacy `project_members` PRIMARY KEY (project_id, user_id) meant an
+    // upsert REPLACED the role. Reproduce that: member -> manager must retract
+    // the member row, not union with it.
+    exclusive: true,
+    // The human who granted it. `SYSTEM_ACTOR` only says "this route already
+    // authorized the writer"; it does not mean nobody granted this.
+    grantedBy: input.grantedBy,
+  });
   // The role just changed — drop this user's cached authz so the new role is
   // effective on their next request, not after the ~15s TTL window.
+  // (`assignRole` busts the principal memos; this covers the project-role label
+  // memo in this module, which is keyed the same way.)
   invalidateIamCacheForUser(input.userId);
 }
 
@@ -310,10 +463,28 @@ export async function ensureOrgMembership(
 ): Promise<AccountRole> {
   const existing = await getAccountMembership(userId, accountId);
   if (existing) return existing.accountRole as AccountRole;
+  // Membership is two facts in two stores now. IDENTITY (the row that says this
+  // user belongs to this account, and carries is_super_admin / scim_external_id)
+  // is `kortix.account_memberships`; the ROLE is an account-scope assignment.
+  // Writing the identity row first is what lets `assignRole`'s principal check
+  // resolve without falling back to auth.users.
   await db
-    .insert(accountMembers)
-    .values({ userId, accountId, accountRole: 'member' })
+    .insert(accountMemberships)
+    .values({ userId, accountId })
     .onConflictDoNothing();
+  // The grant, through the ONE write path, so joining an account emits
+  // `iam.assignment.granted` like every other grant. `SYSTEM_ACTOR`: the two
+  // callers (accepting a project invite, approving an access request) were
+  // authorized by their own route, and the person being added is not the writer.
+  await assignRole(SYSTEM_ACTOR, accountId, {
+    principal: { type: 'user', id: userId },
+    roleKey: 'member',
+    scope: { type: 'account' },
+    source: 'system',
+    // One account role per member, as the `account_role` COLUMN enforced.
+    exclusive: true,
+  });
+  invalidateIamCacheForUser(userId);
   return 'member';
 }
 
@@ -447,12 +618,27 @@ export async function resolveProjectAccount(c: Context, body?: Record<string, un
   };
 }
 
-// Maps the high-level project access action onto the IAM action key
-// the engine recognises. Keep this narrow — these three labels cover
-// every gate this file uses; bespoke actions (project.trigger.fire,
-// project.trigger.create, project.secret.write, etc.) should call authorize()
-// directly with the exact action.
-
+/**
+ * THE alias table: the coarse `loadProjectForUser` parameter mapped onto a real
+ * permission from `kortix.permissions`. Nothing else in the system speaks the
+ * coarse vocabulary — bespoke actions (project.trigger.fire, project.secret.write,
+ * …) call `assertProjectCapability` with the exact leaf.
+ *
+ *   read        -> project.read
+ *   session     -> project.session.start
+ *   write       -> project.write
+ *   manage      -> project.write            (legacy admin-tier write)
+ *   members     -> project.members.manage   (member administration)
+ *   credentials -> project.credentials.issue (mint/revoke a project credential)
+ *
+ * `manage` KEEPS mapping to project.write on purpose: all 31 remaining `manage`
+ * call sites stack their own explicit leaf assert immediately after
+ * (project.customize.write, project.connector.write, project.secret.write, …),
+ * so the coarse gate is the membership-tier question and the leaf gate is the
+ * capability question. The two sites where that stack was MISSING are the ones
+ * routes.md §5.2 named — `POST|DELETE /projects/:id/cli-token` — and they now
+ * pass `credentials`.
+ */
 export function iamActionForProjectAccess(action: ProjectAccessAction): string {
   switch (action) {
     case 'read':
@@ -465,22 +651,27 @@ export function iamActionForProjectAccess(action: ProjectAccessAction): string {
     case 'write':
       return 'project.write';
     case 'manage':
-      // 'manage' historically meant "admin-tier write" — covers triggers,
-      // secrets, snapshots, CLI tokens, etc. Map to project.write (which
-      // Project Editor has) so editors aren't accidentally locked out.
-      // Routes that need the stricter `project.members.manage` gate add
-      // an explicit assertProjectCapability() on top of loadProjectForUser.
       return 'project.write';
+    case 'members':
+      return 'project.members.manage';
+    case 'credentials':
+      // Minting or revoking a credential that outlives the request is its own
+      // capability, not "an admin-tier write". Before this leaf existed, a
+      // project CLI token could be minted by anyone holding project.write.
+      return 'project.credentials.issue';
   }
 }
 
+
 /**
  * Assert a SPECIFIC project capability (a leaf action like project.gitops.push)
- * for the current request, threading the acting token id off the request context
- * so the engine's agent-grant fold actually fires — `userRole ∩ agentGrant`. Use
- * this (not a bare `assertAuthorized`) for every per-capability route gate: a
- * bare call omits the token and the fold silently no-ops, which is exactly how
- * the per-route checks leaked the agent grant. 403s on denial.
+ * for the current request. 403s on denial.
+ *
+ * The acting credential no longer has to be threaded by hand: it is part of the
+ * `Actor` that `middleware/auth.ts` built, so the agent-grant fold and the token
+ * project-scope check cannot be skipped by forgetting an argument. `userId` is
+ * kept in the signature (194 call sites pass it) but is only used to assert that
+ * the caller and the request agree.
  */
 export async function assertProjectCapability(
   c: Context,
@@ -488,24 +679,19 @@ export async function assertProjectCapability(
   accountId: string,
   projectId: string,
   action: string,
-  // Optional per-RESOURCE narrowing: when supplied, the verdict is additionally
-  // intersected with iam_resource_grants for this specific agent/skill (see
-  // resource-grants.ts). Used by the agent/skill launch gates.
+  // Optional per-OBJECT narrowing: when supplied, the verdict is additionally
+  // intersected with the object grants for this specific agent/skill.
   resource?: { type: 'agent' | 'skill'; id: string },
 ): Promise<void> {
   if (isRepositoryProjectAction(action)) {
     await assertAgentSessionWorkspaceAllowsRepository(c, accountId, projectId);
   }
-  const actingTokenId =
-    ((c as unknown as { get(k: string): unknown }).get('iamTokenId') as string | undefined) ?? undefined;
-  await assertAuthorized(
-    userId,
-    accountId,
-    action,
-    { type: 'project', id: projectId, ...(resource ? { resource } : {}) },
-    actingTokenId,
-    deriveRequestContext(c),
-  );
+  const actor = await actorOf(c, accountId);
+  await assertAuthorized(actor, action, {
+    type: 'project',
+    id: projectId,
+    ...(resource ? { resource } : {}),
+  });
 }
 
 /**
@@ -531,16 +717,7 @@ export async function projectCapabilityAllowed(
   ) {
     return false;
   }
-  const actingTokenId =
-    ((c as unknown as { get(k: string): unknown }).get('iamTokenId') as string | undefined) ?? undefined;
-  const verdict = await authorize(
-    userId,
-    accountId,
-    action,
-    { type: 'project', id: projectId },
-    actingTokenId,
-    deriveRequestContext(c),
-  );
+  const verdict = await authorize(await actorOf(c, accountId), action, { type: 'project', id: projectId });
   return verdict.allowed;
 }
 
@@ -624,33 +801,25 @@ export async function loadProjectForUser(c: Context, projectId: string, action: 
   setContextField('accountId', row.accountId);
   setContextField('projectId', row.projectId);
 
-  const actingTokenId =
-    ((c as unknown as { get(k: string): unknown }).get('iamTokenId') as
-      | string
-      | undefined) ?? undefined;
-  const requestCtx = deriveRequestContext(c);
+  // ONE structured principal for the whole request, built from the credential
+  // that authenticated it. Rebuilt here only when the project's account differs
+  // from the one auth resolved (the dashboard case).
+  const actor = await actorOf(c, row.accountId);
+  const iamAction = iamActionForProjectAccess(action);
 
   // Membership, project role and the IAM verdict are independent lookups —
   // overlap them. Every project-scoped request runs this path; each DB
   // statement is a fast same-region roundtrip (~3ms measured, DB and API
   // both in eu-west-2), but they're serial by default, so running them in
   // parallel instead of stacked still matters at this call frequency.
-  // The engine consults super-admin bypass, direct + group policies,
-  // project_groups, AND the legacy account_role / project_members bridges
-  // (in non-strict mode), so it's strictly a superset of the old role-only
-  // check. Passing requestCtx is required for IP-allowlist / require-MFA
-  // policy conditions to evaluate against the current request.
+  // The verdict comes from `kortix.role_assignments` only. `membership` and
+  // `projectRole` are read here for the `accountRole` / `projectRole` /
+  // `effectiveRole` LABELS the four read models render — they are not part of
+  // the decision.
   const [membership, projectRole, verdict] = await Promise.all([
     getAccountMembership(userId, row.accountId),
     getProjectMemberRole(projectId, userId),
-    authorize(
-      userId,
-      row.accountId,
-      iamActionForProjectAccess(action),
-      { type: 'project', id: projectId },
-      actingTokenId,
-      requestCtx,
-    ),
+    authorize(actor, iamAction, { type: 'project', id: projectId }),
   ]);
 
   // A service account has NO account_members row — its access is purely its own
@@ -694,13 +863,12 @@ export async function loadProjectForUser(c: Context, projectId: string, action: 
 
   const accountRole = membership?.accountRole as AccountRole | undefined;
   if (!verdict.allowed && !adminBypass) {
-    const iamAction = iamActionForProjectAccess(action);
     // The engine already computed WHY. When the reason names a constraint other
     // than the caller's project role — an agent-session grant, a service
     // account's assigned role, MFA, token scope — report THAT.
     //
     // The role-probe below cannot: `project.read` is one of the two actions the
-    // agent-grant fold never gates (AGENT_GRANT_EXEMPT_ACTIONS in engine-v2),
+    // agent-grant fold never gates (AGENT_GRANT_EXEMPT_ACTIONS in iam/authorize),
     // so for an agent-session token the probe passes no matter what actually
     // denied the request. Every agent-scope and service-account-scope denial
     // therefore rendered as "your role is too low" — advice that told an
@@ -716,15 +884,15 @@ export async function loadProjectForUser(c: Context, projectId: string, action: 
     // all. Only do the second probe when the failed action was NOT already
     // 'read' — otherwise it's the same answer.
     if (action !== 'read') {
-      const readVerdict = await authorize(
-        userId,
-        row.accountId,
-        'project.read',
-        { type: 'project', id: projectId },
-        actingTokenId,
-        requestCtx,
-      );
+      const readVerdict = await authorize(actor, 'project.read', { type: 'project', id: projectId });
       if (readVerdict.allowed) {
+        // The two precise aliases name a real leaf, so they get the leaf's own
+        // wording ("manage project members" / "issue project credentials")
+        // rather than the coarse "change this project" — the coarse phrasing is
+        // what made a members-only denial read as a project-wide one.
+        if (action === 'members' || action === 'credentials') {
+          throw buildDenialError(iamAction, verdict.reason);
+        }
         const verb = action === 'manage' ? 'manage this project' : 'change this project';
         throw new HTTPException(403, {
           message: `Your role on this project doesn't let you ${verb}. Ask an account owner or admin to grant you a higher role.`,
@@ -754,6 +922,9 @@ export async function loadProjectForUser(c: Context, projectId: string, action: 
     projectRole,
     effectiveRole: effectiveRole as ProjectRole,
     adminBypass,
+    /** The request's canonical principal, so a handler that needs a second
+     *  verdict or an assignment write does not rebuild it. */
+    actor,
   };
 }
 

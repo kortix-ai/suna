@@ -25,10 +25,12 @@ surface. It does not change the authenticated actor or their permissions.
 ## Personal access tokens
 
 A personal access token (PAT) is the credential for the SDK, the CLI, and CI.
-Create one at **User settings → API keys**. The key starts with `kortix_pat_`
-and shows only once, at creation. Store it as a secret.
+Create one in your own settings, at **Settings → API keys**
+(`/settings/tokens`). The key starts with `kortix_pat_` and shows only once, at
+creation. Store it as a secret.
 
-A PAT acts as the user who created it. Its scope is fixed at creation:
+A PAT acts as the user who created it and holds exactly that user's role
+assignments. It adds no access of its own. Its scope only narrows the reach:
 
 | Scope | Reach |
 |---|---|
@@ -42,13 +44,22 @@ type, not a separate token kind.
 ## Service accounts
 
 A service account is a separate credential family for non-human callers,
-prefixed `kortix_sa_`. Create one at **Account settings → Service accounts**.
+prefixed `kortix_sa_`. Create one at **Account → Tokens**
+(`/accounts/<account-id>?tab=tokens`), the account-level surface for
+credentials that are not a person's.
+
+A service account is its own **principal** (`service_account`), not a person's
+credential. It has no membership, so it holds only the roles assigned to it
+directly. An agent's identity is a service account, which is how you assign a
+role to an agent. See
+[Accounts & access](/docs/accounts#one-access-model).
 
 <Callout type="warn">
-  A new service account has no project access. If you point `getToken` at one
-  before you grant it access, every call returns `403 "You do not have access
-  to this project"`. Grant the service account access first, or use a
-  personal access token for the SDK, the CLI, and demos instead.
+  A new service account has no assignments and therefore no project access. If
+  you point `getToken` at one before you assign it a role, every call returns
+  `403 "You do not have access to this project"`. Assign it a project role
+  first, or use a personal access token for the SDK, the CLI, and demos
+  instead.
 </Callout>
 
 ## Supabase JWT
@@ -71,4 +82,4 @@ automatically.
 | A backend, script, or CI job | A personal access token, account-wide or project-scoped |
 | The Kortix CLI | `kortix login` (mints a personal access token) |
 | A web app on Kortix sign-in | A Supabase JWT |
-| An automated caller with a granted project | A service account |
+| An automated caller with its own project assignment | A service account |

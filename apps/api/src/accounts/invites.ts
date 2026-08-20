@@ -3,9 +3,8 @@ import { and, eq, isNull } from 'drizzle-orm';
 import {
   accountGroupMembers,
   accountInvitations,
-  accountMembers,
+  accountMemberships,
   accounts,
-  projectMembers,
 } from '@kortix/db';
 import type { AppEnv } from '../types';
 import { db } from '../shared/db';
@@ -15,7 +14,8 @@ import { createInviteAcceptRateLimitMiddleware } from '../shared/rate-limit';
 import { onMemberAdded } from '../billing/services/seat-management';
 import { getMembership } from './core/app';
 import { makeOpenApiApp, json, errors, auth, ErrorSchema } from '../openapi';
-import { normalizeProjectRole } from '../iam/role-perms';
+import { normalizeProjectRole } from '../iam/roles';
+import { assignRole, convertPendingAssignments, SYSTEM_ACTOR } from '../iam/assignments';
 
 export const accountInvitesRouter = makeOpenApiApp<AppEnv>();
 
@@ -74,13 +74,13 @@ async function lookupAuthEmail(userId: string | null): Promise<string | null> {
 // only POST /v1/projects/:id/access/invite writes to it, and it
 // constructs entries from validated inputs — so in practice we trust
 // what's there. The cost of being wrong, though, is that the accept
-// handler would feed garbage straight into projectMembers (e.g., a
+// handler would feed garbage straight into the grant store (e.g., a
 // non-UUID project_id would 22023 on the insert, or an out-of-range
 // role would 22P02 on the enum cast). Validate defensively so an
 // unrelated future code path can't break invite acceptance.
 type ValidatedGrant = {
   project_id: string;
-  role: 'manager' | 'editor' | 'member';
+  role: 'manager' | 'member';
   expires_at: string | null;
 };
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -162,25 +162,19 @@ async function applyBootstrapGrants(
       continue;
     }
     try {
-      await db
-        .insert(projectMembers)
-        .values({
-          accountId: invite.accountId,
-          projectId: g.project_id,
-          userId,
-          projectRole: g.role,
-          grantedBy: invite.invitedBy,
-          expiresAt: g.expires_at ? new Date(g.expires_at) : null,
-        })
-        .onConflictDoUpdate({
-          target: [projectMembers.projectId, projectMembers.userId],
-          set: {
-            projectRole: g.role,
-            grantedBy: invite.invitedBy,
-            updatedAt: new Date(),
-            ...(g.expires_at ? { expiresAt: new Date(g.expires_at) } : {}),
-          },
-        });
+      // The ONE write path. `kortix.project_members` is a view over
+      // `kortix.role_assignments` as of the cutover, so this single call is the
+      // whole grant, and it emits one `iam.assignment.granted` per project the
+      // inviter staged.
+      await assignRole(SYSTEM_ACTOR, invite.accountId, {
+        principal: { type: 'user', id: userId },
+        roleKey: g.role,
+        scope: { type: 'project', id: g.project_id },
+        expiresAt: g.expires_at ? new Date(g.expires_at) : null,
+        source: 'invite',
+        exclusive: true,
+        grantedBy: invite.invitedBy,
+      });
       applied.push({ project_id: g.project_id, role: g.role });
     } catch (err) {
       console.warn(
@@ -334,18 +328,26 @@ accountInvitesRouter.openapi(
     }
   }
 
-  // Ensure account membership. onConflictDoNothing on the (user, account) unique
-  // index keeps this idempotent whether it's a first accept or a re-entry.
+  // Ensure account membership: IDENTITY first, then the ROLE.
+  // `onConflictDoNothing` on the (user, account) primary key keeps the identity
+  // half idempotent whether this is a first accept or a re-entry; `assignRole`
+  // is idempotent on the assignment identity for the same reason.
+  //
+  // `SYSTEM_ACTOR`: the writer is the INVITEE, who by definition holds no
+  // permission in this account yet — the invitation is the authorization.
   await db
-    .insert(accountMembers)
-    .values({
-      userId,
-      accountId: invite.accountId,
-      accountRole: invite.initialRole,
-    })
+    .insert(accountMemberships)
+    .values({ userId, accountId: invite.accountId })
     .onConflictDoNothing({
-      target: [accountMembers.userId, accountMembers.accountId],
+      target: [accountMemberships.userId, accountMemberships.accountId],
     });
+  await assignRole(SYSTEM_ACTOR, invite.accountId, {
+    principal: { type: 'user', id: userId },
+    roleKey: invite.initialRole,
+    scope: { type: 'account' },
+    source: 'invite',
+    exclusive: true,
+  });
 
   // Stamp accepted_at on first accept. The isNull guard makes concurrent
   // accepts collapse to a single write without us caring who won — both
@@ -375,6 +377,15 @@ accountInvitesRouter.openapi(
   // to them and re-clicking the link never fixed it. applyBootstrapGrants is
   // idempotent, so re-running it on re-entry just heals the missing grant.
   const appliedGrants = await applyBootstrapGrants(invite, userId);
+
+  // Staged `pending` assignments become this user's own. Run on every accept
+  // for the same self-healing reason applyBootstrapGrants is: a partial earlier
+  // run must be repairable by clicking the link again.
+  try {
+    await convertPendingAssignments(invite.accountId, invite.email, userId);
+  } catch (err) {
+    console.warn('[accept-invite] converting pending assignments failed', err);
+  }
 
   return c.json({
     account_id: invite.accountId,

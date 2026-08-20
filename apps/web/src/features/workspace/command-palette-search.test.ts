@@ -369,10 +369,11 @@ describe('genuine synonyms still answer', () => {
     ['cron', 'nav:proj-triggers'],
     ['recurring', 'nav:proj-triggers'],
     ['endpoint', 'nav:proj-triggers'],
-    // Was `settings:api-keys` / `settings:usage`. Both tabs left the overlay
-    // for `/accounts/[id]`, so the row that answers these queries is a
-    // registry row now.
-    ['pat', 'nav:account-tokens'],
+    // `usage` left the overlay for `/accounts/[id]`, so its queries are
+    // answered by a registry row. `api-keys` came BACK on 2026-08-18 as the
+    // `tokens` tab (the personal half only), so `pat` reaches a settings row
+    // again — `nav:account-tokens` answers for service account tokens.
+    ['pat', 'settings:tokens'],
     ['hotkeys', 'settings:preferences'],
     ['ledger', 'nav:account-usage'],
     ['configure', 'nav:proj-customize'],

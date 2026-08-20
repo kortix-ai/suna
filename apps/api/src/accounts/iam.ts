@@ -30,6 +30,7 @@
 
 import './iam/groups'; // groups, group members, group→project grants
 import './iam/members'; // super-admin, member groups / project-access / effective(+batch)
+import './iam/resource-grants'; // account-wide resource-grants rollup (agent/skill grants across every project)
 import './iam/mfa'; // account-wide MFA enforcement
 import './iam/scim-tokens'; // SCIM provisioning tokens
 import './iam/sso'; // SAML SSO provider + group mappings
@@ -37,5 +38,6 @@ import './iam/enterprise-demo'; // self-serve enterprise-preview toggle
 import './iam/policies'; // session policy, active sessions / revoke, PAT policy
 import './iam/service-accounts'; // service accounts (non-human IAM principals)
 import './iam/custom-roles'; // IAM v1: custom roles + action sets + principal→role policies
+import './iam/assignments'; // canonical: role_assignments CRUD + the permission catalog
 
 export { iamRouter } from './iam/app';

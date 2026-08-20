@@ -156,9 +156,12 @@ describe('the composer reads ONE working answer', () => {
  * ever while the composer beside it — projection-backed — correctly read idle.
  */
 describe('the turn card reads the same working answer', () => {
-  test('the LAST turn shimmers from the projection; a non-last turn NEVER works', () => {
+  test('the WORKING turn shimmers from the projection; any other turn NEVER works', () => {
+    // Not "the last turn": a prompt queued mid-turn is the last user message
+    // while the agent still streams the turn before it — `resolveWorkingTurn`
+    // picks the turn, the projection says whether it works.
     const turn = between(chat, 'function SessionTurnImpl(', 'const activeAssistantMessage');
-    expect(turn).toContain('isLast && lastTurnWorking');
+    expect(turn).toContain('isWorkingTurn && sessionWorking');
     // The raw slot no longer decides any turn's shimmer inside the card.
     expect(turn).not.toContain('getWorkingState(');
   });
@@ -169,7 +172,8 @@ describe('the turn card reads the same working answer', () => {
     // the projection-backed delay-hidden `isBusy` as the Kortix answer.
     expect(chat).toContain('resolveLastTurnWorking({');
     expect(chat).toContain('isChildSession');
-    expect(chat).toContain('lastTurnWorking={lastTurnWorking}');
+    expect(chat).toContain('sessionWorking={lastTurnWorking}');
+    expect(chat).toContain('resolveWorkingTurn({ turns, hintMessageId: working.turnId })');
   });
 
   test('retry copy keeps the raw frame — the projection does not carry the reason', () => {
@@ -194,6 +198,9 @@ describe('the turn card reads the same working answer', () => {
     // receipt, cleared the draft, and told the user nothing.
     const send = between(chat, 'const created = await promptInbox.enqueue({', 'return { ok: true }');
     expect(send).toContain("created.state === 'failed'");
-    expect(chat).toContain('correctedWillWait');
+    // No after-the-fact bubble for a prompt sent while a turn is live: the
+    // server HOLDS it (one prompt = one turn), so it belongs in the strip
+    // until its own turn starts.
+    expect(chat).not.toContain('correctedWillWait');
   });
 });

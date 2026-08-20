@@ -12,12 +12,16 @@
 //      so self-add is a one-click action.
 //
 //   3. Labelling a project Members row that has access only via a group
-//      ("Inherited Editor via Engineering + 1 more").
+//      ("Inherited Manager via Engineering + 1 more").
 
-export type AccountRole = 'owner' | 'admin' | 'member';
-// `member` is the project floor role; `viewer` was folded into it and is no
-// longer emitted by the API.
-export type ProjectRole = 'manager' | 'editor' | 'member';
+// ONE role model. These are re-exports of the SDK's unions, not local copies —
+// this file used to declare its own `AccountRole` / `ProjectRole`, shadowing
+// `@kortix/sdk`'s, so the same two names meant two things depending on the
+// import path.
+export type { AccountRole, ProjectRole } from '@kortix/sdk';
+
+import type { AccountRole, ProjectRole } from '@kortix/sdk';
+import { builtinRoleDescriptor } from '@/features/workspace/shared/access/role-select';
 
 export interface AccountMeta {
   email: string | null;
@@ -102,12 +106,6 @@ export function floatCurrentUserFirst<T extends { user_id: string }>(
 
 // ─── Project Members → inherited-via-group label ─────────────────────────
 
-const PROJECT_ROLE_LABEL: Record<ProjectRole, string> = {
-  manager: 'Manager',
-  editor: 'Editor',
-  member: 'Member',
-};
-
 export interface ProjectAccessRowInput {
   has_implicit_access: boolean;
   project_role: ProjectRole | null;
@@ -128,25 +126,9 @@ export function isInheritedFromGroupOnly(row: ProjectAccessRowInput): boolean {
   );
 }
 
-/**
- * "Expires in 3d" / "Expires tomorrow" / "Expired" — the inline label
- * that shows up next to a time-bounded grant. Past = "Expired" (renders
- * red in the row); future = "Expires in …" (amber). Used by the project
- * Members card + the group detail's Project access card.
- */
-export function formatExpiry(iso: string): string {
-  const ms = new Date(iso).getTime() - Date.now();
-  if (Number.isNaN(ms)) return 'Expires (unknown)';
-  if (ms <= 0) return 'Expired';
-  const minutes = Math.floor(ms / 60_000);
-  if (minutes < 60) return `Expires in ${minutes}m`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `Expires in ${hours}h`;
-  const days = Math.floor(hours / 24);
-  if (days === 1) return 'Expires tomorrow';
-  if (days < 30) return `Expires in ${days}d`;
-  return `Expires ${new Date(iso).toLocaleDateString()}`;
-}
+// `formatExpiry` used to live here too — a second implementation with a
+// different signature and different output from `shared/access/access-shared.ts`,
+// which the barrel's own policy forbids. Deleted; use that one.
 
 /**
  * Render the "Inherited X via Y" subtitle. Returns null when the row
@@ -158,8 +140,9 @@ export function inheritedFromGroupSummary(row: ProjectAccessRowInput): string | 
   const sources = row.group_sources!;
   const head = sources[0];
   const rest = sources.length - 1;
-  // Fallback guards against a stale `viewer` value from cache — it folds to Member.
-  const label = PROJECT_ROLE_LABEL[row.effective_project_role!] ?? 'Member';
+  // ONE source for the words: `role-select.tsx`'s descriptors, the same copy the
+  // role picker and the help page render. This file used to keep a third copy.
+  const label = builtinRoleDescriptor('project', row.effective_project_role!)?.label ?? 'Member';
   return rest > 0
     ? `Inherited ${label} via ${head.group_name} + ${rest} more`
     : `Inherited ${label} via ${head.group_name}`;

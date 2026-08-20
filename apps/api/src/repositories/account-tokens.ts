@@ -1,4 +1,4 @@
-import { eq, and, desc, inArray } from 'drizzle-orm';
+import { eq, and, desc, inArray, isNull } from 'drizzle-orm';
 import { accountTokens, accounts } from '@kortix/db';
 import { db } from '../shared/db';
 import {
@@ -213,6 +213,55 @@ export async function listAccountTokens(
     .orderBy(desc(accountTokens.createdAt));
 }
 
+/**
+ * List the API keys ONE person minted by hand in an account.
+ *
+ * `listAccountTokens` above answers a different question — "every row this
+ * account owns" — and three kinds of row live in that table:
+ *
+ *   1. an API key a human minted for themselves (`user_id` = them, nothing
+ *      else set),
+ *   2. a session connector token the runtime mints per sandbox and injects as
+ *      `KORTIX_TOKEN` (`session_id` set, usually `agent_grant` too), and
+ *   3. a service account's bearer (`service_account_id` set) — an automation
+ *      identity, not a person's key.
+ *
+ * Only (1) belongs on a person's own settings page, so this filters to it by
+ * the three columns that DEFINE the other two rather than by a name heuristic:
+ * the browser used to guess with `name.startsWith('Connector Session ')`
+ * (`components/iam/api-key-rows.ts`) because the list payload carried no
+ * `session_id`. A person's key is theirs alone — the caller only ever gets
+ * their own rows back, never another member's.
+ */
+export async function listPersonalAccountTokens(
+  accountId: string,
+  userId: string,
+): Promise<AccountTokenListEntry[]> {
+  return db
+    .select({
+      tokenId: accountTokens.tokenId,
+      publicKey: accountTokens.publicKey,
+      name: accountTokens.name,
+      status: accountTokens.status,
+      projectId: accountTokens.projectId,
+      expiresAt: accountTokens.expiresAt,
+      lastUsedAt: accountTokens.lastUsedAt,
+      createdAt: accountTokens.createdAt,
+      revokedAt: accountTokens.revokedAt,
+    })
+    .from(accountTokens)
+    .where(
+      and(
+        eq(accountTokens.accountId, accountId),
+        eq(accountTokens.userId, userId),
+        isNull(accountTokens.sessionId),
+        isNull(accountTokens.serviceAccountId),
+        isNull(accountTokens.agentGrant),
+      ),
+    )
+    .orderBy(desc(accountTokens.createdAt));
+}
+
 /** Revoke a token (soft-delete — sets status='revoked' + revoked_at). */
 export async function revokeAccountToken(
   tokenId: string,
@@ -342,6 +391,24 @@ export async function validateAccountToken(
         and(
           inArray(accountTokens.secretKeyHash, secretKeyHashes),
           eq(accountTokens.status, 'active'),
+          // `revoked_at` is the SECOND half of the revocation invariant and it
+          // must be checked here, not only `status`. Nothing in the database
+          // ties the two columns together — there is no CHECK, no trigger and
+          // no partial index (schema: packages/db/src/schema/kortix.ts
+          // `accountTokens`) — so a row can be `status='active'` with
+          // `revoked_at` stamped. Until this predicate existed, every such row
+          // authenticated cleanly on every surface (REST, LLM gateway, git
+          // proxy, preview proxy, connectors) and emitted a normal
+          // `auth.login.success` audit event, which hid the bypass.
+          //
+          // This is not hypothetical: the release-gate sweep revokes test PATs
+          // with a direct `UPDATE account_tokens SET revoked_at = now()`, and
+          // 186 "Connector Session" tokens kept authenticating afterwards,
+          // keeping zombie sandbox agents alive against staging. Every other
+          // reader of this table already checks both columns — see
+          // projects/lib/session-token-grant.ts, whose comment states the
+          // intent outright: "a revoked token must stay dead".
+          isNull(accountTokens.revokedAt),
         ),
       )
       .limit(1);
@@ -410,7 +477,17 @@ async function updateLastUsedThrottled(tokenId: string): Promise<void> {
     await db
       .update(accountTokens)
       .set({ lastUsedAt: new Date() })
-      .where(eq(accountTokens.tokenId, tokenId));
+      // Same liveness predicate as the validation query. A revoked token must
+      // not keep refreshing its own idle clock: without this, a token revoked
+      // between the read and this write looks freshly used, which defeats the
+      // idle-revoke sweep above and makes the token appear live in the UI.
+      .where(
+        and(
+          eq(accountTokens.tokenId, tokenId),
+          eq(accountTokens.status, 'active'),
+          isNull(accountTokens.revokedAt),
+        ),
+      );
   } catch (err) {
     console.warn('Failed to update account_tokens.last_used_at:', err);
   }

@@ -1,0 +1,101 @@
+name: Tests - browser quarantine (nightly)
+
+# The non-blocking home for browser journeys that cannot be made deterministic
+# against a deployed target.
+#
+# `tests-release.yml` excludes the `@quarantine` tag so a third-party outage
+# cannot hold a production release. This workflow runs EXACTLY that tag, on a
+# schedule, against the same staging origin and with the same secrets — so a
+# quarantined journey keeps being exercised and keeps an owner, instead of
+# rotting into a spec nobody runs.
+#
+# It is required by no branch and gates nothing. A red run here is a ticket, not
+# a block. If a journey goes green here for a sustained period AND its
+# non-determinism has been removed at the source, drop its tag and it returns to
+# the blocking gate automatically — no workflow edit needed.
+
+on:
+  schedule:
+    # 04:20 UTC daily — after the nightly deploys have settled and well clear of
+    # the release-gate window, so the two lanes never contend for staging.
+    - cron: '20 4 * * *'
+  workflow_dispatch:
+    inputs:
+      tags:
+        description: 'Tag filter to run (default @quarantine)'
+        required: false
+        default: '@quarantine'
+
+concurrency:
+  group: tests-browser-nightly
+  cancel-in-progress: false
+
+# Mirrors the top-level env of tests-release.yml. Both target the same deployed
+# staging origin with the same credentials; keep them in step when either
+# changes.
+env:
+  KE2E_API_URL: ${{ vars.QA_API_BASE_URL || 'https://staging-api.kortix.com/v1' }}
+  E2E_BASE_URL: ${{ vars.QA_WEB_BASE_URL || 'https://staging.kortix.com' }}
+  KE2E_GATEWAY_URL: ${{ vars.QA_GATEWAY_URL || 'https://gateway-staging.kortix.com' }}
+  KE2E_TARGET: staging
+  KE2E_LIVE_CONFIRM: ci
+  KE2E_OWNER_EMAIL: ${{ secrets.KE2E_OWNER_EMAIL }}
+  KE2E_OWNER_PASSWORD: ${{ secrets.KE2E_OWNER_PASSWORD }}
+  KE2E_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+  KE2E_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+  KE2E_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
+  KE2E_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+  KE2E_INTERNAL_SERVICE_KEY: ${{ secrets.STAGING_INTERNAL_SERVICE_KEY }}
+  KE2E_STRIPE_SECRET_KEY: ${{ secrets.STAGING_STRIPE_SECRET_KEY }}
+  KE2E_STRIPE_WEBHOOK_SECRET: ${{ secrets.STAGING_STRIPE_WEBHOOK_SECRET }}
+  E2E_AGENTMAIL_API_KEY: ${{ secrets.E2E_AGENTMAIL_API_KEY }}
+  KE2E_CAP_MANAGED_GIT_PUSH: ${{ vars.KE2E_CAP_MANAGED_GIT_PUSH || '0' }}
+  WEB_PROTECTION_PASSWORD: ${{ secrets.WEB_PROTECTION_PASSWORD }}
+  # Staging sits behind Vercel SSO deployment protection; without this header
+  # every authenticated page 302s to vercel.com/sso-api. See playwright.config.
+  VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+  KE2E_CI_PASSTHROUGH_SECRET: ${{ secrets.CF_WORKER_CI_PASSTHROUGH_SECRET }}
+
+jobs:
+  quarantine:
+    name: quarantined browser journeys
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      # `playwright.config.ts` turns this into `grep`, so the run loads ONLY the
+      # tagged journeys. Everything else is never collected.
+      E2E_INCLUDE_TAGS: ${{ github.event.inputs.tags || '@quarantine' }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 8.11.0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install deployed-target dependencies
+        run: |
+          pnpm install --frozen-lockfile --filter @kortix/tests...
+          pnpm --dir tests exec playwright install --with-deps chromium
+      - name: Run the quarantined browser journeys against staging
+        run: pnpm test -- --target-browser-full
+      - name: Guard test artifacts against secrets
+        if: always()
+        run: |
+          set -euo pipefail
+          if rg -l 'kortix_(pat|sa)_[A-Za-z0-9]{12,}|sk-[A-Za-z0-9]{20,}|eyJ[A-Za-z0-9_-]{30,}\.' tests/test-results 2>/dev/null; then
+            echo "::error::A test artifact contains a secret-shaped value."
+            exit 1
+          fi
+          echo "No secret-shaped values found."
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: tests-browser-nightly-quarantine
+          path: tests/test-results/**
+          if-no-files-found: warn
+          retention-days: 30

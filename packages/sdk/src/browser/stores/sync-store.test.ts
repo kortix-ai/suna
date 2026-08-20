@@ -8,6 +8,7 @@ import type {
 	TextPart,
 	UserMessage,
 } from "@opencode-ai/sdk/v2/client";
+import { getTurnError, groupMessagesIntoTurns } from "../../core/turns";
 import { ascendingId, Binary, sameSessionStatus, useSyncStore } from "./sync-store";
 
 // ============================================================================
@@ -370,6 +371,342 @@ describe("useSyncStore — session.error stub reconciliation on hydrate", () => 
 		]);
 
 		expect(useSyncStore.getState().messages.ses_1.map((m) => m.id)).toContain(stubId);
+	});
+});
+
+// ============================================================================
+// A turn that fails BEFORE any assistant message exists (2026-08-19 prod
+// report: `ModelNotFound: kortix/grok-4.6`, `session.error` ~2ms after the
+// user message). The error belongs to THAT turn — the user message it
+// answers — and nowhere else. Three failures were reported, and all three are
+// one question the old handler could not answer: WHICH turn failed?
+//
+//  1. Nothing rendered at all. The session already held an earlier turn, so
+//     the handler patched `.error` onto that turn's assistant message, far up
+//     the transcript — and the `reconcileTail` hydrate that follows every
+//     `session.error` overwrote that message with the server's own copy,
+//     which carries no error. The failure left no trace.
+//  2. The error rendered under the NEXT prompt instead of its own.
+//  3. A later, successful answer kept the stale error pinned below it.
+// ============================================================================
+
+describe("useSyncStore — session.error attaches to the turn that failed", () => {
+	test("does not patch a PREVIOUS turn's assistant message", () => {
+		const store = useSyncStore.getState();
+		store.upsertMessage("ses_1", userMessage("msg_0000000000010000000000"));
+		store.upsertMessage("ses_1", {
+			...assistantMessage("msg_0000000000020000000000"),
+			parentID: "msg_0000000000010000000000",
+		});
+		// The prompt that fails. No assistant message for it exists yet.
+		store.upsertMessage("ses_1", userMessage("msg_0000000000030000000000"));
+
+		store.applyEvent({
+			id: "evt_1",
+			type: "session.error",
+			properties: {
+				sessionID: "ses_1",
+				error: { name: "UnknownError", data: { message: "ModelNotFound: kortix/grok-4.6" } },
+			},
+		} as never);
+
+		const msgs = useSyncStore.getState().messages.ses_1;
+		const previous = msgs.find(
+			(m) => m.id === "msg_0000000000020000000000",
+		) as AssistantMessage;
+		expect(previous.error).toBeUndefined();
+
+		// The error rides an assistant message parented to the FAILING prompt,
+		// positioned directly after it.
+		const idx = msgs.findIndex((m) => m.id === "msg_0000000000030000000000");
+		const stub = msgs[idx + 1] as AssistantMessage;
+		expect(stub.role).toBe("assistant");
+		expect(stub.parentID).toBe("msg_0000000000030000000000");
+		expect((stub.error as { data: { message: string } }).data.message).toBe(
+			"ModelNotFound: kortix/grok-4.6",
+		);
+		expect(useSyncStore.getState().sessionStatus.ses_1).toEqual({ type: "idle" });
+	});
+
+	test("renders inside the failing turn, and stays there when a later turn arrives", () => {
+		const store = useSyncStore.getState();
+		store.upsertMessage("ses_1", userMessage("msg_0000000000010000000000"));
+		store.applyEvent({
+			id: "evt_1",
+			type: "session.error",
+			properties: {
+				sessionID: "ses_1",
+				error: { name: "UnknownError", data: { message: "boom" } },
+			},
+		} as never);
+
+		// A later, SUCCESSFUL turn.
+		store.upsertMessage("ses_1", userMessage("msg_0000000000030000000000"));
+		store.upsertMessage("ses_1", {
+			...assistantMessage("msg_0000000000040000000000"),
+			parentID: "msg_0000000000030000000000",
+		});
+
+		const turns = groupMessagesIntoTurns(useSyncStore.getState().getMessages("ses_1"));
+		expect(turns).toHaveLength(2);
+		expect(getTurnError(turns[0])).toBe("boom");
+		// The later turn is clean — nothing is pinned to the bottom of the thread.
+		expect(getTurnError(turns[1])).toBeUndefined();
+	});
+
+	test("still patches an assistant message that already started THIS turn", () => {
+		const store = useSyncStore.getState();
+		store.upsertMessage("ses_1", userMessage("msg_0000000000010000000000"));
+		store.upsertMessage("ses_1", {
+			...assistantMessage("msg_0000000000020000000000"),
+			parentID: "msg_0000000000010000000000",
+		});
+
+		store.applyEvent({
+			id: "evt_1",
+			type: "session.error",
+			properties: {
+				sessionID: "ses_1",
+				error: { name: "UnknownError", data: { message: "mid-turn failure" } },
+			},
+		} as never);
+
+		const msgs = useSyncStore.getState().messages.ses_1;
+		expect(msgs).toHaveLength(2);
+		expect(
+			(msgs[1] as AssistantMessage).error as { data: { message: string } },
+		).toEqual({ data: { message: "mid-turn failure" }, name: "UnknownError" } as never);
+	});
+
+	test("hydrate KEEPS the error when the server transcript has no reply for that turn", () => {
+		const store = useSyncStore.getState();
+		store.upsertMessage("ses_1", userMessage("msg_0000000000010000000000"));
+		store.upsertMessage("ses_1", {
+			...assistantMessage("msg_0000000000020000000000"),
+			parentID: "msg_0000000000010000000000",
+		});
+		store.upsertMessage("ses_1", userMessage("msg_0000000000030000000000"));
+		store.applyEvent({
+			id: "evt_1",
+			type: "session.error",
+			properties: {
+				sessionID: "ses_1",
+				error: { name: "UnknownError", data: { message: "boom" } },
+			},
+		} as never);
+
+		// `reconcileTail('session-error')` — the server holds the earlier turn's
+		// assistant message, and NOTHING for the failing turn. The old
+		// session-wide rule read that as "a real assistant message landed" and
+		// dropped the only record of the failure.
+		store.hydrate("ses_1", [
+			{ info: userMessage("msg_0000000000010000000000"), parts: [] },
+			{
+				info: {
+					...assistantMessage("msg_0000000000020000000000"),
+					parentID: "msg_0000000000010000000000",
+				},
+				parts: [],
+			},
+			{ info: userMessage("msg_0000000000030000000000"), parts: [] },
+		]);
+
+		const turns = groupMessagesIntoTurns(useSyncStore.getState().getMessages("ses_1"));
+		expect(turns).toHaveLength(2);
+		expect(getTurnError(turns[1])).toBe("boom");
+	});
+
+	test("hydrate DROPS the error once the server holds a real reply for that turn", () => {
+		const store = useSyncStore.getState();
+		store.upsertMessage("ses_1", userMessage("msg_0000000000010000000000"));
+		store.applyEvent({
+			id: "evt_1",
+			type: "session.error",
+			properties: {
+				sessionID: "ses_1",
+				error: { name: "UnknownError", data: { message: "boom" } },
+			},
+		} as never);
+
+		store.hydrate("ses_1", [
+			{ info: userMessage("msg_0000000000010000000000"), parts: [] },
+			{
+				info: {
+					...assistantMessage("msg_0000000000020000000000"),
+					parentID: "msg_0000000000010000000000",
+				},
+				parts: [],
+			},
+		]);
+
+		const ids = useSyncStore.getState().messages.ses_1.map((m) => m.id);
+		expect(ids).toEqual(["msg_0000000000010000000000", "msg_0000000000020000000000"]);
+	});
+
+	test("hydrate moves the error onto the server's own reply for that turn", () => {
+		const store = useSyncStore.getState();
+		store.upsertMessage("ses_1", userMessage("msg_0000000000010000000000"));
+		store.applyEvent({
+			id: "evt_1",
+			type: "session.error",
+			properties: {
+				sessionID: "ses_1",
+				error: { name: "UnknownError", data: { message: "boom" } },
+			},
+		} as never);
+
+		// The server DID persist an assistant message for the failed turn, but
+		// its copy carries no error (opencode records the failure on the
+		// session, not always on the message). Dropping the stub against it
+		// would erase the only evidence the turn failed.
+		store.hydrate("ses_1", [
+			{ info: userMessage("msg_0000000000010000000000"), parts: [] },
+			{
+				info: {
+					...assistantMessage("msg_0000000000020000000000"),
+					parentID: "msg_0000000000010000000000",
+				},
+				parts: [],
+			},
+		]);
+
+		const msgs = useSyncStore.getState().messages.ses_1;
+		expect(msgs.map((m) => m.id)).toEqual([
+			"msg_0000000000010000000000",
+			"msg_0000000000020000000000",
+		]);
+		const turns = groupMessagesIntoTurns(useSyncStore.getState().getMessages("ses_1"));
+		expect(getTurnError(turns[0])).toBe("boom");
+	});
+
+	test("hydrate leaves the server's OWN error on that reply alone", () => {
+		const store = useSyncStore.getState();
+		store.upsertMessage("ses_1", userMessage("msg_0000000000010000000000"));
+		store.applyEvent({
+			id: "evt_1",
+			type: "session.error",
+			properties: {
+				sessionID: "ses_1",
+				error: { name: "UnknownError", data: { message: "client copy" } },
+			},
+		} as never);
+
+		store.hydrate("ses_1", [
+			{ info: userMessage("msg_0000000000010000000000"), parts: [] },
+			{
+				info: {
+					...assistantMessage("msg_0000000000020000000000"),
+					parentID: "msg_0000000000010000000000",
+					error: { name: "UnknownError", data: { message: "server copy" } },
+				} as never,
+				parts: [],
+			},
+		]);
+
+		const turns = groupMessagesIntoTurns(useSyncStore.getState().getMessages("ses_1"));
+		expect(getTurnError(turns[0])).toBe("server copy");
+	});
+
+	// The stub is part of `messages[sessionID]`, so the transcript cache mirrors
+	// it to IndexedDB and the first paint after a reload brings it back. Its
+	// tracking map does not survive the reload, so `hydrate` re-adopts it —
+	// otherwise a restored stub could never be reconciled again.
+	test("re-adopts a stub restored from the disk transcript cache", () => {
+		const store = useSyncStore.getState();
+		const stub = {
+			...assistantMessage("msg_0000000000010000000000_error"),
+			parentID: "msg_0000000000010000000000",
+			error: { name: "UnknownError", data: { message: "boom" } },
+		} as never as Message;
+
+		// First paint, straight out of the cache.
+		store.hydrate("ses_1", [
+			{ info: userMessage("msg_0000000000010000000000"), parts: [] },
+			{ info: stub, parts: [] },
+		]);
+		expect(
+			getTurnError(groupMessagesIntoTurns(useSyncStore.getState().getMessages("ses_1"))[0]),
+		).toBe("boom");
+
+		// The runtime reconcile behind it: the server now holds a real reply.
+		store.hydrate("ses_1", [
+			{ info: userMessage("msg_0000000000010000000000"), parts: [] },
+			{
+				info: {
+					...assistantMessage("msg_0000000000020000000000"),
+					parentID: "msg_0000000000010000000000",
+				},
+				parts: [],
+			},
+		]);
+
+		expect(useSyncStore.getState().messages.ses_1.map((m) => m.id)).toEqual([
+			"msg_0000000000010000000000",
+			"msg_0000000000020000000000",
+		]);
+	});
+
+	test("follows its user message when a message.updated echo retires the optimistic one", () => {
+		const store = useSyncStore.getState();
+		store.optimisticAdd("ses_1", userMessage("msg_optimistic00000000000"), [
+			textPart("prt_1", "msg_optimistic00000000000", "hi"),
+		]);
+		store.markOptimisticDispatched("ses_1", "msg_optimistic00000000000");
+		store.applyEvent({
+			id: "evt_1",
+			type: "session.error",
+			properties: {
+				sessionID: "ses_1",
+				error: { name: "UnknownError", data: { message: "boom" } },
+			},
+		} as never);
+
+		// The server's own copy of that prompt, over SSE this time.
+		store.applyEvent({
+			id: "evt_2",
+			type: "message.updated",
+			properties: { info: userMessage("msg_0000000000090000000000") },
+		} as never);
+
+		const msgs = useSyncStore.getState().messages.ses_1;
+		expect(msgs.map((m) => m.id)).not.toContain("msg_optimistic00000000000");
+		const stub = msgs.find((m) => m.role === "assistant") as AssistantMessage;
+		expect(stub.parentID).toBe("msg_0000000000090000000000");
+		const turns = groupMessagesIntoTurns(useSyncStore.getState().getMessages("ses_1"));
+		expect(turns).toHaveLength(1);
+		expect(getTurnError(turns[0])).toBe("boom");
+	});
+
+	test("follows its user message when the server echo supersedes the optimistic one", () => {
+		const store = useSyncStore.getState();
+		store.optimisticAdd("ses_1", userMessage("msg_optimistic00000000000"), [
+			textPart("prt_1", "msg_optimistic00000000000", "hi"),
+		]);
+		store.markOptimisticDispatched("ses_1", "msg_optimistic00000000000");
+		store.applyEvent({
+			id: "evt_1",
+			type: "session.error",
+			properties: {
+				sessionID: "ses_1",
+				error: { name: "UnknownError", data: { message: "boom" } },
+			},
+		} as never);
+
+		// The server's own copy of that prompt, correlated by part id.
+		store.hydrate("ses_1", [
+			{
+				info: userMessage("msg_0000000000090000000000"),
+				parts: [textPart("prt_1", "msg_0000000000090000000000", "hi")],
+			},
+		]);
+
+		const msgs = useSyncStore.getState().messages.ses_1;
+		expect(msgs.map((m) => m.id)).not.toContain("msg_optimistic00000000000");
+		const stub = msgs.find((m) => m.role === "assistant") as AssistantMessage;
+		expect(stub.parentID).toBe("msg_0000000000090000000000");
+		const turns = groupMessagesIntoTurns(useSyncStore.getState().getMessages("ses_1"));
+		expect(turns).toHaveLength(1);
+		expect(getTurnError(turns[0])).toBe("boom");
 	});
 });
 
@@ -2515,5 +2852,286 @@ describe("sameSessionStatus", () => {
 		expect(sameSessionStatus(retry, { ...retry, attempt: 2 })).toBe(false);
 		expect(sameSessionStatus(retry, { ...retry, message: "gateway 429" })).toBe(false);
 		expect(sameSessionStatus(retry, { ...retry, next: 2000 })).toBe(false);
+	});
+});
+
+// ============================================================================
+// ONE prompt = ONE id = ONE bubble. The optimistic message is minted with the
+// WIRE id the inbox row carries, so the server's echo either confirms it in
+// place (same id) or supersedes it under a re-minted id that the store
+// aliases back to the original. And a message the control plane already holds
+// (an inbox row landed) is never swept by a local idle.
+// ============================================================================
+
+describe("useSyncStore — an echo under the SAME id confirms the optimistic message in place", () => {
+	function userMessageUpdated(id: string, sessionID = "ses_1") {
+		return {
+			id: "evt_x",
+			type: "message.updated",
+			properties: { info: userMessage(id, sessionID) },
+		} as never;
+	}
+
+	test("message.updated with the optimistic id keeps ONE message, and the idle sweep no longer touches it", () => {
+		const store = useSyncStore.getState();
+		store.optimisticAdd("ses_1", userMessage("msg_wire"), [
+			textPart("prt_client", "msg_wire", "hello"),
+		]);
+		store.markOptimisticDispatched("ses_1", "msg_wire");
+
+		store.applyEvent(userMessageUpdated("msg_wire"));
+
+		const ids = useSyncStore.getState().messages["ses_1"]?.map((m) => m.id) ?? [];
+		expect(ids).toEqual(["msg_wire"]);
+		// The optimistic text stands in until the real part lands.
+		expect(useSyncStore.getState().parts["msg_wire"]?.[0]).toMatchObject({ text: "hello" });
+		expect(useSyncStore.getState().hasOptimisticMessages("ses_1")).toBe(false);
+
+		// Confirmed by the runtime: a sweep is not allowed to delete it.
+		store.clearOptimisticMessages("ses_1");
+		expect(useSyncStore.getState().messages["ses_1"]?.map((m) => m.id)).toEqual(["msg_wire"]);
+	});
+
+	test("the first REAL part replaces the optimistic part instead of sitting beside it", () => {
+		const store = useSyncStore.getState();
+		store.optimisticAdd("ses_1", userMessage("msg_wire"), [
+			textPart("prt_client", "msg_wire", "hello"),
+		]);
+		store.markOptimisticDispatched("ses_1", "msg_wire");
+		store.applyEvent(userMessageUpdated("msg_wire"));
+
+		store.upsertPart("msg_wire", textPart("prt_server", "msg_wire", "hello"), "ses_1");
+
+		const parts = useSyncStore.getState().parts["msg_wire"] ?? [];
+		expect(parts.map((p) => p.id)).toEqual(["prt_server"]);
+	});
+
+	test("hydrate with the optimistic id confirms it too, and real parts win", () => {
+		const store = useSyncStore.getState();
+		store.optimisticAdd("ses_1", userMessage("msg_wire"), [
+			textPart("prt_client", "msg_wire", "hello"),
+		]);
+		store.markOptimisticDispatched("ses_1", "msg_wire");
+
+		store.hydrate("ses_1", [
+			{ info: userMessage("msg_wire"), parts: [textPart("prt_server", "msg_wire", "hello")] },
+		] as never);
+
+		const s = useSyncStore.getState();
+		expect(s.messages["ses_1"]?.map((m) => m.id)).toEqual(["msg_wire"]);
+		expect(s.parts["msg_wire"]?.map((p) => p.id)).toEqual(["prt_server"]);
+		expect(s.hasOptimisticMessages("ses_1")).toBe(false);
+	});
+});
+
+describe("useSyncStore — an echo under a RE-MINTED id is aliased to the optimistic id", () => {
+	function userMessageUpdated(id: string, sessionID = "ses_1") {
+		return {
+			id: "evt_x",
+			type: "message.updated",
+			properties: { info: userMessage(id, sessionID) },
+		} as never;
+	}
+
+	test("SSE supersede records origin ↔ echo both ways", () => {
+		const store = useSyncStore.getState();
+		store.optimisticAdd("ses_1", userMessage("msg_wire"), [
+			textPart("prt_client", "msg_wire", "hello"),
+		]);
+		store.markOptimisticDispatched("ses_1", "msg_wire");
+
+		store.applyEvent(userMessageUpdated("msg_reminted"));
+
+		const s = useSyncStore.getState();
+		expect(s.messages["ses_1"]?.map((m) => m.id)).toEqual(["msg_reminted"]);
+		expect(s.optimisticEchoOf("ses_1", "msg_wire")).toBe("msg_reminted");
+		expect(s.optimisticOriginOf("ses_1", "msg_reminted")).toBe("msg_wire");
+		expect(s.optimisticOriginOf("ses_1", "msg_wire")).toBeUndefined();
+	});
+
+	test("hydrate supersede records the alias as well", () => {
+		const store = useSyncStore.getState();
+		store.optimisticAdd("ses_1", userMessage("msg_wire"), [
+			textPart("prt_client", "msg_wire", "hello"),
+		]);
+		store.markOptimisticDispatched("ses_1", "msg_wire");
+
+		store.hydrate("ses_1", [{ info: userMessage("msg_reminted"), parts: [] }] as never);
+
+		const s = useSyncStore.getState();
+		expect(s.messages["ses_1"]?.map((m) => m.id)).toEqual(["msg_reminted"]);
+		expect(s.optimisticEchoOf("ses_1", "msg_wire")).toBe("msg_reminted");
+		expect(s.optimisticOriginOf("ses_1", "msg_reminted")).toBe("msg_wire");
+	});
+
+	test("aliases leave with the session", () => {
+		const store = useSyncStore.getState();
+		store.optimisticAdd("ses_1", userMessage("msg_wire"), []);
+		store.markOptimisticDispatched("ses_1", "msg_wire");
+		store.applyEvent(userMessageUpdated("msg_reminted"));
+		store.clearSession("ses_1");
+		expect(useSyncStore.getState().optimisticEchoOf("ses_1", "msg_wire")).toBeUndefined();
+	});
+});
+
+describe("useSyncStore — optimisticRemove is a no-op for a message the runtime confirmed", () => {
+	test("after a same-id echo the message is the transcript's; removing the queue row leaves it", () => {
+		const store = useSyncStore.getState();
+		store.optimisticAdd("ses_1", userMessage("msg_wire"), []);
+		store.markOptimisticDispatched("ses_1", "msg_wire");
+		store.applyEvent({
+			id: "evt_x",
+			type: "message.updated",
+			properties: { info: userMessage("msg_wire") },
+		} as never);
+
+		store.optimisticRemove("ses_1", "msg_wire");
+
+		expect(useSyncStore.getState().messages["ses_1"]?.map((m) => m.id)).toEqual(["msg_wire"]);
+	});
+});
+
+describe("useSyncStore — an INBOX-BACKED optimistic message survives the idle sweep", () => {
+	test("markOptimisticInboxBacked keeps it through clearOptimisticMessages; optimisticRemove still removes it", () => {
+		const store = useSyncStore.getState();
+		store.optimisticAdd("ses_1", userMessage("msg_wire"), [
+			textPart("prt_client", "msg_wire", "queued while asleep"),
+		]);
+		store.markOptimisticDispatched("ses_1", "msg_wire");
+		store.markOptimisticInboxBacked("ses_1", "msg_wire");
+		// A second, NOT inbox-backed one — the sweep still takes it.
+		store.optimisticAdd("ses_1", userMessage("msg_never_landed"), []);
+
+		store.clearOptimisticMessages("ses_1");
+
+		expect(useSyncStore.getState().messages["ses_1"]?.map((m) => m.id)).toEqual(["msg_wire"]);
+		expect(useSyncStore.getState().parts["msg_wire"]?.[0]).toMatchObject({
+			text: "queued while asleep",
+		});
+
+		store.optimisticRemove("ses_1", "msg_wire");
+		expect(useSyncStore.getState().messages["ses_1"] ?? []).toEqual([]);
+	});
+
+	test("an inbox-backed message is still superseded by its echo (SSE) — the backing never blocks confirmation", () => {
+		const store = useSyncStore.getState();
+		store.optimisticAdd("ses_1", userMessage("msg_wire"), [
+			textPart("prt_client", "msg_wire", "hi"),
+		]);
+		store.markOptimisticDispatched("ses_1", "msg_wire");
+		store.markOptimisticInboxBacked("ses_1", "msg_wire");
+
+		store.applyEvent({
+			id: "evt_x",
+			type: "message.updated",
+			properties: { info: userMessage("msg_reminted") },
+		} as never);
+
+		expect(useSyncStore.getState().messages["ses_1"]?.map((m) => m.id)).toEqual(["msg_reminted"]);
+		// Once superseded there is nothing left to protect — a later sweep is a no-op.
+		store.clearOptimisticMessages("ses_1");
+		expect(useSyncStore.getState().messages["ses_1"]?.map((m) => m.id)).toEqual(["msg_reminted"]);
+	});
+});
+
+describe("useSyncStore — cache-sourced messages are provisional until the runtime confirms them", () => {
+	test("a cache-sourced user message the runtime's own tail does not contain is dropped (a phantom)", () => {
+		const store = useSyncStore.getState();
+		// Disk repaint: two real messages and a phantom (an optimistic stub that
+		// was mirrored to disk before its echo) — all plain messages by now.
+		store.hydrate(
+			"ses_1",
+			[
+				{ info: userMessage("msg_a"), parts: [] },
+				{ info: userMessage("msg_phantom"), parts: [] },
+				{ info: userMessage("msg_c"), parts: [] },
+			],
+			{ source: "cache" },
+		);
+		expect(useSyncStore.getState().messages.ses_1.map((m) => m.id)).toEqual([
+			"msg_a",
+			"msg_c",
+			"msg_phantom",
+		]);
+		// The runtime's tail covers that range and knows nothing of the phantom.
+		store.hydrate("ses_1", [
+			{ info: userMessage("msg_a"), parts: [] },
+			{ info: userMessage("msg_c"), parts: [] },
+		]);
+		expect(useSyncStore.getState().messages.ses_1.map((m) => m.id)).toEqual(["msg_a", "msg_c"]);
+	});
+
+	test("a cache-sourced message OLDER than the runtime's tail is kept (history the tail did not reach)", () => {
+		const store = useSyncStore.getState();
+		store.hydrate(
+			"ses_1",
+			[
+				{ info: userMessage("msg_a"), parts: [] },
+				{ info: userMessage("msg_b"), parts: [] },
+			],
+			{ source: "cache" },
+		);
+		// A bounded tail that starts at msg_b: msg_a is simply older than it.
+		store.hydrate("ses_1", [
+			{ info: userMessage("msg_b"), parts: [] },
+			{ info: userMessage("msg_c"), parts: [] },
+		]);
+		expect(useSyncStore.getState().messages.ses_1.map((m) => m.id)).toEqual([
+			"msg_a",
+			"msg_b",
+			"msg_c",
+		]);
+	});
+
+	test("an optimistic message is reported as such, and a plain one is not", () => {
+		const store = useSyncStore.getState();
+		store.optimisticAdd("ses_1", userMessage("msg_opt"), []);
+		store.upsertMessage("ses_1", userMessage("msg_real"));
+		expect(store.isOptimisticMessage("ses_1", "msg_opt")).toBe(true);
+		expect(store.isOptimisticMessage("ses_1", "msg_real")).toBe(false);
+	});
+});
+
+describe("useSyncStore — a removed user message the control plane still owns keeps its bubble", () => {
+	test("message.removed for an inbox-backed message re-marks it optimistic instead of dropping it", () => {
+		// The drain deletes a stranded copy of a forwarded prompt and re-places
+		// it under a new id; the box emits message.removed for the old copy.
+		// The user's bubble must not blink out between the two.
+		const store = useSyncStore.getState();
+		store.optimisticAdd("ses_1", userMessage("msg_c"), [textPart("prt_1", "msg_c", "hi")]);
+		store.markOptimisticDispatched("ses_1", "msg_c");
+		store.markOptimisticInboxBacked("ses_1", "msg_c");
+		// The echo confirms it in place (same id).
+		store.hydrate("ses_1", [{ info: userMessage("msg_c"), parts: [textPart("prt_1", "msg_c", "hi")] }]);
+		expect(store.isOptimisticMessage("ses_1", "msg_c")).toBe(false);
+
+		store.applyEvent({
+			type: "message.removed",
+			properties: { sessionID: "ses_1", messageID: "msg_c" },
+		} as never);
+		const msgs = useSyncStore.getState().messages.ses_1;
+		expect(msgs.map((m) => m.id)).toEqual(["msg_c"]);
+		expect(useSyncStore.getState().parts.msg_c?.[0]?.id).toBe("prt_1");
+		expect(useSyncStore.getState().isOptimisticMessage("ses_1", "msg_c")).toBe(true);
+
+		// The re-placed copy arrives under a new id: it supersedes the bubble,
+		// and the alias chain keeps pointing at the id the host keyed on.
+		store.applyEvent({
+			type: "message.updated",
+			properties: { info: userMessage("msg_c2") },
+		} as never);
+		expect(useSyncStore.getState().messages.ses_1.map((m) => m.id)).toEqual(["msg_c2"]);
+		expect(useSyncStore.getState().optimisticOriginOf("ses_1", "msg_c2")).toBe("msg_c");
+		expect(useSyncStore.getState().parts.msg_c2?.[0]?.id).toBe("prt_1");
+	});
+
+	test("message.removed for a message nobody owns still removes it", () => {
+		const store = useSyncStore.getState();
+		store.upsertMessage("ses_1", userMessage("msg_x"));
+		store.applyEvent({
+			type: "message.removed",
+			properties: { sessionID: "ses_1", messageID: "msg_x" },
+		} as never);
+		expect(useSyncStore.getState().messages.ses_1).toEqual([]);
 	});
 });

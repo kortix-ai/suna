@@ -12,7 +12,7 @@ interface SeedProjectOptions {
   userId: string;
   name: string;
   repoUrl?: string;
-  projectRole?: "manager" | "editor" | "member";
+  projectRole?: "manager" | "member";
 }
 
 export async function runDatabaseSql(
@@ -40,12 +40,38 @@ export async function queryDatabaseRows<
   }
 }
 
+/**
+ * The same query, retried until it returns at least one row.
+ *
+ * A browser journey that acts through the UI and then reads the database is
+ * racing two independent systems: the API commits the row after the response
+ * the browser already rendered. Polling is the only sound wait — a fixed sleep
+ * is either flaky or slow, and the browser exposes no event for "the server
+ * finished writing".
+ *
+ * Returns the last (possibly empty) result when the budget runs out, so the
+ * caller's own `expect` still reports what it actually wanted.
+ */
+export async function pollDatabaseRows<T extends QueryResultRow = QueryResultRow>(
+  sql: string,
+  values: unknown[] = [],
+  { timeoutMs = 20_000, intervalMs = 500 }: { timeoutMs?: number; intervalMs?: number } = {},
+): Promise<T[]> {
+  const deadline = Date.now() + timeoutMs;
+  let rows: T[] = [];
+  for (;;) {
+    rows = await queryDatabaseRows<T>(sql, values).catch(() => [] as T[]);
+    if (rows.length > 0 || Date.now() >= deadline) return rows;
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
+}
+
 export async function seedDatabaseProject({
   accountId,
   userId,
   name,
   repoUrl,
-  projectRole = "editor",
+  projectRole = "manager",
 }: SeedProjectOptions): Promise<string> {
   const projectId = randomUUID();
   const projectRepoUrl =

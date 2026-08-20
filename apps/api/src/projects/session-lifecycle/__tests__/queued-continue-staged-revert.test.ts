@@ -105,6 +105,7 @@ mock.module('../backpressure', () => ({
   sessionBackpressureState: async () => ({ shouldQueue: false, reason: null }),
 }));
 mock.module('../store', () => ({
+  promoteNextInboxRow: async () => null,
   // The prompt inbox's admission refusal — `executeQueuedContinue` calls it
   // before anything else, so every store mock has to carry it or the engine
   // import fails outright.

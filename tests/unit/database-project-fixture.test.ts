@@ -271,7 +271,12 @@ describe("managed Git fixture selection", () => {
 
     expect(gc).toContain("KE2E_GC_WORKERS");
     expect(gc).toContain("mapWithConcurrency(stale, workers");
-    expect(gc).toContain("if (env.databaseUrl) return listTestUsersViaDb(env)");
-    expect(gc).toContain("ssl: local ? false : true");
+    // The sweep now takes the domain list too, so it can also see the browser
+    // suite's accounts — see gc-sweep.test.ts.
+    expect(gc).toContain("if (env.databaseUrl) return listTestUsersViaDb(env, domains)");
+    // The permissive-chain policy moved into `gcDbSsl`, which gc-sweep.test.ts
+    // now pins by behaviour instead of by source text. Assert the connection
+    // helper still routes through it.
+    expect(gc).toContain("ssl: gcDbSsl(conn)");
   });
 });

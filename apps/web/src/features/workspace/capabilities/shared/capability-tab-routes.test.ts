@@ -7,7 +7,7 @@ import {
 } from './capability-tab-routes';
 
 describe('CAPABILITY_TABS', () => {
-  test('lists models, connectors, agent, skills, triggers, secrets, members, config in that order', () => {
+  test('lists models, connectors, agent, skills, triggers, secrets, config in that order', () => {
     // Models leads the bar (Jay, 2026-08-17) — it used to sit after Triggers.
     expect(CAPABILITY_TABS.map((t) => t.key)).toEqual([
       'models',
@@ -16,7 +16,6 @@ describe('CAPABILITY_TABS', () => {
       'skills',
       'triggers',
       'secrets',
-      'members',
       'config',
     ]);
   });

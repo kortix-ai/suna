@@ -119,6 +119,15 @@ flow(
   "SEC-8",
   {
     domain: "secrets",
+    // SEC-8 provisions a REAL managed GitHub repository, and one provision
+    // request is allowed 180_000ms on its own (fixtures/provision.ts
+    // PROVISION_REQUEST_TIMEOUT_MS). On the deployed lane this flow inherited
+    // the same 180_000ms floor (core/local-runner.ts DEPLOYED_FLOW_TIMEOUT_MS),
+    // so a provision that took its full budget and SUCCEEDED still failed the
+    // flow before its first step ran — which is how run 32306385663 recorded
+    // `flow SEC-8 exceeded 180000ms` twice. The budget must exceed the bounds
+    // the flow itself contains.
+    timeoutMs: 300_000,
     routes: [
       "POST /v1/projects/:projectId/secrets",
       "GET /v1/projects/:projectId/secrets",
@@ -132,7 +141,6 @@ flow(
   async (ctx) => {
     const team = await ctx.fixtures.team({ enterprise: true });
     const p = await team.project();
-    let networkBoundaryAvailable = false;
 
     await ctx.step("create returns explicit runtime delivery metadata", async () => {
       const r = await ctx.client
@@ -147,8 +155,11 @@ flow(
         .has("$.strategy", "runtime")
         .has("$.consumer", "sandbox")
         .has("$.delivery_status", "available")
-        .has("$.requires_rotation", false);
-      networkBoundaryAvailable = r.json<{ network_boundary_available?: boolean }>().network_boundary_available === true;
+        .has("$.requires_rotation", false)
+        // One mechanism serves every sandbox provider, so this is unconditional.
+        // It used to depend on Platinum or a per-project flag, and the egress
+        // steps below had to branch on it.
+        .has("$.network_boundary_available", true);
     });
 
     await ctx.step("manager disables sandbox delivery", async () => {
@@ -229,7 +240,32 @@ flow(
         .has("$.egress_policy", policy);
     });
 
-    await ctx.step("transparent egress follows the deployment capability", async () => {
+    await ctx.step("egress-enforced delivery stores a host-list-only policy", async () => {
+      // The default shape: no injection slot. The sandbox env carries a handle
+      // and the relay substitutes the real value on an approved host.
+      const policy = {
+        rules: [{ host: "api.example.com" }],
+        on_no_match: "deny",
+      };
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .put(
+          "/v1/projects/:projectId/secrets/:identifier/strategy",
+          {
+            strategy: "egress",
+            egress_policy: policy,
+          },
+          { params: { projectId: p.id, identifier: "CONTROL_PLANE_KEY" } },
+        );
+      r.status(200)
+        .body()
+        .has("$.strategy", "egress")
+        .has("$.consumer", "network")
+        .has("$.delivery_status", "available")
+        .has("$.egress_policy", policy);
+    });
+
+    await ctx.step("egress-enforced delivery still stores a legacy injection policy", async () => {
       const policy = {
         rules: [{ host: "api.example.com" }],
         inject: { kind: "header", name: "authorization", template: "Bearer {{secret}}" },
@@ -244,16 +280,12 @@ flow(
           },
           { params: { projectId: p.id, identifier: "CONTROL_PLANE_KEY" } },
         );
-      if (networkBoundaryAvailable) {
-        r.status(200)
-          .body()
-          .has("$.strategy", "egress")
-          .has("$.consumer", "network")
-          .has("$.delivery_status", "available")
-          .has("$.egress_policy", policy);
-      } else {
-        r.status(409).body().has("$.code", "secret_delivery_unavailable");
-      }
+      r.status(200)
+        .body()
+        .has("$.strategy", "egress")
+        .has("$.consumer", "network")
+        .has("$.delivery_status", "available")
+        .has("$.egress_policy", policy);
     });
 
     // The grant route's success path commits kortix.yaml, and the local profile
@@ -341,7 +373,7 @@ flow(
       rotate
         .status(200)
         .body()
-        .has("$.strategy", networkBoundaryAvailable ? "egress" : "broker")
+        .has("$.strategy", "egress")
         .has("$.requires_rotation", false);
 
       const restore = await ctx.client
