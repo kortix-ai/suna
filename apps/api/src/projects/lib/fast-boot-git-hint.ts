@@ -1,13 +1,10 @@
 import { projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
-import type { FastBootGitHint } from '../git/commits';
-import {
-  MAX_FAST_BOOT_GIT_BUNDLE_BASE64_BYTES,
-  resolveFastBootGitHint,
-} from '../git/commits';
-import { resolveRemoteBranchTip } from '../git/branches';
-import type { GitBackedProject } from '../git/types';
 import { db } from '../../shared/db';
+import { resolveRemoteBranchTip } from '../git/branches';
+import type { FastBootGitHint } from '../git/commits';
+import { MAX_FAST_BOOT_GIT_BUNDLE_BASE64_BYTES, resolveFastBootGitHint } from '../git/commits';
+import type { GitBackedProject } from '../git/types';
 import { metadataMergeSubtree } from './metadata-merge';
 
 export const FAST_BOOT_GIT_HINT_CACHE_VERSION = 1;
@@ -44,10 +41,7 @@ export function buildCachedFastBootGitHint(
   };
 }
 
-export function readCachedFastBootGitHint(
-  metadata: unknown,
-  ref: string,
-): FastBootGitHint | null {
+export function readCachedFastBootGitHint(metadata: unknown, ref: string): FastBootGitHint | null {
   if (!metadata || typeof metadata !== 'object') return null;
   const git = (metadata as { git?: unknown }).git;
   if (!git || typeof git !== 'object') return null;
@@ -101,11 +95,7 @@ interface FastBootGitHintDependencies {
     ref: string,
     forceRefresh: boolean,
   ) => Promise<FastBootGitHint>;
-  persistHint: (
-    projectId: string,
-    ref: string,
-    hint: FastBootGitHint,
-  ) => Promise<unknown>;
+  persistHint: (projectId: string, ref: string, hint: FastBootGitHint) => Promise<unknown>;
 }
 
 const defaultDependencies: FastBootGitHintDependencies = {
