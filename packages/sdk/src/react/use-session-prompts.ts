@@ -158,6 +158,45 @@ export function reconcileOptimisticPrompts(
   return pending.length ? [...server, ...pending] : [...server];
 }
 
+/**
+ * One read of a session's inbox — and the refusal that keeps a project-scoped
+ * URL from ever being built for a session that has no project.
+ *
+ * Not every session has one. A sub-session (the "Agent · general: …" panel
+ * `SubSessionModal` opens over the transcript) is a local OpenCode child:
+ * `SessionChat` renders it with a `sessionId` and nothing else — no project id,
+ * no project session id — and there is no server-side inbox to read. Both ids
+ * are then genuinely `undefined`, and `listSessionPrompts` interpolates them
+ * into its path as the literal text: `GET
+ * /projects/undefined/sessions/undefined/prompts` → 400 `Invalid session id`,
+ * which the host's `onError` sink turns into a red toast beside a sub-agent
+ * that is streaming perfectly.
+ *
+ * The hook's `enabled` flag does not stop it on its own. `enabled` governs
+ * react-query's SCHEDULING; `QueryObserver.refetch()` goes straight to
+ * `query.fetch()` with no `enabled` check, and `session-chat.tsx` refetches the
+ * inbox on every new user bubble — exactly what a streaming sub-agent produces.
+ * So the refusal belongs here, on the read itself.
+ *
+ * `cached` is this tab's current rows: with no project there is nothing to
+ * reconcile against, and the optimistic rows already on screen stay on screen.
+ */
+export async function readSessionPromptsInbox(
+  projectId: string | undefined,
+  sessionId: string | undefined,
+  cached: readonly SessionPrompt[] | undefined,
+): Promise<SessionPrompt[]> {
+  if (!projectId || !sessionId) return [...(cached ?? [])];
+  // Stamped BEFORE the request, like `/turn`'s: an answer is only as fresh
+  // as the moment it was asked.
+  const atMs = Date.now();
+  const { prompts } = await listSessionPrompts(projectId, sessionId);
+  noteInboxObservation(sessionId, prompts, atMs);
+  // Keep this tab's not-yet-confirmed rows on screen across a poll that landed
+  // before their POST returned.
+  return reconcileOptimisticPrompts(cached, prompts);
+}
+
 export interface UseSessionPromptsResult {
   prompts: SessionPrompt[];
   isLoading: boolean;
@@ -187,16 +226,12 @@ export function useSessionPrompts(
   const query = useQuery({
     queryKey: key,
     enabled,
-    queryFn: async () => {
-      // Stamped BEFORE the request, like `/turn`'s: an answer is only as fresh
-      // as the moment it was asked.
-      const atMs = Date.now();
-      const { prompts } = await listSessionPrompts(projectId!, sessionId!);
-      noteInboxObservation(sessionId!, prompts, atMs);
-      // Keep this tab's not-yet-confirmed rows on screen across a poll that
-      // landed before their POST returned.
-      return reconcileOptimisticPrompts(queryClient.getQueryData<SessionPrompt[]>(key), prompts);
-    },
+    queryFn: () =>
+      readSessionPromptsInbox(
+        projectId,
+        sessionId,
+        queryClient.getQueryData<SessionPrompt[]>(key),
+      ),
     // Two cadences, never `false` — see the note above.
     refetchInterval: (q) => sessionPromptsPollMs(q.state.data?.length ?? 0, options?.pollMs),
     // Per-query, because the host disables focus refetching globally. Coming
@@ -204,6 +239,16 @@ export function useSessionPrompts(
     // hidden has to be on screen.
     refetchOnWindowFocus: true,
   });
+
+  // `enabled` governs react-query's SCHEDULING, not every path into the
+  // request: `QueryObserver.refetch()` calls `query.fetch()` with no `enabled`
+  // check at all. A session with no project must not fetch on either path, so
+  // the same gate is applied here (and again inside the read itself).
+  const queryRefetch = query.refetch;
+  const refetch = useCallback(
+    () => (enabled ? queryRefetch() : Promise.resolve(undefined)),
+    [enabled, queryRefetch],
+  );
 
   const invalidate = useCallback(
     () => queryClient.invalidateQueries({ queryKey: key }),
@@ -276,7 +321,7 @@ export function useSessionPrompts(
     remove: removeMutation.mutateAsync,
     retry: retryMutation.mutateAsync,
     hold: holdMutation.mutateAsync,
-    refetch: query.refetch,
+    refetch,
   };
 }
 
