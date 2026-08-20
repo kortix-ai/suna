@@ -396,6 +396,13 @@ const TYPE_SCALE = [
     use: 'Body text, menu items',
   },
   {
+    token: 'text-md',
+    size: '0.9375rem',
+    px: '15px',
+    twClass: 'text-md',
+    use: 'Between body and default UI text',
+  },
+  {
     token: 'text-base',
     size: '1rem',
     px: '~16px',

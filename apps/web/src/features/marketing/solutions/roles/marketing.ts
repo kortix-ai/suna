@@ -11,7 +11,7 @@ export const marketing: RoleContent = {
 
   hero: {
     title: 'It sounds like you because your voice is a file it has to read.',
-    sub: 'The reason AI copy reads like AI copy is that nothing told it how you write. Here, the voice, the claims you are allowed to make and the words you never use live in your repo as a skill — versioned, reviewed, and loaded into every session before a word is written.',
+    sub: 'AI copy reads like AI copy because nothing told it how you write. Here your voice, your claims and your banned words live in the repo, and every session loads them before writing a word.',
     microline: 'The voice is a file · the claims are a file · every draft is a diff',
     specs: [
       { k: 'Voice lives in', v: 'A skill file in your repo' },
@@ -23,7 +23,7 @@ export const marketing: RoleContent = {
 
   handoff: {
     title: 'The production line, not the idea.',
-    sub: 'The strategy is not the bottleneck. The bottleneck is that one positioning decision turns into nine assets, and by the third one the register has drifted and nobody has time to notice.',
+    sub: 'Strategy is not the bottleneck. One positioning decision turns into nine assets, and by the third one the voice has drifted and nobody has time to notice.',
     jobs: [
       {
         id: 'variants',
@@ -60,7 +60,7 @@ export const marketing: RoleContent = {
 
   output: {
     title: 'A draft on a branch, reviewed as a diff.',
-    sub: 'Marketing work is normally reviewed by pasting a document into a comment thread and losing track of which version won. Here every draft is a commit, so the review is a diff and the history is real.',
+    sub: 'Marketing review usually means pasting a document into a comment thread and losing track of which version won. Here every draft is a commit, so review is a diff and the history is real.',
     artifact: {
       kind: 'doc',
       file: 'content/launch/2026-07-scheduled-sessions.md',
@@ -100,7 +100,7 @@ export const marketing: RoleContent = {
 
   reach: {
     title: 'Where the words live, and where they have to go.',
-    sub: 'Connect each source once for the whole project. The raw credential is decrypted on our side and attached to the outbound call — it never lands in the machine the model is driving.',
+    sub: 'Connect each source once for the whole project. Credentials are decrypted on our side and attached to the outgoing call. They never land in the machine the model is driving.',
     rows: [
       {
         k: 'Notion and Google Drive',
@@ -129,7 +129,7 @@ export const marketing: RoleContent = {
 
   cadence: {
     title: 'Draft it now. Never let it send by itself.',
-    sub: 'The same session machinery started three ways. In marketing the automated mode is the one to be most careful with, because the output is public.',
+    sub: 'Three ways to start the same session. Scheduled runs need the most care here, because the output is public.',
     modes: [
       {
         id: 'on-demand',
@@ -154,7 +154,7 @@ export const marketing: RoleContent = {
 
   control: {
     title: 'Nothing published, nothing claimed, without a person.',
-    sub: 'Marketing is where an autonomous mistake is permanent and public. State the defaults precisely rather than reassuringly.',
+    sub: 'A mistake in marketing is public and permanent. So the defaults below are stated precisely, not reassuringly.',
     rows: [
       {
         id: 'gates',

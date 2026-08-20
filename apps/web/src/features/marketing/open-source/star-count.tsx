@@ -12,7 +12,7 @@ const FORMATTER = new Intl.NumberFormat('en-US');
  * flips back — so the count-up runs exactly once per page load, not on every
  * scroll past.
  */
-function useHasBeenSeen<T extends HTMLElement>(): [React.RefObject<T | null>, boolean] {
+export function useHasBeenSeen<T extends HTMLElement>(): [React.RefObject<T | null>, boolean] {
   const ref = useRef<T>(null);
   const [seen, setSeen] = useState(false);
 
@@ -110,7 +110,7 @@ export function StarCount({ caption, className }: { caption: string; className?:
         data-testid="open-source-star-count"
         aria-label={stars === null ? caption : `${FORMATTER.format(stars)} ${caption}`}
         className={cn(
-          'text-foreground text-6xl leading-none font-medium tracking-tight tabular-nums sm:text-7xl',
+          'text-foreground text-5xl leading-none font-medium tracking-tight tabular-nums sm:text-6xl md:text-7xl',
           /* Only the placeholder is dimmed; the digits never fade in mid-count. */
           value === null && 'text-muted-foreground/30',
         )}
@@ -120,7 +120,7 @@ export function StarCount({ caption, className }: { caption: string; className?:
 
       <p
         className={cn(
-          'text-muted-foreground mt-4 font-mono text-[10px] tracking-widest uppercase transition-opacity duration-500',
+          'text-muted-foreground mt-3 max-w-full font-mono text-[10px] tracking-wider uppercase transition-opacity duration-500 sm:mt-4 sm:tracking-widest',
           settled ? 'opacity-100' : 'opacity-60',
         )}
       >

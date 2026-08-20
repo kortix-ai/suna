@@ -161,17 +161,4 @@ export const LAYERS: Layer[] = [
       'Session work lands on main as a change request you read as a diff first',
     ],
   },
-  {
-    // The closing card, not a seventh layer. Card 06 used to be the last one,
-    // so it sat open at the bottom of the section forever and the stack never
-    // resolved. This is the full stop: the six above add up to one thing.
-    // It carries no product panel on purpose — a mark and a line is the point.
-    id: 'kortix',
-    ordinal: '07',
-    label: 'Kortix',
-    title: 'This is Kortix.',
-    description:
-      'Six layers, one platform, one repo you own. Open source, and it runs wherever you put it.',
-    bullets: [],
-  },
 ];

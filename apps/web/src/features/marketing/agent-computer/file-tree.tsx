@@ -63,7 +63,7 @@ function railsFor(entries: readonly Entry[], i: number): RailKind[] {
  */
 export function FileTree(): ReactNode {
   return (
-    <div className="border-border bg-card overflow-x-auto rounded-sm border p-5 sm:p-7">
+    <div className="border-border bg-card h-full overflow-x-auto rounded-sm border p-5 sm:p-7">
       {/* One grid for every row, so the note column lines up across depths. */}
       <ul className="grid min-w-max grid-cols-[auto_1fr] gap-x-8 font-mono text-[12.5px] sm:gap-x-12">
         {files.tree.map((entry, i) => (

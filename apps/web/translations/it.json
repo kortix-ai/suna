@@ -4227,7 +4227,15 @@
       "line301JsxTextRequestDemo": "Richiedi demo",
       "line312JsxTextGetStarted": "Inizia",
       "line322JsxAttrAriaLabelOpenMenu": "Apri menu",
-      "line348JsxAttrAriaLabelCloseMenu": "Chiudi menu"
+      "line348JsxAttrAriaLabelCloseMenu": "Chiudi menu",
+      "copySymbolSvg": "Copia il simbolo come SVG",
+      "copyWordmarkSvg": "Copia il logotipo come SVG",
+      "downloadBrandAssets": "Scarica le risorse del brand",
+      "svgCopied": "SVG copiato negli appunti",
+      "copyFailed": "Copia non riuscita",
+      "home": "Home",
+      "logIn": "Accedi",
+      "back": "Indietro"
     },
     "componentsHomeSimpleFooter": {
       "line50JsxAttrAriaLabelToggleTheme": "Cambia tema"

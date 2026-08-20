@@ -2,9 +2,10 @@
 
 import { Reveal } from '@/components/home/reveal';
 import { Separator } from '@/components/ui/separator';
+import SectionHeader from '@/features/marketing/component/section-header';
 import { cn } from '@/lib/utils';
 import { policy, type PolicyStateId } from './content';
-import { Eyebrow, ProductShot, Section, SectionHeader } from './shared';
+import { Eyebrow, ProductShot, Section } from './shared';
 
 /**
  * The three policy tints, taken verbatim from the product
@@ -140,7 +141,7 @@ function ConditionTable() {
 export function PolicySection() {
   return (
     <Section id="policy">
-      <SectionHeader eyebrow={policy.eyebrow} title={policy.title} sub={policy.sub} />
+      <SectionHeader eyebrow={policy.eyebrow} title={policy.title} description={policy.sub} />
 
       <Reveal delay={0.06}>
         <div className="border-border bg-card mt-10 grid overflow-hidden rounded-sm border sm:grid-cols-3">

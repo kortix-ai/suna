@@ -42,10 +42,10 @@ export const hero = {
   microline: 'Same images as the cloud · One command · Any model, your keys',
   /** Four mono facts the page then proves. Every value is defensible. */
   specs: [
-    { k: 'Install', v: 'kortix self-host start' },
-    { k: 'Stack', v: 'One Docker Compose project' },
-    { k: 'Models', v: 'Your provider, your keys' },
-    { k: 'Updates', v: 'Nightly, or pin a version' },
+    { k: 'Install', v: 'kortix self-host start', visual: 'terminal' },
+    { k: 'Stack', v: 'One Docker Compose project', visual: 'stack' },
+    { k: 'Models', v: 'Your provider, your keys', visual: 'providers' },
+    { k: 'Updates', v: 'Nightly, or pin a version', visual: 'versions' },
   ],
 } as const;
 
@@ -181,7 +181,8 @@ export const firstRun = {
     ],
     note: 'Everything the CLI generates is rotatable later with kortix self-host env rotate, and every value is visible with kortix self-host env ls, masked unless you ask for --show.',
   },
-  after: 'GitHub and your model key are not asked here on purpose. Both are set in the dashboard after the stack is up — GitHub at Settings → Git, the model key in the model picker.',
+  after:
+    'GitHub and your model key are not asked here on purpose. Both are set in the dashboard after the stack is up — GitHub at Settings → Git, the model key in the model picker.',
 } as const;
 
 /* ── 4 · the stack ─────────────────────────────────────────────────────────

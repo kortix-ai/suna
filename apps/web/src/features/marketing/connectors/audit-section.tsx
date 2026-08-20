@@ -1,9 +1,10 @@
 'use client';
 
 import { Reveal } from '@/components/home/reveal';
+import SectionHeader from '@/features/marketing/component/section-header';
 import { cn } from '@/lib/utils';
 import { audit } from './content';
-import { Eyebrow, Section, SectionHeader } from './shared';
+import { Eyebrow, Section } from './shared';
 
 /**
  * The ledger. Every field named here is a real column on
@@ -12,7 +13,7 @@ import { Eyebrow, Section, SectionHeader } from './shared';
 export function AuditSection() {
   return (
     <Section id="audit">
-      <SectionHeader eyebrow={audit.eyebrow} title={audit.title} sub={audit.sub} />
+      <SectionHeader eyebrow={audit.eyebrow} title={audit.title} description={audit.sub} />
 
       <Reveal delay={0.06}>
         <div className="border-border mt-10 grid overflow-hidden rounded-sm border sm:grid-cols-2 lg:grid-cols-3">

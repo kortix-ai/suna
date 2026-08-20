@@ -1,9 +1,10 @@
 'use client';
 
 import { Reveal } from '@/components/home/reveal';
+import SectionHeader from '@/features/marketing/component/section-header';
 import { cn } from '@/lib/utils';
 import { connect } from './content';
-import { Eyebrow, ProductShot, Section, SectionHeader } from './shared';
+import { Eyebrow, ProductShot, Section } from './shared';
 
 /**
  * The three ways a tool becomes a connector, then the real catalogue screen.
@@ -13,7 +14,7 @@ import { Eyebrow, ProductShot, Section, SectionHeader } from './shared';
 export function ConnectSection() {
   return (
     <Section id="connect">
-      <SectionHeader eyebrow={connect.eyebrow} title={connect.title} sub={connect.sub} />
+      <SectionHeader eyebrow={connect.eyebrow} title={connect.title} description={connect.sub} />
 
       <Reveal delay={0.06}>
         <div className="border-border mt-10 grid overflow-hidden rounded-sm border sm:grid-cols-3">

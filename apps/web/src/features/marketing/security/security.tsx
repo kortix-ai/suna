@@ -70,7 +70,7 @@ const Security = () => {
   const [activeId, setActiveId] = useState<string>(ACCORDION[0].id);
 
   return (
-    <section className="mx-auto max-w-7xl rounded-sm px-6 py-16 sm:py-24 lg:px-0">
+    <section className="mx-auto max-w-7xl rounded-sm px-6 py-24 md:py-30 lg:px-0">
       <div className="mb-16 max-w-2xl space-y-3">
         <p className="text-muted-foreground font-mono text-xs tracking-wider uppercase">
           {tHome('enterpriseEyebrow')}

@@ -49,7 +49,7 @@ export function CliInstallSection() {
   useEffect(() => () => void (timer.current && clearTimeout(timer.current)), []);
 
   return (
-    <section id="cli" className="mx-auto max-w-7xl scroll-mt-24 px-6 py-16 sm:py-24 lg:px-0">
+    <section id="cli" className="mx-auto max-w-7xl scroll-mt-24 px-6 py-24 md:py-30lg:px-0">
       <Reveal>
         <div className="grid gap-8 lg:grid-cols-[0.9fr_1.1fr] lg:items-stretch">
           <div className="flex flex-col items-start justify-center space-y-5">

@@ -95,7 +95,7 @@ export type FaqItem = {
 };
 
 export const faq = {
-  eyebrow: 'Straight answers',
+  eyebrow: 'Frequently asked questions',
   title: 'The questions people ask before the first session.',
   /** One link out, to the page that carries the longest of these answers. */
   /* No trailing link. One 'How Kortix is secured →' under a list of six

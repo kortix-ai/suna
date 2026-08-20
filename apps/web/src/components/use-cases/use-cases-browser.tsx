@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 
+import { Button } from '@/components/ui/marketing/button';
 import { UseCaseCard } from '@/components/use-cases/use-case-card';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import type { Post } from '@/lib/blog';
@@ -9,8 +10,13 @@ import { cn } from '@/lib/utils';
 
 const ALL = 'All';
 
-/** Tag-filter bar + responsive grid of use-case cards. The archetype (first tag)
- * drives the filter; "All" shows everything. */
+/**
+ * Archetype filter + the use-case catalog grid.
+ *
+ * The count renders on every chip, not just the active one — showing it
+ * conditionally changes a chip's width on click, which reflows the whole row
+ * under the cursor.
+ */
 export function UseCasesBrowser({ posts }: { posts: Post[] }) {
   const filters = useMemo(() => {
     const counts = new Map<string, number>();
@@ -29,23 +35,28 @@ export function UseCasesBrowser({ posts }: { posts: Post[] }) {
 
   return (
     <div>
-      <div className="mb-8 flex flex-wrap items-center gap-2">
-        {filters.map(({ tag, count }) => (
-          <button
-            key={tag}
-            type="button"
-            onClick={() => setActive(tag)}
-            className={cn(
-              'flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-sm font-medium transition-colors',
-              active === tag
-                ? 'border-foreground bg-foreground text-background'
-                : 'border-border text-muted-foreground hover:border-foreground/30 hover:text-foreground',
-            )}
-          >
-            {tag}
-            <span className="tabular-nums opacity-50">{count}</span>
-          </button>
-        ))}
+      <div
+        className="border-border/60 mb-10 flex flex-wrap items-center gap-1.5 border-b pb-6 sm:mb-12"
+        role="group"
+        aria-label="Filter use cases by type"
+      >
+        {filters.map(({ tag, count }) => {
+          const isActive = active === tag;
+          return (
+            <Button
+              key={tag}
+              type="button"
+              size="sm"
+              variant={isActive ? 'secondary' : 'ghost'}
+              aria-pressed={isActive}
+              className="rounded-full border capitalize shadow-none"
+              onClick={() => setActive(tag)}
+            >
+              {tag}
+              {isActive && <span className={cn('tabular-nums')}>{count}</span>}
+            </Button>
+          );
+        })}
       </div>
 
       {visible.length === 0 ? (
@@ -54,7 +65,9 @@ export function UseCasesBrowser({ posts }: { posts: Post[] }) {
           description="Case studies and use cases are on the way. Check back soon."
         />
       ) : (
-        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+        // No card borders: whitespace separates the cells, so the vertical gap
+        // is deliberately larger than the horizontal one.
+        <div className="grid grid-cols-1 gap-x-6 gap-y-10 sm:grid-cols-2 sm:gap-y-12 lg:grid-cols-3">
           {visible.map((post) => (
             <UseCaseCard key={post.slug} post={post} />
           ))}

@@ -423,11 +423,18 @@ counted, and never lands in a shard.
 
 A browser journey that cannot be made deterministic against a deployed target
 carries the `@quarantine` tag on its `test.describe`. Today that is
-`17-oauth-provider-initiation` alone: it clicks through to `accounts.google.com`
-and `github.com` and asserts what those pages do, so a third-party interstitial
-turns the production release gate red with no Kortix defect behind it.
+`17-oauth-provider-initiation` (it clicks through to `accounts.google.com` and
+`github.com` and asserts what those pages do, so a third-party interstitial
+turns a gate red with no Kortix defect behind it), `13-sdk-only-session`, and
+`08-accounts-project-access` (cross-task IAM cache propagation — the spec's own
+header explains what the product needs before it can be un-quarantined).
 
-- The blocking release gate excludes the tag.
+- **Every gate excludes the tag by default.** `resolveGrepFilters` injects it
+  whenever the environment names no include filter, so a workflow cannot block
+  a build on a quarantined journey by forgetting to set `E2E_EXCLUDE_TAGS` —
+  which is exactly what `tests.yml` did.
+- The blocking release gate also names the tag explicitly; that is now
+  belt-and-braces rather than the only thing holding the line.
 - `.github/workflows/tests-browser-nightly.yml` runs exactly the tag, nightly
   and on dispatch, against the same staging origin with the same secrets. It
   gates nothing. A red run there is a ticket, not a block.

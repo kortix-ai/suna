@@ -68,10 +68,10 @@ export const hero = {
   microline: 'Slack today · Teams, email and voice behind a switch',
   /** Four mono facts under the fold. Every value has to be defensible. */
   specs: [
-    { k: 'Live today', v: 'Slack' },
-    { k: 'A thread is', v: 'Exactly one session' },
-    { k: 'The reply lands', v: 'In the same thread' },
-    { k: 'Approve or deny', v: 'On a card, in the thread' },
+    { k: 'Live today', v: 'Slack', visual: 'presence' },
+    { k: 'A thread is', v: 'Exactly one session', visual: 'thread' },
+    { k: 'The reply lands', v: 'In the same thread', visual: 'reply' },
+    { k: 'Approve or deny', v: 'On a card, in the thread', visual: 'approve' },
   ],
 } as const;
 
@@ -259,8 +259,14 @@ export const commands = {
   policy: {
     title: 'Three answers to “who may start a session here”',
     values: [
-      { k: 'project_open', v: 'The default. Any project member who mentions the bot gets a session.' },
-      { k: 'owner_approval', v: 'A session starts only once the channel owner approves the request.' },
+      {
+        k: 'project_open',
+        v: 'The default. Any project member who mentions the bot gets a session.',
+      },
+      {
+        k: 'owner_approval',
+        v: 'A session starts only once the channel owner approves the request.',
+      },
       { k: 'owner_only', v: 'Only the owner. Everyone else gets nothing, predictably.' },
     ],
   },

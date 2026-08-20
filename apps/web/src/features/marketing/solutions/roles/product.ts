@@ -11,7 +11,7 @@ export const product: RoleContent = {
 
   hero: {
     title: 'The evidence, gathered — so the decision is yours to make.',
-    sub: 'Feedback arrives in six places and gets read in none of them. An agent reads all six, groups what is actually the same request, writes the spec against the real quotes, and cites every one of them. You decide what to build. It does the reading.',
+    sub: 'Feedback arrives in six places and gets read in none of them. The agent reads all six, groups the requests that are really the same, and writes the spec with every quote cited. You decide what to build.',
     microline: 'Every claim cites the ticket it came from · drafts, never decisions',
     specs: [
       { k: 'Reads', v: 'Tickets, threads, the tracker, the repo' },
@@ -23,7 +23,7 @@ export const product: RoleContent = {
 
   handoff: {
     title: 'Reading everything, so you can think about something.',
-    sub: 'The product job degrades into an inbox. Four hundred tickets, three channels, a tracker somebody stopped grooming in April, and a nagging sense that the thing you are about to prioritise was already asked for in a thread you never saw.',
+    sub: 'The product job turns into an inbox. Four hundred tickets, three channels, a tracker nobody has groomed since April, and the feeling that the thing you are about to prioritise was already asked for.',
     jobs: [
       {
         id: 'synthesis',
@@ -60,7 +60,7 @@ export const product: RoleContent = {
 
   output: {
     title: 'A document with its sources in it.',
-    sub: 'A synthesis you cannot check is a synthesis you should not trust. So every grouping carries the tickets underneath it and every claim about what people want carries the thing a person actually said.',
+    sub: 'A synthesis you cannot check is one you should not trust. So every group carries the tickets underneath it, and every claim carries the words someone actually wrote.',
     artifact: {
       kind: 'doc',
       file: 'specs/2026-07-bulk-export.md',
@@ -99,7 +99,7 @@ export const product: RoleContent = {
 
   reach: {
     title: 'The places feedback actually lands.',
-    sub: 'Product feedback does not live in one system, which is the entire problem. Connect each source once for the project; the credential is resolved on our side of the wall and never enters the machine.',
+    sub: 'Product feedback never lives in one system, which is the whole problem. Connect each source once for the project. Credentials are resolved on our side, never in the machine.',
     rows: [
       {
         k: 'Linear',
@@ -128,7 +128,7 @@ export const product: RoleContent = {
 
   cadence: {
     title: 'Ask before the meeting. Run it every Monday.',
-    sub: 'The same session machinery started three ways. Product work is mostly reading, which makes the scheduled mode unusually valuable here.',
+    sub: 'Three ways to start the same session. Product work is mostly reading, which makes the scheduled one unusually useful.',
     modes: [
       {
         id: 'on-demand',
@@ -153,7 +153,7 @@ export const product: RoleContent = {
 
   control: {
     title: 'It gathers. You decide.',
-    sub: 'The failure mode for a product agent is not a bad merge. It is a confident summary of something nobody said. So the controls here are about traceability as much as about permissions.',
+    sub: 'The risk here is not a bad merge. It is a confident summary of something nobody said. So these controls are about evidence as much as permissions.',
     rows: [
       {
         id: 'evidence',

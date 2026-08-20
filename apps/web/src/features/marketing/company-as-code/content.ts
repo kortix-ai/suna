@@ -36,10 +36,10 @@ export const hero = {
   microline: 'kortix init · kortix ship · one repo · any model',
   /** Four mono facts the rest of the page proves. Every value is defensible. */
   specs: [
-    { k: 'Configuration', v: 'Files in a repo you own' },
-    { k: 'Runtime', v: 'OpenCode, declared in the repo' },
-    { k: 'Every change', v: 'A commit you can diff and revert' },
-    { k: 'Work lands via', v: 'Change request to main' },
+    { k: 'Configuration', v: 'Files in a repo you own', visual: 'repo' },
+    { k: 'Runtime', v: 'OpenCode, declared in the repo', visual: 'declare' },
+    { k: 'Every change', v: 'A commit you can diff and revert', visual: 'commits' },
+    { k: 'Work lands via', v: 'Change request to main', visual: 'diff' },
   ],
 } as const;
 

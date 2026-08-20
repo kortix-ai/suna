@@ -1,12 +1,9 @@
 import { Reveal } from '@/components/home/reveal';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/marketing/button';
 import { Separator } from '@/components/ui/separator';
 import { CodePanel } from '@/features/marketing/agent-computer/code-panel';
-import { SectionHeading } from '@/features/marketing/agent-computer/section-heading';
 import {
   back,
-  closing,
   commands,
   connect,
   custom,
@@ -17,22 +14,12 @@ import {
 } from '@/features/marketing/channels/content';
 import { SurfaceTable } from '@/features/marketing/channels/surface-table';
 import { ThreadMock } from '@/features/marketing/channels/thread-mock';
+import { ChannelsHeroVisual } from '@/features/marketing/channels/hero-visual';
+import { CapabilityHero } from '@/features/marketing/component/capability-hero';
+import SectionHeader from '@/features/marketing/component/section-header';
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
-
-/**
- * Hairlines for a 4-up grid that reflows 1 → 2 → 4 columns. Written per index
- * because the divider a cell needs changes with the breakpoint: cell 3 is a new
- * row at `sm` (top rule) and a new column at `lg` (left rule). Same table as
- * `/agent-computer`, so the capability pages share one rhythm.
- */
-const GRID_4_RULES = [
-  '',
-  'border-t sm:border-t-0 sm:border-l',
-  'border-t lg:border-t-0 lg:border-l',
-  'border-t sm:border-l lg:border-t-0',
-] as const;
 
 function SectionDivider(): ReactNode {
   return (
@@ -55,55 +42,24 @@ function SectionDivider(): ReactNode {
 export default function ChannelsPage(): ReactNode {
   return (
     <div className="bg-background relative">
-      {/* ── hero ────────────────────────────────────────────────────────── */}
-      <section className="relative px-6 pt-32 pb-12 sm:pt-36">
-        <div className="mx-auto max-w-7xl">
-          <Reveal>
-            <Badge variant="kortix" className="rounded">
-              {hero.eyebrow}
-            </Badge>
-            <h1 className="text-foreground mt-6 max-w-4xl text-4xl font-medium tracking-tight text-balance sm:text-5xl lg:text-6xl">
-              {hero.title}
-            </h1>
-            <p className="text-muted-foreground mt-6 max-w-2xl text-lg leading-relaxed">
-              {hero.sub}
-            </p>
-            <div className="mt-8 flex flex-wrap gap-3">
-              <Button size="xl" asChild>
-                <Link href={hero.ctaPrimaryHref}>{hero.ctaPrimary}</Link>
-              </Button>
-              <Button size="xl" variant="secondary" asChild>
-                <Link href={hero.ctaSecondaryHref}>{hero.ctaSecondary}</Link>
-              </Button>
-            </div>
-            <p className="text-muted-foreground mt-6 font-mono text-xs tracking-wider uppercase">
-              {hero.microline}
-            </p>
-          </Reveal>
-
-          <Reveal delay={0.1}>
-            <dl className="border-border bg-card mt-14 grid overflow-hidden rounded-sm border sm:grid-cols-2 lg:grid-cols-4">
-              {hero.specs.map((spec, i) => (
-                <div
-                  key={spec.k}
-                  className={cn('border-border px-5 py-6 sm:px-6', GRID_4_RULES[i])}
-                >
-                  <dt className="text-muted-foreground font-mono text-[10px] tracking-widest uppercase">
-                    {spec.k}
-                  </dt>
-                  <dd className="text-foreground mt-2.5 text-sm leading-snug">{spec.v}</dd>
-                </div>
-              ))}
-            </dl>
-          </Reveal>
-        </div>
-      </section>
-
-      <SectionDivider />
+      <CapabilityHero
+        eyebrow={hero.eyebrow}
+        title={hero.title}
+        sub={hero.sub}
+        ctaPrimary={hero.ctaPrimary}
+        ctaPrimaryHref={hero.ctaPrimaryHref}
+        ctaSecondary={hero.ctaSecondary}
+        ctaSecondaryHref={hero.ctaSecondaryHref}
+        visual={<ChannelsHeroVisual />}
+      />
 
       {/* ── 1 · the four platforms, and the truth about each ────────────── */}
-      <section id="surfaces" className="mx-auto max-w-7xl px-6 py-16 sm:py-24">
-        <SectionHeading eyebrow={surfaces.eyebrow} title={surfaces.title} sub={surfaces.sub} />
+      <section id="surfaces" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
+        <SectionHeader
+          eyebrow={surfaces.eyebrow}
+          title={surfaces.title}
+          description={surfaces.sub}
+        />
 
         <Reveal delay={0.06}>
           <div className="mt-10">
@@ -130,8 +86,8 @@ export default function ChannelsPage(): ReactNode {
       <SectionDivider />
 
       {/* ── 2 · a thread is a session ───────────────────────────────────── */}
-      <section id="thread" className="mx-auto max-w-7xl px-6 py-16 sm:py-24">
-        <SectionHeading eyebrow={thread.eyebrow} title={thread.title} sub={thread.sub} />
+      <section id="thread" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
+        <SectionHeader eyebrow={thread.eyebrow} title={thread.title} description={thread.sub} />
 
         <div className="mt-10 grid grid-cols-1 gap-4 lg:grid-cols-12">
           <Reveal delay={0.06} className="lg:col-span-7">
@@ -170,8 +126,8 @@ export default function ChannelsPage(): ReactNode {
       <SectionDivider />
 
       {/* ── 3 · connecting it, honestly ─────────────────────────────────── */}
-      <section id="connect" className="mx-auto max-w-7xl px-6 py-16 sm:py-24">
-        <SectionHeading eyebrow={connect.eyebrow} title={connect.title} sub={connect.sub} />
+      <section id="connect" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
+        <SectionHeader eyebrow={connect.eyebrow} title={connect.title} description={connect.sub} />
 
         <Reveal delay={0.06}>
           <div className="mt-10">
@@ -196,8 +152,8 @@ export default function ChannelsPage(): ReactNode {
       <SectionDivider />
 
       {/* ── 4 · what comes back into the thread ─────────────────────────── */}
-      <section id="round-trip" className="mx-auto max-w-7xl px-6 py-16 sm:py-24">
-        <SectionHeading eyebrow={back.eyebrow} title={back.title} sub={back.sub} />
+      <section id="round-trip" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
+        <SectionHeader eyebrow={back.eyebrow} title={back.title} description={back.sub} />
 
         <Reveal delay={0.06}>
           <div className="mt-10 grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -223,8 +179,12 @@ export default function ChannelsPage(): ReactNode {
       <SectionDivider />
 
       {/* ── 5 · driving the project from the thread ─────────────────────── */}
-      <section id="commands" className="mx-auto max-w-7xl px-6 py-16 sm:py-24">
-        <SectionHeading eyebrow={commands.eyebrow} title={commands.title} sub={commands.sub} />
+      <section id="commands" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
+        <SectionHeader
+          eyebrow={commands.eyebrow}
+          title={commands.title}
+          description={commands.sub}
+        />
 
         <Reveal delay={0.06}>
           <div className="border-border bg-card mt-10 overflow-hidden rounded-sm border">
@@ -281,8 +241,8 @@ export default function ChannelsPage(): ReactNode {
       <SectionDivider />
 
       {/* ── 6 · the walls do not move because it is chat ────────────────── */}
-      <section id="rules" className="mx-auto max-w-7xl px-6 py-16 sm:py-24">
-        <SectionHeading eyebrow={rules.eyebrow} title={rules.title} sub={rules.sub} />
+      <section id="rules" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
+        <SectionHeader eyebrow={rules.eyebrow} title={rules.title} description={rules.sub} />
 
         <Reveal delay={0.06}>
           <dl className="border-border bg-card mt-10 overflow-hidden rounded-sm border">
@@ -309,8 +269,8 @@ export default function ChannelsPage(): ReactNode {
       <SectionDivider />
 
       {/* ── 7 · the gap, named out loud ─────────────────────────────────── */}
-      <section id="custom" className="mx-auto max-w-7xl px-6 py-16 sm:py-24">
-        <SectionHeading eyebrow={custom.eyebrow} title={custom.title} sub={custom.sub} />
+      <section id="custom" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
+        <SectionHeader eyebrow={custom.eyebrow} title={custom.title} description={custom.sub} />
 
         <div className="mt-10 grid grid-cols-1 gap-4 lg:grid-cols-12">
           <Reveal delay={0.06} className="lg:col-span-7">
@@ -340,33 +300,6 @@ export default function ChannelsPage(): ReactNode {
           </Button>
         </Reveal>
       </section>
-
-      {/* ── closing ─────────────────────────────────────────────────────── */}
-      <section id="cta" className="mx-auto max-w-7xl px-6 py-16 sm:py-24">
-        <Reveal>
-          <div className="border-border bg-card flex flex-col items-start gap-6 rounded-sm border p-8 sm:p-12">
-            <Badge variant="kortix" className="rounded">
-              {closing.eyebrow}
-            </Badge>
-            <h2 className="text-foreground max-w-2xl text-3xl leading-tight font-medium tracking-tight text-balance sm:text-4xl">
-              {closing.title}
-            </h2>
-            <p className="text-muted-foreground max-w-xl text-base leading-relaxed">
-              {closing.sub}
-            </p>
-            <div className="flex flex-wrap gap-3">
-              <Button size="xl" asChild>
-                <Link href={closing.ctaPrimaryHref}>{closing.ctaPrimary}</Link>
-              </Button>
-              <Button size="xl" variant="secondary" asChild>
-                <Link href={closing.ctaSecondaryHref}>{closing.ctaSecondary}</Link>
-              </Button>
-            </div>
-          </div>
-        </Reveal>
-      </section>
-
-      <div className="h-24 sm:h-28" />
     </div>
   );
 }
