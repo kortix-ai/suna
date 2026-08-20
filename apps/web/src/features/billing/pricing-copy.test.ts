@@ -12,11 +12,16 @@ const calculatorSource = readFileSync(
 );
 const planSource = readFileSync(join(import.meta.dir, 'pricing-plans.ts'), 'utf8');
 /**
- * The calculator with its block comments removed. A doc comment may *name* a
- * billing number to explain why the code does not hardcode it; only the code
- * itself is evidence about what renders.
+ * Same convention as `workspace-vocabulary.test.ts`: strip comments before
+ * asserting on the source. A doc comment may *name* a billing number to
+ * explain why the code does not hardcode it, and only the code itself is
+ * evidence about what renders. The `[^:]` guard keeps `https://` intact.
  */
-const calculatorCode = calculatorSource.replace(/\/\*[\s\S]*?\*\//g, '');
+function stripComments(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
+}
+
+const calculatorCode = stripComments(calculatorSource);
 const englishTranslations = JSON.parse(
   readFileSync(join(import.meta.dir, '../../../translations/en.json'), 'utf8'),
 ) as {
