@@ -96,9 +96,7 @@ function ActivityStepImpl({
       <span className="text-foreground/80 flex-none text-sm leading-[1.5]">{verb}</span>
       {label.object && (
         <span
-          className={cn(
-            'text-muted-foreground/70 min-w-0 truncate font-mono text-sm leading-[1.5]',
-          )}
+          className="text-muted-foreground/70 min-w-0 truncate font-mono text-sm leading-[1.5]"
           title={label.object}
         >
           {label.object}

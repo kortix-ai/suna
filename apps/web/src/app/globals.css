@@ -223,6 +223,16 @@
   --color-kortix-green: var(--kortix-green);
   --color-kortix-purple: var(--kortix-purple);
   --color-kortix-red: var(--kortix-red);
+  /* Terminal surface. The PTY pane and its chrome (the connect strip, the
+     panel shell behind it) are always dark, in every app theme, because they
+     mirror a real shell — so these are literals, not light/dark pairs. One
+     set of tokens so the three files that paint that surface cannot drift
+     apart again. `terminalTheme` in features/session/pty-terminal.tsx must
+     keep `background` equal to --terminal-surface and `foreground` equal to
+     --terminal-fg: xterm's ITheme needs concrete colors, not CSS vars. */
+  --color-terminal-surface: var(--terminal-surface);
+  --color-terminal-fg: var(--terminal-fg);
+  --color-terminal-border: var(--terminal-border);
   /* Emoji-picker active-cell tints (src/components/ui/emoji-picker.tsx).
      Six hues the picker rotates through so the hovered/keyboard-active cell is
      never the same colour as the cell above it. They live here rather than as
@@ -693,6 +703,12 @@
   --kortix-green: oklch(0.581 0.165 146.619);
   --kortix-purple: oklch(0.675 0.131 306.212);
   --kortix-red: oklch(0.648 0.202 24.745);
+
+  /* Terminal surface — declared once, never re-declared under .dark: the PTY
+     pane keeps the same shell-black in both themes. See the @theme mapping. */
+  --terminal-surface: #0f0f0f;
+  --terminal-fg: #e5e5e5;
+  --terminal-border: rgb(255 255 255 / 0.1);
 
   /* Motion tokens (canonical values; mirrored in @theme for utilities) */
   --duration-fast: 100ms;
@@ -2000,8 +2016,13 @@ html[data-desktop='true'] .kx-titlebar-row[data-sidebar-collapsed] {
 /* Coarse-pointer (touch) targets inside the composer toolbar — added once
    here at the shell rather than per-button, since every toolbar button is a
    plain <button> with no shared class today. */
+/* The underbar is listed too. It holds the SAME attach control the toolbar
+   used to, so with only `.kortix-composer-toolbar` here one button was 40px on
+   project home (inline underbar, inside the toolbar) and 32px in a session
+   (row underbar, outside it). */
 @media (pointer: coarse) {
-  .kortix-composer-toolbar button {
+  .kortix-composer-toolbar button,
+  .kortix-composer-underbar button {
     min-height: 2.5rem;
     min-width: 2.5rem;
   }
@@ -2073,9 +2094,9 @@ html[data-desktop='true'] .kx-titlebar-row[data-sidebar-collapsed] {
    above. `composer.tsx` applies `.composer-locked-approval` to the
    editor's own wrapper only while `lockForApproval` is true; scoped to the
    placeholder `::before` alone so it can never affect real typed text. */
+/* `--kortix-yellow`, not Tailwind's raw amber scale: the token is already
+   defined for both themes, so one rule replaces the light/dark pair that
+   hard-coded two palette colours the design system does not own. */
 .composer-locked-approval .kortix-composer-editor .ProseMirror p.is-editor-empty:first-child::before {
-  color: var(--color-amber-600);
-}
-.dark .composer-locked-approval .kortix-composer-editor .ProseMirror p.is-editor-empty:first-child::before {
-  color: var(--color-amber-400);
+  color: var(--kortix-yellow);
 }

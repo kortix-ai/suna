@@ -270,14 +270,24 @@ function ModelRow({
               'group-hover:pointer-events-auto group-hover:opacity-100',
               'group-data-[selected=true]:pointer-events-auto group-data-[selected=true]:opacity-100',
               'focus-visible:pointer-events-auto focus-visible:opacity-100',
-              'focus-visible:ring-kortix-base focus-visible:ring-[0.6px] focus-visible:outline-none',
+              /* A 0.6px ring with `outline-none` is not a focus indicator —
+                 on a 1x display it rounds away entirely, so keyboard users
+                 tabbing to the default-star had no visible target at all. */
+              'focus-visible:ring-kortix-base focus-visible:ring-2 focus-visible:outline-none',
               /* The default keeps its star at rest ONLY when the check is not
                  already using the slot. Selected wins; see above. */
               isAccountDefault && 'text-foreground cursor-default hover:bg-transparent',
               isAccountDefault && !isSelected && 'pointer-events-auto opacity-100',
             )}
           >
-            <Star weight={isAccountDefault ? 'fill' : 'regular'} className="size-3.5" />
+            {/* `weight="fill"` or no weight at all — Phosphor's `regular` IS the
+                default, so passing it made the two states read as a deliberate
+                pair when only one of them says anything. */}
+            {isAccountDefault ? (
+              <Star weight="fill" className="size-3.5" />
+            ) : (
+              <Star className="size-3.5" />
+            )}
           </button>
         )}
       </span>
@@ -422,6 +432,14 @@ export function ModelSelector({
       .sort((a, b) => a.modelName.localeCompare(b.modelName));
   }, [baseModels, search]);
 
+  /** Is there anything to pick AT ALL, ignoring the search box? The empty
+   *  state below branches on this: "no models match your search" and "you have
+   *  no models" are different problems with different ways out. */
+  const hasAnyModel = useMemo(
+    () => baseModels.some((m) => m.enabled !== false),
+    [baseModels],
+  );
+
   const grouped = useMemo(() => {
     const groups = new Map<
       string,
@@ -516,11 +534,24 @@ export function ModelSelector({
         <CommandPopoverTrigger>
           <Button type="button" variant="ghost" size="sm" className="text-foreground/70 rounded-lg">
             <span className={cn('max-w-30 truncate', triggerLabelClassName)}>{displayName}</span>
-            <ChevronDown className={cn('size-3', open && 'rotate-180')} />
+            <ChevronDown
+              className={cn(
+                'size-3 transition-transform duration-200 ease-out',
+                open && 'rotate-180',
+              )}
+            />
           </Button>
         </CommandPopoverTrigger>
 
-        <CommandPopoverContent side="top" align="start" sideOffset={8} className="w-[300px]">
+        {/* `min(...)`, not a hard `300px`: on a 320px viewport a fixed 300px
+            popover plus the trigger's own inset pushed the panel off-screen.
+            Same shape `mention-menu.tsx` uses. */}
+        <CommandPopoverContent
+          side="top"
+          align="start"
+          sideOffset={8}
+          className="w-[min(300px,calc(100vw-1.5rem))]"
+        >
           <>
             <CommandInput
               compact
@@ -536,7 +567,7 @@ export function ModelSelector({
                       'componentsSessionModelSelector.line239JsxTextConnectProvider',
                     )}
                     side="top"
-                    className="z-999999999"
+                    className="z-50"
                   >
                     <button
                       type="button"
@@ -552,7 +583,7 @@ export function ModelSelector({
                       'componentsSessionModelSelector.line251JsxTextManageModels',
                     )}
                     side="top"
-                    className="z-999999999"
+                    className="z-50"
                   >
                     <button
                       type="button"
@@ -655,6 +686,23 @@ export function ModelSelector({
                     </Fragment>
                   ))}
                 </>
+              ) : hasAnyModel ? (
+                /* Models ARE connected — the SEARCH matched none of them.
+                   `grouped` is built from `visibleModels`, which is already
+                   filtered by `search`, so the branch below could not tell the
+                   two apart: typing "zzz" with 40 models connected showed
+                   "No models available" and a Connect-provider CTA. */
+                <div className="px-3 py-5 text-center">
+                  <div className="text-foreground text-sm font-medium">No models match</div>
+                  <p className="text-muted-foreground mx-auto mt-1 max-w-[220px] text-xs leading-5">
+                    Nothing matches “{search.trim()}”. Try a different search.
+                  </p>
+                  <div className="mt-4 flex items-center justify-center">
+                    <Button type="button" size="xs" variant="outline" onClick={() => setSearch('')}>
+                      Clear search
+                    </Button>
+                  </div>
+                </div>
               ) : (
                 <div className="px-3 py-5 text-center">
                   <div className="text-foreground text-sm font-medium">No models available</div>
@@ -718,8 +766,6 @@ export function ModelSelector({
 const extrasChipBase =
   'text-muted-foreground hover:text-foreground hover:bg-muted inline-flex h-7 shrink-0 cursor-pointer items-center rounded-full px-2.5 text-[11px] font-medium capitalize transition-colors duration-200';
 const extrasChipSelected = 'bg-foreground/[0.06] text-foreground';
-const extrasChipLocked =
-  'hover:text-muted-foreground pointer-events-none cursor-not-allowed opacity-60 hover:bg-transparent';
 const extrasRowLabel =
   'text-muted-foreground/60 px-1 text-[10px] font-semibold tracking-wide uppercase';
 

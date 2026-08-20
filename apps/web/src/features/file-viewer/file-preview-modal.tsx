@@ -2,6 +2,7 @@
 
 import { PublicShareLinkButton } from '@/components/projects/public-share-link-button';
 import { Button } from '@/components/ui/button';
+import Hint from '@/components/ui/hint';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 import { dialogContentZ, dialogOverlayZ, useDialogDepth } from '@/lib/z-stack';
@@ -278,15 +279,17 @@ export function FilePreviewModal({
   const toolbar = (
     <>
       <div className="flex min-w-0 flex-1 items-center gap-2">
-        <Button
-          variant="ghost"
-          size="icon"
-          className="text-muted-foreground hover:text-foreground h-8 w-8 shrink-0"
-          onClick={onClose}
-          title="Back"
-        >
-          <ChevronLeft className="h-4 w-4" />
-        </Button>
+        <Hint label="Back" side="bottom">
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Back"
+            className="text-muted-foreground hover:text-foreground h-8 w-8 shrink-0 active:scale-[0.96]"
+            onClick={onClose}
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+        </Hint>
         <div className="flex min-w-0 items-center gap-2">
           {renderFileIcon(fileName)}
           <span
@@ -306,41 +309,47 @@ export function FilePreviewModal({
 
       <div className="flex shrink-0 items-center gap-0.5">
         {isMarkdownFile && (
+          <Hint label={markdownPreview ? 'View source' : 'Preview'} side="bottom">
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label={markdownPreview ? 'View source' : 'Preview'}
+              aria-pressed={!markdownPreview}
+              className={cn(
+                'h-8 w-8 active:scale-[0.96]',
+                markdownPreview
+                  ? 'text-muted-foreground hover:text-foreground'
+                  : 'text-foreground bg-muted',
+              )}
+              onClick={() => setMarkdownPreview((v) => !v)}
+            >
+              {markdownPreview ? <Code className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </Button>
+          </Hint>
+        )}
+        <Hint label={historyLabel} side="bottom">
           <Button
             variant="ghost"
             size="icon"
+            aria-label={historyLabel}
+            aria-pressed={!!historyPath}
             className={cn(
-              'h-8 w-8',
-              markdownPreview
-                ? 'text-muted-foreground hover:text-foreground'
-                : 'text-foreground bg-muted',
+              'h-8 w-8 active:scale-[0.96]',
+              historyPath
+                ? 'text-foreground bg-muted'
+                : 'text-muted-foreground hover:text-foreground',
             )}
-            onClick={() => setMarkdownPreview((v) => !v)}
-            title={markdownPreview ? 'View source' : 'Preview'}
+            onClick={() => setHistoryPath(historyPath ? null : selectedFilePath)}
           >
-            {markdownPreview ? <Code className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            <History className="h-4 w-4" />
           </Button>
-        )}
-        <Button
-          variant="ghost"
-          size="icon"
-          className={cn(
-            'h-8 w-8',
-            historyPath
-              ? 'text-foreground bg-muted'
-              : 'text-muted-foreground hover:text-foreground',
-          )}
-          onClick={() => setHistoryPath(historyPath ? null : selectedFilePath)}
-          title={historyLabel}
-        >
-          <History className="h-4 w-4" />
-        </Button>
+        </Hint>
         <Button
           variant="outline"
           size="sm"
           className="h-8 gap-1.5 px-3 text-xs font-medium"
           onClick={handleDownload}
-          title="Download"
+          aria-label="Download"
         >
           <Download className="h-3.5 w-3.5" />
           Download
@@ -358,28 +367,38 @@ export function FilePreviewModal({
         )}
         {extraActions}
         {embedded && (
+          <Hint label={expanded ? 'Collapse to panel' : 'Expand'} side="bottom">
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label={expanded ? 'Collapse to panel' : 'Expand'}
+              aria-pressed={expanded}
+              className="text-muted-foreground hover:text-foreground h-8 w-8 active:scale-[0.96]"
+              onClick={() => setExpanded((v) => !v)}
+            >
+              {expanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+            </Button>
+          </Hint>
+        )}
+        <div className="bg-border/50 mx-1 h-5 w-px" />
+        <Hint
+          label={tI18nHardcoded.raw(
+            'autoFeaturesFileViewerFilePreviewModalJsxAttrTitleClosea40d0510',
+          )}
+          side="bottom"
+        >
           <Button
             variant="ghost"
             size="icon"
-            className="text-muted-foreground hover:text-foreground h-8 w-8"
-            onClick={() => setExpanded((v) => !v)}
-            title={expanded ? 'Collapse to panel' : 'Expand'}
+            aria-label={tI18nHardcoded.raw(
+              'autoFeaturesFileViewerFilePreviewModalJsxAttrTitleClosea40d0510',
+            )}
+            className="text-muted-foreground hover:text-foreground h-8 w-8 active:scale-[0.96]"
+            onClick={onClose}
           >
-            {expanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+            <X className="h-4 w-4" />
           </Button>
-        )}
-        <div className="bg-border/50 mx-1 h-5 w-px" />
-        <Button
-          variant="ghost"
-          size="icon"
-          className="text-muted-foreground hover:text-foreground h-8 w-8"
-          onClick={onClose}
-          title={tI18nHardcoded.raw(
-            'autoFeaturesFileViewerFilePreviewModalJsxAttrTitleClosea40d0510',
-          )}
-        >
-          <X className="h-4 w-4" />
-        </Button>
+        </Hint>
       </div>
     </>
   );
@@ -428,7 +447,7 @@ export function FilePreviewModal({
       </div>
 
       {historyPath && (
-        <div className="bg-popover border-border/60 animate-in slide-in-from-bottom-4 fade-in-0 absolute right-4 bottom-4 z-30 overflow-hidden rounded-2xl border shadow-2xl duration-150">
+        <div className="bg-popover border-border/60 animate-in slide-in-from-bottom-4 fade-in-0 absolute right-4 bottom-4 z-30 overflow-hidden rounded-md border shadow-md duration-150">
           <HistoryContent filePath={historyPath} onClose={() => setHistoryPath(null)} />
         </div>
       )}
@@ -478,7 +497,7 @@ export function FilePreviewModal({
         aria-modal="true"
         aria-label={`File preview${fileName ? `: ${fileName}` : ''}`}
         tabIndex={-1}
-        className="kx-fullscreen-modal border-border/60 bg-background animate-in fade-in-0 zoom-in-[0.98] pointer-events-auto fixed inset-3 flex flex-col overflow-hidden rounded-2xl border shadow-2xl duration-150 outline-none sm:inset-4"
+        className="kx-fullscreen-modal border-border/60 bg-background animate-in fade-in-0 zoom-in-[0.98] pointer-events-auto fixed inset-3 flex flex-col overflow-hidden rounded-xl border shadow-lg duration-150 outline-none sm:inset-4"
         style={{ zIndex: dialogContentZ(dialogDepth + 1) }}
       >
         {panelInner}

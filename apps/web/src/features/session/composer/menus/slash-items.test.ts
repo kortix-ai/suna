@@ -125,18 +125,18 @@ describe('buildSlashSections', () => {
   });
 
   test('filters actions via the same query, alongside commands', () => {
-    // Queried 'voice' against a 'Start voice input' action until that action
-    // was removed from SLASH_ACTIONS, at which point this asserted a label
-    // that no longer existed and could only ever fail. 'scope' now matches
-    // one of each — the "alongside commands" the test name claims — and the
-    // expected order doubles as a check that Actions render before Commands.
+    // 'voice' matches one of each — the "alongside commands" the test name
+    // claims — and the expected order doubles as a check that Actions render
+    // before Commands. It queried 'scope' while `set-scope` existed; that row
+    // was removed because it opened nothing, and `start-voice` came back with
+    // a real control behind it (`VoiceRecorder` in the composer toolbar).
     const sections = buildSlashSections({
-      commands: [cmd('build'), cmd('scope-check')],
-      query: 'scope',
+      commands: [cmd('build'), cmd('voice-check')],
+      query: 'voice',
     });
     const rows = sections.flatMap((s) => s.rows);
 
-    expect(rows.map((r) => r.name)).toEqual(['Set scope', 'scope-check']);
+    expect(rows.map((r) => r.name)).toEqual(['Start voice input', 'voice-check']);
   });
 
   test('no commands leaves just the Actions section, indices starting at 0', () => {
@@ -167,12 +167,12 @@ describe('buildSlashSections', () => {
   test('a custom actions list overrides the SLASH_ACTIONS default', () => {
     const sections = buildSlashSections({
       commands: [],
-      actions: [{ id: 'set-scope', label: 'Set scope', description: 'x' }],
+      actions: [{ id: 'attach-file', label: 'Only row', description: 'x' }],
       query: '',
     });
     const rows = sections.flatMap((s) => s.rows);
     expect(rows).toHaveLength(1);
-    expect(rows[0].name).toBe('Set scope');
+    expect(rows[0].name).toBe('Only row');
   });
 });
 

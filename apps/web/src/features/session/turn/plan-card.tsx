@@ -80,7 +80,7 @@ function PlanPie({
   className?: string;
 }) {
   const { sweep, state } = planPieState(done, total, running);
-  const fill = state === 'running' ? 'text-kortix-orange' : 'text-emerald-600';
+  const fill = state === 'running' ? 'text-kortix-orange' : 'text-kortix-green';
 
   return (
     <span

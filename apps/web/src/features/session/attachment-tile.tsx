@@ -34,9 +34,11 @@ export const TILE_SURFACE =
  * nothing or force a name to wrap across more lines than the two-line clamp
  * allows, so non-image tiles get the extra width instead.
  *
- * `max-w-60` is the hard cap that makes `line-clamp-2` fire: without it the
- * tile grows to the filename's max-content width and the ellipsis never
- * appears. `min-w-40` keeps short names from collapsing to the image square.
+ * `h-20 w-30` — 80px tall, 120px wide. That FIXED width is what makes
+ * `line-clamp-2` fire: without a bound the tile grows to the filename's
+ * max-content width and the ellipsis never appears. (It was written
+ * `size-20 w-30`, which sets the width twice and left the real value depending
+ * on stylesheet order rather than on the class list.)
  *
  * Kept as its own constant (not folded into `TILE_SURFACE`) for the same
  * reason `TILE_SURFACE` exists at all: one definition, shared by the sent
@@ -44,7 +46,7 @@ export const TILE_SURFACE =
  * cannot land in one surface without the other.
  */
 export const FILE_TILE_SURFACE =
-  'border-border bg-background relative block size-20 w-30 shrink-0 overflow-hidden rounded-sm border';
+  'border-border bg-background relative block h-20 w-30 shrink-0 overflow-hidden rounded-sm border';
 
 /**
  * The press/hover feel every attachment tile shares — a file pill, an image
@@ -72,13 +74,17 @@ export function FileTileBody({ filename, pending }: { filename: string; pending?
     // `min-w-0` is required on the flex column and the filename: flex items
     // default to `min-width: auto`, which refuses to shrink below the name's
     // max-content width — so a long name expands the tile instead of
-    // clamping. With a bounded tile (`FILE_TILE_SURFACE`'s `max-w-60`) and
+    // clamping. With a bounded tile (`FILE_TILE_SURFACE`'s `w-30`) and
     // `min-w-0`, `line-clamp-2` can actually ellipsize.
     //
     // Do not add `truncate` here. It sets `white-space: nowrap`, which
     // overrides the wrap `line-clamp-2` needs and is the measured cause of
     // "ellipsis missing on long names" (tile grows; nothing clamps).
-    <span className="flex size-20 w-full flex-col justify-between gap-1 p-2">
+    //
+    // `h-20 w-full`, not `size-20 w-full`: the latter set the width twice and
+    // the file tile is 120px wide, not 80 — which of the two won was left to
+    // stylesheet order.
+    <span className="flex h-20 w-full flex-col justify-between gap-1 p-2">
       {pending ? (
         <Loading className="text-muted-foreground size-5 shrink-0" variant="spokes" />
       ) : (

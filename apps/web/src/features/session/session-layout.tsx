@@ -1,5 +1,6 @@
 'use client';
 
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Drawer, DrawerContent } from '@/components/ui/drawer';
 import Hint from '@/components/ui/hint';
@@ -697,14 +698,19 @@ function PanelHeaderSwitcher({
           <TabsTrigger size="xs" value="browser" className="h-7 w-fit">
             Browser
           </TabsTrigger>
-          <TabsTrigger size="xs" value="explorer" className="h-7 w-fit">
+          <TabsTrigger size="xs" value="explorer" className="hit-area-2 h-7 w-fit">
             Files
           </TabsTrigger>
-          <TabsTrigger size="xs" value="terminal" className="h-7 w-fit">
+          <TabsTrigger size="xs" value="terminal" className="hit-area-2 h-7 w-fit">
             Terminal
           </TabsTrigger>
-          <TabsTrigger size="xs" value="audit" className="h-7 w-fit">
+          <TabsTrigger size="xs" value="audit" className="hit-area-2 h-7 w-fit gap-1.5">
             Audit
+            {auditBadge > 0 ? (
+              <Badge variant="secondary" size="xs" className="tabular-nums">
+                {auditBadge}
+              </Badge>
+            ) : null}
           </TabsTrigger>
         </TabsList>
       </Tabs>
@@ -713,7 +719,7 @@ function PanelHeaderSwitcher({
           variant="ghost"
           size="sm"
           onClick={onToggleMode}
-          className="text-muted-foreground hover:text-foreground h-7 cursor-pointer text-xs"
+          className="text-muted-foreground hover:text-foreground hit-area-2 h-7 cursor-pointer text-xs"
         >
           Easy
         </Button>

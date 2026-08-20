@@ -1,5 +1,6 @@
 'use client';
 
+import { Kbd } from '@/components/ui/kbd';
 import { cn } from '@/lib/utils';
 import {
   ArrowsClockwiseIcon,
@@ -10,7 +11,6 @@ import {
   PuzzlePieceIcon,
   RobotIcon,
   SlidersHorizontalIcon,
-  TargetIcon,
   TerminalWindowIcon,
 } from '@phosphor-icons/react';
 
@@ -55,8 +55,6 @@ function SlashRowIcon({
         return <PaperclipIcon className={className} />;
       case 'start-voice':
         return <MicrophoneIcon className={className} />;
-      case 'set-scope':
-        return <TargetIcon className={className} />;
       default:
         return <SlidersHorizontalIcon className={className} />;
     }
@@ -97,11 +95,11 @@ function SlashRowIcon({
  * no match, or no menu open — contributes no gap at all: the margin cannot
  * exist without a card to own it.
  *
- * `rounded-xl` matches the composer card it stacks onto, so the two read as
- * one object split in two rather than a popover that happens to be nearby.
- * The list's `p-1.5` + the rows' `rounded-md` make that radius concentric
- * (6px inner + 6px padding = 12px outer); mismatched nesting here is the
- * single most visible way a card like this reads as "off".
+ * `rounded-lg` (8px) is the cap `menu-shell.tsx` documents for app containers,
+ * and it is the same radius the `@` menu uses — the two palettes read as one
+ * system rather than two different popovers. It is deliberately NOT the
+ * composer card's `rounded-xl`: this card floats above the card, so matching
+ * it exactly made the seam between them read as a rendering glitch.
  */
 export function SlashMenu({
   sections,
@@ -114,7 +112,19 @@ export function SlashMenu({
   onSelect: (row: SlashRow) => void;
   onHover?: (row: SlashRow) => void;
 }) {
-  if (!sections.length) return null;
+  // A query that matches nothing keeps the card, with one dead row saying so.
+  // Returning `null` made the palette DISAPPEAR mid-word — the user could not
+  // tell "no match" from "the menu closed", and one backspace brought it back
+  // from nowhere.
+  if (!sections.length) {
+    return (
+      <MenuCard className={cn('mb-2.5 w-full rounded-lg')}>
+        <p role="status" className="text-muted-foreground px-3 py-2.5 text-sm">
+          No matching command or action
+        </p>
+      </MenuCard>
+    );
+  }
 
   const rows = sections.flatMap((section) =>
     section.rows.map((row) => ({ row, heading: section.heading })),
@@ -122,16 +132,21 @@ export function SlashMenu({
   const active = rows.find(({ row }) => row.index === selectedIndex) ?? rows[0];
 
   return (
-    // `rounded-2xl` (16px) tracks the composer card this stacks onto, so the
-    // two read as one object split in two rather than a popover that happens
-    // to be nearby. The list's `p-2` (8px) plus the rows' `rounded-lg` (8px)
-    // makes that radius concentric: 8 + 8 = 16.
-    <MenuCard className={cn('mb-2.5 flex max-h-96 h-88 overflow-hidden w-full rounded-lg shadow-none')}>
+    // `max-h-96` and no fixed height: `h-88` pinned the card to 352px whether
+    // it held one row or thirty, so a single match rendered a mostly-empty
+    // panel taller than the composer under it. `MenuCard`'s own `shadow-md`
+    // is kept — `shadow-none` erased the only thing separating this card from
+    // the transcript behind it.
+    <MenuCard className={cn('mb-2.5 flex max-h-96 w-full overflow-hidden rounded-lg')}>
       <div
         role="listbox"
         aria-label="Commands and actions"
         aria-activedescendant={`slash-row-${selectedIndex}`}
-        tabIndex={0}
+        // `-1`, matching `mention-menu.tsx`: focusable for AT, but never a tab
+        // stop. Keyboard interaction stays in the composer editor, which
+        // proxies arrow/Enter to this listbox — a real tab stop here trapped
+        // Tab between the palette and the composer.
+        tabIndex={-1}
         className="min-w-0 flex-1 space-y-2 overflow-y-auto p-2"
       >
         {sections.map((section) => (
@@ -168,11 +183,7 @@ export function SlashMenu({
                       {row.value}
                     </span>
                   )}
-                  {row.hint && (
-                    <kbd className="bg-muted text-muted-foreground rounded-sm px-1.5 py-0.5 font-sans text-[0.6875rem]">
-                      {row.hint}
-                    </kbd>
-                  )}
+                  {row.hint && <Kbd className="shrink-0">{row.hint}</Kbd>}
                 </MenuRow>
               ))}
             </div>
@@ -198,8 +209,8 @@ export function SlashMenu({
             </p>
           )}
           <div className="mt-auto flex items-center justify-end gap-2 pt-4">
-            <span className="text-muted-foreground text-xs">
-              <kbd className="bg-muted rounded-sm px-1.5 py-0.5 font-sans">↵</kbd> to use
+            <span className="text-muted-foreground flex items-center gap-1 text-xs">
+              <Kbd>↵</Kbd> to use
             </span>
             <button
               type="button"

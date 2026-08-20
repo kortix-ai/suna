@@ -116,11 +116,15 @@ export function ComposerUnderbar({
   const inline = variant === 'inline';
 
   return (
+    // `kortix-composer-underbar` is not decoration — `globals.css` hangs the
+    // coarse-pointer 40×40 minimum off it. Without the class this row's
+    // buttons stayed 32px on touch while the identical controls inside
+    // `.kortix-composer-toolbar` were 40px.
     <div
       className={
         inline
-          ? 'flex min-w-0 items-center gap-1'
-          : 'flex items-center justify-between gap-2 px-px pt-1.5 pb-2'
+          ? 'kortix-composer-underbar flex min-w-0 items-center gap-1'
+          : 'kortix-composer-underbar flex items-center justify-between gap-2 px-px pt-1.5 pb-2'
       }
     >
       <div className="flex min-w-0 items-center gap-1">
@@ -134,7 +138,10 @@ export function ComposerUnderbar({
             size="icon-base"
             onClick={onAttachClick}
             aria-label="Attach files"
-            className="text-muted-foreground rounded-lg"
+            // `hit-area-1` — the same extension the toolbar's send/voice
+            // buttons carry. The visible chip stays 32px; the pressable box
+            // grows to 40, on a mouse as well as on a finger.
+            className="text-muted-foreground hit-area-1 rounded-lg"
           >
             <Paperclip className="size-4 shrink-0" />
           </Button>

@@ -46,6 +46,7 @@ import {
   isDormantSessionWithoutRuntime,
   isUnmaterializedSessionFailure,
 } from '@/features/session/session-terminal-state';
+import { ErrorState } from '@/features/layout/section/error-state';
 import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
 import { useAccountState } from '@/hooks/billing';
 import { useSandboxConnection } from '@/hooks/platform/use-sandbox-connection';
@@ -587,6 +588,11 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
         <InlineSessionError
           title="Couldn't start session"
           message="This session is no longer available, or you do not have access to it."
+          action={
+            <Button variant="outline" size="sm" onClick={() => router.push(`/projects/${projectId}`)}>
+              Back to project
+            </Button>
+          }
         />
       );
     }
@@ -662,6 +668,11 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
           title="This session's computer was lost"
           message="Its cloud sandbox disappeared on the provider side, so this session cannot be restarted or recovered. This is a fault on our end, not something you did — it has been reported automatically. Anything committed and pushed from this session is safe in your project's repository."
           detail={sandbox?.external_id ? `${sandbox.provider} · ${sandbox.external_id}` : undefined}
+          action={
+            <Button variant="outline" size="sm" onClick={() => setDeleteOpen(true)}>
+              Delete session
+            </Button>
+          }
         />
       );
     }
@@ -826,16 +837,18 @@ function InlineSessionError({
 }) {
   return (
     <div className="flex min-h-0 flex-1 items-center justify-center px-6">
-      <div className="flex max-w-md flex-col items-center gap-3 text-center">
-        <h2 className="text-foreground/90 text-sm font-medium">{title}</h2>
-        <p className="text-muted-foreground/70 text-xs leading-relaxed">{message}</p>
-        {detail ? (
-          <p className="border-border/60 bg-muted/40 text-muted-foreground max-w-full rounded-md border px-2 py-1 font-mono text-xs leading-relaxed">
-            {detail}
-          </p>
-        ) : null}
-        {action}
-      </div>
+      <ErrorState
+        title={title}
+        description={message}
+        action={action}
+        secondaryAction={
+          detail ? (
+            <code className="border-border/60 bg-muted/40 text-muted-foreground max-w-full rounded-md border px-2 py-1 font-mono text-xs leading-relaxed break-all">
+              {detail}
+            </code>
+          ) : undefined
+        }
+      />
     </div>
   );
 }

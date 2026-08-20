@@ -83,7 +83,9 @@ function Action({
         size="icon-xs"
         aria-label={label}
         onClick={onClick}
-        className={cn(destructive && 'hover:text-destructive')}
+        // 24px visible, 40px target — the queued-prompt row packs several of
+        // these side by side.
+        className={cn('hit-area-2', destructive && 'hover:text-destructive')}
       >
         {children}
       </Button>

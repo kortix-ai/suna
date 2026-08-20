@@ -3,8 +3,7 @@ export type SlashActionId =
   | 'switch-agent'
   | 'set-reasoning-effort'
   | 'attach-file'
-  | 'start-voice'
-  | 'set-scope';
+  | 'start-voice';
 
 export interface SlashAction {
   id: SlashActionId;
@@ -49,8 +48,19 @@ export const SLASH_ACTIONS: SlashAction[] = [
     description: 'How much thinking the model does before answering',
   },
   { id: 'attach-file', label: 'Attach file', description: 'Add an image or document' },
-  { id: 'set-scope', label: 'Set scope', description: 'Limit which files this session may touch' },
+  {
+    id: 'start-voice',
+    label: 'Start voice input',
+    description: 'Dictate the message with your microphone',
+  },
 ];
+
+/*
+ * `set-scope` used to be a sixth row here. It was REMOVED, not forgotten: no
+ * scope panel exists for it to open, so `handleSelectAction` fell to its
+ * `default: return` and the row highlighted, offered a "Use" button, and did
+ * nothing. Re-add it only together with the control it names.
+ */
 
 /** A composer control a `/` row can open. */
 export type SlashActionControl = 'model' | 'reasoning';

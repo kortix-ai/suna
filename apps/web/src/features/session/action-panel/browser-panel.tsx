@@ -13,6 +13,9 @@ import { FaviconAvatar } from '@/components/ui/favicon-avatar';
 import Hint from '@/components/ui/hint';
 import { Input } from '@/components/ui/input';
 import Loading from '@/components/ui/loading';
+import { EmptyState } from '@/features/layout/section/empty-state';
+import { ErrorState } from '@/features/layout/section/error-state';
+import { isKortixAppUrl } from '@/features/session/kortix-app-url';
 import { useAuthenticatedPreviewUrl } from '@/hooks/use-authenticated-preview-url';
 import { usePublicShareLink } from '@/hooks/use-public-share-link';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
@@ -20,7 +23,6 @@ import { useSessionPublicShares } from '@/hooks/use-session-public-shares';
 import { INTERACTIVE_PREVIEW_IFRAME_SANDBOX } from '@/lib/security/iframe-sandbox';
 import { cn } from '@/lib/utils';
 import { focusWithoutScroll } from '@/lib/utils/focus-without-scroll';
-import { isKortixAppUrl } from '@/features/session/kortix-app-url';
 import {
   buildWebProxyUrl,
   isExternalUrl,
@@ -523,7 +525,7 @@ export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabC
               type="text"
               size="xs"
               value={urlParts ? fullUrl : addressValue}
-              title={tHardcodedUi.raw(
+              aria-label={tHardcodedUi.raw(
                 'autoComponentsTabsPreviewTabContentJsxAttrTitleEnterA2bdb9e26',
               )}
               onChange={(e) => {
@@ -635,29 +637,25 @@ export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabC
 
           {/* Error state */}
           {hasError && (
-            <div className="bg-background absolute inset-0 z-10 flex items-center justify-center">
-              <div className="flex max-w-sm flex-col items-center gap-4 text-center">
-                <span className="bg-kortix-orange/15 flex size-9 items-center justify-center rounded-sm">
-                  <AlertTriangle className="text-kortix-orange size-5" />
-                </span>
-                <div>
-                  <p className="text-sm font-medium">
-                    {tHardcodedUi.raw(
-                      'componentsTabsPreviewTabContent.line492JsxTextFailedToLoadPreview',
-                    )}
-                  </p>
-                  <p className="text-muted-foreground mt-1 text-xs">
-                    {isExternalBrowsing
-                      ? 'Could not reach the target website.'
-                      : `The service on port ${port} may not be running yet.`}
-                  </p>
-                </div>
+            <ErrorState
+              icon={AlertTriangle}
+              size="sm"
+              className="bg-background absolute inset-0 z-10"
+              title={tHardcodedUi.raw(
+                'componentsTabsPreviewTabContent.line492JsxTextFailedToLoadPreview',
+              )}
+              description={
+                isExternalBrowsing
+                  ? 'Could not reach the target website.'
+                  : `The service on port ${port} may not be running yet.`
+              }
+              action={
                 <Button variant="outline" size="sm" className="gap-1.5" onClick={handleRefresh}>
                   <RefreshCw className="size-3.5 shrink-0" />
                   Retry
                 </Button>
-              </div>
-            </div>
+              }
+            />
           )}
 
           <iframe
@@ -703,27 +701,20 @@ export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabC
               </section>
             </div>
           ) : (
-            <div className="flex h-full items-center justify-center">
-              <div className="text-muted-foreground flex max-w-sm flex-col items-center gap-4 px-4 text-center">
-                <Globe className="size-12 opacity-20" />
-                <div>
-                  <p className="text-foreground text-sm font-medium">
-                    {tHardcodedUi.raw(
-                      'autoComponentsTabsPreviewTabContentJsxTextPreviewBrowser8136da05',
-                    )}
-                  </p>
-                  <p className="mt-1.5 text-xs leading-relaxed text-balance">
-                    {tHardcodedUi.raw(
-                      'autoComponentsTabsPreviewTabContentJsxTextOpenAnAppda305669',
-                    )}{' '}
-                    <span className="text-foreground/80 font-mono">3000</span>{' '}
-                    {tHardcodedUi.raw(
-                      'autoComponentsTabsPreviewTabContentJsxTextIfYouKnow6745fa88',
-                    )}
-                  </p>
-                </div>
-              </div>
-            </div>
+            <EmptyState
+              icon={Globe}
+              className="h-full"
+              title={tHardcodedUi.raw(
+                'autoComponentsTabsPreviewTabContentJsxTextPreviewBrowser8136da05',
+              )}
+              description={
+                <>
+                  {tHardcodedUi.raw('autoComponentsTabsPreviewTabContentJsxTextOpenAnAppda305669')}{' '}
+                  <span className="text-foreground/80 font-mono">3000</span>{' '}
+                  {tHardcodedUi.raw('autoComponentsTabsPreviewTabContentJsxTextIfYouKnow6745fa88')}
+                </>
+              }
+            />
           )}
         </div>
       )}

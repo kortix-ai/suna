@@ -187,7 +187,7 @@ function StepRing({ spinning }: { spinning: boolean }) {
       className={cn(
         'relative flex shrink-0 items-center justify-center transition-colors duration-300',
         spinning
-          ? 'text-kortix-green animate-spin motion-reduce:animate-none'
+          ? 'text-kortix-green animate-spinner-spin'
           : 'text-muted-foreground/60',
       )}
       aria-hidden
@@ -251,10 +251,7 @@ function StepGlyph({ done, current }: { done: boolean; current: boolean }) {
           className="absolute inset-0 flex items-center justify-center"
         >
           {done ? (
-            <CheckCircleSolid
-              className="text-kortix-green bg-background size-3.5"
-              strokeWidth={2.5}
-            />
+            <CheckCircleSolid className="text-kortix-green size-3.5" weight="fill" />
           ) : (
             <StepRing spinning={current} />
           )}
@@ -300,7 +297,7 @@ function BootCompactMessage({
     // bought nothing — a 20px glyph and a 2-line message coexist happily at
     // 256px — and it cost the one relationship that matters here: the spinner
     // reads as belonging to the message it sits beside.
-    <div className="flex flex-col items-start gap-2.5 sm:flex-row">
+    <div className="flex flex-row items-start gap-2.5">
       {/* mt-1 optically centres the 20px spinner on the headline's 28px line
           box — geometric top-alignment sits it visibly high against a bold cap. */}
       {/* `spokes` to match the reference: beside a headline the ticking wheel
@@ -368,7 +365,7 @@ function BootStepList({ active }: { active: number }) {
               className="items-center"
               aria-current={current ? 'step' : undefined}
             >
-              <StepperIndicator className="flex size-3.5 shrink-0 items-center justify-center rounded-none bg-none text-current">
+              <StepperIndicator className="flex size-3.5 shrink-0 items-center justify-center rounded-none bg-transparent text-current data-[state=active]:bg-transparent data-[state=completed]:bg-transparent">
                 <StepGlyph done={done} current={current} />
               </StepperIndicator>
               <StepperSeparator className="bg-border group-data-[state=completed]/step:bg-kortix-green/40 m-0 my-0.5 group-data-[orientation=vertical]/stepper:min-h-3" />
@@ -457,7 +454,10 @@ export function RestartFallback({
 }) {
   const reduce = useReducedMotion();
   return (
-    <AnimatePresence>
+    // `initial={false}`: `show` is false at mount, so the stall entrance still
+    // animates when it flips — this only suppresses a replay if the component
+    // remounts already-stalled.
+    <AnimatePresence initial={false}>
       {show ? (
         <m.div
           initial={{ opacity: 0, y: reduce ? 0 : 6 }}
@@ -487,7 +487,7 @@ export function RestartFallback({
             // whose column is NOT capped (the 768px chat thread) passes
             // `buttonClassName="w-auto"`, where full-bleed would read as a
             // banner rather than an offer.
-            className={cn('w-full active:scale-[0.98]', buttonClassName)}
+            className={cn('w-full active:scale-[0.97]', buttonClassName)}
             disabled={pending}
             onClick={onRestart}
           >

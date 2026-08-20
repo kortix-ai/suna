@@ -45,6 +45,16 @@ function attachmentName(af: AttachedFile): string {
 function AttachmentImageTile({ af, name }: { af: AttachedFile; name: string }) {
   const isHeic = isHeicFile(name);
   const [heicUrl, setHeicUrl] = useState<string | null>(null);
+  // WHICH file failed, not merely "something failed". Storing the attachment
+  // itself makes the reset free: a new `af` no longer matches, so the flag
+  // clears by comparison instead of by a `setState` in the effect body (which
+  // is a cascading render, and what the React Compiler rule flags).
+  //
+  // Before this existed, a failed decode was indistinguishable from one still
+  // running — `.catch(() => {})` swallowed the rejection and the tile spun
+  // forever on a file that was never going to render.
+  const [failedFor, setFailedFor] = useState<AttachedFile | null>(null);
+  const failed = failedFor === af;
 
   useEffect(() => {
     if (!isHeic || af.kind !== 'local') return;
@@ -56,7 +66,9 @@ function AttachmentImageTile({ af, name }: { af: AttachedFile; name: string }) {
         objectUrl = URL.createObjectURL(jpeg);
         setHeicUrl(objectUrl);
       })
-      .catch(() => {});
+      .catch(() => {
+        if (!cancelled) setFailedFor(af);
+      });
     return () => {
       cancelled = true;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
@@ -67,11 +79,20 @@ function AttachmentImageTile({ af, name }: { af: AttachedFile; name: string }) {
 
   const src = isHeic ? heicUrl : af.kind === 'local' ? af.localUrl : af.url;
 
+  // Fall back to the named tile — the file is still attached and still sends;
+  // only the thumbnail is unavailable.
+  if (failed) return <FileTileBody filename={name} />;
   if (!src) return <FileTileBody filename={name} pending />;
 
   return (
     // eslint-disable-next-line @next/next/no-img-element
-    <img src={src} alt={name} className="size-full object-cover" draggable={false} />
+    <img
+      src={src}
+      alt={name}
+      className="size-full object-cover"
+      draggable={false}
+      onError={() => setFailedFor(af)}
+    />
   );
 }
 
@@ -129,7 +150,18 @@ function AttachmentFileTile({ af, name }: { af: AttachedFile; name: string }) {
     if (af.kind !== 'local' || !isPreviewableTextExtension(ext)) return;
     const reader = new FileReader();
     reader.onload = () => setTextPreview(truncateTextPreview(reader.result as string));
+    // An unreadable file (revoked handle, permissions) rejected silently and
+    // left the read hanging; the tile just never showed a peek. Clear it
+    // explicitly so the state is a decision, not a leftover.
+    reader.onerror = () => setTextPreview(null);
     reader.readAsText(af.file.slice(0, 2048));
+    // Aborting on unmount: without it the read completes into a component that
+    // is gone, and `onload` fires a `setState` on it.
+    return () => {
+      reader.onload = null;
+      reader.onerror = null;
+      if (reader.readyState === FileReader.LOADING) reader.abort();
+    };
   }, [af, ext]);
 
   return <FileTileWithPreview filename={name} preview={textPreview} />;
@@ -174,9 +206,19 @@ export function AttachmentTiles({
                 onClick={() => onRemove(i)}
                 aria-label={`Remove ${name}`}
                 className={cn(
+                  // `bg-foreground text-background` — the semantic pair that
+                  // already flips with the theme. The old `bg-black text-white
+                  // dark:bg-white dark:text-black` was the same idea written as
+                  // four raw colours that no token change can follow.
                   'border-card absolute -top-1.5 -right-1.5 z-10 flex size-5 items-center justify-center',
-                  'rounded-full border-2 bg-black text-white dark:bg-white dark:text-black',
-                  'opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100',
+                  'bg-foreground text-background rounded-full border-2',
+                  // `hit-area-1` extends the pressable box past the 20px glyph
+                  // without moving it — the visible dot stays a dot.
+                  'hit-area-1',
+                  // Not fully hidden at rest. `opacity-0` meant the only way to
+                  // discover the remove control was to hope it was there; at
+                  // 60% it reads as available and firms up on hover.
+                  'opacity-60 transition-opacity group-hover:opacity-100 focus-visible:opacity-100',
                   '[@media(pointer:coarse)]:opacity-100',
                 )}
               >

@@ -120,7 +120,7 @@ export function AnimatedComposerPlaceholder({
       // `inset-x-2` mirrors the wrapper's `px-2`; the font classes mirror
       // `ComposerEditor`'s own, so the overlay sits exactly where the static
       // placeholder would. `overflow-hidden` clips the roll to one line.
-      className="text-muted-foreground pointer-events-none absolute inset-x-2 top-0 overflow-hidden text-[15px] sm:text-[14px]"
+      className="text-muted-foreground pointer-events-none absolute inset-x-2 top-0 overflow-hidden text-base sm:text-sm"
     >
       <AnimatePresence mode="popLayout" initial={false}>
         <m.span

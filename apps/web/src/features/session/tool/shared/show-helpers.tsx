@@ -38,6 +38,7 @@ import { buildStaticFileLocalUrl } from '@kortix/sdk';
 import type { Icon as PhosphorIcon } from '@phosphor-icons/react';
 import {
   WarningIcon as AlertTriangle,
+  ArrowClockwiseIcon,
   CodeSimpleIcon as Code2,
   ArrowSquareOutIcon as ExternalLink,
   FileCodeIcon as FileCode,
@@ -53,7 +54,6 @@ import {
   FileXlsIcon as FileXls,
   FileZipIcon as FileZip,
   GlobeIcon as Globe,
-  ArrowClockwiseIcon as GrRefresh,
   ImageIcon,
   ArrowsOutSimpleIcon as Maximize2,
   MusicNotesIcon as Music,
@@ -354,7 +354,7 @@ export function ShowFileActions({
           aria-label="Refresh"
           className="active:scale-[0.96]"
         >
-          <GrRefresh className={cn('size-4', refreshing && 'animate-spinner-spin')} />
+          <ArrowClockwiseIcon className={cn('size-4', refreshing && 'animate-spinner-spin')} />
         </Button>
       </Hint>
 

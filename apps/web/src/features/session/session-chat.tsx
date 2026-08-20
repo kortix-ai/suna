@@ -1242,10 +1242,17 @@ function SessionTurnImpl({
     const timer = setInterval(() => setStatusElapsedMs(Date.now() - statusSinceMs), 1000);
     return () => clearInterval(timer);
   }, [working, statusSinceMs]);
-  const statusWithElapsed =
+  /** The phrase alone — never the elapsed time. Folding the ticking duration in
+   *  here changed the busy indicator's animation key once a second, which
+   *  replayed its roll-swap forever during any long tool call. */
+  const statusPhrase =
     throttledStatus && working && statusElapsedMs >= STATUS_STALL_AFTER_MS
-      ? `${throttledStatus.replace(/(\.\.\.|…)$/, '')} · ${formatDuration(statusElapsedMs)}`
+      ? throttledStatus.replace(/(\.\.\.|…)$/, '')
       : throttledStatus;
+  const statusElapsedLabel =
+    throttledStatus && working && statusElapsedMs >= STATUS_STALL_AFTER_MS
+      ? formatDuration(statusElapsedMs)
+      : undefined;
 
   useEffect(() => {
     const newStatus = rawStatus;
@@ -1416,7 +1423,7 @@ function SessionTurnImpl({
   if (isCompaction && !working && response) {
     return (
       <div className="group/turn">
-        <div className="border-border/60 bg-card/50 overflow-hidden rounded-2xl border">
+        <div className="border-border/60 bg-card/50 overflow-hidden rounded-md border">
           <div className="border-border/40 bg-muted/40 flex items-center gap-2 border-b px-4 py-2.5">
             <Layers className="text-muted-foreground/70 size-3.5" />
             <span className="text-muted-foreground/70 text-xs font-medium tracking-wider uppercase">
@@ -1591,9 +1598,12 @@ function SessionTurnImpl({
         </div>
       )}
 
-      {/* ── Screen reader ── */}
+      {/* ── Screen reader ──
+          Announce COMPLETION only. Mirroring the full response here duplicated
+          every turn in the DOM, so select-all across the transcript copied each
+          answer twice. The visible markdown is already in the a11y tree. */}
       <div className="sr-only" aria-live="polite">
-        {!working && response ? response : ''}
+        {!working && response ? 'Response complete' : ''}
       </div>
 
       {/* Inline content: text and answered questions rendered in natural order.
@@ -1704,7 +1714,8 @@ function SessionTurnImpl({
           )}
           <SessionBusyIndicator
             sessionId={sessionId}
-            statusText={statusWithElapsed || undefined}
+            statusText={statusPhrase || undefined}
+            elapsedLabel={statusElapsedLabel}
             retryLabel={
               retryInfo
                 ? String(
@@ -1728,14 +1739,20 @@ function SessionTurnImpl({
 
       {/* Question prompt — now rendered inside the chat input card (questionSlot) */}
 
-      {/* ── Action bar (copy + turn meta) ── */}
-      {!working && response && (
+      {/* ── Action bar (copy + turn meta) ──
+          Gated on `!working` only. A turn that ends in tool calls has no closing
+          prose, but its finished-at / duration / cost are still turn facts —
+          `SessionTurnMeta` self-hides when it has no rows. Only the copy button
+          needs a response to copy. */}
+      {!working && (
         <div className="flex items-center gap-0.5 opacity-0 transition-opacity duration-150 group-hover/turn:opacity-100 focus-within:opacity-100 has-[[data-state=open]]:opacity-100">
+          {response ? (
           <Button
             variant="ghost"
             size="icon-sm"
             onClick={handleCopy}
             aria-label={copied ? 'Copied' : 'Copy response'}
+            className="hit-area-3"
           >
             <span className="relative inline-flex shrink-0 items-center justify-center">
               <AnimatePresence initial={false} mode="popLayout">
@@ -1756,6 +1773,7 @@ function SessionTurnImpl({
               </AnimatePresence>
             </span>
           </Button>
+          ) : null}
           <SessionTurnMeta
             endedAt={turnEndedAt}
             durationMs={turnDurationMs}
@@ -1817,6 +1835,24 @@ interface SessionChatProps {
   readOnly?: boolean;
   /** Start scrolled to the top instead of the bottom (e.g. sub-session modal viewer) */
   initialScrollTop?: boolean;
+}
+
+/**
+ * The "Compaction" rule that marks where history was summarised. Rendered in two
+ * places (the optimistic pass and the first turn after a landed compaction);
+ * they were byte-identical copies, so they live here to stay that way.
+ */
+function CompactionDivider(): React.ReactElement {
+  return (
+    <div className="my-3 flex items-center gap-3 py-4">
+      <div className="bg-border h-px flex-1" />
+      <div className="bg-muted/80 border-border/60 flex items-center gap-2 rounded-full border px-3 py-1.5">
+        <Layers className="text-muted-foreground size-3.5" />
+        <span className="text-muted-foreground text-xs font-semibold tracking-wide">Compaction</span>
+      </div>
+      <div className="bg-border h-px flex-1" />
+    </div>
+  );
 }
 
 export function SessionChat({
@@ -4319,7 +4355,17 @@ export function SessionChat({
   if (isDataLoading) {
     return (
       <div className="bg-background relative flex h-full flex-col" data-testid="session-chat">
-        <SessionStartingLoader stage="ready" variant="compact" />
+        {/* `projectId`/`sessionId` are what arm the loader's restart offer
+            (`canRestart`). Without them a session wedged in this state spun
+            forever with no way out but a page reload. The stage must also track
+            the real runtime — hardcoding "ready" froze the copy on
+            "Connecting" no matter what the boot was actually doing. */}
+        <SessionStartingLoader
+          stage={runtimeReady ? 'ready' : 'starting'}
+          variant="compact"
+          projectId={projectId}
+          sessionId={projectSessionId}
+        />
       </div>
     );
   }
@@ -4380,18 +4426,21 @@ export function SessionChat({
                   'componentsSessionSessionChat.line5821JsxTextThisSessionIsNotAccessibleRightNow',
                 )}
               </div>
-              <button
+              {/* Soft nav, not `window.location.assign` — a full page reload
+                  tore down the whole app to move one route. */}
+              <Button
                 type="button"
+                variant="outline"
+                size="sm"
                 onClick={() => {
                   try {
                     if (sessionId) useTabStore.getState().closeTab?.(sessionId);
                   } catch {}
-                  if (typeof window !== 'undefined') window.location.assign('/');
+                  router.push('/');
                 }}
-                className="text-primary text-sm hover:underline"
               >
                 {tHardcodedUi.raw('componentsSessionSessionChat.line5833JsxTextGoToHome')}
-              </button>
+              </Button>
             </div>
           ) : (
             <div ref={chatAreaRef} className="relative z-10 min-h-0 flex-1">
@@ -4433,16 +4482,7 @@ export function SessionChat({
                   <div className="flex min-w-0 flex-col">
                     {isOptimisticCompacting && !hasCompactionTurn && (
                       <div className="mt-12 space-y-3">
-                        <div className="my-3 flex items-center gap-3 py-4">
-                          <div className="bg-border h-px flex-1" />
-                          <div className="bg-muted/80 border-border/60 flex items-center gap-2 rounded-2xl border px-3 py-1.5">
-                            <Layers className="text-muted-foreground size-3.5" />
-                            <span className="text-muted-foreground text-xs font-semibold tracking-wide">
-                              Compaction
-                            </span>
-                          </div>
-                          <div className="bg-border h-px flex-1" />
-                        </div>
+                        <CompactionDivider />
                         <div className="flex items-center gap-3">
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img
@@ -4539,16 +4579,7 @@ export function SessionChat({
                           >
                             {/* Compaction divider — shown before the first turn after compaction */}
                             {hasCompaction && (
-                              <div className="my-3 flex items-center gap-3 py-4">
-                                <div className="bg-border h-px flex-1" />
-                                <div className="bg-muted/80 border-border/60 flex items-center gap-2 rounded-2xl border px-3 py-1.5">
-                                  <Layers className="text-muted-foreground size-3.5" />
-                                  <span className="text-muted-foreground text-xs font-semibold tracking-wide">
-                                    Compaction
-                                  </span>
-                                </div>
-                                <div className="bg-border h-px flex-1" />
-                              </div>
+                              <CompactionDivider />
                             )}
                             <SessionTurn
                               turn={turn}

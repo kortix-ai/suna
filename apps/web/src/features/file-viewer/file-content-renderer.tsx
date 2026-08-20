@@ -7,8 +7,10 @@ import { CodeEditor } from '@/components/file-editors/code-editor';
 import { MarkdownWithFrontmatter } from '@/components/markdown/markdown-frontmatter';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import Hint from '@/components/ui/hint';
 import { InfoBanner } from '@/components/ui/info-banner';
 import Loading from '@/components/ui/loading';
+import { StatusDot } from '@/components/ui/status';
 import { errorToast, successToast } from '@/components/ui/toast';
 import {
   appendPreviewToken,
@@ -249,7 +251,7 @@ function FileNotFoundState({ filePath }: { filePath: string }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
-      <div className="bg-muted/50 flex h-12 w-12 items-center justify-center rounded-2xl">
+      <div className="bg-muted/50 flex h-12 w-12 items-center justify-center rounded-sm">
         <FileX className="text-muted-foreground/40 h-6 w-6" />
       </div>
       <p className="text-muted-foreground text-sm font-medium">
@@ -726,6 +728,10 @@ export function FileContentRenderer({
     targetLine,
   };
 
+  const discardLabel: string = tHardcodedUi.raw(
+    'featuresFilesComponentsFileContentRenderer.line600JsxAttrTitleDiscardChanges',
+  );
+
   return (
     <div className={cn('flex h-full flex-col', className)}>
       {/* Header */}
@@ -736,10 +742,7 @@ export function FileContentRenderer({
             {/* Edit state indicator */}
             {!readOnly && hasUnsavedChanges && (
               <Badge variant="warning" size="sm" className="shrink-0">
-                <span className="relative flex h-1.5 w-1.5">
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75"></span>
-                  <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-amber-500"></span>
-                </span>
+                <StatusDot tone="warning" pulse />
                 Edited
               </Badge>
             )}
@@ -760,13 +763,13 @@ export function FileContentRenderer({
             {(fileDiagErrorCount > 0 || fileDiagWarningCount > 0) && (
               <span className="inline-flex shrink-0 items-center gap-1.5">
                 {fileDiagErrorCount > 0 && (
-                  <span className="text-destructive inline-flex items-center gap-0.5 text-xs font-medium">
+                  <span className="text-destructive inline-flex items-center gap-0.5 text-xs font-medium tabular-nums">
                     <CircleAlert className="h-3 w-3" />
                     {fileDiagErrorCount}
                   </span>
                 )}
                 {fileDiagWarningCount > 0 && (
-                  <span className="inline-flex items-center gap-0.5 text-xs font-medium text-yellow-500">
+                  <span className="text-kortix-orange inline-flex items-center gap-0.5 text-xs font-medium tabular-nums">
                     <AlertTriangle className="h-3 w-3" />
                     {fileDiagWarningCount}
                   </span>
@@ -796,57 +799,66 @@ export function FileContentRenderer({
                   )}
                   Save
                 </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="text-muted-foreground hover:text-foreground h-7 w-7"
-                  onClick={handleDiscard}
-                  title={tHardcodedUi.raw(
-                    'featuresFilesComponentsFileContentRenderer.line600JsxAttrTitleDiscardChanges',
-                  )}
-                >
-                  <RotateCcw className="h-3.5 w-3.5" />
-                </Button>
+                <Hint label={discardLabel} side="bottom">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label={discardLabel}
+                    className="text-muted-foreground hover:text-foreground h-7 w-7 active:scale-[0.96]"
+                    onClick={handleDiscard}
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" />
+                  </Button>
+                </Hint>
               </>
             )}
 
             {/* HTML preview toggle */}
             {isHtmlFile && (
-              <Button
-                variant="ghost"
-                size="icon"
-                className={cn('h-7 w-7', isHtmlPreview && 'text-primary')}
-                onClick={() => setIsHtmlPreview((v) => !v)}
-                title={isHtmlPreview ? 'View source' : 'Preview'}
-              >
-                {isHtmlPreview ? <Code className="h-4 w-4" /> : <Globe className="h-4 w-4" />}
-              </Button>
+              <Hint label={isHtmlPreview ? 'View source' : 'Preview'} side="bottom">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label={isHtmlPreview ? 'View source' : 'Preview'}
+                  aria-pressed={isHtmlPreview}
+                  className={cn('h-7 w-7 active:scale-[0.96]', isHtmlPreview && 'text-primary')}
+                  onClick={() => setIsHtmlPreview((v) => !v)}
+                >
+                  {isHtmlPreview ? <Code className="h-4 w-4" /> : <Globe className="h-4 w-4" />}
+                </Button>
+              </Hint>
             )}
 
             {/* JSON tree toggle */}
             {isJsonFile && fileContent?.type === 'text' && (
-              <Button
-                variant="ghost"
-                size="icon"
-                className={cn('h-7 w-7', isJsonTreeView && 'text-primary')}
-                onClick={() => setIsJsonTreeView((v) => !v)}
-                title={isJsonTreeView ? 'View source' : 'Tree view'}
-              >
-                <Braces className="h-4 w-4" />
-              </Button>
+              <Hint label={isJsonTreeView ? 'View source' : 'Tree view'} side="bottom">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label={isJsonTreeView ? 'View source' : 'Tree view'}
+                  aria-pressed={isJsonTreeView}
+                  className={cn('h-7 w-7 active:scale-[0.96]', isJsonTreeView && 'text-primary')}
+                  onClick={() => setIsJsonTreeView((v) => !v)}
+                >
+                  <Braces className="h-4 w-4" />
+                </Button>
+              </Hint>
             )}
 
             {/* Markdown preview toggle */}
             {isMarkdownFile && fileContent?.type === 'text' && (
-              <Button
-                variant="ghost"
-                size="icon"
-                className={cn('h-7 w-7', isMarkdownPreview && 'text-primary')}
-                onClick={() => setIsMarkdownPreview((v) => !v)}
-                title={isMarkdownPreview ? 'View source' : 'Preview'}
-              >
-                {isMarkdownPreview ? <Code className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-              </Button>
+              <Hint label={isMarkdownPreview ? 'View source' : 'Preview'} side="bottom">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label={isMarkdownPreview ? 'View source' : 'Preview'}
+                  aria-pressed={isMarkdownPreview}
+                  className={cn('h-7 w-7 active:scale-[0.96]', isMarkdownPreview && 'text-primary')}
+                  onClick={() => setIsMarkdownPreview((v) => !v)}
+                >
+                  {isMarkdownPreview ? <Code className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </Button>
+              </Hint>
             )}
 
             {/* Additional header actions from parent */}
@@ -858,7 +870,7 @@ export function FileContentRenderer({
               className="h-7 gap-1.5 px-3 text-xs font-medium"
               onClick={handleDownload}
               disabled={!fileContent && !blobUrl && !rawBlob}
-              title="Download"
+              aria-label="Download"
             >
               <Download className="h-3.5 w-3.5" />
               Download
@@ -873,7 +885,7 @@ export function FileContentRenderer({
         <ClientErrorBoundary
           fallback={() => (
             <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
-              <div className="bg-destructive/10 flex h-12 w-12 items-center justify-center rounded-2xl">
+              <div className="bg-destructive/10 flex h-12 w-12 items-center justify-center rounded-sm">
                 <FileWarning className="text-destructive/50 h-6 w-6" />
               </div>
               <p className="text-muted-foreground text-sm font-medium">
@@ -905,9 +917,7 @@ export function FileContentRenderer({
           {contentError && !showLoadingState && isSandboxWaking && (
             <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
               <Loading className="text-muted-foreground/40 h-4 w-4" />
-              <p className="text-muted-foreground text-sm font-medium">
-                Waking up the workspace…
-              </p>
+              <p className="text-muted-foreground text-sm font-medium">Waking up the workspace…</p>
               <p className="text-muted-foreground/50 max-w-sm font-mono text-xs break-all">
                 {filePath}
               </p>
@@ -927,7 +937,7 @@ export function FileContentRenderer({
               <FileNotFoundState filePath={filePath} />
             ) : (
               <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
-                <div className="bg-destructive/10 flex h-12 w-12 items-center justify-center rounded-2xl">
+                <div className="bg-destructive/10 flex h-12 w-12 items-center justify-center rounded-sm">
                   <FileWarning className="text-destructive/50 h-6 w-6" />
                 </div>
                 <p className="text-muted-foreground text-sm font-medium">
@@ -1012,7 +1022,7 @@ export function FileContentRenderer({
           {/* Audio preview */}
           {isContentReady && fileCategory === 'audio' && blobUrl && (
             <div className="flex h-full flex-col items-center justify-center gap-5 p-8">
-              <div className="bg-muted/50 flex h-14 w-14 items-center justify-center rounded-2xl">
+              <div className="bg-muted/50 flex h-14 w-14 items-center justify-center rounded-sm">
                 <svg
                   className="text-muted-foreground/40 h-6 w-6"
                   viewBox="0 0 24 24"
@@ -1110,7 +1120,7 @@ export function FileContentRenderer({
             !isHeicImage &&
             !['pdf', 'docx', 'pptx', 'xlsx', 'sqlite', 'video', 'audio'].includes(fileCategory) && (
               <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
-                <div className="bg-muted/50 flex h-12 w-12 items-center justify-center rounded-2xl">
+                <div className="bg-muted/50 flex h-12 w-12 items-center justify-center rounded-sm">
                   <FileWarning className="text-muted-foreground/30 h-6 w-6" />
                 </div>
                 <p className="text-muted-foreground/50 text-sm">
@@ -1245,7 +1255,7 @@ function JsonNode({
     return (
       <div style={{ paddingLeft: depth * 20 }}>
         {keyName !== null && <span className="text-primary/70">{`"${keyName}"`}: </span>}
-        <span className="text-yellow-500/80">{String(value)}</span>
+        <span className="text-kortix-yellow">{String(value)}</span>
       </div>
     );
   }
@@ -1254,7 +1264,7 @@ function JsonNode({
     return (
       <div style={{ paddingLeft: depth * 20 }}>
         {keyName !== null && <span className="text-primary/70">{`"${keyName}"`}: </span>}
-        <span className="text-cyan-500/80">{String(value)}</span>
+        <span className="text-kortix-blue">{String(value)}</span>
       </div>
     );
   }
@@ -1264,7 +1274,7 @@ function JsonNode({
     return (
       <div style={{ paddingLeft: depth * 20 }} className="break-all">
         {keyName !== null && <span className="text-primary/70">{`"${keyName}"`}: </span>}
-        <span className="text-emerald-500/80">
+        <span className="text-kortix-green">
           {tHardcodedUi.raw('featuresFilesComponentsFileContentRenderer.line963JsxTextQuot')}
           {value.length > 200 ? value.slice(0, 200) + '...' : value}
           {tHardcodedUi.raw(
@@ -1276,7 +1286,7 @@ function JsonNode({
             href={value}
             target="_blank"
             rel="noopener noreferrer"
-            className="ml-1 text-xs text-blue-400/60 hover:text-blue-400"
+            className="text-kortix-blue/70 hover:text-kortix-blue ml-1 text-xs"
           >
             open
           </a>
@@ -1289,9 +1299,11 @@ function JsonNode({
     const count = value.length;
     return (
       <div>
-        <div
+        <button
+          type="button"
           style={{ paddingLeft: depth * 20 }}
-          className="hover:bg-muted/30 inline-flex cursor-pointer items-center gap-1 rounded-lg transition-colors"
+          aria-expanded={!isCollapsed}
+          className="hover:bg-muted/30 inline-flex cursor-pointer items-center gap-1 rounded-sm text-left transition-colors"
           onClick={() => setIsCollapsed((v) => !v)}
         >
           <span className="text-muted-foreground/40 w-3.5 text-center text-xs select-none">
@@ -1305,7 +1317,7 @@ function JsonNode({
           ) : (
             <span className="text-muted-foreground/30">[</span>
           )}
-        </div>
+        </button>
         {!isCollapsed && (
           <>
             {value.map((item, idx) => (
@@ -1325,9 +1337,11 @@ function JsonNode({
     const count = entries.length;
     return (
       <div>
-        <div
+        <button
+          type="button"
           style={{ paddingLeft: depth * 20 }}
-          className="hover:bg-muted/30 inline-flex cursor-pointer items-center gap-1 rounded-lg transition-colors"
+          aria-expanded={!isCollapsed}
+          className="hover:bg-muted/30 inline-flex cursor-pointer items-center gap-1 rounded-sm text-left transition-colors"
           onClick={() => setIsCollapsed((v) => !v)}
         >
           <span className="text-muted-foreground/40 w-3.5 text-center text-xs select-none">
@@ -1341,7 +1355,7 @@ function JsonNode({
           ) : (
             <span className="text-muted-foreground/30">{'{'}</span>
           )}
-        </div>
+        </button>
         {!isCollapsed && (
           <>
             {entries.map(([k, v]) => (

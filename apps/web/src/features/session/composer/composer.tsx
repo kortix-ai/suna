@@ -1,6 +1,6 @@
 'use client';
 
-import { toast } from '@/lib/toast';
+import { errorToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 import { isImageFile } from '@/lib/utils/file-utils';
 import type { Agent, Command, MessageWithParts, ProviderListResponse } from '@kortix/sdk/react';
@@ -373,7 +373,7 @@ function ComposerImpl({
   modelRequired = false,
   modelsLoading = false,
   autoFocus,
-  placeholder = 'Ask anything...',
+  placeholder = 'Ask anything…',
   prefill = null,
   onPrefillApplied,
   attachRequestId = null,
@@ -408,6 +408,8 @@ function ComposerImpl({
     attachedFilesRef.current = attachedFiles;
   }, [attachedFiles]);
   const [isDragOver, setIsDragOver] = useState(false);
+  /** Bumped by the `/` palette's "Start voice input" row — see `VoiceRecorder`. */
+  const [voiceStartRequestId, setVoiceStartRequestId] = useState(0);
   const [isEmpty, setIsEmpty] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -885,10 +887,12 @@ function ComposerImpl({
         case 'attach-file':
           fileInputRef.current?.click();
           return;
-        default:
-          // `set-scope` and `start-voice` remain no-ops: `VoiceRecorder` owns
-          // its own state with no external control, and scope lives outside
-          // this component entirely.
+        case 'start-voice':
+          // A counter, not a boolean: `VoiceRecorder` owns its own recording
+          // state, and this is the one signal that reaches into it. Two
+          // consecutive `/start-voice` selections must both arrive, which a
+          // boolean already `true` cannot express.
+          setVoiceStartRequestId((n) => n + 1);
           return;
       }
     },
@@ -899,11 +903,11 @@ function ComposerImpl({
     // Ahead of the model check: with no agent to run it, the model this prompt
     // would have used is not the user's problem.
     if (agentUnavailable) {
-      toast.error(NO_AGENT_ACCESS_LABEL, { description: NO_AGENT_ACCESS_HINT });
+      errorToast(NO_AGENT_ACCESS_LABEL, { description: NO_AGENT_ACCESS_HINT });
       return;
     }
     if (modelUnavailable) {
-      toast.error(NO_MODEL_AVAILABLE_MESSAGE, {
+      errorToast(NO_MODEL_AVAILABLE_MESSAGE, {
         description: NO_MODEL_AVAILABLE_ACTION_MESSAGE,
       });
       return;
@@ -922,7 +926,7 @@ function ComposerImpl({
     });
     if (submissionBlocker) {
       const copy = sendBlockerMessage(submissionBlocker);
-      toast.error(copy.message, copy.description ? { description: copy.description } : undefined);
+      errorToast(copy.message, copy.description ? { description: copy.description } : undefined);
       return;
     }
 
@@ -950,7 +954,7 @@ function ComposerImpl({
         attachmentCount: filesNow.length,
       });
       if (guard.kind === 'refuse') {
-        toast.error(guard.message, { description: guard.description });
+        errorToast(guard.message, { description: guard.description });
         return;
       }
 
@@ -983,7 +987,7 @@ function ComposerImpl({
       });
       if (blocker) {
         const copy = sendBlockerMessage(blocker);
-        toast.error(copy.message, copy.description ? { description: copy.description } : undefined);
+        errorToast(copy.message, copy.description ? { description: copy.description } : undefined);
         return;
       }
       onCommand?.(plan.command, plan.args, draft?.commandSplit);
@@ -1207,12 +1211,15 @@ function ComposerImpl({
             shell around it kept painting as an empty sliver.
           */}
           {showQueueStrip && (
-            <div className="bg-sidebar border-border flex w-[96%] flex-col items-center gap-2 rounded-t-xl border border-b-0 p-[0.3rem]  empty:hidden">
+            <div className="bg-sidebar border-border flex w-[96%] flex-col items-center gap-2 rounded-t-xl border border-b-0 p-1 empty:hidden">
               {threadContext && (
                 <button
                   onClick={threadContext.onBackToParent}
                   className={cn(
-                    'text-muted-foreground hover:text-foreground hover:bg-muted/80 flex cursor-pointer items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium transition-colors',
+                    // `group`, or the arrow's `group-hover:` transforms below
+                    // have no group to hover — the nudge was written and never
+                    // fired.
+                    'group text-muted-foreground hover:text-foreground hover:bg-muted/80 flex cursor-pointer items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium transition-colors',
                   )}
                 >
                   <ArrowUpLeft className="text-muted-foreground size-3.5 flex-shrink-0 transition-transform group-hover:-translate-x-0.5 group-hover:-translate-y-0.5" />
@@ -1295,15 +1302,38 @@ function ComposerImpl({
         onDragLeave={handleDragLeave}
         onDrop={handleDropFiles}
         className={cn(
-          'bg-sidebar shadow-card border-border relative isolate z-10 w-full rounded-xl border shadow-xl',
-          'pt-3 shadow-[0_0_4px_oklch(0_0_0/0.03)] dark:shadow-md',
+          // One shadow, from the ladder. `shadow-card` is defined nowhere in
+          // `globals.css` and `shadow-xl` was dead — twMerge dropped it for the
+          // arbitrary `shadow-[…oklch…]` that followed, which was the only
+          // raw colour left in the composer.
+          'bg-sidebar border-border relative isolate z-10 w-full rounded-xl border',
+          'pt-3 shadow-sm',
           'transition-[border-color] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)]',
           'motion-reduce:transition-none',
           cardClassName,
-          isDragOver && 'border-kortix-blue/80 ring-primary/40 border opacity-30 ring',
+          // NO `opacity-30` here. It used to sit on the card AND on the column
+          // inside it, and the two multiplied — 0.3 × 0.3 = 0.09 — so the whole
+          // composer, border and drop target included, went all but invisible
+          // the moment a file crossed it. The card keeps full opacity and its
+          // highlighted border; only the CONTENT dims, under the label below.
+          isDragOver && 'border-kortix-blue/80 ring-primary/40 border ring',
           (replyTo || notice) && 'rounded-t-none',
         )}
       >
+        {/* What the dimmed card is asking for. Without it the drag state said
+            only "something is happening" — it never named the action or its
+            result. `pointer-events-none` so it can never eat the drop. */}
+        {isDragOver && (
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-0 z-[2] flex items-center justify-center"
+          >
+            <span className="text-foreground bg-sidebar/80 rounded-md px-3 py-1.5 text-sm font-medium">
+              Drop files to attach
+            </span>
+          </div>
+        )}
+
         <div
           className={cn(
             'relative z-[1] flex w-full flex-col overflow-visible',
@@ -1451,6 +1481,7 @@ function ComposerImpl({
               rewind={rewind}
               onTranscription={handleTranscription}
               voiceDisabled={submitDisabled || isBusy}
+              voiceStartRequestId={voiceStartRequestId}
               isSending={isSending}
               isBusy={isBusy}
               onStop={onStop}

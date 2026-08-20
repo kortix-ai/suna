@@ -33,12 +33,12 @@ import { getActivePanelSessionId, sessionPreviewTabId } from '@/stores/session-b
 import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
 import {
   WarningIcon as AlertTriangle,
+  ArrowClockwiseIcon,
   ArrowSquareOutIcon,
   CaretRightIcon,
   CheckIcon as Check,
   WarningCircleIcon as CircleAlert,
   GlobeIcon as Globe,
-  ArrowClockwiseIcon as GrRefresh,
   SidebarSimpleIcon as PanelRight,
   MagnifyingGlassIcon as Search,
 } from '@phosphor-icons/react';
@@ -223,7 +223,7 @@ export function ServicePreviewActions({ preview }: { preview: ServicePreviewStat
     <div className="flex shrink-0 items-center gap-1">
       <Hint label="Refresh" side="top">
         <Button variant="ghost" size="icon-sm" type="button" onClick={handleRefresh}>
-          <GrRefresh className={cn('size-4', isLoading && 'animate-spinner-spin')} />
+          <ArrowClockwiseIcon className={cn('size-4', isLoading && 'animate-spinner-spin')} />
         </Button>
       </Hint>
       <Hint
@@ -297,7 +297,7 @@ export function ServicePreviewUrlFallback({ preview }: { preview: ServicePreview
             onClick={handleRefresh}
             className="text-muted-foreground gap-1.5"
           >
-            <GrRefresh className={cn('size-3.5', isLoading && 'animate-spinner-spin')} />
+            <ArrowClockwiseIcon className={cn('size-3.5', isLoading && 'animate-spinner-spin')} />
             Retry preview
           </Button>
         </Hint>
@@ -933,13 +933,31 @@ function InlineTriggerTitle({
             (running ? (
               <TextShimmer className="min-w-0 truncate text-sm">{trigger.subtitle}</TextShimmer>
             ) : (
+              // Painted as a link, so it must behave like one for the keyboard
+              // too. Kept as a <span role="button"> rather than a real <button>
+              // because this content is cloned into the disclosure's own trigger
+              // button — nesting one button in another is invalid HTML.
               <span
                 className={cn(
                   'text-muted-foreground min-w-0 truncate text-sm',
                   onSubtitleClick &&
                     'hover:text-foreground cursor-pointer underline-offset-2 hover:underline',
                 )}
+                role={onSubtitleClick ? 'button' : undefined}
+                tabIndex={onSubtitleClick ? 0 : undefined}
+                // Last, so the rendered markup keeps `title="…">…</span>` — the
+                // shape the memory-tool trigger tests pin.
                 title={trigger.subtitle}
+                onKeyDown={
+                  onSubtitleClick
+                    ? (e) => {
+                        if (e.key !== 'Enter' && e.key !== ' ') return;
+                        e.preventDefault();
+                        e.stopPropagation();
+                        onSubtitleClick();
+                      }
+                    : undefined
+                }
                 onClick={
                   onSubtitleClick
                     ? (e) => {
