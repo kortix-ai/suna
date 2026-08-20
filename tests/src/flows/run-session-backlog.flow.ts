@@ -198,18 +198,35 @@ flow(
 /**
  * Boot a fresh session and wait for its runtime to reach `ready`, returning the
  * proxy id (`external_id`, the value `:sandboxId` in the preview proxy path).
+ *
+ * The body runs INSIDE a `ctx.step`, and that is the whole point of the wrapper.
+ * Request capture is `AsyncLocalStorage`-scoped to a step (core/context.ts
+ * `withRecorder`, entered only by `ctx.step` in core/runner.ts), so every
+ * `POST /start` poll made outside one is recorded NOWHERE. RUN-4 failed in run
+ * 32330628092 with `Timed out waiting for session runtime ready` and produced a
+ * flow record with `"steps": []` — no request, no body, no `provisioningStage`,
+ * no `lastInitError`, on the single failure mode these flows actually fail with.
+ * Boot is the most expensive and most failure-prone part of every flow here; it
+ * must leave evidence behind.
  */
 async function bootSandbox(
   ctx: FlowContext,
   opts?: { prompt?: string; readinessTimeoutMs?: number },
 ): Promise<{ projectId: string; sessionId: string; sandboxId: string; sandbox: any }> {
-  const project = await ctx.fixtures.sharedSeededProject();
-  const session = await ctx.fixtures.session(project, { prompt: opts?.prompt ?? 'say hello' });
-  const started = await waitForSessionReady(ctx, project.id, session.id, opts?.readinessTimeoutMs);
+  return ctx.step('a fresh session boots to a ready runtime', async () => {
+    const project = await ctx.fixtures.sharedSeededProject();
+    const session = await ctx.fixtures.session(project, { prompt: opts?.prompt ?? 'say hello' });
+    const started = await waitForSessionReady(
+      ctx,
+      project.id,
+      session.id,
+      opts?.readinessTimeoutMs,
+    );
 
-  const sandbox = started.sandbox;
-  const sandboxId = String(sandbox.external_id ?? sandbox.externalId);
-  return { projectId: project.id, sessionId: session.id, sandboxId, sandbox };
+    const sandbox = started.sandbox;
+    const sandboxId = String(sandbox.external_id ?? sandbox.externalId);
+    return { projectId: project.id, sessionId: session.id, sandboxId, sandbox };
+  });
 }
 
 /** The workspace directory the session's OpenCode root lives under (see

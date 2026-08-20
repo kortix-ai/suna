@@ -25,6 +25,7 @@
 import { and, eq } from 'drizzle-orm';
 
 import { projectSessions } from '@kortix/db';
+import { logger as appLogger } from '../lib/logger';
 import { db } from '../shared/db';
 import {
   KORTIX_USER_CONTEXT_HEADER,
@@ -98,6 +99,19 @@ export async function listSandboxOpencodeSessions(
     // 503 = daemon up but OpenCode/repo not ready yet — distinct from a hard
     // failure so callers can retry rather than treat it as "empty".
     if (res.status === 503) return { ok: false, reason: 'not_ready' };
+    // A 401 here is NEVER transient and never the sandbox's fault: the daemon
+    // rejects every non-`/kortix/*` path without a valid X-Kortix-User-Context,
+    // and this call only carries one when `userId` was supplied. Folding that
+    // into a silent `unreachable` is what let a userId-less caller disable the
+    // opencode_sessions snapshot for three weeks unnoticed (0 of 2804 staging
+    // sessions in 2026-08). Name it in the log; the caller contract is unchanged.
+    if (res.status === 401) {
+      appLogger.warn('[opencode-mapping] daemon refused the session list (unsigned context)', {
+        externalId,
+        hasUserId: Boolean(userId),
+      });
+      return { ok: false, reason: 'unreachable' };
+    }
     if (!res.ok) return { ok: false, reason: 'unreachable' };
     const data = (await res.json()) as unknown;
     const sessions = Array.isArray(data) ? (data as OpencodeSessionLite[]) : [];

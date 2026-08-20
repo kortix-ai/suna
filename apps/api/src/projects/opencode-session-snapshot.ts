@@ -188,9 +188,21 @@ async function loadRow(sessionId: string, projectId: string): Promise<ProjectSes
  * Schedule a deferred `opencode_sessions` refresh for a session that just served
  * a prompt. Safe to call on every prompt — deduped per session; two attempts
  * (the second catches sub-agent sessions spawned during the turn).
+ *
+ * `userId` is REQUIRED, not optional. The daemon's auth gate rejects every
+ * non-`/kortix/*` path — `GET /session` included — with 401 unless the call
+ * carries a valid `X-Kortix-User-Context` header (apps/kortix-sandbox-agent-server
+ * /src/proxy.ts). That header is minted by `sandboxOpencodeEndpoint` ONLY when a
+ * userId is supplied: `resolvePreviewUserContext` returns null for `undefined`.
+ * A userId-less schedule therefore 401s, degrades to `unreachable`, and the
+ * snapshot is silently never written — which is exactly what happened between
+ * 2026-08-01 and 2026-08-20, when 0 of 2804 staging sessions got a populated
+ * `metadata.opencode_sessions`. Spelling the parameter as required (rather than
+ * `userId?`) makes the compiler, not a reviewer, catch the next caller that
+ * forgets it.
  */
 export function scheduleOpencodeSnapshotSync(
-  input: { sessionId: string; projectId: string; externalId: string; userId?: string },
+  input: { sessionId: string; projectId: string; externalId: string; userId: string | undefined },
   options: SnapshotSyncOptions = {},
 ): void {
   if (!input.sessionId || !input.projectId || !input.externalId) return;

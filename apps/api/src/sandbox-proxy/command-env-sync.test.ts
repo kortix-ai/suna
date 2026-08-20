@@ -68,7 +68,7 @@ type Recorder = {
   deps: PrePromptEnvSyncDeps;
   envSync: Array<{ requestedAgent?: string | null; sessionId: string; providerName: string }>;
   remint: Array<{ sessionAgent: string; requestedAgent: string | null }>;
-  snapshot: string[];
+  snapshot: Array<{ sessionId: string; projectId: string; externalId: string; userId?: string }>;
   titles: string[];
 };
 
@@ -95,7 +95,12 @@ function recorder(opts: { envSyncError?: () => Error } = {}): Recorder {
       return { action: 'skip' };
     }) as PrePromptEnvSyncDeps['remintGrant'],
     scheduleSnapshot: ((input) => {
-      rec.snapshot.push(input.sessionId);
+      rec.snapshot.push({
+        sessionId: input.sessionId,
+        projectId: input.projectId,
+        externalId: input.externalId,
+        userId: input.userId,
+      });
     }) as PrePromptEnvSyncDeps['scheduleSnapshot'],
     generateTitle: (async (input) => {
       rec.titles.push(input.firstPromptText);
@@ -204,7 +209,23 @@ describe('runPrePromptEnvSync — a /command body', () => {
   test('schedules the opencode snapshot refresh', async () => {
     const rec = recorder();
     await runSync(rec, COMMAND_BODY);
-    expect(rec.snapshot).toEqual(['sess-1']);
+    expect(rec.snapshot).toEqual([
+      { sessionId: 'sess-1', projectId: 'proj-1', externalId: 'ext-1', userId: 'u1' },
+    ]);
+  });
+
+  // REGRESSION (staging release gate, SESS-10): the schedule used to omit
+  // `userId`. `sandboxOpencodeEndpoint` mints the X-Kortix-User-Context header
+  // only when a userId is present (`resolvePreviewUserContext` returns null for
+  // undefined), and the daemon 401s every non-`/kortix/*` path without it. The
+  // refresh therefore degraded to `unreachable` and NEVER wrote:
+  // 0 of 2804 staging sessions created in 2026-08 had a populated
+  // `metadata.opencode_sessions`. Assert the identity reaches the scheduler.
+  test('forwards the caller userId so the daemon call is authenticated', async () => {
+    const rec = recorder();
+    await runSync(rec, COMMAND_BODY);
+    expect(rec.snapshot).toHaveLength(1);
+    expect(rec.snapshot[0]?.userId).toBe('u1');
   });
 
   test('generates NO session title from a command body', async () => {

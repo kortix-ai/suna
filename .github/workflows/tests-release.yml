@@ -143,7 +143,19 @@ jobs:
     env:
       # Pin the run id so the post-run sweep below can reclaim exactly THIS
       # shard's principals (`principals.ts` names them `e2e-<runId>-…`).
-      KE2E_RUN_ID: ${{ github.run_id }}-api${{ matrix.shard }}
+      #
+      # The ATTEMPT is part of the identity, or `gh run rerun --failed` collides
+      # with its own debris: `github.run_id` is identical across attempts, so
+      # every run-scoped fixture name is too, and attempt 2's world bootstrap
+      # re-derives names attempt 1 already claimed. Run 32330628092 attempt 2
+      # failed KAAB-7 in 2.2s with `409 IDEMPOTENCY_KEY_CONFLICT` on its first
+      # `POST /sessions` for exactly this reason — a green flow reported as a
+      # failure, on the release gate, during a release.
+      #
+      # Attempt 1 keeps the OLD id byte-for-byte, so nothing that greps existing
+      # logs or artifacts changes; only a re-run gets the suffix. The reclaim
+      # step below reads this same variable, so the sweep stays exact.
+      KE2E_RUN_ID: ${{ github.run_id }}-api${{ matrix.shard }}${{ github.run_attempt != 1 && format('-a{0}', github.run_attempt) || '' }}
       # Fleet arithmetic, not per-job tuning, and UNCHANGED per shard by the
       # move to 6 — the throughput comes from fewer flows per shard, not from
       # more workers inside one.
