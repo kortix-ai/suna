@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 
-import { relayTurnBeginToApi, __resetRelayedTurnBegins } from '../main'
+import { relayTurnBeginToApi, reconcileRunningTurnOnConnect, __resetRelayedTurnBegins } from '../main'
 import { dispatch } from '../opencode-events'
 import type { Config } from '../config'
 
@@ -246,5 +246,81 @@ describe('dispatch → onSessionStatus', () => {
       { onSessionStatus: () => {}, onSessionIdle: (s) => { idle = s } },
     )
     expect(idle).toBe('ses_root')
+  })
+})
+
+// THE BOOT-WINDOW GAP, measured on dev 2026-08-20: for a session with no
+// initial prompt the event loop starts only after `waitForOpencodeReady`
+// returns, and that probe lagged actual readiness by ~5 minutes (opencode
+// spawned 15:26:06 and served a real turn at 15:26:19; `subscribed` logged at
+// 15:31:08). Every session.status frame in that window is lost, so a turn the
+// box started on its own never got authority. Turn END already reconciles on
+// connect; this is the same backstop for turn BEGIN.
+describe('reconcileRunningTurnOnConnect — the late-subscribe backstop', () => {
+  function mocks(status: 'busy' | 'idle' | 'unreadable') {
+    let turnStreamCalls = 0
+    const server = Bun.serve({
+      port: 0,
+      async fetch(req) {
+        const url = new URL(req.url)
+        if (url.pathname.endsWith('/turn-stream')) {
+          turnStreamCalls++
+          await req.json()
+          return Response.json({ ok: true, outcome: 'adopted' })
+        }
+        if (url.pathname === '/session/status') {
+          if (status === 'unreadable') return new Response('nope', { status: 503 })
+          return Response.json({ [ROOT]: { type: status } })
+        }
+        if (url.pathname === `/session/${ROOT}/message`) return Response.json(syntheticTurn())
+        if (url.pathname === `/session/${ROOT}`) return Response.json({ parentID: null })
+        return new Response('nf', { status: 404 })
+      },
+    })
+    return { baseUrl: `http://127.0.0.1:${server.port}`, calls: () => turnStreamCalls, stop: () => server.stop(true) }
+  }
+
+  test('a root that is STILL busy at subscribe gets its turn adopted', async () => {
+    const m = mocks('busy')
+    sessionEnv(m.baseUrl)
+    try {
+      await reconcileRunningTurnOnConnect({ getInternalUrl: () => m.baseUrl }, { workspace: WORKSPACE } as unknown as Config, ROOT)
+      expect(m.calls()).toBe(1)
+    } finally {
+      m.stop()
+    }
+  })
+
+  test('an IDLE root adopts nothing — a finished turn is turn-end\'s business', async () => {
+    const m = mocks('idle')
+    sessionEnv(m.baseUrl)
+    try {
+      await reconcileRunningTurnOnConnect({ getInternalUrl: () => m.baseUrl }, { workspace: WORKSPACE } as unknown as Config, ROOT)
+      expect(m.calls()).toBe(0)
+    } finally {
+      m.stop()
+    }
+  })
+
+  test('an unreadable status adopts nothing', async () => {
+    const m = mocks('unreadable')
+    sessionEnv(m.baseUrl)
+    try {
+      await reconcileRunningTurnOnConnect({ getInternalUrl: () => m.baseUrl }, { workspace: WORKSPACE } as unknown as Config, ROOT)
+      expect(m.calls()).toBe(0)
+    } finally {
+      m.stop()
+    }
+  })
+
+  test('no pinned root adopts nothing', async () => {
+    const m = mocks('busy')
+    sessionEnv(m.baseUrl)
+    try {
+      await reconcileRunningTurnOnConnect({ getInternalUrl: () => m.baseUrl }, { workspace: WORKSPACE } as unknown as Config, null)
+      expect(m.calls()).toBe(0)
+    } finally {
+      m.stop()
+    }
   })
 })

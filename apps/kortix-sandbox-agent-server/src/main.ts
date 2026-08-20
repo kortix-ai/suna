@@ -66,7 +66,7 @@ import {
 import type { SandboxBootState } from './routes/health'
 import { installShutdownHandlers } from './shutdown'
 import { startStaticWebServer } from './static-web'
-import { opencodeDeliveryInFlight, opencodeTurnInFlight } from './opencode-turn-state'
+import { opencodeDeliveryInFlight, opencodeSessionInFlight, opencodeTurnInFlight } from './opencode-turn-state'
 
 const LEGACY_OPENCODE_ZEN_FREE_MODELS = new Set([
   'deepseek-v4-flash-free',
@@ -637,6 +637,11 @@ async function startSessionRuntime(
   // relayed is a no-op.
   const onConnected = () => {
     void reconcileInitialTurnAcceptance()
+    void reconcileRunningTurnOnConnect(opencode, cfg).catch((err) =>
+      logger.warn('[opencode-events] connect turn-begin reconcile failed', {
+        err: (err as Error).message,
+      }),
+    )
     void reconcileFinishedFirstTurn(opencode, cfg).catch((err) =>
       logger.warn('[opencode-events] connect reconcile failed', { err: (err as Error).message }),
     )
@@ -2367,6 +2372,37 @@ export async function relayTurnBeginToApi(
   } finally {
     turnBeginRelaysInFlight.delete(opencodeSessionId)
   }
+}
+
+/**
+ * Turn-BEGIN backstop, run on every (re)subscribe.
+ *
+ * The subscription is not always live when a turn starts. For a session with
+ * no initial prompt the event loop only starts after `waitForOpencodeReady`
+ * returns, and that probe can lag actual readiness badly — measured on dev
+ * 2026-08-20: opencode spawned 15:26:06 and served a real turn at 15:26:19,
+ * while `[opencode-events] subscribed` did not log until 15:31:08. Every
+ * `session.status` frame in that window is lost, so a turn the box starts on
+ * its own gets no authority and the composer reads "not running" — the very
+ * symptom `turn_begin` exists to fix.
+ *
+ * Turn END already has this backstop (`reconcileFinishedFirstTurn`); this is
+ * its mirror. Only a root that is STILL busy is adopted: a turn that already
+ * finished is over, and `reconcileFinishedFirstTurn` is what finalizes it.
+ */
+export async function reconcileRunningTurnOnConnect(
+  opencode: Pick<Opencode, 'getInternalUrl'>,
+  cfg: Config,
+  /** The root to ask about. Defaults to the pinned one; passed explicitly by
+   *  tests, which have no pin file — same shape as `opencodeTurnInFlight`. */
+  rootSessionId: string | null = readPinnedOpencodeSessionId(),
+): Promise<void> {
+  const rootId = rootSessionId
+  if (!rootId) return
+  const busy = await opencodeSessionInFlight(opencode.getInternalUrl(), cfg.workspace, rootId)
+  if (busy !== true) return
+  logger.info('[opencode-events] root is busy at subscribe; adopting its turn', { rootId })
+  await relayTurnBeginToApi(rootId, opencode, cfg)
 }
 
 export async function relayTurnEndToApi(

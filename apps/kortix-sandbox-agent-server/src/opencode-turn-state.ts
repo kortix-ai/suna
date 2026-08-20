@@ -152,7 +152,12 @@ export async function opencodeTurnInFlight(
   }
 }
 
-async function opencodeSessionInFlight(
+/**
+ * Is this exact OpenCode session busy or retrying right now? `null` when the
+ * status could not be read. Exported for the connect-time turn-begin backstop
+ * (main.ts) — see `reconcileRunningTurnOnConnect`.
+ */
+export async function opencodeSessionInFlight(
   baseUrl: string,
   workspace: string,
   sessionId: string,
