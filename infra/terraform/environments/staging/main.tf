@@ -112,11 +112,16 @@ module "api" {
   # 37s -> ALB 5xx -> edge-laundered 503, while the DB sat at 0 slow queries —
   # API event-loop starvation, not data. 3 x 2 vCPU gives the release gate's
   # ~18-worker fleet real JS throughput (~+$150/mo at the floor).
+  # 2026-08-20: floor raised 3 -> 6. Dry-run 32323656671 still collapsed the
+  # write path at 3 tasks (POST /v1/accounts 2.3-15.2s idle over the eu-west-2
+  # DB; 19 workers pushed it past the origin timeout), and a manual
+  # ecs-scale to 6 was silently reverted by the next deploy's TF apply —
+  # the floor must live here or it does not exist.
   task_cpu                   = 2048
   task_memory                = 4096
-  desired_count              = 3
-  min_capacity               = 3
-  max_capacity               = 6
+  desired_count              = 6
+  min_capacity               = 6
+  max_capacity               = 8
   use_fargate_spot           = true
   fargate_base_on_demand     = 1
   requests_per_target_target = 600
