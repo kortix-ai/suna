@@ -12,6 +12,7 @@ import type { Client } from "../core/client";
 import type { Env } from "../core/env";
 import { log } from "../core/log";
 import { sleep } from "../core/poll";
+import { retryBootstrapCreate } from "./transient";
 
 const TEST_PAYMENT_METHOD = "pm_card_visa";
 
@@ -46,12 +47,18 @@ export async function subscribe(
   accountId: string,
   tierKey = "pro",
 ): Promise<void> {
-  const created = await client.post("/v1/billing/create-inline-checkout", {
-    account_id: accountId,
-    tier_key: tierKey,
-    billing_period: "monthly",
+  // Bootstrap-time create: retried through a transient edge-laundered 5xx —
+  // an abandoned predecessor checkout is inert until its PaymentIntent is
+  // confirmed, so re-creating is safe. See fixtures/transient.ts.
+  const created = await retryBootstrapCreate("inline checkout create", async () => {
+    const res = await client.post("/v1/billing/create-inline-checkout", {
+      account_id: accountId,
+      tier_key: tierKey,
+      billing_period: "monthly",
+    });
+    res.status([200, 201]);
+    return res;
   });
-  created.status([200, 201]);
   const body = created.json<any>();
 
   if (body?.no_payment_required) {
