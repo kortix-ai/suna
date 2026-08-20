@@ -1211,3 +1211,35 @@ had already established the correct pattern.
 
 *Incident:* no outage — the fix was simply inert in production for ~25 minutes
 between merge and detection, which is exactly what dev verification is for.
+
+## `kortix self-host update` reconciles to the CONFIGURED channel, not the running one
+
+Hit live on Essentia, 2026-08-20, while shipping the turn-truth fixes.
+
+The box was **running** `kortix/kortix-api:dev-latest` but its instance config
+said `channel stable`. A plain `kortix self-host update` is a *reconcile*: it
+moved every service to `:stable` (v0.13.1) — a silent channel change away from
+the images the operator had been running, and away from the fix being shipped.
+The log says it plainly if you read it: `update complete (dev-latest -> stable)`.
+
+**Rules.**
+1. **Read the channel before updating**: `kortix self-host version` prints
+   `running <v> (tracking :<tag>)` AND `channel <name>`. When those disagree,
+   the box is drifted and a bare `update` will "fix" the drift by moving the
+   RUNNING images, not the config.
+2. Preserve the running channel explicitly: `kortix self-host update --tag
+   dev-latest` (alias `--version`/`--release`). Restoring is quick and
+   non-destructive — the updater keeps the previous image for fast rollback.
+3. **A successful update does not mean a NEW image.** The first restore rolled
+   onto a *cached* `dev-latest` created the previous day; only an explicit
+   `docker pull` revealed a newer one and a second update actually moved the
+   commit. Verify by CONTENT, never by the tag or the "update complete" line:
+   `/v1/health` `commit` must be the SHA you expect (see
+   [[deploy-verify-by-image-content-not-version]]).
+4. Self-host API health lives on the API host (`api.<domain>/v1/health`). `/v1/*`
+   on the WEB host is a frontend route miss and 500s — that 500 is not an API
+   outage, and mistaking it for one sends you chasing a phantom.
+
+*Incident:* no customer-visible outage (containers stayed healthy throughout and
+the box was restored within ~3 minutes), but the deployment ran on an unintended
+release channel in between.
