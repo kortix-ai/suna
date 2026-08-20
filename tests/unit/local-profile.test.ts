@@ -86,12 +86,13 @@ describe("ke2e local profile", () => {
     expect(localRunExitCode({ failed: 0, skipped: 0, todo: 1 })).toBe(1);
   });
 
-  it("fails a strict deployed run when any flow is skipped or remains todo", () => {
-    expect(runExitCode({ failed: 0, skipped: 0, todo: 0 }, true)).toBe(0);
-    expect(runExitCode({ failed: 1, skipped: 0, todo: 0 }, false)).toBe(1);
-    expect(runExitCode({ failed: 0, skipped: 1, todo: 0 }, false)).toBe(0);
-    expect(runExitCode({ failed: 0, skipped: 1, todo: 0 }, true)).toBe(1);
-    expect(runExitCode({ failed: 0, skipped: 0, todo: 1 }, true)).toBe(1);
+  it("fails a strict deployed run when a flow skips without an assertion or remains todo", () => {
+    expect(runExitCode({ failed: 0, skipped: 0, skippedUnasserted: 0, todo: 0 }, true)).toBe(0);
+    expect(runExitCode({ failed: 1, skipped: 0, skippedUnasserted: 0, todo: 0 }, false)).toBe(1);
+    expect(runExitCode({ failed: 0, skipped: 1, skippedUnasserted: 1, todo: 0 }, false)).toBe(0);
+    expect(runExitCode({ failed: 0, skipped: 1, skippedUnasserted: 0, todo: 0 }, true)).toBe(0);
+    expect(runExitCode({ failed: 0, skipped: 1, skippedUnasserted: 1, todo: 0 }, true)).toBe(1);
+    expect(runExitCode({ failed: 0, skipped: 0, skippedUnasserted: 0, todo: 1 }, true)).toBe(1);
   });
 
   it("uses bounded CPU-aware concurrency", () => {
